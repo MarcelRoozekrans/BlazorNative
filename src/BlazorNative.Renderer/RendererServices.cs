@@ -19,7 +19,6 @@ public static class ServiceCollectionExtensions
         this IServiceCollection services)
     {
         services.AddScoped<NativeRenderer>();
-        services.AddScoped<IComponentActivator, DefaultComponentActivator>();
         return services;
     }
 }
@@ -54,9 +53,3 @@ internal sealed class NativeRendererLoggerFactory : ILoggerFactory
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// WebEventData shim
-// Wraps native UI event dispatch back into Blazor's event system.
-// ─────────────────────────────────────────────────────────────────────────────
-
-internal sealed record WebEventData(ulong EventHandlerId, EventArgs EventArgs);
