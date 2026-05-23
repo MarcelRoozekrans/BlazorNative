@@ -82,6 +82,35 @@ internal static class BlazorInterop
             failures.Add($"BnRenderTreeDiff: {ex.Message}");
         }
 
+        try
+        {
+            var edit = default(RenderTreeEdit);
+            _ = RefAccessors.EditType(ref edit);
+            _ = RefAccessors.ReferenceFrameIndex(ref edit);
+            _ = RefAccessors.SiblingIndex(ref edit);
+            _ = RefAccessors.RemovedAttributeName(ref edit);
+        }
+        catch (Exception ex) when (ex is MissingFieldException or MissingMethodException)
+        {
+            failures.Add($"BnRenderTreeEdit: {ex.Message}");
+        }
+
+        try
+        {
+            var frame = default(RenderTreeFrame);
+            _ = RefAccessors.FrameType(ref frame);
+            _ = RefAccessors.ElementName(ref frame);
+            _ = RefAccessors.ElementSubtreeLength(ref frame);
+            _ = RefAccessors.AttributeName(ref frame);
+            _ = RefAccessors.AttributeValue(ref frame);
+            _ = RefAccessors.AttributeEventHandlerId(ref frame);
+            _ = RefAccessors.TextContent(ref frame);
+        }
+        catch (Exception ex) when (ex is MissingFieldException or MissingMethodException)
+        {
+            failures.Add($"BnRenderTreeFrame: {ex.Message}");
+        }
+
         if (failures.Count > 0)
             throw new BlazorVersionMismatchException(
                 "Blazor internal-layout drift detected:\n  - " + string.Join("\n  - ", failures));
@@ -146,6 +175,35 @@ internal ref struct BnRenderTreeDiff
     public BnArrayRange<RenderTreeFrame> ReferenceFrames => new(ref RefAccessors.ReferenceFrames(ref _diff));
 }
 
+// ── RenderTreeEdit ───────────────────────────────────────────────────────────
+
+internal ref struct BnRenderTreeEdit
+{
+    private readonly ref RenderTreeEdit _edit;
+    public BnRenderTreeEdit(ref RenderTreeEdit edit) { _edit = ref edit; }
+
+    public int     Type                  => (int)RefAccessors.EditType(ref _edit);
+    public int     ReferenceFrameIndex   => RefAccessors.ReferenceFrameIndex(ref _edit);
+    public int     SiblingIndex          => RefAccessors.SiblingIndex(ref _edit);
+    public string? RemovedAttributeName  => RefAccessors.RemovedAttributeName(ref _edit);
+}
+
+// ── RenderTreeFrame ──────────────────────────────────────────────────────────
+
+internal ref struct BnRenderTreeFrame
+{
+    private readonly ref RenderTreeFrame _frame;
+    public BnRenderTreeFrame(ref RenderTreeFrame frame) { _frame = ref frame; }
+
+    public RenderTreeFrameType FrameType            => RefAccessors.FrameType(ref _frame);
+    public string?             ElementName          => RefAccessors.ElementName(ref _frame);
+    public int                 ElementSubtreeLength => RefAccessors.ElementSubtreeLength(ref _frame);
+    public string?             AttributeName        => RefAccessors.AttributeName(ref _frame);
+    public object?             AttributeValue       => RefAccessors.AttributeValue(ref _frame);
+    public ulong               AttributeEventHandlerId => RefAccessors.AttributeEventHandlerId(ref _frame);
+    public string?             TextContent          => RefAccessors.TextContent(ref _frame);
+}
+
 file static class RefAccessors
 {
     [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "Array")]
@@ -168,4 +226,39 @@ file static class RefAccessors
 
     [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "ReferenceFrames")]
     public static extern ref ArrayRange<RenderTreeFrame> ReferenceFrames(ref RenderTreeDiff diff);
+
+    // RenderTreeEdit — underlying field names may differ; verify on first probe.
+    [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "TypeField")]
+    public static extern ref int EditType(ref RenderTreeEdit edit);
+
+    [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "ReferenceFrameIndexField")]
+    public static extern ref int ReferenceFrameIndex(ref RenderTreeEdit edit);
+
+    [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "SiblingIndexField")]
+    public static extern ref int SiblingIndex(ref RenderTreeEdit edit);
+
+    [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "RemovedAttributeNameField")]
+    public static extern ref string? RemovedAttributeName(ref RenderTreeEdit edit);
+
+    // RenderTreeFrame
+    [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "FrameTypeField")]
+    public static extern ref RenderTreeFrameType FrameType(ref RenderTreeFrame frame);
+
+    [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "ElementNameField")]
+    public static extern ref string? ElementName(ref RenderTreeFrame frame);
+
+    [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "ElementSubtreeLengthField")]
+    public static extern ref int ElementSubtreeLength(ref RenderTreeFrame frame);
+
+    [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "AttributeNameField")]
+    public static extern ref string? AttributeName(ref RenderTreeFrame frame);
+
+    [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "AttributeValueField")]
+    public static extern ref object? AttributeValue(ref RenderTreeFrame frame);
+
+    [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "AttributeEventHandlerIdField")]
+    public static extern ref ulong AttributeEventHandlerId(ref RenderTreeFrame frame);
+
+    [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "TextContentField")]
+    public static extern ref string? TextContent(ref RenderTreeFrame frame);
 }
