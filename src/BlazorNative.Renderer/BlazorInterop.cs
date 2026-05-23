@@ -60,19 +60,26 @@ internal static class BlazorInterop
     {
         var failures = new List<string>();
 
-        // DispatchEventAsync is the only UnsafeAccessor we still depend on.
-        try
+        // Blazor's Renderer.DispatchEventAsync(ulong, EventFieldInfo?, EventArgs) is
+        // the one accessor we genuinely depend on. If Blazor renames it or changes
+        // its arity, the [UnsafeAccessor(Method)] binding fails at first call —
+        // verify the underlying member exists *now* so we fail at load time instead.
+        var eventFieldInfoType = typeof(RenderTreeFrameType).Assembly
+            .GetType("Microsoft.AspNetCore.Components.RenderTree.EventFieldInfo");
+        if (eventFieldInfoType is null)
         {
-            // Probe the accessor metadata exists at all. We can't *invoke* it
-            // here without a real Renderer instance, but referring to the
-            // delegate via reflection forces it to resolve.
-            _ = typeof(RefAccessors).GetMethod(
-                nameof(RefAccessors.DispatchEventAsync),
-                BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
+            failures.Add("Microsoft.AspNetCore.Components.RenderTree.EventFieldInfo type not found");
         }
-        catch (Exception ex) when (ex is MissingFieldException or MissingMethodException)
+        else
         {
-            failures.Add($"DispatchEventAsync: {ex.Message}");
+            var dispatchMethod = typeof(BlazorRenderer).GetMethod(
+                "DispatchEventAsync",
+                BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public,
+                binder: null,
+                types: new[] { typeof(ulong), eventFieldInfoType, typeof(EventArgs) },
+                modifiers: null);
+            if (dispatchMethod is null)
+                failures.Add("BlazorRenderer.DispatchEventAsync(ulong, EventFieldInfo?, EventArgs) not found");
         }
 
         if (failures.Count > 0)
