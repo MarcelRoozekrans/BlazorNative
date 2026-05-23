@@ -263,6 +263,7 @@ Each platform API follows the same pattern:
 ### Testing infrastructure
 - [ ] **`BlazorNative.Analyzers.Tests`** — `Microsoft.CodeAnalysis.Testing` unit tests for all BN0001–BN0013 diagnostics
 - [ ] **`BlazorNative.Renderer.Tests`** — mount a component, assert `RenderPatch[]` output matches expected. No native shell needed.
+  - Currently includes one [Fact(Skip)] test `RenderWalk_IsAllocationFree_OnSteadyState` (`tests/BlazorNative.Renderer.Tests/RendererSpike.cs`). When this milestone enables StateHasChanged-on-mounted-root, un-skip and set a realistic ~512 B/iteration budget.
 - [ ] **`BlazorNative.Integration.Tests`** — run compiled `.wasm` module via wasmtime, assert bridge call round-trips
 - [ ] **`BlazorNative.Components.Tests`** — bunit-style tests for component library
 - [ ] **`.editorconfig` analyzer scoping** — suppress WASI analyzers in DevHost and test projects
