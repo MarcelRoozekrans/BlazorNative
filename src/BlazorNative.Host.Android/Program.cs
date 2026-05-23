@@ -1,5 +1,5 @@
+using BlazorNative.Blazor;
 using BlazorNative.Core;
-using BlazorNative.DevHost;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // BlazorNative DevHost

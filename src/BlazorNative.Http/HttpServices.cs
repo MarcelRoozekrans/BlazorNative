@@ -28,8 +28,10 @@ public static class ServiceCollectionExtensions
         // Register the handler itself
         services.AddScoped<BridgeHttpHandler>();
 
-        // Default HttpClient — uses bridge handler
-        services.AddHttpClient()
+        // Default HttpClient — uses bridge handler.
+        // AddHttpClient(name) returns IHttpClientBuilder (the parameterless
+        // AddHttpClient() returns IServiceCollection and can't be chained).
+        services.AddHttpClient(Microsoft.Extensions.Options.Options.DefaultName)
             .ConfigurePrimaryHttpMessageHandler<BridgeHttpHandler>();
 
         return services;
