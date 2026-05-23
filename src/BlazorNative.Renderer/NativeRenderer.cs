@@ -109,6 +109,19 @@ public sealed class NativeRenderer : BlazorRenderer
     protected override void HandleException(Exception exception)
         => Console.Error.WriteLine($"[BlazorNative.Renderer] {exception}");
 
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            // Release any handlers registered against Frames. The underlying
+            // AsyncEventHandler<T> struct holds delegate references in its
+            // internal state; resetting to default releases them so per-test
+            // closures don't leak across NativeRenderer instances.
+            _frames = default;
+        }
+        base.Dispose(disposing);
+    }
+
     // ── Render tree walking (typed against Bn* wrappers only) ─────────────────
 
     private void ProcessRenderTreeDiff(
