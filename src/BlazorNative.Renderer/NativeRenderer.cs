@@ -100,6 +100,10 @@ public sealed class NativeRenderer : BlazorRenderer
         }
         finally
         {
+            // We cannot use `using var` here: PooledList<T> is a struct whose
+            // Add() mutates internal state, so the helper methods take it by
+            // `ref`. The C# compiler rejects passing a `using` local by ref
+            // (CS1657), forcing the explicit try/finally pattern.
             patches.Dispose();
         }
 
