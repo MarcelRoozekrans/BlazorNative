@@ -2,6 +2,8 @@
 
 *Brainstormed: 2026-05-23 — Milestone 1, Phase 1.1*
 
+> **Superseded for one decision (2026-05-23):** Mono-AOT, not NativeAOT, is what .NET 10's `wasi-experimental` workload provides for `wasi-wasm`. See ROADMAP.md Phase 1.1 verdict. Rest of design unaffected.
+
 ## Problem
 
 `BlazorNative.Renderer.NativeRenderer` needs to walk `RenderBatch` / `RenderTreeDiff` / `RenderTreeFrame` to translate Blazor renders into the `RenderPatch` JSON protocol. Almost every member it touches is `internal` in `Microsoft.AspNetCore.Components`. The current code references them directly and will not compile against a stock NuGet package. BACKLOG.md P0 lists this as a blocker: every later renderer work depends on the strategy chosen here.
