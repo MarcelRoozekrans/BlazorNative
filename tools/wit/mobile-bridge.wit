@@ -1,0 +1,63 @@
+// mobile-bridge.wit
+// WebAssembly Interface Types contract between .NET WASM module and native shell.
+// This is the canonical source of truth. C# and Kotlin/Swift bindings are generated from this.
+//
+// Tooling:  wit-bindgen generate --language csharp mobile-bridge.wit
+//           wit-bindgen generate --language kotlin mobile-bridge.wit
+
+package blazornative:mobile-bridge@0.1.0;
+
+interface types {
+  record http-request {
+    url: string,
+    method: string,
+    body: option<string>,
+    headers: list<tuple<string, string>>,
+  }
+
+  record http-response {
+    status-code: u32,
+    body: string,
+    headers: list<tuple<string, string>>,
+  }
+
+  record platform-info {
+    platform: platform-kind,
+    os-version: string,
+    app-version: string,
+    is-debug: bool,
+  }
+
+  enum platform-kind {
+    dev-host,
+    android,
+    ios,
+    windows,
+    mac,
+  }
+
+  record native-event {
+    name: string,
+    payload: option<string>,
+  }
+}
+
+// Imports: what the WASM module calls INTO the native host
+world mobile-bridge {
+  use types.{http-request, http-response, platform-info, native-event};
+
+  import navigate: func(route: string);
+  import current-route: func() -> string;
+
+  import storage-read: func(key: string) -> option<string>;
+  import storage-write: func(key: string, value: string);
+  import storage-delete: func(key: string);
+
+  import fetch: func(request: http-request) -> result<http-response, string>;
+
+  import platform-info: func() -> platform-info;
+
+  // Export: what the native host calls INTO the WASM module
+  export dispatch-event: func(event: native-event);
+  export app-init: func();
+}

@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net9.0;net9.0-browser;wasi-wasm</TargetFrameworks>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+
+    <!-- AOT settings (matches ZeroAlloc-Net conventions) -->
+    <PublishAot Condition="'$(RuntimeIdentifier)' == 'wasi-wasm'">true</PublishAot>
+    <TrimmerRootDescriptor>TrimmerRoots.xml</TrimmerRootDescriptor>
+    <InvariantGlobalization>true</InvariantGlobalization>
+
+    <!-- WASI specific -->
+    <WasmSingleFileBundle Condition="'$(RuntimeIdentifier)' == 'wasi-wasm'">true</WasmSingleFileBundle>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(RuntimeIdentifier)' == 'wasi-wasm'">
+    <OutputType>Exe</OutputType>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(RuntimeIdentifier)' == 'wasi-wasm'">
+    <PackageReference Include="Microsoft.DotNet.ILCompiler.LLVM" Version="9.*-*" />
+  </ItemGroup>
+
+</Project>

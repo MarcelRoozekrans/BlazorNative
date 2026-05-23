@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>BlazorNative.DevHost</RootNamespace>
+
+    <!-- Dev host runs as a normal web app for great inner-loop DX -->
+    <ApplicationUrl>https://localhost:5273;http://localhost:5272</ApplicationUrl>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\BlazorNative.Core\BlazorNative.Core.csproj" />
+    <ProjectReference Include="..\BlazorNative.Blazor\BlazorNative.Blazor.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Server" Version="9.*" />
+    <PackageReference Include="System.Reactive" Version="6.*" />
+  </ItemGroup>
+
+</Project>

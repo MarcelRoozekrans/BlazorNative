@@ -1,0 +1,40 @@
+# Build output
+bin/
+obj/
+artifacts/
+
+# .NET
+*.user
+*.suo
+.vs/
+.vscode/settings.json
+project.lock.json
+project.fragment.lock.json
+
+# WASM / WASI
+*.wasm
+*.wat
+
+# Android
+*.apk
+*.aab
+*.keystore
+
+# Rider
+.idea/
+*.DotSettings.user
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# NuGet
+*.nupkg
+*.snupkg
+packages/
+nuget.config.local
+
+# Logs
+*.log
+logs/

@@ -1,0 +1,27 @@
+
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BlazorNative.Core", "src\BlazorNative.Core\BlazorNative.Core.csproj", "{A1B2C3D4-0001-0001-0001-000000000001}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BlazorNative.Bridge", "src\BlazorNative.Bridge\BlazorNative.Bridge.csproj", "{A1B2C3D4-0001-0001-0001-000000000002}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BlazorNative.Blazor", "src\BlazorNative.Blazor\BlazorNative.Blazor.csproj", "{A1B2C3D4-0001-0001-0001-000000000003}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BlazorNative.DevHost", "src\BlazorNative.Host.Android\BlazorNative.DevHost.csproj", "{A1B2C3D4-0001-0001-0001-000000000004}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BlazorNative.Renderer", "src\BlazorNative.Renderer\BlazorNative.Renderer.csproj", "{A1B2C3D4-0001-0001-0001-000000000005}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BlazorNative.Http", "src\BlazorNative.Http\BlazorNative.Http.csproj", "{A1B2C3D4-0001-0001-0001-000000000006}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BlazorNative.Analyzers", "src\BlazorNative.Analyzers\BlazorNative.Analyzers.csproj", "{A1B2C3D4-0001-0001-0001-000000000007}"
+EndProject
+
+Global
+    GlobalSection(SolutionConfigurationPlatforms) = preSolution
+        Debug|Any CPU = Debug|Any CPU
+        Release|Any CPU = Release|Any CPU
+        WASI|Any CPU = WASI|Any CPU
+    EndGlobalSection
+EndGlobal
