@@ -165,10 +165,10 @@ internal ref struct BnRenderBatch
 // ── RenderTreeDiff ───────────────────────────────────────────────────────────
 // ComponentId / Edits are public readonly fields.
 
-internal struct BnRenderTreeDiff
+internal ref struct BnRenderTreeDiff
 {
-    private RenderTreeDiff _diff;
-    public BnRenderTreeDiff(in RenderTreeDiff diff) { _diff = diff; }
+    private readonly ref readonly RenderTreeDiff _diff;
+    public BnRenderTreeDiff(in RenderTreeDiff diff) { _diff = ref diff; }
 
     public int ComponentId => _diff.ComponentId;
     public BnArrayBuilderSegment<RenderTreeEdit> Edits => new(_diff.Edits);
