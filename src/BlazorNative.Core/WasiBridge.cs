@@ -81,9 +81,9 @@ public sealed class WasiBridge : IMobileBridge, IDisposable
 
     // ── Network ───────────────────────────────────────────────────────────────
 
-    public async ValueTask<BridgeHttpResponse> FetchAsync(BridgeHttpRequest request, CancellationToken ct = default)
+    public ValueTask<BridgeHttpResponse> FetchAsync(BridgeHttpRequest request, CancellationToken ct = default)
     {
-        var reqJson = JsonSerializer.Serialize(request);
+        var reqJson = JsonSerializer.Serialize(request, BridgeJsonContext.Default.BridgeHttpRequest);
         var reqBytes = Encoding.UTF8.GetBytes(reqJson);
         var resBuf = new byte[1024 * 64]; // 64KB response buffer
         int resLen;
@@ -95,10 +95,11 @@ public sealed class WasiBridge : IMobileBridge, IDisposable
         }
 
         if (resLen < 0)
-            return new BridgeHttpResponse(0, "fetch failed", new Dictionary<string, string>());
+            return ValueTask.FromResult(new BridgeHttpResponse(0, "fetch failed", new Dictionary<string, string>()));
 
         var json = Encoding.UTF8.GetString(resBuf, 0, resLen);
-        return JsonSerializer.Deserialize<BridgeHttpResponse>(json);
+        return ValueTask.FromResult(
+            JsonSerializer.Deserialize(json, BridgeJsonContext.Default.BridgeHttpResponse)!);
     }
 
     // ── Platform info ─────────────────────────────────────────────────────────
@@ -109,7 +110,8 @@ public sealed class WasiBridge : IMobileBridge, IDisposable
         int len;
         unsafe { fixed (byte* ptr = buf) len = Native.shell_platform_info(ptr, buf.Length); }
         var json = Encoding.UTF8.GetString(buf, 0, len);
-        return ValueTask.FromResult(JsonSerializer.Deserialize<PlatformInfo>(json));
+        return ValueTask.FromResult(
+            JsonSerializer.Deserialize(json, BridgeJsonContext.Default.PlatformInfo));
     }
 
     // ── Called by native host to push events into WASM ────────────────────────
