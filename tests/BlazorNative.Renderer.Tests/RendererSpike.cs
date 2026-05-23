@@ -22,6 +22,18 @@ public class RendererSpike
         }
     }
 
+    private sealed class NestedComponent : ComponentBase
+    {
+        protected override void BuildRenderTree(RenderTreeBuilder b)
+        {
+            b.OpenElement(0, "div");
+            b.OpenElement(1, "button");
+            b.AddContent(2, "tap");
+            b.CloseElement();
+            b.CloseElement();
+        }
+    }
+
     [Fact]
     public async Task FirstFrame_HasExpectedPatches()
     {
@@ -78,5 +90,42 @@ public class RendererSpike
     public void RenderWalk_IsAllocationFree_OnSteadyState()
     {
         // Placeholder — see Skip reason. Will be implemented in Milestone 4 using AllocationGate.AssertBudget.
+    }
+
+    // Documents a known bug: ProcessFrame's nested-element walk uses the child's
+    // absolute frame index as the sibling-key, which then can't be re-found by
+    // GetNodeIdBySibling on subsequent diffs. Flat components (HelloComponent)
+    // dodge this because every child sits at sibling-index 1. The fix lands with
+    // the real widget tree in Milestone 2 (BACKLOG P1 "Native widget mapper").
+    [Fact(Skip = "Nested elements lose sibling-key on re-render — fix scheduled for Milestone 2 widget tree (BACKLOG P1 'Native widget mapper'). See NativeRenderer.cs:146-178.")]
+    public async Task NestedElements_EmitCreateNodeForEachLevel()
+    {
+        var services = new ServiceCollection().AddBlazorNativeRenderer().BuildServiceProvider();
+        using var bridge = new DevHostBridge();
+        using var renderer = new NativeRenderer(bridge, services);
+
+        var tcs = new TaskCompletionSource<RenderFrame>();
+        AsyncEvent<RenderFrame> handler = (frame, ct) =>
+        {
+            tcs.TrySetResult(frame);
+            return ValueTask.CompletedTask;
+        };
+        renderer.Frames += handler;
+
+        try
+        {
+            await renderer.MountAsync<NestedComponent>();
+            var frame = await tcs.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+            // Outer <div> -> "view", inner <button> -> "button", inner text -> "text".
+            Assert.Contains(frame.Patches, p => p is CreateNodePatch c && c.NodeType == "view");
+            Assert.Contains(frame.Patches, p => p is CreateNodePatch c && c.NodeType == "button");
+            Assert.Contains(frame.Patches, p => p is CreateNodePatch c && c.NodeType == "text");
+            Assert.Contains(frame.Patches, p => p is ReplaceTextPatch r && r.Text == "tap");
+        }
+        finally
+        {
+            renderer.Frames -= handler;
+        }
     }
 }
