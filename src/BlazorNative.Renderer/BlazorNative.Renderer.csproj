@@ -9,6 +9,11 @@
 
     <PublishAot Condition="'$(RuntimeIdentifier)' == 'wasi-wasm'">true</PublishAot>
     <InvariantGlobalization Condition="'$(RuntimeIdentifier)' == 'wasi-wasm'">true</InvariantGlobalization>
+
+    <!-- BL0006: "do not use internal Blazor render-tree types" — intentionally
+         done in BlazorInterop.cs behind the Bn* wrapper layer. See
+         docs/plans/2026-05-23-renderer-internal-api-design.md. -->
+    <NoWarn>$(NoWarn);BL0006</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
