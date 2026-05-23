@@ -10,12 +10,14 @@ A `BlazorNative.Core` WASM module that boots cleanly under `wasmtime`, has the c
 
 After this milestone the project compiles in all configurations (Debug, Release, WASI) and runs both the inner-loop DevHost and the WASI binary without errors. No native shell or actual native rendering yet — that is Milestone 2.
 
+**Update (Phase 1.1, 2026-05-23):** .NET 10's `wasi-experimental` workload provides **Mono-AOT** for `wasi-wasm`, not NativeAOT. The original design's "Native AOT + WASI" framing was wrong; the actual model is a Mono runtime compiled to WASM (`dotnet.wasm`, ~12 MB) that loads a managed `BlazorNative.Core.dll` at runtime. Different bundling shape, same external interface (one `dotnet.wasm` + side-by-side `.dll` files in an AppBundle). Phase 1.2 needs `wasi-sdk` installed for the IL→WASM AOT step that produces the app-specific `BlazorNative.Core.wasm`.
+
 ## Definition of Done
 
 1. **Build green in all configurations.**
    - `dotnet build BlazorNative.sln -c Debug` succeeds.
    - `dotnet build BlazorNative.sln -c Release` succeeds.
-   - `dotnet build src/BlazorNative.Core/BlazorNative.Core.csproj -r wasi-wasm -c Release` succeeds and emits `BlazorNative.Core.wasm`.
+   - `dotnet build src/BlazorNative.Core/BlazorNative.Core.csproj -r wasi-wasm -c Release` succeeds and produces an AppBundle containing `dotnet.wasm` (Mono runtime), the launcher scripts (`run-wasmtime.sh`, `run-node.sh`), and the managed `BlazorNative.Core.dll`. The app-specific `BlazorNative.Core.wasm` is produced only on `dotnet publish` with `wasi-sdk` installed — Phase 1.2 work.
 
 2. **Renderer internal-API verdict captured.** A written decision (in `docs/plans/`) recording the chosen approach (`UnsafeAccessor` preferred per BACKLOG, or alternative if spike disproves it) with a working proof-of-concept compiling against `Microsoft.AspNetCore.Components`'s public-only surface.
 
