@@ -13,6 +13,7 @@ using System.Reflection;
 using System.Runtime.CompilerServices;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.RenderTree;
+using BlazorRenderer = Microsoft.AspNetCore.Components.RenderTree.Renderer;
 
 namespace BlazorNative.Renderer;
 
@@ -28,7 +29,7 @@ internal static class BlazorInterop
 
     private static void VerifyVersion()
     {
-        var actual = typeof(Renderer).Assembly.GetName().Version;
+        var actual = typeof(BlazorRenderer).Assembly.GetName().Version;
         if (actual is null
             || actual.Major != BlazorCompatVersion.Major
             || actual.Minor != BlazorCompatVersion.Minor)
@@ -115,6 +116,12 @@ internal static class BlazorInterop
             throw new BlazorVersionMismatchException(
                 "Blazor internal-layout drift detected:\n  - " + string.Join("\n  - ", failures));
     }
+
+    public static Task DispatchEventViaAccessor(
+        BlazorRenderer renderer,
+        ulong eventHandlerId,
+        EventArgs eventArgs)
+        => RefAccessors.DispatchEventAsync(renderer, eventHandlerId, fieldInfo: null, eventArgs);
 }
 
 public sealed class BlazorVersionMismatchException : Exception
@@ -261,4 +268,13 @@ file static class RefAccessors
 
     [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "TextContentField")]
     public static extern ref string? TextContent(ref RenderTreeFrame frame);
+
+    // Renderer.DispatchEventAsync — EventFieldInfo is fully internal, reference it via UnsafeAccessorType.
+    [UnsafeAccessor(UnsafeAccessorKind.Method, Name = "DispatchEventAsync")]
+    public static extern Task DispatchEventAsync(
+        BlazorRenderer renderer,
+        ulong eventHandlerId,
+        [UnsafeAccessorType("Microsoft.AspNetCore.Components.RenderTree.EventFieldInfo, Microsoft.AspNetCore.Components")]
+        object? fieldInfo,
+        EventArgs eventArgs);
 }
