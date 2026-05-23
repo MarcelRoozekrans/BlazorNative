@@ -1,4 +1,4 @@
-using System.Reactive.Subjects;
+using ZeroAlloc.AsyncEvents;
 
 namespace BlazorNative.Core;
 
@@ -18,12 +18,16 @@ namespace BlazorNative.Core;
 public sealed class DevHostBridge : IMobileBridge, IDisposable
 {
     private readonly Dictionary<string, string> _storage = new();
-    private readonly Subject<NativeEvent> _events = new();
+    private AsyncEventHandler<NativeEvent> _events = new(InvokeMode.Sequential);
     private readonly HttpClient _http = new();
     private readonly List<string> _routeHistory = new();
     private string _currentRoute = "/";
 
-    public IObservable<NativeEvent> NativeEvents => _events;
+    public event AsyncEvent<NativeEvent> NativeEvents
+    {
+        add    => _events.Register(value);
+        remove => _events.Unregister(value);
+    }
 
     // ── Navigation ────────────────────────────────────────────────────────────
 
@@ -32,7 +36,7 @@ public sealed class DevHostBridge : IMobileBridge, IDisposable
         _routeHistory.Add(_currentRoute);
         _currentRoute = route;
         Console.WriteLine($"[DevBridge] Navigate → {route}");
-        _events.OnNext(new NativeEvent("navigation", route));
+        _events.InvokeAsync(new NativeEvent("navigation", route), default).AsTask().GetAwaiter().GetResult();
         return ValueTask.CompletedTask;
     }
 
@@ -99,7 +103,7 @@ public sealed class DevHostBridge : IMobileBridge, IDisposable
     public void InjectEvent(string name, string? payload = null)
     {
         Console.WriteLine($"[DevBridge] InjectEvent  {name}  payload={payload ?? "<none>"}");
-        _events.OnNext(new NativeEvent(name, payload));
+        _events.InvokeAsync(new NativeEvent(name, payload), default).AsTask().GetAwaiter().GetResult();
     }
 
     /// <summary>Snapshot of current storage — useful in tests.</summary>
@@ -108,5 +112,5 @@ public sealed class DevHostBridge : IMobileBridge, IDisposable
     /// <summary>Full navigation history.</summary>
     public IReadOnlyList<string> RouteHistory => _routeHistory;
 
-    public void Dispose() { _events.Dispose(); _http.Dispose(); }
+    public void Dispose() { _http.Dispose(); }
 }

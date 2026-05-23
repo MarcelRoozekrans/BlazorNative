@@ -1,7 +1,7 @@
-using System.Reactive.Subjects;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
+using ZeroAlloc.AsyncEvents;
 
 namespace BlazorNative.Core;
 
@@ -16,9 +16,13 @@ namespace BlazorNative.Core;
 
 public sealed class WasiBridge : IMobileBridge, IDisposable
 {
-    private readonly Subject<NativeEvent> _events = new();
+    private AsyncEventHandler<NativeEvent> _events = new(InvokeMode.Sequential);
 
-    public IObservable<NativeEvent> NativeEvents => _events;
+    public event AsyncEvent<NativeEvent> NativeEvents
+    {
+        add    => _events.Register(value);
+        remove => _events.Unregister(value);
+    }
 
     // ── Navigation ────────────────────────────────────────────────────────────
 
@@ -116,14 +120,15 @@ public sealed class WasiBridge : IMobileBridge, IDisposable
         // Note: this is the WASM export the native host calls
         var name = Encoding.UTF8.GetString(namePtr, nameLen);
         var payload = payloadLen > 0 ? Encoding.UTF8.GetString(payloadPtr, payloadLen) : null;
-        Current?._events.OnNext(new NativeEvent(name, payload));
+        if (Current is { } c)
+            c._events.InvokeAsync(new NativeEvent(name, payload), default).AsTask().GetAwaiter().GetResult();
     }
 
     // Singleton access for the unmanaged callback
     internal static WasiBridge? Current { get; private set; }
 
     public WasiBridge() => Current = this;
-    public void Dispose() { Current = null; _events.Dispose(); }
+    public void Dispose() { Current = null; }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

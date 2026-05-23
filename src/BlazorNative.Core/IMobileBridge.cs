@@ -1,3 +1,5 @@
+using ZeroAlloc.AsyncEvents;
+
 namespace BlazorNative.Core;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -25,7 +27,7 @@ public interface IMobileBridge
     ValueTask<PlatformInfo> GetPlatformInfoAsync(CancellationToken ct = default);
 
     // Events from native → WASM
-    IObservable<NativeEvent> NativeEvents { get; }
+    event AsyncEvent<NativeEvent> NativeEvents;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
