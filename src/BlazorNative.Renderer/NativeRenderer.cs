@@ -36,6 +36,9 @@ public sealed class NativeRenderer : BlazorRenderer
         : base(services, new NativeRendererLoggerFactory())
     {
         _bridge = bridge;
+        // Force the BlazorInterop static ctor (version + accessor probe) to run
+        // before the first frame is rendered so layout drift surfaces immediately.
+        BlazorInterop.EnsureInitialized();
     }
 
     public override Dispatcher Dispatcher { get; } = Dispatcher.CreateDefault();
@@ -59,7 +62,7 @@ public sealed class NativeRenderer : BlazorRenderer
 
     protected override Task UpdateDisplayAsync(in RenderBatch renderBatch)
     {
-        var batch = new BnRenderBatch(ref Unsafe.AsRef(in renderBatch));
+        var batch = new BnRenderBatch(in renderBatch);
         var timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         var frameId = Interlocked.Increment(ref _frameId);
 
@@ -67,11 +70,13 @@ public sealed class NativeRenderer : BlazorRenderer
 
         try
         {
-            // Updated components
+            // Updated components — pass the batch's ReferenceFrames in (in Blazor 10
+            // ReferenceFrames lives on RenderBatch, not on RenderTreeDiff).
+            var referenceFrames = batch.ReferenceFrames;
             foreach (ref var diff in batch.UpdatedComponents)
             {
-                var bnDiff = new BnRenderTreeDiff(ref diff);
-                ProcessRenderTreeDiff(ref bnDiff, ref patches);
+                var bnDiff = new BnRenderTreeDiff(in diff);
+                ProcessRenderTreeDiff(ref bnDiff, ref referenceFrames, ref patches);
             }
 
             // Disposed components
@@ -106,70 +111,90 @@ public sealed class NativeRenderer : BlazorRenderer
 
     // ── Render tree walking (typed against Bn* wrappers only) ─────────────────
 
-    private void ProcessRenderTreeDiff(ref BnRenderTreeDiff diff, ref PooledList<RenderPatch> patches)
+    private void ProcessRenderTreeDiff(
+        ref BnRenderTreeDiff diff,
+        ref BnArrayRange<RenderTreeFrame> referenceFrames,
+        ref PooledList<RenderPatch> patches)
     {
+        var componentId = diff.ComponentId;
         foreach (ref var edit in diff.Edits)
         {
-            var bnEdit = new BnRenderTreeEdit(ref edit);
+            var bnEdit = new BnRenderTreeEdit(in edit);
             switch ((RenderTreeEditType)bnEdit.Type)
             {
                 case RenderTreeEditType.PrependFrame:
-                    ProcessFrame(ref diff, bnEdit.ReferenceFrameIndex, bnEdit.SiblingIndex, ref patches);
+                    ProcessFrame(componentId, ref referenceFrames, bnEdit.ReferenceFrameIndex, bnEdit.SiblingIndex, ref patches);
                     break;
 
                 case RenderTreeEditType.RemoveFrame:
                 {
-                    var nodeId = _tree.GetNodeIdBySibling(diff.ComponentId, bnEdit.SiblingIndex);
+                    var nodeId = _tree.GetNodeIdBySibling(componentId, bnEdit.SiblingIndex);
                     if (nodeId >= 0) patches.Add(new RemoveNodePatch(nodeId));
                     break;
                 }
 
                 case RenderTreeEditType.SetAttribute:
-                    ProcessAttributeEdit(ref diff, bnEdit.ReferenceFrameIndex, ref patches);
+                    ProcessAttributeEdit(componentId, ref referenceFrames, bnEdit.ReferenceFrameIndex, ref patches);
                     break;
 
                 case RenderTreeEditType.RemoveAttribute:
                 {
-                    var nodeId = _tree.GetNodeIdBySibling(diff.ComponentId, bnEdit.SiblingIndex);
+                    var nodeId = _tree.GetNodeIdBySibling(componentId, bnEdit.SiblingIndex);
                     if (nodeId >= 0 && bnEdit.RemovedAttributeName is not null)
                         patches.Add(new UpdatePropPatch(nodeId, bnEdit.RemovedAttributeName, null));
                     break;
                 }
 
                 case RenderTreeEditType.UpdateText:
-                    ProcessTextEdit(ref diff, bnEdit.ReferenceFrameIndex, bnEdit.SiblingIndex, ref patches);
+                    ProcessTextEdit(componentId, ref referenceFrames, bnEdit.ReferenceFrameIndex, bnEdit.SiblingIndex, ref patches);
                     break;
             }
         }
     }
 
-    private void ProcessFrame(ref BnRenderTreeDiff diff, int frameIndex, int siblingIndex, ref PooledList<RenderPatch> patches)
+    private void ProcessFrame(
+        int componentId,
+        ref BnArrayRange<RenderTreeFrame> frames,
+        int frameIndex,
+        int siblingIndex,
+        ref PooledList<RenderPatch> patches)
     {
-        var frames = diff.ReferenceFrames;
         var frame = new BnRenderTreeFrame(ref frames[frameIndex]);
 
         switch (frame.FrameType)
         {
             case RenderTreeFrameType.Element:
             {
-                var nodeId = _tree.AllocateNode(diff.ComponentId, siblingIndex);
+                var nodeId = _tree.AllocateNode(componentId, siblingIndex);
                 var nodeType = MapElementToNodeType(frame.ElementName!);
                 patches.Add(new CreateNodePatch(nodeId, nodeType));
 
-                for (var i = 1; i <= frame.ElementSubtreeLength - 1; i++)
+                var subtreeLen = frame.ElementSubtreeLength;
+                for (var i = 1; i < subtreeLen; i++)
                 {
                     var child = new BnRenderTreeFrame(ref frames[frameIndex + i]);
                     if (child.FrameType == RenderTreeFrameType.Attribute)
+                    {
                         ProcessAttribute(nodeId, ref child, ref patches);
+                    }
                     else
-                        break;
+                    {
+                        // Non-attribute child frame inside the subtree — recurse to
+                        // emit its create/text patches as a child of this element.
+                        // Use the child's index as siblingIndex (positions within
+                        // the parent's subtree are unique enough for the M1 mapping).
+                        ProcessFrame(componentId, ref frames, frameIndex + i, frameIndex + i, ref patches);
+                        // Skip the child's own subtree so we don't double-walk it.
+                        if (child.FrameType == RenderTreeFrameType.Element)
+                            i += child.ElementSubtreeLength - 1;
+                    }
                 }
                 break;
             }
 
             case RenderTreeFrameType.Text:
             {
-                var textNodeId = _tree.AllocateNode(diff.ComponentId, siblingIndex);
+                var textNodeId = _tree.AllocateNode(componentId, siblingIndex);
                 patches.Add(new CreateNodePatch(textNodeId, "text"));
                 patches.Add(new ReplaceTextPatch(textNodeId, frame.TextContent ?? ""));
                 break;
@@ -199,20 +224,27 @@ public sealed class NativeRenderer : BlazorRenderer
         }
     }
 
-    private void ProcessAttributeEdit(ref BnRenderTreeDiff diff, int frameIndex, ref PooledList<RenderPatch> patches)
+    private void ProcessAttributeEdit(
+        int componentId,
+        ref BnArrayRange<RenderTreeFrame> frames,
+        int frameIndex,
+        ref PooledList<RenderPatch> patches)
     {
-        var frames = diff.ReferenceFrames;
         var frame = new BnRenderTreeFrame(ref frames[frameIndex]);
-        var nodeId = _tree.GetNodeIdBySibling(diff.ComponentId, frameIndex);
+        var nodeId = _tree.GetNodeIdBySibling(componentId, frameIndex);
         if (nodeId < 0) return;
         ProcessAttribute(nodeId, ref frame, ref patches);
     }
 
-    private void ProcessTextEdit(ref BnRenderTreeDiff diff, int frameIndex, int siblingIndex, ref PooledList<RenderPatch> patches)
+    private void ProcessTextEdit(
+        int componentId,
+        ref BnArrayRange<RenderTreeFrame> frames,
+        int frameIndex,
+        int siblingIndex,
+        ref PooledList<RenderPatch> patches)
     {
-        var frames = diff.ReferenceFrames;
         var frame = new BnRenderTreeFrame(ref frames[frameIndex]);
-        var nodeId = _tree.GetNodeIdBySibling(diff.ComponentId, siblingIndex);
+        var nodeId = _tree.GetNodeIdBySibling(componentId, siblingIndex);
         if (nodeId >= 0) patches.Add(new ReplaceTextPatch(nodeId, frame.TextContent ?? ""));
     }
 

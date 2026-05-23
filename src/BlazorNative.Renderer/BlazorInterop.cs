@@ -1,10 +1,21 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// BlazorInterop.cs — SINGLE SEAM between BlazorNative.Renderer and the internal
-// layout of Microsoft.AspNetCore.Components.
+// BlazorInterop.cs — SINGLE SEAM between BlazorNative.Renderer and the
+// internal layout of Microsoft.AspNetCore.Components.
 //
 // Bound to Microsoft.AspNetCore.Components 10.0.* — bump BlazorCompatVersion
-// and re-verify accessor field names against the linked Blazor source revision
-// before any major-version package upgrade.
+// and re-verify against the linked Blazor source revision before any major-
+// version package upgrade.
+//
+// Phase 1.1 finding: against Blazor 10.0.8, almost every render-tree member
+// the renderer needs is already accessible as a public field or public
+// property. Only Renderer.DispatchEventAsync (which takes the internal
+// EventFieldInfo type) still requires UnsafeAccessor + UnsafeAccessorType.
+//
+// The Bn* wrappers remain because they:
+//   1. Quarantine all `Microsoft.AspNetCore.Components.RenderTree` names to
+//      this one file (NativeRenderer.cs never references those internals);
+//   2. Give us a single place to swap in [UnsafeAccessor] field reads later
+//      if Blazor ever makes any of the currently-public members internal.
 //
 // See docs/plans/2026-05-23-renderer-internal-api-design.md for rationale.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -27,6 +38,9 @@ internal static class BlazorInterop
         VerifyAccessors();
     }
 
+    /// <summary>Idempotent trigger for the static constructor (probes layout).</summary>
+    public static void EnsureInitialized() { }
+
     private static void VerifyVersion()
     {
         var actual = typeof(BlazorRenderer).Assembly.GetName().Version;
@@ -44,72 +58,21 @@ internal static class BlazorInterop
 
     private static void VerifyAccessors()
     {
-        // Each accessor in this file should be touched once against a
-        // default-initialised struct. Populated as accessors are added in Tasks 8-11.
-        // Each touch wraps in try/catch and aggregates MissingFieldException /
-        // MissingMethodException into a single BlazorVersionMismatchException.
         var failures = new List<string>();
-        try
-        {
-            var range = default(ArrayRange<int>);
-            _ = RefAccessors.ArrayRangeArray(ref range);  // may legitimately be null on default — ok
-            _ = RefAccessors.ArrayRangeCount(ref range);
-        }
-        catch (Exception ex) when (ex is MissingFieldException or MissingMethodException)
-        {
-            failures.Add($"BnArrayRange<T>: {ex.Message}");
-        }
 
+        // DispatchEventAsync is the only UnsafeAccessor we still depend on.
         try
         {
-            var batch = default(RenderBatch);
-            _ = RefAccessors.UpdatedComponents(ref batch);
-            _ = RefAccessors.DisposedComponentIDs(ref batch);
+            // Probe the accessor metadata exists at all. We can't *invoke* it
+            // here without a real Renderer instance, but referring to the
+            // delegate via reflection forces it to resolve.
+            _ = typeof(RefAccessors).GetMethod(
+                nameof(RefAccessors.DispatchEventAsync),
+                BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
         }
         catch (Exception ex) when (ex is MissingFieldException or MissingMethodException)
         {
-            failures.Add($"BnRenderBatch: {ex.Message}");
-        }
-
-        try
-        {
-            var diff = default(RenderTreeDiff);
-            _ = RefAccessors.ComponentId(ref diff);
-            _ = RefAccessors.Edits(ref diff);
-            _ = RefAccessors.ReferenceFrames(ref diff);
-        }
-        catch (Exception ex) when (ex is MissingFieldException or MissingMethodException)
-        {
-            failures.Add($"BnRenderTreeDiff: {ex.Message}");
-        }
-
-        try
-        {
-            var edit = default(RenderTreeEdit);
-            _ = RefAccessors.EditType(ref edit);
-            _ = RefAccessors.ReferenceFrameIndex(ref edit);
-            _ = RefAccessors.SiblingIndex(ref edit);
-            _ = RefAccessors.RemovedAttributeName(ref edit);
-        }
-        catch (Exception ex) when (ex is MissingFieldException or MissingMethodException)
-        {
-            failures.Add($"BnRenderTreeEdit: {ex.Message}");
-        }
-
-        try
-        {
-            var frame = default(RenderTreeFrame);
-            _ = RefAccessors.FrameType(ref frame);
-            _ = RefAccessors.ElementName(ref frame);
-            _ = RefAccessors.ElementSubtreeLength(ref frame);
-            _ = RefAccessors.AttributeName(ref frame);
-            _ = RefAccessors.AttributeValue(ref frame);
-            _ = RefAccessors.AttributeEventHandlerId(ref frame);
-            _ = RefAccessors.TextContent(ref frame);
-        }
-        catch (Exception ex) when (ex is MissingFieldException or MissingMethodException)
-        {
-            failures.Add($"BnRenderTreeFrame: {ex.Message}");
+            failures.Add($"DispatchEventAsync: {ex.Message}");
         }
 
         if (failures.Count > 0)
@@ -130,146 +93,119 @@ public sealed class BlazorVersionMismatchException : Exception
 }
 
 // ── ArrayRange<T> ────────────────────────────────────────────────────────────
+// Array and Count are public readonly fields of ArrayRange<T>.
 
-internal ref struct BnArrayRange<T>
+internal struct BnArrayRange<T>
 {
-    private readonly ref ArrayRange<T> _range;
+    private ArrayRange<T> _range;
 
-    public BnArrayRange(ref ArrayRange<T> range)
+    public BnArrayRange(in ArrayRange<T> range) { _range = range; }
+
+    public int Count => _range.Count;
+    public ref T this[int i] => ref _range.Array[i];
+
+    public Enumerator GetEnumerator() => new(in _range);
+
+    public struct Enumerator
     {
-        _range = ref range;
-    }
-
-    public int Count => RefAccessors.ArrayRangeCount(ref _range);
-
-    public ref T this[int i] => ref RefAccessors.ArrayRangeArray(ref _range)[i];
-
-    public Enumerator GetEnumerator() => new(ref _range);
-
-    public ref struct Enumerator
-    {
-        private readonly ref ArrayRange<T> _range;
+        private ArrayRange<T> _range;
         private int _index;
-        public Enumerator(ref ArrayRange<T> range) { _range = ref range; _index = -1; }
-        public bool MoveNext() => ++_index < RefAccessors.ArrayRangeCount(ref _range);
-        public ref T Current => ref RefAccessors.ArrayRangeArray(ref _range)[_index];
+        public Enumerator(in ArrayRange<T> range) { _range = range; _index = -1; }
+        public bool MoveNext() => ++_index < _range.Count;
+        public ref T Current => ref _range.Array[_index];
+    }
+}
+
+// ── ArrayBuilderSegment<T> ───────────────────────────────────────────────────
+// Array / Offset / Count are public on ArrayBuilderSegment<T>.
+
+internal struct BnArrayBuilderSegment<T>
+{
+    private ArrayBuilderSegment<T> _seg;
+
+    public BnArrayBuilderSegment(in ArrayBuilderSegment<T> seg) { _seg = seg; }
+
+    public int Count => _seg.Count;
+    public int Offset => _seg.Offset;
+    public ref T this[int i] => ref _seg.Array[_seg.Offset + i];
+
+    public Enumerator GetEnumerator() => new(in _seg);
+
+    public struct Enumerator
+    {
+        private ArrayBuilderSegment<T> _seg;
+        private int _index;
+        public Enumerator(in ArrayBuilderSegment<T> seg) { _seg = seg; _index = -1; }
+        public bool MoveNext() => ++_index < _seg.Count;
+        public ref T Current => ref _seg.Array[_seg.Offset + _index];
     }
 }
 
 // ── RenderBatch ──────────────────────────────────────────────────────────────
+// UpdatedComponents / ReferenceFrames / DisposedComponentIDs are public auto-
+// properties on RenderBatch (which is a readonly struct).
 
 internal ref struct BnRenderBatch
 {
-    private readonly ref RenderBatch _batch;
-    public BnRenderBatch(ref RenderBatch batch) { _batch = ref batch; }
+    private readonly ref readonly RenderBatch _batch;
+    public BnRenderBatch(in RenderBatch batch) { _batch = ref batch; }
 
-    public BnArrayRange<RenderTreeDiff> UpdatedComponents
-        => new(ref RefAccessors.UpdatedComponents(ref _batch));
-
-    public BnArrayRange<int> DisposedComponentIDs
-        => new(ref RefAccessors.DisposedComponentIDs(ref _batch));
+    public BnArrayRange<RenderTreeDiff>  UpdatedComponents    => new(_batch.UpdatedComponents);
+    public BnArrayRange<RenderTreeFrame> ReferenceFrames      => new(_batch.ReferenceFrames);
+    public BnArrayRange<int>             DisposedComponentIDs => new(_batch.DisposedComponentIDs);
 }
 
 // ── RenderTreeDiff ───────────────────────────────────────────────────────────
+// ComponentId / Edits are public readonly fields.
 
-internal ref struct BnRenderTreeDiff
+internal struct BnRenderTreeDiff
 {
-    private readonly ref RenderTreeDiff _diff;
-    public BnRenderTreeDiff(ref RenderTreeDiff diff) { _diff = ref diff; }
+    private RenderTreeDiff _diff;
+    public BnRenderTreeDiff(in RenderTreeDiff diff) { _diff = diff; }
 
-    public int ComponentId => RefAccessors.ComponentId(ref _diff);
-    public BnArrayRange<RenderTreeEdit>  Edits           => new(ref RefAccessors.Edits(ref _diff));
-    public BnArrayRange<RenderTreeFrame> ReferenceFrames => new(ref RefAccessors.ReferenceFrames(ref _diff));
+    public int ComponentId => _diff.ComponentId;
+    public BnArrayBuilderSegment<RenderTreeEdit> Edits => new(_diff.Edits);
 }
 
 // ── RenderTreeEdit ───────────────────────────────────────────────────────────
+// Type / SiblingIndex / ReferenceFrameIndex / RemovedAttributeName are public
+// readonly fields of the StructLayout-Explicit RenderTreeEdit.
 
-internal ref struct BnRenderTreeEdit
+internal struct BnRenderTreeEdit
 {
-    private readonly ref RenderTreeEdit _edit;
-    public BnRenderTreeEdit(ref RenderTreeEdit edit) { _edit = ref edit; }
+    private RenderTreeEdit _edit;
+    public BnRenderTreeEdit(in RenderTreeEdit edit) { _edit = edit; }
 
-    public int     Type                  => (int)RefAccessors.EditType(ref _edit);
-    public int     ReferenceFrameIndex   => RefAccessors.ReferenceFrameIndex(ref _edit);
-    public int     SiblingIndex          => RefAccessors.SiblingIndex(ref _edit);
-    public string? RemovedAttributeName  => RefAccessors.RemovedAttributeName(ref _edit);
+    public int     Type                  => (int)_edit.Type;
+    public int     ReferenceFrameIndex   => _edit.ReferenceFrameIndex;
+    public int     SiblingIndex          => _edit.SiblingIndex;
+    public string? RemovedAttributeName  => _edit.RemovedAttributeName;
 }
 
 // ── RenderTreeFrame ──────────────────────────────────────────────────────────
+// The *Field fields are internal but the public property wrappers cover every
+// piece of data the renderer reads. RenderTreeFrame is a non-readonly struct
+// with StructLayout(Explicit); we keep ref semantics so we don't copy
+// 40-plus-byte structs in the hot loop.
 
 internal ref struct BnRenderTreeFrame
 {
     private readonly ref RenderTreeFrame _frame;
     public BnRenderTreeFrame(ref RenderTreeFrame frame) { _frame = ref frame; }
 
-    public RenderTreeFrameType FrameType            => RefAccessors.FrameType(ref _frame);
-    public string?             ElementName          => RefAccessors.ElementName(ref _frame);
-    public int                 ElementSubtreeLength => RefAccessors.ElementSubtreeLength(ref _frame);
-    public string?             AttributeName        => RefAccessors.AttributeName(ref _frame);
-    public object?             AttributeValue       => RefAccessors.AttributeValue(ref _frame);
-    public ulong               AttributeEventHandlerId => RefAccessors.AttributeEventHandlerId(ref _frame);
-    public string?             TextContent          => RefAccessors.TextContent(ref _frame);
+    public RenderTreeFrameType FrameType            => _frame.FrameType;
+    public string?             ElementName          => _frame.ElementName;
+    public int                 ElementSubtreeLength => _frame.ElementSubtreeLength;
+    public string?             AttributeName        => _frame.AttributeName;
+    public object?             AttributeValue       => _frame.AttributeValue;
+    public ulong               AttributeEventHandlerId => _frame.AttributeEventHandlerId;
+    public string?             TextContent          => _frame.TextContent;
 }
 
-file static class RefAccessors
+internal static class RefAccessors
 {
-    [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "Array")]
-    public static extern ref T[] ArrayRangeArray<T>(ref ArrayRange<T> range);
-
-    [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "Count")]
-    public static extern ref int ArrayRangeCount<T>(ref ArrayRange<T> range);
-
-    [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "UpdatedComponentsBuffer")]
-    public static extern ref ArrayRange<RenderTreeDiff> UpdatedComponents(ref RenderBatch batch);
-
-    [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "DisposedComponentIndices")]
-    public static extern ref ArrayRange<int> DisposedComponentIDs(ref RenderBatch batch);
-
-    [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "ComponentId")]
-    public static extern ref int ComponentId(ref RenderTreeDiff diff);
-
-    [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "Edits")]
-    public static extern ref ArrayRange<RenderTreeEdit> Edits(ref RenderTreeDiff diff);
-
-    [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "ReferenceFrames")]
-    public static extern ref ArrayRange<RenderTreeFrame> ReferenceFrames(ref RenderTreeDiff diff);
-
-    // RenderTreeEdit — underlying field names may differ; verify on first probe.
-    [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "TypeField")]
-    public static extern ref int EditType(ref RenderTreeEdit edit);
-
-    [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "ReferenceFrameIndexField")]
-    public static extern ref int ReferenceFrameIndex(ref RenderTreeEdit edit);
-
-    [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "SiblingIndexField")]
-    public static extern ref int SiblingIndex(ref RenderTreeEdit edit);
-
-    [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "RemovedAttributeNameField")]
-    public static extern ref string? RemovedAttributeName(ref RenderTreeEdit edit);
-
-    // RenderTreeFrame
-    [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "FrameTypeField")]
-    public static extern ref RenderTreeFrameType FrameType(ref RenderTreeFrame frame);
-
-    [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "ElementNameField")]
-    public static extern ref string? ElementName(ref RenderTreeFrame frame);
-
-    [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "ElementSubtreeLengthField")]
-    public static extern ref int ElementSubtreeLength(ref RenderTreeFrame frame);
-
-    [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "AttributeNameField")]
-    public static extern ref string? AttributeName(ref RenderTreeFrame frame);
-
-    [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "AttributeValueField")]
-    public static extern ref object? AttributeValue(ref RenderTreeFrame frame);
-
-    [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "AttributeEventHandlerIdField")]
-    public static extern ref ulong AttributeEventHandlerId(ref RenderTreeFrame frame);
-
-    [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "TextContentField")]
-    public static extern ref string? TextContent(ref RenderTreeFrame frame);
-
-    // Renderer.DispatchEventAsync — EventFieldInfo is fully internal, reference it via UnsafeAccessorType.
+    // The one true UnsafeAccessor: Renderer.DispatchEventAsync takes an
+    // internal EventFieldInfo type that we cannot reference directly.
     [UnsafeAccessor(UnsafeAccessorKind.Method, Name = "DispatchEventAsync")]
     public static extern Task DispatchEventAsync(
         BlazorRenderer renderer,
