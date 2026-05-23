@@ -17,13 +17,10 @@
 - [ ] **`[UnmanagedCallersOnly]` export wiring**
   `WasiBridge.DispatchEvent` is declared with `[UnmanagedCallersOnly(EntryPoint = "blazornative_dispatch_event")]` but the export needs to appear in the compiled `.wasm` module's export table. Verify with `wasm-tools dump` after AOT compile. May need a `__attribute__((used))` equivalent or explicit export hint.
 
-- [ ] **Renderer internal API access strategy**
-  `RenderTreeDiff`, `RenderTreeFrame`, `RenderBatch` are `internal` in `Microsoft.AspNetCore.Components`. Two options to evaluate:
-  - Option A: `InternalsVisibleTo` — requires a fork/patch of Blazor, not ideal
-  - Option B: Use `BindingFlags.NonPublic` reflection at startup (violates AOT)
-  - Option C: Use the public `Renderer` API surface only (`RenderFragment`, `ParameterView`) and intercept at a higher level
-  - Option D: Use `UnsafeAccessor` (new in .NET 8) — AOT-safe, no fork needed ✅ preferred
-  Spike required. Verdict goes here before any renderer work continues.
+- [x] **Renderer internal API access strategy** — **resolved 2026-05-23**
+  Original framing: `RenderTreeDiff`, `RenderTreeFrame`, `RenderBatch` are `internal` in `Microsoft.AspNetCore.Components`. Four options evaluated (A: InternalsVisibleTo fork; B: NonPublic reflection; C: public surface only; D: UnsafeAccessor).
+  - **Verdict:** Option D + `[UnsafeAccessorType]` behind a single isolation file (`src/BlazorNative.Renderer/BlazorInterop.cs`). Design rationale: [docs/plans/2026-05-23-renderer-internal-api-design.md](plans/2026-05-23-renderer-internal-api-design.md). Implementation plan: [docs/plans/2026-05-23-phase-1.1-implementation-plan.md](plans/2026-05-23-phase-1.1-implementation-plan.md).
+  - **Unexpected finding:** Against Microsoft.AspNetCore.Components **10.0.x**, almost every render-tree member is already accessible as a public field/property. `[UnsafeAccessor]` was genuinely required only for the protected `Renderer.DispatchEventAsync` (which takes the internal `EventFieldInfo`). The `Bn*` ref-struct wrappers in `BlazorInterop.cs` remain as the naming-isolation seam, but they mostly read from the public surface. Simpler and more future-proof than the original design anticipated.
 
 - [ ] **`DispatchEventAsync` signature fix**
   `WebEventData` wrapper in `RendererServices.cs` doesn't match Blazor's internal `DispatchEventAsync(ulong handlerId, EventFieldInfo? fieldInfo, EventArgs eventArgs)` signature. Fix after internal API strategy is decided.

@@ -11,10 +11,15 @@ Toolchain produces a `.wasm` that loads under wasmtime with correct exports and 
 Definition of done: see [MILESTONE.md](MILESTONE.md).
 
 Phases:
-- ⏳ **Phase 1.1** — Renderer internal-API spike (`UnsafeAccessor` verdict) — *pending*
+- ✅ **Phase 1.1** — Renderer internal-API spike — *complete (2026-05-23)*
+   - Verdict: `BlazorInterop.cs` isolation layer with `Bn*` ref-struct wrappers. Against Blazor 10, most render-tree members turned out to be public — `[UnsafeAccessor]` is only needed for `Renderer.DispatchEventAsync` (uses internal `EventFieldInfo`). See [design](../plans/2026-05-23-renderer-internal-api-design.md) + [implementation plan](../plans/2026-05-23-phase-1.1-implementation-plan.md).
+   - Side effects: full retarget to .NET 10; `System.Reactive` → `ZeroAlloc.AsyncEvents`; `List<RenderPatch>` → `ZeroAlloc.Collections.PooledList`; smoke test (`FirstFrame_HasExpectedPatches`) passes; allocation budget test deferred to Milestone 4.
+   - Discovered: .NET 10's `wasi-experimental` workload provides **Mono-AOT**, not NativeAOT, for `wasi-wasm`. Design's "Native AOT + WASI" framing was wrong; updated.
 - ⏳ **Phase 1.2** — WASI entry point + cooperative scheduler bootstrap — *pending*
+   - Prerequisite: install `wasi-sdk` (Clang/LLVM toolchain) and set `WASI_SDK_PATH` env var. Phase 1.1 produced `dotnet.wasm` runtime + AppBundle, but the IL→WASM AOT step (which yields the app-specific `BlazorNative.Core.wasm`) needs wasi-sdk.
+   - Replace the no-op `WasiEntryPoint.cs::Main` with the .NET 10 cooperative scheduler bootstrap + DI registration + root component mount.
 - ⏳ **Phase 1.3** — `[UnmanagedCallersOnly]` export verification — *pending*
-- ⏳ **Phase 1.4** — `DispatchEventAsync` signature fix — *pending*
+- ⏳ **Phase 1.4** — `DispatchEventAsync` signature fix — *pending* — *partial credit already taken in Phase 1.1 (`BlazorInterop.DispatchEventViaAccessor`).*
 - ⏳ **Phase 1.5** — Analyzer scoping for non-WASI projects — *pending*
 
 ---
