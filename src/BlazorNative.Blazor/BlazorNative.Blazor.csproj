@@ -1,13 +1,10 @@
-<Project Sdk="Microsoft.NET.Sdk.BlazorWebAssembly">
+<Project Sdk="Microsoft.NET.Sdk.Razor">
 
   <PropertyGroup>
-    <TargetFrameworks>net9.0-browser;wasi-wasm</TargetFrameworks>
+    <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>BlazorNative.Blazor</RootNamespace>
-
-    <!-- AOT for WASI target -->
-    <RunAOTCompilation Condition="'$(RuntimeIdentifier)' == 'wasi-wasm'">true</RunAOTCompilation>
   </PropertyGroup>
 
   <ItemGroup>
@@ -15,8 +12,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" Version="9.*" />
-    <PackageReference Include="System.Reactive" Version="6.*" />
+    <PackageReference Include="Microsoft.AspNetCore.Components" Version="10.0.*" />
+    <PackageReference Include="Microsoft.AspNetCore.Components.Web" Version="10.0.*" />
   </ItemGroup>
 
 </Project>
