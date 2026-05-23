@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Components.Rendering;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 using ZeroAlloc.AsyncEvents;
+using ZeroAlloc.TestHelpers;
 using BlazorNative.Core;
 using BlazorNative.Renderer;
 
@@ -59,5 +60,23 @@ public class RendererSpike
         {
             renderer.Frames -= handler;
         }
+    }
+
+    // Deferred to Milestone 4 (BACKLOG P3 "BlazorNative.Renderer.Tests").
+    //
+    // The intent: assert the UpdateDisplayAsync walk + PooledList lease stay within a
+    // small per-frame allocation budget on steady-state re-renders. The blocker is
+    // that triggering a steady-state re-render (StateHasChanged on the existing root
+    // component) requires test access to ComponentState / Renderer.RenderRootComponent
+    // overloads that aren't part of the public surface we built for M1's MountAsync.
+    //
+    // Re-mounting on every iteration (the obvious workaround) measures full component-
+    // creation cost — ~230 KB/iteration — which is the wrong shape for validating the
+    // hot-path zero-alloc design. M4 will plumb StateHasChanged-on-mounted-root through
+    // the renderer; this test gets enabled then with a realistic budget (~512 B/call).
+    [Fact(Skip = "Requires StateHasChanged on mounted root — deferred to Milestone 4 (BACKLOG P3).")]
+    public void RenderWalk_IsAllocationFree_OnSteadyState()
+    {
+        // Placeholder — see Skip reason. Will be implemented in Milestone 4 using AllocationGate.AssertBudget.
     }
 }
