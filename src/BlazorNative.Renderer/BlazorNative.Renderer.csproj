@@ -1,14 +1,14 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFrameworks>net9.0;net9.0-browser;wasi-wasm</TargetFrameworks>
+    <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <RootNamespace>BlazorNative.Renderer</RootNamespace>
 
     <PublishAot Condition="'$(RuntimeIdentifier)' == 'wasi-wasm'">true</PublishAot>
-    <InvariantGlobalization>true</InvariantGlobalization>
+    <InvariantGlobalization Condition="'$(RuntimeIdentifier)' == 'wasi-wasm'">true</InvariantGlobalization>
   </PropertyGroup>
 
   <ItemGroup>
@@ -16,10 +16,10 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.AspNetCore.Components" Version="9.*" />
-    <PackageReference Include="Microsoft.AspNetCore.Components.Web" Version="9.*" />
-    <PackageReference Include="System.Text.Json" Version="9.*" />
-    <PackageReference Include="System.Reactive" Version="6.*" />
+    <PackageReference Include="Microsoft.AspNetCore.Components" Version="10.0.*" />
+    <PackageReference Include="Microsoft.AspNetCore.Components.Web" Version="10.0.*" />
+    <PackageReference Include="ZeroAlloc.AsyncEvents" Version="*" />
+    <PackageReference Include="ZeroAlloc.Collections" Version="*" />
   </ItemGroup>
 
 </Project>
