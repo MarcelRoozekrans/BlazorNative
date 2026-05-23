@@ -59,6 +59,29 @@ internal static class BlazorInterop
             failures.Add($"BnArrayRange<T>: {ex.Message}");
         }
 
+        try
+        {
+            var batch = default(RenderBatch);
+            _ = RefAccessors.UpdatedComponents(ref batch);
+            _ = RefAccessors.DisposedComponentIDs(ref batch);
+        }
+        catch (Exception ex) when (ex is MissingFieldException or MissingMethodException)
+        {
+            failures.Add($"BnRenderBatch: {ex.Message}");
+        }
+
+        try
+        {
+            var diff = default(RenderTreeDiff);
+            _ = RefAccessors.ComponentId(ref diff);
+            _ = RefAccessors.Edits(ref diff);
+            _ = RefAccessors.ReferenceFrames(ref diff);
+        }
+        catch (Exception ex) when (ex is MissingFieldException or MissingMethodException)
+        {
+            failures.Add($"BnRenderTreeDiff: {ex.Message}");
+        }
+
         if (failures.Count > 0)
             throw new BlazorVersionMismatchException(
                 "Blazor internal-layout drift detected:\n  - " + string.Join("\n  - ", failures));
@@ -97,6 +120,32 @@ internal ref struct BnArrayRange<T>
     }
 }
 
+// ── RenderBatch ──────────────────────────────────────────────────────────────
+
+internal ref struct BnRenderBatch
+{
+    private readonly ref RenderBatch _batch;
+    public BnRenderBatch(ref RenderBatch batch) { _batch = ref batch; }
+
+    public BnArrayRange<RenderTreeDiff> UpdatedComponents
+        => new(ref RefAccessors.UpdatedComponents(ref _batch));
+
+    public BnArrayRange<int> DisposedComponentIDs
+        => new(ref RefAccessors.DisposedComponentIDs(ref _batch));
+}
+
+// ── RenderTreeDiff ───────────────────────────────────────────────────────────
+
+internal ref struct BnRenderTreeDiff
+{
+    private readonly ref RenderTreeDiff _diff;
+    public BnRenderTreeDiff(ref RenderTreeDiff diff) { _diff = ref diff; }
+
+    public int ComponentId => RefAccessors.ComponentId(ref _diff);
+    public BnArrayRange<RenderTreeEdit>  Edits           => new(ref RefAccessors.Edits(ref _diff));
+    public BnArrayRange<RenderTreeFrame> ReferenceFrames => new(ref RefAccessors.ReferenceFrames(ref _diff));
+}
+
 file static class RefAccessors
 {
     [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "Array")]
@@ -104,4 +153,19 @@ file static class RefAccessors
 
     [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "Count")]
     public static extern ref int ArrayRangeCount<T>(ref ArrayRange<T> range);
+
+    [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "UpdatedComponentsBuffer")]
+    public static extern ref ArrayRange<RenderTreeDiff> UpdatedComponents(ref RenderBatch batch);
+
+    [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "DisposedComponentIndices")]
+    public static extern ref ArrayRange<int> DisposedComponentIDs(ref RenderBatch batch);
+
+    [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "ComponentId")]
+    public static extern ref int ComponentId(ref RenderTreeDiff diff);
+
+    [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "Edits")]
+    public static extern ref ArrayRange<RenderTreeEdit> Edits(ref RenderTreeDiff diff);
+
+    [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "ReferenceFrames")]
+    public static extern ref ArrayRange<RenderTreeFrame> ReferenceFrames(ref RenderTreeDiff diff);
 }
