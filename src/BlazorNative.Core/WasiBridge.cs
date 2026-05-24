@@ -2,6 +2,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 using ZeroAlloc.AsyncEvents;
+using ZeroAlloc.Inject;
 
 namespace BlazorNative.Core;
 
@@ -14,6 +15,7 @@ namespace BlazorNative.Core;
 // In browser-WASM mode they call through JS interop shims.
 // ─────────────────────────────────────────────────────────────────────────────
 
+[Singleton(As = typeof(IMobileBridge))]
 public sealed class WasiBridge : IMobileBridge, IDisposable
 {
     private AsyncEventHandler<NativeEvent> _events = new(InvokeMode.Sequential);
