@@ -15,7 +15,7 @@ public sealed class BootSmoke : IClassFixture<WasiPublishFixture>
         var (exitCode, stdout, _) = await WasmtimeRunner.Run(
             _fixture,
             extraArgsBeforeWasm: Array.Empty<string>(),
-            programArgs: new[] { _fixture.AppAssemblyName },
+            programArgs: Array.Empty<string>(),
             timeout: TimeSpan.FromSeconds(10));
 
         // Boot sequence assertions — order matters; each marker proves the prior step finished.
@@ -39,7 +39,7 @@ public sealed class BootSmoke : IClassFixture<WasiPublishFixture>
         var (exitCode, _, _) = await WasmtimeRunner.Run(
             _fixture,
             extraArgsBeforeWasm: Array.Empty<string>(),
-            programArgs: new[] { _fixture.AppAssemblyName },
+            programArgs: Array.Empty<string>(),
             timeout: TimeSpan.FromSeconds(5));
         Assert.Equal(0, exitCode);
         Assert.True(sw.Elapsed < TimeSpan.FromSeconds(5),
