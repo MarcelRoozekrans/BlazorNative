@@ -4,15 +4,16 @@
     BlazorNative — full prerequisite installer for Windows 11
 .DESCRIPTION
     Installs and configures everything needed to build and run BlazorNative:
-      • .NET 9 SDK
-      • WASI experimental workload
-      • Wasmtime CLI
+      • .NET 10 SDK
+      • WASI experimental workload (manifest 10.0.108)
+      • wasi-sdk 25.0 (pinned — newer SDKs are rejected by the workload)
+      • Wasmtime CLI v45
       • MAUI Android workload + Android SDK
       • Rust + wit-bindgen (optional, for WIT binding regeneration)
-    
+
     Run from the repo root:
         powershell -ExecutionPolicy Bypass -File setup.ps1
-    
+
     Flags:
         -SkipAndroid     Skip Android SDK/MAUI installation
         -SkipWitBindgen  Skip Rust + wit-bindgen installation
@@ -35,6 +36,7 @@ $ErrorActionPreference = "Stop"
 $script:passed  = 0
 $script:skipped = 0
 $script:failed  = 0
+$script:envChanged = $false
 
 function Write-Header([string]$text) {
     Write-Host ""
@@ -129,22 +131,22 @@ if (Command-Exists "winget") {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 2. .NET 9 SDK
+# 2. .NET 10 SDK
 # ─────────────────────────────────────────────────────────────────────────────
 
-Write-Header "2 · .NET 9 SDK"
+Write-Header "2 · .NET 10 SDK"
 
 $dotnetOk = $false
 if (Command-Exists "dotnet") {
     $sdks = dotnet --list-sdks 2>&1
-    if ($sdks -match "^9\.") {
-        Write-OK ".NET 9 SDK already installed"
+    if ($sdks -match "^10\.") {
+        Write-OK ".NET 10 SDK already installed"
         $dotnetOk = $true
     }
 }
 
 if (-not $dotnetOk) {
-    Invoke-Winget "Microsoft.DotNet.SDK.9" ".NET 9 SDK"
+    Invoke-Winget "Microsoft.DotNet.SDK.10" ".NET 10 SDK"
     Refresh-Path
 }
 
@@ -165,7 +167,7 @@ Write-Header "3 · .NET workloads"
 
 $installedWorkloads = dotnet workload list 2>&1 | Out-String
 
-# WASI (always required)
+# WASI (always required) — net10 manifest 10.0.108
 if ($installedWorkloads -match "wasi-experimental") {
     Write-OK "wasi-experimental workload already installed"
 } else {
@@ -188,41 +190,115 @@ if (-not $SkipAndroid) {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 4. Wasmtime
+# 4. wasi-sdk 25 (pinned by the wasi-experimental workload)
 # ─────────────────────────────────────────────────────────────────────────────
 
-Write-Header "4 · Wasmtime"
+Write-Header "4 · wasi-sdk 25.0"
 
-if (Command-Exists "wasmtime") {
-    $wtVer = (wasmtime --version 2>&1).Trim()
-    Write-OK "Wasmtime already installed ($wtVer)"
+$wasiSdkRoot   = "C:\Tools\wasi-sdk-25.0-x86_64-windows"
+$wasiSdkClang  = Join-Path $wasiSdkRoot "bin\clang.exe"
+$wasiSdkUrl    = "https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-25/wasi-sdk-25.0-x86_64-windows.tar.gz"
+
+# Pick up an existing WASI_SDK_PATH if it already points at a valid install
+$existingSdk = $env:WASI_SDK_PATH
+if (-not $existingSdk) {
+    $existingSdk = [System.Environment]::GetEnvironmentVariable('WASI_SDK_PATH', 'User')
+}
+
+if ($existingSdk -and (Test-Path (Join-Path $existingSdk "bin\clang.exe"))) {
+    Write-OK "wasi-sdk-25 already installed at $existingSdk"
+    if (-not $env:WASI_SDK_PATH) {
+        $env:WASI_SDK_PATH = $existingSdk
+    }
+} elseif (Test-Path $wasiSdkClang) {
+    Write-OK "wasi-sdk-25 already installed at $wasiSdkRoot"
+    [System.Environment]::SetEnvironmentVariable('WASI_SDK_PATH', $wasiSdkRoot, 'User')
+    $env:WASI_SDK_PATH = $wasiSdkRoot
+    $script:envChanged = $true
 } else {
-    Write-Step "Installing Wasmtime via winget..."
-    Invoke-Winget "BytecodeAlliance.wasmtime" "Wasmtime"
-    Refresh-Path
-
-    # Fallback: PowerShell installer from wasmtime.dev
-    if (-not (Command-Exists "wasmtime")) {
-        Write-Warn "winget install failed — trying official installer script..."
-        $installerUrl = "https://github.com/bytecodealliance/wasmtime/releases/latest/download/wasmtime-dev-x86_64-windows.zip"
-        $dest = "$env:USERPROFILE\.wasmtime"
-        New-Item -ItemType Directory -Force -Path $dest | Out-Null
-        Invoke-WebRequest $installerUrl -OutFile "$dest\wasmtime.zip"
-        Expand-Archive "$dest\wasmtime.zip" -DestinationPath $dest -Force
-        $exePath = (Get-ChildItem "$dest" -Filter "wasmtime.exe" -Recurse | Select-Object -First 1).DirectoryName
-        [Environment]::SetEnvironmentVariable("PATH", $env:PATH + ";$exePath", "User")
-        Refresh-Path
-        if (Command-Exists "wasmtime") { Write-OK "Wasmtime installed via direct download" }
-        else { Write-Fail "Wasmtime install failed — install manually from https://wasmtime.dev" }
+    Write-Step "Downloading wasi-sdk-25 tarball (~100MB) ..."
+    $tarPath = Join-Path $env:TEMP "wasi-sdk-25.tar.gz"
+    try {
+        Invoke-WebRequest $wasiSdkUrl -OutFile $tarPath -UseBasicParsing
+        Write-Step "Extracting to C:\Tools\ ..."
+        if (-not (Test-Path "C:\Tools")) {
+            New-Item -ItemType Directory -Path "C:\Tools" | Out-Null
+        }
+        # tar ships with Windows 10/11 — capable of .tar.gz
+        & tar -xzf $tarPath -C "C:\Tools\"
+        if ($LASTEXITCODE -ne 0) {
+            throw "tar extraction failed (exit $LASTEXITCODE)"
+        }
+        if (Test-Path $wasiSdkClang) {
+            [System.Environment]::SetEnvironmentVariable('WASI_SDK_PATH', $wasiSdkRoot, 'User')
+            $env:WASI_SDK_PATH = $wasiSdkRoot
+            $script:envChanged = $true
+            Write-OK "wasi-sdk-25 installed at $wasiSdkRoot"
+            Write-Warn "WASI_SDK_PATH set for current session + user scope — restart any open shells to pick it up."
+        } else {
+            Write-Fail "wasi-sdk-25 extraction did not produce $wasiSdkClang"
+        }
+    } catch {
+        Write-Fail "wasi-sdk-25 install failed: $($_.Exception.Message)"
+    } finally {
+        if (Test-Path $tarPath) { Remove-Item $tarPath -Force -ErrorAction SilentlyContinue }
     }
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 5. Java 17 (required for Android)
+# 5. Wasmtime v45 (pinned — the workload's WASI proposals match this release)
+# ─────────────────────────────────────────────────────────────────────────────
+
+Write-Header "5 · Wasmtime v45"
+
+$wasmtimeDir = "C:\Tools\wasmtime-v45.0.0-x86_64-windows"
+$wasmtimeUrl = "https://github.com/bytecodealliance/wasmtime/releases/download/v45.0.0/wasmtime-v45.0.0-x86_64-windows.zip"
+
+if (Command-Exists "wasmtime") {
+    $wtVer = (wasmtime --version 2>&1).Trim()
+    Write-OK "Wasmtime already installed ($wtVer)"
+} elseif (Test-Path (Join-Path $wasmtimeDir "wasmtime.exe")) {
+    Write-OK "Wasmtime v45 already extracted at $wasmtimeDir"
+    $userPath = [System.Environment]::GetEnvironmentVariable("PATH", "User")
+    if ($userPath -notlike "*$wasmtimeDir*") {
+        [System.Environment]::SetEnvironmentVariable("PATH", "$wasmtimeDir;$userPath", "User")
+        $script:envChanged = $true
+        Write-Warn "Prepended $wasmtimeDir to user PATH — restart shells to pick it up."
+    }
+    Refresh-Path
+} else {
+    Write-Step "Downloading wasmtime v45 zip..."
+    $zipPath = Join-Path $env:TEMP "wasmtime-v45.zip"
+    try {
+        Invoke-WebRequest $wasmtimeUrl -OutFile $zipPath -UseBasicParsing
+        Write-Step "Extracting to C:\Tools\ ..."
+        if (-not (Test-Path "C:\Tools")) {
+            New-Item -ItemType Directory -Path "C:\Tools" | Out-Null
+        }
+        Expand-Archive $zipPath -DestinationPath "C:\Tools\" -Force
+        if (Test-Path (Join-Path $wasmtimeDir "wasmtime.exe")) {
+            $userPath = [System.Environment]::GetEnvironmentVariable("PATH", "User")
+            [System.Environment]::SetEnvironmentVariable("PATH", "$wasmtimeDir;$userPath", "User")
+            $env:PATH = "$wasmtimeDir;$env:PATH"
+            $script:envChanged = $true
+            Write-OK "Wasmtime v45 installed at $wasmtimeDir"
+            Write-Warn "PATH updated for current session + user scope — restart shells for new processes."
+        } else {
+            Write-Fail "Wasmtime extraction did not produce wasmtime.exe at $wasmtimeDir"
+        }
+    } catch {
+        Write-Fail "Wasmtime install failed: $($_.Exception.Message)"
+    } finally {
+        if (Test-Path $zipPath) { Remove-Item $zipPath -Force -ErrorAction SilentlyContinue }
+    }
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 6. Java 17 (required for Android)
 # ─────────────────────────────────────────────────────────────────────────────
 
 if (-not $SkipAndroid) {
-    Write-Header "5 · Java 17 (Android toolchain)"
+    Write-Header "6 · Java 17 (Android toolchain)"
 
     $javaOk = $false
     if (Command-Exists "java") {
@@ -240,11 +316,11 @@ if (-not $SkipAndroid) {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 6. Android SDK (via Android command-line tools)
+# 7. Android SDK (via Android command-line tools)
 # ─────────────────────────────────────────────────────────────────────────────
 
 if (-not $SkipAndroid) {
-    Write-Header "6 · Android SDK"
+    Write-Header "7 · Android SDK"
 
     $androidHome = $env:ANDROID_HOME ?? "$env:USERPROFILE\AppData\Local\Android\Sdk"
 
@@ -280,11 +356,11 @@ if (-not $SkipAndroid) {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 7. Rust + wit-bindgen (optional)
+# 8. Rust + wit-bindgen (optional)
 # ─────────────────────────────────────────────────────────────────────────────
 
 if (-not $SkipWitBindgen) {
-    Write-Header "7 · Rust + wit-bindgen (WIT binding generation)"
+    Write-Header "8 · Rust + wit-bindgen (WIT binding generation)"
 
     if (Command-Exists "cargo") {
         Write-OK "Rust/Cargo already installed"
@@ -312,10 +388,10 @@ if (-not $SkipWitBindgen) {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 8. Restore NuGet packages
+# 9. Restore NuGet packages
 # ─────────────────────────────────────────────────────────────────────────────
 
-Write-Header "8 · NuGet restore"
+Write-Header "9 · NuGet restore"
 
 if (Test-Path "BlazorNative.sln") {
     Write-Step "Restoring NuGet packages..."
@@ -328,18 +404,23 @@ if (Test-Path "BlazorNative.sln") {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 9. Verify the dev build
+# 10. Verify the dev build (fast — no WASI publish)
 # ─────────────────────────────────────────────────────────────────────────────
 
-Write-Header "9 · Smoke test — dev build"
+Write-Header "10 · Smoke test — Debug build + fast tests"
 
-if (Test-Path "src\BlazorNative.Host.Android\BlazorNative.DevHost.csproj") {
-    Write-Step "Building DevHost (net9.0)..."
-    dotnet build src\BlazorNative.Host.Android\BlazorNative.DevHost.csproj -c Debug --nologo -v q
-    if ($LASTEXITCODE -eq 0) { Write-OK "DevHost builds successfully" }
-    else { Write-Fail "DevHost build failed — check output above" }
+if (Test-Path "BlazorNative.sln") {
+    Write-Step "Building BlazorNative.sln (Debug)..."
+    dotnet build BlazorNative.sln -c Debug --nologo -v q
+    if ($LASTEXITCODE -eq 0) { Write-OK "BlazorNative.sln builds successfully (Debug)" }
+    else { Write-Fail "Debug build failed — check output above" }
+
+    Write-Step "Running fast tests (skipping WASI integration)..."
+    dotnet test BlazorNative.sln --no-build -c Debug --filter "Category!=Integration" --nologo -v q
+    if ($LASTEXITCODE -eq 0) { Write-OK "Fast tests passed" }
+    else { Write-Warn "Fast tests reported failures — review above" }
 } else {
-    Write-Warn "DevHost project not found — skipping smoke test"
+    Write-Warn "BlazorNative.sln not found — skipping smoke test"
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -348,7 +429,7 @@ if (Test-Path "src\BlazorNative.Host.Android\BlazorNative.DevHost.csproj") {
 
 Write-Host ""
 Write-Host "  ────────────────────────────────────" -ForegroundColor DarkGray
-Write-Host "  Setup complete" -ForegroundColor White
+Write-Host "  Setup complete (.NET 10 · wasi-sdk-25 · wasmtime v45)" -ForegroundColor White
 Write-Host ""
 Write-Host "    ✓ Passed  : $script:passed" -ForegroundColor Green
 if ($script:skipped -gt 0) {
@@ -359,13 +440,25 @@ Write-Host "    ✗ Failed  : $script:failed" -ForegroundColor Red
 }
 Write-Host ""
 
-if ($script:failed -eq 0) {
-    Write-Host "  You're ready to go! Start the dev host:" -ForegroundColor White
+if ($script:envChanged) {
+    Write-Warn "Environment variables (WASI_SDK_PATH and/or PATH) were updated."
+    Write-Warn "Open a fresh PowerShell/terminal so new processes inherit the changes."
     Write-Host ""
+}
+
+if ($script:failed -eq 0) {
+    Write-Host "  You're ready to go!" -ForegroundColor White
+    Write-Host ""
+    Write-Host "  Fast iteration (no WASM compile):" -ForegroundColor DarkGray
     Write-Host "    dotnet watch run --project src\BlazorNative.Host.Android\BlazorNative.DevHost.csproj" -ForegroundColor Cyan
     Write-Host ""
-    Write-Host "  Or if you have make installed:" -ForegroundColor DarkGray
-    Write-Host "    make dev" -ForegroundColor Cyan
+    Write-Host "  Run the full WASI boot test (does a Mono-AOT publish, ~3 min):" -ForegroundColor DarkGray
+    Write-Host "    dotnet test BlazorNative.sln" -ForegroundColor Cyan
+    Write-Host ""
+    Write-Host "  Or via make:" -ForegroundColor DarkGray
+    Write-Host "    make wasi       # publish WasiHost → bin\Release\net10.0\wasi-wasm\AppBundle\" -ForegroundColor Cyan
+    Write-Host "    make wasi-run   # publish + execute via wasmtime" -ForegroundColor Cyan
+    Write-Host "    make wasi-test  # publish + boot smoke test" -ForegroundColor Cyan
     Write-Host ""
     Write-Host "  DevTools API will be available at https://localhost:5273/dev/storage" -ForegroundColor DarkGray
 } else {
