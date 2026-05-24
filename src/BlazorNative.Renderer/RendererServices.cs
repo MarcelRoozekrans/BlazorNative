@@ -17,10 +17,7 @@ public static class ServiceCollectionExtensions
     /// </summary>
     public static IServiceCollection AddBlazorNativeRenderer(
         this IServiceCollection services)
-    {
-        services.AddScoped<NativeRenderer>();
-        return services;
-    }
+        => services.AddBlazorNativeRendererServices();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
