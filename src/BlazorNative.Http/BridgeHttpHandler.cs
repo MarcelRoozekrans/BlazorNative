@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text;
 using BlazorNative.Core;
+using ZeroAlloc.Inject;
 
 namespace BlazorNative.Http;
 
@@ -22,6 +23,7 @@ namespace BlazorNative.Http;
 //   public MyService(HttpClient http) { ... }
 // ─────────────────────────────────────────────────────────────────────────────
 
+[Transient]
 public sealed class BridgeHttpHandler : HttpMessageHandler
 {
     private readonly IMobileBridge _bridge;
