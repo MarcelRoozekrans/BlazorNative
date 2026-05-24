@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Components.RenderTree;
 using Microsoft.AspNetCore.Components.Web;
 using ZeroAlloc.AsyncEvents;
 using ZeroAlloc.Collections;
+using ZeroAlloc.Inject;
 using BlazorNative.Core;
 using BlazorRenderer = Microsoft.AspNetCore.Components.RenderTree.Renderer;
 
@@ -19,6 +20,7 @@ namespace BlazorNative.Renderer;
 // ArrayRange<T> directly — those names should appear nowhere else in this file.
 // ─────────────────────────────────────────────────────────────────────────────
 
+[Singleton]
 public sealed class NativeRenderer : BlazorRenderer
 {
     private readonly IMobileBridge _bridge;
