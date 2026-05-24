@@ -18,6 +18,10 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{0AB3BF05
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BlazorNative.Renderer.Tests", "tests\BlazorNative.Renderer.Tests\BlazorNative.Renderer.Tests.csproj", "{6FDB2772-30C6-4145-97AD-D8B83591B359}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{827E0CD3-B72D-47B6-A68D-7590B98EB39B}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BlazorNative.WasiHost", "src\BlazorNative.WasiHost\BlazorNative.WasiHost.csproj", "{8A66D923-E9F1-4E3B-AA42-6353C318EC6A}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -157,11 +161,30 @@ Global
 		{6FDB2772-30C6-4145-97AD-D8B83591B359}.WASI|x64.Build.0 = Debug|Any CPU
 		{6FDB2772-30C6-4145-97AD-D8B83591B359}.WASI|x86.ActiveCfg = Debug|Any CPU
 		{6FDB2772-30C6-4145-97AD-D8B83591B359}.WASI|x86.Build.0 = Debug|Any CPU
+		{8A66D923-E9F1-4E3B-AA42-6353C318EC6A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8A66D923-E9F1-4E3B-AA42-6353C318EC6A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8A66D923-E9F1-4E3B-AA42-6353C318EC6A}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{8A66D923-E9F1-4E3B-AA42-6353C318EC6A}.Debug|x64.Build.0 = Debug|Any CPU
+		{8A66D923-E9F1-4E3B-AA42-6353C318EC6A}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{8A66D923-E9F1-4E3B-AA42-6353C318EC6A}.Debug|x86.Build.0 = Debug|Any CPU
+		{8A66D923-E9F1-4E3B-AA42-6353C318EC6A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8A66D923-E9F1-4E3B-AA42-6353C318EC6A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{8A66D923-E9F1-4E3B-AA42-6353C318EC6A}.Release|x64.ActiveCfg = Release|Any CPU
+		{8A66D923-E9F1-4E3B-AA42-6353C318EC6A}.Release|x64.Build.0 = Release|Any CPU
+		{8A66D923-E9F1-4E3B-AA42-6353C318EC6A}.Release|x86.ActiveCfg = Release|Any CPU
+		{8A66D923-E9F1-4E3B-AA42-6353C318EC6A}.Release|x86.Build.0 = Release|Any CPU
+		{8A66D923-E9F1-4E3B-AA42-6353C318EC6A}.WASI|Any CPU.ActiveCfg = Debug|Any CPU
+		{8A66D923-E9F1-4E3B-AA42-6353C318EC6A}.WASI|Any CPU.Build.0 = Debug|Any CPU
+		{8A66D923-E9F1-4E3B-AA42-6353C318EC6A}.WASI|x64.ActiveCfg = Debug|Any CPU
+		{8A66D923-E9F1-4E3B-AA42-6353C318EC6A}.WASI|x64.Build.0 = Debug|Any CPU
+		{8A66D923-E9F1-4E3B-AA42-6353C318EC6A}.WASI|x86.ActiveCfg = Debug|Any CPU
+		{8A66D923-E9F1-4E3B-AA42-6353C318EC6A}.WASI|x86.Build.0 = Debug|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{6FDB2772-30C6-4145-97AD-D8B83591B359} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
+		{8A66D923-E9F1-4E3B-AA42-6353C318EC6A} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 	EndGlobalSection
 EndGlobal

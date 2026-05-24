@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- ─────────────────────────────────────────────────────────────────────
+       BlazorNative.WasiHost
+       The WASI executable composition root. Owns Main() / OutputType=Exe /
+       Mono-AOT settings.
+       Lives separately from BlazorNative.Core because Renderer + Http already
+       reference Core — having Core also reference Renderer + Http (as the
+       Phase 1.2 plan implicitly required for WasiEntryPoint.cs's using
+       directives) creates a circular project dependency that the NuGet target
+       graph rejects (MSB4006). Splitting the WASI entry point into its own
+       leaf project preserves the natural dep direction
+       Core ← Renderer/Http ← WasiHost
+       and keeps the lib build of Core clean.
+       ───────────────────────────────────────────────────────────────────── -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>BlazorNative.WasiHost</RootNamespace>
+
+    <OutputType>Exe</OutputType>
+
+    <!-- AOT settings. Mirrors the previous BlazorNative.Core wasi-wasm setup. -->
+    <RunAOTCompilation Condition="'$(RuntimeIdentifier)' == 'wasi-wasm'">true</RunAOTCompilation>
+    <InvariantGlobalization Condition="'$(RuntimeIdentifier)' == 'wasi-wasm'">true</InvariantGlobalization>
+    <WasmSingleFileBundle Condition="'$(RuntimeIdentifier)' == 'wasi-wasm'">true</WasmSingleFileBundle>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\BlazorNative.Core\BlazorNative.Core.csproj" />
+    <ProjectReference Include="..\BlazorNative.Renderer\BlazorNative.Renderer.csproj" />
+    <ProjectReference Include="..\BlazorNative.Http\BlazorNative.Http.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.*" />
+  </ItemGroup>
+
+</Project>

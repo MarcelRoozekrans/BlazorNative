@@ -5,20 +5,6 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-
-    <!-- AOT settings.
-         .NET 10's wasi-experimental workload provides Mono-AOT for wasi-wasm,
-         not NativeAOT (NETSDK1203 confirms PublishAot is unsupported here).
-         RunAOTCompilation triggers the Mono-AOT pipeline instead. -->
-    <RunAOTCompilation Condition="'$(RuntimeIdentifier)' == 'wasi-wasm'">true</RunAOTCompilation>
-    <InvariantGlobalization Condition="'$(RuntimeIdentifier)' == 'wasi-wasm'">true</InvariantGlobalization>
-
-    <!-- WASI specific -->
-    <WasmSingleFileBundle Condition="'$(RuntimeIdentifier)' == 'wasi-wasm'">true</WasmSingleFileBundle>
-  </PropertyGroup>
-
-  <PropertyGroup Condition="'$(RuntimeIdentifier)' == 'wasi-wasm'">
-    <OutputType>Exe</OutputType>
   </PropertyGroup>
 
   <ItemGroup>
