@@ -4,7 +4,8 @@ using Xunit;
 namespace BlazorNative.Wasi.Tests;
 
 [Trait("Category", "Integration")]
-public sealed class BootSmoke : IClassFixture<WasiPublishFixture>
+[Collection("Wasi")]
+public sealed class BootSmoke
 {
     private readonly WasiPublishFixture _fixture;
     public BootSmoke(WasiPublishFixture f) => _fixture = f;

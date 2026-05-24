@@ -30,7 +30,8 @@ namespace BlazorNative.Wasi.Tests;
 // ─────────────────────────────────────────────────────────────────────────────
 
 [Trait("Category", "Integration")]
-public sealed class ExportSmoke : IClassFixture<WasiPublishFixture>
+[Collection("Wasi")]
+public sealed class ExportSmoke
 {
     private const string ExportName = "blazornative_dispatch_event";
 
