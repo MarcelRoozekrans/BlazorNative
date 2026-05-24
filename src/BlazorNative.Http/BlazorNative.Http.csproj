@@ -7,7 +7,11 @@
     <RootNamespace>BlazorNative.Http</RootNamespace>
 
     <!-- AOT settings live on the executable (BlazorNative.WasiHost), not on
-         consumed libraries. -->
+         consumed libraries.
+         ZAI007: "class implements no interfaces and will only be registered as
+         its concrete type" — informational, expected. BridgeHttpHandler is
+         intentionally registered as its concrete type via [Transient]. -->
+    <NoWarn>$(NoWarn);ZAI007</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>

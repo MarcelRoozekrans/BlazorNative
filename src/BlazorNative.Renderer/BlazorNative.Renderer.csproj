@@ -13,8 +13,11 @@
 
     <!-- BL0006: "do not use internal Blazor render-tree types" — intentionally
          done in BlazorInterop.cs behind the Bn* wrapper layer. See
-         docs/plans/2026-05-23-renderer-internal-api-design.md. -->
-    <NoWarn>$(NoWarn);BL0006</NoWarn>
+         docs/plans/2026-05-23-renderer-internal-api-design.md.
+         ZAI007: "class implements no interfaces and will only be registered as
+         its concrete type" — informational, expected. NativeRenderer is
+         intentionally registered as its concrete type via [Singleton]. -->
+    <NoWarn>$(NoWarn);BL0006;ZAI007</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
