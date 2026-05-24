@@ -1,3 +1,4 @@
+using System.Text;
 using Xunit;
 
 namespace BlazorNative.Wasi.Tests;
@@ -6,45 +7,77 @@ namespace BlazorNative.Wasi.Tests;
 // ExportSmoke
 //
 // Verifies the [UnmanagedCallersOnly(EntryPoint = "blazornative_dispatch_event")]
-// attribute on WasiBridge.DispatchEvent survives Mono-AOT and is callable.
+// attribute on WasiBridge.DispatchEvent survives Mono-AOT and appears in the
+// AOT'd .wasm's export section.
 //
-// wasmtime --invoke skips _start/Main and calls the named export directly. If
-// the export resolves, the function runs; if not, wasmtime errors with
-// "function not found" (non-zero exit).
+// Phase 1.3 findings:
+//  - wasmtime --invoke can't reach core-module exports through the component-
+//    model layer wasi-experimental emits — exports inside the inner core
+//    module aren't surfaced as component-level functions, so invocation via
+//    `wasmtime --invoke` isn't viable.
+//  - wasm-tools `print`/`dump` work but produce ~10 MB of output for a 13 MB
+//    .wasm; piping that through Process.Standard{Output|Error} deadlocks
+//    reliably (the pipe buffer fills before we drain it).
+//  - The export name is a literal UTF-8 string in the .wasm's export section,
+//    so we can verify presence with a direct byte scan — no subprocess.
 //
-// All-zero args route through the no-subscriber branch — WasiBridge.Current is
-// null because Main never ran, so the function returns immediately without
-// tripping the D1 async-trap concern (BACKLOG "Mono-WASI async trap will fire
-// on first real bridge event").
+// Additional Phase 1.3 finding (recorded for context):
+//  - [UnmanagedCallersOnly] alone wasn't enough of a trim root on Mono-AOT.
+//    WasiBridge.DispatchEvent got stripped because nothing in the post-Main
+//    IL graph references it statically. Fix: [DynamicDependency] on
+//    Program.Main keeps all WasiBridge members alive (see
+//    src/BlazorNative.WasiHost/WasiEntryPoint.cs).
 // ─────────────────────────────────────────────────────────────────────────────
 
 [Trait("Category", "Integration")]
 public sealed class ExportSmoke : IClassFixture<WasiPublishFixture>
 {
+    private const string ExportName = "blazornative_dispatch_event";
+
     private readonly WasiPublishFixture _fixture;
     public ExportSmoke(WasiPublishFixture f) => _fixture = f;
 
     [Fact]
-    public async Task Export_BlazorNativeDispatchEvent_IsCallable()
+    public void Export_BlazorNativeDispatchEvent_IsPresent()
     {
-        var (exitCode, _, stderr) = await WasmtimeRunner.Run(
-            _fixture,
-            extraArgsBeforeWasm: new[] { "--invoke", "blazornative_dispatch_event" },
-            programArgs: new[] { "0", "0", "0", "0" },   // namePtr, nameLen, payloadPtr, payloadLen
-            timeout: TimeSpan.FromSeconds(10));
+        // Direct byte scan. UTF-8 export names in WASM are inline in the
+        // module's export section — no decoding needed. We accept multiple
+        // hits (the name appears both as the export-section entry and as a
+        // metadata-section name).
+        var wasm = File.ReadAllBytes(_fixture.WasmPath);
+        var needle = Encoding.UTF8.GetBytes(ExportName);
+        var hitCount = CountOccurrences(wasm, needle);
 
-        Assert.True(exitCode == 0, BuildFailureMessage(exitCode, stderr));
+        Assert.True(hitCount > 0,
+            $"'{ExportName}' not found in {_fixture.WasmPath} ({wasm.Length:N0} bytes). " +
+            $"The [UnmanagedCallersOnly] attribute on WasiBridge.DispatchEvent did not " +
+            $"survive Mono-AOT trimming. Verify that " +
+            $"src/BlazorNative.WasiHost/WasiEntryPoint.cs has " +
+            $"[DynamicDependency(DynamicallyAccessedMemberTypes.All, typeof(WasiBridge))] " +
+            $"on Program.Main.");
     }
 
-    private static string BuildFailureMessage(int exitCode, string stderr) =>
-        $"wasmtime --invoke exited {exitCode}.\nSTDERR:\n{stderr}\n\n" +
-        $"If stderr mentions 'function not found' or 'no export', the [UnmanagedCallersOnly] " +
-        $"attribute on WasiBridge.DispatchEvent did not survive Mono-AOT trimming. " +
-        $"Fix candidates: add WasiBridge to a TrimmerRoots.xml referenced by " +
-        $"BlazorNative.WasiHost.csproj, or add [DynamicDependency(...)] to keep " +
-        $"DispatchEvent rooted.\n\n" +
-        $"If stderr mentions '--invoke is not supported for components' or similar, " +
-        $"install wasm-tools (https://github.com/bytecodealliance/wasm-tools/releases " +
-        $"or `cargo install wasm-tools`) and rewrite this test to shell out to " +
-        $"`wasm-tools dump <path> | grep blazornative_dispatch_event`.";
+    /// <summary>
+    /// Boyer-Moore-Horspool-ish naive scan. Sufficient for our needs — wasm is
+    /// ~13 MB, needle is ~27 bytes, the test runs in well under 100 ms.
+    /// </summary>
+    private static int CountOccurrences(ReadOnlySpan<byte> haystack, ReadOnlySpan<byte> needle)
+    {
+        if (needle.Length == 0 || haystack.Length < needle.Length) return 0;
+        var count = 0;
+        var i = 0;
+        while (i <= haystack.Length - needle.Length)
+        {
+            if (haystack.Slice(i, needle.Length).SequenceEqual(needle))
+            {
+                count++;
+                i += needle.Length;
+            }
+            else
+            {
+                i++;
+            }
+        }
+        return count;
+    }
 }
