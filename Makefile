@@ -1,8 +1,9 @@
 # BlazorNative — Developer Makefile
 # ──────────────────────────────────────────────────────────────────────────────
 # make dev          → start dev host with hot reload (normal .NET, no WASM)
-# make wasi         → compile core to WASM/WASI
-# make wasi-run     → compile + run via wasmtime
+# make wasi         → publish WasiHost to WASM/WASI (Mono-AOT via wasi-sdk)
+# make wasi-run     → publish + run via wasmtime
+# make wasi-test    → run just the WASI integration tests
 # make android      → build MAUI Android package (requires MAUI workload)
 # make ios          → build MAUI iOS package (requires Mac + Xcode)
 # make test         → run all tests
@@ -10,17 +11,23 @@
 # make clean        → clean all build artifacts
 # ──────────────────────────────────────────────────────────────────────────────
 
-DOTNET        := dotnet
-WASMTIME      := wasmtime
-WIT_BINDGEN   := wit-bindgen
+DOTNET            := dotnet
+WASMTIME          := wasmtime
+WIT_BINDGEN       := wit-bindgen
 CORE_PROJECT      := src/BlazorNative.Core/BlazorNative.Core.csproj
 RENDERER_PROJECT  := src/BlazorNative.Renderer/BlazorNative.Renderer.csproj
 HTTP_PROJECT      := src/BlazorNative.Http/BlazorNative.Http.csproj
 ANALYZER_PROJECT  := src/BlazorNative.Analyzers/BlazorNative.Analyzers.csproj
 DEV_PROJECT       := src/BlazorNative.Host.Android/BlazorNative.DevHost.csproj
-WASI_OUT      := artifacts/wasi
+WASI_PROJECT      := src/BlazorNative.WasiHost/BlazorNative.WasiHost.csproj
+WASI_TESTS        := tests/BlazorNative.Wasi.Tests/BlazorNative.Wasi.Tests.csproj
+# Mono-AOT for wasi-wasm drops the app-specific .wasm at AppBundle/<AppName>.wasm.
+# This is NOT in any --output dir — passing --output to dotnet publish would only
+# capture the IL .dlls + the generic dotnet.wasm runtime.
+WASI_APP_BUNDLE   := src/BlazorNative.WasiHost/bin/Release/net10.0/wasi-wasm/AppBundle
+WASI_APP_WASM     := $(WASI_APP_BUNDLE)/BlazorNative.WasiHost.wasm
 
-.PHONY: dev wasi wasi-run android ios test wit-gen clean setup help
+.PHONY: dev dev-no-reload wasi wasi-run wasi-test wasi-inspect android ios test test-watch wit-gen clean setup analyzers help
 
 ## ── Development ──────────────────────────────────────────────────────────────
 
@@ -35,38 +42,39 @@ dev-no-reload:                ## Start dev host without hot reload
 
 ## ── WASI compilation ─────────────────────────────────────────────────────────
 
-wasi:                         ## Compile core library to WASM/WASI
-	@echo "🔧 Building WASI target..."
-	@mkdir -p $(WASI_OUT)
-	$(DOTNET) build $(CORE_PROJECT) \
-		-r wasi-wasm \
-		-c Release \
-		--output $(WASI_OUT)
-	@echo "✅ WASM output: $(WASI_OUT)"
-	@ls -lh $(WASI_OUT)/*.wasm 2>/dev/null || echo "  (no .wasm yet — add a WASI entrypoint)"
+wasi:                         ## Publish WasiHost to WASM/WASI (Mono-AOT)
+	@echo "🔧 Publishing BlazorNative.WasiHost to wasi-wasm (Release)..."
+	$(DOTNET) publish $(WASI_PROJECT) -r wasi-wasm -c Release
+	@echo "✅ WASM output: $(WASI_APP_WASM)"
+	@ls -lh $(WASI_APP_WASM) 2>/dev/null || echo "  (no .wasm produced — check publish output above)"
 
-wasi-run: wasi                ## Compile + run via wasmtime
-	@echo "▶️  Running via wasmtime..."
-	$(WASMTIME) $(WASI_OUT)/BlazorNative.Core.wasm
+wasi-run: wasi                ## Publish + run via wasmtime
+	@echo "▶️  Running BlazorNative.WasiHost.wasm via wasmtime..."
+	@echo "    (cd into AppBundle so --dir=. stays relative — absolute paths break Mono ICU lookup)"
+	cd $(WASI_APP_BUNDLE) && $(WASMTIME) run -Shttp --dir=. BlazorNative.WasiHost.wasm
 
-analyzers:                    ## Build Roslyn analyzers
-	$(DOTNET) build $(ANALYZER_PROJECT) -c Release
+wasi-test:                    ## Run just the WASI integration tests (publishes via fixture)
+	@echo "🧪 Running WASI integration tests..."
+	$(DOTNET) test $(WASI_TESTS) --logger "console;verbosity=normal"
 
 wasi-inspect: wasi            ## Show WASM module imports/exports
 	@echo "🔍 Module interface:"
-	$(WASMTIME) wasm-tools dump $(WASI_OUT)/BlazorNative.Core.wasm | grep -E "(import|export)"
+	$(WASMTIME) wasm-tools dump $(WASI_APP_WASM) | grep -E "(import|export)"
+
+analyzers:                    ## Build Roslyn analyzers
+	$(DOTNET) build $(ANALYZER_PROJECT) -c Release
 
 ## ── Mobile targets ───────────────────────────────────────────────────────────
 
 android:                      ## Build Android APK via MAUI
 	$(DOTNET) publish src/BlazorNative.Host.Android/BlazorNative.DevHost.csproj \
-		-f net9.0-android \
+		-f net10.0-android \
 		-c Release \
 		-o artifacts/android
 
 ios:                          ## Build iOS IPA (requires Mac + Xcode)
 	$(DOTNET) publish src/BlazorNative.Host.Android/BlazorNative.DevHost.csproj \
-		-f net9.0-ios \
+		-f net10.0-ios \
 		-c Release \
 		-o artifacts/ios
 
@@ -92,15 +100,25 @@ test-watch:                   ## Run tests with file watcher
 
 ## ── Utilities ────────────────────────────────────────────────────────────────
 
-setup:                        ## Install required .NET workloads
-	@echo "📦 Installing workloads..."
+setup:                        ## Install required prerequisites
+ifeq ($(OS),Windows_NT)
+	@echo "📦 On Windows, run the canonical installer (admin shell):"
+	@echo "    powershell -ExecutionPolicy Bypass -File setup.ps1"
+	@echo ""
+	@echo "It installs .NET 10 SDK, wasi-experimental workload, wasi-sdk-25,"
+	@echo "wasmtime v45, MAUI Android, OpenJDK 17, and Android SDK."
+else
+	@echo "📦 Installing .NET workloads..."
 	$(DOTNET) workload install wasi-experimental
 	$(DOTNET) workload install maui-android
 	$(DOTNET) workload install maui-ios
 	@echo "✅ Workloads installed"
 	@echo ""
-	@echo "You also need wasmtime: https://wasmtime.dev"
-	@echo "  curl https://wasmtime.dev/install.sh -sSf | bash"
+	@echo "You also need:"
+	@echo "  • wasi-sdk 25 → https://github.com/WebAssembly/wasi-sdk/releases/tag/wasi-sdk-25"
+	@echo "    (set WASI_SDK_PATH to its extracted root)"
+	@echo "  • wasmtime v45 → https://github.com/bytecodealliance/wasmtime/releases/tag/v45.0.0"
+endif
 
 clean:                        ## Clean all build artifacts
 	$(DOTNET) clean
