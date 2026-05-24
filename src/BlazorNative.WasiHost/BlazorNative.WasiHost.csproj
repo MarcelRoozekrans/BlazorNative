@@ -32,6 +32,18 @@
     <ProjectReference Include="..\BlazorNative.Core\BlazorNative.Core.csproj" />
     <ProjectReference Include="..\BlazorNative.Renderer\BlazorNative.Renderer.csproj" />
     <ProjectReference Include="..\BlazorNative.Http\BlazorNative.Http.csproj" />
+
+    <!-- Phase 1.5: BlazorNative.Analyzers fires WasiThreadingAnalyzer (BN0001-BN0006)
+         + WasiBclGapsAnalyzer (BN0010-BN0013) on this project's sources. Scoping
+         strategy: the analyzer is referenced ONLY from WasiHost (the wasi-wasm
+         executable composition root), NOT from Core/Renderer/Http/DevHost/tests.
+         This satisfies MILESTONE DoD #7 "analyzers do not fire on DevHost or test
+         projects" via project-graph scoping rather than .editorconfig suppression.
+         When more projects join the wasi-wasm graph in M2+, they should add this
+         same ProjectReference. P3 will wire the analyzer's own unit-test project. -->
+    <ProjectReference Include="..\BlazorNative.Analyzers\BlazorNative.Analyzers.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="false" />
   </ItemGroup>
 
   <ItemGroup>
