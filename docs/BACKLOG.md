@@ -29,8 +29,8 @@
   - **Verdict:** Option D + `[UnsafeAccessorType]` behind a single isolation file (`src/BlazorNative.Renderer/BlazorInterop.cs`). Design rationale: [docs/plans/2026-05-23-renderer-internal-api-design.md](plans/2026-05-23-renderer-internal-api-design.md). Implementation plan: [docs/plans/2026-05-23-phase-1.1-implementation-plan.md](plans/2026-05-23-phase-1.1-implementation-plan.md).
   - **Unexpected finding:** Against Microsoft.AspNetCore.Components **10.0.x**, almost every render-tree member is already accessible as a public field/property. `[UnsafeAccessor]` was genuinely required only for the protected `Renderer.DispatchEventAsync` (which takes the internal `EventFieldInfo`). The `Bn*` ref-struct wrappers in `BlazorInterop.cs` remain as the naming-isolation seam, but they mostly read from the public surface. Simpler and more future-proof than the original design anticipated.
 
-- [ ] **`DispatchEventAsync` signature fix**
-  `WebEventData` wrapper in `RendererServices.cs` doesn't match Blazor's internal `DispatchEventAsync(ulong handlerId, EventFieldInfo? fieldInfo, EventArgs eventArgs)` signature. Fix after internal API strategy is decided.
+- [x] **`DispatchEventAsync` signature fix** — **resolved 2026-05-24 (Phase 1.4 close-out; work landed in Phase 1.1)**
+  The broken `WebEventData` shim was deleted during Phase 1.1's renderer rewrite. `BlazorInterop.RefAccessors.DispatchEventAsync` declares the matching `(ulong, EventFieldInfo?, EventArgs)` signature via `[UnsafeAccessor(Method)]` + `[UnsafeAccessorType]` for the internal `EventFieldInfo` parameter. `NativeRenderer.DispatchUiEventAsync` calls the new helper. The startup version probe (`BlazorInterop.VerifyAccessors`) catches Blazor-side signature drift at type-load time.
 
 ---
 
