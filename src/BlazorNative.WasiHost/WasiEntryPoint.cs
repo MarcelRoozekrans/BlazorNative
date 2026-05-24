@@ -11,15 +11,26 @@ namespace BlazorNative.WasiHost;
 // Real WASI entry point (Phase 1.2). Builds the DI graph via ZeroAlloc.Inject's
 // generated extension methods, resolves IMobileBridge + NativeRenderer (does
 // NOT invoke any bridge method — would trap on unresolved mobile_bridge extern
-// imports until M2 ships the native shell), performs an await Task.Delay(1)
-// round-trip to prove the cooperative scheduler works, and exits 0.
+// imports until M2 ships the native shell), and exits 0.
 //
-// Four structured [BOOT] markers on stdout let the xUnit subprocess test in
-// tests/BlazorNative.Wasi.Tests/ disambiguate failure stages by exit code:
-//   0  = clean exit (all 4 markers emitted)
+// .NET 10 Mono-WASI limitation (discovered Phase 1.2 Task 13): async Main
+// and `await Task.Delay(N)` throw PlatformNotSupportedException because
+// Mono's WASI runtime resolves the await-continuation through Task.Wait,
+// which traps on the single-threaded WASI scheduler. Synchronous Main is
+// the supported shape (matches the `dotnet new wasiconsole` template).
+//
+// The "scheduler round-trip" DoD criterion (MILESTONE.md DoD #5) is deferred
+// to a later phase: once cooperative async is supported on Mono-WASI (.NET
+// 11 candidate) or once we run inside the Android shell where threads exist.
+// For Phase 1.2 the load-bearing proof is "Mono runtime loads + DI graph
+// composes + Blazor drift probe runs + clean exit", which the three remaining
+// [BOOT] markers cover.
+//
+// Three structured [BOOT] markers on stdout let the xUnit subprocess test
+// disambiguate failure stages by exit code:
+//   0  = clean exit (all 3 markers emitted)
 //   1  = DI failure  ([BOOT] FAIL stage=di)
 //   2  = Blazor drift ([BOOT] FAIL stage=blazor-drift)
-//   3  = Scheduler   ([BOOT] FAIL stage=scheduler)
 //   99 = Unknown     ([BOOT] FAIL stage=unknown)
 //
 // Lives in BlazorNative.WasiHost (not Core) because Renderer + Http already
@@ -31,12 +42,11 @@ namespace BlazorNative.WasiHost;
 
 public static class Program
 {
-    public static async Task<int> Main()
+    public static int Main()
     {
         try
         {
-            var sw = System.Diagnostics.Stopwatch.StartNew();
-            Console.WriteLine("[BOOT] scheduler-start");
+            Console.WriteLine("[BOOT] runtime-start");
 
             IServiceProvider provider;
             IMobileBridge bridge;
@@ -63,19 +73,6 @@ public static class Program
             }
 
             Console.WriteLine($"[BOOT] di-ok bridge={bridge.GetType().Name} renderer={renderer.GetType().Name}");
-
-            var t0 = sw.ElapsedMilliseconds;
-            try
-            {
-                await Task.Delay(1);
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[BOOT] FAIL stage=scheduler msg={ex.GetType().Name}: {ex.Message}");
-                return 3;
-            }
-            var dt = sw.ElapsedMilliseconds - t0;
-            Console.WriteLine($"[BOOT] delay-ok Δ={dt}ms");
 
             Console.WriteLine("[BOOT] done");
             return 0;
