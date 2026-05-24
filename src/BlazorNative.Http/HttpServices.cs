@@ -25,8 +25,10 @@ public static class ServiceCollectionExtensions
     public static IServiceCollection AddBlazorNativeHttp(
         this IServiceCollection services)
     {
-        // Register the handler itself
-        services.AddScoped<BridgeHttpHandler>();
+        // BridgeHttpHandler is registered by the generated AddBlazorNativeHttpServices()
+        // via its [Transient] attribute (see Task 6). The HttpClient factory plumbing
+        // isn't part of ZA.Inject's surface — keep it here.
+        services.AddBlazorNativeHttpServices();
 
         // AddHttpClient(Options.DefaultName) is the chainable equivalent of the
         // parameterless AddHttpClient(). Both register the default-named factory
