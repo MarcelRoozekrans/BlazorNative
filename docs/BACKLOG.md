@@ -15,6 +15,12 @@
 - [ ] **Cooperative async on Mono-WASI** *(deferred from P0)*
   When .NET 11 ships Mono-WASI changes that allow async `Main`, or when we're inside the Android/iOS shell, replace the sync `Main` body with the original design: DI compose → `await Task.Delay(1)` round-trip → ready signal. For now, sync `Main` is the only viable shape.
 
+- [ ] **Mono-WASI async trap will fire on first real bridge event** *(deferred from Phase 1.2)*
+  Phase 1.2 reframed MILESTONE DoD #5 ("await Task.Delay round-trip") because .NET 10 Mono-WASI throws `PlatformNotSupportedException` from `Task.InternalWaitCore` — there are no threads on the single-threaded WASI scheduler. Sync `Main` works around this. **BUT:** `WasiBridge.DispatchEvent` (the `[UnmanagedCallersOnly]` entry point at `src/BlazorNative.Core/WasiBridge.cs:122-129`) and `NativeRenderer.DispatchFrameAsync` (`src/BlazorNative.Renderer/NativeRenderer.cs:272-277`) both use `.AsTask().GetAwaiter().GetResult()` / fire-and-forget `await _bridge.WriteStorageAsync(...)`. Same trap mechanism. Phase 1.2's BootSmoke doesn't catch this because it deliberately avoids invoking any bridge method. **First failure point: M2 when the Android shell pushes a real `blazornative_dispatch_event` and forces the awaiter to actually resume.** Options to investigate before M2 starts:
+  - (a) wait for .NET 11 Mono-WASI cooperative-async support;
+  - (b) avoid awaits inside the WASM module entirely and use the unmanaged callback as a pure sync sink (queue events, drain on a tick);
+  - (c) move the renderer execution into the Android shell process and use the WASM module as a pure logic/data layer.
+
 - [ ] **`[UnmanagedCallersOnly]` export wiring**
   `WasiBridge.DispatchEvent` is declared with `[UnmanagedCallersOnly(EntryPoint = "blazornative_dispatch_event")]` but the export needs to appear in the compiled `.wasm` module's export table. Verify with `wasm-tools dump` after AOT compile. May need a `__attribute__((used))` equivalent or explicit export hint.
 
@@ -105,6 +111,9 @@
 ---
 
 ## P3 — Production readiness
+
+- [ ] **`AddBlazorNativeRenderer()` / `AddBlazorNativeHttp()` will be called from DevHost in P2**
+  Phase 1.2 made these thin re-exports of the ZA.Inject-generated `AddBlazorNativeRendererServices` / `AddBlazorNativeHttpServices`. The DevHost's `Program.cs` doesn't call them yet (it's still a pure Razor app). When P2's "DI fully wired end-to-end" task lands ("Render frames appear in `/dev/renderframe` endpoint"), DevHost will need to call both methods after `var devBridge = new DevHostBridge();`. Until then the re-exports are intentionally dead code — keep them so the call site in P2 doesn't need to know about the underlying generator naming.
 
 - [ ] **Analyzer unit tests**
   `src/BlazorNative.Analyzers/tests/` is empty. Add `Microsoft.CodeAnalysis.Testing` based tests for every diagnostic (BN0001–BN0013). Each test should verify: fires on bad code, silent on correct code, fix suggestion (where applicable).
