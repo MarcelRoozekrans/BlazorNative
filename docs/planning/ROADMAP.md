@@ -4,9 +4,9 @@
 
 ## Milestones
 
-### 🔄 Milestone 1 — P0: Runtime Boots End-to-End  *(active, started 2026-05-23)*
+### ✅ Milestone 1 — P0: Runtime Boots End-to-End  *(complete 2026-05-24, tagged `v1.0`)*
 
-Toolchain produces a `.wasm` that loads under wasmtime with correct exports and a working cooperative scheduler. Renderer internal-API strategy decided.
+Toolchain produces a `.wasm` that loads under wasmtime with correct exports and a working cooperative scheduler. Renderer internal-API strategy decided. All 8 DoD criteria met — see [final audit](../plans/2026-05-24-milestone-1-final-audit.md).
 
 Definition of done: see [MILESTONE.md](MILESTONE.md).
 

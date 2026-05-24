@@ -1,7 +1,9 @@
 # Milestone 1 — P0: Runtime Boots End-to-End
 
-**Status:** active
+**Status:** ✅ complete (2026-05-24, tagged `v1.0`)
 **Started:** 2026-05-23
+**Completed:** 2026-05-24
+**Final audit:** [docs/plans/2026-05-24-milestone-1-final-audit.md](../plans/2026-05-24-milestone-1-final-audit.md) — 8/8 DoD criteria met
 **Source:** maps to BACKLOG.md "P0 — Blocks everything"
 
 ## Goal
