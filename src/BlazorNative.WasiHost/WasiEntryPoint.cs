@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.DependencyInjection;
 using BlazorNative.Core;
 using BlazorNative.Renderer;
@@ -42,6 +43,15 @@ namespace BlazorNative.WasiHost;
 
 public static class Program
 {
+    // Keep WasiBridge (including the [UnmanagedCallersOnly] DispatchEvent export)
+    // rooted through Mono-AOT trimming. Without this, the trimmer removes
+    // WasiBridge.DispatchEvent because nothing in the post-Main IL graph
+    // references it statically — verified via wasm-tools: the string
+    // 'blazornative_dispatch_event' was absent from the AOT'd .wasm before
+    // this attribute was added. The IMobileBridge resolution via DI below
+    // keeps the type alive, but the trimmer still strips per-method dead code;
+    // [DynamicDependency] on Main forces all WasiBridge members to be preserved.
+    [DynamicDependency(DynamicallyAccessedMemberTypes.All, typeof(WasiBridge))]
     public static int Main()
     {
         try
