@@ -21,8 +21,8 @@
   - (b) avoid awaits inside the WASM module entirely and use the unmanaged callback as a pure sync sink (queue events, drain on a tick);
   - (c) move the renderer execution into the Android shell process and use the WASM module as a pure logic/data layer.
 
-- [ ] **`[UnmanagedCallersOnly]` export wiring**
-  `WasiBridge.DispatchEvent` is declared with `[UnmanagedCallersOnly(EntryPoint = "blazornative_dispatch_event")]` but the export needs to appear in the compiled `.wasm` module's export table. Verify with `wasm-tools dump` after AOT compile. May need a `__attribute__((used))` equivalent or explicit export hint.
+- [x] **`[UnmanagedCallersOnly]` export wiring** — **resolved 2026-05-24 (Phase 1.3)**
+  Verified `blazornative_dispatch_event` is in the AOT'd `.wasm` export table via direct byte-scan in `tests/BlazorNative.Wasi.Tests/ExportSmoke.cs`. **Required the predicted explicit export hint:** `[DynamicDependency(DynamicallyAccessedMemberTypes.All, typeof(WasiBridge))]` on `Program.Main`. Without it, Mono-AOT trimmed `WasiBridge.DispatchEvent` completely (the string was absent from the 13 MB .wasm) — `[UnmanagedCallersOnly]` alone wasn't enough of a trim root. Also discovered `wasmtime --invoke` doesn't reach core-module exports through the component-model layer; `wasm-tools print` works but its 10 MB output deadlocks subprocess pipes. In-process byte-scan was the right verification.
 
 - [x] **Renderer internal API access strategy** — **resolved 2026-05-23**
   Original framing: `RenderTreeDiff`, `RenderTreeFrame`, `RenderBatch` are `internal` in `Microsoft.AspNetCore.Components`. Four options evaluated (A: InternalsVisibleTo fork; B: NonPublic reflection; C: public surface only; D: UnsafeAccessor).
