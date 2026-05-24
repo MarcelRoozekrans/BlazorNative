@@ -17,6 +17,11 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.*" />
     <PackageReference Include="Microsoft.Extensions.Http" Version="10.*" />
+    <PackageReference Include="ZeroAlloc.Inject" Version="*" />
+    <PackageReference Include="ZeroAlloc.Inject.Generator" Version="*">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>analyzers;build</IncludeAssets>
+    </PackageReference>
   </ItemGroup>
 
 </Project>
