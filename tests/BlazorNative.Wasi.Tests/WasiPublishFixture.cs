@@ -94,7 +94,12 @@ public sealed class WasiPublishFixture : IDisposable
         AppBundleDir = Path.GetDirectoryName(WasmPath)!;
     }
 
-    public void Dispose() { /* leave artifacts/wasi-publish-test in place for inspection */ }
+    public void Dispose()
+    {
+        // Leave the published AppBundle (src/BlazorNative.WasiHost/bin/.../AppBundle)
+        // in place for post-run inspection — wasmtime invocation, wasm-tools dump,
+        // etc. The next `dotnet publish` overwrites it anyway.
+    }
 
     private static string FindRepoRoot()
     {
