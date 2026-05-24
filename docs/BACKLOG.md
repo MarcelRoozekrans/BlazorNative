@@ -118,8 +118,8 @@
 - [ ] **Analyzer unit tests**
   `src/BlazorNative.Analyzers/tests/` is empty. Add `Microsoft.CodeAnalysis.Testing` based tests for every diagnostic (BN0001–BN0013). Each test should verify: fires on bad code, silent on correct code, fix suggestion (where applicable).
 
-- [ ] **`.editorconfig` analyzer scoping**
-  Add suppressions so `WasiThreadingAnalyzer` and `WasiBclGapsAnalyzer` only fire on projects that target `wasi-wasm`. DevHost and test projects should not get false positives.
+- [x] **`.editorconfig` analyzer scoping** — **resolved 2026-05-24 (Phase 1.5; via project-graph instead of `.editorconfig`)**
+  Chosen mechanism: `BlazorNative.Analyzers` is wired as `<ProjectReference OutputItemType="Analyzer">` from `BlazorNative.WasiHost` only. Non-wasi-wasm projects (DevHost, tests, etc.) don't reference the analyzer, so it can't fire on them — cleaner than per-folder `.editorconfig` suppression. Verified: `dotnet build BlazorNative.sln` produces 0 BN0001-BN0013 warnings. Future wasi-wasm-targeting projects should add the same `ProjectReference` shape.
 
 - [ ] **GitHub Actions CI pipeline**
   `.github/workflows/ci.yml`:
