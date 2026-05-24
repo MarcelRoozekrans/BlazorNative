@@ -23,6 +23,12 @@
 
   <ItemGroup>
     <PackageReference Include="ZeroAlloc.AsyncEvents" Version="*" />
+    <PackageReference Include="ZeroAlloc.Inject" Version="*" />
+    <PackageReference Include="ZeroAlloc.Inject.Generator" Version="*">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>analyzers;build</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.*" />
   </ItemGroup>
 
 </Project>
