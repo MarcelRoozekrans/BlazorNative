@@ -6,8 +6,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>BlazorNative.Http</RootNamespace>
 
-    <PublishAot Condition="'$(RuntimeIdentifier)' == 'wasi-wasm'">true</PublishAot>
-    <InvariantGlobalization Condition="'$(RuntimeIdentifier)' == 'wasi-wasm'">true</InvariantGlobalization>
+    <!-- AOT settings live on the executable (BlazorNative.WasiHost), not on
+         consumed libraries. -->
   </PropertyGroup>
 
   <ItemGroup>

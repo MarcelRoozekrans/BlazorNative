@@ -7,8 +7,9 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <RootNamespace>BlazorNative.Renderer</RootNamespace>
 
-    <PublishAot Condition="'$(RuntimeIdentifier)' == 'wasi-wasm'">true</PublishAot>
-    <InvariantGlobalization Condition="'$(RuntimeIdentifier)' == 'wasi-wasm'">true</InvariantGlobalization>
+    <!-- AOT settings live on the executable (BlazorNative.WasiHost), not on
+         consumed libraries. The wasi-wasm RID participates here only as a
+         transitive build target; AOT compilation is driven by WasiHost. -->
 
     <!-- BL0006: "do not use internal Blazor render-tree types" — intentionally
          done in BlazorInterop.cs behind the Bn* wrapper layer. See
