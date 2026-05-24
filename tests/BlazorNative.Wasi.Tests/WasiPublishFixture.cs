@@ -16,19 +16,32 @@ namespace BlazorNative.Wasi.Tests;
 
 public sealed class WasiPublishFixture : IDisposable
 {
+    /// <summary>Path to the Mono runtime .wasm. Pass this to wasmtime; it loads
+    /// the managed app assembly (BlazorNative.WasiHost.dll) from the same dir
+    /// at runtime via runtimeconfig.json.</summary>
     public string WasmPath { get; }
+
+    /// <summary>The publish output dir. wasmtime must be invoked with
+    /// <c>--dir=&lt;this&gt;</c> for WASI filesystem access to the managed dlls.</summary>
     public string AppBundleDir { get; }
+
+    /// <summary>The assembly name (without .dll) to pass as wasmtime's program arg.</summary>
+    public string AppAssemblyName => "BlazorNative.WasiHost";
 
     public WasiPublishFixture()
     {
         var repoRoot = FindRepoRoot();
-        AppBundleDir = Path.Combine(repoRoot, "artifacts", "wasi-publish-test");
-        if (Directory.Exists(AppBundleDir))
-            Directory.Delete(AppBundleDir, recursive: true);
+
+        // The wasi-experimental workload puts the AOT'd app-specific .wasm in
+        // bin/Release/net10.0/wasi-wasm/AppBundle/ — NOT in the --output dir
+        // (which only gets the IL .dlls + the generic dotnet.wasm runtime).
+        // Publish without --output so the AppBundle lands at its canonical path.
+        AppBundleDir = Path.Combine(repoRoot,
+            "src", "BlazorNative.WasiHost", "bin", "Release", "net10.0", "wasi-wasm", "AppBundle");
 
         var psi = new ProcessStartInfo("dotnet",
-            $"publish src/BlazorNative.WasiHost/BlazorNative.WasiHost.csproj " +
-            $"-r wasi-wasm -c Release --output \"{AppBundleDir}\"")
+            "publish src/BlazorNative.WasiHost/BlazorNative.WasiHost.csproj " +
+            "-r wasi-wasm -c Release")
         {
             WorkingDirectory = repoRoot,
             RedirectStandardOutput = true,
@@ -60,18 +73,18 @@ public sealed class WasiPublishFixture : IDisposable
                 $"STDOUT:\n{stdout}\n\nSTDERR:\n{stderr}");
         }
 
-        // WasmSingleFileBundle=true → single bundled .wasm; probe both candidate paths.
-        var candidates = new[]
-        {
-            Path.Combine(AppBundleDir, "AppBundle", "BlazorNative.WasiHost.wasm"),
-            Path.Combine(AppBundleDir, "BlazorNative.WasiHost.wasm"),
-        };
-        WasmPath = candidates.FirstOrDefault(File.Exists)
-            ?? throw new FileNotFoundException(
-                "Expected app-specific .wasm not produced. Searched:\n  " +
-                string.Join("\n  ", candidates) +
-                "\n\nDirectory contents under " + AppBundleDir + ":\n  " +
-                string.Join("\n  ", Directory.GetFiles(AppBundleDir, "*", SearchOption.AllDirectories)));
+        // Mono-AOT for wasi-wasm produces an app-specific .wasm at
+        // bin/.../AppBundle/<AppName>.wasm with the IL baked in. This is the
+        // single-file artifact wasmtime needs to invoke directly (no separate
+        // dotnet.wasm runtime + .dll dance).
+        WasmPath = Path.Combine(AppBundleDir, "BlazorNative.WasiHost.wasm");
+        if (!File.Exists(WasmPath))
+            throw new FileNotFoundException(
+                "Expected app-specific .wasm not produced at " + WasmPath +
+                "\n\nDirectory contents:\n  " +
+                (Directory.Exists(AppBundleDir)
+                    ? string.Join("\n  ", Directory.GetFiles(AppBundleDir, "*", SearchOption.AllDirectories))
+                    : "(AppBundle dir does not exist)"));
     }
 
     public void Dispose() { /* leave artifacts/wasi-publish-test in place for inspection */ }
