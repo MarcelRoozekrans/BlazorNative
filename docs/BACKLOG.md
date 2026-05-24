@@ -6,13 +6,14 @@
 ## P0 — Blocks everything
 *Nothing works end-to-end without these.*
 
-- [ ] **WASI `Program.cs` entry point**
-  Write the `wasi-wasm` target entry point that bootstraps the .NET cooperative async scheduler, initialises DI, registers `WasiBridge`, `AddBlazorNativeRenderer()`, `AddBlazorNativeHttp()`, and mounts the root Blazor component. One wrong call order and `await` never resumes.
-  - Files to create: `src/BlazorNative.Core/WasiEntryPoint.cs`
-  - Reference: https://github.com/dotnet/dotnet-wasi-sdk samples
+- [x] **WASI `Program.cs` entry point** — **resolved 2026-05-24 (Phase 1.2)**
+  Implemented in `src/BlazorNative.WasiHost/WasiEntryPoint.cs` (new project — Core stays a library; WasiHost is the executable composition root). Builds DI graph via ZeroAlloc.Inject's generated `AddBlazorNativeCoreServices()` / `AddBlazorNativeRendererServices()` / `AddBlazorNativeHttpServices()` methods, resolves `IMobileBridge` (→ WasiBridge) + `NativeRenderer`, exits 0. Root component mount deferred to M2 (would require the native shell to provide `mobile_bridge` extern imports).
 
-- [ ] **Cooperative async scheduler bootstrap**
-  WASI needs the .NET event loop started via `WasiEventLoop.Run()` (or equivalent in .NET 9). Must be the outermost call in `Main`. Validate with a simple `await Task.Delay(1)` round-trip via wasmtime.
+- [x] **Cooperative async scheduler bootstrap** — **resolved 2026-05-24 (sort of — see below)**
+  Original framing was .NET 9-era — assumed `WasiEventLoop.Run()`-style explicit bootstrap. **.NET 10 reality:** Mono-WASI runtime handles WASI bootstrap transparently. **But:** async `Main` is NOT supported — `Task.InternalWaitCore` throws `PlatformNotSupportedException` because the single-threaded WASI scheduler can't actually wait. The `dotnet new wasiconsole` template uses sync `Main` for exactly this reason. Our `WasiEntryPoint.cs` uses sync `Main` too. Cooperative async (`await Task.Delay`, etc.) on Mono-WASI is a deferred concern — either (a) .NET 11 may add support, or (b) we use it inside the Android shell where the real cooperative scheduler runs. Tracked as the new BACKLOG bullet below.
+
+- [ ] **Cooperative async on Mono-WASI** *(deferred from P0)*
+  When .NET 11 ships Mono-WASI changes that allow async `Main`, or when we're inside the Android/iOS shell, replace the sync `Main` body with the original design: DI compose → `await Task.Delay(1)` round-trip → ready signal. For now, sync `Main` is the only viable shape.
 
 - [ ] **`[UnmanagedCallersOnly]` export wiring**
   `WasiBridge.DispatchEvent` is declared with `[UnmanagedCallersOnly(EntryPoint = "blazornative_dispatch_event")]` but the export needs to appear in the compiled `.wasm` module's export table. Verify with `wasm-tools dump` after AOT compile. May need a `__attribute__((used))` equivalent or explicit export hint.

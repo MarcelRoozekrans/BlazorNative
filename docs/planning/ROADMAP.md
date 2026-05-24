@@ -15,9 +15,14 @@ Phases:
    - Verdict: `BlazorInterop.cs` isolation layer with `Bn*` ref-struct wrappers. Against Blazor 10, most render-tree members turned out to be public — `[UnsafeAccessor]` is only needed for `Renderer.DispatchEventAsync` (uses internal `EventFieldInfo`). See [design](../plans/2026-05-23-renderer-internal-api-design.md) + [implementation plan](../plans/2026-05-23-phase-1.1-implementation-plan.md).
    - Side effects: full retarget to .NET 10; `System.Reactive` → `ZeroAlloc.AsyncEvents`; `List<RenderPatch>` → `ZeroAlloc.Collections.PooledList`; smoke test (`FirstFrame_HasExpectedPatches`) passes; allocation budget test deferred to Milestone 4.
    - Discovered: .NET 10's `wasi-experimental` workload provides **Mono-AOT**, not NativeAOT, for `wasi-wasm`. Design's "Native AOT + WASI" framing was wrong; updated.
-- ⏳ **Phase 1.2** — WASI entry point + cooperative scheduler bootstrap — *pending*
-   - Prerequisite: install `wasi-sdk` (Clang/LLVM toolchain) and set `WASI_SDK_PATH` env var. Phase 1.1 produced `dotnet.wasm` runtime + AppBundle, but the IL→WASM AOT step (which yields the app-specific `BlazorNative.Core.wasm`) needs wasi-sdk.
-   - Replace the no-op `WasiEntryPoint.cs::Main` with the .NET 10 cooperative scheduler bootstrap + DI registration + root component mount.
+- ✅ **Phase 1.2** — WASI entry point + DI bootstrap — *complete (2026-05-24)*
+   - Real `Main` in new `BlazorNative.WasiHost` project (architectural deviation from plan — Core stays a library; WasiHost is the executable composition root, breaks the would-be circular Core↔Renderer/Http dep). Builds DI graph via ZeroAlloc.Inject MS DI Extension mode, resolves IMobileBridge + NativeRenderer, exits 0. End-to-end verified by `tests/BlazorNative.Wasi.Tests/BootSmoke` which publishes for `wasi-wasm` + invokes the AOT'd `.wasm` under `wasmtime`.
+   - Discoveries:
+     - .NET 10 Mono-WASI **does not support async `Main`** — `Task.InternalWaitCore` throws `PlatformNotSupportedException`. The `await Task.Delay(1)` round-trip from MILESTONE DoD #5 was reframed; sync `Main` is the supported shape (matches `dotnet new wasiconsole` template).
+     - wasi-experimental workload (manifest 10.0.108) pins to `wasi-sdk-25` specifically. Newer wasi-sdk versions are rejected.
+     - `dotnet publish --output X` copies IL .dlls but NOT the AOT'd app `.wasm` — that lands at `bin/Release/.../wasi-wasm/AppBundle/<App>.wasm` always.
+     - wasmtime needs `-Shttp` to enable wasi:http (Mono imports it via System.Net.Http transitively); `--dir=.` (not absolute) for ICU lookup.
+   - See [design](../plans/2026-05-23-phase-1.2-design.md) + [implementation plan](../plans/2026-05-23-phase-1.2-implementation-plan.md).
 - ⏳ **Phase 1.3** — `[UnmanagedCallersOnly]` export verification — *pending*
 - ⏳ **Phase 1.4** — `DispatchEventAsync` signature fix — *pending* — *partial credit already taken in Phase 1.1 (`BlazorInterop.DispatchEventViaAccessor`).*
 - ⏳ **Phase 1.5** — Analyzer scoping for non-WASI projects — *pending*

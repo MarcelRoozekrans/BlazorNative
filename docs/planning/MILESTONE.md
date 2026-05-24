@@ -25,7 +25,7 @@ After this milestone the project compiles in all configurations (Debug, Release,
 
 4. **`[UnmanagedCallersOnly]` export visible.** `wasm-tools dump artifacts/wasi/BlazorNative.Core.wasm | grep blazornative_dispatch_event` returns a match in the export section.
 
-5. **Cooperative async round-trip works.** Running the produced `.wasm` via `wasmtime artifacts/wasi/BlazorNative.Core.wasm` performs at least one `await Task.Delay(1)` and exits with code 0 (proves the scheduler is wired correctly).
+5. **WASI runtime + DI graph compose under wasmtime.** Running the AOT'd `.wasm` via `wasmtime -Shttp --dir=. BlazorNative.WasiHost.wasm` emits `[BOOT] runtime-start` + `[BOOT] di-ok` + `[BOOT] done` to stdout and exits with code 0. ~~Originally asked for `await Task.Delay(1)` round-trip — dropped during Phase 1.2 because .NET 10 Mono-WASI doesn't support async Main (Task.Wait traps with PlatformNotSupportedException on single-threaded WASI).~~ Cooperative async on Mono-WASI is deferred to a later phase (.NET 11 candidate) or to the Android shell context (where threads exist).
 
 6. **`DispatchEventAsync` signature compiles.** `BlazorNative.Renderer` builds without errors against the chosen internal-API strategy. `NativeRenderer.DispatchUiEventAsync` calls the renderer base correctly.
 
