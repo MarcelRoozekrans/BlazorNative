@@ -1,58 +1,85 @@
-# Milestone 1 — P0: Runtime Boots End-to-End
+# Milestone 2 — P1: First End-to-End Demo on Android
 
-**Status:** ✅ complete (2026-05-24, tagged `v1.0`)
-**Started:** 2026-05-23
-**Completed:** 2026-05-24
-**Final audit:** [docs/plans/2026-05-24-milestone-1-final-audit.md](../plans/2026-05-24-milestone-1-final-audit.md) — 8/8 DoD criteria met
-**Source:** maps to BACKLOG.md "P0 — Blocks everything"
+**Status:** active
+**Started:** 2026-05-24
+**Source:** maps to BACKLOG.md "P1 — First end-to-end demo"
+**Predecessor:** Milestone 1 — complete 2026-05-24, tagged `v1.0` ([final audit](../plans/2026-05-24-milestone-1-final-audit.md))
 
 ## Goal
 
-A `BlazorNative.Core` WASM module that boots cleanly under `wasmtime`, has the correct `[UnmanagedCallersOnly]` exports visible in its export table, can round-trip a cooperative `await Task.Delay(1)`, and has a chosen, working strategy for accessing Blazor's internal render-tree types.
+Render a Blazor component as native Android widgets via a Kotlin shell that embeds Wasmtime and loads our WASI module.
 
-After this milestone the project compiles in all configurations (Debug, Release, WASI) and runs both the inner-loop DevHost and the WASI binary without errors. No native shell or actual native rendering yet — that is Milestone 2.
-
-**Update (Phase 1.1, 2026-05-23):** .NET 10's `wasi-experimental` workload provides **Mono-AOT** for `wasi-wasm`, not NativeAOT. The original design's "Native AOT + WASI" framing was wrong; the actual model is a Mono runtime compiled to WASM (`dotnet.wasm`, ~12 MB) that loads a managed `BlazorNative.Core.dll` at runtime. Different bundling shape, same external interface (one `dotnet.wasm` + side-by-side `.dll` files in an AppBundle). Phase 1.2 needs `wasi-sdk` installed for the IL→WASM AOT step that produces the app-specific `BlazorNative.Core.wasm`.
+This milestone closes the loop from .NET source code to a pixel on a real Android device. After M2 ships, the architecture diagram in `README.md` is no longer aspirational — it's executable.
 
 ## Definition of Done
 
-1. **Build green in all configurations.**
-   - `dotnet build BlazorNative.sln -c Debug` succeeds with 0 warnings, 0 errors.
-   - `dotnet build BlazorNative.sln -c Release` succeeds with 0 warnings, 0 errors.
-   - `dotnet publish src/BlazorNative.WasiHost/BlazorNative.WasiHost.csproj -r wasi-wasm -c Release` (with `wasi-sdk-25` installed and `WASI_SDK_PATH` set) produces an AOT-compiled `BlazorNative.WasiHost.wasm` (~13 MB) at `bin/Release/net10.0/wasi-wasm/AppBundle/`. Wording fix 2026-05-24: the original criterion mentioned `BlazorNative.Core.wasm` + `run-wasmtime.sh` launcher scripts; that was the pre-AOT Mono-interpreter shape. After the Phase 1.2 architectural pivot (Core stays a library; WasiHost is the executable), and the Phase 1.3 trim-hint fix that lets the AOT-compiled .wasm actually export `blazornative_dispatch_event`, a single bundled `.wasm` is the correct artifact.
+1. **Mono-WASI async trap resolved.** The `Task.InternalWaitCore PlatformNotSupportedException` concern carried from M1 (BACKLOG bullet "Mono-WASI async trap will fire on first real bridge event") is addressed via one of the three documented remediation options:
+   - (a) queue-and-drain pattern in the bridge — `[UnmanagedCallersOnly]` callback enqueues; a sync `pump` export drains;
+   - (b) sync-callable bridge interface — no `await` anywhere on the WASM → host path;
+   - (c) move renderer execution into the Android shell process — WASM module becomes pure logic/data.
 
-2. **Renderer internal-API verdict captured.** A written decision (in `docs/plans/`) recording the chosen approach (`UnsafeAccessor` preferred per BACKLOG, or alternative if spike disproves it) with a working proof-of-concept compiling against `Microsoft.AspNetCore.Components`'s public-only surface.
+   Decision committed to `docs/plans/`; remediation implemented; existing `ExportSmoke` test extended to confirm a bridge round-trip with at least one subscriber doesn't trap.
 
-3. **WASI entry point exists.** `src/BlazorNative.WasiHost/WasiEntryPoint.cs` defines a synchronous `Main` that builds the DI graph (via ZeroAlloc.Inject's source-generated extension methods), resolves `IMobileBridge` + `NativeRenderer`, and exits cleanly with exit code 0. Wording fix 2026-05-24: the original criterion said `src/BlazorNative.Core/WasiEntryPoint.cs` + ".NET 9 cooperative scheduler". Reality after Phase 1.2: the entry point lives in `BlazorNative.WasiHost` (new executable project — Core stays a library), and `.NET 10 Mono-WASI handles WASI bootstrap transparently` — no explicit scheduler initialization needed, and async `Main` is unsupported (sync `int Main()` is the only viable shape until .NET 11 ships Mono-WASI cooperative-async support).
+2. **Android Kotlin shell scaffold exists** at `src/BlazorNative.Shell.Android/` with a minimal `MainActivity.kt` that loads `BlazorNative.WasiHost.wasm` from app assets. Builds via Gradle, installs to an emulator or device.
 
-4. **`[UnmanagedCallersOnly]` export visible.** The export `blazornative_dispatch_event` is present in the AOT'd `.wasm`'s export section. Verified by `tests/BlazorNative.Wasi.Tests/ExportSmoke.Export_BlazorNativeDispatchEvent_IsPresent` via direct byte-scan of the .wasm. Wording fix 2026-05-24: the original criterion prescribed `wasm-tools dump | grep`. In practice (a) `wasm-tools dump`'s 10 MB output deadlocks subprocess pipes; (b) `wasmtime --invoke` can't reach core-module exports through the component-model layer wasi-experimental emits; (c) an in-process byte scan needs no external tool. Critical implementation detail discovered during Phase 1.3: `[UnmanagedCallersOnly]` alone is NOT a sufficient trim root for Mono-AOT — without `[DynamicDependency(All, typeof(WasiBridge))]` on `Program.Main`, the trimmer removes `WasiBridge.DispatchEvent` entirely.
+3. **`wasmtime-java` JNI integration** via Gradle — module loads successfully on Android, `mobile_bridge` import symbols can be wired to Kotlin implementations. Tracking dependency: `dev.wasmtime:wasmtime-java:latest` per the BACKLOG note.
 
-5. **WASI runtime + DI graph compose under wasmtime.** Running the AOT'd `.wasm` via `wasmtime -Shttp --dir=. BlazorNative.WasiHost.wasm` emits `[BOOT] runtime-start` + `[BOOT] di-ok` + `[BOOT] done` to stdout and exits with code 0. ~~Originally asked for `await Task.Delay(1)` round-trip — dropped during Phase 1.2 because .NET 10 Mono-WASI doesn't support async Main (Task.Wait traps with PlatformNotSupportedException on single-threaded WASI).~~ Cooperative async on Mono-WASI is deferred to a later phase (.NET 11 candidate) or to the Android shell context (where threads exist).
+4. **All seven `mobile_bridge` symbol exports implemented** on the Android side:
+   - `shell_navigate(routePtr, routeLen)`
+   - `shell_current_route(buf, bufLen) → int`
+   - `shell_storage_read(keyPtr, keyLen, valBuf, valBufLen) → int`
+   - `shell_storage_write(keyPtr, keyLen, valPtr, valLen)`
+   - `shell_storage_delete(keyPtr, keyLen)`
+   - `shell_fetch(reqPtr, reqLen, resBuf, resBufLen) → int`
+   - `shell_platform_info(buf, bufLen) → int`
 
-6. **`DispatchEventAsync` signature compiles.** `BlazorNative.Renderer` builds without errors against the chosen internal-API strategy. `NativeRenderer.DispatchUiEventAsync` calls the renderer base correctly.
+5. **Render-frame consumer.** WASM-side: the renderer's `DispatchFrameAsync` write hits a code path the Android shell can intercept. Android-side: receives the `RenderFrame` JSON (via storage hook, dedicated export, or another path settled during Phase 2.3 brainstorm), parses to `RenderPatch[]`, applies patches to its native widget tree.
 
-7. **Analyzers do not fire on DevHost or test projects.** `BlazorNative.Analyzers` (containing `WasiThreadingAnalyzer` BN0001-BN0006 + `WasiBclGapsAnalyzer` BN0010-BN0013) is wired as a `ProjectReference` with `OutputItemType="Analyzer"` from `BlazorNative.WasiHost` only. Core / Renderer / Http / Blazor / DevHost / tests do not reference it. Verified post-wire: `dotnet build BlazorNative.sln` produces 0 warnings, including no BN0001-BN0013 output on any project. Future wasi-wasm-targeting projects (M2+) should add the same `ProjectReference` shape. Wording refinement 2026-05-24: the original `.editorconfig` mechanism would have been one valid approach; the project-graph approach we picked is cleaner and doesn't require per-folder suppression files.
+6. **Native widget mapper** — Android implements the `NodeType` → widget mapping table from BACKLOG:
 
-8. **Decision log committed.** Each phase produces a short plan doc in `docs/plans/` capturing what was tried, what worked, and any follow-up for later milestones.
+   | NodeType | Android widget |
+   |---|---|
+   | `view` | `FrameLayout` / `LinearLayout` |
+   | `text` | `TextView` |
+   | `button` | `Button` |
+   | `input` | `EditText` |
+   | `image` | `ImageView` |
+   | `scroll` | `ScrollView` |
+   | `picker` | `Spinner` |
+
+7. **End-to-end demo runs on a real Android device (or emulator).** A `Hello`-style Blazor component renders correctly with the expected `[BOOT]` markers in logcat and the expected widgets on screen. Evidence captured as a screenshot or short recording in `docs/plans/`.
+
+8. **Decision log committed** — design + implementation-plan doc per phase, plus an M2 final-audit doc once complete (same pattern as M1).
 
 ## Out of scope for this milestone
 
-- Android Kotlin shell (Milestone 2)
-- Native widget rendering (Milestone 2)
-- Component library / `Bn*` components (Milestone 3)
-- iOS shell (Milestone 4)
-- NuGet packaging, CI pipeline, OTA updates (later milestones)
+- iOS Swift shell — Milestone 4 / BACKLOG P3
+- Component library (`Bn*` components, `@bind`, cascading values, navigation service) — Milestone 3 / BACKLOG P2
+- Production hardening (security, accessibility, i18n, OTA updates) — Milestones 6/7
+- NuGet packaging, CI pipeline, DevTools render-tree inspector — Milestone 4 / BACKLOG P3
+- Multi-window support, MD3/HIG defaults — Milestone 8 / BACKLOG P7
 
-## Phases
+## Initial phase plan
 
-Tracked in `ROADMAP.md`. Initial plan (subject to refinement via `add-phase`/`insert-phase`):
+Tracked in `ROADMAP.md`. Subject to refinement via `add-phase` / `insert-phase`:
 
-- Phase 1.1 — Renderer internal-API spike (`UnsafeAccessor` verdict)
-- Phase 1.2 — WASI entry point + cooperative scheduler bootstrap
-- Phase 1.3 — `[UnmanagedCallersOnly]` export verification
-- Phase 1.4 — `DispatchEventAsync` signature fix against chosen strategy
-- Phase 1.5 — Analyzer scoping (`.editorconfig` / project-level suppressions)
+- **Phase 2.0 — Mono-WASI async-trap remediation** *(pre-req unblocker; brainstorm decides which of (a)/(b)/(c) we ship)*
+- **Phase 2.1 — Android Kotlin shell scaffold + `wasmtime-java` Gradle setup**
+- **Phase 2.2 — `mobile_bridge` symbol implementations** (Android side)
+- **Phase 2.3 — Render-frame consumer** (WASM-side dispatch + Android-side parse)
+- **Phase 2.4 — Native widget mapper** (`NodeType` → Android widgets)
+- **Phase 2.5 — `BlazorNativeHostElement` stub** (renderer-side host element descriptor satisfying Blazor's requirements without a real DOM)
+- **Phase 2.6 — End-to-end demo + final audit** (Hello component on emulator/device; capture evidence; close milestone)
 
 ## Why this milestone exists
 
-Nothing further can be demonstrated — not a render frame, not an Android shell, not a single bridge round-trip — until the .NET → WASM toolchain produces a binary that loads, exports the right symbols, and runs the cooperative scheduler correctly. Every later phase in BACKLOG.md assumes these foundations hold. Failing to nail them here means rework downstream.
+M1 proved the toolchain. M2 proves the architecture. After M2, every later milestone (P2 component library, P3 iOS shell, P4 platform APIs, ...) builds on a known-working Blazor → WASM → native widget pipeline. Skipping M2's end-to-end demo means downstream milestones inherit unknown unknowns from the unverified integration boundary.
+
+## Risks identified at milestone start
+
+| # | Risk | Mitigation |
+|---|---|---|
+| 1 | Mono-WASI async trap blocks every bridge call (see DoD #1) | Phase 2.0 explicitly addresses this BEFORE any native-shell scaffolding. Three options enumerated; brainstorm picks one. |
+| 2 | `wasmtime-java` may not match wasmtime CLI's component-model support level | Verify in Phase 2.1; fallback options: pin to an older wasmtime-java version that supports our component shape, or switch to a different embedding (e.g. `chicory` for pure-JVM, or shell out to native wasmtime binary). |
+| 3 | Render-frame transport (storage hook vs dedicated export) is undecided | Phase 2.3 brainstorm picks. Storage-hook is convenient but adds JSON-serialization cost; dedicated export is more efficient but requires Phase 2.0's async-trap fix to be solid. |
+| 4 | Android device + Java 17+ + Android SDK on Marcel's dev machine | Verify before Phase 2.1; install Android SDK via Android Studio or `sdkmanager` CLI if missing. Probably a `setup.ps1` extension. |

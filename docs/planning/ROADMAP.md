@@ -41,11 +41,20 @@ Phases:
 
 ---
 
-### ⏳ Milestone 2 — P1: First Pixel on Android  *(pending)*
+### 🔄 Milestone 2 — P1: First End-to-End Demo on Android  *(active, started 2026-05-24)*
 
-Android Kotlin shell scaffold + wasmtime-java + `mobile_bridge` symbol exports + native widget mapper. Goal: a `BnText` rendered on a real Android device.
+Render a Blazor component as native Android widgets via a Kotlin shell that embeds Wasmtime and loads our WASI module. Full goal + 8-point DoD: [MILESTONE.md](MILESTONE.md).
 
-Maps to BACKLOG.md "P1 — First end-to-end demo".
+Maps to BACKLOG.md "P1 — First end-to-end demo", plus the Mono-WASI async-trap remediation carried over from M1.
+
+Phases:
+- ⏳ **Phase 2.0** — Mono-WASI async-trap remediation (pre-req unblocker) — *pending*
+- ⏳ **Phase 2.1** — Android Kotlin shell scaffold + `wasmtime-java` Gradle setup — *pending*
+- ⏳ **Phase 2.2** — `mobile_bridge` symbol implementations (Android side) — *pending*
+- ⏳ **Phase 2.3** — Render-frame consumer (WASM-side dispatch + Android-side parse) — *pending*
+- ⏳ **Phase 2.4** — Native widget mapper (`NodeType` → Android widgets) — *pending*
+- ⏳ **Phase 2.5** — `BlazorNativeHostElement` stub (renderer-side host element descriptor) — *pending*
+- ⏳ **Phase 2.6** — End-to-end demo + final audit — *pending*
 
 ---
 
