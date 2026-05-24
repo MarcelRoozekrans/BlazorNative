@@ -32,13 +32,6 @@ public sealed class WasiPublishFixture : IDisposable
     {
         var repoRoot = FindRepoRoot();
 
-        // The wasi-experimental workload puts the AOT'd app-specific .wasm in
-        // bin/Release/net10.0/wasi-wasm/AppBundle/ — NOT in the --output dir
-        // (which only gets the IL .dlls + the generic dotnet.wasm runtime).
-        // Publish without --output so the AppBundle lands at its canonical path.
-        AppBundleDir = Path.Combine(repoRoot,
-            "src", "BlazorNative.WasiHost", "bin", "Release", "net10.0", "wasi-wasm", "AppBundle");
-
         var psi = new ProcessStartInfo("dotnet",
             "publish src/BlazorNative.WasiHost/BlazorNative.WasiHost.csproj " +
             "-r wasi-wasm -c Release")
@@ -73,18 +66,32 @@ public sealed class WasiPublishFixture : IDisposable
                 $"STDOUT:\n{stdout}\n\nSTDERR:\n{stderr}");
         }
 
-        // Mono-AOT for wasi-wasm produces an app-specific .wasm at
-        // bin/.../AppBundle/<AppName>.wasm with the IL baked in. This is the
-        // single-file artifact wasmtime needs to invoke directly (no separate
-        // dotnet.wasm runtime + .dll dance).
-        WasmPath = Path.Combine(AppBundleDir, "BlazorNative.WasiHost.wasm");
-        if (!File.Exists(WasmPath))
-            throw new FileNotFoundException(
-                "Expected app-specific .wasm not produced at " + WasmPath +
-                "\n\nDirectory contents:\n  " +
-                (Directory.Exists(AppBundleDir)
-                    ? string.Join("\n  ", Directory.GetFiles(AppBundleDir, "*", SearchOption.AllDirectories))
-                    : "(AppBundle dir does not exist)"));
+        // Mono-AOT for wasi-wasm produces an app-specific .wasm with the IL
+        // baked in. The canonical location today is
+        //   bin/Release/net10.0/wasi-wasm/AppBundle/<AppName>.wasm
+        // but that path could shift (TFM bump, workload layout change). Walk
+        // bin/ recursively for any BlazorNative.WasiHost.wasm > 1 MB — the
+        // AOT'd module is ~6 MB; the managed-IL .wasm if any would be ~6 KB.
+        // Pick the newest as a tie-breaker.
+        var publishRoot = Path.Combine(repoRoot, "src", "BlazorNative.WasiHost", "bin");
+        var candidates = Directory.Exists(publishRoot)
+            ? Directory.GetFiles(publishRoot, "BlazorNative.WasiHost.wasm", SearchOption.AllDirectories)
+                .Where(f => new FileInfo(f).Length > 1_000_000)
+                .OrderByDescending(f => new FileInfo(f).LastWriteTimeUtc)
+                .ToArray()
+            : Array.Empty<string>();
+
+        WasmPath = candidates.FirstOrDefault()
+            ?? throw new FileNotFoundException(
+                "Could not locate an AOT'd BlazorNative.WasiHost.wasm (>1 MB) under " + publishRoot +
+                "\n\nAll BlazorNative.WasiHost.wasm files found:\n  " +
+                (Directory.Exists(publishRoot)
+                    ? string.Join("\n  ",
+                        Directory.GetFiles(publishRoot, "BlazorNative.WasiHost.wasm", SearchOption.AllDirectories)
+                            .Select(f => $"{f} ({new FileInfo(f).Length:N0} bytes)"))
+                    : "(bin dir does not exist)"));
+
+        AppBundleDir = Path.GetDirectoryName(WasmPath)!;
     }
 
     public void Dispose() { /* leave artifacts/wasi-publish-test in place for inspection */ }
