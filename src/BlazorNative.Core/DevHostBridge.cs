@@ -1,5 +1,3 @@
-using ZeroAlloc.AsyncEvents;
-
 namespace BlazorNative.Core;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -18,15 +16,15 @@ namespace BlazorNative.Core;
 public sealed class DevHostBridge : IMobileBridge, IDisposable
 {
     private readonly Dictionary<string, string> _storage = new();
-    private AsyncEventHandler<NativeEvent> _events = new(InvokeMode.Sequential);
+    private Action<NativeEvent>? _events;
     private readonly HttpClient _http = new();
     private readonly List<string> _routeHistory = new();
     private string _currentRoute = "/";
 
-    public event AsyncEvent<NativeEvent> NativeEvents
+    public event Action<NativeEvent>? NativeEvents
     {
-        add    => _events.Register(value);
-        remove => _events.Unregister(value);
+        add    => _events += value;
+        remove => _events -= value;
     }
 
     // ── Navigation ────────────────────────────────────────────────────────────
@@ -36,7 +34,7 @@ public sealed class DevHostBridge : IMobileBridge, IDisposable
         _routeHistory.Add(_currentRoute);
         _currentRoute = route;
         Console.WriteLine($"[DevBridge] Navigate → {route}");
-        _events.InvokeAsync(new NativeEvent("navigation", route), default).AsTask().GetAwaiter().GetResult();
+        RaiseNativeEvent(new NativeEvent("navigation", route));
         return ValueTask.CompletedTask;
     }
 
@@ -103,7 +101,7 @@ public sealed class DevHostBridge : IMobileBridge, IDisposable
     public void InjectEvent(string name, string? payload = null)
     {
         Console.WriteLine($"[DevBridge] InjectEvent  {name}  payload={payload ?? "<none>"}");
-        _events.InvokeAsync(new NativeEvent(name, payload), default).AsTask().GetAwaiter().GetResult();
+        RaiseNativeEvent(new NativeEvent(name, payload));
     }
 
     /// <summary>Snapshot of current storage — useful in tests.</summary>
@@ -113,4 +111,19 @@ public sealed class DevHostBridge : IMobileBridge, IDisposable
     public IReadOnlyList<string> RouteHistory => _routeHistory;
 
     public void Dispose() { _http.Dispose(); }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private void RaiseNativeEvent(NativeEvent evt)
+    {
+        if (_events is null) return;
+        foreach (var handler in _events.GetInvocationList())
+        {
+            try { ((Action<NativeEvent>)handler)(evt); }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[NativeEvents] subscriber threw: {ex.GetType().Name}: {ex.Message}");
+            }
+        }
+    }
 }
