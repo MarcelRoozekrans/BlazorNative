@@ -7,8 +7,8 @@ namespace BlazorNative.Wasi.Tests;
 // ExportSmoke
 //
 // Verifies the [UnmanagedCallersOnly(EntryPoint = "blazornative_dispatch_event")]
-// attribute on WasiBridge.DispatchEvent survives Mono-AOT and appears in the
-// AOT'd .wasm's export section.
+// attribute on WasiBridge.DispatchEventNative survives Mono-AOT and appears
+// in the AOT'd .wasm's export section.
 //
 // Phase 1.3 findings:
 //  - wasmtime --invoke can't reach core-module exports through the component-
@@ -23,9 +23,9 @@ namespace BlazorNative.Wasi.Tests;
 //
 // Additional Phase 1.3 finding (recorded for context):
 //  - [UnmanagedCallersOnly] alone wasn't enough of a trim root on Mono-AOT.
-//    WasiBridge.DispatchEvent got stripped because nothing in the post-Main
-//    IL graph references it statically. Fix: [DynamicDependency] on
-//    Program.Main keeps all WasiBridge members alive (see
+//    WasiBridge.DispatchEventNative got stripped because nothing in the
+//    post-Main IL graph references it statically. Fix: [DynamicDependency]
+//    on Program.Main keeps all WasiBridge members alive (see
 //    src/BlazorNative.WasiHost/WasiEntryPoint.cs).
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -51,7 +51,7 @@ public sealed class ExportSmoke
 
         Assert.True(hitCount > 0,
             $"'{ExportName}' not found in {_fixture.WasmPath} ({wasm.Length:N0} bytes). " +
-            $"The [UnmanagedCallersOnly] attribute on WasiBridge.DispatchEvent did not " +
+            $"The [UnmanagedCallersOnly] attribute on WasiBridge.DispatchEventNative did not " +
             $"survive Mono-AOT trimming. Verify that " +
             $"src/BlazorNative.WasiHost/WasiEntryPoint.cs has " +
             $"[DynamicDependency(DynamicallyAccessedMemberTypes.All, typeof(WasiBridge))] " +

@@ -234,7 +234,7 @@ There is no \`Program.cs\` for the \`wasi-wasm\` target. The WASM module has not
 issue "$M" "$L,type/core" \
 "[UnmanagedCallersOnly] export wiring" \
 "## Problem
-\`WasiBridge.DispatchEvent\` is declared with \`[UnmanagedCallersOnly(EntryPoint = \"blazornative_dispatch_event\")]\` but the export may not appear in the compiled \`.wasm\` module's export table.
+\`WasiBridge.DispatchEventNative\` is declared with \`[UnmanagedCallersOnly(EntryPoint = \"blazornative_dispatch_event\")]\` but the export may not appear in the compiled \`.wasm\` module's export table.
 
 ## Acceptance criteria
 - [ ] \`wasm-tools dump BlazorNative.Core.wasm\` shows \`blazornative_dispatch_event\` in exports
