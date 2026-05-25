@@ -96,7 +96,7 @@ public static class Program
             bridge.NativeEvents += probe;
             WasiBridge.DispatchEventCore("self-test", "phase-2.0");
             bridge.NativeEvents -= probe;
-            Console.WriteLine($"[BOOT] event-ok fired={selfTestFired} name={receivedEvent.Name}");
+            Console.WriteLine($"[BOOT] event-ok fired={selfTestFired} name={receivedEvent.Name} payload={receivedEvent.Payload}");
 
             Console.WriteLine("[BOOT] done");
             return 0;
