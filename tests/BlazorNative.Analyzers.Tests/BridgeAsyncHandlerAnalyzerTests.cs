@@ -75,6 +75,35 @@ public sealed class BridgeAsyncHandlerAnalyzerTests
     }
 
     [Fact]
+    public async Task BN0014_FiresOnAsyncMethodReference()
+    {
+        // The realistic async-method-reference footgun: an `async void` method
+        // that matches `Action<NativeEvent>` by signature and assigns cleanly
+        // (an `async Task` method wouldn't compile against Action<T>). The
+        // analyzer's IMethodSymbol.IsAsync branch picks this up — exactly the
+        // path that's untested by BN0014_FiresOnAsyncLambdaSubscription.
+        var source = """
+            using System.Threading.Tasks;
+            using BlazorNative.Core;
+            public class C
+            {
+                public void M(IMobileBridge b)
+                {
+                    b.NativeEvents += {|BN0014:OnEvent|};
+                }
+                private async void OnEvent(NativeEvent e) { await Task.Yield(); }
+            }
+            """ + BridgeStub;
+
+        var test = new VerifyCS
+        {
+            TestCode = source,
+            ReferenceAssemblies = ReferenceAssemblies.Net.Net90,
+        };
+        await test.RunAsync();
+    }
+
+    [Fact]
     public async Task BN0014_SilentOnSyncLambda()
     {
         var source = """
