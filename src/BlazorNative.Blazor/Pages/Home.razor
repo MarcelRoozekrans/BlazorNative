@@ -2,7 +2,6 @@
 @inject IMobileBridge Bridge
 @implements IDisposable
 @using BlazorNative.Core
-@using ZeroAlloc.AsyncEvents
 
 <PageTitle>BlazorNative</PageTitle>
 
@@ -60,19 +59,18 @@
     private string StorageValue = "";
     private string? StorageResult;
     private List<NativeEvent> Events = new();
-    private AsyncEvent<NativeEvent>? _eventHandler;
+    private Action<NativeEvent>? _eventHandler;
 
     protected override async Task OnInitializedAsync()
     {
         Info = await Bridge.GetPlatformInfoAsync();
         CurrentRoute = await Bridge.GetCurrentRouteAsync();
 
-        _eventHandler = (e, ct) =>
+        _eventHandler = e =>
         {
             Events.Insert(0, e);
             if (Events.Count > 20) Events.RemoveAt(Events.Count - 1);
             _ = InvokeAsync(StateHasChanged);
-            return ValueTask.CompletedTask;
         };
         Bridge.NativeEvents += _eventHandler;
     }
