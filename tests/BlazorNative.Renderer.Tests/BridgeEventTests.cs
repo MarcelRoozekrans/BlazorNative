@@ -14,6 +14,7 @@ namespace BlazorNative.Renderer.Tests;
 // See docs/plans/2026-05-25-phase-2.0-design.md (Layer 1 testing).
 // ─────────────────────────────────────────────────────────────────────────────
 
+[Collection("WasiBridge")]
 public sealed class BridgeEventTests
 {
     [Fact]
