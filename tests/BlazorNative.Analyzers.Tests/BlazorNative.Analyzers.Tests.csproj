@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.*" />
+    <PackageReference Include="xunit" Version="2.*" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.*" />
+    <!-- Microsoft.CodeAnalysis.Testing harness — XUnit variant matches our test runner.
+         Pin to 1.1.2 (not 1.*) — 1.* matches old 1.0.x with stale Microsoft.CodeAnalysis.Common 1.0.1 floor. -->
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Analyzer.Testing.XUnit" Version="1.1.2" />
+    <!-- Override the stale transitive Microsoft.CodeAnalysis.* 1.0.x brought in by the
+         testing harness; the analyzer DLL was built against 4.14.x so we need a matching
+         API surface available at test-runtime. -->
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.*" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="4.*" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Analyzer project is netstandard2.0; ProjectReference (no analyzer asset)
+         pulls in the assembly so test harness can instantiate it. -->
+    <ProjectReference Include="..\..\src\BlazorNative.Analyzers\BlazorNative.Analyzers.csproj"
+                      ReferenceOutputAssembly="true" />
+    <!-- BlazorNative.Core is *not* referenced — the analyzer-testing harness compiles
+         a fresh in-memory project and a net10 Core.dll vs Net90 reference assemblies
+         triggers CS1705 (System.Runtime version skew). Tests inline-stub the
+         IMobileBridge / NativeEvent shape instead — see BridgeAsyncHandlerAnalyzerTests. -->
+  </ItemGroup>
+
+</Project>
