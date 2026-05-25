@@ -25,6 +25,7 @@ public sealed class BootSmoke
         // supported .NET 10 shape and is what `dotnet new wasiconsole` produces.
         Assert.Contains("[BOOT] runtime-start",                                         stdout);
         Assert.Contains("[BOOT] di-ok bridge=WasiBridge renderer=NativeRenderer",       stdout);
+        Assert.Contains("[BOOT] event-ok fired=True name=self-test",                    stdout);
         Assert.Contains("[BOOT] done",                                                  stdout);
         Assert.DoesNotContain("[BOOT] FAIL",                                            stdout);
         Assert.Equal(0, exitCode);
