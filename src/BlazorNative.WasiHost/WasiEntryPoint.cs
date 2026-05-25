@@ -27,9 +27,9 @@ namespace BlazorNative.WasiHost;
 // composes + Blazor drift probe runs + clean exit", which the three remaining
 // [BOOT] markers cover.
 //
-// Three structured [BOOT] markers on stdout let the xUnit subprocess test
+// Four structured [BOOT] markers on stdout let the xUnit subprocess test
 // disambiguate failure stages by exit code:
-//   0  = clean exit (all 3 markers emitted)
+//   0  = clean exit (all 4 markers emitted; including Phase 2.0 self-test)
 //   1  = DI failure  ([BOOT] FAIL stage=di)
 //   2  = Blazor drift ([BOOT] FAIL stage=blazor-drift)
 //   99 = Unknown     ([BOOT] FAIL stage=unknown)
@@ -83,6 +83,20 @@ public static class Program
             }
 
             Console.WriteLine($"[BOOT] di-ok bridge={bridge.GetType().Name} renderer={renderer.GetType().Name}");
+
+            // Phase 2.0 self-test: prove bridge round-trip works without trapping.
+            // Registers a sync subscriber, invokes DispatchEventCore from managed
+            // code (the same path the unmanaged blazornative_dispatch_event export
+            // calls into), confirms the subscriber fired. This is the Mono-WASI
+            // end-to-end check that the Task.InternalWaitCore PNSE trap from M1 is
+            // genuinely closed.
+            var selfTestFired = false;
+            NativeEvent receivedEvent = default;
+            Action<NativeEvent> probe = e => { selfTestFired = true; receivedEvent = e; };
+            bridge.NativeEvents += probe;
+            WasiBridge.DispatchEventCore("self-test", "phase-2.0");
+            bridge.NativeEvents -= probe;
+            Console.WriteLine($"[BOOT] event-ok fired={selfTestFired} name={receivedEvent.Name}");
 
             Console.WriteLine("[BOOT] done");
             return 0;
