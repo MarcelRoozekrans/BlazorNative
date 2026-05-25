@@ -48,7 +48,12 @@ Render a Blazor component as native Android widgets via a Kotlin shell that embe
 Maps to BACKLOG.md "P1 — First end-to-end demo", plus the Mono-WASI async-trap remediation carried over from M1.
 
 Phases:
-- ⏳ **Phase 2.0** — Mono-WASI async-trap remediation (pre-req unblocker) — *pending*
+- ✅ **Phase 2.0** — Mono-WASI async-trap remediation — *complete (2026-05-25)*
+   - `IMobileBridge.NativeEvents` changed from `event AsyncEvent<NativeEvent>` to `event Action<NativeEvent>`. `WasiBridge.DispatchEvent` split into `[UnmanagedCallersOnly] DispatchEventNative` (the export) + `internal static DispatchEventCore` (managed-callable, used by both the export and `Main`'s self-test). Multicast via `GetInvocationList()` + per-handler try/catch so one subscriber's exception doesn't strand siblings.
+   - New analyzer rule `BN0014` (error severity) flags async lambdas / async-method registrations against `IMobileBridge.NativeEvents` at compile time — closes the `async void` footgun that `Action<T>` alone permits.
+   - End-to-end verified by new `[BOOT] event-ok fired=True name=self-test` marker emitted from `Main`'s self-test, asserted by `BootSmoke`. The trap is structurally absent from the call chain — no `Task` / `ValueTask` / `Wait` from `DispatchEventNative` → `DispatchEventCore` → subscriber.
+   - New `tests/BlazorNative.Analyzers.Tests/` project establishes the analyzer-test infrastructure (BACKLOG P3 follow-up can drop in BN0001-BN0013 tests alongside).
+   - 11 commits + atomic Tasks 1-3 bundle. See [design](../plans/2026-05-25-phase-2.0-design.md) + [implementation plan](../plans/2026-05-25-phase-2.0-implementation-plan.md).
 - ⏳ **Phase 2.1** — Android Kotlin shell scaffold + `wasmtime-java` Gradle setup — *pending*
 - ⏳ **Phase 2.2** — `mobile_bridge` symbol implementations (Android side) — *pending*
 - ⏳ **Phase 2.3** — Render-frame consumer (WASM-side dispatch + Android-side parse) — *pending*
