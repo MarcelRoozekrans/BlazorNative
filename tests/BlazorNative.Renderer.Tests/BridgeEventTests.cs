@@ -73,4 +73,20 @@ public sealed class BridgeEventTests
 
         Assert.False(ran);
     }
+
+    [Fact]
+    public void DevHostBridge_InjectEvent_OneSubscriberThrows_OthersStillFire()
+    {
+        // Symmetric coverage for DevHostBridge's RaiseNativeEvent helper —
+        // near-duplicate of WasiBridge.DispatchEventCore but worth pinning
+        // separately so the two implementations don't drift silently.
+        using var bridge = new DevHostBridge();
+        var ran = false;
+        bridge.NativeEvents += _ => throw new InvalidOperationException("boom");
+        bridge.NativeEvents += _ => ran = true;
+
+        bridge.InjectEvent("x", null);
+
+        Assert.True(ran, "Second subscriber should fire even when the first threw.");
+    }
 }
