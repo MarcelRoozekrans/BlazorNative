@@ -127,9 +127,16 @@ public sealed class WasiBridge : IMobileBridge, IDisposable
 
     /// <summary>Managed-callable entry into the bridge event multicast. Invoked by
     /// DispatchEventNative from the native shell, and by WasiEntryPoint.cs's
-    /// self-test during boot. Subscribers MUST complete synchronously per the
-    /// Phase 2.0 sync-contract decision —
-    /// see docs/plans/2026-05-25-phase-2.0-design.md.</summary>
+    /// self-test during boot.
+    ///
+    /// Trim-root: kept alive via [DynamicDependency(All, typeof(WasiBridge))] on
+    /// Program.Main (see src/BlazorNative.WasiHost/WasiEntryPoint.cs). If Main's
+    /// attribute is ever removed, this method's IL may be stripped — the Phase 1.3
+    /// ExportSmoke test will catch the regression (the blazornative_dispatch_event
+    /// export disappears too, since it's static-reachable only from this assembly).
+    ///
+    /// Subscribers MUST complete synchronously per the Phase 2.0 sync-contract
+    /// decision — see docs/plans/2026-05-25-phase-2.0-design.md.</summary>
     internal static void DispatchEventCore(string name, string? payload)
     {
         if (Current is not { } c || c._events is null) return;
