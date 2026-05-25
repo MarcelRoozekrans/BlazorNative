@@ -17,4 +17,8 @@
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.*" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="BlazorNative.Renderer.Tests" />
+  </ItemGroup>
+
 </Project>
