@@ -21,7 +21,9 @@ public interface IMobileBridge
     // Network (thin fetch — TLS handled by native layer)
     ValueTask<BridgeHttpResponse> FetchAsync(BridgeHttpRequest request, CancellationToken ct = default);
 
-    // Platform info
+    // Platform info — sync raw-JSON form (read from BLAZOR_PLATFORM_INFO env
+    // var on Mono-WASI; Phase 2.3 env-var bridge) + async typed form.
+    string PlatformInfo { get; }
     ValueTask<PlatformInfo> GetPlatformInfoAsync(CancellationToken ct = default);
 
     // Events from native → WASM

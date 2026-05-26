@@ -1,4 +1,3 @@
-using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
@@ -62,29 +61,31 @@ public sealed class WasiBridge : IMobileBridge, IDisposable
 
     // ── Platform info ─────────────────────────────────────────────────────────
     //
-    // Phase 2.3 Task 2: host-satisfied import via core-shape [DllImport]. See
-    // the Native class declaration below for the empirical findings that drove
-    // the shape choice (Option B core-shape, NOT Option A's WIT-typed Library
-    // path). The .wasm currently does NOT declare this import end-to-end —
-    // Task 5 ships the SDK glue + JNA host registration that makes the
-    // round-trip real. Until then, calls trap with DllNotFoundException at
-    // runtime; the trim-root call in Program.Main wraps the trap in try/catch.
+    // Phase 2.3 (revised — see docs/plans/2026-05-26-phase-2.3-design-revision.md):
+    // host passes platform-info JSON via the BLAZOR_PLATFORM_INFO env var. We
+    // read it via standard System.Environment.GetEnvironmentVariable (which
+    // Mono-WASI implements via the wasi:cli/environment.get-environment
+    // interface — pre-included by wasi-experimental's component-adapter).
+    //
+    // Why env-var instead of the original Phase 2.3 WIT-typed import design:
+    // Task 2's spike (commit 3aa83c9) found three wasi-experimental SDK gaps
+    // that block custom WIT imports from materializing in the .wasm. Env vars
+    // ride on the STANDARD wasi:cli/environment surface that wasi-experimental
+    // already supports — zero SDK gaps. Trade-off: one-way (host → .NET) and
+    // initialization-time only, which is correct semantics for platform-info
+    // anyway (the OS doesn't change at runtime).
+    //
+    // The 6 other Phase 1 mobile_bridge imports stay deferred per the revised
+    // design (and per docs/BACKLOG.md). Future dynamic bridges (e.g., button-
+    // tap event callbacks in Phase 2.5+) will use a different mechanism —
+    // most likely the export-based request/response pattern.
 
-    /// <summary>Synchronous bridge call — fetches the host's platform-info JSON
-    /// into a stack buffer + decodes UTF-8. Used by the Phase 2.3 self-test
-    /// marker (`[BOOT] bridge-ok platform-info=&lt;json&gt;`) in WasiEntryPoint.cs
-    /// and by the async wrapper below.</summary>
-    public unsafe string PlatformInfo
-    {
-        get
-        {
-            const int BufSize = 1024;
-            var buf = stackalloc byte[BufSize];
-            var len = Native.ShellPlatformInfo(buf, BufSize);
-            if (len <= 0) return string.Empty;
-            return Encoding.UTF8.GetString(buf, Math.Min(len, BufSize));
-        }
-    }
+    /// <summary>Host-provided platform-info JSON. Set by the WasiHost facade
+    /// via wasi_config_set_env before instantiation. Used by the Phase 2.3
+    /// self-test marker (`[BOOT] bridge-ok platform-info=&lt;json&gt;`) in
+    /// WasiEntryPoint.cs and by the async wrapper below.</summary>
+    public string PlatformInfo =>
+        Environment.GetEnvironmentVariable("BLAZOR_PLATFORM_INFO") ?? "{}";
 
     public ValueTask<PlatformInfo> GetPlatformInfoAsync(CancellationToken ct = default)
     {
@@ -137,50 +138,4 @@ public sealed class WasiBridge : IMobileBridge, IDisposable
 
     public WasiBridge() => Current = this;
     public void Dispose() { Current = null; }
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // Native extern declarations  (the WASM imports — provided by the host)
-    //
-    // Phase 2.3 Task 2: ONE [DllImport] — replaces 7 [DllImport]s from Phase 1
-    // (all dead code per Phase 2.1.0 trim finding). The other 6 shell-* imports
-    // land additively in the downstream phase that needs each per
-    // docs/BACKLOG.md.
-    //
-    // We tried Option A first per the Phase 2.3 design: a WIT-typed shape with
-    // [LibraryImport("blazornative:mobile-bridge/bridge", EntryPoint =
-    // "shell-platform-info", StringMarshalling = Utf8)] returning string. The
-    // C# compiled and the source-generator emitted the marshalling stub, but
-    // Mono-AOT's pinvoke scanner doesn't recognize the WIT-style Library path
-    // — empirically verified 2026-05-26: no entry in pinvoke-table.h, no WASM
-    // import declared. wasi-experimental does NOT consume user .wit files
-    // (Task 1 finding — commit 25efdb2), so the WIT-typed import never lowers
-    // to a component-import emission.
-    //
-    // Settled on Option B: core-shape [DllImport("mobile_bridge",
-    // EntryPoint="shell_platform_info")] with byte* + int buffer marshaling,
-    // matching Phase 1's convention. When the toolchain glue lands (Task 5
-    // adds wit-component invocation + the three SDK hacks documented in
-    // BlazorNative.WasiHost.csproj), the .wasm will declare a core import
-    // ((import "mobile_bridge" "shell_platform_info" (func (param i32 i32)
-    // (result i32)))) that the JNA host satisfies by registering against the
-    // core module name "mobile_bridge".
-    //
-    // [DllImport] (not [LibraryImport]) is intentional: Mono-AOT's pinvoke
-    // scanner only recognizes DllImport-shape attributes for wasi-wasm. The
-    // [LibraryImport] source-generator stub IS invisible to the scanner —
-    // empirically verified 2026-05-26 (no shell_platform_info in
-    // pinvoke-table.h with LibraryImport, present with DllImport).
-    //
-    // Trim-root: [DynamicDependency] on Program.Main AND an actual call site
-    // in Program.Main itself (see WasiEntryPoint.cs). Mono-AOT requires a
-    // reachable IL call site to emit the pinvoke wrapper; [DynamicDependency]
-    // alone preserves the IL through ILLink trim but is not sufficient for
-    // the AOT scanner.
-    // ─────────────────────────────────────────────────────────────────────────
-
-    internal static unsafe class Native
-    {
-        [DllImport("mobile_bridge", EntryPoint = "shell_platform_info")]
-        internal static extern int ShellPlatformInfo(byte* buf, int bufLen);
-    }
 }

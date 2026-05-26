@@ -21,10 +21,6 @@
     <RootNamespace>BlazorNative.WasiHost</RootNamespace>
 
     <OutputType>Exe</OutputType>
-    <!-- Phase 2.3 Task 2: stackalloc trim-root in Program.Main for the
-         shell_platform_info import. The unsafe block lets us make the
-         actual Mono-AOT-visible call site that emits the WASM import. -->
-    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 
     <!-- AOT settings. Mirrors the previous BlazorNative.Core wasi-wasm setup. -->
     <RunAOTCompilation Condition="'$(RuntimeIdentifier)' == 'wasi-wasm'">true</RunAOTCompilation>
@@ -54,74 +50,18 @@
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.*" />
   </ItemGroup>
 
-  <!-- Phase 2.3 Task 1: declare the custom-host WIT contract for IDE visibility.
-       Empirical finding (2026-05-26): the wasi-experimental workload (sdk-manifests
-       10.0.108 + Microsoft.NET.Runtime.WebAssembly.Wasi.Sdk 10.0.8) does NOT expose
-       any MSBuild item or property for user-supplied .wit files. WasiApp.targets
-       hardcodes a single linker arg
-         -Wl,(double-dash)component-type,...\WasiHttpWorld_component_type.wit
-       pointing to the runtime pack's HTTP world; no codepath consumes a <Wit>,
-       <WitFile>, or <WitBindgenInput> ItemGroup. All four candidate names were
-       silently ignored at publish time.
-       Consequence: the .wit file is documentation-only. The actual import surface
-       for shell-platform-info is provided by the [LibraryImport] hand-authored
-       binding in WasiBridge.cs (Phase 2.3 Task 2). Re-evaluate when the wasi
-       workload ships first-class WIT integration. -->
+  <!-- Phase 2.3 (revised) — the .wit files capture the long-term WIT-typed bridge
+       direction but are not consumed by the build. Phase 2.3 ships an env-var
+       bridge through wasi:cli/environment instead (host passes BLAZOR_PLATFORM_INFO;
+       .NET reads it via Environment.GetEnvironmentVariable). See
+       docs/plans/2026-05-26-phase-2.3-design-revision.md.
+
+       The three wasi-experimental SDK gaps that block first-class WIT-import
+       support (custom _WasmPInvokeModules, allow-undefined linker arg,
+       wit-component binary blob) are tracked in docs/BACKLOG.md as Phase 2.3b. -->
   <ItemGroup>
     <None Include="wit\mobile_bridge.wit" />
     <None Include="wit\mobile_bridge_core.wit" />
   </ItemGroup>
-
-  <!-- ─────────────────────────────────────────────────────────────────────
-       Phase 2.3 Task 2 — toolchain-gap findings (DEFERRED to Task 5)
-       ─────────────────────────────────────────────────────────────────────
-       Making the .wasm declare the mobile_bridge.shell_platform_info import
-       end-to-end requires THREE separate toolchain wires that the current
-       wasi-experimental SDK (10.0.8) doesn't quite ship coherently:
-
-       1. Mono-AOT pinvoke-table emit. SDK auto-populates _WasmPInvokeModules
-          from statically-linked native libs only; user modules need explicit
-          opt-in via <_WasmPInvokeModules Include="mobile_bridge" /> in a
-          Target BeforeTargets="_GenerateManagedToNative". With this added,
-          pinvoke-table.h gets a shell_platform_info entry — verified.
-
-       2. wasm-ld undefined-symbol policy. With the pinvoke emitted, wasm-ld
-          fails the link with 'undefined symbol: shell_platform_info'. The
-          $(WasmAllowUndefinedSymbols) property is documented in
-          WasmApp.Common.targets:85-87 but the SDK never consumes it
-          (verified: setting it to true has zero effect on the wasm-ld
-          arguments). Explicit <LinkerArg Include="-Wl,(double-dash)allow-undefined" />
-          works around it — wasm-ld then places the symbol under the 'env'
-          module by default.
-
-       3. wasm-component-ld component encoding. Once wasm-ld succeeds, the
-          component encoder fails with 'failed to resolve import
-          env::shell_platform_info' because every component import must be
-          declared in a (double-dash)component-type WIT file. The runtime pack ships
-          WasiHttpWorld_component_type.wit; appending a second
-          (double-dash)component-type with a hand-authored .wit fails with 'unable to
-          add component type' because wasm-component-ld expects a binary
-          component-type blob (produced by `wit-component`), not raw .wit
-          text. No SDK helper exists to assemble that blob.
-
-       Net result: with all three wires in place the publish would succeed
-       and the .wasm would declare a real import — but step 3 needs a
-       wit-component invocation that wasi-experimental doesn't provide.
-       Phase 2.3 Task 5 (host-side registration) is the natural place to
-       close this: it owns the JNA layer that will define the func against
-       wasmtime's component linker, so it can also own the wit-component
-       step + a custom MSBuild target that produces the .wasm with the
-       full import surface. Task 2 lands the C# binding (verified compiles
-       + Native class shrinks 7 -> 1 as designed); Task 5 wires the rest.
-
-       The csproj here intentionally does NOT ship those three hacks —
-       they would leave `dotnet publish` broken without the matching
-       wit-component step (the component encoder erroring stops AppBundle
-       generation, which breaks the Phase 2.2 Android pipeline that
-       consumes the .wasm). Pin the design's revised plan in
-       docs/plans/2026-05-26-phase-2.3-design.md when Task 5 lands.
-
-       The two .wit files in wit/ are documentation only until then.
-       ───────────────────────────────────────────────────────────────────── -->
 
 </Project>

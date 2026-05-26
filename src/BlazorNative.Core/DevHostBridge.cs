@@ -88,6 +88,9 @@ public sealed class DevHostBridge : IMobileBridge, IDisposable
 
     // ── Platform info ─────────────────────────────────────────────────────────
 
+    public string PlatformInfo =>
+        $$"""{"kind":"DevHost","os":"{{Environment.OSVersion}}","version":"0.1.0-dev","isDebug":true}""";
+
     public ValueTask<PlatformInfo> GetPlatformInfoAsync(CancellationToken ct = default)
         => ValueTask.FromResult(new PlatformInfo(
             PlatformKind.DevHost,
