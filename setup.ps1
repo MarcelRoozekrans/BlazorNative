@@ -357,6 +357,17 @@ if (-not $SkipAndroid) {
 
     # 7b. Install SDK packages (idempotent — sdkmanager skips already-installed)
     if (Test-Path $sdkmanager) {
+        # sdkmanager + avdmanager need Java 17+ (class file 61.0). Marcel's PATH
+        # may put Oracle's java8path first; force JAVA_HOME for these invocations.
+        $jdk21Found = (Get-ChildItem -Path "C:\Program Files\Eclipse Adoptium\" -Directory -ErrorAction SilentlyContinue |
+                       Where-Object { $_.Name -match "^jdk-21" } | Select-Object -First 1)
+        if ($jdk21Found) {
+            $env:JAVA_HOME = $jdk21Found.FullName
+            Write-Step "Using JAVA_HOME=$($jdk21Found.FullName) for sdkmanager (needs Java 17+)"
+        } else {
+            Write-Warn "JDK 21 not found at Adoptium default location — sdkmanager may fail with Java version mismatch"
+        }
+
         Write-Step "Installing Android SDK packages (platform-tools, build-tools, platforms-34, NDK 26.3, x86_64 system image)..."
         # Auto-accept all license prompts
         & cmd /c "echo y| `"$sdkmanager`" --licenses" 2>&1 | Out-Null
