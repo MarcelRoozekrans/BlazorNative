@@ -78,6 +78,18 @@
 ## P2 — Real apps can be built
 *Required before any non-trivial Blazor app works correctly.*
 
+- [ ] **Linux/macOS `setup.ps1` parity for libwasmtime cargo build** *(deferred from Phase 2.1)*
+  Phase 2.1's `setup.ps1` section 8b is Windows-only. Equivalent shell scripts (`setup.sh`) for Linux + macOS need to clone wasmtime, cargo-build wasmtime-c-api, and place the resulting `.so` / `.dylib` at `vendor/wasmtime/`. Same logic; different binary names and PATH conventions. Required before contributors on Linux/macOS can run `./gradlew test` from `src/BlazorNative.Jni/`.
+
+- [ ] **Phase 2.3 — `mobile_bridge` import revival strategy** *(deferred from Phase 2.1)*
+  Phase 2.1.0 spike found that Mono-AOT trimmed the `[DllImport("mobile_bridge")]` declarations because nothing reachable from `Main` calls them. When Phase 2.3 needs real `mobile_bridge` implementations from the Android side, choose between:
+  (a) `[DynamicDependency(DynamicallyAccessedMemberTypes.All, typeof(Native))]` on Main to force-root all 7 externs as a trim root — quick fix, ~30 min, mirrors the Phase 1.3 trim-root pattern.
+  (b) Migrate to `wit-bindgen`-generated typed bindings — author `src/BlazorNative.WasiHost/wit/mobile_bridge.wit`, generate .NET-side partial methods, replace `[DllImport]` declarations with WIT-typed externs. Bigger refactor; aligns with the design's "WIT-typed imports = JSI-equivalent" future direction.
+  Phase 2.3 brainstorm picks.
+
+- [ ] **WIT-typed records for `shell-fetch` and `shell-storage-write`** *(deferred from Phase 2.1)*
+  Phase 2.1 Q5 chose JSON-string payloads for the structured `mobile_bridge` imports because wasmtime C-API issues #11437 (Resources) and #11617 (Byte arrays) were open and we didn't want to bet the phase on full WIT-record marshaling. When those issues close upstream, refactor `mobile_bridge.wit`'s `shell-fetch` from `func(request-json: string) -> string` to `func(req: fetch-request) -> fetch-response` with typed records. Same shape upgrade for `shell-storage-write`. Non-breaking when shipped alongside compatible JNA marshaling.
+
 - [ ] **`@bind` two-way binding**
   Input value changes from native (`EditText.afterTextChanged`) need to flow back into Blazor component state via `DispatchEventAsync`. Requires the `NativeUiEvent` → Blazor event pipeline to be complete.
 

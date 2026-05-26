@@ -64,7 +64,7 @@ This milestone closes the loop from .NET source code to a pixel on a real Androi
 Tracked in `ROADMAP.md`. Subject to refinement via `add-phase` / `insert-phase`:
 
 - **Phase 2.0 — Mono-WASI async-trap remediation** *(complete 2026-05-25; (b) sync-callable bridge interface chosen)*
-- **Phase 2.1 — JVM desktop hosts `.wasm` via libwasmtime + JNA** *(format-pivot spike + cargo-built `wasmtime.dll` + Kotlin/Gradle `src/BlazorNative.Jni/` + `BootSmokeTest` parity; **desktop only, no Android**; runtime-layer-risk isolation; see [Phase 2.1 design](../plans/2026-05-26-phase-2.1-design.md))*
+- ✅ **Phase 2.1 — JVM desktop hosts `.wasm` via libwasmtime + JNA** *(complete 2026-05-26; GREEN CHECKPOINT met — 4 [BOOT] markers captured by `BootSmokeTest` via in-process JNA-bound libwasmtime. See [Phase 2.1 design](../plans/2026-05-26-phase-2.1-design.md) + [implementation plan](../plans/2026-05-26-phase-2.1-implementation-plan.md).)*
 - **Phase 2.2 — Android port** *(cross-compile `libwasmtime.so` for android-arm64 + x86_64 emulator via NDK + cargo; Android Gradle plugin; MainActivity loads `.wasm` from assets; reuses Phase 2.1's JNA layer unchanged)*
 - **Phase 2.3 — `mobile_bridge` symbol implementations** (Android side)
 - **Phase 2.4 — Render-frame consumer** (WASM-side dispatch + Android-side parse)
