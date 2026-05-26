@@ -298,20 +298,29 @@ if (Command-Exists "wasmtime") {
 # ─────────────────────────────────────────────────────────────────────────────
 
 if (-not $SkipAndroid) {
-    Write-Header "6 · Java 17 (Android toolchain)"
+    Write-Header "6 · Java 21 (Android toolchain + Gradle 8.x daemon)"
 
-    $javaOk = $false
-    if (Command-Exists "java") {
-        $jver = java -version 2>&1 | Select-Object -First 1
-        if ($jver -match "17\.|21\.") {
-            Write-OK "Java already installed ($($jver.ToString().Trim()))"
-            $javaOk = $true
-        }
+    # Phase 2.1 found: Gradle 8.11.1 daemon supports JDK 8-23. JDK 25 is too new
+    # (Gradle 9.0+ required). JDK 21 is the LTS sweet spot — works for Gradle
+    # 8.x AND for Android (which needs 17+). Marcel's box may have JDK 25 from
+    # other tooling; we additionally ensure JDK 21 is available for Gradle.
+    $jdk21Found = (Get-ChildItem -Path "C:\Program Files\Eclipse Adoptium\" -Directory -ErrorAction SilentlyContinue |
+                   Where-Object { $_.Name -match "^jdk-21" } | Select-Object -First 1)
+    if ($jdk21Found) {
+        Write-OK "Temurin JDK 21 already installed at $($jdk21Found.FullName)"
+    } else {
+        Invoke-Winget "EclipseAdoptium.Temurin.21.JDK" "Temurin JDK 21"
+        Refresh-Path
     }
 
-    if (-not $javaOk) {
-        Invoke-Winget "Microsoft.OpenJDK.17" "Microsoft OpenJDK 17"
-        Refresh-Path
+    # Verify SOME compatible JDK is on PATH
+    if (Command-Exists "java") {
+        $jver = java -version 2>&1 | Select-Object -First 1
+        if ($jver -match "1[7-9]\.|2[0-3]\.") {
+            Write-OK "Gradle-compatible JDK on PATH ($($jver.ToString().Trim()))"
+        } elseif ($jver -match "2[5-9]\.|[3-9]\d\.") {
+            Write-Warn "Active JDK on PATH is $($jver.ToString().Trim()) — too new for Gradle 8.x. Gradle daemon may need JAVA_HOME pointing at JDK 21."
+        }
     }
 }
 
@@ -414,10 +423,20 @@ $wasmtimeSrcDir   = Join-Path $PSScriptRoot "vendor\wasmtime-src"
 $wasmtimeDllPath  = Join-Path $PSScriptRoot "vendor\wasmtime\wasmtime.dll"
 $wasmtimeVersion  = "v45.0.0"   # matches setup.ps1 section 5's CLI version
 
+# CMake is required by wasmtime-c-api's build.rs to copy headers around.
+# Without it, the build fails late with: "failed to spawn cmake: program not found".
+if (-not (Command-Exists "cmake")) {
+    Write-Step "Installing CMake (wasmtime-c-api build.rs prereq)..."
+    Invoke-Winget "Kitware.CMake" "CMake"
+    Refresh-Path
+}
+
 if (Test-Path $wasmtimeDllPath) {
     Write-OK "wasmtime.dll already present at vendor/wasmtime/"
 } elseif (-not (Command-Exists "cargo")) {
     Write-Fail "cargo not available — run setup.ps1 without -SkipWitBindgen first to install Rust"
+} elseif (-not (Command-Exists "cmake")) {
+    Write-Fail "cmake not available even after winget install attempt — install manually and re-run"
 } else {
     # Clone if missing
     if (-not (Test-Path $wasmtimeSrcDir)) {
