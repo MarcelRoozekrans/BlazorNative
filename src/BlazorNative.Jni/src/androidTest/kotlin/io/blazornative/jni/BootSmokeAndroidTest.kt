@@ -2,6 +2,7 @@ package io.blazornative.jni
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import io.blazornative.shell.AndroidPlatformInfo
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -30,7 +31,7 @@ class BootSmokeAndroidTest {
         val wasmBytes = context.assets.open("BlazorNative.WasiHost.wasm").use { it.readBytes() }
         assertTrue(".wasm seems too small (${wasmBytes.size} bytes)", wasmBytes.size > 1_000_000)
 
-        val stdout = WasiHost.loadAndRun(wasmBytes, context.cacheDir)
+        val stdout = WasiHost.loadAndRun(wasmBytes, context.cacheDir, AndroidPlatformInfo.handlers)
 
         assertTrue("missing [BOOT] runtime-start. stdout:\n$stdout",
             stdout.contains("[BOOT] runtime-start"))
@@ -38,6 +39,13 @@ class BootSmokeAndroidTest {
             stdout.contains("[BOOT] di-ok bridge=WasiBridge renderer=NativeRenderer"))
         assertTrue("missing [BOOT] event-ok. stdout:\n$stdout",
             stdout.contains("[BOOT] event-ok fired=True name=self-test payload=phase-2.0"))
+        // Phase 2.3 env-var bridge: assert the marker is present AND contains the
+        // literal '"os":"Android"' substring proving AndroidPlatformInfo.handlers
+        // ran (not the JVM Defaults stub).
+        assertTrue("missing [BOOT] bridge-ok. stdout:\n$stdout",
+            stdout.contains("[BOOT] bridge-ok platform-info="))
+        assertTrue("expected '\"os\":\"Android\"' in bridge-ok payload. stdout:\n$stdout",
+            stdout.contains("\"os\":\"Android\""))
         assertTrue("missing [BOOT] done. stdout:\n$stdout",
             stdout.contains("[BOOT] done"))
     }

@@ -36,7 +36,7 @@ class MainActivity : Activity() {
                 val wasmBytes = assets.open("BlazorNative.WasiHost.wasm").use { it.readBytes() }
                 Log.i(tag, "Loaded ${wasmBytes.size} bytes of .wasm from assets; booting...")
 
-                val stdout = WasiHost.loadAndRun(wasmBytes, cacheDir)
+                val stdout = WasiHost.loadAndRun(wasmBytes, cacheDir, AndroidPlatformInfo.handlers)
 
                 // Emit each captured line as one Log.i call so logcat shows
                 // them as atomic lines (filter via `adb logcat -s BlazorNative`).
