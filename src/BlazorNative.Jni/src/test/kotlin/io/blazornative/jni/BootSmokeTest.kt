@@ -25,6 +25,13 @@ class BootSmokeTest {
             stdout.contains("[BOOT] event-ok fired=True name=self-test payload=phase-2.0"),
             "missing [BOOT] event-ok in stdout. Captured stdout:\n$stdout"
         )
+        // Phase 2.3: env-var bridge marker. The default JVM handlers return
+        // the stub-host JSON; assert just on the prefix since the payload
+        // varies per host (Defaults.handlers vs AndroidPlatformInfo).
+        assertTrue(
+            stdout.contains("[BOOT] bridge-ok platform-info="),
+            "missing [BOOT] bridge-ok in stdout. Captured stdout:\n$stdout"
+        )
         assertTrue(
             stdout.contains("[BOOT] done"),
             "missing [BOOT] done in stdout. Captured stdout:\n$stdout"

@@ -36,11 +36,11 @@ object WasiHost {
      * JVM-only convenience: reads .wasm bytes from disk, uses an ephemeral
      * temp dir for stdout capture + Mono's filesystem preopen.
      */
-    fun loadAndRun(wasmPath: Path): String {
+    fun loadAndRun(wasmPath: Path, handlers: MobileBridgeHandlers = Defaults.handlers): String {
         val wasmBytes = Files.readAllBytes(wasmPath)
         val scratchDir = Files.createTempDirectory("blazor-native-jni").toFile()
         try {
-            return loadAndRun(wasmBytes, scratchDir)
+            return loadAndRun(wasmBytes, scratchDir, handlers)
         } finally {
             scratchDir.deleteRecursively()
         }
@@ -52,8 +52,13 @@ object WasiHost {
      * an ephemeral one. The scratch dir is preopened to the .wasm as "."
      * (Mono needs writable space for ICU data + assembly auxiliary files)
      * AND houses the stdout + stderr capture files.
+     *
+     * Phase 2.3 env-var bridge: handlers.platformInfo() is called once
+     * during this setup and passed to the .wasm as the BLAZOR_PLATFORM_INFO
+     * environment variable, which .NET reads via
+     * Environment.GetEnvironmentVariable for the [BOOT] bridge-ok self-test.
      */
-    fun loadAndRun(wasmBytes: ByteArray, scratchDir: File): String {
+    fun loadAndRun(wasmBytes: ByteArray, scratchDir: File, handlers: MobileBridgeHandlers = Defaults.handlers): String {
         if (!scratchDir.exists()) scratchDir.mkdirs()
         val runId = UUID.randomUUID().toString().substring(0, 8)
         val stdoutFile = File(scratchDir, "wasm-stdout-$runId.txt")
@@ -61,7 +66,7 @@ object WasiHost {
         try {
             var thrown: Throwable? = null
             try {
-                runWasm(wasmBytes, stdoutFile.toPath(), stderrFile.toPath(), scratchDir.toPath())
+                runWasm(wasmBytes, stdoutFile.toPath(), stderrFile.toPath(), scratchDir.toPath(), handlers)
             } catch (t: Throwable) {
                 thrown = t
             }
@@ -81,7 +86,7 @@ object WasiHost {
         }
     }
 
-    private fun runWasm(wasmBytes: ByteArray, stdoutFile: Path, stderrFile: Path, preopenDir: Path) {
+    private fun runWasm(wasmBytes: ByteArray, stdoutFile: Path, stderrFile: Path, preopenDir: Path, handlers: MobileBridgeHandlers) {
         val b = WasmtimeBindings.INSTANCE
 
         // ── Engine + config (component-model on) ────────────────────────
@@ -119,6 +124,17 @@ object WasiHost {
                 // conventionally set to the .wasm filename.
                 if (!b.wasi_config_set_argv(wasiConfig, 1L, arrayOf("BlazorNative.WasiHost.wasm"))) {
                     error("wasi_config_set_argv failed")
+                }
+                // Phase 2.3 env-var bridge: pass the host's platform-info JSON
+                // through BLAZOR_PLATFORM_INFO; .NET reads it via
+                // Environment.GetEnvironmentVariable for the [BOOT] bridge-ok
+                // self-test (see WasiEntryPoint.cs Main).
+                val platformInfo = handlers.platformInfo()
+                if (!b.wasi_config_set_env(
+                        wasiConfig, 1L,
+                        arrayOf("BLAZOR_PLATFORM_INFO"),
+                        arrayOf(platformInfo))) {
+                    error("wasi_config_set_env failed")
                 }
                 val setWasiErr = b.wasmtime_context_set_wasi(context, wasiConfig)
                 if (setWasiErr != null) throw WasmtimeException.fromErrorPointer("wasmtime_context_set_wasi", setWasiErr)

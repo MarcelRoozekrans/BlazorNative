@@ -106,6 +106,10 @@ interface WasmtimeBindings : Library {
     ): Boolean
     // Set argv (UTF-8 strings). argv[0] is conventionally the program name.
     fun wasi_config_set_argv(config: Pointer, argc: Long, argv: Array<String>): Boolean
+    // Set environment variables — parallel arrays of names + values.
+    // Phase 2.3 env-var bridge (revised design): host passes BLAZOR_PLATFORM_INFO
+    // here; .NET reads it via Environment.GetEnvironmentVariable.
+    fun wasi_config_set_env(config: Pointer, envc: Long, names: Array<String>, values: Array<String>): Boolean
     fun wasmtime_context_set_wasi(context: Pointer, config: Pointer): Pointer?
 
     // ─── Error ───────────────────────────────────────────────────────────
