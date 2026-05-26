@@ -1,9 +1,11 @@
 package io.blazornative.jni
 
 import com.sun.jna.Pointer
+import java.io.File
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.UUID
 
 /**
  * High-level facade: load BlazorNative.WasiHost.wasm as a wasmtime component,
@@ -15,31 +17,56 @@ import java.nio.file.Path
  * via wasmtime_component_linker_add_wasip2. See
  * docs/plans/2026-05-26-phase-2.1.0-spike-conclusion.md.
  *
- * Stdout capture: we route the .wasm's stdout to a temp file via
+ * Stdout capture: we route the .wasm's stdout to a file via
  * wasi_config_set_stdout_file, then read the file back after the run
  * completes. This is more reliable than System.out tee because libwasmtime
  * writes directly to the file descriptor, bypassing the JVM's System.out
  * PrintStream.
+ *
+ * Phase 2.2 split: the primary signature `(ByteArray, File)` accepts raw
+ * .wasm bytes + a writable scratch directory. Android calls this with
+ * `assets.open(...).readBytes()` + `context.cacheDir`. The legacy
+ * `(Path)` overload delegates to the primary by reading the file +
+ * using `Files.createTempDirectory()` for scratch — keeps Phase 2.1's
+ * JVM BootSmokeTest working unchanged.
  */
 object WasiHost {
 
+    /**
+     * JVM-only convenience: reads .wasm bytes from disk, uses an ephemeral
+     * temp dir for stdout capture + Mono's filesystem preopen.
+     */
     fun loadAndRun(wasmPath: Path): String {
         val wasmBytes = Files.readAllBytes(wasmPath)
-        val stdoutFile = Files.createTempFile("blazor-native-stdout", ".log")
-        val stderrFile = Files.createTempFile("blazor-native-stderr", ".log")
-        // The .wasm bundles its assembly via WASM_SINGLE_FILE, but Mono still
-        // needs filesystem access for ICU data and assembly auxiliary files.
-        // Preopen the AppBundle dir (parent of the .wasm) as ".".
-        val appBundleDir = wasmPath.parent.toAbsolutePath()
+        val scratchDir = Files.createTempDirectory("blazor-native-jni").toFile()
+        try {
+            return loadAndRun(wasmBytes, scratchDir)
+        } finally {
+            scratchDir.deleteRecursively()
+        }
+    }
+
+    /**
+     * Primary: caller provides .wasm bytes + a writable scratch directory.
+     * Android passes `context.cacheDir`; JVM convenience overload creates
+     * an ephemeral one. The scratch dir is preopened to the .wasm as "."
+     * (Mono needs writable space for ICU data + assembly auxiliary files)
+     * AND houses the stdout + stderr capture files.
+     */
+    fun loadAndRun(wasmBytes: ByteArray, scratchDir: File): String {
+        if (!scratchDir.exists()) scratchDir.mkdirs()
+        val runId = UUID.randomUUID().toString().substring(0, 8)
+        val stdoutFile = File(scratchDir, "wasm-stdout-$runId.txt")
+        val stderrFile = File(scratchDir, "wasm-stderr-$runId.txt")
         try {
             var thrown: Throwable? = null
             try {
-                runWasm(wasmBytes, stdoutFile, stderrFile, appBundleDir)
+                runWasm(wasmBytes, stdoutFile.toPath(), stderrFile.toPath(), scratchDir.toPath())
             } catch (t: Throwable) {
                 thrown = t
             }
-            val stdout = String(Files.readAllBytes(stdoutFile), StandardCharsets.UTF_8)
-            val stderr = String(Files.readAllBytes(stderrFile), StandardCharsets.UTF_8)
+            val stdout = if (stdoutFile.exists()) String(Files.readAllBytes(stdoutFile.toPath()), StandardCharsets.UTF_8) else ""
+            val stderr = if (stderrFile.exists()) String(Files.readAllBytes(stderrFile.toPath()), StandardCharsets.UTF_8) else ""
             if (stdout.isNotEmpty()) {
                 System.out.println("[WasiHost] .wasm stdout (${stdout.length} bytes):\n$stdout")
             }
@@ -49,12 +76,12 @@ object WasiHost {
             if (thrown != null) throw thrown
             return stdout
         } finally {
-            try { Files.deleteIfExists(stdoutFile) } catch (_: Throwable) {}
-            try { Files.deleteIfExists(stderrFile) } catch (_: Throwable) {}
+            try { stdoutFile.delete() } catch (_: Throwable) {}
+            try { stderrFile.delete() } catch (_: Throwable) {}
         }
     }
 
-    private fun runWasm(wasmBytes: ByteArray, stdoutFile: Path, stderrFile: Path, appBundleDir: Path) {
+    private fun runWasm(wasmBytes: ByteArray, stdoutFile: Path, stderrFile: Path, preopenDir: Path) {
         val b = WasmtimeBindings.INSTANCE
 
         // ── Engine + config (component-model on) ────────────────────────
@@ -80,14 +107,13 @@ object WasiHost {
                 if (!b.wasi_config_set_stderr_file(wasiConfig, stderrFile.toAbsolutePath().toString())) {
                     error("wasi_config_set_stderr_file failed for $stderrFile")
                 }
-                // Preopen the AppBundle dir as "." — Mono needs filesystem
-                // access for ICU data and assembly auxiliary files. Maps the
-                // wasmtime CLI `--dir=.` flag (used by run-wasmtime.sh's
-                // implicit CWD-relative behavior, since the parity test runs
-                // wasmtime with WorkingDirectory=AppBundleDir).
+                // Preopen the scratch dir as "." — Mono needs writable filesystem
+                // access for ICU data and assembly auxiliary files. On JVM,
+                // this is an ephemeral temp dir (same dir as the stdout/stderr
+                // files). On Android, this is context.cacheDir.
                 // Permission bits: READ=1, WRITE=2 → 3 = READ|WRITE.
-                if (!b.wasi_config_preopen_dir(wasiConfig, appBundleDir.toString(), ".", 3L, 3L)) {
-                    error("wasi_config_preopen_dir failed for $appBundleDir")
+                if (!b.wasi_config_preopen_dir(wasiConfig, preopenDir.toAbsolutePath().toString(), ".", 3L, 3L)) {
+                    error("wasi_config_preopen_dir failed for $preopenDir")
                 }
                 // Set argv[0] = program name. Mono's WASM_SINGLE_FILE path
                 // doesn't strictly need argv[1+] (it uses
