@@ -27,7 +27,7 @@ WASI_TESTS        := tests/BlazorNative.Wasi.Tests/BlazorNative.Wasi.Tests.cspro
 WASI_APP_BUNDLE   := src/BlazorNative.WasiHost/bin/Release/net10.0/wasi-wasm/AppBundle
 WASI_APP_WASM     := $(WASI_APP_BUNDLE)/BlazorNative.WasiHost.wasm
 
-.PHONY: dev dev-no-reload wasi wasi-run wasi-test wasi-inspect android ios test test-watch wit-gen clean setup analyzers help
+.PHONY: dev dev-no-reload wasi wasi-run wasi-test wasi-inspect android android-build android-test android-test-visible ios test test-watch wit-gen clean setup analyzers help
 
 ## ── Development ──────────────────────────────────────────────────────────────
 
@@ -66,11 +66,18 @@ analyzers:                    ## Build Roslyn analyzers
 
 ## ── Mobile targets ───────────────────────────────────────────────────────────
 
-android:                      ## Build Android APK via MAUI
-	$(DOTNET) publish src/BlazorNative.Host.Android/BlazorNative.DevHost.csproj \
-		-f net10.0-android \
-		-c Release \
-		-o artifacts/android
+android-build:                ## Build the Phase 2.2 Android APK (BlazorNative.Jni)
+	@echo "🚀 Building Android APK (assembleDebug)..."
+	cd src/BlazorNative.Jni && JAVA_HOME="C:/Program Files/Eclipse Adoptium/jdk-21.0.11.10-hotspot" ANDROID_HOME="$$USERPROFILE/AppData/Local/Android/Sdk" ./gradlew.bat assembleDebug --no-daemon
+
+android-test:                 ## Boot AVD if needed + run connectedAndroidTest
+	powershell -ExecutionPolicy Bypass -File scripts/test-android.ps1
+
+android-test-visible:         ## Same as android-test but with visible emulator window
+	powershell -ExecutionPolicy Bypass -File scripts/test-android.ps1 -ShowEmulator
+
+android:                      ## Legacy alias — same as android-build
+	@$(MAKE) android-build
 
 ios:                          ## Build iOS IPA (requires Mac + Xcode)
 	$(DOTNET) publish src/BlazorNative.Host.Android/BlazorNative.DevHost.csproj \
