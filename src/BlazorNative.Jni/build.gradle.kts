@@ -108,3 +108,50 @@ tasks.withType<Test>().configureEach {
             .absolutePath
     )
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 2.2: keep .wasm + per-ABI libwasmtime.so in sync with their build outputs.
+// Stale-asset bugs were the #1 risk in Phase 2.2 design — preBuild dependency
+// guarantees every APK assembly picks up the latest from `dotnet publish` and
+// `cargo ndk build`.
+// ─────────────────────────────────────────────────────────────────────────────
+
+val copyWasm = tasks.register<Copy>("copyWasm") {
+    description = "Copies the AOT'd BlazorNative.WasiHost.wasm into androidMain/assets/"
+    group = "blazornative"
+    val sourceWasm = rootProject.projectDir
+        .resolve("../../src/BlazorNative.WasiHost/bin/Release/net10.0/wasi-wasm/AppBundle/BlazorNative.WasiHost.wasm")
+    from(sourceWasm)
+    into(layout.projectDirectory.dir("src/androidMain/assets"))
+    doFirst {
+        if (!sourceWasm.exists()) {
+            throw GradleException(
+                "BlazorNative.WasiHost.wasm not found at expected path:\n  $sourceWasm\n" +
+                "Run from repo root: dotnet publish src/BlazorNative.WasiHost -c Release -r wasi-wasm"
+            )
+        }
+    }
+}
+
+val copyJniLibs = tasks.register<Copy>("copyJniLibs") {
+    description = "Copies cross-compiled libwasmtime.so (per ABI) into androidMain/jniLibs/"
+    group = "blazornative"
+    val sourceDir = rootProject.projectDir.resolve("../../vendor/wasmtime/jniLibs")
+    from(sourceDir)
+    into(layout.projectDirectory.dir("src/androidMain/jniLibs"))
+    doFirst {
+        val arm64 = sourceDir.resolve("arm64-v8a/libwasmtime.so")
+        val x86_64 = sourceDir.resolve("x86_64/libwasmtime.so")
+        if (!arm64.exists() || !x86_64.exists()) {
+            throw GradleException(
+                "libwasmtime.so missing for one or both ABIs under $sourceDir.\n" +
+                "Run setup.ps1 section 8c (cargo-ndk cross-compile)."
+            )
+        }
+    }
+}
+
+// Wire both into preBuild so every APK build picks up the latest assets.
+tasks.named("preBuild") {
+    dependsOn(copyWasm, copyJniLibs)
+}
