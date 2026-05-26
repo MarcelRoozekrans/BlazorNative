@@ -329,17 +329,18 @@ if (-not $SkipAndroid) {
 # ─────────────────────────────────────────────────────────────────────────────
 
 if (-not $SkipAndroid) {
-    Write-Header "7 · Android SDK"
+    Write-Header "7 · Android SDK + NDK + AVD"
 
     $androidHome = $env:ANDROID_HOME ?? "$env:USERPROFILE\AppData\Local\Android\Sdk"
+    $cmdToolsDest = "$androidHome\cmdline-tools"
+    $sdkmanager = "$cmdToolsDest\latest\bin\sdkmanager.bat"
+    $avdmanager = "$cmdToolsDest\latest\bin\avdmanager.bat"
 
-    if (Test-Path "$androidHome\platform-tools\adb.exe") {
-        Write-OK "Android SDK found at $androidHome"
-    } else {
+    # 7a. Command-line tools — install if missing
+    if (-not (Test-Path "$androidHome\platform-tools\adb.exe")) {
         Write-Step "Downloading Android command-line tools..."
         $cmdToolsUrl  = "https://dl.google.com/android/repository/commandlinetools-win-11076708_latest.zip"
         $cmdToolsZip  = "$env:TEMP\android-cmdtools.zip"
-        $cmdToolsDest = "$androidHome\cmdline-tools"
 
         New-Item -ItemType Directory -Force -Path $cmdToolsDest | Out-Null
         Invoke-WebRequest $cmdToolsUrl -OutFile $cmdToolsZip
@@ -349,17 +350,59 @@ if (-not $SkipAndroid) {
         $extracted = Get-ChildItem $cmdToolsDest | Where-Object { $_.Name -ne "latest" } | Select-Object -First 1
         if ($extracted) { Rename-Item $extracted.FullName "latest" }
 
-        $sdkmanager = "$cmdToolsDest\latest\bin\sdkmanager.bat"
-        if (Test-Path $sdkmanager) {
-            Write-Step "Installing Android platform-tools and build-tools..."
-            echo "y" | & $sdkmanager "platform-tools" "build-tools;34.0.0" "platforms;android-34"
+        [Environment]::SetEnvironmentVariable("ANDROID_HOME", $androidHome, "User")
+        [Environment]::SetEnvironmentVariable("PATH", $env:PATH + ";$androidHome\platform-tools", "User")
+        Refresh-Path
+    }
 
-            [Environment]::SetEnvironmentVariable("ANDROID_HOME", $androidHome, "User")
-            [Environment]::SetEnvironmentVariable("PATH", $env:PATH + ";$androidHome\platform-tools", "User")
-            Refresh-Path
-            Write-OK "Android SDK installed at $androidHome"
+    # 7b. Install SDK packages (idempotent — sdkmanager skips already-installed)
+    if (Test-Path $sdkmanager) {
+        Write-Step "Installing Android SDK packages (platform-tools, build-tools, platforms-34, NDK 26.3, x86_64 system image)..."
+        # Auto-accept all license prompts
+        & cmd /c "echo y| `"$sdkmanager`" --licenses" 2>&1 | Out-Null
+        echo "y" | & $sdkmanager `
+            "platform-tools" `
+            "build-tools;34.0.0" `
+            "platforms;android-34" `
+            "ndk;26.3.11579264" `
+            "system-images;android-34;google_apis;x86_64" `
+            "emulator"
+        if ($LASTEXITCODE -eq 0) {
+            Write-OK "Android SDK packages installed at $androidHome"
         } else {
-            Write-Fail "sdkmanager not found after extraction"
+            Write-Fail "sdkmanager install failed (exit $LASTEXITCODE)"
+        }
+
+        # Set ANDROID_NDK_HOME so cargo-ndk can find the NDK toolchain
+        $ndkRoot = "$androidHome\ndk\26.3.11579264"
+        if (Test-Path $ndkRoot) {
+            [Environment]::SetEnvironmentVariable("ANDROID_NDK_HOME", $ndkRoot, "User")
+            $env:ANDROID_NDK_HOME = $ndkRoot
+            Write-OK "ANDROID_NDK_HOME set to $ndkRoot"
+        } else {
+            Write-Fail "NDK 26.3 not found at $ndkRoot after install"
+        }
+    } else {
+        Write-Fail "sdkmanager not found at $sdkmanager"
+    }
+
+    # 7c. Create AVD for Phase 2.2 emulator (idempotent)
+    if (Test-Path $avdmanager) {
+        $avdName = "blazornative-pixel6-x86_64"
+        $existingAvds = & $avdmanager list avd -c 2>&1
+        if ($LASTEXITCODE -eq 0 -and ($existingAvds | Out-String) -match "(?m)^$([regex]::Escape($avdName))$") {
+            Write-OK "AVD $avdName already exists"
+        } else {
+            Write-Step "Creating AVD $avdName..."
+            echo "no" | & $avdmanager create avd `
+                -n $avdName `
+                -k "system-images;android-34;google_apis;x86_64" `
+                -d "pixel_6"
+            if ($LASTEXITCODE -eq 0) {
+                Write-OK "AVD $avdName created"
+            } else {
+                Write-Fail "avdmanager create avd failed (exit $LASTEXITCODE)"
+            }
         }
     }
 }
@@ -477,6 +520,62 @@ if (Test-Path $wasmtimeDllPath) {
             }
         } else {
             Write-Fail "cargo build wasmtime-c-api failed (exit $buildExit)"
+        }
+    }
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 8c. libwasmtime for Android ABIs (cargo-ndk + NDK 26.3)
+#     Phase 2.2 cross-compiles wasmtime-c-api for arm64-v8a + x86_64 using
+#     cargo-ndk (handles per-ABI CC/AR/linker env vars). Reuses the
+#     vendor/wasmtime-src/ clone from section 8b — no second checkout needed.
+#     Output: jniLibs/<abi>/libwasmtime.so consumed by the Android Gradle
+#     plugin via sourceSets.jniLibs.srcDirs.
+# ─────────────────────────────────────────────────────────────────────────────
+
+if (-not $SkipAndroid) {
+    Write-Header "8c · libwasmtime for Android ABIs (cargo-ndk + NDK 26.3, ~10-15 min first run)"
+
+    $jniLibsDir = Join-Path $PSScriptRoot "vendor\wasmtime\jniLibs"
+    $arm64So    = Join-Path $jniLibsDir "arm64-v8a\libwasmtime.so"
+    $x86_64So   = Join-Path $jniLibsDir "x86_64\libwasmtime.so"
+    $wasmtimeSrcDir = Join-Path $PSScriptRoot "vendor\wasmtime-src"
+
+    if ((Test-Path $arm64So) -and (Test-Path $x86_64So)) {
+        Write-OK "Android libwasmtime.so already built (both ABIs)"
+    } elseif (-not (Command-Exists "cargo")) {
+        Write-Fail "cargo not available — section 8 (Rust install) needs to succeed first"
+    } elseif (-not $env:ANDROID_NDK_HOME -or -not (Test-Path $env:ANDROID_NDK_HOME)) {
+        Write-Fail "ANDROID_NDK_HOME not set or invalid — section 7 needs to install NDK 26.3 first"
+    } elseif (-not (Test-Path $wasmtimeSrcDir)) {
+        Write-Fail "vendor/wasmtime-src/ missing — section 8b (Windows libwasmtime build) needs to clone it first"
+    } else {
+        # cargo-ndk wrapper
+        if (-not (Command-Exists "cargo-ndk")) {
+            Write-Step "Installing cargo-ndk..."
+            cargo install cargo-ndk
+            if ($LASTEXITCODE -ne 0) {
+                Write-Fail "cargo install cargo-ndk failed"
+            }
+        }
+
+        if (Command-Exists "cargo-ndk") {
+            Write-Step "Adding Rust targets aarch64-linux-android + x86_64-linux-android..."
+            rustup target add aarch64-linux-android x86_64-linux-android | Out-Null
+
+            Push-Location $wasmtimeSrcDir
+            Write-Step "Cross-compiling libwasmtime for arm64-v8a + x86_64 (this is the slow part)..."
+            cargo ndk -t arm64-v8a -t x86_64 -o $jniLibsDir build -p wasmtime-c-api --release
+            $buildExit = $LASTEXITCODE
+            Pop-Location
+
+            if ($buildExit -eq 0 -and (Test-Path $arm64So) -and (Test-Path $x86_64So)) {
+                $arm64Mb = [math]::Round((Get-Item $arm64So).Length / 1MB, 1)
+                $x86Mb   = [math]::Round((Get-Item $x86_64So).Length / 1MB, 1)
+                Write-OK "Android libwasmtime.so built (arm64-v8a: ${arm64Mb}MB, x86_64: ${x86Mb}MB)"
+            } else {
+                Write-Fail "cargo ndk build failed (exit $buildExit)"
+            }
         }
     }
 }
