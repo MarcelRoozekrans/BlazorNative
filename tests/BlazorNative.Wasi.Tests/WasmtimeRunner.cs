@@ -36,21 +36,23 @@ internal static class WasmtimeRunner
         //   --dir=.             relative filesystem access (needed for ICU
         //                       data lookup); WorkingDirectory below makes
         //                       "." resolve to AppBundleDir.
-        var extraJoined = extraArgsBeforeWasm.Length > 0
-            ? " " + string.Join(" ", extraArgsBeforeWasm)
-            : "";
-        var programJoined = programArgs.Length > 0
-            ? " " + string.Join(" ", programArgs)
-            : "";
-        var args = $"run -Shttp --dir=.{extraJoined} {fixture.AppAssemblyName}.wasm{programJoined}";
-
-        var psi = new ProcessStartInfo(wasmtimeExe, args)
+        //
+        // Use ArgumentList (per-arg) not Arguments (string-form) — Phase 2.3
+        // env-var bridge passes JSON values that contain spaces; string-form
+        // would split them across multiple wasmtime args, breaking --env.
+        var psi = new ProcessStartInfo(wasmtimeExe)
         {
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
             WorkingDirectory = fixture.AppBundleDir,
         };
+        psi.ArgumentList.Add("run");
+        psi.ArgumentList.Add("-Shttp");
+        psi.ArgumentList.Add("--dir=.");
+        foreach (var a in extraArgsBeforeWasm) psi.ArgumentList.Add(a);
+        psi.ArgumentList.Add($"{fixture.AppAssemblyName}.wasm");
+        foreach (var a in programArgs) psi.ArgumentList.Add(a);
 
         // Strip DOTNET_*/MONO_*/ASPNETCORE_* env vars inherited from the test
         // runner — they flip the WASM-side Mono runtime into incompatible modes
