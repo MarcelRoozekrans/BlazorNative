@@ -55,12 +55,15 @@ Phases:
    - New `tests/BlazorNative.Analyzers.Tests/` project establishes the analyzer-test infrastructure (BACKLOG P3 follow-up can drop in BN0001-BN0013 tests alongside).
    - 11 commits + atomic Tasks 1-3 bundle. See [design](../plans/2026-05-25-phase-2.0-design.md) + [implementation plan](../plans/2026-05-25-phase-2.0-implementation-plan.md).
    - **2026-05-25 follow-ups landed:** xUnit Collection for WasiBridge.Current singleton safety; DevHostBridge multicast-symmetry test; BN0014 async-method-reference test; payload in [BOOT] event-ok marker; trim-root doc comment on DispatchEventCore; stale DispatchEvent → DispatchEventNative doc renames. Final test count: 12 passed, 2 skipped.
-- ⏳ **Phase 2.1** — Android Kotlin shell scaffold + `wasmtime-java` Gradle setup — *pending*
-- ⏳ **Phase 2.2** — `mobile_bridge` symbol implementations (Android side) — *pending*
-- ⏳ **Phase 2.3** — Render-frame consumer (WASM-side dispatch + Android-side parse) — *pending*
-- ⏳ **Phase 2.4** — Native widget mapper (`NodeType` → Android widgets) — *pending*
-- ⏳ **Phase 2.5** — `BlazorNativeHostElement` stub (renderer-side host element descriptor) — *pending*
-- ⏳ **Phase 2.6** — End-to-end demo + final audit — *pending*
+- ⏳ **Phase 2.1** — JVM desktop hosts `.wasm` via libwasmtime + JNA — *pending (active)*
+   - Replaces original "Android Kotlin shell scaffold + `wasmtime-java` Gradle setup" framing. During brainstorming (2026-05-26) we discovered `dev.wasmtime:wasmtime-java` doesn't exist; `kawamuray/wasmtime-java` is unmaintained and ships no Android ABI binaries; `chicory` is WASIp1-only and can't host our wasi-component. Chose Strategy G (cross-compile `libwasmtime` per ABI via NDK + cargo, bind from Kotlin via JNA — RN-Hermes pattern). To isolate runtime-layer risk (format pivot + JNA bindings + C-API quirks) from Android build pipeline risk (NDK + emulator + Gradle Android plugin), Phase 2.1 ships the runtime layer on **desktop JVM (Windows x86_64) only**. Includes: Phase 2.1.0 format-pivot spike (drop `wasi:http`, author `mobile_bridge.wit`, re-emit slim component), `setup.ps1` extension to cargo-build `wasmtime.dll`, new `src/BlazorNative.Jni/` Kotlin/Gradle module with ~30 JNA bindings + no-op `mobile_bridge` stubs + `BootSmokeTest` parity with `tests/BlazorNative.Wasi.Tests/BootSmoke.cs`. See [design](../plans/2026-05-26-phase-2.1-design.md).
+- ⏳ **Phase 2.2** — Android port: cross-compile libwasmtime + Android Gradle scaffold — *pending*
+   - Reuses Phase 2.1's JNA layer unchanged. Adds Android Gradle plugin, NDK toolchain in setup, cross-compiled `libwasmtime.so` for android-arm64 (+ x86_64 emulator). MainActivity loads `.wasm` from assets and emits `[BOOT]` markers to logcat.
+- ⏳ **Phase 2.3** — `mobile_bridge` symbol implementations (Android side) — *pending*
+- ⏳ **Phase 2.4** — Render-frame consumer (WASM-side dispatch + Android-side parse) — *pending*
+- ⏳ **Phase 2.5** — Native widget mapper (`NodeType` → Android widgets) — *pending*
+- ⏳ **Phase 2.6** — `BlazorNativeHostElement` stub (renderer-side host element descriptor) — *pending*
+- ⏳ **Phase 2.7** — End-to-end demo + final audit — *pending*
 
 ---
 

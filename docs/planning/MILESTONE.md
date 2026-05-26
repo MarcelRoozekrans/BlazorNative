@@ -20,9 +20,9 @@ This milestone closes the loop from .NET source code to a pixel on a real Androi
 
    Decision committed to `docs/plans/`; remediation implemented; existing `ExportSmoke` test extended to confirm a bridge round-trip with at least one subscriber doesn't trap.
 
-2. **Android Kotlin shell scaffold exists** at `src/BlazorNative.Shell.Android/` with a minimal `MainActivity.kt` that loads `BlazorNative.WasiHost.wasm` from app assets. Builds via Gradle, installs to an emulator or device.
+2. **Android Kotlin shell scaffold exists** at `src/BlazorNative.Shell.Android/` with a minimal `MainActivity.kt` that loads `BlazorNative.WasiHost.wasm` from app assets. Builds via Gradle, installs to an emulator or device. *(Implemented in Phase 2.2 after Phase 2.1 proves the runtime layer on desktop JVM.)*
 
-3. **`wasmtime-java` JNI integration** via Gradle — module loads successfully on Android, `mobile_bridge` import symbols can be wired to Kotlin implementations. Tracking dependency: `dev.wasmtime:wasmtime-java:latest` per the BACKLOG note.
+3. **JVM ↔ libwasmtime JNI integration** via JNA bindings against `libwasmtime` (cross-compiled per ABI from wasmtime source via cargo + NDK). Module loads successfully on Android; `mobile_bridge` import symbols can be wired to Kotlin implementations. *(Original DoD referenced `dev.wasmtime:wasmtime-java:latest` — that artifact does not exist. Strategy revised during Phase 2.1 brainstorm to Strategy G: cross-compile `libwasmtime` ourselves, bind via JNA. RN-Hermes pattern. See [Phase 2.1 design](../plans/2026-05-26-phase-2.1-design.md).)*
 
 4. **All seven `mobile_bridge` symbol exports implemented** on the Android side:
    - `shell_navigate(routePtr, routeLen)`
@@ -63,13 +63,14 @@ This milestone closes the loop from .NET source code to a pixel on a real Androi
 
 Tracked in `ROADMAP.md`. Subject to refinement via `add-phase` / `insert-phase`:
 
-- **Phase 2.0 — Mono-WASI async-trap remediation** *(pre-req unblocker; brainstorm decides which of (a)/(b)/(c) we ship)*
-- **Phase 2.1 — Android Kotlin shell scaffold + `wasmtime-java` Gradle setup**
-- **Phase 2.2 — `mobile_bridge` symbol implementations** (Android side)
-- **Phase 2.3 — Render-frame consumer** (WASM-side dispatch + Android-side parse)
-- **Phase 2.4 — Native widget mapper** (`NodeType` → Android widgets)
-- **Phase 2.5 — `BlazorNativeHostElement` stub** (renderer-side host element descriptor satisfying Blazor's requirements without a real DOM)
-- **Phase 2.6 — End-to-end demo + final audit** (Hello component on emulator/device; capture evidence; close milestone)
+- **Phase 2.0 — Mono-WASI async-trap remediation** *(complete 2026-05-25; (b) sync-callable bridge interface chosen)*
+- **Phase 2.1 — JVM desktop hosts `.wasm` via libwasmtime + JNA** *(format-pivot spike + cargo-built `wasmtime.dll` + Kotlin/Gradle `src/BlazorNative.Jni/` + `BootSmokeTest` parity; **desktop only, no Android**; runtime-layer-risk isolation; see [Phase 2.1 design](../plans/2026-05-26-phase-2.1-design.md))*
+- **Phase 2.2 — Android port** *(cross-compile `libwasmtime.so` for android-arm64 + x86_64 emulator via NDK + cargo; Android Gradle plugin; MainActivity loads `.wasm` from assets; reuses Phase 2.1's JNA layer unchanged)*
+- **Phase 2.3 — `mobile_bridge` symbol implementations** (Android side)
+- **Phase 2.4 — Render-frame consumer** (WASM-side dispatch + Android-side parse)
+- **Phase 2.5 — Native widget mapper** (`NodeType` → Android widgets)
+- **Phase 2.6 — `BlazorNativeHostElement` stub** (renderer-side host element descriptor satisfying Blazor's requirements without a real DOM)
+- **Phase 2.7 — End-to-end demo + final audit** (Hello component on emulator/device; capture evidence; close milestone)
 
 ## Why this milestone exists
 
