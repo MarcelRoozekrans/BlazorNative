@@ -9,13 +9,21 @@ group = "io.blazornative"
 version = "0.1.0-SNAPSHOT"
 
 dependencies {
-    // JNA — JVM ↔ libwasmtime FFI binding. :aar variant bundles
-    // libjnidispatch.so for all Android ABIs (arm64-v8a, x86_64, etc.) so the
-    // APK's jniLibs section contains JNA's native dispatch. Same artifact works
-    // for JVM unit tests since the .aar metadata exposes the same JVM classes.
+    // JNA — JVM ↔ libwasmtime FFI binding.
+    //
+    // The :aar variant bundles libjnidispatch.so for Android ABIs (arm64-v8a,
+    // x86_64) so the APK's lib/<abi>/ directory has JNA's native dispatch.
+    // But the .aar does NOT include the desktop-JVM dispatch resources
+    // (com/sun/jna/win32-x86-64/jnidispatch.dll etc.) needed for unit tests
+    // to load JNA on the host JVM.
+    //
+    // Solution: scope each variant per classpath.
+    //   - main classpath (compiled into APK): jna:.aar (Android dispatch)
+    //   - testImplementation (JVM unit tests only): jna:.jar (desktop dispatch)
     implementation("net.java.dev.jna:jna:5.14.0@aar")
+    testImplementation("net.java.dev.jna:jna:5.14.0")
     // jna-platform transitively pulls jna:.jar — exclude it so the :aar above
-    // is the only JNA on the classpath (otherwise duplicate-class build error).
+    // is the only JNA on the APK runtime classpath.
     implementation("net.java.dev.jna:jna-platform:5.14.0") {
         exclude(group = "net.java.dev.jna", module = "jna")
     }

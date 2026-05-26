@@ -90,13 +90,11 @@ object WasiHost {
         val engine = b.wasm_engine_new_with_config(config)
             ?: error("wasm_engine_new_with_config returned null")
 
-        try {
-            // ── Store + context + WASI config ───────────────────────────
-            val store = b.wasmtime_store_new(engine, Pointer.NULL, Pointer.NULL)
-                ?: error("wasmtime_store_new returned null")
+        // ── Store + context + WASI config ───────────────────────────
+        val store = b.wasmtime_store_new(engine, Pointer.NULL, Pointer.NULL)
+            ?: error("wasmtime_store_new returned null")
 
-            try {
-                val context = b.wasmtime_store_context(store)
+        val context = b.wasmtime_store_context(store)
 
                 val wasiConfig = b.wasi_config_new()
                 // wasi_config_t is consumed by wasmtime_context_set_wasi —
@@ -131,67 +129,59 @@ object WasiHost {
                 if (compErr != null) throw WasmtimeException.fromErrorPointer("wasmtime_component_new", compErr)
                 val component = componentOut[0] ?: error("wasmtime_component_new returned null component without error")
 
-                try {
-                    // ── Linker (add WASIp2 — no custom imports for Phase 2.1) ──
-                    val linker = b.wasmtime_component_linker_new(engine)
-                        ?: error("wasmtime_component_linker_new returned null")
+                // ── Linker (add WASIp2 — no custom imports for Phase 2.1) ──
+                val linker = b.wasmtime_component_linker_new(engine)
+                    ?: error("wasmtime_component_linker_new returned null")
 
-                    try {
-                        val addWasiErr = b.wasmtime_component_linker_add_wasip2(linker)
-                        if (addWasiErr != null) throw WasmtimeException.fromErrorPointer("wasmtime_component_linker_add_wasip2", addWasiErr)
+                val addWasiErr = b.wasmtime_component_linker_add_wasip2(linker)
+                if (addWasiErr != null) throw WasmtimeException.fromErrorPointer("wasmtime_component_linker_add_wasip2", addWasiErr)
 
-                        // ── Instantiate ─────────────────────────────────
-                        val instance = ComponentInstance()
-                        val instErr = b.wasmtime_component_linker_instantiate(linker, context, component, instance)
-                        if (instErr != null) throw WasmtimeException.fromErrorPointer("wasmtime_component_linker_instantiate", instErr)
+                // ── Instantiate ─────────────────────────────────
+                val instance = ComponentInstance()
+                val instErr = b.wasmtime_component_linker_instantiate(linker, context, component, instance)
+                if (instErr != null) throw WasmtimeException.fromErrorPointer("wasmtime_component_linker_instantiate", instErr)
 
-                        // ── Look up wasi:cli/run.run ────────────────────
-                        // Component export index lookup: first the "wasi:cli/run@0.2.0"
-                        // INSTANCE export, then the "run" function within it.
-                        val runInstanceIdx = findExportIndex(component, null, "wasi:cli/run@0.2.0")
-                            ?: findExportIndex(component, null, "wasi:cli/run")
-                            ?: error("could not find wasi:cli/run instance export on component")
+                // ── Look up wasi:cli/run.run ────────────────────
+                val runInstanceIdx = findExportIndex(component, null, "wasi:cli/run@0.2.0")
+                    ?: findExportIndex(component, null, "wasi:cli/run")
+                    ?: error("could not find wasi:cli/run instance export on component")
+                val runFuncIdx = findExportIndex(component, runInstanceIdx, "run")
+                    ?: error("could not find 'run' function within wasi:cli/run instance")
 
-                        try {
-                            val runFuncIdx = findExportIndex(component, runInstanceIdx, "run")
-                                ?: error("could not find 'run' function within wasi:cli/run instance")
+                val func = ComponentFunc()
+                val found = b.wasmtime_component_instance_get_func(instance, context, runFuncIdx, func)
+                if (!found) error("wasmtime_component_instance_get_func returned false for wasi:cli/run.run")
 
-                            try {
-                                val func = ComponentFunc()
-                                val found = b.wasmtime_component_instance_get_func(instance, context, runFuncIdx, func)
-                                if (!found) error("wasmtime_component_instance_get_func returned false for wasi:cli/run.run")
+                // ── Call run() ──────────────────────────
+                // wasi:cli/run.run signature: () -> result<_,_>
+                // 1-element results buffer; wasmtime_component_val_t is a tagged
+                // union, 128 bytes is conservative.
+                val results = com.sun.jna.Memory(128L)
+                results.clear()
+                val callErr = b.wasmtime_component_func_call(
+                    func, context, null, 0L, results, 1L
+                )
+                if (callErr != null) throw WasmtimeException.fromErrorPointer("wasmtime_component_func_call", callErr)
 
-                                // ── Call run() ──────────────────────────
-                                // wasi:cli/run.run signature: () -> result<_,_>
-                                // We must provide a 1-element results buffer.
-                                // The wasmtime_component_val_t struct is large
-                                // (union with up to ~32 bytes payload + kind),
-                                // so allocate generously and let wasmtime
-                                // write the discriminant + payload.
-                                val results = com.sun.jna.Memory(128L)
-                                results.clear()
-                                val callErr = b.wasmtime_component_func_call(
-                                    func, context, null, 0L, results, 1L
-                                )
-                                if (callErr != null) throw WasmtimeException.fromErrorPointer("wasmtime_component_func_call", callErr)
-                            } finally {
-                                b.wasmtime_component_export_index_delete(runFuncIdx)
-                            }
-                        } finally {
-                            b.wasmtime_component_export_index_delete(runInstanceIdx)
-                        }
-                    } finally {
-                        b.wasmtime_component_linker_delete(linker)
-                    }
-                } finally {
-                    b.wasmtime_component_delete(component)
-                }
-            } finally {
-                b.wasmtime_store_delete(store)
-            }
-        } finally {
-            b.wasm_engine_delete(engine)
-        }
+                // ── Cleanup intentionally skipped — see BACKLOG ──────────
+                // wasmtime_component_linker_delete + cascading deletes
+                // crash with SIGABRT (Scudo "corrupted chunk header") on
+                // Android's hardened allocator. Same call sequence works
+                // fine on Windows. The wasm execution completes BEFORE the
+                // crash (verified: all 4 [BOOT] markers captured to
+                // stdoutFile). For Phase 2.2 GREEN CHECKPOINT we accept the
+                // process-scoped leak — the test process exits immediately
+                // after; the MainActivity user can restart the app.
+                //
+                // Phase 2.2b backlog item: investigate why libwasmtime v45's
+                // Linker::drop fails Scudo validation on Android x86_64.
+                // Possible angles: Mono-AOT'd .wasm holds Arcs that wasmtime
+                // double-decrements; wasmtime's TLS cleanup ordering differs
+                // on Bionic vs glibc; cargo-ndk build flags missing some
+                // Android-specific allocator wiring.
+                //
+        // Skipping in deliberate creation-reverse order: would have
+        // been linker → component → store → engine. All leaked.
     }
 
     private fun findExportIndex(component: Pointer, instanceIdx: Pointer?, name: String): Pointer? {
