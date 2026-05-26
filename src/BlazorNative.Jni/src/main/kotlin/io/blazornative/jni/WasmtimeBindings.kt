@@ -24,6 +24,31 @@ interface WasmtimeBindings : Library {
     fun wasm_engine_new(): Pointer?
     fun wasm_engine_delete(engine: Pointer)
 
+    // ─── Config (component-model toggle) ─────────────────────────────────
+    // Note: config_new comes from the upstream wasm-c-api (wasm_* prefix);
+    // component_model_set is a wasmtime extension (wasmtime_* prefix).
+    fun wasm_config_new(): Pointer
+    fun wasmtime_config_wasm_component_model_set(config: Pointer, enable: Byte)
+    fun wasm_engine_new_with_config(config: Pointer): Pointer?
+
+    // ─── Store ────────────────────────────────────────────────────────────
+    fun wasmtime_store_new(engine: Pointer, data: Pointer?, finalizer: Pointer?): Pointer?
+    fun wasmtime_store_delete(store: Pointer)
+
+    // ─── Component ───────────────────────────────────────────────────────
+    // Returns wasmtime_error_t* on failure (null = success). out: wasmtime_component_t**.
+    fun wasmtime_component_new(engine: Pointer, wasmBytes: ByteArray, wasmLen: Long, componentOut: Array<Pointer?>): Pointer?
+    fun wasmtime_component_delete(component: Pointer)
+
+    // ─── Error ───────────────────────────────────────────────────────────
+    fun wasmtime_error_message(errPtr: Pointer, nameOut: WasmName)
+    fun wasmtime_error_delete(errPtr: Pointer)
+
+    // ─── wasm_name_t helpers ─────────────────────────────────────────────
+    // wasm_name_t is a typedef alias of wasm_byte_vec_t; only the byte_vec
+    // deleter exists as a C symbol.
+    fun wasm_byte_vec_delete(name: WasmName)
+
     // Stubs for the rest — Phase 2.1's later tasks fill these in.
     // Declaring the interface progressively (one task at a time) keeps each
     // commit reviewable.
