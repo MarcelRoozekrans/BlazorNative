@@ -50,4 +50,21 @@
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.*" />
   </ItemGroup>
 
+  <!-- Phase 2.3 Task 1: declare the custom-host WIT contract for IDE visibility.
+       Empirical finding (2026-05-26): the wasi-experimental workload (sdk-manifests
+       10.0.108 + Microsoft.NET.Runtime.WebAssembly.Wasi.Sdk 10.0.8) does NOT expose
+       any MSBuild item or property for user-supplied .wit files. WasiApp.targets
+       hardcodes a single linker arg
+         -Wl,--component-type,...\WasiHttpWorld_component_type.wit
+       pointing to the runtime pack's HTTP world; no codepath consumes a <Wit>,
+       <WitFile>, or <WitBindgenInput> ItemGroup. All four candidate names were
+       silently ignored at publish time.
+       Consequence: the .wit file is documentation-only. The actual import surface
+       for shell-platform-info is provided by [WasmImportLinkage] hand-authored
+       bindings in WasiBridge.cs (Phase 2.3 Task 2). Re-evaluate when the wasi
+       workload ships first-class WIT integration. -->
+  <ItemGroup>
+    <None Include="wit\mobile_bridge.wit" />
+  </ItemGroup>
+
 </Project>
