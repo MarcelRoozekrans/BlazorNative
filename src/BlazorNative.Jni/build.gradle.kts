@@ -9,8 +9,11 @@ group = "io.blazornative"
 version = "0.1.0-SNAPSHOT"
 
 dependencies {
-    // JNA — JVM ↔ libwasmtime FFI binding
-    implementation("net.java.dev.jna:jna:5.14.0")
+    // JNA — JVM ↔ libwasmtime FFI binding. :aar variant bundles
+    // libjnidispatch.so for all Android ABIs (arm64-v8a, x86_64, etc.) so the
+    // APK's jniLibs section contains JNA's native dispatch. Same artifact works
+    // for JVM unit tests since the .aar metadata exposes the same JVM classes.
+    implementation("net.java.dev.jna:jna:5.14.0@aar")
     implementation("net.java.dev.jna:jna-platform:5.14.0")
 
     // Kotlin stdlib
@@ -66,6 +69,10 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = "17"
     }
 
     buildTypes {
