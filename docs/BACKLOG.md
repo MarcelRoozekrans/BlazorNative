@@ -78,6 +78,22 @@
 ## P2 — Real apps can be built
 *Required before any non-trivial Blazor app works correctly.*
 
+- [ ] **Phase 2.3b — wasi-experimental WIT-import unblocker** *(deferred from Phase 2.3)*
+  Phase 2.3 found three wasi-experimental SDK 10.0.8 gaps that block first-class WIT-typed imports from materializing in the .wasm:
+    1. `_WasmPInvokeModules` auto-population covers only statically-linked libs; user modules need explicit MSBuild opt-in.
+    2. `$(WasmAllowUndefinedSymbols)` property is documented but never consumed by the SDK; wasm-ld fails with "undefined symbol".
+    3. `wasm-component-ld --component-type` expects a binary blob (from `wit-component`), not raw .wit text — and no SDK helper assembles that blob.
+  Phase 2.3 sidestepped via env-var bridge over `wasi:cli/environment`. Closing the gaps is a 1-3 hour spike that would revive the wit-bindgen path for dynamic bridges. The `mobile_bridge.wit` files (commit `25efdb2`) capture the long-term direction; revisit when (i) wasi-experimental ships first-class WIT integration, OR (ii) Phase 2.5+ event callbacks need a typed dynamic bridge that env-vars can't provide.
+
+- [ ] **Phase 2.5+ — export-based dynamic bridge for runtime event callbacks** *(deferred from Phase 2.3 redesign)*
+  Env-var bridge (Phase 2.3) is one-way (host → .NET) and initialization-time only. When user-event callbacks (button tap → .NET event handler) need runtime-resident bidirectional communication, design + ship the `[UnmanagedCallersOnly]` export pattern: host calls into the .wasm via exported `blazornative_*` functions; .wasm responds via exported `blazornative_response_*` patterns. Proven mechanism (Phase 1.3's `blazornative_dispatch_event` works this way). Phase 2.5+ brainstorm when there's a real UI event to bridge.
+
+- [ ] **Phase 2.3 deferred mobile_bridge imports** *(landing in respective phases)*
+  Each lands additively in the phase that needs it:
+  - `shell-navigate` + `shell-current-route` → Phase 2.5 (widget mapper + navigation)
+  - `shell-storage-read/write/delete` → Phase 2.5+ (state persistence — likely env-var-shaped for init + file-based via wasi:filesystem preopen for runtime, OR the export-based dynamic pattern from Phase 2.5+)
+  - `shell-fetch` → M4 (P3 production-readiness) or earlier if a demo needs it (response data path needs the dynamic-bridge pattern)
+
 - [ ] **Phase 2.2b — wasmtime Linker::drop SIGABRT on Android Scudo allocator** *(deferred from Phase 2.2)*
   `wasmtime_component_linker_delete` crashes with `Scudo ERROR: corrupted chunk header` on Android x86_64 emulator (API 34). The wasm execution completes successfully before the crash — `[BOOT]` markers ARE captured. Workaround in place: skip all cleanup deletes in `WasiHost.runWasm` (process-scoped leak). Backtrace shows `wasmtime_component_linker_t::drop → NameMap<Atom, Definition>::drop → Arc<Definition>::drop_slow → scudo::deallocate → corrupted header`. Investigation angles:
     (a) Mono-AOT'd .wasm might hold Arc<wasmtime::Engine> refs that wasmtime double-decrements during cleanup
