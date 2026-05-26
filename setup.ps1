@@ -401,6 +401,68 @@ if (-not $SkipWitBindgen) {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
+# 8b. libwasmtime — C API DLL cargo-built from source
+#     Phase 2.1 needs wasmtime.dll in vendor/wasmtime/ for the BlazorNative.Jni
+#     Kotlin module to load via JNA. Phase 2.2 will add an Android NDK target
+#     on top of this same cargo install; building from source now front-loads
+#     the toolchain rather than mixing prebuilt + source-built versions.
+# ─────────────────────────────────────────────────────────────────────────────
+
+Write-Header "8b · libwasmtime (cargo-built from source, ~15 min first run)"
+
+$wasmtimeSrcDir   = Join-Path $PSScriptRoot "vendor\wasmtime-src"
+$wasmtimeDllPath  = Join-Path $PSScriptRoot "vendor\wasmtime\wasmtime.dll"
+$wasmtimeVersion  = "v45.0.0"   # matches setup.ps1 section 5's CLI version
+
+if (Test-Path $wasmtimeDllPath) {
+    Write-OK "wasmtime.dll already present at vendor/wasmtime/"
+} elseif (-not (Command-Exists "cargo")) {
+    Write-Fail "cargo not available — run setup.ps1 without -SkipWitBindgen first to install Rust"
+} else {
+    # Clone if missing
+    if (-not (Test-Path $wasmtimeSrcDir)) {
+        Write-Step "Cloning bytecodealliance/wasmtime $wasmtimeVersion (depth=1)..."
+        $parent = Split-Path $wasmtimeSrcDir
+        if (-not (Test-Path $parent)) { New-Item -ItemType Directory -Force -Path $parent | Out-Null }
+        git clone --depth 1 --branch $wasmtimeVersion https://github.com/bytecodealliance/wasmtime $wasmtimeSrcDir
+        if ($LASTEXITCODE -ne 0) {
+            Write-Fail "git clone wasmtime failed (exit $LASTEXITCODE)"
+        }
+    }
+
+    # Submodule init (Cranelift, etc.)
+    if (Test-Path $wasmtimeSrcDir) {
+        Push-Location $wasmtimeSrcDir
+        Write-Step "Initializing wasmtime submodules..."
+        git submodule update --init --recursive --depth 1
+        Pop-Location
+    }
+
+    # cargo build -p wasmtime-c-api --release
+    if (Test-Path $wasmtimeSrcDir) {
+        Write-Step "Building wasmtime-c-api (release) — first run is ~15 min..."
+        Push-Location $wasmtimeSrcDir
+        cargo build -p wasmtime-c-api --release
+        $buildExit = $LASTEXITCODE
+        Pop-Location
+
+        if ($buildExit -eq 0) {
+            $built = Join-Path $wasmtimeSrcDir "target\release\wasmtime.dll"
+            if (Test-Path $built) {
+                $dllDir = Split-Path $wasmtimeDllPath
+                if (-not (Test-Path $dllDir)) { New-Item -ItemType Directory -Force -Path $dllDir | Out-Null }
+                Copy-Item $built $wasmtimeDllPath -Force
+                Write-OK "wasmtime.dll built and copied to vendor/wasmtime/"
+            } else {
+                Write-Fail "cargo build reported success but wasmtime.dll not found at $built"
+            }
+        } else {
+            Write-Fail "cargo build wasmtime-c-api failed (exit $buildExit)"
+        }
+    }
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
 # 9. Restore NuGet packages
 # ─────────────────────────────────────────────────────────────────────────────
 
