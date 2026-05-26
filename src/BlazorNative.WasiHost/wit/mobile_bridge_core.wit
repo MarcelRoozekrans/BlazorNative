@@ -1,0 +1,30 @@
+// Phase 2.3 Task 2 — core-shape component-type adapter WIT.
+//
+// This file is consumed by wasm-component-ld via the --component-type linker
+// flag (see BlazorNative.WasiHost.csproj). Its role is to declare a component
+// world whose imports match the core-shape pinvoke that Mono-AOT emits for
+// our [DllImport("mobile_bridge", EntryPoint="shell_platform_info")] partial:
+//
+//   int32_t shell_platform_info(void* buf, int32_t bufLen)
+//
+// The core .wasm imports this as `env::shell_platform_info` (default module
+// for undefined symbols under wasm-ld). The component-type tells the encoder
+// "yes, this is a legitimate import; satisfy it from `env`."
+//
+// Once wit-bindgen csharp ships proper component-typed [LibraryImport]
+// support in the wasi-experimental workload, this adapter goes away and the
+// design's intended `blazornative:mobile-bridge/bridge.shell-platform-info`
+// component import lands instead. Until then this preserves the round-trip
+// the JNA host needs while being honest about the actual import shape.
+
+package blazornative:mobile-bridge-core@0.1.0;
+
+interface env {
+  shell-platform-info: func(buf: u32, buf-len: s32) -> s32;
+}
+
+world wasi-host {
+  include wasi:cli/imports@0.2.0;
+  import env;
+  export wasi:cli/run@0.2.0;
+}
