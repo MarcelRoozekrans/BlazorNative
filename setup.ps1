@@ -385,6 +385,19 @@ if (-not $SkipWitBindgen) {
     } else {
         Write-Fail "Cargo not available — skipping wit-bindgen"
     }
+
+    # wasm-tools — Phase 2.1+ uses it to inspect .wasm component WIT shape
+    # (validates the format-pivot spike). Same cargo install path as wit-bindgen.
+    if (Command-Exists "wasm-tools") {
+        Write-OK "wasm-tools already installed"
+    } elseif (Command-Exists "cargo") {
+        Write-Step "Installing wasm-tools via cargo (~3-5 min)..."
+        cargo install wasm-tools
+        if ($LASTEXITCODE -eq 0) { Write-OK "wasm-tools installed" }
+        else { Write-Fail "wasm-tools install failed" }
+    } else {
+        Write-Fail "Cargo not available — skipping wasm-tools"
+    }
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
