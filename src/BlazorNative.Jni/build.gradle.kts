@@ -27,7 +27,9 @@ dependencies {
 }
 
 kotlin {
-    jvmToolchain(17)   // Java 25 on Marcel's box satisfies; 17 is the floor
+    // JDK 21 (Temurin LTS) is installed by setup.ps1 section 6. Gradle 8.11.1
+    // daemon supports JDK 8-23; using 21 keeps the project + daemon JVM aligned.
+    jvmToolchain(21)
 }
 
 tasks.test {
