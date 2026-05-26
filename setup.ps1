@@ -336,17 +336,26 @@ if (-not $SkipAndroid) {
     $sdkmanager = "$cmdToolsDest\latest\bin\sdkmanager.bat"
     $avdmanager = "$cmdToolsDest\latest\bin\avdmanager.bat"
 
-    # 7a. Command-line tools — install if missing
-    if (-not (Test-Path "$androidHome\platform-tools\adb.exe")) {
+    # 7a. Command-line tools — install if sdkmanager isn't already present
+    # (Guard on $sdkmanager not adb.exe, so a partial previous run that extracted
+    # cmdline-tools but didn't install platform-tools doesn't re-download.)
+    if (-not (Test-Path $sdkmanager)) {
         Write-Step "Downloading Android command-line tools..."
         $cmdToolsUrl  = "https://dl.google.com/android/repository/commandlinetools-win-11076708_latest.zip"
         $cmdToolsZip  = "$env:TEMP\android-cmdtools.zip"
 
         New-Item -ItemType Directory -Force -Path $cmdToolsDest | Out-Null
+
+        # Clean up any stale 'latest' from a previous failed run that left
+        # the dir but without a working sdkmanager.
+        if (Test-Path "$cmdToolsDest\latest") {
+            Remove-Item -Recurse -Force "$cmdToolsDest\latest"
+        }
+
         Invoke-WebRequest $cmdToolsUrl -OutFile $cmdToolsZip
         Expand-Archive $cmdToolsZip -DestinationPath $cmdToolsDest -Force
 
-        # Rename extracted folder to 'latest' as required by sdkmanager
+        # Extracted folder is named 'cmdline-tools' — rename to 'latest' as sdkmanager requires.
         $extracted = Get-ChildItem $cmdToolsDest | Where-Object { $_.Name -ne "latest" } | Select-Object -First 1
         if ($extracted) { Rename-Item $extracted.FullName "latest" }
 
