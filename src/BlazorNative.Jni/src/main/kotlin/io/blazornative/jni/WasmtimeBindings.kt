@@ -40,6 +40,10 @@ interface WasmtimeBindings : Library {
     fun wasmtime_component_new(engine: Pointer, wasmBytes: ByteArray, wasmLen: Long, componentOut: Array<Pointer?>): Pointer?
     fun wasmtime_component_delete(component: Pointer)
 
+    // ─── Component Linker ────────────────────────────────────────────────
+    fun wasmtime_component_linker_new(engine: Pointer): Pointer?
+    fun wasmtime_component_linker_delete(linker: Pointer)
+
     // ─── Error ───────────────────────────────────────────────────────────
     fun wasmtime_error_message(errPtr: Pointer, nameOut: WasmName)
     fun wasmtime_error_delete(errPtr: Pointer)
