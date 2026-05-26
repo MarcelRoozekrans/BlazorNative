@@ -14,7 +14,11 @@ dependencies {
     // APK's jniLibs section contains JNA's native dispatch. Same artifact works
     // for JVM unit tests since the .aar metadata exposes the same JVM classes.
     implementation("net.java.dev.jna:jna:5.14.0@aar")
-    implementation("net.java.dev.jna:jna-platform:5.14.0")
+    // jna-platform transitively pulls jna:.jar — exclude it so the :aar above
+    // is the only JNA on the classpath (otherwise duplicate-class build error).
+    implementation("net.java.dev.jna:jna-platform:5.14.0") {
+        exclude(group = "net.java.dev.jna", module = "jna")
+    }
 
     // Kotlin stdlib
     implementation(kotlin("stdlib-jdk8"))
@@ -83,6 +87,18 @@ android {
 
     testOptions {
         unitTests.isIncludeAndroidResources = false
+    }
+
+    packaging {
+        // Both JNA artifacts (jna:.aar + jna-platform:.jar) ship the LGPL2.1
+        // license text under META-INF — exclude duplicates from the APK.
+        resources {
+            excludes += setOf(
+                "META-INF/LGPL2.1",
+                "META-INF/AL2.0",
+                "META-INF/*.kotlin_module"
+            )
+        }
     }
 }
 
