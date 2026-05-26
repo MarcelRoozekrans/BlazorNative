@@ -78,6 +78,23 @@
 ## P2 — Real apps can be built
 *Required before any non-trivial Blazor app works correctly.*
 
+- [ ] **Phase 2.2b — wasmtime Linker::drop SIGABRT on Android Scudo allocator** *(deferred from Phase 2.2)*
+  `wasmtime_component_linker_delete` crashes with `Scudo ERROR: corrupted chunk header` on Android x86_64 emulator (API 34). The wasm execution completes successfully before the crash — `[BOOT]` markers ARE captured. Workaround in place: skip all cleanup deletes in `WasiHost.runWasm` (process-scoped leak). Backtrace shows `wasmtime_component_linker_t::drop → NameMap<Atom, Definition>::drop → Arc<Definition>::drop_slow → scudo::deallocate → corrupted header`. Investigation angles:
+    (a) Mono-AOT'd .wasm might hold Arc<wasmtime::Engine> refs that wasmtime double-decrements during cleanup
+    (b) wasmtime's TLS cleanup ordering differs on Bionic vs glibc
+    (c) cargo-ndk build flags might be missing Android-specific allocator wiring (e.g. `-C link-arg=-Wl,-z,noexecstack`)
+    (d) libwasmtime v45 may have an Android-specific bug; check wasmtime upstream issue tracker; consider bumping to v46+ when available
+  Same call sequence works fine on Windows x86_64 (JVM tests pass). Phase 2.2b should ALSO add a per-test Android instrumented test for each lifecycle pair (engine alone, store alone, etc.) to bisect which delete is the actual problem — the current "skip everything" workaround leaks the whole graph; finding the minimal failing delete narrows the fix.
+
+- [ ] **Android x86_64 emulator HAXM/Hyper-V documentation** *(deferred from Phase 2.2)*
+  Phase 2.2 assumed Marcel's dev box had HAXM or Hyper-V acceleration for the x86_64 emulator. Documented working on Marcel's box. On boxes without it, emulator boot is too slow / fails. Document the fallback (arm64 emulator on Windows-on-ARM, or `-accel off` slow mode) in setup.ps1 with a probe + warning.
+
+- [ ] **APK size reduction** *(deferred from Phase 2.2 — P3)*
+  Phase 2.2 ships ~81 MB APK (libwasmtime per ABI is ~36-39 MB each, plus .wasm ~13 MB). R8 / ProGuard / wasmtime feature trimming can reduce. M4 hardening work.
+
+- [ ] **Universal vs ABI-split APK** *(deferred from Phase 2.2 — P3)*
+  Currently building a single universal APK with both ABIs. Play Store best practice is per-ABI split APKs (or App Bundle). M4 work.
+
 - [ ] **Linux/macOS `setup.ps1` parity for libwasmtime cargo build** *(deferred from Phase 2.1)*
   Phase 2.1's `setup.ps1` section 8b is Windows-only. Equivalent shell scripts (`setup.sh`) for Linux + macOS need to clone wasmtime, cargo-build wasmtime-c-api, and place the resulting `.so` / `.dylib` at `vendor/wasmtime/`. Same logic; different binary names and PATH conventions. Required before contributors on Linux/macOS can run `./gradlew test` from `src/BlazorNative.Jni/`.
 
