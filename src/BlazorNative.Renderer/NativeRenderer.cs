@@ -213,7 +213,7 @@ public sealed class NativeRenderer : BlazorRenderer
             switch ((RenderTreeEditType)bnEdit.Type)
             {
                 case RenderTreeEditType.PrependFrame:
-                    ProcessFrame(componentId, ref referenceFrames, bnEdit.ReferenceFrameIndex, bnEdit.SiblingIndex, ref patches);
+                    ProcessFrame(componentId, ref referenceFrames, bnEdit.ReferenceFrameIndex, bnEdit.SiblingIndex, parentNodeId: null, ref patches);
                     break;
 
                 case RenderTreeEditType.RemoveFrame:
@@ -247,6 +247,7 @@ public sealed class NativeRenderer : BlazorRenderer
         ref BnArrayRange<RenderTreeFrame> frames,
         int frameIndex,
         int siblingIndex,
+        int? parentNodeId,
         ref PooledList<RenderPatch> patches)
     {
         var frame = new BnRenderTreeFrame(ref frames[frameIndex]);
@@ -257,7 +258,7 @@ public sealed class NativeRenderer : BlazorRenderer
             {
                 var nodeId = _tree.AllocateNode(componentId, siblingIndex);
                 var nodeType = MapElementToNodeType(frame.ElementName!);
-                patches.Add(new CreateNodePatch(nodeId, nodeType));
+                patches.Add(new CreateNodePatch(nodeId, nodeType, parentNodeId));
 
                 var subtreeLen = frame.ElementSubtreeLength;
                 for (var i = 1; i < subtreeLen; i++)
@@ -273,7 +274,10 @@ public sealed class NativeRenderer : BlazorRenderer
                         // emit its create/text patches as a child of this element.
                         // Use the child's index as siblingIndex (positions within
                         // the parent's subtree are unique enough for the M1 mapping).
-                        ProcessFrame(componentId, ref frames, frameIndex + i, frameIndex + i, ref patches);
+                        // Pass this element's nodeId as the child's parentNodeId so
+                        // the host-side widget mapper can attach the child inside
+                        // this element's view (Phase 2.5 design).
+                        ProcessFrame(componentId, ref frames, frameIndex + i, frameIndex + i, parentNodeId: nodeId, ref patches);
                         // Skip the child's own subtree so we don't double-walk it.
                         if (child.FrameType == RenderTreeFrameType.Element)
                             i += child.ElementSubtreeLength - 1;
@@ -285,7 +289,7 @@ public sealed class NativeRenderer : BlazorRenderer
             case RenderTreeFrameType.Text:
             {
                 var textNodeId = _tree.AllocateNode(componentId, siblingIndex);
-                patches.Add(new CreateNodePatch(textNodeId, "text"));
+                patches.Add(new CreateNodePatch(textNodeId, "text", parentNodeId));
                 patches.Add(new ReplaceTextPatch(textNodeId, frame.TextContent ?? ""));
                 break;
             }
