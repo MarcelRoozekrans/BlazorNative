@@ -53,6 +53,11 @@ public static class Program
     // keeps the type alive, but the trimmer still strips per-method dead code;
     // [DynamicDependency] on Main forces all WasiBridge members to be preserved.
     [DynamicDependency(DynamicallyAccessedMemberTypes.All, typeof(WasiBridge))]
+    // Phase 2.4 Task 4: NativeRenderer.Mount<T> calls InstantiateComponent
+    // which uses Activator.CreateInstance — Mono-AOT trimmer drops the
+    // parameterless ctor of _BridgeFrameSelfTest otherwise (error surfaces as
+    // "CtorNotLocated, BlazorNative.WasiHost._BridgeFrameSelfTest" at mount).
+    [DynamicDependency(DynamicallyAccessedMemberTypes.All, typeof(_BridgeFrameSelfTest))]
     public static int Main()
     {
         try
@@ -109,6 +114,16 @@ public static class Program
             // stub vs Android Build.* vs .NET CLI --env-passed value.
             var platformInfo = bridge.PlatformInfo;
             Console.WriteLine($"[BOOT] bridge-ok platform-info={platformInfo}");
+
+            // Phase 2.4: mount the sentinel component. The renderer's sync
+            // Mount<T> asserts the first render completes synchronously — true
+            // for _BridgeFrameSelfTest (no async lifecycle, sync UpdateDisplayAsync).
+            // UpdateDisplayAsync calls DispatchFrame which emits one [FRAME] line
+            // to stdout; the host parses it via FrameStreamParser. End-to-end
+            // proof of the .NET → host runtime transport for a single snapshot.
+            Console.WriteLine("[BOOT] mounting sentinel");
+            renderer.Mount<_BridgeFrameSelfTest>();
+            Console.WriteLine("[BOOT] frame-emitted");
 
             Console.WriteLine("[BOOT] done");
             return 0;
