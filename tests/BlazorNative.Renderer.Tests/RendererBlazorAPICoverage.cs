@@ -9,29 +9,28 @@ using BlazorNative.Renderer;
 namespace BlazorNative.Renderer.Tests;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Phase 2.7 Host-Element Spike
+// RendererBlazorAPICoverage
 //
-// Investigation of what Blazor components actually need from our renderer that
-// we may not currently provide. Output drives the Phase 2.7 design decision:
-//   - Is `BlazorNativeHostElement` even needed?
-//   - If yes, what shape (empty marker, custom DOM, AngleSharp-backed)?
-//   - What component patterns can M2's Hello demo (Phase 2.8) safely use?
+// Regression coverage for the Blazor component-API surface that BlazorNative's
+// renderer must support. Each test mounts a probe component exercising one
+// pattern (parameters, events, nested components, [Inject] DI, CascadingValue)
+// and asserts the emitted RenderFrame contains the expected patch shape.
 //
-// Each test mounts a progressively-more-complex component and observes:
-//   (a) Does Mount<T>() return without throwing?
-//   (b) Do the expected patches arrive?
-//   (c) Does the component's lifecycle / DI / event-wiring work?
+// Originally `Phase27HostElementSpike`: discovered that no "host element"
+// abstraction was needed for M2 and surfaced two real renderer bugs (Bug A:
+// MountAsync default ParameterView NRE; Bug B: Component-frame mis-attribution).
+// Both fixed in Phase 2.7. Spike doc:
+// docs/plans/2026-05-27-phase-2.7-host-element-spike.md.
 //
-// Tests use the .NET host CLR (not Mono-WASI). Mono-WASI-specific defects
-// (Phase 2.4 Task 4) are already documented and orthogonal to host-element
-// requirements; this spike focuses on what Blazor needs from the renderer
-// architecturally, runtime-independent.
+// These tests run on the .NET host CLR (not Mono-WASI). Runtime-specific
+// concerns are tracked separately under MILESTONE/ROADMAP — see Phase 2.4
+// Task 4 + Phase 2.8 audit's runtime-architecture-evaluation item.
 // ─────────────────────────────────────────────────────────────────────────────
 
-public class Phase27HostElementSpike
+public class RendererBlazorAPICoverage
 {
     private readonly ITestOutputHelper _log;
-    public Phase27HostElementSpike(ITestOutputHelper log) => _log = log;
+    public RendererBlazorAPICoverage(ITestOutputHelper log) => _log = log;
 
     private static NativeRenderer NewRenderer(IServiceCollection? extraServices = null)
     {
@@ -280,15 +279,9 @@ public class Phase27HostElementSpike
         var themePatch = frame.Patches.OfType<ReplaceTextPatch>()
             .FirstOrDefault(p => p.Text.StartsWith("theme:"));
 
-        if (themePatch is null)
-        {
-            _log.WriteLine("⚠ Probe 5 FAIL: no theme text in first frame — cascading value may need multi-frame composition");
-        }
-        else
-        {
-            _log.WriteLine($"✅ Probe 5 PASS: cascading value reached child → {themePatch.Text}");
-            Assert.Equal("theme:dark", themePatch.Text);
-        }
+        Assert.NotNull(themePatch);
+        Assert.Equal("theme:dark", themePatch.Text);
+        _log.WriteLine($"✅ Probe 5 PASS: cascading value reached child → {themePatch.Text}");
     }
 
     // ── Bug A regression test ─────────────────────────────────────────────────
