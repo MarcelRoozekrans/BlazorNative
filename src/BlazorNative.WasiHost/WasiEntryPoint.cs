@@ -57,7 +57,7 @@ public static class Program
     // which uses Activator.CreateInstance — Mono-AOT trimmer drops the
     // parameterless ctor of _BridgeFrameSelfTest otherwise (error surfaces as
     // "CtorNotLocated, BlazorNative.WasiHost._BridgeFrameSelfTest" at mount).
-    [DynamicDependency(DynamicallyAccessedMemberTypes.All, typeof(_BridgeFrameSelfTest))]
+    [DynamicDependency(DynamicallyAccessedMemberTypes.All, typeof(HelloComponent))]
     public static int Main()
     {
         try
@@ -121,9 +121,9 @@ public static class Program
             // UpdateDisplayAsync calls DispatchFrame which emits one [FRAME] line
             // to stdout; the host parses it via FrameStreamParser. End-to-end
             // proof of the .NET → host runtime transport for a single snapshot.
-            Console.WriteLine("[BOOT] mounting sentinel");
-            renderer.Mount<_BridgeFrameSelfTest>();
-            Console.WriteLine("[BOOT] frame-emitted");
+            Console.WriteLine("[BOOT] mounting hello");
+            renderer.Mount<HelloComponent>();
+            Console.WriteLine("[BOOT] hello-rendered");
 
             // Phase 2.4 Task 15 streaming spike: when BLAZOR_STREAMING_SPIKE=1
             // is set, sleep + emit a second frame so a host-side poller has
