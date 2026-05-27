@@ -2,6 +2,9 @@ package io.blazornative.jni
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import io.blazornative.jni.MobileBridgeHandlers
+import io.blazornative.jni.RenderFrame
+import io.blazornative.jni.RenderPatch
 import io.blazornative.shell.AndroidPlatformInfo
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -31,7 +34,16 @@ class BootSmokeAndroidTest {
         val wasmBytes = context.assets.open("BlazorNative.WasiHost.wasm").use { it.readBytes() }
         assertTrue(".wasm seems too small (${wasmBytes.size} bytes)", wasmBytes.size > 1_000_000)
 
-        val stdout = WasiHost.loadAndRun(wasmBytes, context.cacheDir, AndroidPlatformInfo.handlers)
+        val captured = mutableListOf<RenderFrame>()
+        val androidHandlers = AndroidPlatformInfo.handlers
+        val handlers = MobileBridgeHandlers(
+            platformInfo = androidHandlers.platformInfo,
+            onFrame = { frame ->
+                androidHandlers.onFrame(frame)  // preserve logcat side-effect
+                captured.add(frame)
+            }
+        )
+        val stdout = WasiHost.loadAndRun(wasmBytes, context.cacheDir, handlers)
 
         assertTrue("missing [BOOT] runtime-start. stdout:\n$stdout",
             stdout.contains("[BOOT] runtime-start"))
@@ -46,6 +58,17 @@ class BootSmokeAndroidTest {
             stdout.contains("[BOOT] bridge-ok platform-info="))
         assertTrue("expected '\"os\":\"Android\"' in bridge-ok payload. stdout:\n$stdout",
             stdout.contains("\"os\":\"Android\""))
+        // Phase 2.4: sentinel + frame round-trip on Android.
+        assertTrue("missing [BOOT] mounting sentinel. stdout:\n$stdout",
+            stdout.contains("[BOOT] mounting sentinel"))
+        assertTrue("missing [BOOT] frame-emitted. stdout:\n$stdout",
+            stdout.contains("[BOOT] frame-emitted"))
+        assertTrue("onFrame never fired. stdout:\n$stdout",
+            captured.isNotEmpty())
+        assertTrue("expected CommitFrame patch in first captured frame. captured: $captured",
+            captured.first().patches.any { it is RenderPatch.CommitFrame })
+        assertTrue("expected CreateNode(view) patch in first captured frame. captured: $captured",
+            captured.first().patches.any { it is RenderPatch.CreateNode && it.nodeType == "view" })
         assertTrue("missing [BOOT] done. stdout:\n$stdout",
             stdout.contains("[BOOT] done"))
     }
