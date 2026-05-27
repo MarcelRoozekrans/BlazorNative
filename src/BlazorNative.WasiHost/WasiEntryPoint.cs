@@ -125,6 +125,29 @@ public static class Program
             renderer.Mount<_BridgeFrameSelfTest>();
             Console.WriteLine("[BOOT] frame-emitted");
 
+            // Phase 2.4 Task 15 streaming spike: when BLAZOR_STREAMING_SPIKE=1
+            // is set, sleep + emit a second frame so a host-side poller has
+            // a measurable observation window to detect line-by-line flush.
+            // Production Main does not sleep; this code path is dormant unless
+            // the env var is set by the spike test.
+            if (Environment.GetEnvironmentVariable("BLAZOR_STREAMING_SPIKE") == "1")
+            {
+                Console.WriteLine("[BOOT] spike-sleeping");
+                Console.Out.Flush();
+                // Phase 2.4 Task 15 spike: Thread.Sleep is normally banned on
+                // WASI (BN0004) — Task.Delay throws PlatformNotSupportedException
+                // on Mono-WASI (see Phase 1.2 notes above). For this spike we
+                // WANT a synchronous block to extend the observation window;
+                // the cooperative-scheduler concern doesn't apply because Main
+                // has no async continuations.
+#pragma warning disable BN0004
+                Thread.Sleep(200);
+#pragma warning restore BN0004
+                renderer.Mount<_BridgeFrameSelfTest>();
+                Console.WriteLine("[BOOT] spike-second-frame-emitted");
+                Console.Out.Flush();
+            }
+
             Console.WriteLine("[BOOT] done");
             return 0;
         }
