@@ -14,4 +14,8 @@
     <PackageReference Include="xunit.runner.visualstudio" Version="2.*" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\BlazorNative.Renderer\BlazorNative.Renderer.csproj" />
+  </ItemGroup>
+
 </Project>
