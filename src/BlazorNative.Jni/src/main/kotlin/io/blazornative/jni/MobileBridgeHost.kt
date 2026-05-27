@@ -18,9 +18,14 @@ package io.blazornative.jni
  * docs/BACKLOG.md's deferred list (Phase 2.5 navigate/storage, M4+ fetch).
  * Dynamic bridges (runtime event callbacks) wait for the export-based pattern
  * — env vars are initialization-time only.
+ *
+ * Phase 2.4 adds onFrame — invoked by WasiHost.loadAndRun for each [FRAME]
+ * line parsed from captured stdout. Default no-op so existing Phase 2.3 call
+ * sites compile unchanged. Phase 2.5 widget mapper plugs into this slot.
  */
 data class MobileBridgeHandlers(
-    val platformInfo: () -> String
+    val platformInfo: () -> String,
+    val onFrame: (RenderFrame) -> Unit = {}
 )
 
 /**
