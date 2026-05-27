@@ -40,23 +40,70 @@ public sealed class NativeRenderer : BlazorRenderer
         BlazorInterop.EnsureInitialized();
     }
 
-    public override Dispatcher Dispatcher { get; } = Dispatcher.CreateDefault();
+    // Mono-WASI is single-threaded with no real scheduler — Dispatcher.CreateDefault()
+    // returns a dispatcher whose async-state-machine continuations don't unwind
+    // synchronously even when the wrapped work completes inline. Phase 2.4 Task 4
+    // needs sync-mount to succeed in Main, so we route all work through an inline
+    // dispatcher that simply runs the work item on the calling thread.
+    public override Dispatcher Dispatcher { get; } = new InlineDispatcher();
+
+    private sealed class InlineDispatcher : Dispatcher
+    {
+        public override bool CheckAccess() => true;
+
+        public override Task InvokeAsync(Action workItem)
+        {
+            try { workItem(); return Task.CompletedTask; }
+            catch (Exception ex) { return Task.FromException(ex); }
+        }
+
+        public override Task InvokeAsync(Func<Task> workItem)
+        {
+            try { return workItem() ?? Task.CompletedTask; }
+            catch (Exception ex) { return Task.FromException(ex); }
+        }
+
+        public override Task<TResult> InvokeAsync<TResult>(Func<TResult> workItem)
+        {
+            try { return Task.FromResult(workItem()); }
+            catch (Exception ex) { return Task.FromException<TResult>(ex); }
+        }
+
+        public override Task<TResult> InvokeAsync<TResult>(Func<Task<TResult>> workItem)
+        {
+            try { return workItem(); }
+            catch (Exception ex) { return Task.FromException<TResult>(ex); }
+        }
+    }
 
     public Task<int> MountAsync<TComponent>(
         ParameterView parameters = default,
         CancellationToken ct = default)
         where TComponent : IComponent
-        => Dispatcher.InvokeAsync(async ()
-            => await AddComponentAsync(typeof(TComponent), parameters));
+        => Dispatcher.InvokeAsync(() => AddComponentAsync(typeof(TComponent), parameters));
 
     /// <summary>Synchronous mount entry point for hosts without a multi-threaded
     /// scheduler (Mono-WASI Main). Asserts the first render completes synchronously;
     /// throws with a clear diagnostic if the component has async lifecycle work
     /// that requires real scheduler threads. See Phase 2.4 design.</summary>
-    public int Mount<TComponent>(ParameterView parameters = default)
+    ///
+    /// Bypasses MountAsync entirely: even with an inline Dispatcher + stripped
+    /// async lambda, the Task<int> returned by MountAsync is observed incomplete
+    /// on Mono-WASI for a fully-sync component (Phase 2.4 Task 4 investigation —
+    /// the async-state-machine wrapping AddComponentAsync's `await Render...` adds
+    /// a continuation step that doesn't unwind on the single-threaded WASI scheduler).
+    /// Calling Blazor's underlying primitives (InstantiateComponent +
+    /// AssignRootComponentId + RenderRootComponentAsync) directly lets us inspect
+    /// the inner Task's actual completion state without an extra async wrapper.
+    public int Mount<TComponent>() where TComponent : IComponent
+        => Mount<TComponent>(ParameterView.Empty);
+
+    public int Mount<TComponent>(ParameterView parameters)
         where TComponent : IComponent
     {
-        var task = MountAsync<TComponent>(parameters);
+        var component = InstantiateComponent(typeof(TComponent));
+        var componentId = AssignRootComponentId(component);
+        var task = RenderRootComponentAsync(componentId, parameters);
         if (!task.IsCompletedSuccessfully)
         {
             throw new InvalidOperationException(
@@ -64,7 +111,7 @@ public sealed class NativeRenderer : BlazorRenderer
                 "Component has async lifecycle work that needs a multi-threaded " +
                 "scheduler — not supported on Mono-WASI (Phase 1.2 finding).");
         }
-        return task.Result;
+        return componentId;
     }
 
     private async Task<int> AddComponentAsync(Type t, ParameterView pv)
