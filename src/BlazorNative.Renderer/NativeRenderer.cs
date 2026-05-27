@@ -6,7 +6,6 @@ using Microsoft.AspNetCore.Components.Web;
 using ZeroAlloc.AsyncEvents;
 using ZeroAlloc.Collections;
 using ZeroAlloc.Inject;
-using BlazorNative.Core;
 using BlazorRenderer = Microsoft.AspNetCore.Components.RenderTree.Renderer;
 
 namespace BlazorNative.Renderer;
@@ -23,7 +22,6 @@ namespace BlazorNative.Renderer;
 [Singleton]
 public sealed class NativeRenderer : BlazorRenderer
 {
-    private readonly IMobileBridge _bridge;
     private AsyncEventHandler<RenderFrame> _frames = new(InvokeMode.Sequential);
     private readonly NativeWidgetTree _tree = new();
     private int _frameId;
@@ -34,10 +32,9 @@ public sealed class NativeRenderer : BlazorRenderer
         remove => _frames.Unregister(value);
     }
 
-    public NativeRenderer(IMobileBridge bridge, IServiceProvider services)
+    public NativeRenderer(IServiceProvider services)
         : base(services, new NativeRendererLoggerFactory())
     {
-        _bridge = bridge;
         // Force the BlazorInterop static ctor (version + accessor probe) to run
         // before the first frame is rendered so layout drift surfaces immediately.
         BlazorInterop.EnsureInitialized();
@@ -293,9 +290,10 @@ public sealed class NativeRenderer : BlazorRenderer
     // JVM JNA / Android JNA) captures stdout via wasi_config_set_stdout_file
     // and parses [FRAME] lines via io.blazornative.jni.FrameStreamParser.
     //
-    // The previous DispatchFrameAsync awaited _bridge.WriteStorageAsync +
-    // _bridge.FetchAsync — both of which throw NotImplementedException (the
-    // shell-* deferred imports per Phase 2.3 BACKLOG). Removed in this phase.
+    // The previous DispatchFrameAsync awaited bridge.WriteStorageAsync +
+    // bridge.FetchAsync — both of which throw NotImplementedException (the
+    // shell-* deferred imports per Phase 2.3 BACKLOG). Removed in this phase,
+    // along with the IMobileBridge dependency itself (no longer referenced).
 
     private void DispatchFrame(RenderFrame frame)
     {

@@ -4,7 +4,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 using ZeroAlloc.AsyncEvents;
 using ZeroAlloc.TestHelpers;
-using BlazorNative.Core;
 using BlazorNative.Renderer;
 
 namespace BlazorNative.Renderer.Tests;
@@ -39,8 +38,7 @@ public class RendererSpike
     {
         // Arrange
         var services = new ServiceCollection().AddBlazorNativeRenderer().BuildServiceProvider();
-        using var bridge = new DevHostBridge();
-        using var renderer = new NativeRenderer(bridge, services);
+        using var renderer = new NativeRenderer(services);
 
         var tcs = new TaskCompletionSource<RenderFrame>();
         AsyncEvent<RenderFrame> handler = (frame, ct) =>
@@ -101,8 +99,7 @@ public class RendererSpike
     public async Task NestedElements_EmitCreateNodeForEachLevel()
     {
         var services = new ServiceCollection().AddBlazorNativeRenderer().BuildServiceProvider();
-        using var bridge = new DevHostBridge();
-        using var renderer = new NativeRenderer(bridge, services);
+        using var renderer = new NativeRenderer(services);
 
         var tcs = new TaskCompletionSource<RenderFrame>();
         AsyncEvent<RenderFrame> handler = (frame, ct) =>
