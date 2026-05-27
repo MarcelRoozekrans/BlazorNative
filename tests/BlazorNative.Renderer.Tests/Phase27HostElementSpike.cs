@@ -286,6 +286,26 @@ public class Phase27HostElementSpike
             Assert.Equal("theme:dark", themePatch.Text);
         }
     }
+
+    // ── Bug A regression test ─────────────────────────────────────────────────
+
+    [Fact]
+    public async Task BugA_MountAsync_With_No_Args_Defaults_To_Empty_Parameters()
+    {
+        // Regression guard: Phase 2.4 Task 4 found that default(ParameterView)
+        // NREs in Blazor's ParameterView enumerator (silently swallowed by
+        // HandleException). The sync Mount<T> was fixed; MountAsync<T> still
+        // had the latent bug per Phase 2.7 spike. This test calls MountAsync
+        // with NO args and asserts a frame fires (i.e., the mount actually
+        // produced patches, not silently failed).
+        using var renderer = NewRenderer();
+        var frame = await CaptureFirstFrame(renderer, () => renderer.MountAsync<ParamProbe>());
+        _log.WriteLine($"Bug A test: got {frame.Patches.Length} patches");
+        Assert.NotEmpty(frame.Patches);
+        // ParamProbe with no Greeting param falls back to its default "default" value
+        var textPatch = frame.Patches.OfType<ReplaceTextPatch>().Single();
+        Assert.Equal("default", textPatch.Text);
+    }
 }
 
 internal static class EnumerableExtensions

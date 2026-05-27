@@ -76,8 +76,19 @@ public sealed class NativeRenderer : BlazorRenderer
         }
     }
 
+    /// <summary>Convenience overload that explicitly passes <see cref="ParameterView.Empty"/>.
+    /// Do NOT collapse this into a single overload with <c>ParameterView parameters = default</c>:
+    /// on Blazor's ParameterView (any runtime, not just Mono-WASI AOT), <c>default(ParameterView)</c>
+    /// throws NullReferenceException inside ComponentState.SupplyCombinedParameters, which the
+    /// renderer's HandleException swallows silently — mount appears to "succeed" (returns a
+    /// componentId) but no render fires and no [FRAME] line is emitted. Phase 2.7 Bug A fix
+    /// (continuation of Phase 2.4 Task 4 defect #3 finding).</summary>
+    public Task<int> MountAsync<TComponent>(CancellationToken ct = default)
+        where TComponent : IComponent
+        => MountAsync<TComponent>(ParameterView.Empty, ct);
+
     public Task<int> MountAsync<TComponent>(
-        ParameterView parameters = default,
+        ParameterView parameters,
         CancellationToken ct = default)
         where TComponent : IComponent
         => Dispatcher.InvokeAsync(() => AddComponentAsync(typeof(TComponent), parameters));
