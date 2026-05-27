@@ -282,7 +282,7 @@ public sealed class NativeRenderer : BlazorRenderer
         if (nodeId >= 0) patches.Add(new ReplaceTextPatch(nodeId, frame.TextContent ?? ""));
     }
 
-    // ── Bridge dispatch ───────────────────────────────────────────────────────
+    // ── Frame dispatch ────────────────────────────────────────────────────────
     //
     // Phase 2.4 transport: tagged [FRAME] line on stdout. Sync — Phase 2.0's
     // sync-contract decision forbids await/Task.Wait on any bridge path
