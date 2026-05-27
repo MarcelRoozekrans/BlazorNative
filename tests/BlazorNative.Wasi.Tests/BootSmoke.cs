@@ -33,8 +33,8 @@ public sealed class BootSmoke
         // Phase 2.3 — bridge round-trip via env var (wasmtime --env passed to .NET).
         Assert.Contains($"[BOOT] bridge-ok platform-info={CliPlatformInfo}",             stdout);
         // Phase 2.4: sentinel mount + frame emission round-trip.
-        Assert.Contains("[BOOT] mounting sentinel",  stdout);
-        Assert.Contains("[BOOT] frame-emitted",      stdout);
+        Assert.Contains("[BOOT] mounting hello",  stdout);
+        Assert.Contains("[BOOT] hello-rendered",  stdout);
         Assert.Matches(@"\[FRAME\] \{.*""op"":""commit""", stdout);
         Assert.Contains("[BOOT] done",                                                   stdout);
         Assert.DoesNotContain("[BOOT] FAIL",                                             stdout);

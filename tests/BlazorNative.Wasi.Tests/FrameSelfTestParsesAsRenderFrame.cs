@@ -36,6 +36,8 @@ public sealed class FrameSelfTestParsesAsRenderFrame
         Assert.Single(frame.Patches.OfType<CommitFramePatch>());
         Assert.Contains(frame.Patches.OfType<CreateNodePatch>(),
             p => p.NodeType == "view");
+        Assert.Contains(frame.Patches.OfType<ReplaceTextPatch>(),
+            p => p.Text == "Hello, BlazorNative!");
 
         // Phase 2.5: text-node create patches must carry ParentId so the host
         // mapper can attach text widgets inside their container (not as siblings).
