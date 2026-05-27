@@ -3,7 +3,9 @@ package io.blazornative.shell
 import android.app.Activity
 import android.os.Bundle
 import android.util.Log
+import android.widget.FrameLayout
 import android.widget.TextView
+import io.blazornative.jni.MobileBridgeHandlers
 import io.blazornative.jni.WasiHost
 import kotlin.concurrent.thread
 
@@ -30,13 +32,26 @@ class MainActivity : Activity() {
         setContentView(R.layout.main)
 
         val view = findViewById<TextView>(R.id.markers)
+        val widgetRoot = findViewById<FrameLayout>(R.id.widget_root)
+        val mapper = WidgetMapper(this, widgetRoot)
+
+        // Phase 2.5: wrap AndroidPlatformInfo.handlers so onFrame both logs to logcat
+        // (existing diagnostic behaviour) AND renders the patches to real widgets.
+        val androidHandlers = AndroidPlatformInfo.handlers
+        val handlers = MobileBridgeHandlers(
+            platformInfo = androidHandlers.platformInfo,
+            onFrame = { frame ->
+                androidHandlers.onFrame(frame)  // preserve logcat side-effect
+                mapper.apply(frame)             // render to real widgets
+            }
+        )
 
         thread(name = "BlazorNative-WasiHost-Boot") {
             try {
                 val wasmBytes = assets.open("BlazorNative.WasiHost.wasm").use { it.readBytes() }
                 Log.i(tag, "Loaded ${wasmBytes.size} bytes of .wasm from assets; booting...")
 
-                val stdout = WasiHost.loadAndRun(wasmBytes, cacheDir, AndroidPlatformInfo.handlers)
+                val stdout = WasiHost.loadAndRun(wasmBytes, cacheDir, handlers)
 
                 // Emit each captured line as one Log.i call so logcat shows
                 // them as atomic lines (filter via `adb logcat -s BlazorNative`).
