@@ -32,6 +32,10 @@ public sealed class BootSmoke
         Assert.Contains("[BOOT] event-ok fired=True name=self-test payload=phase-2.0",   stdout);
         // Phase 2.3 — bridge round-trip via env var (wasmtime --env passed to .NET).
         Assert.Contains($"[BOOT] bridge-ok platform-info={CliPlatformInfo}",             stdout);
+        // Phase 2.4: sentinel mount + frame emission round-trip.
+        Assert.Contains("[BOOT] mounting sentinel",  stdout);
+        Assert.Contains("[BOOT] frame-emitted",      stdout);
+        Assert.Matches(@"\[FRAME\] \{.*""op"":""commit""", stdout);
         Assert.Contains("[BOOT] done",                                                   stdout);
         Assert.DoesNotContain("[BOOT] FAIL",                                             stdout);
         Assert.Equal(0, exitCode);
