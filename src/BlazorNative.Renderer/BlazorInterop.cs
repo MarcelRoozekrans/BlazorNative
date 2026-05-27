@@ -200,13 +200,14 @@ internal ref struct BnRenderTreeFrame
     private readonly ref RenderTreeFrame _frame;
     public BnRenderTreeFrame(ref RenderTreeFrame frame) { _frame = ref frame; }
 
-    public RenderTreeFrameType FrameType            => _frame.FrameType;
-    public string?             ElementName          => _frame.ElementName;
-    public int                 ElementSubtreeLength => _frame.ElementSubtreeLength;
-    public string?             AttributeName        => _frame.AttributeName;
-    public object?             AttributeValue       => _frame.AttributeValue;
-    public ulong               AttributeEventHandlerId => _frame.AttributeEventHandlerId;
-    public string?             TextContent          => _frame.TextContent;
+    public RenderTreeFrameType FrameType                => _frame.FrameType;
+    public string?             ElementName              => _frame.ElementName;
+    public int                 ElementSubtreeLength     => _frame.ElementSubtreeLength;
+    public int                 ComponentSubtreeLength   => _frame.ComponentSubtreeLength;
+    public string?             AttributeName            => _frame.AttributeName;
+    public object?             AttributeValue           => _frame.AttributeValue;
+    public ulong               AttributeEventHandlerId  => _frame.AttributeEventHandlerId;
+    public string?             TextContent              => _frame.TextContent;
 }
 
 internal static class RefAccessors

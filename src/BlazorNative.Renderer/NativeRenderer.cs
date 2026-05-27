@@ -279,15 +279,26 @@ public sealed class NativeRenderer : BlazorRenderer
                     {
                         ProcessAttribute(nodeId, ref child, ref patches);
                     }
+                    else if (child.FrameType == RenderTreeFrameType.Component)
+                    {
+                        // Component frame inside this element's subtree. We do NOT
+                        // emit a patch here — the component's own ComponentRenderTreeDiff
+                        // is in the same RenderBatch.UpdatedComponents array and handles
+                        // its rendering separately. We MUST advance i past the component's
+                        // subtree so its child Attribute frames (carrying its parameter
+                        // values like Label="A") aren't mis-attributed to THIS element
+                        // by the next loop iteration. Phase 2.7 Bug B fix.
+                        i += child.ComponentSubtreeLength - 1;
+                    }
                     else
                     {
-                        // Non-attribute child frame inside the subtree — recurse to
-                        // emit its create/text patches as a child of this element.
-                        // Use the child's index as siblingIndex (positions within
-                        // the parent's subtree are unique enough for the M1 mapping).
-                        // Pass this element's nodeId as the child's parentNodeId so
-                        // the host-side widget mapper can attach the child inside
-                        // this element's view (Phase 2.5 design).
+                        // Non-attribute, non-component child frame inside the subtree —
+                        // recurse to emit its create/text patches as a child of this element.
+                        // Use the child's index as siblingIndex (positions within the
+                        // parent's subtree are unique enough for the M1 mapping). Pass
+                        // this element's nodeId as the child's parentNodeId so the host-
+                        // side widget mapper can attach the child inside this element's
+                        // view (Phase 2.5 design).
                         ProcessFrame(componentId, ref frames, frameIndex + i, frameIndex + i, parentNodeId: nodeId, ref patches);
                         // Skip the child's own subtree so we don't double-walk it.
                         if (child.FrameType == RenderTreeFrameType.Element)

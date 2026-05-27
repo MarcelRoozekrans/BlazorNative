@@ -182,20 +182,24 @@ public class Phase27HostElementSpike
         _log.WriteLine($"   child:A texts found = {childATexts.Count}");
         _log.WriteLine($"   child:B texts found = {childBTexts.Count}");
 
-        // Don't fail hard — report what's there.
-        if (childATexts.Count == 0 || childBTexts.Count == 0)
-        {
-            _log.WriteLine("⚠ Probe 3 FINDING: child components' text patches not in first frame");
-            _log.WriteLine("   This means children render in separate UpdateDisplayAsync calls");
-            _log.WriteLine("   → host needs to handle multi-frame component composition");
-        }
-        else
-        {
-            _log.WriteLine("✅ Probe 3 PASS: both children rendered in first frame");
-        }
+        // Phase 2.7 Bug B fix: assert NO UpdatePropPatches on the parent div for
+        // child component parameters. Pre-fix, "Label"="A" and "Label"="B" were
+        // mis-attributed to the parent (nodeId=1); post-fix, they should be on
+        // their respective child components or not emitted in the parent's diff
+        // at all (since child components render via separate diffs).
+        var parentNodeId = frame.Patches.OfType<CreateNodePatch>()
+            .First(p => p.NodeType == "view").NodeId;
+        var labelPropsOnParent = frame.Patches.OfType<UpdatePropPatch>()
+            .Where(p => p.NodeId == parentNodeId && p.Name == "Label")
+            .ToList();
+        Assert.Empty(labelPropsOnParent);  // Bug B fix: no mis-attributed props
 
-        // Soft assert: confirm we got SOMETHING; specific assertions in findings doc.
-        Assert.NotEmpty(frame.Patches);
+        // Both children's text must still render correctly (proves the fix
+        // doesn't break the children's own diffs).
+        Assert.NotEmpty(childATexts);
+        Assert.NotEmpty(childBTexts);
+
+        _log.WriteLine("✅ Probe 3 PASS: both children rendered + no mis-attribution");
     }
 
     // ── Probe 4: Service injection ────────────────────────────────────────────
