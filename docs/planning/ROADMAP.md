@@ -119,14 +119,24 @@ Phases:
      - Event flow (host→.NET button click) — Phase 2.6+/M3 separately.
      - Nested-component `PrependFrame` parenting (Task 1 review finding) — Phase 3+.
    - **9 commits.** Task 1: `9e805bb`. Task 2: `d3c0bc3`. Task 3: `e1b0eef`. Task 4: `fbbae93`. Task 5: `ffd236d`. Task 6: `9e801a1`. Task 7: `e56eb6c`. Task 8 GREEN marker: `65e200a`. Task 9: this update. See [design](../plans/2026-05-27-phase-2.5-design.md) + [implementation plan](../plans/2026-05-27-phase-2.5-implementation-plan.md).
-- ⏳ **Phase 2.6** — `BlazorNativeHostElement` stub (renderer-side host element descriptor) — *pending*
-- ⏳ **Phase 2.7** — End-to-end demo + final audit — *pending*
+- ⏳ **Phase 2.6** — Widget mapper completeness — *pending (inserted 2026-05-27 from Phase 2.5 carryovers)*
+   - Coverage tests for the 5 unexercised NodeTypes (button, input, image, scroll, picker) via synthetic-frame instrumented tests (no `.wasm` round-trip needed; tests call `mapper.apply(...)` directly with constructed `RenderFrame` fixtures).
+   - `UpdateProp` handler with a narrow initial property set (e.g., `placeholder`, `enabled`, `value`). Pattern: per-widget-type allowlist of property names + value-coercion rules. Establishable now; M3 components extend the allowlist as needed.
+   - `SetStyle` handler with a narrow initial property set (e.g., `backgroundColor`, `fontSize`, `padding`). Same pattern as UpdateProp.
+   - Out of scope: AttachEvent/DetachEvent (requires long-running Main + bidirectional event flow → M3), AppendChild (not emitted by current renderer → M3), nested-component `PrependFrame` parenting (multi-component support → M3).
+- ⏳ **Phase 2.7** — `BlazorNativeHostElement` stub (renderer-side host element descriptor) — *pending (was 2.6 before 2026-05-27 restructure)*
+- ⏳ **Phase 2.8** — End-to-end Hello demo + final audit — *pending (was 2.7 before 2026-05-27 restructure)*
 
 ---
 
 ### ⏳ Milestone 3 — P2: Real Apps Can Be Built  *(pending)*
 
 `@bind` two-way binding, `Bn*` component library, cascading values, end-to-end DI, navigation service, `BlazorNativeComponentBase` ergonomics.
+
+**Architectural items inherited from M2 (added 2026-05-27 during M2 phase restructure):**
+- **Bidirectional event flow.** AttachEvent/DetachEvent patches need host→.NET event dispatch. Requires keeping the `.wasm` alive past `Main` return (currently it exits after the sentinel mounts). Substantial runtime-loop change. The event-ingress mechanism (`WasiBridge.DispatchEventCore` via `[UnmanagedCallersOnly]` export) already exists from Phase 2.0 — what's missing is the long-running-Main shape that lets the host invoke it post-boot.
+- **Multi-component support.** `NativeRenderer.ProcessRenderTreeDiff`'s `PrependFrame` arm currently passes `parentNodeId: null` for all subtrees. This is correct for root-component PrependFrames but wrong for nested-component re-renders (each child component's diff arrives as a separate `BnRenderTreeDiff` whose root should attach to the parent component's view, not to the host root). Track and fix when component composition lands.
+- **`AppendChild` patch emission.** Currently defined in `PatchProtocol.cs` but never emitted. Whether component composition needs it (vs. re-emitting CreateNode + parent linkage) is an M3 design question.
 
 Maps to BACKLOG.md "P2 — Real apps can be built".
 
