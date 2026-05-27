@@ -78,6 +78,13 @@ object WasiHost {
             if (stderr.isNotEmpty()) {
                 System.err.println("[WasiHost] .wasm stderr (${stderr.length} bytes):\n$stderr")
             }
+            // Phase 2.4: parse [FRAME] lines from captured stdout and dispatch
+            // to handlers.onFrame. Default is a no-op so Phase 2.3 callers
+            // pay nothing. Phase 2.5 widget mapper plugs in here.
+            if (thrown == null && stdout.isNotEmpty()) {
+                val frames = FrameStreamParser.parse(stdout)
+                frames.forEach { handlers.onFrame(it) }
+            }
             if (thrown != null) throw thrown
             return stdout
         } finally {
