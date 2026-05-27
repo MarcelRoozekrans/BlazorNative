@@ -36,5 +36,12 @@ public sealed class FrameSelfTestParsesAsRenderFrame
         Assert.Single(frame.Patches.OfType<CommitFramePatch>());
         Assert.Contains(frame.Patches.OfType<CreateNodePatch>(),
             p => p.NodeType == "view");
+
+        // Phase 2.5: text-node create patches must carry ParentId so the host
+        // mapper can attach text widgets inside their container (not as siblings).
+        var textCreatePatches = frame.Patches.OfType<CreateNodePatch>()
+            .Where(p => p.NodeType == "text").ToList();
+        Assert.NotEmpty(textCreatePatches);
+        Assert.All(textCreatePatches, p => Assert.NotNull(p.ParentId));
     }
 }
