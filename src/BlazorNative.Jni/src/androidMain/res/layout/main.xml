@@ -1,17 +1,30 @@
 <?xml version="1.0" encoding="utf-8"?>
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#000000"
-    android:padding="16dp">
+    android:orientation="vertical">
 
-    <TextView
-        android:id="@+id/markers"
+    <FrameLayout
+        android:id="@+id/widget_root"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:fontFamily="monospace"
-        android:textColor="#00FF00"
-        android:textSize="14sp"
-        android:text="Loading .wasm..." />
+        android:layout_height="0dp"
+        android:layout_weight="3"
+        android:background="#FFFFFF" />
 
-</ScrollView>
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="2"
+        android:background="#000000"
+        android:padding="16dp">
+
+        <TextView
+            android:id="@+id/markers"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:fontFamily="monospace"
+            android:textColor="#00FF00"
+            android:textSize="14sp"
+            android:text="Loading .wasm..." />
+    </ScrollView>
+</LinearLayout>
