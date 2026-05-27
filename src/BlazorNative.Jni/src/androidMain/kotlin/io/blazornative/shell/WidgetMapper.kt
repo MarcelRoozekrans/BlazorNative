@@ -1,9 +1,11 @@
 package io.blazornative.shell
 
 import android.content.Context
+import android.graphics.Color
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import android.util.TypedValue
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
@@ -52,8 +54,8 @@ class WidgetMapper(private val context: Context, private val root: ViewGroup) {
             is RenderPatch.ReplaceText -> handleReplaceText(patch)
             is RenderPatch.RemoveNode  -> handleRemove(patch)
             is RenderPatch.UpdateProp  -> handleUpdateProp(patch)
+            is RenderPatch.SetStyle    -> handleSetStyle(patch)
             is RenderPatch.CommitFrame -> { /* boundary marker; no-op here */ }
-            is RenderPatch.SetStyle,
             is RenderPatch.AttachEvent,
             is RenderPatch.DetachEvent,
             is RenderPatch.AppendChild -> Log.w(TAG, "TODO Phase 3+: $patch")
@@ -103,6 +105,46 @@ class WidgetMapper(private val context: Context, private val root: ViewGroup) {
             }
             else -> Log.w(TAG, "UpdateProp '${p.name}' not yet supported (Phase 3+ extends)")
         }
+    }
+
+    private fun handleSetStyle(p: RenderPatch.SetStyle) {
+        val view = nodes[p.nodeId] ?: run {
+            Log.w(TAG, "SetStyle for unknown nodeId ${p.nodeId}: ignored")
+            return
+        }
+        when (p.property) {
+            "backgroundColor" -> {
+                val color = p.value?.let { parseColorOrNull(it) }
+                    ?: return logIgnore("backgroundColor", p.value)
+                view.setBackgroundColor(color)
+            }
+            "fontSize" -> {
+                val tv = view as? TextView
+                    ?: return logIgnore("fontSize", "${view::class.simpleName} is not TextView")
+                val sp = p.value?.let { parseFloatOrNull(it) }
+                    ?: return logIgnore("fontSize", p.value)
+                tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, sp)
+            }
+            "padding" -> {
+                val dp = p.value?.let { parseFloatOrNull(it) }
+                    ?: return logIgnore("padding", p.value)
+                val px = TypedValue.applyDimension(
+                    TypedValue.COMPLEX_UNIT_DIP, dp, context.resources.displayMetrics
+                ).toInt()
+                view.setPadding(px, px, px, px)
+            }
+            else -> Log.w(TAG, "SetStyle '${p.property}' not yet supported (Phase 3+ extends)")
+        }
+    }
+
+    private fun parseColorOrNull(s: String): Int? =
+        try { Color.parseColor(s) } catch (_: IllegalArgumentException) { null }
+
+    private fun parseFloatOrNull(s: String): Float? =
+        s.removeSuffix("sp").removeSuffix("dp").removeSuffix("px").toFloatOrNull()
+
+    private fun logIgnore(prop: String, detail: String?) {
+        Log.w(TAG, "SetStyle $prop ignored: $detail")
     }
 
     private companion object { const val TAG = "BlazorNative.WidgetMapper" }
