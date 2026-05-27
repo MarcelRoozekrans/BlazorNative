@@ -52,6 +52,24 @@ public sealed class NativeRenderer : BlazorRenderer
         => Dispatcher.InvokeAsync(async ()
             => await AddComponentAsync(typeof(TComponent), parameters));
 
+    /// <summary>Synchronous mount entry point for hosts without a multi-threaded
+    /// scheduler (Mono-WASI Main). Asserts the first render completes synchronously;
+    /// throws with a clear diagnostic if the component has async lifecycle work
+    /// that requires real scheduler threads. See Phase 2.4 design.</summary>
+    public int Mount<TComponent>(ParameterView parameters = default)
+        where TComponent : IComponent
+    {
+        var task = MountAsync<TComponent>(parameters);
+        if (!task.IsCompletedSuccessfully)
+        {
+            throw new InvalidOperationException(
+                "Mount<T> requires the first render to complete synchronously. " +
+                "Component has async lifecycle work that needs a multi-threaded " +
+                "scheduler — not supported on Mono-WASI (Phase 1.2 finding).");
+        }
+        return task.Result;
+    }
+
     private async Task<int> AddComponentAsync(Type t, ParameterView pv)
     {
         var component = InstantiateComponent(t);
