@@ -51,8 +51,8 @@ class WidgetMapper(private val context: Context, private val root: ViewGroup) {
             is RenderPatch.CreateNode  -> handleCreate(patch)
             is RenderPatch.ReplaceText -> handleReplaceText(patch)
             is RenderPatch.RemoveNode  -> handleRemove(patch)
+            is RenderPatch.UpdateProp  -> handleUpdateProp(patch)
             is RenderPatch.CommitFrame -> { /* boundary marker; no-op here */ }
-            is RenderPatch.UpdateProp,
             is RenderPatch.SetStyle,
             is RenderPatch.AttachEvent,
             is RenderPatch.DetachEvent,
@@ -86,6 +86,23 @@ class WidgetMapper(private val context: Context, private val root: ViewGroup) {
     private fun handleRemove(p: RenderPatch.RemoveNode) {
         val v = nodes.remove(p.nodeId) ?: return
         (v.parent as? ViewGroup)?.removeView(v)
+    }
+
+    private fun handleUpdateProp(p: RenderPatch.UpdateProp) {
+        val view = nodes[p.nodeId] ?: run {
+            Log.w(TAG, "UpdateProp for unknown nodeId ${p.nodeId}: ignored")
+            return
+        }
+        when (p.name) {
+            "placeholder" -> {
+                if (view is EditText) view.hint = p.value
+                else Log.w(TAG, "UpdateProp placeholder ignored: $view is not EditText")
+            }
+            "enabled" -> {
+                view.isEnabled = p.value?.toBoolean() ?: true
+            }
+            else -> Log.w(TAG, "UpdateProp '${p.name}' not yet supported (Phase 3+ extends)")
+        }
     }
 
     private companion object { const val TAG = "BlazorNative.WidgetMapper" }
