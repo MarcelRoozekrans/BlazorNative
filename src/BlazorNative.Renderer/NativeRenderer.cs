@@ -111,7 +111,7 @@ public sealed class NativeRenderer : BlazorRenderer
 
             var frame = new RenderFrame(frameId, timestamp, patches.AsSpan().ToArray());
             _ = _frames.InvokeAsync(frame, default);
-            _ = DispatchFrameAsync(frame);
+            DispatchFrame(frame);
         }
         catch (Exception ex)
         {
@@ -286,12 +286,21 @@ public sealed class NativeRenderer : BlazorRenderer
     }
 
     // ── Bridge dispatch ───────────────────────────────────────────────────────
+    //
+    // Phase 2.4 transport: tagged [FRAME] line on stdout. Sync — Phase 2.0's
+    // sync-contract decision forbids await/Task.Wait on any bridge path
+    // (Mono-WASI Task.InternalWaitCore PNSE trap). The host (wasmtime CLI /
+    // JVM JNA / Android JNA) captures stdout via wasi_config_set_stdout_file
+    // and parses [FRAME] lines via io.blazornative.jni.FrameStreamParser.
+    //
+    // The previous DispatchFrameAsync awaited _bridge.WriteStorageAsync +
+    // _bridge.FetchAsync — both of which throw NotImplementedException (the
+    // shell-* deferred imports per Phase 2.3 BACKLOG). Removed in this phase.
 
-    private async Task DispatchFrameAsync(RenderFrame frame)
+    private void DispatchFrame(RenderFrame frame)
     {
         var json = JsonSerializer.Serialize(frame, RendererJsonContext.Default.RenderFrame);
-        await _bridge.WriteStorageAsync("__render_frame__", json);
-        await _bridge.FetchAsync(new BridgeHttpRequest("blazornative://render", "POST", json));
+        Console.WriteLine($"[FRAME] {json}");
     }
 
     // ── Event ingestion ───────────────────────────────────────────────────────
