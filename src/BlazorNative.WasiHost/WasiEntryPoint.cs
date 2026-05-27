@@ -53,10 +53,13 @@ public static class Program
     // keeps the type alive, but the trimmer still strips per-method dead code;
     // [DynamicDependency] on Main forces all WasiBridge members to be preserved.
     [DynamicDependency(DynamicallyAccessedMemberTypes.All, typeof(WasiBridge))]
-    // Phase 2.4 Task 4: NativeRenderer.Mount<T> calls InstantiateComponent
-    // which uses Activator.CreateInstance — Mono-AOT trimmer drops the
-    // parameterless ctor of _BridgeFrameSelfTest otherwise (error surfaces as
-    // "CtorNotLocated, BlazorNative.WasiHost._BridgeFrameSelfTest" at mount).
+    // Phase 2.4 Task 4 / Phase 2.8 Task 1: NativeRenderer.Mount<T> calls
+    // InstantiateComponent which uses Activator.CreateInstance — Mono-AOT
+    // trimmer drops the parameterless ctor of any component-type mounted
+    // via Mount<T> otherwise (error surfaces as "CtorNotLocated,
+    // BlazorNative.WasiHost.<TypeName>" at mount time). M3 may generalize
+    // this pattern via a `[BlazorNativeMountable]` marker analyzer that
+    // emits the [DynamicDependency] automatically.
     [DynamicDependency(DynamicallyAccessedMemberTypes.All, typeof(HelloComponent))]
     public static int Main()
     {
