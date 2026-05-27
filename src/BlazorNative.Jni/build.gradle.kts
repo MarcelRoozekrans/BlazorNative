@@ -3,6 +3,7 @@ import org.gradle.api.tasks.testing.logging.TestExceptionFormat
 plugins {
     id("com.android.application") version "8.7.3"
     kotlin("android") version "2.0.21"
+    kotlin("plugin.serialization") version "2.0.21"
 }
 
 group = "io.blazornative"
@@ -30,6 +31,12 @@ dependencies {
 
     // Kotlin stdlib
     implementation(kotlin("stdlib-jdk8"))
+
+    // Phase 2.4: kotlinx.serialization for RenderFrame / RenderPatch wire format.
+    // Sealed-class polymorphism keyed on "op" discriminator matches the .NET
+    // [JsonPolymorphic(TypeDiscriminatorPropertyName = "op")] contract in
+    // src/BlazorNative.Renderer/PatchProtocol.cs.
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
 
     // JVM unit tests (Phase 2.1)
     testImplementation("org.junit.jupiter:junit-jupiter-api:5.11.3")
