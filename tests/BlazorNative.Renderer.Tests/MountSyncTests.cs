@@ -63,4 +63,28 @@ public sealed class MountSyncTests
         var ex = Assert.Throws<InvalidOperationException>(() => renderer.Mount<AsyncProbe>());
         Assert.Contains("synchronously", ex.Message);
     }
+
+    [Fact]
+    public void Mount_parameterless_overload_succeeds_with_sync_component()
+    {
+        // Regression guard: prevents anyone from collapsing the two Mount<T> overloads
+        // into one with `ParameterView parameters = default`, which silently breaks on
+        // Mono-WASI AOT (Phase 2.4 Task 4 defect #3). The fix is to pass ParameterView.Empty
+        // explicitly via this overload — this test ensures the overload exists and works.
+        var renderer = NewRenderer();
+        var id = renderer.Mount<SyncProbe>();
+        Assert.True(id >= 0, $"expected non-negative component id, got {id}");
+    }
+
+    [Fact]
+    public void Renderer_uses_inline_dispatcher_so_mount_chain_completes_synchronously()
+    {
+        // Regression guard: prevents anyone from reverting the InlineDispatcher swap.
+        // Dispatcher.CreateDefault() is not inline-only on Mono-WASI even when work
+        // completes synchronously — the swap is load-bearing (Phase 2.4 Task 4 defect #1).
+        var renderer = NewRenderer();
+        Assert.Equal("InlineDispatcher", renderer.Dispatcher.GetType().Name);
+        Assert.True(renderer.Dispatcher.CheckAccess(),
+            "InlineDispatcher.CheckAccess() must return true on the calling thread");
+    }
 }

@@ -95,6 +95,12 @@ public sealed class NativeRenderer : BlazorRenderer
     /// Calling Blazor's underlying primitives (InstantiateComponent +
     /// AssignRootComponentId + RenderRootComponentAsync) directly lets us inspect
     /// the inner Task's actual completion state without an extra async wrapper.
+    /// <summary>Convenience overload that explicitly passes <see cref="ParameterView.Empty"/>.
+    /// Do NOT collapse this into a single overload with <c>ParameterView parameters = default</c>:
+    /// on Mono-WASI AOT, <c>default(ParameterView)</c> throws NullReferenceException inside
+    /// ComponentState.SupplyCombinedParameters, which the renderer's HandleException swallows
+    /// silently — mount appears to "succeed" (returns a componentId) but no render fires and
+    /// no [FRAME] line is emitted. Phase 2.4 Task 4 investigation, defect #3.</summary>
     public int Mount<TComponent>() where TComponent : IComponent
         => Mount<TComponent>(ParameterView.Empty);
 
@@ -106,10 +112,13 @@ public sealed class NativeRenderer : BlazorRenderer
         var task = RenderRootComponentAsync(componentId, parameters);
         if (!task.IsCompletedSuccessfully)
         {
+            var inner = task.Exception?.GetBaseException();
             throw new InvalidOperationException(
-                "Mount<T> requires the first render to complete synchronously. " +
-                "Component has async lifecycle work that needs a multi-threaded " +
-                "scheduler — not supported on Mono-WASI (Phase 1.2 finding).");
+                $"Mount<T> requires RenderRootComponentAsync to complete synchronously. " +
+                $"task.Status={task.Status}; task.Exception={inner?.Message ?? "<none>"}. " +
+                "Common causes: component has truly async SetParametersAsync/OnInitializedAsync " +
+                "work, or the Dispatcher is no longer inline (see Phase 2.4 Task 4 investigation).",
+                inner);
         }
         return componentId;
     }
