@@ -1,88 +1,77 @@
-# Milestone 2 — P1: First End-to-End Demo on Android
+# Milestone 3 — P2: Real Apps Can Be Built
 
 **Status:** active
-**Started:** 2026-05-24
-**Source:** maps to BACKLOG.md "P1 — First end-to-end demo"
-**Predecessor:** Milestone 1 — complete 2026-05-24, tagged `v1.0` ([final audit](../plans/2026-05-24-milestone-1-final-audit.md))
+**Started:** 2026-05-28
+**Source:** maps to BACKLOG.md "P2 — Real apps can be built"
+**Predecessor:** Milestone 2 — complete 2026-05-28, tagged `v2.0` ([final audit](../plans/2026-05-27-milestone-2-final-audit.md))
 
 ## Goal
 
-Render a Blazor component as native Android widgets via a Kotlin shell that embeds Wasmtime and loads our WASI module.
+M2 proved the architecture works end-to-end for a static Hello render. M3 makes that architecture *useful* — real components, real interactivity, real platform-API access. After M3, a developer can plausibly build a small real app on BlazorNative: a multi-screen view hierarchy with bound form inputs, button taps that mutate state, navigation between routes, and access to host storage / fetch / current-route from .NET.
 
-This milestone closes the loop from .NET source code to a pixel on a real Android device. After M2 ships, the architecture diagram in `README.md` is no longer aspirational — it's executable.
+M3 also resolves the runtime-architecture question carried over from M2: pick (or confirm) the long-term build target — Mono-AOT wasi-experimental (status quo), componentize-dotnet (typed WIT, same runtime), or NativeAOT-per-ABI (drops .wasm entirely). Phase 3.0 owns this decision before any larger component-library investment.
 
 ## Definition of Done
 
-1. **Mono-WASI async trap resolved.** The `Task.InternalWaitCore PlatformNotSupportedException` concern carried from M1 (BACKLOG bullet "Mono-WASI async trap will fire on first real bridge event") is addressed via one of the three documented remediation options:
-   - (a) queue-and-drain pattern in the bridge — `[UnmanagedCallersOnly]` callback enqueues; a sync `pump` export drains;
-   - (b) sync-callable bridge interface — no `await` anywhere on the WASM → host path;
-   - (c) move renderer execution into the Android shell process — WASM module becomes pure logic/data.
+The criteria below are the initial M3 contract drafted at milestone-open. Subject to refinement during the Phase 3.0 brainstorm.
 
-   Decision committed to `docs/plans/`; remediation implemented; existing `ExportSmoke` test extended to confirm a bridge round-trip with at least one subscriber doesn't trap.
+1. **Runtime architecture decision committed.** Phase 2.8's eval doc ([runtime-architecture-eval.md](../plans/2026-05-27-phase-2.8-runtime-architecture-eval.md)) surfaced three options; Phase 3.0 chooses one and commits. If `componentize-dotnet` is selected, the 1-week time-boxed spike is run and either lands the swap or documents why staying on `wasi-experimental` is correct.
 
-2. **Android Kotlin shell scaffold exists** at `src/BlazorNative.Shell.Android/` with a minimal `MainActivity.kt` that loads `BlazorNative.WasiHost.wasm` from app assets. Builds via Gradle, installs to an emulator or device. *(Implemented in Phase 2.2 after Phase 2.1 proves the runtime layer on desktop JVM.)*
+2. **Bidirectional event flow.** `<button @onclick>` round-trips end-to-end: tap on Android widget → host invokes .NET `WasiBridge.DispatchEventCore` → the Blazor component's handler fires → re-render emits a frame → widget tree updates. Requires the long-running-Main shape (`Main` doesn't exit after first render) — substantial runtime-loop change designed and implemented.
 
-3. **JVM ↔ libwasmtime JNI integration** via JNA bindings against `libwasmtime` (cross-compiled per ABI from wasmtime source via cargo + NDK). Module loads successfully on Android; `mobile_bridge` import symbols can be wired to Kotlin implementations. *(Original DoD referenced `dev.wasmtime:wasmtime-java:latest` — that artifact does not exist. Strategy revised during Phase 2.1 brainstorm to Strategy G: cross-compile `libwasmtime` ourselves, bind via JNA. RN-Hermes pattern. See [Phase 2.1 design](../plans/2026-05-26-phase-2.1-design.md).)*
+3. **6 deferred `mobile_bridge` exports implemented** (Phase 2.3 carryover):
+   - `shell_navigate(route)`
+   - `shell_current_route() → string`
+   - `shell_storage_read(key) → string`
+   - `shell_storage_write(key, value)`
+   - `shell_storage_delete(key)`
+   - `shell_fetch(request) → response`
 
-4. **All seven `mobile_bridge` symbol exports implemented** on the Android side:
-   - `shell_navigate(routePtr, routeLen)`
-   - `shell_current_route(buf, bufLen) → int`
-   - `shell_storage_read(keyPtr, keyLen, valBuf, valBufLen) → int`
-   - `shell_storage_write(keyPtr, keyLen, valPtr, valLen)`
-   - `shell_storage_delete(keyPtr, keyLen)`
-   - `shell_fetch(reqPtr, reqLen, resBuf, resBufLen) → int`
-   - `shell_platform_info(buf, bufLen) → int`
+   Transport mechanism (env-var bridge revisited, or a real export surface unlocked by the Phase 3.0 runtime decision) settled during M3 design.
 
-5. **Render-frame consumer.** WASM-side: the renderer's `DispatchFrameAsync` write hits a code path the Android shell can intercept. Android-side: receives the `RenderFrame` JSON (via storage hook, dedicated export, or another path settled during Phase 2.3 brainstorm), parses to `RenderPatch[]`, applies patches to its native widget tree.
+4. **`Bn*` component library** — typed wrappers around the raw `NodeType`s from M2: `BnView`, `BnText`, `BnButton`, `BnInput`, plus parameters that flow through to widget properties (`BackgroundColor`, `FontSize`, `Padding`, `Placeholder`, `Enabled`, `OnClick`).
 
-6. **Native widget mapper** — Android implements the `NodeType` → widget mapping table from BACKLOG:
+5. **`@bind` two-way binding** works for at least one form input — EditText `value` ↔ component state. Triggers re-render on change.
 
-   | NodeType | Android widget |
-   |---|---|
-   | `view` | `FrameLayout` / `LinearLayout` |
-   | `text` | `TextView` |
-   | `button` | `Button` |
-   | `input` | `EditText` |
-   | `image` | `ImageView` |
-   | `scroll` | `ScrollView` |
-   | `picker` | `Spinner` |
+6. **Cascading values** propagate from a root-mounted parent component to nested child components, and a change in the parent triggers child re-render.
 
-7. **End-to-end demo runs on a real Android device (or emulator).** A `Hello`-style Blazor component renders correctly with the expected `[BOOT]` markers in logcat and the expected widgets on screen. Evidence captured as a screenshot or short recording in `docs/plans/`.
+7. **Navigation service** (`BlazorNative.Navigation`) — at minimum, `INavigationManager.NavigateTo(route)` triggers a root-component swap. Wired through the `shell_navigate` / `shell_current_route` exports from DoD #3.
 
-8. **Decision log committed** — design + implementation-plan doc per phase, plus an M2 final-audit doc once complete (same pattern as M1).
+8. **Multi-component composition.** Components compose other components; nested-component `PrependFrame` parenting works correctly (Phase 2.5 Task 1 review finding fixed — `ProcessRenderTreeDiff`'s `PrependFrame` arm uses the parent component's view, not the host root).
+
+9. **`HandleException` strict-mode opt-in.** Phase 2.7 carryover. Renderer exceptions are surfaced rather than silently swallowed to `Console.Error`. Both Phase 2.4 (Bug A) and Phase 2.7 (Bug B) lost a day each to silent-swallow debugging; M3 prevents recurrence.
+
+10. **`AppendChild` patch emission decision.** Currently defined in `PatchProtocol.cs` but never emitted. M3 either makes it load-bearing for composition or removes the dead patch type.
+
+11. **Decision log committed.** Same pattern as M1/M2: design + plan doc per phase, plus an M3 final-audit doc at close.
 
 ## Out of scope for this milestone
 
 - iOS Swift shell — Milestone 4 / BACKLOG P3
-- Component library (`Bn*` components, `@bind`, cascading values, navigation service) — Milestone 3 / BACKLOG P2
 - Production hardening (security, accessibility, i18n, OTA updates) — Milestones 6/7
 - NuGet packaging, CI pipeline, DevTools render-tree inspector — Milestone 4 / BACKLOG P3
 - Multi-window support, MD3/HIG defaults — Milestone 8 / BACKLOG P7
+- Allocation-budget tests (deferred from M1) — Milestone 4
+- Predictive back, lifecycle, FCM, secure storage, deep links — Milestone 5
+
+## Inherited from M2
+
+These items were identified during M2 phases but are M3 work by scope:
+
+- **Bidirectional event flow + long-running `Main`** — covered by DoD #2 above.
+- **Nested-component `PrependFrame` parenting** — covered by DoD #8 above.
+- **`AppendChild` patch emission resolution** — covered by DoD #10 above.
+- **`HandleException` debugging hazard** — covered by DoD #9 above.
+- **6 deferred `mobile_bridge` exports** — covered by DoD #3 above. (Phase 2.3 pivot shipped only `shell-platform-info`; the other 6 are intentional M3 work per the revised design.)
+- **`Mount<T>` faulted-task masking** — Phase 2.4 Task 2 carryover. If `MountAsync` faults synchronously, the current diagnostic masks the real exception. Cheap fix as part of DoD #9's strict-mode work.
+- **`NativeUiEvent` Kotlin-side mirror** — Phase 2.4 Task 7 carryover. Needed for DoD #2's event-flow wiring.
+- **Shared `WidgetMapperTestHelpers.kt`** — Phase 2.6 cleanup. Hoist when 4th test file lands.
+- **Android wasmtime 1/N flake (Phase 2.4b watch)** — keep watching; revisit with wasmtime v46+ upgrade if recurrence rate rises.
 
 ## Initial phase plan
 
-Tracked in `ROADMAP.md`. Subject to refinement via `add-phase` / `insert-phase`:
-
-- **Phase 2.0 — Mono-WASI async-trap remediation** *(complete 2026-05-25; (b) sync-callable bridge interface chosen)*
-- ✅ **Phase 2.1 — JVM desktop hosts `.wasm` via libwasmtime + JNA** *(complete 2026-05-26; GREEN CHECKPOINT met — 4 [BOOT] markers captured by `BootSmokeTest` via in-process JNA-bound libwasmtime. See [Phase 2.1 design](../plans/2026-05-26-phase-2.1-design.md) + [implementation plan](../plans/2026-05-26-phase-2.1-implementation-plan.md).)*
-- ✅ **Phase 2.2 — Android port** *(complete 2026-05-26; GREEN CHECKPOINT met — BootSmokeAndroidTest passes on blazornative-pixel6-x86_64 AVD; same .wasm boots identically in wasmtime CLI subprocess, JVM in-process JNA, and Android in-process JNA. See [Phase 2.2 design](../plans/2026-05-26-phase-2.2-design.md) + [implementation plan](../plans/2026-05-26-phase-2.2-implementation-plan.md).)*
-- ✅ **Phase 2.3 — `mobile_bridge` revival via env-var bridge** *(complete 2026-05-26; three-way GREEN — same .wasm round-trips host-supplied platform-info JSON via wasmtime CLI, JVM in-process JNA, AND Android in-process JNA. Design pivoted mid-execution from WIT-typed imports to env-var bridge over standard wasi:cli/environment due to three wasi-experimental SDK gaps. See [Phase 2.3 design](../plans/2026-05-26-phase-2.3-design.md) + [revision](../plans/2026-05-26-phase-2.3-design-revision.md).)*
-- ✅ **Phase 2.4 — Render-frame consumer** *(complete 2026-05-27; three-way GREEN with one observed flake — same .wasm round-trips one sentinel [FRAME] line through wasmtime CLI, JVM in-process JNA, and Android in-process JNA. The initial Task 14 Android failure was a 1/6 non-deterministic panic_bounds_check; Phase 2.4b investigation confirmed 5/5 successive re-runs PASS. Streaming spike validated at Rung 1 — tee'd stdout flushes line-by-line with ≤15ms latency; Phase 2.5+ has a known foundation. See [Phase 2.4 design](../plans/2026-05-26-phase-2.4-design.md) + [implementation plan](../plans/2026-05-26-phase-2.4-implementation-plan.md) + [streaming paths](../plans/2026-05-27-phase-2.4-streaming-paths.md).)*
-- 👁 **Phase 2.4b — Android wasmtime flake watch** *(low-priority watch item; no scheduled work — see ROADMAP.md)*
-- ✅ **Phase 2.5 — Native widget mapper** *(complete 2026-05-27; sentinel renders as real Android TextView inside vertical LinearLayout in MainActivity's widget_root, validated by new WidgetMapperTest instrumented test. Three-way GREEN: .NET 17/2, JVM 11, Android 2 (BootSmokeAndroidTest + WidgetMapperTest). WidgetMapper switches over 4 active patch types, stubs 5 deferred. .NET-side NativeRenderer.ProcessFrame populates CreateNodePatch.ParentId so parenting is explicit. See [Phase 2.5 design](../plans/2026-05-27-phase-2.5-design.md) + [implementation plan](../plans/2026-05-27-phase-2.5-implementation-plan.md).)*
-- ✅ **Phase 2.6 — Widget mapper completeness** *(complete 2026-05-27; three-way GREEN — 14 new instrumented tests pass on the AVD. UpdateProp handles placeholder + enabled; SetStyle handles backgroundColor + fontSize + padding. .NET 17/2, JVM 11, Android 16 (2 existing + 14 new). See [Phase 2.6 design](../plans/2026-05-27-phase-2.6-design.md) + [implementation plan](../plans/2026-05-27-phase-2.6-implementation-plan.md).)*
-- ✅ **Phase 2.7 — Renderer hardening (Bugs A + B fix, spike graduation)** *(complete 2026-05-27; three-way GREEN — .NET 23/2, JVM 11, Android 16. Original "host element stub" framing rejected after spike proved no host abstraction is needed; instead fixed two real renderer bugs surfaced by the spike. `RendererBlazorAPICoverage` permanent regression suite added. See [Phase 2.7 spike findings](../plans/2026-05-27-phase-2.7-host-element-spike.md) + [implementation plan](../plans/2026-05-27-phase-2.7-implementation-plan.md).)*
-- **Phase 2.8 — End-to-end Hello demo + final audit** *(was 2.7 before 2026-05-27 restructure — Hello component on emulator/device; capture evidence; close milestone. **Includes formal runtime-architecture evaluation:** weigh staying on `wasi-experimental` (current Mono-WASI path) vs switching to `componentize-dotnet` (typed WIT components, same runtime, ~1 week swap) vs pivoting to NativeAOT-per-ABI (drops wasm entirely, ~1-2 weeks if `linux-bionic-*` RIDs are GA). Decision feeds M3 starting point.)*
+Tracked in `ROADMAP.md`. Subject to refinement via `add-phase` / `insert-phase`. The first phase (3.0) covers the runtime-architecture decision; subsequent phases TBD via brainstorming.
 
 ## Why this milestone exists
 
-M1 proved the toolchain. M2 proves the architecture. After M2, every later milestone (P2 component library, P3 iOS shell, P4 platform APIs, ...) builds on a known-working Blazor → WASM → native widget pipeline. Skipping M2's end-to-end demo means downstream milestones inherit unknown unknowns from the unverified integration boundary.
-
-## Risks identified at milestone start
-
-| # | Risk | Mitigation |
-|---|---|---|
-| 1 | Mono-WASI async trap blocks every bridge call (see DoD #1) | Phase 2.0 explicitly addresses this BEFORE any native-shell scaffolding. Three options enumerated; brainstorm picks one. |
-| 2 | `wasmtime-java` may not match wasmtime CLI's component-model support level | Verify in Phase 2.1; fallback options: pin to an older wasmtime-java version that supports our component shape, or switch to a different embedding (e.g. `chicory` for pure-JVM, or shell out to native wasmtime binary). |
-| 3 | Render-frame transport (storage hook vs dedicated export) is undecided | Phase 2.3 brainstorm picks. Storage-hook is convenient but adds JSON-serialization cost; dedicated export is more efficient but requires Phase 2.0's async-trap fix to be solid. |
-| 4 | Android device + Java 17+ + Android SDK on Marcel's dev machine | Verify before Phase 2.1; install Android SDK via Android Studio or `sdkmanager` CLI if missing. Probably a `setup.ps1` extension. |
+M1 proved the toolchain. M2 proved the architecture. M3 makes the architecture *usable*. Skipping M3's component library + event flow means later milestones (P3 production hardening, P4 platform coverage, P5 ecosystem) inherit untested ergonomics and an unproven interactivity contract. The bidirectional event flow in particular changes the runtime shape (`Main` no longer exits) — that's a fundamental enough shift that delaying it past M3 would force every downstream milestone to be retrofitted.

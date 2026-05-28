@@ -41,7 +41,13 @@ Phases:
 
 ---
 
-### 🔄 Milestone 2 — P1: First End-to-End Demo on Android  *(active, started 2026-05-24)*
+### ✅ Milestone 2 — P1: First End-to-End Demo on Android  *(complete 2026-05-28, tagged `v2.0`)*
+
+8 phases (2.0 — 2.7) + Phase 2.8 close-out shipped. Same `.wasm` boots
+identically in three runtimes (wasmtime CLI, JVM JNA, Android JNA);
+HelloComponent renders as native Android widgets via the Kotlin shell.
+Audit verdict: PASS WITH PIVOTS (7/8 DoD PASS, #4 PIVOTED per Phase 2.3).
+See [final audit](../plans/2026-05-27-milestone-2-final-audit.md).
 
 Render a Blazor component as native Android widgets via a Kotlin shell that embeds Wasmtime and loads our WASI module. Full goal + 8-point DoD: [MILESTONE.md](MILESTONE.md).
 
@@ -136,11 +142,19 @@ Phases:
    - **Operational note:** Android sweep hit the Phase 2.4b 1/N flake on first attempt (`WidgetMapperTest` timed out after 60s). Passed cleanly on first re-run. **Third recurrence of the documented Phase 2.4b pattern** since it was first observed (Phase 2.4 Task 14, Phase 2.6 Task 4, Phase 2.7 Task 4). All three re-runs PASS. Still 0% reproduction rate on re-attempt — the watch item stays low-priority.
    - **Carryover for Phase 2.8 audit:** (a) the renderer's `HandleException` silently swallowing exceptions to `Console.Error` is a debugging hazard — both Bug A and Bug B's silent symptoms came from this. Consider a strict-mode opt-in or public `LastException` property for M3. (b) Pre-existing doc-comment defect on sync `Mount<T>` in `NativeRenderer.cs` (duplicate `<summary>` opening tag inside the doc block) — surfaced during Task 1 spec review but out of scope for that fix. Cosmetic; cleanup in Phase 2.8 or M3.
    - **5 commits.** Spike: `5dcf3f9`. Bug A: `d13f25b`. Bug B: `9039d1d`. Spike graduation: `f82d734`. GREEN marker: `14cf70b`. Task 5: this update. See [spike findings](../plans/2026-05-27-phase-2.7-host-element-spike.md) + [implementation plan](../plans/2026-05-27-phase-2.7-implementation-plan.md).
-- ⏳ **Phase 2.8** — End-to-end Hello demo + final audit — *pending (was 2.7 before 2026-05-27 restructure)*
+- ✅ **Phase 2.8** — Hello demo + M2 final audit + runtime arch eval — *complete (2026-05-28)*
+   - **Three-way GREEN.** `.NET` 23/2 (unchanged — assertions re-targeted from sentinel to Hello); JVM 11 (unchanged; one regression caught and fixed in `3007c69` — Task 1's `[DynamicDependency]` swap dropped `_BridgeFrameSelfTest`, which the dormant `BLAZOR_STREAMING_SPIKE=1` path still mounts → `CtorNotLocated` at runtime; re-added second trim-root annotation); Android 19 (16 baseline + 3 `WidgetMapperTextChildOnButtonTest` added in Task 3b; WidgetMapperTest's structural assertion now matches Hello's outer LinearLayout + 3 children shape).
+   - **HelloComponent** renders on the AVD: outer LinearLayout (backgroundColor=#FFEEAA, padding=16dp) containing inner LinearLayout (fontSize=24sp "Hello, BlazorNative!") + Button ("Tap") + EditText (placeholder="Type here..."). Exercises Phase 2.5 mapper + Phase 2.6 SetStyle (backgroundColor/fontSize/padding) + Phase 2.6 UpdateProp (placeholder) in one screenshot. Evidence: `docs/plans/2026-05-27-phase-2.8-hello-screenshot.png` + `docs/plans/2026-05-27-phase-2.8-hello-logcat.txt`.
+   - **Task 3b finding — text-child-on-TextView collapse.** Button/EditText extend TextView, not ViewGroup. Naive mapping would orphan child text nodes to `widget_root`. New `WidgetMapper` special-case: when a `CreateNode { nodeType=text, parentId=<TextView-derived> }` arrives, map the text node's id to its parent (no separate view); subsequent `ReplaceText` then calls `parent.setText(...)`. Matches the React Native idiom. 3 new regression tests in `WidgetMapperTextChildOnButtonTest`.
+   - **M2 final audit:** `docs/plans/2026-05-27-milestone-2-final-audit.md` walks all 8 DoD criteria. **Verdict: PASS WITH PIVOTS — 7 of 8 PASS, DoD #4 PIVOTED (1 of 7 mobile_bridge exports shipped; 6 deferred to M3 per Phase 2.3 design revision).**
+   - **Runtime architecture evaluation:** `docs/plans/2026-05-27-phase-2.8-runtime-architecture-eval.md` — research-subagent output with WebSearch/WebFetch evidence on all three options (wasi-experimental / componentize-dotnet / NativeAOT-per-ABI). Recommendation: start M3 on wasi-experimental (status quo); time-box 1-week componentize-dotnet spike at Phase 3.0; defer NativeAOT-per-ABI to M4/M5.
+   - **Housekeeping:** sync `Mount<T>` doc-comment duplicate-`<summary>` defect fixed (Phase 2.7 carryover).
+   - **M2 closed:** tagged `v2.0`. M3 ("P2 — Real Apps Can Be Built") opens with the runtime-architecture decision as its first concern.
+   - See [design](../plans/2026-05-27-phase-2.8-design.md) + [implementation plan](../plans/2026-05-27-phase-2.8-implementation-plan.md).
 
 ---
 
-### ⏳ Milestone 3 — P2: Real Apps Can Be Built  *(pending)*
+### 🔄 Milestone 3 — P2: Real Apps Can Be Built  *(active, started 2026-05-28)*
 
 `@bind` two-way binding, `Bn*` component library, cascading values, end-to-end DI, navigation service, `BlazorNativeComponentBase` ergonomics.
 
