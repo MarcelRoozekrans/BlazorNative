@@ -1,0 +1,11 @@
+--------- beginning of main
+05-28 06:56:40.455 28190 28214 I BlazorNative: Loaded 14166512 bytes of .wasm from assets; booting...
+05-28 06:58:22.563 28190 28214 I BlazorNative: Frame 1: 13 patches
+05-28 06:58:22.724 28190 28214 I BlazorNative: [BOOT] runtime-start
+05-28 06:58:22.735 28190 28214 I BlazorNative: [BOOT] di-ok bridge=WasiBridge renderer=NativeRenderer
+05-28 06:58:22.805 28190 28214 I BlazorNative: [BOOT] event-ok fired=True name=self-test payload=phase-2.0
+05-28 06:58:22.819 28190 28214 I BlazorNative: [BOOT] bridge-ok platform-info={"os":"Android","sdk":34,"abi":"x86_64","model":"sdk_gphone64_x86_64"}
+05-28 06:58:22.835 28190 28214 I BlazorNative: [BOOT] mounting hello
+05-28 06:58:22.852 28190 28214 I BlazorNative: [FRAME] {"frameId":1,"timestampMs":1779951500503,"patches":[{"op":"create","nodeId":1,"nodeType":"view"},{"op":"style","nodeId":1,"property":"backgroundColor","value":"#FFEEAA"},{"op":"style","nodeId":1,"property":"padding","value":"16"},{"op":"create","nodeId":2,"nodeType":"view","parentId":1},{"op":"style","nodeId":2,"property":"fontSize","value":"24"},{"op":"create","nodeId":3,"nodeType":"text","parentId":2},{"op":"text","nodeId":3,"text":"Hello, BlazorNative!"},{"op":"create","nodeId":4,"nodeType":"button","parentId":1},{"op":"create","nodeId":5,"nodeType":"text","parentId":4},{"op":"text","nodeId":5,"text":"Tap"},{"op":"create","nodeId":6,"nodeType":"input","parentId":1},{"op":"prop","nodeId":6,"name":"placeholder","value":"Type here..."},{"op":"commit","frameId":1,"timestampMs":1779951500503}]}
+05-28 06:58:22.854 28190 28214 I BlazorNative: [BOOT] hello-rendered
+05-28 06:58:22.861 28190 28214 I BlazorNative: [BOOT] done
