@@ -61,6 +61,11 @@ public static class Program
     // this pattern via a `[BlazorNativeMountable]` marker analyzer that
     // emits the [DynamicDependency] automatically.
     [DynamicDependency(DynamicallyAccessedMemberTypes.All, typeof(HelloComponent))]
+    // The dormant BLAZOR_STREAMING_SPIKE=1 code path (Phase 2.4 Task 15) still
+    // mounts _BridgeFrameSelfTest. Keep its ctor rooted for the spike test
+    // (StreamingSpike_Rung1Test) — otherwise CtorNotLocated fires when the
+    // env var is set. Phase 2.8 Task 8 GREEN-sweep finding.
+    [DynamicDependency(DynamicallyAccessedMemberTypes.All, typeof(_BridgeFrameSelfTest))]
     public static int Main()
     {
         try
