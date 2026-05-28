@@ -58,11 +58,14 @@ class BootSmokeAndroidTest {
             stdout.contains("[BOOT] bridge-ok platform-info="))
         assertTrue("expected '\"os\":\"Android\"' in bridge-ok payload. stdout:\n$stdout",
             stdout.contains("\"os\":\"Android\""))
-        // Phase 2.4: sentinel + frame round-trip on Android.
-        assertTrue("missing [BOOT] mounting sentinel. stdout:\n$stdout",
-            stdout.contains("[BOOT] mounting sentinel"))
-        assertTrue("missing [BOOT] frame-emitted. stdout:\n$stdout",
-            stdout.contains("[BOOT] frame-emitted"))
+        // Phase 2.4 / 2.8: HelloComponent mount + frame round-trip on Android.
+        // (Phase 2.8 Task 1 renamed the markers from "mounting sentinel" /
+        // "frame-emitted" to "mounting hello" / "hello-rendered" — matches
+        // tests/BlazorNative.Wasi.Tests/BootSmoke.cs.)
+        assertTrue("missing [BOOT] mounting hello. stdout:\n$stdout",
+            stdout.contains("[BOOT] mounting hello"))
+        assertTrue("missing [BOOT] hello-rendered. stdout:\n$stdout",
+            stdout.contains("[BOOT] hello-rendered"))
         assertTrue("onFrame never fired. stdout:\n$stdout",
             captured.isNotEmpty())
         assertTrue("expected CommitFrame patch in first captured frame. captured: $captured",

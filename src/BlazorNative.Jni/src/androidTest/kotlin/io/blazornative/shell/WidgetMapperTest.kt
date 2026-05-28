@@ -22,8 +22,7 @@ import java.util.concurrent.atomic.AtomicReference
  * parsed [FRAME] patches to the main looper via WidgetMapper), polls the
  * widget_root for the rendered tree, asserts the resulting view tree.
  *
- * As of Phase 2.8 Task 1, Main mounts the HelloComponent instead of the
- * Phase 2.5 sentinel. The IDEAL expected tree would be:
+ * As of Phase 2.8 Task 1, Main mounts the HelloComponent. Expected tree:
  *   widget_root: FrameLayout
  *     └── outer LinearLayout (from outer <div>)
  *           ├── inner LinearLayout (from inner <div>)
@@ -31,21 +30,11 @@ import java.util.concurrent.atomic.AtomicReference
  *           ├── Button ("Tap")
  *           └── EditText (hint="Type here...")
  *
- * KNOWN PHASE 2.8 RENDERER LIMITATION: Blazor's `<button>Tap</button>` produces
- * a button element with a TEXT-NODE CHILD ("Tap"). The current Android
- * WidgetMapper maps `<button>` → android.widget.Button, but Button extends
- * TextView (not ViewGroup), so when the renderer tries to attach the text-node
- * child to the Button, the parent-lookup `nodes[buttonId] as? ViewGroup`
- * returns null and falls back to `root`. Result: the "Tap" TextView ends up as
- * a sibling of the outer LinearLayout at widget_root level (an orphaned
- * TextView), and the Button itself is rendered text-less inside the outer
- * LinearLayout.
- *
- * The clean fix (special-case Button in handleCreate or handleReplaceText to
- * absorb its text-node child onto Button.setText) is a Phase 3+ renderer item.
- * For Phase 2.8 we assert the ACTUAL rendered shape and document the deferred
- * fix as a follow-up — the M2 screenshot still demonstrates all four widget
- * types are reachable end-to-end.
+ * Phase 2.8 Task 3b fixed the text-child-of-TextView collapse in WidgetMapper
+ * so that Blazor's `<button>Tap</button>` (a button with a text-node child)
+ * renders correctly: the text-node child is absorbed onto Button.setText
+ * instead of orphaning as a sibling at widget_root. See
+ * WidgetMapperTextChildOnButtonTest for the targeted regression coverage.
  *
  * Polling loop: cold wasmtime JIT + Mono AOT init of the ~14 MB .wasm on the
  * AVD x86_64 emulator can take 30-50s; 60s deadline gives headroom. The
@@ -79,15 +68,11 @@ class WidgetMapperTest {
 
             scenario.onActivity { act ->
                 val root = act.findViewById<FrameLayout>(R.id.widget_root)
-                // Phase 2.8: 2 top-level children due to the known Button
-                // text-child-misroute limitation documented in the KDoc above.
-                // Once the renderer special-cases Button (Phase 3+), the
-                // misrouted TextView disappears and root.childCount drops to 1.
-                assertEquals("widget_root should have 2 top-level children: outer <div> + orphaned button-text TextView",
-                    2, root.childCount)
+                assertEquals("widget_root should have exactly one top-level child (the outer <div> container)",
+                    1, root.childCount)
 
                 val outer = root.getChildAt(0)
-                assertTrue("first child should be a LinearLayout (mapped from outer <div>)",
+                assertTrue("top-level child should be a LinearLayout (mapped from outer <div>)",
                     outer is LinearLayout)
                 outer as LinearLayout
                 assertEquals("outer LinearLayout should be vertical",
@@ -95,9 +80,9 @@ class WidgetMapperTest {
                 assertEquals("outer LinearLayout should contain 3 children (inner div + button + input)",
                     3, outer.childCount)
 
-                // Outer child [0]: inner div → LinearLayout containing the Hello TextView
+                // Child [0]: inner div → LinearLayout containing the Hello TextView
                 val innerDiv = outer.getChildAt(0)
-                assertTrue("outer's first child should be inner LinearLayout (mapped from inner <div>)",
+                assertTrue("first child should be inner LinearLayout (mapped from inner <div>)",
                     innerDiv is LinearLayout)
                 innerDiv as LinearLayout
                 assertEquals("inner LinearLayout should contain 1 child (the Hello text)",
@@ -107,25 +92,19 @@ class WidgetMapperTest {
                 helloText as TextView
                 assertEquals("Hello, BlazorNative!", helloText.text.toString())
 
-                // Outer child [1]: button (the Button widget; its "Tap" text-node
-                // child was orphaned to widget_root — see KDoc).
+                // Child [1]: button (with text collapsed via Phase 2.8 Task 3b fix)
                 val button = outer.getChildAt(1)
-                assertTrue("outer's second child should be a Button (mapped from <button>)",
+                assertTrue("second child should be a Button (mapped from <button>)",
                     button is Button)
+                button as Button
+                assertEquals("Tap", button.text.toString())
 
-                // Outer child [2]: input
+                // Child [2]: input
                 val input = outer.getChildAt(2)
-                assertTrue("outer's third child should be an EditText (mapped from <input>)",
+                assertTrue("third child should be an EditText (mapped from <input>)",
                     input is EditText)
                 input as EditText
                 assertEquals("Type here...", input.hint.toString())
-
-                // Root child [1]: orphaned "Tap" TextView (Button text-node child).
-                val orphanedTap = root.getChildAt(1)
-                assertTrue("second top-level child should be a TextView (the orphaned <button> text-node)",
-                    orphanedTap is TextView)
-                orphanedTap as TextView
-                assertEquals("Tap", orphanedTap.text.toString())
             }
         }
     }

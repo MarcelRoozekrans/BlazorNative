@@ -63,6 +63,23 @@ class WidgetMapper(private val context: Context, private val root: ViewGroup) {
     }
 
     private fun handleCreate(p: RenderPatch.CreateNode) {
+        // Phase 2.8 Task 3b — text-child-of-TextView collapse: when a CreateNode
+        // for a text frame lands with a parent that's a TextView-but-not-ViewGroup
+        // (Button, EditText, plain TextView, etc.), don't allocate a separate
+        // View; instead map this nodeId to the parent itself so the subsequent
+        // ReplaceText on this nodeId routes through the parent's setText.
+        // Matches React Native's text-content collapse pattern.
+        //
+        // Without this, the renderer's child text frames orphan to widget_root
+        // because `as? ViewGroup` returns null for Button/EditText/etc.
+        if (p.nodeType == "text") {
+            val rawParent = p.parentId?.let { nodes[it] }
+            if (rawParent is TextView && rawParent !is android.view.ViewGroup) {
+                nodes[p.nodeId] = rawParent
+                return  // no separate view; subsequent ReplaceText sets parent's text
+            }
+        }
+
         val view: View = when (p.nodeType) {
             "view"   -> LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
             "text"   -> TextView(context)
