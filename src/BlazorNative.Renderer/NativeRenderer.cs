@@ -93,19 +93,6 @@ public sealed class NativeRenderer : BlazorRenderer
         where TComponent : IComponent
         => Dispatcher.InvokeAsync(() => AddComponentAsync(typeof(TComponent), parameters));
 
-    /// <summary>Synchronous mount entry point for hosts without a multi-threaded
-    /// scheduler (Mono-WASI Main). Asserts the first render completes synchronously;
-    /// throws with a clear diagnostic if the component has async lifecycle work
-    /// that requires real scheduler threads. See Phase 2.4 design.</summary>
-    ///
-    /// Bypasses MountAsync entirely: even with an inline Dispatcher + stripped
-    /// async lambda, the Task<int> returned by MountAsync is observed incomplete
-    /// on Mono-WASI for a fully-sync component (Phase 2.4 Task 4 investigation —
-    /// the async-state-machine wrapping AddComponentAsync's `await Render...` adds
-    /// a continuation step that doesn't unwind on the single-threaded WASI scheduler).
-    /// Calling Blazor's underlying primitives (InstantiateComponent +
-    /// AssignRootComponentId + RenderRootComponentAsync) directly lets us inspect
-    /// the inner Task's actual completion state without an extra async wrapper.
     /// <summary>Convenience overload that explicitly passes <see cref="ParameterView.Empty"/>.
     /// Do NOT collapse this into a single overload with <c>ParameterView parameters = default</c>:
     /// on Mono-WASI AOT, <c>default(ParameterView)</c> throws NullReferenceException inside
@@ -115,6 +102,20 @@ public sealed class NativeRenderer : BlazorRenderer
     public int Mount<TComponent>() where TComponent : IComponent
         => Mount<TComponent>(ParameterView.Empty);
 
+    /// <summary>Synchronous mount entry point for hosts without a multi-threaded
+    /// scheduler (Mono-WASI Main). Asserts the first render completes synchronously;
+    /// throws with a clear diagnostic if the component has async lifecycle work
+    /// that requires real scheduler threads.</summary>
+    /// <remarks>
+    /// Bypasses <see cref="MountAsync{TComponent}(ParameterView, CancellationToken)"/> entirely:
+    /// even with an inline Dispatcher + stripped async lambda, the <c>Task&lt;int&gt;</c> returned
+    /// by MountAsync is observed incomplete on Mono-WASI for a fully-sync component (Phase 2.4
+    /// Task 4 investigation — the async-state-machine wrapping <c>AddComponentAsync</c>'s
+    /// <c>await Render…</c> adds a continuation step that doesn't unwind on the single-threaded
+    /// WASI scheduler). Calling Blazor's underlying primitives (<c>InstantiateComponent</c> +
+    /// <c>AssignRootComponentId</c> + <c>RenderRootComponentAsync</c>) directly lets us inspect
+    /// the inner Task's actual completion state without an extra async wrapper.
+    /// </remarks>
     public int Mount<TComponent>(ParameterView parameters)
         where TComponent : IComponent
     {
