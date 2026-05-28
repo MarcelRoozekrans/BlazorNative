@@ -37,11 +37,12 @@ import java.util.concurrent.atomic.AtomicReference
  * WidgetMapperTextChildOnButtonTest for the targeted regression coverage.
  *
  * Polling loop: cold wasmtime JIT + Mono AOT init of the ~14 MB .wasm on the
- * AVD x86_64 emulator can take 30-50s; 60s deadline gives headroom. The
- * synchronous JVM BootSmokeAndroidTest exhibits the same latency.
- * The poller breaks as soon as widget_root has children (the commit-frame post
- * has fired). All assertions then run inside scenario.onActivity { } so they
- * see the latest widget tree on the UI thread.
+ * AVD x86_64 emulator can take 30-50s in isolation; full-suite runs after
+ * BootSmokeAndroidTest already consumed one cold-boot pay 50-75s for the
+ * second in-process load. 120s deadline accommodates the worst case (Phase
+ * 2.8 Task 3b finding). The poller breaks as soon as widget_root has children
+ * (the commit-frame post has fired). All assertions then run inside
+ * scenario.onActivity { } so they see the latest widget tree on the UI thread.
  *
  * The test method name retains the Phase 2.5 "sentinel_" prefix to avoid churn;
  * the assertions now target HelloComponent's shape.
@@ -52,7 +53,7 @@ class WidgetMapperTest {
     @Test
     fun sentinel_renders_as_linearlayout_containing_textview() {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
-            val deadline = System.currentTimeMillis() + 60_000
+            val deadline = System.currentTimeMillis() + 120_000
             val ready = AtomicReference(false)
 
             while (System.currentTimeMillis() < deadline) {
