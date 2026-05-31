@@ -35,8 +35,8 @@ public sealed class TrimValidationTests
             ["Count"] = 42,
         });
 
-        var frame = await CaptureFirstFrame(renderer, () => Task.Run(() =>
-            renderer.Mount<ParameterProbe>(pv)));
+        var frame = await CaptureFirstFrame(renderer, () =>
+            renderer.MountAsync<ParameterProbe>(pv));
 
         Assert.Contains(frame.Patches.OfType<CreateNodePatch>(),
             p => p.NodeType == "view");
@@ -52,8 +52,8 @@ public sealed class TrimValidationTests
         // Mount a CascadingValue<string> wrapping CascadingProbe and assert
         // the child sees the value. Builds a tiny TestHost component.
         var renderer = BuildRenderer();
-        var frame = await CaptureFirstFrame(renderer, () => Task.Run(() =>
-            renderer.Mount<CascadingTestHost>()));
+        var frame = await CaptureFirstFrame(renderer, () =>
+            renderer.MountAsync<CascadingTestHost>());
 
         var replaceText = frame.Patches.OfType<ReplaceTextPatch>().FirstOrDefault();
         Assert.NotNull(replaceText);
@@ -65,8 +65,8 @@ public sealed class TrimValidationTests
     public async Task InjectProbe_ResolvesService()
     {
         var renderer = BuildRendererWithService();
-        var frame = await CaptureFirstFrame(renderer, () => Task.Run(() =>
-            renderer.Mount<InjectProbe>()));
+        var frame = await CaptureFirstFrame(renderer, () =>
+            renderer.MountAsync<InjectProbe>());
 
         var replaceText = frame.Patches.OfType<ReplaceTextPatch>().FirstOrDefault();
         Assert.NotNull(replaceText);
@@ -95,6 +95,12 @@ public sealed class TrimValidationTests
         return services.BuildServiceProvider().GetRequiredService<NativeRenderer>();
     }
 
+    // NOTE: third copy of this helper in the test surface (also in
+    // tests/BlazorNative.Renderer.Tests/{TrimSafetyTests,RendererBlazorAPICoverage}.cs).
+    // Carryover from Phase 3.0a quality review: extract to shared
+    // RendererTestHelpers under InternalsVisibleTo (or BlazorNative.Renderer.Testing
+    // helper assembly) when Phase 3.0c's renderer rewrite touches this surface
+    // anyway. Until then, keep the duplication explicit + commented.
     private static async Task<RenderFrame> CaptureFirstFrame(
         NativeRenderer renderer,
         Func<Task> mountAction,
