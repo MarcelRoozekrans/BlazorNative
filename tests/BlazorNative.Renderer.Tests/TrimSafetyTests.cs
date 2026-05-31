@@ -152,6 +152,6 @@ public sealed class TrimSafetyTests
                 $"CreateNodePatch at NodeId={create.NodeId} has empty NodeType.");
         }
 
-        _log.WriteLine("✅ TrimSafetyTests PASS: ElementName → NodeType flow intact on Mono-AOT");
+        _log.WriteLine("TrimSafetyTests PASS: ElementName -> NodeType flow intact on Mono-AOT");
     }
 }
