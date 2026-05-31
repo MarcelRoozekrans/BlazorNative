@@ -1,4 +1,5 @@
 import org.gradle.api.tasks.testing.logging.TestExceptionFormat
+import java.io.File
 
 plugins {
     id("com.android.application") version "8.7.3"
@@ -132,12 +133,18 @@ tasks.withType<Test>().configureEach {
             .resolve("../../src/BlazorNative.WasiHost/bin/Release/net10.0/wasi-wasm/AppBundle/BlazorNative.WasiHost.wasm")
             .absolutePath
     )
-    // JNA's library search path — where setup.ps1 copies wasmtime.dll
+    // JNA's library search path — where setup.ps1 copies wasmtime.dll, plus
+    // the NativeAOT publish output for BlazorNative.NativeHost.dll (Phase 3.0b).
+    // Both paths coexist through 3.0b; 3.0c's atomic cleanup removes wasmtime.
     systemProperty(
         "jna.library.path",
-        rootProject.projectDir
-            .resolve("../../vendor/wasmtime")
-            .absolutePath
+        listOf(
+            // Existing: wasmtime — keeps BootSmokeTest (wasmtime path) green
+            rootProject.projectDir.resolve("../../vendor/wasmtime"),
+            // New: NativeAOT publish output (Phase 3.0b Gate 2)
+            rootProject.projectDir.resolve(
+                "../../src/BlazorNative.NativeHost/bin/Release/net10.0/win-x64/publish")
+        ).joinToString(File.pathSeparator) { it.absolutePath }
     )
 }
 
