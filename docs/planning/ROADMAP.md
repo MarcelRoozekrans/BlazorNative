@@ -158,10 +158,20 @@ Phases:
 
 `@bind` two-way binding, `Bn*` component library, cascading values, end-to-end DI, navigation service, `BlazorNativeComponentBase` ergonomics.
 
-**Architectural items inherited from M2 (added 2026-05-27 during M2 phase restructure):**
-- **Bidirectional event flow.** AttachEvent/DetachEvent patches need host→.NET event dispatch. Requires keeping the `.wasm` alive past `Main` return (currently it exits after the sentinel mounts). Substantial runtime-loop change. The event-ingress mechanism (`WasiBridge.DispatchEventCore` via `[UnmanagedCallersOnly]` export) already exists from Phase 2.0 — what's missing is the long-running-Main shape that lets the host invoke it post-boot.
-- **Multi-component support.** `NativeRenderer.ProcessRenderTreeDiff`'s `PrependFrame` arm currently passes `parentNodeId: null` for all subtrees. This is correct for root-component PrependFrames but wrong for nested-component re-renders (each child component's diff arrives as a separate `BnRenderTreeDiff` whose root should attach to the parent component's view, not to the host root). Track and fix when component composition lands.
-- **`AppendChild` patch emission.** Currently defined in `PatchProtocol.cs` but never emitted. Whether component composition needs it (vs. re-emitting CreateNode + parent linkage) is an M3 design question.
+**Runtime architecture decision committed 2026-05-28: NativeAOT-per-ABI** — drops wasmtime + .wasm; see [Phase 3.0 design](../plans/2026-05-28-phase-3.0-design.md). MILESTONE.md DoD #1 closed.
+
+Phases:
+- ⏳ **Phase 3.0a** — Renderer trim safety *(pending)*
+   - Annotation pass on `BlazorNative.Renderer` + `BlazorNative.WasiHost` to fix the trim-fragility wedge exposed by the failed componentize-dotnet spike (2026-05-28). `<TrimmerSingleWarn>false</TrimmerSingleWarn>` + `[DynamicallyAccessedMembers(All)]` on `Mount<T>` generic + `Bn*` accessor enclosing types. `BlazorInterop.VerifyAccessors` switches `Assembly.GetType(string)` → `typeof()` lookups. Regression test `TrimSafetyTests.Mount_HelloComponent_ElementName_NotNull`. Stays on wasi-experimental — no runtime swap. GREEN bar: 0 trim warnings on `dotnet publish`, `WidgetMapperTest` unchanged. Timebox: 1-2 days, 3 gates. **3.0b doesn't start until 3.0a is GREEN.**
+- ⏳ **Phase 3.0b** — NativeAOT runtime works *(pending)*
+   - New `BlazorNative.NativeHost.csproj` with `PublishAot=true` + `RuntimeIdentifiers=win-x64;linux-bionic-arm64;linux-bionic-x64`. Three boot-only `[UnmanagedCallersOnly]` exports (`blazornative_init/shutdown/version`) with typed structs (no JSON). JVM-desktop validation first (Windows-direct `.dll`), then WSL Ubuntu install + Android cross-compile, then `BootSmokeNativeAndroidTest` on AVD x86_64. **No renderer mount in this phase** — single-variable hypothesis test. wasi-experimental .wasm path stays intact as rollback safety net. Timebox: 5 days, 5 gates.
+- ⏳ **Phase 3.0c** — Native wire protocol + renderer + WASM-era collapse *(pending)*
+   - `PatchProtocolNative.cs` typed C-ABI structs for frames + patches. `NativeRenderer.DispatchFrame` rewrites from `Console.WriteLine` JSON to struct-array callback. Kotlin `WidgetMapper` rewires from sealed-class polymorphism to JNA Structure reads. Extended C-ABI: `register_frame_callback`, `register_event_callback`, `mount`, `dispatch_event`. Final cleanup commit deletes `BlazorNative.WasiHost/`, `vendor/wasmtime/`, `BlazorNative.Wasi.Tests/`, wasmtime + wasi-sdk + cargo-ndk in setup.ps1; renames `BlazorNative.NativeHost` → `BlazorNative.Runtime`. Timebox: 5-7 days, 5 gates.
+
+**M2 architectural carryover (resolved by Phase 3.0 decision):**
+- **Bidirectional event flow.** No long-running-Main concern — the NativeAOT library is always loaded. M3 DoD #2 implementation lands in Phase 3.2 via the C-ABI event-dispatch surface wired in 3.0c.
+- **6 deferred mobile_bridge exports** ship as direct C-ABI exports + JNA callbacks in Phase 3.1.
+- **Multi-component support / `AppendChild` patch emission.** Pure renderer work, runtime-neutral; M3 phase 3.3+ tackles when `Bn*` component library lands.
 
 Maps to BACKLOG.md "P2 — Real apps can be built".
 

@@ -15,9 +15,9 @@ M3 also resolves the runtime-architecture question carried over from M2: pick (o
 
 The criteria below are the initial M3 contract drafted at milestone-open. Subject to refinement during the Phase 3.0 brainstorm.
 
-1. **Runtime architecture decision committed.** Phase 2.8's eval doc ([runtime-architecture-eval.md](../plans/2026-05-27-phase-2.8-runtime-architecture-eval.md)) surfaced three options; Phase 3.0 chooses one and commits. If `componentize-dotnet` is selected, the 1-week time-boxed spike is run and either lands the swap or documents why staying on `wasi-experimental` is correct.
+1. **Runtime architecture decision committed.** ✅ **Decided 2026-05-28: NativeAOT-per-ABI** — see [Phase 3.0 design](../plans/2026-05-28-phase-3.0-design.md). Drops wasmtime + .wasm entirely; targets `win-x64` (JVM dev loop) + `linux-bionic-arm64`/`linux-bionic-x64` (Android). Sequenced as three sub-phases: **3.0a** renderer trim safety (on wasi-experimental, prerequisite), **3.0b** NativeAOT runtime works (JVM-desktop first, then Android, no renderer), **3.0c** native wire protocol + renderer + WASM-era collapse. Rationale: wasi-experimental upstream stalled + Phase 2.3's SDK gaps unfixed; componentize-dotnet 1-day spike on 2026-05-28 RED'd at Gate 2 (renderer `Bn*` wrapper trim-fragility under NativeAOT-LLVM — `RenderTreeFrame.ElementName` returned null at runtime). NativeAOT-per-ABI eliminates the WASI ABI threading ceiling, removes the wasmtime layer, and enables typed C-ABI for DoD #2 (bidirectional events) + DoD #3 (six deferred mobile_bridge exports). Phase 2.8's eval doc ([runtime-architecture-eval.md](../plans/2026-05-27-phase-2.8-runtime-architecture-eval.md)) is now historical context.
 
-2. **Bidirectional event flow.** `<button @onclick>` round-trips end-to-end: tap on Android widget → host invokes .NET `WasiBridge.DispatchEventCore` → the Blazor component's handler fires → re-render emits a frame → widget tree updates. Requires the long-running-Main shape (`Main` doesn't exit after first render) — substantial runtime-loop change designed and implemented.
+2. **Bidirectional event flow.** `<button @onclick>` round-trips end-to-end: tap on Android widget → host invokes .NET event-dispatch C-ABI export → the Blazor component's handler fires → re-render emits a frame → widget tree updates. **Long-running-Main concern retires automatically** under the Phase 3.0 NativeAOT decision — the runtime library is always loaded, event dispatch is just another `[UnmanagedCallersOnly]` call. Implementation lands in Phase 3.2.
 
 3. **6 deferred `mobile_bridge` exports implemented** (Phase 2.3 carryover):
    - `shell_navigate(route)`
@@ -27,7 +27,7 @@ The criteria below are the initial M3 contract drafted at milestone-open. Subjec
    - `shell_storage_delete(key)`
    - `shell_fetch(request) → response`
 
-   Transport mechanism (env-var bridge revisited, or a real export surface unlocked by the Phase 3.0 runtime decision) settled during M3 design.
+   **Transport mechanism settled by Phase 3.0 decision:** direct `[UnmanagedCallersOnly]` C-ABI exports + JNA callbacks, no env-var shoehorn, no WIT-typed-import toolchain. Implementation lands in Phase 3.1.
 
 4. **`Bn*` component library** — typed wrappers around the raw `NodeType`s from M2: `BnView`, `BnText`, `BnButton`, `BnInput`, plus parameters that flow through to widget properties (`BackgroundColor`, `FontSize`, `Padding`, `Placeholder`, `Enabled`, `OnClick`).
 
