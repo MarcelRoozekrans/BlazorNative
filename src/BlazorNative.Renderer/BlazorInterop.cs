@@ -68,15 +68,17 @@ internal static class BlazorInterop
         // the one accessor we genuinely depend on. If Blazor renames it or changes
         // its arity, the [UnsafeAccessor(Method)] binding fails at first call —
         // verify the underlying member exists *now* so we fail at load time instead.
-        // Annotated to tell the trimmer that EventFieldInfo's members must stay reachable.
-        // Without this, IL2026 fires on the lookup. The type is rooted by the
-        // [UnsafeAccessorType(...)] reference on RefAccessors.DispatchEventAsync below,
-        // so the trimmer will keep it; this annotation just silences the warning at the lookup site.
-        [UnconditionalSuppressMessage("Trimming", "IL2026",
-            Justification = "EventFieldInfo is kept alive by [UnsafeAccessorType] on RefAccessors.DispatchEventAsync. " +
-                            "Lookup at runtime is for drift detection only.")]
+        // Suppression scope: IL2057 (Type.GetType with non-recognized string literal)
+        // is silenced here because EventFieldInfo is kept alive by [UnsafeAccessorType]
+        // on RefAccessors.DispatchEventAsync below — the trimmer roots the type via
+        // that reference, this lookup is for drift detection only and never invokes
+        // members reflectively. IL2026 (RequiresUnreferencedCode) is NOT suppressed
+        // because Type.GetType(string, bool) doesn't carry RUC; if a future Blazor
+        // release annotates EventFieldInfo with [RequiresUnreferencedCode], IL2026
+        // would surface and we'd add the suppression then with concrete justification.
         [UnconditionalSuppressMessage("Trimming", "IL2057",
-            Justification = "Same as above — type referenced via UnsafeAccessorType, not subject to trimming.")]
+            Justification = "Type name is a const referring to a type rooted by [UnsafeAccessorType] " +
+                            "on RefAccessors.DispatchEventAsync. Lookup is for drift detection only.")]
         static Type? GetEventFieldInfoType() =>
             Type.GetType(EventFieldInfoTypeName, throwOnError: false);
 
