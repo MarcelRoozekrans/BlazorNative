@@ -33,15 +33,19 @@ public struct BlazorNativeInitResult
 
 public static class Exports
 {
-    // Static UTF-8 cstrings — populated in the static ctor so the NativeAOT
-    // RVA-fixup machinery doesn't need to allocate at first call.
+    // Static UTF-8 cstrings — allocated once on first type touch via the static
+    // ctor; pointers stay valid for the entire process lifetime so the JNA-side
+    // caller can hold them across many Init/Version calls. StringToCoTaskMemUTF8
+    // (not StringToHGlobalAnsi) gives us actual UTF-8 bytes; ANSI uses the OS
+    // codepage (Windows-1252 / locale default on Linux) which would mojibake on
+    // any non-ASCII content the Kotlin side decodes with Charsets.UTF_8.
     private static readonly IntPtr s_versionString;
     private static readonly IntPtr s_initOkErrorEmpty;
 
     static Exports()
     {
-        s_versionString = Marshal.StringToHGlobalAnsi("BlazorNative.NativeHost 0.3.0-phase-3.0b");
-        s_initOkErrorEmpty = Marshal.StringToHGlobalAnsi("");
+        s_versionString = Marshal.StringToCoTaskMemUTF8("BlazorNative.NativeHost 0.3.0-phase-3.0b");
+        s_initOkErrorEmpty = Marshal.StringToCoTaskMemUTF8("");
     }
 
     [UnmanagedCallersOnly(EntryPoint = "blazornative_init")]
@@ -71,11 +75,14 @@ public static class Exports
         {
             // Allocate the error message; host borrows the pointer during this
             // call (caller must copy if retaining). Memory leaks per-failure;
-            // acceptable since Init is one-shot.
+            // acceptable since Init is one-shot. Use ex.ToString() so the
+            // InnerException chain + stack come along — for the actual R1
+            // failure modes (TypeLoadException, MissingMethodException from
+            // NativeAOT trim), Message alone hides the offending type/member.
             return new BlazorNativeInitResult
             {
                 Status = 1,
-                ErrorMessage = Marshal.StringToHGlobalAnsi($"{ex.GetType().Name}: {ex.Message}"),
+                ErrorMessage = Marshal.StringToCoTaskMemUTF8(ex.ToString()),
                 VersionString = s_versionString,
             };
         }
