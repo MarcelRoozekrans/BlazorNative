@@ -5,7 +5,7 @@
 .DESCRIPTION
     Installs and configures everything needed to build and run BlazorNative:
       • .NET 10 SDK
-      • WASI experimental workload (manifest 10.0.108)
+      • WSL Ubuntu (blazornative-ubuntu) + .NET 10 SDK + NativeAOT cross-toolchain
       • wasi-sdk 25.0 (pinned — newer SDKs are rejected by the workload)
       • Wasmtime CLI v45
       • MAUI Android workload + Android SDK
@@ -160,34 +160,52 @@ if (Command-Exists "dotnet") {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 3. .NET workloads
+# 3. WSL Ubuntu (blazornative-ubuntu) + .NET 10 SDK
+#
+# Replaces the wasi-experimental workload as the Bionic-cross-compile
+# host. wasi-experimental sections 4 + 5 + 7c + 8c stay through
+# Phase 3.0b; Phase 3.0c's atomic cleanup deletes them.
 # ─────────────────────────────────────────────────────────────────────────────
 
-Write-Header "3 · .NET workloads"
+Write-Header "3 · WSL Ubuntu (blazornative-ubuntu)"
 
-$installedWorkloads = dotnet workload list 2>&1 | Out-String
+$wslDistro    = "blazornative-ubuntu"
+$wslInstall   = "C:\WSL\$wslDistro"
+$rootfsUrl    = "https://cloud-images.ubuntu.com/wsl/jammy/current/ubuntu-jammy-wsl-amd64-ubuntu22.04lts.rootfs.tar.gz"
+$rootfsPath   = Join-Path $env:TEMP "ubuntu-jammy-wsl.tar.gz"
 
-# WASI (always required) — net10 manifest 10.0.108
-if ($installedWorkloads -match "wasi-experimental") {
-    Write-OK "wasi-experimental workload already installed"
+$existing = wsl -l -q 2>&1 | Where-Object { $_ -eq $wslDistro }
+if ($existing) {
+    Write-OK "$wslDistro WSL distro already imported"
 } else {
-    Write-Step "Installing wasi-experimental workload..."
-    dotnet workload install wasi-experimental
-    if ($LASTEXITCODE -eq 0) { Write-OK "wasi-experimental installed" }
-    else { Write-Fail "wasi-experimental install failed (exit $LASTEXITCODE)" }
+    Write-Step "Downloading Ubuntu 22.04 WSL rootfs (~600 MB) ..."
+    if (-not (Test-Path $rootfsPath)) {
+        Invoke-WebRequest -Uri $rootfsUrl -OutFile $rootfsPath
+    }
+    New-Item -ItemType Directory -Force -Path $wslInstall | Out-Null
+    wsl --import $wslDistro $wslInstall $rootfsPath
+    if ($LASTEXITCODE -eq 0) { Write-OK "$wslDistro imported" }
+    else { Write-Fail "wsl --import failed (exit $LASTEXITCODE)" }
 }
 
-# MAUI Android (optional)
-if (-not $SkipAndroid) {
-    if ($installedWorkloads -match "maui-android") {
-        Write-OK "maui-android workload already installed"
-    } else {
-        Write-Step "Installing maui-android workload (this may take a few minutes)..."
-        dotnet workload install maui-android
-        if ($LASTEXITCODE -eq 0) { Write-OK "maui-android installed" }
-        else { Write-Fail "maui-android install failed (exit $LASTEXITCODE)" }
-    }
-}
+# Bootstrap .NET 10 SDK + cross-toolchain inside the distro.
+# NOTE: piped via `bash -c "<single-line>"` not a here-string. PowerShell here-
+# strings carry CRLF, which bash treats as a literal carriage return in args —
+# so `dotnet --version\r` is parsed as `dotnet--version`. The single-line
+# `bash -c` form sidesteps this without needing a CRLF→LF translation step.
+$bootstrapScript = "set -e; " +
+    "if ! command -v dotnet &> /dev/null; then " +
+        "apt-get update -qq && " +
+        "apt-get install -y wget ca-certificates clang zlib1g-dev libkrb5-dev && " +
+        "wget -q https://dot.net/v1/dotnet-install.sh -O /tmp/dotnet-install.sh && " +
+        "bash /tmp/dotnet-install.sh --channel 10.0 --install-dir /usr/share/dotnet && " +
+        "ln -sf /usr/share/dotnet/dotnet /usr/local/bin/dotnet; " +
+    "fi; " +
+    "dotnet --version"
+Write-Step "Bootstrapping .NET 10 SDK inside $wslDistro ..."
+wsl -d $wslDistro -e bash -c $bootstrapScript
+if ($LASTEXITCODE -eq 0) { Write-OK ".NET 10 SDK ready in $wslDistro" }
+else { Write-Fail "WSL bootstrap failed" }
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 4. wasi-sdk 25 (pinned by the wasi-experimental workload)
