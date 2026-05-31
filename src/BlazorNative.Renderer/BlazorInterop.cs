@@ -20,6 +20,7 @@
 // See docs/plans/2026-05-23-renderer-internal-api-design.md for rationale.
 // ─────────────────────────────────────────────────────────────────────────────
 
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using Microsoft.AspNetCore.Components;
@@ -31,6 +32,9 @@ namespace BlazorNative.Renderer;
 internal static class BlazorInterop
 {
     public static readonly Version BlazorCompatVersion = new(10, 0);
+
+    private const string EventFieldInfoTypeName =
+        "Microsoft.AspNetCore.Components.RenderTree.EventFieldInfo, Microsoft.AspNetCore.Components";
 
     static BlazorInterop()
     {
@@ -64,8 +68,19 @@ internal static class BlazorInterop
         // the one accessor we genuinely depend on. If Blazor renames it or changes
         // its arity, the [UnsafeAccessor(Method)] binding fails at first call —
         // verify the underlying member exists *now* so we fail at load time instead.
-        var eventFieldInfoType = typeof(RenderTreeFrameType).Assembly
-            .GetType("Microsoft.AspNetCore.Components.RenderTree.EventFieldInfo");
+        // Annotated to tell the trimmer that EventFieldInfo's members must stay reachable.
+        // Without this, IL2026 fires on the lookup. The type is rooted by the
+        // [UnsafeAccessorType(...)] reference on RefAccessors.DispatchEventAsync below,
+        // so the trimmer will keep it; this annotation just silences the warning at the lookup site.
+        [UnconditionalSuppressMessage("Trimming", "IL2026",
+            Justification = "EventFieldInfo is kept alive by [UnsafeAccessorType] on RefAccessors.DispatchEventAsync. " +
+                            "Lookup at runtime is for drift detection only.")]
+        [UnconditionalSuppressMessage("Trimming", "IL2057",
+            Justification = "Same as above — type referenced via UnsafeAccessorType, not subject to trimming.")]
+        static Type? GetEventFieldInfoType() =>
+            Type.GetType(EventFieldInfoTypeName, throwOnError: false);
+
+        var eventFieldInfoType = GetEventFieldInfoType();
         if (eventFieldInfoType is null)
         {
             failures.Add("Microsoft.AspNetCore.Components.RenderTree.EventFieldInfo type not found");
