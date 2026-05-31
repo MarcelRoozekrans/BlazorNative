@@ -8,14 +8,14 @@
       • WSL Ubuntu (blazornative-ubuntu) + .NET 10 SDK + NativeAOT cross-toolchain
       • wasi-sdk 25.0 (pinned — newer SDKs are rejected by the workload)
       • Wasmtime CLI v45
-      • MAUI Android workload + Android SDK
+      • Android SDK + NDK
       • Rust + wit-bindgen (optional, for WIT binding regeneration)
 
     Run from the repo root:
         powershell -ExecutionPolicy Bypass -File setup.ps1
 
     Flags:
-        -SkipAndroid     Skip Android SDK/MAUI installation
+        -SkipAndroid     Skip Android SDK + NDK installation
         -SkipWitBindgen  Skip Rust + wit-bindgen installation
         -Verbose         Show detailed output from installers
 #>
