@@ -26,6 +26,10 @@
     <RunAOTCompilation Condition="'$(RuntimeIdentifier)' == 'wasi-wasm'">true</RunAOTCompilation>
     <InvariantGlobalization Condition="'$(RuntimeIdentifier)' == 'wasi-wasm'">true</InvariantGlobalization>
     <WasmSingleFileBundle Condition="'$(RuntimeIdentifier)' == 'wasi-wasm'">true</WasmSingleFileBundle>
+
+    <!-- Phase 3.0a: surface every trim warning individually (default aggregates to one IL2104).
+         Required to inventory the wasi-experimental → NativeAOT migration risk. -->
+    <TrimmerSingleWarn Condition="'$(RuntimeIdentifier)' == 'wasi-wasm'">false</TrimmerSingleWarn>
   </PropertyGroup>
 
   <ItemGroup>

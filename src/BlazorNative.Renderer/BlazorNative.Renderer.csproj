@@ -18,6 +18,10 @@
          its concrete type" — informational, expected. NativeRenderer is
          intentionally registered as its concrete type via [Singleton]. -->
     <NoWarn>$(NoWarn);BL0006;ZAI007</NoWarn>
+
+    <!-- Phase 3.0a: surface every trim warning individually (default aggregates to one IL2104).
+         Required to inventory the wasi-experimental → NativeAOT migration risk. -->
+    <TrimmerSingleWarn>false</TrimmerSingleWarn>
   </PropertyGroup>
 
   <ItemGroup>

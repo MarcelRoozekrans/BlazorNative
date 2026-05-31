@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Microsoft.AspNetCore.Components;
@@ -83,11 +84,11 @@ public sealed class NativeRenderer : BlazorRenderer
     /// renderer's HandleException swallows silently — mount appears to "succeed" (returns a
     /// componentId) but no render fires and no [FRAME] line is emitted. Phase 2.7 Bug A fix
     /// (continuation of Phase 2.4 Task 4 defect #3 finding).</summary>
-    public Task<int> MountAsync<TComponent>(CancellationToken ct = default)
+    public Task<int> MountAsync<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.All)] TComponent>(CancellationToken ct = default)
         where TComponent : IComponent
         => MountAsync<TComponent>(ParameterView.Empty, ct);
 
-    public Task<int> MountAsync<TComponent>(
+    public Task<int> MountAsync<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.All)] TComponent>(
         ParameterView parameters,
         CancellationToken ct = default)
         where TComponent : IComponent
@@ -99,7 +100,7 @@ public sealed class NativeRenderer : BlazorRenderer
     /// ComponentState.SupplyCombinedParameters, which the renderer's HandleException swallows
     /// silently — mount appears to "succeed" (returns a componentId) but no render fires and
     /// no [FRAME] line is emitted. Phase 2.4 Task 4 investigation, defect #3.</summary>
-    public int Mount<TComponent>() where TComponent : IComponent
+    public int Mount<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.All)] TComponent>() where TComponent : IComponent
         => Mount<TComponent>(ParameterView.Empty);
 
     /// <summary>Synchronous mount entry point for hosts without a multi-threaded
@@ -116,7 +117,7 @@ public sealed class NativeRenderer : BlazorRenderer
     /// <c>AssignRootComponentId</c> + <c>RenderRootComponentAsync</c>) directly lets us inspect
     /// the inner Task's actual completion state without an extra async wrapper.
     /// </remarks>
-    public int Mount<TComponent>(ParameterView parameters)
+    public int Mount<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.All)] TComponent>(ParameterView parameters)
         where TComponent : IComponent
     {
         var component = InstantiateComponent(typeof(TComponent));
@@ -135,7 +136,9 @@ public sealed class NativeRenderer : BlazorRenderer
         return componentId;
     }
 
-    private async Task<int> AddComponentAsync(Type t, ParameterView pv)
+    private async Task<int> AddComponentAsync(
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.All)] Type t,
+        ParameterView pv)
     {
         var component = InstantiateComponent(t);
         var componentId = AssignRootComponentId(component);
