@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- ─────────────────────────────────────────────────────────────────────
+       BlazorNative.Runtime.Tests — Phase 3.0b Gate 2
+
+       Host-CLR tests for the NativeAOT runtime surface:
+         - Three trim-validation probe components ([Parameter], [CascadingParameter], [Inject])
+           that exercise the IL2072 ACCEPT call paths from Phase 3.0a.
+         - A managed-side BootSmoke that confirms BlazorInterop.VerifyAccessors
+           runs clean as a precursor to the JNA test in src/BlazorNative.Jni.
+
+       xUnit + Microsoft.NET.Test.Sdk versions mirror tests/BlazorNative.Renderer.Tests
+       verbatim per plan Task 2.1 Step 2.
+
+       See docs/plans/2026-05-31-phase-3.0b-implementation-plan.md (Gate 2).
+       ───────────────────────────────────────────────────────────────────── -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <RootNamespace>BlazorNative.Runtime.Tests</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\BlazorNative.Core\BlazorNative.Core.csproj" />
+    <ProjectReference Include="..\..\src\BlazorNative.Renderer\BlazorNative.Renderer.csproj" />
+    <ProjectReference Include="..\..\src\BlazorNative.Http\BlazorNative.Http.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- xUnit + test SDK versions: mirror tests/BlazorNative.Renderer.Tests verbatim -->
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.*" />
+    <PackageReference Include="xunit" Version="2.*" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.*" />
+    <PackageReference Include="Microsoft.AspNetCore.Components" Version="10.0.*" />
+  </ItemGroup>
+
+</Project>

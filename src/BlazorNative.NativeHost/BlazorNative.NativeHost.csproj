@@ -1,0 +1,50 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- ─────────────────────────────────────────────────────────────────────
+       BlazorNative.NativeHost — Phase 3.0b
+       NativeAOT-compiled shared library replacing the wasi-experimental
+       .wasm path. Multi-RID: win-x64 for JVM dev loop, linux-bionic-arm64
+       + linux-bionic-x64 for Android (cross-compiled in WSL Ubuntu).
+
+       Coexists with BlazorNative.WasiHost.csproj through Phase 3.0b;
+       Phase 3.0c's atomic cleanup commit deletes the WASM-era path.
+       See docs/plans/2026-05-31-phase-3.0b-design.md.
+       ───────────────────────────────────────────────────────────────────── -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>BlazorNative.NativeHost</RootNamespace>
+    <OutputType>Library</OutputType>
+
+    <PublishAot>true</PublishAot>
+    <IsAotCompatible>true</IsAotCompatible>
+    <SelfContained>true</SelfContained>
+    <InvariantGlobalization>true</InvariantGlobalization>
+
+    <!-- Phase 3.0a's trim-safety annotations carry over via ProjectReference
+         on Renderer + Core + Http. Surface every warning individually so we
+         can spot any new shape that emerges under NativeAOT (vs Mono-AOT). -->
+    <TrimmerSingleWarn>false</TrimmerSingleWarn>
+
+    <RuntimeIdentifiers>win-x64;linux-bionic-arm64;linux-bionic-x64</RuntimeIdentifiers>
+
+    <!-- Exports.cs uses unsafe pointer params on [UnmanagedCallersOnly] entry points. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\BlazorNative.Core\BlazorNative.Core.csproj" />
+    <ProjectReference Include="..\BlazorNative.Renderer\BlazorNative.Renderer.csproj" />
+    <ProjectReference Include="..\BlazorNative.Http\BlazorNative.Http.csproj" />
+    <ProjectReference Include="..\BlazorNative.Analyzers\BlazorNative.Analyzers.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.*" />
+  </ItemGroup>
+
+</Project>
