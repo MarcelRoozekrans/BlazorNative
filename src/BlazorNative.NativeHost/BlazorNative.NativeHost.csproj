@@ -34,6 +34,20 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
+  <!-- Phase 3.0c: NativeAOT for Android via runtime-pack bypass. The RID-specific
+       ILCompiler packages don't exist for .NET 10 (3.0b Gate 4 RED); the host ILC
+       compiles against the target runtime pack instead. Unsupported-but-serviced
+       path — RuntimeFrameworkVersion pins the exact runtime pack so a servicing
+       release can't silently change the toolchain under us.
+       See docs/plans/2026-07-08-phase-3.0c-redesign.md. -->
+  <PropertyGroup Condition="$(RuntimeIdentifier.StartsWith('linux-bionic'))">
+    <PublishAotUsingRuntimePack>true</PublishAotUsingRuntimePack>
+    <DisableUnsupportedError>true</DisableUnsupportedError>
+    <RuntimeFrameworkVersion>10.0.9</RuntimeFrameworkVersion>
+  </PropertyGroup>
+
+  <Import Project="..\..\build\BionicNativeAot.targets" />
+
   <ItemGroup>
     <ProjectReference Include="..\BlazorNative.Core\BlazorNative.Core.csproj" />
     <ProjectReference Include="..\BlazorNative.Renderer\BlazorNative.Renderer.csproj" />
