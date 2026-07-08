@@ -619,6 +619,49 @@ if (-not $SkipAndroid) {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
+# 8d. Bionic NativeAOT toolchain (Phase 3.0c) — verify + document, no installs
+#     BlazorNative.NativeHost cross-compiles to linux-bionic-{x64,arm64} .so
+#     files directly on Windows via the runtime-pack bypass (the RID-specific
+#     ILCompiler packages don't exist for .NET 10 — 3.0b Gate 4 RED).
+#     Pinned working combo (Gate 2 GREEN):
+#       • .NET SDK 10.0.301 (section 2)
+#       • ILCompiler + Microsoft.NETCore.App.Runtime.NativeAOT.linux-bionic-*
+#         runtime packs 10.0.9 (pinned via RuntimeFrameworkVersion in
+#         BlazorNative.NativeHost.csproj)
+#       • Android NDK 26.3.11579264 (installed by section 7)
+#       • vendored build/BionicNativeAot.targets (NDK shim + linker args)
+#     The targets read ANDROID_NDK_ROOT (not ANDROID_NDK_HOME) — this section
+#     mirrors section 7's NDK path into it.
+# ─────────────────────────────────────────────────────────────────────────────
+
+if (-not $SkipAndroid) {
+    Write-Header "8d · Bionic NativeAOT toolchain (verify env for linux-bionic publishes)"
+
+    $bionicNdkRoot = "$env:LOCALAPPDATA\Android\Sdk\ndk\26.3.11579264"
+    if ($env:ANDROID_NDK_HOME -and (Test-Path $env:ANDROID_NDK_HOME)) { $bionicNdkRoot = $env:ANDROID_NDK_HOME }
+
+    if (-not (Test-Path $bionicNdkRoot)) {
+        Write-Fail "NDK 26.3.11579264 not found at $bionicNdkRoot — section 7 needs to install it first"
+    } elseif ($env:ANDROID_NDK_ROOT -and (Test-Path $env:ANDROID_NDK_ROOT)) {
+        Write-OK "ANDROID_NDK_ROOT already set to $env:ANDROID_NDK_ROOT"
+    } else {
+        [Environment]::SetEnvironmentVariable("ANDROID_NDK_ROOT", $bionicNdkRoot, "User")
+        $env:ANDROID_NDK_ROOT = $bionicNdkRoot
+        $script:envChanged = $true
+        Write-OK "ANDROID_NDK_ROOT set to $bionicNdkRoot"
+    }
+
+    Write-Host ""
+    Write-Host "  Pinned toolchain combo (Phase 3.0c Gate 2):" -ForegroundColor DarkGray
+    Write-Host "    .NET SDK 10.0.301 · ILCompiler/NativeAOT runtime packs 10.0.9 · NDK 26.3.11579264" -ForegroundColor Cyan
+    Write-Host ""
+    Write-Host "  Publish the Android native host (from repo root):" -ForegroundColor DarkGray
+    Write-Host "    dotnet publish src\BlazorNative.NativeHost -c Release -r linux-bionic-x64" -ForegroundColor Cyan
+    Write-Host "    dotnet publish src\BlazorNative.NativeHost -c Release -r linux-bionic-arm64" -ForegroundColor Cyan
+    Write-Host ""
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
 # 9. Restore NuGet packages
 # ─────────────────────────────────────────────────────────────────────────────
 
