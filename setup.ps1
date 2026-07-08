@@ -638,10 +638,22 @@ if (-not $SkipAndroid) {
     Write-Header "8d · Bionic NativeAOT toolchain (verify env for linux-bionic publishes)"
 
     $bionicNdkRoot = "$env:LOCALAPPDATA\Android\Sdk\ndk\26.3.11579264"
-    if ($env:ANDROID_NDK_HOME -and (Test-Path $env:ANDROID_NDK_HOME)) { $bionicNdkRoot = $env:ANDROID_NDK_HOME }
+    $bionicNdkPathSource = "the default SDK location (`$env:LOCALAPPDATA\Android\Sdk)"
+    if ($env:ANDROID_NDK_HOME -and (Test-Path $env:ANDROID_NDK_HOME)) {
+        $bionicNdkRoot = $env:ANDROID_NDK_HOME
+        $bionicNdkPathSource = "ANDROID_NDK_HOME"
+    }
+
+    # The path existing isn't enough — a stray ANDROID_NDK_HOME can point at a
+    # different NDK. Verify the pinned revision from the NDK's own source.properties.
+    $bionicNdkProps = Join-Path $bionicNdkRoot "source.properties"
+    $bionicNdkRevisionOk = (Test-Path $bionicNdkProps) -and
+        ((Get-Content $bionicNdkProps -Raw) -match 'Pkg\.Revision\s*=\s*26\.3\.11579264')
 
     if (-not (Test-Path $bionicNdkRoot)) {
         Write-Fail "NDK 26.3.11579264 not found at $bionicNdkRoot — section 7 needs to install it first"
+    } elseif (-not $bionicNdkRevisionOk) {
+        Write-Fail "NDK at $bionicNdkRoot (resolved from $bionicNdkPathSource) is not revision 26.3.11579264 — source.properties is missing or reports a different Pkg.Revision. Point ANDROID_NDK_HOME at NDK 26.3.11579264, or unset it so the default SDK path is used."
     } elseif ($env:ANDROID_NDK_ROOT -and (Test-Path $env:ANDROID_NDK_ROOT)) {
         Write-OK "ANDROID_NDK_ROOT already set to $env:ANDROID_NDK_ROOT"
     } else {

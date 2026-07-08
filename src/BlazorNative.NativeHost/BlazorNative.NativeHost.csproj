@@ -38,7 +38,8 @@
        ILCompiler packages don't exist for .NET 10 (3.0b Gate 4 RED); the host ILC
        compiles against the target runtime pack instead. Unsupported-but-serviced
        path — RuntimeFrameworkVersion pins the exact runtime pack so a servicing
-       release can't silently change the toolchain under us.
+       release can't silently change the toolchain under us. The SDK side
+       (host ILCompiler) is pinned via global.json (feature band 10.0.3xx).
        See docs/plans/2026-07-08-phase-3.0c-redesign.md. -->
   <PropertyGroup Condition="$(RuntimeIdentifier.StartsWith('linux-bionic'))">
     <PublishAotUsingRuntimePack>true</PublishAotUsingRuntimePack>
