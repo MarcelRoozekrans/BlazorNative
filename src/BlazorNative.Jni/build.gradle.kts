@@ -190,7 +190,30 @@ val copyJniLibs = tasks.register<Copy>("copyJniLibs") {
     }
 }
 
-// Wire both into preBuild so every APK build picks up the latest assets.
+// Phase 3.0c: NativeAOT .so per ABI → jniLibs. Renamed to lib-prefix so
+// JNA's Native.load("BlazorNative.NativeHost") resolves on Android
+// (dlopen expects lib<name>.so inside the APK's native-lib dir).
+val copyNativeHostSo = tasks.register<Copy>("copyNativeHostSo") {
+    description = "Copies NativeAOT BlazorNative.NativeHost.so (per ABI) into androidMain/jniLibs/"
+    group = "blazornative"
+    val pubRoot = rootProject.projectDir.resolve("../../src/BlazorNative.NativeHost/bin/Release/net10.0")
+    val x64 = pubRoot.resolve("linux-bionic-x64/publish/BlazorNative.NativeHost.so")
+    val arm64 = pubRoot.resolve("linux-bionic-arm64/publish/BlazorNative.NativeHost.so")
+    from(x64) { into("x86_64") }
+    from(arm64) { into("arm64-v8a") }
+    rename { "libBlazorNative.NativeHost.so" }
+    into(layout.projectDirectory.dir("src/androidMain/jniLibs"))
+    doFirst {
+        if (!x64.exists() || !arm64.exists()) {
+            throw GradleException(
+                "BlazorNative.NativeHost.so missing for one or both bionic ABIs under $pubRoot.\n" +
+                "Run from repo root: dotnet publish src/BlazorNative.NativeHost -c Release -r linux-bionic-x64 (and -arm64)"
+            )
+        }
+    }
+}
+
+// Wire all three into preBuild so every APK build picks up the latest assets.
 tasks.named("preBuild") {
-    dependsOn(copyWasm, copyJniLibs)
+    dependsOn(copyWasm, copyJniLibs, copyNativeHostSo)
 }
