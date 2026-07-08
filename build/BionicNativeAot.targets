@@ -30,6 +30,17 @@
         <NdkVersion Condition="'$(NdkVersion)' == ''">0</NdkVersion>
     </PropertyGroup>
 
+    <!-- LOCAL DEVIATION from upstream: upstream's bare shim names rely on cmd.exe resolving
+         them from the Exec working directory, which breaks when NoDefaultCurrentDirectoryInExePath=1
+         removes CWD from cmd.exe lookup (Gate 1 finding). Absolute paths are NOT an option:
+         the ILCompiler SDK probes the linker with `where /Q "$(CppLinker)"` and invokes
+         `"$(CppLinker)" -fuse-ld=lld` with a version query inside SetupOSSpecificProps, and where.exe
+         rejects absolute paths ("Invalid pattern is specified in 'path:pattern'"). The only
+         string that satisfies both where.exe and cmd.exe-without-CWD is a bare name resolvable
+         via PATH — so the names stay bare, and PrepareNdkBatches prepends the shim directory
+         ($(MSBuildProjectDirectory)) to the MSBuild node's PATH (PrependShimDirToNodePath task
+         below) before any SDK Exec runs them. This also makes publishing from outside the
+         project directory work. -->
     <PropertyGroup Condition="$(IsAndroid) == 'true'">
         <!--OSX and Linux can use NDK directly-->
         <CppCompilerAndLinker Condition="$(IsWindowsHost) != 'true'">$(ANDROID_NDK_ROOT)/toolchains/llvm/prebuilt/$(NdkHost)/bin/clang</CppCompilerAndLinker>
@@ -38,6 +49,32 @@
         <CppCompilerAndLinker Condition="$(IsWindowsHost) == 'true'">android_clang.cmd</CppCompilerAndLinker>
         <ObjCopyName Condition="$(IsWindowsHost) == 'true'">android_llvm-objcopy.cmd</ObjCopyName>
     </PropertyGroup>
+
+    <!-- LOCAL DEVIATION from upstream (see comment above): prepend a directory to the PATH of
+         the MSBuild node process so child Exec invocations (cmd.exe) resolve the NDK shims via
+         PATH instead of CWD. Idempotent; persists only for the node process lifetime. -->
+    <UsingTask TaskName="PrependShimDirToNodePath" TaskFactory="RoslynCodeTaskFactory" AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.Core.dll">
+        <ParameterGroup>
+            <ShimDirectory ParameterType="System.String" Required="true"/>
+        </ParameterGroup>
+        <Task>
+            <Code Type="Fragment" Language="cs">
+                <![CDATA[
+                string path = Environment.GetEnvironmentVariable("PATH") ?? "";
+                bool present = false;
+                foreach (string p in path.Split(';'))
+                {
+                    if (string.Equals(p.Trim(), ShimDirectory, StringComparison.OrdinalIgnoreCase)) { present = true; break; }
+                }
+                if (!present)
+                {
+                    Environment.SetEnvironmentVariable("PATH", ShimDirectory + ";" + path);
+                    Log.LogMessage(MessageImportance.Low, "BionicNativeAot: prepended '" + ShimDirectory + "' to the MSBuild node PATH for NDK shim resolution.");
+                }
+                ]]>
+            </Code>
+        </Task>
+    </UsingTask>
 
     <ItemGroup Condition="$(IsAndroid) == 'true'">
         <!--JNI libs needs to be compiled with -z noexecstack-->
@@ -54,14 +91,16 @@
             <NdkHostBin Condition="$(IsWindowsHost) != 'true'">$(ANDROID_NDK_ROOT)/toolchains/llvm/prebuilt/$(NdkHost)/bin/</NdkHostBin>
         </PropertyGroup>
         <!--Create Windows .cmd files-->
-        <WriteLinesToFile Condition="$(IsWindowsHost) == 'true'" File="android_clang.cmd" Lines="&quot;$(NdkHostBin)clang.exe&quot; %*" Overwrite="true"/>
-        <WriteLinesToFile Condition="$(IsWindowsHost) == 'true'" File="android_llvm-objcopy.cmd" Lines="&quot;$(NdkHostBin)llvm-objcopy.exe&quot; %*" Overwrite="true"/>
+        <WriteLinesToFile Condition="$(IsWindowsHost) == 'true'" File="$(MSBuildProjectDirectory)\android_clang.cmd" Lines="&quot;$(NdkHostBin)clang.exe&quot; %*" Overwrite="true"/>
+        <WriteLinesToFile Condition="$(IsWindowsHost) == 'true'" File="$(MSBuildProjectDirectory)\android_llvm-objcopy.cmd" Lines="&quot;$(NdkHostBin)llvm-objcopy.exe&quot; %*" Overwrite="true"/>
+        <!--LOCAL DEVIATION: make the bare shim names PATH-resolvable for every later SDK Exec (see comment on PrependShimDirToNodePath)-->
+        <PrependShimDirToNodePath Condition="$(IsWindowsHost) == 'true'" ShimDirectory="$(MSBuildProjectDirectory)"/>
     </Target>
     <Target Condition="$(IsAndroid) == 'true'" Name="RemoveBatchFiles" AfterTargets="LinkNative">
         <!--Remove batch files-->
         <ItemGroup>
-            <BatchFiles Condition="$(IsWindowsHost) == 'true'" Include="android_clang.cmd"/>
-            <BatchFiles Condition="$(IsWindowsHost) == 'true'" Include="android_llvm-objcopy.cmd"/>
+            <BatchFiles Condition="$(IsWindowsHost) == 'true'" Include="$(MSBuildProjectDirectory)\android_clang.cmd"/>
+            <BatchFiles Condition="$(IsWindowsHost) == 'true'" Include="$(MSBuildProjectDirectory)\android_llvm-objcopy.cmd"/>
         </ItemGroup>
         <Delete Files="@(BatchFiles)"/>
     </Target>
