@@ -4,9 +4,9 @@ import com.sun.jna.Memory
 import com.sun.jna.Pointer
 
 /**
- * Phase 3.0d: thin lifecycle wrapper for the NativeAOT host —
- * init → register frame callback → mount. Replaces the wasmtime/WasiHost boot
- * path in MainActivity (WasiHost remains for the wasmtime tests until 3.0e).
+ * Phase 3.0d: thin lifecycle wrapper for the NativeAOT BlazorNative.Runtime —
+ * init → register frame callback → mount. Replaced the wasmtime/WasiHost boot
+ * path in MainActivity; Phase 3.0e deleted that era, so this is the only one.
  *
  * Holds the [NativeBindings.FrameCallback] strongly for the .so's lifetime —
  * JNA callbacks are GC-eligible; if this object were collected, the native

@@ -13,14 +13,14 @@ import kotlin.concurrent.thread
  *
  * On launch: spawns a background thread that runs [BlazorNativeRuntime.start]
  * (init → register frame callback → mount HelloComponent) against the
- * NativeAOT libBlazorNative.NativeHost.so from the APK's jniLibs. Frames
+ * NativeAOT libBlazorNative.Runtime.so from the APK's jniLibs. Frames
  * arrive through the C-ABI struct path (NativeFrameAdapter) and render via
  * [WidgetMapper] into widget_root; [BOOT] status lines go to logcat and the
  * green-on-black console TextView.
  *
- * The wasmtime/.wasm boot path is retired from this Activity as of Phase 3.0d
- * (WasiHost/AndroidPlatformInfo remain in the tree for the wasmtime-driven
- * instrumented tests until the Phase 3.0e cleanup).
+ * The wasmtime/.wasm boot path was retired from this Activity in Phase 3.0d,
+ * and Phase 3.0e deleted the WASM era from the tree entirely — the NativeAOT
+ * runtime is the only boot path.
  *
  * Threading/lifetime notes:
  *  - [runtime] is an Activity FIELD deliberately: it strongly holds the JNA
@@ -51,7 +51,7 @@ class MainActivity : Activity() {
             onError = { msg, t -> Log.e(tag, msg, t) },
         )
 
-        thread(name = "BlazorNative-NativeHost-Boot") {
+        thread(name = "BlazorNative-Runtime-Boot") {
             try {
                 val lines = runtime.start(
                     platformOs = "android",

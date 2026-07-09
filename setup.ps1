@@ -290,14 +290,14 @@ if (-not $SkipAndroid) {
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 5. Bionic NativeAOT toolchain (Phase 3.0c) — verify + document, no installs
-#    BlazorNative.NativeHost cross-compiles to linux-bionic-{x64,arm64} .so
+#    BlazorNative.Runtime cross-compiles to linux-bionic-{x64,arm64} .so
 #    files directly on Windows via the runtime-pack bypass (the RID-specific
 #    ILCompiler packages don't exist for .NET 10 — 3.0b Gate 4 RED).
 #    Pinned working combo (Gate 2 GREEN):
 #      • .NET SDK 10.0.301 (section 2)
 #      • ILCompiler + Microsoft.NETCore.App.Runtime.NativeAOT.linux-bionic-*
 #        runtime packs 10.0.9 (pinned via RuntimeFrameworkVersion in
-#        BlazorNative.NativeHost.csproj)
+#        BlazorNative.Runtime.csproj)
 #      • Android NDK 26.3.11579264 (installed by section 4)
 #      • vendored build/BionicNativeAot.targets (NDK shim + linker args)
 #    The targets read ANDROID_NDK_ROOT (not ANDROID_NDK_HOME) — this section
@@ -352,8 +352,8 @@ if (-not $SkipAndroid) {
     Write-Host "    .NET SDK 10.0.3xx band (floor 10.0.301) · ILCompiler/NativeAOT runtime packs 10.0.9 · NDK $bionicNdkPin" -ForegroundColor Cyan
     Write-Host ""
     Write-Host "  Publish the Android native host (from repo root):" -ForegroundColor DarkGray
-    Write-Host "    dotnet publish src\BlazorNative.NativeHost -c Release -r linux-bionic-x64" -ForegroundColor Cyan
-    Write-Host "    dotnet publish src\BlazorNative.NativeHost -c Release -r linux-bionic-arm64" -ForegroundColor Cyan
+    Write-Host "    dotnet publish src\BlazorNative.Runtime -c Release -r linux-bionic-x64" -ForegroundColor Cyan
+    Write-Host "    dotnet publish src\BlazorNative.Runtime -c Release -r linux-bionic-arm64" -ForegroundColor Cyan
     Write-Host ""
 }
 
@@ -426,9 +426,9 @@ if ($script:failed -eq 0) {
     Write-Host "    dotnet test BlazorNative.sln" -ForegroundColor Cyan
     Write-Host ""
     Write-Host "  Publish the native runtime (pinned combo — see section 5):" -ForegroundColor DarkGray
-    Write-Host "    dotnet publish src\BlazorNative.NativeHost -c Release -r win-x64" -ForegroundColor Cyan
-    Write-Host "    dotnet publish src\BlazorNative.NativeHost -c Release -r linux-bionic-x64" -ForegroundColor Cyan
-    Write-Host "    dotnet publish src\BlazorNative.NativeHost -c Release -r linux-bionic-arm64" -ForegroundColor Cyan
+    Write-Host "    dotnet publish src\BlazorNative.Runtime -c Release -r win-x64" -ForegroundColor Cyan
+    Write-Host "    dotnet publish src\BlazorNative.Runtime -c Release -r linux-bionic-x64" -ForegroundColor Cyan
+    Write-Host "    dotnet publish src\BlazorNative.Runtime -c Release -r linux-bionic-arm64" -ForegroundColor Cyan
     Write-Host ""
     Write-Host "  DevTools API will be available at https://localhost:5273/dev/storage" -ForegroundColor DarkGray
 } else {

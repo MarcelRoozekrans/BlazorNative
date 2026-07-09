@@ -118,7 +118,7 @@ class NativeFrameAdapterTest {
 
     @Test
     fun golden_mountHello_viaNativeDll_matchesExpectedShape() {
-        initNativeHost()
+        initRuntime()
 
         val captured = java.util.concurrent.atomic.AtomicReference<RenderFrame?>()
         // A throw inside a JNA callback is swallowed by JNA's default handler
@@ -155,7 +155,7 @@ class NativeFrameAdapterTest {
 
     @Test
     fun mount_unknownComponent_returns1() {
-        initNativeHost()
+        initRuntime()
         assertEquals(1, NativeBindings.INSTANCE.blazornative_mount(nulTerminated("NoSuchComponent")))
     }
 
@@ -192,7 +192,7 @@ class NativeFrameAdapterTest {
 
     /** Same options pattern as BootSmokeNativeTest — init is idempotent enough
      * for repeated calls within one test JVM (verifies accessors only). */
-    private fun initNativeHost() {
+    private fun initRuntime() {
         val osBytes = nulTerminated("test-host")
         val osMem = Memory(osBytes.size.toLong()).apply { write(0, osBytes, 0, osBytes.size) }
         val noteBytes = nulTerminated("phase-3.0d-golden")

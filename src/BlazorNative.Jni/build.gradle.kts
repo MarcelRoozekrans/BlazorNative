@@ -119,11 +119,11 @@ tasks.withType<Test>().configureEach {
         showStandardStreams = true
     }
     // JNA's library search path — the NativeAOT publish output for
-    // BlazorNative.NativeHost.dll (host-JVM unit tests).
+    // BlazorNative.Runtime.dll (host-JVM unit tests).
     systemProperty(
         "jna.library.path",
         rootProject.projectDir
-            .resolve("../../src/BlazorNative.NativeHost/bin/Release/net10.0/win-x64/publish")
+            .resolve("../../src/BlazorNative.Runtime/bin/Release/net10.0/win-x64/publish")
             .absolutePath
     )
 }
@@ -135,9 +135,9 @@ tasks.withType<Test>().configureEach {
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Expected native build outputs — shared by verifyNativeAssets + the copy task.
-val nativeHostPubRoot = rootProject.projectDir.resolve("../../src/BlazorNative.NativeHost/bin/Release/net10.0")
-val nativeHostSoX64 = nativeHostPubRoot.resolve("linux-bionic-x64/publish/BlazorNative.NativeHost.so")
-val nativeHostSoArm64 = nativeHostPubRoot.resolve("linux-bionic-arm64/publish/BlazorNative.NativeHost.so")
+val runtimePubRoot = rootProject.projectDir.resolve("../../src/BlazorNative.Runtime/bin/Release/net10.0")
+val runtimeSoX64 = runtimePubRoot.resolve("linux-bionic-x64/publish/BlazorNative.Runtime.so")
+val runtimeSoArm64 = runtimePubRoot.resolve("linux-bionic-arm64/publish/BlazorNative.Runtime.so")
 
 // Gate 3 review follow-up: a Copy task whose every `from` source is missing
 // goes NO-SOURCE and skips ALL actions — including a doFirst fail-fast —
@@ -149,8 +149,8 @@ val verifyNativeAssets = tasks.register("verifyNativeAssets") {
     group = "blazornative"
     doLast {
         val expected = mapOf(
-            nativeHostSoX64 to "dotnet publish src/BlazorNative.NativeHost -c Release -r linux-bionic-x64",
-            nativeHostSoArm64 to "dotnet publish src/BlazorNative.NativeHost -c Release -r linux-bionic-arm64",
+            runtimeSoX64 to "dotnet publish src/BlazorNative.Runtime -c Release -r linux-bionic-x64",
+            runtimeSoArm64 to "dotnet publish src/BlazorNative.Runtime -c Release -r linux-bionic-arm64",
         )
         val missing = expected.filterKeys { !it.exists() }
         if (missing.isNotEmpty()) {
@@ -165,19 +165,19 @@ val verifyNativeAssets = tasks.register("verifyNativeAssets") {
 }
 
 // Phase 3.0c: NativeAOT .so per ABI → jniLibs. Renamed to lib-prefix so
-// JNA's Native.load("BlazorNative.NativeHost") resolves on Android
+// JNA's Native.load("BlazorNative.Runtime") resolves on Android
 // (dlopen expects lib<name>.so inside the APK's native-lib dir).
-val copyNativeHostSo = tasks.register<Copy>("copyNativeHostSo") {
-    description = "Copies NativeAOT BlazorNative.NativeHost.so (per ABI) into androidMain/jniLibs/"
+val copyRuntimeSo = tasks.register<Copy>("copyRuntimeSo") {
+    description = "Copies NativeAOT BlazorNative.Runtime.so (per ABI) into androidMain/jniLibs/"
     group = "blazornative"
     dependsOn(verifyNativeAssets)
-    from(nativeHostSoX64) { into("x86_64") }
-    from(nativeHostSoArm64) { into("arm64-v8a") }
-    rename { "libBlazorNative.NativeHost.so" }
+    from(runtimeSoX64) { into("x86_64") }
+    from(runtimeSoArm64) { into("arm64-v8a") }
+    rename { "libBlazorNative.Runtime.so" }
     into(layout.projectDirectory.dir("src/androidMain/jniLibs"))
 }
 
 // Wire the copy into preBuild so every APK build picks up the latest .so.
 tasks.named("preBuild") {
-    dependsOn(copyNativeHostSo)
+    dependsOn(copyRuntimeSo)
 }

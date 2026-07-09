@@ -8,12 +8,10 @@ import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
 
 /**
- * Phase 3.0b Gate 2 — load BlazorNative.NativeHost.dll via JNA on Windows JVM,
+ * Phase 3.0b Gate 2 — load BlazorNative.Runtime.dll via JNA on Windows JVM,
  * call blazornative_init, assert Status == 0 + non-null version string.
- *
- * Parallel JVM-side counterpart to BootSmokeTest (which boots the wasmtime
- * path). Both coexist through Phase 3.0b; 3.0c's atomic cleanup deletes
- * BootSmokeTest.
+ * (Began life alongside the wasmtime-era BootSmokeTest, deleted in 3.0c;
+ * the library carries its final name since the Phase 3.0e rename.)
  */
 class BootSmokeNativeTest {
 
@@ -63,12 +61,12 @@ class BootSmokeNativeTest {
         )
         assertNotNull(result.versionString, "Expected non-null VersionString pointer")
         assertTrue(
-            versionString.contains("BlazorNative.NativeHost"),
-            "Expected version string to mention 'BlazorNative.NativeHost'; got '$versionString'"
+            versionString.contains("BlazorNative.Runtime"),
+            "Expected version string to mention 'BlazorNative.Runtime'; got '$versionString'"
         )
         assertTrue(
-            versionString.contains("phase-3.0d"),
-            "Expected version string to mention 'phase-3.0d'; got '$versionString'"
+            versionString.contains("phase-3.0e"),
+            "Expected version string to mention 'phase-3.0e'; got '$versionString'"
         )
     }
 

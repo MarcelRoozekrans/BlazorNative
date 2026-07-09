@@ -6,8 +6,8 @@ import com.sun.jna.Pointer
 import com.sun.jna.Structure
 
 /**
- * JNA bindings for BlazorNative.NativeHost — the NativeAOT-compiled replacement
- * for the wasmtime/.wasm path (Phase 3.0b+).
+ * JNA bindings for BlazorNative.Runtime — the NativeAOT-compiled replacement
+ * for the wasmtime/.wasm path (Phase 3.0b+; final name since Phase 3.0e).
  *
  * Loaded lazily on first INSTANCE access; JNA searches the path declared in
  * the `jna.library.path` system property (set by build.gradle.kts to point at
@@ -71,11 +71,11 @@ interface NativeBindings : Library {
     }
 
     companion object {
-        // JNA library name "BlazorNative.NativeHost" → maps to:
-        //   Windows: BlazorNative.NativeHost.dll
-        //   Bionic:  libBlazorNative.NativeHost.so (JNA prepends "lib" + appends ".so")
+        // JNA library name "BlazorNative.Runtime" → maps to:
+        //   Windows: BlazorNative.Runtime.dll
+        //   Bionic:  libBlazorNative.Runtime.so (JNA prepends "lib" + appends ".so")
         // JNA's native loader strips/adds prefixes appropriately per platform.
-        val INSTANCE: NativeBindings = Native.load("BlazorNative.NativeHost", NativeBindings::class.java)
+        val INSTANCE: NativeBindings = Native.load("BlazorNative.Runtime", NativeBindings::class.java)
     }
 }
 
