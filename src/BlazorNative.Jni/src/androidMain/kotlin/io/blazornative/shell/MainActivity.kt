@@ -45,7 +45,14 @@ class MainActivity : Activity() {
 
         val view = findViewById<TextView>(R.id.markers)
         val widgetRoot = findViewById<FrameLayout>(R.id.widget_root)
-        val mapper = WidgetMapper(this, widgetRoot)
+        // Phase 3.2: UI listeners forward into the dispatch lane. The lambda
+        // captures the lateinit `runtime` field (constructed just below) —
+        // safe: onUiEvent only fires from listeners that AttachEvent installs,
+        // i.e. after runtime.start() has mounted, long after assignment.
+        // dispatchEvent is a non-blocking submit — UI-thread safe.
+        val mapper = WidgetMapper(this, widgetRoot, onUiEvent = { h, n, p ->
+            runtime.dispatchEvent(h, n, p)
+        })
 
         val onError: (String, Throwable) -> Unit = { msg, t -> Log.e(tag, msg, t) }
         runtime = BlazorNativeRuntime(

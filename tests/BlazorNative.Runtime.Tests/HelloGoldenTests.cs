@@ -6,18 +6,19 @@ using Microsoft.Extensions.DependencyInjection;
 namespace BlazorNative.Runtime.Tests;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Phase 3.0e — the Hello golden frame, typed.
+// Phase 3.0e — the Hello golden frame, typed. (Phase 3.2: +AttachEventPatch,
+// counter text.)
 //
 // Typed expected list transcribed from the retired hello-frame.json fixture
 // (3.0e); the wire shape lock lives here now. Mounts HelloComponent, captures
-// the first RenderFrame via the Frames event, and asserts the 13-patch Hello
-// frame: 12 patches field-by-field against in-code record literals (records
+// the first RenderFrame via the Frames event, and asserts the 14-patch Hello
+// frame: 13 patches field-by-field against in-code record literals (records
 // give value equality) + the commit terminator type-only. The CommitFramePatch
 // carries nondeterministic FrameId/TimestampMs — hence type-only, matching the
 // old fixture normalization (which zeroed both).
 //
 // The Kotlin twin (NativeFrameAdapterTest.golden_mountHello_viaNativeDll_
-// matchesExpectedShape) asserts the same 13 patches against the native
+// matchesExpectedShape) asserts the same 14 patches against the native
 // struct-callback path — together they lock the wire shape on both sides of
 // the C ABI.
 //
@@ -27,9 +28,20 @@ namespace BlazorNative.Runtime.Tests;
 
 public sealed class HelloGoldenTests
 {
-    /// <summary>The Phase 2.8 Hello shape: outer view #FFEEAA + padding 16,
-    /// inner view fontSize 24 + text "Hello, BlazorNative!", button + "Tap",
-    /// input + "Type here...". Transcribed from the retired fixture.</summary>
+    /// <summary>Sentinel for the one runtime-assigned field in the golden
+    /// list: AttachEventPatch.HandlerId comes from Blazor's event-handler
+    /// table (a process-global counter), so its value depends on how many
+    /// handlers earlier tests registered. Pinning it would make the golden
+    /// order-dependent; the test asserts HandlerId &gt; 0 instead — the same
+    /// relaxation the Kotlin twin applies via normalize(). Every OTHER field
+    /// of the patch (NodeId, EventName) stays pinned.</summary>
+    private const int AnyHandlerId = -1;
+
+    /// <summary>The Phase 2.8 Hello shape, Phase 3.2 interactive: outer view
+    /// #FFEEAA + padding 16, inner view fontSize 24 + text
+    /// "Hello, BlazorNative! (taps: 0)", button with @onclick + "Tap",
+    /// input + "Type here...". Transcribed from the retired fixture,
+    /// hand-updated per the procedure above.</summary>
     private static readonly IReadOnlyList<RenderPatch> ExpectedPatches =
     [
         new CreateNodePatch(1, "view"),
@@ -38,13 +50,14 @@ public sealed class HelloGoldenTests
         new CreateNodePatch(2, "view", 1),
         new SetStylePatch(2, "fontSize", "24"),
         new CreateNodePatch(3, "text", 2),
-        new ReplaceTextPatch(3, "Hello, BlazorNative!"),
+        new ReplaceTextPatch(3, "Hello, BlazorNative! (taps: 0)"),
         new CreateNodePatch(4, "button", 1),
+        new AttachEventPatch(4, "click", AnyHandlerId),
         new CreateNodePatch(5, "text", 4),
         new ReplaceTextPatch(5, "Tap"),
         new CreateNodePatch(6, "input", 1),
         new UpdatePropPatch(6, "placeholder", "Type here..."),
-        // 13th patch: CommitFramePatch — asserted type-only in the test body
+        // 14th patch: CommitFramePatch — asserted type-only in the test body
         // (FrameId/TimestampMs are nondeterministic).
     ];
 
@@ -52,7 +65,6 @@ public sealed class HelloGoldenTests
     public async Task MountHello_Frame_MatchesTypedGoldenPatches()
     {
         var services = new ServiceCollection();
-        services.AddBlazorNativeCoreServices();
         services.AddBlazorNativeRendererServices();
         services.AddBlazorNativeHttpServices();
         using var renderer = services.BuildServiceProvider().GetRequiredService<NativeRenderer>();
@@ -75,11 +87,25 @@ public sealed class HelloGoldenTests
             renderer.Frames -= handler;
         }
 
-        // 12 shape patches + the commit terminator.
+        // 13 shape patches + the commit terminator.
         Assert.Equal(ExpectedPatches.Count + 1, frame.Patches.Length);
 
         for (var i = 0; i < ExpectedPatches.Count; i++)
+        {
+            if (ExpectedPatches[i] is AttachEventPatch expectedAttach)
+            {
+                // HandlerId is runtime-assigned (see AnyHandlerId doc) —
+                // normalize it to the sentinel, then compare by record
+                // equality so every OTHER field (including any future
+                // additions to the record) stays load-bearing.
+                var actualAttach = Assert.IsType<AttachEventPatch>(frame.Patches[i]);
+                Assert.True(actualAttach.HandlerId > 0,
+                    $"AttachEventPatch.HandlerId must be a positive runtime-assigned id, got {actualAttach.HandlerId}");
+                Assert.Equal(expectedAttach, actualAttach with { HandlerId = AnyHandlerId });
+                continue;
+            }
             Assert.Equal(ExpectedPatches[i], frame.Patches[i]);
+        }
 
         // Terminator: type-only (FrameId/TimestampMs are nondeterministic —
         // the old fixture normalized both to 0 before comparing).

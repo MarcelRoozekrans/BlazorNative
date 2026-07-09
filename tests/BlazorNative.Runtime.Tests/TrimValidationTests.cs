@@ -79,7 +79,6 @@ public sealed class TrimValidationTests
     private static NativeRenderer BuildRenderer()
     {
         var services = new ServiceCollection();
-        services.AddBlazorNativeCoreServices();
         services.AddBlazorNativeRendererServices();
         services.AddBlazorNativeHttpServices();
         return services.BuildServiceProvider().GetRequiredService<NativeRenderer>();
@@ -88,7 +87,6 @@ public sealed class TrimValidationTests
     private static NativeRenderer BuildRendererWithService()
     {
         var services = new ServiceCollection();
-        services.AddBlazorNativeCoreServices();
         services.AddBlazorNativeRendererServices();
         services.AddBlazorNativeHttpServices();
         services.AddSingleton<ITestService, TestService>();

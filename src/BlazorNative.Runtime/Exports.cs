@@ -1,5 +1,6 @@
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using BlazorNative.Renderer;
 
 namespace BlazorNative.Runtime;
 
@@ -18,7 +19,9 @@ namespace BlazorNative.Runtime;
 //                             close, together with run_bridge_probes)
 //   register_frame_callback — Phase 3.0d: store the host's cdecl frame callback
 //   mount                   — Phase 3.0d: mount a registered component by name
-//   dispatch_event          — ABI-reserved stub; Phase 3.2 wires event ingress
+//   dispatch_event          — Phase 3.2: host→renderer event ingress
+//                             (handlerId + flat-JSON args; synchronous
+//                             handler → re-render → frame callback; 0/1/2/3)
 //   register_bridge         — Phase 3.1: copy the host's 6-callback struct
 //   fetch_complete          — Phase 3.1: deliver an async fetch response
 //   run_bridge_probes       — Phase 3.1 diagnostic (delete at M3 close,
@@ -68,7 +71,7 @@ public static class Exports
     /// <summary>Single source of truth for the runtime version — the
     /// JNA-visible version cstring and NativeShellBridge.PlatformInfo both
     /// derive from it.</summary>
-    internal const string VersionNumber = "0.6.0-phase-3.1";
+    internal const string VersionNumber = "0.7.0-phase-3.2";
 
     static Exports()
     {
@@ -197,17 +200,109 @@ public static class Exports
     }
 
     /// <summary>
-    /// ABI-reserved, deliberately dormant: Phase 3.2 wires host→renderer event
-    /// ingress through this entry point (handlerId + JSON args → NativeUiEvent).
-    /// Declared now so the C ABI is complete for M3 DoD and the Kotlin binding
-    /// surface doesn't churn. Always returns -1 (not implemented).
+    /// Phase 3.2: host→renderer event ingress. Thin ABI wrapper over
+    /// <see cref="DispatchEventCore"/> (same wrapper/core split as
+    /// fetch_complete → CompleteFetch) — the wrapper only marshals the args
+    /// pointer and guarantees no exception crosses the ABI.
     /// </summary>
     [UnmanagedCallersOnly(EntryPoint = "blazornative_dispatch_event")]
     public static int DispatchEvent(ulong handlerId, IntPtr argsJsonUtf8)
     {
-        _ = handlerId;
-        _ = argsJsonUtf8;
-        return -1;
+        try
+        {
+            string? argsJson = argsJsonUtf8 == IntPtr.Zero
+                ? null
+                : Marshal.PtrToStringUTF8(argsJsonUtf8);
+            return DispatchEventCore(handlerId, argsJson);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[Exports] dispatch_event handler {handlerId} failed: {ex}");
+            return 2;
+        }
+    }
+
+    /// <summary>
+    /// Managed core of blazornative_dispatch_event (testable without the ABI
+    /// crossing). Args are flat JSON via the 3.1 FlatJson parser
+    /// (NativeShellBridge internals — same hand-rolled pair the Kotlin side
+    /// mirrors): <c>{"name":"click"}</c> / <c>{"name":"change","payload":"…"}</c>.
+    ///
+    /// Return codes:
+    ///   0 = dispatched — INCLUDING a stale handlerId: delivery is
+    ///       at-most-once, the renderer catches Blazor's ArgumentException for
+    ///       a handler that died in a re-render and logs it (a stale tap is
+    ///       not an error);
+    ///   1 = no session / nothing mounted;
+    ///   2 = dispatch faulted — the handler, the resulting re-render, or
+    ///       frame delivery threw (anything routed to HandleException inside
+    ///       the dispatch window; detail ex.ToString() on stderr — Kotlin
+    ///       logs loudly);
+    ///   3 = malformed or NULL args, including a handlerId outside the int
+    ///       range of the renderer's handler table.
+    ///
+    /// SYNCHRONOUS by contract: the renderer's InlineDispatcher runs the
+    /// handler, the re-render, and the FrameSink callback on the calling
+    /// thread, so everything — including frame delivery to the host — has
+    /// completed when this returns. Frames therefore still fire only inside
+    /// host calls (mount OR dispatch), containing the 3.0d trampoline hazard.
+    /// The host-side threading contract (single BlazorNative-Dispatch lane,
+    /// never the UI thread) lives in BlazorNativeRuntime.kt.
+    /// </summary>
+    internal static int DispatchEventCore(ulong handlerId, string? argsJson)
+    {
+        // Args validate first (rc 3) — a malformed dispatch is diagnosable
+        // regardless of session state.
+        if (argsJson is null)
+            return 3;
+
+        string? name;
+        string? payload;
+        try
+        {
+            Dictionary<string, string> args = NativeShellBridge.ParseFlatJsonObject(argsJson);
+            if (!args.TryGetValue("name", out name) || string.IsNullOrEmpty(name))
+                return 3; // parsed but no event name — not a dispatchable event
+            args.TryGetValue("payload", out payload);
+        }
+        catch (FormatException ex)
+        {
+            Console.Error.WriteLine($"[Exports] dispatch_event handler {handlerId}: bad args — {ex.Message}");
+            return 3;
+        }
+
+        // Guard BEFORE the (int) narrowing below: silent truncation of an
+        // out-of-range id could alias onto a LIVE handler and dispatch the
+        // wrong event — reject as malformed input instead.
+        if (handlerId > int.MaxValue)
+        {
+            Console.Error.WriteLine(
+                $"[Exports] dispatch_event: handlerId {handlerId} exceeds the handler table's int range — rejected as malformed");
+            return 3;
+        }
+
+        var renderer = HostSession.CurrentRenderer;
+        if (renderer is null)
+            return 1;
+
+        try
+        {
+            // GetAwaiter().GetResult() is the sync contract, not a blocking
+            // wait: the InlineDispatcher completed the work before the Task
+            // was handed back (Phase 2.4 decision).
+            renderer.DispatchUiEventAsync(new NativeUiEvent(0, (int)handlerId, name, payload))
+                .GetAwaiter().GetResult();
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            // Dispatch fault (DoD #9 partial): the handler, the resulting
+            // re-render, or frame delivery threw — visible via rc 2 + full
+            // detail on stderr so a device-side crash is diagnosable from
+            // logcat.
+            Console.Error.WriteLine($"[Exports] dispatch_event handler {handlerId} faulted: {ex}");
+            return 2;
+        }
     }
 
     /// <summary>

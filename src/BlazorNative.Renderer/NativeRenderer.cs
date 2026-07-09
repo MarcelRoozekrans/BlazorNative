@@ -205,7 +205,14 @@ public sealed class NativeRenderer : BlazorRenderer
     }
 
     protected override void HandleException(Exception exception)
-        => Console.Error.WriteLine($"[BlazorNative.Renderer] {exception}");
+    {
+        // Inside a UI-event dispatch window, remember the first exception so
+        // DispatchUiEventAsync can fault its task (Blazor swallows dispatch
+        // exceptions here otherwise — see _uiEventDispatchException doc).
+        if (_uiEventDispatchDepth > 0)
+            _uiEventDispatchException ??= exception;
+        Console.Error.WriteLine($"[BlazorNative.Renderer] {exception}");
+    }
 
     protected override void Dispose(bool disposing)
     {
@@ -222,24 +229,56 @@ public sealed class NativeRenderer : BlazorRenderer
 
     // ── Render tree walking (typed against Bn* wrappers only) ─────────────────
 
+    /// <summary>Cursor value after a failed StepIn: never a real node id and
+    /// never NativeWidgetTree's -1 root sentinel, so every edit under an
+    /// unknown container resolves to nothing (GetChildAt misses) and
+    /// PrependFrame breaks out explicitly — nothing may alias onto the
+    /// component root or create a live child-order bucket under the
+    /// sentinel.</summary>
+    private const int PoisonedCursor = int.MinValue;
+
     private void ProcessRenderTreeDiff(
         ref BnRenderTreeDiff diff,
         ref BnArrayRange<RenderTreeFrame> referenceFrames,
         ref PooledList<RenderPatch> patches)
     {
         var componentId = diff.ComponentId;
+
+        // Phase 3.2 diff cursor: Blazor addresses re-render edits through a
+        // walk — StepIn(siblingIndex) descends into a child of the current
+        // container, StepOut pops back, and positional edits (UpdateText)
+        // carry a SiblingIndex RELATIVE to the current container. Node ids
+        // must be resolved through this cursor: ReferenceFrameIndex is
+        // BATCH-relative (each RenderBatch builds its own ReferenceFrames
+        // array), so the mount-time (componentId, frameIndex) sibling map is
+        // only valid for lookups within the SAME batch (SetAttribute uses it —
+        // its edits so far only appear in mount-shaped batches). Before this
+        // cursor existed, Hello's counter UpdateText resolved to the OUTER
+        // div (node 1) and the on-screen text never changed (Android Gate 3
+        // caught it; the JVM tests only asserted patch TEXT, not nodeId).
+        // currentParent == null means the component's root level.
+        int? currentParent = null;
+        var parentStack = new Stack<int?>();
+
         foreach (ref var edit in diff.Edits)
         {
             var bnEdit = new BnRenderTreeEdit(in edit);
             switch ((RenderTreeEditType)bnEdit.Type)
             {
                 case RenderTreeEditType.PrependFrame:
-                    ProcessFrame(componentId, ref referenceFrames, bnEdit.ReferenceFrameIndex, bnEdit.SiblingIndex, parentNodeId: null, ref patches);
+                    // Review follow-up: under a poisoned cursor a prepend must
+                    // be dropped outright — emitting it would ship
+                    // CreateNodePatch(parent=PoisonedCursor) (Android falls
+                    // back to widget_root) AND AppendChildOrder would turn the
+                    // poison sentinel into a live child-order bucket,
+                    // cross-container aliasing later cursor lookups.
+                    if (currentParent == PoisonedCursor) break;
+                    ProcessFrame(componentId, ref referenceFrames, bnEdit.ReferenceFrameIndex, bnEdit.SiblingIndex, parentNodeId: currentParent, ref patches);
                     break;
 
                 case RenderTreeEditType.RemoveFrame:
                 {
-                    var nodeId = _tree.GetNodeIdBySibling(componentId, bnEdit.SiblingIndex);
+                    var nodeId = _tree.GetChildAt(componentId, currentParent, bnEdit.SiblingIndex);
                     if (nodeId >= 0) patches.Add(new RemoveNodePatch(nodeId));
                     break;
                 }
@@ -250,14 +289,34 @@ public sealed class NativeRenderer : BlazorRenderer
 
                 case RenderTreeEditType.RemoveAttribute:
                 {
-                    var nodeId = _tree.GetNodeIdBySibling(componentId, bnEdit.SiblingIndex);
+                    var nodeId = _tree.GetChildAt(componentId, currentParent, bnEdit.SiblingIndex);
                     if (nodeId >= 0 && bnEdit.RemovedAttributeName is not null)
                         patches.Add(new UpdatePropPatch(nodeId, bnEdit.RemovedAttributeName, null));
                     break;
                 }
 
                 case RenderTreeEditType.UpdateText:
-                    ProcessTextEdit(componentId, ref referenceFrames, bnEdit.ReferenceFrameIndex, bnEdit.SiblingIndex, ref patches);
+                {
+                    var nodeId = _tree.GetChildAt(componentId, currentParent, bnEdit.SiblingIndex);
+                    ProcessTextEdit(nodeId, ref referenceFrames, bnEdit.ReferenceFrameIndex, ref patches);
+                    break;
+                }
+
+                case RenderTreeEditType.StepIn:
+                {
+                    parentStack.Push(currentParent);
+                    var stepped = _tree.GetChildAt(componentId, currentParent, bnEdit.SiblingIndex);
+                    // A failed StepIn poisons the cursor (see PoisonedCursor):
+                    // node-targeting edits inside the unknown container miss
+                    // their GetChildAt lookups and PrependFrame breaks out via
+                    // its explicit guard above — nothing aliases onto the
+                    // component root.
+                    currentParent = stepped >= 0 ? stepped : PoisonedCursor;
+                    break;
+                }
+
+                case RenderTreeEditType.StepOut:
+                    currentParent = parentStack.Count > 0 ? parentStack.Pop() : null;
                     break;
             }
         }
@@ -278,6 +337,9 @@ public sealed class NativeRenderer : BlazorRenderer
             case RenderTreeFrameType.Element:
             {
                 var nodeId = _tree.AllocateNode(componentId, siblingIndex);
+                // Phase 3.2: creation order = render-tree sibling order — the
+                // diff cursor (StepIn/UpdateText) resolves children by it.
+                _tree.AppendChildOrder(componentId, parentNodeId, nodeId);
                 var nodeType = MapElementToNodeType(frame.ElementName!);
                 patches.Add(new CreateNodePatch(nodeId, nodeType, parentNodeId));
 
@@ -298,6 +360,10 @@ public sealed class NativeRenderer : BlazorRenderer
                         // subtree so its child Attribute frames (carrying its parameter
                         // values like Label="A") aren't mis-attributed to THIS element
                         // by the next loop iteration. Phase 2.7 Bug B fix.
+                        // 3.3 carryover (b) on NativeWidgetTree._childOrderMap: this
+                        // skip allocates no child-order slot, so a component
+                        // interleaved between element siblings offsets the diff
+                        // cursor's indices for everything after it.
                         i += child.ComponentSubtreeLength - 1;
                     }
                     else
@@ -321,6 +387,8 @@ public sealed class NativeRenderer : BlazorRenderer
             case RenderTreeFrameType.Text:
             {
                 var textNodeId = _tree.AllocateNode(componentId, siblingIndex);
+                // Phase 3.2: see the Element case — cursor-order bookkeeping.
+                _tree.AppendChildOrder(componentId, parentNodeId, textNodeId);
                 patches.Add(new CreateNodePatch(textNodeId, "text", parentNodeId));
                 patches.Add(new ReplaceTextPatch(textNodeId, frame.TextContent ?? ""));
                 break;
@@ -362,16 +430,20 @@ public sealed class NativeRenderer : BlazorRenderer
         ProcessAttribute(nodeId, ref frame, ref patches);
     }
 
-    private void ProcessTextEdit(
-        int componentId,
+    /// <summary>Emits the ReplaceText for an UpdateText edit. The node was
+    /// resolved by the caller through the diff cursor (see
+    /// <see cref="ProcessRenderTreeDiff"/>); the reference frame only supplies
+    /// the new text content (ReferenceFrameIndex is batch-relative and must
+    /// never be used as a node key).</summary>
+    private static void ProcessTextEdit(
+        int nodeId,
         ref BnArrayRange<RenderTreeFrame> frames,
         int frameIndex,
-        int siblingIndex,
         ref PooledList<RenderPatch> patches)
     {
+        if (nodeId < 0) return;
         var frame = new BnRenderTreeFrame(ref frames[frameIndex]);
-        var nodeId = _tree.GetNodeIdBySibling(componentId, siblingIndex);
-        if (nodeId >= 0) patches.Add(new ReplaceTextPatch(nodeId, frame.TextContent ?? ""));
+        patches.Add(new ReplaceTextPatch(nodeId, frame.TextContent ?? ""));
     }
 
     // ── Frame dispatch ────────────────────────────────────────────────────────
@@ -389,9 +461,47 @@ public sealed class NativeRenderer : BlazorRenderer
 
     // ── Event ingestion ───────────────────────────────────────────────────────
 
+    /// <summary>Captures the first exception Blazor routes to
+    /// <see cref="HandleException"/> during a <see cref="DispatchUiEventAsync"/>
+    /// window. Blazor's Renderer.DispatchEventAsync does NOT propagate such
+    /// exceptions to its caller — they go to HandleExceptionViaErrorBoundary →
+    /// (no error boundary here) → HandleException, and the returned task
+    /// completes successfully. Without this capture,
+    /// blazornative_dispatch_event could never honor its "2 = dispatch
+    /// faulted" contract (Phase 3.2, DoD #9 partial). Note the capture is a
+    /// WINDOW, not a handler hook: anything routed to HandleException while
+    /// the window is open is captured — the handler itself, the resulting
+    /// re-render (UpdateDisplayAsync failures land here too), or frame
+    /// delivery.
+    ///
+    /// The depth counter (not a bool) keeps the window correct for NESTED
+    /// dispatches (a handler that itself calls DispatchUiEventAsync): the
+    /// slot is only cleared + rethrown when the OUTERMOST dispatch unwinds,
+    /// and is never reset at nested-dispatch start — so an outer handler's
+    /// throw cannot be discarded by an inner dispatch.
+    ///
+    /// These guarantees assume SYNCHRONOUS handlers; async handlers (await in
+    /// @onclick) move continuations off the dispatch thread and out of this
+    /// window — revisit in 3.3+.
+    ///
+    /// Instance fields are safe: all dispatch runs on the InlineDispatcher's
+    /// calling thread (single-threaded post-boot contract).</summary>
+    private Exception? _uiEventDispatchException;
+    private int _uiEventDispatchDepth;
+
+    /// <summary>Dispatches a host UI event into Blazor's handler table.
+    /// Synchronous in effect (InlineDispatcher): handler, re-render, and
+    /// FrameSink delivery have all completed when the returned task is
+    /// observed. Stale handler ids (ArgumentException from a handler that
+    /// died in a re-render) are caught + logged — delivery is at-most-once,
+    /// a stale tap is not an error. A fault anywhere in the dispatch window —
+    /// the handler, the resulting re-render, or frame delivery — faults the
+    /// returned task (see <see cref="_uiEventDispatchException"/>) so the
+    /// export can map it to return code 2.</summary>
     public Task DispatchUiEventAsync(NativeUiEvent e)
         => Dispatcher.InvokeAsync(async () =>
         {
+            _uiEventDispatchDepth++;
             try
             {
                 var args = BuildEventArgs(e);
@@ -400,6 +510,16 @@ public sealed class NativeRenderer : BlazorRenderer
             catch (ArgumentException ex)
             {
                 Console.Error.WriteLine($"[NativeRenderer] stale handler {e.HandlerId}: {ex.Message}");
+            }
+            finally
+            {
+                _uiEventDispatchDepth--;
+            }
+
+            if (_uiEventDispatchDepth == 0 && _uiEventDispatchException is { } dispatchEx)
+            {
+                _uiEventDispatchException = null;
+                System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(dispatchEx).Throw();
             }
         });
 

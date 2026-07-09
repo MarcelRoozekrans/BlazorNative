@@ -42,7 +42,6 @@ public sealed class MountSyncTests
     private static NativeRenderer NewRenderer()
     {
         var services = new ServiceCollection();
-        services.AddBlazorNativeCoreServices();
         services.AddBlazorNativeRendererServices();
         var provider = services.BuildServiceProvider();
         return provider.GetRequiredService<NativeRenderer>();

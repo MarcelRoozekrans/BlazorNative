@@ -4,6 +4,8 @@ import android.content.Context
 import android.graphics.Color
 import android.os.Handler
 import android.os.Looper
+import android.text.Editable
+import android.text.TextWatcher
 import android.util.Log
 import android.util.TypedValue
 import android.view.View
@@ -25,18 +27,45 @@ import io.blazornative.jni.RenderPatch
  * mapper collects patches until [RenderPatch.CommitFrame], then posts the batch
  * to the main looper for atomic application. Caller-thread-agnostic.
  *
- * Patch coverage (Phase 2.5 scope): CreateNode (all 7 NodeTypes wired),
- * ReplaceText, RemoveNode, CommitFrame. UpdateProp / SetStyle / AttachEvent /
- * DetachEvent / AppendChild are stubbed with Log.w and a TODO marker — Phase 3+.
+ * Patch coverage: CreateNode (all 7 NodeTypes wired), ReplaceText, RemoveNode,
+ * UpdateProp, SetStyle, CommitFrame, and — live since Phase 3.2 — AttachEvent /
+ * DetachEvent (click listener + re-entrancy-guarded change TextWatcher; see
+ * [handleAttachEvent]). AppendChild remains the only TODO (Phase 3+).
+ *
+ * Events: [onUiEvent] is invoked from UI listeners with (handlerId, eventName,
+ * payload) — production wires it to BlazorNativeRuntime.dispatchEvent, which is
+ * safe to call from the UI thread (non-blocking submit to the
+ * BlazorNative-Dispatch lane). The default no-op keeps event-agnostic tests
+ * compiling unchanged.
  *
  * Patch model: src/BlazorNative.Renderer/PatchProtocol.cs (the wire itself is
  * the typed-struct C ABI decoded by [io.blazornative.jni.NativeFrameAdapter]).
  * Source of truth for the NodeType → widget table: docs/planning/MILESTONE.md DoD #6.
  */
-class WidgetMapper(private val context: Context, private val root: ViewGroup) {
+class WidgetMapper(
+    private val context: Context,
+    private val root: ViewGroup,
+    private val onUiEvent: (handlerId: Int, eventName: String, payload: String?) -> Unit = { _, _, _ -> },
+) {
     private val nodes = mutableMapOf<Int, View>()
     private val mainHandler = Handler(Looper.getMainLooper())
     private val pending = mutableListOf<RenderPatch>()
+
+    /**
+     * Phase 3.2 re-entrancy guard: true while [applyBatch] runs. A programmatic
+     * `setText` during patch application (ReplaceText/UpdateProp on an EditText)
+     * fires its TextWatcher synchronously; the watcher checks this flag and
+     * skips the dispatch — otherwise a change dispatch → re-render → setText
+     * loop would spin. Plain field (no volatile/atomic): both applyBatch and
+     * every watcher callback run on the main looper thread only.
+     */
+    private var applyingBatch = false
+
+    /**
+     * Live change-watchers keyed by handlerId so DetachEvent can remove them
+     * (view tags would need res-ids; a map is simpler). Main-thread only.
+     */
+    private val watchers = mutableMapOf<Int, Pair<EditText, TextWatcher>>()
 
     fun apply(frame: RenderFrame) {
         for (patch in frame.patches) {
@@ -50,17 +79,95 @@ class WidgetMapper(private val context: Context, private val root: ViewGroup) {
     }
 
     private fun applyBatch(patches: List<RenderPatch>) {
-        for (patch in patches) when (patch) {
-            is RenderPatch.CreateNode  -> handleCreate(patch)
-            is RenderPatch.ReplaceText -> handleReplaceText(patch)
-            is RenderPatch.RemoveNode  -> handleRemove(patch)
-            is RenderPatch.UpdateProp  -> handleUpdateProp(patch)
-            is RenderPatch.SetStyle    -> handleSetStyle(patch)
-            is RenderPatch.CommitFrame -> { /* boundary marker; no-op here */ }
-            is RenderPatch.AttachEvent,
-            is RenderPatch.DetachEvent,
-            is RenderPatch.AppendChild -> Log.w(TAG, "TODO Phase 3+: $patch")
+        applyingBatch = true
+        try {
+            for (patch in patches) when (patch) {
+                is RenderPatch.CreateNode  -> handleCreate(patch)
+                is RenderPatch.ReplaceText -> handleReplaceText(patch)
+                is RenderPatch.RemoveNode  -> handleRemove(patch)
+                is RenderPatch.UpdateProp  -> handleUpdateProp(patch)
+                is RenderPatch.SetStyle    -> handleSetStyle(patch)
+                is RenderPatch.CommitFrame -> { /* boundary marker; no-op here */ }
+                is RenderPatch.AttachEvent -> handleAttachEvent(patch)
+                is RenderPatch.DetachEvent -> handleDetachEvent(patch)
+                is RenderPatch.AppendChild -> Log.w(TAG, "TODO Phase 3+: $patch")
+            }
+        } finally {
+            applyingBatch = false
         }
+    }
+
+    /**
+     * Phase 3.2: wires a native listener that forwards to [onUiEvent].
+     *
+     * NodeId resolution rides the text-collapse (see [handleCreate]): the
+     * renderer emits AttachEvent against the interactive element's OWN nodeId
+     * (Hello: nodeId 4 = the Button view itself), so `nodes[p.nodeId]` is the
+     * real widget even when its text child shares the mapping.
+     *
+     * Re-attach after re-render: the renderer NEVER emits DetachEvent today —
+     * an on* RemoveAttribute leaves the wire as UpdatePropPatch(name, null),
+     * which this mapper ignores (carryover (e) on NativeWidgetTree
+     * ._childOrderMap; routing it to DetachEventPatch is 3.3 renderer work) —
+     * so listeners are only ever REPLACED, never detached. Click re-attach
+     * overwrites via setOnClickListener; change re-attach replaces the
+     * [watchers] map entry but leaves the previous watcher registered on the
+     * EditText — a stale watcher dispatches a dead handlerId, absorbed by the
+     * rc-0 at-most-once stale contract until the same 3.3 work lands.
+     */
+    private fun handleAttachEvent(p: RenderPatch.AttachEvent) {
+        val view = nodes[p.nodeId] ?: run {
+            Log.w(TAG, "AttachEvent '${p.eventName}' for unknown nodeId ${p.nodeId}: ignored")
+            return
+        }
+        when (p.eventName) {
+            "click" -> view.setOnClickListener { onUiEvent(p.handlerId, "click", null) }
+            "change" -> {
+                if (view !is EditText) {
+                    Log.w(TAG, "AttachEvent 'change' ignored: node ${p.nodeId} is ${view::class.simpleName}, not EditText")
+                    return
+                }
+                val watcher = object : TextWatcher {
+                    override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+                    override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+                    override fun afterTextChanged(s: Editable?) {
+                        // Re-entrancy guard: programmatic setText during patch
+                        // application must not dispatch (see [applyingBatch]).
+                        if (applyingBatch) return
+                        // s is nullable — a null Editable must not stringify
+                        // into the literal "null" payload.
+                        onUiEvent(p.handlerId, "change", s?.toString() ?: "")
+                    }
+                }
+                view.addTextChangedListener(watcher)
+                watchers[p.handlerId] = view to watcher
+            }
+            else -> Log.w(TAG, "AttachEvent '${p.eventName}' not supported (forward compat): skipped")
+        }
+    }
+
+    /** Phase 3.2: DetachEvent carries nodeId + handlerId but NO eventName, so
+     * the event kind is INFERRED: a handlerId present in [watchers] is treated
+     * as a change detach (remove that watcher), anything else falls through to
+     * a click detach on the node's view. The inference is sound while click
+     * and change are the only wired events and change watchers are always
+     * registered in the map; a future event type must either extend the
+     * inference or add eventName to the patch. (Dead code today — the renderer
+     * never emits DetachEvent; see [handleAttachEvent]'s re-attach note.) */
+    private fun handleDetachEvent(p: RenderPatch.DetachEvent) {
+        watchers.remove(p.handlerId)?.let { (editText, watcher) ->
+            editText.removeTextChangedListener(watcher)
+            return
+        }
+        val view = nodes[p.nodeId] ?: run {
+            Log.w(TAG, "DetachEvent for unknown nodeId ${p.nodeId}: ignored")
+            return
+        }
+        view.setOnClickListener(null)
+        // setOnClickListener(non-null) flips the view clickable; detaching
+        // must restore the pre-listener state or the view keeps consuming
+        // taps as a focusable/clickable no-op.
+        view.isClickable = false
     }
 
     private fun handleCreate(p: RenderPatch.CreateNode) {
@@ -105,6 +212,11 @@ class WidgetMapper(private val context: Context, private val root: ViewGroup) {
 
     private fun handleRemove(p: RenderPatch.RemoveNode) {
         val v = nodes.remove(p.nodeId) ?: return
+        // Purge change watchers registered on the removed view — the detached
+        // EditText would otherwise pin itself (and its watcher) in [watchers]
+        // forever. Identity match: the collapse can alias several nodeIds to
+        // one view, but watchers are keyed by handlerId, not nodeId.
+        watchers.entries.removeAll { it.value.first === v }
         (v.parent as? ViewGroup)?.removeView(v)
     }
 

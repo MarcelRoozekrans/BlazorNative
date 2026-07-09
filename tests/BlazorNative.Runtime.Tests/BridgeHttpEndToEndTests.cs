@@ -8,10 +8,10 @@ namespace BlazorNative.Runtime.Tests;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Phase 3.1 Task 3 — BridgeHttpHandler end-to-end on the host CLR against the
-// HostSession-SHAPED DI graph: the same four registrations in the same order
-// as HostSession.EnsureSession (Core → Renderer → AddBlazorNativeHttp →
-// NativeShellBridge registered LAST so it overrides WasiBridge's
-// [Singleton(As=IMobileBridge)] registration; MS.DI last-wins). A plain
+// HostSession-SHAPED DI graph: the same three registrations in the same order
+// as HostSession.EnsureSession (Renderer → AddBlazorNativeHttp →
+// NativeShellBridge — since Phase 3.2 deleted WasiBridge, Core registers
+// nothing and NativeShellBridge is the sole IMobileBridge). A plain
 // injected HttpClient GET must round-trip through the registered fake
 // callbacks: BridgeHttpHandler → NativeShellBridge.FetchAsync →
 // FakeShellHost.FetchBegin → CompleteFetch → HttpResponseMessage.
@@ -28,10 +28,9 @@ public sealed class BridgeHttpEndToEndTests
     private static ServiceProvider BuildHostGraph()
     {
         var services = new ServiceCollection();
-        services.AddBlazorNativeCoreServices();
         services.AddBlazorNativeRendererServices();
         services.AddBlazorNativeHttp(); // BridgeHttpHandler as primary handler + HttpClient factory
-        services.AddSingleton<IMobileBridge, NativeShellBridge>(); // last wins over WasiBridge
+        services.AddSingleton<IMobileBridge, NativeShellBridge>(); // sole IMobileBridge since 3.2 (WasiBridge deleted)
         return services.BuildServiceProvider();
     }
 

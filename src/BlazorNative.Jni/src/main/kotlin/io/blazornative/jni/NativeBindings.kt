@@ -55,6 +55,29 @@ interface NativeBindings : Library {
     fun blazornative_mount(componentName: ByteArray): Int
 
     /**
+     * Phase 3.2: host→renderer event ingress — dispatches a UI event to the
+     * Blazor handler registered under [handlerId] (harvested from an
+     * AttachEvent patch). [argsJsonUtf8] is NUL-terminated UTF-8 flat JSON
+     * (the 3.1 FlatJson pair): `{"name":"click"}` /
+     * `{"name":"change","payload":"…"}`.
+     *
+     * Return codes:
+     *   0 = dispatched (incl. stale-handler at-most-once)
+     *   1 = no session/nothing mounted
+     *   2 = dispatch faulted — the handler, the resulting re-render, or frame
+     *       delivery threw (detail on native stderr)
+     *   3 = malformed/NULL args OR handlerId > int.MaxValue
+     *
+     * SYNCHRONOUS: the handler, the re-render, AND the frame callback all
+     * complete before this returns (InlineDispatcher contract in Exports.cs) —
+     * frames still fire only inside host calls (mount OR dispatch).
+     * THREADING: never call from the UI thread — all post-boot .NET entry
+     * serializes through BlazorNativeRuntime's BlazorNative-Dispatch lane
+     * (see the threading contract on [BlazorNativeRuntime.dispatchEvent]).
+     */
+    fun blazornative_dispatch_event(handlerId: Long, argsJsonUtf8: ByteArray): Int
+
+    /**
      * Phase 3.1: copies the host's six-callback struct into the runtime's
      * shell bridge (the struct memory may be freed after this returns; the
      * CALLBACK OBJECTS must stay strongly referenced — see the lifetime note

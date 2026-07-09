@@ -270,7 +270,7 @@ public sealed class NativeShellBridge : IMobileBridge
         {
             PlatformOptions? opts = Volatile.Read(ref s_platformOptions);
             if (opts is null)
-                return "{}"; // Init not called yet — same fallback as WasiBridge
+                return "{}"; // Init not called yet — same "{}" fallback the WASM-era WasiBridge used (deleted Phase 3.2)
 
             var sb = new StringBuilder(96);
             sb.Append("{\"kind\":\"Android\",\"os\":");

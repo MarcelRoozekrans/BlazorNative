@@ -42,6 +42,34 @@ internal static unsafe class HostSession
     public static void SetFrameCallback(IntPtr fnPtr)
         => Volatile.Write(ref s_frameCallback, fnPtr);
 
+    /// <summary>The live session renderer, or null before the first
+    /// EnsureSession/TryMount. Phase 3.2: blazornative_dispatch_event resolves
+    /// its target through this — null maps to return code 1 (no session).</summary>
+    // BL0006 (NativeRenderer derives from Blazor's internal Renderer): the
+    // Renderer project suppresses it project-wide for the same reason — all
+    // internal-type access is deliberate and drift-guarded by VerifyAccessors.
+#pragma warning disable BL0006
+    internal static NativeRenderer? CurrentRenderer => Volatile.Read(ref s_renderer);
+#pragma warning restore BL0006
+
+    /// <summary>Test-only: tears down the session singleton so "no session"
+    /// paths are testable and each test gets a fresh renderer. Tests touching
+    /// HostSession serialize via the "host-session" xUnit collection — the
+    /// production ABI never calls this.</summary>
+    internal static void ResetForTests()
+    {
+        lock (s_lock)
+        {
+            // BL0006: Dispose comes from Blazor's internal Renderer base —
+            // same deliberate-access rationale as CurrentRenderer above.
+#pragma warning disable BL0006
+            Volatile.Read(ref s_renderer)?.Dispose();
+#pragma warning restore BL0006
+            Volatile.Write(ref s_renderer, null);
+            Volatile.Write(ref s_frameCallback, IntPtr.Zero);
+        }
+    }
+
     /// <summary>Mounts a registered component by name.
     /// Returns 0 = ok, 1 = unknown component, 2 = mount threw.</summary>
     public static int TryMount(string name)
@@ -63,7 +91,11 @@ internal static unsafe class HostSession
         }
     }
 
-    private static NativeRenderer EnsureSession()
+    // internal (not private): DispatchEventTests needs the renderer BEFORE the
+    // first mount so it can subscribe to Frames and harvest the first frame's
+    // AttachEventPatch handlerId (the renderer is otherwise only born inside
+    // TryMount, after which the first frame is gone).
+    internal static NativeRenderer EnsureSession()
     {
         NativeRenderer? renderer = Volatile.Read(ref s_renderer);
         if (renderer is not null)
@@ -75,8 +107,10 @@ internal static unsafe class HostSession
                 return s_renderer;
 
             // Same registrations as TrimProbeRunner — the production DI surface.
+            // (No AddBlazorNativeCoreServices call: Phase 3.2 deleted WasiBridge,
+            // Core's last [Singleton] type, so the ZeroAlloc.Inject generator no
+            // longer emits the Core extension method at all.)
             var services = new ServiceCollection();
-            services.AddBlazorNativeCoreServices();
             services.AddBlazorNativeRendererServices();
             // Full HttpClient plumbing, not just the generated handler
             // registration: AddBlazorNativeHttp() layers the IHttpClientFactory
@@ -85,11 +119,10 @@ internal static unsafe class HostSession
             // BridgeHttpHandler (3.3+ components rely on this).
             services.AddBlazorNativeHttp();
             // Phase 3.1: the shell bridge is THE IMobileBridge on-device.
-            // Registered AFTER the Core services so it overrides WasiBridge's
-            // [Singleton(As = typeof(IMobileBridge))] registration (MS.DI:
-            // last registration wins for GetRequiredService) — WasiBridge
-            // deletion itself is deferred to Phase 3.2. BridgeHttpHandler
-            // therefore resolves against the host callbacks on Android.
+            // Sole runtime registration since Phase 3.2 deleted the WASM-era
+            // WasiBridge (Core no longer registers any IMobileBridge).
+            // BridgeHttpHandler therefore resolves against the host callbacks
+            // on Android.
             services.AddSingleton<IMobileBridge, NativeShellBridge>();
             renderer = services.BuildServiceProvider().GetRequiredService<NativeRenderer>();
 

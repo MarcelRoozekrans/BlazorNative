@@ -24,6 +24,35 @@ internal sealed class NativeWidgetTree
     // nodeId → parent nodeId
     private readonly Dictionary<int, int> _parentMap = new();
 
+    // Phase 3.2: ordered child lists, recorded in creation (= render-tree)
+    // order so diff-cursor edits (StepIn/UpdateText SiblingIndex) can resolve
+    // "child N of the current container". Key -1 per component = the
+    // component's root level (top-level nodes have no parent node).
+    // (componentId, parentNodeId or -1) → ordered child nodeIds
+    //
+    // Known limits (3.3 carryovers) — safe while component trees are
+    // diff-shape-stable (Hello), each breaks under richer diffs:
+    //  (a) Order lists are APPEND-ONLY: PrependFrame appends regardless of
+    //      the edit's SiblingIndex (mid-list inserts land at the end) and
+    //      RemoveFrame never trims the list — after structural churn, cursor
+    //      indices drift from Blazor's sibling positions.
+    //  (b) Component frames occupy a diff sibling slot but get NO order-list
+    //      slot (NativeRenderer skips them without allocating a node), so a
+    //      child component interleaved between elements offsets every cursor
+    //      index after it.
+    //  (c) SetAttribute still resolves through the batch-relative
+    //      (componentId, frameIndex) sibling map, not the cursor — only
+    //      valid for mount-shaped batches.
+    //  (d) PrependFrame under a poisoned cursor is DROPPED (explicit guard in
+    //      NativeRenderer — emitting it would alias the poison sentinel into
+    //      a live child-order bucket); the prepended subtree silently never
+    //      renders.
+    //  (e) on* RemoveAttribute never becomes a DetachEventPatch (it flows out
+    //      as UpdatePropPatch(name, null), which hosts ignore) — routing it
+    //      to DetachEventPatch is 3.3 renderer work; until then listeners
+    //      are only ever replaced by re-attach, never detached.
+    private readonly Dictionary<(int, int), List<int>> _childOrderMap = new();
+
     // ── Allocation ────────────────────────────────────────────────────────────
 
     public int AllocateNode(int componentId, int siblingIndex)
@@ -41,6 +70,28 @@ internal sealed class NativeWidgetTree
     public void SetParent(int nodeId, int parentNodeId)
     {
         _parentMap[nodeId] = parentNodeId;
+    }
+
+    /// <summary>Appends <paramref name="childNodeId"/> to the ordered child
+    /// list of <paramref name="parentNodeId"/> (null = the component's root
+    /// level). Called at node creation — creation order IS render-tree sibling
+    /// order for the initial walk, which is what the diff cursor addresses.</summary>
+    public void AppendChildOrder(int componentId, int? parentNodeId, int childNodeId)
+    {
+        var key = (componentId, parentNodeId ?? -1);
+        if (!_childOrderMap.TryGetValue(key, out List<int>? children))
+            _childOrderMap[key] = children = new List<int>();
+        children.Add(childNodeId);
+    }
+
+    /// <summary>Node id of the child at diff-cursor <paramref name="siblingIndex"/>
+    /// under <paramref name="parentNodeId"/> (null = component root level),
+    /// or -1 when unknown/out of range.</summary>
+    public int GetChildAt(int componentId, int? parentNodeId, int siblingIndex)
+    {
+        if (!_childOrderMap.TryGetValue((componentId, parentNodeId ?? -1), out List<int>? children))
+            return -1;
+        return siblingIndex >= 0 && siblingIndex < children.Count ? children[siblingIndex] : -1;
     }
 
     // ── Lookups ───────────────────────────────────────────────────────────────
@@ -80,6 +131,13 @@ internal sealed class NativeWidgetTree
             _siblingMap.Remove(key);
             _parentMap.Remove(nodeId);
         }
+
+        // Drop the component's ordered child lists (Phase 3.2).
+        var childKeys = _childOrderMap.Keys
+            .Where(k => k.Item1 == componentId)
+            .ToList();
+        foreach (var key in childKeys)
+            _childOrderMap.Remove(key);
     }
 
     public void Clear()
@@ -87,6 +145,7 @@ internal sealed class NativeWidgetTree
         _siblingMap.Clear();
         _componentMap.Clear();
         _parentMap.Clear();
+        _childOrderMap.Clear();
         _nextNodeId = 1;
     }
 

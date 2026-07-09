@@ -51,6 +51,14 @@ public sealed class TrimSafetyTests
     /// without taking a ProjectReference dependency on the runtime project. Same element
     /// vocabulary (div / button / input), same attribute mix (backgroundColor,
     /// padding, fontSize, placeholder), same nesting depth.
+    ///
+    /// DELIBERATE DIVERGENCE (Phase 3.2): HelloComponent gained an @onclick
+    /// tap counter; this probe does NOT mirror it. The probe's job is the
+    /// ElementName → NodeType flow regression (the componentize-dotnet trim
+    /// bug shape) — event attributes don't participate in that flow, and
+    /// trim/behavior coverage for event dispatch lives in the Phase 3.2
+    /// Gate 1 tests (DispatchEventTests + the updated HelloGoldenTests),
+    /// which exercise the real interactive HelloComponent.
     /// </summary>
     private sealed class TrimSafetyProbe : ComponentBase
     {

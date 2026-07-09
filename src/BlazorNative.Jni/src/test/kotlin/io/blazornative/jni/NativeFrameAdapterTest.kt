@@ -4,6 +4,7 @@ import com.sun.jna.Memory
 import com.sun.jna.Pointer
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 /**
@@ -96,10 +97,16 @@ class NativeFrameAdapterTest {
 
     // ── 3. Golden: native dll path == typed expected shape ───────────────────
 
-    /** The Phase 2.8 Hello shape — 12 patches + the CommitFrame terminator.
-     * Typed expected list transcribed from the retired hello-frame.json
-     * fixture (3.0e). Node IDs are first-appearance order (1..6); CommitFrame
-     * is normalized to (0, 0) on both sides before comparing. */
+    /** The Phase 2.8 Hello shape, Phase 3.2 interactive — 13 patches + the
+     * CommitFrame terminator. Typed expected list transcribed from the retired
+     * hello-frame.json fixture (3.0e), hand-updated for Phase 3.2 (+AttachEvent
+     * on the button, counter in the fontSize-24 text). Node IDs are
+     * first-appearance order (1..6); CommitFrame is normalized to (0, 0) on
+     * both sides before comparing. AttachEvent.handlerId is runtime-assigned
+     * (Blazor's process-global handler table) — the 0 here is the normalized
+     * sentinel, zeroed on BOTH sides by [normalize] (the Kotlin mirror of
+     * HelloGoldenTests.cs's AnyHandlerId relaxation); every OTHER field stays
+     * pinned. */
     private val expectedHelloPatches = listOf<RenderPatch>(
         RenderPatch.CreateNode(nodeId = 1, nodeType = "view"),
         RenderPatch.SetStyle(nodeId = 1, property = "backgroundColor", value = "#FFEEAA"),
@@ -107,8 +114,9 @@ class NativeFrameAdapterTest {
         RenderPatch.CreateNode(nodeId = 2, nodeType = "view", parentId = 1),
         RenderPatch.SetStyle(nodeId = 2, property = "fontSize", value = "24"),
         RenderPatch.CreateNode(nodeId = 3, nodeType = "text", parentId = 2),
-        RenderPatch.ReplaceText(nodeId = 3, text = "Hello, BlazorNative!"),
+        RenderPatch.ReplaceText(nodeId = 3, text = "Hello, BlazorNative! (taps: 0)"),
         RenderPatch.CreateNode(nodeId = 4, nodeType = "button", parentId = 1),
+        RenderPatch.AttachEvent(nodeId = 4, eventName = "click", handlerId = 0),
         RenderPatch.CreateNode(nodeId = 5, nodeType = "text", parentId = 4),
         RenderPatch.ReplaceText(nodeId = 5, text = "Tap"),
         RenderPatch.CreateNode(nodeId = 6, nodeType = "input", parentId = 1),
@@ -146,9 +154,18 @@ class NativeFrameAdapterTest {
         val nativeFrame = captured.get()
         assertNotNull(nativeFrame, "frame callback did not fire during mount")
 
+        // Runtime-assigned handlerIds must at least be positive (the .NET
+        // twin's HandlerId > 0 assertion) — normalize() then zeroes them.
+        nativeFrame!!.patches.filterIsInstance<RenderPatch.AttachEvent>().forEach {
+            assertTrue(it.handlerId > 0, "AttachEvent.handlerId must be a positive runtime-assigned id, got ${it.handlerId}")
+        }
+
+        // normalize() BOTH sides: node-ID renumbering is identity on the
+        // expected list (already first-appearance order), and handlerId is
+        // zeroed on both — the AnyHandlerId-sentinel comparison.
         assertEquals(
-            expectedHelloPatches,
-            normalize(nativeFrame!!.patches),
+            normalize(expectedHelloPatches),
+            normalize(nativeFrame.patches),
             "native-callback patch list must equal the typed golden patch list"
         )
     }
@@ -171,7 +188,14 @@ class NativeFrameAdapterTest {
      * test that mounts a component (e.g. BlazorNativeRuntimeTest, Phase 3.0d
      * Gate 3) shifts the raw IDs. The typed golden list's 1..6 is itself just
      * first-appearance order, so canonical renumbering preserves every
-     * structural assertion (types, parent linkage, texts, props, order). */
+     * structural assertion (types, parent linkage, texts, props, order).
+     *
+     * Attach/DetachEvent handlerIds are zeroed (Phase 3.2): Blazor's
+     * event-handler table is likewise a process-global counter, so the raw id
+     * depends on how many handlers earlier tests registered. Applied to BOTH
+     * sides of the comparison — the expected list carries handlerId = 0 as the
+     * sentinel, mirroring the .NET twin's AnyHandlerId normalization
+     * (HelloGoldenTests.cs); every OTHER field stays load-bearing. */
     private fun normalize(patches: List<RenderPatch>): List<RenderPatch> {
         val idMap = mutableMapOf<Int, Int>()
         fun canon(id: Int): Int = idMap.getOrPut(id) { idMap.size + 1 }
@@ -183,8 +207,8 @@ class NativeFrameAdapterTest {
                 is RenderPatch.UpdateProp  -> p.copy(nodeId = canon(p.nodeId))
                 is RenderPatch.ReplaceText -> p.copy(nodeId = canon(p.nodeId))
                 is RenderPatch.SetStyle    -> p.copy(nodeId = canon(p.nodeId))
-                is RenderPatch.AttachEvent -> p.copy(nodeId = canon(p.nodeId))
-                is RenderPatch.DetachEvent -> p.copy(nodeId = canon(p.nodeId))
+                is RenderPatch.AttachEvent -> p.copy(nodeId = canon(p.nodeId), handlerId = 0)
+                is RenderPatch.DetachEvent -> p.copy(nodeId = canon(p.nodeId), handlerId = 0)
                 is RenderPatch.CommitFrame -> RenderPatch.CommitFrame(0, 0L)
             }
         }
