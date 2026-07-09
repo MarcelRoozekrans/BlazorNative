@@ -3,13 +3,19 @@ package io.blazornative.jni
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import java.util.Collections
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * Phase 3.2 Gate 2 — blazornative_dispatch_event proven on the desktop JVM
  * against the win-x64 NativeAOT dll, through [BlazorNativeRuntime]'s dispatch
  * seam ([BlazorNativeRuntime.dispatchEventBlocking] — the tests' calling
  * thread IS the dispatch-discipline thread, so the inline variant is the
- * honest one to exercise; the async lane adds only an executor hop).
+ * honest one for the rc-contract tests). The async PRODUCTION path
+ * ([BlazorNativeRuntime.dispatchEvent] → the BlazorNative-Dispatch lane) has
+ * its own latch-based test pinning the threading contract.
  *
  * Return-code contract under test (frozen at Gate 1 close — Exports.cs):
  *   0 = dispatched (incl. stale-handler at-most-once)
@@ -41,7 +47,9 @@ class DispatchEventTest {
 
     /** HandlerId of the LATEST AttachEvent for [eventName] across all captured
      * frames — Blazor may re-issue handler ids on a re-render, so the freshest
-     * attach wins (the same rule WidgetMapper's re-attach follows on Android). */
+     * attach wins (the same rule WidgetMapper's re-attach follows on Android).
+     * NOTE: ignores DetachEvent — sufficient for Hello (never detaches); do
+     * not copy unaudited into tests for components that detach handlers. */
     private fun latestHandlerId(frames: List<RenderFrame>, eventName: String): Int =
         frames.asReversed().firstNotNullOfOrNull { frame ->
             frame.patches.filterIsInstance<RenderPatch.AttachEvent>()
@@ -89,24 +97,91 @@ class DispatchEventTest {
     // ── payload marshaling across the ABI ────────────────────────────────────
 
     @Test
-    fun change_dispatch_payload_crosses_abi() {
-        // HONESTY NOTE: Hello has no change handler, so this test cannot
+    fun payload_carrying_dispatch_crosses_abi() {
+        // HONESTY NOTE: Hello has no change handler, so no JVM test here can
         // prove end-to-end ChangeEventArgs delivery — the .NET-side Gate 1
-        // test (Dispatch_Change_BuildsChangeEventArgs) already proved payload
-        // marshaling in-process. What THIS test proves is that a payload-
-        // carrying args object crosses the ABI intact: dispatching "change"
-        // against the CLICK handler's id either faults on the handler-args
-        // type mismatch (rc 2) or dispatches benignly (rc 0) — either way the
-        // args JSON PARSED, i.e. anything but rc 3.
+        // test (Dispatch_Change_BuildsChangeEventArgs) already proved that
+        // in-process. What THIS test proves, DETERMINISTICALLY, is that
+        // payload-carrying args cross the ABI intact and parse: a "click"
+        // dispatch WITH a payload against the real click handler must behave
+        // exactly like a payload-less click — rc 0 and the counter
+        // increments (the payload is parsed by the export, then unused by
+        // Hello's no-arg handler). A corrupted/unparsed payload would
+        // surface as rc 3 instead.
         val (runtime, frames) = bootHello()
         val handlerId = latestHandlerId(frames, "click")
 
-        val rc = runtime.dispatchEventBlocking(handlerId, "change", payload = "héllo → 世界")
+        val rc = runtime.dispatchEventBlocking(handlerId, "click", payload = "héllo → 世界")
 
-        println("[DispatchEventTest] change-with-payload against the click handler → rc $rc")
+        println("[DispatchEventTest] click-with-payload → rc $rc")
+        assertEquals(0, rc, "payload-carrying click args must parse and dispatch")
         assertTrue(
-            rc == 0 || rc == 2,
-            "payload-carrying change args must parse across the ABI (rc 0 or 2, never 3); got rc $rc"
+            frames.last().patches.filterIsInstance<RenderPatch.ReplaceText>()
+                .any { it.text.contains("taps: 1") },
+            "the handler must have run despite the (ignored) payload; got ${frames.last().patches}"
+        )
+    }
+
+    // ── the PRODUCTION path: async lane (THREADING CONTRACT) ─────────────────
+
+    @Test
+    fun async_dispatchEvent_rerenders_on_the_dispatch_lane() {
+        // dispatchEvent (not the blocking test seam): the event is queued on
+        // the BlazorNative-Dispatch lane, so the re-render frame must arrive
+        // asynchronously ON that lane thread — pinning the threading contract
+        // production shells rely on (UI listeners never enter the ABI
+        // directly).
+        val latch = CountDownLatch(1)
+        val rerenderThread = AtomicReference<String>()
+        val frames = Collections.synchronizedList(mutableListOf<RenderFrame>())
+        val errors = Collections.synchronizedList(mutableListOf<String>())
+        val runtime = BlazorNativeRuntime(
+            onFrame = { f ->
+                frames.add(f)
+                if (f.patches.filterIsInstance<RenderPatch.ReplaceText>()
+                        .any { it.text.contains("taps: 1") }
+                ) {
+                    rerenderThread.set(Thread.currentThread().name)
+                    latch.countDown()
+                }
+            },
+            onError = { msg, t -> errors.add("$msg: $t") },
+        )
+        runtime.start(platformOs = "test-host")
+        val handlerId = latestHandlerId(frames.toList(), "click")
+
+        runtime.dispatchEvent(handlerId, "click")
+
+        assertTrue(
+            latch.await(5, TimeUnit.SECONDS),
+            "re-render frame did not arrive within 5 s via the async lane; errors=$errors"
+        )
+        println("[DispatchEventTest] async re-render frame arrived on thread '${rerenderThread.get()}'")
+        assertEquals(
+            "BlazorNative-Dispatch", rerenderThread.get(),
+            "the re-render frame must be delivered on the dispatch lane (THREADING CONTRACT)"
+        )
+        assertTrue(errors.isEmpty(), "async dispatch must not route to onError; got $errors")
+        assertTrue(runtime.retire(), "the lane must drain after the dispatch completed")
+    }
+
+    // ── onError message contract (frozen rc-2 wording) ───────────────────────
+
+    @Test
+    fun describeDispatchFailure_rc2_carries_frozen_wording() {
+        // The rc-2 message contract from the plan: the frozen Gate 1 wording
+        // + the desktop-JVM reproduction hint (Android stderr is /dev/null).
+        val runtime = BlazorNativeRuntime(onFrame = {})
+
+        val msg = runtime.describeDispatchFailure(2, handlerId = 42, eventName = "click")
+
+        assertTrue(
+            msg.contains("dispatch faulted — the handler, the resulting re-render, or frame delivery threw"),
+            "rc-2 message must carry the frozen Gate 1 wording; got: $msg"
+        )
+        assertTrue(
+            msg.contains("detail on native stderr — reproduce on desktop JVM to see it"),
+            "rc-2 message must carry the desktop-JVM reproduction hint; got: $msg"
         )
     }
 

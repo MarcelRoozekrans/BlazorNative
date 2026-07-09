@@ -4,6 +4,7 @@ import com.sun.jna.Memory
 import com.sun.jna.Pointer
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 /**
  * Phase 3.0d: thin lifecycle wrapper for the NativeAOT BlazorNative.Runtime —
@@ -23,6 +24,10 @@ import java.util.concurrent.Executors
  * instead of calling android.util.Log directly — the Activity passes Log.e.
  */
 class BlazorNativeRuntime(
+    // Called with every decoded frame. THREAD SET: {the start() caller thread
+    // (the mount's synchronous first frame), the BlazorNative-Dispatch lane
+    // (re-render frames delivered inside dispatchEvent)} — consumers must be
+    // safe for both (Android: post to the main thread before touching views).
     private val onFrame: (RenderFrame) -> Unit,
     // (JVM-only default — Android callers must pass a Log-based sink: stderr
     // goes to /dev/null on Android, not logcat.)
@@ -64,6 +69,12 @@ class BlazorNativeRuntime(
      * lane is deliberately SINGLE (renderer affinity); a slow handler blocks
      * later events — documented starvation watch, revisit if M3 components
      * need concurrency. Daemon thread: the lane never blocks process exit.
+     *
+     * ONE LANE PER RUNTIME: each BlazorNativeRuntime owns its own lane thread,
+     * so constructing runtimes repeatedly (Activity recreation) accumulates
+     * daemon threads unless the superseded instance is [retire]d first —
+     * same accumulation posture as the never-disposed component instances
+     * (see the recreation contract on [start]).
      */
     private val dispatchLane: ExecutorService = Executors.newSingleThreadExecutor { r ->
         Thread(r, "BlazorNative-Dispatch").apply { isDaemon = true }
@@ -118,7 +129,9 @@ class BlazorNativeRuntime(
         return NativeBindings.INSTANCE.blazornative_dispatch_event(handlerId.toLong(), argsJson)
     }
 
-    private fun describeDispatchFailure(rc: Int, handlerId: Int, eventName: String): String = when (rc) {
+    /** Human-readable onError message per non-zero rc — rc 2 carries the
+     * frozen Gate 1 wording (internal so the message contract is unit-tested). */
+    internal fun describeDispatchFailure(rc: Int, handlerId: Int, eventName: String): String = when (rc) {
         1 -> "dispatch_event(handlerId=$handlerId, '$eventName') → rc 1: no session/nothing mounted"
         2 -> "dispatch_event(handlerId=$handlerId, '$eventName') → rc 2: dispatch faulted — " +
             "the handler, the resulting re-render, or frame delivery threw " +
@@ -138,15 +151,20 @@ class BlazorNativeRuntime(
      * blazornative_init is idempotent, callback re-registration is last-wins,
      * and re-mounting adds a NEW component instance on the process-global
      * session (old instances are never disposed and accumulate natively).
-     * The window where the OLD runtime's callback trampoline is still
-     * registered (old Activity destroyed, new start() not yet re-registered)
-     * is safe ONLY because frames fire exclusively inside host calls — mount
-     * OR, since Phase 3.2, dispatch_event (still no free-running frame
-     * source). A dispatch queued on the OLD runtime's lane during that window
-     * would deliver its re-render frame to the OLD onFrame (a destroyed
-     * Activity's views) — recreation paths must stop feeding the old
-     * runtime's dispatchEvent before tearing the Activity down. Concurrent
-     * start() calls (multiple threads) are unguarded — callers must serialize.
+     * The PRIMARY recreation hazard (Phase 3.2) is CONCURRENT .NET ENTRY: a
+     * dispatch queued on the OLD runtime's lane can still be executing —
+     * inside the dll — while the NEW runtime's start() runs init/register/
+     * mount on its own thread. That violates the renderer's single-threaded
+     * access contract (two threads in the .NET session at once) and races the
+     * callback re-registration against the in-flight dispatch's frame
+     * delivery. Secondary hazard: an old-lane dispatch that survives the
+     * window delivers its re-render frame to the OLD onFrame (a destroyed
+     * Activity's views). BOTH are closed the same way: [retire] the old
+     * runtime (drains its lane) BEFORE constructing/starting the replacement.
+     * Frames still fire only inside host calls (mount OR dispatch_event — no
+     * free-running frame source), so a retired runtime is fully quiescent.
+     * Concurrent start() calls (multiple threads) are unguarded — callers
+     * must serialize.
      *
      * Returns human-readable status lines for a console pane.
      * Throws [IllegalStateException] on init/registration/mount failure.
@@ -206,13 +224,36 @@ class BlazorNativeRuntime(
     }
 
     /**
-     * Tears down the process-lifetime native session. Do NOT call this from
-     * Activity teardown (onDestroy) — Activity recreation re-runs start()
-     * against the same process-global session (see the recreation contract on
-     * [start]); shutting down between recreations would kill the session the
-     * new Activity expects. Reserved for genuine process-exit paths.
+     * Retires THIS runtime's dispatch lane: no new events are accepted and
+     * the call blocks (up to 5 s) until any in-flight dispatch has drained
+     * out of the dll. Call BEFORE constructing a replacement runtime
+     * (Activity recreation) — see the recreation contract on [start]: an
+     * old-lane dispatch must never execute concurrently with the
+     * replacement's start(). Does NOT touch the native session (that is
+     * [shutdown]'s job); idempotent.
+     *
+     * @return true when the lane drained in time; false on timeout — the
+     *   in-flight dispatch is stuck inside the dll (log loudly; proceeding
+     *   with a replacement start() risks the concurrent-entry hazard).
      */
-    fun shutdown() = NativeBindings.INSTANCE.blazornative_shutdown()
+    fun retire(): Boolean {
+        dispatchLane.shutdown()
+        return dispatchLane.awaitTermination(5, TimeUnit.SECONDS)
+    }
+
+    /**
+     * Tears down the process-lifetime native session (retiring the dispatch
+     * lane first — no event may enter the dll after the frame callback is
+     * cleared). Do NOT call this from Activity teardown (onDestroy) —
+     * Activity recreation re-runs start() against the same process-global
+     * session (see the recreation contract on [start]); shutting down between
+     * recreations would kill the session the new Activity expects. Reserved
+     * for genuine process-exit paths.
+     */
+    fun shutdown() {
+        retire()
+        NativeBindings.INSTANCE.blazornative_shutdown()
+    }
 
     /** Caller-allocated NUL-terminated UTF-8 cstring for input pointers. */
     private fun utf8CString(s: String): Memory {
