@@ -91,20 +91,41 @@ public sealed class HelloGoldenTests
             .Select(p => p is CommitFramePatch ? new CommitFramePatch(0, 0) : p)
             .ToArray());
 
-    private static void RecordFixture(string json)
+    /// <summary>The golden comparison alone can't catch a hand-edit that keeps
+    /// the Kotlin copy parse-equivalent while drifting its bytes (whitespace,
+    /// key order, escaping) — the JVM golden test parses, so it would sail
+    /// past. Pin the two committed copies to BYTE equality.</summary>
+    [Fact]
+    public void CommittedFixtureCopies_AreByteIdentical()
     {
-        // Walk up from the test output dir to the repo root (the dir holding
-        // .git), then write both committed copies.
+        string root = FindRepoRoot();
+        byte[] dotnetCopy = File.ReadAllBytes(DotnetFixturePath(root));
+        byte[] kotlinCopy = File.ReadAllBytes(KotlinFixturePath(root));
+        Assert.Equal(dotnetCopy, kotlinCopy);
+    }
+
+    /// <summary>Walks up from the test output dir to the repo root (the dir
+    /// holding .git).</summary>
+    private static string FindRepoRoot()
+    {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
         while (dir is not null && !Directory.Exists(Path.Combine(dir.FullName, ".git")))
             dir = dir.Parent;
         Assert.NotNull(dir);
+        return dir!.FullName;
+    }
 
-        string root = dir!.FullName;
-        string dotnetCopy = Path.Combine(
-            root, "tests", "BlazorNative.Runtime.Tests", "Fixtures", FixtureName);
-        string kotlinCopy = Path.Combine(
-            root, "src", "BlazorNative.Jni", "src", "test", "resources", FixtureName);
+    private static string DotnetFixturePath(string root) => Path.Combine(
+        root, "tests", "BlazorNative.Runtime.Tests", "Fixtures", FixtureName);
+
+    private static string KotlinFixturePath(string root) => Path.Combine(
+        root, "src", "BlazorNative.Jni", "src", "test", "resources", FixtureName);
+
+    private static void RecordFixture(string json)
+    {
+        string root = FindRepoRoot();
+        string dotnetCopy = DotnetFixturePath(root);
+        string kotlinCopy = KotlinFixturePath(root);
 
         Directory.CreateDirectory(Path.GetDirectoryName(dotnetCopy)!);
         Directory.CreateDirectory(Path.GetDirectoryName(kotlinCopy)!);

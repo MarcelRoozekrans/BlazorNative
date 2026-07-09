@@ -100,12 +100,20 @@ class NativeFrameAdapterTest {
         initNativeHost()
 
         val captured = java.util.concurrent.atomic.AtomicReference<RenderFrame?>()
+        // A throw inside a JNA callback is swallowed by JNA's default handler
+        // (stderr + return-to-native) — capture it and rethrow in the assertion
+        // phase so adapter regressions surface in the test report, not stderr.
+        val callbackError = java.util.concurrent.atomic.AtomicReference<Throwable?>()
         // MUST stay strongly referenced for the native call's duration — JNA
         // callbacks are GC-eligible once unreachable (local val is enough here).
         val callback = object : NativeBindings.FrameCallback {
             override fun invoke(frame: Pointer) {
-                // Copy INSIDE the callback: the native memory is callback-scoped.
-                captured.set(NativeFrameAdapter.read(frame))
+                try {
+                    // Copy INSIDE the callback: the native memory is callback-scoped.
+                    captured.set(NativeFrameAdapter.read(frame))
+                } catch (t: Throwable) {
+                    callbackError.set(t)
+                }
             }
         }
         assertEquals(0, NativeBindings.INSTANCE.blazornative_register_frame_callback(callback))
@@ -113,6 +121,7 @@ class NativeFrameAdapterTest {
         val mountStatus = NativeBindings.INSTANCE.blazornative_mount(nulTerminated("HelloComponent"))
         assertEquals(0, mountStatus, "blazornative_mount(HelloComponent) failed")
 
+        callbackError.get()?.let { throw AssertionError("frame callback threw while decoding", it) }
         val nativeFrame = captured.get()
         assertNotNull(nativeFrame, "frame callback did not fire during mount")
 

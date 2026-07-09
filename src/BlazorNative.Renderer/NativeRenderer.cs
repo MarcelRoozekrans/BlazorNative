@@ -36,7 +36,9 @@ public sealed class NativeRenderer : BlazorRenderer
     /// <summary>Phase 3.0d: host-pluggable frame transport. When set, DispatchFrame
     /// invokes this instead of the [FRAME] stdout line. NativeHost installs the
     /// struct marshaller here; WasiHost leaves it null (stdout fallback — deletes
-    /// with the WASM era in Phase 3.0e). Synchronous by contract (Phase 2.0).</summary>
+    /// with the WASM era in Phase 3.0e). Synchronous by contract (Phase 2.0).
+    /// Threading: set before mount, or from the renderer thread; the property
+    /// is not synchronized, so a cross-thread mid-render swap races.</summary>
     public Action<RenderFrame>? FrameSink { get; set; }
 
     public NativeRenderer(IServiceProvider services)

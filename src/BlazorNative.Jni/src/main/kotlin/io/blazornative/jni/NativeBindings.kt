@@ -57,6 +57,13 @@ interface NativeBindings : Library {
      * Cdecl `void (*)(BlazorNativeFrame*)`. The frame pointer (and every
      * string it references) is valid ONLY during the invocation — decode with
      * [NativeFrameAdapter.read] before returning (it copies everything).
+     *
+     * EXCEPTION POSTURE: if [invoke] throws, JNA's default callback exception
+     * handler prints the stack trace to stderr and returns normally to native
+     * code — the frame is SILENTLY DROPPED (no crash, nothing propagates to
+     * the mount call). Gate 3's BlazorNativeRuntime must therefore wrap the
+     * callback body in try/catch routed to android.util.Log so dropped frames
+     * reach logcat deliberately instead of vanishing into an untailed stderr.
      */
     interface FrameCallback : com.sun.jna.Callback {
         fun invoke(frame: Pointer)

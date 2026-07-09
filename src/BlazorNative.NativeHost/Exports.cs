@@ -9,7 +9,7 @@ namespace BlazorNative.NativeHost;
 //
 // Seven exports:
 //   init                    — load runtime, verify Blazor accessors
-//   shutdown                — no-op placeholder (frame flush lands later)
+//   shutdown                — clears the frame callback (frame flush lands later)
 //   version                 — static version cstring
 //   run_trim_probes         — Phase 3.0c Gate 4 diagnostic (delete-vs-keep TBD)
 //   register_frame_callback — Phase 3.0d: store the host's cdecl frame callback
@@ -106,22 +106,18 @@ public static class Exports
     [UnmanagedCallersOnly(EntryPoint = "blazornative_shutdown")]
     public static void Shutdown()
     {
-        // Phase 3.0b no-op. Phase 3.0d+ may flush pending frames / dispose
-        // renderer state. The static cstrings are intentionally leaked —
-        // process-scoped lifetime.
+        // Phase 3.0d: clear the frame callback so a post-shutdown re-render
+        // (possible once Phase 3.2 wires event-driven re-renders) can never
+        // dispatch into a freed JNA trampoline after the host releases its
+        // callback object. Renderer/session state is NOT disposed (frame
+        // flush / teardown is later-phase work); the static cstrings are
+        // intentionally leaked — process-scoped lifetime.
+        HostSession.SetFrameCallback(IntPtr.Zero);
     }
 
     [UnmanagedCallersOnly(EntryPoint = "blazornative_version")]
     public static IntPtr Version() => s_versionString;
 
-    /// <summary>
-    /// Phase 3.0c Gate 4 diagnostic export. Status = number of failed probes
-    /// (0 = all pass, -1 = runner crashed). ErrorMessage carries per-probe
-    /// failure detail. Reuses the InitResult struct so the Kotlin side needs
-    /// no new mirror. The failure-path ErrorMessage is allocated per call and
-    /// never freed — acceptable leak for a diagnostic invoked once per test
-    /// run. Fate (delete vs. keep) is a Phase 3.0d decision.
-    /// </summary>
     /// <summary>
     /// Phase 3.0d: stores the host's frame callback — a cdecl
     /// <c>void (*)(BlazorNativeFrame*)</c> function pointer. Returns 0 on
@@ -153,7 +149,7 @@ public static class Exports
     /// (detail on stderr) / 3 name pointer null.
     /// </summary>
     [UnmanagedCallersOnly(EntryPoint = "blazornative_mount")]
-    public static unsafe int Mount(IntPtr componentNameUtf8)
+    public static int Mount(IntPtr componentNameUtf8)
     {
         try
         {
@@ -178,13 +174,21 @@ public static class Exports
     /// surface doesn't churn. Always returns -1 (not implemented).
     /// </summary>
     [UnmanagedCallersOnly(EntryPoint = "blazornative_dispatch_event")]
-    public static unsafe int DispatchEvent(ulong handlerId, IntPtr argsJsonUtf8)
+    public static int DispatchEvent(ulong handlerId, IntPtr argsJsonUtf8)
     {
         _ = handlerId;
         _ = argsJsonUtf8;
         return -1;
     }
 
+    /// <summary>
+    /// Phase 3.0c Gate 4 diagnostic export. Status = number of failed probes
+    /// (0 = all pass, -1 = runner crashed). ErrorMessage carries per-probe
+    /// failure detail. Reuses the InitResult struct so the Kotlin side needs
+    /// no new mirror. The failure-path ErrorMessage is allocated per call and
+    /// never freed — acceptable leak for a diagnostic invoked once per test
+    /// run. Fate (delete vs. keep) is a Phase 3.0d decision.
+    /// </summary>
     [UnmanagedCallersOnly(EntryPoint = "blazornative_run_trim_probes")]
     public static BlazorNativeInitResult RunTrimProbes()
     {

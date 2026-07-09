@@ -33,6 +33,13 @@ import com.sun.jna.Pointer
  * LIFETIME: everything the frame points at is arena memory owned by the
  * native side, valid ONLY for the duration of the callback — [read] must
  * complete (and copy all strings, which getString does) INSIDE the callback.
+ *
+ * EXCEPTION POSTURE: [read] throws on malformed input (NULL contractual
+ * strings, out-of-range patch count). Inside a JNA callback that throw is
+ * swallowed by JNA's default handler (stderr + return-to-native) and the
+ * frame is silently dropped — see [NativeBindings.FrameCallback]. Gate 3's
+ * BlazorNativeRuntime wraps the callback body in try/catch → android.util.Log
+ * so the drop is deliberate and visible in logcat.
  */
 object NativeFrameAdapter {
 
@@ -59,9 +66,18 @@ object NativeFrameAdapter {
      * CreateNode by the encoder). */
     private val nodeTypes = arrayOf("?", "view", "text", "button", "input", "image", "scroll", "picker")
 
+    /** Sanity ceiling on patchCount: real frames are tens of patches; anything
+     * beyond this means the frame pointer/layout is corrupted, and we'd rather
+     * take the documented dropped-frame path (require → throw → JNA handler)
+     * than chase garbage pointers at native speed. */
+    const val MAX_PATCHES = 65_536
+
     fun read(framePtr: Pointer): RenderFrame {
         val patchesPtr = framePtr.getPointer(FRAME_PATCHES)
         val patchCount = framePtr.getInt(FRAME_PATCH_COUNT)
+        require(patchCount in 0..MAX_PATCHES) {
+            "corrupt BlazorNativeFrame: patchCount=$patchCount (allowed 0..$MAX_PATCHES)"
+        }
         val frameId = framePtr.getInt(FRAME_FRAME_ID)
         val timestampMs = framePtr.getLong(FRAME_TIMESTAMP_MS)
 
