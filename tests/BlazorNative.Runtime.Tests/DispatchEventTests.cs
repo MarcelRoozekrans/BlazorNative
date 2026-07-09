@@ -86,9 +86,10 @@ public sealed class DispatchEventTests
         // before DispatchEventCore returned.
         Assert.True(frames.Count >= 2,
             $"expected the re-render frame to be delivered synchronously, got {frames.Count} frame(s)");
-        // Contains (not Single): the assertion is "the counter text updated",
-        // deliberately decoupled from how many text patches Hello's re-render
-        // happens to produce.
+        // Single-with-predicate: exactly ONE text patch carries the updated
+        // counter (its nodeId is pinned against the mount frame below); any
+        // other text patches Hello's re-render might produce are ignored by
+        // the predicate rather than failing the count.
         ReplaceTextPatch reRenderText = Assert.Single(
             frames[1].Patches.OfType<ReplaceTextPatch>(),
             p => p.Text.Contains("taps: 1"));

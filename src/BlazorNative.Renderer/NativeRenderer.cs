@@ -229,6 +229,14 @@ public sealed class NativeRenderer : BlazorRenderer
 
     // ── Render tree walking (typed against Bn* wrappers only) ─────────────────
 
+    /// <summary>Cursor value after a failed StepIn: never a real node id and
+    /// never NativeWidgetTree's -1 root sentinel, so every edit under an
+    /// unknown container resolves to nothing (GetChildAt misses) and
+    /// PrependFrame breaks out explicitly — nothing may alias onto the
+    /// component root or create a live child-order bucket under the
+    /// sentinel.</summary>
+    private const int PoisonedCursor = int.MinValue;
+
     private void ProcessRenderTreeDiff(
         ref BnRenderTreeDiff diff,
         ref BnArrayRange<RenderTreeFrame> referenceFrames,
@@ -258,6 +266,13 @@ public sealed class NativeRenderer : BlazorRenderer
             switch ((RenderTreeEditType)bnEdit.Type)
             {
                 case RenderTreeEditType.PrependFrame:
+                    // Review follow-up: under a poisoned cursor a prepend must
+                    // be dropped outright — emitting it would ship
+                    // CreateNodePatch(parent=PoisonedCursor) (Android falls
+                    // back to widget_root) AND AppendChildOrder would turn the
+                    // poison sentinel into a live child-order bucket,
+                    // cross-container aliasing later cursor lookups.
+                    if (currentParent == PoisonedCursor) break;
                     ProcessFrame(componentId, ref referenceFrames, bnEdit.ReferenceFrameIndex, bnEdit.SiblingIndex, parentNodeId: currentParent, ref patches);
                     break;
 
@@ -291,11 +306,12 @@ public sealed class NativeRenderer : BlazorRenderer
                 {
                     parentStack.Push(currentParent);
                     var stepped = _tree.GetChildAt(componentId, currentParent, bnEdit.SiblingIndex);
-                    // int.MinValue (never a node id, never the -1 root
-                    // sentinel) poisons the cursor on a failed StepIn so
-                    // edits inside an unknown container are skipped instead
-                    // of aliasing onto the component root.
-                    currentParent = stepped >= 0 ? stepped : int.MinValue;
+                    // A failed StepIn poisons the cursor (see PoisonedCursor):
+                    // node-targeting edits inside the unknown container miss
+                    // their GetChildAt lookups and PrependFrame breaks out via
+                    // its explicit guard above — nothing aliases onto the
+                    // component root.
+                    currentParent = stepped >= 0 ? stepped : PoisonedCursor;
                     break;
                 }
 
@@ -344,6 +360,10 @@ public sealed class NativeRenderer : BlazorRenderer
                         // subtree so its child Attribute frames (carrying its parameter
                         // values like Label="A") aren't mis-attributed to THIS element
                         // by the next loop iteration. Phase 2.7 Bug B fix.
+                        // 3.3 carryover (b) on NativeWidgetTree._childOrderMap: this
+                        // skip allocates no child-order slot, so a component
+                        // interleaved between element siblings offsets the diff
+                        // cursor's indices for everything after it.
                         i += child.ComponentSubtreeLength - 1;
                     }
                     else

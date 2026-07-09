@@ -29,6 +29,28 @@ internal sealed class NativeWidgetTree
     // "child N of the current container". Key -1 per component = the
     // component's root level (top-level nodes have no parent node).
     // (componentId, parentNodeId or -1) → ordered child nodeIds
+    //
+    // Known limits (3.3 carryovers) — safe while component trees are
+    // diff-shape-stable (Hello), each breaks under richer diffs:
+    //  (a) Order lists are APPEND-ONLY: PrependFrame appends regardless of
+    //      the edit's SiblingIndex (mid-list inserts land at the end) and
+    //      RemoveFrame never trims the list — after structural churn, cursor
+    //      indices drift from Blazor's sibling positions.
+    //  (b) Component frames occupy a diff sibling slot but get NO order-list
+    //      slot (NativeRenderer skips them without allocating a node), so a
+    //      child component interleaved between elements offsets every cursor
+    //      index after it.
+    //  (c) SetAttribute still resolves through the batch-relative
+    //      (componentId, frameIndex) sibling map, not the cursor — only
+    //      valid for mount-shaped batches.
+    //  (d) PrependFrame under a poisoned cursor is DROPPED (explicit guard in
+    //      NativeRenderer — emitting it would alias the poison sentinel into
+    //      a live child-order bucket); the prepended subtree silently never
+    //      renders.
+    //  (e) on* RemoveAttribute never becomes a DetachEventPatch (it flows out
+    //      as UpdatePropPatch(name, null), which hosts ignore) — routing it
+    //      to DetachEventPatch is 3.3 renderer work; until then listeners
+    //      are only ever replaced by re-attach, never detached.
     private readonly Dictionary<(int, int), List<int>> _childOrderMap = new();
 
     // ── Allocation ────────────────────────────────────────────────────────────

@@ -105,9 +105,15 @@ class WidgetMapper(
      * (Hello: nodeId 4 = the Button view itself), so `nodes[p.nodeId]` is the
      * real widget even when its text child shares the mapping.
      *
-     * Re-attach after re-render (same view, NEW handlerId) simply overwrites
-     * the click listener; for change, the old watcher is removed by DetachEvent
-     * (renderer emits detach before re-attach) or replaced here.
+     * Re-attach after re-render: the renderer NEVER emits DetachEvent today —
+     * an on* RemoveAttribute leaves the wire as UpdatePropPatch(name, null),
+     * which this mapper ignores (carryover (e) on NativeWidgetTree
+     * ._childOrderMap; routing it to DetachEventPatch is 3.3 renderer work) —
+     * so listeners are only ever REPLACED, never detached. Click re-attach
+     * overwrites via setOnClickListener; change re-attach replaces the
+     * [watchers] map entry but leaves the previous watcher registered on the
+     * EditText — a stale watcher dispatches a dead handlerId, absorbed by the
+     * rc-0 at-most-once stale contract until the same 3.3 work lands.
      */
     private fun handleAttachEvent(p: RenderPatch.AttachEvent) {
         val view = nodes[p.nodeId] ?: run {
@@ -128,7 +134,9 @@ class WidgetMapper(
                         // Re-entrancy guard: programmatic setText during patch
                         // application must not dispatch (see [applyingBatch]).
                         if (applyingBatch) return
-                        onUiEvent(p.handlerId, "change", s.toString())
+                        // s is nullable — a null Editable must not stringify
+                        // into the literal "null" payload.
+                        onUiEvent(p.handlerId, "change", s?.toString() ?: "")
                     }
                 }
                 view.addTextChangedListener(watcher)
@@ -138,8 +146,14 @@ class WidgetMapper(
         }
     }
 
-    /** Phase 3.2: DetachEvent carries nodeId + handlerId — click clears the
-     * view's listener; change removes the watcher registered under handlerId. */
+    /** Phase 3.2: DetachEvent carries nodeId + handlerId but NO eventName, so
+     * the event kind is INFERRED: a handlerId present in [watchers] is treated
+     * as a change detach (remove that watcher), anything else falls through to
+     * a click detach on the node's view. The inference is sound while click
+     * and change are the only wired events and change watchers are always
+     * registered in the map; a future event type must either extend the
+     * inference or add eventName to the patch. (Dead code today — the renderer
+     * never emits DetachEvent; see [handleAttachEvent]'s re-attach note.) */
     private fun handleDetachEvent(p: RenderPatch.DetachEvent) {
         watchers.remove(p.handlerId)?.let { (editText, watcher) ->
             editText.removeTextChangedListener(watcher)
@@ -150,6 +164,10 @@ class WidgetMapper(
             return
         }
         view.setOnClickListener(null)
+        // setOnClickListener(non-null) flips the view clickable; detaching
+        // must restore the pre-listener state or the view keeps consuming
+        // taps as a focusable/clickable no-op.
+        view.isClickable = false
     }
 
     private fun handleCreate(p: RenderPatch.CreateNode) {
@@ -194,6 +212,11 @@ class WidgetMapper(
 
     private fun handleRemove(p: RenderPatch.RemoveNode) {
         val v = nodes.remove(p.nodeId) ?: return
+        // Purge change watchers registered on the removed view — the detached
+        // EditText would otherwise pin itself (and its watcher) in [watchers]
+        // forever. Identity match: the collapse can alias several nodeIds to
+        // one view, but watchers are keyed by handlerId, not nodeId.
+        watchers.entries.removeAll { it.value.first === v }
         (v.parent as? ViewGroup)?.removeView(v)
     }
 
