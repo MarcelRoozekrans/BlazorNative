@@ -9,9 +9,11 @@ import io.blazornative.jni.NativeBindings
 import org.junit.AfterClass
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.io.File
 import java.net.InetAddress
 import java.net.ServerSocket
 
@@ -117,11 +119,11 @@ class ShellBridgeAndroidTest {
     }
 
     /**
-     * Storage lands in the REAL SharedPreferences file — written through the
-     * registered handlers instance, read back through independently-obtained
-     * SharedPreferences handles (Context caches one instance per name within
-     * a process, so cross-process durability is proven by commit()'s
-     * synchronous contract — AndroidShellBridge uses commit(), not apply()).
+     * Storage lands in the REAL SharedPreferences store — written through the
+     * registered handlers instance, read back through the SharedPreferences
+     * API, and (the durability proof) already present in the backing on-disk
+     * XML file: AndroidShellBridge uses commit(), which is synchronous-to-
+     * disk, so the file assertion is deterministic.
      */
     @Test
     fun storage_persists_via_sharedpreferences() {
@@ -136,6 +138,15 @@ class ShellBridgeAndroidTest {
             val freshHandle = InstrumentationRegistry.getInstrumentation()
                 .targetContext.getSharedPreferences("blazornative", Context.MODE_PRIVATE)
             assertEquals("test-value", freshHandle.getString("test-key", null))
+
+            // REAL durability: commit() has already flushed the backing XML
+            // file — not just the process-wide in-memory map.
+            val prefsFile = File(appContext.dataDir, "shared_prefs/blazornative.xml")
+            assertTrue("SharedPreferences file missing: $prefsFile", prefsFile.exists())
+            assertTrue(
+                "committed key absent from the on-disk XML: $prefsFile",
+                prefsFile.readText().contains("test-key")
+            )
         } finally {
             bridge.storageDelete("test-key")
         }

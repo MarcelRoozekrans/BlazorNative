@@ -73,9 +73,34 @@ class AndroidShellBridge(
     }
 
     // ── Fetch — HttpURLConnection on a single background thread ──────────────
+    //
+    // KNOWN SEMANTICS (POC posture — the M4 Swift mirror must match these):
+    //  (a) TEXT BODIES ONLY: request and response bodies cross the ABI as
+    //      UTF-8 STRINGS — a binary response (image, gzip, protobuf) is
+    //      corrupted by the bytes→String decode. By design until the ABI
+    //      grows a byte-array lane.
+    //  (b) TRANSPARENT GZIP: Android's HttpURLConnection adds
+    //      "Accept-Encoding: gzip" and decompresses transparently — but ONLY
+    //      when the caller did NOT set Accept-Encoding itself. Forwarding a
+    //      caller Accept-Encoding header disables that, so the raw gzip
+    //      bytes then hit (a) as mojibake. Forwarded response
+    //      Content-Length / Content-Encoding may likewise describe the WIRE
+    //      body, not the decoded string we return.
+    //  (c) HttpURLConnection QUIRKS: PATCH is rejected by setRequestMethod
+    //      (ProtocolException → surfaces as a transport failure, not HTTP);
+    //      a GET with a body silently becomes POST (doOutput flips the
+    //      method); redirects are followed within a scheme but never cross
+    //      http↔https (the 3xx comes back as the response instead).
+    //  (d) MULTI-VALUE RESPONSE HEADERS collapse to a single value — the
+    //      flat-JSON ABI is Map<String,String>; note headerFields lists a
+    //      name's values in REVERSE arrival order, so "first" is the
+    //      LAST-received value.
 
     /** Single daemon thread: fetches complete in FIFO order; a hung request
-     * can't pile up threads (POC posture — one in-flight fetch at a time). */
+     * can't pile up threads (POC posture — one in-flight fetch at a time).
+     * Worst-case stall for queued fetches: [CONNECT_TIMEOUT_MS] to connect
+     * plus [READ_TIMEOUT_MS] per read() — a slow-drip server feeding a byte
+     * every just-under-10-s can hold this thread far beyond 20 s. */
     private val fetchExecutor: ExecutorService = Executors.newSingleThreadExecutor { r ->
         Thread(r, "BlazorNative-Fetch").apply { isDaemon = true }
     }
@@ -90,9 +115,10 @@ class AndroidShellBridge(
         try {
             val conn = URL(request.url).openConnection() as HttpURLConnection
             try {
-                conn.connectTimeout = 10_000
-                conn.readTimeout = 10_000
-                conn.requestMethod = request.method
+                conn.connectTimeout = CONNECT_TIMEOUT_MS
+                conn.readTimeout = READ_TIMEOUT_MS
+                conn.requestMethod = request.method // PATCH throws here — quirk (c)
+                // Forwarded verbatim — incl. Accept-Encoding, see (b).
                 for ((name, value) in request.headers) conn.setRequestProperty(name, value)
                 request.body?.let { body ->
                     conn.doOutput = true
@@ -106,8 +132,9 @@ class AndroidShellBridge(
                 val stream = if (status >= 400) conn.errorStream else conn.inputStream
                 val body = stream?.use { it.readBytes().toString(Charsets.UTF_8) } ?: ""
 
-                // First value per header name suffices for the flat-JSON ABI;
-                // the null key is the HTTP status line, not a header.
+                // One value per header name — semantics note (d): collapse is
+                // firstOrNull over headerFields' REVERSE-arrival-order lists.
+                // The null key is the HTTP status line, not a header.
                 val headers = LinkedHashMap<String, String>()
                 for ((name, values) in conn.headerFields) {
                     if (name == null) continue
@@ -131,5 +158,10 @@ class AndroidShellBridge(
     private companion object {
         const val TAG = "BlazorNative"
         const val PREFS_NAME = "blazornative"
+
+        /** HttpURLConnection timeouts. READ_TIMEOUT_MS bounds each read(),
+         * not the whole response — see the slow-drip note on [fetchExecutor]. */
+        const val CONNECT_TIMEOUT_MS = 10_000
+        const val READ_TIMEOUT_MS = 10_000
     }
 }
