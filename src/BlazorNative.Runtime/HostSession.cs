@@ -1,4 +1,5 @@
 using BlazorNative.Core;
+using BlazorNative.Http;
 using BlazorNative.Renderer;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -77,7 +78,12 @@ internal static unsafe class HostSession
             var services = new ServiceCollection();
             services.AddBlazorNativeCoreServices();
             services.AddBlazorNativeRendererServices();
-            services.AddBlazorNativeHttpServices();
+            // Full HttpClient plumbing, not just the generated handler
+            // registration: AddBlazorNativeHttp() layers the IHttpClientFactory
+            // + default-client configuration over AddBlazorNativeHttpServices()
+            // so a component doing [Inject] HttpClient resolves through
+            // BridgeHttpHandler (3.3+ components rely on this).
+            services.AddBlazorNativeHttp();
             // Phase 3.1: the shell bridge is THE IMobileBridge on-device.
             // Registered AFTER the Core services so it overrides WasiBridge's
             // [Singleton(As = typeof(IMobileBridge))] registration (MS.DI:

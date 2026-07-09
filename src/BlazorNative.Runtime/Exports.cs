@@ -14,7 +14,8 @@ namespace BlazorNative.Runtime;
 //                             platform-info options for the shell bridge
 //   shutdown                — clears the frame callback (frame flush lands later)
 //   version                 — static version cstring
-//   run_trim_probes         — Phase 3.0c Gate 4 diagnostic (delete-vs-keep TBD)
+//   run_trim_probes         — Phase 3.0c Gate 4 diagnostic (deletes at M3
+//                             close, together with run_bridge_probes)
 //   register_frame_callback — Phase 3.0d: store the host's cdecl frame callback
 //   mount                   — Phase 3.0d: mount a registered component by name
 //   dispatch_event          — ABI-reserved stub; Phase 3.2 wires event ingress
@@ -215,8 +216,8 @@ public static class Exports
     /// failure detail. Reuses the InitResult struct so the Kotlin side needs
     /// no new mirror. The failure-path ErrorMessage is allocated per call and
     /// never freed — acceptable leak for a diagnostic invoked once per test
-    /// run. 3.0d decision: keep until Phase 3.0e (sole on-device coverage for
-    /// the cascading/[Inject] IL2072 paths); delete or graduate at 3.0e cleanup.
+    /// run. Settled fate (Phase 3.1 close-out): BOTH probe exports — this one
+    /// and blazornative_run_bridge_probes — delete at M3 close.
     /// </summary>
     [UnmanagedCallersOnly(EntryPoint = "blazornative_run_trim_probes")]
     public static BlazorNativeInitResult RunTrimProbes()
