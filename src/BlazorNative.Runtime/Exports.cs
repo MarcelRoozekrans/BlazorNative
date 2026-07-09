@@ -234,9 +234,12 @@ public static class Exports
     ///       a handler that died in a re-render and logs it (a stale tap is
     ///       not an error);
     ///   1 = no session / nothing mounted;
-    ///   2 = handler threw (detail ex.ToString() on stderr — Kotlin logs
-    ///       loudly);
-    ///   3 = malformed or NULL args.
+    ///   2 = dispatch faulted — the handler, the resulting re-render, or
+    ///       frame delivery threw (anything routed to HandleException inside
+    ///       the dispatch window; detail ex.ToString() on stderr — Kotlin
+    ///       logs loudly);
+    ///   3 = malformed or NULL args, including a handlerId outside the int
+    ///       range of the renderer's handler table.
     ///
     /// SYNCHRONOUS by contract: the renderer's InlineDispatcher runs the
     /// handler, the re-render, and the FrameSink callback on the calling
@@ -268,6 +271,16 @@ public static class Exports
             return 3;
         }
 
+        // Guard BEFORE the (int) narrowing below: silent truncation of an
+        // out-of-range id could alias onto a LIVE handler and dispatch the
+        // wrong event — reject as malformed input instead.
+        if (handlerId > int.MaxValue)
+        {
+            Console.Error.WriteLine(
+                $"[Exports] dispatch_event: handlerId {handlerId} exceeds the handler table's int range — rejected as malformed");
+            return 3;
+        }
+
         var renderer = HostSession.CurrentRenderer;
         if (renderer is null)
             return 1;
@@ -283,10 +296,11 @@ public static class Exports
         }
         catch (Exception ex)
         {
-            // Handler exception (DoD #9 partial): visible via rc 2 + full
+            // Dispatch fault (DoD #9 partial): the handler, the resulting
+            // re-render, or frame delivery threw — visible via rc 2 + full
             // detail on stderr so a device-side crash is diagnosable from
             // logcat.
-            Console.Error.WriteLine($"[Exports] dispatch_event handler {handlerId} threw: {ex}");
+            Console.Error.WriteLine($"[Exports] dispatch_event handler {handlerId} faulted: {ex}");
             return 2;
         }
     }

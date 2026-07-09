@@ -95,12 +95,13 @@ public sealed class HelloGoldenTests
             if (ExpectedPatches[i] is AttachEventPatch expectedAttach)
             {
                 // HandlerId is runtime-assigned (see AnyHandlerId doc) —
-                // assert shape + positivity instead of record equality.
+                // normalize it to the sentinel, then compare by record
+                // equality so every OTHER field (including any future
+                // additions to the record) stays load-bearing.
                 var actualAttach = Assert.IsType<AttachEventPatch>(frame.Patches[i]);
-                Assert.Equal(expectedAttach.NodeId, actualAttach.NodeId);
-                Assert.Equal(expectedAttach.EventName, actualAttach.EventName);
                 Assert.True(actualAttach.HandlerId > 0,
                     $"AttachEventPatch.HandlerId must be a positive runtime-assigned id, got {actualAttach.HandlerId}");
+                Assert.Equal(expectedAttach, actualAttach with { HandlerId = AnyHandlerId });
                 continue;
             }
             Assert.Equal(ExpectedPatches[i], frame.Patches[i]);

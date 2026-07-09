@@ -16,8 +16,9 @@ namespace BlazorNative.Runtime.Tests;
 //   0 = dispatched (INCLUDING stale handlerId — at-most-once delivery; the
 //       renderer already catches the ArgumentException + logs)
 //   1 = no session / nothing mounted
-//   2 = handler threw (detail ex.ToString() on stderr)
-//   3 = malformed / NULL args JSON
+//   2 = dispatch faulted — the handler, the resulting re-render, or frame
+//       delivery threw (detail ex.ToString() on stderr)
+//   3 = malformed / NULL args JSON (incl. handlerId beyond int range)
 //
 // Synchronous contract: the handler, the re-render, AND frame delivery all
 // complete before the core returns (InlineDispatcher) — the tests assert the
@@ -85,8 +86,11 @@ public sealed class DispatchEventTests
         // before DispatchEventCore returned.
         Assert.True(frames.Count >= 2,
             $"expected the re-render frame to be delivered synchronously, got {frames.Count} frame(s)");
-        ReplaceTextPatch replace = Assert.Single(frames[1].Patches.OfType<ReplaceTextPatch>());
-        Assert.Contains("taps: 1", replace.Text);
+        // Contains (not Single): the assertion is "the counter text updated",
+        // deliberately decoupled from how many text patches Hello's re-render
+        // happens to produce.
+        Assert.Contains(frames[1].Patches.OfType<ReplaceTextPatch>(),
+            p => p.Text.Contains("taps: 1"));
     }
 
     [Fact]
@@ -156,7 +160,45 @@ public sealed class DispatchEventTests
         Assert.Contains(nameof(InvalidOperationException), stderr);
     }
 
+    [Fact]
+    public void Dispatch_NestedDispatchInsideHandler_OuterThrowStillReturns2()
+    {
+        // Pins the depth-counter fix in NativeRenderer's capture window: a
+        // handler that ITSELF dispatches (nested DispatchUiEventAsync) must
+        // not discard the outer capture — the outer handler's throw still
+        // maps to rc 2. (With a boolean window flag, the inner dispatch
+        // closed the window and reset the slot → outer throw yielded rc 0.)
+        var (renderer, frames) = CreateCapturingSession();
+        NestedDispatchProbe.Renderer = renderer;
+        NestedDispatchProbe.InnerRan = false;
+        renderer.Mount<NestedDispatchProbe>();
+        int outerHandlerId = HarvestHandlerId(frames[0], "click");
+        NestedDispatchProbe.InnerHandlerId = HarvestHandlerId(frames[0], "change");
+
+        int rc = 999; // sentinel
+        string stderr = CaptureStderr(() =>
+            rc = Exports.DispatchEventCore((ulong)outerHandlerId, ClickArgs));
+
+        Assert.Equal(2, rc);
+        Assert.True(NestedDispatchProbe.InnerRan, "the nested (inner) dispatch should have run");
+        Assert.Contains("outer-boom", stderr);
+    }
+
     // ── rc 3: malformed / NULL args ───────────────────────────────────────────
+
+    [Fact]
+    public void Dispatch_HandlerIdBeyondIntRange_Returns3()
+    {
+        // Silent (int) truncation could alias onto a LIVE handler and
+        // dispatch the wrong event — the export rejects it as malformed.
+        var (renderer, frames) = CreateCapturingSession();
+        renderer.Mount<HelloComponent>();
+        Assert.NotEmpty(frames);
+
+        int rc = Exports.DispatchEventCore((ulong)int.MaxValue + 1, ClickArgs);
+
+        Assert.Equal(3, rc);
+    }
 
     [Theory]
     [InlineData(null)]                      // NULL args pointer → null string
@@ -200,6 +242,36 @@ public sealed class DispatchEventTests
             b.OpenElement(0, "button");
             b.AddAttribute(1, "onclick", EventCallback.Factory.Create<MouseEventArgs>(
                 this, () => throw new InvalidOperationException("boom-click")));
+            b.CloseElement();
+        }
+    }
+
+    /// <summary>Click handler runs a NESTED dispatch (benign change handler),
+    /// then throws — exercises the outer capture surviving the inner window.
+    /// Static slots are safe under the "host-session" collection.</summary>
+    private sealed class NestedDispatchProbe : ComponentBase
+    {
+        public static NativeRenderer? Renderer;
+        public static int InnerHandlerId;
+        public static bool InnerRan;
+
+        protected override void BuildRenderTree(RenderTreeBuilder b)
+        {
+            b.OpenElement(0, "button");
+            b.AddAttribute(1, "onclick", EventCallback.Factory.Create<MouseEventArgs>(this, () =>
+            {
+                // Inline dispatcher: the nested dispatch (handler + any
+                // re-render) completes synchronously right here.
+                Renderer!.DispatchUiEventAsync(
+                        new NativeUiEvent(0, InnerHandlerId, "change", "nested"))
+                    .GetAwaiter().GetResult();
+                throw new InvalidOperationException("outer-boom");
+            }));
+            b.CloseElement();
+
+            b.OpenElement(10, "input");
+            b.AddAttribute(11, "onchange",
+                EventCallback.Factory.Create<ChangeEventArgs>(this, _ => InnerRan = true));
             b.CloseElement();
         }
     }

@@ -207,9 +207,9 @@ public sealed class NativeRenderer : BlazorRenderer
     protected override void HandleException(Exception exception)
     {
         // Inside a UI-event dispatch window, remember the first exception so
-        // DispatchUiEventAsync can fault its task (Blazor swallows handler
+        // DispatchUiEventAsync can fault its task (Blazor swallows dispatch
         // exceptions here otherwise — see _uiEventDispatchException doc).
-        if (_inUiEventDispatch)
+        if (_uiEventDispatchDepth > 0)
             _uiEventDispatchException ??= exception;
         Console.Error.WriteLine($"[BlazorNative.Renderer] {exception}");
     }
@@ -398,30 +398,45 @@ public sealed class NativeRenderer : BlazorRenderer
 
     /// <summary>Captures the first exception Blazor routes to
     /// <see cref="HandleException"/> during a <see cref="DispatchUiEventAsync"/>
-    /// window. Blazor's Renderer.DispatchEventAsync does NOT propagate handler
-    /// exceptions to its caller — a throwing handler goes to
-    /// HandleExceptionViaErrorBoundary → (no error boundary here) →
-    /// HandleException, and the returned task completes successfully. Without
-    /// this capture, blazornative_dispatch_event could never honor its
-    /// "2 = handler threw" contract (Phase 3.2, DoD #9 partial). Instance
-    /// fields are safe: all dispatch runs on the InlineDispatcher's calling
-    /// thread (single-threaded post-boot contract).</summary>
+    /// window. Blazor's Renderer.DispatchEventAsync does NOT propagate such
+    /// exceptions to its caller — they go to HandleExceptionViaErrorBoundary →
+    /// (no error boundary here) → HandleException, and the returned task
+    /// completes successfully. Without this capture,
+    /// blazornative_dispatch_event could never honor its "2 = dispatch
+    /// faulted" contract (Phase 3.2, DoD #9 partial). Note the capture is a
+    /// WINDOW, not a handler hook: anything routed to HandleException while
+    /// the window is open is captured — the handler itself, the resulting
+    /// re-render (UpdateDisplayAsync failures land here too), or frame
+    /// delivery.
+    ///
+    /// The depth counter (not a bool) keeps the window correct for NESTED
+    /// dispatches (a handler that itself calls DispatchUiEventAsync): the
+    /// slot is only cleared + rethrown when the OUTERMOST dispatch unwinds,
+    /// and is never reset at nested-dispatch start — so an outer handler's
+    /// throw cannot be discarded by an inner dispatch.
+    ///
+    /// These guarantees assume SYNCHRONOUS handlers; async handlers (await in
+    /// @onclick) move continuations off the dispatch thread and out of this
+    /// window — revisit in 3.3+.
+    ///
+    /// Instance fields are safe: all dispatch runs on the InlineDispatcher's
+    /// calling thread (single-threaded post-boot contract).</summary>
     private Exception? _uiEventDispatchException;
-    private bool _inUiEventDispatch;
+    private int _uiEventDispatchDepth;
 
     /// <summary>Dispatches a host UI event into Blazor's handler table.
     /// Synchronous in effect (InlineDispatcher): handler, re-render, and
     /// FrameSink delivery have all completed when the returned task is
     /// observed. Stale handler ids (ArgumentException from a handler that
     /// died in a re-render) are caught + logged — delivery is at-most-once,
-    /// a stale tap is not an error. A THROWING handler faults the returned
-    /// task (see <see cref="_uiEventDispatchException"/>) so the export can
-    /// map it to return code 2.</summary>
+    /// a stale tap is not an error. A fault anywhere in the dispatch window —
+    /// the handler, the resulting re-render, or frame delivery — faults the
+    /// returned task (see <see cref="_uiEventDispatchException"/>) so the
+    /// export can map it to return code 2.</summary>
     public Task DispatchUiEventAsync(NativeUiEvent e)
         => Dispatcher.InvokeAsync(async () =>
         {
-            _inUiEventDispatch = true;
-            _uiEventDispatchException = null;
+            _uiEventDispatchDepth++;
             try
             {
                 var args = BuildEventArgs(e);
@@ -433,13 +448,13 @@ public sealed class NativeRenderer : BlazorRenderer
             }
             finally
             {
-                _inUiEventDispatch = false;
+                _uiEventDispatchDepth--;
             }
 
-            if (_uiEventDispatchException is { } handlerEx)
+            if (_uiEventDispatchDepth == 0 && _uiEventDispatchException is { } dispatchEx)
             {
                 _uiEventDispatchException = null;
-                System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(handlerEx).Throw();
+                System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(dispatchEx).Throw();
             }
         });
 
