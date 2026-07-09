@@ -61,9 +61,6 @@
     <ProjectReference Include="..\BlazorNative.Core\BlazorNative.Core.csproj" />
     <ProjectReference Include="..\BlazorNative.Renderer\BlazorNative.Renderer.csproj" />
     <ProjectReference Include="..\BlazorNative.Http\BlazorNative.Http.csproj" />
-    <ProjectReference Include="..\BlazorNative.Analyzers\BlazorNative.Analyzers.csproj"
-                      OutputItemType="Analyzer"
-                      ReferenceOutputAssembly="false" />
   </ItemGroup>
 
   <ItemGroup>
