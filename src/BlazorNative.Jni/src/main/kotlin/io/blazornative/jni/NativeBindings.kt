@@ -24,6 +24,13 @@ interface NativeBindings : Library {
     fun blazornative_shutdown()
     fun blazornative_version(): Pointer
 
+    /**
+     * Phase 3.0c Gate 4 diagnostic export: mounts the IL2072 trim probes inside
+     * the NativeAOT library. Status = failed probe count (0 = all pass, -1 =
+     * runner crash); ErrorMessage carries per-probe failure detail.
+     */
+    fun blazornative_run_trim_probes(): BlazorNativeInitResult.ByValue
+
     companion object {
         // JNA library name "BlazorNative.NativeHost" → maps to:
         //   Windows: BlazorNative.NativeHost.dll

@@ -41,11 +41,13 @@ public static class Exports
     // any non-ASCII content the Kotlin side decodes with Charsets.UTF_8.
     private static readonly IntPtr s_versionString;
     private static readonly IntPtr s_initOkErrorEmpty;
+    private static readonly IntPtr s_probesLabel;
 
     static Exports()
     {
         s_versionString = Marshal.StringToCoTaskMemUTF8("BlazorNative.NativeHost 0.3.0-phase-3.0b");
         s_initOkErrorEmpty = Marshal.StringToCoTaskMemUTF8("");
+        s_probesLabel = Marshal.StringToCoTaskMemUTF8("probes:parameter,cascading,inject");
     }
 
     [UnmanagedCallersOnly(EntryPoint = "blazornative_init")]
@@ -98,4 +100,34 @@ public static class Exports
 
     [UnmanagedCallersOnly(EntryPoint = "blazornative_version")]
     public static IntPtr Version() => s_versionString;
+
+    /// <summary>
+    /// Phase 3.0c Gate 4 diagnostic export. Status = number of failed probes
+    /// (0 = all pass, -1 = runner crashed). ErrorMessage carries per-probe
+    /// failure detail. Reuses the InitResult struct so the Kotlin side needs
+    /// no new mirror. Fate (delete vs. keep) is a Phase 3.0d decision.
+    /// </summary>
+    [UnmanagedCallersOnly(EntryPoint = "blazornative_run_trim_probes")]
+    public static BlazorNativeInitResult RunTrimProbes()
+    {
+        try
+        {
+            var (failed, detail) = TrimProbeRunner.RunAll();
+            return new BlazorNativeInitResult
+            {
+                Status = failed,
+                ErrorMessage = failed == 0 ? s_initOkErrorEmpty : Marshal.StringToCoTaskMemUTF8(detail),
+                VersionString = s_probesLabel,
+            };
+        }
+        catch (Exception ex)
+        {
+            return new BlazorNativeInitResult
+            {
+                Status = -1,
+                ErrorMessage = Marshal.StringToCoTaskMemUTF8(ex.ToString()),
+                VersionString = s_probesLabel,
+            };
+        }
+    }
 }

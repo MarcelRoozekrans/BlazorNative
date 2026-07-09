@@ -71,4 +71,17 @@ class BootSmokeNativeTest {
             "Expected version string to mention 'phase-3.0b'; got '$versionString'"
         )
     }
+
+    /**
+     * Phase 3.0c Gate 4 — the 4 accepted IL2072 call paths (ComponentProperties
+     * .SetProperties ×2, FindCascadingParameters, PerformPropertyInjection) run
+     * INSIDE the NativeAOT-trimmed library via blazornative_run_trim_probes.
+     * Status = failed probe count; ErrorMessage = per-probe detail.
+     */
+    @Test
+    fun trim_probes_pass_inside_native_library() {
+        val result = NativeBindings.INSTANCE.blazornative_run_trim_probes()
+        val detail = result.errorMessage?.getString(0, "UTF-8") ?: ""
+        assertEquals(0, result.status, "failed probes: $detail")
+    }
 }
