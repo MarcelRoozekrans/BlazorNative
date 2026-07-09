@@ -637,7 +637,12 @@ if (-not $SkipAndroid) {
 if (-not $SkipAndroid) {
     Write-Header "8d · Bionic NativeAOT toolchain (verify env for linux-bionic publishes)"
 
-    $bionicNdkRoot = "$env:LOCALAPPDATA\Android\Sdk\ndk\26.3.11579264"
+    $bionicNdkPin = "26.3.11579264"
+    # Anchored so a longer revision (e.g. "26.3.115792640") can't sneak past;
+    # (?m) because source.properties is a multi-line key=value file.
+    $bionicNdkRevisionPattern = '(?m)^\s*Pkg\.Revision\s*=\s*' + [regex]::Escape($bionicNdkPin) + '\s*$'
+
+    $bionicNdkRoot = "$env:LOCALAPPDATA\Android\Sdk\ndk\$bionicNdkPin"
     $bionicNdkPathSource = "the default SDK location (`$env:LOCALAPPDATA\Android\Sdk)"
     if ($env:ANDROID_NDK_HOME -and (Test-Path $env:ANDROID_NDK_HOME)) {
         $bionicNdkRoot = $env:ANDROID_NDK_HOME
@@ -648,14 +653,23 @@ if (-not $SkipAndroid) {
     # different NDK. Verify the pinned revision from the NDK's own source.properties.
     $bionicNdkProps = Join-Path $bionicNdkRoot "source.properties"
     $bionicNdkRevisionOk = (Test-Path $bionicNdkProps) -and
-        ((Get-Content $bionicNdkProps -Raw) -match 'Pkg\.Revision\s*=\s*26\.3\.11579264')
+        ((Get-Content $bionicNdkProps -Raw) -match $bionicNdkRevisionPattern)
 
     if (-not (Test-Path $bionicNdkRoot)) {
-        Write-Fail "NDK 26.3.11579264 not found at $bionicNdkRoot — section 7 needs to install it first"
+        Write-Fail "NDK $bionicNdkPin not found at $bionicNdkRoot — section 7 needs to install it first"
     } elseif (-not $bionicNdkRevisionOk) {
-        Write-Fail "NDK at $bionicNdkRoot (resolved from $bionicNdkPathSource) is not revision 26.3.11579264 — source.properties is missing or reports a different Pkg.Revision. Point ANDROID_NDK_HOME at NDK 26.3.11579264, or unset it so the default SDK path is used."
+        Write-Fail "NDK at $bionicNdkRoot (resolved from $bionicNdkPathSource) is not revision $bionicNdkPin — source.properties is missing or reports a different Pkg.Revision. Point ANDROID_NDK_HOME at NDK $bionicNdkPin, or unset it so the default SDK path is used."
     } elseif ($env:ANDROID_NDK_ROOT -and (Test-Path $env:ANDROID_NDK_ROOT)) {
-        Write-OK "ANDROID_NDK_ROOT already set to $env:ANDROID_NDK_ROOT"
+        # A pre-existing ANDROID_NDK_ROOT is what the bionic publish actually
+        # reads — verify ITS revision too, not just that the path exists.
+        $ndkRootProps = Join-Path $env:ANDROID_NDK_ROOT "source.properties"
+        $ndkRootRevisionOk = (Test-Path $ndkRootProps) -and
+            ((Get-Content $ndkRootProps -Raw) -match $bionicNdkRevisionPattern)
+        if ($ndkRootRevisionOk) {
+            Write-OK "ANDROID_NDK_ROOT already set to $env:ANDROID_NDK_ROOT (revision $bionicNdkPin verified)"
+        } else {
+            Write-Fail "NDK at $env:ANDROID_NDK_ROOT (resolved from ANDROID_NDK_ROOT) is not revision $bionicNdkPin — source.properties is missing or reports a different Pkg.Revision. Point ANDROID_NDK_ROOT at NDK $bionicNdkPin, or unset it so setup can set it to the pinned default."
+        }
     } else {
         [Environment]::SetEnvironmentVariable("ANDROID_NDK_ROOT", $bionicNdkRoot, "User")
         $env:ANDROID_NDK_ROOT = $bionicNdkRoot
@@ -665,7 +679,7 @@ if (-not $SkipAndroid) {
 
     Write-Host ""
     Write-Host "  Pinned toolchain combo (Phase 3.0c Gate 2):" -ForegroundColor DarkGray
-    Write-Host "    .NET SDK 10.0.301 · ILCompiler/NativeAOT runtime packs 10.0.9 · NDK 26.3.11579264" -ForegroundColor Cyan
+    Write-Host "    .NET SDK 10.0.3xx band (floor 10.0.301) · ILCompiler/NativeAOT runtime packs 10.0.9 · NDK $bionicNdkPin" -ForegroundColor Cyan
     Write-Host ""
     Write-Host "  Publish the Android native host (from repo root):" -ForegroundColor DarkGray
     Write-Host "    dotnet publish src\BlazorNative.NativeHost -c Release -r linux-bionic-x64" -ForegroundColor Cyan

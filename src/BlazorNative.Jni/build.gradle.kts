@@ -155,39 +155,56 @@ tasks.withType<Test>().configureEach {
 // `cargo ndk build`.
 // ─────────────────────────────────────────────────────────────────────────────
 
-val copyWasm = tasks.register<Copy>("copyWasm") {
-    description = "Copies the AOT'd BlazorNative.WasiHost.wasm into androidMain/assets/"
+// Expected native build outputs — shared by verifyNativeAssets + the copy tasks.
+val wasmSource = rootProject.projectDir
+    .resolve("../../src/BlazorNative.WasiHost/bin/Release/net10.0/wasi-wasm/AppBundle/BlazorNative.WasiHost.wasm")
+val wasmtimeJniLibsDir = rootProject.projectDir.resolve("../../vendor/wasmtime/jniLibs")
+val nativeHostPubRoot = rootProject.projectDir.resolve("../../src/BlazorNative.NativeHost/bin/Release/net10.0")
+val nativeHostSoX64 = nativeHostPubRoot.resolve("linux-bionic-x64/publish/BlazorNative.NativeHost.so")
+val nativeHostSoArm64 = nativeHostPubRoot.resolve("linux-bionic-arm64/publish/BlazorNative.NativeHost.so")
+
+// Gate 3 review follow-up: a Copy task whose every `from` source is missing
+// goes NO-SOURCE and skips ALL actions — including a doFirst fail-fast —
+// silently producing an APK with stale/absent native assets. Verification
+// therefore lives in a plain task (no inputs → never skipped) that every
+// copy task depends on.
+val verifyNativeAssets = tasks.register("verifyNativeAssets") {
+    description = "Fails fast when any expected native build output (.wasm, libwasmtime.so, NativeHost .so) is missing"
     group = "blazornative"
-    val sourceWasm = rootProject.projectDir
-        .resolve("../../src/BlazorNative.WasiHost/bin/Release/net10.0/wasi-wasm/AppBundle/BlazorNative.WasiHost.wasm")
-    from(sourceWasm)
-    into(layout.projectDirectory.dir("src/androidMain/assets"))
-    doFirst {
-        if (!sourceWasm.exists()) {
+    doLast {
+        val expected = mapOf(
+            wasmSource to "dotnet publish src/BlazorNative.WasiHost -c Release -r wasi-wasm",
+            wasmtimeJniLibsDir.resolve("arm64-v8a/libwasmtime.so") to "setup.ps1 section 8c (cargo-ndk cross-compile)",
+            wasmtimeJniLibsDir.resolve("x86_64/libwasmtime.so") to "setup.ps1 section 8c (cargo-ndk cross-compile)",
+            nativeHostSoX64 to "dotnet publish src/BlazorNative.NativeHost -c Release -r linux-bionic-x64",
+            nativeHostSoArm64 to "dotnet publish src/BlazorNative.NativeHost -c Release -r linux-bionic-arm64",
+        )
+        val missing = expected.filterKeys { !it.exists() }
+        if (missing.isNotEmpty()) {
             throw GradleException(
-                "BlazorNative.WasiHost.wasm not found at expected path:\n  $sourceWasm\n" +
-                "Run from repo root: dotnet publish src/BlazorNative.WasiHost -c Release -r wasi-wasm"
+                "Native build outputs missing:\n" +
+                    missing.entries.joinToString("\n") { (file, fix) ->
+                        "  $file\n    → produce it via: $fix"
+                    }
             )
         }
     }
 }
 
+val copyWasm = tasks.register<Copy>("copyWasm") {
+    description = "Copies the AOT'd BlazorNative.WasiHost.wasm into androidMain/assets/"
+    group = "blazornative"
+    dependsOn(verifyNativeAssets)
+    from(wasmSource)
+    into(layout.projectDirectory.dir("src/androidMain/assets"))
+}
+
 val copyJniLibs = tasks.register<Copy>("copyJniLibs") {
     description = "Copies cross-compiled libwasmtime.so (per ABI) into androidMain/jniLibs/"
     group = "blazornative"
-    val sourceDir = rootProject.projectDir.resolve("../../vendor/wasmtime/jniLibs")
-    from(sourceDir)
+    dependsOn(verifyNativeAssets)
+    from(wasmtimeJniLibsDir)
     into(layout.projectDirectory.dir("src/androidMain/jniLibs"))
-    doFirst {
-        val arm64 = sourceDir.resolve("arm64-v8a/libwasmtime.so")
-        val x86_64 = sourceDir.resolve("x86_64/libwasmtime.so")
-        if (!arm64.exists() || !x86_64.exists()) {
-            throw GradleException(
-                "libwasmtime.so missing for one or both ABIs under $sourceDir.\n" +
-                "Run setup.ps1 section 8c (cargo-ndk cross-compile)."
-            )
-        }
-    }
 }
 
 // Phase 3.0c: NativeAOT .so per ABI → jniLibs. Renamed to lib-prefix so
@@ -196,21 +213,11 @@ val copyJniLibs = tasks.register<Copy>("copyJniLibs") {
 val copyNativeHostSo = tasks.register<Copy>("copyNativeHostSo") {
     description = "Copies NativeAOT BlazorNative.NativeHost.so (per ABI) into androidMain/jniLibs/"
     group = "blazornative"
-    val pubRoot = rootProject.projectDir.resolve("../../src/BlazorNative.NativeHost/bin/Release/net10.0")
-    val x64 = pubRoot.resolve("linux-bionic-x64/publish/BlazorNative.NativeHost.so")
-    val arm64 = pubRoot.resolve("linux-bionic-arm64/publish/BlazorNative.NativeHost.so")
-    from(x64) { into("x86_64") }
-    from(arm64) { into("arm64-v8a") }
+    dependsOn(verifyNativeAssets)
+    from(nativeHostSoX64) { into("x86_64") }
+    from(nativeHostSoArm64) { into("arm64-v8a") }
     rename { "libBlazorNative.NativeHost.so" }
     into(layout.projectDirectory.dir("src/androidMain/jniLibs"))
-    doFirst {
-        if (!x64.exists() || !arm64.exists()) {
-            throw GradleException(
-                "BlazorNative.NativeHost.so missing for one or both bionic ABIs under $pubRoot.\n" +
-                "Run from repo root: dotnet publish src/BlazorNative.NativeHost -c Release -r linux-bionic-x64 (and -arm64)"
-            )
-        }
-    }
 }
 
 // Wire all three into preBuild so every APK build picks up the latest assets.
