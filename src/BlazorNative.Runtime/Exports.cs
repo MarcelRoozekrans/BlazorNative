@@ -57,9 +57,14 @@ public static class Exports
     private static readonly IntPtr s_initOkErrorEmpty;
     private static readonly IntPtr s_probesLabel;
 
+    /// <summary>Single source of truth for the runtime version — the
+    /// JNA-visible version cstring and NativeShellBridge.PlatformInfo both
+    /// derive from it.</summary>
+    internal const string VersionNumber = "0.5.0-phase-3.0e";
+
     static Exports()
     {
-        s_versionString = Marshal.StringToCoTaskMemUTF8("BlazorNative.Runtime 0.5.0-phase-3.0e");
+        s_versionString = Marshal.StringToCoTaskMemUTF8($"BlazorNative.Runtime {VersionNumber}");
         s_initOkErrorEmpty = Marshal.StringToCoTaskMemUTF8("");
         s_probesLabel = Marshal.StringToCoTaskMemUTF8("probes:parameter,cascading,inject");
     }
