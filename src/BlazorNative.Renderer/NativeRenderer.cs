@@ -33,6 +33,14 @@ public sealed class NativeRenderer : BlazorRenderer
         remove => _frames.Unregister(value);
     }
 
+    /// <summary>Phase 3.0d: host-pluggable frame transport. When set, DispatchFrame
+    /// invokes this instead of the [FRAME] stdout line. NativeHost installs the
+    /// struct marshaller here; WasiHost leaves it null (stdout fallback — deletes
+    /// with the WASM era in Phase 3.0e). Synchronous by contract (Phase 2.0).
+    /// Threading: set before mount, or from the renderer thread; the property
+    /// is not synchronized, so a cross-thread mid-render swap races.</summary>
+    public Action<RenderFrame>? FrameSink { get; set; }
+
     public NativeRenderer(IServiceProvider services)
         : base(services, new NativeRendererLoggerFactory())
     {
@@ -383,6 +391,14 @@ public sealed class NativeRenderer : BlazorRenderer
 
     private void DispatchFrame(RenderFrame frame)
     {
+        // Phase 3.0d: a host-installed FrameSink (NativeHost's struct
+        // marshaller) replaces the stdout transport entirely for that host.
+        if (FrameSink is { } sink)
+        {
+            sink(frame);
+            return;
+        }
+
         var json = JsonSerializer.Serialize(frame, RendererJsonContext.Default.RenderFrame);
         Console.WriteLine($"[FRAME] {json}");
     }

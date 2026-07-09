@@ -4,16 +4,25 @@ using System.Runtime.InteropServices;
 namespace BlazorNative.NativeHost;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Phase 3.0b boot-only C-ABI surface (+ Phase 3.0c Gate 4 diagnostic).
+// Phase 3.0b boot C-ABI surface + Phase 3.0c Gate 4 diagnostic + Phase 3.0d
+// wire protocol.
 //
-// Four exports: init, shutdown, version, and run_trim_probes (Phase 3.0c
-// Gate 4 diagnostic — delete-vs-keep is a 3.0d decision). No frame protocol
-// yet — that lands in Phase 3.0d. String ownership rule: input strings
-// are caller-allocated UTF-8, callee-borrowed during the call; output strings
-// are static native memory (never freed). Documented exception: failure-detail
-// strings (Init's error path, RunTrimProbes' non-zero-status path) are
-// allocated fresh per failing call and leak — acceptable for one-shot /
-// diagnostic paths.
+// Seven exports:
+//   init                    — load runtime, verify Blazor accessors
+//   shutdown                — clears the frame callback (frame flush lands later)
+//   version                 — static version cstring
+//   run_trim_probes         — Phase 3.0c Gate 4 diagnostic (delete-vs-keep TBD)
+//   register_frame_callback — Phase 3.0d: store the host's cdecl frame callback
+//   mount                   — Phase 3.0d: mount a registered component by name
+//   dispatch_event          — ABI-reserved stub; Phase 3.2 wires event ingress
+//
+// String ownership rule: input strings are caller-allocated UTF-8,
+// callee-borrowed during the call; output strings are static native memory
+// (never freed). Documented exception: failure-detail strings (Init's error
+// path, RunTrimProbes' non-zero-status path) are allocated fresh per failing
+// call and leak — acceptable for one-shot / diagnostic paths. Frame payloads
+// (register_frame_callback → callback) live in a FrameArena and are valid
+// only during the callback — see PatchProtocolNative.cs.
 //
 // See docs/plans/2026-05-31-phase-3.0b-design.md "C-ABI surface" for the
 // long-form contract.
@@ -49,7 +58,7 @@ public static class Exports
 
     static Exports()
     {
-        s_versionString = Marshal.StringToCoTaskMemUTF8("BlazorNative.NativeHost 0.3.0-phase-3.0b");
+        s_versionString = Marshal.StringToCoTaskMemUTF8("BlazorNative.NativeHost 0.4.0-phase-3.0d");
         s_initOkErrorEmpty = Marshal.StringToCoTaskMemUTF8("");
         s_probesLabel = Marshal.StringToCoTaskMemUTF8("probes:parameter,cascading,inject");
     }
@@ -97,13 +106,80 @@ public static class Exports
     [UnmanagedCallersOnly(EntryPoint = "blazornative_shutdown")]
     public static void Shutdown()
     {
-        // Phase 3.0b no-op. Phase 3.0d+ may flush pending frames / dispose
-        // renderer state. The static cstrings are intentionally leaked —
-        // process-scoped lifetime.
+        // Phase 3.0d: clear the frame callback so a post-shutdown re-render
+        // (possible once Phase 3.2 wires event-driven re-renders) can never
+        // dispatch into a freed JNA trampoline after the host releases its
+        // callback object. Renderer/session state is NOT disposed (frame
+        // flush / teardown is later-phase work); the static cstrings are
+        // intentionally leaked — process-scoped lifetime.
+        HostSession.SetFrameCallback(IntPtr.Zero);
     }
 
     [UnmanagedCallersOnly(EntryPoint = "blazornative_version")]
     public static IntPtr Version() => s_versionString;
+
+    /// <summary>
+    /// Phase 3.0d: stores the host's frame callback — a cdecl
+    /// <c>void (*)(BlazorNativeFrame*)</c> function pointer. Returns 0 on
+    /// success. Re-registration is allowed (last wins); passing NULL disables
+    /// frame delivery. The frame pointer handed to the callback (and every
+    /// string it references) is valid ONLY for the duration of the callback —
+    /// the host must copy synchronously (PatchProtocolNative.cs contract).
+    /// </summary>
+    [UnmanagedCallersOnly(EntryPoint = "blazornative_register_frame_callback")]
+    public static int RegisterFrameCallback(IntPtr fnPtr)
+    {
+        try
+        {
+            HostSession.SetFrameCallback(fnPtr);
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[Exports] register_frame_callback failed: {ex}");
+            return 2;
+        }
+    }
+
+    /// <summary>
+    /// Phase 3.0d: mounts a registered component by NUL-terminated UTF-8 name.
+    /// Builds the DI session lazily on first call. The first render completes
+    /// synchronously, so the registered frame callback has already fired when
+    /// this returns. Status: 0 ok / 1 unknown component / 2 mount threw
+    /// (detail on stderr) / 3 name pointer null.
+    /// </summary>
+    [UnmanagedCallersOnly(EntryPoint = "blazornative_mount")]
+    public static int Mount(IntPtr componentNameUtf8)
+    {
+        try
+        {
+            if (componentNameUtf8 == IntPtr.Zero)
+                return 3;
+            string? name = Marshal.PtrToStringUTF8(componentNameUtf8);
+            if (name is null)
+                return 3;
+            return HostSession.TryMount(name);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[Exports] mount failed: {ex}");
+            return 2;
+        }
+    }
+
+    /// <summary>
+    /// ABI-reserved, deliberately dormant: Phase 3.2 wires host→renderer event
+    /// ingress through this entry point (handlerId + JSON args → NativeUiEvent).
+    /// Declared now so the C ABI is complete for M3 DoD and the Kotlin binding
+    /// surface doesn't churn. Always returns -1 (not implemented).
+    /// </summary>
+    [UnmanagedCallersOnly(EntryPoint = "blazornative_dispatch_event")]
+    public static int DispatchEvent(ulong handlerId, IntPtr argsJsonUtf8)
+    {
+        _ = handlerId;
+        _ = argsJsonUtf8;
+        return -1;
+    }
 
     /// <summary>
     /// Phase 3.0c Gate 4 diagnostic export. Status = number of failed probes
@@ -111,7 +187,8 @@ public static class Exports
     /// failure detail. Reuses the InitResult struct so the Kotlin side needs
     /// no new mirror. The failure-path ErrorMessage is allocated per call and
     /// never freed — acceptable leak for a diagnostic invoked once per test
-    /// run. Fate (delete vs. keep) is a Phase 3.0d decision.
+    /// run. 3.0d decision: keep until Phase 3.0e (sole on-device coverage for
+    /// the cascading/[Inject] IL2072 paths); delete or graduate at 3.0e cleanup.
     /// </summary>
     [UnmanagedCallersOnly(EntryPoint = "blazornative_run_trim_probes")]
     public static BlazorNativeInitResult RunTrimProbes()

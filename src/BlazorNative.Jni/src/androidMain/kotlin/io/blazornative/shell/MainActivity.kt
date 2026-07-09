@@ -5,27 +5,38 @@ import android.os.Bundle
 import android.util.Log
 import android.widget.FrameLayout
 import android.widget.TextView
-import io.blazornative.jni.MobileBridgeHandlers
-import io.blazornative.jni.WasiHost
+import io.blazornative.jni.BlazorNativeRuntime
 import kotlin.concurrent.thread
 
 /**
- * Phase 2.2 Android shell entry point.
+ * Phase 3.0d Android shell entry point — boots the NativeAOT pipeline.
  *
- * On launch: spawns a background thread that
- *   1. reads BlazorNative.WasiHost.wasm from app assets (~13 MB),
- *   2. invokes WasiHost.loadAndRun(bytes, cacheDir),
- *   3. emits each captured stdout line via Log.i("BlazorNative", line),
- *   4. displays the full captured stdout in the green-on-black console TextView.
+ * On launch: spawns a background thread that runs [BlazorNativeRuntime.start]
+ * (init → register frame callback → mount HelloComponent) against the
+ * NativeAOT libBlazorNative.NativeHost.so from the APK's jniLibs. Frames
+ * arrive through the C-ABI struct path (NativeFrameAdapter) and render via
+ * [WidgetMapper] into widget_root; [BOOT] status lines go to logcat and the
+ * green-on-black console TextView.
  *
- * The background thread keeps the UI responsive during the ~500ms-1500ms
- * cold JIT compile + Mono-AOT init that runs the first time the .wasm boots.
- * All throwables are caught → Log.e + "FAIL: ..." in the TextView so a
- * runtime crash is visible without needing to attach to logcat.
+ * The wasmtime/.wasm boot path is retired from this Activity as of Phase 3.0d
+ * (WasiHost/AndroidPlatformInfo remain in the tree for the wasmtime-driven
+ * instrumented tests until the Phase 3.0e cleanup).
+ *
+ * Threading/lifetime notes:
+ *  - [runtime] is an Activity FIELD deliberately: it strongly holds the JNA
+ *    frame callback; if it were a local, GC could collect the callback's
+ *    trampoline while native code still points at it.
+ *  - All throwables are caught → Log.e + "FAIL: ..." in the TextView so a
+ *    boot crash is visible without attaching to logcat. Frame-level errors
+ *    (adapter/consumer throws inside the JNA callback) route through
+ *    onError → Log.e — JNA would otherwise swallow them to stderr.
  */
 class MainActivity : Activity() {
 
     private val tag = "BlazorNative"
+
+    /** Strong ref for the .so's lifetime — see class KDoc. */
+    private lateinit var runtime: BlazorNativeRuntime
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -35,31 +46,21 @@ class MainActivity : Activity() {
         val widgetRoot = findViewById<FrameLayout>(R.id.widget_root)
         val mapper = WidgetMapper(this, widgetRoot)
 
-        // Phase 2.5: wrap AndroidPlatformInfo.handlers so onFrame both logs to logcat
-        // (existing diagnostic behaviour) AND renders the patches to real widgets.
-        val androidHandlers = AndroidPlatformInfo.handlers
-        val handlers = MobileBridgeHandlers(
-            platformInfo = androidHandlers.platformInfo,
-            onFrame = { frame ->
-                androidHandlers.onFrame(frame)  // preserve logcat side-effect
-                mapper.apply(frame)             // render to real widgets
-            }
+        runtime = BlazorNativeRuntime(
+            onFrame = { frame -> mapper.apply(frame) },
+            onError = { msg, t -> Log.e(tag, msg, t) },
         )
 
-        thread(name = "BlazorNative-WasiHost-Boot") {
+        thread(name = "BlazorNative-NativeHost-Boot") {
             try {
-                val wasmBytes = assets.open("BlazorNative.WasiHost.wasm").use { it.readBytes() }
-                Log.i(tag, "Loaded ${wasmBytes.size} bytes of .wasm from assets; booting...")
-
-                val stdout = WasiHost.loadAndRun(wasmBytes, cacheDir, handlers)
-
-                // Emit each captured line as one Log.i call so logcat shows
-                // them as atomic lines (filter via `adb logcat -s BlazorNative`).
-                stdout.lineSequence().filter { it.isNotBlank() }.forEach { line ->
-                    Log.i(tag, line)
-                }
-
-                runOnUiThread { view.text = stdout }
+                val lines = runtime.start(
+                    platformOs = "android",
+                    apiLevel = android.os.Build.VERSION.SDK_INT,
+                )
+                // Emit each line as one Log.i call so logcat shows them as
+                // atomic lines (filter via `adb logcat -s BlazorNative`).
+                lines.forEach { Log.i(tag, it) }
+                runOnUiThread { view.text = lines.joinToString("\n") }
             } catch (t: Throwable) {
                 Log.e(tag, "Boot failed", t)
                 runOnUiThread { view.text = "FAIL: ${t.javaClass.simpleName}: ${t.message}" }

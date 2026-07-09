@@ -22,12 +22,19 @@
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
     <RootNamespace>BlazorNative.Runtime.Tests</RootNamespace>
+    <!-- Phase 3.0d Gate 1: FrameArena/FrameEncoder tests dereference
+         BlazorNativePatch* directly. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\BlazorNative.Core\BlazorNative.Core.csproj" />
     <ProjectReference Include="..\..\src\BlazorNative.Renderer\BlazorNative.Renderer.csproj" />
     <ProjectReference Include="..\..\src\BlazorNative.Http\BlazorNative.Http.csproj" />
+    <!-- Phase 3.0d Gate 1: NativeHost is an ordinary class library at build time
+         (PublishAot only affects publish), so referencing it from a test project
+         is safe. Gives us PatchProtocolNative/FrameArena/FrameEncoder coverage. -->
+    <ProjectReference Include="..\..\src\BlazorNative.NativeHost\BlazorNative.NativeHost.csproj" />
   </ItemGroup>
 
   <ItemGroup>
@@ -36,6 +43,13 @@
     <PackageReference Include="xunit" Version="2.*" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.*" />
     <PackageReference Include="Microsoft.AspNetCore.Components" Version="10.0.*" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Phase 3.0d Task 6: Hello golden frame fixture (second copy lives at
+         src/BlazorNative.Jni/src/test/resources/hello-frame.json — keep in sync
+         via HelloGoldenTests' record mode). -->
+    <Content Include="Fixtures\hello-frame.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

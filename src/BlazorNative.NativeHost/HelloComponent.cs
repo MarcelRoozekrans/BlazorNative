@@ -1,10 +1,16 @@
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Rendering;
 
-namespace BlazorNative.WasiHost;
+namespace BlazorNative.NativeHost;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// HelloComponent
+// HelloComponent (NativeHost copy)
+//
+// DUPLICATED from src/BlazorNative.WasiHost/HelloComponent.cs for Phase 3.0d's
+// blazornative_mount registry — NativeHost must not take a ProjectReference on
+// the WASM-era WasiHost. Dedupe when Phase 3.0e deletes WasiHost. If you edit
+// this file, edit the WasiHost copy too (and vice versa — it carries the
+// reverse breadcrumb).
 //
 // Phase 2.8 Hello demo component — the M2-closing visible artifact. Exercises
 // Phase 2.5/2.6 surface in one screenshot:
@@ -17,13 +23,6 @@ namespace BlazorNative.WasiHost;
 // 10/11/12 for the text container, 20/21 for the button, 30/31 for the input.
 // Gap-leaving keeps the BuildRenderTree readable and accommodates future
 // additions without renumbering.
-//
-// Lives in WasiHost (not a separate samples project) for M2; M3's component
-// library work may relocate this to a proper BlazorNative.Samples.Hello project.
-//
-// Phase 3.0d: duplicated into src/BlazorNative.NativeHost/HelloComponent.cs
-// (blazornative_mount registry) — if you edit this file, edit that copy too;
-// dedupe when Phase 3.0e deletes WasiHost.
 // ─────────────────────────────────────────────────────────────────────────────
 internal sealed class HelloComponent : ComponentBase
 {
