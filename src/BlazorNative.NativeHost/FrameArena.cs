@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
 
@@ -99,11 +100,17 @@ internal sealed unsafe class FrameArena : IDisposable
     }
 
     /// <summary>Returns this arena to the thread cache. Does NOT free the
-    /// native block (process-lifetime cache — see class header). Idempotent.</summary>
+    /// native block (process-lifetime cache — see class header). Idempotent.
+    /// Thread affinity: Dispose is only a guaranteed no-op cross-thread when
+    /// <c>_rented</c> is already false (a stale double-Dispose echo). Disposing
+    /// a STILL-RENTED arena from a foreign thread migrates it into THAT
+    /// thread's cache slot (or frees it if occupied) — a contract violation:
+    /// rent, alloc, and dispose must all happen on the same thread (the frame
+    /// callback runs synchronously on the renderer thread, so this holds).</summary>
     public void Dispose()
     {
         if (!_rented)
-            return; // second Dispose (or foreign-thread echo): no-op
+            return; // second Dispose (or stale foreign-thread echo): no-op
         _rented = false;
 
         if (t_cached is null)
@@ -123,6 +130,10 @@ internal sealed unsafe class FrameArena : IDisposable
 
     private byte* Alloc(nuint size)
     {
+        // Alloc on a non-rented arena = use-after-Dispose: the next Rent()'s
+        // Reset() reuses the same bytes, silently corrupting live pointers.
+        Debug.Assert(_rented, "FrameArena.Alloc called on a non-rented arena (use-after-Dispose).");
+
         nuint advance = (size + 7) & ~(nuint)7; // keep _offset 8-aligned
         if (_offset + advance > _capacity)
             Grow(advance);

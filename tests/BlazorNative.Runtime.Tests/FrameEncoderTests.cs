@@ -181,6 +181,53 @@ public sealed class FrameEncoderTests
         Assert.Contains("blink", ex.Message);
     }
 
+    [Fact]
+    public unsafe void Encode_SteadyState_900Frames_StaysWithinManagedAllocBound()
+    {
+        // FrameArenaTests pins the arena's zero-alloc contract in isolation;
+        // this pins the PRODUCTION path — FrameEncoder.Encode over a realistic
+        // prebuilt frame — so a future encoder change that starts allocating
+        // per patch (string concat, boxing, LINQ) fails here, not in profiling.
+        var frame = new RenderFrame(
+            FrameId: 1,
+            TimestampMs: 42L,
+            Patches:
+            [
+                new CreateNodePatch(1, "view", null),
+                new SetStylePatch(1, "backgroundColor", "#FFEEAA"),
+                new SetStylePatch(1, "padding", "16"),
+                new CreateNodePatch(2, "text", 1),
+                new ReplaceTextPatch(2, "Hello, BlazorNative!"),
+                new UpdatePropPatch(3, "placeholder", "Type here..."),
+                new AppendChildPatch(ParentId: 1, ChildId: 2, AtIndex: 0),
+                new CommitFramePatch(FrameId: 1, TimestampMs: 42L),
+            ]);
+
+        static void EncodeOnce(RenderFrame f)
+        {
+            using var arena = FrameArena.Rent();
+            BlazorNativeFrame native = FrameEncoder.Encode(f, arena);
+            // Consume the result so the JIT can't dead-code the encode.
+            if (native.PatchCount != f.Patches.Length)
+                throw new InvalidOperationException("encode dropped patches");
+        }
+
+        // Warmup: JIT + arena steady-state capacity.
+        for (int i = 0; i < 100; i++)
+            EncodeOnce(frame);
+
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        for (int i = 0; i < 900; i++)
+            EncodeOnce(frame);
+        long delta = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        // Same bound as FrameArenaTests.RentDispose_1000Frames: < 100KB slack
+        // across 900 frames for runtime incidentals; per-frame allocation
+        // would blow well past this.
+        Assert.True(delta < 100_000,
+            $"Expected < 100000 managed bytes allocated across 900 Encode cycles, got {delta}");
+    }
+
     /// <summary>Reads patch i back through Marshal — the same byte-level view
     /// an out-of-process (Kotlin) reader has.</summary>
     private static BlazorNativePatch Decode(BlazorNativeFrame native, int i) =>

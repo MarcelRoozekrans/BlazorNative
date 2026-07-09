@@ -15,6 +15,11 @@ namespace BlazorNative.NativeHost;
 //
 // String/array ownership: native-owned, valid ONLY for the duration of the
 // frame callback. The Kotlin side copies synchronously before returning.
+//
+// Endianness/width: this layout assumes little-endian byte order and 8-byte
+// pointers (all supported targets: win-x64, linux-bionic-x64/arm64). A
+// ByteBuffer-based reader must call order(ByteOrder.LITTLE_ENDIAN); JNA
+// Pointer.getInt/getLong/getPointer read in native order and are safe as-is.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// <summary>Wire ids for all 9 RenderPatch types. AttachEvent/DetachEvent/

@@ -71,6 +71,71 @@ public sealed unsafe class FrameArenaTests
     }
 
     [Fact]
+    public void Grow_KeepsPreGrowthPointersValid_AndFreesRetiredBlockOnNextRent()
+    {
+        var arena = FrameArena.Rent();
+
+        // Allocate patches in the INITIAL block and stamp them.
+        BlazorNativePatch* patches = arena.AllocPatches(4);
+        for (int i = 0; i < 4; i++)
+        {
+            patches[i].Kind = BlazorNativePatchKind.SetStyle;
+            patches[i].NodeId = 100 + i;
+        }
+
+        // Force Grow(): a single string larger than the 16KB initial capacity.
+        string big = new string('x', 20 * 1024);
+        IntPtr bigPtr = arena.AllocUtf8(big);
+        Assert.NotEqual(IntPtr.Zero, bigPtr);
+        Assert.Equal(big, Marshal.PtrToStringUTF8(bigPtr));
+
+        // Pre-growth pointers live in the RETIRED block, which must remain
+        // valid (readable AND writable) until the next Rent()/Reset().
+        for (int i = 0; i < 4; i++)
+        {
+            Assert.Equal(BlazorNativePatchKind.SetStyle, patches[i].Kind);
+            Assert.Equal(100 + i, patches[i].NodeId);
+        }
+        patches[0].NodeId = 999;
+        Assert.Equal(999, patches[0].NodeId);
+
+        arena.Dispose();
+
+        // Re-rent: Reset() frees the retired block. Alloc again to prove the
+        // arena is fully functional after the retire-and-free cycle.
+        using var arena2 = FrameArena.Rent();
+        BlazorNativePatch* fresh = arena2.AllocPatches(2);
+        fresh[1].NodeId = 7;
+        Assert.Equal(7, fresh[1].NodeId);
+    }
+
+    [Fact]
+    public void Dispose_SecondArenaIntoOccupiedSlot_FreesWithoutCrash()
+    {
+        // Rent() nulls the thread-cache slot, so a second Rent() on the same
+        // thread creates a FRESH arena. Disposing the first parks it in the
+        // slot; disposing the second finds the slot occupied and takes the
+        // free-instead-of-leak branch.
+        var first = FrameArena.Rent();
+        var second = FrameArena.Rent();
+        Assert.NotSame(first, second);
+
+        first.AllocUtf8("first");
+        second.AllocUtf8("second");
+
+        first.Dispose();  // slot empty → cached
+        second.Dispose(); // slot occupied → block freed
+
+        // Idempotency on the freed instance must still hold (no double-free).
+        second.Dispose();
+
+        // The thread cache still works afterwards.
+        using var next = FrameArena.Rent();
+        Assert.Same(first, next);
+        Assert.NotEqual(IntPtr.Zero, next.AllocUtf8("next"));
+    }
+
+    [Fact]
     public void RentDispose_1000Frames_DoesNotGrowUnbounded()
     {
         // Warm-up: 100 cycles let the thread-cached arena grow to its
