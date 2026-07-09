@@ -61,9 +61,10 @@ interface NativeBindings : Library {
      * EXCEPTION POSTURE: if [invoke] throws, JNA's default callback exception
      * handler prints the stack trace to stderr and returns normally to native
      * code — the frame is SILENTLY DROPPED (no crash, nothing propagates to
-     * the mount call). Gate 3's BlazorNativeRuntime must therefore wrap the
-     * callback body in try/catch routed to android.util.Log so dropped frames
-     * reach logcat deliberately instead of vanishing into an untailed stderr.
+     * the mount call). Gate 3's BlazorNativeRuntime therefore wraps the
+     * callback body in try/catch routed to its pluggable onError sink
+     * (android.util.Log only when the Activity wires it) so dropped frames
+     * surface deliberately instead of vanishing into an untailed stderr.
      */
     interface FrameCallback : com.sun.jna.Callback {
         fun invoke(frame: Pointer)

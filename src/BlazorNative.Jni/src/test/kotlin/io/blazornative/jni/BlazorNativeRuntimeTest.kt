@@ -3,6 +3,7 @@ package io.blazornative.jni
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
 import java.util.concurrent.atomic.AtomicReference
 
@@ -61,5 +62,17 @@ class BlazorNativeRuntimeTest {
             "unexpected onError message: ${captured.first}"
         )
         assertEquals("consumer boom", captured.second.message)
+    }
+
+    @Test
+    fun start_maps_unknown_component_to_IllegalStateException() {
+        val runtime = BlazorNativeRuntime(onFrame = {})
+        val ex = assertThrows(IllegalStateException::class.java) {
+            runtime.start(componentName = "NoSuchComponent", platformOs = "test-host")
+        }
+        assertTrue(
+            ex.message!!.contains("unknown component 'NoSuchComponent'"),
+            "unexpected failure message: ${ex.message}"
+        )
     }
 }

@@ -22,6 +22,8 @@ import com.sun.jna.Pointer
  */
 class BlazorNativeRuntime(
     private val onFrame: (RenderFrame) -> Unit,
+    // (JVM-only default — Android callers must pass a Log-based sink: stderr
+    // goes to /dev/null on Android, not logcat.)
     private val onError: (String, Throwable) -> Unit = { msg, t -> System.err.println("$msg: $t") },
 ) {
     private val callback = object : NativeBindings.FrameCallback {
@@ -41,6 +43,19 @@ class BlazorNativeRuntime(
      * Boots the runtime: init → register frame callback → mount. The first
      * frame callback fires synchronously INSIDE the mount call (sync mount
      * contract), on the calling thread.
+     *
+     * ACTIVITY-RECREATION CONTRACT: calling start() a second time in the same
+     * process (e.g. from a recreated Activity) is safe TODAY —
+     * blazornative_init is idempotent, callback re-registration is last-wins,
+     * and re-mounting adds a NEW component instance on the process-global
+     * session (old instances are never disposed and accumulate natively).
+     * The window where the OLD runtime's callback trampoline is still
+     * registered (old Activity destroyed, new start() not yet re-registered)
+     * is safe ONLY because frames fire exclusively inside mount() — no mount
+     * in flight means no frame can hit the stale trampoline. Phase 3.2's
+     * async frames BREAK that invariant: any recreation path must re-register
+     * the new callback BEFORE any async frame source starts. Concurrent
+     * start() calls (multiple threads) are unguarded — callers must serialize.
      *
      * Returns human-readable status lines for a console pane.
      * Throws [IllegalStateException] on init/registration/mount failure.
@@ -80,12 +95,21 @@ class BlazorNativeRuntime(
             0 -> lines += "[BOOT] mounted $componentName"
             1 -> throw IllegalStateException("unknown component '$componentName'")
             else -> throw IllegalStateException(
-                "mount($componentName) failed with status $rc — see native stderr"
+                "mount($componentName) failed with status $rc — detail went to " +
+                    "native stderr, which Android discards; reproduce on the " +
+                    "desktop JVM to see it"
             )
         }
         return lines
     }
 
+    /**
+     * Tears down the process-lifetime native session. Do NOT call this from
+     * Activity teardown (onDestroy) — Activity recreation re-runs start()
+     * against the same process-global session (see the recreation contract on
+     * [start]); shutting down between recreations would kill the session the
+     * new Activity expects. Reserved for genuine process-exit paths.
+     */
     fun shutdown() = NativeBindings.INSTANCE.blazornative_shutdown()
 
     /** Caller-allocated NUL-terminated UTF-8 cstring for input pointers. */
