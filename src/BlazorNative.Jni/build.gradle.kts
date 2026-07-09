@@ -10,7 +10,7 @@ group = "io.blazornative"
 version = "0.1.0-SNAPSHOT"
 
 dependencies {
-    // JNA — JVM ↔ libwasmtime FFI binding.
+    // JNA — JVM ↔ NativeAOT runtime FFI binding.
     //
     // The :aar variant bundles libjnidispatch.so for Android ABIs (arm64-v8a,
     // x86_64) so the APK's lib/<abi>/ directory has JNA's native dispatch.
