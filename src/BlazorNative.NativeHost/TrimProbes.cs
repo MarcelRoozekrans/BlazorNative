@@ -53,6 +53,9 @@ internal sealed class InjectProbe : ComponentBase
     }
 }
 
+// (Deliberately renamed vs. the test project's ITestService/"test-service" —
+// distinguishes device probe output from host-CLR test output at a glance;
+// not accidental drift from the duplicated probe shapes.)
 internal interface IProbeService
 {
     string Name { get; }
@@ -128,7 +131,11 @@ internal static class TrimProbeRunner
         }
         catch (Exception ex)
         {
-            failures.Add($"{name}: {ex.GetType().Name}: {ex.Message}");
+            // ex.ToString() so the InnerException chain + stack survive the
+            // C-ABI crossing — mount failures are frequently wrapped (e.g.
+            // TargetInvocationException); Message alone hides the offending
+            // type/member. Same rationale as Exports.cs Init's catch.
+            failures.Add($"{name}: {ex}");
         }
     }
 }

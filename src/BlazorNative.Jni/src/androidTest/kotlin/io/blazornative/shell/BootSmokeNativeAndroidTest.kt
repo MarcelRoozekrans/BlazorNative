@@ -41,8 +41,10 @@ class BootSmokeNativeAndroidTest {
     @Test
     fun init_returns_status_zero_with_version() {
         // Gate 3 review follow-up: pass REAL platform-info strings instead of
-        // null pointers — proves input-pointer (caller-allocated UTF-8) struct
-        // marshaling on bionic, not just output-pointer reads.
+        // null pointers. Init doesn't dereference PlatformInfoOs yet, so this
+        // proves the options struct populates and the call survives with live
+        // input pointers on bionic — full content round-trip lands when a real
+        // consumer export exists (Phase 3.0d).
         val osMem = utf8CString("android-emulator")
         val noteMem = utf8CString("phase-3.0c-gate4-bootsmoke")
         val opts = BlazorNativeInitOptions.ByReference().apply {

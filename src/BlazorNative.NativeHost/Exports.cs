@@ -4,12 +4,16 @@ using System.Runtime.InteropServices;
 namespace BlazorNative.NativeHost;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Phase 3.0b boot-only C-ABI surface.
+// Phase 3.0b boot-only C-ABI surface (+ Phase 3.0c Gate 4 diagnostic).
 //
-// Three exports: init, shutdown, version. No renderer, no frame protocol —
-// those land in Phase 3.0c. String ownership rule: input strings are caller-
-// allocated UTF-8, callee-borrowed during the call; output strings are static
-// native memory (never freed).
+// Four exports: init, shutdown, version, and run_trim_probes (Phase 3.0c
+// Gate 4 diagnostic — delete-vs-keep is a 3.0d decision). No frame protocol
+// yet — that lands later in Phase 3.0c. String ownership rule: input strings
+// are caller-allocated UTF-8, callee-borrowed during the call; output strings
+// are static native memory (never freed). Documented exception: failure-detail
+// strings (Init's error path, RunTrimProbes' non-zero-status path) are
+// allocated fresh per failing call and leak — acceptable for one-shot /
+// diagnostic paths.
 //
 // See docs/plans/2026-05-31-phase-3.0b-design.md "C-ABI surface" for the
 // long-form contract.
@@ -105,7 +109,9 @@ public static class Exports
     /// Phase 3.0c Gate 4 diagnostic export. Status = number of failed probes
     /// (0 = all pass, -1 = runner crashed). ErrorMessage carries per-probe
     /// failure detail. Reuses the InitResult struct so the Kotlin side needs
-    /// no new mirror. Fate (delete vs. keep) is a Phase 3.0d decision.
+    /// no new mirror. The failure-path ErrorMessage is allocated per call and
+    /// never freed — acceptable leak for a diagnostic invoked once per test
+    /// run. Fate (delete vs. keep) is a Phase 3.0d decision.
     /// </summary>
     [UnmanagedCallersOnly(EntryPoint = "blazornative_run_trim_probes")]
     public static BlazorNativeInitResult RunTrimProbes()
