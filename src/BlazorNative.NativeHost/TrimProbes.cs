@@ -13,7 +13,9 @@ namespace BlazorNative.NativeHost;
 // the test project is never AOT-published, so host-CLR test passes prove
 // nothing about trim. Statically rooted via the generic MountAsync<T> calls
 // below (no [DynamicDependency] needed).
-// Fate of this file (delete vs. keep as diagnostics surface) is a 3.0d decision.
+// 3.0d decision: KEEP until Phase 3.0e — this remains the only on-device
+// coverage for the cascading/[Inject] IL2072 paths until real components
+// exercise them (M3 3.1+). Delete or graduate at 3.0e cleanup.
 // ─────────────────────────────────────────────────────────────────────────────
 
 internal sealed class ParameterProbe : ComponentBase

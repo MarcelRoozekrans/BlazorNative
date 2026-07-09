@@ -187,7 +187,8 @@ public static class Exports
     /// failure detail. Reuses the InitResult struct so the Kotlin side needs
     /// no new mirror. The failure-path ErrorMessage is allocated per call and
     /// never freed — acceptable leak for a diagnostic invoked once per test
-    /// run. Fate (delete vs. keep) is a Phase 3.0d decision.
+    /// run. 3.0d decision: keep until Phase 3.0e (sole on-device coverage for
+    /// the cascading/[Inject] IL2072 paths); delete or graduate at 3.0e cleanup.
     /// </summary>
     [UnmanagedCallersOnly(EntryPoint = "blazornative_run_trim_probes")]
     public static BlazorNativeInitResult RunTrimProbes()
