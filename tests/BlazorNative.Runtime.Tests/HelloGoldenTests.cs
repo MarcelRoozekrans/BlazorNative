@@ -1,43 +1,55 @@
-using System.Text.Json;
 using BlazorNative.Core;
-using BlazorNative.NativeHost;
+using BlazorNative.Runtime;
 using BlazorNative.Renderer;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace BlazorNative.Runtime.Tests;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Phase 3.0d Task 6 — the Hello golden frame fixture.
+// Phase 3.0e — the Hello golden frame, typed.
 //
-// Mounts NativeHost's HelloComponent, captures the first RenderFrame via the
-// Frames event, normalizes the nondeterministic bits (frameId/timestampMs →
-// 0, in the envelope AND the CommitFramePatch), serializes through
-// RendererJsonContext, and asserts byte-equality with the committed fixture:
+// Typed expected list transcribed from the retired hello-frame.json fixture
+// (3.0e); the wire shape lock lives here now. Mounts HelloComponent, captures
+// the first RenderFrame via the Frames event, and asserts the 13-patch Hello
+// frame: 12 patches field-by-field against in-code record literals (records
+// give value equality) + the commit terminator type-only. The CommitFramePatch
+// carries nondeterministic FrameId/TimestampMs — hence type-only, matching the
+// old fixture normalization (which zeroed both).
 //
-//   tests/BlazorNative.Runtime.Tests/Fixtures/hello-frame.json   (this side)
-//   src/BlazorNative.Jni/src/test/resources/hello-frame.json     (JVM side)
+// The Kotlin twin (NativeFrameAdapterTest.golden_mountHello_viaNativeDll_
+// matchesExpectedShape) asserts the same 13 patches against the native
+// struct-callback path — together they lock the wire shape on both sides of
+// the C ABI.
 //
-// The SAME fixture is what the Kotlin golden test (NativeFrameAdapterTest.kt)
-// compares the native-callback path against — together they lock the wire
-// shape on both sides of the C ABI.
-//
-// REGENERATION (only for an intentional Hello/protocol change):
-//   1. set BLAZORNATIVE_RECORD_GOLDEN=1
-//   2. dotnet test tests/BlazorNative.Runtime.Tests --filter HelloGoldenTests
-//      (the test writes BOTH copies into the repo, then deliberately fails so
-//      a record run can never pass CI)
-//   3. INSPECT the diff — the fixture must show the Phase 2.8 Hello shape
-//      (outer view #FFEEAA + padding 16, inner view fontSize 24 + text
-//      "Hello, BlazorNative!", button + "Tap", input + "Type here...")
-//   4. unset the env var, re-run green, commit BOTH copies + the Kotlin test.
+// An intentional Hello/protocol change updates BOTH typed lists by hand —
+// there is no record mode anymore.
 // ─────────────────────────────────────────────────────────────────────────────
 
 public sealed class HelloGoldenTests
 {
-    private const string FixtureName = "hello-frame.json";
+    /// <summary>The Phase 2.8 Hello shape: outer view #FFEEAA + padding 16,
+    /// inner view fontSize 24 + text "Hello, BlazorNative!", button + "Tap",
+    /// input + "Type here...". Transcribed from the retired fixture.</summary>
+    private static readonly IReadOnlyList<RenderPatch> ExpectedPatches =
+    [
+        new CreateNodePatch(1, "view"),
+        new SetStylePatch(1, "backgroundColor", "#FFEEAA"),
+        new SetStylePatch(1, "padding", "16"),
+        new CreateNodePatch(2, "view", 1),
+        new SetStylePatch(2, "fontSize", "24"),
+        new CreateNodePatch(3, "text", 2),
+        new ReplaceTextPatch(3, "Hello, BlazorNative!"),
+        new CreateNodePatch(4, "button", 1),
+        new CreateNodePatch(5, "text", 4),
+        new ReplaceTextPatch(5, "Tap"),
+        new CreateNodePatch(6, "input", 1),
+        new UpdatePropPatch(6, "placeholder", "Type here..."),
+        // 13th patch: CommitFramePatch — asserted type-only in the test body
+        // (FrameId/TimestampMs are nondeterministic).
+    ];
 
     [Fact]
-    public async Task MountHello_NormalizedFrame_MatchesGoldenFixture()
+    public async Task MountHello_Frame_MatchesTypedGoldenPatches()
     {
         var services = new ServiceCollection();
         services.AddBlazorNativeCoreServices();
@@ -63,73 +75,14 @@ public sealed class HelloGoldenTests
             renderer.Frames -= handler;
         }
 
-        string json = JsonSerializer.Serialize(
-            Normalize(frame), RendererJsonContext.Default.RenderFrame);
+        // 12 shape patches + the commit terminator.
+        Assert.Equal(ExpectedPatches.Count + 1, frame.Patches.Length);
 
-        if (Environment.GetEnvironmentVariable("BLAZORNATIVE_RECORD_GOLDEN") == "1")
-        {
-            RecordFixture(json);
-            Assert.Fail(
-                "Golden fixture RECORDED (both copies). Inspect the diff, unset " +
-                "BLAZORNATIVE_RECORD_GOLDEN, and re-run to verify green.");
-        }
+        for (var i = 0; i < ExpectedPatches.Count; i++)
+            Assert.Equal(ExpectedPatches[i], frame.Patches[i]);
 
-        string fixturePath = Path.Combine(AppContext.BaseDirectory, "Fixtures", FixtureName);
-        Assert.True(File.Exists(fixturePath),
-            $"Missing golden fixture at {fixturePath} — see header for regeneration steps.");
-        string expected = File.ReadAllText(fixturePath).Trim();
-
-        Assert.Equal(expected, json);
-    }
-
-    /// <summary>Zeroes the nondeterministic fields: envelope frameId +
-    /// timestampMs, and the same pair inside CommitFramePatch.</summary>
-    private static RenderFrame Normalize(RenderFrame frame) => new(
-        FrameId: 0,
-        TimestampMs: 0,
-        Patches: frame.Patches
-            .Select(p => p is CommitFramePatch ? new CommitFramePatch(0, 0) : p)
-            .ToArray());
-
-    /// <summary>The golden comparison alone can't catch a hand-edit that keeps
-    /// the Kotlin copy parse-equivalent while drifting its bytes (whitespace,
-    /// key order, escaping) — the JVM golden test parses, so it would sail
-    /// past. Pin the two committed copies to BYTE equality.</summary>
-    [Fact]
-    public void CommittedFixtureCopies_AreByteIdentical()
-    {
-        string root = FindRepoRoot();
-        byte[] dotnetCopy = File.ReadAllBytes(DotnetFixturePath(root));
-        byte[] kotlinCopy = File.ReadAllBytes(KotlinFixturePath(root));
-        Assert.Equal(dotnetCopy, kotlinCopy);
-    }
-
-    /// <summary>Walks up from the test output dir to the repo root (the dir
-    /// holding .git).</summary>
-    private static string FindRepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !Directory.Exists(Path.Combine(dir.FullName, ".git")))
-            dir = dir.Parent;
-        Assert.NotNull(dir);
-        return dir!.FullName;
-    }
-
-    private static string DotnetFixturePath(string root) => Path.Combine(
-        root, "tests", "BlazorNative.Runtime.Tests", "Fixtures", FixtureName);
-
-    private static string KotlinFixturePath(string root) => Path.Combine(
-        root, "src", "BlazorNative.Jni", "src", "test", "resources", FixtureName);
-
-    private static void RecordFixture(string json)
-    {
-        string root = FindRepoRoot();
-        string dotnetCopy = DotnetFixturePath(root);
-        string kotlinCopy = KotlinFixturePath(root);
-
-        Directory.CreateDirectory(Path.GetDirectoryName(dotnetCopy)!);
-        Directory.CreateDirectory(Path.GetDirectoryName(kotlinCopy)!);
-        File.WriteAllText(dotnetCopy, json);
-        File.WriteAllText(kotlinCopy, json);
+        // Terminator: type-only (FrameId/TimestampMs are nondeterministic —
+        // the old fixture normalized both to 0 before comparing).
+        Assert.IsType<CommitFramePatch>(frame.Patches[^1]);
     }
 }

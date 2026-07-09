@@ -21,18 +21,18 @@ namespace BlazorNative.Renderer.Tests;
 // IL2026). Phase 3.0a Gate 3 (this file) locks in that pass with a
 // behavioral assertion at the .NET layer.
 //
-// SCOPE CAVEAT: this test runs on the CURRENT toolchain (Mono-AOT under
-// wasi-experimental — what `dotnet test` exercises on the .NET host CLR).
-// It does NOT prove NativeAOT trim safety — that's Phase 3.0b Gate 2's job.
-// Its purpose is:
+// SCOPE CAVEAT: this test runs on the untrimmed .NET host CLR (what
+// `dotnet test` exercises). It does NOT prove NativeAOT trim safety — that
+// proof lives in the trim probes exercised INSIDE the published binary
+// (Phase 3.0c Gate 4, `blazornative_run_trim_probes`). Its purpose is:
 //   1. Regression guard against future code drift that breaks ElementName
-//      flow on Mono-AOT (would be unexpected, but the test catches it).
-//   2. Sanity check that Gate 2's annotation pass didn't accidentally break
-//      behavior on Mono-AOT.
+//      flow (would be unexpected, but the test catches it).
+//   2. Sanity check that the annotation pass didn't accidentally break
+//      behavior on the host CLR.
 //
-// PROBE COMPONENT: TrimSafetyProbe mirrors HelloComponent's shape (the M2
-// "Hello demo" component in src/BlazorNative.WasiHost). HelloComponent is
-// `internal sealed` in WasiHost; rather than add a WasiHost ProjectReference
+// PROBE COMPONENT: TrimSafetyProbe mirrors HelloComponent's shape (the "Hello
+// demo" component, now in src/BlazorNative.Runtime). HelloComponent is
+// `internal sealed` in the runtime project; rather than add a ProjectReference
 // to the test project (and create a project-graph dependency for one
 // internal type), we mirror its layout here: outer LinearLayout container
 // (div with backgroundColor + padding style attrs) holding a TextView
@@ -47,8 +47,8 @@ public sealed class TrimSafetyTests
     public TrimSafetyTests(ITestOutputHelper log) => _log = log;
 
     /// <summary>
-    /// Mirrors HelloComponent's shape (src/BlazorNative.WasiHost/HelloComponent.cs)
-    /// without taking a ProjectReference dependency on WasiHost. Same element
+    /// Mirrors HelloComponent's shape (src/BlazorNative.Runtime/HelloComponent.cs)
+    /// without taking a ProjectReference dependency on the runtime project. Same element
     /// vocabulary (div / button / input), same attribute mix (backgroundColor,
     /// padding, fontSize, placeholder), same nesting depth.
     /// </summary>
@@ -107,7 +107,7 @@ public sealed class TrimSafetyTests
     [Fact]
     public async Task Mount_HelloComponentShape_FirstCreateNodeHasNonNullElementName()
     {
-        // Build the same DI surface as production WasiHost (Core + Renderer).
+        // Build the same DI surface as the production runtime (Core + Renderer).
         // We don't need Http services for this test — Mount only touches
         // renderer + core. AddBlazorNativeRenderer is a convenience overload
         // that calls AddBlazorNativeRendererServices internally.

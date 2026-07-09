@@ -18,8 +18,9 @@ import java.util.concurrent.atomic.AtomicReference
 /**
  * Phase 2.5 / 2.8 end-to-end widget-mapper assertion.
  *
- * Launches MainActivity (which boots the .wasm on a background thread, posts
- * parsed [FRAME] patches to the main looper via WidgetMapper), polls the
+ * Launches MainActivity (which boots the NativeAOT runtime on a background
+ * thread, posts adapter-decoded patches to the main looper via WidgetMapper),
+ * polls the
  * widget_root for the rendered tree, asserts the resulting view tree.
  *
  * As of Phase 2.8 Task 1, Main mounts the HelloComponent. Expected tree:
@@ -36,12 +37,11 @@ import java.util.concurrent.atomic.AtomicReference
  * instead of orphaning as a sibling at widget_root. See
  * WidgetMapperTextChildOnButtonTest for the targeted regression coverage.
  *
- * Polling loop: cold wasmtime JIT + Mono AOT init of the ~14 MB .wasm on the
- * AVD x86_64 emulator can take 30-50s in isolation; full-suite runs after
- * BootSmokeAndroidTest already consumed one cold-boot pay 50-75s for the
- * second in-process load. 120s deadline accommodates the worst case (Phase
- * 2.8 Task 3b finding). The poller breaks as soon as widget_root has children
- * (the commit-frame post has fired). All assertions then run inside
+ * Polling loop: the 120s deadline is a wasm-era relic (cold wasmtime JIT of
+ * the ~14 MB .wasm took 30-75s; the NativeAOT pipeline mounts in ~1-2s since
+ * Phase 3.0d). Kept as generous headroom — the poller breaks as soon as
+ * widget_root has children (the commit-frame post has fired), so the deadline
+ * only bounds fail-detection latency. All assertions then run inside
  * scenario.onActivity { } so they see the latest widget tree on the UI thread.
  *
  * The test method name retains the Phase 2.5 "sentinel_" prefix to avoid churn;

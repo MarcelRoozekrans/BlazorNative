@@ -1,11 +1,11 @@
 using System.Runtime.InteropServices;
 
-namespace BlazorNative.NativeHost;
+namespace BlazorNative.Runtime;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Phase 3.0d native wire protocol — typed-struct replacement for the [FRAME]
-// JSON-over-stdout transport (which remains as NativeRenderer's FrameSink
-// fallback for WasiHost until Phase 3.0e).
+// JSON-over-stdout transport (retired with the WASM era in Phase 3.0e; this is
+// now the only frame transport).
 //
 // Layout contract: mirrored by offset constants in
 // src/BlazorNative.Jni/src/main/kotlin/io/blazornative/jni/NativeFrameAdapter.kt.

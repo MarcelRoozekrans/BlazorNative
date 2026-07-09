@@ -4,11 +4,11 @@ import com.sun.jna.Pointer
 
 /**
  * Phase 3.0d: decodes a native `BlazorNativeFrame*` (handed to the registered
- * [NativeBindings.FrameCallback]) into the SAME [RenderFrame] sealed-class
- * model the JSON/[FrameStreamParser] path produces — so the widget-mapping
- * layer upstream is transport-agnostic.
+ * [NativeBindings.FrameCallback]) into the [RenderFrame] sealed-class model —
+ * the same model the retired JSON/[FRAME]-line parser produced, so the
+ * widget-mapping layer upstream stayed transport-agnostic across the switch.
  *
- * Layout contract — mirror of src/BlazorNative.NativeHost/PatchProtocolNative.cs
+ * Layout contract — mirror of src/BlazorNative.Runtime/PatchProtocolNative.cs
  * (little-endian, 8-byte pointers). Reads use ONLY Pointer.getInt/getLong/
  * getPointer + getString(0, "UTF-8") at hardcoded offsets — deliberately no
  * JNA Structure reflection on the 60fps frame path. Offsets are pinned on

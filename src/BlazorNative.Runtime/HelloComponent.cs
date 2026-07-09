@@ -1,16 +1,14 @@
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Rendering;
 
-namespace BlazorNative.NativeHost;
+namespace BlazorNative.Runtime;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// HelloComponent (NativeHost copy)
+// HelloComponent
 //
-// DUPLICATED from src/BlazorNative.WasiHost/HelloComponent.cs for Phase 3.0d's
-// blazornative_mount registry — NativeHost must not take a ProjectReference on
-// the WASM-era WasiHost. Dedupe when Phase 3.0e deletes WasiHost. If you edit
-// this file, edit the WasiHost copy too (and vice versa — it carries the
-// reverse breadcrumb).
+// The SOLE copy since Phase 3.0e deleted the WASM-era WasiHost. (Began life as
+// a Phase 3.0d duplicate of WasiHost's HelloComponent for the
+// blazornative_mount registry; the twin died with WasiHost.)
 //
 // Phase 2.8 Hello demo component — the M2-closing visible artifact. Exercises
 // Phase 2.5/2.6 surface in one screenshot:

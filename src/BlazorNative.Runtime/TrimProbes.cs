@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Rendering;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace BlazorNative.NativeHost;
+namespace BlazorNative.Runtime;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Phase 3.0c Gate 4 — the 4 accepted IL2072 call paths (Phase 3.0a decision

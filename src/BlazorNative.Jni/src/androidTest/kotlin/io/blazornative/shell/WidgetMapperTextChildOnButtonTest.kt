@@ -27,7 +27,7 @@ import org.junit.runner.RunWith
  * matching the React Native text-content pattern.
  *
  * These tests synthesize the renderer's patch stream directly so we can
- * assert the post-fix behavior without going through the full .wasm boot.
+ * assert the post-fix behavior without going through the full runtime boot.
  */
 @RunWith(AndroidJUnit4::class)
 class WidgetMapperTextChildOnButtonTest {

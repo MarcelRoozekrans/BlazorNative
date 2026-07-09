@@ -25,6 +25,6 @@
             android:fontFamily="monospace"
             android:textColor="#00FF00"
             android:textSize="14sp"
-            android:text="Loading .wasm..." />
+            android:text="Booting native runtime..." />
     </ScrollView>
 </LinearLayout>

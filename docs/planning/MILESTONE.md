@@ -66,7 +66,7 @@ These items were identified during M2 phases but are M3 work by scope:
 - **`Mount<T>` faulted-task masking** — Phase 2.4 Task 2 carryover. If `MountAsync` faults synchronously, the current diagnostic masks the real exception. Cheap fix as part of DoD #9's strict-mode work.
 - **`NativeUiEvent` Kotlin-side mirror** — Phase 2.4 Task 7 carryover. Needed for DoD #2's event-flow wiring.
 - **Shared `WidgetMapperTestHelpers.kt`** — Phase 2.6 cleanup. Hoist when 4th test file lands.
-- **Android wasmtime 1/N flake (Phase 2.4b watch)** — keep watching; revisit with wasmtime v46+ upgrade if recurrence rate rises.
+- **Android wasmtime 1/N flake (Phase 2.4b watch)** — retired with the wasmtime layer in Phase 3.0e; structurally impossible to recur.
 
 ## Initial phase plan
 

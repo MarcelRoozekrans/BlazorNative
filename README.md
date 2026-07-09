@@ -1,56 +1,64 @@
 # BlazorNative
 
-> .NET → WASM → Native mobile. Blazor apps compiled to WASI and run on Android/iOS via a thin native shell.
+> .NET → NativeAOT → native mobile widgets. Blazor components rendered as real Android views, no WebView, no JavaScript, no wasm.
 
 BlazorNative is a proof-of-concept framework for running .NET Blazor applications as native mobile apps — without React Native, Flutter, or MAUI. The approach:
 
-1. Your Blazor UI and business logic run on the **Mono runtime compiled to WebAssembly** (via the `wasi-experimental` workload), with the application IL **AOT-compiled into the same WASM module** using `wasi-sdk`
-2. A thin native shell (Kotlin on Android, Swift on iOS) embeds Wasmtime and loads the binary
-3. A typed WIT contract (`mobile-bridge.wit`) defines the boundary between .NET and native code
+1. Your Blazor UI and business logic are compiled **ahead-of-time into a platform-native shared library** (`BlazorNative.Runtime`) — a .NET NativeAOT binary, one per platform/ABI
+2. A headless `NativeRenderer` drives the Blazor render tree and emits **typed struct patches** (create node, set style, replace text, …) through a C-ABI frame callback
+3. A thin native shell (Kotlin on Android) loads the library via JNA, reads the patch structs, and maps them to **real platform widgets** (`LinearLayout`, `TextView`, `Button`, `EditText`, …)
 
 ## Quick start
 
 ```powershell
-# Windows — installs all prerequisites automatically (.NET 10, wasi-sdk-25, wasmtime v45, ...)
+# Windows — installs/verifies all prerequisites (.NET 10 SDK, JDK 21, Android SDK + NDK 26.3)
 powershell -ExecutionPolicy Bypass -File setup.ps1
 
-# Then start the dev host (hot reload, no WASM compile)
-dotnet watch run --project src\BlazorNative.Host.Android\BlazorNative.DevHost.csproj
+# Publish the runtime (setup.ps1 §5 one-liners):
+dotnet publish src\BlazorNative.Runtime -c Release -r win-x64            # JVM dev loop (.dll)
+dotnet publish src\BlazorNative.Runtime -c Release -r linux-bionic-x64   # Android emulator (.so)
+dotnet publish src\BlazorNative.Runtime -c Release -r linux-bionic-arm64 # Android device (.so)
+
+# JVM-side tests (load the win-x64 .dll via JNA, no emulator needed)
+cd src\BlazorNative.Jni; .\gradlew testDebugUnitTest
+
+# Instrumented tests on an Android emulator/device
+.\gradlew connectedAndroidTest
 ```
 
-Or with `make`:
+For the .NET inner loop there is also a hot-reload dev host (no AOT publish involved):
 
-```bash
-make setup     # install workloads (Windows: prefer setup.ps1 — installs wasi-sdk + wasmtime too)
-make dev       # hot reload dev host → https://localhost:5273
-make wasi      # publish BlazorNative.WasiHost → AOT'd .wasm in bin/Release/.../AppBundle/
-make wasi-run  # publish + execute via wasmtime
-make wasi-test # publish + boot smoke test
+```powershell
+dotnet watch run --project src\BlazorNative.Host.Android\BlazorNative.DevHost.csproj
 ```
 
 ## Architecture
 
 ```
-[Blazor Components]      ← your UI, shared across all targets
+[Blazor Components]           ← your UI, plain Razor/C#
         ↓
-[BlazorNative.Core]      ← IMobileBridge contract, WasiBridge, DevHostBridge (library)
-[BlazorNative.Renderer]  ← NativeRenderer + RenderFrame patch protocol (library)
-[BlazorNative.Http]      ← BridgeHttpHandler (library)
+[BlazorNative.Renderer]       ← headless NativeRenderer + RenderPatch model
         ↓
-[BlazorNative.WasiHost]  ← executable composition root — Mono-AOT'd to .wasm via wasi-sdk
-        ↓
-[mobile-bridge.wit]      ← canonical WIT interface (generates C#/Kotlin/Swift)
-        ↓  WASI P/Invoke
-[Native Shell]           ← thin Kotlin (Android) or Swift (iOS) host
-        ↓
-[Wasmtime embedded]      ← runtime inside the app package
+[BlazorNative.Runtime]        ← NativeAOT composition root + C-ABI exports
+   PatchProtocolNative /         (blazornative_init / mount / register_frame_callback / …)
+   FrameEncoder                  typed-struct frames, 48 B patches / 24 B frame header
+        ↓  one native library per platform
+   BlazorNative.Runtime.dll      win-x64 — JVM dev loop
+   libBlazorNative.Runtime.so    linux-bionic-x64 / arm64 — Android, cross-compiled
+                                 from Windows via the runtime-pack bypass
+        ↓  JNA (cdecl callback)
+[BlazorNative.Jni]            ← Kotlin shell: NativeBindings → NativeFrameAdapter
+        ↓                        (offset reads) → WidgetMapper
+[Android widgets]             ← LinearLayout / TextView / Button / EditText …
 ```
 
-`BlazorNative.Core` / `.Renderer` / `.Http` are pure libraries — they do not produce executables and do not own `Main`. `BlazorNative.WasiHost` is the executable composition root that wires DI, owns the WASI entry point, and is the project that gets published with `-r wasi-wasm` to produce the AOT'd `.wasm` module.
+One runtime, one transport: the same NativeAOT library and typed-struct protocol run everywhere — the JVM desktop loop is the fast feedback surface, the Android `.so` is the product. There is no interpreter and no serialization on the frame path.
+
+`BlazorNative.Core` / `.Renderer` / `.Http` are pure libraries. `BlazorNative.Runtime` is the publishable composition root that wires DI and owns the `[UnmanagedCallersOnly]` export surface.
 
 ## Dev experience
 
-The inner loop runs as a **normal ASP.NET app** — no WASM compilation, full hot reload, and a DevTools REST API for simulating native events:
+The inner loop runs as a **normal ASP.NET app** — full hot reload plus a DevTools REST API for simulating native events:
 
 ```bash
 # Inject a native event during development
@@ -66,48 +74,54 @@ curl https://localhost:5273/dev/storage
 
 | Tool | Purpose | Required |
 |---|---|---|
-| .NET 10 SDK | Everything | ✅ |
-| `wasi-experimental` workload | Mono runtime + WASM build targets | ✅ |
-| `wasi-sdk` 25.0 | C toolchain for Mono-AOT'ing app IL into the .wasm | ✅ Required for `make wasi` / `dotnet publish -r wasi-wasm` |
-| `wasmtime` CLI v45 | Run the produced `.wasm` locally (and used by `make wasi-test`) | ✅ |
-| `maui-android` workload | Android build | When needed |
-| Android SDK | Android build | When needed |
-| Java 17+ | Android toolchain | When needed |
-| Rust + wit-bindgen | Regenerate WIT bindings | Optional |
+| .NET 10 SDK (10.0.3xx, see `global.json`) | Build + NativeAOT publish | ✅ |
+| Temurin JDK 21 | Gradle / Kotlin shell | ✅ |
+| Android SDK + NDK 26.3.11579264 | bionic cross-compile + emulator | ✅ for Android |
+| AVD (x86_64, API 34) | `connectedAndroidTest` | ✅ for instrumented tests |
 
-Run `setup.ps1` on Windows to install everything automatically — it pins `wasi-sdk-25` (the workload rejects newer versions) and `wasmtime v45`, both extracted to `C:\Tools\`, with `WASI_SDK_PATH` and `PATH` updated at user scope.
+Run `setup.ps1` on Windows to install and pin everything automatically. The Android `.so`s are produced **directly on Windows**: .NET 10 ships no `linux-bionic-*` ILCompiler packages, so the vendored `build/BionicNativeAot.targets` uses the runtime-pack bypass (`PublishAotUsingRuntimePack=true`, runtime packs 10.0.9) and links against the NDK.
 
 ## Project structure
 
 ```
 BlazorNative/
-├── setup.ps1                              ← prerequisite installer (Windows)
-├── Makefile                               ← dev/wasi/android/wit-gen targets
+├── setup.ps1                              ← prerequisite installer/verifier (Windows)
+├── Makefile                               ← dev/test/android/publish targets
+├── build/BionicNativeAot.targets          ← runtime-pack bypass + NDK linker hookup
 ├── src/
-│   ├── BlazorNative.Core/                 ← IMobileBridge, WasiBridge, DevHostBridge (library)
-│   ├── BlazorNative.Renderer/             ← NativeRenderer + RenderFrame patch protocol (library)
+│   ├── BlazorNative.Core/                 ← IMobileBridge contract, bridge impls (library)
+│   ├── BlazorNative.Renderer/             ← headless NativeRenderer + RenderPatch model (library)
 │   ├── BlazorNative.Http/                 ← BridgeHttpHandler + DI (library)
-│   ├── BlazorNative.Analyzers/            ← Roslyn analyzers (BN0001–BN0013)
+│   ├── BlazorNative.Analyzers/            ← Roslyn analyzers (wasm-era rules, rescope pending)
 │   ├── BlazorNative.Blazor/               ← Razor components
-│   ├── BlazorNative.WasiHost/             ← executable composition root, published to wasi-wasm
+│   ├── BlazorNative.Runtime/              ← NativeAOT composition root + C-ABI exports + FrameEncoder
+│   ├── BlazorNative.Jni/                  ← Kotlin shell: JNA bindings, frame adapter,
+│   │                                         WidgetMapper, MainActivity (Android + JVM tests)
 │   └── BlazorNative.Host.Android/         ← DevHost (ASP.NET) + DevTools API
 ├── tests/
-│   └── BlazorNative.Wasi.Tests/           ← WasiPublishFixture + BootSmoke (wasmtime integration)
-└── tools/
-    └── wit/mobile-bridge.wit              ← canonical WIT contract
+│   ├── BlazorNative.Renderer.Tests/       ← renderer, bridge, trim-safety, frame-sink tests
+│   ├── BlazorNative.Runtime.Tests/        ← encoder/arena/protocol + typed Hello golden test
+│   └── BlazorNative.Analyzers.Tests/      ← analyzer harness
+└── tools/wit/mobile-bridge.wit            ← historical bridge contract (3.1 redesigns as C-ABI)
 ```
 
-## Roadmap
+## Test surface
 
-- [x] Core scaffold + WIT contract
-- [x] DevHostBridge (hot reload dev experience)
-- [x] WasiBridge (WASI P/Invoke skeleton)
-- [x] wasi-wasm publish passing (Mono-AOT via wasi-sdk-25)
-- [x] WasiHost boots under wasmtime (BootSmoke green)
-- [ ] Wasmtime round-trip call (Android JNI)
-- [ ] Blazor canvas render bridge
-- [ ] Native widget renderer (VDOM patch protocol)
-- [ ] iOS Swift shell
+| Surface | Command | Count |
+|---|---|---|
+| .NET | `dotnet test` | 49 passed / 2 skipped |
+| JVM (JNA + win-x64 .dll) | `gradlew testDebugUnitTest` | 10 |
+| Android (instrumented, AVD) | `gradlew connectedAndroidTest` | 21 |
+
+## Status
+
+- [x] Headless Blazor renderer with typed patch protocol
+- [x] NativeAOT runtime for win-x64 + linux-bionic-x64/arm64 (Android, built on Windows)
+- [x] HelloComponent renders as native Android widgets (~1.6 s cold boot)
+- [ ] Bidirectional events (`@onclick` → native tap → .NET handler) — Phase 3.2
+- [ ] Six `shell_*` bridge exports as C-ABI (navigate/storage/fetch) — Phase 3.1
+- [ ] `Bn*` component library, `@bind`, navigation — Milestone 3
+- [ ] iOS Swift shell — Milestone 4
 
 ## Compatibility
 

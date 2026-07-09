@@ -2,7 +2,7 @@ using BlazorNative.Core;
 using BlazorNative.Renderer;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace BlazorNative.NativeHost;
+namespace BlazorNative.Runtime;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Phase 3.0d host session — the lazy singleton behind blazornative_mount /

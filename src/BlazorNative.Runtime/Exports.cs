@@ -1,11 +1,12 @@
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
-namespace BlazorNative.NativeHost;
+namespace BlazorNative.Runtime;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Phase 3.0b boot C-ABI surface + Phase 3.0c Gate 4 diagnostic + Phase 3.0d
-// wire protocol.
+// BlazorNative.Runtime C-ABI surface: Phase 3.0b boot + Phase 3.0c Gate 4
+// diagnostic + Phase 3.0d wire protocol (Phase 3.0e gave the library its final
+// name — the version string below is the JNA-visible one).
 //
 // Seven exports:
 //   init                    — load runtime, verify Blazor accessors
@@ -58,7 +59,7 @@ public static class Exports
 
     static Exports()
     {
-        s_versionString = Marshal.StringToCoTaskMemUTF8("BlazorNative.NativeHost 0.4.0-phase-3.0d");
+        s_versionString = Marshal.StringToCoTaskMemUTF8("BlazorNative.Runtime 0.5.0-phase-3.0e");
         s_initOkErrorEmpty = Marshal.StringToCoTaskMemUTF8("");
         s_probesLabel = Marshal.StringToCoTaskMemUTF8("probes:parameter,cascading,inject");
     }

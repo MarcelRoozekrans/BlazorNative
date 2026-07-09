@@ -12,10 +12,10 @@ public static class ServiceCollectionExtensions
     /// <summary>
     /// Registers HttpClient with BridgeHttpHandler as the primary handler.
     /// All HttpClient injections will route through IMobileBridge.FetchAsync,
-    /// bypassing WASI's lack of socket support transparently.
+    /// so the native shell performs the actual HTTP request.
     ///
     /// <code>
-    /// // In your DI setup (DevHost Program.cs or WASI entry point):
+    /// // In your DI setup (DevHost Program.cs or the runtime composition root):
     /// services.AddBlazorNativeHttp();
     ///
     /// // In your services — no changes needed:

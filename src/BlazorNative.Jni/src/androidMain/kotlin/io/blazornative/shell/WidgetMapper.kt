@@ -21,15 +21,16 @@ import io.blazornative.jni.RenderPatch
 /**
  * Phase 2.5: maps parsed [RenderFrame] patches to real Android [View] mutations.
  *
- * Threading: `apply(frame)` is called on the WasiHost boot thread. The mapper
- * collects patches until [RenderPatch.CommitFrame], then posts the batch to the
- * main looper for atomic application. Caller-thread-agnostic.
+ * Threading: `apply(frame)` is called on the native frame-callback thread. The
+ * mapper collects patches until [RenderPatch.CommitFrame], then posts the batch
+ * to the main looper for atomic application. Caller-thread-agnostic.
  *
  * Patch coverage (Phase 2.5 scope): CreateNode (all 7 NodeTypes wired),
  * ReplaceText, RemoveNode, CommitFrame. UpdateProp / SetStyle / AttachEvent /
  * DetachEvent / AppendChild are stubbed with Log.w and a TODO marker — Phase 3+.
  *
- * Wire contract: src/BlazorNative.Renderer/PatchProtocol.cs.
+ * Patch model: src/BlazorNative.Renderer/PatchProtocol.cs (the wire itself is
+ * the typed-struct C ABI decoded by [io.blazornative.jni.NativeFrameAdapter]).
  * Source of truth for the NodeType → widget table: docs/planning/MILESTONE.md DoD #6.
  */
 class WidgetMapper(private val context: Context, private val root: ViewGroup) {

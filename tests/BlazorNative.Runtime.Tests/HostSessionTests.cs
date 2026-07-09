@@ -1,6 +1,6 @@
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using BlazorNative.NativeHost;
+using BlazorNative.Runtime;
 
 namespace BlazorNative.Runtime.Tests;
 

@@ -7,7 +7,8 @@ namespace BlazorNative.Renderer;
 // and our native node IDs. This is the authoritative source of truth for
 // which native widget corresponds to which Blazor render tree frame.
 //
-// Thread safety: single-threaded (WASI has no threads).
+// Thread safety: none — mutated only from the renderer's single-threaded
+// dispatcher (all render batches arrive there), so no locking is needed.
 // ─────────────────────────────────────────────────────────────────────────────
 
 internal sealed class NativeWidgetTree

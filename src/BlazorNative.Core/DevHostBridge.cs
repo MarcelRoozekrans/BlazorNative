@@ -3,7 +3,7 @@ namespace BlazorNative.Core;
 // ─────────────────────────────────────────────────────────────────────────────
 // DevHostBridge
 // A full in-process mock of IMobileBridge for local development.
-// Runs as a normal .NET app — no WASM compilation needed during the inner loop.
+// Runs as a normal .NET app — no NativeAOT publish needed during the inner loop.
 //
 // Features:
 //   • In-memory key/value store (hot-reload safe)

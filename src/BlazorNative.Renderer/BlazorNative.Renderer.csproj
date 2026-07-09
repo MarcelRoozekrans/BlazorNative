@@ -7,9 +7,8 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <RootNamespace>BlazorNative.Renderer</RootNamespace>
 
-    <!-- AOT settings live on the executable (BlazorNative.WasiHost), not on
-         consumed libraries. The wasi-wasm RID participates here only as a
-         transitive build target; AOT compilation is driven by WasiHost. -->
+    <!-- AOT settings live on the publishable runtime (BlazorNative.Runtime),
+         not on consumed libraries; NativeAOT compilation is driven from there. -->
 
     <!-- BL0006: "do not use internal Blazor render-tree types" — intentionally
          done in BlazorInterop.cs behind the Bn* wrapper layer. See
@@ -20,7 +19,7 @@
     <NoWarn>$(NoWarn);BL0006;ZAI007</NoWarn>
 
     <!-- Phase 3.0a: surface every trim warning individually (default aggregates to one IL2104).
-         Required to inventory the wasi-experimental → NativeAOT migration risk. -->
+         Keeps the NativeAOT trim-warning inventory honest (4 accepted IL2072s, see 3.0a/3.0c). -->
     <TrimmerSingleWarn>false</TrimmerSingleWarn>
   </PropertyGroup>
 
@@ -29,9 +28,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Phase 3.0b: NativeHost calls BlazorInterop.EnsureInitialized() from
-         Exports.Init to trigger VerifyAccessors at native init time. -->
-    <InternalsVisibleTo Include="BlazorNative.NativeHost" />
+    <!-- Phase 3.0b: BlazorNative.Runtime calls BlazorInterop.EnsureInitialized()
+         from Exports.Init to trigger VerifyAccessors at native init time. -->
+    <InternalsVisibleTo Include="BlazorNative.Runtime" />
     <!-- Phase 3.0b Gate 2: BlazorNative.Runtime.Tests' BootSmokeNativeManagedTest
          calls BlazorInterop.EnsureInitialized() as a host-CLR precursor to the
          JNA test in BlazorNative.Jni. -->

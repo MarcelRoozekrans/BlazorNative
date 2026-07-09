@@ -1,14 +1,13 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <!-- ─────────────────────────────────────────────────────────────────────
-       BlazorNative.NativeHost — Phase 3.0b/3.0c
-       NativeAOT-compiled shared library replacing the wasi-experimental
-       .wasm path. Multi-RID: win-x64 for JVM dev loop, linux-bionic-arm64
+       BlazorNative.Runtime — Phase 3.0b/3.0c (carried its native-host
+       working name until the Phase 3.0e rename)
+       NativeAOT-compiled shared library — the permanent BlazorNative
+       runtime. Replaced the wasi-experimental .wasm path, which Phase 3.0e
+       deleted. Multi-RID: win-x64 for JVM dev loop, linux-bionic-arm64
        + linux-bionic-x64 for Android (Windows-direct via the runtime-pack
        bypass — see the Phase 3.0c PropertyGroup below; no WSL needed).
-
-       Coexists with BlazorNative.WasiHost.csproj until Phase 3.0e's atomic
-       cleanup commit deletes the WASM-era path.
        See docs/plans/2026-05-31-phase-3.0b-design.md and
        docs/plans/2026-07-08-phase-3.0c-redesign.md.
        ───────────────────────────────────────────────────────────────────── -->
@@ -17,7 +16,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <RootNamespace>BlazorNative.NativeHost</RootNamespace>
+    <RootNamespace>BlazorNative.Runtime</RootNamespace>
     <OutputType>Library</OutputType>
 
     <PublishAot>true</PublishAot>
@@ -61,9 +60,6 @@
     <ProjectReference Include="..\BlazorNative.Core\BlazorNative.Core.csproj" />
     <ProjectReference Include="..\BlazorNative.Renderer\BlazorNative.Renderer.csproj" />
     <ProjectReference Include="..\BlazorNative.Http\BlazorNative.Http.csproj" />
-    <ProjectReference Include="..\BlazorNative.Analyzers\BlazorNative.Analyzers.csproj"
-                      OutputItemType="Analyzer"
-                      ReferenceOutputAssembly="false" />
   </ItemGroup>
 
   <ItemGroup>

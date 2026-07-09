@@ -1,6 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
-using System.Text.Json;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.RenderTree;
 using Microsoft.AspNetCore.Components.Web;
@@ -33,10 +32,9 @@ public sealed class NativeRenderer : BlazorRenderer
         remove => _frames.Unregister(value);
     }
 
-    /// <summary>Phase 3.0d: host-pluggable frame transport. When set, DispatchFrame
-    /// invokes this instead of the [FRAME] stdout line. NativeHost installs the
-    /// struct marshaller here; WasiHost leaves it null (stdout fallback — deletes
-    /// with the WASM era in Phase 3.0e). Synchronous by contract (Phase 2.0).
+    /// <summary>Host-pluggable frame transport. The host installs the struct
+    /// marshaller here; null means "no transport" (the <see cref="Frames"/>
+    /// event remains the test channel). Synchronous by contract (Phase 2.0).
     /// Threading: set before mount, or from the renderer thread; the property
     /// is not synchronized, so a cross-thread mid-render swap races.</summary>
     public Action<RenderFrame>? FrameSink { get; set; }
@@ -90,7 +88,7 @@ public sealed class NativeRenderer : BlazorRenderer
     /// on Blazor's ParameterView (any runtime, not just Mono-WASI AOT), <c>default(ParameterView)</c>
     /// throws NullReferenceException inside ComponentState.SupplyCombinedParameters, which the
     /// renderer's HandleException swallows silently — mount appears to "succeed" (returns a
-    /// componentId) but no render fires and no [FRAME] line is emitted. Phase 2.7 Bug A fix
+    /// componentId) but no render fires and no frame reaches the FrameSink / Frames event. Phase 2.7 Bug A fix
     /// (continuation of Phase 2.4 Task 4 defect #3 finding).</summary>
     public Task<int> MountAsync<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.All)] TComponent>(CancellationToken ct = default)
         where TComponent : IComponent
@@ -107,7 +105,7 @@ public sealed class NativeRenderer : BlazorRenderer
     /// on Mono-WASI AOT, <c>default(ParameterView)</c> throws NullReferenceException inside
     /// ComponentState.SupplyCombinedParameters, which the renderer's HandleException swallows
     /// silently — mount appears to "succeed" (returns a componentId) but no render fires and
-    /// no [FRAME] line is emitted. Phase 2.4 Task 4 investigation, defect #3.</summary>
+    /// no frame reaches the FrameSink / Frames event. Phase 2.4 Task 4 investigation, defect #3.</summary>
     public int Mount<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.All)] TComponent>() where TComponent : IComponent
         => Mount<TComponent>(ParameterView.Empty);
 
@@ -378,29 +376,15 @@ public sealed class NativeRenderer : BlazorRenderer
 
     // ── Frame dispatch ────────────────────────────────────────────────────────
     //
-    // Phase 2.4 transport: tagged [FRAME] line on stdout. Sync — Phase 2.0's
-    // sync-contract decision forbids await/Task.Wait on any bridge path
-    // (Mono-WASI Task.InternalWaitCore PNSE trap). The host (wasmtime CLI /
-    // JVM JNA / Android JNA) captures stdout via wasi_config_set_stdout_file
-    // and parses [FRAME] lines via io.blazornative.jni.FrameStreamParser.
-    //
-    // The previous DispatchFrameAsync awaited bridge.WriteStorageAsync +
-    // bridge.FetchAsync — both of which throw NotImplementedException (the
-    // shell-* deferred imports per Phase 2.3 BACKLOG). Removed in this phase,
-    // along with the IMobileBridge dependency itself (no longer referenced).
+    // Hands the frame to the host-installed FrameSink (the struct marshaller).
+    // Sync — Phase 2.0's sync-contract decision. Null sink = no transport;
+    // tests observe frames via the Frames event instead. The Phase 2.4
+    // "[FRAME]" stdout fallback was deleted with the WASM era (Phase 3.0e).
 
     private void DispatchFrame(RenderFrame frame)
     {
-        // Phase 3.0d: a host-installed FrameSink (NativeHost's struct
-        // marshaller) replaces the stdout transport entirely for that host.
         if (FrameSink is { } sink)
-        {
             sink(frame);
-            return;
-        }
-
-        var json = JsonSerializer.Serialize(frame, RendererJsonContext.Default.RenderFrame);
-        Console.WriteLine($"[FRAME] {json}");
     }
 
     // ── Event ingestion ───────────────────────────────────────────────────────

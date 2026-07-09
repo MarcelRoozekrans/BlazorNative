@@ -1,5 +1,5 @@
 using System.Runtime.InteropServices;
-using BlazorNative.NativeHost;
+using BlazorNative.Runtime;
 using BlazorNative.Renderer;
 
 namespace BlazorNative.Runtime.Tests;

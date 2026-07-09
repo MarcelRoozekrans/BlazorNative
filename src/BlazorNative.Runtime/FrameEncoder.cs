@@ -1,6 +1,6 @@
 using BlazorNative.Renderer;
 
-namespace BlazorNative.NativeHost;
+namespace BlazorNative.Runtime;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Phase 3.0d RenderFrame → BlazorNativePatch[] encoder.

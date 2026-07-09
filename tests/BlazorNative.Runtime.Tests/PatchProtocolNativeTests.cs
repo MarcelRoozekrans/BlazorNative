@@ -1,5 +1,5 @@
 using System.Runtime.InteropServices;
-using BlazorNative.NativeHost;
+using BlazorNative.Runtime;
 
 namespace BlazorNative.Runtime.Tests;
 
@@ -12,7 +12,7 @@ namespace BlazorNative.Runtime.Tests;
 // side of that contract.
 //
 // If one of these tests fails: the struct layout drifted. Fix the layout in
-// src/BlazorNative.NativeHost/PatchProtocolNative.cs — NEVER the expected
+// src/BlazorNative.Runtime/PatchProtocolNative.cs — NEVER the expected
 // sizes here — or, for an intentional ABI change, update the Kotlin offsets
 // AND both drift tests together.
 // ─────────────────────────────────────────────────────────────────────────────

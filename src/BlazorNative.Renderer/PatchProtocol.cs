@@ -1,31 +1,25 @@
-using System.Text.Json.Serialization;
-
 namespace BlazorNative.Renderer;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Patch Protocol
 //
-// BlazorNative communicates UI changes from the .NET renderer to the native
-// shell via a lightweight JSON patch protocol. Each render cycle produces a
-// list of RenderPatch commands the native shell applies to its widget tree.
+// The in-memory patch model produced by the headless renderer. Each render
+// cycle yields a list of RenderPatch commands the native shell applies to its
+// widget tree. This is NO LONGER a JSON protocol: the wire format is the
+// typed-struct encoding in BlazorNative.Runtime (PatchProtocolNative /
+// FrameEncoder), consumed on the Kotlin side by NativeFrameAdapter. The JSON
+// layer (RendererJsonContext + polymorphic attributes) was deleted with the
+// WASM era in Phase 3.0e.
 //
 // Design goals:
 //   • Minimal payload — only diffs, never full tree snapshots
-//   • AOT-safe — all types registered via JsonSerializerContext
 //   • Zero-alloc friendly — structs for hot-path types
+//
+// NativeUiEvent stays as the in-memory event model; its (de)serialization for
+// blazornative_dispatch_event(argsJsonUtf8) is a Phase 3.2 design decision.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// <summary>A single atomic UI change produced by the headless renderer.</summary>
-[JsonPolymorphic(TypeDiscriminatorPropertyName = "op")]
-[JsonDerivedType(typeof(CreateNodePatch),   "create")]
-[JsonDerivedType(typeof(UpdatePropPatch),   "prop")]
-[JsonDerivedType(typeof(AppendChildPatch),  "append")]
-[JsonDerivedType(typeof(RemoveNodePatch),   "remove")]
-[JsonDerivedType(typeof(ReplaceTextPatch),  "text")]
-[JsonDerivedType(typeof(SetStylePatch),     "style")]
-[JsonDerivedType(typeof(AttachEventPatch),  "event")]
-[JsonDerivedType(typeof(DetachEventPatch),  "detach")]
-[JsonDerivedType(typeof(CommitFramePatch),  "commit")]
 public abstract record RenderPatch;
 
 // ── Node lifecycle ────────────────────────────────────────────────────────────
@@ -77,7 +71,7 @@ public sealed record SetStylePatch(
 public sealed record AttachEventPatch(
     int    NodeId,
     string EventName,       // "click" | "change" | "focus" | "blur" | "scroll"
-    int    HandlerId        // opaque ID the WASM side registered
+    int    HandlerId        // opaque ID the .NET runtime side registered
 ) : RenderPatch;
 
 /// <summary>Stop routing an event for a node.</summary>
@@ -105,28 +99,9 @@ public sealed record RenderFrame(
     long             TimestampMs,
     RenderPatch[]    Patches);
 
-/// <summary>An event dispatched from the native shell back into the WASM renderer.</summary>
+/// <summary>An event dispatched from the native shell back into the renderer.</summary>
 public sealed record NativeUiEvent(
     int    NodeId,
     int    HandlerId,
     string EventName,
     string? Payload = null);   // JSON payload (e.g. input value, scroll position)
-
-// ── AOT-safe JSON context ─────────────────────────────────────────────────────
-
-[JsonSerializable(typeof(RenderFrame))]
-[JsonSerializable(typeof(RenderPatch))]
-[JsonSerializable(typeof(CreateNodePatch))]
-[JsonSerializable(typeof(UpdatePropPatch))]
-[JsonSerializable(typeof(AppendChildPatch))]
-[JsonSerializable(typeof(RemoveNodePatch))]
-[JsonSerializable(typeof(ReplaceTextPatch))]
-[JsonSerializable(typeof(SetStylePatch))]
-[JsonSerializable(typeof(AttachEventPatch))]
-[JsonSerializable(typeof(DetachEventPatch))]
-[JsonSerializable(typeof(CommitFramePatch))]
-[JsonSerializable(typeof(NativeUiEvent))]
-[JsonSourceGenerationOptions(
-    PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
-    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
-public partial class RendererJsonContext : JsonSerializerContext { }
