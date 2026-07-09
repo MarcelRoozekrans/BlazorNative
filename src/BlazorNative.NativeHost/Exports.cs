@@ -8,7 +8,7 @@ namespace BlazorNative.NativeHost;
 //
 // Four exports: init, shutdown, version, and run_trim_probes (Phase 3.0c
 // Gate 4 diagnostic — delete-vs-keep is a 3.0d decision). No frame protocol
-// yet — that lands later in Phase 3.0c. String ownership rule: input strings
+// yet — that lands in Phase 3.0d. String ownership rule: input strings
 // are caller-allocated UTF-8, callee-borrowed during the call; output strings
 // are static native memory (never freed). Documented exception: failure-detail
 // strings (Init's error path, RunTrimProbes' non-zero-status path) are
@@ -67,7 +67,7 @@ public static class Exports
             BlazorNative.Renderer.BlazorInterop.EnsureInitialized();
 
             // Phase 3.0b deliberately does NOT mount a renderer or build a full
-            // DI graph here — that work belongs to Phase 3.0c via blazornative_mount.
+            // DI graph here — that work belongs to Phase 3.0d via blazornative_mount.
             // Init is purely "the runtime loaded + Blazor accessors verify".
 
             return new BlazorNativeInitResult
@@ -97,7 +97,7 @@ public static class Exports
     [UnmanagedCallersOnly(EntryPoint = "blazornative_shutdown")]
     public static void Shutdown()
     {
-        // Phase 3.0b no-op. Phase 3.0c+ may flush pending frames / dispose
+        // Phase 3.0b no-op. Phase 3.0d+ may flush pending frames / dispose
         // renderer state. The static cstrings are intentionally leaked —
         // process-scoped lifetime.
     }

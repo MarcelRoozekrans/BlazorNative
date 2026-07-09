@@ -14,7 +14,8 @@ import com.sun.jna.Structure
  * the NativeAOT publish output directory).
  *
  * Phase 3.0b: minimum surface for boot smoke — init, shutdown, version.
- * Phase 3.0c+ extends with frame callback registration + event dispatch.
+ * Phase 3.0c adds the run_trim_probes diagnostic (Gate 4).
+ * Phase 3.0d extends with frame callback registration + event dispatch.
  *
  * See docs/plans/2026-05-31-phase-3.0b-design.md for the C-ABI contract.
  */
