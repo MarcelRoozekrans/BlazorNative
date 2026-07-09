@@ -78,6 +78,13 @@ internal static unsafe class HostSession
             services.AddBlazorNativeCoreServices();
             services.AddBlazorNativeRendererServices();
             services.AddBlazorNativeHttpServices();
+            // Phase 3.1: the shell bridge is THE IMobileBridge on-device.
+            // Registered AFTER the Core services so it overrides WasiBridge's
+            // [Singleton(As = typeof(IMobileBridge))] registration (MS.DI:
+            // last registration wins for GetRequiredService) — WasiBridge
+            // deletion itself is deferred to Phase 3.2. BridgeHttpHandler
+            // therefore resolves against the host callbacks on Android.
+            services.AddSingleton<IMobileBridge, NativeShellBridge>();
             renderer = services.BuildServiceProvider().GetRequiredService<NativeRenderer>();
 
             renderer.FrameSink = frame =>

@@ -45,6 +45,16 @@ internal static unsafe class FakeShellHost
     public static string? LastFetchHeadersJson;
     public static int FetchBeginReturnCode;
 
+    // When set, FetchBegin completes the fetch synchronously via
+    // NativeShellBridge.CompleteFetch with the canned response below —
+    // scripts the host side for the probe-runner and HttpClient E2E tests.
+    public static bool AutoCompleteFetch;
+    public static bool AutoCompleteOk = true;
+    public static int AutoCompleteStatus = 200;
+    public static string AutoCompleteBody = "";
+    public static string AutoCompleteError = "fake transport error";
+    public static string? AutoCompleteHeadersJson;
+
     public static void Reset()
     {
         Route = "/";
@@ -54,6 +64,12 @@ internal static unsafe class FakeShellHost
         LastFetchRequestId = -1;
         LastFetchUrl = LastFetchMethod = LastFetchBody = LastFetchHeadersJson = null;
         FetchBeginReturnCode = 0;
+        AutoCompleteFetch = false;
+        AutoCompleteOk = true;
+        AutoCompleteStatus = 200;
+        AutoCompleteBody = "";
+        AutoCompleteError = "fake transport error";
+        AutoCompleteHeadersJson = null;
     }
 
     public static BlazorNativeBridgeCallbacks BuildCallbacks() => new()
@@ -121,7 +137,38 @@ internal static unsafe class FakeShellHost
         LastFetchMethod = Marshal.PtrToStringUTF8(req->Method);
         LastFetchBody = req->Body == IntPtr.Zero ? null : Marshal.PtrToStringUTF8(req->Body);
         LastFetchHeadersJson = req->HeadersJson == IntPtr.Zero ? null : Marshal.PtrToStringUTF8(req->HeadersJson);
-        return FetchBeginReturnCode;
+        if (FetchBeginReturnCode != 0)
+            return FetchBeginReturnCode;
+
+        if (AutoCompleteFetch)
+        {
+            // Host-owned response memory, valid only during CompleteFetch —
+            // freed right after, per the ABI lifetime rules.
+            IntPtr body = Marshal.StringToCoTaskMemUTF8(AutoCompleteBody);
+            IntPtr error = AutoCompleteOk ? IntPtr.Zero : Marshal.StringToCoTaskMemUTF8(AutoCompleteError);
+            IntPtr headers = AutoCompleteHeadersJson is null
+                ? IntPtr.Zero
+                : Marshal.StringToCoTaskMemUTF8(AutoCompleteHeadersJson);
+            try
+            {
+                var resp = new BlazorNativeFetchResponse
+                {
+                    StatusCode = AutoCompleteStatus,
+                    Ok = AutoCompleteOk ? 1 : 0,
+                    BodyUtf8 = body,
+                    ErrorMessage = error,
+                    HeadersJson = headers,
+                };
+                NativeShellBridge.CompleteFetch(requestId, in resp);
+            }
+            finally
+            {
+                Marshal.FreeCoTaskMem(body);
+                if (error != IntPtr.Zero) Marshal.FreeCoTaskMem(error);
+                if (headers != IntPtr.Zero) Marshal.FreeCoTaskMem(headers);
+            }
+        }
+        return 0;
     }
 
     /// <summary>The host half of the buffer protocol: write UTF-8 + NUL when
