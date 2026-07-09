@@ -27,7 +27,7 @@ The criteria below are the initial M3 contract drafted at milestone-open. Subjec
    - `shell_storage_delete(key)`
    - `shell_fetch(request) → response`
 
-   **Transport mechanism settled by Phase 3.0 decision:** direct `[UnmanagedCallersOnly]` C-ABI exports + JNA callbacks, no env-var shoehorn, no WIT-typed-import toolchain. Implementation lands in Phase 3.1.
+   **Transport mechanism settled by Phase 3.0 decision:** direct `[UnmanagedCallersOnly]` C-ABI exports + JNA callbacks, no env-var shoehorn, no WIT-typed-import toolchain. Implementation lands in Phase 3.1. ✅ **Closed 2026-07-09 (Phase 3.1):** all six shipped as direct C-ABI host callbacks (`blazornative_register_bridge`) + async fetch completion (`blazornative_fetch_complete`); `HttpClient` works on Android via `BridgeHttpHandler` → `NativeShellBridge`. See [Phase 3.1 conclusion](../plans/2026-07-09-phase-3.1-conclusion.md).
 
 4. **`Bn*` component library** — typed wrappers around the raw `NodeType`s from M2: `BnView`, `BnText`, `BnButton`, `BnInput`, plus parameters that flow through to widget properties (`BackgroundColor`, `FontSize`, `Padding`, `Placeholder`, `Enabled`, `OnClick`).
 
@@ -35,7 +35,7 @@ The criteria below are the initial M3 contract drafted at milestone-open. Subjec
 
 6. **Cascading values** propagate from a root-mounted parent component to nested child components, and a change in the parent triggers child re-render.
 
-7. **Navigation service** (`BlazorNative.Navigation`) — at minimum, `INavigationManager.NavigateTo(route)` triggers a root-component swap. Wired through the `shell_navigate` / `shell_current_route` exports from DoD #3.
+7. **Navigation service** (`BlazorNative.Navigation`) — at minimum, `INavigationManager.NavigateTo(route)` triggers a root-component swap. Wired through the `shell_navigate` / `shell_current_route` exports from DoD #3. *Note (2026-07-09): the C-ABI layer for this now exists — Phase 3.1's `NativeShellBridge.NavigateAsync` / `GetCurrentRouteAsync` round-trip through the host's Navigate/CurrentRoute callbacks (route is an in-memory var + log on Android for now); this DoD item owns the actual navigation UI/root-component swap.*
 
 8. **Multi-component composition.** Components compose other components; nested-component `PrependFrame` parenting works correctly (Phase 2.5 Task 1 review finding fixed — `ProcessRenderTreeDiff`'s `PrependFrame` arm uses the parent component's view, not the host root).
 
