@@ -17,10 +17,12 @@ namespace BlazorNative.Runtime.Tests;
 // (src/BlazorNative.Jni/.../NativeFrameAdapterTest.kt, Task 7).
 //
 // State note: HostSession is a process-wide singleton (static renderer +
-// callback slot), so these tests live in ONE class — xUnit runs same-class
-// tests sequentially — and each test restores the callback slot to Zero.
+// callback slot); each test restores the callback slot to Zero. Phase 3.2:
+// DispatchEventTests touches the same statics (incl. ResetForTests), so both
+// classes serialize via the shared "host-session" collection.
 // ─────────────────────────────────────────────────────────────────────────────
 
+[Collection("host-session")]
 public sealed unsafe class HostSessionTests
 {
     private static volatile bool s_callbackFired;

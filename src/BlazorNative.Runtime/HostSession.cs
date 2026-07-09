@@ -42,6 +42,30 @@ internal static unsafe class HostSession
     public static void SetFrameCallback(IntPtr fnPtr)
         => Volatile.Write(ref s_frameCallback, fnPtr);
 
+    /// <summary>The live session renderer, or null before the first
+    /// EnsureSession/TryMount. Phase 3.2: blazornative_dispatch_event resolves
+    /// its target through this — null maps to return code 1 (no session).</summary>
+    // BL0006 (NativeRenderer derives from Blazor's internal Renderer): the
+    // Renderer project suppresses it project-wide for the same reason — all
+    // internal-type access is deliberate and drift-guarded by VerifyAccessors.
+#pragma warning disable BL0006
+    internal static NativeRenderer? CurrentRenderer => Volatile.Read(ref s_renderer);
+#pragma warning restore BL0006
+
+    /// <summary>Test-only: tears down the session singleton so "no session"
+    /// paths are testable and each test gets a fresh renderer. Tests touching
+    /// HostSession serialize via the "host-session" xUnit collection — the
+    /// production ABI never calls this.</summary>
+    internal static void ResetForTests()
+    {
+        lock (s_lock)
+        {
+            Volatile.Read(ref s_renderer)?.Dispose();
+            Volatile.Write(ref s_renderer, null);
+            Volatile.Write(ref s_frameCallback, IntPtr.Zero);
+        }
+    }
+
     /// <summary>Mounts a registered component by name.
     /// Returns 0 = ok, 1 = unknown component, 2 = mount threw.</summary>
     public static int TryMount(string name)
@@ -63,7 +87,11 @@ internal static unsafe class HostSession
         }
     }
 
-    private static NativeRenderer EnsureSession()
+    // internal (not private): DispatchEventTests needs the renderer BEFORE the
+    // first mount so it can subscribe to Frames and harvest the first frame's
+    // AttachEventPatch handlerId (the renderer is otherwise only born inside
+    // TryMount, after which the first frame is gone).
+    internal static NativeRenderer EnsureSession()
     {
         NativeRenderer? renderer = Volatile.Read(ref s_renderer);
         if (renderer is not null)

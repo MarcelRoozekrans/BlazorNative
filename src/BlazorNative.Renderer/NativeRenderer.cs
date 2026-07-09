@@ -205,7 +205,14 @@ public sealed class NativeRenderer : BlazorRenderer
     }
 
     protected override void HandleException(Exception exception)
-        => Console.Error.WriteLine($"[BlazorNative.Renderer] {exception}");
+    {
+        // Inside a UI-event dispatch window, remember the first exception so
+        // DispatchUiEventAsync can fault its task (Blazor swallows handler
+        // exceptions here otherwise — see _uiEventDispatchException doc).
+        if (_inUiEventDispatch)
+            _uiEventDispatchException ??= exception;
+        Console.Error.WriteLine($"[BlazorNative.Renderer] {exception}");
+    }
 
     protected override void Dispose(bool disposing)
     {
@@ -389,9 +396,32 @@ public sealed class NativeRenderer : BlazorRenderer
 
     // ── Event ingestion ───────────────────────────────────────────────────────
 
+    /// <summary>Captures the first exception Blazor routes to
+    /// <see cref="HandleException"/> during a <see cref="DispatchUiEventAsync"/>
+    /// window. Blazor's Renderer.DispatchEventAsync does NOT propagate handler
+    /// exceptions to its caller — a throwing handler goes to
+    /// HandleExceptionViaErrorBoundary → (no error boundary here) →
+    /// HandleException, and the returned task completes successfully. Without
+    /// this capture, blazornative_dispatch_event could never honor its
+    /// "2 = handler threw" contract (Phase 3.2, DoD #9 partial). Instance
+    /// fields are safe: all dispatch runs on the InlineDispatcher's calling
+    /// thread (single-threaded post-boot contract).</summary>
+    private Exception? _uiEventDispatchException;
+    private bool _inUiEventDispatch;
+
+    /// <summary>Dispatches a host UI event into Blazor's handler table.
+    /// Synchronous in effect (InlineDispatcher): handler, re-render, and
+    /// FrameSink delivery have all completed when the returned task is
+    /// observed. Stale handler ids (ArgumentException from a handler that
+    /// died in a re-render) are caught + logged — delivery is at-most-once,
+    /// a stale tap is not an error. A THROWING handler faults the returned
+    /// task (see <see cref="_uiEventDispatchException"/>) so the export can
+    /// map it to return code 2.</summary>
     public Task DispatchUiEventAsync(NativeUiEvent e)
         => Dispatcher.InvokeAsync(async () =>
         {
+            _inUiEventDispatch = true;
+            _uiEventDispatchException = null;
             try
             {
                 var args = BuildEventArgs(e);
@@ -400,6 +430,16 @@ public sealed class NativeRenderer : BlazorRenderer
             catch (ArgumentException ex)
             {
                 Console.Error.WriteLine($"[NativeRenderer] stale handler {e.HandlerId}: {ex.Message}");
+            }
+            finally
+            {
+                _inUiEventDispatch = false;
+            }
+
+            if (_uiEventDispatchException is { } handlerEx)
+            {
+                _uiEventDispatchException = null;
+                System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(handlerEx).Throw();
             }
         });
 
