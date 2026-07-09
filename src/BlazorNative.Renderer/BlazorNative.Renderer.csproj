@@ -29,9 +29,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Phase 3.0b: NativeHost calls BlazorInterop.EnsureInitialized() from
-         Exports.Init to trigger VerifyAccessors at native init time. -->
-    <InternalsVisibleTo Include="BlazorNative.NativeHost" />
+    <!-- Phase 3.0b: BlazorNative.Runtime calls BlazorInterop.EnsureInitialized()
+         from Exports.Init to trigger VerifyAccessors at native init time. -->
+    <InternalsVisibleTo Include="BlazorNative.Runtime" />
     <!-- Phase 3.0b Gate 2: BlazorNative.Runtime.Tests' BootSmokeNativeManagedTest
          calls BlazorInterop.EnsureInitialized() as a host-CLR precursor to the
          JNA test in BlazorNative.Jni. -->

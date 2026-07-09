@@ -1,5 +1,5 @@
 using BlazorNative.Core;
-using BlazorNative.NativeHost;
+using BlazorNative.Runtime;
 using BlazorNative.Renderer;
 using Microsoft.Extensions.DependencyInjection;
 

@@ -22,7 +22,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{827E0CD3-B72
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BlazorNative.Analyzers.Tests", "tests\BlazorNative.Analyzers.Tests\BlazorNative.Analyzers.Tests.csproj", "{C1F7764F-4964-4BA9-AE08-659AC760D407}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BlazorNative.NativeHost", "src\BlazorNative.NativeHost\BlazorNative.NativeHost.csproj", "{5486B921-1D3F-4054-9C55-9EF13A4C9900}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BlazorNative.Runtime", "src\BlazorNative.Runtime\BlazorNative.Runtime.csproj", "{5486B921-1D3F-4054-9C55-9EF13A4C9900}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BlazorNative.Runtime.Tests", "tests\BlazorNative.Runtime.Tests\BlazorNative.Runtime.Tests.csproj", "{7BE83DE1-37F0-429F-9591-353981A63503}"
 EndProject

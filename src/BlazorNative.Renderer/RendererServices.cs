@@ -13,7 +13,7 @@ public static class ServiceCollectionExtensions
 {
     /// <summary>
     /// Registers the BlazorNative headless renderer and all required services.
-    /// Call this in both DevHost and the WASI entry point.
+    /// Call this in every host: DevHost and the NativeAOT runtime's HostSession.
     /// </summary>
     public static IServiceCollection AddBlazorNativeRenderer(
         this IServiceCollection services)
@@ -22,7 +22,8 @@ public static class ServiceCollectionExtensions
 
 // ─────────────────────────────────────────────────────────────────────────────
 // NativeRendererLoggerFactory
-// Minimal ILoggerFactory that works under WASI (no MEL host required).
+// Minimal ILoggerFactory that needs no MEL host — works in the trimmed
+// NativeAOT runtime and DevHost alike.
 // ─────────────────────────────────────────────────────────────────────────────
 
 internal sealed class NativeRendererLoggerFactory : ILoggerFactory
