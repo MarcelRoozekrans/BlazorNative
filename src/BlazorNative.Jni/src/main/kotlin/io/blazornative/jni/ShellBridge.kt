@@ -19,6 +19,8 @@ import java.util.TreeMap
  *
  * @property body NULL body pointer decodes to null (no body).
  * @property headers empty when the native HeadersJson pointer was NULL.
+ *   Lookups are CASE-INSENSITIVE (header names per RFC 9110 — backed by a
+ *   TreeMap with a case-insensitive comparer, same choice as the .NET side).
  */
 data class BridgeFetchRequest(
     val url: String,
@@ -33,9 +35,21 @@ data class BridgeFetchRequest(
  * [BridgeRegistrar.register] — BEFORE `blazornative_mount`, so components
  * resolving IMobileBridge find a live host.
  *
+ * PROCESS-LIFETIME RETENTION: the registrar's callbacks capture this
+ * handlers instance, and every registration is parked for the PROCESS
+ * lifetime — never released (the liveness rule in BridgeProtocolNative.cs).
+ * Android implementers must therefore capture `applicationContext` (or other
+ * process-scoped objects) ONLY — never an Activity, View, or Fragment: a
+ * retained Activity would leak its whole view hierarchy and LeakCanary would
+ * flag every rotation.
+ *
  * THREADING: calls arrive on whatever thread the .NET runtime happens to be
  * running the bridge operation on (the mount thread today; any thread once
- * Phase 3.2 wires events) — implementations must be thread-safe.
+ * Phase 3.2 wires events) — implementations must be thread-safe. The runtime
+ * BLOCKS SYNCHRONOUSLY on the five non-fetch handlers (navigate,
+ * currentRoute, storageRead/Write/Delete) — keep them fast (in-memory /
+ * SharedPreferences-grade work, no network or long I/O waits); only
+ * [fetchBegin] has the async escape hatch.
  *
  * EXCEPTION POSTURE: throwing from any handler is caught by the registrar's
  * callback wrapper, routed to its onError sink, and surfaces .NET-side as
@@ -45,10 +59,11 @@ data class BridgeFetchRequest(
  *
  * FETCH: [fetchBegin] must return quickly — perform the HTTP work on your own
  * executor/dispatcher and complete the request LATER by calling
- * [BridgeFetchCompleter.complete] with the same requestId (the async
- * completion pattern; completing synchronously from inside fetchBegin is
- * also legal). Every string in [BridgeFetchRequest] is already copied — safe
- * to use from any thread after fetchBegin returns.
+ * [BridgeFetchCompleter.completeSuccess] / [BridgeFetchCompleter.completeFailure]
+ * with the same requestId (the async completion pattern; completing
+ * synchronously from inside fetchBegin is also legal). Every string in
+ * [BridgeFetchRequest] is already copied — safe to use from any thread after
+ * fetchBegin returns.
  */
 interface ShellBridgeHandlers {
     /** The runtime asks the shell to show [route]. */
@@ -64,7 +79,7 @@ interface ShellBridgeHandlers {
 
     fun storageDelete(key: String)
 
-    /** Begin an async fetch; answer later via [BridgeFetchCompleter.complete]. */
+    /** Begin an async fetch; answer later via [BridgeFetchCompleter]. */
     fun fetchBegin(requestId: Long, request: BridgeFetchRequest)
 }
 
@@ -79,7 +94,9 @@ interface ShellBridgeHandlers {
  * process-lifetime list: re-registration is last-wins, but an in-flight .NET
  * operation may still be invoking the PREVIOUS registration's pointers, so
  * superseded registrations are never released (the POC liveness rule from
- * BridgeProtocolNative.cs).
+ * BridgeProtocolNative.cs). That park list transitively retains [handlers]
+ * for the PROCESS LIFETIME — see the retention warning on
+ * [ShellBridgeHandlers]: hand this class application-scoped objects only.
  *
  * RETURN CODES produced here (the host half of the protocol):
  *   >= 0     success (buffer callbacks: bytes written incl. NUL)
@@ -163,13 +180,25 @@ class BridgeRegistrar(
             HOST_ERROR
         }
 
+    /** Set once by [register] — guards accidental double-registration. */
+    private var registered = false
+
     /**
      * Builds the callbacks struct and registers it with the runtime. The
      * struct memory is copied by the export (freeing it afterwards is fine);
      * `this` is parked in a process-lifetime list so the trampolines stay
-     * alive forever. Throws [IllegalStateException] on a non-zero status.
+     * alive forever. ONE-SHOT: a registrar registers once (each registration
+     * is retained forever — re-registering the same instance would only park
+     * duplicates); construct a fresh BridgeRegistrar to swap handlers.
+     * Throws [IllegalStateException] on double-registration or a non-zero
+     * status.
      */
     fun register() {
+        check(!registered) {
+            "BridgeRegistrar.register() called twice on the same instance — " +
+                "registrations are one-shot and retained for the process lifetime; " +
+                "construct a new BridgeRegistrar to register different handlers"
+        }
         val struct = BlazorNativeBridgeCallbacks().apply {
             navigate = navigateCallback
             currentRoute = currentRouteCallback
@@ -180,6 +209,7 @@ class BridgeRegistrar(
         }
         val rc = NativeBindings.INSTANCE.blazornative_register_bridge(struct)
         check(rc == 0) { "blazornative_register_bridge failed with status $rc" }
+        registered = true
         synchronized(registeredForever) { registeredForever.add(this) }
     }
 
@@ -220,27 +250,49 @@ class BridgeRegistrar(
  */
 object BridgeFetchCompleter {
 
+    // Two explicit factories instead of one flag-coupled positional call —
+    // this shape is what the M4 Swift mirror copies, so the ok/errorMessage
+    // coupling must not leak into the public API.
+
     /**
-     * Delivers a fetch outcome for [requestId].
+     * Delivers a successful HTTP outcome for [requestId] (any status code the
+     * server actually answered with, including 4xx/5xx — "success" means the
+     * transport worked).
      *
-     * @param status HTTP status code (meaningful when [ok] is true).
-     * @param ok false = transport error; [errorMessage] should say why.
+     * @param status HTTP status code.
      * @param body response body; null = empty body (NULL pointer).
-     * @param errorMessage transport-error detail, used when [ok] is false.
-     * @param headers response headers; empty map crosses as a NULL
+     * @param headers response headers; an empty map crosses as a NULL
      *   HeadersJson pointer (not "{}"), matching the request-side convention.
      * @return the export's return code: 0 = delivered; 1 = unknown /
      *   already-completed id (benign cancellation race — ignored); 2 =
      *   invalid call / internal bridge failure (logged LOUDLY here; detail
      *   lands on the runtime's stderr).
      */
-    fun complete(
+    fun completeSuccess(
+        requestId: Long,
+        status: Int,
+        body: String? = null,
+        headers: Map<String, String> = emptyMap(),
+    ): Int = completeCore(requestId, status, ok = true, body = body, errorMessage = null, headers = headers)
+
+    /**
+     * Delivers a transport failure for [requestId] (DNS/connect/timeout —
+     * the request never produced an HTTP response). Surfaces .NET-side as an
+     * HttpRequestException carrying [errorMessage].
+     *
+     * @return same return-code table as [completeSuccess].
+     */
+    fun completeFailure(requestId: Long, errorMessage: String): Int =
+        completeCore(requestId, status = 0, ok = false, body = null, errorMessage = errorMessage, headers = emptyMap())
+
+    /** Shared marshalling core — see the class KDoc for the lifetime rule. */
+    private fun completeCore(
         requestId: Long,
         status: Int,
         ok: Boolean,
-        body: String? = null,
-        errorMessage: String? = null,
-        headers: Map<String, String> = emptyMap(),
+        body: String?,
+        errorMessage: String?,
+        headers: Map<String, String>,
     ): Int {
         // Locals keep the Memory objects strongly reachable across the call.
         val bodyMem = body?.let(::utf8CString)

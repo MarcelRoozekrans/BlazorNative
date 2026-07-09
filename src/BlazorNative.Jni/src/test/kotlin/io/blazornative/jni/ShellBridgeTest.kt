@@ -12,6 +12,8 @@ import java.net.ServerSocket
 import java.net.URL
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * Phase 3.1 Gate 2 — the Kotlin half of the shell-bridge C-ABI, proven on the
@@ -146,14 +148,12 @@ class ShellBridgeTest {
                         conn.readTimeout = 5_000
                         val status = conn.responseCode
                         val body = conn.inputStream.use { it.readBytes().toString(Charsets.UTF_8) }
-                        BridgeFetchCompleter.complete(
-                            requestId, status, ok = true, body = body,
+                        BridgeFetchCompleter.completeSuccess(
+                            requestId, status, body = body,
                             headers = mapOf("Content-Type" to "text/plain"),
                         )
                     } catch (t: Throwable) {
-                        BridgeFetchCompleter.complete(
-                            requestId, 0, ok = false, errorMessage = t.toString(),
-                        )
+                        BridgeFetchCompleter.completeFailure(requestId, t.toString())
                     }
                 }
             }
@@ -179,6 +179,10 @@ class ShellBridgeTest {
             assertEquals("probes:navigate,storage,fetch", label)
         } finally {
             executor.shutdown()
+            assertTrue(
+                executor.awaitTermination(5, TimeUnit.SECONDS),
+                "fetch executor did not drain within 5 s"
+            )
             server.close()
         }
     }
@@ -189,9 +193,8 @@ class ShellBridgeTest {
         // navigate + storage probes still pass, so exactly ONE probe fails
         // and the detail must name it.
         val handlers = InMemoryHandlers { requestId, _ ->
-            BridgeFetchCompleter.complete(
-                requestId, 0, ok = false,
-                errorMessage = "deliberate transport failure (ShellBridgeTest)",
+            BridgeFetchCompleter.completeFailure(
+                requestId, "deliberate transport failure (ShellBridgeTest)"
             )
         }
         BridgeRegistrar(handlers) { msg, t -> System.err.println("$msg: $t") }.register()
@@ -211,6 +214,53 @@ class ShellBridgeTest {
             detail.contains("deliberate transport failure"),
             "detail must carry the handler's error message; got: $detail"
         )
+    }
+
+    @Test
+    fun guarded_handler_throw_surfaces_as_host_error_via_dll() {
+        // Proves the full wire path for a throwing handler: Kotlin throw →
+        // guarded catch (onError fired) → -1 across the ABI → .NET HostError
+        // → probe failure detail. storageRead throws; navigate passes; the
+        // fetch probe is satisfied locally (no network) so exactly the
+        // storage probe fails.
+        val errorSink = AtomicReference<Pair<String, Throwable>>()
+        val handlers = object : ShellBridgeHandlers {
+            @Volatile private var route = "/"
+            override fun navigate(route: String) { this.route = route }
+            override fun currentRoute(): String = route
+            override fun storageRead(key: String): String? =
+                throw IllegalStateException("storageRead boom (ShellBridgeTest)")
+            override fun storageWrite(key: String, value: String) {}
+            override fun storageDelete(key: String) {}
+            override fun fetchBegin(requestId: Long, request: BridgeFetchRequest) {
+                BridgeFetchCompleter.completeSuccess(requestId, 200, body = "probe-ok")
+            }
+        }
+        BridgeRegistrar(handlers) { msg, t -> errorSink.set(msg to t) }.register()
+
+        val result = NativeBindings.INSTANCE.blazornative_run_bridge_probes(
+            "http://127.0.0.1:9/unused".toByteArray(Charsets.UTF_8) + 0
+        )
+        val detail = result.errorMessage?.getString(0, "UTF-8") ?: "<null>"
+        println("[ShellBridgeTest] guarded-throw probes status=${result.status} detail='$detail'")
+
+        assertEquals(
+            1, result.status,
+            "expected exactly the storage probe to fail (navigate + fetch pass); detail: $detail"
+        )
+        assertTrue(detail.contains("storage:"), "detail must name the storage probe; got: $detail")
+        assertTrue(
+            detail.contains("return code -1"),
+            "detail must show the .NET HostError for the guarded -1; got: $detail"
+        )
+
+        val captured = errorSink.get()
+        assertTrue(captured != null, "onError sink did not fire for the throwing handler")
+        assertTrue(
+            captured!!.first.contains("storageRead"),
+            "onError message should name the storageRead handler; got: ${captured.first}"
+        )
+        assertEquals("storageRead boom (ShellBridgeTest)", captured.second.message)
     }
 
     // ── Buffer-write helper (the host half of the buffer protocol) ──────────

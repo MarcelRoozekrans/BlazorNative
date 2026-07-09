@@ -408,6 +408,12 @@ public sealed class NativeShellBridge : IMobileBridge
     // ── Flat JSON object (headers) — hand-written, no serializer ─────────────
     // The ABI ships headers as a single flat {"string":"string",...} object.
     // Header names are case-insensitive per RFC 9110, hence the comparer.
+    //
+    // Kotlin mirror: `FlatJson` in
+    // src/BlazorNative.Jni/src/main/kotlin/io/blazornative/jni/ShellBridge.kt —
+    // if you change the escaping/parsing rules here, change them there too;
+    // both sides assert the same content matrix (FlatJsonTests.cs /
+    // ShellBridgeTest.kt).
 
     internal static string WriteFlatJsonObject(IReadOnlyDictionary<string, string> map)
     {
