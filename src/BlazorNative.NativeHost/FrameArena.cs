@@ -34,8 +34,12 @@ internal sealed unsafe class FrameArena : IDisposable
 {
     private const nuint InitialCapacity = 16 * 1024;
 
+    // BN0006 is the WASI-era single-thread rule; NativeHost is NativeAOT with
+    // real threads, where [ThreadStatic] is exactly right for a per-thread cache.
+#pragma warning disable BN0006
     [ThreadStatic]
     private static FrameArena? t_cached;
+#pragma warning restore BN0006
 
     private byte* _block;
     private nuint _capacity;
