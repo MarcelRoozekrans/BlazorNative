@@ -24,8 +24,8 @@ import org.junit.runner.RunWith
  * covered by Phase 2.5's WidgetMapperTest end-to-end run.
  *
  * Test approach: synthetic frame fixtures via in-process WidgetMapper.
- * No .wasm round-trip — each test is ~1s vs. WidgetMapperTest's ~36s
- * cold-boot pattern. Tests run on the AVD (instrumented) because Android
+ * No runtime boot — each test is ~1s vs. WidgetMapperTest's full
+ * end-to-end mount. Tests run on the AVD (instrumented) because Android
  * View construction requires a real Context + Looper.
  *
  * Threading: mapper.apply(frame) posts the batch to mainHandler.post.

@@ -1,21 +1,20 @@
 # BlazorNative — Developer Makefile
 # ──────────────────────────────────────────────────────────────────────────────
-# make dev          → start dev host with hot reload (normal .NET)
-# make android      → build the Android APK (BlazorNative.Jni via Gradle)
-# make android-test → boot AVD if needed + run connectedAndroidTest
-# make ios          → build MAUI iOS package (requires Mac + Xcode)
-# make test         → run all tests
-# make clean        → clean all build artifacts
+# make dev             → start dev host with hot reload (normal .NET)
+# make runtime-publish → NativeAOT publish BlazorNative.Runtime for all 3 RIDs
+# make android         → build the Android APK (BlazorNative.Jni via Gradle)
+# make android-test    → boot AVD if needed + run connectedAndroidTest
+# make ios             → build MAUI iOS package (requires Mac + Xcode)
+# make test            → run all tests
+# make clean           → clean all build artifacts
 # ──────────────────────────────────────────────────────────────────────────────
 
 DOTNET            := dotnet
-CORE_PROJECT      := src/BlazorNative.Core/BlazorNative.Core.csproj
-RENDERER_PROJECT  := src/BlazorNative.Renderer/BlazorNative.Renderer.csproj
-HTTP_PROJECT      := src/BlazorNative.Http/BlazorNative.Http.csproj
+RUNTIME_PROJECT   := src/BlazorNative.Runtime
 ANALYZER_PROJECT  := src/BlazorNative.Analyzers/BlazorNative.Analyzers.csproj
 DEV_PROJECT       := src/BlazorNative.Host.Android/BlazorNative.DevHost.csproj
 
-.PHONY: dev dev-no-reload android android-build android-test android-test-visible ios test test-watch clean setup analyzers help
+.PHONY: dev dev-no-reload runtime-publish android android-build android-test android-test-visible ios test test-watch clean setup analyzers help
 
 ## ── Development ──────────────────────────────────────────────────────────────
 
@@ -30,6 +29,11 @@ dev-no-reload:                ## Start dev host without hot reload
 
 analyzers:                    ## Build Roslyn analyzers
 	$(DOTNET) build $(ANALYZER_PROJECT) -c Release
+
+runtime-publish:              ## NativeAOT publish BlazorNative.Runtime (win-x64 + both bionic ABIs)
+	$(DOTNET) publish $(RUNTIME_PROJECT) -c Release -r win-x64
+	$(DOTNET) publish $(RUNTIME_PROJECT) -c Release -r linux-bionic-x64
+	$(DOTNET) publish $(RUNTIME_PROJECT) -c Release -r linux-bionic-arm64
 
 ## ── Mobile targets ───────────────────────────────────────────────────────────
 

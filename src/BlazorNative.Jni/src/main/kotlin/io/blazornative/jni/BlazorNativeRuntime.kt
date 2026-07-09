@@ -72,7 +72,7 @@ class BlazorNativeRuntime(
         // init copies the strings, it doesn't retain the pointers, but the
         // buffers must stay alive across the call (mirrors BootSmokeNativeTest).
         val osMem = utf8CString(platformOs)
-        val noteMem = utf8CString("phase-3.0d")
+        val noteMem = utf8CString("android-shell")
         val opts = BlazorNativeInitOptions.ByReference().apply {
             platformInfoOs = osMem
             platformInfoApiLevel = apiLevel

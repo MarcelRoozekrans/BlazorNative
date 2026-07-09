@@ -11,10 +11,11 @@ namespace BlazorNative.Http;
 // An HttpMessageHandler that routes all HTTP traffic through IMobileBridge.FetchAsync
 // instead of using .NET's socket-based HttpClientHandler.
 //
-// This is the fix for WASI's "no sockets" limitation. By replacing the default
-// handler, all existing HttpClient usage in your app works transparently on WASI
-// without any code changes — the native shell performs the actual HTTP request
-// and returns the response across the bridge.
+// Born as the fix for the wasm era's "no sockets" limitation; kept because
+// host-mediated fetch remains the design (the native shell performs the actual
+// HTTP request — platform networking stack, proxies, certs — and returns the
+// response across the bridge). Existing HttpClient usage works without code
+// changes. The bridge surface itself is redesigned as C-ABI in Phase 3.1.
 //
 // Usage (automatic via DI — see ServiceCollectionExtensions):
 //   services.AddBlazorNativeHttp();

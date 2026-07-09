@@ -195,7 +195,7 @@ class NativeFrameAdapterTest {
     private fun initRuntime() {
         val osBytes = nulTerminated("test-host")
         val osMem = Memory(osBytes.size.toLong()).apply { write(0, osBytes, 0, osBytes.size) }
-        val noteBytes = nulTerminated("phase-3.0d-golden")
+        val noteBytes = nulTerminated("phase-3.0d-golden") // era the golden was pinned, not the current phase
         val noteMem = Memory(noteBytes.size.toLong()).apply { write(0, noteBytes, 0, noteBytes.size) }
 
         val opts = BlazorNativeInitOptions.ByReference().apply {

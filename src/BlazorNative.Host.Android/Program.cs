@@ -4,7 +4,7 @@ using BlazorNative.Core;
 // ─────────────────────────────────────────────────────────────────────────────
 // BlazorNative DevHost
 // Runs your Blazor app in a normal browser with a mock native bridge.
-// Gives you hot reload, debugging, and DevTools — no WASM compile needed.
+// Gives you hot reload, debugging, and DevTools — no NativeAOT publish needed.
 // ─────────────────────────────────────────────────────────────────────────────
 
 var builder = WebApplication.CreateBuilder(args);

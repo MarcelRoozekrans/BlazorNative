@@ -22,9 +22,9 @@ namespace BlazorNative.Renderer.Tests;
 // Both fixed in Phase 2.7. Spike doc:
 // docs/plans/2026-05-27-phase-2.7-host-element-spike.md.
 //
-// These tests run on the .NET host CLR (not Mono-WASI). Runtime-specific
-// concerns are tracked separately under MILESTONE/ROADMAP — see Phase 2.4
-// Task 4 + Phase 2.8 audit's runtime-architecture-evaluation item.
+// These tests run on the untrimmed .NET host CLR. Trimmed-runtime concerns
+// are covered by the trim probes inside the published NativeAOT binary
+// (Phase 3.0c Gate 4).
 // ─────────────────────────────────────────────────────────────────────────────
 
 public class RendererBlazorAPICoverage
