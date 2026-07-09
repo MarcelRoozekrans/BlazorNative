@@ -10,11 +10,11 @@ namespace BlazorNative.Runtime.Tests;
 //
 // Typed expected list transcribed from the retired hello-frame.json fixture
 // (3.0e); the wire shape lock lives here now. Mounts HelloComponent, captures
-// the first RenderFrame via the Frames event, and asserts the 13 Hello patches
-// field-by-field against in-code record literals (records give value
-// equality). The CommitFramePatch carries nondeterministic FrameId/TimestampMs
-// — it is asserted type-only, matching the old fixture normalization (which
-// zeroed both).
+// the first RenderFrame via the Frames event, and asserts the 13-patch Hello
+// frame: 12 patches field-by-field against in-code record literals (records
+// give value equality) + the commit terminator type-only. The CommitFramePatch
+// carries nondeterministic FrameId/TimestampMs — hence type-only, matching the
+// old fixture normalization (which zeroed both).
 //
 // The Kotlin twin (NativeFrameAdapterTest.golden_mountHello_viaNativeDll_
 // matchesExpectedShape) asserts the same 13 patches against the native

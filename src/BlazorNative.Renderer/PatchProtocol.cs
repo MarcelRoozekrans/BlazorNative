@@ -71,7 +71,7 @@ public sealed record SetStylePatch(
 public sealed record AttachEventPatch(
     int    NodeId,
     string EventName,       // "click" | "change" | "focus" | "blur" | "scroll"
-    int    HandlerId        // opaque ID the WASM side registered
+    int    HandlerId        // opaque ID the .NET runtime side registered
 ) : RenderPatch;
 
 /// <summary>Stop routing an event for a node.</summary>

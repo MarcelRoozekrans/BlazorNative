@@ -18,8 +18,9 @@ import java.util.concurrent.atomic.AtomicReference
 /**
  * Phase 2.5 / 2.8 end-to-end widget-mapper assertion.
  *
- * Launches MainActivity (which boots the .wasm on a background thread, posts
- * parsed [FRAME] patches to the main looper via WidgetMapper), polls the
+ * Launches MainActivity (which boots the NativeAOT runtime on a background
+ * thread, posts adapter-decoded patches to the main looper via WidgetMapper),
+ * polls the
  * widget_root for the rendered tree, asserts the resulting view tree.
  *
  * As of Phase 2.8 Task 1, Main mounts the HelloComponent. Expected tree:

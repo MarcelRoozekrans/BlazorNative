@@ -155,11 +155,11 @@ if (Command-Exists "dotnet") {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 6. Java 17 (required for Android)
+# 3. Java 21 (required for Android)
 # ─────────────────────────────────────────────────────────────────────────────
 
 if (-not $SkipAndroid) {
-    Write-Header "6 · Java 21 (Android toolchain + Gradle 8.x daemon)"
+    Write-Header "3 · Java 21 (Android toolchain + Gradle 8.x daemon)"
 
     # Phase 2.1 found: Gradle 8.11.1 daemon supports JDK 8-23. JDK 25 is too new
     # (Gradle 9.0+ required). JDK 21 is the LTS sweet spot — works for Gradle
@@ -186,18 +186,18 @@ if (-not $SkipAndroid) {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 7. Android SDK (via Android command-line tools)
+# 4. Android SDK (via Android command-line tools)
 # ─────────────────────────────────────────────────────────────────────────────
 
 if (-not $SkipAndroid) {
-    Write-Header "7 · Android SDK + NDK + AVD"
+    Write-Header "4 · Android SDK + NDK + AVD"
 
     $androidHome = $env:ANDROID_HOME ?? "$env:USERPROFILE\AppData\Local\Android\Sdk"
     $cmdToolsDest = "$androidHome\cmdline-tools"
     $sdkmanager = "$cmdToolsDest\latest\bin\sdkmanager.bat"
     $avdmanager = "$cmdToolsDest\latest\bin\avdmanager.bat"
 
-    # 7a. Command-line tools — install if sdkmanager isn't already present
+    # 4a. Command-line tools — install if sdkmanager isn't already present
     # (Guard on $sdkmanager not adb.exe, so a partial previous run that extracted
     # cmdline-tools but didn't install platform-tools doesn't re-download.)
     if (-not (Test-Path $sdkmanager)) {
@@ -225,7 +225,7 @@ if (-not $SkipAndroid) {
         Refresh-Path
     }
 
-    # 7b. Install SDK packages (idempotent — sdkmanager skips already-installed)
+    # 4b. Install SDK packages (idempotent — sdkmanager skips already-installed)
     if (Test-Path $sdkmanager) {
         # sdkmanager + avdmanager need Java 17+ (class file 61.0). Marcel's PATH
         # may put Oracle's java8path first; force JAVA_HOME for these invocations.
@@ -267,7 +267,7 @@ if (-not $SkipAndroid) {
         Write-Fail "sdkmanager not found at $sdkmanager"
     }
 
-    # 7c. Create AVD for Phase 2.2 emulator (idempotent)
+    # 4c. Create AVD for Phase 2.2 emulator (idempotent)
     if (Test-Path $avdmanager) {
         $avdName = "blazornative-pixel6-x86_64"
         $existingAvds = & $avdmanager list avd -c 2>&1
@@ -289,7 +289,7 @@ if (-not $SkipAndroid) {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 8. Bionic NativeAOT toolchain (Phase 3.0c) — verify + document, no installs
+# 5. Bionic NativeAOT toolchain (Phase 3.0c) — verify + document, no installs
 #    BlazorNative.NativeHost cross-compiles to linux-bionic-{x64,arm64} .so
 #    files directly on Windows via the runtime-pack bypass (the RID-specific
 #    ILCompiler packages don't exist for .NET 10 — 3.0b Gate 4 RED).
@@ -298,14 +298,14 @@ if (-not $SkipAndroid) {
 #      • ILCompiler + Microsoft.NETCore.App.Runtime.NativeAOT.linux-bionic-*
 #        runtime packs 10.0.9 (pinned via RuntimeFrameworkVersion in
 #        BlazorNative.NativeHost.csproj)
-#      • Android NDK 26.3.11579264 (installed by section 7)
+#      • Android NDK 26.3.11579264 (installed by section 4)
 #      • vendored build/BionicNativeAot.targets (NDK shim + linker args)
 #    The targets read ANDROID_NDK_ROOT (not ANDROID_NDK_HOME) — this section
-#    mirrors section 7's NDK path into it.
+#    mirrors section 4's NDK path into it.
 # ─────────────────────────────────────────────────────────────────────────────
 
 if (-not $SkipAndroid) {
-    Write-Header "8 · Bionic NativeAOT toolchain (verify env for linux-bionic publishes)"
+    Write-Header "5 · Bionic NativeAOT toolchain (verify env for linux-bionic publishes)"
 
     $bionicNdkPin = "26.3.11579264"
     # Anchored so a longer revision (e.g. "26.3.115792640") can't sneak past;
@@ -326,7 +326,7 @@ if (-not $SkipAndroid) {
         ((Get-Content $bionicNdkProps -Raw) -match $bionicNdkRevisionPattern)
 
     if (-not (Test-Path $bionicNdkRoot)) {
-        Write-Fail "NDK $bionicNdkPin not found at $bionicNdkRoot — section 7 needs to install it first"
+        Write-Fail "NDK $bionicNdkPin not found at $bionicNdkRoot — section 4 needs to install it first"
     } elseif (-not $bionicNdkRevisionOk) {
         Write-Fail "NDK at $bionicNdkRoot (resolved from $bionicNdkPathSource) is not revision $bionicNdkPin — source.properties is missing or reports a different Pkg.Revision. Point ANDROID_NDK_HOME at NDK $bionicNdkPin, or unset it so the default SDK path is used."
     } elseif ($env:ANDROID_NDK_ROOT -and (Test-Path $env:ANDROID_NDK_ROOT)) {
@@ -358,10 +358,10 @@ if (-not $SkipAndroid) {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 9. Restore NuGet packages
+# 6. Restore NuGet packages
 # ─────────────────────────────────────────────────────────────────────────────
 
-Write-Header "9 · NuGet restore"
+Write-Header "6 · NuGet restore"
 
 if (Test-Path "BlazorNative.sln") {
     Write-Step "Restoring NuGet packages..."
@@ -374,10 +374,10 @@ if (Test-Path "BlazorNative.sln") {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 10. Verify the dev build (fast — no AOT publish)
+# 7. Verify the dev build (fast — no AOT publish)
 # ─────────────────────────────────────────────────────────────────────────────
 
-Write-Header "10 · Smoke test — Debug build + fast tests"
+Write-Header "7 · Smoke test — Debug build + fast tests"
 
 if (Test-Path "BlazorNative.sln") {
     Write-Step "Building BlazorNative.sln (Debug)..."
@@ -425,7 +425,7 @@ if ($script:failed -eq 0) {
     Write-Host "  Run all .NET tests:" -ForegroundColor DarkGray
     Write-Host "    dotnet test BlazorNative.sln" -ForegroundColor Cyan
     Write-Host ""
-    Write-Host "  Publish the native runtime (pinned combo — see section 8):" -ForegroundColor DarkGray
+    Write-Host "  Publish the native runtime (pinned combo — see section 5):" -ForegroundColor DarkGray
     Write-Host "    dotnet publish src\BlazorNative.NativeHost -c Release -r win-x64" -ForegroundColor Cyan
     Write-Host "    dotnet publish src\BlazorNative.NativeHost -c Release -r linux-bionic-x64" -ForegroundColor Cyan
     Write-Host "    dotnet publish src\BlazorNative.NativeHost -c Release -r linux-bionic-arm64" -ForegroundColor Cyan

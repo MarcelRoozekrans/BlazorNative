@@ -1,5 +1,4 @@
 import org.gradle.api.tasks.testing.logging.TestExceptionFormat
-import java.io.File
 
 plugins {
     id("com.android.application") version "8.7.3"
