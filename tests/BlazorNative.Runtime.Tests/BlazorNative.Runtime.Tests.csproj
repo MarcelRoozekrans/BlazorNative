@@ -22,6 +22,9 @@
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
     <RootNamespace>BlazorNative.Runtime.Tests</RootNamespace>
+    <!-- Phase 3.0d Gate 1: FrameArena/FrameEncoder tests dereference
+         BlazorNativePatch* directly. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>
