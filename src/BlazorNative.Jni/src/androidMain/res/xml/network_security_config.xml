@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Phase 3.1: targetSdk >= 28 blocks cleartext HTTP everywhere — the
+     platform default has NO localhost exemption (the design doc assumed one).
+     The shell-bridge instrumented tests fetch http://127.0.0.1:<port> from a
+     local ServerSocket responder, so cleartext is re-enabled for LOOPBACK
+     ONLY (plus 10.0.2.2, the emulator's host alias, for local dev servers).
+     Everything else keeps the secure default. -->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">127.0.0.1</domain>
+        <domain includeSubdomains="false">localhost</domain>
+        <domain includeSubdomains="false">10.0.2.2</domain>
+    </domain-config>
+</network-security-config>
