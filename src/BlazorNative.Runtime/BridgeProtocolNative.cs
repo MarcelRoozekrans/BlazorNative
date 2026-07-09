@@ -23,6 +23,17 @@ namespace BlazorNative.Runtime;
 //            host-side and surfaces as -1 — it never crosses the ABI)
 //   -2       key absent (StorageRead only — maps to null)
 //
+// Invariants both sides rely on:
+//   (a) Any FUTURE error code must keep |code| well below 4096 (the default
+//       buffer cap) — negative values whose magnitude exceeds the offered
+//       cap are interpreted as -needed size demands, never as error codes.
+//   (b) The host must NEVER return -needed when the value actually fits in
+//       the offered cap — a negative return with |code| <= cap is always
+//       treated as an error code by the .NET side.
+//   (c) rc == 0 from a buffer callback is tolerated and decodes as the empty
+//       string (deliberate .NET-side leniency; the contract minimum for a
+//       successful write is 1 — the NUL terminator alone).
+//
 // Lifetime rules (mirror the frame protocol — each side copies inside the
 // call it receives):
 //   • Input strings (routeUtf8, keyUtf8, valueUtf8) are .NET-owned,
@@ -35,6 +46,12 @@ namespace BlazorNative.Runtime;
 //     the host may free its struct memory after the call (the function
 //     pointers themselves must stay alive: JNA-side STRONG refs, same GC
 //     rule as the frame callback).
+//   • Re-registration (last wins) swaps an immutable snapshot atomically,
+//     but an in-flight operation may still be invoking the PREVIOUS
+//     snapshot's function pointers. A re-registering host must keep the
+//     previous callback objects alive until in-flight operations have
+//     drained — or simply keep them alive forever (recommended for this
+//     POC: park superseded registrations in a list, never release them).
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// <summary>The six host-implemented shell operations, registered once at

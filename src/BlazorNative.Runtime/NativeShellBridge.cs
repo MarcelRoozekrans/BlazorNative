@@ -41,9 +41,23 @@ public sealed class NativeShellBridge : IMobileBridge
 
     private const int DefaultBufferSize = 4096;
 
-    private static readonly object s_registrationLock = new();
-    private static BlazorNativeBridgeCallbacks s_callbacks; // copied at registration
-    private static bool s_registered;
+    /// <summary>Sanity ceiling for the -needed retry rent: a host demanding
+    /// more than this is malfunctioning, not returning a big route/value.</summary>
+    private const int MaxRetryBytes = 4 * 1024 * 1024;
+
+    /// <summary>Immutable snapshot of the registered callbacks. The holder
+    /// REFERENCE is swapped atomically via Volatile.Write/Read, so a reader
+    /// can never observe a torn 48-byte struct during re-registration — an
+    /// in-flight op sees either the old snapshot or the new one, whole.
+    /// (The host-side liveness obligation for the OLD pointers is documented
+    /// in BridgeProtocolNative.cs.)</summary>
+    private sealed class CallbackHolder
+    {
+        public readonly BlazorNativeBridgeCallbacks Callbacks;
+        public CallbackHolder(in BlazorNativeBridgeCallbacks callbacks) => Callbacks = callbacks;
+    }
+
+    private static CallbackHolder? s_callbacks; // copied at registration; null = unregistered
 
     private static long s_nextFetchId;
     private static readonly ConcurrentDictionary<long, TaskCompletionSource<BridgeHttpResponse>>
@@ -55,16 +69,11 @@ public sealed class NativeShellBridge : IMobileBridge
 
     // ── Registration (blazornative_register_bridge / Exports.Init plumbing) ──
 
-    /// <summary>Copies the host's callback struct. Re-registration is allowed
+    /// <summary>Copies the host's callback struct into a fresh immutable
+    /// holder and swaps the reference atomically. Re-registration is allowed
     /// (last wins) — same posture as the frame callback.</summary>
     internal static void Register(in BlazorNativeBridgeCallbacks callbacks)
-    {
-        lock (s_registrationLock)
-        {
-            s_callbacks = callbacks;
-            Volatile.Write(ref s_registered, true);
-        }
-    }
+        => Volatile.Write(ref s_callbacks, new CallbackHolder(in callbacks));
 
     /// <summary>Stores Init's platform options; <see cref="PlatformInfo"/> and
     /// <see cref="GetPlatformInfoAsync"/> serve them.</summary>
@@ -76,11 +85,7 @@ public sealed class NativeShellBridge : IMobileBridge
     /// serializes callers).</summary>
     internal static void ResetForTests()
     {
-        lock (s_registrationLock)
-        {
-            Volatile.Write(ref s_registered, false);
-            s_callbacks = default;
-        }
+        Volatile.Write(ref s_callbacks, null);
         foreach (long id in s_pendingFetches.Keys)
         {
             if (s_pendingFetches.TryRemove(id, out var tcs))
@@ -91,9 +96,10 @@ public sealed class NativeShellBridge : IMobileBridge
 
     private static BlazorNativeBridgeCallbacks GetCallbacks()
     {
-        if (!Volatile.Read(ref s_registered))
+        CallbackHolder? holder = Volatile.Read(ref s_callbacks);
+        if (holder is null)
             throw new InvalidOperationException(NotRegisteredMessage);
-        return s_callbacks; // struct read is safe post-acquire: registration wrote it before the flag
+        return holder.Callbacks; // immutable snapshot — safe to copy out
     }
 
     // ── Navigation ────────────────────────────────────────────────────────────
@@ -342,6 +348,10 @@ public sealed class NativeShellBridge : IMobileBridge
                     return null;
                 throw HostError(opName, rc);
             }
+            if (needed > MaxRetryBytes)
+                throw new InvalidOperationException(
+                    $"shell bridge '{opName}' demanded a {needed}-byte buffer (host returned {rc}) — " +
+                    $"exceeds the {MaxRetryBytes}-byte retry ceiling; the host is misbehaving");
 
             // Retry once at the exact demanded size.
             byte[] retryBuffer = ArrayPool<byte>.Shared.Rent(needed);
@@ -440,12 +450,12 @@ public sealed class NativeShellBridge : IMobileBridge
             result[key] = value;
             SkipWhitespace(json, ref i);
             if (i >= json.Length)
-                throw Malformed(json);
+                throw Malformed(json, i);
             char c = json[i++];
             if (c == '}')
                 return result;
             if (c != ',')
-                throw Malformed(json);
+                throw Malformed(json, i - 1);
         }
     }
 
@@ -479,7 +489,7 @@ public sealed class NativeShellBridge : IMobileBridge
         while (true)
         {
             if (i >= json.Length)
-                throw Malformed(json);
+                throw Malformed(json, i);
             char c = json[i++];
             if (c == '"')
                 return sb.ToString();
@@ -489,7 +499,7 @@ public sealed class NativeShellBridge : IMobileBridge
                 continue;
             }
             if (i >= json.Length)
-                throw Malformed(json);
+                throw Malformed(json, i);
             char escape = json[i++];
             sb.Append(escape switch
             {
@@ -502,18 +512,35 @@ public sealed class NativeShellBridge : IMobileBridge
                 'b' => '\b',
                 'f' => '\f',
                 'u' => ParseHex4(json, ref i),
-                _ => throw Malformed(json),
+                _ => throw Malformed(json, i - 1),
             });
         }
     }
 
+    /// <summary>Strict \uXXXX: exactly four hex digits, no sign/whitespace
+    /// leniency (int.Parse with NumberStyles.HexNumber would tolerate
+    /// leading/trailing whitespace inside the span).</summary>
     private static char ParseHex4(string json, ref int i)
     {
         if (i + 4 > json.Length)
-            throw Malformed(json);
-        char value = (char)int.Parse(json.AsSpan(i, 4), System.Globalization.NumberStyles.HexNumber);
+            throw Malformed(json, i);
+        int value = 0;
+        for (int k = 0; k < 4; k++)
+        {
+            char c = json[i + k];
+            int digit = c switch
+            {
+                >= '0' and <= '9' => c - '0',
+                >= 'a' and <= 'f' => c - 'a' + 10,
+                >= 'A' and <= 'F' => c - 'A' + 10,
+                _ => -1,
+            };
+            if (digit < 0)
+                throw Malformed(json, i + k);
+            value = (value << 4) | digit;
+        }
         i += 4;
-        return value;
+        return (char)value;
     }
 
     private static void SkipWhitespace(string json, ref int i)
@@ -525,10 +552,17 @@ public sealed class NativeShellBridge : IMobileBridge
     private static void Expect(string json, ref int i, char expected)
     {
         if (i >= json.Length || json[i] != expected)
-            throw Malformed(json);
+            throw Malformed(json, i);
         i++;
     }
 
-    private static FormatException Malformed(string json)
-        => new($"malformed flat JSON object from the shell bridge: '{json}'");
+    /// <summary>Deliberately does NOT embed the full JSON: headers may carry
+    /// Set-Cookie/Authorization values that must not leak into logs. Reports
+    /// the failing character index plus a 32-char prefix only.</summary>
+    private static FormatException Malformed(string json, int index)
+    {
+        string prefix = json.Length <= 32 ? json : json[..32] + "…";
+        return new FormatException(
+            $"malformed flat JSON object from the shell bridge at index {index} (prefix: '{prefix}')");
+    }
 }

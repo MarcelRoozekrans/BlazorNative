@@ -271,9 +271,13 @@ public static class Exports
     /// <summary>
     /// Phase 3.1: delivers an async fetch response for a FetchBegin request
     /// id. The response struct + every string it references are host-owned
-    /// and valid ONLY during this call (copied before return). Returns
-    /// 0 = delivered, 1 = unknown/already-completed id (logged, ignored —
-    /// benign cancellation race). Never throws across the ABI.
+    /// and valid ONLY during this call (copied before return). Return codes:
+    ///   0 = delivered
+    ///   1 = unknown/already-completed id — benign cancellation race, the
+    ///       host should ignore it
+    ///   2 = invalid call (null response pointer) or internal bridge failure
+    ///       — the host should log LOUDLY; detail lands on stderr
+    /// Never throws across the ABI.
     /// </summary>
     [UnmanagedCallersOnly(EntryPoint = "blazornative_fetch_complete")]
     public static unsafe int FetchComplete(long requestId, BlazorNativeFetchResponse* response)
@@ -282,15 +286,15 @@ public static class Exports
         {
             if (response == null)
             {
-                Console.Error.WriteLine($"[Exports] fetch_complete id {requestId}: null response pointer — ignored");
-                return 1;
+                Console.Error.WriteLine($"[Exports] fetch_complete id {requestId}: null response pointer");
+                return 2;
             }
             return NativeShellBridge.CompleteFetch(requestId, in *response);
         }
         catch (Exception ex)
         {
             Console.Error.WriteLine($"[Exports] fetch_complete id {requestId} failed: {ex}");
-            return 1;
+            return 2;
         }
     }
 
