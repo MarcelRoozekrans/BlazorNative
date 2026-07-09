@@ -89,8 +89,19 @@ public sealed class DispatchEventTests
         // Contains (not Single): the assertion is "the counter text updated",
         // deliberately decoupled from how many text patches Hello's re-render
         // happens to produce.
-        Assert.Contains(frames[1].Patches.OfType<ReplaceTextPatch>(),
+        ReplaceTextPatch reRenderText = Assert.Single(
+            frames[1].Patches.OfType<ReplaceTextPatch>(),
             p => p.Text.Contains("taps: 1"));
+        // Gate 3 lesson: the re-render ReplaceText must target the SAME node
+        // the mount frame created for the counter text. Before the Phase 3.2
+        // ProcessTextEdit fix, UpdateText resolved by the diff's relative
+        // SiblingIndex and hit the OUTER div (node 1) — the text-only
+        // assertion above stayed green while every real widget host silently
+        // dropped the update (Android: (nodes[1] as? TextView) == null).
+        ReplaceTextPatch mountText = Assert.Single(
+            frames[0].Patches.OfType<ReplaceTextPatch>(),
+            p => p.Text.Contains("taps: 0"));
+        Assert.Equal(mountText.NodeId, reRenderText.NodeId);
     }
 
     [Fact]

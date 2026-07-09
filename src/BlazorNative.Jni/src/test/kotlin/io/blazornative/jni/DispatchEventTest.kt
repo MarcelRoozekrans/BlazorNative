@@ -73,10 +73,21 @@ class DispatchEventTest {
             "[DispatchEventTest] tap 1 (handlerId=$handlerId) re-render texts: " +
                 frames.last().patches.filterIsInstance<RenderPatch.ReplaceText>().map { it.text }
         )
+        val reRenderText = frames.last().patches.filterIsInstance<RenderPatch.ReplaceText>()
+            .firstOrNull { it.text.contains("taps: 1") }
         assertTrue(
-            frames.last().patches.filterIsInstance<RenderPatch.ReplaceText>()
-                .any { it.text.contains("taps: 1") },
+            reRenderText != null,
             "re-render frame must carry the incremented counter; got ${frames.last().patches}"
+        )
+        // Gate 3 lesson (Phase 3.2 ProcessTextEdit fix): the re-render
+        // ReplaceText must target the SAME nodeId the mount frame used for the
+        // counter text — a text-only assertion stayed green while the patch
+        // hit the outer div and Android silently dropped it.
+        val mountTextNodeId = frames.first().patches.filterIsInstance<RenderPatch.ReplaceText>()
+            .first { it.text.contains("taps: 0") }.nodeId
+        assertEquals(
+            mountTextNodeId, reRenderText!!.nodeId,
+            "re-render ReplaceText must target the mount frame's counter text node"
         )
 
         // Tap 2: harvest the handlerId from the LATEST frame — Blazor may

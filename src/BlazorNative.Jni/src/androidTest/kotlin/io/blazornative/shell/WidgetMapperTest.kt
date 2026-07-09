@@ -27,7 +27,7 @@ import java.util.concurrent.atomic.AtomicReference
  *   widget_root: FrameLayout
  *     └── outer LinearLayout (from outer <div>)
  *           ├── inner LinearLayout (from inner <div>)
- *           │     └── TextView ("Hello, BlazorNative!")
+ *           │     └── TextView ("Hello, BlazorNative! (taps: 0)")   [counter since Phase 3.2]
  *           ├── Button ("Tap")
  *           └── EditText (hint="Type here...")
  *
@@ -91,7 +91,10 @@ class WidgetMapperTest {
                 val helloText = innerDiv.getChildAt(0)
                 assertTrue("inner child should be a TextView", helloText is TextView)
                 helloText as TextView
-                assertEquals("Hello, BlazorNative!", helloText.text.toString())
+                // Phase 3.2: HelloComponent is interactive — the counter lives
+                // in this text (fresh mount ⇒ taps: 0; the tap round-trip is
+                // EventRoundTripAndroidTest's job, not this shape test's).
+                assertEquals("Hello, BlazorNative! (taps: 0)", helloText.text.toString())
 
                 // Child [1]: button (with text collapsed via Phase 2.8 Task 3b fix)
                 val button = outer.getChildAt(1)
