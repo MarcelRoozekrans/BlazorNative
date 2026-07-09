@@ -19,7 +19,6 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="BlazorNative.Renderer.Tests" />
-    <InternalsVisibleTo Include="BlazorNative.WasiHost" />
   </ItemGroup>
 
 </Project>
