@@ -150,9 +150,31 @@ class NativeFrameAdapterTest {
     private fun nulTerminated(s: String): ByteArray = s.toByteArray(Charsets.UTF_8) + 0
 
     /** CommitFrame carries live frameId/timestamp on the native path — compare
-     * it by type only (zeroed), matching HelloGoldenTests' normalization. */
-    private fun normalize(patches: List<RenderPatch>): List<RenderPatch> =
-        patches.map { if (it is RenderPatch.CommitFrame) RenderPatch.CommitFrame(0, 0L) else it }
+     * it by type only (zeroed), matching HelloGoldenTests' normalization.
+     *
+     * Node IDs are renumbered by first appearance: the runtime's node-ID
+     * counter is process-global and monotonic across mounts, so any earlier
+     * test that mounts a component (e.g. BlazorNativeRuntimeTest, Phase 3.0d
+     * Gate 3) shifts the raw IDs. The golden fixture's 1..6 is itself just
+     * first-appearance order, so canonical renumbering preserves every
+     * structural assertion (types, parent linkage, texts, props, order). */
+    private fun normalize(patches: List<RenderPatch>): List<RenderPatch> {
+        val idMap = mutableMapOf<Int, Int>()
+        fun canon(id: Int): Int = idMap.getOrPut(id) { idMap.size + 1 }
+        return patches.map { p ->
+            when (p) {
+                is RenderPatch.CreateNode  -> p.copy(nodeId = canon(p.nodeId), parentId = p.parentId?.let(::canon))
+                is RenderPatch.AppendChild -> p.copy(parentId = canon(p.parentId), childId = canon(p.childId))
+                is RenderPatch.RemoveNode  -> p.copy(nodeId = canon(p.nodeId))
+                is RenderPatch.UpdateProp  -> p.copy(nodeId = canon(p.nodeId))
+                is RenderPatch.ReplaceText -> p.copy(nodeId = canon(p.nodeId))
+                is RenderPatch.SetStyle    -> p.copy(nodeId = canon(p.nodeId))
+                is RenderPatch.AttachEvent -> p.copy(nodeId = canon(p.nodeId))
+                is RenderPatch.DetachEvent -> p.copy(nodeId = canon(p.nodeId))
+                is RenderPatch.CommitFrame -> RenderPatch.CommitFrame(0, 0L)
+            }
+        }
+    }
 
     /** Same options pattern as BootSmokeNativeTest — init is idempotent enough
      * for repeated calls within one test JVM (verifies accessors only). */
