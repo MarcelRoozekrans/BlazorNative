@@ -60,7 +60,11 @@ internal static unsafe class HostSession
     {
         lock (s_lock)
         {
+            // BL0006: Dispose comes from Blazor's internal Renderer base —
+            // same deliberate-access rationale as CurrentRenderer above.
+#pragma warning disable BL0006
             Volatile.Read(ref s_renderer)?.Dispose();
+#pragma warning restore BL0006
             Volatile.Write(ref s_renderer, null);
             Volatile.Write(ref s_frameCallback, IntPtr.Zero);
         }
@@ -103,8 +107,10 @@ internal static unsafe class HostSession
                 return s_renderer;
 
             // Same registrations as TrimProbeRunner — the production DI surface.
+            // (No AddBlazorNativeCoreServices call: Phase 3.2 deleted WasiBridge,
+            // Core's last [Singleton] type, so the ZeroAlloc.Inject generator no
+            // longer emits the Core extension method at all.)
             var services = new ServiceCollection();
-            services.AddBlazorNativeCoreServices();
             services.AddBlazorNativeRendererServices();
             // Full HttpClient plumbing, not just the generated handler
             // registration: AddBlazorNativeHttp() layers the IHttpClientFactory
@@ -113,11 +119,10 @@ internal static unsafe class HostSession
             // BridgeHttpHandler (3.3+ components rely on this).
             services.AddBlazorNativeHttp();
             // Phase 3.1: the shell bridge is THE IMobileBridge on-device.
-            // Registered AFTER the Core services so it overrides WasiBridge's
-            // [Singleton(As = typeof(IMobileBridge))] registration (MS.DI:
-            // last registration wins for GetRequiredService) — WasiBridge
-            // deletion itself is deferred to Phase 3.2. BridgeHttpHandler
-            // therefore resolves against the host callbacks on Android.
+            // Sole runtime registration since Phase 3.2 deleted the WASM-era
+            // WasiBridge (Core no longer registers any IMobileBridge).
+            // BridgeHttpHandler therefore resolves against the host callbacks
+            // on Android.
             services.AddSingleton<IMobileBridge, NativeShellBridge>();
             renderer = services.BuildServiceProvider().GetRequiredService<NativeRenderer>();
 

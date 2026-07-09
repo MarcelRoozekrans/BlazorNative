@@ -65,7 +65,6 @@ public sealed class HelloGoldenTests
     public async Task MountHello_Frame_MatchesTypedGoldenPatches()
     {
         var services = new ServiceCollection();
-        services.AddBlazorNativeCoreServices();
         services.AddBlazorNativeRendererServices();
         services.AddBlazorNativeHttpServices();
         using var renderer = services.BuildServiceProvider().GetRequiredService<NativeRenderer>();

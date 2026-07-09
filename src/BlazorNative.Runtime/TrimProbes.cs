@@ -103,7 +103,9 @@ internal static class TrimProbeRunner
         try
         {
             var services = new ServiceCollection();
-            services.AddBlazorNativeCoreServices();
+            // No AddBlazorNativeCoreServices: gone since Phase 3.2 deleted
+            // WasiBridge, Core's last generator-registered type (HostSession
+            // has the long-form note).
             services.AddBlazorNativeRendererServices();
             services.AddBlazorNativeHttpServices();
             services.AddSingleton<IProbeService, ProbeService>();
