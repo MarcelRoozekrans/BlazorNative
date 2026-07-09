@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Phase 3.1 DEBUG-ONLY overlay (build-type res overrides main's copy):
+     targetSdk >= 28 blocks cleartext HTTP with NO localhost exemption, and
+     the instrumented shell-bridge tests fetch http://127.0.0.1:<port> from a
+     local ServerSocket responder. Cleartext is re-enabled here for:
+       - 127.0.0.1 / localhost — genuine device loopback;
+       - 10.0.2.2 — NOT loopback: the emulator's alias for the host machine
+         (on a physical device this is an ordinary routable address); kept in
+         the DEBUG scope only, for local dev servers.
+     Release builds get main's secure default (no cleartext anywhere).
+
+     Why a res overlay and not <debug-overrides>: that element only overrides
+     trust-anchors — it cannot express cleartextTrafficPermitted. -->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">127.0.0.1</domain>
+        <domain includeSubdomains="false">localhost</domain>
+        <domain includeSubdomains="false">10.0.2.2</domain>
+    </domain-config>
+</network-security-config>

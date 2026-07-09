@@ -5,17 +5,24 @@ namespace BlazorNative.Runtime;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // BlazorNative.Runtime C-ABI surface: Phase 3.0b boot + Phase 3.0c Gate 4
-// diagnostic + Phase 3.0d wire protocol (Phase 3.0e gave the library its final
-// name — the version string below is the JNA-visible one).
+// diagnostic + Phase 3.0d wire protocol + Phase 3.1 shell bridge (Phase 3.0e
+// gave the library its final name — the version string below is the
+// JNA-visible one).
 //
-// Seven exports:
-//   init                    — load runtime, verify Blazor accessors
+// Ten exports:
+//   init                    — load runtime, verify Blazor accessors, store
+//                             platform-info options for the shell bridge
 //   shutdown                — clears the frame callback (frame flush lands later)
 //   version                 — static version cstring
-//   run_trim_probes         — Phase 3.0c Gate 4 diagnostic (delete-vs-keep TBD)
+//   run_trim_probes         — Phase 3.0c Gate 4 diagnostic (deletes at M3
+//                             close, together with run_bridge_probes)
 //   register_frame_callback — Phase 3.0d: store the host's cdecl frame callback
 //   mount                   — Phase 3.0d: mount a registered component by name
 //   dispatch_event          — ABI-reserved stub; Phase 3.2 wires event ingress
+//   register_bridge         — Phase 3.1: copy the host's 6-callback struct
+//   fetch_complete          — Phase 3.1: deliver an async fetch response
+//   run_bridge_probes       — Phase 3.1 diagnostic (delete at M3 close,
+//                             together with run_trim_probes)
 //
 // String ownership rule: input strings are caller-allocated UTF-8,
 // callee-borrowed during the call; output strings are static native memory
@@ -56,12 +63,19 @@ public static class Exports
     private static readonly IntPtr s_versionString;
     private static readonly IntPtr s_initOkErrorEmpty;
     private static readonly IntPtr s_probesLabel;
+    private static readonly IntPtr s_bridgeProbesLabel;
+
+    /// <summary>Single source of truth for the runtime version — the
+    /// JNA-visible version cstring and NativeShellBridge.PlatformInfo both
+    /// derive from it.</summary>
+    internal const string VersionNumber = "0.6.0-phase-3.1";
 
     static Exports()
     {
-        s_versionString = Marshal.StringToCoTaskMemUTF8("BlazorNative.Runtime 0.5.0-phase-3.0e");
+        s_versionString = Marshal.StringToCoTaskMemUTF8($"BlazorNative.Runtime {VersionNumber}");
         s_initOkErrorEmpty = Marshal.StringToCoTaskMemUTF8("");
         s_probesLabel = Marshal.StringToCoTaskMemUTF8("probes:parameter,cascading,inject");
+        s_bridgeProbesLabel = Marshal.StringToCoTaskMemUTF8("probes:navigate,storage,fetch");
     }
 
     [UnmanagedCallersOnly(EntryPoint = "blazornative_init")]
@@ -76,9 +90,23 @@ public static class Exports
             // expects.
             BlazorNative.Renderer.BlazorInterop.EnsureInitialized();
 
+            // Phase 3.1: STORE the platform-info options so IMobileBridge
+            // .PlatformInfo / GetPlatformInfoAsync can serve them (the host
+            // owns the strings only during this call — copy now).
+            if (opts != null)
+            {
+                NativeShellBridge.SetPlatformInfo(
+                    os: opts->PlatformInfoOs == IntPtr.Zero
+                        ? "" : Marshal.PtrToStringUTF8(opts->PlatformInfoOs) ?? "",
+                    apiLevel: opts->PlatformInfoApiLevel,
+                    note: opts->PlatformInfoNote == IntPtr.Zero
+                        ? null : Marshal.PtrToStringUTF8(opts->PlatformInfoNote));
+            }
+
             // Phase 3.0b deliberately does NOT mount a renderer or build a full
             // DI graph here — that work belongs to Phase 3.0d via blazornative_mount.
-            // Init is purely "the runtime loaded + Blazor accessors verify".
+            // Init is purely "the runtime loaded + Blazor accessors verify" (plus
+            // the option store above).
 
             return new BlazorNativeInitResult
             {
@@ -188,8 +216,8 @@ public static class Exports
     /// failure detail. Reuses the InitResult struct so the Kotlin side needs
     /// no new mirror. The failure-path ErrorMessage is allocated per call and
     /// never freed — acceptable leak for a diagnostic invoked once per test
-    /// run. 3.0d decision: keep until Phase 3.0e (sole on-device coverage for
-    /// the cascading/[Inject] IL2072 paths); delete or graduate at 3.0e cleanup.
+    /// run. Settled fate (Phase 3.1 close-out): BOTH probe exports — this one
+    /// and blazornative_run_bridge_probes — delete at M3 close.
     /// </summary>
     [UnmanagedCallersOnly(EntryPoint = "blazornative_run_trim_probes")]
     public static BlazorNativeInitResult RunTrimProbes()
@@ -211,6 +239,109 @@ public static class Exports
                 Status = -1,
                 ErrorMessage = Marshal.StringToCoTaskMemUTF8(ex.ToString()),
                 VersionString = s_probesLabel,
+            };
+        }
+    }
+
+    /// <summary>
+    /// Phase 3.1: COPIES the host's 6-callback struct into NativeShellBridge
+    /// (the host may free its struct memory after this returns; the function
+    /// pointers themselves must stay alive — JNA STRONG-ref rule, same as the
+    /// frame callback). Re-registration is allowed (last wins). Returns 0 on
+    /// success, 2 on null pointer / failure (detail on stderr). Call BEFORE
+    /// blazornative_mount so components resolving IMobileBridge find a live
+    /// host. Full ABI contract: BridgeProtocolNative.cs.
+    /// </summary>
+    [UnmanagedCallersOnly(EntryPoint = "blazornative_register_bridge")]
+    public static unsafe int RegisterBridge(BlazorNativeBridgeCallbacks* callbacks)
+    {
+        try
+        {
+            if (callbacks == null)
+                return 2;
+            NativeShellBridge.Register(in *callbacks);
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[Exports] register_bridge failed: {ex}");
+            return 2;
+        }
+    }
+
+    /// <summary>
+    /// Phase 3.1: delivers an async fetch response for a FetchBegin request
+    /// id. The response struct + every string it references are host-owned
+    /// and valid ONLY during this call (copied before return). Return codes:
+    ///   0 = delivered
+    ///   1 = unknown/already-completed id — benign cancellation race, the
+    ///       host should ignore it
+    ///   2 = invalid call (null response pointer) or internal bridge failure
+    ///       — the host should log LOUDLY; detail lands on stderr
+    /// Never throws across the ABI.
+    /// </summary>
+    [UnmanagedCallersOnly(EntryPoint = "blazornative_fetch_complete")]
+    public static unsafe int FetchComplete(long requestId, BlazorNativeFetchResponse* response)
+    {
+        try
+        {
+            if (response == null)
+            {
+                Console.Error.WriteLine($"[Exports] fetch_complete id {requestId}: null response pointer");
+                return 2;
+            }
+            return NativeShellBridge.CompleteFetch(requestId, in *response);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[Exports] fetch_complete id {requestId} failed: {ex}");
+            return 2;
+        }
+    }
+
+    /// <summary>
+    /// Phase 3.1 diagnostic export — TEMPORARY, same pattern + fate as
+    /// blazornative_run_trim_probes: BOTH probe exports delete at M3 close.
+    /// Runs the shell-bridge ops against the registered host callbacks:
+    /// navigate round-trip, storage write/read/delete + absent-key null, one
+    /// fetch against the given NUL-terminated UTF-8 URL (10 s timeout,
+    /// expects HTTP 200). Status = failed probe count (0 = all pass,
+    /// -1 = runner crashed or null URL); ErrorMessage carries per-probe
+    /// detail (allocated per failing call, never freed — accepted diagnostic
+    /// leak). Reuses the InitResult struct so the Kotlin side needs no new
+    /// mirror.
+    /// </summary>
+    [UnmanagedCallersOnly(EntryPoint = "blazornative_run_bridge_probes")]
+    public static BlazorNativeInitResult RunBridgeProbes(IntPtr fetchUrlUtf8)
+    {
+        try
+        {
+            string? fetchUrl = fetchUrlUtf8 == IntPtr.Zero ? null : Marshal.PtrToStringUTF8(fetchUrlUtf8);
+            if (fetchUrl is null)
+            {
+                return new BlazorNativeInitResult
+                {
+                    Status = -1,
+                    ErrorMessage = Marshal.StringToCoTaskMemUTF8("fetch URL pointer was null"),
+                    VersionString = s_bridgeProbesLabel,
+                };
+            }
+
+            var (failed, detail) = BridgeProbeRunner.RunAll(fetchUrl);
+            return new BlazorNativeInitResult
+            {
+                Status = failed,
+                ErrorMessage = failed == 0 ? s_initOkErrorEmpty : Marshal.StringToCoTaskMemUTF8(detail),
+                VersionString = s_bridgeProbesLabel,
+            };
+        }
+        catch (Exception ex)
+        {
+            return new BlazorNativeInitResult
+            {
+                Status = -1,
+                ErrorMessage = Marshal.StringToCoTaskMemUTF8(ex.ToString()),
+                VersionString = s_bridgeProbesLabel,
             };
         }
     }

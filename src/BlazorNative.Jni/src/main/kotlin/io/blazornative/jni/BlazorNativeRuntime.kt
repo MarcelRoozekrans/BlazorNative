@@ -40,6 +40,16 @@ class BlazorNativeRuntime(
     }
 
     /**
+     * Phase 3.1: strong ref to the shell-bridge registrar (same GC rule as
+     * [callback] — its six JNA trampolines must outlive the registration).
+     * BridgeRegistrar additionally parks every registered instance in a
+     * process-lifetime list, so a re-run of [start] (Activity recreation)
+     * keeps the superseded registration alive too, as the re-registration
+     * rule in BridgeProtocolNative.cs demands.
+     */
+    private var bridgeRegistrar: BridgeRegistrar? = null
+
+    /**
      * Boots the runtime: init → register frame callback → mount. The first
      * frame callback fires synchronously INSIDE the mount call (sync mount
      * contract), on the calling thread.
@@ -64,6 +74,9 @@ class BlazorNativeRuntime(
         componentName: String = "HelloComponent",
         platformOs: String = "android",
         apiLevel: Int = 0,
+        // Phase 3.1: when non-null, the six shell callbacks are registered
+        // BEFORE mount (components resolving IMobileBridge need a live host).
+        bridge: ShellBridgeHandlers? = null,
     ): List<String> {
         val lines = mutableListOf<String>()
         val lib = NativeBindings.INSTANCE
@@ -90,6 +103,14 @@ class BlazorNativeRuntime(
             "blazornative_register_frame_callback failed"
         }
         lines += "[BOOT] frame callback registered"
+
+        if (bridge != null) {
+            // Registered BEFORE mount. register() throws on non-zero status;
+            // the registrar keeps the callback trampolines alive (field here
+            // + the process-lifetime park list inside BridgeRegistrar).
+            bridgeRegistrar = BridgeRegistrar(bridge, onError).also { it.register() }
+            lines += "[BOOT] shell bridge registered"
+        }
 
         when (val rc = lib.blazornative_mount(componentName.toByteArray(Charsets.UTF_8) + 0)) {
             0 -> lines += "[BOOT] mounted $componentName"

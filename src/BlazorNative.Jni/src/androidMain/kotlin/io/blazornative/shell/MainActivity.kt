@@ -12,7 +12,8 @@ import kotlin.concurrent.thread
  * Phase 3.0d Android shell entry point — boots the NativeAOT pipeline.
  *
  * On launch: spawns a background thread that runs [BlazorNativeRuntime.start]
- * (init → register frame callback → mount HelloComponent) against the
+ * (init → register frame callback → register shell bridge → mount
+ * HelloComponent; 4 [BOOT] lines since Phase 3.1) against the
  * NativeAOT libBlazorNative.Runtime.so from the APK's jniLibs. Frames
  * arrive through the C-ABI struct path (NativeFrameAdapter) and render via
  * [WidgetMapper] into widget_root; [BOOT] status lines go to logcat and the
@@ -46,16 +47,23 @@ class MainActivity : Activity() {
         val widgetRoot = findViewById<FrameLayout>(R.id.widget_root)
         val mapper = WidgetMapper(this, widgetRoot)
 
+        val onError: (String, Throwable) -> Unit = { msg, t -> Log.e(tag, msg, t) }
         runtime = BlazorNativeRuntime(
             onFrame = { frame -> mapper.apply(frame) },
-            onError = { msg, t -> Log.e(tag, msg, t) },
+            onError = onError,
         )
+
+        // Phase 3.1: the shell half of IMobileBridge. Passing the Activity is
+        // safe — AndroidShellBridge captures applicationContext ONLY (the
+        // process-lifetime retention contract on ShellBridgeHandlers).
+        val bridge = AndroidShellBridge(this, onError)
 
         thread(name = "BlazorNative-Runtime-Boot") {
             try {
                 val lines = runtime.start(
                     platformOs = "android",
                     apiLevel = android.os.Build.VERSION.SDK_INT,
+                    bridge = bridge,
                 )
                 // Emit each line as one Log.i call so logcat shows them as
                 // atomic lines (filter via `adb logcat -s BlazorNative`).

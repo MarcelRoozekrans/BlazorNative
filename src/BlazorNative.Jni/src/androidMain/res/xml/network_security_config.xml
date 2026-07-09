@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Phase 3.1: RELEASE keeps the platform's secure default — cleartext HTTP
+     blocked everywhere (spelled out explicitly so the debug overlay is an
+     obvious diff against this file). The DEBUG build type overrides this
+     whole file via the res overlay at src/debug/res/xml/ with a loopback +
+     emulator-host cleartext exemption for the instrumented shell-bridge
+     tests. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+</network-security-config>
