@@ -14,7 +14,8 @@ import com.sun.jna.Structure
  * the NativeAOT publish output directory).
  *
  * Phase 3.0b: minimum surface for boot smoke — init, shutdown, version.
- * Phase 3.0c+ extends with frame callback registration + event dispatch.
+ * Phase 3.0c adds the run_trim_probes diagnostic (Gate 4).
+ * Phase 3.0d extends with frame callback registration + event dispatch.
  *
  * See docs/plans/2026-05-31-phase-3.0b-design.md for the C-ABI contract.
  */
@@ -23,6 +24,13 @@ interface NativeBindings : Library {
     fun blazornative_init(opts: BlazorNativeInitOptions.ByReference): BlazorNativeInitResult.ByValue
     fun blazornative_shutdown()
     fun blazornative_version(): Pointer
+
+    /**
+     * Phase 3.0c Gate 4 diagnostic export: mounts the IL2072 trim probes inside
+     * the NativeAOT library. Status = failed probe count (0 = all pass, -1 =
+     * runner crash); ErrorMessage carries per-probe failure detail.
+     */
+    fun blazornative_run_trim_probes(): BlazorNativeInitResult.ByValue
 
     companion object {
         // JNA library name "BlazorNative.NativeHost" → maps to:

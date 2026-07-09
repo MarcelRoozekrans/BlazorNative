@@ -1,14 +1,16 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <!-- ─────────────────────────────────────────────────────────────────────
-       BlazorNative.NativeHost — Phase 3.0b
+       BlazorNative.NativeHost — Phase 3.0b/3.0c
        NativeAOT-compiled shared library replacing the wasi-experimental
        .wasm path. Multi-RID: win-x64 for JVM dev loop, linux-bionic-arm64
-       + linux-bionic-x64 for Android (cross-compiled in WSL Ubuntu).
+       + linux-bionic-x64 for Android (Windows-direct via the runtime-pack
+       bypass — see the Phase 3.0c PropertyGroup below; no WSL needed).
 
-       Coexists with BlazorNative.WasiHost.csproj through Phase 3.0b;
-       Phase 3.0c's atomic cleanup commit deletes the WASM-era path.
-       See docs/plans/2026-05-31-phase-3.0b-design.md.
+       Coexists with BlazorNative.WasiHost.csproj until Phase 3.0e's atomic
+       cleanup commit deletes the WASM-era path.
+       See docs/plans/2026-05-31-phase-3.0b-design.md and
+       docs/plans/2026-07-08-phase-3.0c-redesign.md.
        ───────────────────────────────────────────────────────────────────── -->
 
   <PropertyGroup>
@@ -33,6 +35,21 @@
     <!-- Exports.cs uses unsafe pointer params on [UnmanagedCallersOnly] entry points. -->
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
+
+  <!-- Phase 3.0c: NativeAOT for Android via runtime-pack bypass. The RID-specific
+       ILCompiler packages don't exist for .NET 10 (3.0b Gate 4 RED); the host ILC
+       compiles against the target runtime pack instead. Unsupported-but-serviced
+       path — RuntimeFrameworkVersion pins the exact runtime pack so a servicing
+       release can't silently change the toolchain under us. The SDK side
+       (host ILCompiler) is pinned via global.json (feature band 10.0.3xx).
+       See docs/plans/2026-07-08-phase-3.0c-redesign.md. -->
+  <PropertyGroup Condition="$(RuntimeIdentifier.StartsWith('linux-bionic'))">
+    <PublishAotUsingRuntimePack>true</PublishAotUsingRuntimePack>
+    <DisableUnsupportedError>true</DisableUnsupportedError>
+    <RuntimeFrameworkVersion>10.0.9</RuntimeFrameworkVersion>
+  </PropertyGroup>
+
+  <Import Project="..\..\build\BionicNativeAot.targets" />
 
   <ItemGroup>
     <ProjectReference Include="..\BlazorNative.Core\BlazorNative.Core.csproj" />

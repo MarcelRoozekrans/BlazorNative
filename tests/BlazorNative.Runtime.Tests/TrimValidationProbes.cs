@@ -13,6 +13,10 @@ namespace BlazorNative.Runtime.Tests;
 //
 // Mounted on JVM-desktop NativeAOT (where the trimmer runs) — proves the
 // ACCEPT decisions hold at runtime, not just statically.
+//
+// NOTE: these probe shapes are duplicated in src/BlazorNative.NativeHost/
+// TrimProbes.cs (Phase 3.0c Gate 4) — if you edit them here, update the
+// NativeAOT twin too.
 // ─────────────────────────────────────────────────────────────────────────────
 
 internal sealed class ParameterProbe : ComponentBase

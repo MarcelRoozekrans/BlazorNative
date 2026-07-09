@@ -619,6 +619,75 @@ if (-not $SkipAndroid) {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
+# 8d. Bionic NativeAOT toolchain (Phase 3.0c) — verify + document, no installs
+#     BlazorNative.NativeHost cross-compiles to linux-bionic-{x64,arm64} .so
+#     files directly on Windows via the runtime-pack bypass (the RID-specific
+#     ILCompiler packages don't exist for .NET 10 — 3.0b Gate 4 RED).
+#     Pinned working combo (Gate 2 GREEN):
+#       • .NET SDK 10.0.301 (section 2)
+#       • ILCompiler + Microsoft.NETCore.App.Runtime.NativeAOT.linux-bionic-*
+#         runtime packs 10.0.9 (pinned via RuntimeFrameworkVersion in
+#         BlazorNative.NativeHost.csproj)
+#       • Android NDK 26.3.11579264 (installed by section 7)
+#       • vendored build/BionicNativeAot.targets (NDK shim + linker args)
+#     The targets read ANDROID_NDK_ROOT (not ANDROID_NDK_HOME) — this section
+#     mirrors section 7's NDK path into it.
+# ─────────────────────────────────────────────────────────────────────────────
+
+if (-not $SkipAndroid) {
+    Write-Header "8d · Bionic NativeAOT toolchain (verify env for linux-bionic publishes)"
+
+    $bionicNdkPin = "26.3.11579264"
+    # Anchored so a longer revision (e.g. "26.3.115792640") can't sneak past;
+    # (?m) because source.properties is a multi-line key=value file.
+    $bionicNdkRevisionPattern = '(?m)^\s*Pkg\.Revision\s*=\s*' + [regex]::Escape($bionicNdkPin) + '\s*$'
+
+    $bionicNdkRoot = "$env:LOCALAPPDATA\Android\Sdk\ndk\$bionicNdkPin"
+    $bionicNdkPathSource = "the default SDK location (`$env:LOCALAPPDATA\Android\Sdk)"
+    if ($env:ANDROID_NDK_HOME -and (Test-Path $env:ANDROID_NDK_HOME)) {
+        $bionicNdkRoot = $env:ANDROID_NDK_HOME
+        $bionicNdkPathSource = "ANDROID_NDK_HOME"
+    }
+
+    # The path existing isn't enough — a stray ANDROID_NDK_HOME can point at a
+    # different NDK. Verify the pinned revision from the NDK's own source.properties.
+    $bionicNdkProps = Join-Path $bionicNdkRoot "source.properties"
+    $bionicNdkRevisionOk = (Test-Path $bionicNdkProps) -and
+        ((Get-Content $bionicNdkProps -Raw) -match $bionicNdkRevisionPattern)
+
+    if (-not (Test-Path $bionicNdkRoot)) {
+        Write-Fail "NDK $bionicNdkPin not found at $bionicNdkRoot — section 7 needs to install it first"
+    } elseif (-not $bionicNdkRevisionOk) {
+        Write-Fail "NDK at $bionicNdkRoot (resolved from $bionicNdkPathSource) is not revision $bionicNdkPin — source.properties is missing or reports a different Pkg.Revision. Point ANDROID_NDK_HOME at NDK $bionicNdkPin, or unset it so the default SDK path is used."
+    } elseif ($env:ANDROID_NDK_ROOT -and (Test-Path $env:ANDROID_NDK_ROOT)) {
+        # A pre-existing ANDROID_NDK_ROOT is what the bionic publish actually
+        # reads — verify ITS revision too, not just that the path exists.
+        $ndkRootProps = Join-Path $env:ANDROID_NDK_ROOT "source.properties"
+        $ndkRootRevisionOk = (Test-Path $ndkRootProps) -and
+            ((Get-Content $ndkRootProps -Raw) -match $bionicNdkRevisionPattern)
+        if ($ndkRootRevisionOk) {
+            Write-OK "ANDROID_NDK_ROOT already set to $env:ANDROID_NDK_ROOT (revision $bionicNdkPin verified)"
+        } else {
+            Write-Fail "NDK at $env:ANDROID_NDK_ROOT (resolved from ANDROID_NDK_ROOT) is not revision $bionicNdkPin — source.properties is missing or reports a different Pkg.Revision. Point ANDROID_NDK_ROOT at NDK $bionicNdkPin, or unset it so setup can set it to the pinned default."
+        }
+    } else {
+        [Environment]::SetEnvironmentVariable("ANDROID_NDK_ROOT", $bionicNdkRoot, "User")
+        $env:ANDROID_NDK_ROOT = $bionicNdkRoot
+        $script:envChanged = $true
+        Write-OK "ANDROID_NDK_ROOT set to $bionicNdkRoot"
+    }
+
+    Write-Host ""
+    Write-Host "  Pinned toolchain combo (Phase 3.0c Gate 2):" -ForegroundColor DarkGray
+    Write-Host "    .NET SDK 10.0.3xx band (floor 10.0.301) · ILCompiler/NativeAOT runtime packs 10.0.9 · NDK $bionicNdkPin" -ForegroundColor Cyan
+    Write-Host ""
+    Write-Host "  Publish the Android native host (from repo root):" -ForegroundColor DarkGray
+    Write-Host "    dotnet publish src\BlazorNative.NativeHost -c Release -r linux-bionic-x64" -ForegroundColor Cyan
+    Write-Host "    dotnet publish src\BlazorNative.NativeHost -c Release -r linux-bionic-arm64" -ForegroundColor Cyan
+    Write-Host ""
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
 # 9. Restore NuGet packages
 # ─────────────────────────────────────────────────────────────────────────────
 
