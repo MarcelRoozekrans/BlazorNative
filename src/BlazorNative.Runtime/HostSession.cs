@@ -171,7 +171,11 @@ internal static unsafe class HostSession
     /// before blazornative_dispatch_event returns. Failures THROW — direct
     /// callers see them; deferred ones join the 3.2 dispatch capture and
     /// map to export rc 2 (strict conventions).</summary>
-    internal static void SwapRoot(string name)
+    /// <param name="name">The mount-registry key to swap to.</param>
+    /// <param name="afterSwap">Runs INSIDE the swap unit, after the new root
+    /// mounted — the nav manager finalizes route state + RouteChanged here so
+    /// neither happens when a (possibly deferred) swap fails.</param>
+    internal static void SwapRoot(string name, Action? afterSwap = null)
     {
         if (!s_components.ContainsKey(name))
         {
@@ -189,6 +193,7 @@ internal static unsafe class HostSession
                 Volatile.Write(ref s_currentRootComponentId, -1);
             }
             MountRoot(name, renderer);
+            afterSwap?.Invoke();
         });
     }
 

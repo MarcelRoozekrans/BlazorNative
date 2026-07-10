@@ -86,11 +86,16 @@ public sealed class NativeNavigationManager : INavigationManager
 
         // 2. The swap: old root's RemoveNode disposal frame, then the new
         //    page's mount frame. Failures THROW — inside a click dispatch the
-        //    3.2 capture window maps them to export rc 2.
-        HostSession.SwapRoot(component);
-
-        _currentRoute = route;
-        RouteChanged?.Invoke(route);
+        //    3.2 capture window maps them to export rc 2. Route state + the
+        //    RouteChanged event ride the swap unit (afterSwap) so they track
+        //    the SCREEN, not the intent: a mid-dispatch navigation defers the
+        //    swap to the dispatch unwind, and a failed swap must not leave
+        //    CurrentRoute pointing at a page that never mounted.
+        HostSession.SwapRoot(component, afterSwap: () =>
+        {
+            _currentRoute = route;
+            RouteChanged?.Invoke(route);
+        });
         return ValueTask.CompletedTask;
     }
 
