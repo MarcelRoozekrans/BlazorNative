@@ -91,6 +91,11 @@ public sealed class NativeNavigationManager : INavigationManager
         //    the SCREEN, not the intent: a mid-dispatch navigation defers the
         //    swap to the dispatch unwind, and a failed swap must not leave
         //    CurrentRoute pointing at a page that never mounted.
+        //    A THROWING RouteChanged subscriber faults the swap unit AFTER
+        //    the screen already swapped (the deferred path maps it to rc 2
+        //    even though the navigation itself succeeded) — CurrentRoute is
+        //    already consistent with the screen at that point; documented
+        //    POC posture (subscriber isolation is M4+ diagnostics work).
         HostSession.SwapRoot(component, afterSwap: () =>
         {
             _currentRoute = route;

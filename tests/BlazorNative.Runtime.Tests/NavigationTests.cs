@@ -366,4 +366,47 @@ public sealed class NavigationTests
             TearDown();
         }
     }
+
+    // ── FAILED swap: route state tracks the SCREEN, not the intent ───────────
+
+    [Fact]
+    public void FailedSwap_InsideClickHandler_FaultsDispatch_RouteStateUntouched()
+    {
+        var (_, frames) = StartSession();
+        // Make the swap TARGET's mount throw (test-only registry override —
+        // the route table is untouched, so NavigateToAsync still resolves).
+        Func<NativeRenderer, int> original = HostSession.ReplaceRegistryEntryForTests(
+            "BnSettingsPage",
+            _ => throw new InvalidOperationException("test: settings mount refused"));
+        try
+        {
+            Assert.Equal(0, HostSession.TryMount("BnDemo"));
+            INavigationManager nav = Nav();
+            bool routeChangedFired = false;
+            nav.RouteChanged += _ => routeChangedFired = true;
+            int settingsHandler = ClickHandlerOn(frames[0],
+                ContainerOfText(frames[0], "Settings →"));
+
+            // The deferred swap's mount throws → the fault joins the 3.2
+            // dispatch capture → rc 2. Route state + RouteChanged ride the
+            // swap unit (afterSwap), so neither moved: CurrentRoute still
+            // agrees with what actually mounted.
+            int rc = Exports.DispatchEventCore((ulong)settingsHandler, ClickArgs);
+            Assert.Equal(2, rc);
+            Assert.Equal("/", nav.CurrentRoute);
+            Assert.False(routeChangedFired,
+                "RouteChanged must not fire for a failed swap");
+
+            // The documented host-notify-first divergence: the host heard the
+            // new route BEFORE the swap failed (NavigateToAsync step 1
+            // precedes step 2 by design — the host's @Volatile route is a
+            // notification record, not the swap's outcome).
+            Assert.Equal("/settings", FakeShellHost.Route);
+        }
+        finally
+        {
+            HostSession.ReplaceRegistryEntryForTests("BnSettingsPage", original);
+            TearDown();
+        }
+    }
 }

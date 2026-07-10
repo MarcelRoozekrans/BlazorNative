@@ -234,7 +234,13 @@ public sealed class NativeRenderer : BlazorRenderer
     /// window unwinds (still inside the dispatch export call). A queued
     /// action's exception — including strict-mode renderer errors from the
     /// frames it produces — is routed into the dispatch capture slot, so it
-    /// faults the dispatch task exactly like a handler fault (export rc 2).</summary>
+    /// faults the dispatch task exactly like a handler fault (export rc 2).
+    /// Honest boundary (NON-strict mode): the drain runs at depth 0, so a
+    /// renderer error DURING a deferred action's own batches routes through
+    /// <see cref="HandleException"/>'s log-only path — the action "succeeds"
+    /// and the export returns 0. Only exceptions the action itself throws
+    /// (or strict-mode rethrows) reach the capture slot. In-window faults are
+    /// unaffected: they always map to rc 2.</summary>
     public void RunAfterDispatch(Action action)
     {
         if (_uiEventDispatchDepth == 0)
@@ -247,11 +253,14 @@ public sealed class NativeRenderer : BlazorRenderer
 
     /// <summary>Drains queued post-dispatch work (see <see cref="RunAfterDispatch"/>).
     /// Runs with the dispatch depth already at 0 — a drained action's
-    /// Unmount/Mount batches process normally. The while-loop covers actions
-    /// that queue further actions (they run in the same drain, preserving
-    /// "inside this dispatch"). Action faults land in the capture slot
-    /// (first one wins, matching the window contract) instead of escaping
-    /// the calling finally.</summary>
+    /// Unmount/Mount batches process normally, and a RunAfterDispatch call
+    /// DURING the drain executes immediately (depth 0), so the while-loop is
+    /// unreachable today: purely defensive against a future change that
+    /// re-queues mid-drain. Action faults land in the capture slot (first
+    /// one wins, matching the window contract) instead of escaping the
+    /// calling finally; EVERY fault is logged to stderr — mirroring
+    /// <see cref="HandleException"/>'s window path — so a second fault is
+    /// never silently discarded when the slot is already taken.</summary>
     private void DrainPostDispatchActions()
     {
         while (_postDispatchActions is { Count: > 0 } actions)
@@ -265,6 +274,7 @@ public sealed class NativeRenderer : BlazorRenderer
                 }
                 catch (Exception ex)
                 {
+                    Console.Error.WriteLine($"[BlazorNative.Renderer] {ex}");
                     _uiEventDispatchException ??= ex;
                 }
             }

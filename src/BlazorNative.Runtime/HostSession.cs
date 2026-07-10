@@ -120,6 +120,21 @@ internal static unsafe class HostSession
         }
     }
 
+    /// <summary>Test-only (same posture as StrictErrorsForTests): swaps a
+    /// mount-registry entry so failure paths — a navigation swap whose
+    /// target mount THROWS — are testable without a throwing production
+    /// component. Returns the original entry; callers restore it in a
+    /// finally. The production ABI never calls this; tests using it
+    /// serialize via the "host-session" collection like every other
+    /// registry consumer.</summary>
+    internal static Func<NativeRenderer, int> ReplaceRegistryEntryForTests(
+        string name, Func<NativeRenderer, int> mount)
+    {
+        Func<NativeRenderer, int> original = s_components[name];
+        s_components[name] = mount;
+        return original;
+    }
+
     /// <summary>Mounts a registered component by name.
     /// Returns 0 = ok, 1 = unknown component, 2 = mount threw.</summary>
     /// <remarks>Phase 3.5 route-aware initial mount (design §1): the mount
@@ -129,7 +144,10 @@ internal static unsafe class HostSession
     /// CurrentRoute from the host's CurrentRoute buffer callback, and a
     /// known non-default route mounts ITS page instead (unknown/empty →
     /// "/" → the requested default). Explicit mounts of any OTHER name
-    /// (test Intent extras, probes) are never overridden.</remarks>
+    /// (test Intent extras, probes) are never overridden.
+    /// One mount per session: a second TryMount over a live root is ADDITIVE
+    /// (the new root renders alongside the old one) and orphans the old
+    /// root's tracking — host contract: use navigation to change pages.</remarks>
     public static int TryMount(string name)
     {
         if (!s_components.ContainsKey(name))
@@ -189,8 +207,16 @@ internal static unsafe class HostSession
             int current = Volatile.Read(ref s_currentRootComponentId);
             if (current >= 0)
             {
-                renderer.Unmount(current);
+                // Tracking clears BEFORE Unmount (unmount-as-best-effort): a
+                // strict-mode disposal fault leaves the old root in an
+                // undefined half-disposed state, and keeping its dead id
+                // would make every LATER swap re-call Unmount on it — each
+                // raising Blazor's "not a live root component"
+                // ArgumentException and masking the original fault forever.
+                // The fault itself still surfaces (thrown here → rc 2 on the
+                // deferred path), and the next swap can proceed to a mount.
                 Volatile.Write(ref s_currentRootComponentId, -1);
+                renderer.Unmount(current);
             }
             MountRoot(name, renderer);
             afterSwap?.Invoke();

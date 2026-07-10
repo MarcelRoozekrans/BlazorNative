@@ -8,7 +8,8 @@ namespace BlazorNative.Runtime.Tests;
 // in NativeShellBridge (WriteFlatJsonObject / ParseFlatJsonObject); Gate 2's
 // Kotlin writer/parser must round-trip the SAME matrix (escaping, \uXXXX,
 // surrogate pairs, malformed rejection). Pure functions — no bridge state,
-// so no "native-shell-bridge" collection needed.
+// so no "host-session" collection membership needed (the collection that
+// serializes all bridge/session singleton access since Phase 3.5).
 // ─────────────────────────────────────────────────────────────────────────────
 
 public sealed class FlatJsonTests
