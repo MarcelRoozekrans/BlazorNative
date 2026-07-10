@@ -21,7 +21,9 @@ namespace BlazorNative.Runtime;
 //   SetStylePatch(NodeId, Property, Value)      → Kind=SetStyle,
 //       PropName = Property, PropValue = Value (NULL if null)
 //   AttachEventPatch(NodeId, EventName, HandlerId) → Kind=AttachEvent,
-//       Text = EventName, AuxInt = HandlerId
+//       Text = EventName, AuxInt = HandlerId (re-attach for the same
+//       (node, event) REPLACES the prior handler — last wins, no DetachEvent
+//       precedes it; hosts swap their watcher, never stack)
 //   DetachEventPatch(NodeId, HandlerId, EventName) → Kind=DetachEvent,
 //       NodeId, AuxInt = HandlerId, Text = EventName (Phase 3.3 — same free
 //       Text field AttachEvent uses; wire layout unchanged)

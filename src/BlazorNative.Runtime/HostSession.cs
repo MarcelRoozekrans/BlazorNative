@@ -50,8 +50,11 @@ internal static unsafe class HostSession
     /// immediately. The PRODUCTION default stays false — renderer errors log
     /// to stderr rather than crash the host process (deliberate POC posture;
     /// a diagnostics surface is M4+). .NET host-session tests flip this via a
-    /// module initializer; JVM/instrumented suites can gain an export-level
-    /// hook later if Gate 2/3 need it (none wired — the C ABI is unchanged).</summary>
+    /// module initializer. The instrumented path has no managed hook, so
+    /// EnsureSession ALSO ORs in the <c>BLAZORNATIVE_STRICT=1</c> process
+    /// environment variable — the Android instrumented harness sets it BEFORE
+    /// init (Gate 3 wires it via the test runner's environment; no ABI
+    /// change). Absent/other values leave the production default.</summary>
     internal static bool StrictErrorsForTests
     {
         get => Volatile.Read(ref s_strictErrors);
@@ -148,7 +151,10 @@ internal static unsafe class HostSession
             // on Android.
             services.AddSingleton<IMobileBridge, NativeShellBridge>();
             renderer = services.BuildServiceProvider().GetRequiredService<NativeRenderer>();
-            renderer.StrictErrors = Volatile.Read(ref s_strictErrors);
+            // .NET test hook OR the instrumented-harness env toggle (see
+            // StrictErrorsForTests doc) — production default remains false.
+            renderer.StrictErrors = Volatile.Read(ref s_strictErrors)
+                || Environment.GetEnvironmentVariable("BLAZORNATIVE_STRICT") == "1";
 
             renderer.FrameSink = frame =>
             {

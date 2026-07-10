@@ -204,6 +204,13 @@ internal sealed class NativeWidgetTree
              + TranslateToViewIndex(componentId, parentNodeId, slotIndex);
     }
 
+    /// <summary>Contract-WARNING hook (Phase 3.3 Gate 1b review): quiet
+    /// fallbacks in the host-index translation report here. The renderer
+    /// wires it so the message is VISIBLE under strict mode and silently
+    /// tolerated otherwise — a warning, not a violation: the fallback result
+    /// (treat as append / zero offset) is still applied either way.</summary>
+    internal Action<string>? ContractWarning { get; set; }
+
     /// <summary>Whether any host view sits AFTER the given slot position in
     /// the shared host container (own bucket, then — for root-level buckets —
     /// the enclosing component-slot chain).</summary>
@@ -222,7 +229,16 @@ internal sealed class NativeWidgetTree
             return false; // root component at the host root
         var slotPos = IndexOfComponentSlot(parent.ParentComponentId, parent.ParentNodeId, componentId);
         if (slotPos < 0)
-            return false; // slot already trimmed (teardown) — treat as append
+        {
+            // Quiet fallback — exactly the class strict mode exists to make
+            // visible: a component whose slot is gone from its recorded
+            // parent container should only occur mid-teardown.
+            ContractWarning?.Invoke(
+                $"component {componentId} has no slot in its recorded parent container " +
+                $"(component {parent.ParentComponentId}, container {parent.ParentNodeId?.ToString() ?? "root"}) " +
+                "— treating its insert as a host append");
+            return false;
+        }
         return HasHostViewsAfter(parent.ParentComponentId, parent.ParentNodeId, slotPos + 1);
     }
 
@@ -238,7 +254,15 @@ internal sealed class NativeWidgetTree
             return 0;
         var slotPos = IndexOfComponentSlot(parent.ParentComponentId, parent.ParentNodeId, componentId);
         if (slotPos < 0)
+        {
+            // Same quiet-fallback class as HasHostViewsAfter's trimmed-slot
+            // branch (which normally short-circuits this path to -1 first).
+            ContractWarning?.Invoke(
+                $"component {componentId} has no slot in its recorded parent container " +
+                $"(component {parent.ParentComponentId}, container {parent.ParentNodeId?.ToString() ?? "root"}) " +
+                "— base offset 0 assumed");
             return 0;
+        }
         return HostBaseOffset(parent.ParentComponentId, parent.ParentNodeId)
              + TranslateToViewIndex(parent.ParentComponentId, parent.ParentNodeId, slotPos);
     }
@@ -316,6 +340,11 @@ internal sealed class NativeWidgetTree
         _componentParents.Remove(componentId);
 
         // Drop the component's slot lists.
+        // Complexity: O(total live buckets) PER DISPOSAL — the Keys.Where
+        // scan touches every bucket in the tree, not just this component's.
+        // Fine at probe scale (a handful of buckets); index buckets by
+        // componentId if 3.4's Bn* lists dispose many keyed children per
+        // frame (N disposals × B buckets goes quadratic-ish).
         var slotKeys = _slotLists.Keys
             .Where(k => k.ComponentId == componentId)
             .ToList();

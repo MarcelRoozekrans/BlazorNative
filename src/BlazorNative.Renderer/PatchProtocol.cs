@@ -75,6 +75,12 @@ public sealed record SetStylePatch(
 // ── Events ────────────────────────────────────────────────────────────────────
 
 /// <summary>Tell the native shell to start routing events of this type for a node.</summary>
+/// <remarks>Re-attach for the same (node, event) REPLACES the prior handler —
+/// last wins; no DetachEventPatch precedes it. Blazor emits this shape when a
+/// re-render swaps a handler delegate in place (a SetAttribute edit with a
+/// fresh handlerId, no RemoveAttribute); the renderer's detach registry
+/// follows suit, so a later detach carries the NEWEST handlerId. Hosts must
+/// swap their watcher, never stack a second one.</remarks>
 public sealed record AttachEventPatch(
     int    NodeId,
     string EventName,       // "click" | "change" | "focus" | "blur" | "scroll"

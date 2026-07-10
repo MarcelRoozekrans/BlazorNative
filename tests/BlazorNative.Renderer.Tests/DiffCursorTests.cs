@@ -662,6 +662,77 @@ public sealed class DiffCursorTests
         Assert.Equal("click", detach2.EventName);
     }
 
+    /// <summary>Driver div plus a target whose onclick DELEGATE swaps between
+    /// two methods (phase 0 → 1), then disappears (phase 2). The swap is a
+    /// pure SetAttribute with a fresh handlerId — NO RemoveAttribute.</summary>
+    private sealed class SwappingHandler : ComponentBase
+    {
+        private int _phase;
+        private void OnDriverClick() => _phase++;
+        private void HandlerA() { }
+        private void HandlerB() { }
+
+        protected override void BuildRenderTree(RenderTreeBuilder b)
+        {
+            b.OpenElement(0, "div");                       // sibling 0 — driver
+            b.AddAttribute(1, "onclick",
+                EventCallback.Factory.Create<MouseEventArgs>(this, OnDriverClick));
+            b.AddContent(2, "driver");
+            b.CloseElement();
+
+            b.OpenElement(3, "div");                       // sibling 1 — target
+            if (_phase == 0)
+                b.AddAttribute(4, "onclick",
+                    EventCallback.Factory.Create<MouseEventArgs>(this, HandlerA));
+            else if (_phase == 1)
+                b.AddAttribute(4, "onclick",
+                    EventCallback.Factory.Create<MouseEventArgs>(this, HandlerB));
+            b.AddContent(5, "target");
+            b.CloseElement();
+        }
+    }
+
+    [Fact]
+    public async Task SetAttribute_HandlerReplacement_NoDetach_NextDetachCarriesNewestHandlerId()
+    {
+        var (renderer, frames) = BuildRenderer();
+        using var rendererScope = renderer;
+
+        await renderer.MountAsync<SwappingHandler>(ParameterView.Empty);
+        Assert.NotEmpty(frames);
+
+        int NodeOf(string text)
+        {
+            var t = Assert.Single(frames[0].Patches.OfType<ReplaceTextPatch>(), p => p.Text == text);
+            var c = Assert.Single(frames[0].Patches.OfType<CreateNodePatch>(), p => p.NodeId == t.NodeId);
+            return Assert.IsType<int>(c.ParentId);
+        }
+        var driverAttach = Assert.Single(
+            frames[0].Patches.OfType<AttachEventPatch>(), p => p.NodeId == NodeOf("driver"));
+        var targetNode = NodeOf("target");
+        var originalAttach = Assert.Single(
+            frames[0].Patches.OfType<AttachEventPatch>(), p => p.NodeId == targetNode);
+
+        // Click 1: HandlerA → HandlerB — a direct SetAttribute replacement.
+        // The wire contract (AttachEventPatch remarks): re-attach REPLACES,
+        // last wins, and NO DetachEventPatch precedes it.
+        await Click(renderer, driverAttach);
+        Assert.True(frames.Count >= 2, "expected a re-render frame after click 1");
+        var swapped = Assert.Single(
+            frames[^1].Patches.OfType<AttachEventPatch>(), p => p.NodeId == targetNode);
+        Assert.NotEqual(originalAttach.HandlerId, swapped.HandlerId);
+        Assert.Empty(frames[^1].Patches.OfType<DetachEventPatch>());
+
+        // Click 2: the handler disappears → the detach carries the SWAPPED
+        // (newest) handlerId, not the mount-time one — the registry's
+        // last-wins overwrite followed the SetAttribute replacement.
+        await Click(renderer, driverAttach);
+        var detach = Assert.Single(frames[^1].Patches.OfType<DetachEventPatch>());
+        Assert.Equal(targetNode, detach.NodeId);
+        Assert.Equal(swapped.HandlerId, detach.HandlerId);
+        Assert.Equal("click", detach.EventName);
+    }
+
     /// <summary>Keyed item divs, each carrying its own onclick; the driver
     /// removes the first item.</summary>
     private sealed class RemovableHandlerList : ComponentBase

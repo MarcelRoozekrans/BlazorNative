@@ -79,7 +79,10 @@ public sealed class NativeRenderer : BlazorRenderer
     /// Default FALSE — the deliberate production POC posture: renderer errors
     /// log to stderr rather than crash the host process (a diagnostics
     /// surface is M4+ work). ALL test harnesses enable it: this silent
-    /// swallow hid Bug A, Bug B, and the 3.2 diff-cursor bug for days each.</summary>
+    /// swallow hid Bug A, Bug B, and the 3.2 diff-cursor bug for days each.
+    /// Threading: set before mount, or from the renderer thread; the property
+    /// is not synchronized, so a cross-thread mid-render flip races (same
+    /// contract as <see cref="FrameSink"/>).</summary>
     public bool StrictErrors { get; set; }
 
     public NativeRenderer(IServiceProvider services)
@@ -88,6 +91,16 @@ public sealed class NativeRenderer : BlazorRenderer
         // Force the BlazorInterop static ctor (version + accessor probe) to run
         // before the first frame is rendered so layout drift surfaces immediately.
         BlazorInterop.EnsureInitialized();
+
+        // Quiet-fallback WARNINGS from the tree's host-index translation
+        // (trimmed-slot → append): visible under strict mode, silently
+        // tolerated otherwise — a warning, not a violation (the fallback is
+        // still applied), so it never throws.
+        _tree.ContractWarning = message =>
+        {
+            if (StrictErrors)
+                Console.Error.WriteLine($"[NativeRenderer] contract warning: {message}");
+        };
     }
 
     // Mono-WASI is single-threaded with no real scheduler — Dispatcher.CreateDefault()
@@ -229,7 +242,12 @@ public sealed class NativeRenderer : BlazorRenderer
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[NativeRenderer] frame {frameId} failed: {ex}");
+            // Non-strict only: strict mode promises SURFACING over logging —
+            // HandleException rethrows (or the dispatch window captures and
+            // logs), so logging here too would double-report the same
+            // exception. Non-strict keeps the frame-id context line.
+            if (!StrictErrors)
+                Console.Error.WriteLine($"[NativeRenderer] frame {frameId} failed: {ex}");
             HandleException(ex);
         }
         finally
