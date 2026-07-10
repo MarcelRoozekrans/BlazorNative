@@ -17,8 +17,10 @@ import org.junit.runner.RunWith
  * the desktop JVM uses — no wasmtime, no Java-side runtime bootstrap — loads
  * the NativeAOT .so from the APK's jniLibs and boots.
  *
- * Phase 3.0c Gate 4 adds trim_probes_pass_on_device: the 4 accepted IL2072
- * call paths from Phase 3.0a run INSIDE the trimmed .so on the device.
+ * Phase 3.5 (M3 close): trim_probes_pass_on_device was deleted with the
+ * blazornative_run_trim_probes export — the IL2072 trim paths are exercised
+ * on-device by real components (BnDemo/CompositionProbe mounts) under strict
+ * mode.
  */
 @RunWith(AndroidJUnit4::class)
 class BootSmokeNativeAndroidTest {
@@ -58,26 +60,12 @@ class BootSmokeNativeAndroidTest {
         assertEquals("init failed: $error", 0, result.status)
         val version = result.versionString?.getString(0, "UTF-8") ?: ""
         assertTrue("unexpected version: $version", version.contains("BlazorNative.Runtime"))
-        assertTrue("unexpected version: $version", version.contains("phase-3.4"))
+        assertTrue("unexpected version: $version", version.contains("phase-3.5"))
 
         // Gate 3 review follow-up: cross-check the second export shape —
         // blazornative_version() (bare pointer return) must agree with the
         // struct-marshaled VersionString.
         val standaloneVersion = NativeBindings.INSTANCE.blazornative_version().getString(0, "UTF-8")
         assertEquals("blazornative_version() disagrees with init VersionString", version, standaloneVersion)
-    }
-
-    /**
-     * Phase 3.0c Gate 4 — the 4 accepted IL2072 call paths (ComponentProperties
-     * .SetProperties ×2, FindCascadingParameters, PerformPropertyInjection) run
-     * INSIDE the NativeAOT-trimmed .so on the device via
-     * blazornative_run_trim_probes. Status = failed probe count; ErrorMessage =
-     * per-probe detail.
-     */
-    @Test
-    fun trim_probes_pass_on_device() {
-        val result = NativeBindings.INSTANCE.blazornative_run_trim_probes()
-        val detail = result.errorMessage?.getString(0, "UTF-8") ?: ""
-        assertEquals("failed probes: $detail", 0, result.status)
     }
 }

@@ -1,3 +1,4 @@
+using BlazorNative.Core;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Rendering;
 using Microsoft.AspNetCore.Components.Web;
@@ -7,8 +8,11 @@ namespace BlazorNative.Components;
 // ─────────────────────────────────────────────────────────────────────────────
 // BnDemo — Phase 3.4 Task 4 (design §4): the Bn*-built demo form closing
 // M3 DoD #5 (two-way bound input + live echo) and DoD #6 (cascading theme
-// toggle → themed children re-render). Registered as "BnDemo" in
-// HostSession's mount registry; becomes MainActivity's default at Gate 4.
+// toggle → themed children re-render). Phase 3.5 (design §2) makes it a
+// TWO-PAGE app: the "Settings →" button navigates to BnSettingsPage
+// (route "/settings") through [Inject] INavigationManager — DoD #7.
+// Registered as "BnDemo" in HostSession's mount registry; MainActivity's
+// default since 3.4 Gate 4.
 //
 // Shape (the pinned mount contract — BnDemoTests + Gate 3's BnDemoTest.kt):
 //   CascadingValue<BnTheme>                       (region — no node)
@@ -18,13 +22,18 @@ namespace BlazorNative.Components;
 //       ├─ BnThemedPanel #2 → BnView echo panel    div, backgroundColor+padding 8
 //       │   └─ BnText echo (= the bound text)      span
 //       ├─ BnButton "Clear"                        button + click
-//       └─ BnButton "Theme"                        button + click
+//       ├─ BnButton "Theme"                        button + click
+//       └─ BnButton "Settings →"                   button + click → NavigateToAsync("/settings")
+//   (4 event attaches: change + Clear + Theme + Settings →)
 //
 // The bind loop (DoD #5): change dispatch → BnInput.ValueChanged → _text
 // mutates → re-render → echo ReplaceText + input value UpdateProp.
 // The theme toggle (DoD #6): _theme swaps to a NEW BnTheme record →
 // CascadingValue notifies → BOTH BnThemedPanels re-render → SetStyle
 // backgroundColor on both divs.
+// The navigation (DoD #7): Settings click → INavigationManager swaps the
+// root (this page's RemoveNodes, then BnSettingsPage's creates) inside the
+// same dispatch.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// <summary>Demo-internal cascading consumer: reads the cascaded
@@ -58,11 +67,19 @@ public sealed class BnDemo : ComponentBase
     private string _text = "";
     private BnTheme _theme = new(DefaultBackground, AltBackground);
 
+    /// <summary>Phase 3.5: the navigation service (Core contract) — with
+    /// BnSettingsPage, the first real DI consumers in Components.</summary>
+    [Inject] public INavigationManager Navigation { get; set; } = default!;
+
     private void Clear() => _text = "";
 
     // Swap: a NEW record instance each toggle (see BnTheme doc).
     private void ToggleTheme()
         => _theme = new BnTheme(_theme.AltBackground, _theme.Background);
+
+    // Sync-completing (inline dispatcher): the swap has fully happened —
+    // removes + creates delivered — when this Task is observed.
+    private Task GoToSettings() => Navigation.NavigateToAsync("/settings").AsTask();
 
     protected override void BuildRenderTree(RenderTreeBuilder b)
     {
@@ -114,6 +131,12 @@ public sealed class BnDemo : ComponentBase
         b.AddComponentParameter(41, nameof(BnButton.Label), "Theme");
         b.AddComponentParameter(42, nameof(BnButton.OnClick),
             EventCallback.Factory.Create<MouseEventArgs>(this, ToggleTheme));
+        b.CloseComponent();
+
+        b.OpenComponent<BnButton>(50);                           // → BnSettingsPage (DoD #7)
+        b.AddComponentParameter(51, nameof(BnButton.Label), "Settings →");
+        b.AddComponentParameter(52, nameof(BnButton.OnClick),
+            EventCallback.Factory.Create<MouseEventArgs>(this, GoToSettings));
         b.CloseComponent();
     }
 }

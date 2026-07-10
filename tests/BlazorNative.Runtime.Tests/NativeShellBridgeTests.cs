@@ -20,8 +20,10 @@ namespace BlazorNative.Runtime.Tests;
 //
 // State note: NativeShellBridge holds process-wide static state (registered
 // callbacks + pending-fetch table), and FakeShellHost is static too — so
-// every test class touching either joins the "native-shell-bridge" xUnit
-// collection (serialized), and each test resets the bridge in finally.
+// every test class touching either serializes via the shared "host-session"
+// xUnit collection (Phase 3.5 merged the former "native-shell-bridge"
+// collection into it: NavigationTests spans BOTH singletons, and separate
+// collections run in parallel), and each test resets the bridge in finally.
 // ─────────────────────────────────────────────────────────────────────────────
 
 // ── FakeShellHost — managed stand-in for the Kotlin host ────────────────────
@@ -187,7 +189,7 @@ internal static unsafe class FakeShellHost
 
 // ── Tests ────────────────────────────────────────────────────────────────────
 
-[Collection("native-shell-bridge")]
+[Collection("host-session")]
 public sealed class NativeShellBridgeTests
 {
     private const string NotRegisteredMessage =
@@ -342,6 +344,27 @@ public sealed class NativeShellBridgeTests
             // The late completion hits the unknown-id path: 1, never a throw.
             var resp = new BlazorNativeFetchResponse { StatusCode = 200, Ok = 1 };
             Assert.Equal(1, NativeShellBridge.CompleteFetch(id, in resp));
+        }
+        finally { NativeShellBridge.ResetForTests(); }
+    }
+
+    [Fact]
+    public async Task FetchBegin_HostErrorReturnCode_ThrowsHostError()
+    {
+        // The .NET leg of the guarded-catch wire path (ABI exception posture):
+        // a throwing Kotlin handler surfaces across the ABI as -1, and the
+        // bridge must turn any negative FetchBegin return into the HostError
+        // InvalidOperationException naming the op + return code. (The Kotlin
+        // leg — throw → guarded() → onError + -1 — is pinned by
+        // ShellBridgeTest.guarded_callback_maps_throw_to_host_error.)
+        var bridge = RegisterFake();
+        try
+        {
+            FakeShellHost.FetchBeginReturnCode = -1;
+            var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+                () => bridge.FetchAsync(new BridgeHttpRequest("http://fake.test/boom")).AsTask());
+            Assert.Contains("fetch-begin", ex.Message);
+            Assert.Contains("return code -1", ex.Message);
         }
         finally { NativeShellBridge.ResetForTests(); }
     }

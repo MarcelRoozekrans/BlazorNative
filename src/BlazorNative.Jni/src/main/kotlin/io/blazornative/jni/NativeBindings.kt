@@ -15,8 +15,10 @@ import com.sun.jna.Structure
  * the NativeAOT publish output directory).
  *
  * Phase 3.0b: minimum surface for boot smoke — init, shutdown, version.
- * Phase 3.0c adds the run_trim_probes diagnostic (Gate 4).
  * Phase 3.0d extends with frame callback registration + event dispatch.
+ * Phase 3.5 (M3 close) deleted the two diagnostic probe exports
+ * (run_trim_probes, run_bridge_probes) — superseded by real components under
+ * strict mode + production bridge use. Eight exports remain.
  *
  * See docs/plans/2026-05-31-phase-3.0b-design.md for the C-ABI contract.
  */
@@ -25,13 +27,6 @@ interface NativeBindings : Library {
     fun blazornative_init(opts: BlazorNativeInitOptions.ByReference): BlazorNativeInitResult.ByValue
     fun blazornative_shutdown()
     fun blazornative_version(): Pointer
-
-    /**
-     * Phase 3.0c Gate 4 diagnostic export: mounts the IL2072 trim probes inside
-     * the NativeAOT library. Status = failed probe count (0 = all pass, -1 =
-     * runner crash); ErrorMessage carries per-probe failure detail.
-     */
-    fun blazornative_run_trim_probes(): BlazorNativeInitResult.ByValue
 
     /**
      * Phase 3.0d: registers the frame callback the runtime invokes (synchronously,
@@ -103,19 +98,6 @@ interface NativeBindings : Library {
      *       lands on the runtime's stderr
      */
     fun blazornative_fetch_complete(requestId: Long, response: BlazorNativeFetchResponse.ByReference): Int
-
-    /**
-     * Phase 3.1 diagnostic export (TEMPORARY — deleted at M3 close together
-     * with run_trim_probes): exercises the six shell-bridge ops inside the
-     * NativeAOT library against the REGISTERED host callbacks — navigate
-     * round-trip, storage write/read/delete + absent-key null, one fetch
-     * against [fetchUrlUtf8] (NUL-terminated UTF-8; 10 s timeout, expects
-     * HTTP 200). Returns the InitResult struct BY VALUE: Status = failed
-     * probe count (0 = all pass, -1 = runner crashed / null URL),
-     * ErrorMessage = per-probe detail, VersionString = the static label
-     * "probes:navigate,storage,fetch".
-     */
-    fun blazornative_run_bridge_probes(fetchUrlUtf8: ByteArray): BlazorNativeInitResult.ByValue
 
     /**
      * Cdecl `void (*)(BlazorNativeFrame*)`. The frame pointer (and every

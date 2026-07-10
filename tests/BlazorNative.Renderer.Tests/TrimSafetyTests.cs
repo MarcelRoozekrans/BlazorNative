@@ -23,8 +23,10 @@ namespace BlazorNative.Renderer.Tests;
 //
 // SCOPE CAVEAT: this test runs on the untrimmed .NET host CLR (what
 // `dotnet test` exercises). It does NOT prove NativeAOT trim safety — that
-// proof lives in the trim probes exercised INSIDE the published binary
-// (Phase 3.0c Gate 4, `blazornative_run_trim_probes`). Its purpose is:
+// proof came from the trim probes exercised INSIDE the published binary
+// (Phase 3.0c Gate 4, `blazornative_run_trim_probes` — export deleted at M3
+// close, Phase 3.5) and now comes from real components mounted in the
+// trimmed binary under strict mode. Its purpose is:
 //   1. Regression guard against future code drift that breaks ElementName
 //      flow (would be unexpected, but the test catches it).
 //   2. Sanity check that the annotation pass didn't accidentally break

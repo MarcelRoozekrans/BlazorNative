@@ -1,7 +1,6 @@
 package io.blazornative.shell
 
 import android.content.Intent
-import android.system.Os
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
@@ -14,7 +13,6 @@ import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
-import org.junit.BeforeClass
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.util.concurrent.atomic.AtomicReference
@@ -45,39 +43,15 @@ import java.util.concurrent.atomic.AtomicReference
  * "item-N (taps: 0)" TextViews — never by nodeId (process-global counters)
  * or patch order (JVM-twin convention).
  *
- * STRICT MODE (DoD #9): [enableStrictMode] sets BLAZORNATIVE_STRICT=1 via
- * Os.setenv BEFORE any Activity launch. Test and app share the instrumented
- * process, and HostSession.EnsureSession reads the variable ONE-SHOT at
- * first-session creation — so strict is guaranteed exactly when the class
- * holding the process's FIRST mount has set it. Since Phase 3.4 Gate 4 that
- * class is BnDemoAndroidTest in full-suite runs ("Bn" < "Bo" < "Composition"
- * under the runner's default alphabetical order; BootSmokeNativeAndroidTest
- * inits + runs trim probes but never mounts) — it carries an IDENTICAL
- * @BeforeClass setenv. This one is KEPT for filtered runs of this class,
- * where it owns the first mount again; the two are idempotent (same
- * variable, same value, both pre-launch). Because the session is
- * process-global, the strict session then persists for the REST of the
- * suite — deliberate (design §5: all test harnesses run strict); a strict
- * failure anywhere downstream is a real finding, not flakiness. When another
- * class mounts first, an already-set setenv degrades to a silent no-op
- * (documented on HostSession.StrictErrorsForTests) — which is why EVERY
- * class that could own the first mount must set it itself.
+ * STRICT MODE (DoD #9): strict is guaranteed by BlazorNativeTestRunner —
+ * the runner sets BLAZORNATIVE_STRICT=1 before any test class loads
+ * (Phase 3.5 Gate 0; the per-class setenv pattern is gone).
  *
  * Polling: boot deadline 60s, post-tap re-render deadline 10s — the
  * EventRoundTripAndroidTest precedent (dispatch is async from the UI thread).
  */
 @RunWith(AndroidJUnit4::class)
 class CompositionAndroidTest {
-
-    companion object {
-        @BeforeClass
-        @JvmStatic
-        fun enableStrictMode() {
-            // Must precede the first blazornative_mount in this process —
-            // see the class KDoc's one-shot/ordering contract.
-            Os.setenv("BLAZORNATIVE_STRICT", "1", true)
-        }
-    }
 
     private fun launchProbe(): ActivityScenario<MainActivity> {
         val ctx = InstrumentationRegistry.getInstrumentation().targetContext

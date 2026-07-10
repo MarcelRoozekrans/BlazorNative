@@ -81,8 +81,9 @@ public sealed class NativeShellBridge : IMobileBridge
         => Volatile.Write(ref s_platformOptions, new PlatformOptions(os, apiLevel, note));
 
     /// <summary>Test-only: unregister + drain pending fetches so state can't
-    /// leak across tests (the "native-shell-bridge" xUnit collection
-    /// serializes callers).</summary>
+    /// leak across tests (the "host-session" xUnit collection serializes
+    /// callers — Phase 3.5 merged the former "native-shell-bridge"
+    /// collection into it).</summary>
     internal static void ResetForTests()
     {
         Volatile.Write(ref s_callbacks, null);

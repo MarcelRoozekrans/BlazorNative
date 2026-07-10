@@ -123,10 +123,12 @@ public sealed class BnDemoTests
         var echoText = Assert.Single(mount.Patches.OfType<ReplaceTextPatch>(), p => p.Text == "");
         Assert.Equal(EchoTextNode(mount), echoText.NodeId);
 
-        // Buttons under the form, each with a click attach.
+        // Buttons under the form, each with a click attach (Phase 3.5:
+        // + "Settings →", the navigation entry — DoD #7).
         var clear = ContainerOfText(mount, "Clear");
         var theme = ContainerOfText(mount, "Theme");
-        foreach (var btn in new[] { clear, theme })
+        var settings = ContainerOfText(mount, "Settings →");
+        foreach (var btn in new[] { clear, theme, settings })
         {
             Assert.Equal("button", CreateOf(mount, btn).NodeType);
             Assert.Equal(root.NodeId, CreateOf(mount, btn).ParentId);
@@ -134,23 +136,24 @@ public sealed class BnDemoTests
         }
 
         // Order pin for Gate 3. Blazor's FIFO render queue CREATES the form
-        // children as title → input → Clear → Theme → echo panel (the panel's
-        // BnView is a chained child component, queued behind the buttons),
-        // so the panel's create carries the MID-LIST InsertIndex 2 — after
-        // title + input, before the buttons — while everything else appends.
-        // FINAL child order: title, input, echo panel, Clear, Theme.
+        // children as title → input → Clear → Theme → Settings → echo panel
+        // (the panel's BnView is a chained child component, queued behind the
+        // buttons), so the panel's create carries the MID-LIST InsertIndex 2 —
+        // after title + input, before the buttons — while everything else
+        // appends. FINAL child order: title, input, echo panel, Clear,
+        // Theme, Settings →.
         var formChildren = mount.Patches.OfType<CreateNodePatch>()
             .Where(p => p.ParentId == root.NodeId)
             .ToList();
         Assert.Equal(
-            new[] { title, input.NodeId, clear, theme, panel.NodeId },
+            new[] { title, input.NodeId, clear, theme, settings, panel.NodeId },
             formChildren.Select(p => p.NodeId)); // creation (patch) order
         Assert.Equal(2, panel.InsertIndex);
         Assert.All(formChildren.Where(p => p.NodeId != panel.NodeId),
             p => Assert.Equal(-1, p.InsertIndex));
 
-        // Exactly 3 event attaches: change + Clear + Theme.
-        Assert.Equal(3, mount.Patches.OfType<AttachEventPatch>().Count());
+        // Exactly 4 event attaches: change + Clear + Theme + Settings →.
+        Assert.Equal(4, mount.Patches.OfType<AttachEventPatch>().Count());
     }
 
     // ── The bind loop headless (DoD #5) ───────────────────────────────────────

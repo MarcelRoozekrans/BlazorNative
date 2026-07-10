@@ -14,9 +14,11 @@ namespace BlazorNative.Runtime.Tests;
 // Mounted on JVM-desktop NativeAOT (where the trimmer runs) — proves the
 // ACCEPT decisions hold at runtime, not just statically.
 //
-// NOTE: these probe shapes are duplicated in src/BlazorNative.Runtime/
-// TrimProbes.cs (Phase 3.0c Gate 4) — if you edit them here, update the
-// NativeAOT twin too.
+// NOTE: the NativeAOT twin of these probe shapes (src/BlazorNative.Runtime/
+// TrimProbes.cs, Phase 3.0c Gate 4) was deleted at M3 close (Phase 3.5)
+// together with the blazornative_run_trim_probes export — on-device coverage
+// of the IL2072 paths now comes from real components under strict mode.
+// These host-CLR probes STAY (scaffolding, ledgered in the M3 audit).
 // ─────────────────────────────────────────────────────────────────────────────
 
 internal sealed class ParameterProbe : ComponentBase

@@ -198,6 +198,89 @@ public sealed class NativeRenderer : BlazorRenderer
         return componentId;
     }
 
+    /// <summary>Phase 3.5 (DoD #7): removes a root component previously
+    /// mounted via <see cref="Mount{TComponent}()"/>/<see cref="MountAsync{TComponent}(CancellationToken)"/>.
+    /// Thin wrapper over Blazor's <c>RemoveRootComponent(int)</c> (protected
+    /// internal on the Renderer base — verified present on Blazor 10.0.x):
+    /// Blazor enqueues the component (and transitively its descendants) for
+    /// disposal and processes the render queue; on the InlineDispatcher the
+    /// disposal batch reaches UpdateDisplayAsync SYNCHRONOUSLY, so the
+    /// RemoveNode patches that clear the screen (the Phase 3.3 disposal
+    /// machinery, ProcessDisposedComponent) have already been delivered to
+    /// Frames/FrameSink when this returns. Blazor throws for an id that is
+    /// not a live root component — surfaced to the caller unchanged.
+    /// MUST NOT be called from inside a UI-event dispatch window: Blazor
+    /// holds <c>_isBatchInProgress</c> across the handler, and
+    /// RemoveRootComponent's ProcessRenderQueue throws "Cannot start a batch
+    /// when one is already in progress" — defer via
+    /// <see cref="RunAfterDispatch"/> instead (the navigation swap does).</summary>
+    public void Unmount(int componentId) => RemoveRootComponent(componentId);
+
+    // ── Post-dispatch deferral (Phase 3.5) ────────────────────────────────────
+    //
+    // Blazor's Renderer.DispatchEventAsync keeps its batch open across the
+    // synchronous part of an event handler (state changes coalesce into ONE
+    // re-render after the handler). Work that must start a NEW batch — the
+    // navigation swap's RemoveRootComponent — therefore cannot run inside the
+    // handler; it queues here and drains when the OUTERMOST dispatch window
+    // unwinds (handler + its re-render batch complete), still synchronously
+    // inside DispatchUiEventAsync — so swap frames are delivered before
+    // blazornative_dispatch_event returns (the dispatch-window pin).
+
+    private List<Action>? _postDispatchActions;
+
+    /// <summary>Runs <paramref name="action"/> immediately when no UI-event
+    /// dispatch window is open; otherwise queues it to run when the outermost
+    /// window unwinds (still inside the dispatch export call). A queued
+    /// action's exception — including strict-mode renderer errors from the
+    /// frames it produces — is routed into the dispatch capture slot, so it
+    /// faults the dispatch task exactly like a handler fault (export rc 2).
+    /// Honest boundary (NON-strict mode): the drain runs at depth 0, so a
+    /// renderer error DURING a deferred action's own batches routes through
+    /// <see cref="HandleException"/>'s log-only path — the action "succeeds"
+    /// and the export returns 0. Only exceptions the action itself throws
+    /// (or strict-mode rethrows) reach the capture slot. In-window faults are
+    /// unaffected: they always map to rc 2.</summary>
+    public void RunAfterDispatch(Action action)
+    {
+        if (_uiEventDispatchDepth == 0)
+        {
+            action();
+            return;
+        }
+        (_postDispatchActions ??= new List<Action>()).Add(action);
+    }
+
+    /// <summary>Drains queued post-dispatch work (see <see cref="RunAfterDispatch"/>).
+    /// Runs with the dispatch depth already at 0 — a drained action's
+    /// Unmount/Mount batches process normally, and a RunAfterDispatch call
+    /// DURING the drain executes immediately (depth 0), so the while-loop is
+    /// unreachable today: purely defensive against a future change that
+    /// re-queues mid-drain. Action faults land in the capture slot (first
+    /// one wins, matching the window contract) instead of escaping the
+    /// calling finally; EVERY fault is logged to stderr — mirroring
+    /// <see cref="HandleException"/>'s window path — so a second fault is
+    /// never silently discarded when the slot is already taken.</summary>
+    private void DrainPostDispatchActions()
+    {
+        while (_postDispatchActions is { Count: > 0 } actions)
+        {
+            _postDispatchActions = null;
+            foreach (Action action in actions)
+            {
+                try
+                {
+                    action();
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"[BlazorNative.Renderer] {ex}");
+                    _uiEventDispatchException ??= ex;
+                }
+            }
+        }
+    }
+
     private async Task<int> AddComponentAsync(
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.All)] Type t,
         ParameterView pv)
@@ -876,6 +959,14 @@ public sealed class NativeRenderer : BlazorRenderer
             finally
             {
                 _uiEventDispatchDepth--;
+                // Phase 3.5: run deferred work (the navigation swap) when the
+                // OUTERMOST window unwinds — the event's own batch is closed,
+                // so a new batch (Unmount's disposal) may start. Inside the
+                // finally so a faulted handler still drains (the queue must
+                // never leak into the NEXT dispatch); action faults join the
+                // capture slot, never escape this finally.
+                if (_uiEventDispatchDepth == 0)
+                    DrainPostDispatchActions();
             }
 
             if (_uiEventDispatchDepth == 0 && _uiEventDispatchException is { } dispatchEx)
