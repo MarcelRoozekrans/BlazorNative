@@ -1,4 +1,4 @@
-
+﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.31903.59
@@ -25,6 +25,8 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BlazorNative.Runtime", "src\BlazorNative.Runtime\BlazorNative.Runtime.csproj", "{5486B921-1D3F-4054-9C55-9EF13A4C9900}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BlazorNative.Runtime.Tests", "tests\BlazorNative.Runtime.Tests\BlazorNative.Runtime.Tests.csproj", "{7BE83DE1-37F0-429F-9591-353981A63503}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BlazorNative.Components", "src\BlazorNative.Components\BlazorNative.Components.csproj", "{E12E39E0-17DC-4AB3-BBEF-5E946555E930}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -156,6 +158,18 @@ Global
 		{7BE83DE1-37F0-429F-9591-353981A63503}.Release|x64.Build.0 = Release|Any CPU
 		{7BE83DE1-37F0-429F-9591-353981A63503}.Release|x86.ActiveCfg = Release|Any CPU
 		{7BE83DE1-37F0-429F-9591-353981A63503}.Release|x86.Build.0 = Release|Any CPU
+		{E12E39E0-17DC-4AB3-BBEF-5E946555E930}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{E12E39E0-17DC-4AB3-BBEF-5E946555E930}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{E12E39E0-17DC-4AB3-BBEF-5E946555E930}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{E12E39E0-17DC-4AB3-BBEF-5E946555E930}.Debug|x64.Build.0 = Debug|Any CPU
+		{E12E39E0-17DC-4AB3-BBEF-5E946555E930}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{E12E39E0-17DC-4AB3-BBEF-5E946555E930}.Debug|x86.Build.0 = Debug|Any CPU
+		{E12E39E0-17DC-4AB3-BBEF-5E946555E930}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{E12E39E0-17DC-4AB3-BBEF-5E946555E930}.Release|Any CPU.Build.0 = Release|Any CPU
+		{E12E39E0-17DC-4AB3-BBEF-5E946555E930}.Release|x64.ActiveCfg = Release|Any CPU
+		{E12E39E0-17DC-4AB3-BBEF-5E946555E930}.Release|x64.Build.0 = Release|Any CPU
+		{E12E39E0-17DC-4AB3-BBEF-5E946555E930}.Release|x86.ActiveCfg = Release|Any CPU
+		{E12E39E0-17DC-4AB3-BBEF-5E946555E930}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -165,5 +179,6 @@ Global
 		{C1F7764F-4964-4BA9-AE08-659AC760D407} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 		{5486B921-1D3F-4054-9C55-9EF13A4C9900} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{7BE83DE1-37F0-429F-9591-353981A63503} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
+		{E12E39E0-17DC-4AB3-BBEF-5E946555E930} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 	EndGlobalSection
 EndGlobal

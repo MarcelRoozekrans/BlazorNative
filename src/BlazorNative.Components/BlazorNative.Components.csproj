@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- ─────────────────────────────────────────────────────────────────────
+       BlazorNative.Components — Phase 3.4 Gate 2 (design §2)
+
+       The public Bn* component library — the shape app authors consume
+       (M6 names this package). Public, sealed, hand-written BuildRenderTree
+       components (Razor syntax awaits .razor compilation, M6):
+         BnView / BnText / BnButton / BnInput + BnDemo + BnTheme.
+
+       Trim posture: statically referenced through the annotated
+       OpenComponent/Mount<T> paths; the Runtime publish gate proves no new
+       warnings (the 4 accepted IL2072s only).
+
+       See docs/plans/2026-07-10-phase-3.4-design.md §2-4.
+       ───────────────────────────────────────────────────────────────────── -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>BlazorNative.Components</RootNamespace>
+    <IsAotCompatible>true</IsAotCompatible>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Components" Version="10.0.*" />
+    <!-- MouseEventArgs (BnButton.OnClick) lives in Components.Web — same
+         pinned pair as BlazorNative.Renderer. -->
+    <PackageReference Include="Microsoft.AspNetCore.Components.Web" Version="10.0.*" />
+  </ItemGroup>
+
+</Project>
