@@ -297,39 +297,69 @@ public sealed class NavigationTests
     // ── Navigating from INSIDE a click handler (the dispatch-window pin) ─────
 
     [Fact]
-    public async Task Navigate_FromInsideClickHandler()
+    public void Navigate_FromInsideClickHandler()
     {
         var (_, frames) = StartSession();
         try
         {
             Assert.Equal(0, HostSession.TryMount("BnDemo"));
             INavigationManager nav = Nav();
-            await nav.NavigateToAsync("/settings");
-            RenderFrame settingsMount = frames[^1];
-            int backButton = ContainerOfText(settingsMount, "← Back");
-            int backHandler = ClickHandlerOn(settingsMount, backButton);
-            int settingsRoot = Root(settingsMount).NodeId;
+            RenderFrame demoMount = frames[0];
+            int demoRoot = Root(demoMount).NodeId;
+            int settingsButton = ContainerOfText(demoMount, "Settings →");
+            int settingsHandler = ClickHandlerOn(demoMount, settingsButton);
             frames.Clear();
 
-            // The page's own click handler performs the swap SYNCHRONOUSLY
-            // with respect to the export: when DispatchEventCore returns, the
-            // removes AND the new page's creates have already been delivered
-            // (the dispatch-window interplay pin). Blazor completes the
-            // event's OWN batch first (the handler's no-op re-render may
-            // precede the swap frames) — the pin is ORDER, not frame count:
-            // removes strictly before creates, all inside this dispatch.
-            int rc = Exports.DispatchEventCore((ulong)backHandler, ClickArgs);
+            // The Settings button's OWN click dispatch performs the swap
+            // SYNCHRONOUSLY with respect to the export: when DispatchEventCore
+            // returns, the removes AND BnSettingsPage's creates have already
+            // been delivered (the dispatch-window interplay pin). Blazor
+            // completes the event's OWN batch first (the handler's no-op
+            // re-render may precede the swap frames) — the pin is ORDER, not
+            // frame count: removes strictly before creates, all inside this
+            // dispatch.
+            int rc = Exports.DispatchEventCore((ulong)settingsHandler, ClickArgs);
             Assert.Equal(0, rc);
 
-            int removeIdx = frames.FindIndex(f => RemovedNodes(f).Contains(settingsRoot));
+            int removeIdx = frames.FindIndex(f => RemovedNodes(f).Contains(demoRoot));
             Assert.True(removeIdx >= 0,
-                "settings root was never removed during the dispatch");
-            int createIdx = frames.FindIndex(f =>
-                f.Patches.OfType<CreateNodePatch>().Any(p => p.NodeType == "input"));
+                "BnDemo's root was never removed during the dispatch");
+            int createIdx = frames.FindIndex(f => HasText(f, "Settings"));
             Assert.True(createIdx > removeIdx,
-                $"BnDemo's creates must follow the removes (remove@{removeIdx}, create@{createIdx})");
+                $"BnSettingsPage's creates must follow the removes (remove@{removeIdx}, create@{createIdx})");
+            Assert.Equal("/settings", FakeShellHost.Route);
+            Assert.Equal("/settings", nav.CurrentRoute);
+        }
+        finally
+        {
+            TearDown();
+        }
+    }
+
+    // ── Round trip via both buttons: Settings → then ← Back ──────────────────
+
+    [Fact]
+    public void Navigate_RoundTrip_ViaButtons()
+    {
+        var (_, frames) = StartSession();
+        try
+        {
+            Assert.Equal(0, HostSession.TryMount("BnDemo"));
+            int settingsHandler = ClickHandlerOn(frames[0],
+                ContainerOfText(frames[0], "Settings →"));
+            frames.Clear();
+
+            Assert.Equal(0, Exports.DispatchEventCore((ulong)settingsHandler, ClickArgs));
+            RenderFrame settingsMount = frames[^1];
+            Assert.True(HasText(settingsMount, "Settings"));
+            int backHandler = ClickHandlerOn(settingsMount,
+                ContainerOfText(settingsMount, "← Back"));
+            frames.Clear();
+
+            Assert.Equal(0, Exports.DispatchEventCore((ulong)backHandler, ClickArgs));
+            _ = InputNode(frames[^1]); // BnDemo is back, fresh
             Assert.Equal("/", FakeShellHost.Route);
-            Assert.Equal("/", nav.CurrentRoute);
+            Assert.Equal("/", Nav().CurrentRoute);
         }
         finally
         {
