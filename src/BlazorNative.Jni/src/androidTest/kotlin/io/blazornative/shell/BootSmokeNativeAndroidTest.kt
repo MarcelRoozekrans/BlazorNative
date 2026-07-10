@@ -58,7 +58,7 @@ class BootSmokeNativeAndroidTest {
         assertEquals("init failed: $error", 0, result.status)
         val version = result.versionString?.getString(0, "UTF-8") ?: ""
         assertTrue("unexpected version: $version", version.contains("BlazorNative.Runtime"))
-        assertTrue("unexpected version: $version", version.contains("phase-3.3"))
+        assertTrue("unexpected version: $version", version.contains("phase-3.4"))
 
         // Gate 3 review follow-up: cross-check the second export shape —
         // blazornative_version() (bare pointer return) must agree with the
