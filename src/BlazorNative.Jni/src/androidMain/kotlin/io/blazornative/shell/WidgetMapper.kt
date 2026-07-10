@@ -30,7 +30,9 @@ import io.blazornative.jni.RenderPatch
  * Patch coverage: CreateNode (all 7 NodeTypes wired), ReplaceText, RemoveNode,
  * UpdateProp, SetStyle, CommitFrame, and — live since Phase 3.2 — AttachEvent /
  * DetachEvent (click listener + re-entrancy-guarded change TextWatcher; see
- * [handleAttachEvent]). AppendChild remains the only TODO (Phase 3+).
+ * [handleAttachEvent]). AppendChild was DELETED in Phase 3.3 (DoD #10):
+ * CreateNode.insertIndex carries placement instead — honoring it in
+ * [handleCreate] via addView(view, index) is Phase 3.3 Task 9.
  *
  * Events: [onUiEvent] is invoked from UI listeners with (handlerId, eventName,
  * payload) — production wires it to BlazorNativeRuntime.dispatchEvent, which is
@@ -90,7 +92,6 @@ class WidgetMapper(
                 is RenderPatch.CommitFrame -> { /* boundary marker; no-op here */ }
                 is RenderPatch.AttachEvent -> handleAttachEvent(patch)
                 is RenderPatch.DetachEvent -> handleDetachEvent(patch)
-                is RenderPatch.AppendChild -> Log.w(TAG, "TODO Phase 3+: $patch")
             }
         } finally {
             applyingBatch = false
@@ -146,14 +147,13 @@ class WidgetMapper(
         }
     }
 
-    /** Phase 3.2: DetachEvent carries nodeId + handlerId but NO eventName, so
-     * the event kind is INFERRED: a handlerId present in [watchers] is treated
-     * as a change detach (remove that watcher), anything else falls through to
-     * a click detach on the node's view. The inference is sound while click
-     * and change are the only wired events and change watchers are always
-     * registered in the map; a future event type must either extend the
-     * inference or add eventName to the patch. (Dead code today — the renderer
-     * never emits DetachEvent; see [handleAttachEvent]'s re-attach note.) */
+    /** Phase 3.2 inference, kept through Phase 3.3 Task 8: a handlerId present
+     * in [watchers] is treated as a change detach (remove that watcher),
+     * anything else falls through to a click detach on the node's view. The
+     * patch DOES carry eventName since Phase 3.3 (and the renderer now
+     * genuinely emits DetachEvent on `on*` attribute removal); switching this
+     * dispatch to `p.eventName` — retiring the inference — is Phase 3.3
+     * Task 9. */
     private fun handleDetachEvent(p: RenderPatch.DetachEvent) {
         watchers.remove(p.handlerId)?.let { (editText, watcher) ->
             editText.removeTextChangedListener(watcher)

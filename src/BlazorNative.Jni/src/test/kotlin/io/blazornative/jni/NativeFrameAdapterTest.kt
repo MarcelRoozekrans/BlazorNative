@@ -59,10 +59,13 @@ class NativeFrameAdapterTest {
         val patches = Memory(NativeFrameAdapter.PATCH_SIZE * patchCount).apply { clear() }
 
         // patch[0]: CreateNode nodeId=1 parent=-1 nodeType=3 (button)
+        // insertIndex=2 rides AuxInt (Phase 3.3) — a non-default value proves
+        // the field is actually decoded, not defaulted.
         patches.setInt(0 + NativeFrameAdapter.PATCH_KIND, 1)
         patches.setInt(0 + NativeFrameAdapter.PATCH_NODE_ID, 1)
         patches.setInt(0 + NativeFrameAdapter.PATCH_PARENT, -1)
         patches.setInt(0 + NativeFrameAdapter.PATCH_NODE_TYPE, 3)
+        patches.setInt(0 + NativeFrameAdapter.PATCH_AUX, 2)
 
         // patch[1]: ReplaceText nodeId=2 text="héllo→世界"
         val textBytes = "héllo→世界".toByteArray(Charsets.UTF_8) + 0
@@ -88,7 +91,7 @@ class NativeFrameAdapterTest {
         assertEquals(123456789L, decoded.timestampMs)
         assertEquals(
             listOf(
-                RenderPatch.CreateNode(nodeId = 1, nodeType = "button", parentId = null),
+                RenderPatch.CreateNode(nodeId = 1, nodeType = "button", parentId = null, insertIndex = 2),
                 RenderPatch.ReplaceText(nodeId = 2, text = "héllo→世界"),
             ),
             decoded.patches
@@ -108,18 +111,20 @@ class NativeFrameAdapterTest {
      * HelloGoldenTests.cs's AnyHandlerId relaxation); every OTHER field stays
      * pinned. */
     private val expectedHelloPatches = listOf<RenderPatch>(
-        RenderPatch.CreateNode(nodeId = 1, nodeType = "view"),
+        // Phase 3.3: every CreateNode carries insertIndex = -1 (Hello's mount
+        // is pure appends) — the ONLY delta from the 3.2 golden (DoD #10).
+        RenderPatch.CreateNode(nodeId = 1, nodeType = "view", insertIndex = -1),
         RenderPatch.SetStyle(nodeId = 1, property = "backgroundColor", value = "#FFEEAA"),
         RenderPatch.SetStyle(nodeId = 1, property = "padding", value = "16"),
-        RenderPatch.CreateNode(nodeId = 2, nodeType = "view", parentId = 1),
+        RenderPatch.CreateNode(nodeId = 2, nodeType = "view", parentId = 1, insertIndex = -1),
         RenderPatch.SetStyle(nodeId = 2, property = "fontSize", value = "24"),
-        RenderPatch.CreateNode(nodeId = 3, nodeType = "text", parentId = 2),
+        RenderPatch.CreateNode(nodeId = 3, nodeType = "text", parentId = 2, insertIndex = -1),
         RenderPatch.ReplaceText(nodeId = 3, text = "Hello, BlazorNative! (taps: 0)"),
-        RenderPatch.CreateNode(nodeId = 4, nodeType = "button", parentId = 1),
+        RenderPatch.CreateNode(nodeId = 4, nodeType = "button", parentId = 1, insertIndex = -1),
         RenderPatch.AttachEvent(nodeId = 4, eventName = "click", handlerId = 0),
-        RenderPatch.CreateNode(nodeId = 5, nodeType = "text", parentId = 4),
+        RenderPatch.CreateNode(nodeId = 5, nodeType = "text", parentId = 4, insertIndex = -1),
         RenderPatch.ReplaceText(nodeId = 5, text = "Tap"),
-        RenderPatch.CreateNode(nodeId = 6, nodeType = "input", parentId = 1),
+        RenderPatch.CreateNode(nodeId = 6, nodeType = "input", parentId = 1, insertIndex = -1),
         RenderPatch.UpdateProp(nodeId = 6, name = "placeholder", value = "Type here..."),
         RenderPatch.CommitFrame(frameId = 0, timestampMs = 0L),
     )
@@ -202,7 +207,6 @@ class NativeFrameAdapterTest {
         return patches.map { p ->
             when (p) {
                 is RenderPatch.CreateNode  -> p.copy(nodeId = canon(p.nodeId), parentId = p.parentId?.let(::canon))
-                is RenderPatch.AppendChild -> p.copy(parentId = canon(p.parentId), childId = canon(p.childId))
                 is RenderPatch.RemoveNode  -> p.copy(nodeId = canon(p.nodeId))
                 is RenderPatch.UpdateProp  -> p.copy(nodeId = canon(p.nodeId))
                 is RenderPatch.ReplaceText -> p.copy(nodeId = canon(p.nodeId))
