@@ -344,11 +344,22 @@ public sealed class NativeRenderer : BlazorRenderer
     }
 
     /// <summary>Host node a component's root-level views attach to: the
-    /// container recorded when the parent's diff walked this component's
-    /// frame (component-parent map, DoD #8) — or the host root for the
-    /// root component.</summary>
+    /// nearest ELEMENT container up the component-parent chain (component-
+    /// parent map, DoD #8) — or the host root when the chain ends without
+    /// one. Walking (not one hop) matters for component CHAINS (Phase 3.4:
+    /// a wrapper whose entire tree is another component, e.g. BnThemedPanel
+    /// → BnView): each link's record holds its SLOT container — null at a
+    /// component's root level — so the host node may sit several links up.</summary>
     private int? ResolveComponentEmitParent(int componentId)
-        => _tree.TryGetComponentParent(componentId, out var parent) ? parent.ParentNodeId : null;
+    {
+        while (_tree.TryGetComponentParent(componentId, out var parent))
+        {
+            if (parent.ParentNodeId is { } containerNode)
+                return containerNode;
+            componentId = parent.ParentComponentId;
+        }
+        return null; // root component (or chain of them) at the host root
+    }
 
     private void ProcessRenderTreeDiff(
         ref BnRenderTreeDiff diff,
@@ -623,10 +634,20 @@ public sealed class NativeRenderer : BlazorRenderer
                 // the current container (e.g. a root-level child component).
                 // It occupies a sibling slot but owns no view — no patch. Its
                 // own diff (later in this batch, or any future one) roots its
-                // views at emitParent via the component-parent map. Attribute
-                // frames in its subtree are its parameters — not walked.
+                // views through the component-parent map. Attribute frames in
+                // its subtree are its parameters — not walked.
+                // Phase 3.4 Task 4 fix: register the SLOT CONTAINER, not the
+                // emit parent. The record keys IndexOfComponentSlot lookups
+                // (host-index translation + disposal's RemoveComponentSlot),
+                // which address the SLOT bucket — at a component's root level
+                // that bucket is null while emitParent is the enclosing HOST
+                // node, and recording the latter sent chained components'
+                // (wrapper → inner, e.g. BnThemedPanel → BnView) mid-list
+                // inserts into the append fallback (ComponentChainTests).
+                // Emit-parent resolution now walks the chain instead
+                // (ResolveComponentEmitParent).
                 AddSlot(componentId, slotContainer, insertAtSlot, Slot.ForComponent(frame.ComponentId));
-                _tree.RegisterComponentParent(frame.ComponentId, componentId, emitParent);
+                _tree.RegisterComponentParent(frame.ComponentId, componentId, slotContainer);
                 return 1;
             }
 

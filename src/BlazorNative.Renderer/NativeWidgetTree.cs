@@ -309,8 +309,16 @@ internal sealed class NativeWidgetTree
     // childComponentId → (parentComponentId, parentNodeId). Recorded when the
     // parent's diff walks the child's Component frame; consulted when the
     // CHILD's own RenderTreeDiff arrives so its root-level views parent under
-    // the recorded host container instead of the host root. parentNodeId null
-    // = the child sits at the host root (root-level component chains).
+    // the recorded host container instead of the host root.
+    // FIXED 2026-07-10 (Phase 3.4 Task 4): parentNodeId is the child's SLOT
+    // CONTAINER (null = the child's slot sits in the parent component's ROOT
+    // bucket), NOT the resolved host node — the two differ for component
+    // CHAINS (a wrapper whose entire tree is another component, e.g.
+    // BnThemedPanel → BnView). IndexOfComponentSlot consumers (host-index
+    // translation, RemoveComponentSlot) key slot buckets by it; recording the
+    // host node sent chained mid-list inserts into the append fallback
+    // (ComponentChainTests pins the fix). Host-node resolution now walks the
+    // chain (NativeRenderer.ResolveComponentEmitParent).
     private readonly Dictionary<int, (int ParentComponentId, int? ParentNodeId)> _componentParents = new();
 
     public void RegisterComponentParent(int childComponentId, int parentComponentId, int? parentNodeId)
