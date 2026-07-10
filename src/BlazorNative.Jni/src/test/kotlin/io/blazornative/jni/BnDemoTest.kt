@@ -12,10 +12,11 @@ import org.junit.jupiter.api.Test
  *
  * Shape: see src/BlazorNative.Components/BnDemo.cs's file header — this
  * header restates only the pins this file asserts; the full tree lives
- * there. Final child order under the
- * form div: title span, input, echo panel div, Clear button, Theme button;
- * the echo panel's create carries the MID-LIST InsertIndex 2 (Blazor's FIFO
- * render queue creates it AFTER the buttons), everything else appends (-1).
+ * there. Final child order under the form div: title span, input, echo
+ * panel div, Clear button, Theme button, "Settings →" button (Phase 3.5 —
+ * the navigation entry, DoD #7); the echo panel's create carries the
+ * MID-LIST InsertIndex 2 (Blazor's FIFO render queue creates it AFTER the
+ * buttons), everything else appends (-1).
  * Theme toggle: #FFEEAA ⇄ #334455 on BOTH themed divs.
  *
  * Node identification is ALWAYS structural / by text (the .NET twin's pins,
@@ -172,19 +173,20 @@ class BnDemoTest {
             .filter { it.parentId == root.nodeId && it.nodeId != panel.nodeId }
             .forEach { assertEquals(-1, it.insertIndex, "form child ${it.nodeId} must be an explicit -1 append") }
 
-        // Buttons under the form, each with a click attach.
-        for (label in listOf("Clear", "Theme")) {
+        // Buttons under the form, each with a click attach (Phase 3.5:
+        // + "Settings →", the navigation entry — DoD #7).
+        for (label in listOf("Clear", "Theme", "Settings →")) {
             val btn = containerOfText(mount, label)
             assertEquals("button", createOf(mount, btn).nodeType)
             assertEquals(root.nodeId, createOf(mount, btn).parentId)
             clickHandlerOn(mount, btn)
         }
 
-        // Exactly 3 event attaches: change + Clear + Theme.
+        // Exactly 4 event attaches: change + Clear + Theme + Settings →.
         assertEquals(
-            3,
+            4,
             mount.patches.filterIsInstance<RenderPatch.AttachEvent>().size,
-            "exactly change + 2 clicks; got ${mount.patches.filterIsInstance<RenderPatch.AttachEvent>()}"
+            "exactly change + 3 clicks; got ${mount.patches.filterIsInstance<RenderPatch.AttachEvent>()}"
         )
     }
 
