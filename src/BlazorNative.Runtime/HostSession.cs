@@ -9,8 +9,8 @@ namespace BlazorNative.Runtime;
 // Phase 3.0d host session — the lazy singleton behind blazornative_mount /
 // blazornative_register_frame_callback.
 //
-// EnsureSession() builds the same DI surface as TrimProbeRunner (Core +
-// Renderer + Http services), resolves the NativeRenderer singleton, and
+// EnsureSession() builds the production DI surface (Renderer + Http
+// services), resolves the NativeRenderer singleton, and
 // installs the FrameSink marshaller: RenderFrame → FrameEncoder → one
 // synchronous cdecl callback into the host (JNA on the Kotlin side).
 //
@@ -21,7 +21,7 @@ namespace BlazorNative.Runtime;
 //
 // Component registry: mount-by-name keeps reflection out of the C ABI —
 // each entry is a statically-rooted generic Mount<T> instantiation, so
-// NativeAOT trims nothing it needs (same idiom as TrimProbeRunner).
+// NativeAOT trims nothing it needs.
 // ─────────────────────────────────────────────────────────────────────────────
 
 internal static unsafe class HostSession
@@ -253,7 +253,7 @@ internal static unsafe class HostSession
             if (s_renderer is not null)
                 return s_renderer;
 
-            // Same registrations as TrimProbeRunner — the production DI surface.
+            // The production DI surface.
             // (No AddBlazorNativeCoreServices call: Phase 3.2 deleted WasiBridge,
             // Core's last [Singleton] type, so the ZeroAlloc.Inject generator no
             // longer emits the Core extension method at all.)
