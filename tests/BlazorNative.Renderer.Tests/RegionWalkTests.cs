@@ -46,7 +46,12 @@ public sealed class RegionWalkTests
 
     /// <summary>CascadingValue's entire body is `AddContent(0, ChildContent)`
     /// — a Region ROOT at the component's root level. The elements inside
-    /// must produce CreateNodePatches parented correctly.</summary>
+    /// must produce CreateNodePatches parented correctly.
+    /// NOTE: never reaches the Region arm on Blazor 10.0.x (Blazor decomposes
+    /// root-level region inserts per-child; stayed GREEN under sabotage) —
+    /// this test pins the DECOMPOSITION ASSUMPTION the correction rests on;
+    /// if it starts failing with misplaced slots, suspect a Blazor behavior
+    /// change first.</summary>
     private sealed class CascadingElements : ComponentBase
     {
         protected override void BuildRenderTree(RenderTreeBuilder b)
@@ -235,15 +240,15 @@ public sealed class RegionWalkTests
         var componentId = await renderer.MountAsync<NestedRegionsTrailing>(ParameterView.Empty);
         Assert.NotEmpty(frames);
 
-        int NodeOf(string text)
+        int ParentOfText(string text)
         {
             var t = Assert.Single(frames[0].Patches.OfType<ReplaceTextPatch>(), p => p.Text == text);
             var c = Assert.Single(frames[0].Patches.OfType<CreateNodePatch>(), p => p.NodeId == t.NodeId);
             return Assert.IsType<int>(c.ParentId);
         }
-        var innerSpan = NodeOf("inner");
-        var tailSpan = NodeOf("outer-tail");
-        var pNode = NodeOf($"tail:0");
+        var innerSpan = ParentOfText("inner");
+        var tailSpan = ParentOfText("outer-tail");
+        var pNode = ParentOfText("tail:0");
         var mountTail = Assert.Single(frames[0].Patches.OfType<ReplaceTextPatch>(),
             p => p.Text == "tail:0");
 
@@ -272,7 +277,12 @@ public sealed class RegionWalkTests
     /// siblings — the region content must be created at consecutive correct
     /// slots (1 and 2), shifting the trailing div to slot 3. Click 2 mutates
     /// the trailing div's text: it only resolves if the insert landed
-    /// mid-list, not appended.</summary>
+    /// mid-list, not appended.
+    /// NOTE: never reaches the Region arm on Blazor 10.0.x (Blazor decomposes
+    /// diff-time region inserts per-child; stayed GREEN under sabotage) —
+    /// this test pins the DECOMPOSITION ASSUMPTION the correction rests on;
+    /// if it starts failing with misplaced slots, suspect a Blazor behavior
+    /// change first.</summary>
     private sealed class ToggleRegionMidList : ComponentBase
     {
         private bool _show;

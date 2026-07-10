@@ -518,9 +518,12 @@ public sealed class NativeRenderer : BlazorRenderer
     /// walk — creation order IS sibling order inside a fresh subtree).
     /// Returns the number of SIBLING SLOTS the frame consumed in the current
     /// container: 1 for element/text/component, the transparent child sum for
-    /// a Region (regions occupy no slot of their own), 0 otherwise — the
-    /// Region arm needs it to advance consecutive insert positions across
-    /// nested regions (Phase 3.4 Task 1).</summary>
+    /// a Region (regions occupy no slot of their own), 0 otherwise. The return
+    /// value is only CONSUMED on the DEFENSIVE region-root-prepend path (a
+    /// Region arriving with insertAtSlot >= 0, where nested regions must
+    /// advance consecutive insert positions) — a path Blazor 10.0.x never
+    /// emits, since RenderTreeDiffBuilder decomposes region inserts per-child;
+    /// see the Region arm's reality-check note (Phase 3.4 Task 1).</summary>
     /// <remarks><paramref name="slotContainer"/> keys the slot-list bucket the
     /// subtree ROOT's slot goes into (null = the component's root level);
     /// <paramref name="emitParent"/> is the HOST node its view attaches to.
@@ -595,10 +598,7 @@ public sealed class NativeRenderer : BlazorRenderer
                         // happened to produce transparent numbering by accident.
                         // With the explicit Region arm descending, failing to skip
                         // the full region subtree would double-create its content.)
-                        if (child.FrameType == RenderTreeFrameType.Element)
-                            i += child.ElementSubtreeLength - 1;
-                        else if (child.FrameType == RenderTreeFrameType.Region)
-                            i += child.RegionSubtreeLength - 1;
+                        i += SubtreeLength(in child) - 1;
                     }
                 }
                 return 1;
@@ -663,13 +663,7 @@ public sealed class NativeRenderer : BlazorRenderer
                     slotsConsumed += consumed;
                     if (childSlot >= 0)
                         childSlot += consumed;
-                    childIndex += child.FrameType switch
-                    {
-                        RenderTreeFrameType.Element   => child.ElementSubtreeLength,
-                        RenderTreeFrameType.Component => child.ComponentSubtreeLength,
-                        RenderTreeFrameType.Region    => child.RegionSubtreeLength,
-                        _ => 1,
-                    };
+                    childIndex += SubtreeLength(in child);
                 }
                 return slotsConsumed;
             }
@@ -679,6 +673,18 @@ public sealed class NativeRenderer : BlazorRenderer
         // NamedEvent) consume no sibling slot.
         return 0;
     }
+
+    /// <summary>Total frame count of the subtree rooted at <paramref name="frame"/>
+    /// — the walk-skip distance past a child frame. Subtree-less frame types
+    /// (Text, Attribute, ElementReferenceCapture, …) are 1. THE one place to
+    /// extend when a future frame type with a subtree joins the walk.</summary>
+    private static int SubtreeLength(in BnRenderTreeFrame frame) => frame.FrameType switch
+    {
+        RenderTreeFrameType.Element   => frame.ElementSubtreeLength,
+        RenderTreeFrameType.Component => frame.ComponentSubtreeLength,
+        RenderTreeFrameType.Region    => frame.RegionSubtreeLength,
+        _ => 1,
+    };
 
     /// <summary>Slot bookkeeping for a freshly created slot: insert at the
     /// diff-provided sibling position, or append for subtree-walk children.
