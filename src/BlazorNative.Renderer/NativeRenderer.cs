@@ -26,6 +26,11 @@ public sealed class NativeRenderer : BlazorRenderer
     private readonly NativeWidgetTree _tree = new();
     private int _frameId;
 
+    /// <summary>Test-only view of the slot bookkeeping (Phase 3.3): DiffCursor /
+    /// SlotList tests assert slot order and view-index translation directly.
+    /// Never used by production hosts.</summary>
+    internal NativeWidgetTree WidgetTree => _tree;
+
     public event AsyncEvent<RenderFrame> Frames
     {
         add    => _frames.Register(value);
@@ -244,18 +249,19 @@ public sealed class NativeRenderer : BlazorRenderer
     {
         var componentId = diff.ComponentId;
 
-        // Phase 3.2 diff cursor: Blazor addresses re-render edits through a
-        // walk — StepIn(siblingIndex) descends into a child of the current
-        // container, StepOut pops back, and positional edits (UpdateText)
-        // carry a SiblingIndex RELATIVE to the current container. Node ids
-        // must be resolved through this cursor: ReferenceFrameIndex is
-        // BATCH-relative (each RenderBatch builds its own ReferenceFrames
-        // array), so the mount-time (componentId, frameIndex) sibling map is
-        // only valid for lookups within the SAME batch (SetAttribute uses it —
-        // its edits so far only appear in mount-shaped batches). Before this
-        // cursor existed, Hello's counter UpdateText resolved to the OUTER
-        // div (node 1) and the on-screen text never changed (Android Gate 3
-        // caught it; the JVM tests only asserted patch TEXT, not nodeId).
+        // Phase 3.2 diff cursor, completed in 3.3 Task 2: Blazor addresses
+        // re-render edits through a walk — StepIn(siblingIndex) descends into
+        // a child of the current container, StepOut pops back, and positional
+        // edits (PrependFrame/RemoveFrame/UpdateText/SetAttribute/
+        // RemoveAttribute) carry a SiblingIndex RELATIVE to the current
+        // container. EVERY node resolution goes through this cursor:
+        // ReferenceFrameIndex is BATCH-relative (each RenderBatch builds its
+        // own ReferenceFrames array) and is never a node key — the 3.2-era
+        // (componentId, frameIndex) sibling map that SetAttribute leaned on
+        // is deleted. Before this cursor existed, Hello's counter UpdateText
+        // resolved to the OUTER div (node 1) and the on-screen text never
+        // changed (Android Gate 3 caught it; the JVM tests only asserted
+        // patch TEXT, not nodeId).
         // currentParent == null means the component's root level.
         int? currentParent = null;
         var parentStack = new Stack<int?>();
@@ -269,23 +275,45 @@ public sealed class NativeRenderer : BlazorRenderer
                     // Review follow-up: under a poisoned cursor a prepend must
                     // be dropped outright — emitting it would ship
                     // CreateNodePatch(parent=PoisonedCursor) (Android falls
-                    // back to widget_root) AND AppendChildOrder would turn the
-                    // poison sentinel into a live child-order bucket,
+                    // back to widget_root) AND the slot insert would turn the
+                    // poison sentinel into a live slot-list bucket,
                     // cross-container aliasing later cursor lookups.
                     if (currentParent == PoisonedCursor) break;
-                    ProcessFrame(componentId, ref referenceFrames, bnEdit.ReferenceFrameIndex, bnEdit.SiblingIndex, parentNodeId: currentParent, ref patches);
+                    // Phase 3.3 Task 2: the edit's SiblingIndex is the slot
+                    // position — mid-list prepends insert there, not at the end.
+                    ProcessFrame(componentId, ref referenceFrames, bnEdit.ReferenceFrameIndex, parentNodeId: currentParent, insertAtSlot: bnEdit.SiblingIndex, ref patches);
                     break;
 
                 case RenderTreeEditType.RemoveFrame:
                 {
-                    var slot = _tree.GetChildAt(componentId, currentParent, bnEdit.SiblingIndex);
-                    if (slot.IsNode) patches.Add(new RemoveNodePatch(slot.NodeId));
+                    // Phase 3.3 Task 2: trim the slot so later sibling indices
+                    // in this and future diffs keep resolving.
+                    var removed = _tree.RemoveSlot(componentId, currentParent, bnEdit.SiblingIndex);
+                    if (removed.IsNode)
+                    {
+                        patches.Add(new RemoveNodePatch(removed.NodeId));
+                        _tree.PurgeNodeSubtree(componentId, removed.NodeId);
+                    }
                     break;
                 }
 
                 case RenderTreeEditType.SetAttribute:
-                    ProcessAttributeEdit(componentId, ref referenceFrames, bnEdit.ReferenceFrameIndex, ref patches);
+                {
+                    // Phase 3.3 Task 2: resolve through the cursor — the edit's
+                    // SiblingIndex addresses the element in the CURRENT
+                    // container; the reference frame only carries the new
+                    // attribute value. (The old batch-relative
+                    // (componentId, frameIndex) sibling map is deleted: a
+                    // ReferenceFrameIndex is only meaningful within its own
+                    // batch and was never a node key.)
+                    var slot = _tree.GetChildAt(componentId, currentParent, bnEdit.SiblingIndex);
+                    if (slot.IsNode)
+                    {
+                        var attrFrame = new BnRenderTreeFrame(ref referenceFrames[bnEdit.ReferenceFrameIndex]);
+                        ProcessAttribute(slot.NodeId, ref attrFrame, ref patches);
+                    }
                     break;
+                }
 
                 case RenderTreeEditType.RemoveAttribute:
                 {
@@ -322,12 +350,17 @@ public sealed class NativeRenderer : BlazorRenderer
         }
     }
 
+    /// <summary>Walks the reference-frame subtree at <paramref name="frameIndex"/>,
+    /// emitting create/text/attribute patches. <paramref name="insertAtSlot"/> is
+    /// the slot position for the subtree ROOT in its container's slot list
+    /// (a PrependFrame edit's SiblingIndex); -1 = append (the recursive child
+    /// walk — creation order IS sibling order inside a fresh subtree).</summary>
     private void ProcessFrame(
         int componentId,
         ref BnArrayRange<RenderTreeFrame> frames,
         int frameIndex,
-        int siblingIndex,
         int? parentNodeId,
+        int insertAtSlot,
         ref PooledList<RenderPatch> patches)
     {
         var frame = new BnRenderTreeFrame(ref frames[frameIndex]);
@@ -336,10 +369,8 @@ public sealed class NativeRenderer : BlazorRenderer
         {
             case RenderTreeFrameType.Element:
             {
-                var nodeId = _tree.AllocateNode(componentId, siblingIndex);
-                // Phase 3.2: creation order = render-tree sibling order — the
-                // diff cursor (StepIn/UpdateText) resolves children by it.
-                _tree.AppendSlot(componentId, parentNodeId, Slot.ForNode(nodeId));
+                var nodeId = _tree.AllocateNode();
+                AddSlot(componentId, parentNodeId, insertAtSlot, Slot.ForNode(nodeId));
                 var nodeType = MapElementToNodeType(frame.ElementName!);
                 patches.Add(new CreateNodePatch(nodeId, nodeType, parentNodeId));
 
@@ -369,13 +400,12 @@ public sealed class NativeRenderer : BlazorRenderer
                     else
                     {
                         // Non-attribute, non-component child frame inside the subtree —
-                        // recurse to emit its create/text patches as a child of this element.
-                        // Use the child's index as siblingIndex (positions within the
-                        // parent's subtree are unique enough for the M1 mapping). Pass
-                        // this element's nodeId as the child's parentNodeId so the host-
-                        // side widget mapper can attach the child inside this element's
-                        // view (Phase 2.5 design).
-                        ProcessFrame(componentId, ref frames, frameIndex + i, frameIndex + i, parentNodeId: nodeId, ref patches);
+                        // recurse to emit its create/text patches as a child of this
+                        // element (slot appended: creation order IS sibling order in a
+                        // fresh subtree). Pass this element's nodeId as the child's
+                        // parentNodeId so the host-side widget mapper can attach the
+                        // child inside this element's view (Phase 2.5 design).
+                        ProcessFrame(componentId, ref frames, frameIndex + i, parentNodeId: nodeId, insertAtSlot: -1, ref patches);
                         // Skip the child's own subtree so we don't double-walk it.
                         if (child.FrameType == RenderTreeFrameType.Element)
                             i += child.ElementSubtreeLength - 1;
@@ -386,14 +416,23 @@ public sealed class NativeRenderer : BlazorRenderer
 
             case RenderTreeFrameType.Text:
             {
-                var textNodeId = _tree.AllocateNode(componentId, siblingIndex);
-                // Phase 3.2: see the Element case — cursor-order bookkeeping.
-                _tree.AppendSlot(componentId, parentNodeId, Slot.ForNode(textNodeId));
+                var textNodeId = _tree.AllocateNode();
+                AddSlot(componentId, parentNodeId, insertAtSlot, Slot.ForNode(textNodeId));
                 patches.Add(new CreateNodePatch(textNodeId, "text", parentNodeId));
                 patches.Add(new ReplaceTextPatch(textNodeId, frame.TextContent ?? ""));
                 break;
             }
         }
+    }
+
+    /// <summary>Slot bookkeeping for a freshly created slot: insert at the
+    /// diff-provided sibling position, or append for subtree-walk children.</summary>
+    private void AddSlot(int componentId, int? parentNodeId, int insertAtSlot, Slot slot)
+    {
+        if (insertAtSlot >= 0)
+            _tree.InsertSlotAt(componentId, parentNodeId, insertAtSlot, slot);
+        else
+            _tree.AppendSlot(componentId, parentNodeId, slot);
     }
 
     private static void ProcessAttribute(int nodeId, ref BnRenderTreeFrame frame, ref PooledList<RenderPatch> patches)
@@ -416,18 +455,6 @@ public sealed class NativeRenderer : BlazorRenderer
         {
             patches.Add(new UpdatePropPatch(nodeId, name, value));
         }
-    }
-
-    private void ProcessAttributeEdit(
-        int componentId,
-        ref BnArrayRange<RenderTreeFrame> frames,
-        int frameIndex,
-        ref PooledList<RenderPatch> patches)
-    {
-        var frame = new BnRenderTreeFrame(ref frames[frameIndex]);
-        var nodeId = _tree.GetNodeIdBySibling(componentId, frameIndex);
-        if (nodeId < 0) return;
-        ProcessAttribute(nodeId, ref frame, ref patches);
     }
 
     /// <summary>Emits the ReplaceText for an UpdateText edit. The node was

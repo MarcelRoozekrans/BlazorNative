@@ -61,9 +61,6 @@ internal sealed class NativeWidgetTree
 {
     private int _nextNodeId = 1;
 
-    // (componentId, siblingIndex) → nodeId
-    private readonly Dictionary<(int, int), int> _siblingMap = new();
-
     // componentId → nodeId  (for component-level removal)
     private readonly Dictionary<int, int> _componentMap = new();
 
@@ -78,22 +75,22 @@ internal sealed class NativeWidgetTree
     // = the component's root level (root-level slots have no parent node).
     //
     // Replaces the Phase 3.2 append-only _childOrderMap (List<int> of node ids,
-    // no component entries). Remaining 3.3 carryovers on this model — the
-    // renderer-side wiring lands task-by-task:
-    //  (a) renderer inserts are still APPEND-ONLY (PrependFrame ignores the
-    //      edit's SiblingIndex; RemoveFrame doesn't trim) — Task 2 routes them
-    //      through InsertSlotAt/RemoveSlot.
+    // no component entries). Fixed here (3.3 Task 2): (a) PrependFrame inserts
+    // at the edit's SiblingIndex and RemoveFrame trims; (c) SetAttribute
+    // resolves through the cursor — the batch-relative (componentId,
+    // frameIndex) sibling map is DELETED. Remaining 3.3 carryovers:
     //  (b) component frames get NO slot yet (NativeRenderer skips them without
     //      allocating one), so an interleaved child component still offsets
     //      every cursor index after it — Task 3 allocates component slots.
-    //  (c) SetAttribute still resolves through the batch-relative
-    //      (componentId, frameIndex) sibling map, not the cursor — Task 2
-    //      deletes that map.
     //  (d) PrependFrame under a poisoned cursor is DROPPED (explicit guard in
     //      NativeRenderer); with a-c fixed a poisoned cursor is a genuine bug
     //      and reports through strict mode — Task 6.
     //  (e) on* RemoveAttribute never becomes a DetachEventPatch (it flows out
     //      as UpdatePropPatch(name, null), which hosts ignore) — Task 5.
+    // Plus: CreateNodePatch carries no host insert position yet — a mid-list
+    // insert's slot bookkeeping is exact, but the HOST still appends the new
+    // view at the end until Task 4 ships CreateNodePatch.InsertIndex
+    // (via TranslateToViewIndex).
     private const int RootParentKey = -1;
     private readonly Dictionary<(int ComponentId, int ParentKey), List<Slot>> _slotLists = new();
 
@@ -174,14 +171,29 @@ internal sealed class NativeWidgetTree
     private int RootViewCount(int componentId)
         => TranslateToViewIndex(componentId, parentNodeId: null, int.MaxValue);
 
+    /// <summary>Drops the slot-list bookkeeping for a removed node's subtree
+    /// (its own child bucket plus, recursively, its node-slot children's).
+    /// Node ids are never reused, so this is hygiene — stale buckets can't
+    /// alias — but a long-lived session shouldn't accrete them. Component
+    /// slots inside the subtree are NOT purged here: their buckets live under
+    /// their own componentId and are cleaned by component disposal.</summary>
+    public void PurgeNodeSubtree(int componentId, int nodeId)
+    {
+        if (!_slotLists.Remove((componentId, nodeId), out List<Slot>? slots))
+            return;
+        foreach (var slot in slots)
+        {
+            if (slot.IsNode)
+                PurgeNodeSubtree(componentId, slot.NodeId);
+        }
+    }
+
     // ── Allocation ────────────────────────────────────────────────────────────
 
-    public int AllocateNode(int componentId, int siblingIndex)
-    {
-        var nodeId = _nextNodeId++;
-        _siblingMap[(componentId, siblingIndex)] = nodeId;
-        return nodeId;
-    }
+    /// <summary>Next node id. Position bookkeeping lives in the slot lists —
+    /// the Phase 3.2 (componentId, siblingIndex) map was deleted in 3.3
+    /// Task 2 (ReferenceFrameIndex is batch-relative, never a node key).</summary>
+    public int AllocateNode() => _nextNodeId++;
 
     public void RegisterComponent(int componentId, int nodeId)
     {
@@ -194,12 +206,6 @@ internal sealed class NativeWidgetTree
     }
 
     // ── Lookups ───────────────────────────────────────────────────────────────
-
-    public int GetNodeIdBySibling(int componentId, int siblingIndex)
-    {
-        _siblingMap.TryGetValue((componentId, siblingIndex), out var id);
-        return id == 0 ? -1 : id;
-    }
 
     public int GetNodeId(int componentId)
     {
@@ -219,18 +225,6 @@ internal sealed class NativeWidgetTree
     {
         _componentMap.Remove(componentId);
 
-        // Remove all sibling mappings for this component
-        var keys = _siblingMap.Keys
-            .Where(k => k.Item1 == componentId)
-            .ToList();
-
-        foreach (var key in keys)
-        {
-            var nodeId = _siblingMap[key];
-            _siblingMap.Remove(key);
-            _parentMap.Remove(nodeId);
-        }
-
         // Drop the component's slot lists.
         var slotKeys = _slotLists.Keys
             .Where(k => k.ComponentId == componentId)
@@ -241,7 +235,6 @@ internal sealed class NativeWidgetTree
 
     public void Clear()
     {
-        _siblingMap.Clear();
         _componentMap.Clear();
         _parentMap.Clear();
         _slotLists.Clear();
@@ -250,6 +243,5 @@ internal sealed class NativeWidgetTree
 
     // ── Diagnostics ───────────────────────────────────────────────────────────
 
-    public int NodeCount => _siblingMap.Count;
     public int ComponentCount => _componentMap.Count;
 }
