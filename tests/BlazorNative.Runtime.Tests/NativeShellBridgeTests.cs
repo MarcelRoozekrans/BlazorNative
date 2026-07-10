@@ -349,6 +349,27 @@ public sealed class NativeShellBridgeTests
     }
 
     [Fact]
+    public async Task FetchBegin_HostErrorReturnCode_ThrowsHostError()
+    {
+        // The .NET leg of the guarded-catch wire path (ABI exception posture):
+        // a throwing Kotlin handler surfaces across the ABI as -1, and the
+        // bridge must turn any negative FetchBegin return into the HostError
+        // InvalidOperationException naming the op + return code. (The Kotlin
+        // leg — throw → guarded() → onError + -1 — is pinned by
+        // ShellBridgeTest.guarded_callback_maps_throw_to_host_error.)
+        var bridge = RegisterFake();
+        try
+        {
+            FakeShellHost.FetchBeginReturnCode = -1;
+            var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+                () => bridge.FetchAsync(new BridgeHttpRequest("http://fake.test/boom")).AsTask());
+            Assert.Contains("fetch-begin", ex.Message);
+            Assert.Contains("return code -1", ex.Message);
+        }
+        finally { NativeShellBridge.ResetForTests(); }
+    }
+
+    [Fact]
     public async Task UnregisteredHost_Throws()
     {
         NativeShellBridge.ResetForTests();

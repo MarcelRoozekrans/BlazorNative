@@ -3,20 +3,25 @@ package io.blazornative.jni
 import com.sun.jna.Memory
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * Phase 3.1 Gate 2 — the Kotlin half of the shell-bridge C-ABI: struct-layout
- * drift pins, the writeUtf8 buffer protocol, and FlatJson writer/parser parity
- * with the .NET side.
+ * drift pins, the guarded-catch exception posture, the writeUtf8 buffer
+ * protocol, and FlatJson writer/parser parity with the .NET side.
  *
  * Phase 3.5 (M3 close): the end-to-end probe tests that drove
  * blazornative_run_bridge_probes through the dll were deleted with that
  * export — the production bridge path (register_bridge → real components
  * navigating/fetching) is covered by NavigationTest/BnDemoTest via
- * BlazorNativeRuntime.start(bridge = …).
+ * BlazorNativeRuntime.start(bridge = …). The guarded-catch wire leg they
+ * covered is pinned here (guarded_callback_maps_throw_to_host_error) with
+ * its .NET counterpart in NativeShellBridgeTests.cs
+ * (FetchBegin_HostErrorReturnCode_ThrowsHostError).
  */
 class ShellBridgeTest {
 
@@ -56,6 +61,50 @@ class ShellBridgeTest {
             32, BlazorNativeFetchResponse().size(),
             "BlazorNativeFetchResponse must be 4+4+8+8+8 = 32 bytes"
         )
+    }
+
+    // ── Guarded-catch exception posture (the ABI's -1 wire leg) ─────────────
+
+    /**
+     * The Kotlin leg of the ABI's exception posture: a throwing handler must
+     * be caught by BridgeRegistrar's guarded() wrapper, routed to the onError
+     * sink, and returned as -1 (HOST_ERROR) — never escape raw into JNA's
+     * default callback handler (which would hand native a garbage 0
+     * "success"). Invokes the callback object directly — no dll registration
+     * needed, the wrapper IS the unit under test. The .NET leg (-1 →
+     * HostError InvalidOperationException) is pinned by
+     * NativeShellBridgeTests.FetchBegin_HostErrorReturnCode_ThrowsHostError.
+     */
+    @Test
+    fun guarded_callback_maps_throw_to_host_error() {
+        val errorSink = AtomicReference<Pair<String, Throwable>>()
+        val handlers = object : ShellBridgeHandlers {
+            override fun navigate(route: String) =
+                throw IllegalStateException("navigate boom (ShellBridgeTest)")
+            override fun currentRoute(): String = "/"
+            override fun storageRead(key: String): String? = null
+            override fun storageWrite(key: String, value: String) {}
+            override fun storageDelete(key: String) {}
+            override fun fetchBegin(requestId: Long, request: BridgeFetchRequest) {}
+        }
+        // NOT registered — the guarded() wrapper is exercised directly on the
+        // callback object (registration/park semantics are BridgeRegistrar
+        // .register()'s separate concern).
+        val registrar = BridgeRegistrar(handlers) { msg, t -> errorSink.set(msg to t) }
+
+        val routeBytes = "/x".toByteArray(Charsets.UTF_8) + 0
+        val routeMem = Memory(routeBytes.size.toLong())
+            .apply { write(0, routeBytes, 0, routeBytes.size) }
+        val rc = registrar.navigateCallback.invoke(routeMem)
+
+        assertEquals(-1, rc, "a throwing handler must surface as -1 (HOST_ERROR)")
+        val captured = errorSink.get()
+        assertNotNull(captured, "onError sink did not fire for the throwing handler")
+        assertTrue(
+            captured.first.contains("navigate"),
+            "onError message should name the navigate handler; got: ${captured.first}"
+        )
+        assertEquals("navigate boom (ShellBridgeTest)", captured.second.message)
     }
 
     // ── Buffer-write helper (the host half of the buffer protocol) ──────────

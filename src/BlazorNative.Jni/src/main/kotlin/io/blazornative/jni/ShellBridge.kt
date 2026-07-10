@@ -114,7 +114,12 @@ class BridgeRegistrar(
 
     // ── The six callbacks — STRONG refs as fields (GC rule above) ───────────
 
-    private val navigateCallback = object : NativeBindings.BridgeNavigateCallback {
+    // internal (not private) purely so the guarded-catch wire-leg test can
+    // invoke it directly — the ABI's exception posture (handler throw →
+    // guarded() → onError → -1, never a raw throw into JNA's default handler)
+    // must stay pinned without the deleted probe export. Same test-surface
+    // posture as writeUtf8 below / HostSession.ReplaceRegistryEntryForTests.
+    internal val navigateCallback = object : NativeBindings.BridgeNavigateCallback {
         override fun invoke(routeUtf8: Pointer): Int = guarded("navigate") {
             handlers.navigate(routeUtf8.getString(0, "UTF-8")) // getString copies
             0
