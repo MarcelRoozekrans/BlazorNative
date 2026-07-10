@@ -15,7 +15,7 @@ namespace BlazorNative.Renderer.Tests;
 //   • lists hold node AND component slots;
 //   • InsertSlotAt honors the sibling position (mid-list inserts);
 //   • RemoveSlot trims the list (later indices shift down);
-//   • GetChildAt resolves node slots by sibling index and returns the
+//   • GetSlotAt resolves node slots by sibling index and returns the
 //     component marker for component slots;
 //   • TranslateToViewIndex skips component slots — a component slot
 //     contributes its subtree's ROOT-VIEW count (recursively) when
@@ -66,9 +66,9 @@ public sealed class SlotListTests
         tree.InsertSlotAt(Comp, Root, 1, Slot.ForNode(12));
 
         Assert.Equal(3, tree.GetSlotCount(Comp, Root));
-        Assert.Equal(10, tree.GetChildAt(Comp, Root, 0).NodeId);
-        Assert.Equal(12, tree.GetChildAt(Comp, Root, 1).NodeId);
-        Assert.Equal(11, tree.GetChildAt(Comp, Root, 2).NodeId);
+        Assert.Equal(10, tree.GetSlotAt(Comp, Root, 0).NodeId);
+        Assert.Equal(12, tree.GetSlotAt(Comp, Root, 1).NodeId);
+        Assert.Equal(11, tree.GetSlotAt(Comp, Root, 2).NodeId);
     }
 
     [Fact]
@@ -78,8 +78,8 @@ public sealed class SlotListTests
         tree.AppendSlot(Comp, Root, Slot.ForNode(10));
         tree.InsertSlotAt(Comp, Root, 0, Slot.ForNode(11));
 
-        Assert.Equal(11, tree.GetChildAt(Comp, Root, 0).NodeId);
-        Assert.Equal(10, tree.GetChildAt(Comp, Root, 1).NodeId);
+        Assert.Equal(11, tree.GetSlotAt(Comp, Root, 0).NodeId);
+        Assert.Equal(10, tree.GetSlotAt(Comp, Root, 1).NodeId);
     }
 
     [Fact]
@@ -90,13 +90,13 @@ public sealed class SlotListTests
         tree.AppendSlot(Comp, Root, Slot.ForComponent(7));   // sibling 1: child component
         tree.AppendSlot(Comp, Root, Slot.ForNode(11));       // sibling 2: element
 
-        Assert.Equal(10, tree.GetChildAt(Comp, Root, 0).NodeId);
-        var marker = tree.GetChildAt(Comp, Root, 1);
+        Assert.Equal(10, tree.GetSlotAt(Comp, Root, 0).NodeId);
+        var marker = tree.GetSlotAt(Comp, Root, 1);
         Assert.True(marker.IsComponent);
         Assert.Equal(7, marker.ComponentId);
         // THE carryover (b) fix at model level: the element AFTER the
         // component still resolves at ITS Blazor sibling index.
-        Assert.Equal(11, tree.GetChildAt(Comp, Root, 2).NodeId);
+        Assert.Equal(11, tree.GetSlotAt(Comp, Root, 2).NodeId);
     }
 
     // ── Remove ────────────────────────────────────────────────────────────────
@@ -114,8 +114,8 @@ public sealed class SlotListTests
         Assert.True(removed.IsNode);
         Assert.Equal(10, removed.NodeId);
         Assert.Equal(2, tree.GetSlotCount(Comp, Root));
-        Assert.Equal(11, tree.GetChildAt(Comp, Root, 0).NodeId);
-        Assert.Equal(12, tree.GetChildAt(Comp, Root, 1).NodeId);
+        Assert.Equal(11, tree.GetSlotAt(Comp, Root, 0).NodeId);
+        Assert.Equal(12, tree.GetSlotAt(Comp, Root, 1).NodeId);
     }
 
     [Fact]
@@ -131,14 +131,14 @@ public sealed class SlotListTests
     }
 
     [Fact]
-    public void GetChildAt_OutOfRangeOrUnknownContainer_ReturnsNone()
+    public void GetSlotAt_OutOfRangeOrUnknownContainer_ReturnsNone()
     {
         var tree = new NativeWidgetTree();
         tree.AppendSlot(Comp, Root, Slot.ForNode(10));
 
-        Assert.True(tree.GetChildAt(Comp, Root, 1).IsNone);
-        Assert.True(tree.GetChildAt(Comp, Root, -1).IsNone);
-        Assert.True(tree.GetChildAt(Comp, (int?)999, 0).IsNone);
+        Assert.True(tree.GetSlotAt(Comp, Root, 1).IsNone);
+        Assert.True(tree.GetSlotAt(Comp, Root, -1).IsNone);
+        Assert.True(tree.GetSlotAt(Comp, (int?)999, 0).IsNone);
     }
 
     // ── Slot → view-index translation ─────────────────────────────────────────
@@ -199,5 +199,29 @@ public sealed class SlotListTests
         tree.AppendSlot(Comp, Root, Slot.ForNode(10));
 
         Assert.Equal(0, tree.TranslateToViewIndex(Comp, Root, 1));
+    }
+
+    // ── Subtree purge ─────────────────────────────────────────────────────────
+
+    [Fact]
+    public void PurgeNodeSubtree_NestedDepth_DropsAllDescendantBuckets()
+    {
+        var tree = new NativeWidgetTree();
+        // Root bucket holds node 10; 10 → 11 → 12 → 13 at nested depth, each
+        // opening its own child bucket (4 buckets under node 10's subtree,
+        // plus the root bucket itself = 5).
+        tree.AppendSlot(Comp, Root, Slot.ForNode(10));
+        tree.AppendSlot(Comp, 10, Slot.ForNode(11));
+        tree.AppendSlot(Comp, 11, Slot.ForNode(12));
+        tree.AppendSlot(Comp, 12, Slot.ForNode(13));
+        tree.AppendSlot(Comp, 13, Slot.ForNode(14)); // leaf bucket at depth 4
+        Assert.Equal(5, tree.SlotListCount);
+
+        tree.PurgeNodeSubtree(Comp, 10);
+
+        // The FULL nested chain is gone — only the root bucket remains.
+        Assert.Equal(1, tree.SlotListCount);
+        Assert.Equal(0, tree.GetSlotCount(Comp, 10));
+        Assert.Equal(0, tree.GetSlotCount(Comp, 13));
     }
 }

@@ -94,22 +94,34 @@ internal sealed class NativeWidgetTree
         => (componentId, parentNodeId ?? RootParentKey);
 
     /// <summary>Appends a slot at the end of the container's slot list
-    /// (mount-walk creation order — creation order IS sibling order there).</summary>
+    /// (mount-walk creation order — creation order IS sibling order there).
+    /// Deliberately NOT routed through <see cref="InsertSlotAt"/>: appends
+    /// carry no diff-provided index, so the insert path's out-of-range
+    /// handling (a Blazor contract violation, strict-mode reportable) must
+    /// never see them.</summary>
     public void AppendSlot(int componentId, int? parentNodeId, Slot slot)
-        => InsertSlotAt(componentId, parentNodeId, int.MaxValue, slot);
+        => GetOrAddSlotList(componentId, parentNodeId).Add(slot);
 
-    /// <summary>Inserts a slot at <paramref name="index"/> (Blazor sibling
-    /// position) in the container's slot list. Indices are clamped to
-    /// [0, Count]: Blazor's diff contract guarantees in-range sibling indices,
-    /// so the clamp is POC defense-in-depth, not a semantic (strict-mode
-    /// surfacing of contract violations is Task 6).</summary>
+    /// <summary>Inserts a slot at <paramref name="index"/> (a DIFF-PROVIDED
+    /// Blazor sibling position — appends go through <see cref="AppendSlot"/>)
+    /// in the container's slot list. Indices are clamped to [0, Count]:
+    /// Blazor's diff contract guarantees in-range sibling indices, so an
+    /// out-of-range index is a contract violation the caller reports through
+    /// strict mode (NativeRenderer, Task 6); the clamp keeps the non-strict
+    /// path alive.</summary>
     public void InsertSlotAt(int componentId, int? parentNodeId, int index, Slot slot)
+    {
+        var slots = GetOrAddSlotList(componentId, parentNodeId);
+        index = Math.Clamp(index, 0, slots.Count);
+        slots.Insert(index, slot);
+    }
+
+    private List<Slot> GetOrAddSlotList(int componentId, int? parentNodeId)
     {
         var key = SlotKey(componentId, parentNodeId);
         if (!_slotLists.TryGetValue(key, out List<Slot>? slots))
             _slotLists[key] = slots = new List<Slot>();
-        index = Math.Clamp(index, 0, slots.Count);
-        slots.Insert(index, slot);
+        return slots;
     }
 
     /// <summary>Removes and returns the slot at <paramref name="index"/>,
@@ -129,7 +141,7 @@ internal sealed class NativeWidgetTree
     /// <summary>The slot at diff-cursor <paramref name="siblingIndex"/> under
     /// <paramref name="parentNodeId"/> (null = component root level): a node
     /// slot, a component marker, or None when unknown/out of range.</summary>
-    public Slot GetChildAt(int componentId, int? parentNodeId, int siblingIndex)
+    public Slot GetSlotAt(int componentId, int? parentNodeId, int siblingIndex)
     {
         if (!_slotLists.TryGetValue(SlotKey(componentId, parentNodeId), out List<Slot>? slots))
             return default;
@@ -146,7 +158,12 @@ internal sealed class NativeWidgetTree
     /// a component slot contributes its subtree's ROOT-view count (recursively —
     /// a component's root views attach to the SAME host container as its
     /// parent's siblings, so they occupy host child positions here).
-    /// This is the CreateNodePatch.InsertIndex translation (Task 4 consumer).</summary>
+    /// This is the CreateNodePatch.InsertIndex translation (Task 4 consumer).
+    /// Complexity: O(subtree slots) per call — each component slot before
+    /// <paramref name="slotIndex"/> is expanded recursively (acyclic by
+    /// Blazor's tree guarantee, so termination is safe). Called once per
+    /// mid-list insert; memoize per-diff if Bn* list sizes ever make this
+    /// measurable.</summary>
     public int TranslateToViewIndex(int componentId, int? parentNodeId, int slotIndex)
     {
         if (!_slotLists.TryGetValue(SlotKey(componentId, parentNodeId), out List<Slot>? slots))

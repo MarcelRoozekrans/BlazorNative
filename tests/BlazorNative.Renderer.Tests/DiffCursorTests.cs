@@ -170,9 +170,9 @@ public sealed class DiffCursorTests
         // and the view-index translation ("InsertIndex-to-be", Task 4's input)
         // places it at host child position 0.
         var tree = renderer.WidgetTree;
-        Assert.Equal(aDiv.NodeId,    tree.GetChildAt(componentId, container.NodeId, 0).NodeId);
-        Assert.Equal(itemDivs[0],    tree.GetChildAt(componentId, container.NodeId, 1).NodeId);
-        Assert.Equal(itemDivs[1],    tree.GetChildAt(componentId, container.NodeId, 2).NodeId);
+        Assert.Equal(aDiv.NodeId,    tree.GetSlotAt(componentId, container.NodeId, 0).NodeId);
+        Assert.Equal(itemDivs[0],    tree.GetSlotAt(componentId, container.NodeId, 1).NodeId);
+        Assert.Equal(itemDivs[1],    tree.GetSlotAt(componentId, container.NodeId, 2).NodeId);
         Assert.Equal(0, tree.TranslateToViewIndex(componentId, container.NodeId, 0));
         Assert.Equal(2, tree.TranslateToViewIndex(componentId, container.NodeId, 2));
 
@@ -463,10 +463,10 @@ public sealed class DiffCursorTests
         var rootId = await renderer.MountAsync<ToggleChildParent>(ParameterView.Empty);
         Assert.NotEmpty(frames);
 
-        // Blazor assigns component ids sequentially from the renderer's
-        // component table; the single child instantiated during this mount is
-        // rootId + 1 (same determinism the node-id goldens rely on).
-        var childId = rootId + 1;
+        // Harvest the child's componentId from the slot bookkeeping (root
+        // sibling 1 is its component slot) — no assumption about Blazor's
+        // id-assignment order.
+        var childId = renderer.WidgetTree.GetSlotAt(rootId, null, 1).ComponentId;
 
         var badgeText = Assert.Single(
             frames[0].Patches.OfType<ReplaceTextPatch>(), p => p.Text == "badge");
@@ -494,5 +494,76 @@ public sealed class DiffCursorTests
         Assert.Equal(2, tree.SlotListCount);
         // The component's sibling slot is trimmed from the parent's root list.
         Assert.Equal(1, tree.GetSlotCount(rootId, null));
+    }
+
+    /// <summary>Click removes the wrapper ELEMENT whose subtree contains the
+    /// child component — the ancestor's RemoveFrame and the child's disposal
+    /// land in the same batch.</summary>
+    private sealed class ToggleWrappedChildParent : ComponentBase
+    {
+        private bool _show = true;
+        private void OnClick() => _show = false;
+
+        protected override void BuildRenderTree(RenderTreeBuilder b)
+        {
+            b.OpenElement(0, "div");                     // root sibling 0
+            b.AddAttribute(1, "onclick",
+                EventCallback.Factory.Create<MouseEventArgs>(this, OnClick));
+            b.AddContent(2, "host");
+            b.CloseElement();
+
+            if (_show)
+            {
+                b.OpenElement(3, "div");                 // root sibling 1 — wrapper ELEMENT
+                b.OpenComponent<ChildBadge>(4);          //   wrapper child 0 — the component
+                b.CloseComponent();
+                b.CloseElement();
+            }
+        }
+    }
+
+    [Fact]
+    public async Task RemovedElement_WithChildComponentInSubtree_AncestorRemoveEmitted_ChildDisposalTolerated()
+    {
+        var (renderer, frames) = BuildRenderer();
+        using var rendererScope = renderer;
+
+        var rootId = await renderer.MountAsync<ToggleWrappedChildParent>(ParameterView.Empty);
+        Assert.NotEmpty(frames);
+
+        // Identify the wrapper div and the badge span inside it.
+        var badgeText = Assert.Single(
+            frames[0].Patches.OfType<ReplaceTextPatch>(), p => p.Text == "badge");
+        var badgeTextCreate = Assert.Single(frames[0].Patches.OfType<CreateNodePatch>(),
+            p => p.NodeId == badgeText.NodeId);
+        var badgeSpanId = Assert.IsType<int>(badgeTextCreate.ParentId);   // child's root view
+        var badgeSpanCreate = Assert.Single(frames[0].Patches.OfType<CreateNodePatch>(),
+            p => p.NodeId == badgeSpanId);
+        var wrapperId = Assert.IsType<int>(badgeSpanCreate.ParentId);     // the wrapper element (DoD #8 parenting)
+        var attach = Assert.Single(frames[0].Patches.OfType<AttachEventPatch>());
+
+        // Harvest the child's componentId from the wrapper's slot bucket.
+        var childId = renderer.WidgetTree.GetSlotAt(rootId, wrapperId, 0).ComponentId;
+
+        // Click → the parent's diff removes the wrapper element (RemoveFrame)
+        // AND the batch's DisposedComponentIDs carries the child. Must not throw.
+        await Click(renderer, attach);
+        Assert.True(frames.Count >= 2, "expected a re-render frame after the click");
+
+        var removes = frames[^1].Patches.OfType<RemoveNodePatch>().Select(p => p.NodeId).ToList();
+        // The ANCESTOR element's remove is emitted…
+        Assert.Contains(wrapperId, removes);
+        // …and the disposed child's root-view remove is ALSO emitted, although
+        // the host already detached that view with the wrapper's subtree. This
+        // is the documented host contract (ProcessDisposedComponent remarks):
+        // hosts must tolerate RemoveNode for nodes inside already-removed
+        // subtrees (treat unknown ids as a no-op).
+        Assert.Contains(badgeSpanId, removes);
+
+        // Bookkeeping fully cleaned regardless of emission order.
+        var tree = renderer.WidgetTree;
+        Assert.Equal(0, tree.GetSlotCount(childId, null));
+        Assert.False(tree.TryGetComponentParent(childId, out _));
+        Assert.Equal(0, tree.ComponentParentCount);
     }
 }
