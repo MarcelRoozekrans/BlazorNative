@@ -22,11 +22,13 @@ namespace BlazorNative.Runtime;
 // Pointer.getInt/getLong/getPointer read in native order and are safe as-is.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// <summary>Wire ids for all 9 RenderPatch types. AttachEvent/DetachEvent/
-/// AppendChild are ABI-reserved now (M3 DoD #2/#10) but unwired until Phase 3.2.</summary>
+/// <summary>Wire ids for the RenderPatch types. AppendChild = 2 is
+/// RESERVED-DORMANT since Phase 3.3 deleted AppendChildPatch (DoD #10 —
+/// CreateNode.AuxInt carries InsertIndex instead): the id is never emitted
+/// and never reused, so wire ids stay stable across hosts (no ABI break).</summary>
 public enum BlazorNativePatchKind : int
 {
-    CreateNode = 1, AppendChild = 2, RemoveNode = 3, UpdateProp = 4,
+    CreateNode = 1, AppendChild = 2 /* reserved-dormant */, RemoveNode = 3, UpdateProp = 4,
     ReplaceText = 5, SetStyle = 6, AttachEvent = 7, DetachEvent = 8, CommitFrame = 9,
 }
 
@@ -37,12 +39,12 @@ public enum BlazorNativeNodeType : int
 public struct BlazorNativePatch
 {
     public BlazorNativePatchKind Kind;    // offset 0
-    public int    NodeId;                 // offset 4  (CommitFrame: FrameId; AppendChild: ChildId)
-    public int    ParentNodeId;           // offset 8  (-1 = none; AppendChild: ParentId)
+    public int    NodeId;                 // offset 4  (CommitFrame: FrameId)
+    public int    ParentNodeId;           // offset 8  (-1 = none)
     public BlazorNativeNodeType NodeType; // offset 12 (CreateNode only)
-    public int    AuxInt;                 // offset 16 (Attach/DetachEvent: HandlerId; AppendChild: AtIndex)
+    public int    AuxInt;                 // offset 16 (CreateNode: InsertIndex, -1 = append — explicitly encoded, 0 is a valid front index; Attach/DetachEvent: HandlerId)
     public int    Reserved0;              // offset 20 — explicit pad so the pointers are 8-aligned
-    public IntPtr Text;                   // offset 24 (ReplaceText: text; AttachEvent: eventName; NULL if unused)
+    public IntPtr Text;                   // offset 24 (ReplaceText: text; Attach/DetachEvent: eventName; NULL if unused)
     public IntPtr PropName;               // offset 32 (UpdateProp/SetStyle: name)
     public IntPtr PropValue;              // offset 40 (UpdateProp/SetStyle: value; NULL = null)
 }                                         // total 48 bytes

@@ -44,7 +44,9 @@ public sealed class MountSyncTests
         var services = new ServiceCollection();
         services.AddBlazorNativeRendererServices();
         var provider = services.BuildServiceProvider();
-        return provider.GetRequiredService<NativeRenderer>();
+        var renderer = provider.GetRequiredService<NativeRenderer>();
+        renderer.StrictErrors = true; // Task 6: all fixtures run strict (DoD #9)
+        return renderer;
     }
 
     [Fact]

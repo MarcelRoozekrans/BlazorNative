@@ -31,7 +31,9 @@ public sealed class FrameSinkTests
     private static NativeRenderer BuildRenderer()
     {
         var services = new ServiceCollection().AddBlazorNativeRenderer();
-        return services.BuildServiceProvider().GetRequiredService<NativeRenderer>();
+        var renderer = services.BuildServiceProvider().GetRequiredService<NativeRenderer>();
+        renderer.StrictErrors = true; // Task 6: all fixtures run strict (DoD #9)
+        return renderer;
     }
 
     [Fact]

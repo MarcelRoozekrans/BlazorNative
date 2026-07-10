@@ -35,12 +35,41 @@ internal static unsafe class HostSession
     private static readonly Dictionary<string, Action<NativeRenderer>> s_components = new()
     {
         ["HelloComponent"] = r => r.Mount<HelloComponent>(),
+        // Phase 3.3: the composition proof app (nested components, keyed
+        // list mutation, detach — design §6).
+        ["CompositionProbe"] = r => r.Mount<CompositionProbe>(),
     };
 
     /// <summary>Stores the host's frame callback. IntPtr.Zero disables
     /// delivery; re-registration is allowed (last wins).</summary>
     public static void SetFrameCallback(IntPtr fnPtr)
         => Volatile.Write(ref s_frameCallback, fnPtr);
+
+    /// <summary>Test-only strict-mode toggle (Phase 3.3 Task 6, DoD #9):
+    /// applied to the session renderer at EnsureSession AND to a live session
+    /// immediately. The PRODUCTION default stays false — renderer errors log
+    /// to stderr rather than crash the host process (deliberate POC posture;
+    /// a diagnostics surface is M4+). .NET host-session tests flip this via a
+    /// module initializer. The instrumented path has no managed hook, so
+    /// EnsureSession ALSO ORs in the <c>BLAZORNATIVE_STRICT=1</c> process
+    /// environment variable — Gate 3 wires it via <c>Os.setenv</c> in
+    /// CompositionAndroidTest's @BeforeClass (test and app share the
+    /// instrumented process; no ABI change). ONE-SHOT: the variable is read
+    /// here at first-session creation only — setenv after another test class
+    /// has already mounted is a silent no-op (ordering documented at the
+    /// Kotlin site). Absent/other values leave the production default.</summary>
+    internal static bool StrictErrorsForTests
+    {
+        get => Volatile.Read(ref s_strictErrors);
+        set
+        {
+            Volatile.Write(ref s_strictErrors, value);
+            var renderer = Volatile.Read(ref s_renderer);
+            if (renderer is not null)
+                renderer.StrictErrors = value;
+        }
+    }
+    private static bool s_strictErrors;
 
     /// <summary>The live session renderer, or null before the first
     /// EnsureSession/TryMount. Phase 3.2: blazornative_dispatch_event resolves
@@ -125,6 +154,10 @@ internal static unsafe class HostSession
             // on Android.
             services.AddSingleton<IMobileBridge, NativeShellBridge>();
             renderer = services.BuildServiceProvider().GetRequiredService<NativeRenderer>();
+            // .NET test hook OR the instrumented-harness env toggle (see
+            // StrictErrorsForTests doc) — production default remains false.
+            renderer.StrictErrors = Volatile.Read(ref s_strictErrors)
+                || Environment.GetEnvironmentVariable("BLAZORNATIVE_STRICT") == "1";
 
             renderer.FrameSink = frame =>
             {

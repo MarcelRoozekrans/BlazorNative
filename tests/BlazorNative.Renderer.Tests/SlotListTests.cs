@@ -1,0 +1,323 @@
+using Xunit;
+
+namespace BlazorNative.Renderer.Tests;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SlotListTests — Phase 3.3 Task 1 (TDD).
+//
+// Pins the slot-list model that replaces NativeWidgetTree's append-only
+// _childOrderMap (the 3.3 carryover block, items a-c). Slot lists mirror
+// Blazor's sibling numbering EXACTLY: each entry is either a node slot
+// (a real native view) or a component slot (a componentId marker that
+// occupies a sibling position but owns no view).
+//
+// Contract under test (design doc §1):
+//   • lists hold node AND component slots;
+//   • InsertSlotAt honors the sibling position (mid-list inserts);
+//   • RemoveSlot trims the list (later indices shift down);
+//   • GetSlotAt resolves node slots by sibling index and returns the
+//     component marker for component slots;
+//   • TranslateToViewIndex skips component slots — a component slot
+//     contributes its subtree's ROOT-VIEW count (recursively) when
+//     translating positions after it.
+//
+// These tests exercise NativeWidgetTree directly (InternalsVisibleTo) —
+// the renderer-driven behavior lands in DiffCursorTests (Tasks 2-3).
+// ─────────────────────────────────────────────────────────────────────────────
+
+public sealed class SlotListTests
+{
+    private const int Comp = 0;          // the component whose slot lists we exercise
+    private static readonly int? Root = null; // component root level (no parent node)
+
+    // ── Slot discriminated struct ─────────────────────────────────────────────
+
+    [Fact]
+    public void Slot_IsNodeXorComponent()
+    {
+        var node = Slot.ForNode(42);
+        Assert.True(node.IsNode);
+        Assert.False(node.IsComponent);
+        Assert.Equal(42, node.NodeId);
+        Assert.Throws<InvalidOperationException>(() => node.ComponentId);
+
+        var comp = Slot.ForComponent(7);
+        Assert.True(comp.IsComponent);
+        Assert.False(comp.IsNode);
+        Assert.Equal(7, comp.ComponentId);
+        Assert.Throws<InvalidOperationException>(() => comp.NodeId);
+
+        var none = default(Slot);
+        Assert.False(none.IsNode);
+        Assert.False(none.IsComponent);
+        Assert.True(none.IsNone);
+    }
+
+    // ── Insert / order ────────────────────────────────────────────────────────
+
+    [Fact]
+    public void InsertSlotAt_MidList_HonorsSiblingPosition()
+    {
+        var tree = new NativeWidgetTree();
+        tree.AppendSlot(Comp, Root, Slot.ForNode(10));   // sibling 0
+        tree.AppendSlot(Comp, Root, Slot.ForNode(11));   // sibling 1
+
+        // Mid-list insert at sibling 1 — the append-only carryover (a) shape.
+        tree.InsertSlotAt(Comp, Root, 1, Slot.ForNode(12));
+
+        Assert.Equal(3, tree.GetSlotCount(Comp, Root));
+        Assert.Equal(10, tree.GetSlotAt(Comp, Root, 0).NodeId);
+        Assert.Equal(12, tree.GetSlotAt(Comp, Root, 1).NodeId);
+        Assert.Equal(11, tree.GetSlotAt(Comp, Root, 2).NodeId);
+    }
+
+    [Fact]
+    public void InsertSlotAt_AtFront_ShiftsEverything()
+    {
+        var tree = new NativeWidgetTree();
+        tree.AppendSlot(Comp, Root, Slot.ForNode(10));
+        tree.InsertSlotAt(Comp, Root, 0, Slot.ForNode(11));
+
+        Assert.Equal(11, tree.GetSlotAt(Comp, Root, 0).NodeId);
+        Assert.Equal(10, tree.GetSlotAt(Comp, Root, 1).NodeId);
+    }
+
+    [Fact]
+    public void SlotList_HoldsNodeAndComponentSlots()
+    {
+        var tree = new NativeWidgetTree();
+        tree.AppendSlot(Comp, Root, Slot.ForNode(10));       // sibling 0: element
+        tree.AppendSlot(Comp, Root, Slot.ForComponent(7));   // sibling 1: child component
+        tree.AppendSlot(Comp, Root, Slot.ForNode(11));       // sibling 2: element
+
+        Assert.Equal(10, tree.GetSlotAt(Comp, Root, 0).NodeId);
+        var marker = tree.GetSlotAt(Comp, Root, 1);
+        Assert.True(marker.IsComponent);
+        Assert.Equal(7, marker.ComponentId);
+        // THE carryover (b) fix at model level: the element AFTER the
+        // component still resolves at ITS Blazor sibling index.
+        Assert.Equal(11, tree.GetSlotAt(Comp, Root, 2).NodeId);
+    }
+
+    // ── Remove ────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void RemoveSlot_Trims_LaterIndicesShiftDown()
+    {
+        var tree = new NativeWidgetTree();
+        tree.AppendSlot(Comp, Root, Slot.ForNode(10));
+        tree.AppendSlot(Comp, Root, Slot.ForNode(11));
+        tree.AppendSlot(Comp, Root, Slot.ForNode(12));
+
+        var removed = tree.RemoveSlot(Comp, Root, 0);
+
+        Assert.True(removed.IsNode);
+        Assert.Equal(10, removed.NodeId);
+        Assert.Equal(2, tree.GetSlotCount(Comp, Root));
+        Assert.Equal(11, tree.GetSlotAt(Comp, Root, 0).NodeId);
+        Assert.Equal(12, tree.GetSlotAt(Comp, Root, 1).NodeId);
+    }
+
+    [Fact]
+    public void RemoveSlot_OutOfRange_ReturnsNone()
+    {
+        var tree = new NativeWidgetTree();
+        tree.AppendSlot(Comp, Root, Slot.ForNode(10));
+
+        Assert.True(tree.RemoveSlot(Comp, Root, 5).IsNone);
+        Assert.True(tree.RemoveSlot(Comp, Root, -1).IsNone);
+        Assert.True(tree.RemoveSlot(Comp, (int?)999, 0).IsNone); // unknown container
+        Assert.Equal(1, tree.GetSlotCount(Comp, Root));
+    }
+
+    [Fact]
+    public void GetSlotAt_OutOfRangeOrUnknownContainer_ReturnsNone()
+    {
+        var tree = new NativeWidgetTree();
+        tree.AppendSlot(Comp, Root, Slot.ForNode(10));
+
+        Assert.True(tree.GetSlotAt(Comp, Root, 1).IsNone);
+        Assert.True(tree.GetSlotAt(Comp, Root, -1).IsNone);
+        Assert.True(tree.GetSlotAt(Comp, (int?)999, 0).IsNone);
+    }
+
+    // ── Slot → view-index translation ─────────────────────────────────────────
+
+    [Fact]
+    public void TranslateToViewIndex_NodeSlotsOnly_IsIdentity()
+    {
+        var tree = new NativeWidgetTree();
+        tree.AppendSlot(Comp, Root, Slot.ForNode(10));
+        tree.AppendSlot(Comp, Root, Slot.ForNode(11));
+
+        Assert.Equal(0, tree.TranslateToViewIndex(Comp, Root, 0));
+        Assert.Equal(1, tree.TranslateToViewIndex(Comp, Root, 1));
+        Assert.Equal(2, tree.TranslateToViewIndex(Comp, Root, 2)); // end = append position
+    }
+
+    [Fact]
+    public void TranslateToViewIndex_SkipsComponentSlots()
+    {
+        var tree = new NativeWidgetTree();
+        tree.AppendSlot(Comp, Root, Slot.ForNode(10));       // 1 view
+        tree.AppendSlot(Comp, Root, Slot.ForComponent(7));   // 0 OWN views…
+        tree.AppendSlot(Comp, Root, Slot.ForNode(11));
+
+        // …component 7 contributes its ROOT-view count: two root views.
+        tree.AppendSlot(7, Root, Slot.ForNode(20));
+        tree.AppendSlot(7, Root, Slot.ForNode(21));
+
+        Assert.Equal(0, tree.TranslateToViewIndex(Comp, Root, 0));
+        Assert.Equal(1, tree.TranslateToViewIndex(Comp, Root, 1)); // before the component slot
+        Assert.Equal(3, tree.TranslateToViewIndex(Comp, Root, 2)); // after it: 1 + 2 subtree roots
+        Assert.Equal(4, tree.TranslateToViewIndex(Comp, Root, 3));
+    }
+
+    [Fact]
+    public void TranslateToViewIndex_ComponentSubtreeCount_IsRecursive()
+    {
+        var tree = new NativeWidgetTree();
+        tree.AppendSlot(Comp, Root, Slot.ForComponent(7));
+        tree.AppendSlot(Comp, Root, Slot.ForNode(10));
+
+        // Component 7's root level: one view + a nested component 8.
+        tree.AppendSlot(7, Root, Slot.ForNode(20));
+        tree.AppendSlot(7, Root, Slot.ForComponent(8));
+        // Component 8's root level: two views.
+        tree.AppendSlot(8, Root, Slot.ForNode(30));
+        tree.AppendSlot(8, Root, Slot.ForNode(31));
+
+        // Slot 1 sits after component 7 → 1 (its own view) + 2 (nested 8's views) = 3.
+        Assert.Equal(3, tree.TranslateToViewIndex(Comp, Root, 1));
+    }
+
+    [Fact]
+    public void TranslateToViewIndex_EmptyComponentSlot_ContributesZero()
+    {
+        var tree = new NativeWidgetTree();
+        tree.AppendSlot(Comp, Root, Slot.ForComponent(7));   // no views registered yet
+        tree.AppendSlot(Comp, Root, Slot.ForNode(10));
+
+        Assert.Equal(0, tree.TranslateToViewIndex(Comp, Root, 1));
+    }
+
+    // ── Host insert-index translation (Task 4: CreateNodePatch.InsertIndex) ──
+
+    [Fact]
+    public void TranslateToHostInsertIndex_AppendPositions_ReturnMinusOne()
+    {
+        var tree = new NativeWidgetTree();
+        // Empty bucket: inserting at 0 IS an append.
+        Assert.Equal(-1, tree.TranslateToHostInsertIndex(Comp, Root, 0));
+
+        tree.AppendSlot(Comp, Root, Slot.ForNode(10));
+        // At the end of the bucket, nothing after → host append.
+        Assert.Equal(-1, tree.TranslateToHostInsertIndex(Comp, Root, 1));
+    }
+
+    [Fact]
+    public void TranslateToHostInsertIndex_MidList_ReturnsViewIndex()
+    {
+        var tree = new NativeWidgetTree();
+        tree.AppendSlot(Comp, Root, Slot.ForNode(10));
+        tree.AppendSlot(Comp, Root, Slot.ForNode(11));
+
+        Assert.Equal(0, tree.TranslateToHostInsertIndex(Comp, Root, 0)); // front
+        Assert.Equal(1, tree.TranslateToHostInsertIndex(Comp, Root, 1)); // between
+    }
+
+    [Fact]
+    public void TranslateToHostInsertIndex_MidList_ExpandsComponentSlotsBefore()
+    {
+        var tree = new NativeWidgetTree();
+        tree.AppendSlot(Comp, Root, Slot.ForComponent(7));   // 2 subtree views
+        tree.AppendSlot(Comp, Root, Slot.ForNode(10));
+        tree.AppendSlot(7, Root, Slot.ForNode(20));
+        tree.AppendSlot(7, Root, Slot.ForNode(21));
+
+        // Mid-list insert at slot 1 (after the component, before node 10):
+        // component 7 contributes 2 host views before the position.
+        Assert.Equal(2, tree.TranslateToHostInsertIndex(Comp, Root, 1));
+    }
+
+    [Fact]
+    public void TranslateToHostInsertIndex_ChildComponentRootBucket_AddsEnclosingOffset()
+    {
+        var tree = new NativeWidgetTree();
+        const int parentNode = 100;
+        // Parent container: [element 10, component 7, element 11].
+        tree.AppendSlot(Comp, parentNode, Slot.ForNode(10));
+        tree.AppendSlot(Comp, parentNode, Slot.ForComponent(7));
+        tree.AppendSlot(Comp, parentNode, Slot.ForNode(11));
+        tree.RegisterComponentParent(7, Comp, parentNode);
+
+        // Component 7 prepends its FIRST root view (own bucket empty). Its own
+        // bucket says "append", but element 11 sits AFTER the component slot in
+        // the shared host container — the host index must be 1 (after element
+        // 10), not a blind append (which would land after element 11).
+        Assert.Equal(1, tree.TranslateToHostInsertIndex(7, Root, 0));
+
+        // With one view in place, appending another at the bucket end still
+        // sits before element 11 → host index 2.
+        tree.AppendSlot(7, Root, Slot.ForNode(20));
+        Assert.Equal(2, tree.TranslateToHostInsertIndex(7, Root, 1));
+    }
+
+    [Fact]
+    public void TranslateToHostInsertIndex_ChildComponentAtContainerEnd_IsAppend()
+    {
+        var tree = new NativeWidgetTree();
+        const int parentNode = 100;
+        tree.AppendSlot(Comp, parentNode, Slot.ForNode(10));
+        tree.AppendSlot(Comp, parentNode, Slot.ForComponent(7));
+        tree.RegisterComponentParent(7, Comp, parentNode);
+
+        // Component 7 is the LAST slot in the container — its root-level
+        // insert is a genuine host append.
+        Assert.Equal(-1, tree.TranslateToHostInsertIndex(7, Root, 0));
+    }
+
+    [Fact]
+    public void TranslateToHostInsertIndex_NestedComponentChain_OffsetsAccumulate()
+    {
+        var tree = new NativeWidgetTree();
+        // Root level of Comp: [node 10, component 7]; component 7's root
+        // level: [node 20, component 8]; component 8 prepends at ITS root.
+        tree.AppendSlot(Comp, Root, Slot.ForNode(10));
+        tree.AppendSlot(Comp, Root, Slot.ForComponent(7));
+        tree.AppendSlot(7, Root, Slot.ForNode(20));
+        tree.AppendSlot(7, Root, Slot.ForComponent(8));
+        tree.RegisterComponentParent(7, Comp, null);
+        tree.RegisterComponentParent(8, 7, null);
+        // A node AFTER component 7 forces the non-append path.
+        tree.AppendSlot(Comp, Root, Slot.ForNode(11));
+
+        // Component 8's first view: base(7) = 1 (node 10) + base(8 within 7) =
+        // 1 (node 20) → host index 2.
+        Assert.Equal(2, tree.TranslateToHostInsertIndex(8, Root, 0));
+    }
+
+    // ── Subtree purge ─────────────────────────────────────────────────────────
+
+    [Fact]
+    public void PurgeNodeSubtree_NestedDepth_DropsAllDescendantBuckets()
+    {
+        var tree = new NativeWidgetTree();
+        // Root bucket holds node 10; 10 → 11 → 12 → 13 at nested depth, each
+        // opening its own child bucket (4 buckets under node 10's subtree,
+        // plus the root bucket itself = 5).
+        tree.AppendSlot(Comp, Root, Slot.ForNode(10));
+        tree.AppendSlot(Comp, 10, Slot.ForNode(11));
+        tree.AppendSlot(Comp, 11, Slot.ForNode(12));
+        tree.AppendSlot(Comp, 12, Slot.ForNode(13));
+        tree.AppendSlot(Comp, 13, Slot.ForNode(14)); // leaf bucket at depth 4
+        Assert.Equal(5, tree.SlotListCount);
+
+        tree.PurgeNodeSubtree(Comp, 10);
+
+        // The FULL nested chain is gone — only the root bucket remains.
+        Assert.Equal(1, tree.SlotListCount);
+        Assert.Equal(0, tree.GetSlotCount(Comp, 10));
+        Assert.Equal(0, tree.GetSlotCount(Comp, 13));
+    }
+}

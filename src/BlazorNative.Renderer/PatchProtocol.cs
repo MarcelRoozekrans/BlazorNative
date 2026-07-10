@@ -25,18 +25,25 @@ public abstract record RenderPatch;
 // ── Node lifecycle ────────────────────────────────────────────────────────────
 
 /// <summary>Create a new native widget node.</summary>
+/// <remarks>Phase 3.3 (DoD #10): <paramref name="InsertIndex"/> is the HOST
+/// child position the new view takes inside <paramref name="ParentId"/> —
+/// −1 = append at end (the mount-walk common case), ≥0 = insert at that
+/// index (mid-list keyed inserts; 0 = front is a VALID index, which is why
+/// −1 is encoded explicitly on the wire). Counts real views only — the
+/// renderer translates Blazor sibling slots to view indices, skipping
+/// component slots (NativeWidgetTree.TranslateToHostInsertIndex). This
+/// retires AppendChildPatch: creation carries its own placement, and moves
+/// are remove+insert at POC fidelity (a dedicated move patch is YAGNI).</remarks>
 public sealed record CreateNodePatch(
     int     NodeId,
     string  NodeType,       // "view" | "text" | "button" | "input" | "scroll" | "image"
-    int?    ParentId = null
+    int?    ParentId = null,
+    int     InsertIndex = -1
 ) : RenderPatch;
 
-/// <summary>Append an existing node as a child of another.</summary>
-public sealed record AppendChildPatch(
-    int ParentId,
-    int ChildId,
-    int AtIndex = -1        // -1 = append at end
-) : RenderPatch;
+// AppendChildPatch DELETED (Phase 3.3, DoD #10) — CreateNodePatch.InsertIndex
+// carries placement. Its wire kind (BlazorNativePatchKind.AppendChild = 2)
+// stays reserved-dormant so wire ids never renumber.
 
 /// <summary>Remove a node and its subtree from the widget tree.</summary>
 public sealed record RemoveNodePatch(
@@ -68,16 +75,27 @@ public sealed record SetStylePatch(
 // ── Events ────────────────────────────────────────────────────────────────────
 
 /// <summary>Tell the native shell to start routing events of this type for a node.</summary>
+/// <remarks>Re-attach for the same (node, event) REPLACES the prior handler —
+/// last wins; no DetachEventPatch precedes it. Blazor emits this shape when a
+/// re-render swaps a handler delegate in place (a SetAttribute edit with a
+/// fresh handlerId, no RemoveAttribute); the renderer's detach registry
+/// follows suit, so a later detach carries the NEWEST handlerId. Hosts must
+/// swap their watcher, never stack a second one.</remarks>
 public sealed record AttachEventPatch(
     int    NodeId,
     string EventName,       // "click" | "change" | "focus" | "blur" | "scroll"
     int    HandlerId        // opaque ID the .NET runtime side registered
 ) : RenderPatch;
 
-/// <summary>Stop routing an event for a node.</summary>
+/// <summary>Stop routing an event for a node. Phase 3.3 (carryover e):
+/// emitted when a re-render removes an on* attribute — the renderer resolves
+/// the ORIGINAL handlerId through its (nodeId, eventName) registry, and
+/// <paramref name="EventName"/> tells the host exactly which watcher to drop
+/// (no map-membership guessing; rides the wire's free Text field).</summary>
 public sealed record DetachEventPatch(
-    int NodeId,
-    int HandlerId
+    int    NodeId,
+    int    HandlerId,
+    string EventName        // "click" | "change" | "focus" | "blur" | "scroll"
 ) : RenderPatch;
 
 // ── Frame boundary ────────────────────────────────────────────────────────────

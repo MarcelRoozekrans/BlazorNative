@@ -21,21 +21,22 @@ namespace BlazorNative.Runtime.Tests;
 public sealed class FrameEncoderTests
 {
     [Fact]
-    public void Encode_AllNineKinds_RoundTrips()
+    public void Encode_AllEightKinds_RoundTrips()
     {
+        // AppendChildPatch is DELETED (Phase 3.3, DoD #10) — 8 live kinds; its
+        // wire id stays reserved-dormant (see BlazorNativePatchKind).
         var frame = new RenderFrame(
             FrameId: 7,
             TimestampMs: 123456789L,
             Patches:
             [
-                new CreateNodePatch(10, "button", 5),
-                new AppendChildPatch(ParentId: 3, ChildId: 11, AtIndex: 2),
+                new CreateNodePatch(10, "button", 5, InsertIndex: 2),
                 new RemoveNodePatch(12),
                 new UpdatePropPatch(13, "placeholder", "typé here…"),
                 new ReplaceTextPatch(14, "héllo→世界"),
                 new SetStylePatch(15, "backgroundColor", "#336699"),
                 new AttachEventPatch(16, "click", HandlerId: 99),
-                new DetachEventPatch(17, HandlerId: 98),
+                new DetachEventPatch(17, HandlerId: 98, EventName: "change"),
                 new CommitFramePatch(FrameId: 7, TimestampMs: 123456789L),
             ]);
 
@@ -44,34 +45,24 @@ public sealed class FrameEncoderTests
 
         // Envelope
         Assert.NotEqual(IntPtr.Zero, native.Patches);
-        Assert.Equal(9, native.PatchCount);
+        Assert.Equal(8, native.PatchCount);
         Assert.Equal(7, native.FrameId);
         Assert.Equal(123456789L, native.TimestampMs);
 
-        // 0: CreateNode
+        // 0: CreateNode — AuxInt carries InsertIndex (Phase 3.3, DoD #10).
         var p = Decode(native, 0);
         Assert.Equal(BlazorNativePatchKind.CreateNode, p.Kind);
         Assert.Equal(10, p.NodeId);
         Assert.Equal(5, p.ParentNodeId);
         Assert.Equal(BlazorNativeNodeType.Button, p.NodeType);
-        Assert.Equal(0, p.AuxInt);
+        Assert.Equal(2, p.AuxInt);
         Assert.Equal(IntPtr.Zero, p.Text);
         Assert.Equal(IntPtr.Zero, p.PropName);
         Assert.Equal(IntPtr.Zero, p.PropValue);
 
-        // 1: AppendChild — NodeId carries ChildId, ParentNodeId carries ParentId,
-        //    AuxInt carries AtIndex.
-        p = Decode(native, 1);
-        Assert.Equal(BlazorNativePatchKind.AppendChild, p.Kind);
-        Assert.Equal(11, p.NodeId);
-        Assert.Equal(3, p.ParentNodeId);
-        Assert.Equal(BlazorNativeNodeType.None, p.NodeType);
-        Assert.Equal(2, p.AuxInt);
-        Assert.Equal(IntPtr.Zero, p.Text);
-
-        // 2: RemoveNode — ParentNodeId unused ⇒ 0 (only CreateNode-with-null-parent
+        // 1: RemoveNode — ParentNodeId unused ⇒ 0 (only CreateNode-with-null-parent
         //    uses -1).
-        p = Decode(native, 2);
+        p = Decode(native, 1);
         Assert.Equal(BlazorNativePatchKind.RemoveNode, p.Kind);
         Assert.Equal(12, p.NodeId);
         Assert.Equal(0, p.ParentNodeId);
@@ -80,32 +71,32 @@ public sealed class FrameEncoderTests
         Assert.Equal(IntPtr.Zero, p.PropName);
         Assert.Equal(IntPtr.Zero, p.PropValue);
 
-        // 3: UpdateProp
-        p = Decode(native, 3);
+        // 2: UpdateProp
+        p = Decode(native, 2);
         Assert.Equal(BlazorNativePatchKind.UpdateProp, p.Kind);
         Assert.Equal(13, p.NodeId);
         Assert.Equal("placeholder", Marshal.PtrToStringUTF8(p.PropName));
         Assert.Equal("typé here…", Marshal.PtrToStringUTF8(p.PropValue));
         Assert.Equal(IntPtr.Zero, p.Text);
 
-        // 4: ReplaceText
-        p = Decode(native, 4);
+        // 3: ReplaceText
+        p = Decode(native, 3);
         Assert.Equal(BlazorNativePatchKind.ReplaceText, p.Kind);
         Assert.Equal(14, p.NodeId);
         Assert.Equal("héllo→世界", Marshal.PtrToStringUTF8(p.Text));
         Assert.Equal(IntPtr.Zero, p.PropName);
         Assert.Equal(IntPtr.Zero, p.PropValue);
 
-        // 5: SetStyle
-        p = Decode(native, 5);
+        // 4: SetStyle
+        p = Decode(native, 4);
         Assert.Equal(BlazorNativePatchKind.SetStyle, p.Kind);
         Assert.Equal(15, p.NodeId);
         Assert.Equal("backgroundColor", Marshal.PtrToStringUTF8(p.PropName));
         Assert.Equal("#336699", Marshal.PtrToStringUTF8(p.PropValue));
         Assert.Equal(IntPtr.Zero, p.Text);
 
-        // 6: AttachEvent — Text carries the event name, AuxInt the handler id.
-        p = Decode(native, 6);
+        // 5: AttachEvent — Text carries the event name, AuxInt the handler id.
+        p = Decode(native, 5);
         Assert.Equal(BlazorNativePatchKind.AttachEvent, p.Kind);
         Assert.Equal(16, p.NodeId);
         Assert.Equal("click", Marshal.PtrToStringUTF8(p.Text));
@@ -113,16 +104,20 @@ public sealed class FrameEncoderTests
         Assert.Equal(IntPtr.Zero, p.PropName);
         Assert.Equal(IntPtr.Zero, p.PropValue);
 
-        // 7: DetachEvent
-        p = Decode(native, 7);
+        // 6: DetachEvent — Text carries the event name (Phase 3.3, carryover
+        //    e: the host detaches without map-membership guessing), AuxInt the
+        //    handler id. Same field reuse as AttachEvent; layout unchanged.
+        p = Decode(native, 6);
         Assert.Equal(BlazorNativePatchKind.DetachEvent, p.Kind);
         Assert.Equal(17, p.NodeId);
+        Assert.Equal("change", Marshal.PtrToStringUTF8(p.Text));
         Assert.Equal(98, p.AuxInt);
-        Assert.Equal(IntPtr.Zero, p.Text);
+        Assert.Equal(IntPtr.Zero, p.PropName);
+        Assert.Equal(IntPtr.Zero, p.PropValue);
 
-        // 8: CommitFrame — NodeId carries FrameId; the timestamp rides the
+        // 7: CommitFrame — NodeId carries FrameId; the timestamp rides the
         //    envelope, not the patch.
-        p = Decode(native, 8);
+        p = Decode(native, 7);
         Assert.Equal(BlazorNativePatchKind.CommitFrame, p.Kind);
         Assert.Equal(7, p.NodeId);
         Assert.Equal(0, p.ParentNodeId);
@@ -130,6 +125,42 @@ public sealed class FrameEncoderTests
         Assert.Equal(IntPtr.Zero, p.Text);
         Assert.Equal(IntPtr.Zero, p.PropName);
         Assert.Equal(IntPtr.Zero, p.PropValue);
+    }
+
+    [Fact]
+    public void Encode_CreateNode_InsertIndexExplicitlyEncoded()
+    {
+        // −1 (append) is EXPLICITLY encoded — 0 is a valid front index, so the
+        // wire must never rely on "0 means unset" (Phase 3.3 design §3).
+        var frame = new RenderFrame(1, 0L,
+        [
+            new CreateNodePatch(1, "view", null),                 // default −1
+            new CreateNodePatch(2, "view", 1, InsertIndex: 0),    // front
+        ]);
+
+        using var arena = FrameArena.Rent();
+        BlazorNativeFrame native = FrameEncoder.Encode(frame, arena);
+
+        Assert.Equal(-1, Decode(native, 0).AuxInt);
+        Assert.Equal(0, Decode(native, 1).AuxInt);
+    }
+
+    /// <summary>Stand-in for a RenderPatch the encoder has no arm for — the
+    /// shape AppendChildPatch left behind when Phase 3.3 deleted it.</summary>
+    private sealed record RetiredPatch : RenderPatch;
+
+    [Fact]
+    public void Encode_UnknownPatchType_Throws()
+    {
+        // The AppendChild encoder arm is deleted with its record — any patch
+        // type without an arm (including a resurrected AppendChild) must throw,
+        // not silently emit garbage on the wire.
+        var frame = new RenderFrame(1, 0L, [new RetiredPatch()]);
+
+        using var arena = FrameArena.Rent();
+        var ex = Assert.Throws<ArgumentOutOfRangeException>(
+            () => FrameEncoder.Encode(frame, arena));
+        Assert.Contains("RetiredPatch", ex.Message);
     }
 
     [Theory]
@@ -199,7 +230,7 @@ public sealed class FrameEncoderTests
                 new CreateNodePatch(2, "text", 1),
                 new ReplaceTextPatch(2, "Hello, BlazorNative!"),
                 new UpdatePropPatch(3, "placeholder", "Type here..."),
-                new AppendChildPatch(ParentId: 1, ChildId: 2, AtIndex: 0),
+                new CreateNodePatch(4, "button", 1, InsertIndex: 0),
                 new CommitFramePatch(FrameId: 1, TimestampMs: 42L),
             ]);
 

@@ -122,6 +122,7 @@ public sealed class TrimSafetyTests
         var services = new ServiceCollection().AddBlazorNativeRenderer();
         using var renderer = services.BuildServiceProvider()
             .GetRequiredService<NativeRenderer>();
+        renderer.StrictErrors = true; // Task 6: all fixtures run strict (DoD #9)
 
         var frame = await CaptureFirstFrame(
             renderer,

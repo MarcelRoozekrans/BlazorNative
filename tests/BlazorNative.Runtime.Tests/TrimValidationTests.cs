@@ -81,7 +81,9 @@ public sealed class TrimValidationTests
         var services = new ServiceCollection();
         services.AddBlazorNativeRendererServices();
         services.AddBlazorNativeHttpServices();
-        return services.BuildServiceProvider().GetRequiredService<NativeRenderer>();
+        var renderer = services.BuildServiceProvider().GetRequiredService<NativeRenderer>();
+        renderer.StrictErrors = true; // Task 6: all fixtures run strict (DoD #9)
+        return renderer;
     }
 
     private static NativeRenderer BuildRendererWithService()
@@ -90,7 +92,9 @@ public sealed class TrimValidationTests
         services.AddBlazorNativeRendererServices();
         services.AddBlazorNativeHttpServices();
         services.AddSingleton<ITestService, TestService>();
-        return services.BuildServiceProvider().GetRequiredService<NativeRenderer>();
+        var renderer = services.BuildServiceProvider().GetRequiredService<NativeRenderer>();
+        renderer.StrictErrors = true; // Task 6: all fixtures run strict (DoD #9)
+        return renderer;
     }
 
     // NOTE: third copy of this helper in the test surface (also in

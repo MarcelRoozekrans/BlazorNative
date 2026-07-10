@@ -8,10 +8,12 @@ namespace BlazorNative.Runtime;
 // Field mapping (CONTRACTUAL — Kotlin NativeFrameAdapter decodes exactly this;
 // asserted by FrameEncoderTests.cs on this side):
 //
-//   CreateNodePatch(NodeId, NodeType, ParentId) → Kind=CreateNode, NodeId,
-//       ParentNodeId = ParentId ?? -1, NodeType = enum (throws on unknown)
-//   AppendChildPatch(ParentId, ChildId, AtIndex) → Kind=AppendChild,
-//       NodeId = ChildId, ParentNodeId = ParentId, AuxInt = AtIndex
+//   CreateNodePatch(NodeId, NodeType, ParentId, InsertIndex) → Kind=CreateNode,
+//       NodeId, ParentNodeId = ParentId ?? -1, NodeType = enum (throws on
+//       unknown), AuxInt = InsertIndex (−1 append — EXPLICITLY encoded, 0 is
+//       a valid front index; Phase 3.3 DoD #10)
+//   (AppendChildPatch DELETED Phase 3.3 — wire kind 2 reserved-dormant, the
+//       default arm below throws if it ever reappears)
 //   RemoveNodePatch(NodeId)                     → Kind=RemoveNode, NodeId
 //   UpdatePropPatch(NodeId, Name, Value)        → Kind=UpdateProp,
 //       PropName = Name, PropValue = Value (NULL if null)
@@ -19,9 +21,12 @@ namespace BlazorNative.Runtime;
 //   SetStylePatch(NodeId, Property, Value)      → Kind=SetStyle,
 //       PropName = Property, PropValue = Value (NULL if null)
 //   AttachEventPatch(NodeId, EventName, HandlerId) → Kind=AttachEvent,
-//       Text = EventName, AuxInt = HandlerId
-//   DetachEventPatch(NodeId, HandlerId)         → Kind=DetachEvent,
-//       NodeId, AuxInt = HandlerId
+//       Text = EventName, AuxInt = HandlerId (re-attach for the same
+//       (node, event) REPLACES the prior handler — last wins, no DetachEvent
+//       precedes it; hosts swap their watcher, never stack)
+//   DetachEventPatch(NodeId, HandlerId, EventName) → Kind=DetachEvent,
+//       NodeId, AuxInt = HandlerId, Text = EventName (Phase 3.3 — same free
+//       Text field AttachEvent uses; wire layout unchanged)
 //   CommitFramePatch(FrameId, TimestampMs)      → Kind=CommitFrame,
 //       NodeId = FrameId (the timestamp rides the envelope, not the patch)
 //
@@ -52,13 +57,7 @@ internal static unsafe class FrameEncoder
                     dst.NodeId = p.NodeId;
                     dst.ParentNodeId = p.ParentId ?? -1;
                     dst.NodeType = MapNodeType(p.NodeType);
-                    break;
-
-                case AppendChildPatch p:
-                    dst.Kind = BlazorNativePatchKind.AppendChild;
-                    dst.NodeId = p.ChildId;
-                    dst.ParentNodeId = p.ParentId;
-                    dst.AuxInt = p.AtIndex;
+                    dst.AuxInt = p.InsertIndex; // −1 append, explicitly encoded
                     break;
 
                 case RemoveNodePatch p:
@@ -97,6 +96,7 @@ internal static unsafe class FrameEncoder
                     dst.Kind = BlazorNativePatchKind.DetachEvent;
                     dst.NodeId = p.NodeId;
                     dst.AuxInt = p.HandlerId;
+                    dst.Text = arena.AllocUtf8(p.EventName);
                     break;
 
                 case CommitFramePatch p:

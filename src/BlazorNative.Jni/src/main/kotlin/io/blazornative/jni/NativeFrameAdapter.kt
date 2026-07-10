@@ -17,14 +17,22 @@ import com.sun.jna.Pointer
  *
  * Field mapping — the exact inverse of FrameEncoder.cs's contractual table:
  *
- *   CreateNode  → CreateNode(nodeId, nodeTypes[nodeType], parentId = parent unless -1)
- *   AppendChild → AppendChild(parentId = parent, childId = nodeId, atIndex = aux)
+ *   CreateNode  → CreateNode(nodeId, nodeTypes[nodeType], parentId = parent
+ *                 unless -1, insertIndex = aux) — Phase 3.3 DoD #10: AuxInt
+ *                 carries the host child insert index (-1 append, explicitly
+ *                 encoded; 0 is a valid front index)
+ *   (kind 2)    → reserved-dormant: AppendChild was DELETED in Phase 3.3
+ *                 (CreateNode.insertIndex carries placement); the id is never
+ *                 emitted and never reused, so it falls into the unknown-kind
+ *                 log+skip arm below by design
  *   RemoveNode  → RemoveNode(nodeId)
  *   UpdateProp  → UpdateProp(nodeId, propName!!, propValue)
  *   ReplaceText → ReplaceText(nodeId, text!!)
  *   SetStyle    → SetStyle(nodeId, propName!!, propValue)
  *   AttachEvent → AttachEvent(nodeId, eventName = text!!, handlerId = aux)
- *   DetachEvent → DetachEvent(nodeId, handlerId = aux)
+ *   DetachEvent → DetachEvent(nodeId, handlerId = aux, eventName = text!!) —
+ *                 Phase 3.3: eventName rides the same Text field AttachEvent
+ *                 uses; handlerId is the ORIGINAL attach's id
  *   CommitFrame → CommitFrame(frameId = envelope frameId, timestampMs = envelope
  *                 timestampMs) — the envelope carries the truth; the patch's
  *                 NodeId duplicate of frameId is ignored.
@@ -46,12 +54,12 @@ object NativeFrameAdapter {
     // BlazorNativePatch — 48 bytes.
     const val PATCH_SIZE = 48L
     const val PATCH_KIND = 0L
-    const val PATCH_NODE_ID = 4L       // CommitFrame: frameId; AppendChild: childId
-    const val PATCH_PARENT = 8L        // -1 = none; AppendChild: parentId
+    const val PATCH_NODE_ID = 4L       // CommitFrame: frameId
+    const val PATCH_PARENT = 8L        // -1 = none
     const val PATCH_NODE_TYPE = 12L    // CreateNode only
-    const val PATCH_AUX = 16L          // Attach/DetachEvent: handlerId; AppendChild: atIndex
+    const val PATCH_AUX = 16L          // CreateNode: insertIndex (-1 = append); Attach/DetachEvent: handlerId
     // offset 20: Reserved0 padding — pointers below are 8-aligned.
-    const val PATCH_TEXT = 24L         // ReplaceText: text; AttachEvent: eventName
+    const val PATCH_TEXT = 24L         // ReplaceText: text; Attach/DetachEvent: eventName
     const val PATCH_PROP_NAME = 32L    // UpdateProp/SetStyle: name
     const val PATCH_PROP_VALUE = 40L   // UpdateProp/SetStyle: value; NULL = null
 
@@ -97,10 +105,13 @@ object NativeFrameAdapter {
                             nodeId = nodeId,
                             nodeType = nodeTypes.getOrElse(nodeTypeIdx) { "?" },
                             parentId = parent.takeIf { it != -1 },
+                            insertIndex = aux,
                         )
                     )
                 }
-                2 -> patches.add(RenderPatch.AppendChild(parentId = parent, childId = nodeId, atIndex = aux))
+                // kind 2 (AppendChild) is reserved-dormant since Phase 3.3 —
+                // never emitted; if it ever appears it takes the unknown-kind
+                // log+skip arm below.
                 3 -> patches.add(RenderPatch.RemoveNode(nodeId = nodeId))
                 4 -> patches.add(
                     RenderPatch.UpdateProp(
@@ -129,7 +140,13 @@ object NativeFrameAdapter {
                         handlerId = aux,
                     )
                 )
-                8 -> patches.add(RenderPatch.DetachEvent(nodeId = nodeId, handlerId = aux))
+                8 -> patches.add(
+                    RenderPatch.DetachEvent(
+                        nodeId = nodeId,
+                        handlerId = aux,
+                        eventName = requireNotNull(readUtf8(patchesPtr, base + PATCH_TEXT)) { "DetachEvent.eventName NULL" },
+                    )
+                )
                 9 -> patches.add(RenderPatch.CommitFrame(frameId = frameId, timestampMs = timestampMs))
                 else ->
                     // Unknown wire id: a newer runtime is talking to an older
