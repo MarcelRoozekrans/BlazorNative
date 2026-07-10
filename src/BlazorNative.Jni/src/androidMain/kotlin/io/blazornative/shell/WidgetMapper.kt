@@ -109,8 +109,8 @@ class WidgetMapper(
      * real widget even when its text child shares the mapping. Task-9
      * invariant: the collapse aliases text nodeIds onto non-ViewGroup parents,
      * which is safe for indexed inserts (CreateNode.insertIndex) because those
-     * only ever target ViewGroup containers — do NOT "fix" the collapse when
-     * wiring addView(view, index).
+     * only ever target ViewGroup containers — the collapse must stay as-is;
+     * indexed inserts depend on it.
      *
      * Detach vs re-attach (Phase 3.3): a GENUINE on* attribute removal now
      * emits DetachEventPatch (with eventName) — [handleDetachEvent] handles
@@ -229,7 +229,8 @@ class WidgetMapper(
         // No translation needed; mirrors the JVM twin's arithmetic
         // (CompositionProbeTest: "the list container's children are
         // EXCLUSIVELY the keyed ItemComponent views"). −1 = append,
-        // explicitly encoded (0 is a valid front index).
+        // explicitly encoded (0 is a valid front index). An out-of-range
+        // index throws on the main thread — inherently strict placement.
         if (p.insertIndex >= 0) parent.addView(view, p.insertIndex)
         else parent.addView(view)
     }
