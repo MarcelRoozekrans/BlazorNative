@@ -259,6 +259,26 @@ class WidgetMapper(
                 if (view is EditText) view.hint = p.value
                 else Log.w(TAG, "UpdateProp placeholder ignored: $view is not EditText")
             }
+            // Phase 3.4 (DoD #5): the bound input's write-back half of the bind
+            // loop. Runs inside [applyBatch], so the [applyingBatch] guard
+            // already suppresses the TextWatcher's dispatch — a value echo can
+            // never re-enter the change → re-render → setText loop. The
+            // inequality check skips redundant setText when the echo merely
+            // confirms what the user just typed (the common bind case), which
+            // also preserves the user's cursor position mid-edit. When the
+            // runtime DOES push a different value (e.g. Clear), the write wins
+            // over whatever the IME holds (last-write-wins: Blazor state is
+            // the source of truth) and the cursor moves to the end —
+            // setText resets the selection to 0, so setSelection(length) is
+            // the least-surprising placement for a programmatic overwrite.
+            "value" -> {
+                if (view is EditText) {
+                    if (view.text.toString() != (p.value ?: "")) {
+                        view.setText(p.value ?: "")
+                        view.setSelection(view.text.length)
+                    }
+                } else Log.w(TAG, "UpdateProp value ignored: $view is not EditText")
+            }
             "enabled" -> {
                 view.isEnabled = p.value?.toBoolean() ?: true
             }

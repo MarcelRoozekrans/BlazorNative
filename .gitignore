@@ -37,6 +37,7 @@ logs/
 
 # Gradle build cache
 .gradle/
+.kotlin/
 build/
 # ...but the repo-root build/ holds vendored msbuild targets (Phase 3.0c), not Gradle output
 !/build/

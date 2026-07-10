@@ -36,6 +36,7 @@
          test project is safe. Gives us PatchProtocolNative/FrameArena/FrameEncoder
          coverage. -->
     <ProjectReference Include="..\..\src\BlazorNative.Runtime\BlazorNative.Runtime.csproj" />
+    <ProjectReference Include="..\..\src\BlazorNative.Components\BlazorNative.Components.csproj" />
   </ItemGroup>
 
   <ItemGroup>

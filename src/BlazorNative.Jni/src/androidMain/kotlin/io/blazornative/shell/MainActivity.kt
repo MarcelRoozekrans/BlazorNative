@@ -13,7 +13,7 @@ import kotlin.concurrent.thread
  *
  * On launch: spawns a background thread that runs [BlazorNativeRuntime.start]
  * (init → register frame callback → register shell bridge → mount
- * HelloComponent, or the [EXTRA_COMPONENT] Intent-extra override; 4 [BOOT]
+ * BnDemo, or the [EXTRA_COMPONENT] Intent-extra override; 4 [BOOT]
  * lines since Phase 3.1) against the
  * NativeAOT libBlazorNative.Runtime.so from the APK's jniLibs. Frames
  * arrive through the C-ABI struct path (NativeFrameAdapter) and render via
@@ -38,12 +38,13 @@ class MainActivity : Activity() {
     companion object {
         /**
          * Phase 3.3 Task 9: Intent-extra override for the mounted component
-         * (a mount-registry name, HostSession.cs). Absent → "HelloComponent",
-         * so the launcher demo is unchanged; instrumented tests pass
-         * "CompositionProbe" via ActivityScenario.launch(Intent) to drive the
-         * composition composite without touching the demo. Test-only surface —
-         * an unknown name fails the boot loudly (mount rc 1 → FAIL in the
-         * console pane), same as any other boot error.
+         * (a mount-registry name, HostSession.cs). Absent → "BnDemo" since
+         * Phase 3.4 Gate 4 — the Bn* library demo (bound input + live echo +
+         * cascading theme toggle) IS the launcher experience; tests that pin
+         * another component's shape pass it explicitly ("HelloComponent",
+         * "CompositionProbe") via ActivityScenario.launch(Intent). An unknown
+         * name fails the boot loudly (mount rc 1 → FAIL in the console pane),
+         * same as any other boot error.
          */
         const val EXTRA_COMPONENT = "io.blazornative.shell.EXTRA_COMPONENT"
     }
@@ -79,7 +80,7 @@ class MainActivity : Activity() {
         // process-lifetime retention contract on ShellBridgeHandlers).
         val bridge = AndroidShellBridge(this, onError)
 
-        val componentName = intent.getStringExtra(EXTRA_COMPONENT) ?: "HelloComponent"
+        val componentName = intent.getStringExtra(EXTRA_COMPONENT) ?: "BnDemo"
 
         thread(name = "BlazorNative-Runtime-Boot") {
             try {

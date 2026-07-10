@@ -1,5 +1,6 @@
 package io.blazornative.shell
 
+import android.content.Intent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
@@ -47,7 +48,14 @@ class EventRoundTripAndroidTest {
 
     @Test
     fun tap_increments_counter_on_screen() {
-        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+        // Phase 3.4 Gate 4: MainActivity's no-extra default flipped to
+        // "BnDemo", but this round-trip pins HELLO's tap counter — so it must
+        // now request HelloComponent explicitly instead of riding the default
+        // (per the 3.4 design risk table).
+        val ctx = InstrumentationRegistry.getInstrumentation().targetContext
+        val intent = Intent(ctx, MainActivity::class.java)
+            .putExtra(MainActivity.EXTRA_COMPONENT, "HelloComponent")
+        ActivityScenario.launch<MainActivity>(intent).use { scenario ->
             // 1. Boot: poll for the rendered Button (the mount's first frame).
             val button = pollForView<Button>(scenario, deadlineMs = 60_000) { it is Button }
             assertNotNull("Button never appeared in widget_root within 60s — boot/mapper failed", button)

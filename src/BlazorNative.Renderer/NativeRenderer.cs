@@ -344,11 +344,22 @@ public sealed class NativeRenderer : BlazorRenderer
     }
 
     /// <summary>Host node a component's root-level views attach to: the
-    /// container recorded when the parent's diff walked this component's
-    /// frame (component-parent map, DoD #8) — or the host root for the
-    /// root component.</summary>
+    /// nearest ELEMENT container up the component-parent chain (component-
+    /// parent map, DoD #8) — or the host root when the chain ends without
+    /// one. Walking (not one hop) matters for component CHAINS (Phase 3.4:
+    /// a wrapper whose entire tree is another component, e.g. BnThemedPanel
+    /// → BnView): each link's record holds its SLOT container — null at a
+    /// component's root level — so the host node may sit several links up.</summary>
     private int? ResolveComponentEmitParent(int componentId)
-        => _tree.TryGetComponentParent(componentId, out var parent) ? parent.ParentNodeId : null;
+    {
+        while (_tree.TryGetComponentParent(componentId, out var parent))
+        {
+            if (parent.ParentNodeId is { } containerNode)
+                return containerNode;
+            componentId = parent.ParentComponentId;
+        }
+        return null; // root component (or chain of them) at the host root
+    }
 
     private void ProcessRenderTreeDiff(
         ref BnRenderTreeDiff diff,
@@ -515,13 +526,21 @@ public sealed class NativeRenderer : BlazorRenderer
     /// emitting create/text/attribute patches. <paramref name="insertAtSlot"/> is
     /// the slot position for the subtree ROOT in its container's slot list
     /// (a PrependFrame edit's SiblingIndex); -1 = append (the recursive child
-    /// walk — creation order IS sibling order inside a fresh subtree).</summary>
+    /// walk — creation order IS sibling order inside a fresh subtree).
+    /// Returns the number of SIBLING SLOTS the frame consumed in the current
+    /// container: 1 for element/text/component, the transparent child sum for
+    /// a Region (regions occupy no slot of their own), 0 otherwise. The return
+    /// value is only CONSUMED on the DEFENSIVE region-root-prepend path (a
+    /// Region arriving with insertAtSlot >= 0, where nested regions must
+    /// advance consecutive insert positions) — a path Blazor 10.0.x never
+    /// emits, since RenderTreeDiffBuilder decomposes region inserts per-child;
+    /// see the Region arm's reality-check note (Phase 3.4 Task 1).</summary>
     /// <remarks><paramref name="slotContainer"/> keys the slot-list bucket the
     /// subtree ROOT's slot goes into (null = the component's root level);
     /// <paramref name="emitParent"/> is the HOST node its view attaches to.
     /// They differ only at a component's root level (see <see cref="DiffCursor"/>);
     /// inside the walk both become the enclosing element's node.</remarks>
-    private void ProcessFrame(
+    private int ProcessFrame(
         int componentId,
         ref BnArrayRange<RenderTreeFrame> frames,
         int frameIndex,
@@ -566,8 +585,11 @@ public sealed class NativeRenderer : BlazorRenderer
                         // values like Label="A") aren't mis-attributed to THIS element
                         // by the next loop iteration. Phase 2.7 Bug B fix.
                         // Phase 3.3 Task 3 (carryover b + DoD #8): the component
-                        // OCCUPIES a sibling slot here, and the component-parent
-                        // map records where its own diff must root its views.
+                        // OCCUPIES a sibling slot here. Phase 3.4: nodeId is this
+                        // element — the child's SLOT CONTAINER, which here
+                        // coincides with its host node; see the corrected
+                        // invariant in NativeWidgetTree's ledger (the Component
+                        // arm below is the site where the two differ).
                         _tree.AppendSlot(componentId, nodeId, Slot.ForComponent(child.ComponentId));
                         _tree.RegisterComponentParent(child.ComponentId, componentId, nodeId);
                         i += child.ComponentSubtreeLength - 1;
@@ -580,13 +602,20 @@ public sealed class NativeRenderer : BlazorRenderer
                         // fresh subtree). Pass this element's nodeId as the child's
                         // container AND host parent so the host-side widget mapper
                         // attaches the child inside this element's view (Phase 2.5).
+                        // A Region child (Phase 3.4 Task 1) descends transparently
+                        // via ProcessFrame's Region arm — its children land in THIS
+                        // element's slot list, exactly as if written inline.
                         ProcessFrame(componentId, ref frames, frameIndex + i, slotContainer: nodeId, emitParent: nodeId, insertAtSlot: -1, ref patches);
                         // Skip the child's own subtree so we don't double-walk it.
-                        if (child.FrameType == RenderTreeFrameType.Element)
-                            i += child.ElementSubtreeLength - 1;
+                        // (Before 3.4 a Region child was skipped by only 1 here —
+                        // the walk then iterated INTO the region's children, which
+                        // happened to produce transparent numbering by accident.
+                        // With the explicit Region arm descending, failing to skip
+                        // the full region subtree would double-create its content.)
+                        i += SubtreeLength(in child) - 1;
                     }
                 }
-                break;
+                return 1;
             }
 
             case RenderTreeFrameType.Text:
@@ -599,7 +628,7 @@ public sealed class NativeRenderer : BlazorRenderer
                 AddSlot(componentId, slotContainer, insertAtSlot, Slot.ForNode(textNodeId));
                 patches.Add(new CreateNodePatch(textNodeId, "text", emitParent, insertIndex));
                 patches.Add(new ReplaceTextPatch(textNodeId, frame.TextContent ?? ""));
-                break;
+                return 1;
             }
 
             case RenderTreeFrameType.Component:
@@ -608,14 +637,78 @@ public sealed class NativeRenderer : BlazorRenderer
                 // the current container (e.g. a root-level child component).
                 // It occupies a sibling slot but owns no view — no patch. Its
                 // own diff (later in this batch, or any future one) roots its
-                // views at emitParent via the component-parent map. Attribute
-                // frames in its subtree are its parameters — not walked.
+                // views through the component-parent map. Attribute frames in
+                // its subtree are its parameters — not walked.
+                // Phase 3.4 Task 4 fix: register the SLOT CONTAINER, not the
+                // emit parent. The record keys IndexOfComponentSlot lookups
+                // (host-index translation + disposal's RemoveComponentSlot),
+                // which address the SLOT bucket — at a component's root level
+                // that bucket is null while emitParent is the enclosing HOST
+                // node, and recording the latter sent chained components'
+                // (wrapper → inner, e.g. BnThemedPanel → BnView) mid-list
+                // inserts into the append fallback (ComponentChainTests).
+                // Emit-parent resolution now walks the chain instead
+                // (ResolveComponentEmitParent).
                 AddSlot(componentId, slotContainer, insertAtSlot, Slot.ForComponent(frame.ComponentId));
-                _tree.RegisterComponentParent(frame.ComponentId, componentId, emitParent);
-                break;
+                _tree.RegisterComponentParent(frame.ComponentId, componentId, slotContainer);
+                return 1;
+            }
+
+            case RenderTreeFrameType.Region:
+            {
+                // Phase 3.4 Task 1 (the 3.3 MUST-FIX carryover). Blazor emits
+                // Region frames for RenderFragment / CascadingValue ChildContent:
+                // grouping markers that occupy NO sibling slot — their children
+                // number as if inline in the enclosing container (region-
+                // transparent sibling numbering), and regions nest. Descend with
+                // the SAME slot container + emit parent; each slot-occupying
+                // child advances the insert position, so region content arriving
+                // as a mid-list insert lands at CONSECUTIVE slot positions.
+                //
+                // Reality check against Blazor 10.0.x (RenderTreeDiffBuilder):
+                // region inserts/removes are decomposed into per-child edits and
+                // same-sequence regions diff via transparent recursion, so a
+                // PrependFrame's reference root is never a Region there — this
+                // arm is reached for Region frames nested inside a prepended
+                // ELEMENT subtree (the recursive walk above), and defensively
+                // covers a region-root prepend should a future Blazor emit one.
+                // Before 3.4 this frame type hit no arm at all: the element
+                // walk's fall-through happened to iterate into region children
+                // (accidental transparency) — now the descent is explicit.
+                var slotsConsumed = 0;
+                var childSlot = insertAtSlot;
+                var end = frameIndex + frame.RegionSubtreeLength;
+                var childIndex = frameIndex + 1;
+                while (childIndex < end)
+                {
+                    var child = new BnRenderTreeFrame(ref frames[childIndex]);
+                    var consumed = ProcessFrame(componentId, ref frames, childIndex,
+                        slotContainer, emitParent, childSlot, ref patches);
+                    slotsConsumed += consumed;
+                    if (childSlot >= 0)
+                        childSlot += consumed;
+                    childIndex += SubtreeLength(in child);
+                }
+                return slotsConsumed;
             }
         }
+
+        // Frame types the walk deliberately ignores (e.g. ElementReferenceCapture,
+        // NamedEvent) consume no sibling slot.
+        return 0;
     }
+
+    /// <summary>Total frame count of the subtree rooted at <paramref name="frame"/>
+    /// — the walk-skip distance past a child frame. Subtree-less frame types
+    /// (Text, Attribute, ElementReferenceCapture, …) are 1. THE one place to
+    /// extend when a future frame type with a subtree joins the walk.</summary>
+    private static int SubtreeLength(in BnRenderTreeFrame frame) => frame.FrameType switch
+    {
+        RenderTreeFrameType.Element   => frame.ElementSubtreeLength,
+        RenderTreeFrameType.Component => frame.ComponentSubtreeLength,
+        RenderTreeFrameType.Region    => frame.RegionSubtreeLength,
+        _ => 1,
+    };
 
     /// <summary>Slot bookkeeping for a freshly created slot: insert at the
     /// diff-provided sibling position, or append for subtree-walk children.

@@ -83,10 +83,19 @@ internal sealed class NativeWidgetTree
     // event-handler registry (see NativeRenderer._eventHandlers).
     // Fixed in Task 4 (DoD #10): CreateNodePatch.InsertIndex carries the host
     // insert position (TranslateToHostInsertIndex below); AppendChildPatch is
-    // deleted. Remaining: Region frames (RenderFragment / CascadingValue
-    // bodies) are not walked: components inside a region get no slot/parent
-    // record and root at the host root (pre-3.3 behavior, unchanged — see
-    // ProcessFrame; documented 3.4 carryover).
+    // deleted.
+    // FIXED 2026-07-10 (Phase 3.4 Task 1): Region frames (RenderFragment /
+    // CascadingValue bodies) are now walked EXPLICITLY — ProcessFrame's Region
+    // arm descends transparently (same container/parent, no slot for the
+    // region itself; children number inline per Blazor's region-transparent
+    // sibling numbering). Correction to the 3.3 diagnosis: content was not
+    // being dropped on Blazor 10.0.x — RenderTreeDiffBuilder decomposes region
+    // inserts/removes into per-child edits (a PrependFrame's reference root is
+    // never a Region), and the pre-3.4 element walk fell through region frames
+    // by ACCIDENT, which coincidentally produced transparent numbering. 3.4
+    // converts that accident into a contract: explicit Region arm + subtree
+    // skip, pinned by RegionWalkTests (incl. components inside regions getting
+    // slot + parent record, nested regions, and mid-list region inserts).
     private const int RootParentKey = -1;
     private readonly Dictionary<(int ComponentId, int ParentKey), List<Slot>> _slotLists = new();
 
@@ -300,8 +309,16 @@ internal sealed class NativeWidgetTree
     // childComponentId → (parentComponentId, parentNodeId). Recorded when the
     // parent's diff walks the child's Component frame; consulted when the
     // CHILD's own RenderTreeDiff arrives so its root-level views parent under
-    // the recorded host container instead of the host root. parentNodeId null
-    // = the child sits at the host root (root-level component chains).
+    // the recorded host container instead of the host root.
+    // FIXED 2026-07-10 (Phase 3.4 Task 4): parentNodeId is the child's SLOT
+    // CONTAINER (null = the child's slot sits in the parent component's ROOT
+    // bucket), NOT the resolved host node — the two differ for component
+    // CHAINS (a wrapper whose entire tree is another component, e.g.
+    // BnThemedPanel → BnView). IndexOfComponentSlot consumers (host-index
+    // translation, RemoveComponentSlot) key slot buckets by it; recording the
+    // host node sent chained mid-list inserts into the append fallback
+    // (ComponentChainTests pins the fix). Host-node resolution now walks the
+    // chain (NativeRenderer.ResolveComponentEmitParent).
     private readonly Dictionary<int, (int ParentComponentId, int? ParentNodeId)> _componentParents = new();
 
     public void RegisterComponentParent(int childComponentId, int parentComponentId, int? parentNodeId)

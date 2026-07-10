@@ -38,6 +38,9 @@ internal static unsafe class HostSession
         // Phase 3.3: the composition proof app (nested components, keyed
         // list mutation, detach — design §6).
         ["CompositionProbe"] = r => r.Mount<CompositionProbe>(),
+        // Phase 3.4: the Bn* demo form (bind loop + cascading theme —
+        // DoD #5/#6); becomes MainActivity's default at Gate 4.
+        ["BnDemo"] = r => r.Mount<BlazorNative.Components.BnDemo>(),
     };
 
     /// <summary>Stores the host's frame callback. IntPtr.Zero disables
