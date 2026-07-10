@@ -35,6 +35,9 @@ internal static unsafe class HostSession
     private static readonly Dictionary<string, Action<NativeRenderer>> s_components = new()
     {
         ["HelloComponent"] = r => r.Mount<HelloComponent>(),
+        // Phase 3.3: the composition proof app (nested components, keyed
+        // list mutation, detach — design §6).
+        ["CompositionProbe"] = r => r.Mount<CompositionProbe>(),
     };
 
     /// <summary>Stores the host's frame callback. IntPtr.Zero disables
