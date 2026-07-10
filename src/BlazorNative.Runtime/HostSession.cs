@@ -42,6 +42,26 @@ internal static unsafe class HostSession
     public static void SetFrameCallback(IntPtr fnPtr)
         => Volatile.Write(ref s_frameCallback, fnPtr);
 
+    /// <summary>Test-only strict-mode toggle (Phase 3.3 Task 6, DoD #9):
+    /// applied to the session renderer at EnsureSession AND to a live session
+    /// immediately. The PRODUCTION default stays false — renderer errors log
+    /// to stderr rather than crash the host process (deliberate POC posture;
+    /// a diagnostics surface is M4+). .NET host-session tests flip this via a
+    /// module initializer; JVM/instrumented suites can gain an export-level
+    /// hook later if Gate 2/3 need it (none wired — the C ABI is unchanged).</summary>
+    internal static bool StrictErrorsForTests
+    {
+        get => Volatile.Read(ref s_strictErrors);
+        set
+        {
+            Volatile.Write(ref s_strictErrors, value);
+            var renderer = Volatile.Read(ref s_renderer);
+            if (renderer is not null)
+                renderer.StrictErrors = value;
+        }
+    }
+    private static bool s_strictErrors;
+
     /// <summary>The live session renderer, or null before the first
     /// EnsureSession/TryMount. Phase 3.2: blazornative_dispatch_event resolves
     /// its target through this — null maps to return code 1 (no session).</summary>
@@ -125,6 +145,7 @@ internal static unsafe class HostSession
             // on Android.
             services.AddSingleton<IMobileBridge, NativeShellBridge>();
             renderer = services.BuildServiceProvider().GetRequiredService<NativeRenderer>();
+            renderer.StrictErrors = Volatile.Read(ref s_strictErrors);
 
             renderer.FrameSink = frame =>
             {

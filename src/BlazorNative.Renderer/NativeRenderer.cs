@@ -68,6 +68,20 @@ public sealed class NativeRenderer : BlazorRenderer
     /// is not synchronized, so a cross-thread mid-render swap races.</summary>
     public Action<RenderFrame>? FrameSink { get; set; }
 
+    /// <summary>Phase 3.3 Task 6 (DoD #9). When true, exceptions Blazor routes
+    /// to <see cref="HandleException"/> OUTSIDE the 3.2 event-dispatch capture
+    /// window rethrow synchronously (ExceptionDispatchInfo — original stack)
+    /// at the caller boundary (mount / batch) instead of logging; renderer
+    /// contract violations (poisoned cursor, out-of-range diff-provided
+    /// sibling index) raise through the same switch. INSIDE the dispatch
+    /// window the 3.2 capture still wins (the dispatch task faults → export
+    /// rc 2; no double-report).
+    /// Default FALSE — the deliberate production POC posture: renderer errors
+    /// log to stderr rather than crash the host process (a diagnostics
+    /// surface is M4+ work). ALL test harnesses enable it: this silent
+    /// swallow hid Bug A, Bug B, and the 3.2 diff-cursor bug for days each.</summary>
+    public bool StrictErrors { get; set; }
+
     public NativeRenderer(IServiceProvider services)
         : base(services, new NativeRendererLoggerFactory())
     {
@@ -235,10 +249,44 @@ public sealed class NativeRenderer : BlazorRenderer
         // Inside a UI-event dispatch window, remember the first exception so
         // DispatchUiEventAsync can fault its task (Blazor swallows dispatch
         // exceptions here otherwise — see _uiEventDispatchException doc).
+        // The window wins over strict mode: the fault surfaces ONCE, at the
+        // dispatch boundary (export rc 2) — never from this stack.
         if (_uiEventDispatchDepth > 0)
+        {
             _uiEventDispatchException ??= exception;
+            Console.Error.WriteLine($"[BlazorNative.Renderer] {exception}");
+            return;
+        }
+
+        // Strict mode (Phase 3.3 Task 6, DoD #9): rethrow with the original
+        // stack — the exception surfaces synchronously at whatever boundary
+        // invoked the render work (mount, batch). See StrictErrors doc for
+        // why production stays on the log path below.
+        if (StrictErrors)
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(exception).Throw();
+
         Console.Error.WriteLine($"[BlazorNative.Renderer] {exception}");
     }
+
+    /// <summary>Renderer contract violations (Phase 3.3 Task 6): a poisoned
+    /// cursor or an out-of-range diff-provided sibling index is a genuine bug
+    /// once Tasks 1-3 fixed the legitimate causes. Strict: throw (inside a
+    /// render batch the throw routes through UpdateDisplayAsync's catch →
+    /// <see cref="HandleException"/>, so window/boundary semantics match any
+    /// other renderer error). Non-strict: stderr + drop, the POC posture.</summary>
+    private void ReportContractViolation(string message)
+    {
+        if (StrictErrors)
+            throw new InvalidOperationException($"[NativeRenderer] contract violation: {message}");
+        Console.Error.WriteLine($"[NativeRenderer] contract violation (dropped): {message}");
+    }
+
+    /// <summary>Test-only: routes a message through the contract-violation
+    /// switch. Poisoned-cursor / clamp situations are not constructible from
+    /// legal Blazor diffs anymore, so StrictModeTests injects here — the same
+    /// path the production guards call.</summary>
+    internal void InjectContractViolationForTests(string message)
+        => ReportContractViolation(message);
 
     protected override void Dispose(bool disposing)
     {
@@ -321,13 +369,21 @@ public sealed class NativeRenderer : BlazorRenderer
             switch ((RenderTreeEditType)bnEdit.Type)
             {
                 case RenderTreeEditType.PrependFrame:
-                    // Review follow-up: under a poisoned cursor a prepend must
-                    // be dropped outright — emitting it would ship
-                    // CreateNodePatch(parent=PoisonedCursor) (Android falls
-                    // back to widget_root) AND the slot insert would turn the
-                    // poison sentinel into a live slot-list bucket,
-                    // cross-container aliasing later cursor lookups.
-                    if (cursor.Poisoned) break;
+                    // Under a poisoned cursor a prepend must never be applied —
+                    // emitting it would ship CreateNodePatch(parent=
+                    // PoisonedCursor) (Android falls back to widget_root) AND
+                    // the slot insert would turn the poison sentinel into a
+                    // live slot-list bucket, cross-container aliasing later
+                    // cursor lookups. Task 6: a genuine contract violation now
+                    // (Tasks 1-3 fixed the legitimate causes) — strict throws,
+                    // non-strict drops the edit.
+                    if (cursor.Poisoned)
+                    {
+                        ReportContractViolation(
+                            $"PrependFrame at sibling {bnEdit.SiblingIndex} under a poisoned cursor " +
+                            $"(component {cursor.ComponentId}) — edit dropped");
+                        break;
+                    }
                     // Phase 3.3 Task 2: the edit's SiblingIndex is the slot
                     // position — mid-list prepends insert there, not at the end.
                     ProcessFrame(cursor.ComponentId, ref referenceFrames, bnEdit.ReferenceFrameIndex,
@@ -544,13 +600,25 @@ public sealed class NativeRenderer : BlazorRenderer
     }
 
     /// <summary>Slot bookkeeping for a freshly created slot: insert at the
-    /// diff-provided sibling position, or append for subtree-walk children.</summary>
+    /// diff-provided sibling position, or append for subtree-walk children.
+    /// Task 6: an out-of-range DIFF-PROVIDED index is a Blazor-contract
+    /// violation — strict throws, non-strict clamps and continues (the
+    /// InsertSlotAt clamp). Appends never hit this check (see AppendSlot).</summary>
     private void AddSlot(int componentId, int? slotContainer, int insertAtSlot, Slot slot)
     {
         if (insertAtSlot >= 0)
+        {
+            var count = _tree.GetSlotCount(componentId, slotContainer);
+            if (insertAtSlot > count)
+                ReportContractViolation(
+                    $"diff-provided sibling index {insertAtSlot} exceeds slot count {count} " +
+                    $"(component {componentId}, container {slotContainer?.ToString() ?? "root"}) — clamped");
             _tree.InsertSlotAt(componentId, slotContainer, insertAtSlot, slot);
+        }
         else
+        {
             _tree.AppendSlot(componentId, slotContainer, slot);
+        }
     }
 
     /// <summary>Handles one entry of RenderBatch.DisposedComponentIDs (Phase

@@ -47,6 +47,7 @@ public sealed class DiffCursorTests
     {
         var services = new ServiceCollection().AddBlazorNativeRenderer();
         using var renderer = services.BuildServiceProvider().GetRequiredService<NativeRenderer>();
+        renderer.StrictErrors = true; // Task 6: all fixtures run strict (DoD #9)
 
         // Frames-event capture pattern (test channel; no FrameSink needed).
         var frames = new List<RenderFrame>();
@@ -91,6 +92,7 @@ public sealed class DiffCursorTests
     {
         var services = new ServiceCollection().AddBlazorNativeRenderer();
         var renderer = services.BuildServiceProvider().GetRequiredService<NativeRenderer>();
+        renderer.StrictErrors = true; // Task 6: all fixtures run strict (DoD #9)
         var frames = new List<RenderFrame>();
         renderer.Frames += (f, _) =>
         {

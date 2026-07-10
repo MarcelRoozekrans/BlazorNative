@@ -36,7 +36,9 @@ public class RendererBlazorAPICoverage
     {
         var services = new ServiceCollection().AddBlazorNativeRenderer();
         extraServices?.GetEnumerator().ToEnumerable().ToList().ForEach(s => services.Add(s));
-        return services.BuildServiceProvider().GetRequiredService<NativeRenderer>();
+        var renderer = services.BuildServiceProvider().GetRequiredService<NativeRenderer>();
+        renderer.StrictErrors = true; // Task 6: all fixtures run strict (DoD #9)
+        return renderer;
     }
 
     private static async Task<RenderFrame> CaptureFirstFrame(
@@ -226,6 +228,7 @@ public class RendererBlazorAPICoverage
         services.AddSingleton<GreetingService>();
         var provider = services.BuildServiceProvider();
         using var renderer = provider.GetRequiredService<NativeRenderer>();
+        renderer.StrictErrors = true; // Task 6: all fixtures run strict (DoD #9)
 
         var frame = await CaptureFirstFrame(renderer, () => renderer.MountAsync<InjectProbe>(ParameterView.Empty));
 

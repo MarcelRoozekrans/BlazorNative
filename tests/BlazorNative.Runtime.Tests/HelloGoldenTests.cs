@@ -71,6 +71,7 @@ public sealed class HelloGoldenTests
         services.AddBlazorNativeRendererServices();
         services.AddBlazorNativeHttpServices();
         using var renderer = services.BuildServiceProvider().GetRequiredService<NativeRenderer>();
+        renderer.StrictErrors = true; // Task 6: all fixtures run strict (DoD #9)
 
         var tcs = new TaskCompletionSource<RenderFrame>();
         ZeroAlloc.AsyncEvents.AsyncEvent<RenderFrame> handler = (f, _) =>

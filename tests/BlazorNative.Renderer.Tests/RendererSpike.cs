@@ -39,6 +39,7 @@ public class RendererSpike
         // Arrange
         var services = new ServiceCollection().AddBlazorNativeRenderer().BuildServiceProvider();
         using var renderer = new NativeRenderer(services);
+        renderer.StrictErrors = true; // Task 6: all fixtures run strict (DoD #9)
 
         var tcs = new TaskCompletionSource<RenderFrame>();
         AsyncEvent<RenderFrame> handler = (frame, ct) =>
@@ -100,6 +101,7 @@ public class RendererSpike
     {
         var services = new ServiceCollection().AddBlazorNativeRenderer().BuildServiceProvider();
         using var renderer = new NativeRenderer(services);
+        renderer.StrictErrors = true; // Task 6: all fixtures run strict (DoD #9)
 
         var tcs = new TaskCompletionSource<RenderFrame>();
         AsyncEvent<RenderFrame> handler = (frame, ct) =>
