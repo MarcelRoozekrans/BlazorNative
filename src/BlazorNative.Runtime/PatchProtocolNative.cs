@@ -44,7 +44,7 @@ public struct BlazorNativePatch
     public BlazorNativeNodeType NodeType; // offset 12 (CreateNode only)
     public int    AuxInt;                 // offset 16 (CreateNode: InsertIndex, -1 = append — explicitly encoded, 0 is a valid front index; Attach/DetachEvent: HandlerId)
     public int    Reserved0;              // offset 20 — explicit pad so the pointers are 8-aligned
-    public IntPtr Text;                   // offset 24 (ReplaceText: text; AttachEvent: eventName; NULL if unused)
+    public IntPtr Text;                   // offset 24 (ReplaceText: text; Attach/DetachEvent: eventName; NULL if unused)
     public IntPtr PropName;               // offset 32 (UpdateProp/SetStyle: name)
     public IntPtr PropValue;              // offset 40 (UpdateProp/SetStyle: value; NULL = null)
 }                                         // total 48 bytes

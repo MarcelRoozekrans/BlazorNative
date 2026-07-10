@@ -574,4 +574,180 @@ public sealed class DiffCursorTests
         Assert.False(tree.TryGetComponentParent(childId, out _));
         Assert.Equal(0, tree.ComponentParentCount);
     }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Phase 3.3 Task 5 — DetachEventPatch emission (carryover e): an on*
+    // RemoveAttribute resolves the ORIGINAL handlerId through the renderer's
+    // (nodeId, eventName) → handlerId registry and emits DetachEventPatch
+    // (with EventName — the host stops routing without guessing). Re-attach
+    // after detach registers the NEW handlerId; the registry cleans on node
+    // removal and component disposal.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// <summary>Driver div with a permanent handler; target div whose onclick
+    /// toggles on every driver click.</summary>
+    private sealed class DetachableSecond : ComponentBase
+    {
+        private bool _attached = true;
+        private void OnDriverClick() => _attached = !_attached;
+
+        protected override void BuildRenderTree(RenderTreeBuilder b)
+        {
+            b.OpenElement(0, "div");                       // sibling 0 — driver
+            b.AddAttribute(1, "onclick",
+                EventCallback.Factory.Create<MouseEventArgs>(this, OnDriverClick));
+            b.AddContent(2, "driver");
+            b.CloseElement();
+
+            b.OpenElement(3, "div");                       // sibling 1 — target
+            if (_attached)
+                b.AddAttribute(4, "onclick",
+                    EventCallback.Factory.Create<MouseEventArgs>(this, () => { }));
+            b.AddContent(5, "target");
+            b.CloseElement();
+        }
+    }
+
+    [Fact]
+    public async Task RemoveAttribute_OnEvent_EmitsDetach_AndReattachRegistersNewHandler()
+    {
+        var (renderer, frames) = BuildRenderer();
+        using var rendererScope = renderer;
+
+        await renderer.MountAsync<DetachableSecond>(ParameterView.Empty);
+        Assert.NotEmpty(frames);
+
+        // Identify driver/target attaches via their text nodes' parents.
+        int NodeOf(string text)
+        {
+            var t = Assert.Single(frames[0].Patches.OfType<ReplaceTextPatch>(), p => p.Text == text);
+            var c = Assert.Single(frames[0].Patches.OfType<CreateNodePatch>(), p => p.NodeId == t.NodeId);
+            return Assert.IsType<int>(c.ParentId);
+        }
+        var driverNode = NodeOf("driver");
+        var targetNode = NodeOf("target");
+        var driverAttach = Assert.Single(
+            frames[0].Patches.OfType<AttachEventPatch>(), p => p.NodeId == driverNode);
+        var targetAttach = Assert.Single(
+            frames[0].Patches.OfType<AttachEventPatch>(), p => p.NodeId == targetNode);
+
+        // Click 1: toggle OFF → RemoveAttribute("onclick") on the target →
+        // DetachEventPatch carrying the ORIGINAL attach handlerId + EventName.
+        await Click(renderer, driverAttach);
+        Assert.True(frames.Count >= 2, "expected a re-render frame after click 1");
+        var detach = Assert.Single(frames[^1].Patches.OfType<DetachEventPatch>());
+        Assert.Equal(targetNode, detach.NodeId);
+        Assert.Equal(targetAttach.HandlerId, detach.HandlerId);
+        Assert.Equal("click", detach.EventName);
+        // The detach is a DETACH — not the 3.2-era UpdateProp(onclick, null)
+        // that hosts ignored.
+        Assert.DoesNotContain(frames[^1].Patches.OfType<UpdatePropPatch>(),
+            p => p.Name.StartsWith("on", StringComparison.OrdinalIgnoreCase));
+
+        // Click 2: toggle back ON → a fresh AttachEventPatch with a NEW
+        // handlerId (Blazor allocates a new table entry).
+        await Click(renderer, driverAttach);
+        var reattach = Assert.Single(
+            frames[^1].Patches.OfType<AttachEventPatch>(), p => p.NodeId == targetNode);
+        Assert.NotEqual(targetAttach.HandlerId, reattach.HandlerId);
+
+        // Click 3: toggle OFF again → the detach carries the RE-ATTACHED
+        // handlerId — the registry followed the re-attach.
+        await Click(renderer, driverAttach);
+        var detach2 = Assert.Single(frames[^1].Patches.OfType<DetachEventPatch>());
+        Assert.Equal(targetNode, detach2.NodeId);
+        Assert.Equal(reattach.HandlerId, detach2.HandlerId);
+        Assert.Equal("click", detach2.EventName);
+    }
+
+    /// <summary>Keyed item divs, each carrying its own onclick; the driver
+    /// removes the first item.</summary>
+    private sealed class RemovableHandlerList : ComponentBase
+    {
+        private readonly List<string> _keys = ["a", "b"];
+        private void OnDriverClick() => _keys.RemoveAt(0);
+
+        protected override void BuildRenderTree(RenderTreeBuilder b)
+        {
+            b.OpenElement(0, "div");
+            b.AddAttribute(1, "onclick",
+                EventCallback.Factory.Create<MouseEventArgs>(this, OnDriverClick));
+            foreach (var key in _keys)
+            {
+                b.OpenElement(2, "div");
+                b.SetKey(key);
+                b.AddAttribute(3, "onclick",
+                    EventCallback.Factory.Create<MouseEventArgs>(this, () => { }));
+                b.AddContent(4, key);
+                b.CloseElement();
+            }
+            b.CloseElement();
+        }
+    }
+
+    [Fact]
+    public async Task EventRegistry_CleansOnNodeRemoval()
+    {
+        var (renderer, frames) = BuildRenderer();
+        using var rendererScope = renderer;
+
+        await renderer.MountAsync<RemovableHandlerList>(ParameterView.Empty);
+        Assert.NotEmpty(frames);
+
+        // Driver + 2 items = 3 live registrations.
+        Assert.Equal(3, renderer.EventRegistrationCount);
+        var driverAttach = frames[0].Patches.OfType<AttachEventPatch>().First();
+
+        // Remove the first item (its div carries a handler): the node's
+        // registration goes with it — no leak, and no DetachEventPatch either
+        // (the node itself is being removed; RemoveNode subsumes detach).
+        await Click(renderer, driverAttach);
+        Assert.Single(frames[^1].Patches.OfType<RemoveNodePatch>());
+        Assert.Empty(frames[^1].Patches.OfType<DetachEventPatch>());
+        Assert.Equal(2, renderer.EventRegistrationCount);
+    }
+
+    /// <summary>Driver + a disposable child component whose span carries its
+    /// own handler.</summary>
+    private sealed class ToggleCounterParent : ComponentBase
+    {
+        private bool _show = true;
+        private void OnClick() => _show = false;
+
+        protected override void BuildRenderTree(RenderTreeBuilder b)
+        {
+            b.OpenElement(0, "div");
+            b.AddAttribute(1, "onclick",
+                EventCallback.Factory.Create<MouseEventArgs>(this, OnClick));
+            b.AddContent(2, "host");
+            b.CloseElement();
+
+            if (_show)
+            {
+                b.OpenComponent<ChildCounter>(3);
+                b.CloseComponent();
+            }
+        }
+    }
+
+    [Fact]
+    public async Task EventRegistry_CleansOnComponentDisposal()
+    {
+        var (renderer, frames) = BuildRenderer();
+        using var rendererScope = renderer;
+
+        await renderer.MountAsync<ToggleCounterParent>(ParameterView.Empty);
+        Assert.NotEmpty(frames);
+
+        // Driver + the child's span handler = 2 registrations.
+        Assert.Equal(2, renderer.EventRegistrationCount);
+        var hostText = Assert.Single(frames[0].Patches.OfType<ReplaceTextPatch>(), p => p.Text == "host");
+        var hostCreate = Assert.Single(frames[0].Patches.OfType<CreateNodePatch>(), p => p.NodeId == hostText.NodeId);
+        var driverAttach = Assert.Single(frames[0].Patches.OfType<AttachEventPatch>(),
+            p => p.NodeId == hostCreate.ParentId);
+
+        // Dispose the child → its node registrations are purged with it.
+        await Click(renderer, driverAttach);
+        Assert.Equal(1, renderer.EventRegistrationCount);
+    }
 }

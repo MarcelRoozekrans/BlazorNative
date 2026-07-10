@@ -81,10 +81,15 @@ public sealed record AttachEventPatch(
     int    HandlerId        // opaque ID the .NET runtime side registered
 ) : RenderPatch;
 
-/// <summary>Stop routing an event for a node.</summary>
+/// <summary>Stop routing an event for a node. Phase 3.3 (carryover e):
+/// emitted when a re-render removes an on* attribute — the renderer resolves
+/// the ORIGINAL handlerId through its (nodeId, eventName) registry, and
+/// <paramref name="EventName"/> tells the host exactly which watcher to drop
+/// (no map-membership guessing; rides the wire's free Text field).</summary>
 public sealed record DetachEventPatch(
-    int NodeId,
-    int HandlerId
+    int    NodeId,
+    int    HandlerId,
+    string EventName        // "click" | "change" | "focus" | "blur" | "scroll"
 ) : RenderPatch;
 
 // ── Frame boundary ────────────────────────────────────────────────────────────

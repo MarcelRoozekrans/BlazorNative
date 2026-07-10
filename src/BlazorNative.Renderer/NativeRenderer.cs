@@ -31,6 +31,30 @@ public sealed class NativeRenderer : BlazorRenderer
     /// Never used by production hosts.</summary>
     internal NativeWidgetTree WidgetTree => _tree;
 
+    // ── Event-handler registry (Phase 3.3 Task 5, carryover e) ────────────────
+    //
+    // nodeId → (eventName → handlerId), maintained at the AttachEvent emission
+    // site (ProcessAttribute). Blazor's RemoveAttribute edit carries only the
+    // attribute name — resolving the ORIGINAL handlerId for DetachEventPatch
+    // needs this. Re-attach overwrites (last wins, mirroring Blazor's handler
+    // table); entries clean on node removal (RemoveFrame + subtree purge) and
+    // component disposal, so the registry cannot leak across teardowns.
+    private readonly Dictionary<int, Dictionary<string, int>> _eventHandlers = new();
+
+    /// <summary>Test-only: live (node, event) registrations — cleanup tests
+    /// assert the registry doesn't accrete after node/component teardown.</summary>
+    internal int EventRegistrationCount => _eventHandlers.Values.Sum(e => e.Count);
+
+    private void RegisterEventHandler(int nodeId, string eventName, int handlerId)
+    {
+        if (!_eventHandlers.TryGetValue(nodeId, out var events))
+            _eventHandlers[nodeId] = events = new Dictionary<string, int>();
+        events[eventName] = handlerId;
+    }
+
+    private void RemoveNodeEventRegistrations(int nodeId)
+        => _eventHandlers.Remove(nodeId);
+
     public event AsyncEvent<RenderFrame> Frames
     {
         add    => _frames.Register(value);
@@ -322,7 +346,10 @@ public sealed class NativeRenderer : BlazorRenderer
                     if (removed.IsNode)
                     {
                         patches.Add(new RemoveNodePatch(removed.NodeId));
-                        _tree.PurgeNodeSubtree(cursor.ComponentId, removed.NodeId);
+                        // Event registrations die with the node + its subtree
+                        // (RemoveNode subsumes detach — no DetachEventPatch).
+                        RemoveNodeEventRegistrations(removed.NodeId);
+                        _tree.PurgeNodeSubtree(cursor.ComponentId, removed.NodeId, RemoveNodeEventRegistrations);
                     }
                     break;
                 }
@@ -348,8 +375,29 @@ public sealed class NativeRenderer : BlazorRenderer
                 case RenderTreeEditType.RemoveAttribute:
                 {
                     var slot = _tree.GetSlotAt(cursor.ComponentId, cursor.Container, bnEdit.SiblingIndex);
-                    if (slot.IsNode && bnEdit.RemovedAttributeName is not null)
-                        patches.Add(new UpdatePropPatch(slot.NodeId, bnEdit.RemovedAttributeName, null));
+                    if (slot.IsNode && bnEdit.RemovedAttributeName is { } removedName)
+                    {
+                        if (removedName.StartsWith("on", StringComparison.OrdinalIgnoreCase))
+                        {
+                            // Phase 3.3 Task 5 (carryover e): an on* removal is
+                            // a genuine detach. Resolve the ORIGINAL handlerId
+                            // through the registry (the edit carries only the
+                            // name); no registry entry means the attach never
+                            // reached the host — emit nothing.
+                            var eventName = removedName[2..].ToLowerInvariant();
+                            if (_eventHandlers.TryGetValue(slot.NodeId, out var events)
+                                && events.Remove(eventName, out var handlerId))
+                            {
+                                patches.Add(new DetachEventPatch(slot.NodeId, handlerId, eventName));
+                                if (events.Count == 0)
+                                    _eventHandlers.Remove(slot.NodeId);
+                            }
+                        }
+                        else
+                        {
+                            patches.Add(new UpdatePropPatch(slot.NodeId, removedName, null));
+                        }
+                    }
                     break;
                 }
 
@@ -534,20 +582,25 @@ public sealed class NativeRenderer : BlazorRenderer
         if (_tree.TryGetComponentParent(componentId, out var parent))
             _tree.RemoveComponentSlot(parent.ParentComponentId, parent.ParentNodeId, componentId);
 
-        _tree.RemoveComponent(componentId);
+        // Event registrations for every node the component still owned die
+        // with its buckets (Task 5 registry cleanup).
+        _tree.RemoveComponent(componentId, RemoveNodeEventRegistrations);
     }
 
-    private static void ProcessAttribute(int nodeId, ref BnRenderTreeFrame frame, ref PooledList<RenderPatch> patches)
+    private void ProcessAttribute(int nodeId, ref BnRenderTreeFrame frame, ref PooledList<RenderPatch> patches)
     {
         var name = frame.AttributeName ?? "";
         var value = frame.AttributeValue?.ToString();
 
         if (name.StartsWith("on", StringComparison.OrdinalIgnoreCase))
         {
-            patches.Add(new AttachEventPatch(
-                nodeId,
-                name[2..].ToLowerInvariant(),
-                (int)frame.AttributeEventHandlerId));
+            var eventName = name[2..].ToLowerInvariant();
+            var handlerId = (int)frame.AttributeEventHandlerId;
+            // THE AttachEvent emission site — the detach registry records the
+            // handlerId here (a SetAttribute re-attach overwrites: last wins,
+            // so a later detach carries the LIVE handlerId). Task 5.
+            RegisterEventHandler(nodeId, eventName, handlerId);
+            patches.Add(new AttachEventPatch(nodeId, eventName, handlerId));
         }
         else if (StyleAttributes.Contains(name))
         {

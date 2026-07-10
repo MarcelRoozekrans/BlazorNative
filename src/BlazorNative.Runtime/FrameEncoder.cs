@@ -22,8 +22,9 @@ namespace BlazorNative.Runtime;
 //       PropName = Property, PropValue = Value (NULL if null)
 //   AttachEventPatch(NodeId, EventName, HandlerId) → Kind=AttachEvent,
 //       Text = EventName, AuxInt = HandlerId
-//   DetachEventPatch(NodeId, HandlerId)         → Kind=DetachEvent,
-//       NodeId, AuxInt = HandlerId
+//   DetachEventPatch(NodeId, HandlerId, EventName) → Kind=DetachEvent,
+//       NodeId, AuxInt = HandlerId, Text = EventName (Phase 3.3 — same free
+//       Text field AttachEvent uses; wire layout unchanged)
 //   CommitFramePatch(FrameId, TimestampMs)      → Kind=CommitFrame,
 //       NodeId = FrameId (the timestamp rides the envelope, not the patch)
 //
@@ -93,6 +94,7 @@ internal static unsafe class FrameEncoder
                     dst.Kind = BlazorNativePatchKind.DetachEvent;
                     dst.NodeId = p.NodeId;
                     dst.AuxInt = p.HandlerId;
+                    dst.Text = arena.AllocUtf8(p.EventName);
                     break;
 
                 case CommitFramePatch p:

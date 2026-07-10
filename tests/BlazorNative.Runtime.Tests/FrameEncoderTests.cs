@@ -36,7 +36,7 @@ public sealed class FrameEncoderTests
                 new ReplaceTextPatch(14, "héllo→世界"),
                 new SetStylePatch(15, "backgroundColor", "#336699"),
                 new AttachEventPatch(16, "click", HandlerId: 99),
-                new DetachEventPatch(17, HandlerId: 98),
+                new DetachEventPatch(17, HandlerId: 98, EventName: "change"),
                 new CommitFramePatch(FrameId: 7, TimestampMs: 123456789L),
             ]);
 
@@ -104,11 +104,16 @@ public sealed class FrameEncoderTests
         Assert.Equal(IntPtr.Zero, p.PropName);
         Assert.Equal(IntPtr.Zero, p.PropValue);
 
-        // 6: DetachEvent
+        // 6: DetachEvent — Text carries the event name (Phase 3.3, carryover
+        //    e: the host detaches without map-membership guessing), AuxInt the
+        //    handler id. Same field reuse as AttachEvent; layout unchanged.
         p = Decode(native, 6);
         Assert.Equal(BlazorNativePatchKind.DetachEvent, p.Kind);
         Assert.Equal(17, p.NodeId);
+        Assert.Equal("change", Marshal.PtrToStringUTF8(p.Text));
         Assert.Equal(98, p.AuxInt);
+        Assert.Equal(IntPtr.Zero, p.PropName);
+        Assert.Equal(IntPtr.Zero, p.PropValue);
 
         // 7: CommitFrame — NodeId carries FrameId; the timestamp rides the
         //    envelope, not the patch.

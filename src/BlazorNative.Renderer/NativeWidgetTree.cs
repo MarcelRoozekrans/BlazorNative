@@ -78,8 +78,9 @@ internal sealed class NativeWidgetTree
     //  (d) PrependFrame under a poisoned cursor is DROPPED (explicit guard in
     //      NativeRenderer); with a-c fixed a poisoned cursor is a genuine bug
     //      and reports through strict mode — Task 6.
-    //  (e) on* RemoveAttribute never becomes a DetachEventPatch (it flows out
-    //      as UpdatePropPatch(name, null), which hosts ignore) — Task 5.
+    // Fixed in Task 5 (carryover e): on* RemoveAttribute emits
+    // DetachEventPatch(nodeId, handlerId, eventName) via the renderer's
+    // event-handler registry (see NativeRenderer._eventHandlers).
     // Fixed in Task 4 (DoD #10): CreateNodePatch.InsertIndex carries the host
     // insert position (TranslateToHostInsertIndex below); AppendChildPatch is
     // deleted. Remaining: Region frames (RenderFragment / CascadingValue
@@ -252,15 +253,21 @@ internal sealed class NativeWidgetTree
     /// Node ids are never reused, so this is hygiene — stale buckets can't
     /// alias — but a long-lived session shouldn't accrete them. Component
     /// slots inside the subtree are NOT purged here: their buckets live under
-    /// their own componentId and are cleaned by component disposal.</summary>
-    public void PurgeNodeSubtree(int componentId, int nodeId)
+    /// their own componentId and are cleaned by component disposal.
+    /// <paramref name="onNodePurged"/> fires for every DESCENDANT node slot
+    /// dropped (not the root — the caller already holds it): the renderer
+    /// uses it to clean its event registry (Task 5).</summary>
+    public void PurgeNodeSubtree(int componentId, int nodeId, Action<int>? onNodePurged = null)
     {
         if (!_slotLists.Remove((componentId, nodeId), out List<Slot>? slots))
             return;
         foreach (var slot in slots)
         {
             if (slot.IsNode)
-                PurgeNodeSubtree(componentId, slot.NodeId);
+            {
+                onNodePurged?.Invoke(slot.NodeId);
+                PurgeNodeSubtree(componentId, slot.NodeId, onNodePurged);
+            }
         }
     }
 
@@ -298,8 +305,13 @@ internal sealed class NativeWidgetTree
 
     /// <summary>Purges a disposed component's bookkeeping: all its slot lists
     /// and its component-parent map entry. Callers emit the RemoveNodePatches
-    /// and trim its sibling slot first (see NativeRenderer.ProcessDisposedComponent).</summary>
-    public void RemoveComponent(int componentId)
+    /// and trim its sibling slot first (see NativeRenderer.ProcessDisposedComponent).
+    /// <paramref name="onNodePurged"/> fires for every node slot in the
+    /// dropped buckets — every node the component ever created still holds
+    /// exactly one slot in a bucket keyed by its componentId (nodes trimmed
+    /// earlier by RemoveFrame were cleaned at trim time) — so the renderer's
+    /// event registry cleans completely (Task 5).</summary>
+    public void RemoveComponent(int componentId, Action<int>? onNodePurged = null)
     {
         _componentParents.Remove(componentId);
 
@@ -308,7 +320,17 @@ internal sealed class NativeWidgetTree
             .Where(k => k.ComponentId == componentId)
             .ToList();
         foreach (var key in slotKeys)
+        {
+            if (onNodePurged is not null)
+            {
+                foreach (var slot in _slotLists[key])
+                {
+                    if (slot.IsNode)
+                        onNodePurged(slot.NodeId);
+                }
+            }
             _slotLists.Remove(key);
+        }
     }
 
     public void Clear()
