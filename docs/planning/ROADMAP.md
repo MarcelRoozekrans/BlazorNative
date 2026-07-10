@@ -154,7 +154,16 @@ Phases:
 
 ---
 
-### 🔄 Milestone 3 — P2: Real Apps Can Be Built  *(active, started 2026-05-28)*
+### ✅ Milestone 3 — P2: Real Apps Can Be Built  *(complete 2026-07-10, tagged `v3.0`)*
+
+10 phases (3.0a–3.0e runtime re-platform, 3.1–3.5 application layer) shipped.
+A real two-page app runs on the AVD through a NativeAOT `.so` with a typed
+eight-export C-ABI: `Bn*` components, `@bind` mechanics, cascading values,
+bidirectional events, the six shell-bridge operations, multi-component
+composition, strict mode, and `INavigationManager` root-component navigation.
+wasmtime + `.wasm` deleted entirely (3.0e). Audit verdict: **PASS — all 11 DoD
+criteria PASS** (wording-level honesty notes on #3/#5/#6/#7 recorded per
+criterion). See [final audit](../plans/2026-07-10-milestone-3-final-audit.md).
 
 `@bind` two-way binding, `Bn*` component library, cascading values, end-to-end DI, navigation service, `BlazorNativeComponentBase` ergonomics.
 
@@ -215,7 +224,13 @@ Phases:
    - **Two renderer finds:** (1) the corrected Region diagnosis above; (2) component-root chaining (`BnThemedPanel` → `BnView`) recorded the component-parent entry against the emit parent instead of the slot container — wrong-bucket lookups sent the chained inner's view to the quiet append fallback, **caught by 3.3's `ContractWarning` working as designed** (the strict infrastructure's first real bug); fixed in `e51d5de`, `ComponentChainTests` pins the mid-list `InsertIndex 1`.
    - **Final counts:** .NET **170 passed / 2 skipped**; JVM `testDebugUnitTest` **33**; Android `connectedAndroidTest` **32/32** (strict session).
    - Carryovers (PRE-3.5 MUST: custom `AndroidJUnitRunner` for strict mode — the `Os.setenv` pattern is at its ceiling incl. a filtered-run gap; M6 ledger: stringly FontSize/Padding, stale-echo sequence-stamping, paired pin-harness extraction; M3 close: probe-exports deletion + `CompositionProbe` fate, `BnDemo` stays): see the [conclusion doc](../plans/2026-07-10-phase-3.4-conclusion.md).
-- ⏳ **Phase 3.5** — navigation service (DoD #7) + M3 final audit *(next — the LAST M3 phase → v3.0 tag)* — `INavigationManager.NavigateTo` root-component swap over the 3.1 C-ABI (`shell_navigate`/`shell_current_route` exist since 3.1); the M3 final audit (probe-exports deletion incl. `CompositionProbe`'s fate; `BnDemo` stays as the demo) closes the milestone. **PRE-3.5 MUST first:** the custom `AndroidJUnitRunner` strict-mode hardening (~10 lines + one gradle line) before 3.5 adds instrumented classes to the ordering.
+- ✅ **Phase 3.5** — navigation service (DoD #7) + M3 close — *complete (2026-07-10, the LAST M3 phase)*
+   - **All 6 gates GREEN — M3 DoD #7 CLOSED ON-DEVICE; milestone complete.** The shipped demo is a two-page app: tap "Settings →" on the AVD → the whole screen swaps to `BnSettingsPage` (BnDemo's input GONE from the tree); "← Back" → `BnDemo` remounts **fresh**. `INavigationManager` (Core) + `NativeNavigationManager` (Runtime; route table `/` → BnDemo, `/settings` → BnSettingsPage): host-notify via the 3.1 `Navigate` callback → `Unmount` (`RemoveRootComponent`, verified FIRST — the 3.3 disposal machinery clears the screen) → fresh `TryMount` → afterSwap (`CurrentRoute`/`RouteChanged` track the screen, not the intent). Version `BlazorNative.Runtime 1.0.0-phase-3.5`.
+   - **Gate 0 (the PRE-3.5 MUST):** `BlazorNativeTestRunner` sets `BLAZORNATIVE_STRICT=1` before any test class loads — both `@BeforeClass` setenv copies + ordering KDocs deleted; the filtered-run strict gap closed by construction.
+   - **Mid-dispatch finding:** Blazor 10 holds the event batch open across handlers, so in-handler swaps defer via `NativeRenderer.RunAfterDispatch` and drain at the outermost dispatch unwind — still before `blazornative_dispatch_event` returns (dispatch-window pin holds; drain faults → rc 2, every fault stderr-logged).
+   - **M3 close code (Gate 4):** both probe exports retired (`TrimProbes.cs`/`BridgeProbes.cs` + bindings + their tests, per-test judgment) — the final **eight-export C-ABI** verified via dumpbin + `llvm-readelf` on all three RIDs; guarded-catch → −1 → `HostError` re-pinned on both wire legs after review caught a false "covered elsewhere" claim. `TrimValidationProbes` + `CompositionProbe` stay (scaffolding ledger in the audit).
+   - **Final counts:** .NET **177 passed / 2 skipped**; JVM **32**; Android **32/32** (runner-strict).
+   - Honest boundaries (non-strict drain faults log-only; failed-swap blank screen with stale `CurrentRoute`; host-route-updates-first divergence; throwing `RouteChanged` subscriber) + carryovers (M5 host-initiated nav; M6 ledger incl. the `BlazorNative.Navigation` package lift; M4+ `RouteChanged` subscriber isolation): see the [conclusion doc](../plans/2026-07-10-phase-3.5-conclusion.md) + [final audit](../plans/2026-07-10-milestone-3-final-audit.md).
 
 **M2 architectural carryover (resolved by Phase 3.0 decision):**
 - **Bidirectional event flow.** No long-running-Main concern — the NativeAOT library is always loaded. ✅ shipped in Phase 3.2 (2026-07-09): `blazornative_dispatch_event` live, tap round-trip on the AVD, M3 DoD #2 closed.
@@ -226,11 +241,11 @@ Maps to BACKLOG.md "P2 — Real apps can be built".
 
 ---
 
-### ⏳ Milestone 4 — P3: Production-Shippable  *(pending)*
+### ⏳ Milestone 4 — P3: Production-Shippable  *(next — opens via `new-milestone`)*
 
-Analyzer unit tests, `.editorconfig` analyzer scoping (full), GitHub Actions CI, iOS Swift shell, DevTools render-tree inspector, `wit-bindgen` C# bindings committed, initial NuGet packages, WASI hot-reload protocol.
+Analyzer unit tests + WASI-era analyzer rescope (3.0e carryover), GitHub Actions CI, iOS Swift shell, DevTools render-tree inspector, initial NuGet packages, hot-reload story (the WASI protocol framing is obsolete post-3.0e — reframe for NativeAOT at milestone-open).
 
-Maps to BACKLOG.md "P3 — Production readiness".
+Maps to BACKLOG.md "P3 — Production readiness". Triage input: the [M3 final audit](../plans/2026-07-10-milestone-3-final-audit.md) carryover table (host-initiated nav is M5; the packaging ledger is M6; the diagnostics/host-error surface + still-open runtime items land here as touched).
 
 ---
 
