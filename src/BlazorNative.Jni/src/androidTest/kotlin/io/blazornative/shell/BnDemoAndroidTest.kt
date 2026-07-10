@@ -1,7 +1,6 @@
 package io.blazornative.shell
 
 import android.graphics.drawable.ColorDrawable
-import android.system.Os
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
@@ -14,7 +13,6 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
-import org.junit.BeforeClass
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.util.concurrent.atomic.AtomicReference
@@ -49,16 +47,9 @@ import java.util.concurrent.atomic.AtomicReference
  * (Kotlin String → JNA → UTF-8 C ABI → .NET → back) the JVM twin's
  * test-host payload can't distinguish from plain ASCII on a real device.
  *
- * STRICT MODE (DoD #9) + ORDERING: [enableStrictMode] sets
- * BLAZORNATIVE_STRICT=1 before any Activity launch. HostSession reads the
- * variable ONE-SHOT at first-session creation, and under the runner's
- * default alphabetical class order THIS class now owns the process's first
- * mount in full-suite runs ("Bn" < "Bo"(otSmoke, which inits but never
- * mounts) < "Composition") — so the setenv moved here WITH the class.
- * CompositionAndroidTest KEEPS its identical @BeforeClass for filtered runs
- * of that class; both are idempotent (same variable, same value, both
- * pre-launch), and every class that could own the first mount must set it
- * itself (an already-mounted session makes a later setenv a silent no-op).
+ * STRICT MODE (DoD #9): strict is guaranteed by BlazorNativeTestRunner —
+ * the runner sets BLAZORNATIVE_STRICT=1 before any test class loads
+ * (Phase 3.5 Gate 0; the per-class setenv pattern is gone).
  *
  * Polling: boot deadline 60s, post-event re-render deadline 10s (the
  * EventRoundTripAndroidTest precedent — dispatch is async from the UI
@@ -72,14 +63,6 @@ class BnDemoAndroidTest {
     companion object {
         const val DEFAULT_BACKGROUND = 0xFFFFEEAA.toInt() // #FFEEAA
         const val ALT_BACKGROUND = 0xFF334455.toInt()     // #334455
-
-        @BeforeClass
-        @JvmStatic
-        fun enableStrictMode() {
-            // Must precede the first blazornative_mount in this process —
-            // see the class KDoc's one-shot/ordering contract.
-            Os.setenv("BLAZORNATIVE_STRICT", "1", true)
-        }
     }
 
     /** Launches MainActivity with NO extra: BnDemo as the DEFAULT is itself

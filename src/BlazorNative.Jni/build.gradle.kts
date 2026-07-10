@@ -59,7 +59,10 @@ android {
             abiFilters += listOf("arm64-v8a", "x86_64")
         }
 
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        // Phase 3.5 Gate 0: custom runner sets BLAZORNATIVE_STRICT=1 before
+        // any test class loads — every instrumented process runs strict
+        // (BlazorNativeTestRunner.kt has the full contract).
+        testInstrumentationRunner = "io.blazornative.shell.BlazorNativeTestRunner"
     }
 
     sourceSets {
