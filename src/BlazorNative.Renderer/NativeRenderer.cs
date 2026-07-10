@@ -278,8 +278,8 @@ public sealed class NativeRenderer : BlazorRenderer
 
                 case RenderTreeEditType.RemoveFrame:
                 {
-                    var nodeId = _tree.GetChildAt(componentId, currentParent, bnEdit.SiblingIndex);
-                    if (nodeId >= 0) patches.Add(new RemoveNodePatch(nodeId));
+                    var slot = _tree.GetChildAt(componentId, currentParent, bnEdit.SiblingIndex);
+                    if (slot.IsNode) patches.Add(new RemoveNodePatch(slot.NodeId));
                     break;
                 }
 
@@ -289,16 +289,16 @@ public sealed class NativeRenderer : BlazorRenderer
 
                 case RenderTreeEditType.RemoveAttribute:
                 {
-                    var nodeId = _tree.GetChildAt(componentId, currentParent, bnEdit.SiblingIndex);
-                    if (nodeId >= 0 && bnEdit.RemovedAttributeName is not null)
-                        patches.Add(new UpdatePropPatch(nodeId, bnEdit.RemovedAttributeName, null));
+                    var slot = _tree.GetChildAt(componentId, currentParent, bnEdit.SiblingIndex);
+                    if (slot.IsNode && bnEdit.RemovedAttributeName is not null)
+                        patches.Add(new UpdatePropPatch(slot.NodeId, bnEdit.RemovedAttributeName, null));
                     break;
                 }
 
                 case RenderTreeEditType.UpdateText:
                 {
-                    var nodeId = _tree.GetChildAt(componentId, currentParent, bnEdit.SiblingIndex);
-                    ProcessTextEdit(nodeId, ref referenceFrames, bnEdit.ReferenceFrameIndex, ref patches);
+                    var slot = _tree.GetChildAt(componentId, currentParent, bnEdit.SiblingIndex);
+                    ProcessTextEdit(slot.IsNode ? slot.NodeId : -1, ref referenceFrames, bnEdit.ReferenceFrameIndex, ref patches);
                     break;
                 }
 
@@ -311,7 +311,7 @@ public sealed class NativeRenderer : BlazorRenderer
                     // their GetChildAt lookups and PrependFrame breaks out via
                     // its explicit guard above — nothing aliases onto the
                     // component root.
-                    currentParent = stepped >= 0 ? stepped : PoisonedCursor;
+                    currentParent = stepped.IsNode ? stepped.NodeId : PoisonedCursor;
                     break;
                 }
 
@@ -339,7 +339,7 @@ public sealed class NativeRenderer : BlazorRenderer
                 var nodeId = _tree.AllocateNode(componentId, siblingIndex);
                 // Phase 3.2: creation order = render-tree sibling order — the
                 // diff cursor (StepIn/UpdateText) resolves children by it.
-                _tree.AppendChildOrder(componentId, parentNodeId, nodeId);
+                _tree.AppendSlot(componentId, parentNodeId, Slot.ForNode(nodeId));
                 var nodeType = MapElementToNodeType(frame.ElementName!);
                 patches.Add(new CreateNodePatch(nodeId, nodeType, parentNodeId));
 
@@ -388,7 +388,7 @@ public sealed class NativeRenderer : BlazorRenderer
             {
                 var textNodeId = _tree.AllocateNode(componentId, siblingIndex);
                 // Phase 3.2: see the Element case — cursor-order bookkeeping.
-                _tree.AppendChildOrder(componentId, parentNodeId, textNodeId);
+                _tree.AppendSlot(componentId, parentNodeId, Slot.ForNode(textNodeId));
                 patches.Add(new CreateNodePatch(textNodeId, "text", parentNodeId));
                 patches.Add(new ReplaceTextPatch(textNodeId, frame.TextContent ?? ""));
                 break;

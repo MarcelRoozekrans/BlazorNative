@@ -35,6 +35,10 @@
          calls BlazorInterop.EnsureInitialized() as a host-CLR precursor to the
          JNA test in BlazorNative.Jni. -->
     <InternalsVisibleTo Include="BlazorNative.Runtime.Tests" />
+    <!-- Phase 3.3 Task 1: SlotListTests exercises the internal NativeWidgetTree
+         slot-list model (Slot / InsertSlotAt / RemoveSlot / TranslateToViewIndex)
+         directly — the renderer-driven coverage lives in DiffCursorTests. -->
+    <InternalsVisibleTo Include="BlazorNative.Renderer.Tests" />
   </ItemGroup>
 
   <ItemGroup>
