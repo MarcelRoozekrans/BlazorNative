@@ -284,7 +284,80 @@ public class RendererBlazorAPICoverage
 
         Assert.NotNull(themePatch);
         Assert.Equal("theme:dark", themePatch.Text);
-        _log.WriteLine($"✅ Probe 5 PASS: cascading value reached child → {themePatch.Text}");
+
+        // Phase 3.4 Task 2: assert RENDERING, not just the cascaded value.
+        // The child's ChildContent travels through CascadingValue's Region
+        // root — its div must actually be created, with the text node
+        // parented under it (pre-3.4 this probe passed on the value text
+        // alone and would have stayed green with the child's views dropped
+        // or misrooted).
+        var textCreate = Assert.Single(frame.Patches.OfType<CreateNodePatch>(),
+            p => p.NodeId == themePatch.NodeId);
+        var childDiv = Assert.Single(frame.Patches.OfType<CreateNodePatch>(),
+            p => p.NodeType == "view");
+        Assert.Equal(childDiv.NodeId, textCreate.ParentId);
+        _log.WriteLine($"✅ Probe 5 PASS: cascading value reached child AND rendered → {themePatch.Text}");
+    }
+
+    /// <summary>Phase 3.4 Task 2: the cascading probe must also prove the
+    /// RE-RENDER path — a cascaded value CHANGE re-renders the consuming
+    /// child (nodeId-pinned ReplaceText), the exact behavior DoD #6's theme
+    /// toggle rides on.</summary>
+    private sealed class CascadeToggleParent : ComponentBase
+    {
+        private string _theme = "dark";
+        private void Toggle() => _theme = "light";
+
+        protected override void BuildRenderTree(RenderTreeBuilder b)
+        {
+            b.OpenElement(0, "button");
+            b.AddAttribute(1, "onclick",
+                EventCallback.Factory.Create<Microsoft.AspNetCore.Components.Web.MouseEventArgs>(this, Toggle));
+            b.AddContent(2, "toggle");
+            b.CloseElement();
+
+            b.OpenComponent<CascadingValue<string>>(3);
+            b.AddComponentParameter(4, "Value", _theme);
+            b.AddComponentParameter(5, "ChildContent", (RenderFragment)(cb =>
+            {
+                cb.OpenComponent<CascadeChild>(0);
+                cb.CloseComponent();
+            }));
+            b.CloseComponent();
+        }
+    }
+
+    [Fact]
+    public async Task Probe5b_CascadeChange_ReRendersConsumingChild()
+    {
+        using var renderer = NewRenderer();
+        var frames = new List<RenderFrame>();
+        renderer.Frames += (f, _) =>
+        {
+            frames.Add(f);
+            return ValueTask.CompletedTask;
+        };
+
+        await renderer.MountAsync<CascadeToggleParent>(ParameterView.Empty);
+        Assert.NotEmpty(frames);
+
+        var mountTheme = Assert.Single(frames[0].Patches.OfType<ReplaceTextPatch>(),
+            p => p.Text == "theme:dark");
+        var attach = Assert.Single(frames[0].Patches.OfType<AttachEventPatch>(),
+            p => p.EventName == "click");
+
+        // Toggle the cascaded value: CascadingValue (IsFixed=false) notifies
+        // its subscribers → CascadeChild re-renders with the new theme.
+        await renderer.DispatchUiEventAsync(new NativeUiEvent(0, attach.HandlerId, "click", null));
+        Assert.True(frames.Count >= 2, "expected a re-render frame after the cascade change");
+
+        var updated = Assert.Single(frames[^1].Patches.OfType<ReplaceTextPatch>(),
+            p => p.Text == "theme:light");
+        // nodeId-pinned: the SAME text node the mount created — the child
+        // re-rendered in place, its edit resolving through the region-
+        // transparent slot bookkeeping.
+        Assert.Equal(mountTheme.NodeId, updated.NodeId);
+        _log.WriteLine($"✅ Probe 5b PASS: cascade change re-rendered the child in place (node {updated.NodeId})");
     }
 
     // ── Bug A regression test ─────────────────────────────────────────────────

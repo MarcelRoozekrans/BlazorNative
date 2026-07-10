@@ -58,7 +58,18 @@ public sealed class TrimValidationTests
         var replaceText = frame.Patches.OfType<ReplaceTextPatch>().FirstOrDefault();
         Assert.NotNull(replaceText);
         Assert.Equal("theme=dark", replaceText!.Text);
-        _log.WriteLine($"CascadingProbe PASS: rendered '{replaceText.Text}'");
+
+        // Phase 3.4 Task 2: assert the probe's RENDERING, not just the value.
+        // CascadingTestHost routes ChildContent through CascadingValue's
+        // Region root — the probe's div must be created with the text node
+        // parented under it (this test previously passed on the value text
+        // alone, blind to dropped/misrooted views).
+        var textCreate = Assert.Single(frame.Patches.OfType<CreateNodePatch>(),
+            p => p.NodeId == replaceText.NodeId);
+        var probeDiv = Assert.Single(frame.Patches.OfType<CreateNodePatch>(),
+            p => p.NodeType == "view");
+        Assert.Equal(probeDiv.NodeId, textCreate.ParentId);
+        _log.WriteLine($"CascadingProbe PASS: rendered '{replaceText.Text}' under node {probeDiv.NodeId}");
     }
 
     [Fact]
