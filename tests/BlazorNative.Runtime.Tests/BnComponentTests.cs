@@ -156,6 +156,47 @@ public sealed class BnComponentTests
         Assert.Equal("false", PropOn(mount, root.NodeId, "enabled").Value);
     }
 
+    /// <summary>Host for the re-enable transition: starts disabled; the
+    /// button's own click flips it enabled (EventCallback receiver semantics
+    /// re-render this host with the new parameter).</summary>
+    private sealed class ReEnableHost : ComponentBase
+    {
+        private bool _enabled;
+
+        protected override void BuildRenderTree(Microsoft.AspNetCore.Components.Rendering.RenderTreeBuilder b)
+        {
+            b.OpenComponent<BnButton>(0);
+            b.AddComponentParameter(1, nameof(BnButton.Label), "Wake");
+            b.AddComponentParameter(2, nameof(BnButton.Enabled), _enabled);
+            b.AddComponentParameter(3, nameof(BnButton.OnClick),
+                EventCallback.Factory.Create<MouseEventArgs>(this, () => _enabled = true));
+            b.CloseComponent();
+        }
+    }
+
+    [Fact]
+    public void BnButton_ReEnabled_EmitsEnabledNullProp()
+    {
+        var (renderer, frames) = CreateCapturingSession();
+
+        renderer.Mount<ReEnableHost>();
+        Assert.NotEmpty(frames);
+        var mount = frames[0];
+        var root = Assert.Single(mount.Patches.OfType<CreateNodePatch>(), p => p.ParentId is null);
+        Assert.Equal("false", PropOn(mount, root.NodeId, "enabled").Value);
+        var attach = Assert.Single(mount.Patches.OfType<AttachEventPatch>(),
+            p => p.NodeId == root.NodeId && p.EventName == "click");
+
+        // Enabled false → true: the boolean attribute LEAVES the tree —
+        // RemoveAttribute → UpdatePropPatch("enabled", null), the documented
+        // BnButton contract (hosts restore their default: WidgetMapper's
+        // p.value?.toBoolean() ?: true).
+        Assert.Equal(0, Exports.DispatchEventCore(
+            (ulong)attach.HandlerId, /*lang=json*/ """{"name":"click"}"""));
+        Assert.True(frames.Count >= 2, "expected a synchronous re-render frame");
+        Assert.Null(PropOn(frames[^1], root.NodeId, "enabled").Value);
+    }
+
     // ── BnInput ───────────────────────────────────────────────────────────────
 
     [Fact]

@@ -585,8 +585,11 @@ public sealed class NativeRenderer : BlazorRenderer
                         // values like Label="A") aren't mis-attributed to THIS element
                         // by the next loop iteration. Phase 2.7 Bug B fix.
                         // Phase 3.3 Task 3 (carryover b + DoD #8): the component
-                        // OCCUPIES a sibling slot here, and the component-parent
-                        // map records where its own diff must root its views.
+                        // OCCUPIES a sibling slot here. Phase 3.4: nodeId is this
+                        // element — the child's SLOT CONTAINER, which here
+                        // coincides with its host node; see the corrected
+                        // invariant in NativeWidgetTree's ledger (the Component
+                        // arm below is the site where the two differ).
                         _tree.AppendSlot(componentId, nodeId, Slot.ForComponent(child.ComponentId));
                         _tree.RegisterComponentParent(child.ComponentId, componentId, nodeId);
                         i += child.ComponentSubtreeLength - 1;

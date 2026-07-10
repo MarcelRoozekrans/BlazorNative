@@ -10,14 +10,10 @@ namespace BlazorNative.Runtime.Tests;
 // patch level every host decodes. The Kotlin twin (BnDemoTest.kt, Gate 3)
 // mirrors these shapes through the published dll.
 //
-// BnDemo's pinned mount shape (element order under the form div):
-//   form div (themed #1: backgroundColor #FFEEAA, padding 16)   [root]
-//     ├─ span  "BnDemo" (fontSize 24)                — title
-//     ├─ input (value "", placeholder "Type here...", change attach)
-//     ├─ div   (themed #2: backgroundColor #FFEEAA, padding 8)  — echo panel
-//     │   └─ span "" — the echo BnText (text node pinned across re-renders)
-//     ├─ button "Clear" (click attach)
-//     └─ button "Theme" (click attach)
+// Shape: see BnDemo.cs's file header — the CANONICAL pinned tree lives
+// there; keep THAT one updated (this header and Gate 3's Kotlin twin
+// deliberately don't duplicate it — same instruction applies to
+// BnDemoTest.kt).
 // Theme toggle: #FFEEAA ⇄ #334455 on BOTH themed divs (the cascaded BnTheme
 // consumers re-render — DoD #6).
 // ─────────────────────────────────────────────────────────────────────────────
