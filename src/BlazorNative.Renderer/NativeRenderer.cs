@@ -178,13 +178,10 @@ public sealed class NativeRenderer : BlazorRenderer
                 ProcessRenderTreeDiff(ref bnDiff, ref referenceFrames, ref patches);
             }
 
-            // Disposed components
+            // Disposed components (Phase 3.3 Task 3): remove their views,
+            // their sibling slot, and their bookkeeping.
             foreach (ref var disposedId in batch.DisposedComponentIDs)
-            {
-                var nodeId = _tree.GetNodeId(disposedId);
-                if (nodeId >= 0)
-                    patches.Add(new RemoveNodePatch(nodeId));
-            }
+                ProcessDisposedComponent(disposedId, ref patches);
 
             patches.Add(new CommitFramePatch(frameId, timestamp));
 
@@ -242,6 +239,27 @@ public sealed class NativeRenderer : BlazorRenderer
     /// sentinel.</summary>
     private const int PoisonedCursor = int.MinValue;
 
+    /// <summary>Diff-cursor state (Phase 3.3 Task 3). <paramref name="ComponentId"/>
+    /// selects whose slot lists the cursor addresses (StepIn into a component
+    /// slot descends into THAT component's root-level list).
+    /// <paramref name="Container"/> keys the slot-list bucket (null = the
+    /// cursor component's root level; PoisonedCursor after a failed StepIn).
+    /// <paramref name="EmitParent"/> is the HOST node new views attach to —
+    /// it differs from Container only at a component's root level, where slots
+    /// live in the component's own root bucket but views attach to the parent
+    /// component's container node (null = host root).</summary>
+    private readonly record struct DiffCursor(int ComponentId, int? Container, int? EmitParent)
+    {
+        public bool Poisoned => Container == PoisonedCursor;
+    }
+
+    /// <summary>Host node a component's root-level views attach to: the
+    /// container recorded when the parent's diff walked this component's
+    /// frame (component-parent map, DoD #8) — or the host root for the
+    /// root component.</summary>
+    private int? ResolveComponentEmitParent(int componentId)
+        => _tree.TryGetComponentParent(componentId, out var parent) ? parent.ParentNodeId : null;
+
     private void ProcessRenderTreeDiff(
         ref BnRenderTreeDiff diff,
         ref BnArrayRange<RenderTreeFrame> referenceFrames,
@@ -262,9 +280,16 @@ public sealed class NativeRenderer : BlazorRenderer
         // resolved to the OUTER div (node 1) and the on-screen text never
         // changed (Android Gate 3 caught it; the JVM tests only asserted
         // patch TEXT, not nodeId).
-        // currentParent == null means the component's root level.
-        int? currentParent = null;
-        var parentStack = new Stack<int?>();
+        //
+        // Phase 3.3 Task 3: the cursor tracks (ComponentId, Container,
+        // EmitParent) — this component's diff addresses ITS slot lists, but
+        // its root-level views attach to the parent component's container
+        // node (DoD #8). Container == null means the cursor component's root
+        // level.
+        var rootCursor = new DiffCursor(componentId, Container: null,
+            EmitParent: ResolveComponentEmitParent(componentId));
+        var cursor = rootCursor;
+        var cursorStack = new Stack<DiffCursor>();
 
         foreach (ref var edit in diff.Edits)
         {
@@ -278,21 +303,26 @@ public sealed class NativeRenderer : BlazorRenderer
                     // back to widget_root) AND the slot insert would turn the
                     // poison sentinel into a live slot-list bucket,
                     // cross-container aliasing later cursor lookups.
-                    if (currentParent == PoisonedCursor) break;
+                    if (cursor.Poisoned) break;
                     // Phase 3.3 Task 2: the edit's SiblingIndex is the slot
                     // position — mid-list prepends insert there, not at the end.
-                    ProcessFrame(componentId, ref referenceFrames, bnEdit.ReferenceFrameIndex, parentNodeId: currentParent, insertAtSlot: bnEdit.SiblingIndex, ref patches);
+                    ProcessFrame(cursor.ComponentId, ref referenceFrames, bnEdit.ReferenceFrameIndex,
+                        slotContainer: cursor.Container, emitParent: cursor.EmitParent,
+                        insertAtSlot: bnEdit.SiblingIndex, ref patches);
                     break;
 
                 case RenderTreeEditType.RemoveFrame:
                 {
                     // Phase 3.3 Task 2: trim the slot so later sibling indices
-                    // in this and future diffs keep resolving.
-                    var removed = _tree.RemoveSlot(componentId, currentParent, bnEdit.SiblingIndex);
+                    // in this and future diffs keep resolving. A removed
+                    // COMPONENT slot emits no patch here — the child's views
+                    // and bookkeeping are torn down by DisposedComponentIDs
+                    // in this same batch.
+                    var removed = _tree.RemoveSlot(cursor.ComponentId, cursor.Container, bnEdit.SiblingIndex);
                     if (removed.IsNode)
                     {
                         patches.Add(new RemoveNodePatch(removed.NodeId));
-                        _tree.PurgeNodeSubtree(componentId, removed.NodeId);
+                        _tree.PurgeNodeSubtree(cursor.ComponentId, removed.NodeId);
                     }
                     break;
                 }
@@ -306,7 +336,7 @@ public sealed class NativeRenderer : BlazorRenderer
                     // (componentId, frameIndex) sibling map is deleted: a
                     // ReferenceFrameIndex is only meaningful within its own
                     // batch and was never a node key.)
-                    var slot = _tree.GetChildAt(componentId, currentParent, bnEdit.SiblingIndex);
+                    var slot = _tree.GetChildAt(cursor.ComponentId, cursor.Container, bnEdit.SiblingIndex);
                     if (slot.IsNode)
                     {
                         var attrFrame = new BnRenderTreeFrame(ref referenceFrames[bnEdit.ReferenceFrameIndex]);
@@ -317,7 +347,7 @@ public sealed class NativeRenderer : BlazorRenderer
 
                 case RenderTreeEditType.RemoveAttribute:
                 {
-                    var slot = _tree.GetChildAt(componentId, currentParent, bnEdit.SiblingIndex);
+                    var slot = _tree.GetChildAt(cursor.ComponentId, cursor.Container, bnEdit.SiblingIndex);
                     if (slot.IsNode && bnEdit.RemovedAttributeName is not null)
                         patches.Add(new UpdatePropPatch(slot.NodeId, bnEdit.RemovedAttributeName, null));
                     break;
@@ -325,26 +355,35 @@ public sealed class NativeRenderer : BlazorRenderer
 
                 case RenderTreeEditType.UpdateText:
                 {
-                    var slot = _tree.GetChildAt(componentId, currentParent, bnEdit.SiblingIndex);
+                    var slot = _tree.GetChildAt(cursor.ComponentId, cursor.Container, bnEdit.SiblingIndex);
                     ProcessTextEdit(slot.IsNode ? slot.NodeId : -1, ref referenceFrames, bnEdit.ReferenceFrameIndex, ref patches);
                     break;
                 }
 
                 case RenderTreeEditType.StepIn:
                 {
-                    parentStack.Push(currentParent);
-                    var stepped = _tree.GetChildAt(componentId, currentParent, bnEdit.SiblingIndex);
-                    // A failed StepIn poisons the cursor (see PoisonedCursor):
+                    cursorStack.Push(cursor);
+                    var stepped = _tree.GetChildAt(cursor.ComponentId, cursor.Container, bnEdit.SiblingIndex);
+                    // Node slot: descend into that view's child list. Component
+                    // slot: descend into THAT component's root-level slot list
+                    // (its views attach at its recorded host container). A
+                    // failed StepIn poisons the cursor (see PoisonedCursor):
                     // node-targeting edits inside the unknown container miss
                     // their GetChildAt lookups and PrependFrame breaks out via
                     // its explicit guard above — nothing aliases onto the
                     // component root.
-                    currentParent = stepped.IsNode ? stepped.NodeId : PoisonedCursor;
+                    cursor = stepped.Kind switch
+                    {
+                        SlotKind.Node => cursor with { Container = stepped.NodeId, EmitParent = stepped.NodeId },
+                        SlotKind.Component => new DiffCursor(stepped.ComponentId, Container: null,
+                            EmitParent: ResolveComponentEmitParent(stepped.ComponentId)),
+                        _ => cursor with { Container = PoisonedCursor },
+                    };
                     break;
                 }
 
                 case RenderTreeEditType.StepOut:
-                    currentParent = parentStack.Count > 0 ? parentStack.Pop() : null;
+                    cursor = cursorStack.Count > 0 ? cursorStack.Pop() : rootCursor;
                     break;
             }
         }
@@ -355,11 +394,17 @@ public sealed class NativeRenderer : BlazorRenderer
     /// the slot position for the subtree ROOT in its container's slot list
     /// (a PrependFrame edit's SiblingIndex); -1 = append (the recursive child
     /// walk — creation order IS sibling order inside a fresh subtree).</summary>
+    /// <summary><paramref name="slotContainer"/> keys the slot-list bucket the
+    /// subtree ROOT's slot goes into (null = the component's root level);
+    /// <paramref name="emitParent"/> is the HOST node its view attaches to.
+    /// They differ only at a component's root level (see <see cref="DiffCursor"/>);
+    /// inside the walk both become the enclosing element's node.</summary>
     private void ProcessFrame(
         int componentId,
         ref BnArrayRange<RenderTreeFrame> frames,
         int frameIndex,
-        int? parentNodeId,
+        int? slotContainer,
+        int? emitParent,
         int insertAtSlot,
         ref PooledList<RenderPatch> patches)
     {
@@ -370,9 +415,9 @@ public sealed class NativeRenderer : BlazorRenderer
             case RenderTreeFrameType.Element:
             {
                 var nodeId = _tree.AllocateNode();
-                AddSlot(componentId, parentNodeId, insertAtSlot, Slot.ForNode(nodeId));
+                AddSlot(componentId, slotContainer, insertAtSlot, Slot.ForNode(nodeId));
                 var nodeType = MapElementToNodeType(frame.ElementName!);
-                patches.Add(new CreateNodePatch(nodeId, nodeType, parentNodeId));
+                patches.Add(new CreateNodePatch(nodeId, nodeType, emitParent));
 
                 var subtreeLen = frame.ElementSubtreeLength;
                 for (var i = 1; i < subtreeLen; i++)
@@ -391,10 +436,11 @@ public sealed class NativeRenderer : BlazorRenderer
                         // subtree so its child Attribute frames (carrying its parameter
                         // values like Label="A") aren't mis-attributed to THIS element
                         // by the next loop iteration. Phase 2.7 Bug B fix.
-                        // 3.3 carryover (b) on NativeWidgetTree._childOrderMap: this
-                        // skip allocates no child-order slot, so a component
-                        // interleaved between element siblings offsets the diff
-                        // cursor's indices for everything after it.
+                        // Phase 3.3 Task 3 (carryover b + DoD #8): the component
+                        // OCCUPIES a sibling slot here, and the component-parent
+                        // map records where its own diff must root its views.
+                        _tree.AppendSlot(componentId, nodeId, Slot.ForComponent(child.ComponentId));
+                        _tree.RegisterComponentParent(child.ComponentId, componentId, nodeId);
                         i += child.ComponentSubtreeLength - 1;
                     }
                     else
@@ -403,9 +449,9 @@ public sealed class NativeRenderer : BlazorRenderer
                         // recurse to emit its create/text patches as a child of this
                         // element (slot appended: creation order IS sibling order in a
                         // fresh subtree). Pass this element's nodeId as the child's
-                        // parentNodeId so the host-side widget mapper can attach the
-                        // child inside this element's view (Phase 2.5 design).
-                        ProcessFrame(componentId, ref frames, frameIndex + i, parentNodeId: nodeId, insertAtSlot: -1, ref patches);
+                        // container AND host parent so the host-side widget mapper
+                        // attaches the child inside this element's view (Phase 2.5).
+                        ProcessFrame(componentId, ref frames, frameIndex + i, slotContainer: nodeId, emitParent: nodeId, insertAtSlot: -1, ref patches);
                         // Skip the child's own subtree so we don't double-walk it.
                         if (child.FrameType == RenderTreeFrameType.Element)
                             i += child.ElementSubtreeLength - 1;
@@ -417,9 +463,22 @@ public sealed class NativeRenderer : BlazorRenderer
             case RenderTreeFrameType.Text:
             {
                 var textNodeId = _tree.AllocateNode();
-                AddSlot(componentId, parentNodeId, insertAtSlot, Slot.ForNode(textNodeId));
-                patches.Add(new CreateNodePatch(textNodeId, "text", parentNodeId));
+                AddSlot(componentId, slotContainer, insertAtSlot, Slot.ForNode(textNodeId));
+                patches.Add(new CreateNodePatch(textNodeId, "text", emitParent));
                 patches.Add(new ReplaceTextPatch(textNodeId, frame.TextContent ?? ""));
+                break;
+            }
+
+            case RenderTreeFrameType.Component:
+            {
+                // Phase 3.3 Task 3: a component frame prepended directly into
+                // the current container (e.g. a root-level child component).
+                // It occupies a sibling slot but owns no view — no patch. Its
+                // own diff (later in this batch, or any future one) roots its
+                // views at emitParent via the component-parent map. Attribute
+                // frames in its subtree are its parameters — not walked.
+                AddSlot(componentId, slotContainer, insertAtSlot, Slot.ForComponent(frame.ComponentId));
+                _tree.RegisterComponentParent(frame.ComponentId, componentId, emitParent);
                 break;
             }
         }
@@ -427,12 +486,35 @@ public sealed class NativeRenderer : BlazorRenderer
 
     /// <summary>Slot bookkeeping for a freshly created slot: insert at the
     /// diff-provided sibling position, or append for subtree-walk children.</summary>
-    private void AddSlot(int componentId, int? parentNodeId, int insertAtSlot, Slot slot)
+    private void AddSlot(int componentId, int? slotContainer, int insertAtSlot, Slot slot)
     {
         if (insertAtSlot >= 0)
-            _tree.InsertSlotAt(componentId, parentNodeId, insertAtSlot, slot);
+            _tree.InsertSlotAt(componentId, slotContainer, insertAtSlot, slot);
         else
-            _tree.AppendSlot(componentId, parentNodeId, slot);
+            _tree.AppendSlot(componentId, slotContainer, slot);
+    }
+
+    /// <summary>Handles one entry of RenderBatch.DisposedComponentIDs (Phase
+    /// 3.3 Task 3): emits RemoveNodePatch for the component's ROOT-level views
+    /// (their subtrees ride along on the host), trims its sibling slot from
+    /// the recorded parent container (no-op when the parent's RemoveFrame edit
+    /// already trimmed it), and purges its slot lists + component-parent map
+    /// entry. Components disposed together each appear in the array and clean
+    /// themselves — nested markers need no recursion here.</summary>
+    private void ProcessDisposedComponent(int componentId, ref PooledList<RenderPatch> patches)
+    {
+        var rootSlots = _tree.GetSlotCount(componentId, parentNodeId: null);
+        for (var i = 0; i < rootSlots; i++)
+        {
+            var slot = _tree.GetChildAt(componentId, parentNodeId: null, i);
+            if (slot.IsNode)
+                patches.Add(new RemoveNodePatch(slot.NodeId));
+        }
+
+        if (_tree.TryGetComponentParent(componentId, out var parent))
+            _tree.RemoveComponentSlot(parent.ParentComponentId, parent.ParentNodeId, componentId);
+
+        _tree.RemoveComponent(componentId);
     }
 
     private static void ProcessAttribute(int nodeId, ref BnRenderTreeFrame frame, ref PooledList<RenderPatch> patches)

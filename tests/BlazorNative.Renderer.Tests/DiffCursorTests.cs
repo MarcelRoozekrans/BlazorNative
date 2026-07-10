@@ -302,4 +302,197 @@ public sealed class DiffCursorTests
         // the mount styled — not on sibling 0 (the batch-relative map's miss).
         Assert.Equal(mountStyle.NodeId, updatedStyle.NodeId);
     }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Phase 3.3 Task 3 — component slots + nested parenting + disposal
+    // (DoD #8): component frames occupy a sibling slot (elements AFTER an
+    // interleaved component keep their cursor indices); a child component's
+    // own diff roots its views under the PARENT component's container node,
+    // not the host root; DisposedComponentIDs removes the child's views,
+    // slots, and component-parent map entries.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// <summary>Static single-root child — the interleaving marker.</summary>
+    private sealed class ChildBadge : ComponentBase
+    {
+        protected override void BuildRenderTree(RenderTreeBuilder b)
+        {
+            b.OpenElement(0, "span");
+            b.AddContent(1, "badge");
+            b.CloseElement();
+        }
+    }
+
+    /// <summary>Root level: element, CHILD COMPONENT, element. The click
+    /// mutates text inside the element AFTER the component — its StepIn index
+    /// (2) counts the component's sibling slot.</summary>
+    private sealed class InterleavedParent : ComponentBase
+    {
+        private int _n;
+        private void OnClick() => _n++;
+
+        protected override void BuildRenderTree(RenderTreeBuilder b)
+        {
+            b.OpenElement(0, "div");                     // root sibling 0
+            b.AddAttribute(1, "onclick",
+                EventCallback.Factory.Create<MouseEventArgs>(this, OnClick));
+            b.AddContent(2, "before");
+            b.CloseElement();
+
+            b.OpenComponent<ChildBadge>(3);              // root sibling 1
+            b.CloseComponent();
+
+            b.OpenElement(4, "div");                     // root sibling 2
+            b.AddContent(5, $"after: {_n}");
+            b.CloseElement();
+        }
+    }
+
+    [Fact]
+    public async Task InterleavedComponent_ElementIndicesAfterComponentStayCorrect()
+    {
+        var (renderer, frames) = BuildRenderer();
+        using var _ = renderer;
+
+        await renderer.MountAsync<InterleavedParent>(ParameterView.Empty);
+        Assert.NotEmpty(frames);
+
+        var afterText = Assert.Single(
+            frames[0].Patches.OfType<ReplaceTextPatch>(), p => p.Text == "after: 0");
+        var attach = Assert.Single(frames[0].Patches.OfType<AttachEventPatch>());
+
+        // Click → the parent's diff steps ACROSS the component slot:
+        // StepIn(2) / UpdateText(0). Without a component slot the cursor
+        // poisoned (slot list held only two entries) and the edit was DROPPED.
+        await Click(renderer, attach);
+        Assert.True(frames.Count >= 2, "expected a re-render frame after the click");
+        var updated = Assert.Single(
+            frames[^1].Patches.OfType<ReplaceTextPatch>(), p => p.Text == "after: 1");
+        Assert.Equal(afterText.NodeId, updated.NodeId);
+    }
+
+    /// <summary>Child with its own state + handler, mounted INSIDE the
+    /// parent's div — its views must root under that div (DoD #8), and its
+    /// own re-render diffs must resolve against its own slot list.</summary>
+    private sealed class ChildCounter : ComponentBase
+    {
+        private int _n;
+
+        protected override void BuildRenderTree(RenderTreeBuilder b)
+        {
+            b.OpenElement(0, "span");
+            b.AddAttribute(1, "onclick",
+                EventCallback.Factory.Create<MouseEventArgs>(this, () => _n++));
+            b.AddContent(2, $"n:{_n}");
+            b.CloseElement();
+        }
+    }
+
+    private sealed class NestedChildParent : ComponentBase
+    {
+        protected override void BuildRenderTree(RenderTreeBuilder b)
+        {
+            b.OpenElement(0, "div");
+            b.OpenComponent<ChildCounter>(1);
+            b.CloseComponent();
+            b.CloseElement();
+        }
+    }
+
+    [Fact]
+    public async Task NestedChild_RootsUnderParentContainerNode_NotHostRoot()
+    {
+        var (renderer, frames) = BuildRenderer();
+        using var _ = renderer;
+
+        await renderer.MountAsync<NestedChildParent>(ParameterView.Empty);
+        Assert.NotEmpty(frames);
+
+        var parentDiv = Assert.Single(frames[0].Patches.OfType<CreateNodePatch>(),
+            p => p.NodeType == "view");
+        var childText = Assert.Single(
+            frames[0].Patches.OfType<ReplaceTextPatch>(), p => p.Text == "n:0");
+        var childTextCreate = Assert.Single(frames[0].Patches.OfType<CreateNodePatch>(),
+            p => p.NodeId == childText.NodeId);
+        var childSpanCreate = Assert.Single(frames[0].Patches.OfType<CreateNodePatch>(),
+            p => p.NodeId == childTextCreate.ParentId);
+
+        // DoD #8: the child component's root view parents under the PARENT
+        // component's container node — NOT the host root (ParentId null).
+        Assert.NotNull(childSpanCreate.ParentId);
+        Assert.Equal(parentDiv.NodeId, childSpanCreate.ParentId);
+
+        // The child's OWN re-render resolves against its own slot list.
+        var attach = Assert.Single(frames[0].Patches.OfType<AttachEventPatch>());
+        await Click(renderer, attach);
+        var updated = Assert.Single(
+            frames[^1].Patches.OfType<ReplaceTextPatch>(), p => p.Text == "n:1");
+        Assert.Equal(childText.NodeId, updated.NodeId);
+    }
+
+    /// <summary>Click hides the child component → the parent's diff removes
+    /// the component's sibling slot (RemoveFrame) and the batch's
+    /// DisposedComponentIDs carries the child.</summary>
+    private sealed class ToggleChildParent : ComponentBase
+    {
+        private bool _show = true;
+        private void OnClick() => _show = false;
+
+        protected override void BuildRenderTree(RenderTreeBuilder b)
+        {
+            b.OpenElement(0, "div");                     // root sibling 0
+            b.AddAttribute(1, "onclick",
+                EventCallback.Factory.Create<MouseEventArgs>(this, OnClick));
+            b.AddContent(2, "host");
+            b.CloseElement();
+
+            if (_show)
+            {
+                b.OpenComponent<ChildBadge>(3);          // root sibling 1
+                b.CloseComponent();
+            }
+        }
+    }
+
+    [Fact]
+    public async Task DisposedComponent_RemovesItsViews_Slots_AndMapEntries()
+    {
+        var (renderer, frames) = BuildRenderer();
+        using var rendererScope = renderer;
+
+        var rootId = await renderer.MountAsync<ToggleChildParent>(ParameterView.Empty);
+        Assert.NotEmpty(frames);
+
+        // Blazor assigns component ids sequentially from the renderer's
+        // component table; the single child instantiated during this mount is
+        // rootId + 1 (same determinism the node-id goldens rely on).
+        var childId = rootId + 1;
+
+        var badgeText = Assert.Single(
+            frames[0].Patches.OfType<ReplaceTextPatch>(), p => p.Text == "badge");
+        var badgeTextCreate = Assert.Single(frames[0].Patches.OfType<CreateNodePatch>(),
+            p => p.NodeId == badgeText.NodeId);
+        var badgeSpanId = Assert.IsType<int>(badgeTextCreate.ParentId); // the child's root view
+        var attach = Assert.Single(frames[0].Patches.OfType<AttachEventPatch>());
+
+        // Click → _show = false → RemoveFrame(component slot) in the parent's
+        // diff + childId in RenderBatch.DisposedComponentIDs.
+        await Click(renderer, attach);
+        Assert.True(frames.Count >= 2, "expected a re-render frame after the click");
+
+        // The child's ROOT view is removed on the host.
+        var removed = Assert.Single(frames[^1].Patches.OfType<RemoveNodePatch>());
+        Assert.Equal(badgeSpanId, removed.NodeId);
+
+        // Bookkeeping is gone: the child's slot lists (its root bucket held
+        // the span) and its component-parent map entry.
+        var tree = renderer.WidgetTree;
+        Assert.Equal(0, tree.GetSlotCount(childId, null));
+        Assert.False(tree.TryGetComponentParent(childId, out _));
+        Assert.Equal(0, tree.ComponentParentCount);
+        // Only the root component's buckets remain: its root level + the div.
+        Assert.Equal(2, tree.SlotListCount);
+        // The component's sibling slot is trimmed from the parent's root list.
+        Assert.Equal(1, tree.GetSlotCount(rootId, null));
+    }
 }

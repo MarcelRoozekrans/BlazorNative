@@ -61,12 +61,6 @@ internal sealed class NativeWidgetTree
 {
     private int _nextNodeId = 1;
 
-    // componentId → nodeId  (for component-level removal)
-    private readonly Dictionary<int, int> _componentMap = new();
-
-    // nodeId → parent nodeId
-    private readonly Dictionary<int, int> _parentMap = new();
-
     // ── Slot lists (Phase 3.3 §1) ─────────────────────────────────────────────
     //
     // Per container, the ordered slot list mirroring Blazor's sibling numbering
@@ -75,13 +69,12 @@ internal sealed class NativeWidgetTree
     // = the component's root level (root-level slots have no parent node).
     //
     // Replaces the Phase 3.2 append-only _childOrderMap (List<int> of node ids,
-    // no component entries). Fixed here (3.3 Task 2): (a) PrependFrame inserts
-    // at the edit's SiblingIndex and RemoveFrame trims; (c) SetAttribute
-    // resolves through the cursor — the batch-relative (componentId,
-    // frameIndex) sibling map is DELETED. Remaining 3.3 carryovers:
-    //  (b) component frames get NO slot yet (NativeRenderer skips them without
-    //      allocating one), so an interleaved child component still offsets
-    //      every cursor index after it — Task 3 allocates component slots.
+    // no component entries). Fixed in 3.3 Tasks 2-3: (a) PrependFrame inserts
+    // at the edit's SiblingIndex and RemoveFrame trims; (b) component frames
+    // occupy a component slot (interleaved children no longer offset later
+    // cursor indices; StepIn into a component slot descends into its root
+    // list); (c) SetAttribute resolves through the cursor — the batch-relative
+    // (componentId, frameIndex) sibling map is DELETED. Remaining carryovers:
     //  (d) PrependFrame under a poisoned cursor is DROPPED (explicit guard in
     //      NativeRenderer); with a-c fixed a poisoned cursor is a genuine bug
     //      and reports through strict mode — Task 6.
@@ -90,7 +83,10 @@ internal sealed class NativeWidgetTree
     // Plus: CreateNodePatch carries no host insert position yet — a mid-list
     // insert's slot bookkeeping is exact, but the HOST still appends the new
     // view at the end until Task 4 ships CreateNodePatch.InsertIndex
-    // (via TranslateToViewIndex).
+    // (via TranslateToViewIndex). And Region frames (RenderFragment /
+    // CascadingValue bodies) are not walked: components inside a region get
+    // no slot/parent record and root at the host root (pre-3.3 behavior,
+    // unchanged — see ProcessFrame).
     private const int RootParentKey = -1;
     private readonly Dictionary<(int ComponentId, int ParentKey), List<Slot>> _slotLists = new();
 
@@ -188,6 +184,29 @@ internal sealed class NativeWidgetTree
         }
     }
 
+    // ── Component-parent map (Phase 3.3 §2, DoD #8) ───────────────────────────
+    //
+    // childComponentId → (parentComponentId, parentNodeId). Recorded when the
+    // parent's diff walks the child's Component frame; consulted when the
+    // CHILD's own RenderTreeDiff arrives so its root-level views parent under
+    // the recorded host container instead of the host root. parentNodeId null
+    // = the child sits at the host root (root-level component chains).
+    private readonly Dictionary<int, (int ParentComponentId, int? ParentNodeId)> _componentParents = new();
+
+    public void RegisterComponentParent(int childComponentId, int parentComponentId, int? parentNodeId)
+        => _componentParents[childComponentId] = (parentComponentId, parentNodeId);
+
+    public bool TryGetComponentParent(int childComponentId, out (int ParentComponentId, int? ParentNodeId) parent)
+        => _componentParents.TryGetValue(childComponentId, out parent);
+
+    /// <summary>Removes the child component's slot from its recorded parent
+    /// container's slot list (no-op when a RemoveFrame edit already trimmed it).</summary>
+    public void RemoveComponentSlot(int parentComponentId, int? parentNodeId, int childComponentId)
+    {
+        if (_slotLists.TryGetValue(SlotKey(parentComponentId, parentNodeId), out List<Slot>? slots))
+            slots.Remove(Slot.ForComponent(childComponentId));
+    }
+
     // ── Allocation ────────────────────────────────────────────────────────────
 
     /// <summary>Next node id. Position bookkeeping lives in the slot lists —
@@ -195,35 +214,14 @@ internal sealed class NativeWidgetTree
     /// Task 2 (ReferenceFrameIndex is batch-relative, never a node key).</summary>
     public int AllocateNode() => _nextNodeId++;
 
-    public void RegisterComponent(int componentId, int nodeId)
-    {
-        _componentMap[componentId] = nodeId;
-    }
-
-    public void SetParent(int nodeId, int parentNodeId)
-    {
-        _parentMap[nodeId] = parentNodeId;
-    }
-
-    // ── Lookups ───────────────────────────────────────────────────────────────
-
-    public int GetNodeId(int componentId)
-    {
-        _componentMap.TryGetValue(componentId, out var id);
-        return id == 0 ? -1 : id;
-    }
-
-    public int GetParentId(int nodeId)
-    {
-        _parentMap.TryGetValue(nodeId, out var id);
-        return id == 0 ? -1 : id;
-    }
-
     // ── Cleanup ───────────────────────────────────────────────────────────────
 
+    /// <summary>Purges a disposed component's bookkeeping: all its slot lists
+    /// and its component-parent map entry. Callers emit the RemoveNodePatches
+    /// and trim its sibling slot first (see NativeRenderer.ProcessDisposedComponent).</summary>
     public void RemoveComponent(int componentId)
     {
-        _componentMap.Remove(componentId);
+        _componentParents.Remove(componentId);
 
         // Drop the component's slot lists.
         var slotKeys = _slotLists.Keys
@@ -235,13 +233,17 @@ internal sealed class NativeWidgetTree
 
     public void Clear()
     {
-        _componentMap.Clear();
-        _parentMap.Clear();
+        _componentParents.Clear();
         _slotLists.Clear();
         _nextNodeId = 1;
     }
 
     // ── Diagnostics ───────────────────────────────────────────────────────────
 
-    public int ComponentCount => _componentMap.Count;
+    /// <summary>Live slot-list buckets — disposal tests assert bookkeeping
+    /// doesn't accrete after component teardown.</summary>
+    public int SlotListCount => _slotLists.Count;
+
+    /// <summary>Live component-parent map entries — see SlotListCount.</summary>
+    public int ComponentParentCount => _componentParents.Count;
 }
