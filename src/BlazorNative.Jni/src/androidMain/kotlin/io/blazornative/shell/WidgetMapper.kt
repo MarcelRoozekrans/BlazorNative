@@ -273,7 +273,7 @@ class WidgetMapper(
             // the least-surprising placement for a programmatic overwrite.
             "value" -> {
                 if (view is EditText) {
-                    if (view.text.toString() != p.value) {
+                    if (view.text.toString() != (p.value ?: "")) {
                         view.setText(p.value ?: "")
                         view.setSelection(view.text.length)
                     }
