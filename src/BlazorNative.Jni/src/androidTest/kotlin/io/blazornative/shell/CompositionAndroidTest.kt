@@ -48,16 +48,20 @@ import java.util.concurrent.atomic.AtomicReference
  * STRICT MODE (DoD #9): [enableStrictMode] sets BLAZORNATIVE_STRICT=1 via
  * Os.setenv BEFORE any Activity launch. Test and app share the instrumented
  * process, and HostSession.EnsureSession reads the variable ONE-SHOT at
- * first-session creation — so strict is guaranteed exactly when this class
- * performs the process's FIRST mount. That holds for a filtered run of this
- * class, and for the full suite under the runner's default alphabetical
- * class order (BootSmokeNativeAndroidTest inits + runs trim probes but never
- * mounts; every other mounting class sorts after "Composition"). Because the
- * session is process-global, the strict session then persists for the REST
- * of the suite — deliberate (design §5: all test harnesses run strict); a
- * strict failure anywhere downstream is a real finding, not flakiness. If a
- * future class sorting before "Composition" ever mounts first, this setenv
- * degrades to a silent no-op (documented on HostSession.StrictErrorsForTests).
+ * first-session creation — so strict is guaranteed exactly when the class
+ * holding the process's FIRST mount has set it. Since Phase 3.4 Gate 4 that
+ * class is BnDemoAndroidTest in full-suite runs ("Bn" < "Bo" < "Composition"
+ * under the runner's default alphabetical order; BootSmokeNativeAndroidTest
+ * inits + runs trim probes but never mounts) — it carries an IDENTICAL
+ * @BeforeClass setenv. This one is KEPT for filtered runs of this class,
+ * where it owns the first mount again; the two are idempotent (same
+ * variable, same value, both pre-launch). Because the session is
+ * process-global, the strict session then persists for the REST of the
+ * suite — deliberate (design §5: all test harnesses run strict); a strict
+ * failure anywhere downstream is a real finding, not flakiness. When another
+ * class mounts first, an already-set setenv degrades to a silent no-op
+ * (documented on HostSession.StrictErrorsForTests) — which is why EVERY
+ * class that could own the first mount must set it itself.
  *
  * Polling: boot deadline 60s, post-tap re-render deadline 10s — the
  * EventRoundTripAndroidTest precedent (dispatch is async from the UI thread).

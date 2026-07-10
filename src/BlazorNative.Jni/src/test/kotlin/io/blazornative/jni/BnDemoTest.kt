@@ -10,9 +10,9 @@ import org.junit.jupiter.api.Test
  * bind loop (DoD #5) and the cascading theme toggle (DoD #6) at the patch
  * level every host decodes — through the C ABI instead of in-process.
  *
- * Shape: see src/BlazorNative.Components/BnDemo.cs's file header — the
- * CANONICAL pinned tree lives THERE; keep that one updated (this header and
- * the .NET twin deliberately don't duplicate it). Final child order under the
+ * Shape: see src/BlazorNative.Components/BnDemo.cs's file header — this
+ * header restates only the pins this file asserts; the full tree lives
+ * there. Final child order under the
  * form div: title span, input, echo panel div, Clear button, Theme button;
  * the echo panel's create carries the MID-LIST InsertIndex 2 (Blazor's FIFO
  * render queue creates it AFTER the buttons), everything else appends (-1).
@@ -225,8 +225,12 @@ class BnDemoTest {
         val echoNode = echoTextNode(mount)
         val clearHandler = clickHandlerOn(mount, containerOfText(mount, "Clear"))
 
+        var framesBefore = frames.size
         assertEquals(0, runtime.dispatchEventBlocking(changeHandler(mount), "change", payload = "hello"))
+        assertTrue(frames.size > framesBefore, "re-render frame must arrive synchronously inside the change dispatch")
+        framesBefore = frames.size
         assertEquals(0, runtime.dispatchEventBlocking(clearHandler, "click"))
+        assertTrue(frames.size > framesBefore, "re-render frame must arrive synchronously inside the Clear dispatch")
         val frame = frames.last()
 
         // Both halves reset: the input's value prop AND the echo text.
@@ -263,7 +267,9 @@ class BnDemoTest {
         assertTrue(flipped.size >= 2, "expected >=2 themed children to flip; got $flipped")
 
         // Toggling again restores the default on both.
+        val framesBeforeSecond = frames.size
         assertEquals(0, runtime.dispatchEventBlocking(themeHandler, "click"))
+        assertTrue(frames.size > framesBeforeSecond, "re-render frame must arrive synchronously inside the second toggle")
         val back = frames.last().patches.filterIsInstance<RenderPatch.SetStyle>()
             .filter { it.property == "backgroundColor" && it.value == DEFAULT_BACKGROUND }
             .map { it.nodeId }

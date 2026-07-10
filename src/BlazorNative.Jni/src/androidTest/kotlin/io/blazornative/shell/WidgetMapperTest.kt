@@ -1,5 +1,6 @@
 package io.blazornative.shell
 
+import android.content.Intent
 import android.widget.Button
 import android.widget.EditText
 import android.widget.FrameLayout
@@ -7,6 +8,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
 // IMPORTANT: import path for R matches android.namespace in build.gradle.kts — verify in Step 7.1.
 import io.blazornative.shell.R
 import org.junit.Assert.assertEquals
@@ -23,7 +25,8 @@ import java.util.concurrent.atomic.AtomicReference
  * polls the
  * widget_root for the rendered tree, asserts the resulting view tree.
  *
- * As of Phase 2.8 Task 1, Main mounts the HelloComponent. Expected tree:
+ * Mounts HelloComponent via an explicit [MainActivity.EXTRA_COMPONENT] extra
+ * (the no-extra default is "BnDemo" since Phase 3.4 Gate 4). Expected tree:
  *   widget_root: FrameLayout
  *     └── outer LinearLayout (from outer <div>)
  *           ├── inner LinearLayout (from inner <div>)
@@ -52,7 +55,14 @@ class WidgetMapperTest {
 
     @Test
     fun sentinel_renders_as_linearlayout_containing_textview() {
-        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+        // Phase 3.4 Gate 4: MainActivity's no-extra default flipped to
+        // "BnDemo", but every assertion below pins HELLO's shape — so this
+        // test must now request HelloComponent explicitly instead of riding
+        // the default (per the 3.4 design risk table).
+        val ctx = InstrumentationRegistry.getInstrumentation().targetContext
+        val intent = Intent(ctx, MainActivity::class.java)
+            .putExtra(MainActivity.EXTRA_COMPONENT, "HelloComponent")
+        ActivityScenario.launch<MainActivity>(intent).use { scenario ->
             val deadline = System.currentTimeMillis() + 120_000
             val ready = AtomicReference(false)
 
