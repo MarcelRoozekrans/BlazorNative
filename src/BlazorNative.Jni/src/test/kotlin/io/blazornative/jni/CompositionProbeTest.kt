@@ -29,6 +29,12 @@ import org.junit.jupiter.api.Test
  * Safe alongside the other native tests in one JVM process: init is idempotent,
  * frame-callback registration is last-wins, and each start() mounts a FRESH
  * CompositionProbe instance (list = [item-1, item-2], taps 0).
+ *
+ * NOT covered here: DetachEvent through the dll — CompositionProbe never
+ * removes an on* attribute, so nothing drives the renderer's detach emission
+ * across the ABI yet (the decode arm is pinned synthetically in
+ * NativeFrameAdapterTest; the emission itself by Gate 1's .NET tests).
+ * Awaits a probe that conditionally removes an event attribute.
  */
 class CompositionProbeTest {
 
@@ -47,10 +53,14 @@ class CompositionProbeTest {
     /** NodeId of the element CONTAINING the given text (the text node's
      * create parent). Requires the text to be unique in the frame. */
     private fun containerOfText(frame: RenderFrame, text: String): Int {
-        val t = frame.patches.filterIsInstance<RenderPatch.ReplaceText>()
-            .single { it.text == text }
-        val c = frame.patches.filterIsInstance<RenderPatch.CreateNode>()
-            .single { it.nodeId == t.nodeId }
+        val t = checkNotNull(
+            frame.patches.filterIsInstance<RenderPatch.ReplaceText>()
+                .singleOrNull { it.text == text }
+        ) { "expected exactly one ReplaceText '$text' in the frame; got ${frame.patches}" }
+        val c = checkNotNull(
+            frame.patches.filterIsInstance<RenderPatch.CreateNode>()
+                .singleOrNull { it.nodeId == t.nodeId }
+        ) { "expected exactly one CreateNode for the '$text' text node (id ${t.nodeId})" }
         return checkNotNull(c.parentId) { "text '$text' node must have a parent" }
     }
 
@@ -73,7 +83,7 @@ class CompositionProbeTest {
         val mount = frames.first()
 
         // Exactly one parentless create: the root container.
-        val root = frames.first().patches.filterIsInstance<RenderPatch.CreateNode>()
+        val root = mount.patches.filterIsInstance<RenderPatch.CreateNode>()
             .single { it.parentId == null }
 
         // The badge ItemComponent is identified by its distinguishing text
@@ -94,9 +104,11 @@ class CompositionProbeTest {
         assertEquals(-1, createOf(mount, item2Div).insertIndex, "item-2 must be an append")
 
         // Both items live under the SAME list container, itself under root.
-        val listDiv = createOf(mount, item1Div).parentId
+        val listDiv = checkNotNull(createOf(mount, item1Div).parentId) {
+            "item-1's view must have a parent (the list container)"
+        }
         assertEquals(listDiv, createOf(mount, item2Div).parentId)
-        assertEquals(root.nodeId, createOf(mount, listDiv!!).parentId)
+        assertEquals(root.nodeId, createOf(mount, listDiv).parentId)
     }
 
     // ── Insert-at-front: the DoD #10 payoff through the dll ──────────────────
@@ -132,6 +144,29 @@ class CompositionProbeTest {
         assertEquals(created.nodeId, createOf(frame, newText.nodeId).parentId)
     }
 
+    // ── Add-at-end: -1 append in an UPDATE frame (not just mounts) ───────────
+
+    @Test
+    fun add_at_end_dispatch_emits_append_insert_index() {
+        val (runtime, frames) = bootProbe()
+        val mount = frames.first()
+        val addHandler = handlerOn(mount, containerOfText(mount, "Add"))
+        val listDiv = createOf(mount, containerOfText(mount, "item-1 (taps: 0)")).parentId
+        val framesBefore = frames.size
+
+        assertEquals(0, runtime.dispatchEventBlocking(addHandler, "click"))
+        assertTrue(frames.size > framesBefore, "re-render frame must arrive synchronously inside dispatch")
+        val frame = frames.last()
+
+        // AddAtEnd() appends after item-2 — a genuine append, so the UPDATE
+        // frame's create carries the explicit -1 (not a computed tail index).
+        val created = frame.patches.filterIsInstance<RenderPatch.CreateNode>()
+            .single { it.parentId == listDiv }
+        assertEquals(-1, created.insertIndex, "add-at-end must be an explicit -1 append")
+        frame.patches.filterIsInstance<RenderPatch.ReplaceText>()
+            .single { it.text == "item-3 (taps: 0)" }
+    }
+
     // ── Remove-first: RemoveNode for the FIRST item's view ───────────────────
 
     @Test
@@ -140,8 +175,10 @@ class CompositionProbeTest {
         val mount = frames.first()
         val item1Div = containerOfText(mount, "item-1 (taps: 0)")
         val removeHandler = handlerOn(mount, containerOfText(mount, "Remove"))
+        val framesBefore = frames.size
 
         assertEquals(0, runtime.dispatchEventBlocking(removeHandler, "click"))
+        assertTrue(frames.size > framesBefore, "re-render frame must arrive synchronously inside dispatch")
         val frame = frames.last()
 
         // A pure removal: exactly one RemoveNode — the first item's root view

@@ -104,17 +104,21 @@ class WidgetMapper(
      * NodeId resolution rides the text-collapse (see [handleCreate]): the
      * renderer emits AttachEvent against the interactive element's OWN nodeId
      * (Hello: nodeId 4 = the Button view itself), so `nodes[p.nodeId]` is the
-     * real widget even when its text child shares the mapping.
+     * real widget even when its text child shares the mapping. Task-9
+     * invariant: the collapse aliases text nodeIds onto non-ViewGroup parents,
+     * which is safe for indexed inserts (CreateNode.insertIndex) because those
+     * only ever target ViewGroup containers — do NOT "fix" the collapse when
+     * wiring addView(view, index).
      *
-     * Re-attach after re-render: the renderer NEVER emits DetachEvent today —
-     * an on* RemoveAttribute leaves the wire as UpdatePropPatch(name, null),
-     * which this mapper ignores (carryover (e) on NativeWidgetTree
-     * ._childOrderMap; routing it to DetachEventPatch is 3.3 renderer work) —
-     * so listeners are only ever REPLACED, never detached. Click re-attach
-     * overwrites via setOnClickListener; change re-attach replaces the
-     * [watchers] map entry but leaves the previous watcher registered on the
-     * EditText — a stale watcher dispatches a dead handlerId, absorbed by the
-     * rc-0 at-most-once stale contract until the same 3.3 work lands.
+     * Detach vs re-attach (Phase 3.3): a GENUINE on* attribute removal now
+     * emits DetachEventPatch (with eventName) — [handleDetachEvent] handles
+     * it. Re-attach for the same (node, event) is STILL last-wins with NO
+     * preceding DetachEvent (see RenderFrame.kt's mapping notes): click
+     * re-attach overwrites via setOnClickListener; change re-attach replaces
+     * the [watchers] map entry but leaves the previous watcher registered on
+     * the EditText — a stale watcher dispatches a dead handlerId, absorbed by
+     * the rc-0 at-most-once stale contract. That re-attach caveat remains
+     * real until watchers are swapped keyed by (node, event), not handlerId.
      */
     private fun handleAttachEvent(p: RenderPatch.AttachEvent) {
         val view = nodes[p.nodeId] ?: run {

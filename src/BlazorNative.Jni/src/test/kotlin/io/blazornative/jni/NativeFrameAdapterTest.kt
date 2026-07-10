@@ -53,9 +53,10 @@ class NativeFrameAdapterTest {
 
     @Test
     fun read_syntheticFrame_roundTrips() {
-        // Hand-write a CreateNode + ReplaceText (+ one unknown kind that must
-        // be skipped) at the documented offsets, then decode.
-        val patchCount = 3
+        // Hand-write a CreateNode + ReplaceText + DetachEvent (plus one unknown
+        // kind AND the reserved-dormant kind 2, both of which must be skipped)
+        // at the documented offsets, then decode.
+        val patchCount = 5
         val patches = Memory(NativeFrameAdapter.PATCH_SIZE * patchCount).apply { clear() }
 
         // patch[0]: CreateNode nodeId=1 parent=-1 nodeType=3 (button)
@@ -79,6 +80,24 @@ class NativeFrameAdapterTest {
         val p2 = NativeFrameAdapter.PATCH_SIZE * 2
         patches.setInt(p2 + NativeFrameAdapter.PATCH_KIND, 99)
 
+        // patch[3]: DetachEvent nodeId=4 handlerId=17 (AuxInt) eventName="click"
+        // (Text field — Phase 3.3 pins the changed decode arm)
+        val detachNameBytes = "click".toByteArray(Charsets.UTF_8) + 0
+        val detachNameMem = Memory(detachNameBytes.size.toLong())
+            .apply { write(0, detachNameBytes, 0, detachNameBytes.size) }
+        val p3 = NativeFrameAdapter.PATCH_SIZE * 3
+        patches.setInt(p3 + NativeFrameAdapter.PATCH_KIND, 8)
+        patches.setInt(p3 + NativeFrameAdapter.PATCH_NODE_ID, 4)
+        patches.setInt(p3 + NativeFrameAdapter.PATCH_AUX, 17)
+        patches.setPointer(p3 + NativeFrameAdapter.PATCH_TEXT, detachNameMem)
+
+        // patch[4]: kind 2 (retired AppendChild) → reserved-dormant since
+        // Phase 3.3; must take the SAME unknown-kind skip arm as 99 — this
+        // asserts the claim, not just documents it.
+        val p4 = NativeFrameAdapter.PATCH_SIZE * 4
+        patches.setInt(p4 + NativeFrameAdapter.PATCH_KIND, 2)
+        patches.setInt(p4 + NativeFrameAdapter.PATCH_NODE_ID, 5)
+
         val frame = Memory(NativeFrameAdapter.FRAME_SIZE).apply { clear() }
         frame.setPointer(NativeFrameAdapter.FRAME_PATCHES, patches)
         frame.setInt(NativeFrameAdapter.FRAME_PATCH_COUNT, patchCount)
@@ -93,6 +112,7 @@ class NativeFrameAdapterTest {
             listOf(
                 RenderPatch.CreateNode(nodeId = 1, nodeType = "button", parentId = null, insertIndex = 2),
                 RenderPatch.ReplaceText(nodeId = 2, text = "héllo→世界"),
+                RenderPatch.DetachEvent(nodeId = 4, handlerId = 17, eventName = "click"),
             ),
             decoded.patches
         )
