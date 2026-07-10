@@ -28,13 +28,14 @@ import java.util.concurrent.atomic.AtomicReference
  * canonical pinned tree lives there. On-screen (WidgetMapper's NodeType
  * table + the Phase 2.8 text collapse):
  *   widget_root: FrameLayout
- *     └── form LinearLayout (#FFEEAA), 5 children IN THIS ORDER:
+ *     └── form LinearLayout (#FFEEAA), 6 children IN THIS ORDER:
  *           [0] TextView "BnDemo"          (title span, text-collapsed)
  *           [1] EditText                    (the bound input; hint "Type here...")
  *           [2] LinearLayout echo panel (#FFEEAA)
  *                 └── TextView              (the live echo, "" on mount)
  *           [3] Button "Clear"
  *           [4] Button "Theme"
+ *           [5] Button "Settings →"        (Phase 3.5 — navigates; NavigationAndroidTest)
  *
  * THE ANDROID-ONLY INVERSION: the JVM twin asserts the bound value's
  * write-back UpdateProp ARRIVES; here the assertion INVERTS — after typing,
@@ -186,11 +187,11 @@ class BnDemoAndroidTest {
 
     /** Form child [1]: the bound EditText. */
     private fun editText(act: MainActivity): EditText? =
-        form(act)?.takeIf { it.childCount >= 5 }?.getChildAt(1) as? EditText
+        form(act)?.takeIf { it.childCount >= 6 }?.getChildAt(1) as? EditText
 
     /** Form child [2]: the echo panel div (themed container #2). */
     private fun echoPanel(act: MainActivity): LinearLayout? =
-        form(act)?.takeIf { it.childCount >= 5 }?.getChildAt(2) as? LinearLayout
+        form(act)?.takeIf { it.childCount >= 6 }?.getChildAt(2) as? LinearLayout
 
     /** The echo TextView: the echo panel's single (text-collapsed) child. */
     private fun echoText(act: MainActivity): TextView? =
@@ -202,7 +203,7 @@ class BnDemoAndroidTest {
 
     // ── Helpers (CompositionAndroidTest conventions) ─────────────────────────
 
-    /** Polls until the mount frame is fully applied (form + all 5 children —
+    /** Polls until the mount frame is fully applied (form + all 6 children —
      * batches are atomic per frame, but the chained echo panel's create rides
      * the same mount frame; poll to the complete shape regardless). */
     private fun pollForForm(
@@ -213,7 +214,7 @@ class BnDemoAndroidTest {
         val found = AtomicReference<LinearLayout?>(null)
         while (System.currentTimeMillis() < deadline) {
             scenario.onActivity { act ->
-                found.set(form(act)?.takeIf { it.childCount >= 5 })
+                found.set(form(act)?.takeIf { it.childCount >= 6 })
             }
             if (found.get() != null) break
             Thread.sleep(250)
