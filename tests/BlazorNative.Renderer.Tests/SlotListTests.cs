@@ -201,6 +201,102 @@ public sealed class SlotListTests
         Assert.Equal(0, tree.TranslateToViewIndex(Comp, Root, 1));
     }
 
+    // ── Host insert-index translation (Task 4: CreateNodePatch.InsertIndex) ──
+
+    [Fact]
+    public void TranslateToHostInsertIndex_AppendPositions_ReturnMinusOne()
+    {
+        var tree = new NativeWidgetTree();
+        // Empty bucket: inserting at 0 IS an append.
+        Assert.Equal(-1, tree.TranslateToHostInsertIndex(Comp, Root, 0));
+
+        tree.AppendSlot(Comp, Root, Slot.ForNode(10));
+        // At the end of the bucket, nothing after → host append.
+        Assert.Equal(-1, tree.TranslateToHostInsertIndex(Comp, Root, 1));
+    }
+
+    [Fact]
+    public void TranslateToHostInsertIndex_MidList_ReturnsViewIndex()
+    {
+        var tree = new NativeWidgetTree();
+        tree.AppendSlot(Comp, Root, Slot.ForNode(10));
+        tree.AppendSlot(Comp, Root, Slot.ForNode(11));
+
+        Assert.Equal(0, tree.TranslateToHostInsertIndex(Comp, Root, 0)); // front
+        Assert.Equal(1, tree.TranslateToHostInsertIndex(Comp, Root, 1)); // between
+    }
+
+    [Fact]
+    public void TranslateToHostInsertIndex_MidList_ExpandsComponentSlotsBefore()
+    {
+        var tree = new NativeWidgetTree();
+        tree.AppendSlot(Comp, Root, Slot.ForComponent(7));   // 2 subtree views
+        tree.AppendSlot(Comp, Root, Slot.ForNode(10));
+        tree.AppendSlot(7, Root, Slot.ForNode(20));
+        tree.AppendSlot(7, Root, Slot.ForNode(21));
+
+        // Mid-list insert at slot 1 (after the component, before node 10):
+        // component 7 contributes 2 host views before the position.
+        Assert.Equal(2, tree.TranslateToHostInsertIndex(Comp, Root, 1));
+    }
+
+    [Fact]
+    public void TranslateToHostInsertIndex_ChildComponentRootBucket_AddsEnclosingOffset()
+    {
+        var tree = new NativeWidgetTree();
+        const int parentNode = 100;
+        // Parent container: [element 10, component 7, element 11].
+        tree.AppendSlot(Comp, parentNode, Slot.ForNode(10));
+        tree.AppendSlot(Comp, parentNode, Slot.ForComponent(7));
+        tree.AppendSlot(Comp, parentNode, Slot.ForNode(11));
+        tree.RegisterComponentParent(7, Comp, parentNode);
+
+        // Component 7 prepends its FIRST root view (own bucket empty). Its own
+        // bucket says "append", but element 11 sits AFTER the component slot in
+        // the shared host container — the host index must be 1 (after element
+        // 10), not a blind append (which would land after element 11).
+        Assert.Equal(1, tree.TranslateToHostInsertIndex(7, Root, 0));
+
+        // With one view in place, appending another at the bucket end still
+        // sits before element 11 → host index 2.
+        tree.AppendSlot(7, Root, Slot.ForNode(20));
+        Assert.Equal(2, tree.TranslateToHostInsertIndex(7, Root, 1));
+    }
+
+    [Fact]
+    public void TranslateToHostInsertIndex_ChildComponentAtContainerEnd_IsAppend()
+    {
+        var tree = new NativeWidgetTree();
+        const int parentNode = 100;
+        tree.AppendSlot(Comp, parentNode, Slot.ForNode(10));
+        tree.AppendSlot(Comp, parentNode, Slot.ForComponent(7));
+        tree.RegisterComponentParent(7, Comp, parentNode);
+
+        // Component 7 is the LAST slot in the container — its root-level
+        // insert is a genuine host append.
+        Assert.Equal(-1, tree.TranslateToHostInsertIndex(7, Root, 0));
+    }
+
+    [Fact]
+    public void TranslateToHostInsertIndex_NestedComponentChain_OffsetsAccumulate()
+    {
+        var tree = new NativeWidgetTree();
+        // Root level of Comp: [node 10, component 7]; component 7's root
+        // level: [node 20, component 8]; component 8 prepends at ITS root.
+        tree.AppendSlot(Comp, Root, Slot.ForNode(10));
+        tree.AppendSlot(Comp, Root, Slot.ForComponent(7));
+        tree.AppendSlot(7, Root, Slot.ForNode(20));
+        tree.AppendSlot(7, Root, Slot.ForComponent(8));
+        tree.RegisterComponentParent(7, Comp, null);
+        tree.RegisterComponentParent(8, 7, null);
+        // A node AFTER component 7 forces the non-append path.
+        tree.AppendSlot(Comp, Root, Slot.ForNode(11));
+
+        // Component 8's first view: base(7) = 1 (node 10) + base(8 within 7) =
+        // 1 (node 20) → host index 2.
+        Assert.Equal(2, tree.TranslateToHostInsertIndex(8, Root, 0));
+    }
+
     // ── Subtree purge ─────────────────────────────────────────────────────────
 
     [Fact]

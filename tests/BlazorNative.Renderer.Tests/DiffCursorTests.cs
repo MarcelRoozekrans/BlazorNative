@@ -159,12 +159,20 @@ public sealed class DiffCursorTests
         var cText = Assert.Single(frames[0].Patches.OfType<ReplaceTextPatch>(), p => p.Text == "c");
         var attach = Assert.Single(frames[0].Patches.OfType<AttachEventPatch>());
 
+        // Mount creates are all genuine appends → InsertIndex -1 (Task 4).
+        Assert.All(frames[0].Patches.OfType<CreateNodePatch>(),
+            p => Assert.Equal(-1, p.InsertIndex));
+
         // Click 1: keyed front insert → PrependFrame(SiblingIndex: 0) under the container.
         await Click(renderer, attach);
         Assert.True(frames.Count >= 2, "expected a re-render frame after click 1");
         var aDiv = Assert.Single(
             frames[^1].Patches.OfType<CreateNodePatch>(), p => p.ParentId == container.NodeId);
         Assert.Single(frames[^1].Patches.OfType<ReplaceTextPatch>(), p => p.Text == "a");
+
+        // Task 4 (DoD #10): the mid-list insert carries its HOST view index —
+        // the new item div lands at child position 0 of the container.
+        Assert.Equal(0, aDiv.InsertIndex);
 
         // Slot order: the new item's slot sits at sibling 0 — BEFORE b and c —
         // and the view-index translation ("InsertIndex-to-be", Task 4's input)

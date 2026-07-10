@@ -25,18 +25,25 @@ public abstract record RenderPatch;
 // ── Node lifecycle ────────────────────────────────────────────────────────────
 
 /// <summary>Create a new native widget node.</summary>
+/// <remarks>Phase 3.3 (DoD #10): <paramref name="InsertIndex"/> is the HOST
+/// child position the new view takes inside <paramref name="ParentId"/> —
+/// −1 = append at end (the mount-walk common case), ≥0 = insert at that
+/// index (mid-list keyed inserts; 0 = front is a VALID index, which is why
+/// −1 is encoded explicitly on the wire). Counts real views only — the
+/// renderer translates Blazor sibling slots to view indices, skipping
+/// component slots (NativeWidgetTree.TranslateToHostInsertIndex). This
+/// retires AppendChildPatch: creation carries its own placement, and moves
+/// are remove+insert at POC fidelity (a dedicated move patch is YAGNI).</remarks>
 public sealed record CreateNodePatch(
     int     NodeId,
     string  NodeType,       // "view" | "text" | "button" | "input" | "scroll" | "image"
-    int?    ParentId = null
+    int?    ParentId = null,
+    int     InsertIndex = -1
 ) : RenderPatch;
 
-/// <summary>Append an existing node as a child of another.</summary>
-public sealed record AppendChildPatch(
-    int ParentId,
-    int ChildId,
-    int AtIndex = -1        // -1 = append at end
-) : RenderPatch;
+// AppendChildPatch DELETED (Phase 3.3, DoD #10) — CreateNodePatch.InsertIndex
+// carries placement. Its wire kind (BlazorNativePatchKind.AppendChild = 2)
+// stays reserved-dormant so wire ids never renumber.
 
 /// <summary>Remove a node and its subtree from the widget tree.</summary>
 public sealed record RemoveNodePatch(

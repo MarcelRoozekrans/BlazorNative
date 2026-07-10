@@ -415,9 +415,16 @@ public sealed class NativeRenderer : BlazorRenderer
             case RenderTreeFrameType.Element:
             {
                 var nodeId = _tree.AllocateNode();
+                // Host insert position BEFORE the slot goes in (the new slot
+                // must not count itself): -1 for appends — both the recursive
+                // subtree walk (insertAtSlot -1) and diff inserts with nothing
+                // after them anywhere in the host container (Task 4, DoD #10).
+                var insertIndex = insertAtSlot >= 0
+                    ? _tree.TranslateToHostInsertIndex(componentId, slotContainer, insertAtSlot)
+                    : -1;
                 AddSlot(componentId, slotContainer, insertAtSlot, Slot.ForNode(nodeId));
                 var nodeType = MapElementToNodeType(frame.ElementName!);
-                patches.Add(new CreateNodePatch(nodeId, nodeType, emitParent));
+                patches.Add(new CreateNodePatch(nodeId, nodeType, emitParent, insertIndex));
 
                 var subtreeLen = frame.ElementSubtreeLength;
                 for (var i = 1; i < subtreeLen; i++)
@@ -463,8 +470,12 @@ public sealed class NativeRenderer : BlazorRenderer
             case RenderTreeFrameType.Text:
             {
                 var textNodeId = _tree.AllocateNode();
+                // Same insert-position rule as the Element case above.
+                var insertIndex = insertAtSlot >= 0
+                    ? _tree.TranslateToHostInsertIndex(componentId, slotContainer, insertAtSlot)
+                    : -1;
                 AddSlot(componentId, slotContainer, insertAtSlot, Slot.ForNode(textNodeId));
-                patches.Add(new CreateNodePatch(textNodeId, "text", emitParent));
+                patches.Add(new CreateNodePatch(textNodeId, "text", emitParent, insertIndex));
                 patches.Add(new ReplaceTextPatch(textNodeId, frame.TextContent ?? ""));
                 break;
             }

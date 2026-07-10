@@ -80,13 +80,12 @@ internal sealed class NativeWidgetTree
     //      and reports through strict mode — Task 6.
     //  (e) on* RemoveAttribute never becomes a DetachEventPatch (it flows out
     //      as UpdatePropPatch(name, null), which hosts ignore) — Task 5.
-    // Plus: CreateNodePatch carries no host insert position yet — a mid-list
-    // insert's slot bookkeeping is exact, but the HOST still appends the new
-    // view at the end until Task 4 ships CreateNodePatch.InsertIndex
-    // (via TranslateToViewIndex). And Region frames (RenderFragment /
-    // CascadingValue bodies) are not walked: components inside a region get
-    // no slot/parent record and root at the host root (pre-3.3 behavior,
-    // unchanged — see ProcessFrame).
+    // Fixed in Task 4 (DoD #10): CreateNodePatch.InsertIndex carries the host
+    // insert position (TranslateToHostInsertIndex below); AppendChildPatch is
+    // deleted. Remaining: Region frames (RenderFragment / CascadingValue
+    // bodies) are not walked: components inside a region get no slot/parent
+    // record and root at the host root (pre-3.3 behavior, unchanged — see
+    // ProcessFrame; documented 3.4 carryover).
     private const int RootParentKey = -1;
     private readonly Dictionary<(int ComponentId, int ParentKey), List<Slot>> _slotLists = new();
 
@@ -183,6 +182,70 @@ internal sealed class NativeWidgetTree
     /// components sitting at its own root level.</summary>
     private int RootViewCount(int componentId)
         => TranslateToViewIndex(componentId, parentNodeId: null, int.MaxValue);
+
+    /// <summary>Translates a diff-provided slot insert position into
+    /// CreateNodePatch.InsertIndex (Task 4, DoD #10): −1 when the insert is a
+    /// genuine host APPEND (no host views after the position anywhere in the
+    /// shared host container), else the absolute child index within the host
+    /// container. Call BEFORE inserting the new slot.
+    /// A host container's children can come from MULTIPLE buckets: the owning
+    /// component's element bucket plus the root-level buckets of child
+    /// components occupying its component slots. For a root-level bucket
+    /// (parentNodeId null) the component's own start offset within the
+    /// enclosing container — the component-slot chain up to the nearest
+    /// element bucket (or host root) — is added, and slots AFTER the
+    /// component in that chain count toward the append check.</summary>
+    public int TranslateToHostInsertIndex(int componentId, int? parentNodeId, int slotIndex)
+    {
+        if (!HasHostViewsAfter(componentId, parentNodeId, slotIndex))
+            return -1;
+        return HostBaseOffset(componentId, parentNodeId)
+             + TranslateToViewIndex(componentId, parentNodeId, slotIndex);
+    }
+
+    /// <summary>Whether any host view sits AFTER the given slot position in
+    /// the shared host container (own bucket, then — for root-level buckets —
+    /// the enclosing component-slot chain).</summary>
+    private bool HasHostViewsAfter(int componentId, int? parentNodeId, int slotIndex)
+    {
+        var total = TranslateToViewIndex(componentId, parentNodeId, int.MaxValue);
+        var before = TranslateToViewIndex(componentId, parentNodeId, slotIndex);
+        if (total > before)
+            return true;
+        // An element bucket IS the complete host container — stop here.
+        if (parentNodeId is not null)
+            return false;
+        // Root-level bucket: the component's views share the host container
+        // with its parent's other slots — check after the component's slot.
+        if (!_componentParents.TryGetValue(componentId, out var parent))
+            return false; // root component at the host root
+        var slotPos = IndexOfComponentSlot(parent.ParentComponentId, parent.ParentNodeId, componentId);
+        if (slotPos < 0)
+            return false; // slot already trimmed (teardown) — treat as append
+        return HasHostViewsAfter(parent.ParentComponentId, parent.ParentNodeId, slotPos + 1);
+    }
+
+    /// <summary>Host child index at which the component's root-level views
+    /// START inside their host container: the view-translated position of its
+    /// component slot, accumulated up the component-slot chain until an
+    /// element bucket (or the host root) anchors the container.</summary>
+    private int HostBaseOffset(int componentId, int? parentNodeId)
+    {
+        if (parentNodeId is not null)
+            return 0; // element bucket: local view indices ARE host indices
+        if (!_componentParents.TryGetValue(componentId, out var parent))
+            return 0;
+        var slotPos = IndexOfComponentSlot(parent.ParentComponentId, parent.ParentNodeId, componentId);
+        if (slotPos < 0)
+            return 0;
+        return HostBaseOffset(parent.ParentComponentId, parent.ParentNodeId)
+             + TranslateToViewIndex(parent.ParentComponentId, parent.ParentNodeId, slotPos);
+    }
+
+    private int IndexOfComponentSlot(int componentId, int? parentNodeId, int childComponentId)
+        => _slotLists.TryGetValue(SlotKey(componentId, parentNodeId), out List<Slot>? slots)
+            ? slots.IndexOf(Slot.ForComponent(childComponentId))
+            : -1;
 
     /// <summary>Drops the slot-list bookkeeping for a removed node's subtree
     /// (its own child bucket plus, recursively, its node-slot children's).

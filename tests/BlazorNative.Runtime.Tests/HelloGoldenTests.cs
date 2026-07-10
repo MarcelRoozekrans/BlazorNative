@@ -44,18 +44,21 @@ public sealed class HelloGoldenTests
     /// hand-updated per the procedure above.</summary>
     private static readonly IReadOnlyList<RenderPatch> ExpectedPatches =
     [
-        new CreateNodePatch(1, "view"),
+        // Phase 3.3 (DoD #10): every CreateNode carries InsertIndex — all −1
+        // here because mount-walk creates are genuine appends. The ONLY 3.3
+        // delta in this golden; everything else is the regression net.
+        new CreateNodePatch(1, "view", InsertIndex: -1),
         new SetStylePatch(1, "backgroundColor", "#FFEEAA"),
         new SetStylePatch(1, "padding", "16"),
-        new CreateNodePatch(2, "view", 1),
+        new CreateNodePatch(2, "view", 1, InsertIndex: -1),
         new SetStylePatch(2, "fontSize", "24"),
-        new CreateNodePatch(3, "text", 2),
+        new CreateNodePatch(3, "text", 2, InsertIndex: -1),
         new ReplaceTextPatch(3, "Hello, BlazorNative! (taps: 0)"),
-        new CreateNodePatch(4, "button", 1),
+        new CreateNodePatch(4, "button", 1, InsertIndex: -1),
         new AttachEventPatch(4, "click", AnyHandlerId),
-        new CreateNodePatch(5, "text", 4),
+        new CreateNodePatch(5, "text", 4, InsertIndex: -1),
         new ReplaceTextPatch(5, "Tap"),
-        new CreateNodePatch(6, "input", 1),
+        new CreateNodePatch(6, "input", 1, InsertIndex: -1),
         new UpdatePropPatch(6, "placeholder", "Type here..."),
         // 14th patch: CommitFramePatch — asserted type-only in the test body
         // (FrameId/TimestampMs are nondeterministic).
