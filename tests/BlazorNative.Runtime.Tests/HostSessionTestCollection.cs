@@ -11,6 +11,11 @@ namespace BlazorNative.Runtime.Tests;
 // an explicit marker so the constraint is enforced proactively, not
 // retroactively after a confusing race-bug bisect (house style — same
 // rationale as the retired WasiBridgeTestCollection).
+//
+// Phase 3.5: the former "native-shell-bridge" collection merged into this
+// one. NavigationTests exercises BOTH process-wide singletons (HostSession
+// AND NativeShellBridge/FakeShellHost), and a class can only join ONE
+// collection — so every class touching either singleton now serializes here.
 // ─────────────────────────────────────────────────────────────────────────────
 
 [CollectionDefinition("host-session")]

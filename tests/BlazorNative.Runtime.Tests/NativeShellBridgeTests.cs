@@ -20,8 +20,10 @@ namespace BlazorNative.Runtime.Tests;
 //
 // State note: NativeShellBridge holds process-wide static state (registered
 // callbacks + pending-fetch table), and FakeShellHost is static too — so
-// every test class touching either joins the "native-shell-bridge" xUnit
-// collection (serialized), and each test resets the bridge in finally.
+// every test class touching either serializes via the shared "host-session"
+// xUnit collection (Phase 3.5 merged the former "native-shell-bridge"
+// collection into it: NavigationTests spans BOTH singletons, and separate
+// collections run in parallel), and each test resets the bridge in finally.
 // ─────────────────────────────────────────────────────────────────────────────
 
 // ── FakeShellHost — managed stand-in for the Kotlin host ────────────────────
@@ -187,7 +189,7 @@ internal static unsafe class FakeShellHost
 
 // ── Tests ────────────────────────────────────────────────────────────────────
 
-[Collection("native-shell-bridge")]
+[Collection("host-session")]
 public sealed class NativeShellBridgeTests
 {
     private const string NotRegisteredMessage =

@@ -9,7 +9,7 @@ namespace BlazorNative.Runtime.Tests;
 // contract on the host CLR.
 // ─────────────────────────────────────────────────────────────────────────────
 
-[Collection("native-shell-bridge")]
+[Collection("host-session")]
 public sealed class BridgeProbeRunnerTests
 {
     private const string ProbeUrl = "http://fake.test/probe";

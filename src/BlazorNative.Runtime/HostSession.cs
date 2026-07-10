@@ -28,19 +28,30 @@ internal static unsafe class HostSession
 {
     private static readonly object s_lock = new();
     private static NativeRenderer? s_renderer;
+    private static NativeNavigationManager? s_navigation; // born with the session (Phase 3.5)
     private static IntPtr s_frameCallback; // delegate* unmanaged[Cdecl]<BlazorNativeFrame*, void>
+
+    /// <summary>Root componentId of the CURRENT page (Phase 3.5): tracked at
+    /// every mount so the navigation swap knows what to unmount. -1 = none.
+    /// Single-threaded post-boot contract (same as the renderer's dispatch
+    /// fields) — mounts and navigations both run on the host's dispatch lane.</summary>
+    private static int s_currentRootComponentId = -1;
 
     // Sync Mount<T> (inline dispatcher, Phase 2.4) — the first render completes
     // before TryMount returns, so the frame callback has already fired.
-    private static readonly Dictionary<string, Action<NativeRenderer>> s_components = new()
+    // Values return the root componentId (Phase 3.5: the navigation swap needs
+    // it — see s_currentRootComponentId).
+    private static readonly Dictionary<string, Func<NativeRenderer, int>> s_components = new()
     {
         ["HelloComponent"] = r => r.Mount<HelloComponent>(),
         // Phase 3.3: the composition proof app (nested components, keyed
         // list mutation, detach — design §6).
         ["CompositionProbe"] = r => r.Mount<CompositionProbe>(),
         // Phase 3.4: the Bn* demo form (bind loop + cascading theme —
-        // DoD #5/#6); becomes MainActivity's default at Gate 4.
+        // DoD #5/#6); MainActivity's default since Gate 4.
         ["BnDemo"] = r => r.Mount<BlazorNative.Components.BnDemo>(),
+        // Phase 3.5: the demo's second page (route "/settings" — DoD #7).
+        ["BnSettingsPage"] = r => r.Mount<BlazorNative.Components.BnSettingsPage>(),
     };
 
     /// <summary>Stores the host's frame callback. IntPtr.Zero disables
@@ -55,12 +66,11 @@ internal static unsafe class HostSession
     /// a diagnostics surface is M4+). .NET host-session tests flip this via a
     /// module initializer. The instrumented path has no managed hook, so
     /// EnsureSession ALSO ORs in the <c>BLAZORNATIVE_STRICT=1</c> process
-    /// environment variable — Gate 3 wires it via <c>Os.setenv</c> in
-    /// CompositionAndroidTest's @BeforeClass (test and app share the
-    /// instrumented process; no ABI change). ONE-SHOT: the variable is read
-    /// here at first-session creation only — setenv after another test class
-    /// has already mounted is a silent no-op (ordering documented at the
-    /// Kotlin site). Absent/other values leave the production default.</summary>
+    /// environment variable — set by BlazorNativeTestRunner (Phase 3.5
+    /// Gate 0) before any instrumented test class loads, so the ONE-SHOT
+    /// read here at first-session creation always sees strict on-device
+    /// (no ABI change; the per-class setenv/ordering pattern is gone).
+    /// Absent/other values leave the production default.</summary>
     internal static bool StrictErrorsForTests
     {
         get => Volatile.Read(ref s_strictErrors);
@@ -84,6 +94,12 @@ internal static unsafe class HostSession
     internal static NativeRenderer? CurrentRenderer => Volatile.Read(ref s_renderer);
 #pragma warning restore BL0006
 
+    /// <summary>The session's navigation manager, or null before the first
+    /// EnsureSession (Phase 3.5). Tests reach the INavigationManager surface
+    /// through this; components resolve it via DI ([Inject]).</summary>
+    internal static NativeNavigationManager? CurrentNavigationManager
+        => Volatile.Read(ref s_navigation);
+
     /// <summary>Test-only: tears down the session singleton so "no session"
     /// paths are testable and each test gets a fresh renderer. Tests touching
     /// HostSession serialize via the "host-session" xUnit collection — the
@@ -98,20 +114,42 @@ internal static unsafe class HostSession
             Volatile.Read(ref s_renderer)?.Dispose();
 #pragma warning restore BL0006
             Volatile.Write(ref s_renderer, null);
+            Volatile.Write(ref s_navigation, null);
+            Volatile.Write(ref s_currentRootComponentId, -1);
             Volatile.Write(ref s_frameCallback, IntPtr.Zero);
         }
     }
 
     /// <summary>Mounts a registered component by name.
     /// Returns 0 = ok, 1 = unknown component, 2 = mount threw.</summary>
+    /// <remarks>Phase 3.5 route-aware initial mount (design §1): the mount
+    /// ABI stays NAME-based, but when the FIRST mount of a session requests
+    /// the routed app's DEFAULT entry ("BnDemo" — MainActivity's no-extra
+    /// default), the host's restored route wins: the nav manager initializes
+    /// CurrentRoute from the host's CurrentRoute buffer callback, and a
+    /// known non-default route mounts ITS page instead (unknown/empty →
+    /// "/" → the requested default). Explicit mounts of any OTHER name
+    /// (test Intent extras, probes) are never overridden.</remarks>
     public static int TryMount(string name)
     {
-        if (!s_components.TryGetValue(name, out Action<NativeRenderer>? mount))
+        if (!s_components.ContainsKey(name))
             return 1;
 
         try
         {
-            mount(EnsureSession());
+            NativeRenderer renderer = EnsureSession();
+
+            string effective = name;
+            if (Volatile.Read(ref s_currentRootComponentId) < 0
+                && name == NativeNavigationManager.DefaultComponent
+                && Volatile.Read(ref s_navigation) is { } nav)
+            {
+                // CurrentRoute lazily queries the host here (startup query);
+                // the table clamps it, so ResolveComponent cannot miss.
+                effective = nav.ResolveComponent(nav.CurrentRoute);
+            }
+
+            MountRoot(effective, renderer);
             return 0;
         }
         catch (Exception ex)
@@ -120,6 +158,52 @@ internal static unsafe class HostSession
             // C-ABI crossing (same rationale as Exports.cs Init's catch).
             Console.Error.WriteLine($"[HostSession] mount '{name}' failed: {ex}");
             return 2;
+        }
+    }
+
+    /// <summary>Phase 3.5: the navigation swap (NativeNavigationManager's
+    /// step 2). Unmounts the tracked current root — Blazor's disposal
+    /// machinery emits the RemoveNode patches that clear the screen — then
+    /// mounts the target registry component fresh. Navigations triggered
+    /// INSIDE a click handler defer through RunAfterDispatch (Blazor keeps
+    /// the event's batch open across the handler, so RemoveRootComponent
+    /// cannot start its disposal batch there); the deferred swap still runs
+    /// before blazornative_dispatch_event returns. Failures THROW — direct
+    /// callers see them; deferred ones join the 3.2 dispatch capture and
+    /// map to export rc 2 (strict conventions).</summary>
+    internal static void SwapRoot(string name)
+    {
+        if (!s_components.ContainsKey(name))
+        {
+            throw new InvalidOperationException(
+                $"navigation swap target '{name}' is not in the mount registry");
+        }
+
+        NativeRenderer renderer = EnsureSession();
+        renderer.RunAfterDispatch(() =>
+        {
+            int current = Volatile.Read(ref s_currentRootComponentId);
+            if (current >= 0)
+            {
+                renderer.Unmount(current);
+                Volatile.Write(ref s_currentRootComponentId, -1);
+            }
+            MountRoot(name, renderer);
+        });
+    }
+
+    /// <summary>Mounts a registry component (callers verified the key) and
+    /// tracks it as the session's current root; a ROUTED component also syncs
+    /// the nav manager's CurrentRoute so route state agrees with the screen
+    /// even for direct named mounts. Throws on mount failure.</summary>
+    private static void MountRoot(string name, NativeRenderer renderer)
+    {
+        int rootId = s_components[name](renderer);
+        Volatile.Write(ref s_currentRootComponentId, rootId);
+        if (Volatile.Read(ref s_navigation) is { } nav
+            && NativeNavigationManager.TryGetRouteForComponent(name, out string route))
+        {
+            nav.NotifyMounted(route);
         }
     }
 
@@ -156,7 +240,15 @@ internal static unsafe class HostSession
             // BridgeHttpHandler therefore resolves against the host callbacks
             // on Android.
             services.AddSingleton<IMobileBridge, NativeShellBridge>();
-            renderer = services.BuildServiceProvider().GetRequiredService<NativeRenderer>();
+            // Phase 3.5: the navigation service (DoD #7). Registered as the
+            // Core contract so components [Inject] INavigationManager; the
+            // session also keeps the concrete instance for the route-aware
+            // initial mount + swap plumbing (TryMount/SwapRoot).
+            services.AddSingleton<INavigationManager, NativeNavigationManager>();
+            ServiceProvider provider = services.BuildServiceProvider();
+            renderer = provider.GetRequiredService<NativeRenderer>();
+            Volatile.Write(ref s_navigation,
+                (NativeNavigationManager)provider.GetRequiredService<INavigationManager>());
             // .NET test hook OR the instrumented-harness env toggle (see
             // StrictErrorsForTests doc) — production default remains false.
             renderer.StrictErrors = Volatile.Read(ref s_strictErrors)

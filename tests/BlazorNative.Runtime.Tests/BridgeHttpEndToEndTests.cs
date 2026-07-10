@@ -20,7 +20,7 @@ namespace BlazorNative.Runtime.Tests;
 // below to match — that mirroring IS the test's value.
 // ─────────────────────────────────────────────────────────────────────────────
 
-[Collection("native-shell-bridge")]
+[Collection("host-session")]
 public sealed class BridgeHttpEndToEndTests
 {
     /// <summary>The HostSession.EnsureSession registrations, verbatim —
@@ -31,6 +31,7 @@ public sealed class BridgeHttpEndToEndTests
         services.AddBlazorNativeRendererServices();
         services.AddBlazorNativeHttp(); // BridgeHttpHandler as primary handler + HttpClient factory
         services.AddSingleton<IMobileBridge, NativeShellBridge>(); // sole IMobileBridge since 3.2 (WasiBridge deleted)
+        services.AddSingleton<INavigationManager, NativeNavigationManager>(); // Phase 3.5: the navigation service (DoD #7)
         return services.BuildServiceProvider();
     }
 
