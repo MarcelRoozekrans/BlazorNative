@@ -515,13 +515,18 @@ public sealed class NativeRenderer : BlazorRenderer
     /// emitting create/text/attribute patches. <paramref name="insertAtSlot"/> is
     /// the slot position for the subtree ROOT in its container's slot list
     /// (a PrependFrame edit's SiblingIndex); -1 = append (the recursive child
-    /// walk — creation order IS sibling order inside a fresh subtree).</summary>
+    /// walk — creation order IS sibling order inside a fresh subtree).
+    /// Returns the number of SIBLING SLOTS the frame consumed in the current
+    /// container: 1 for element/text/component, the transparent child sum for
+    /// a Region (regions occupy no slot of their own), 0 otherwise — the
+    /// Region arm needs it to advance consecutive insert positions across
+    /// nested regions (Phase 3.4 Task 1).</summary>
     /// <remarks><paramref name="slotContainer"/> keys the slot-list bucket the
     /// subtree ROOT's slot goes into (null = the component's root level);
     /// <paramref name="emitParent"/> is the HOST node its view attaches to.
     /// They differ only at a component's root level (see <see cref="DiffCursor"/>);
     /// inside the walk both become the enclosing element's node.</remarks>
-    private void ProcessFrame(
+    private int ProcessFrame(
         int componentId,
         ref BnArrayRange<RenderTreeFrame> frames,
         int frameIndex,
@@ -580,13 +585,23 @@ public sealed class NativeRenderer : BlazorRenderer
                         // fresh subtree). Pass this element's nodeId as the child's
                         // container AND host parent so the host-side widget mapper
                         // attaches the child inside this element's view (Phase 2.5).
+                        // A Region child (Phase 3.4 Task 1) descends transparently
+                        // via ProcessFrame's Region arm — its children land in THIS
+                        // element's slot list, exactly as if written inline.
                         ProcessFrame(componentId, ref frames, frameIndex + i, slotContainer: nodeId, emitParent: nodeId, insertAtSlot: -1, ref patches);
                         // Skip the child's own subtree so we don't double-walk it.
+                        // (Before 3.4 a Region child was skipped by only 1 here —
+                        // the walk then iterated INTO the region's children, which
+                        // happened to produce transparent numbering by accident.
+                        // With the explicit Region arm descending, failing to skip
+                        // the full region subtree would double-create its content.)
                         if (child.FrameType == RenderTreeFrameType.Element)
                             i += child.ElementSubtreeLength - 1;
+                        else if (child.FrameType == RenderTreeFrameType.Region)
+                            i += child.RegionSubtreeLength - 1;
                     }
                 }
-                break;
+                return 1;
             }
 
             case RenderTreeFrameType.Text:
@@ -599,7 +614,7 @@ public sealed class NativeRenderer : BlazorRenderer
                 AddSlot(componentId, slotContainer, insertAtSlot, Slot.ForNode(textNodeId));
                 patches.Add(new CreateNodePatch(textNodeId, "text", emitParent, insertIndex));
                 patches.Add(new ReplaceTextPatch(textNodeId, frame.TextContent ?? ""));
-                break;
+                return 1;
             }
 
             case RenderTreeFrameType.Component:
@@ -612,9 +627,57 @@ public sealed class NativeRenderer : BlazorRenderer
                 // frames in its subtree are its parameters — not walked.
                 AddSlot(componentId, slotContainer, insertAtSlot, Slot.ForComponent(frame.ComponentId));
                 _tree.RegisterComponentParent(frame.ComponentId, componentId, emitParent);
-                break;
+                return 1;
+            }
+
+            case RenderTreeFrameType.Region:
+            {
+                // Phase 3.4 Task 1 (the 3.3 MUST-FIX carryover). Blazor emits
+                // Region frames for RenderFragment / CascadingValue ChildContent:
+                // grouping markers that occupy NO sibling slot — their children
+                // number as if inline in the enclosing container (region-
+                // transparent sibling numbering), and regions nest. Descend with
+                // the SAME slot container + emit parent; each slot-occupying
+                // child advances the insert position, so region content arriving
+                // as a mid-list insert lands at CONSECUTIVE slot positions.
+                //
+                // Reality check against Blazor 10.0.x (RenderTreeDiffBuilder):
+                // region inserts/removes are decomposed into per-child edits and
+                // same-sequence regions diff via transparent recursion, so a
+                // PrependFrame's reference root is never a Region there — this
+                // arm is reached for Region frames nested inside a prepended
+                // ELEMENT subtree (the recursive walk above), and defensively
+                // covers a region-root prepend should a future Blazor emit one.
+                // Before 3.4 this frame type hit no arm at all: the element
+                // walk's fall-through happened to iterate into region children
+                // (accidental transparency) — now the descent is explicit.
+                var slotsConsumed = 0;
+                var childSlot = insertAtSlot;
+                var end = frameIndex + frame.RegionSubtreeLength;
+                var childIndex = frameIndex + 1;
+                while (childIndex < end)
+                {
+                    var child = new BnRenderTreeFrame(ref frames[childIndex]);
+                    var consumed = ProcessFrame(componentId, ref frames, childIndex,
+                        slotContainer, emitParent, childSlot, ref patches);
+                    slotsConsumed += consumed;
+                    if (childSlot >= 0)
+                        childSlot += consumed;
+                    childIndex += child.FrameType switch
+                    {
+                        RenderTreeFrameType.Element   => child.ElementSubtreeLength,
+                        RenderTreeFrameType.Component => child.ComponentSubtreeLength,
+                        RenderTreeFrameType.Region    => child.RegionSubtreeLength,
+                        _ => 1,
+                    };
+                }
+                return slotsConsumed;
             }
         }
+
+        // Frame types the walk deliberately ignores (e.g. ElementReferenceCapture,
+        // NamedEvent) consume no sibling slot.
+        return 0;
     }
 
     /// <summary>Slot bookkeeping for a freshly created slot: insert at the

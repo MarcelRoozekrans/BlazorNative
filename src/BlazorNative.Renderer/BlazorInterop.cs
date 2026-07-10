@@ -222,6 +222,7 @@ internal ref struct BnRenderTreeFrame
     public int                 ElementSubtreeLength     => _frame.ElementSubtreeLength;
     public int                 ComponentSubtreeLength   => _frame.ComponentSubtreeLength;
     public int                 ComponentId              => _frame.ComponentId;
+    public int                 RegionSubtreeLength      => _frame.RegionSubtreeLength;
     public string?             AttributeName            => _frame.AttributeName;
     public object?             AttributeValue           => _frame.AttributeValue;
     public ulong               AttributeEventHandlerId  => _frame.AttributeEventHandlerId;
