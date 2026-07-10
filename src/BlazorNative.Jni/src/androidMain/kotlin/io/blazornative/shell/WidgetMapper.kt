@@ -27,12 +27,14 @@ import io.blazornative.jni.RenderPatch
  * mapper collects patches until [RenderPatch.CommitFrame], then posts the batch
  * to the main looper for atomic application. Caller-thread-agnostic.
  *
- * Patch coverage: CreateNode (all 7 NodeTypes wired), ReplaceText, RemoveNode,
- * UpdateProp, SetStyle, CommitFrame, and — live since Phase 3.2 — AttachEvent /
+ * Patch coverage: CreateNode (all 7 NodeTypes wired, placement via
+ * insertIndex — see [handleCreate]), ReplaceText, RemoveNode, UpdateProp,
+ * SetStyle, CommitFrame, and — live since Phase 3.2 — AttachEvent /
  * DetachEvent (click listener + re-entrancy-guarded change TextWatcher; see
- * [handleAttachEvent]). AppendChild was DELETED in Phase 3.3 (DoD #10):
- * CreateNode.insertIndex carries placement instead — honoring it in
- * [handleCreate] via addView(view, index) is Phase 3.3 Task 9.
+ * [handleAttachEvent]; detach dispatches on the patch's eventName since
+ * Phase 3.3 Task 9). AppendChild was DELETED in Phase 3.3 (DoD #10):
+ * CreateNode.insertIndex carries placement instead — its wire kind (2) stays
+ * reserved-dormant and never reaches this class.
  *
  * Events: [onUiEvent] is invoked from UI listeners with (handlerId, eventName,
  * payload) — production wires it to BlazorNativeRuntime.dispatchEvent, which is
@@ -151,27 +153,38 @@ class WidgetMapper(
         }
     }
 
-    /** Phase 3.2 inference, kept through Phase 3.3 Task 8: a handlerId present
-     * in [watchers] is treated as a change detach (remove that watcher),
-     * anything else falls through to a click detach on the node's view. The
-     * patch DOES carry eventName since Phase 3.3 (and the renderer now
-     * genuinely emits DetachEvent on `on*` attribute removal); switching this
-     * dispatch to `p.eventName` — retiring the inference — is Phase 3.3
-     * Task 9. */
+    /** Phase 3.3 Task 9: dispatch on the patch's [RenderPatch.DetachEvent.eventName]
+     * (carried on the wire since Task 8), retiring the 3.2 map-membership
+     * inference ("handlerId in [watchers] ⇒ change") — the eventName mirrors
+     * [handleAttachEvent]'s switch, so a future event type extends both arms
+     * symmetrically instead of overloading the fallthrough. handlerId is the
+     * ORIGINAL attach's id (renderer registry contract, RenderFrame.kt). */
     private fun handleDetachEvent(p: RenderPatch.DetachEvent) {
-        watchers.remove(p.handlerId)?.let { (editText, watcher) ->
-            editText.removeTextChangedListener(watcher)
-            return
+        when (p.eventName) {
+            "click" -> {
+                val view = nodes[p.nodeId] ?: run {
+                    Log.w(TAG, "DetachEvent 'click' for unknown nodeId ${p.nodeId}: ignored")
+                    return
+                }
+                view.setOnClickListener(null)
+                // setOnClickListener(non-null) flips the view clickable; detaching
+                // must restore the pre-listener state or the view keeps consuming
+                // taps as a focusable/clickable no-op.
+                view.isClickable = false
+            }
+            "change" -> {
+                val removed = watchers.remove(p.handlerId)?.also { (editText, watcher) ->
+                    editText.removeTextChangedListener(watcher)
+                }
+                if (removed == null) {
+                    // Legal under the last-wins re-attach caveat (see
+                    // [handleAttachEvent]): the map entry may have been
+                    // replaced by a re-attach before this detach arrived.
+                    Log.w(TAG, "DetachEvent 'change' handlerId ${p.handlerId} has no live watcher: ignored")
+                }
+            }
+            else -> Log.w(TAG, "DetachEvent '${p.eventName}' not supported (forward compat): skipped")
         }
-        val view = nodes[p.nodeId] ?: run {
-            Log.w(TAG, "DetachEvent for unknown nodeId ${p.nodeId}: ignored")
-            return
-        }
-        view.setOnClickListener(null)
-        // setOnClickListener(non-null) flips the view clickable; detaching
-        // must restore the pre-listener state or the view keeps consuming
-        // taps as a focusable/clickable no-op.
-        view.isClickable = false
     }
 
     private fun handleCreate(p: RenderPatch.CreateNode) {
@@ -207,7 +220,18 @@ class WidgetMapper(
         }
         nodes[p.nodeId] = view
         val parent = p.parentId?.let { nodes[it] as? ViewGroup } ?: root
-        parent.addView(view)
+        // Phase 3.3 Task 9 (DoD #10): honor the renderer-computed placement.
+        // insertIndex counts HOST views in the target container — and a
+        // WidgetMapper ViewGroup's children ARE exactly those host views 1:1
+        // (the only nodes that never materialize a child view are collapsed
+        // text nodes, and those alias onto non-ViewGroup parents — see the
+        // collapse block above — so they can't skew a container's indices).
+        // No translation needed; mirrors the JVM twin's arithmetic
+        // (CompositionProbeTest: "the list container's children are
+        // EXCLUSIVELY the keyed ItemComponent views"). −1 = append,
+        // explicitly encoded (0 is a valid front index).
+        if (p.insertIndex >= 0) parent.addView(view, p.insertIndex)
+        else parent.addView(view)
     }
 
     private fun handleReplaceText(p: RenderPatch.ReplaceText) {

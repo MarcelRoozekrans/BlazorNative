@@ -52,9 +52,12 @@ internal static unsafe class HostSession
     /// a diagnostics surface is M4+). .NET host-session tests flip this via a
     /// module initializer. The instrumented path has no managed hook, so
     /// EnsureSession ALSO ORs in the <c>BLAZORNATIVE_STRICT=1</c> process
-    /// environment variable — the Android instrumented harness sets it BEFORE
-    /// init (Gate 3 wires it via the test runner's environment; no ABI
-    /// change). Absent/other values leave the production default.</summary>
+    /// environment variable — Gate 3 wires it via <c>Os.setenv</c> in
+    /// CompositionAndroidTest's @BeforeClass (test and app share the
+    /// instrumented process; no ABI change). ONE-SHOT: the variable is read
+    /// here at first-session creation only — setenv after another test class
+    /// has already mounted is a silent no-op (ordering documented at the
+    /// Kotlin site). Absent/other values leave the production default.</summary>
     internal static bool StrictErrorsForTests
     {
         get => Volatile.Read(ref s_strictErrors);

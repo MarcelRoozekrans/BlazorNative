@@ -13,7 +13,8 @@ import kotlin.concurrent.thread
  *
  * On launch: spawns a background thread that runs [BlazorNativeRuntime.start]
  * (init → register frame callback → register shell bridge → mount
- * HelloComponent; 4 [BOOT] lines since Phase 3.1) against the
+ * HelloComponent, or the [EXTRA_COMPONENT] Intent-extra override; 4 [BOOT]
+ * lines since Phase 3.1) against the
  * NativeAOT libBlazorNative.Runtime.so from the APK's jniLibs. Frames
  * arrive through the C-ABI struct path (NativeFrameAdapter) and render via
  * [WidgetMapper] into widget_root; [BOOT] status lines go to logcat and the
@@ -33,6 +34,19 @@ import kotlin.concurrent.thread
  *    onError → Log.e — JNA would otherwise swallow them to stderr.
  */
 class MainActivity : Activity() {
+
+    companion object {
+        /**
+         * Phase 3.3 Task 9: Intent-extra override for the mounted component
+         * (a mount-registry name, HostSession.cs). Absent → "HelloComponent",
+         * so the launcher demo is unchanged; instrumented tests pass
+         * "CompositionProbe" via ActivityScenario.launch(Intent) to drive the
+         * composition composite without touching the demo. Test-only surface —
+         * an unknown name fails the boot loudly (mount rc 1 → FAIL in the
+         * console pane), same as any other boot error.
+         */
+        const val EXTRA_COMPONENT = "io.blazornative.shell.EXTRA_COMPONENT"
+    }
 
     private val tag = "BlazorNative"
 
@@ -65,9 +79,12 @@ class MainActivity : Activity() {
         // process-lifetime retention contract on ShellBridgeHandlers).
         val bridge = AndroidShellBridge(this, onError)
 
+        val componentName = intent.getStringExtra(EXTRA_COMPONENT) ?: "HelloComponent"
+
         thread(name = "BlazorNative-Runtime-Boot") {
             try {
                 val lines = runtime.start(
+                    componentName = componentName,
                     platformOs = "android",
                     apiLevel = android.os.Build.VERSION.SDK_INT,
                     bridge = bridge,
