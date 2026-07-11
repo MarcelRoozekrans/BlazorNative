@@ -24,6 +24,11 @@ on:
   workflow_dispatch:
   schedule:
     - cron: '0 3 * * *'   # nightly 03:00 UTC
+  # TEMPORARY bootstrap trigger (removed before merge): GitHub only registers
+  # a workflow for `gh workflow run` dispatch after it exists on the default
+  # branch or has run once — this push trigger provides that first run.
+  push:
+    branches: [phase-4.0-github-ci]
 
 permissions:
   contents: read
