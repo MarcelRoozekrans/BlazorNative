@@ -84,6 +84,17 @@ refinement during the Phase 4.0 brainstorm.
    publish → JVM host reload as the fast lane, plus the ADB-push → app-restart story
    for on-device iteration. Documented honestly: NativeAOT cannot hot-patch — this is
    **fast-restart, not hot-reload** — and the measured round-trip times are recorded.
+   ✅ **CLOSED 2026-07-11 (Phase 4.3):** the loop exists (`make devloop` /
+   `make devloop-android` → `scripts/devloop.ps1`: FileSystemWatcher fast lane over
+   the new `PreviewHost` console tree dump, scripted ADB lane to the logcat
+   `[BOOT] mounted` marker), it is **measured** (warm, reproduced ≥2×: incremental
+   win-x64 publish 8.2–9.4 s · PreviewHost boot-to-tree ~0.3 s · JVM cycle
+   9.9–11.2 s · ADB cycle 14.1–14.5 s — recorded in the README's three-lane Dev
+   experience rewrite), and it is **honestly named** (fast-restart, not hot-reload:
+   NativeAOT can't hot-patch, Windows locks the loaded dll; the "no unload API"
+   wording corrected in the conclusion). JVM suite 34 → **47** (TreeSnapshot
+   WidgetMapper-parity TDD); .NET 203/0 and Android 35 untouched. See
+   [Phase 4.3 conclusion](../plans/2026-07-11-phase-4.3-conclusion.md).
 
 6. **DevTools render-tree inspector.** A dev-host surface showing the live patch
    stream, the current widget tree (collapsible), and the event log against a running
