@@ -2,6 +2,7 @@ package io.blazornative.jni
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
 
 /**
  * Phase 4.3 Gate 1 — TreeSnapshot, the PreviewHost's console-shaped mirror of
@@ -114,6 +115,17 @@ class TreeSnapshotTest {
             """.trimIndent(),
             snap.render()
         )
+    }
+
+    @Test
+    fun out_of_range_insert_index_throws_strict_placement_parity() {
+        // Gate 1 review N3 pin: WidgetMapper's addView(view, index) throws on
+        // an out-of-range index — "inherently strict placement". The snapshot
+        // must not silently clamp what Android would crash on.
+        val snap = TreeSnapshot()
+        assertThrows<IndexOutOfBoundsException> {
+            snap.apply(frame(create(1, "view"), create(2, "text", parent = 1, at = 5)))
+        }
     }
 
     @Test

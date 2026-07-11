@@ -1,6 +1,8 @@
 # BlazorNative — Developer Makefile
 # ──────────────────────────────────────────────────────────────────────────────
 # make dev             → start dev host with hot reload (normal .NET)
+# make devloop         → native fast lane: watch .NET src → publish → PreviewHost
+# make devloop-android → device lane: publish → installDebug → launch → logcat
 # make runtime-publish → NativeAOT publish BlazorNative.Runtime for all 3 RIDs
 # make android         → build the Android APK (BlazorNative.Jni via Gradle)
 # make android-test    → boot AVD if needed + run connectedAndroidTest
@@ -14,7 +16,7 @@ RUNTIME_PROJECT   := src/BlazorNative.Runtime
 ANALYZER_PROJECT  := src/BlazorNative.Analyzers/BlazorNative.Analyzers.csproj
 DEV_PROJECT       := src/BlazorNative.Host.Android/BlazorNative.DevHost.csproj
 
-.PHONY: dev dev-no-reload runtime-publish android android-build android-test android-test-visible ios test test-watch clean setup analyzers help
+.PHONY: dev dev-no-reload devloop devloop-android runtime-publish android android-build android-test android-test-visible ios test test-watch clean setup analyzers help
 
 ## ── Development ──────────────────────────────────────────────────────────────
 
@@ -26,6 +28,12 @@ dev:                          ## Start dev host with hot reload
 
 dev-no-reload:                ## Start dev host without hot reload
 	$(DOTNET) run --project $(DEV_PROJECT)
+
+devloop:                      ## Native fast lane: watch .NET src → publish win-x64 → PreviewHost tree (fast-restart)
+	powershell -ExecutionPolicy Bypass -File scripts/devloop.ps1
+
+devloop-android:              ## Device lane: publish bionic-x64 → installDebug → launch → logcat boot marker
+	powershell -ExecutionPolicy Bypass -File scripts/devloop.ps1 -Android
 
 analyzers:                    ## Build Roslyn analyzers
 	$(DOTNET) build $(ANALYZER_PROJECT) -c Release

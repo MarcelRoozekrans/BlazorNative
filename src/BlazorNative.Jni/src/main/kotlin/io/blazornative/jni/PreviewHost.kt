@@ -58,8 +58,19 @@ fun main(args: Array<String>) {
 
         // Stage 3 — the canonical boot: register callback + mount; the mount
         // frame(s) arrive synchronously inside start() (sync-mount contract).
+        // Gate 1 review N1: a frame-delivery fault (adapter/consumer threw →
+        // frame dropped) leaves the tree PARTIAL — the onError sink flags it
+        // so the exit code stays honest; the devloop must never read a
+        // half-applied dump as success.
+        var frameFault = false
         val snapshot = TreeSnapshot()
-        val runtime = BlazorNativeRuntime(onFrame = snapshot::apply)
+        val runtime = BlazorNativeRuntime(
+            onFrame = snapshot::apply,
+            onError = { msg, t ->
+                frameFault = true
+                System.err.println("[PreviewHost] $msg: $t")
+            },
+        )
         val bootLines = runtime.start(componentName = component, platformOs = "preview-host")
         val tMounted = System.nanoTime()
 
@@ -73,6 +84,10 @@ fun main(args: Array<String>) {
         println("[TIME] init     ${ms(tLoaded, tInit)} ms")
         println("[TIME] mount    ${ms(tInit, tMounted)} ms")
         println("[TIME] total    ${ms(tStart, System.nanoTime())} ms")
+        if (frameFault) {
+            System.err.println("[PreviewHost] tree is PARTIAL — a frame was dropped during mount (detail above)")
+            exitProcess(1)
+        }
         exitProcess(0)
     } catch (t: Throwable) {
         System.err.println("[PreviewHost] FAILED to mount '$component': $t")

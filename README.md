@@ -30,10 +30,11 @@ cd src\BlazorNative.Jni; .\gradlew testDebugUnitTest
 .\gradlew connectedAndroidTest
 ```
 
-For the .NET inner loop there is also a hot-reload dev host — hot reload applies only here, because no AOT publish is involved (the native-library loop is fast-restart, not hot-reload — Phase 4.3):
+For the native inner loop, `make devloop` watches the .NET source and re-runs publish → preview on every save (see [Dev experience](#dev-experience)):
 
 ```powershell
-dotnet watch run --project src\BlazorNative.Host.Android\BlazorNative.DevHost.csproj
+powershell -ExecutionPolicy Bypass -File scripts\devloop.ps1          # JVM fast lane
+powershell -ExecutionPolicy Bypass -File scripts\devloop.ps1 -Android # device lane
 ```
 
 ## Architecture
@@ -62,7 +63,28 @@ One runtime, one transport: the same NativeAOT library and typed-struct protocol
 
 ## Dev experience
 
-The browser-side DevHost inner loop runs as a **normal ASP.NET app** — full hot reload plus a DevTools REST API for simulating native events. (NativeAOT binaries cannot hot-patch, so the native-library inner loop is a separate fast-restart story — Phase 4.3.)
+Three lanes, honestly labeled:
+
+| Lane | Command | Feedback model | What it exercises |
+|---|---|---|---|
+| Browser DevHost | `make dev` | **True hot-reload** (plain ASP.NET, no AOT) | Component/business logic against a **mock** bridge — fast, but it tests the wrong transport for native work |
+| Native fast lane | `make devloop` | **Fast-restart**, ~10–11 s/save | The real thing: NativeAOT publish → JNA load → C-ABI patch decode → console tree dump (`PreviewHost`) |
+| Device lane | `make devloop-android` | **Fast-restart**, ~14 s/save | The full APK: bionic publish → `installDebug` → launch → logcat boot marker on an emulator/device |
+
+**Fast-restart, not hot-reload — by design, not omission.** JNA's `Native.load` is process-lifetime: there is no unload API, and Windows locks the loaded dll, so a warm JVM can never pick up a rebuilt native library — and NativeAOT binaries cannot hot-patch. The native loop therefore restarts a tiny host process per cycle (`PreviewHost`: boot → mount → dump tree → exit ~0.3 s), and the loop script makes that restart automatic: save a `.cs` file, get a fresh widget tree.
+
+Measured on the dev machine (warm, `devloop.ps1 -Once`, one `BlazorNative.Components` file touched):
+
+| Stage | Time |
+|---|---|
+| Incremental win-x64 NativeAOT publish | ~8–9 s |
+| PreviewHost boot-to-tree (dll load + init + mount) | ~0.3 s |
+| Full JVM-lane cycle (publish → tree) | ~10–11 s |
+| Full ADB-lane cycle (publish → install → launch → mounted) | ~14 s |
+
+The NativeAOT publish dominates both lanes; everything downstream of it is seconds or less.
+
+The browser-side DevHost additionally exposes a DevTools REST API for simulating native events:
 
 ```bash
 # Inject a native event during development
