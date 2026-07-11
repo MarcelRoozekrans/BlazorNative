@@ -13,17 +13,19 @@
 
     <!-- Analyzers must not be referenced as regular deps -->
     <IncludeBuildOutput>false</IncludeBuildOutput>
-
-    <!-- RS2008 wants AnalyzerReleases.Shipped.md / AnalyzerReleases.Unshipped.md
-         tracking files. Proper fix is P3 work ("Analyzer unit tests" — when we
-         build the test harness we'll add the release-tracking docs at the same
-         time). Suppress for now to keep the build quiet. -->
-    <NoWarn>$(NoWarn);RS2008</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.*" PrivateAssets="all" />
     <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" Version="3.*" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Release tracking (RS2000-family): every BN rule's lifecycle — shipped,
+         changed, removed (IDs never reused) — is recorded here and validated
+         at build time by the Microsoft.CodeAnalysis.Analyzers RS2xxx rules. -->
+    <AdditionalFiles Include="AnalyzerReleases.Shipped.md" />
+    <AdditionalFiles Include="AnalyzerReleases.Unshipped.md" />
   </ItemGroup>
 
 </Project>
