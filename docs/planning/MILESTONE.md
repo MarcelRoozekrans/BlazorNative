@@ -98,7 +98,16 @@ refinement during the Phase 4.0 brainstorm.
 
 6. **DevTools render-tree inspector.** A dev-host surface showing the live patch
    stream, the current widget tree (collapsible), and the event log against a running
-   session.
+   session. ✅ **CLOSED 2026-07-11 (Phase 4.4):** the DoD wording met and exceeded —
+   `make inspect` serves all three surfaces against a running **native** session
+   (the real NativeAOT dll over `InspectorHost`, not a mock), plus interactive-lite
+   **dispatch-from-the-page** (fire clicks, send change payloads → rc shown, logged);
+   live updates ride a pull-model SSE. Collapsible `<details>` tree with props/
+   styles/events per node; patch ring (500) + event log (200) with one global
+   monotonic seq. Proven end-to-end on the Phase 3.5 navigation (page-driven
+   BnDemo → Settings → back → change echo, in headless Chrome via CDP). JVM suite
+   47 → **73**; .NET 203/0 and Android 35 untouched. See
+   [Phase 4.4 conclusion](../plans/2026-07-11-phase-4.4-conclusion.md).
 
 7. **NuGet packages restore into a blank consumer project.** `BlazorNative.Core`,
    `BlazorNative.Renderer`, `BlazorNative.Http`, `BlazorNative.Components`, and
