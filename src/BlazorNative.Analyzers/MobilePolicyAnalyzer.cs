@@ -79,13 +79,16 @@ public sealed class MobilePolicyAnalyzer : DiagnosticAnalyzer
         context.ConfigureGeneratedCodeAnalysis(GeneratedCodeAnalysisFlags.None);
         context.EnableConcurrentExecution();
 
-        context.RegisterSyntaxNodeAction(AnalyzeObjectCreation, SyntaxKind.ObjectCreationExpression);
+        // Both explicit `new HttpClient()` and target-typed `HttpClient c = new();`
+        // — the implicit form must not evade the ctor rules.
+        context.RegisterSyntaxNodeAction(AnalyzeObjectCreation, SyntaxKind.ObjectCreationExpression,
+                                                                SyntaxKind.ImplicitObjectCreationExpression);
         context.RegisterSyntaxNodeAction(AnalyzeInvocation,     SyntaxKind.InvocationExpression);
     }
 
     private static void AnalyzeObjectCreation(SyntaxNodeAnalysisContext ctx)
     {
-        var node = (ObjectCreationExpressionSyntax)ctx.Node;
+        var node = (BaseObjectCreationExpressionSyntax)ctx.Node;
         var type = ctx.SemanticModel.GetTypeInfo(node, ctx.CancellationToken).Type;
         if (type is null) return;
 

@@ -130,6 +130,43 @@ public sealed class InteropBoundaryAnalyzerTests
     }
 
     [Fact]
+    public async Task BN0020_FiresOnRethrowInSpecificCatchBesideCatchAll()
+    {
+        // A throw in ANY catch clause of the top-level try escapes the
+        // boundary — a catch-all sibling does not intercept a rethrow from a
+        // more specific catch.
+        var source = """
+            using System;
+            using System.IO;
+            using System.Runtime.CompilerServices;
+            using System.Runtime.InteropServices;
+
+            public static class NativeExports
+            {
+                [UnmanagedCallersOnly(EntryPoint = "bn_specific_rethrow", CallConvs = new[] { typeof(CallConvCdecl) })]
+                public static int {|BN0020:SpecificRethrow|}(int x)
+                {
+                    try
+                    {
+                        return Compute(x);
+                    }
+                    catch (IOException)
+                    {
+                        throw;
+                    }
+                    catch (Exception)
+                    {
+                        return 2;
+                    }
+                }
+
+                private static int Compute(int x) => x + 1;
+            }
+            """;
+        await Test(source).RunAsync();
+    }
+
+    [Fact]
     public async Task BN0020_FiresOnFilteredCatch()
     {
         // `catch (Exception) when (...)` is not a catch-all — the filter can

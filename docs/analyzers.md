@@ -117,8 +117,8 @@ A pragma without a justification comment does not pass review.
 
 - **What it flags:** a `[UnmanagedCallersOnly]` method whose body is not a single top-level
   `try` with a catch-all clause. A catch-all is a bare `catch` or an unfiltered
-  `catch (Exception)`; a catch-all containing a `throw` (rethrow or fresh) does not count.
-  Expression-bodied exports are always flagged.
+  `catch (Exception)`; a `throw` (rethrow or fresh) in **any** catch clause of the
+  top-level try fires the rule. Expression-bodied exports are always flagged.
 - **Why:** an exception crossing the C-ABI boundary is undefined behavior under NativeAOT —
   on Android it aborts the process with no managed diagnostics. Every export must convert
   failure into a return code (the rc-code contract `Exports.cs` follows).
@@ -143,9 +143,13 @@ A pragma without a justification comment does not pass review.
 
 - **Heuristic scope (deliberate):** the rule is syntactic and strict — it demands the
   top-level try/catch shape rather than proving exhaustively that no exception escapes.
-  A trivially-safe body (e.g. `=> s_versionString;`) is still flagged: wrap it. Known
-  blind spot: a `throw` inside a *nested* try within the catch-all (which that nested
-  try itself catches) is conservatively treated as an escape.
+  A trivially-safe body (e.g. `=> s_versionString;`) is still flagged: wrap it. A `throw`
+  in *any* catch clause of the top-level try fires the rule — a rethrow from a specific
+  catch (`catch (IOException) { throw; }`) escapes even when a catch-all sibling exists.
+  Known blind spots: a `throw` inside a *nested* try within a catch clause (which that
+  nested try itself catches) is conservatively treated as an escape; conversely, a
+  `finally` block that throws is **not** analyzed and can still leak an exception across
+  the boundary — do not throw from `finally` in an export.
 - **Escape hatch:** `#pragma warning disable BN0020` with justification (expected: none —
   wrap instead).
 

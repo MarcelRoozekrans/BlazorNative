@@ -129,6 +129,23 @@ public sealed class MobilePolicyAnalyzerTests
     }
 
     [Fact]
+    public async Task BN0011_FiresOnTargetTypedNew()
+    {
+        // Target-typed `new()` must not evade the parameterless-ctor rule.
+        var source = """
+            public class C
+            {
+                public void M()
+                {
+                    System.Net.Http.HttpClient client = {|BN0011:new()|};
+                    client.Dispose();
+                }
+            }
+            """;
+        await Test(source).RunAsync();
+    }
+
+    [Fact]
     public async Task BN0011_SilentOnHttpClientWithHandler()
     {
         // The handler-ctor negative (design §4): BlazorNative.Http itself

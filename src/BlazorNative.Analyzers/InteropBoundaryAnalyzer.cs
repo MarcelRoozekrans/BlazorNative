@@ -16,10 +16,11 @@ namespace BlazorNative.Analyzers;
 //   BN0020 — exceptions must not escape an export. An exception crossing the
 //            C-ABI boundary is undefined behavior under NativeAOT (process
 //            abort on Android). Required shape: the entire method body is a
-//            single top-level try whose catch-all (bare `catch` or
-//            `catch (Exception)` without a filter) converts failure to a
-//            return code. Heuristic is deliberately syntactic + strict —
-//            expression-bodied exports and unwrapped statements are flagged.
+//            single top-level try with a catch-all (bare `catch` or
+//            `catch (Exception)` without a filter) converting failure to a
+//            return code, and no throw in ANY of the try's catch clauses.
+//            Heuristic is deliberately syntactic + strict — expression-bodied
+//            exports and unwrapped statements are flagged.
 //   BN0021 — explicit C ABI on exports. Both `EntryPoint = "..."` and
 //            `CallConvs = new[] { typeof(CallConvCdecl) }` must be present;
 //            the JNA side binds by name to cdecl, so an implicit calling
@@ -124,10 +125,12 @@ public sealed class InteropBoundaryAnalyzer : DiagnosticAnalyzer
 
     /// <summary>
     /// The required BN0020 shape: the method body is a block whose single
-    /// top-level statement is a try with at least one catch-all clause (bare
-    /// `catch` or unfiltered `catch (Exception)`) that does not rethrow.
-    /// Expression-bodied exports never conform (deliberately strict heuristic —
-    /// see docs/analyzers.md#bn0020).
+    /// top-level statement is a try with (a) at least one catch-all clause
+    /// (bare `catch` or unfiltered `catch (Exception)`) and (b) no throw in
+    /// ANY of its catch clauses — a rethrow from a specific catch escapes the
+    /// boundary; a catch-all sibling does not intercept it. Expression-bodied
+    /// exports never conform (deliberately strict heuristic — see
+    /// docs/analyzers.md#bn0020).
     /// </summary>
     private static bool BodyIsFullyWrapped(
         MethodDeclarationSyntax method, SemanticModel semanticModel, CancellationToken ct)
@@ -139,27 +142,30 @@ public sealed class InteropBoundaryAnalyzer : DiagnosticAnalyzer
             method.Body.Statements[0] is not TryStatementSyntax tryStatement)
             return false;
 
+        var hasCatchAll = false;
         foreach (var catchClause in tryStatement.Catches)
         {
-            if (IsCatchAll(catchClause, semanticModel, ct))
-                return true;
+            if (ContainsThrow(catchClause))
+                return false;
+            hasCatchAll |= IsCatchAllShape(catchClause, semanticModel, ct);
         }
-        return false;
+        return hasCatchAll;
     }
 
-    private static bool IsCatchAll(CatchClauseSyntax catchClause, SemanticModel semanticModel, CancellationToken ct)
+    private static bool IsCatchAllShape(CatchClauseSyntax catchClause, SemanticModel semanticModel, CancellationToken ct)
     {
         // A filtered catch can decline the exception — not a catch-all.
         if (catchClause.Filter is not null) return false;
 
         // Bare `catch` is a catch-all; a declared type must be System.Exception.
-        if (catchClause.Declaration is not null)
-        {
-            var caughtType = semanticModel.GetTypeInfo(catchClause.Declaration.Type, ct).Type;
-            if (caughtType?.ToDisplayString() != "System.Exception") return false;
-        }
+        if (catchClause.Declaration is null) return true;
+        var caughtType = semanticModel.GetTypeInfo(catchClause.Declaration.Type, ct).Type;
+        return caughtType?.ToDisplayString() == "System.Exception";
+    }
 
-        // A throw inside the catch-all (rethrow or fresh) still crosses the
+    private static bool ContainsThrow(CatchClauseSyntax catchClause)
+    {
+        // A throw inside any catch clause (rethrow or fresh) still crosses the
         // boundary. Lambdas / local functions inside the catch run in their own
         // frame — do not descend into them.
         foreach (var node in catchClause.Block.DescendantNodes(
@@ -167,8 +173,8 @@ public sealed class InteropBoundaryAnalyzer : DiagnosticAnalyzer
                          n is not AnonymousFunctionExpressionSyntax and not LocalFunctionStatementSyntax))
         {
             if (node is ThrowStatementSyntax or ThrowExpressionSyntax)
-                return false;
+                return true;
         }
-        return true;
+        return false;
     }
 }
