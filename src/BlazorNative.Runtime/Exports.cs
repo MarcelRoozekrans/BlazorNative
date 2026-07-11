@@ -80,7 +80,7 @@ public static class Exports
         s_initOkErrorEmpty = Marshal.StringToCoTaskMemUTF8("");
     }
 
-    [UnmanagedCallersOnly(EntryPoint = "blazornative_init")]
+    [UnmanagedCallersOnly(EntryPoint = "blazornative_init", CallConvs = new[] { typeof(CallConvCdecl) })]
     public static unsafe BlazorNativeInitResult Init(BlazorNativeInitOptions* opts)
     {
         try
@@ -134,20 +134,42 @@ public static class Exports
         }
     }
 
-    [UnmanagedCallersOnly(EntryPoint = "blazornative_shutdown")]
+    [UnmanagedCallersOnly(EntryPoint = "blazornative_shutdown", CallConvs = new[] { typeof(CallConvCdecl) })]
     public static void Shutdown()
     {
-        // Phase 3.0d: clear the frame callback so a post-shutdown re-render
-        // (possible once Phase 3.2 wires event-driven re-renders) can never
-        // dispatch into a freed JNA trampoline after the host releases its
-        // callback object. Renderer/session state is NOT disposed (frame
-        // flush / teardown is later-phase work); the static cstrings are
-        // intentionally leaked — process-scoped lifetime.
-        HostSession.SetFrameCallback(IntPtr.Zero);
+        try
+        {
+            // Phase 3.0d: clear the frame callback so a post-shutdown re-render
+            // (possible once Phase 3.2 wires event-driven re-renders) can never
+            // dispatch into a freed JNA trampoline after the host releases its
+            // callback object. Renderer/session state is NOT disposed (frame
+            // flush / teardown is later-phase work); the static cstrings are
+            // intentionally leaked — process-scoped lifetime.
+            HostSession.SetFrameCallback(IntPtr.Zero);
+        }
+        catch (Exception ex)
+        {
+            // void export — no rc channel; detail on stderr. The wrap exists for
+            // the BN0020 boundary shape: nothing may throw across the C-ABI.
+            Console.Error.WriteLine($"[Exports] shutdown failed: {ex}");
+        }
     }
 
-    [UnmanagedCallersOnly(EntryPoint = "blazornative_version")]
-    public static IntPtr Version() => s_versionString;
+    [UnmanagedCallersOnly(EntryPoint = "blazornative_version", CallConvs = new[] { typeof(CallConvCdecl) })]
+    public static IntPtr Version()
+    {
+        try
+        {
+            return s_versionString;
+        }
+        catch (Exception)
+        {
+            // Trivially safe (static-field read) — wrapped for the BN0020
+            // boundary shape. IntPtr.Zero on fault matches the rc-contract
+            // spirit: the host null-checks before decoding the cstring.
+            return IntPtr.Zero;
+        }
+    }
 
     /// <summary>
     /// Phase 3.0d: stores the host's frame callback — a cdecl
@@ -157,7 +179,7 @@ public static class Exports
     /// string it references) is valid ONLY for the duration of the callback —
     /// the host must copy synchronously (PatchProtocolNative.cs contract).
     /// </summary>
-    [UnmanagedCallersOnly(EntryPoint = "blazornative_register_frame_callback")]
+    [UnmanagedCallersOnly(EntryPoint = "blazornative_register_frame_callback", CallConvs = new[] { typeof(CallConvCdecl) })]
     public static int RegisterFrameCallback(IntPtr fnPtr)
     {
         try
@@ -179,7 +201,7 @@ public static class Exports
     /// this returns. Status: 0 ok / 1 unknown component / 2 mount threw
     /// (detail on stderr) / 3 name pointer null.
     /// </summary>
-    [UnmanagedCallersOnly(EntryPoint = "blazornative_mount")]
+    [UnmanagedCallersOnly(EntryPoint = "blazornative_mount", CallConvs = new[] { typeof(CallConvCdecl) })]
     public static int Mount(IntPtr componentNameUtf8)
     {
         try
@@ -204,7 +226,7 @@ public static class Exports
     /// fetch_complete → CompleteFetch) — the wrapper only marshals the args
     /// pointer and guarantees no exception crosses the ABI.
     /// </summary>
-    [UnmanagedCallersOnly(EntryPoint = "blazornative_dispatch_event")]
+    [UnmanagedCallersOnly(EntryPoint = "blazornative_dispatch_event", CallConvs = new[] { typeof(CallConvCdecl) })]
     public static int DispatchEvent(ulong handlerId, IntPtr argsJsonUtf8)
     {
         try
@@ -313,7 +335,7 @@ public static class Exports
     /// blazornative_mount so components resolving IMobileBridge find a live
     /// host. Full ABI contract: BridgeProtocolNative.cs.
     /// </summary>
-    [UnmanagedCallersOnly(EntryPoint = "blazornative_register_bridge")]
+    [UnmanagedCallersOnly(EntryPoint = "blazornative_register_bridge", CallConvs = new[] { typeof(CallConvCdecl) })]
     public static unsafe int RegisterBridge(BlazorNativeBridgeCallbacks* callbacks)
     {
         try
@@ -341,7 +363,7 @@ public static class Exports
     ///       — the host should log LOUDLY; detail lands on stderr
     /// Never throws across the ABI.
     /// </summary>
-    [UnmanagedCallersOnly(EntryPoint = "blazornative_fetch_complete")]
+    [UnmanagedCallersOnly(EntryPoint = "blazornative_fetch_complete", CallConvs = new[] { typeof(CallConvCdecl) })]
     public static unsafe int FetchComplete(long requestId, BlazorNativeFetchResponse* response)
     {
         try

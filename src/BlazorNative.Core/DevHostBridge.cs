@@ -17,7 +17,13 @@ public sealed class DevHostBridge : IMobileBridge, IDisposable
 {
     private readonly Dictionary<string, string> _storage = new();
     private Action<NativeEvent>? _events;
+    // BN0011 pragma justification: DevHostBridge IS the bridge — its FetchAsync
+    // passthrough is the dev-host implementation of IMobileBridge.FetchAsync,
+    // so a real socket-backed HttpClient is exactly right here; there is no
+    // host underneath it to ride.
+#pragma warning disable BN0011
     private readonly HttpClient _http = new();
+#pragma warning restore BN0011
     private readonly List<string> _routeHistory = new();
     private string _currentRoute = "/";
 
