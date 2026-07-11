@@ -28,14 +28,24 @@ refinement during the Phase 4.0 brainstorm.
    `docs/GITHUB-SETUP.md` (the script and guide are updated first — their current
    P0–P3 framing still references `.wasm` validation and other WASI-era items that
    died in 3.0e). Branch protection on `main` per the guide. README current with the
-   NativeAOT architecture.
+   NativeAOT architecture. ✅ **CLOSED 2026-07-11 (Phase 4.0):** public at
+   github.com/MarcelRoozekrans/BlazorNative (home revised from ZeroAlloc-Net at
+   brainstorm — personal POC home); 37 labels / 7 milestones (M1–M3 closed with
+   audit links) / 25 open-work issues; protection (require PR + `build-test`,
+   admins included) applied post-flip — private personal repos need Pro, a
+   documented deviation. See [Phase 4.0 conclusion](../plans/2026-07-11-phase-4.0-conclusion.md).
 
 2. **CI green on every PR.** GitHub Actions pipeline: build + analyzers + full .NET
    test suite + JVM `testDebugUnitTest` on every push/PR; NativeAOT publish for all
    three RIDs (win-x64, linux-bionic-x64, linux-bionic-arm64) with the eight-export
    verification, artifacts uploaded; the Android instrumented suite as a scheduled or
    manually-triggered job (emulator-on-Actions needs a KVM Linux runner and the NDK —
-   too slow for per-PR). CI badge in the README.
+   too slow for per-PR). CI badge in the README. ✅ **CLOSED 2026-07-11 (Phase 4.0):**
+   `ci`/`build-test` asserts (not observes) 177/2/0 + 4 IL2072s ×3 + eight-export
+   set-equality ×3 + JVM 32/0 — green first attempt, 13m cold / 6m warm;
+   `android-instrumented` nightly/manual (windows artifact → ubuntu KVM) 32/32 first
+   attempt, informational until a green-nightly stability baseline; badge live.
+   See [Phase 4.0 conclusion](../plans/2026-07-11-phase-4.0-conclusion.md).
 
 3. **Analyzer suite is real.** The WASI-era BN rules are retired or reframed for the
    NativeAOT world; the analyzer project is re-attached to the runtime project graph

@@ -171,7 +171,7 @@ create_milestone() {
   if gh_cmd api \
     --method POST \
     -H "Accept: application/vnd.github+json" \
-    "/repos/$REPO/milestones" \
+    "repos/$REPO/milestones" \
     -f title="$title" \
     -f description="$desc" \
     -f state="$state" > /dev/null; then
