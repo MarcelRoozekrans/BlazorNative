@@ -140,9 +140,17 @@ Applied at Phase 4.0 Gate 4 via `gh api`:
 - Require conversation resolution before merging
 - No force pushes
 
-The instrumented-emulator workflow (`android-instrumented.yml`, nightly +
-manual dispatch) is **informational, not a required check** — emulator-on-CI
-has known flake modes; it stays advisory until a stability baseline exists.
+The instrumented-emulator workflow (`android-instrumented.yml`, nightly
+03:00 UTC + manual dispatch) is **informational, not a required check** —
+emulator-on-CI has known flake modes; it stays advisory until a stability
+baseline exists (several consecutive green nightly runs), at which point it
+can be promoted to a required check. Shape: a `publish-so` job on
+windows-latest publishes the linux-bionic-x64 `.so` (same pinned-NDK,
+IL2072 and eight-export assertions as `ci.yml`) and hands it as an artifact
+to an `emulator` job on ubuntu-latest (KVM), which runs
+`connectedAndroidTest -PciSoDir=<artifact dir>` on an API 34 google_apis
+x86_64 Pixel 6 image — mirroring the local AVD `blazornative-pixel6-x86_64`
+— and asserts 32 passed / 0 failed.
 
 ### PR-merge workflow (from Phase 4.1 onward)
 
