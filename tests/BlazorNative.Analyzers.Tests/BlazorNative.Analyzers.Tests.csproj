@@ -18,8 +18,8 @@
     <!-- Override the stale transitive Microsoft.CodeAnalysis.* 1.0.x brought in by the
          testing harness; the analyzer DLL was built against 4.14.x so we need a matching
          API surface available at test-runtime. -->
-    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.*" />
-    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="4.*" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.1*" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="4.1*" />
   </ItemGroup>
 
   <ItemGroup>
