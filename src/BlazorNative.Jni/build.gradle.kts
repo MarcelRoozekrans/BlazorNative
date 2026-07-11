@@ -8,6 +8,23 @@ plugins {
 group = "io.blazornative"
 version = "0.1.0-SNAPSHOT"
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 4.0 Gate 3: `-PciSoDir=<dir>` — CI override for the NativeAOT .so
+// source. The nightly instrumented workflow publishes linux-bionic-x64 on a
+// Windows job and runs the emulator suite on an ubuntu job that has no .NET
+// publish tree; ciSoDir points the verify/copy chain at the downloaded
+// artifact directory (must contain BlazorNative.Runtime.so).
+//
+// CI shape (deliberate): the workflow ships ONLY the x86_64 .so and the CI
+// emulator is x86_64-only, so with ciSoDir set just the x86_64 ABI is staged
+// and verified — and abiFilters narrows to x86_64 so the APK cannot pair
+// JNA's arm64-v8a libjnidispatch.so (from the :aar) with a missing arm64
+// runtime .so. With the property unset, behavior is byte-identical to the
+// local flow: both bionic publishes are verified and staged per ABI.
+// ─────────────────────────────────────────────────────────────────────────────
+val ciSoDir: File? = (findProperty("ciSoDir") as String?)
+    ?.let { rootProject.projectDir.resolve(it) } // absolute paths pass through resolve() unchanged
+
 dependencies {
     // JNA — JVM ↔ NativeAOT runtime FFI binding.
     //
@@ -56,7 +73,9 @@ android {
         versionName = "0.1.0-phase-2.2"
 
         ndk {
-            abiFilters += listOf("arm64-v8a", "x86_64")
+            // ciSoDir set (CI instrumented job) → x86_64-only APK; see the
+            // ciSoDir declaration above for why.
+            abiFilters += if (ciSoDir != null) listOf("x86_64") else listOf("arm64-v8a", "x86_64")
         }
 
         // Phase 3.5 Gate 0: custom runner sets BLAZORNATIVE_STRICT=1 before
@@ -138,9 +157,13 @@ tasks.withType<Test>().configureEach {
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Expected native build outputs — shared by verifyNativeAssets + the copy task.
+// With -PciSoDir the x86_64 .so comes from the CI artifact dir instead, and no
+// arm64 .so is expected at all (x86_64-only CI shape — see ciSoDir above).
 val runtimePubRoot = rootProject.projectDir.resolve("../../src/BlazorNative.Runtime/bin/Release/net10.0")
-val runtimeSoX64 = runtimePubRoot.resolve("linux-bionic-x64/publish/BlazorNative.Runtime.so")
-val runtimeSoArm64 = runtimePubRoot.resolve("linux-bionic-arm64/publish/BlazorNative.Runtime.so")
+val runtimeSoX64 = ciSoDir?.resolve("BlazorNative.Runtime.so")
+    ?: runtimePubRoot.resolve("linux-bionic-x64/publish/BlazorNative.Runtime.so")
+val runtimeSoArm64: File? =
+    if (ciSoDir == null) runtimePubRoot.resolve("linux-bionic-arm64/publish/BlazorNative.Runtime.so") else null
 
 // Gate 3 review follow-up: a Copy task whose every `from` source is missing
 // goes NO-SOURCE and skips ALL actions — including a doFirst fail-fast —
@@ -151,10 +174,16 @@ val verifyNativeAssets = tasks.register("verifyNativeAssets") {
     description = "Fails fast when an expected NativeAOT .so publish output is missing"
     group = "blazornative"
     doLast {
-        val expected = mapOf(
-            runtimeSoX64 to "dotnet publish src/BlazorNative.Runtime -c Release -r linux-bionic-x64",
-            runtimeSoArm64 to "dotnet publish src/BlazorNative.Runtime -c Release -r linux-bionic-arm64",
-        )
+        val expected = buildMap {
+            put(
+                runtimeSoX64,
+                if (ciSoDir != null) "download the linux-bionic-x64 CI artifact into $ciSoDir"
+                else "dotnet publish src/BlazorNative.Runtime -c Release -r linux-bionic-x64"
+            )
+            runtimeSoArm64?.let {
+                put(it, "dotnet publish src/BlazorNative.Runtime -c Release -r linux-bionic-arm64")
+            }
+        }
         val missing = expected.filterKeys { !it.exists() }
         if (missing.isNotEmpty()) {
             throw GradleException(
@@ -175,7 +204,7 @@ val copyRuntimeSo = tasks.register<Copy>("copyRuntimeSo") {
     group = "blazornative"
     dependsOn(verifyNativeAssets)
     from(runtimeSoX64) { into("x86_64") }
-    from(runtimeSoArm64) { into("arm64-v8a") }
+    runtimeSoArm64?.let { arm64 -> from(arm64) { into("arm64-v8a") } }
     rename { "libBlazorNative.Runtime.so" }
     into(layout.projectDirectory.dir("src/androidMain/jniLibs"))
 }
