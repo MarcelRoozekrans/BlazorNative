@@ -133,6 +133,13 @@ android {
     }
 }
 
+// JNA's library search path — the NativeAOT win-x64 publish output for
+// BlazorNative.Runtime.dll. Shared by the host-JVM unit tests and the
+// Phase 4.3 runPreviewHost JavaExec below.
+val winX64PublishPath: String = rootProject.projectDir
+    .resolve("../../src/BlazorNative.Runtime/bin/Release/net10.0/win-x64/publish")
+    .absolutePath
+
 tasks.withType<Test>().configureEach {
     useJUnitPlatform()
     testLogging {
@@ -140,14 +147,40 @@ tasks.withType<Test>().configureEach {
         exceptionFormat = TestExceptionFormat.FULL
         showStandardStreams = true
     }
-    // JNA's library search path — the NativeAOT publish output for
-    // BlazorNative.Runtime.dll (host-JVM unit tests).
-    systemProperty(
-        "jna.library.path",
-        rootProject.projectDir
-            .resolve("../../src/BlazorNative.Runtime/bin/Release/net10.0/win-x64/publish")
-            .absolutePath
-    )
+    systemProperty("jna.library.path", winX64PublishPath)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 4.3 Gate 1: PreviewHost — the devloop fast-lane surface. A JavaExec
+// over the debug-variant Kotlin classes (PreviewHost.kt lives in main/kotlin;
+// see its placement note) with the DESKTOP JNA jar — the main classpath's
+// jna:.aar carries only Android dispatch binaries, not win32-x86-64.
+//
+// Task-graph note: compileDebugKotlin rides preBuild → copyRuntimeSo →
+// verifyNativeAssets, so both bionic .so publishes must exist — the exact
+// prerequisite testDebugUnitTest already has (see ci.yml's JVM step comment).
+// No .NET publish task is wired here: the devloop script owns publishing.
+// ─────────────────────────────────────────────────────────────────────────────
+val previewHostRuntime: Configuration by configurations.creating {
+    description = "Runtime classpath for the runPreviewHost JavaExec (desktop-JVM JNA dispatch)"
+}
+
+dependencies {
+    previewHostRuntime("net.java.dev.jna:jna:5.14.0")
+    previewHostRuntime(kotlin("stdlib-jdk8"))
+}
+
+tasks.register<JavaExec>("runPreviewHost") {
+    description = "Boots the NativeAOT dll, mounts -Pcomponent= (default BnDemo), prints the widget tree + stage timings"
+    group = "blazornative"
+    dependsOn("compileDebugKotlin")
+    mainClass.set("io.blazornative.jni.PreviewHostKt")
+    classpath = files(layout.buildDirectory.dir("tmp/kotlin-classes/debug")) + previewHostRuntime
+    systemProperty("jna.library.path", winX64PublishPath)
+    // Deterministic UTF-8 on Windows consoles (BnDemo's "Settings →" label).
+    systemProperty("stdout.encoding", "UTF-8")
+    systemProperty("stderr.encoding", "UTF-8")
+    (findProperty("component") as String?)?.let { args(it) }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
