@@ -123,6 +123,29 @@ class BlazorNativeRuntime(
     internal fun dispatchEventBlocking(handlerId: Int, eventName: String, payload: String? = null): Int =
         dispatchCore(handlerId, eventName, payload)
 
+    /**
+     * Phase 4.4 — the HOST-blocking dispatch (InspectorHost's POST handler):
+     * marshals through the SAME single [dispatchLane] as [dispatchEvent] —
+     * post-boot .NET entry stays serialized on `BlazorNative-Dispatch`, the
+     * documented threading contract — but BLOCKS the caller until the
+     * dispatch (including its synchronous re-render frame deliveries, which
+     * run on the lane thread) has completed, and returns the raw rc
+     * (0/1/2/3 — [dispatchEvent]'s table; non-zero is DATA to this caller,
+     * not an onError event). Safe to call from arbitrary threads — concurrent
+     * callers queue up behind each other on the lane. A throw from the
+     * dispatch core (not a non-zero rc) is rethrown to the caller unwrapped.
+     */
+    fun dispatchEventAndWait(handlerId: Int, eventName: String, payload: String? = null): Int {
+        val future = dispatchLane.submit(java.util.concurrent.Callable {
+            dispatchCore(handlerId, eventName, payload)
+        })
+        return try {
+            future.get()
+        } catch (e: java.util.concurrent.ExecutionException) {
+            throw e.cause ?: e
+        }
+    }
+
     /** Builds the FlatJson args (payload key omitted when null), NUL-terminates,
      * and crosses the ABI. */
     private fun dispatchCore(handlerId: Int, eventName: String, payload: String?): Int {
