@@ -1,5 +1,10 @@
 # BlazorNative
 
+<!-- badge goes live at Phase 4.0 Gate 2 (workflow `ci` does not exist yet) -->
+[![ci](https://github.com/MarcelRoozekrans/BlazorNative/actions/workflows/ci.yml/badge.svg)](https://github.com/MarcelRoozekrans/BlazorNative/actions/workflows/ci.yml)
+
+> **Status: pre-release proof of concept.** Milestones 1–3 are complete (tagged `v1.0`–`v3.0`); Milestone 4 (production-shippable) is in progress. Not production-ready — the API surface is unstable and changes without notice.
+
 > .NET → NativeAOT → native mobile widgets. Blazor components rendered as real Android views, no WebView, no JavaScript, no wasm.
 
 BlazorNative is a proof-of-concept framework for running .NET Blazor applications as native mobile apps — without React Native, Flutter, or MAUI. The approach:
@@ -92,8 +97,9 @@ BlazorNative/
 │   ├── BlazorNative.Core/                 ← IMobileBridge contract, bridge impls (library)
 │   ├── BlazorNative.Renderer/             ← headless NativeRenderer + RenderPatch model (library)
 │   ├── BlazorNative.Http/                 ← BridgeHttpHandler + DI (library)
-│   ├── BlazorNative.Analyzers/            ← Roslyn analyzers (wasm-era rules, rescope pending)
+│   ├── BlazorNative.Analyzers/            ← Roslyn analyzers (legacy pre-NativeAOT rules; rescope + tests = Phase 4.1)
 │   ├── BlazorNative.Blazor/               ← Razor components
+│   ├── BlazorNative.Components/           ← Bn* component library (BnView/BnText/BnButton/BnInput)
 │   ├── BlazorNative.Runtime/              ← NativeAOT composition root + C-ABI exports + FrameEncoder
 │   ├── BlazorNative.Jni/                  ← Kotlin shell: JNA bindings, frame adapter,
 │   │                                         WidgetMapper, MainActivity (Android + JVM tests)
@@ -102,26 +108,26 @@ BlazorNative/
 │   ├── BlazorNative.Renderer.Tests/       ← renderer, bridge, trim-safety, frame-sink tests
 │   ├── BlazorNative.Runtime.Tests/        ← encoder/arena/protocol + typed Hello golden test
 │   └── BlazorNative.Analyzers.Tests/      ← analyzer harness
-└── tools/wit/mobile-bridge.wit            ← historical bridge contract (3.1 redesigns as C-ABI)
+└── tools/wit/mobile-bridge.wit            ← historical bridge contract (retired — Phase 3.1 shipped the C-ABI bridge)
 ```
 
 ## Test surface
 
 | Surface | Command | Count |
 |---|---|---|
-| .NET | `dotnet test` | 49 passed / 2 skipped |
-| JVM (JNA + win-x64 .dll) | `gradlew testDebugUnitTest` | 10 |
-| Android (instrumented, AVD) | `gradlew connectedAndroidTest` | 21 |
+| .NET | `dotnet test` | 177 passed / 2 skipped |
+| JVM (JNA + win-x64 .dll) | `gradlew testDebugUnitTest` | 32 |
+| Android (instrumented, AVD) | `gradlew connectedAndroidTest` | 32 |
 
 ## Status
 
-- [x] Headless Blazor renderer with typed patch protocol
-- [x] NativeAOT runtime for win-x64 + linux-bionic-x64/arm64 (Android, built on Windows)
-- [x] HelloComponent renders as native Android widgets (~1.6 s cold boot)
-- [ ] Bidirectional events (`@onclick` → native tap → .NET handler) — Phase 3.2
-- [ ] Six `shell_*` bridge exports as C-ABI (navigate/storage/fetch) — Phase 3.1
-- [ ] `Bn*` component library, `@bind`, navigation — Milestone 3
-- [ ] iOS Swift shell — Milestone 4
+- [x] Headless Blazor renderer with typed patch protocol (composition-grade: nested components, keyed lists, real disposal)
+- [x] NativeAOT runtime for win-x64 + linux-bionic-x64/arm64 (Android, built on Windows) — eight-export C-ABI
+- [x] Bidirectional events (`@onclick` → native tap → .NET handler → re-render) — Phase 3.2
+- [x] Shell bridge as host-registered C-ABI callbacks (navigate/storage/fetch, plain `HttpClient` works on Android) — Phase 3.1
+- [x] `Bn*` component library, `@bind` mechanics, cascading values, navigation — a two-page demo app on the AVD (~1.6 s cold boot) — Milestone 3
+- [ ] Public repo + CI, analyzer rescope, hardening triage, dev inner loop, NuGet packages — Milestone 4 (in progress)
+- [ ] iOS Swift shell — Milestone 5
 
 ## Compatibility
 
