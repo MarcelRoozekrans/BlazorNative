@@ -31,6 +31,9 @@
     <!-- Phase 3.5: INavigationManager (the Core contract) — BnSettingsPage /
          BnDemo are the first real DI consumers in Components. -->
     <ProjectReference Include="..\BlazorNative.Core\BlazorNative.Core.csproj" />
+    <!-- Phase 4.1: BN rules ride every src build (zero-warning bar, M4 DoD #3). -->
+    <ProjectReference Include="..\BlazorNative.Analyzers\BlazorNative.Analyzers.csproj"
+                      OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
 </Project>

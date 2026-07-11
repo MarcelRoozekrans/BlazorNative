@@ -10,30 +10,32 @@ namespace BlazorNative.Analyzers;
 // BridgeAsyncHandlerAnalyzer
 //
 // Fires BN0014 when an async lambda / async method is registered against
-// IMobileBridge.NativeEvents. Bridge event handlers must complete synchronously
-// on Mono-WASI — any path that suspends (await on an incomplete Task) trips
-// Task.InternalWaitCore PlatformNotSupportedException.
+// IMobileBridge.NativeEvents. Handlers run synchronously inside a native
+// callback window (DevHost multicast is sync; the production lane is the
+// single-threaded dispatch lane) — an async handler compiles to `async void`,
+// becoming fire-and-forget: its continuation escapes the callback window and
+// its exceptions vanish. This analyzer is the compile-time gate.
 //
-// Action<NativeEvent> alone doesn't enforce this — async lambdas compile as
-// `async void` and silently reintroduce the trap. This analyzer is the
-// compile-time gate.
+// Note: NativeEvents' own redesign is a ledgered open item (NativeShellBridge
+// currently stubs it no-op) — the rule guards the surviving contract.
 //
-// See docs/plans/2026-05-25-phase-2.0-design.md.
+// Originally Phase 2.0 (docs/plans/2026-05-25-phase-2.0-design.md); reworded
+// off the WASI premise in Phase 4.1. Full rule docs: docs/analyzers.md
 // ─────────────────────────────────────────────────────────────────────────────
 
 [DiagnosticAnalyzer(LanguageNames.CSharp)]
 public sealed class BridgeAsyncHandlerAnalyzer : DiagnosticAnalyzer
 {
-    private const string Category = "BlazorNative.WasiCompatibility";
+    private const string Category = "BlazorNative.Interop";
 
     public static readonly DiagnosticDescriptor BN0014_AsyncBridgeHandler = new(
         id:                 "BN0014",
-        title:              "Bridge event handlers must complete synchronously on Mono-WASI",
-        messageFormat:      "Async handlers cannot be registered against IMobileBridge.NativeEvents — Mono-WASI single-threaded scheduler cannot resume await continuations from unmanaged callbacks. Use a synchronous lambda and fire-and-forget async work via Dispatcher.InvokeAsync.",
+        title:              "Bridge event handlers must complete synchronously",
+        messageFormat:      "Async handlers cannot be registered against IMobileBridge.NativeEvents — handlers run synchronously inside a native callback window, so an async handler becomes fire-and-forget: its continuation escapes the window and its exceptions vanish. Use a synchronous handler and dispatch async work explicitly (e.g. Dispatcher.InvokeAsync).",
         category:           Category,
         defaultSeverity:    DiagnosticSeverity.Error,
         isEnabledByDefault: true,
-        helpLinkUri:        "https://github.com/your-org/BlazorNative/docs/wasi-async.md");
+        helpLinkUri:        "https://github.com/MarcelRoozekrans/BlazorNative/blob/main/docs/analyzers.md#bn0014");
 
     public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics
         => ImmutableArray.Create(BN0014_AsyncBridgeHandler);

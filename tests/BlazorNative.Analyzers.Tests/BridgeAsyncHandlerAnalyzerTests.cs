@@ -10,9 +10,11 @@ namespace BlazorNative.Analyzers.Tests;
 // ─────────────────────────────────────────────────────────────────────────────
 // BridgeAsyncHandlerAnalyzerTests
 //
-// Phase 2.0 Layer 3 tests. Establishes the analyzer-test project infrastructure
-// for BACKLOG P3's full BN0001-BN0013 sweep — once this is in place future
-// rule tests just drop a new .cs file alongside.
+// Phase 2.0 Layer 3 tests; the harness patterns established here are reused by
+// the Phase 4.1 suites (MobilePolicyAnalyzerTests, InteropBoundaryAnalyzerTests).
+// BN0014 was reworded off the Mono-WASI premise in Phase 4.1 — these tests
+// assert diagnostic IDs via markup (not message text), so they pin the
+// surviving detection contract unchanged.
 //
 // Notes on harness configuration:
 //

@@ -21,4 +21,10 @@
     <InternalsVisibleTo Include="BlazorNative.Renderer.Tests" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Phase 4.1: BN rules ride every src build (zero-warning bar, M4 DoD #3). -->
+    <ProjectReference Include="..\BlazorNative.Analyzers\BlazorNative.Analyzers.csproj"
+                      OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
 </Project>

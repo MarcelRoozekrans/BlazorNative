@@ -52,7 +52,14 @@ refinement during the Phase 4.0 brainstorm.
    (it has been detached since 3.0e); every surviving BN rule has
    `Microsoft.CodeAnalysis.Testing` coverage — fires on bad code, silent on correct
    code, fix verified where one exists. Release-tracking files (the RS2008 deferral
-   from M1) land with the tests.
+   from M1) land with the tests. ✅ **CLOSED 2026-07-11 (Phase 4.1):** 6 rules
+   retired / 5 rescoped / 2 new `[UnmanagedCallersOnly]` interop rules (BN0020/21);
+   analyzers re-attached to **all six src projects** with a zero-warning bar met
+   (one justified BN0011 pragma in DevHostBridge; `Exports.cs` made conformant,
+   ABI-parity verified); **23 analyzer tests**, TDD-first; release tracking real
+   (`AnalyzerReleases.Shipped.md`/`Unshipped.md`, RS2008 NoWarn gone,
+   `-warnaserror` clean); rule docs at `docs/analyzers.md`; .NET baseline 197/2/0
+   asserted in CI. See [Phase 4.1 conclusion](../plans/2026-07-11-phase-4.1-conclusion.md).
 
 4. **The runtime-hardening ledger is deliberate.** Every open ledger item — the
    3.2/3.3 carryovers (async-handler capture window, dispatch-lane starvation,

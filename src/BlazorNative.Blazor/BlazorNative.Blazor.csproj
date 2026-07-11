@@ -9,6 +9,10 @@
 
   <ItemGroup>
     <ProjectReference Include="..\BlazorNative.Core\BlazorNative.Core.csproj" />
+    <!-- Phase 4.1: BN rules ride every src build (zero-warning bar, M4 DoD #3);
+         Home.razor's sync NativeEvents subscription is BN0014's original target. -->
+    <ProjectReference Include="..\BlazorNative.Analyzers\BlazorNative.Analyzers.csproj"
+                      OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
   <ItemGroup>
