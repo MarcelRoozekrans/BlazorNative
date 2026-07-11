@@ -30,7 +30,8 @@ import io.blazornative.jni.RenderPatch
  * Patch coverage: CreateNode (all 7 NodeTypes wired, placement via
  * insertIndex — see [handleCreate]), ReplaceText, RemoveNode, UpdateProp,
  * SetStyle, CommitFrame, and — live since Phase 3.2 — AttachEvent /
- * DetachEvent (click listener + re-entrancy-guarded change TextWatcher; see
+ * DetachEvent (click listener + re-entrancy-guarded change TextWatcher +
+ * focus/blur via a single per-view OnFocusChangeListener since Phase 4.2; see
  * [handleAttachEvent]; detach dispatches on the patch's eventName since
  * Phase 3.3 Task 9). AppendChild was DELETED in Phase 3.3 (DoD #10):
  * CreateNode.insertIndex carries placement instead — its wire kind (2) stays
@@ -66,10 +67,34 @@ class WidgetMapper(
     private var applyingBatch = false
 
     /**
-     * Live change-watchers keyed by handlerId so DetachEvent can remove them
+     * Live change-watchers keyed by NODEID so DetachEvent can remove them
      * (view tags would need res-ids; a map is simpler). Main-thread only.
+     *
+     * Phase 4.2 (stale-watcher fix): keyed by nodeId, not handlerId — a
+     * last-wins re-attach (same node, new handlerId, NO preceding detach)
+     * now REPLACES the node's watcher instead of stacking a second one on
+     * the EditText. See [handleAttachEvent]'s change arm.
      */
     private val watchers = mutableMapOf<Int, Pair<EditText, TextWatcher>>()
+
+    /**
+     * Phase 4.2 (M4 DoD #4) — per-view focus/blur handler pair, keyed by
+     * nodeId like [watchers]. Android has ONE focus listener slot per view
+     * ([View.setOnFocusChangeListener]) and it fires BOTH directions
+     * (hasFocus true/false), while the renderer attaches "focus" and "blur"
+     * as two independent events — so the mapper keeps this pair and installs
+     * a SINGLE listener that dispatches whichever side is currently attached
+     * (see [handleAttachEvent]). Detach clears one side; the listener is
+     * removed when both sides are gone. The view is stored so [handleRemove]
+     * can purge by identity (the text collapse can alias nodeIds onto one
+     * view). Main-thread only.
+     */
+    private class FocusEntry(val view: View) {
+        var focusHandlerId: Int? = null
+        var blurHandlerId: Int? = null
+        val isEmpty: Boolean get() = focusHandlerId == null && blurHandlerId == null
+    }
+    private val focusEntries = mutableMapOf<Int, FocusEntry>()
 
     fun apply(frame: RenderFrame) {
         for (patch in frame.patches) {
@@ -116,11 +141,21 @@ class WidgetMapper(
      * emits DetachEventPatch (with eventName) — [handleDetachEvent] handles
      * it. Re-attach for the same (node, event) is STILL last-wins with NO
      * preceding DetachEvent (see RenderFrame.kt's mapping notes): click
-     * re-attach overwrites via setOnClickListener; change re-attach replaces
-     * the [watchers] map entry but leaves the previous watcher registered on
-     * the EditText — a stale watcher dispatches a dead handlerId, absorbed by
-     * the rc-0 at-most-once stale contract. That re-attach caveat remains
-     * real until watchers are swapped keyed by (node, event), not handlerId.
+     * re-attach overwrites via setOnClickListener; change re-attach — FIXED
+     * in Phase 4.2 — removes the node's prior watcher before adding the new
+     * one ([watchers] is keyed by nodeId now, not handlerId), so a re-attach
+     * can no longer STACK watchers: a text change dispatches exactly once,
+     * always with the live handlerId. The rc-0 at-most-once stale contract
+     * itself is unchanged — a dispatch that races a handler swap can still
+     * carry a just-retired id and is still absorbed downstream.
+     *
+     * Focus/blur (Phase 4.2, M4 DoD #4): Android exposes ONE focus listener
+     * slot per view, firing both directions — the renderer's independent
+     * "focus"/"blur" attaches land in the per-view [FocusEntry] pair and a
+     * single [View.setOnFocusChangeListener] dispatches whichever side is
+     * attached at fire time (the listener reads the pair LIVE, so attach /
+     * detach of either side never re-installs it). Installing the listener
+     * on every focus/blur attach is idempotent last-wins, same as click.
      */
     private fun handleAttachEvent(p: RenderPatch.AttachEvent) {
         val view = nodes[p.nodeId] ?: run {
@@ -133,6 +168,13 @@ class WidgetMapper(
                 if (view !is EditText) {
                     Log.w(TAG, "AttachEvent 'change' ignored: node ${p.nodeId} is ${view::class.simpleName}, not EditText")
                     return
+                }
+                // Phase 4.2 stale-watcher fix: a re-attach (same node, new
+                // handlerId, no preceding detach) must REPLACE the watcher,
+                // not stack a second one — remove the node's prior watcher
+                // from the EditText before adding the new one.
+                watchers.remove(p.nodeId)?.let { (priorView, priorWatcher) ->
+                    priorView.removeTextChangedListener(priorWatcher)
                 }
                 val watcher = object : TextWatcher {
                     override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
@@ -147,7 +189,28 @@ class WidgetMapper(
                     }
                 }
                 view.addTextChangedListener(watcher)
-                watchers[p.handlerId] = view to watcher
+                watchers[p.nodeId] = view to watcher
+            }
+            "focus", "blur" -> {
+                // Single-listener semantics (see the method KDoc): both event
+                // names share one FocusEntry and one OnFocusChangeListener per
+                // view. The listener resolves the handlerId from the LIVE map
+                // entry at fire time, so a side that was never attached (or
+                // was detached) simply doesn't dispatch.
+                val entry = focusEntries.getOrPut(p.nodeId) { FocusEntry(view) }
+                if (p.eventName == "focus") entry.focusHandlerId = p.handlerId
+                else entry.blurHandlerId = p.handlerId
+                view.setOnFocusChangeListener { _, hasFocus ->
+                    // Re-entrancy guard, mirroring the change TextWatcher: a
+                    // focus shift caused by patch application itself (e.g. a
+                    // focused view removed mid-batch) must not dispatch.
+                    if (applyingBatch) return@setOnFocusChangeListener
+                    val live = focusEntries[p.nodeId] ?: return@setOnFocusChangeListener
+                    val handlerId = if (hasFocus) live.focusHandlerId else live.blurHandlerId
+                    if (handlerId != null) {
+                        onUiEvent(handlerId, if (hasFocus) "focus" else "blur", null)
+                    }
+                }
             }
             else -> Log.w(TAG, "AttachEvent '${p.eventName}' not supported (forward compat): skipped")
         }
@@ -173,14 +236,28 @@ class WidgetMapper(
                 view.isClickable = false
             }
             "change" -> {
-                val removed = watchers.remove(p.handlerId)?.also { (editText, watcher) ->
+                // Phase 4.2: keyed by nodeId (the stale-watcher fix) — a
+                // genuine detach removes whatever watcher is live on the node.
+                val removed = watchers.remove(p.nodeId)?.also { (editText, watcher) ->
                     editText.removeTextChangedListener(watcher)
                 }
                 if (removed == null) {
-                    // Legal under the last-wins re-attach caveat (see
-                    // [handleAttachEvent]): the map entry may have been
-                    // replaced by a re-attach before this detach arrived.
-                    Log.w(TAG, "DetachEvent 'change' handlerId ${p.handlerId} has no live watcher: ignored")
+                    Log.w(TAG, "DetachEvent 'change' for node ${p.nodeId} has no live watcher: ignored")
+                }
+            }
+            "focus", "blur" -> {
+                // Symmetric to the attach arm's single-listener semantics:
+                // clear ONE side of the pair; drop the entry AND the view's
+                // focus listener only when both sides are gone.
+                val entry = focusEntries[p.nodeId] ?: run {
+                    Log.w(TAG, "DetachEvent '${p.eventName}' for node ${p.nodeId} has no live focus entry: ignored")
+                    return
+                }
+                if (p.eventName == "focus") entry.focusHandlerId = null
+                else entry.blurHandlerId = null
+                if (entry.isEmpty) {
+                    entry.view.onFocusChangeListener = null
+                    focusEntries.remove(p.nodeId)
                 }
             }
             else -> Log.w(TAG, "DetachEvent '${p.eventName}' not supported (forward compat): skipped")
@@ -241,11 +318,14 @@ class WidgetMapper(
 
     private fun handleRemove(p: RenderPatch.RemoveNode) {
         val v = nodes.remove(p.nodeId) ?: return
-        // Purge change watchers registered on the removed view — the detached
-        // EditText would otherwise pin itself (and its watcher) in [watchers]
-        // forever. Identity match: the collapse can alias several nodeIds to
-        // one view, but watchers are keyed by handlerId, not nodeId.
+        // Purge change watchers and focus entries registered on the removed
+        // view — the detached EditText would otherwise pin itself (and its
+        // watcher/pair) in the maps forever. Identity match, NOT key match:
+        // the collapse can alias several nodeIds to one view, and the map
+        // entry may sit under a different (aliased) nodeId than the one
+        // being removed.
         watchers.entries.removeAll { it.value.first === v }
+        focusEntries.entries.removeAll { it.value.view === v }
         (v.parent as? ViewGroup)?.removeView(v)
     }
 

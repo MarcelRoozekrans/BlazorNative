@@ -91,17 +91,44 @@ public sealed class NativeNavigationManager : INavigationManager
         //    the SCREEN, not the intent: a mid-dispatch navigation defers the
         //    swap to the dispatch unwind, and a failed swap must not leave
         //    CurrentRoute pointing at a page that never mounted.
-        //    A THROWING RouteChanged subscriber faults the swap unit AFTER
-        //    the screen already swapped (the deferred path maps it to rc 2
-        //    even though the navigation itself succeeded) — CurrentRoute is
-        //    already consistent with the screen at that point; documented
-        //    POC posture (subscriber isolation is M4+ diagnostics work).
+        //    RouteChanged subscribers are ISOLATED (Phase 4.2, DoD #4) — see
+        //    RaiseRouteChanged.
         HostSession.SwapRoot(component, afterSwap: () =>
         {
             _currentRoute = route;
-            RouteChanged?.Invoke(route);
+            RaiseRouteChanged(route);
         });
         return ValueTask.CompletedTask;
+    }
+
+    /// <summary>Raises <see cref="RouteChanged"/> with per-subscriber
+    /// isolation (Phase 4.2, DoD #4 — the DevHostBridge.RaiseNativeEvent
+    /// pattern): a throwing subscriber is stderr-logged and the remaining
+    /// subscribers still run. The fault is CONTAINED in strict mode too —
+    /// deliberate posture: the navigation already succeeded (the screen
+    /// swapped, CurrentRoute is consistent) when this event fires, so a
+    /// listener's bug must not convert success into export rc 2.
+    /// StrictErrors surfaces RENDERER contract violations, not app-listener
+    /// bugs — the same line the dispatch capture window draws by treating
+    /// handler exceptions as rc 2 only when they fault the dispatch
+    /// itself.</summary>
+    private void RaiseRouteChanged(string route)
+    {
+        if (RouteChanged is not { } subscribers)
+            return;
+        foreach (Delegate subscriber in subscribers.GetInvocationList())
+        {
+            try
+            {
+                ((Action<string>)subscriber)(route);
+            }
+            catch (Exception ex)
+            {
+                // ex.ToString(): the subscriber is app code — keep its stack.
+                Console.Error.WriteLine(
+                    $"[NativeNavigationManager] RouteChanged subscriber threw: {ex}");
+            }
+        }
     }
 
     /// <summary>Component for a KNOWN route (callers pass table keys:

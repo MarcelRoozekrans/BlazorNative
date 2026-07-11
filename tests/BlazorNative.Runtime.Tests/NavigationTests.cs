@@ -367,6 +367,90 @@ public sealed class NavigationTests
         }
     }
 
+    // ── RouteChanged subscriber isolation (Phase 4.2, DoD #4) ────────────────
+    //
+    // A THROWING RouteChanged subscriber is an APP-LISTENER bug, not a swap
+    // failure: the screen already swapped when the event fires, so the fault
+    // must not convert a successful navigation into rc 2 — and it must not
+    // starve later subscribers (per-subscriber isolation, the
+    // DevHostBridge.RaiseNativeEvent pattern). Faults are stderr-logged.
+
+    [Fact]
+    public void RouteChanged_ThrowingSubscriber_SecondStillRuns_SwapReportsSuccess()
+    {
+        var (_, frames) = StartSession();
+        // NON-strict variant (the production posture); the module initializer
+        // sets strict for this project, so flip it off and restore in finally.
+        HostSession.StrictErrorsForTests = false;
+        try
+        {
+            Assert.Equal(0, HostSession.TryMount("BnDemo"));
+            INavigationManager nav = Nav();
+
+            string? secondSubscriberRoute = null;
+            nav.RouteChanged += _ => throw new InvalidOperationException("test: listener bug");
+            nav.RouteChanged += r => secondSubscriberRoute = r;
+
+            int settingsHandler = ClickHandlerOn(frames[0],
+                ContainerOfText(frames[0], "Settings →"));
+            frames.Clear();
+
+            // The navigation SUCCEEDED (screen swapped) — a listener's bug
+            // must not fault the dispatch: rc 0, not 2.
+            int rc = Exports.DispatchEventCore((ulong)settingsHandler, ClickArgs);
+            Assert.Equal(0, rc);
+
+            // The second subscriber still ran, route state tracks the screen.
+            Assert.Equal("/settings", secondSubscriberRoute);
+            Assert.Equal("/settings", nav.CurrentRoute);
+            Assert.Contains(frames, f => HasText(f, "Settings"));
+        }
+        finally
+        {
+            HostSession.StrictErrorsForTests = true;
+            TearDown();
+        }
+    }
+
+    [Fact]
+    public void RouteChanged_ThrowingSubscriber_StrictMode_StillContained_AndLogged()
+    {
+        // STRICT variant (the DoD posture decision): StrictErrors surfaces
+        // RENDERER contract violations — an app listener's exception is not
+        // one (same posture as the dispatch capture window treating handler
+        // exceptions as rc 2 only when they fault the dispatch itself). The
+        // fault stays contained under strict mode too, but is stderr-logged.
+        var (_, frames) = StartSession(); // module initializer: strict is ON
+        TextWriter originalError = Console.Error;
+        var stderr = new StringWriter();
+        Console.SetError(stderr);
+        try
+        {
+            Assert.Equal(0, HostSession.TryMount("BnDemo"));
+            INavigationManager nav = Nav();
+
+            string? secondSubscriberRoute = null;
+            nav.RouteChanged += _ => throw new InvalidOperationException("test: strict listener bug");
+            nav.RouteChanged += r => secondSubscriberRoute = r;
+
+            int settingsHandler = ClickHandlerOn(frames[0],
+                ContainerOfText(frames[0], "Settings →"));
+
+            int rc = Exports.DispatchEventCore((ulong)settingsHandler, ClickArgs);
+            Assert.Equal(0, rc);
+            Assert.Equal("/settings", secondSubscriberRoute);
+            Assert.Equal("/settings", nav.CurrentRoute);
+
+            // Contained is not swallowed: the fault reached stderr.
+            Assert.Contains("test: strict listener bug", stderr.ToString());
+        }
+        finally
+        {
+            Console.SetError(originalError);
+            TearDown();
+        }
+    }
+
     // ── FAILED swap: route state tracks the SCREEN, not the intent ───────────
 
     [Fact]

@@ -52,6 +52,9 @@ internal static unsafe class HostSession
         ["BnDemo"] = r => r.Mount<BlazorNative.Components.BnDemo>(),
         // Phase 3.5: the demo's second page (route "/settings" — DoD #7).
         ["BnSettingsPage"] = r => r.Mount<BlazorNative.Components.BnSettingsPage>(),
+        // Phase 4.2: the focus/blur proof app (BnInput OnFocus/OnBlur →
+        // echo BnText — M4 DoD #4). Scaffolding, like CompositionProbe.
+        ["FocusProbe"] = r => r.Mount<FocusProbe>(),
     };
 
     /// <summary>Stores the host's frame callback. IntPtr.Zero disables

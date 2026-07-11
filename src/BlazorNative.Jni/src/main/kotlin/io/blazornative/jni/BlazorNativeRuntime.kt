@@ -67,8 +67,11 @@ class BlazorNativeRuntime(
      * post-boot, and handler-triggered bridge ops (e.g. SharedPreferences
      * `commit()`) stay off the main thread — no StrictMode violation. The
      * lane is deliberately SINGLE (renderer affinity); a slow handler blocks
-     * later events — documented starvation watch, revisit if M3 components
-     * need concurrency. Daemon thread: the lane never blocks process exit.
+     * later events. RE-LEDGERED — Phase 4.2 triage item 2 (ledger of record:
+     * docs/plans/2026-07-11-phase-4.2-hardening-triage.md): the single lane
+     * IS the design; the real fix for slow handlers is the async-offload
+     * owned by triage item 1's revisit trigger, not more lanes. Daemon
+     * thread: the lane never blocks process exit.
      *
      * ONE LANE PER RUNTIME: each BlazorNativeRuntime owns its own lane thread,
      * so constructing runtimes repeatedly (Activity recreation) accumulates

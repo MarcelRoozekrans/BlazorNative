@@ -73,30 +73,68 @@ public class RendererSpike
         }
     }
 
-    // Deferred to Milestone 4 (BACKLOG P3 "BlazorNative.Renderer.Tests").
-    //
-    // The intent: assert the UpdateDisplayAsync walk + PooledList lease stay within a
-    // small per-frame allocation budget on steady-state re-renders. The blocker is
-    // that triggering a steady-state re-render (StateHasChanged on the existing root
-    // component) requires test access to ComponentState / Renderer.RenderRootComponent
-    // overloads that aren't part of the public surface we built for M1's MountAsync.
-    //
-    // Re-mounting on every iteration (the obvious workaround) measures full component-
-    // creation cost — ~230 KB/iteration — which is the wrong shape for validating the
-    // hot-path zero-alloc design. M4 will plumb StateHasChanged-on-mounted-root through
-    // the renderer; this test gets enabled then with a realistic budget (~512 B/call).
-    [Fact(Skip = "Requires StateHasChanged on mounted root — deferred to Milestone 4 (BACKLOG P3).")]
-    public void RenderWalk_IsAllocationFree_OnSteadyState()
+    /// <summary>Steady-state re-render fixture: every render emits different
+    /// text, so each TriggerRootRenderForTests produces a REAL diff (one
+    /// UpdateText edit → ReplaceTextPatch) — the walk does work, not a no-op
+    /// empty-diff commit.</summary>
+    private sealed class SteadyStateComponent : ComponentBase
     {
-        // Placeholder — see Skip reason. Will be implemented in Milestone 4 using AllocationGate.AssertBudget.
+        private int _renders;
+        protected override void BuildRenderTree(RenderTreeBuilder b)
+        {
+            b.OpenElement(0, "div");
+            b.AddContent(1, $"render {_renders++}");
+            b.CloseElement();
+        }
     }
 
-    // Documents a known bug: ProcessFrame's nested-element walk uses the child's
-    // absolute frame index as the sibling-key, which then can't be re-found by
-    // GetNodeIdBySibling on subsequent diffs. Flat components (HelloComponent)
-    // dodge this because every child sits at sibling-index 1. The fix lands with
-    // the real widget tree in Milestone 2 (BACKLOG P1 "Native widget mapper").
-    [Fact(Skip = "Nested elements lose sibling-key on re-render — fix scheduled for Milestone 2 widget tree (BACKLOG P1 'Native widget mapper'). See NativeRenderer.cs:146-178.")]
+    // Phase 4.2 (M4 DoD #4 — the M1 deferral closed). The blocker was
+    // triggering StateHasChanged on the mounted root; NativeRenderer's
+    // internal TriggerRootRenderForTests seam (GetComponentState →
+    // ComponentBase.StateHasChanged via accessor) provides exactly that.
+    //
+    // HONEST BUDGET, not a fictional zero: the walk allocates per-frame BY
+    // DESIGN — the RenderFrame envelope + its patches.AsSpan().ToArray()
+    // payload copy (NativeRenderer.UpdateDisplayAsync) and the per-frame
+    // patch records. A pooled frame payload is M6+ ecosystem work if ever
+    // needed. This test pins a REGRESSION bound in the sibling
+    // FrameArenaTests style (warmup, then GC.GetAllocatedBytesForCurrentThread
+    // across steady-state iterations): measured baseline 295,200 B / 900
+    // re-renders (328 B/frame, deterministic across runs; Release, .NET 10
+    // win-x64) — bound 600 KB (~2x slack for runtime/GC incidentals, per the
+    // design's flake mitigation). What it catches: List resizes, boxing, an
+    // accidental per-edit allocation joining the walk.
+    [Fact]
+    public void RenderWalk_IsAllocationFree_OnSteadyState()
+    {
+        var services = new ServiceCollection().AddBlazorNativeRenderer().BuildServiceProvider();
+        using var renderer = new NativeRenderer(services);
+        renderer.StrictErrors = true; // Task 6: all fixtures run strict (DoD #9)
+
+        int componentId = renderer.Mount<SteadyStateComponent>();
+
+        // Warm-up: JIT the walk + let Blazor's diff builder grow its pooled
+        // buffers to steady-state capacity (FrameArenaTests pattern).
+        for (int i = 0; i < 100; i++)
+            renderer.TriggerRootRenderForTests(componentId);
+
+        long before = GC.GetAllocatedBytesForCurrentThread();
+
+        for (int i = 0; i < 900; i++)
+            renderer.TriggerRootRenderForTests(componentId);
+
+        long delta = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        Assert.True(delta < 600_000,
+            $"Expected < 600000 managed bytes across 900 steady-state re-renders " +
+            $"(measured baseline 295200 — see comment above), got {delta}");
+    }
+
+    // Phase 4.2 cleanup: this skip documented an M1 bug (nested-element walk
+    // keyed children by absolute frame index — the 3.2-era sibling map). The
+    // Phase 3.3 slot model closed that premise; run unskipped the test is
+    // green, so it stays as the nested-mount shape pin.
+    [Fact]
     public async Task NestedElements_EmitCreateNodeForEachLevel()
     {
         var services = new ServiceCollection().AddBlazorNativeRenderer().BuildServiceProvider();

@@ -389,6 +389,29 @@ public sealed class NativeRenderer : BlazorRenderer
     internal void InjectContractViolationForTests(string message)
         => ReportContractViolation(message);
 
+    /// <summary>Test-only (Phase 4.2, same posture as
+    /// <c>HostSession.ReplaceRegistryEntryForTests</c>): triggers a
+    /// steady-state re-render of a mounted root — the exact
+    /// <c>StateHasChanged()</c> a component's own event handler would issue,
+    /// resolved through Blazor's ComponentState. On the InlineDispatcher the
+    /// render batch (diff → UpdateDisplayAsync → frame delivery) has fully
+    /// completed when this returns. Exists solely so the allocation-budget
+    /// test (RendererSpike.RenderWalk_IsAllocationFree_OnSteadyState, the M1
+    /// deferral) can measure the walk without re-mounting per iteration —
+    /// production hosts re-render exclusively through event dispatch. Only
+    /// ComponentBase roots are supported: anything else throws (a test
+    /// wiring bug, not a runtime condition).</summary>
+    internal void TriggerRootRenderForTests(int componentId)
+    {
+        if (GetComponentState(componentId).Component is not ComponentBase component)
+        {
+            throw new InvalidOperationException(
+                $"TriggerRootRenderForTests: component {componentId} is not a ComponentBase — " +
+                "the test seam only drives ComponentBase.StateHasChanged.");
+        }
+        BlazorInterop.StateHasChangedViaAccessor(component);
+    }
+
     protected override void Dispose(bool disposing)
     {
         if (disposing)
@@ -926,8 +949,10 @@ public sealed class NativeRenderer : BlazorRenderer
     ///
     /// These guarantees assume SYNCHRONOUS handlers; async handlers (await in
     /// @onclick) move continuations off the dispatch thread and out of this
-    /// window — still open after 3.3; revisit in 3.4+ when Bn* components
-    /// make async handlers likely.
+    /// window. RE-LEDGERED — Phase 4.2 triage item 1 (ledger of record:
+    /// docs/plans/2026-07-11-phase-4.2-hardening-triage.md): revisit with the
+    /// first real async @onclick consumer, together with the dispatch lane's
+    /// async-offload (triage item 2 — the same design).
     ///
     /// Instance fields are safe: all dispatch runs on the InlineDispatcher's
     /// calling thread (single-threaded post-boot contract).</summary>

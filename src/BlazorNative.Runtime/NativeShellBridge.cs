@@ -301,10 +301,15 @@ public sealed class NativeShellBridge : IMobileBridge
 
     // ── Events ────────────────────────────────────────────────────────────────
 
-    /// <summary>Documented no-op until Phase 3.2 redesigns native event
-    /// ingress (blazornative_dispatch_event is the reserved entry point).
-    /// Subscribing is allowed so existing components don't break; no event
-    /// ever fires through this bridge in 3.1.</summary>
+    /// <summary>Documented no-op: UI events took the
+    /// blazornative_dispatch_event path instead (Phase 3.2); nothing ever
+    /// fires through the production bridge. Subscribing stays legal so the
+    /// DevHost-parity surface (DevHostBridge DOES fire; Home.razor consumes)
+    /// and the BN0014 sync-handler contract survive. RE-LEDGERED → M5 —
+    /// Phase 4.2 triage item 9 (ledger of record:
+    /// docs/plans/2026-07-11-phase-4.2-hardening-triage.md): host-INITIATED
+    /// lifecycle ingress (pause/resume, back button, deep links) owns the
+    /// redesign.</summary>
     public event Action<NativeEvent> NativeEvents { add { } remove { } }
 
     // ── Callback invokers ─────────────────────────────────────────────────────

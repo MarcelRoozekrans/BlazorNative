@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Rendering;
+using Microsoft.AspNetCore.Components.Web;
 
 namespace BlazorNative.Components;
 
@@ -43,6 +44,17 @@ public sealed class BnInput : ComponentBase
     /// <summary>False disables the host widget. Default true.</summary>
     [Parameter] public bool Enabled { get; set; } = true;
 
+    /// <summary>Raised when the host input gains focus (Phase 4.2, DoD #4).
+    /// OPTIONAL: the <c>focus</c> attach is emitted only when a delegate is
+    /// set (<c>HasDelegate</c>) — an unwired BnInput's patch shape is
+    /// byte-identical to the pre-4.2 one, so BnDemo's canonical golden
+    /// (4 attaches) does not churn.</summary>
+    [Parameter] public EventCallback<FocusEventArgs> OnFocus { get; set; }
+
+    /// <summary>Raised when the host input loses focus. Same
+    /// attach-only-when-set contract as <see cref="OnFocus"/>.</summary>
+    [Parameter] public EventCallback<FocusEventArgs> OnBlur { get; set; }
+
     protected override void BuildRenderTree(RenderTreeBuilder b)
     {
         b.OpenElement(0, "input");
@@ -52,6 +64,10 @@ public sealed class BnInput : ComponentBase
             EventCallback.Factory.Create<ChangeEventArgs>(this, HandleChange));
         if (!Enabled)
             b.AddAttribute(4, "enabled", "false");
+        if (OnFocus.HasDelegate)
+            b.AddAttribute(5, "onfocus", OnFocus);
+        if (OnBlur.HasDelegate)
+            b.AddAttribute(6, "onblur", OnBlur);
         b.CloseElement();
     }
 

@@ -38,6 +38,15 @@ import java.util.concurrent.atomic.AtomicReference
  * not dispatch a change event (guard closes the setText → change → re-render
  * → setText loop), while a text change OUTSIDE a batch must dispatch.
  *
+ * [change_reattach_dispatches_exactly_once_with_live_handler] pins the Phase
+ * 4.2 stale-watcher fix with the same synthetic-frame pattern (a REAL
+ * re-attach needs a re-render that swaps handler identity, which Blazor's
+ * stable delegate targets never do for the Bn* components — so the frames
+ * are driven directly): a last-wins change re-attach (same node, new
+ * handlerId, NO detach) must REPLACE the watcher, not stack a second one —
+ * typing dispatches exactly once, with the live handlerId (pre-fix: once per
+ * stacked watcher, the first with the dead id).
+ *
  * Polling: boot deadline 60s (NativeAOT mounts in ~1-2s; generous headroom,
  * WidgetMapperTest precedent); post-tap re-render deadline 10s — the dispatch
  * lane is async from the UI thread, so the updated text is polled, not read
@@ -141,6 +150,52 @@ class EventRoundTripAndroidTest {
             "text change outside a batch must dispatch exactly one change event",
             1, changeCount.get()
         )
+    }
+
+    @Test
+    fun change_reattach_dispatches_exactly_once_with_live_handler() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val ctx = instrumentation.targetContext
+        val dispatched = mutableListOf<Int>() // handlerIds; main-thread only
+        lateinit var root: FrameLayout
+        lateinit var mapper: WidgetMapper
+
+        // Frame 1: input + change attach h1. Frame 2: last-wins re-attach h2
+        // on the SAME node — no DetachEvent in between (the renderer's
+        // re-attach contract, RenderFrame.kt's mapping notes).
+        instrumentation.runOnMainSync {
+            root = FrameLayout(ctx)
+            mapper = WidgetMapper(ctx, root, onUiEvent = { handlerId, eventName, _ ->
+                if (eventName == "change") dispatched.add(handlerId)
+            })
+            mapper.apply(RenderFrame(
+                frameId = 1, timestampMs = 0L,
+                patches = listOf(
+                    RenderPatch.CreateNode(nodeId = 1, nodeType = "input", parentId = null),
+                    RenderPatch.AttachEvent(nodeId = 1, eventName = "change", handlerId = 1),
+                    RenderPatch.CommitFrame(1, 0L),
+                )
+            ))
+            mapper.apply(RenderFrame(
+                frameId = 2, timestampMs = 0L,
+                patches = listOf(
+                    RenderPatch.AttachEvent(nodeId = 1, eventName = "change", handlerId = 2),
+                    RenderPatch.CommitFrame(2, 0L),
+                )
+            ))
+        }
+        instrumentation.waitForIdleSync()
+
+        // Type: EXACTLY ONE dispatch, carrying the LIVE handlerId (h2). The
+        // pre-fix behavior was two dispatches — h1's stacked stale watcher
+        // fired first with the dead id.
+        instrumentation.runOnMainSync {
+            (root.getChildAt(0) as EditText).setText("typed")
+            assertEquals(
+                "a change re-attach must REPLACE the watcher: exactly one dispatch, the live handlerId",
+                listOf(2), dispatched
+            )
+        }
     }
 
     // ── Helpers ────────────────────────────────────────────────────────────
