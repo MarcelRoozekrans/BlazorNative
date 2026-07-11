@@ -150,14 +150,24 @@ class InspectorServerTest {
         // The production dispatch shape: lane-marshalled, blocking, raw rc.
         val server = InspectorServer(state, dispatch = runtime::dispatchEventAndWait, requestedPort = 0)
         server.start()
-        val sse: SseClient
+        var sse: SseClient? = null
         try {
             val base = "http://127.0.0.1:${server.port}"
 
-            // GET / — the Gate 2 placeholder page (must exist, must be HTML).
+            // GET / — the self-contained inspector page: title, the SSE
+            // wiring, the dispatch call, and the fast-restart honesty footer
+            // (structure pins only — behavior is the manual browser smoke).
             val (rootCode, rootBody) = httpGet("$base/")
             assertEquals(200, rootCode)
-            assertTrue(rootBody.contains("Gate 2"), "placeholder page must be honest about Gate 2; got $rootBody")
+            assertTrue(rootBody.contains("<title>BlazorNative Inspector</title>"), "page title missing")
+            assertTrue(rootBody.contains("new EventSource('/sse')"), "page must wire SSE")
+            assertTrue(rootBody.contains("fetch('/api/dispatch'"), "page must wire dispatch")
+            assertTrue(rootBody.contains("fast-restart, not hot-reload"), "honesty footer missing")
+            assertTrue(rootBody.contains("component <b>BnDemo</b>"), "component name missing from header")
+            assertFalse(
+                Regex("(src|href)\\s*=\\s*[\"']https?://").containsMatchIn(rootBody),
+                "page must be self-contained — no external requests"
+            )
 
             // GET /api/tree — the BnDemo shape: the bound input + 3 buttons.
             val (treeCode, tree) = httpGet("$base/api/tree")
@@ -203,7 +213,6 @@ class InspectorServerTest {
             // SSE heard tree-changed within the deadline (the frames the
             // dispatch delivered are already buffered on the socket).
             sse.awaitEvent("tree-changed")
-            sse.close()
 
             // /api/patches — the ring tail is non-empty and since= filters.
             val (patchesCode, patches) = httpGet("$base/api/patches")
@@ -213,6 +222,7 @@ class InspectorServerTest {
             val (_, none) = httpGet("$base/api/patches?since=999999")
             assertEquals("{\"patches\":[]}", none)
         } finally {
+            sse?.close()
             server.stop()
         }
     }

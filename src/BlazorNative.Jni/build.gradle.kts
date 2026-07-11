@@ -238,6 +238,10 @@ compileJvmHostKotlin.configure {
     compilerOptions.jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
     // The factory leaves this REQUIRED internal convention unset (its getter
     // is Kotlin-internal → name-mangled), so assign it reflectively.
+    // KGP-bump watch (Renovate): a Kotlin plugin bump may rename/remove the
+    // mangled getter — the failure is LOUD, never silent: .first{} throws
+    // NoSuchElementException at task realization on every testDebugUnitTest
+    // run. Delete or adjust this reflective line when that fires.
     @Suppress("UNCHECKED_CAST")
     (javaClass.methods.first { it.name.startsWith("getMultiPlatformEnabled") }
         .invoke(this) as org.gradle.api.provider.Property<Boolean>).set(false)

@@ -17,7 +17,8 @@ import java.util.concurrent.TimeUnit
  * has no com.sun.net.httpserver, so this class can never join the shared main
  * source set (the full story lives on InspectorHost.kt's main KDoc):
  *
- *  - `GET  /`                    — the inspector page (Gate 2; placeholder today)
+ *  - `GET  /`                    — the inspector page ([InspectorPage], one
+ *    self-contained inline HTML+CSS+JS string, no external requests)
  *  - `GET  /api/tree`            — [InspectorState.treeJson]
  *  - `GET  /api/patches?since=`  — [InspectorState.patchesJson] (bad since → 400)
  *  - `GET  /api/events`          — [InspectorState.eventsJson]
@@ -61,6 +62,8 @@ class InspectorServer(
      * — see the threading contract above; must tolerate concurrent callers). */
     private val dispatch: (handlerId: Int, eventName: String, payload: String?) -> Int,
     requestedPort: Int = DEFAULT_PORT,
+    /** Shown in the page header (the session's mounted component). */
+    private val componentName: String = "BnDemo",
 ) {
     companion object {
         const val DEFAULT_PORT = 5199
@@ -116,16 +119,7 @@ class InspectorServer(
     private fun handleRoot(ex: HttpExchange) = guarded(ex) {
         if (ex.requestURI.path != "/") return@guarded respondJson(ex, 404, "{\"error\":\"not found\"}")
         if (ex.requestMethod != "GET") return@guarded methodNotAllowed(ex, "GET")
-        respond(
-            ex, 200, "text/html; charset=utf-8",
-            "<!doctype html><html><head><title>BlazorNative Inspector</title></head><body>" +
-                "<h1>BlazorNative Inspector</h1>" +
-                "<p>The inspector page lands in Gate 2. The API is live now: " +
-                "<code>GET /api/tree</code>, <code>GET /api/patches?since=</code>, " +
-                "<code>GET /api/events</code>, <code>GET /sse</code>, " +
-                "<code>POST /api/dispatch</code>.</p>" +
-                "</body></html>"
-        )
+        respond(ex, 200, "text/html; charset=utf-8", InspectorPage.render(componentName, port))
     }
 
     private fun handleTree(ex: HttpExchange) = guarded(ex) {

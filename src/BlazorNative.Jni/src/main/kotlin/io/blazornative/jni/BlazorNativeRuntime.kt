@@ -131,9 +131,14 @@ class BlazorNativeRuntime(
      * dispatch (including its synchronous re-render frame deliveries, which
      * run on the lane thread) has completed, and returns the raw rc
      * (0/1/2/3 — [dispatchEvent]'s table; non-zero is DATA to this caller,
-     * not an onError event). Safe to call from arbitrary threads — concurrent
-     * callers queue up behind each other on the lane. A throw from the
-     * dispatch core (not a non-zero rc) is rethrown to the caller unwrapped.
+     * not an onError event). Safe to call from any thread EXCEPT the dispatch
+     * lane itself — concurrent callers queue up behind each other on the
+     * lane, but a call FROM the lane (e.g. inside an onFrame consumer during
+     * a dispatch) would SELF-DEADLOCK: the single lane thread would block on
+     * an untimed get() waiting for a task queued behind its own current one.
+     * Unreachable from today's callers (HTTP handler threads only) — pinned
+     * here because this is public API. A throw from the dispatch core (not a
+     * non-zero rc) is rethrown to the caller unwrapped.
      */
     fun dispatchEventAndWait(handlerId: Int, eventName: String, payload: String? = null): Int {
         val future = dispatchLane.submit(java.util.concurrent.Callable {

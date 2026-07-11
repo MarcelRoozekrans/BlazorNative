@@ -105,7 +105,12 @@ fun main(args: Array<String>) {
         }
 
         val server = try {
-            InspectorServer(state, dispatch = runtime::dispatchEventAndWait, requestedPort = port)
+            InspectorServer(
+                state,
+                dispatch = runtime::dispatchEventAndWait,
+                requestedPort = port,
+                componentName = component,
+            )
         } catch (e: BindException) {
             System.err.println(
                 "[InspectorHost] cannot bind 127.0.0.1:$port (${e.message}) — is another " +
