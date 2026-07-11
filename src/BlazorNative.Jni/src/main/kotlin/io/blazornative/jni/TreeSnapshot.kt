@@ -109,6 +109,78 @@ class TreeSnapshot {
         return sb.toString().trimEnd('\n')
     }
 
+    /**
+     * Phase 4.4: the tree as JSON — a top-level array of root nodes, each
+     * `{"id":…,"type":…,"text":…,"props":{…},"styles":{…},"events":{…},
+     * "children":[…]}` in that STABLE key order. Same omit-empty posture as
+     * [render] (pinned in InspectorJsonTest): text omitted when null;
+     * props/styles/events/children omitted when empty. Null prop/style
+     * values render as JSON null; handler ids are JSON numbers. Escaping is
+     * the FlatJson contract via [InspectorJson]. Single-threaded like every
+     * other member — InspectorState's coarse lock guards concurrent use.
+     */
+    fun renderJson(): String {
+        val sb = StringBuilder(1024)
+        sb.append('[')
+        roots.forEachIndexed { i, n ->
+            if (i > 0) sb.append(',')
+            renderNodeJson(n, sb)
+        }
+        sb.append(']')
+        return sb.toString()
+    }
+
+    private fun renderNodeJson(n: Node, sb: StringBuilder) {
+        sb.append("{\"id\":").append(n.id)
+        sb.append(",\"type\":")
+        InspectorJson.appendString(sb, n.type)
+        n.text?.let {
+            sb.append(",\"text\":")
+            InspectorJson.appendString(sb, it)
+        }
+        if (n.props.isNotEmpty()) {
+            sb.append(",\"props\":")
+            appendNullableStringMap(n.props, sb)
+        }
+        if (n.styles.isNotEmpty()) {
+            sb.append(",\"styles\":")
+            appendNullableStringMap(n.styles, sb)
+        }
+        if (n.events.isNotEmpty()) {
+            sb.append(",\"events\":{")
+            var first = true
+            for ((name, handlerId) in n.events) {
+                if (!first) sb.append(',')
+                first = false
+                InspectorJson.appendString(sb, name)
+                sb.append(':').append(handlerId)
+            }
+            sb.append('}')
+        }
+        if (n.children.isNotEmpty()) {
+            sb.append(",\"children\":[")
+            n.children.forEachIndexed { i, child ->
+                if (i > 0) sb.append(',')
+                renderNodeJson(child, sb)
+            }
+            sb.append(']')
+        }
+        sb.append('}')
+    }
+
+    private fun appendNullableStringMap(map: Map<String, String?>, sb: StringBuilder) {
+        sb.append('{')
+        var first = true
+        for ((key, value) in map) {
+            if (!first) sb.append(',')
+            first = false
+            InspectorJson.appendString(sb, key)
+            sb.append(':')
+            if (value == null) sb.append("null") else InspectorJson.appendString(sb, value)
+        }
+        sb.append('}')
+    }
+
     private fun renderNode(n: Node, depth: Int, sb: StringBuilder) {
         sb.append("  ".repeat(depth)).append(n.type).append('#').append(n.id)
         n.text?.let { sb.append(" \"").append(it).append('"') }

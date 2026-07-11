@@ -118,6 +118,15 @@ android {
 
     testOptions {
         unitTests.isIncludeAndroidResources = false
+        // Phase 4.4: InspectorServerTest drives InspectorServer, which is
+        // compiled by compileJvmHostKotlin (see its block comment below) —
+        // its output must join the unit-test RUNTIME classpath through THIS
+        // sanctioned hook (AGP overwrites a Test.classpath set anywhere
+        // else). The COMPILE classpath is wired on the Kotlin task below.
+        unitTests.all { test ->
+            test.dependsOn("compileJvmHostKotlin")
+            test.classpath += files(layout.buildDirectory.dir("tmp/kotlin-classes/jvmHost"))
+        }
     }
 
     packaging {
@@ -181,6 +190,91 @@ tasks.register<JavaExec>("runPreviewHost") {
     systemProperty("stdout.encoding", "UTF-8")
     systemProperty("stderr.encoding", "UTF-8")
     (findProperty("component") as String?)?.let { args(it) }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 4.4 Gate 1: InspectorHost — PreviewHost's long-lived sibling. Its two
+// files (InspectorServer/InspectorHost, src/jvmHost/kotlin) need the JDK's
+// com.sun.net.httpserver, which does NOT exist in android.jar — and EVERY AGP
+// compilation (main, unitTest) compiles against android.jar, so they cannot
+// join any Android source set. compileJvmHostKotlin is therefore a dedicated
+// plain-JVM KotlinCompile over just those files, with the debug classes on
+// its classpath (no duplicate compilation of the shared sources; nothing
+// added to the APK). The Android-safe inspector pieces (InspectorState,
+// InspectorJson, TreeSnapshot.renderJson) stay in main/kotlin.
+//
+// The e2e test (InspectorServerTest, test source set) compiles against the
+// jvmHost OUTPUT (wired below onto the *UnitTestKotlin `libraries` + the
+// unit-test runtime classpath in testOptions.unitTests.all): the test only
+// touches InspectorServer's public API — whose signatures carry no httpserver
+// types — and at RUNTIME unit tests execute on the host JDK, where
+// jdk.httpserver is present.
+// ─────────────────────────────────────────────────────────────────────────────
+val inspectorHostRuntime: Configuration by configurations.creating {
+    description = "Runtime classpath for the runInspectorHost JavaExec (desktop-JVM JNA dispatch)"
+}
+
+dependencies {
+    inspectorHostRuntime("net.java.dev.jna:jna:5.14.0")
+    inspectorHostRuntime(kotlin("stdlib-jdk8"))
+}
+
+// Registering a KotlinCompile outside the plugin's source-set machinery needs
+// KGP's sanctioned factory (KotlinBaseApiPlugin — the same API AGP's built-in
+// Kotlin support uses): it supplies the constructor's KotlinJvmCompilerOptions
+// and every internal task convention a bare tasks.register() leaves unset.
+val kotlinBaseApi = plugins.apply(org.jetbrains.kotlin.gradle.plugin.KotlinBaseApiPlugin::class.java)
+
+val compileJvmHostKotlin = kotlinBaseApi.registerKotlinJvmCompileTask(
+    "compileJvmHostKotlin",
+    "BlazorNative.Jni-jvmHost",
+)
+compileJvmHostKotlin.configure {
+    description = "Compiles the host-JVM-only inspector surface (src/jvmHost/kotlin) against the full JDK"
+    dependsOn("compileDebugKotlin")
+    source(layout.projectDirectory.dir("src/jvmHost/kotlin"))
+    libraries.from(layout.buildDirectory.dir("tmp/kotlin-classes/debug"), inspectorHostRuntime)
+    destinationDirectory.set(layout.buildDirectory.dir("tmp/kotlin-classes/jvmHost"))
+    compilerOptions.jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+    // The factory leaves this REQUIRED internal convention unset (its getter
+    // is Kotlin-internal → name-mangled), so assign it reflectively.
+    // KGP-bump watch (Renovate): a Kotlin plugin bump may rename/remove the
+    // mangled getter — the failure is LOUD, never silent: .first{} throws
+    // NoSuchElementException at task realization on every testDebugUnitTest
+    // run. Delete or adjust this reflective line when that fires.
+    @Suppress("UNCHECKED_CAST")
+    (javaClass.methods.first { it.name.startsWith("getMultiPlatformEnabled") }
+        .invoke(this) as org.gradle.api.provider.Property<Boolean>).set(false)
+}
+
+// The unit-test COMPILE classpath half of the e2e-test wiring (a plain
+// `testImplementation(files(...))` never reaches AGP's variant classpaths;
+// the RUNTIME half lives in android.testOptions.unitTests.all above).
+// configureEach because AGP only creates its variant tasks in afterEvaluate;
+// flatMap carries the compileJvmHostKotlin task dependency.
+tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+    if (name.endsWith("UnitTestKotlin")) {
+        libraries.from(compileJvmHostKotlin.flatMap { it.destinationDirectory })
+    }
+}
+
+tasks.register<JavaExec>("runInspectorHost") {
+    description = "Boots the NativeAOT dll, mounts -Pcomponent= (default BnDemo), serves the inspector API/page on -Pport= (default 5199) until Ctrl+C"
+    group = "blazornative"
+    dependsOn(compileJvmHostKotlin)
+    mainClass.set("io.blazornative.jni.InspectorHostKt")
+    classpath = files(
+        layout.buildDirectory.dir("tmp/kotlin-classes/jvmHost"),
+        layout.buildDirectory.dir("tmp/kotlin-classes/debug"),
+    ) + inspectorHostRuntime
+    systemProperty("jna.library.path", winX64PublishPath)
+    // Deterministic UTF-8 on Windows consoles (BnDemo's "Settings →" label).
+    systemProperty("stdout.encoding", "UTF-8")
+    systemProperty("stderr.encoding", "UTF-8")
+    args(
+        (findProperty("component") as String?) ?: "BnDemo",
+        (findProperty("port") as String?) ?: "5199",
+    )
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

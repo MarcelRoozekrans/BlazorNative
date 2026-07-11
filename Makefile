@@ -3,6 +3,7 @@
 # make dev             → start dev host with hot reload (normal .NET)
 # make devloop         → native fast lane: watch .NET src → publish → PreviewHost
 # make devloop-android → device lane: publish → installDebug → launch → logcat
+# make inspect         → DevTools inspector: native session + localhost page
 # make runtime-publish → NativeAOT publish BlazorNative.Runtime for all 3 RIDs
 # make android         → build the Android APK (BlazorNative.Jni via Gradle)
 # make android-test    → boot AVD if needed + run connectedAndroidTest
@@ -16,7 +17,7 @@ RUNTIME_PROJECT   := src/BlazorNative.Runtime
 ANALYZER_PROJECT  := src/BlazorNative.Analyzers/BlazorNative.Analyzers.csproj
 DEV_PROJECT       := src/BlazorNative.Host.Android/BlazorNative.DevHost.csproj
 
-.PHONY: dev dev-no-reload devloop devloop-android runtime-publish android android-build android-test android-test-visible ios test test-watch clean setup analyzers help
+.PHONY: dev dev-no-reload devloop devloop-android inspect runtime-publish android android-build android-test android-test-visible ios test test-watch clean setup analyzers help
 
 ## ── Development ──────────────────────────────────────────────────────────────
 
@@ -34,6 +35,10 @@ devloop:                      ## Native fast lane: watch .NET src → publish wi
 
 devloop-android:              ## Device lane: publish bionic-x64 → installDebug → launch → logcat boot marker
 	powershell -ExecutionPolicy Bypass -File scripts/devloop.ps1 -Android
+
+inspect:                      ## DevTools inspector: native session + page on http://localhost:5199 (PORT=n, COMPONENT=Name to override)
+	@echo "🔍 Starting BlazorNative Inspector (native session, fast-restart)..."
+	cd src/BlazorNative.Jni && JAVA_HOME="C:/Program Files/Eclipse Adoptium/jdk-21.0.11.10-hotspot" ANDROID_HOME="$$USERPROFILE/AppData/Local/Android/Sdk" ./gradlew.bat runInspectorHost $(if $(PORT),-Pport=$(PORT),) $(if $(COMPONENT),-Pcomponent=$(COMPONENT),)
 
 analyzers:                    ## Build Roslyn analyzers
 	$(DOTNET) build $(ANALYZER_PROJECT) -c Release

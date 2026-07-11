@@ -70,6 +70,7 @@ Three lanes, honestly labeled:
 | Browser DevHost | `make dev` | **True hot-reload** (plain ASP.NET, no AOT) | Component/business logic against a **mock** bridge — fast, but it tests the wrong transport for native work |
 | Native fast lane | `make devloop` | **Fast-restart**, ~10–11 s/save | The real thing: NativeAOT publish → JNA load → C-ABI patch decode → console tree dump (`PreviewHost`) |
 | Device lane | `make devloop-android` | **Fast-restart**, ~14 s/save | The full APK: bionic publish → `installDebug` → launch → logcat boot marker on an emulator/device |
+| Inspector | `make inspect` | **Fast-restart** (long-lived session) | A localhost DevTools page over a **live native session** (`InspectorHost`): collapsible widget tree, live patch stream, event log, and dispatch-from-the-page (fire clicks, send change payloads) — all against the published NativeAOT dll |
 
 **Fast-restart, not hot-reload — by design, not omission.** JNA's `Native.load` is process-lifetime: there is no unload API, and Windows locks the loaded dll, so a warm JVM can never pick up a rebuilt native library — and NativeAOT binaries cannot hot-patch. The native loop therefore restarts a tiny host process per cycle (`PreviewHost`: boot → mount → dump tree → exit ~0.3 s), and the loop script makes that restart automatic: save a `.cs` file, get a fresh widget tree.
 
@@ -83,6 +84,8 @@ Measured on the dev machine (warm, `devloop.ps1 -Once`, one `BlazorNative.Compon
 | Full ADB-lane cycle (publish → install → launch → mounted) | ~14 s |
 
 The NativeAOT publish dominates both lanes; everything downstream of it is seconds or less.
+
+**Two inspectors, two sessions — honestly labeled.** The browser DevHost's dev pages (`/dev/*`) inspect its **mock-bridge** session (fast, but not the native transport). `make inspect` serves http://localhost:5199 over the **native** session — the same NativeAOT dll, C-ABI frames, and dispatch lane the Android app rides. It is fast-restart like everything native: restart the host (rerun `make inspect`) to pick up a rebuilt dll; `PORT=n` / `COMPONENT=Name` override the defaults. The page is one self-contained inline HTML file (no CDN, no build step): widget tree (`<details>`-collapsible, auto-refreshing over SSE), patch tail, event log, and per-node dispatch buttons that call `POST /api/dispatch` on the live session.
 
 The browser-side DevHost additionally exposes a DevTools REST API for simulating native events:
 

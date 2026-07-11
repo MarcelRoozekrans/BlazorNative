@@ -384,7 +384,10 @@ internal object FlatJson {
         return result
     }
 
-    private fun appendJsonString(sb: StringBuilder, value: String) {
+    // internal (not private) since Phase 4.4: InspectorJson delegates here so
+    // the inspector's JSON surface shares this exact escaping contract instead
+    // of growing a drifting copy.
+    internal fun appendJsonString(sb: StringBuilder, value: String) {
         sb.append('"')
         for (c in value) {
             when (c) {
