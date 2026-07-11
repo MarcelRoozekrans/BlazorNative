@@ -1,0 +1,294 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# BlazorNative PR CI (Phase 4.0 Gate 2) — the safety net every later M4 phase
+# rides on. Single windows-latest job mirroring the local verification
+# procedure verbatim (setup.ps1 §1–7 documents the toolchain pins):
+#
+#   build (analyzers ride it) → .NET tests (177 passed / 2 skipped) →
+#   three NativeAOT publishes (win-x64, linux-bionic-x64, linux-bionic-arm64;
+#   each publish must show exactly the 4 accepted IL2072 trim warnings) →
+#   eight-export verification (dumpbin via vswhere / llvm-readelf from the
+#   pinned NDK) → Gradle testDebugUnitTest against the fresh win-x64 dll
+#   (32 passed / 0 failed) → artifacts for the instrumented (Gate 3) job.
+#
+# Baselines are asserted, not observed: count drift fails the job loudly.
+# ─────────────────────────────────────────────────────────────────────────────
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  NDK_PIN: 26.3.11579264
+
+jobs:
+  build-test:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: pwsh
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # ── Toolchain ──────────────────────────────────────────────────────────
+      - name: Setup .NET SDK (global.json — 10.0.3xx band)
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Setup JDK 21 (Temurin — Gradle daemon + sdkmanager)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Resolve toolchain paths (NDK root + vswhere on PATH)
+        run: |
+          if (-not $env:ANDROID_HOME) { throw "ANDROID_HOME is not set on the runner image" }
+          "ANDROID_NDK_ROOT=$env:ANDROID_HOME\ndk\$env:NDK_PIN" | Out-File $env:GITHUB_ENV -Append
+          # The ILCompiler win-x64 link step invokes vswhere.exe by bare name.
+          "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer" | Out-File $env:GITHUB_PATH -Append
+
+      - name: Check for pinned NDK on the runner image
+        id: check-ndk
+        run: |
+          $props = Join-Path $env:ANDROID_NDK_ROOT "source.properties"
+          $present = (Test-Path $props) -and
+            ((Get-Content $props -Raw) -match ('(?m)^\s*Pkg\.Revision\s*=\s*' + [regex]::Escape($env:NDK_PIN) + '\s*$'))
+          "present=$present" | Out-File $env:GITHUB_OUTPUT -Append
+          Write-Host "NDK $env:NDK_PIN preinstalled: $present"
+
+      - name: Cache NDK ${{ env.NDK_PIN }}
+        if: steps.check-ndk.outputs.present != 'True'
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.ANDROID_NDK_ROOT }}
+          key: ndk-${{ runner.os }}-${{ env.NDK_PIN }}
+
+      - name: Install NDK ${{ env.NDK_PIN }} (sdkmanager, on cache miss)
+        if: steps.check-ndk.outputs.present != 'True'
+        run: |
+          $props = Join-Path $env:ANDROID_NDK_ROOT "source.properties"
+          if (Test-Path $props) { Write-Host "NDK restored from cache — skipping sdkmanager"; exit 0 }
+          $sdkmanager = Join-Path $env:ANDROID_HOME "cmdline-tools\latest\bin\sdkmanager.bat"
+          if (-not (Test-Path $sdkmanager)) { throw "sdkmanager not found at $sdkmanager" }
+          "y" | & $sdkmanager --install "ndk;$env:NDK_PIN"
+          if ($LASTEXITCODE -ne 0) { throw "sdkmanager failed to install ndk;$env:NDK_PIN (exit $LASTEXITCODE)" }
+
+      - name: Verify NDK revision pin
+        run: |
+          $props = Join-Path $env:ANDROID_NDK_ROOT "source.properties"
+          if (-not (Test-Path $props)) { throw "NDK $env:NDK_PIN missing at $env:ANDROID_NDK_ROOT" }
+          $pattern = '(?m)^\s*Pkg\.Revision\s*=\s*' + [regex]::Escape($env:NDK_PIN) + '\s*$'
+          if ((Get-Content $props -Raw) -notmatch $pattern) {
+            throw "NDK at $env:ANDROID_NDK_ROOT is not revision $env:NDK_PIN (source.properties mismatch)"
+          }
+          Write-Host "NDK revision $env:NDK_PIN verified at $env:ANDROID_NDK_ROOT"
+
+      # ── Caches (no lockfiles in the repo — keyed on project-file hashes) ───
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', '**/*.props', '**/*.targets', 'global.json') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('src/BlazorNative.Jni/**/*.gradle.kts', 'src/BlazorNative.Jni/gradle/wrapper/gradle-wrapper.properties', 'src/BlazorNative.Jni/gradle.properties') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
+
+      # ── Build + .NET tests ─────────────────────────────────────────────────
+      - name: Build (Release — analyzers ride the build)
+        run: |
+          dotnet build BlazorNative.sln -c Release -tl:off -nologo
+          if ($LASTEXITCODE -ne 0) { throw "dotnet build failed (exit $LASTEXITCODE)" }
+
+      - name: .NET tests (assert 177 passed / 2 skipped)
+        run: |
+          $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
+          dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
+          if ($LASTEXITCODE -ne 0) { throw "dotnet test failed (exit $LASTEXITCODE)" }
+          $summaries = @(Select-String -Path $log -Pattern 'Failed:\s*(\d+),\s*Passed:\s*(\d+),\s*Skipped:\s*(\d+),\s*Total:\s*(\d+)')
+          if ($summaries.Count -eq 0) { throw "Could not parse any test-project summary lines — output format drift?" }
+          $failed  = ($summaries | ForEach-Object { [int]$_.Matches[0].Groups[1].Value } | Measure-Object -Sum).Sum
+          $passed  = ($summaries | ForEach-Object { [int]$_.Matches[0].Groups[2].Value } | Measure-Object -Sum).Sum
+          $skipped = ($summaries | ForEach-Object { [int]$_.Matches[0].Groups[3].Value } | Measure-Object -Sum).Sum
+          Write-Host "dotnet test totals across $($summaries.Count) projects: passed=$passed skipped=$skipped failed=$failed"
+          if ($failed -ne 0 -or $passed -ne 177 -or $skipped -ne 2) {
+            throw ".NET test baseline drift: expected 177 passed / 2 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          }
+
+      # ── NativeAOT publishes + eight-export verification ────────────────────
+      - name: Publish win-x64 (assert exactly 4 IL2072 warnings)
+        run: |
+          $log = Join-Path $env:RUNNER_TEMP "publish-win-x64.log"
+          dotnet publish src/BlazorNative.Runtime -c Release -r win-x64 -tl:off -nologo 2>&1 | Tee-Object -FilePath $log
+          if ($LASTEXITCODE -ne 0) { throw "win-x64 publish failed (exit $LASTEXITCODE)" }
+          $il2072 = @(Select-String -Path $log -Pattern 'warning IL2072')
+          Write-Host "IL2072 count: $($il2072.Count)"
+          if ($il2072.Count -ne 4) {
+            $il2072 | ForEach-Object { Write-Host $_.Line }
+            throw "win-x64 publish IL2072 drift: expected exactly 4 accepted trim warnings, got $($il2072.Count)"
+          }
+
+      - name: Verify win-x64 exports (dumpbin via vswhere)
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          if (-not (Test-Path $vswhere)) { throw "vswhere.exe not found at $vswhere" }
+          $dumpbin = & $vswhere -latest -products * -find "**\Hostx64\x64\dumpbin.exe" | Select-Object -First 1
+          if (-not $dumpbin) { throw "dumpbin.exe not found via vswhere" }
+          $dll = "src\BlazorNative.Runtime\bin\Release\net10.0\win-x64\publish\BlazorNative.Runtime.dll"
+          $out = & $dumpbin /exports $dll
+          $expected = @(
+            'blazornative_dispatch_event', 'blazornative_fetch_complete',
+            'blazornative_init', 'blazornative_mount',
+            'blazornative_register_bridge', 'blazornative_register_frame_callback',
+            'blazornative_shutdown', 'blazornative_version'
+          )
+          $actual = @($out | Select-String -Pattern '\bblazornative_\w+' | ForEach-Object { $_.Matches.Value } | Sort-Object -Unique)
+          Write-Host "Exports found ($($actual.Count)): $($actual -join ', ')"
+          $diff = Compare-Object $expected $actual
+          if ($diff) {
+            $diff | Format-Table | Out-String | Write-Host
+            throw "win-x64 export surface drift: expected exactly the 8 blazornative_* exports"
+          }
+
+      - name: Publish linux-bionic-x64 (assert exactly 4 IL2072 warnings)
+        run: |
+          $log = Join-Path $env:RUNNER_TEMP "publish-bionic-x64.log"
+          dotnet publish src/BlazorNative.Runtime -c Release -r linux-bionic-x64 -tl:off -nologo 2>&1 | Tee-Object -FilePath $log
+          if ($LASTEXITCODE -ne 0) { throw "linux-bionic-x64 publish failed (exit $LASTEXITCODE)" }
+          $il2072 = @(Select-String -Path $log -Pattern 'warning IL2072')
+          Write-Host "IL2072 count: $($il2072.Count)"
+          if ($il2072.Count -ne 4) {
+            $il2072 | ForEach-Object { Write-Host $_.Line }
+            throw "linux-bionic-x64 publish IL2072 drift: expected exactly 4 accepted trim warnings, got $($il2072.Count)"
+          }
+
+      - name: Verify linux-bionic-x64 exports (llvm-readelf from pinned NDK)
+        run: |
+          $readelf = "$env:ANDROID_NDK_ROOT\toolchains\llvm\prebuilt\windows-x86_64\bin\llvm-readelf.exe"
+          if (-not (Test-Path $readelf)) { throw "llvm-readelf.exe not found at $readelf" }
+          $so = "src\BlazorNative.Runtime\bin\Release\net10.0\linux-bionic-x64\publish\BlazorNative.Runtime.so"
+          $out = & $readelf --dyn-syms $so
+          $expected = @(
+            'blazornative_dispatch_event', 'blazornative_fetch_complete',
+            'blazornative_init', 'blazornative_mount',
+            'blazornative_register_bridge', 'blazornative_register_frame_callback',
+            'blazornative_shutdown', 'blazornative_version'
+          )
+          $actual = @($out | Select-String -Pattern '\bblazornative_\w+' | ForEach-Object { $_.Matches.Value } | Sort-Object -Unique)
+          Write-Host "Dynamic symbols found ($($actual.Count)): $($actual -join ', ')"
+          $diff = Compare-Object $expected $actual
+          if ($diff) {
+            $diff | Format-Table | Out-String | Write-Host
+            throw "linux-bionic-x64 export surface drift: expected exactly the 8 blazornative_* exports"
+          }
+
+      - name: Publish linux-bionic-arm64 (assert exactly 4 IL2072 warnings)
+        run: |
+          $log = Join-Path $env:RUNNER_TEMP "publish-bionic-arm64.log"
+          dotnet publish src/BlazorNative.Runtime -c Release -r linux-bionic-arm64 -tl:off -nologo 2>&1 | Tee-Object -FilePath $log
+          if ($LASTEXITCODE -ne 0) { throw "linux-bionic-arm64 publish failed (exit $LASTEXITCODE)" }
+          $il2072 = @(Select-String -Path $log -Pattern 'warning IL2072')
+          Write-Host "IL2072 count: $($il2072.Count)"
+          if ($il2072.Count -ne 4) {
+            $il2072 | ForEach-Object { Write-Host $_.Line }
+            throw "linux-bionic-arm64 publish IL2072 drift: expected exactly 4 accepted trim warnings, got $($il2072.Count)"
+          }
+
+      - name: Verify linux-bionic-arm64 exports (llvm-readelf from pinned NDK)
+        run: |
+          $readelf = "$env:ANDROID_NDK_ROOT\toolchains\llvm\prebuilt\windows-x86_64\bin\llvm-readelf.exe"
+          if (-not (Test-Path $readelf)) { throw "llvm-readelf.exe not found at $readelf" }
+          $so = "src\BlazorNative.Runtime\bin\Release\net10.0\linux-bionic-arm64\publish\BlazorNative.Runtime.so"
+          $out = & $readelf --dyn-syms $so
+          $expected = @(
+            'blazornative_dispatch_event', 'blazornative_fetch_complete',
+            'blazornative_init', 'blazornative_mount',
+            'blazornative_register_bridge', 'blazornative_register_frame_callback',
+            'blazornative_shutdown', 'blazornative_version'
+          )
+          $actual = @($out | Select-String -Pattern '\bblazornative_\w+' | ForEach-Object { $_.Matches.Value } | Sort-Object -Unique)
+          Write-Host "Dynamic symbols found ($($actual.Count)): $($actual -join ', ')"
+          $diff = Compare-Object $expected $actual
+          if ($diff) {
+            $diff | Format-Table | Out-String | Write-Host
+            throw "linux-bionic-arm64 export surface drift: expected exactly the 8 blazornative_* exports"
+          }
+
+      # ── JVM tests against the fresh win-x64 publish ────────────────────────
+      # testDebugUnitTest → preBuild → copyRuntimeSo → verifyNativeAssets needs
+      # BOTH bionic .so publish outputs, hence this step runs after them; the
+      # unit tests themselves load the win-x64 dll via jna.library.path.
+      - name: JVM tests (Gradle testDebugUnitTest — assert 32 passed / 0 failed)
+        working-directory: src/BlazorNative.Jni
+        run: |
+          .\gradlew.bat --no-daemon testDebugUnitTest
+          if ($LASTEXITCODE -ne 0) { throw "gradlew testDebugUnitTest failed (exit $LASTEXITCODE)" }
+          $xmls = @(Get-ChildItem build\test-results\testDebugUnitTest\*.xml -ErrorAction SilentlyContinue)
+          if ($xmls.Count -eq 0) { throw "No JUnit XML results found under build\test-results\testDebugUnitTest" }
+          $tests = 0; $failures = 0; $errors = 0; $skipped = 0
+          foreach ($x in $xmls) {
+            $suite = ([xml](Get-Content $x -Raw)).testsuite
+            $tests += [int]$suite.tests; $failures += [int]$suite.failures
+            $errors += [int]$suite.errors; $skipped += [int]$suite.skipped
+          }
+          Write-Host "JVM test totals across $($xmls.Count) suites: tests=$tests failures=$failures errors=$errors skipped=$skipped"
+          if ($tests -ne 32 -or $failures -ne 0 -or $errors -ne 0 -or $skipped -ne 0) {
+            throw "JVM test baseline drift: expected 32 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped"
+          }
+
+      # ── Artifacts (consumed by the Gate 3 instrumented workflow) ───────────
+      - name: Stage jniLibs layout (x86_64 from bionic-x64)
+        run: |
+          $dest = Join-Path $env:RUNNER_TEMP "jniLibs-staging\x86_64"
+          New-Item -ItemType Directory -Force $dest | Out-Null
+          Copy-Item "src\BlazorNative.Runtime\bin\Release\net10.0\linux-bionic-x64\publish\BlazorNative.Runtime.so" (Join-Path $dest "libBlazorNative.Runtime.so")
+
+      - name: Upload artifact — win-x64 binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: BlazorNative.Runtime-win-x64
+          path: src/BlazorNative.Runtime/bin/Release/net10.0/win-x64/publish/BlazorNative.Runtime.dll
+          if-no-files-found: error
+
+      - name: Upload artifact — linux-bionic-x64 binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: BlazorNative.Runtime-linux-bionic-x64
+          path: src/BlazorNative.Runtime/bin/Release/net10.0/linux-bionic-x64/publish/BlazorNative.Runtime.so
+          if-no-files-found: error
+
+      - name: Upload artifact — linux-bionic-arm64 binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: BlazorNative.Runtime-linux-bionic-arm64
+          path: src/BlazorNative.Runtime/bin/Release/net10.0/linux-bionic-arm64/publish/BlazorNative.Runtime.so
+          if-no-files-found: error
+
+      - name: Upload artifact — jniLibs staging layout
+        uses: actions/upload-artifact@v4
+        with:
+          name: jniLibs-staging
+          path: ${{ runner.temp }}/jniLibs-staging
+          if-no-files-found: error
