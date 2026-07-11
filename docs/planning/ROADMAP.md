@@ -241,11 +241,25 @@ Maps to BACKLOG.md "P2 — Real apps can be built".
 
 ---
 
-### ⏳ Milestone 4 — P3: Production-Shippable  *(next — opens via `new-milestone`)*
+### 🔄 Milestone 4 — P3: Production-Shippable  *(in progress — opened 2026-07-11)*
 
-Analyzer unit tests + WASI-era analyzer rescope (3.0e carryover), GitHub Actions CI, iOS Swift shell, DevTools render-tree inspector, initial NuGet packages, hot-reload story (the WASI protocol framing is obsolete post-3.0e — reframe for NativeAOT at milestone-open).
+The repo goes public with CI as the safety net; the BN analyzers are re-attached and
+tested; the runtime-hardening ledger is triaged into fixed-or-deliberately-deferred;
+the dev inner loop (fast-restart, honestly not hot-reload) and NuGet packages exist
+for outside consumers. **Windows + Android only — the iOS Swift shell is deferred to
+M5** (decided at milestone-open; the BACKLOG's WasmKit framing is obsolete — it will
+be a NativeAOT `ios-arm64` static lib + Swift shell). Full 8-point DoD:
+[MILESTONE.md](MILESTONE.md).
 
-Maps to BACKLOG.md "P3 — Production readiness". Triage input: the [M3 final audit](../plans/2026-07-10-milestone-3-final-audit.md) carryover table (host-initiated nav is M5; the packaging ledger is M6; the diagnostics/host-error surface + still-open runtime items land here as touched).
+Maps to BACKLOG.md "P3 — Production readiness". Triage input: the [M3 final audit](../plans/2026-07-10-milestone-3-final-audit.md) carryover table (host-initiated nav is M5; the packaging ledger is M6; the diagnostics/host-error surface + still-open runtime items land in Phase 4.2's triage).
+
+Phases (approved at milestone-open 2026-07-11):
+- ⏳ **Phase 4.0** — GitHub publish + CI pipeline (DoD #1, #2) — *next; refresh GITHUB-SETUP.md/script for the post-3.0e reality first*
+- ⏳ **Phase 4.1** — Analyzer rescope + unit tests (DoD #3)
+- ⏳ **Phase 4.2** — Runtime hardening: ledger triage + fixes (DoD #4)
+- ⏳ **Phase 4.3** — Dev inner loop / fast-restart (DoD #5)
+- ⏳ **Phase 4.4** — DevTools render-tree inspector (DoD #6)
+- ⏳ **Phase 4.5** — NuGet packaging + consumer smoke + M4 final audit → `v4.0` (DoD #7, #8)
 
 ---
 
