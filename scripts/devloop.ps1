@@ -167,6 +167,10 @@ function Invoke-JvmCycle {
 }
 
 function Invoke-AndroidCycle {
+    if (-not (Test-Path $adb)) {
+        Write-Fail "adb not found at $adb. Run setup.ps1 section 7."
+        return 1
+    }
     $device = Get-ConnectedDevice
     if (-not $device) {
         Write-Fail "No device/emulator connected — the ADB lane needs a running one. Boot the AVD first:"
@@ -199,8 +203,16 @@ function Invoke-AndroidCycle {
     $swLaunch = [System.Diagnostics.Stopwatch]::StartNew()
     & $adb -s $device shell am force-stop io.blazornative.shell 2>&1 | Out-Null
     & $adb -s $device logcat -c 2>&1 | Out-Null
-    & $adb -s $device shell am start -n io.blazornative.shell/.MainActivity `
-        -e io.blazornative.shell.EXTRA_COMPONENT $Component 2>&1 | Out-Null
+    # am start reports failures in its OUTPUT (e.g. "Error: Activity class
+    # does not exist"), often with exit 0 — check both instead of letting the
+    # 90 s marker timeout discover it.
+    $amOut = & $adb -s $device shell am start -n io.blazornative.shell/.MainActivity `
+        -e io.blazornative.shell.EXTRA_COMPONENT $Component 2>&1
+    if ($LASTEXITCODE -ne 0 -or "$amOut" -match 'Error|Exception') {
+        Write-Fail "am start failed (exit $LASTEXITCODE):"
+        $amOut | Out-Host
+        return 1
+    }
 
     # The stopwatch end: MainActivity logs the runtime's "[BOOT] mounted X"
     # line (tag BlazorNative) once the mount frame has been delivered.
