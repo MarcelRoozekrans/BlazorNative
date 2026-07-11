@@ -131,10 +131,14 @@ After running the script:
 
 ### Branch protection (main)
 
-Applied at Phase 4.0 Gate 4 via `gh api`:
+Applied at Phase 4.0 Gate 5, **immediately after the public flip**, via `gh api`.
+(Gate 4 deviation, discovered live: branch protection on a *private* repo
+requires GitHub Pro on personal accounts — on the free plan it is available
+only for public repos. Protection therefore lands right after the repo goes
+public, before the phase closes.)
 
 - Require PR before merging (no direct pushes to `main`, admins included)
-- Required status check: **`ci / build-test`** (the single Windows job from
+- Required status check: **`build-test`** (the single Windows job from
   `.github/workflows/ci.yml` — build + analyzers, .NET test suite, the three
   NativeAOT publishes with eight-export verification, JVM `testDebugUnitTest`)
 - Require conversation resolution before merging
