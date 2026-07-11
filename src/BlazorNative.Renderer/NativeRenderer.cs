@@ -389,6 +389,29 @@ public sealed class NativeRenderer : BlazorRenderer
     internal void InjectContractViolationForTests(string message)
         => ReportContractViolation(message);
 
+    /// <summary>Test-only (Phase 4.2, same posture as
+    /// <c>HostSession.ReplaceRegistryEntryForTests</c>): triggers a
+    /// steady-state re-render of a mounted root — the exact
+    /// <c>StateHasChanged()</c> a component's own event handler would issue,
+    /// resolved through Blazor's ComponentState. On the InlineDispatcher the
+    /// render batch (diff → UpdateDisplayAsync → frame delivery) has fully
+    /// completed when this returns. Exists solely so the allocation-budget
+    /// test (RendererSpike.RenderWalk_IsAllocationFree_OnSteadyState, the M1
+    /// deferral) can measure the walk without re-mounting per iteration —
+    /// production hosts re-render exclusively through event dispatch. Only
+    /// ComponentBase roots are supported: anything else throws (a test
+    /// wiring bug, not a runtime condition).</summary>
+    internal void TriggerRootRenderForTests(int componentId)
+    {
+        if (GetComponentState(componentId).Component is not ComponentBase component)
+        {
+            throw new InvalidOperationException(
+                $"TriggerRootRenderForTests: component {componentId} is not a ComponentBase — " +
+                "the test seam only drives ComponentBase.StateHasChanged.");
+        }
+        BlazorInterop.StateHasChangedViaAccessor(component);
+    }
+
     protected override void Dispose(bool disposing)
     {
         if (disposing)

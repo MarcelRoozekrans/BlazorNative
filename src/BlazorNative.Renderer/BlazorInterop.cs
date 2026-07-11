@@ -99,6 +99,20 @@ internal static class BlazorInterop
                 failures.Add("BlazorRenderer.DispatchEventAsync(ulong, EventFieldInfo?, EventArgs) not found");
         }
 
+        // ComponentBase.StateHasChanged (protected, parameterless) backs the
+        // Phase 4.2 test-only re-render seam (NativeRenderer
+        // .TriggerRootRenderForTests). Same rationale as above: verify the
+        // member NOW so an [UnsafeAccessor] binding failure surfaces at load
+        // time, not at first test-seam call.
+        var stateHasChanged = typeof(ComponentBase).GetMethod(
+            "StateHasChanged",
+            BindingFlags.Instance | BindingFlags.NonPublic,
+            binder: null,
+            types: Type.EmptyTypes,
+            modifiers: null);
+        if (stateHasChanged is null)
+            failures.Add("ComponentBase.StateHasChanged() not found");
+
         if (failures.Count > 0)
             throw new BlazorVersionMismatchException(
                 "Blazor internal-layout drift detected:\n  - " + string.Join("\n  - ", failures));
@@ -109,6 +123,12 @@ internal static class BlazorInterop
         ulong eventHandlerId,
         EventArgs eventArgs)
         => RefAccessors.DispatchEventAsync(renderer, eventHandlerId, fieldInfo: null, eventArgs);
+
+    /// <summary>Phase 4.2: <c>ComponentBase.StateHasChanged()</c> — protected,
+    /// so it needs an accessor. Only consumer: NativeRenderer's test-only
+    /// re-render seam (<c>TriggerRootRenderForTests</c>).</summary>
+    public static void StateHasChangedViaAccessor(ComponentBase component)
+        => RefAccessors.StateHasChanged(component);
 }
 
 public sealed class BlazorVersionMismatchException : Exception
@@ -240,4 +260,10 @@ internal static class RefAccessors
         [UnsafeAccessorType("Microsoft.AspNetCore.Components.RenderTree.EventFieldInfo, Microsoft.AspNetCore.Components")]
         object? fieldInfo,
         EventArgs eventArgs);
+
+    // Phase 4.2: StateHasChanged is protected on ComponentBase — the
+    // test-only re-render seam calls it through this accessor (verified in
+    // VerifyAccessors like DispatchEventAsync above).
+    [UnsafeAccessor(UnsafeAccessorKind.Method, Name = "StateHasChanged")]
+    public static extern void StateHasChanged(ComponentBase component);
 }
