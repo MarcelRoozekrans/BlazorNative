@@ -1,0 +1,18 @@
+# Normalize line endings: store LF in the repo, let git detect text vs binary.
+* text=auto
+
+# Shell scripts must check out with LF — bash on git-for-Windows (autocrlf=true)
+# dies on CRLF scripts with "$'\r': command not found".
+*.sh    text eol=lf
+gradlew text eol=lf
+
+# Windows batch files check out with CRLF.
+*.bat   text eol=crlf
+*.cmd   text eol=crlf
+
+# Binaries — never touch.
+*.png   binary
+*.jar   binary
+*.so    binary
+*.dll   binary
+*.keystore binary

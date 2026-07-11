@@ -20,6 +20,9 @@ project.fragment.lock.json
 .idea/
 *.DotSettings.user
 
+# Claude Code local workspace
+.claude/
+
 # OS
 .DS_Store
 Thumbs.db
