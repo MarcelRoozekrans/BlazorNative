@@ -31,7 +31,7 @@ cd src\BlazorNative.Jni; .\gradlew testDebugUnitTest
 .\gradlew connectedAndroidTest
 ```
 
-For the .NET inner loop there is also a hot-reload dev host (no AOT publish involved):
+For the .NET inner loop there is also a hot-reload dev host — hot reload applies only here, because no AOT publish is involved (the native-library loop is fast-restart, not hot-reload — Phase 4.3):
 
 ```powershell
 dotnet watch run --project src\BlazorNative.Host.Android\BlazorNative.DevHost.csproj
@@ -63,7 +63,7 @@ One runtime, one transport: the same NativeAOT library and typed-struct protocol
 
 ## Dev experience
 
-The inner loop runs as a **normal ASP.NET app** — full hot reload plus a DevTools REST API for simulating native events:
+The browser-side DevHost inner loop runs as a **normal ASP.NET app** — full hot reload plus a DevTools REST API for simulating native events. (NativeAOT binaries cannot hot-patch, so the native-library inner loop is a separate fast-restart story — Phase 4.3.)
 
 ```bash
 # Inject a native event during development

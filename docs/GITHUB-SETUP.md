@@ -66,8 +66,8 @@ Phase labels map to milestones (see `docs/planning/ROADMAP.md`):
 | `phase/p0` | 🔴 Red | M1 — Runtime boots end-to-end *(complete)* |
 | `phase/p1` | 🟠 Orange | M2 — First end-to-end demo on Android *(complete)* |
 | `phase/p2` | 🟡 Amber | M3 — Real apps can be built *(complete)* |
-| `phase/p3` | 🟡 Light | M4 — Production-shippable |
-| `phase/p4` | 🟡 Pale | M5 — Full platform coverage |
+| `phase/p3` | 🩷 Pink | M4 — Production-shippable |
+| `phase/p4` | 🟨 Cream | M5 — Full platform coverage |
 | `phase/p5` | 🟢 Light green | M6 — Developer ecosystem |
 | `phase/p6` | 🔵 Light blue | M7 — Framework hardening |
 | `phase/p7` | 🟣 Lavender | M8 — Enterprise readiness |

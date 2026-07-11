@@ -51,14 +51,17 @@ ok()   { echo -e "${GREEN}  ✓  $1${NC}"; }
 skip() { echo -e "${GRAY}  ○  $1${NC}"; }
 warn() { echo -e "${YELLOW}  ⚠  $1${NC}"; }
 
+# Runs gh with stderr VISIBLE and returns gh's real exit status —
+# callers count failures per category and the script exits non-zero if any.
 gh_cmd() {
   if [ "$DRY_RUN" = true ]; then
     # Compact one-line echo; long issue bodies are summarised by the callers.
+    # Written to stderr so caller stdout redirects can't hide the preview.
     local preview="gh $*"
-    echo -e "${GRAY}  [dry-run] ${preview:0:110}…${NC}"
-  else
-    gh "$@" 2>/dev/null || true
+    echo -e "${GRAY}  [dry-run] ${preview:0:110}…${NC}" >&2
+    return 0
   fi
+  gh "$@"
 }
 
 # Inventory counters (printed at the end — the dry-run verification target)
@@ -66,6 +69,22 @@ LABEL_COUNT=0
 MILESTONE_OPEN_COUNT=0
 MILESTONE_CLOSED_COUNT=0
 ISSUE_COUNT=0
+
+# Failure counters (real runs only — any non-zero total fails the script)
+LABEL_FAIL=0
+MILESTONE_FAIL=0
+ISSUE_FAIL=0
+
+# Prints the failure summary and exits 1 if anything failed; no-op otherwise.
+finish_or_fail() {
+  local total=$((LABEL_FAIL + MILESTONE_FAIL + ISSUE_FAIL))
+  if [ "$total" -gt 0 ]; then
+    echo ""
+    warn "FAILURES: $LABEL_FAIL label(s), $MILESTONE_FAIL milestone(s), $ISSUE_FAIL issue(s) — see stderr above"
+    warn "The inventory above counts successful creations only."
+    exit 1
+  fi
+}
 
 echo ""
 echo "  BlazorNative — GitHub Project Setup"
@@ -82,12 +101,16 @@ echo "  ── Labels ───────────────────�
 create_label() {
   local name=$1 color=$2 desc=$3
   log "Label: $name"
-  gh_cmd label create "$name" \
+  if gh_cmd label create "$name" \
     --repo "$REPO" \
     --color "$color" \
     --description "$desc" \
-    --force   # --force updates if already exists
-  LABEL_COUNT=$((LABEL_COUNT + 1))
+    --force; then  # --force updates if already exists
+    LABEL_COUNT=$((LABEL_COUNT + 1))
+  else
+    warn "FAILED label: $name"
+    LABEL_FAIL=$((LABEL_FAIL + 1))
+  fi
 }
 
 # Phase labels (mapped to milestones — see docs/planning/ROADMAP.md)
@@ -145,17 +168,21 @@ echo "  ── Milestones ──────────────────
 create_milestone() {
   local title=$1 state=$2 desc=$3
   log "Milestone ($state): $title"
-  gh_cmd api \
+  if gh_cmd api \
     --method POST \
     -H "Accept: application/vnd.github+json" \
     "/repos/$REPO/milestones" \
     -f title="$title" \
     -f description="$desc" \
-    -f state="$state"
-  if [ "$state" = "closed" ]; then
-    MILESTONE_CLOSED_COUNT=$((MILESTONE_CLOSED_COUNT + 1))
+    -f state="$state" > /dev/null; then
+    if [ "$state" = "closed" ]; then
+      MILESTONE_CLOSED_COUNT=$((MILESTONE_CLOSED_COUNT + 1))
+    else
+      MILESTONE_OPEN_COUNT=$((MILESTONE_OPEN_COUNT + 1))
+    fi
   else
-    MILESTONE_OPEN_COUNT=$((MILESTONE_OPEN_COUNT + 1))
+    warn "FAILED milestone: $title"
+    MILESTONE_FAIL=$((MILESTONE_FAIL + 1))
   fi
 }
 
@@ -193,6 +220,7 @@ if [ "$LABELS_ONLY" = true ]; then
   echo "  Milestones: $((MILESTONE_CLOSED_COUNT + MILESTONE_OPEN_COUNT)) ($MILESTONE_CLOSED_COUNT closed, $MILESTONE_OPEN_COUNT open)"
   echo "  Issues:     0 (skipped — --labels-only)"
   echo ""
+  finish_or_fail
   exit 0
 fi
 
@@ -211,14 +239,18 @@ echo "  ── Issues ───────────────────�
 issue() {
   local milestone=$1 labels=$2 title=$3 body=$4
   log "Issue: $title"
-  gh_cmd issue create \
+  if gh_cmd issue create \
     --repo "$REPO" \
     --title "$title" \
     --body "$body" \
     --label "$labels" \
-    --milestone "$milestone"
-  ISSUE_COUNT=$((ISSUE_COUNT + 1))
-  [ "$DRY_RUN" = true ] || sleep 0.3  # avoid secondary rate limit
+    --milestone "$milestone"; then
+    ISSUE_COUNT=$((ISSUE_COUNT + 1))
+  else
+    warn "FAILED issue: $title"
+    ISSUE_FAIL=$((ISSUE_FAIL + 1))
+  fi
+  [ "$DRY_RUN" = true ] || sleep 1  # content-creation spacing (GitHub secondary-rate-limit guidance)
 }
 
 M4="M4 — P3: Production-Shippable"
@@ -409,12 +441,13 @@ issue "$M6" "phase/p5,type/docs" \
 "From the ROADMAP M6 one-liner (docs/planning/ROADMAP.md): a documentation site — getting started, architecture, component reference, bridge/C-ABI reference."
 
 echo ""
-ok "All issues created!"
-echo ""
 echo "  ── Inventory ────────────────────────────────────────────"
 echo "  Labels:     $LABEL_COUNT"
 echo "  Milestones: $((MILESTONE_CLOSED_COUNT + MILESTONE_OPEN_COUNT)) ($MILESTONE_CLOSED_COUNT closed, $MILESTONE_OPEN_COUNT open)"
 echo "  Issues:     $ISSUE_COUNT (open work only — M4 phases + hardening ledger + M5/M6 headliners)"
+echo ""
+finish_or_fail
+ok "All issues created!"
 echo ""
 echo "  Next steps:"
 echo "  1. Open https://github.com/$REPO/issues to see all issues"
