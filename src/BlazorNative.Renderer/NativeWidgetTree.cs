@@ -171,7 +171,9 @@ internal sealed class NativeWidgetTree
     /// Complexity: O(subtree slots) per call — each component slot before
     /// <paramref name="slotIndex"/> is expanded recursively (acyclic by
     /// Blazor's tree guarantee, so termination is safe). Called once per
-    /// mid-list insert; memoize per-diff if Bn* list sizes ever make this
+    /// mid-list insert. RE-LEDGERED — Phase 4.2 triage item 6 (ledger of
+    /// record: docs/plans/2026-07-11-phase-4.2-hardening-triage.md): memoize
+    /// per-diff only when a mid-list-insert-heavy profile makes this
     /// measurable.</summary>
     public int TranslateToViewIndex(int componentId, int? parentNodeId, int slotIndex)
     {
@@ -358,10 +360,12 @@ internal sealed class NativeWidgetTree
 
         // Drop the component's slot lists.
         // Complexity: O(total live buckets) PER DISPOSAL — the Keys.Where
-        // scan touches every bucket in the tree, not just this component's.
-        // Fine at probe scale (a handful of buckets); index buckets by
-        // componentId if 3.4's Bn* lists dispose many keyed children per
-        // frame (N disposals × B buckets goes quadratic-ish).
+        // scan touches every bucket in the tree, not just this component's
+        // (N disposals × B buckets goes quadratic-ish). RE-LEDGERED —
+        // Phase 4.2 triage item 5 (ledger of record:
+        // docs/plans/2026-07-11-phase-4.2-hardening-triage.md): index buckets
+        // by componentId when a keyed Bn* list benchmark shows measurable
+        // disposal cost.
         var slotKeys = _slotLists.Keys
             .Where(k => k.ComponentId == componentId)
             .ToList();

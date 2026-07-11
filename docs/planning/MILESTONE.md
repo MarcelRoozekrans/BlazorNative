@@ -68,7 +68,17 @@ refinement during the Phase 4.0 brainstorm.
    the allocation-budget test deferred from M1 — is either **fixed with tests** or
    **explicitly re-ledgered with a written rationale** in a triage doc. Load-bearing
    minimum expected to be fixed rather than re-ledgered: focus/blur wiring, the
-   subscriber-isolation decision, the allocation-budget test.
+   subscriber-isolation decision, the allocation-budget test. ✅ **CLOSED 2026-07-11
+   (Phase 4.2):** all three load-bearing items fixed with tests (focus/blur on real
+   AVD views; RouteChanged isolated — contained under strict mode too, the
+   documented posture decision; allocation test enabled with a **measured** 328
+   B/frame baseline, 600 KB/900 bound) plus the stale-watcher leak fixed
+   (exactly-one-dispatch pinned on-device) and the stale `NestedElements` skip
+   cleaned up; the 5 remaining items re-ledgered with rationale + concrete revisit
+   triggers in [the triage doc](../plans/2026-07-11-phase-4.2-hardening-triage.md)
+   (the ledger of record — in-code breadcrumbs point there). Counts asserted in CI:
+   .NET 203/0, JVM 34, Android 35; version `1.1.0-phase-4.2`. See
+   [Phase 4.2 conclusion](../plans/2026-07-11-phase-4.2-conclusion.md).
 
 5. **Dev inner loop exists and is measured.** File-watcher → incremental win-x64
    publish → JVM host reload as the fast lane, plus the ADB-push → app-restart story
