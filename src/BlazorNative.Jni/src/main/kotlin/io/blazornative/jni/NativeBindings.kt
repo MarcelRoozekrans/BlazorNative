@@ -89,22 +89,31 @@ interface NativeBindings : Library {
     fun blazornative_register_bridge(callbacks: BlazorNativeBridgeCallbacks): Int
 
     /**
-     * Phase 5.1 (M5 DoD #5): host-INITIATED event ingress — fires the runtime's
-     * real NativeShellBridge.NativeEvents multicast so a mounted component
-     * (HostEventProbe) re-renders. [nameUtf8] is NUL-terminated UTF-8 (the event
-     * name, e.g. "onPause"/"onResume"); [payloadUtf8] is NUL-terminated UTF-8 or
-     * NULL (optional — most lifecycle events carry none).
+     * Phase 5.1 (M5 DoD #5): host-INITIATED event ingress. Two routes on ONE
+     * export: the reserved name "back" routes to navigation-back (the
+     * predictive-back production path — Android's OnBackInvokedCallback and the
+     * JVM test drive it identically; the back→NavigateBack mapping lives in
+     * .NET); ANY OTHER name fires the runtime's real
+     * NativeShellBridge.NativeEvents multicast so a mounted component
+     * (HostEventProbe) re-renders. [nameUtf8] is NUL-terminated UTF-8 (e.g.
+     * "onPause"/"onResume"/"back"); [payloadUtf8] is NUL-terminated UTF-8 or
+     * NULL (optional — most lifecycle events, and "back", carry none).
      *
-     * Return codes (parallels dispatch_event, minus the handlerId/no-session leg):
-     *   0 = delivered (incl. no subscribers — an unheard signal is not an error)
+     * Return codes:
+     *   0 = delivered/handled — a lifecycle event reached its subscribers (incl.
+     *       none — an unheard signal is not an error); OR "back" navigated to
+     *       the previous route
+     *   1 = "back" NOT handled — at the origin (no previous route / no session):
+     *       the shell falls through to default back (Android finishes). ONLY the
+     *       "back" route returns rc 1; the multicast path never does
      *   2 = a subscriber (or the re-render it drove) faulted — CONTAINED
-     *       (isolation: other subscribers still ran) but surfaced; detail on
-     *       native stderr — log LOUDLY
+     *       (isolation) but surfaced; OR the back swap faulted; detail on native
+     *       stderr — log LOUDLY
      *   3 = malformed: NULL / empty [nameUtf8] (a NULL payload is legal)
      *
-     * SYNCHRONOUS: the subscriber + its StateHasChanged re-render + frame
-     * callback all complete before this returns (InlineDispatcher contract).
-     * THREADING: never call from the UI thread — route through the
+     * SYNCHRONOUS: the subscriber's StateHasChanged re-render — or the back
+     * swap's frames — all complete before this returns (InlineDispatcher
+     * contract). THREADING: never call from the UI thread — route through the
      * BlazorNative-Dispatch lane like dispatch_event.
      */
     fun blazornative_host_event(nameUtf8: ByteArray, payloadUtf8: ByteArray?): Int

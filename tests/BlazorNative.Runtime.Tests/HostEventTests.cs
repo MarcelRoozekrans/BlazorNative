@@ -130,6 +130,33 @@ public sealed class HostEventTests
         }
     }
 
+    // ── "back" is intercepted BEFORE the multicast (not a lifecycle event) ────
+
+    [Fact]
+    public void HostEvent_Back_IsIntercepted_DoesNotReachSubscribers()
+    {
+        // "back" routes to navigation, never the NativeEvents multicast — a
+        // lifecycle subscriber must not see it. With no session it is "not
+        // handled" (rc 1); the point is the subscriber stayed silent.
+        NativeShellBridge.ResetForTests();
+        var bridge = new NativeShellBridge();
+        bool fired = false;
+        Action<NativeEvent> handler = _ => fired = true;
+        bridge.NativeEvents += handler;
+        try
+        {
+            int rc = Exports.DispatchHostEventCore("back", null);
+
+            Assert.Equal(1, rc); // no session → not handled
+            Assert.False(fired, "the reserved 'back' event must not reach NativeEvents subscribers");
+        }
+        finally
+        {
+            bridge.NativeEvents -= handler;
+            NativeShellBridge.ResetForTests();
+        }
+    }
+
     // ── rc 3: malformed — NULL / empty name ───────────────────────────────────
 
     [Theory]

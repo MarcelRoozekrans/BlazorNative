@@ -501,6 +501,69 @@ public sealed class NavigationTests
         finally { TearDown(); }
     }
 
+    // ── "back" host event → NavigateBack (Phase 5.1, the shared ingress) ─────
+    //
+    // Predictive-back (Gate 3 Android) and the JVM test both drive the SAME
+    // reserved "back" host event: Exports.DispatchHostEventCore intercepts it
+    // and routes to NavigateBackAsync. rc 0 = handled / 1 = not handled (at
+    // root — the shell finishes) / 2 = fault. The mapping lives in .NET so
+    // every shell shares the semantics — pinned here headlessly.
+
+    [Fact]
+    public void HostBackEvent_AtRoot_Returns1_NotHandled()
+    {
+        var (_, _) = StartSession();
+        try
+        {
+            Assert.Equal(0, HostSession.TryMount("BnDemo"));
+
+            // At "/" with no prior: the export reports "not handled" (rc 1) so
+            // the shell falls through to default finish — no swap.
+            int rc = Exports.DispatchHostEventCore("back", null);
+
+            Assert.Equal(1, rc);
+            Assert.Equal("/", Nav().CurrentRoute);
+        }
+        finally { TearDown(); }
+    }
+
+    [Fact]
+    public async Task HostBackEvent_FromSettings_Returns0_BnDemoReturns()
+    {
+        var (_, frames) = StartSession();
+        try
+        {
+            Assert.Equal(0, HostSession.TryMount("BnDemo"));
+            INavigationManager nav = Nav();
+            await nav.NavigateToAsync("/settings");
+            Assert.Equal("/settings", nav.CurrentRoute);
+            frames.Clear();
+
+            // The reserved "back" host event navigates back to BnDemo.
+            int rc = Exports.DispatchHostEventCore("back", null);
+
+            Assert.Equal(0, rc);
+            _ = InputNode(frames[^1]); // BnDemo's shape returned
+            Assert.Equal("/", nav.CurrentRoute);
+            Assert.Equal("/", FakeShellHost.Route);
+
+            // Slot consumed: a second "back" is not handled (rc 1) — no
+            // ping-pong back to /settings.
+            Assert.Equal(1, Exports.DispatchHostEventCore("back", null));
+            Assert.Equal("/", nav.CurrentRoute);
+        }
+        finally { TearDown(); }
+    }
+
+    [Fact]
+    public void HostBackEvent_NoSession_Returns1()
+    {
+        HostSession.ResetForTests();
+
+        // No mounted session → nothing to go back from (not handled).
+        Assert.Equal(1, Exports.DispatchHostEventCore("back", null));
+    }
+
     // ── RouteChanged subscriber isolation (Phase 4.2, DoD #4) ────────────────
     //
     // A THROWING RouteChanged subscriber is an APP-LISTENER bug, not a swap

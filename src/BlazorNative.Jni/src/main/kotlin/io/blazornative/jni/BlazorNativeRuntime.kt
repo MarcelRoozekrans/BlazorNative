@@ -173,6 +173,87 @@ class BlazorNativeRuntime(
     }
 
     /**
+     * Phase 5.1 (M5 DoD #5): host-INITIATED event ingress, asynchronously on the
+     * `BlazorNative-Dispatch` lane (same threading contract as [dispatchEvent] —
+     * never call the ABI directly). LIFECYCLE events (onPause/onResume/…) fire
+     * the runtime's NativeShellBridge.NativeEvents multicast so mounted
+     * components re-render; the reserved name "back" routes to navigation-back
+     * (the mapping lives in .NET — see [NativeBindings.blazornative_host_event]).
+     *
+     * FIRE-AND-FORGET: a non-zero rc is routed to [onError]. This is the right
+     * shape for lifecycle events (rc 0 expected; rc 2 = fault). PREDICTIVE BACK,
+     * which must READ the handled/not-handled decision to choose finish, uses a
+     * BLOCKING variant instead ([dispatchHostEventAndWait]) so the rc 1
+     * "not handled → finish" is DATA, not an error — Gate 3's MainActivity wires
+     * that. [payload] is optional (omitted/NULL — most host events carry none).
+     */
+    fun dispatchHostEvent(name: String, payload: String? = null) {
+        dispatchLane.execute {
+            try {
+                val rc = hostEventCore(name, payload)
+                if (rc != 0) {
+                    onError(describeHostEventFailure(rc, name), IllegalStateException("host_event rc=$rc"))
+                }
+            } catch (t: Throwable) {
+                onError("host_event('$name') threw on the dispatch lane", t)
+            }
+        }
+    }
+
+    /**
+     * Test seam: same marshalling as [dispatchHostEvent] but runs INLINE on the
+     * calling thread and returns the raw rc (JVM tests assert the 0/1/2/3
+     * contract directly, their calling thread IS the dispatch-discipline
+     * thread). Production callers use [dispatchHostEvent] (lifecycle, fire-and-
+     * forget) or [dispatchHostEventAndWait] (back, needs the rc).
+     */
+    internal fun dispatchHostEventBlocking(name: String, payload: String? = null): Int =
+        hostEventCore(name, payload)
+
+    /**
+     * Phase 5.1 — the HOST-blocking host-event dispatch (the predictive-back
+     * production path, Gate 3): marshals through the SAME single [dispatchLane]
+     * (post-boot .NET entry stays serialized) but BLOCKS until the dispatch —
+     * including any synchronous re-render / swap frame deliveries on the lane
+     * thread — has completed, and returns the raw rc (0 handled / 1 not handled
+     * → the shell finishes / 2 faulted). Safe from any thread EXCEPT the
+     * dispatch lane itself (a call from the lane would self-deadlock, same as
+     * [dispatchEventAndWait]). A throw from the dispatch core is rethrown
+     * unwrapped.
+     */
+    fun dispatchHostEventAndWait(name: String, payload: String? = null): Int {
+        val future = dispatchLane.submit(java.util.concurrent.Callable {
+            hostEventCore(name, payload)
+        })
+        return try {
+            future.get()
+        } catch (e: java.util.concurrent.ExecutionException) {
+            throw e.cause ?: e
+        }
+    }
+
+    /** NUL-terminates the name (+ optional payload) and crosses the ABI via the
+     * blazornative_host_event export. */
+    private fun hostEventCore(name: String, payload: String?): Int {
+        val nameZ = name.toByteArray(Charsets.UTF_8) + 0
+        val payloadZ = payload?.let { it.toByteArray(Charsets.UTF_8) + 0 }
+        return NativeBindings.INSTANCE.blazornative_host_event(nameZ, payloadZ)
+    }
+
+    /** Human-readable onError message per non-zero host_event rc (internal so
+     * the message contract is unit-tested; parallels [describeDispatchFailure]). */
+    internal fun describeHostEventFailure(rc: Int, name: String): String = when (rc) {
+        1 -> "host_event('$name') → rc 1: not handled — at the origin (no previous " +
+            "route / no session); the shell falls through to default back"
+        2 -> "host_event('$name') → rc 2: faulted — a NativeEvents subscriber, its " +
+            "re-render, or the back swap threw (detail on native stderr — " +
+            "reproduce on desktop JVM to see it)"
+        3 -> "host_event('$name') → rc 3: malformed/NULL event name (writer bug — " +
+            "should be impossible from this API)"
+        else -> "host_event('$name') → undocumented rc $rc"
+    }
+
+    /**
      * Boots the runtime: init → register frame callback → mount. The first
      * frame callback fires synchronously INSIDE the mount call (sync mount
      * contract), on the calling thread.
