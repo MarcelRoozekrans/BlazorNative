@@ -52,21 +52,20 @@ targets:
         # itself only when it emits a .dylib. For a static embed the app must link
         # them too. ios.yml merges the runtime pack's native/*.a + *.o into one
         # on-demand support archive (libBnRuntimeSupport.a) alongside the app .a.
-        #   - -force_load on BOTH archives: pulls the exports AND the runtime
-        #     bootstrapper/startup object (bootstrapperdll.o) + module constructors
-        #     unconditionally — exactly what NativeAOT does when it links a .dylib.
-        #     On-demand loading of bootstrapperdll.o would leave the runtime
-        #     uninitialised → blazornative_init crashes.
+        #   - -force_load on the app archive only: pulls the exports + module
+        #     constructors. The support archive stays ON-DEMAND — the linker then
+        #     pulls the LIBRARY-appropriate runtime objects (referenced via _Rh*)
+        #     and NOT the exe-flavoured bootstrapper (which needs __managed__Main)
+        #     or the Network-framework transport. Force-loading it pulls both and
+        #     breaks the link.
         #   - the framework/lib set is the 5.0 spike's proven list
-        #     (scripts/ios-spike-verify.sh:106-114) + Security (AppleCrypto) + GSS
-        #     (System.Net.Security.Native.Apple, pulled by the force-loaded support
-        #     archive), the standard .NET-on-Apple native framework set.
+        #     (scripts/ios-spike-verify.sh:106-114); Security covers the pulled
+        #     AppleCrypto calls.
         # BnHost-target-only (NOT global) so the hosted test bundle, which links
         # against the app via BUNDLE_LOADER, does not re-link the runtime.
         OTHER_LDFLAGS:
           - -force_load
           - $(SRCROOT)/vendor/libBlazorNative.Runtime.a
-          - -force_load
           - $(SRCROOT)/vendor/libBnRuntimeSupport.a
           - -lc++
           - -lz
@@ -76,8 +75,6 @@ targets:
           - Foundation
           - -framework
           - Security
-          - -framework
-          - GSS
           - -framework
           - CoreFoundation
 
