@@ -2,7 +2,7 @@
 
 [![ci](https://github.com/MarcelRoozekrans/BlazorNative/actions/workflows/ci.yml/badge.svg)](https://github.com/MarcelRoozekrans/BlazorNative/actions/workflows/ci.yml)
 
-> **Status: pre-release proof of concept.** Milestones 1–3 are complete (tagged `v1.0`–`v3.0`); Milestone 4 (production-shippable) is in progress. Not production-ready — the API surface is unstable and changes without notice.
+> **Status: pre-release proof of concept.** Milestones 1–4 are complete (tagged `v1.0`–`v4.0`); Milestone 5 (full platform coverage) is in progress — iOS proven feasible on the simulator, host-initiated events (lifecycle + predictive back + deep links) landed on Android. Not production-ready — the API surface is unstable and changes without notice.
 
 > .NET → NativeAOT → native mobile widgets. Blazor components rendered as real Android views, no WebView, no JavaScript, no wasm.
 
@@ -146,11 +146,12 @@ BlazorNative/
 ## Status
 
 - [x] Headless Blazor renderer with typed patch protocol (composition-grade: nested components, keyed lists, real disposal)
-- [x] NativeAOT runtime for win-x64 + linux-bionic-x64/arm64 (Android, built on Windows) — eight-export C-ABI
+- [x] NativeAOT runtime for win-x64 + linux-bionic-x64/arm64 (Android, built on Windows) — nine-export C-ABI
 - [x] Bidirectional events (`@onclick` → native tap → .NET handler → re-render) — Phase 3.2
 - [x] Shell bridge as host-registered C-ABI callbacks (navigate/storage/fetch, plain `HttpClient` works on Android) — Phase 3.1
 - [x] `Bn*` component library, `@bind` mechanics, cascading values, navigation — a two-page demo app on the AVD (~1.6 s cold boot) — Milestone 3
-- [ ] Public repo + CI, analyzer rescope, hardening triage, dev inner loop, NuGet packages — Milestone 4 (in progress)
+- [x] Public repo + CI, analyzer rescope, hardening triage, dev inner loop, NuGet packages — Milestone 4
+- [ ] Full platform coverage — iOS proven feasible on the simulator, host-initiated events (lifecycle + predictive back + deep links) on Android — Milestone 5 (in progress)
 - [ ] iOS Swift shell — Milestone 5
 
 ## Compatibility

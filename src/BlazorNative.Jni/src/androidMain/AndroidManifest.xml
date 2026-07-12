@@ -10,6 +10,7 @@
     <application
         android:label="BlazorNative"
         android:allowBackup="true"
+        android:enableOnBackInvokedCallback="true"
         android:networkSecurityConfig="@xml/network_security_config">
         <activity
             android:name=".MainActivity"
@@ -17,6 +18,17 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- Phase 5.1 (M5 DoD #5): launch-time deep links. A custom scheme
+                 (blazornative://<route>) — no domain verification, the simplest
+                 honest proof of the mechanism; https App Links are later work.
+                 MainActivity.onCreate parses intent.data → seeds the startup
+                 route before boot (the 3.5 startup-honor mounts the page). -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="blazornative" />
             </intent-filter>
         </activity>
     </application>

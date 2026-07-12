@@ -2,7 +2,7 @@
 # BlazorNative iOS feasibility spike (Phase 5.0) — macos-latest, dispatch-only.
 #
 # The named-risk probe: can .NET 10 NativeAOT produce a LINKABLE iOS-simulator
-# artifact carrying the eight-export blazornative_* C-ABI, on a free public-repo
+# artifact carrying the nine-export blazornative_* C-ABI, on a free public-repo
 # macOS runner? Three rungs are attempted IN ORDER, each continue-on-error so one
 # run captures maximal evidence; the first rung that produces an artifact feeds
 # the verification (nm + link probe). Artifact-upload heavy by design — every

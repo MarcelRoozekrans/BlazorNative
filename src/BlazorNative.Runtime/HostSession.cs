@@ -55,6 +55,9 @@ internal static unsafe class HostSession
         // Phase 4.2: the focus/blur proof app (BnInput OnFocus/OnBlur →
         // echo BnText — M4 DoD #4). Scaffolding, like CompositionProbe.
         ["FocusProbe"] = r => r.Mount<FocusProbe>(),
+        // Phase 5.1: the host-event proof app (IMobileBridge.NativeEvents →
+        // echo BnText — M5 DoD #5). Scaffolding, like FocusProbe.
+        ["HostEventProbe"] = r => r.Mount<HostEventProbe>(),
     };
 
     /// <summary>Stores the host's frame callback. IntPtr.Zero disables

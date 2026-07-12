@@ -1,5 +1,6 @@
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using BlazorNative.Core;
 using BlazorNative.Renderer;
 
 namespace BlazorNative.Runtime;
@@ -9,7 +10,7 @@ namespace BlazorNative.Runtime;
 // protocol + Phase 3.1 shell bridge (Phase 3.0e gave the library its final
 // name — the version string below is the JNA-visible one).
 //
-// Eight exports:
+// Nine exports:
 //   init                    — load runtime, verify Blazor accessors, store
 //                             platform-info options for the shell bridge
 //   shutdown                — clears the frame callback (frame flush lands later)
@@ -21,6 +22,10 @@ namespace BlazorNative.Runtime;
 //                             handler → re-render → frame callback; 0/1/2/3)
 //   register_bridge         — Phase 3.1: copy the host's 6-callback struct
 //   fetch_complete          — Phase 3.1: deliver an async fetch response
+//   host_event              — Phase 5.1 (M5 DoD #5): host-INITIATED lifecycle
+//                             ingress (pause/resume, back, deep links) — fires
+//                             the real NativeShellBridge.NativeEvents to mounted
+//                             components; name + optional payload; 0/2/3
 //
 // Phase 3.5 (M3 close): the two diagnostic probe exports —
 // blazornative_run_trim_probes (3.0c Gate 4) + blazornative_run_bridge_probes
@@ -72,7 +77,7 @@ public static class Exports
     /// <summary>Single source of truth for the runtime version — the
     /// JNA-visible version cstring and NativeShellBridge.PlatformInfo both
     /// derive from it.</summary>
-    internal const string VersionNumber = "1.2.0-phase-4.5";
+    internal const string VersionNumber = "1.3.0-phase-5.1";
 
     static Exports()
     {
@@ -378,6 +383,126 @@ public static class Exports
         catch (Exception ex)
         {
             Console.Error.WriteLine($"[Exports] fetch_complete id {requestId} failed: {ex}");
+            return 2;
+        }
+    }
+
+    /// <summary>
+    /// Phase 5.1 (M5 DoD #5): host-INITIATED event ingress. Thin ABI wrapper
+    /// over <see cref="DispatchHostEventCore"/> (same wrapper/core split as
+    /// dispatch_event → DispatchEventCore) — marshals the two caller-allocated
+    /// UTF-8 pointers (name required, payload optional/NULL) and guarantees no
+    /// exception crosses the ABI. Unlike dispatch_event this carries NO
+    /// handlerId: it fires the real <see cref="NativeShellBridge.NativeEvents"/>
+    /// multicast, so a mounted component's subscriber (and the re-render its
+    /// StateHasChanged drives) runs synchronously before this returns.
+    /// </summary>
+    [UnmanagedCallersOnly(EntryPoint = "blazornative_host_event", CallConvs = new[] { typeof(CallConvCdecl) })]
+    public static int HostEvent(IntPtr nameUtf8, IntPtr payloadUtf8)
+    {
+        try
+        {
+            string? name = nameUtf8 == IntPtr.Zero
+                ? null
+                : Marshal.PtrToStringUTF8(nameUtf8);
+            string? payload = payloadUtf8 == IntPtr.Zero
+                ? null
+                : Marshal.PtrToStringUTF8(payloadUtf8);
+            return DispatchHostEventCore(name, payload);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[Exports] host_event failed: {ex}");
+            return 2;
+        }
+    }
+
+    /// <summary>The reserved host-event name (Phase 5.1) that routes to
+    /// navigation-back instead of the <see cref="NativeShellBridge.NativeEvents"/>
+    /// multicast. The SAME ingress Android's predictive-back
+    /// (OnBackInvokedCallback, Gate 3) and the JVM test both drive: the
+    /// back→NavigateBack mapping lives HERE, in .NET, so every shell gets
+    /// identical back semantics (a Kotlin-side mapping would fork Android from
+    /// the headless/JVM path). Kotlin's dispatchHostEvent("back") must use this
+    /// exact literal.</summary>
+    internal const string BackEventName = "back";
+
+    /// <summary>
+    /// Managed core of blazornative_host_event (testable without the ABI
+    /// crossing). Two routes on ONE ingress:
+    ///   • the reserved name "back" (<see cref="BackEventName"/>) → the nav
+    ///     manager's NavigateBackAsync (the predictive-back production path);
+    ///   • anything else → the real <see cref="NativeShellBridge.RaiseNativeEvent"/>
+    ///     lifecycle multicast (the 3.2 no-op is gone). "back" is INTERCEPTED
+    ///     before the multicast, so it never reaches NativeEvents subscribers —
+    ///     back is a navigation command, not a lifecycle notification.
+    ///
+    /// Return codes:
+    ///   0 = delivered / handled — a lifecycle event reached every subscriber
+    ///       (or none: an unheard signal is not an error, so there is no
+    ///       "no session" rc for the multicast path, unlike dispatch_event); OR
+    ///       "back" navigated to the previous route;
+    ///   1 = "back" NOT handled — at the origin (no previous route, or no
+    ///       session): the shell falls through to its default back (Android
+    ///       finishes the Activity). rc 1 occurs ONLY for the "back" route
+    ///       (the multicast path never returns it — a "nothing to act on"
+    ///       semantic parallel to dispatch_event's rc 1);
+    ///   2 = a subscriber (or the re-render its StateHasChanged drove, when
+    ///       strict rethrows it) faulted — CONTAINED (isolation: every other
+    ///       subscriber still ran) but surfaced so the host logs loudly; OR
+    ///       the back swap faulted; detail ex.ToString() on stderr;
+    ///   3 = malformed input: a NULL or empty event name (an unnamed event is
+    ///       undispatchable — mirrors dispatch_event's rc 3). A NULL payload is
+    ///       LEGAL (most lifecycle events, and "back", carry none).
+    ///
+    /// SYNCHRONOUS by contract, like dispatch_event: raised on the calling
+    /// (dispatch-lane) thread, so a subscriber's StateHasChanged re-render — or
+    /// the back swap's remove+create frames — have all been delivered when this
+    /// returns. Not called from inside a dispatch window (host-initiated,
+    /// between clicks), so both StateHasChanged's batch and the swap's
+    /// RunAfterDispatch drain cleanly at depth 0 — see the off-lane pin.
+    /// </summary>
+    internal static int DispatchHostEventCore(string? name, string? payload)
+    {
+        if (string.IsNullOrEmpty(name))
+            return 3; // an unnamed host event is not dispatchable
+
+        if (name == BackEventName)
+            return DispatchHostBack();
+
+        try
+        {
+            bool faulted = NativeShellBridge.RaiseNativeEvent(new NativeEvent(name, payload));
+            return faulted ? 2 : 0;
+        }
+        catch (Exception ex)
+        {
+            // Defensive: RaiseNativeEvent isolates per-subscriber, so this only
+            // trips on an unexpected fault OUTSIDE a subscriber body.
+            Console.Error.WriteLine($"[Exports] host_event '{name}' faulted: {ex}");
+            return 2;
+        }
+    }
+
+    /// <summary>Routes the reserved "back" host event to the session's nav
+    /// manager (Phase 5.1). rc 0 = handled (navigated to the previous route) /
+    /// 1 = not handled (at the origin, or no session — the shell finishes) /
+    /// 2 = the back swap faulted. Sync: the swap's frames are delivered before
+    /// this returns (off-lane RunAfterDispatch drains immediately).</summary>
+    private static int DispatchHostBack()
+    {
+        NativeNavigationManager? nav = HostSession.CurrentNavigationManager;
+        if (nav is null)
+            return 1; // nothing mounted → nothing to go back from (not handled)
+
+        try
+        {
+            bool handled = nav.NavigateBackAsync().GetAwaiter().GetResult();
+            return handled ? 0 : 1;
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[Exports] host_event 'back' faulted: {ex}");
             return 2;
         }
     }

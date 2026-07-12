@@ -2,6 +2,7 @@ package io.blazornative.jni
 
 import com.sun.jna.Memory
 import com.sun.jna.Native
+import com.sun.jna.NativeLibrary
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
@@ -65,8 +66,32 @@ class BootSmokeNativeTest {
             "Expected version string to mention 'BlazorNative.Runtime'; got '$versionString'"
         )
         assertTrue(
-            versionString.contains("phase-4.5"),
-            "Expected version string to mention 'phase-4.5'; got '$versionString'"
+            versionString.contains("phase-5.1"),
+            "Expected version string to mention 'phase-5.1'; got '$versionString'"
         )
+    }
+
+    /**
+     * Phase 5.1 — the nine-export surface, verified from the JVM side (the .NET
+     * dumpbin / llvm-readelf checks live in ci.yml; this is the JVM twin the
+     * plan's Gate 2 asks for). Every expected blazornative_* symbol must resolve
+     * in the loaded dll; a missing one throws UnsatisfiedLinkError. The ninth is
+     * blazornative_host_event (the M5 DoD #5 ingress).
+     */
+    @Test
+    fun nine_blazornative_exports_all_resolve() {
+        val expected = listOf(
+            "blazornative_dispatch_event", "blazornative_fetch_complete",
+            "blazornative_host_event", "blazornative_init", "blazornative_mount",
+            "blazornative_register_bridge", "blazornative_register_frame_callback",
+            "blazornative_shutdown", "blazornative_version",
+        )
+        val lib = NativeLibrary.getInstance("BlazorNative.Runtime")
+        for (name in expected) {
+            // getFunction throws UnsatisfiedLinkError if the symbol is absent —
+            // a non-null return is proof the export is present in the surface.
+            assertNotNull(lib.getFunction(name), "export '$name' must resolve in the dll")
+        }
+        assertEquals(9, expected.size, "the C-ABI surface is nine exports (Phase 5.1)")
     }
 }

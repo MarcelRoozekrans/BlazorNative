@@ -129,6 +129,48 @@ public sealed class NavigationTests
         }
     }
 
+    // ── Phase 5.1 named risk: SwapRoot's RunAfterDispatch drains OFF the ──────
+    // dispatch lane (host-initiated back, no open dispatch batch). NavigateBack
+    // rides this: a host event arriving between clicks calls the swap with
+    // _uiEventDispatchDepth == 0, where RunAfterDispatch must run the action
+    // IMMEDIATELY (not queue it — nothing would ever drain the queue off-lane).
+    // The 3.5 KDoc frames deferral around the in-click case; this pins the
+    // no-open-batch path the back button depends on.
+
+    [Fact]
+    public void SwapRoot_OffDispatchLane_NoOpenBatch_DrainsImmediately()
+    {
+        var (_, frames) = StartSession();
+        try
+        {
+            Assert.Equal(0, HostSession.TryMount("BnDemo"));
+            RenderFrame demoMount = frames[0];
+            int demoRoot = Root(demoMount).NodeId;
+            int demoInput = InputNode(demoMount).NodeId;
+            frames.Clear();
+
+            bool afterSwapRan = false;
+            // Called directly — NOT inside any blazornative_dispatch_event
+            // window, so _uiEventDispatchDepth == 0 (host-initiated posture).
+            HostSession.SwapRoot("BnSettingsPage", afterSwap: () => afterSwapRan = true);
+
+            // The swap ran SYNCHRONOUSLY here (no queue, no pending dispatch to
+            // unwind): the old root's removes AND BnSettingsPage's creates were
+            // delivered before SwapRoot returned, and afterSwap fired.
+            Assert.True(afterSwapRan, "afterSwap must run immediately off the dispatch lane");
+            Assert.Equal(2, frames.Count);
+            var removed = RemovedNodes(frames[0]);
+            Assert.Contains(demoRoot, removed);
+            Assert.Contains(demoInput, removed);
+            Assert.True(HasText(frames[1], "Settings"),
+                "the swap's mount frame must land synchronously off-lane");
+        }
+        finally
+        {
+            TearDown();
+        }
+    }
+
     // ── The swap: removes then creates, host notified ─────────────────────────
 
     [Fact]
@@ -365,6 +407,161 @@ public sealed class NavigationTests
         {
             TearDown();
         }
+    }
+
+    // ── NavigateBack: the previous-route slot (Phase 5.1, design §2) ─────────
+    //
+    // A single previous-route slot: NavigateToAsync records the `from` before
+    // each swap; NavigateBackAsync swaps to it and CONSUMES the slot (a back is
+    // not itself a forward step — a second consecutive back has no prior and
+    // returns false, so the Android shell falls through to default finish). A
+    // fresh forward navigation re-arms the slot. Extends to a stack later if
+    // needed (design decision). Runs OFF the dispatch lane (host-initiated) —
+    // it rides the RunAfterDispatch no-open-batch drain pinned above.
+
+    [Fact]
+    public async Task NavigateBack_AtRoot_NoPrior_ReturnsFalse()
+    {
+        var (_, _) = StartSession();
+        try
+        {
+            Assert.Equal(0, HostSession.TryMount("BnDemo"));
+            INavigationManager nav = Nav();
+
+            // Fresh session at "/": nothing to go back to → not handled.
+            Assert.False(await nav.NavigateBackAsync());
+            Assert.Equal("/", nav.CurrentRoute);
+        }
+        finally { TearDown(); }
+    }
+
+    [Fact]
+    public async Task NavigateBack_FromSettings_ReturnsToPrevious_ReturnsTrue()
+    {
+        var (_, frames) = StartSession();
+        try
+        {
+            Assert.Equal(0, HostSession.TryMount("BnDemo"));
+            INavigationManager nav = Nav();
+            await nav.NavigateToAsync("/settings"); // records prior "/"
+            Assert.Equal("/settings", nav.CurrentRoute);
+            frames.Clear();
+
+            bool handled = await nav.NavigateBackAsync();
+
+            Assert.True(handled);
+            // The back swapped to BnDemo (its bound input shape returns), "/".
+            _ = InputNode(frames[^1]);
+            Assert.Equal("/", nav.CurrentRoute);
+            Assert.Equal("/", FakeShellHost.Route); // the host heard the back-nav
+        }
+        finally { TearDown(); }
+    }
+
+    [Fact]
+    public async Task NavigateBack_ThenBack_SlotExhausted_ReturnsFalse()
+    {
+        var (_, _) = StartSession();
+        try
+        {
+            Assert.Equal(0, HostSession.TryMount("BnDemo"));
+            INavigationManager nav = Nav();
+            await nav.NavigateToAsync("/settings"); // / → /settings, prior="/"
+            Assert.True(await nav.NavigateBackAsync()); // back → "/", slot consumed
+            Assert.Equal("/", nav.CurrentRoute);
+
+            // A second consecutive back has no prior — the shell falls through
+            // to default Android finish (false), no ping-pong to /settings.
+            Assert.False(await nav.NavigateBackAsync());
+            Assert.Equal("/", nav.CurrentRoute);
+        }
+        finally { TearDown(); }
+    }
+
+    [Fact]
+    public async Task NavigateBack_ReForwardAfterBack_ReArmsSlot()
+    {
+        var (_, frames) = StartSession();
+        try
+        {
+            Assert.Equal(0, HostSession.TryMount("BnDemo"));
+            INavigationManager nav = Nav();
+            await nav.NavigateToAsync("/settings");
+            Assert.True(await nav.NavigateBackAsync());  // at "/", slot empty
+            Assert.False(await nav.NavigateBackAsync()); // proven exhausted
+
+            // A fresh FORWARD navigation re-arms the slot: back works again.
+            await nav.NavigateToAsync("/settings");
+            Assert.Equal("/settings", nav.CurrentRoute);
+            frames.Clear();
+            Assert.True(await nav.NavigateBackAsync());
+            _ = InputNode(frames[^1]);
+            Assert.Equal("/", nav.CurrentRoute);
+        }
+        finally { TearDown(); }
+    }
+
+    // ── "back" host event → NavigateBack (Phase 5.1, the shared ingress) ─────
+    //
+    // Predictive-back (Gate 3 Android) and the JVM test both drive the SAME
+    // reserved "back" host event: Exports.DispatchHostEventCore intercepts it
+    // and routes to NavigateBackAsync. rc 0 = handled / 1 = not handled (at
+    // root — the shell finishes) / 2 = fault. The mapping lives in .NET so
+    // every shell shares the semantics — pinned here headlessly.
+
+    [Fact]
+    public void HostBackEvent_AtRoot_Returns1_NotHandled()
+    {
+        var (_, _) = StartSession();
+        try
+        {
+            Assert.Equal(0, HostSession.TryMount("BnDemo"));
+
+            // At "/" with no prior: the export reports "not handled" (rc 1) so
+            // the shell falls through to default finish — no swap.
+            int rc = Exports.DispatchHostEventCore("back", null);
+
+            Assert.Equal(1, rc);
+            Assert.Equal("/", Nav().CurrentRoute);
+        }
+        finally { TearDown(); }
+    }
+
+    [Fact]
+    public async Task HostBackEvent_FromSettings_Returns0_BnDemoReturns()
+    {
+        var (_, frames) = StartSession();
+        try
+        {
+            Assert.Equal(0, HostSession.TryMount("BnDemo"));
+            INavigationManager nav = Nav();
+            await nav.NavigateToAsync("/settings");
+            Assert.Equal("/settings", nav.CurrentRoute);
+            frames.Clear();
+
+            // The reserved "back" host event navigates back to BnDemo.
+            int rc = Exports.DispatchHostEventCore("back", null);
+
+            Assert.Equal(0, rc);
+            _ = InputNode(frames[^1]); // BnDemo's shape returned
+            Assert.Equal("/", nav.CurrentRoute);
+            Assert.Equal("/", FakeShellHost.Route);
+
+            // Slot consumed: a second "back" is not handled (rc 1) — no
+            // ping-pong back to /settings.
+            Assert.Equal(1, Exports.DispatchHostEventCore("back", null));
+            Assert.Equal("/", nav.CurrentRoute);
+        }
+        finally { TearDown(); }
+    }
+
+    [Fact]
+    public void HostBackEvent_NoSession_Returns1()
+    {
+        HostSession.ResetForTests();
+
+        // No mounted session → nothing to go back from (not handled).
+        Assert.Equal(1, Exports.DispatchHostEventCore("back", null));
     }
 
     // ── RouteChanged subscriber isolation (Phase 4.2, DoD #4) ────────────────
