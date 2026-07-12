@@ -140,6 +140,9 @@ class InspectorServerTest {
         override fun fetchBegin(requestId: Long, request: BridgeFetchRequest) {
             BridgeFetchCompleter.completeFailure(requestId, "InspectorServerTest performs no fetch")
         }
+        override fun clipboardRead(): String = ""
+        override fun clipboardWrite(text: String) {}
+        override fun share(text: String) {}
     }
 
     @Test

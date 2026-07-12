@@ -66,8 +66,8 @@ class BootSmokeNativeTest {
             "Expected version string to mention 'BlazorNative.Runtime'; got '$versionString'"
         )
         assertTrue(
-            versionString.contains("phase-5.1"),
-            "Expected version string to mention 'phase-5.1'; got '$versionString'"
+            versionString.contains("phase-5.4"),
+            "Expected version string to mention 'phase-5.4'; got '$versionString'"
         )
     }
 

@@ -1,9 +1,11 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// AppleShellBridge — Phase 5.3 (M5 DoD #3): the host half of the shell bridge —
-// the six `@convention(c)` callbacks .NET calls INTO through
+// AppleShellBridge — Phase 5.3 (M5 DoD #3) + Phase 5.4 (DoD #6): the host half of
+// the shell bridge — the `@convention(c)` callbacks .NET calls INTO through
 // `blazornative_register_bridge`. The Swift twin of Android's AndroidShellBridge +
-// ShellBridge.kt, register_bridge is all-or-nothing (all six supplied) and is
-// registered BEFORE mount.
+// ShellBridge.kt; register_bridge is size-negotiated (structSize + min-copy) and
+// registered BEFORE mount. Phase 5.4 appended clipboard read/write + share (offsets
+// 48/56/64) — supplied here as honest -1 stubs until the Gate-3 UIPasteboard /
+// UIActivityViewController wiring.
 //
 // No-capture, singleton-routed (the 5.2 frame-callback pattern): the six global
 // `@convention(c)` trampolines forward to `AppleShellBridge.shared`. Nothing can
@@ -94,6 +96,31 @@ final class AppleShellBridge {
         return -1
     }
 
+    // ── clipboard + share (honest stubs — unsupported until Gate 3) ──────────
+    //
+    // Phase 5.4 appended these slots via the size-negotiated register. The real
+    // UIPasteboard (clipboard) + UIActivityViewController (share) wiring lands in
+    // Gate 3; until then each returns -1 (host error) so a stray call surfaces
+    // immediately rather than silently succeeding — the honest-stub posture the
+    // fetch stub already uses. The slots ARE supplied (non-nil trampolines), so
+    // .NET calls these rather than hitting the null-slot "unsupported" guard;
+    // swapping in the real impls here is the whole of Gate 3's bridge work.
+
+    func clipboardRead(_ buf: UnsafeMutablePointer<CChar>, _ cap: Int32) -> Int32 {
+        NSLog("[AppleShellBridge] clipboardRead — unsupported (5.4 stub), returning -1")
+        return -1
+    }
+
+    func clipboardWrite(_ text: String) -> Int32 {
+        NSLog("[AppleShellBridge] clipboardWrite('\(text)') — unsupported (5.4 stub), returning -1")
+        return -1
+    }
+
+    func share(_ text: String) -> Int32 {
+        NSLog("[AppleShellBridge] share('\(text)') — unsupported (5.4 stub), returning -1")
+        return -1
+    }
+
     // ── the -needed buffer-write helper (twin of ShellBridge.writeUtf8) ──────
 
     /// UTF-8-encode `value`; when bytes + 1 (NUL) fits in `cap`, write bytes + NUL
@@ -143,4 +170,20 @@ let bnBridgeStorageDelete: bn_storage_delete_cb = { keyPtr in
 let bnBridgeFetchBegin: bn_fetch_begin_cb = { requestId, _ in
     guard let bridge = AppleShellBridge.shared else { return -1 }
     return bridge.fetchBegin(requestId)
+}
+
+// Phase 5.4 clipboard/share trampolines (Gate-3 stubs; return -1 = unsupported).
+let bnBridgeClipboardRead: bn_clipboard_read_cb = { buf, cap in
+    guard let buf = buf, let bridge = AppleShellBridge.shared else { return -1 }
+    return bridge.clipboardRead(buf, cap)
+}
+
+let bnBridgeClipboardWrite: bn_clipboard_write_cb = { textPtr in
+    guard let textPtr = textPtr, let bridge = AppleShellBridge.shared else { return -1 }
+    return bridge.clipboardWrite(String(cString: textPtr))
+}
+
+let bnBridgeShare: bn_share_cb = { textPtr in
+    guard let textPtr = textPtr, let bridge = AppleShellBridge.shared else { return -1 }
+    return bridge.share(String(cString: textPtr))
 }

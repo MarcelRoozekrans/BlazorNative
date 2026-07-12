@@ -120,6 +120,22 @@ class AndroidShellBridge(
         fetchExecutor.execute { performFetch(requestId, request) }
     }
 
+    // ── Clipboard + Share (Phase 5.4) — Gate-1 stubs, Gate-2 makes them real ──
+    //
+    // Gate 2 wires clipboard → ClipboardManager (appContext) and share →
+    // Intent.ACTION_SEND + EXTRA_TEXT + FLAG_ACTIVITY_NEW_TASK from appContext.
+    // Until then they THROW (guarded → -1 host error), so a stray call surfaces
+    // loudly rather than silently succeeding — the honest-stub posture.
+
+    override fun clipboardRead(): String =
+        throw NotImplementedError("AndroidShellBridge.clipboardRead — real ClipboardManager wiring lands in Phase 5.4 Gate 2")
+
+    override fun clipboardWrite(text: String): Unit =
+        throw NotImplementedError("AndroidShellBridge.clipboardWrite — real ClipboardManager wiring lands in Phase 5.4 Gate 2")
+
+    override fun share(text: String): Unit =
+        throw NotImplementedError("AndroidShellBridge.share — real ACTION_SEND wiring lands in Phase 5.4 Gate 2")
+
     private fun performFetch(requestId: Long, request: BridgeFetchRequest) {
         try {
             val conn = URL(request.url).openConnection() as HttpURLConnection

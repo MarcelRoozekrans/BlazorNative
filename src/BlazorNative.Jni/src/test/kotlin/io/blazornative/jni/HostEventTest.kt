@@ -47,6 +47,9 @@ class HostEventTest {
         override fun fetchBegin(requestId: Long, request: BridgeFetchRequest) {
             BridgeFetchCompleter.completeFailure(requestId, "HostEventTest performs no fetch")
         }
+        override fun clipboardRead(): String = ""
+        override fun clipboardWrite(text: String) {}
+        override fun share(text: String) {}
     }
 
     private class Session(

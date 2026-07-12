@@ -55,6 +55,9 @@ class NavigationTest {
         override fun fetchBegin(requestId: Long, request: BridgeFetchRequest) {
             BridgeFetchCompleter.completeFailure(requestId, "NavigationTest performs no fetch")
         }
+        override fun clipboardRead(): String = ""
+        override fun clipboardWrite(text: String) {}
+        override fun share(text: String) {}
     }
 
     private class Session(
