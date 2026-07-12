@@ -15,9 +15,39 @@
     <IncludeBuildOutput>false</IncludeBuildOutput>
   </PropertyGroup>
 
+  <PropertyGroup>
+    <!-- Phase 4.5 Gate 1: NuGet pack metadata (M4 DoD #7). Per-csproj by design —
+         see BlazorNative.Core.csproj. Analyzer package shape: no lib/, the dll
+         packed into analyzers/dotnet/cs (see the None Include below),
+         DevelopmentDependency so consumers get PrivateAssets=all by default.
+         No props/targets: plain DiagnosticAnalyzers need none (verified — NuGet
+         loads analyzers/dotnet/cs automatically; nothing here configures builds). -->
+    <PackageId>BlazorNative.Analyzers</PackageId>
+    <Version>1.2.0-phase-4.5</Version>
+    <Authors>Marcel Roozekrans</Authors>
+    <Description>Roslyn analyzers enforcing BlazorNative usage rules (BN0xxx): interop-boundary, bridge-async-handler, and mobile-policy diagnostics for BlazorNative app and library code.</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <RepositoryUrl>https://github.com/MarcelRoozekrans/BlazorNative</RepositoryUrl>
+    <PackageTags>analyzers;roslyn;blazor;native;blazornative</PackageTags>
+    <DevelopmentDependency>true</DevelopmentDependency>
+    <!-- Both Roslyn refs are PrivateAssets=all, so the dependency group would
+         be EMPTY — packing it anyway trips NU5128 (deps group with no matching
+         lib/). Suppressing the empty group is the metadata fix, not a warning
+         suppression; the library packages keep their dependency groups. -->
+    <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
+  </PropertyGroup>
+
   <ItemGroup>
-    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.1*" PrivateAssets="all" />
-    <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" Version="3.1*" PrivateAssets="all" />
+    <!-- Phase 4.5: pinned to the concrete versions the previous floating
+         4.1*/3.1* ranges resolved to (4.1 survey: pin before shipping). -->
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.14.0" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" Version="3.11.0" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Phase 4.5: the analyzer dll ships under analyzers/dotnet/cs (never lib/). -->
+    <None Include="$(OutputPath)\$(AssemblyName).dll" Pack="true"
+          PackagePath="analyzers/dotnet/cs" Visible="false" />
   </ItemGroup>
 
   <ItemGroup>

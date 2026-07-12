@@ -72,7 +72,7 @@ public static class Exports
     /// <summary>Single source of truth for the runtime version — the
     /// JNA-visible version cstring and NativeShellBridge.PlatformInfo both
     /// derive from it.</summary>
-    internal const string VersionNumber = "1.1.0-phase-4.2";
+    internal const string VersionNumber = "1.2.0-phase-4.5";
 
     static Exports()
     {

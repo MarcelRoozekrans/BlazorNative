@@ -14,6 +14,18 @@
     <NoWarn>$(NoWarn);ZAI007</NoWarn>
   </PropertyGroup>
 
+  <PropertyGroup>
+    <!-- Phase 4.5 Gate 1: NuGet pack metadata (M4 DoD #7). Per-csproj by design —
+         see BlazorNative.Core.csproj. -->
+    <PackageId>BlazorNative.Http</PackageId>
+    <Version>1.2.0-phase-4.5</Version>
+    <Authors>Marcel Roozekrans</Authors>
+    <Description>BlazorNative HTTP bridge: BridgeHttpHandler routes HttpClient traffic through the hosting native shell, so Blazor components use plain HttpClient/IHttpClientFactory on NativeAOT.</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <RepositoryUrl>https://github.com/MarcelRoozekrans/BlazorNative</RepositoryUrl>
+    <PackageTags>blazor;native;http;httpclient;nativeaot;android;mobile</PackageTags>
+  </PropertyGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\BlazorNative.Core\BlazorNative.Core.csproj" />
     <!-- Phase 4.1: BN rules ride every src build (zero-warning bar, M4 DoD #3). -->

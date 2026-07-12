@@ -23,6 +23,18 @@
     <IsAotCompatible>true</IsAotCompatible>
   </PropertyGroup>
 
+  <PropertyGroup>
+    <!-- Phase 4.5 Gate 1: NuGet pack metadata (M4 DoD #7). Per-csproj by design —
+         see BlazorNative.Core.csproj. -->
+    <PackageId>BlazorNative.Components</PackageId>
+    <Version>1.2.0-phase-4.5</Version>
+    <Authors>Marcel Roozekrans</Authors>
+    <Description>The public Bn* component library for BlazorNative apps: BnView, BnText, BnButton, BnInput, BnTheme and friends — sealed, hand-written, AOT/trim-compatible Blazor components targeting native widgets.</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <RepositoryUrl>https://github.com/MarcelRoozekrans/BlazorNative</RepositoryUrl>
+    <PackageTags>blazor;native;components;nativeaot;android;mobile;ui</PackageTags>
+  </PropertyGroup>
+
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Components" Version="10.0.*" />
     <!-- MouseEventArgs (BnButton.OnClick) lives in Components.Web — same
