@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- ───────────────────────────────────────────────────────────────────────
+       ConsumerSmoke — Phase 4.5 Gate 2 (M4 DoD #7 proof)
+
+       A blank console project OUTSIDE the solution that consumes BlazorNative
+       exclusively as NuGet packages (see nuget.config: local feed + nuget.org
+       only, no ProjectReferences anywhere). It mounts a hand-written Bn*
+       component through the renderer harness shape and asserts the patch set.
+       Driven by scripts/consumer-smoke.ps1 (locally and as a ci.yml step).
+       ─────────────────────────────────────────────────────────────────────── -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>ConsumerSmoke</RootNamespace>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(AnalyzerTrip)' == 'true'">
+    <!-- consumer-smoke.ps1 passes -p:AnalyzerTrip=true to compile the
+         deliberate BN0011 trip in Program.cs — proving the analyzers package
+         is LIVE in a consumer build. (A dedicated property, not a global
+         DefineConstants override: a global would clobber the SDK-computed
+         TFM defines.) -->
+    <DefineConstants>$(DefineConstants);ANALYZER_TRIP</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="BlazorNative.Core" Version="1.2.0-phase-4.5" />
+    <PackageReference Include="BlazorNative.Renderer" Version="1.2.0-phase-4.5" />
+    <PackageReference Include="BlazorNative.Http" Version="1.2.0-phase-4.5" />
+    <PackageReference Include="BlazorNative.Components" Version="1.2.0-phase-4.5" />
+    <PackageReference Include="BlazorNative.Analyzers" Version="1.2.0-phase-4.5" PrivateAssets="all" />
+  </ItemGroup>
+
+</Project>

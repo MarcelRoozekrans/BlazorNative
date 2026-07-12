@@ -23,6 +23,18 @@
     <TrimmerSingleWarn>false</TrimmerSingleWarn>
   </PropertyGroup>
 
+  <PropertyGroup>
+    <!-- Phase 4.5 Gate 1: NuGet pack metadata (M4 DoD #7). Per-csproj by design —
+         see BlazorNative.Core.csproj. -->
+    <PackageId>BlazorNative.Renderer</PackageId>
+    <Version>1.2.0-phase-4.5</Version>
+    <Authors>Marcel Roozekrans</Authors>
+    <Description>The BlazorNative renderer: drives Blazor's RenderTree diffing into a native widget tree and emits binary UI patch frames for platform shells. NativeAOT/trim-compatible.</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <RepositoryUrl>https://github.com/MarcelRoozekrans/BlazorNative</RepositoryUrl>
+    <PackageTags>blazor;native;renderer;nativeaot;android;mobile;ui</PackageTags>
+  </PropertyGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\BlazorNative.Core\BlazorNative.Core.csproj" />
     <!-- Phase 4.1: BN rules ride every src build (zero-warning bar, M4 DoD #3). -->

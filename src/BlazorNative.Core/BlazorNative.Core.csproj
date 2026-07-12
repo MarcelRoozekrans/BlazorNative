@@ -7,6 +7,19 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
+  <PropertyGroup>
+    <!-- Phase 4.5 Gate 1: NuGet pack metadata (M4 DoD #7). Per-csproj by design —
+         no Directory.Build.props exists, and a scoped one under src/ would leak
+         Version/pack metadata onto the non-packed projects (Runtime, Blazor). -->
+    <PackageId>BlazorNative.Core</PackageId>
+    <Version>1.2.0-phase-4.5</Version>
+    <Authors>Marcel Roozekrans</Authors>
+    <Description>Core contracts for BlazorNative: shell bridge and interop abstractions, the INavigationManager contract, and the DI-facing primitives shared by the renderer, HTTP bridge, and component library.</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <RepositoryUrl>https://github.com/MarcelRoozekrans/BlazorNative</RepositoryUrl>
+    <PackageTags>blazor;native;nativeaot;android;mobile;ui</PackageTags>
+  </PropertyGroup>
+
   <ItemGroup>
     <PackageReference Include="ZeroAlloc.AsyncEvents" Version="*" />
     <PackageReference Include="ZeroAlloc.Inject" Version="*" />
