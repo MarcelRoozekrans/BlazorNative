@@ -64,6 +64,13 @@ public sealed class NativeNavigationManager : INavigationManager
     private readonly IMobileBridge _bridge;
     private string? _currentRoute; // null until first read — see QueryStartupRoute
 
+    /// <summary>The previous-route slot (Phase 5.1, design §2): the route the
+    /// LAST successful <see cref="NavigateToAsync"/> left, or null at the origin.
+    /// <see cref="NavigateBackAsync"/> swaps to it and consumes it (null), so a
+    /// back is not itself a re-armable forward step — a second consecutive back
+    /// finds no prior and returns false. A single slot; a stack is later work.</summary>
+    private string? _previousRoute;
+
     public NativeNavigationManager(IMobileBridge bridge) => _bridge = bridge;
 
     public event Action<string>? RouteChanged;
@@ -78,6 +85,13 @@ public sealed class NativeNavigationManager : INavigationManager
                 $"unknown route '{route}' — known routes: {string.Join(", ", s_routes.Keys)}",
                 nameof(route));
         }
+
+        // Capture the `from` BEFORE the swap (design §2): CurrentRoute resolves
+        // the lazy startup query if it hasn't run, so the slot is never seeded
+        // from a null field. Recorded inside afterSwap so a FAILED swap leaves
+        // the slot (and CurrentRoute) untouched — the previous-route trail
+        // tracks the SCREEN, exactly like _currentRoute/RouteChanged do.
+        string from = CurrentRoute;
 
         // 1. Host notify FIRST (design order — the host's @Volatile route is
         //    current before any frame lands). Sync contract: the ValueTask
@@ -95,10 +109,33 @@ public sealed class NativeNavigationManager : INavigationManager
         //    RaiseRouteChanged.
         HostSession.SwapRoot(component, afterSwap: () =>
         {
+            _previousRoute = from;
             _currentRoute = route;
             RaiseRouteChanged(route);
         });
         return ValueTask.CompletedTask;
+    }
+
+    /// <summary>Host-initiated back (Phase 5.1, design §2): swaps to the
+    /// <see cref="_previousRoute"/> slot and returns true; at the origin (no
+    /// prior) returns false so the Android shell finishes. The slot is CONSUMED
+    /// by the back — cleared AFTER the swap so a second consecutive back has no
+    /// prior (returns false) rather than ping-ponging forever between two pages.
+    /// The nested <see cref="NavigateToAsync"/> re-records the slot (with the
+    /// page we're leaving) as part of its normal contract; the clear then wipes
+    /// that so back leaves no re-back trail — a fresh FORWARD navigation is what
+    /// re-arms it. Runs off the dispatch lane (host-initiated): the swap's
+    /// RunAfterDispatch drains immediately (no open batch — the pinned
+    /// no-open-batch path). On a failed swap the exception propagates and the
+    /// slot survives (the clear is skipped), so back can be retried.</summary>
+    public async ValueTask<bool> NavigateBackAsync()
+    {
+        if (_previousRoute is not { } target)
+            return false; // at the origin — the shell falls through to finish
+
+        await NavigateToAsync(target);
+        _previousRoute = null; // a back consumes the slot — no auto re-back
+        return true;
     }
 
     /// <summary>Raises <see cref="RouteChanged"/> with per-subscriber

@@ -409,6 +409,98 @@ public sealed class NavigationTests
         }
     }
 
+    // ── NavigateBack: the previous-route slot (Phase 5.1, design §2) ─────────
+    //
+    // A single previous-route slot: NavigateToAsync records the `from` before
+    // each swap; NavigateBackAsync swaps to it and CONSUMES the slot (a back is
+    // not itself a forward step — a second consecutive back has no prior and
+    // returns false, so the Android shell falls through to default finish). A
+    // fresh forward navigation re-arms the slot. Extends to a stack later if
+    // needed (design decision). Runs OFF the dispatch lane (host-initiated) —
+    // it rides the RunAfterDispatch no-open-batch drain pinned above.
+
+    [Fact]
+    public async Task NavigateBack_AtRoot_NoPrior_ReturnsFalse()
+    {
+        var (_, _) = StartSession();
+        try
+        {
+            Assert.Equal(0, HostSession.TryMount("BnDemo"));
+            INavigationManager nav = Nav();
+
+            // Fresh session at "/": nothing to go back to → not handled.
+            Assert.False(await nav.NavigateBackAsync());
+            Assert.Equal("/", nav.CurrentRoute);
+        }
+        finally { TearDown(); }
+    }
+
+    [Fact]
+    public async Task NavigateBack_FromSettings_ReturnsToPrevious_ReturnsTrue()
+    {
+        var (_, frames) = StartSession();
+        try
+        {
+            Assert.Equal(0, HostSession.TryMount("BnDemo"));
+            INavigationManager nav = Nav();
+            await nav.NavigateToAsync("/settings"); // records prior "/"
+            Assert.Equal("/settings", nav.CurrentRoute);
+            frames.Clear();
+
+            bool handled = await nav.NavigateBackAsync();
+
+            Assert.True(handled);
+            // The back swapped to BnDemo (its bound input shape returns), "/".
+            _ = InputNode(frames[^1]);
+            Assert.Equal("/", nav.CurrentRoute);
+            Assert.Equal("/", FakeShellHost.Route); // the host heard the back-nav
+        }
+        finally { TearDown(); }
+    }
+
+    [Fact]
+    public async Task NavigateBack_ThenBack_SlotExhausted_ReturnsFalse()
+    {
+        var (_, _) = StartSession();
+        try
+        {
+            Assert.Equal(0, HostSession.TryMount("BnDemo"));
+            INavigationManager nav = Nav();
+            await nav.NavigateToAsync("/settings"); // / → /settings, prior="/"
+            Assert.True(await nav.NavigateBackAsync()); // back → "/", slot consumed
+            Assert.Equal("/", nav.CurrentRoute);
+
+            // A second consecutive back has no prior — the shell falls through
+            // to default Android finish (false), no ping-pong to /settings.
+            Assert.False(await nav.NavigateBackAsync());
+            Assert.Equal("/", nav.CurrentRoute);
+        }
+        finally { TearDown(); }
+    }
+
+    [Fact]
+    public async Task NavigateBack_ReForwardAfterBack_ReArmsSlot()
+    {
+        var (_, frames) = StartSession();
+        try
+        {
+            Assert.Equal(0, HostSession.TryMount("BnDemo"));
+            INavigationManager nav = Nav();
+            await nav.NavigateToAsync("/settings");
+            Assert.True(await nav.NavigateBackAsync());  // at "/", slot empty
+            Assert.False(await nav.NavigateBackAsync()); // proven exhausted
+
+            // A fresh FORWARD navigation re-arms the slot: back works again.
+            await nav.NavigateToAsync("/settings");
+            Assert.Equal("/settings", nav.CurrentRoute);
+            frames.Clear();
+            Assert.True(await nav.NavigateBackAsync());
+            _ = InputNode(frames[^1]);
+            Assert.Equal("/", nav.CurrentRoute);
+        }
+        finally { TearDown(); }
+    }
+
     // ── RouteChanged subscriber isolation (Phase 4.2, DoD #4) ────────────────
     //
     // A THROWING RouteChanged subscriber is an APP-LISTENER bug, not a swap
