@@ -1,15 +1,21 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// BnDriftTests — Phase 5.2 (M5 DoD #2): the wire-layout drift guard. The THIRD
-// offset/size guard, alongside the Kotlin NativeFrameAdapterTest and the .NET
-// PatchProtocolNativeTests (Marshal.OffsetOf). It pins BnFrameAdapter's offset
-// constants to the 48-byte BlazorNativePatch / 24-byte BlazorNativeFrame layout
-// (src/BlazorNative.Runtime/PatchProtocolNative.cs), so any future protocol
-// change breaks ALL THREE shells loudly instead of silently mis-decoding frames
-// on iOS.
+// BnDriftTests — Phase 5.2 (M5 DoD #2) + Phase 5.4 (M5 DoD #6): the iOS layout
+// drift guards. The THIRD mirror of two struct contracts, alongside the Kotlin +
+// .NET pins, so a layout change breaks ALL THREE shells loudly instead of silently
+// mis-reading structs on iOS:
 //
-// Pure Swift (no runtime boot) — fast and deterministic. One test method (the
-// contract's iOS tripwire): if PatchProtocolNative.cs moves a field, this test,
-// NativeFrameAdapterTest.kt, and PatchProtocolNativeTests.cs must all update.
+//   1. testWireLayoutMatchesContract — BnFrameAdapter's offset constants vs the
+//      48-byte BlazorNativePatch / 24-byte BlazorNativeFrame layout
+//      (PatchProtocolNative.cs; twins: NativeFrameAdapterTest.kt +
+//      PatchProtocolNativeTests.cs).
+//   2. testBridgeCallbacksStructLayout — the `bn_bridge_callbacks` C struct
+//      (BlazorNativeRuntimeC.h) vs the 72-byte, 9-callback BridgeProtocolNative.cs
+//      layout (twins: BridgeProtocolNativeTests.cs's offset pins + ShellBridgeTest's
+//      callbacks_struct_is_72_bytes). This is what docs/bridge-extension.md's
+//      "three mirrors, byte-exact, pinned by drift tests" promises — adding a bridge
+//      slot must bump this test.
+//
+// Pure Swift (no runtime boot) — fast and deterministic.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import XCTest
@@ -56,5 +62,32 @@ final class BnDriftTests: XCTestCase {
 
         // The count sanity ceiling must match the Kotlin/.NET guard.
         XCTAssertEqual(BnFrameAdapter.maxPatches, 65_536)
+    }
+
+    /// The `bn_bridge_callbacks` C struct (BlazorNativeRuntimeC.h) — the third
+    /// mirror of the 72-byte, 9 × 8-byte-pointer BlazorNativeBridgeCallbacks layout
+    /// (BridgeProtocolNative.cs). Twins: BridgeProtocolNativeTests.cs's offset pins
+    /// + ShellBridgeTest's callbacks_struct_is_72_bytes. A bridge-slot add/remove or
+    /// reorder must break this test (and the doc's "bump BnDriftTests" instruction).
+    func testBridgeCallbacksStructLayout() {
+        // Total size = 9 fn pointers × 8 bytes (the size negotiation copies
+        // min(structSize, this); BnRuntime passes exactly this as structSize).
+        XCTAssertEqual(MemoryLayout<bn_bridge_callbacks>.size, 72,
+                       "bn_bridge_callbacks must be 72 bytes (9 × 8-byte callbacks)")
+        XCTAssertEqual(MemoryLayout<bn_bridge_callbacks>.stride, 72)
+
+        // Field offsets (0…64), the exact mirror of BridgeProtocolNative.cs. Existing
+        // 6 offsets (0…40) are frozen by the size-negotiation contract; the 5.4
+        // clipboard/share slots append at 48/56/64. MemoryLayout.offset(of:) reads
+        // the C-imported struct's stored-property offsets via KeyPath.
+        XCTAssertEqual(MemoryLayout<bn_bridge_callbacks>.offset(of: \.navigate), 0)
+        XCTAssertEqual(MemoryLayout<bn_bridge_callbacks>.offset(of: \.currentRoute), 8)
+        XCTAssertEqual(MemoryLayout<bn_bridge_callbacks>.offset(of: \.storageRead), 16)
+        XCTAssertEqual(MemoryLayout<bn_bridge_callbacks>.offset(of: \.storageWrite), 24)
+        XCTAssertEqual(MemoryLayout<bn_bridge_callbacks>.offset(of: \.storageDelete), 32)
+        XCTAssertEqual(MemoryLayout<bn_bridge_callbacks>.offset(of: \.fetchBegin), 40)
+        XCTAssertEqual(MemoryLayout<bn_bridge_callbacks>.offset(of: \.clipboardRead), 48)
+        XCTAssertEqual(MemoryLayout<bn_bridge_callbacks>.offset(of: \.clipboardWrite), 56)
+        XCTAssertEqual(MemoryLayout<bn_bridge_callbacks>.offset(of: \.share), 64)
     }
 }

@@ -256,7 +256,7 @@ jobs:
             > ios-out/xcresult.json 2>/dev/null || true
           ls -la ios-out/crash || true
 
-      - name: Assert XCTest baseline (12 passed / 0 failed)
+      - name: Assert XCTest baseline (13 passed / 0 failed)
         if: always()
         run: |
           log=ios-out/xcodebuild-test.log
@@ -268,11 +268,12 @@ jobs:
           # wire-drift guard + BnInteractionTests ×5 (bind/echo, Clear, Theme,
           # Settings→, ←Back) + BnBridgeTests ×2 (-needed buffer, FlatJson) = 9;
           # Phase 5.4 Gate 3 adds BnClipboardTests ×3 (ClipboardProbe Copy→Paste→
-          # echo, the direct UIPasteboard round-trip, the share-hook seam) → 12.
-          # Count drift fails loudly — a deliberate baseline change updates this too.
-          if [ "$failed" -ne 0 ] || [ "$passed" -ne 12 ]; then
+          # echo, the direct UIPasteboard round-trip, the share-hook seam) → 12; and
+          # the bn_bridge_callbacks struct drift pin (BnDriftTests, the third mirror
+          # of the 72-byte bridge struct) → 13. Count drift fails loudly.
+          if [ "$failed" -ne 0 ] || [ "$passed" -ne 13 ]; then
             grep -E "Test Case '.*' (passed|failed)" "$log" || true
-            echo "iOS XCTest baseline drift: expected 12 passed / 0 failed, got passed=$passed failed=$failed" >&2
+            echo "iOS XCTest baseline drift: expected 13 passed / 0 failed, got passed=$passed failed=$failed" >&2
             exit 1
           fi
 
