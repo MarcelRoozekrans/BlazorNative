@@ -115,24 +115,21 @@ jobs:
           find src/BlazorNative.Runtime/bin -type f -name '*.a' 2>/dev/null | sort | tee -a ios-out/native-tree.txt || true
 
           set -e
-          # Find the static archive that actually carries the C-ABI (skip obj/ deps).
-          archive=""
-          while IFS= read -r a; do
-            [ -n "$a" ] || continue
-            if nm -gU "$a" 2>/dev/null | grep -q '_blazornative_init'; then archive="$a"; break; fi
-          done < <(find src/BlazorNative.Runtime/bin -type f -name '*.a' | grep "$RID" | sort -u)
-          if [ -z "$archive" ]; then
-            echo "No .a carrying blazornative_init found under the $RID publish output." >&2
-            echo "Any .dylib produced (would mean NativeLib=Static did not take):" >&2
-            find "$tree_root" -type f -name '*.dylib' 2>/dev/null | while read -r d; do
-              echo "  $d"; nm -gU "$d" 2>/dev/null | grep -Eo '_?blazornative_[A-Za-z_]+' | sed 's/^_/    /' | sort -u || true
-            done
+          # The canonical static archive is the publish/ output (native/ mirrors it).
+          archive="$tree_root/publish/BlazorNative.Runtime.a"
+          [ -f "$archive" ] || archive="$tree_root/native/BlazorNative.Runtime.a"
+          if [ ! -f "$archive" ]; then
+            echo "No BlazorNative.Runtime.a under $tree_root (publish/ or native/)" >&2
             exit 1
           fi
           echo "Archive: $archive"
           ls -la "$archive" | tee -a ios-out/archive-info.txt
           file "$archive" | tee -a ios-out/archive-info.txt
           lipo -info "$archive" 2>/dev/null | tee -a ios-out/archive-info.txt || true
+
+          # Raw nm evidence (uploaded) so any symbol-shape surprise is diagnosable.
+          echo "=== nm -gU (defined external) — first 60 ===" | tee ios-out/nm-raw.txt
+          nm -gU "$archive" 2>&1 | grep -i blazornative | head -60 | tee -a ios-out/nm-raw.txt || true
 
           expected=(
             blazornative_dispatch_event blazornative_fetch_complete
@@ -141,7 +138,8 @@ jobs:
             blazornative_shutdown blazornative_version
           )
           actual=$(nm -gU "$archive" 2>/dev/null | grep -Eo '_?blazornative_[A-Za-z_]+' | sed 's/^_//' | sort -u)
-          echo "$actual" | tee ios-out/nm-symbols.txt
+          echo "=== normalized blazornative_* symbols ===" | tee ios-out/nm-symbols.txt
+          echo "$actual" | tee -a ios-out/nm-symbols.txt
           missing=()
           for s in "${expected[@]}"; do echo "$actual" | grep -qx "$s" || missing+=("$s"); done
           if [ "${#missing[@]}" -ne 0 ]; then
