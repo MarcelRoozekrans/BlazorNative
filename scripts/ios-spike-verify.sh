@@ -42,9 +42,17 @@ fi
 echo "Candidate artifacts (${#CANDIDATES[@]}):"
 printf '  %s\n' "${CANDIDATES[@]}"
 
+# GREEN requires ONE artifact that is BOTH complete (all 8 symbols) AND links.
+# The link stub only references 2 of the 8 symbols, so link-pass alone cannot
+# stand in for the symbol half of the bar — track both, gate on both. This keeps
+# the script honest if Phase 5.2 promotes it to a real CI gate.
 OVERALL_LINK_OK=0
+OVERALL_SYMS_OK=0
+OVERALL_GREEN=0
 
 for ART in "${CANDIDATES[@]}"; do
+  ART_LINK_OK=0
+  ART_SYMS_OK=0
   echo
   echo "------------------------------------------------------------------"
   echo " Artifact: $ART"
@@ -63,6 +71,8 @@ for ART in "${CANDIDATES[@]}"; do
   done
   if [ "${#MISSING[@]}" -eq 0 ]; then
     echo "SYMBOLS: all 8 blazornative_* present."
+    ART_SYMS_OK=1
+    OVERALL_SYMS_OK=1
   else
     echo "SYMBOLS: MISSING ${#MISSING[@]} -> ${MISSING[*]}"
   fi
@@ -108,6 +118,7 @@ EOF
     echo "LINK PROBE: PASS — built $OUT"
     file "$OUT" || true
     OVERALL_LINK_OK=1
+    ART_LINK_OK=1
 
     # 4) BONUS — try to run it on a booted sim (don't gate on this).
     echo "-- bonus: simctl spawn --"
@@ -126,14 +137,20 @@ EOF
   else
     echo "LINK PROBE: FAIL (clang exit $LRC) for $ART"
   fi
+
+  # This artifact is fully good only if it carries ALL 8 symbols AND links.
+  if [ "$ART_SYMS_OK" -eq 1 ] && [ "$ART_LINK_OK" -eq 1 ]; then
+    OVERALL_GREEN=1
+  fi
 done
 
 echo
 echo "=================================================================="
-if [ "$OVERALL_LINK_OK" -eq 1 ]; then
-  echo "VERDICT: GREEN — at least one artifact carries the 8 exports AND link-probes."
+if [ "$OVERALL_GREEN" -eq 1 ]; then
+  echo "VERDICT: GREEN — at least one artifact carries all 8 exports AND link-probes."
   exit 0
 else
-  echo "VERDICT: RED — artifact(s) found but none link-probed clean (see above)."
+  echo "VERDICT: RED — no single artifact met BOTH bars (symbols=$OVERALL_SYMS_OK link=$OVERALL_LINK_OK)."
+  echo "  (GREEN requires ONE artifact with all 8 blazornative_* symbols AND a clean link probe.)"
   exit 2
 fi
