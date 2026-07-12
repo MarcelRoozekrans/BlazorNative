@@ -56,6 +56,18 @@ Phase 5.0 brainstorm — and explicitly subject to the Phase 5.0 spike verdict.
 3. **Two-page demo parity on the simulator** — the headline: bound input + live echo,
    button events, cascading theme, and Settings ⇄ Back navigation, all on the iOS
    simulator, mirroring the Android v3.0 bar.
+   ✅ **CLOSED 2026-07-12 (Phase 5.3): GREEN** — the interactive two-page BnDemo runs
+   on the iOS simulator, reaching the Android v3.0 bar. A serial dispatch lane crosses
+   taps to `blazornative_dispatch_event`; `BnWidgetMapper` wires `AttachEvent` to
+   UIControl targets; `AppleShellBridge` supplies all 6 `@convention(c)` callbacks
+   (navigate/current-route real via the -needed protocol, storage/fetch honest stubs),
+   registered before mount. The `@bind` write-back needs no re-entrancy guard (UIKit
+   doesn't fire `.editingChanged` on a programmatic set — the loop can't form). The
+   interactive hosted XCTests (2 → 9) prove bound input + live echo (the `héllo→世界`
+   UTF-8 leg, input not clobbered), Clear, cascading theme (both directions), and
+   Settings⇄Back (fresh remount) on the simulator. **Swift + `ios.yml` only — zero
+   shared change** (version stays `1.3.0-phase-5.1`; .NET 220 / JVM 78 / Android 38
+   untouched). See [conclusion](../plans/2026-07-12-phase-5.3-conclusion.md).
 4. **iOS CI lane.** A macOS two-job workflow (publish → simulator tests),
    informational-first with promotion criteria, mirroring the Android emulator lane's
    posture.

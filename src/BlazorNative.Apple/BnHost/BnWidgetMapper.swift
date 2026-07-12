@@ -20,13 +20,27 @@
 // Scope: CreateNode (view/text/button/input wired; image/scroll/picker → a
 // placeholder UIView + log, to keep container indices consistent), ReplaceText,
 // RemoveNode, UpdateProp(value/placeholder), SetStyle(backgroundColor/fontSize/
-// padding), CommitFrame. AttachEvent/DetachEvent are LOGGED AND SKIPPED — they
-// arrive in BnDemo's mount frame but interactivity is Phase 5.3.
+// padding), CommitFrame. Phase 5.3 wires AttachEvent/DetachEvent to UIControl
+// targets (the 4 BnDemo events 5.2 skipped) via the `onUiEvent` seam.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import UIKit
 
+/// Wraps a Swift closure as an ObjC target-action sink (UIControl targets must be
+/// ObjC objects and are held WEAKLY by the control — so the mapper retains these
+/// in `eventTargets`). One per (nodeId, eventName).
+final class BnControlTarget: NSObject {
+    private let handler: () -> Void
+    init(_ handler: @escaping () -> Void) { self.handler = handler }
+    @objc func fire() { handler() }
+}
+
 final class BnWidgetMapper {
+
+    /// UI-event seam (the Kotlin mapper's `onUiEvent` constructor arg): wired by
+    /// BnRuntime to the dispatch lane. Default no-op keeps the render-only path
+    /// (5.2 tests) working. Called on the main thread from control targets.
+    var onUiEvent: (_ handlerId: Int32, _ eventName: String, _ payload: String?) -> Void = { _, _, _ in }
 
     /// The host container the top-level (parentless) node is added into — the
     /// twin of Android's widget_root FrameLayout.
@@ -36,6 +50,13 @@ final class BnWidgetMapper {
     /// Patches accumulate here until a CommitFrame flushes the batch to main.
     /// Touched only on the callback thread before the main hop.
     private var pending: [BnPatch] = []
+
+    /// Live control-event targets keyed by (nodeId, eventName). The control is
+    /// retained alongside the target so DetachEvent/RemoveNode can removeTarget by
+    /// identity (the text-collapse can alias several nodeIds onto one control).
+    /// Main-thread only (mutated inside applyBatch).
+    private struct EventKey: Hashable { let nodeId: Int32; let event: String }
+    private var eventTargets: [EventKey: (control: UIControl, target: BnControlTarget)] = [:]
 
     init(root: UIView) {
         self.root = root
@@ -71,12 +92,83 @@ final class BnWidgetMapper {
                 handleSetStyle(nodeId: nodeId, property: property, value: value)
             case .commitFrame:
                 break // boundary marker; no-op here
-            case .attachEvent(let nodeId, let eventName, _):
-                // Phase 5.3 wires these; they ride BnDemo's mount frame. Skip.
-                NSLog("[BnWidgetMapper] AttachEvent '\(eventName)' on node \(nodeId) skipped (interactivity = Phase 5.3)")
+            case .attachEvent(let nodeId, let eventName, let handlerId):
+                handleAttachEvent(nodeId: nodeId, eventName: eventName, handlerId: handlerId)
             case .detachEvent(let nodeId, _, let eventName):
-                NSLog("[BnWidgetMapper] DetachEvent '\(eventName)' on node \(nodeId) skipped (interactivity = Phase 5.3)")
+                handleDetachEvent(nodeId: nodeId, eventName: eventName)
             }
+        }
+    }
+
+    // ── AttachEvent/DetachEvent → UIControl targets (Phase 5.3) ───────────────
+
+    /// Wires a control-event target that forwards to `onUiEvent`. NodeId resolution
+    /// rides the text-collapse (twin of WidgetMapper.handleAttachEvent): the
+    /// renderer attaches against the interactive element's OWN nodeId (e.g. the
+    /// button view, not its text child), so `nodes[nodeId]` is the real control.
+    /// Last-wins: a re-attach for the same (node, event) removes the prior target
+    /// before adding — no stacked dispatches.
+    ///   click → UIButton .touchUpInside (payload nil)
+    ///   change → UITextField .editingChanged (payload = current text)
+    ///   focus/blur → UITextField .editingDidBegin/.editingDidEnd (payload nil)
+    private func handleAttachEvent(nodeId: Int32, eventName: String, handlerId: Int32) {
+        guard let control = nodes[nodeId] as? UIControl else {
+            NSLog("[BnWidgetMapper] AttachEvent '\(eventName)' for node \(nodeId): not a UIControl — ignored")
+            return
+        }
+        let controlEvent: UIControl.Event
+        let payload: () -> String?
+        switch eventName {
+        case "click":
+            guard control is UIButton else {
+                NSLog("[BnWidgetMapper] AttachEvent 'click' ignored: node \(nodeId) is not a UIButton"); return
+            }
+            controlEvent = .touchUpInside
+            payload = { nil }
+        case "change":
+            guard let field = control as? UITextField else {
+                NSLog("[BnWidgetMapper] AttachEvent 'change' ignored: node \(nodeId) is not a UITextField"); return
+            }
+            controlEvent = .editingChanged
+            payload = { [weak field] in field?.text ?? "" }
+        case "focus":
+            guard control is UITextField else {
+                NSLog("[BnWidgetMapper] AttachEvent 'focus' ignored: node \(nodeId) is not a UITextField"); return
+            }
+            controlEvent = .editingDidBegin
+            payload = { nil }
+        case "blur":
+            guard control is UITextField else {
+                NSLog("[BnWidgetMapper] AttachEvent 'blur' ignored: node \(nodeId) is not a UITextField"); return
+            }
+            controlEvent = .editingDidEnd
+            payload = { nil }
+        default:
+            NSLog("[BnWidgetMapper] AttachEvent '\(eventName)' not supported (forward compat): skipped")
+            return
+        }
+        let key = EventKey(nodeId: nodeId, event: eventName)
+        removeTarget(for: key) // last-wins
+        let target = BnControlTarget { [weak self] in
+            self?.onUiEvent(handlerId, eventName, payload())
+        }
+        control.addTarget(target, action: #selector(BnControlTarget.fire), for: controlEvent)
+        eventTargets[key] = (control, target)
+    }
+
+    private func handleDetachEvent(nodeId: Int32, eventName: String) {
+        let key = EventKey(nodeId: nodeId, event: eventName)
+        if eventTargets[key] == nil {
+            NSLog("[BnWidgetMapper] DetachEvent '\(eventName)' for node \(nodeId): no live target — ignored")
+        }
+        removeTarget(for: key)
+    }
+
+    /// Removes and drops the target for a key (removeTarget for all events — one
+    /// target serves one control-event, so `.allEvents` fully detaches it).
+    private func removeTarget(for key: EventKey) {
+        if let (control, target) = eventTargets.removeValue(forKey: key) {
+            control.removeTarget(target, action: nil, for: .allEvents)
         }
     }
 
@@ -177,6 +269,13 @@ final class BnWidgetMapper {
         for (key, value) in nodes where value === v {
             nodes.removeValue(forKey: key)
         }
+        // Purge event targets registered on the removed control by IDENTITY (the
+        // collapse can alias several nodeIds onto one control, so the target may
+        // sit under a different key than the one being removed).
+        for (key, entry) in eventTargets where entry.control === v {
+            entry.control.removeTarget(entry.target, action: nil, for: .allEvents)
+            eventTargets.removeValue(forKey: key)
+        }
         if let stack = v.superview as? UIStackView {
             stack.removeArrangedSubview(v)
         }
@@ -200,7 +299,19 @@ final class BnWidgetMapper {
         case "value":
             if let field = view as? UITextField {
                 let newValue = value ?? ""
-                if field.text != newValue { field.text = newValue }
+                // The @bind write-back — the iOS SIMPLIFICATION (design §3): NO
+                // applyingBatch re-entrancy guard. UIKit does NOT fire
+                // .editingChanged on a programmatic `.text` set (unlike Android's
+                // TextWatcher), so this write can never re-enter the change lane —
+                // the bind loop cannot form. The inequality check stays purely to
+                // preserve the caret/IME marked-text mid-typing (reassigning
+                // `.text` resets the selection). When the runtime pushes a genuinely
+                // new value (e.g. Clear), the caret moves to the end.
+                if field.text != newValue {
+                    field.text = newValue
+                    let end = field.endOfDocument
+                    field.selectedTextRange = field.textRange(from: end, to: end)
+                }
             } else {
                 NSLog("[BnWidgetMapper] UpdateProp value ignored: node \(nodeId) is not a UITextField")
             }

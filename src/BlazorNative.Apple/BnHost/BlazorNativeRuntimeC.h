@@ -1,18 +1,18 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// BlazorNative.Runtime C-ABI — Swift bridging header (Phase 5.2, M5 DoD #2).
+// BlazorNative.Runtime C-ABI — Swift bridging header (Phase 5.2 + 5.3).
 //
-// The Swift/UIKit shell's native-interop surface: it declares the subset of the
-// nine-export blazornative_* C-ABI that the READ-ONLY boot+render shell needs —
-// init / register_frame_callback / mount / version / shutdown — plus the two
-// by-value structs and the frame-callback typedef. This is the Swift twin of the
-// Kotlin JNA `NativeBindings` interface; Swift's native C interop replaces the JNA
-// layer entirely (no reflection, no Structure classes — direct extern decls).
+// The Swift/UIKit shell's native-interop surface. Phase 5.2 declared the
+// boot+render subset (init / register_frame_callback / mount / version / shutdown
+// + the init structs + the frame-callback typedef). Phase 5.3 (M5 DoD #3,
+// interactivity) adds the INPUT direction: dispatch_event (taps→renderer) +
+// register_bridge (the 6-callback shell bridge, .NET→host). This is the Swift twin
+// of the Kotlin JNA `NativeBindings` interface; Swift's native C interop replaces
+// the JNA layer entirely (no reflection, no Structure classes — direct externs).
 //
-// The remaining four exports (dispatch_event, register_bridge, fetch_complete,
-// host_event) are NOT declared here: Phase 5.2 is boot+render only, no bridge and
-// no host→renderer event ingress (that is Phase 5.3). They are still present in
-// the linked static archive (ios.yml asserts all nine via `nm -gU`); the shell
-// simply does not call them yet.
+// host_event (Phase 5.1 host-initiated lifecycle) and fetch_complete are the only
+// exports still undeclared — the Swift shell does not drive lifecycle/fetch yet
+// (the fetch bridge stub fails synchronously; see AppleShellBridge). All nine are
+// present in the linked static archive (ios.yml asserts them via `nm -gU`).
 //
 // Struct-layout contract — mirror of src/BlazorNative.Runtime/Exports.cs
 // (BlazorNativeInitOptions / BlazorNativeInitResult, [StructLayout(Sequential)],
@@ -77,6 +77,47 @@ const char* blazornative_version(void);
 
 // Clears the frame callback. Reserved for genuine process-exit paths.
 void blazornative_shutdown(void);
+
+// ── Phase 5.3: input direction (dispatch_event + the shell bridge) ────────────
+
+// Host→renderer UI event ingress (Exports.cs DispatchEvent). handlerId is the
+// AttachEvent's aux field (widened to u64); argsJsonUtf8 is NUL-terminated flat
+// JSON ({"name":"click"} / {"name":"change","payload":"<raw>"}). SYNCHRONOUS: the
+// handler, the re-render, and the frame callback all complete before this returns
+// (so the re-render frame arrives on the CALLING thread — the dispatch lane).
+// Return: 0 dispatched (incl. stale handler) / 1 no session / 2 dispatch faulted /
+// 3 malformed args or handlerId out of int range.
+int32_t blazornative_dispatch_event(uint64_t handlerId, const char* argsJsonUtf8);
+
+// The six host-implemented shell callbacks (BridgeProtocolNative.cs
+// BlazorNativeBridgeCallbacks — 6 × 8-byte fn pointers = 48 bytes). All cdecl,
+// int-returning. Buffer-writing calls (currentRoute, storageRead) use the
+// -needed protocol: return the byte count written INCLUDING NUL on success, or
+// -(bytesNeeded+... i.e. -(utf8Bytes+1)) when the value does not fit the offered
+// cap; -1 = host error; -2 = key absent (storageRead only). Input strings are
+// .NET-owned, valid only during the callback (copy before returning).
+typedef int32_t (*bn_navigate_cb)(const char* routeUtf8);                    // offset 0
+typedef int32_t (*bn_current_route_cb)(char* buf, int32_t cap);              // offset 8
+typedef int32_t (*bn_storage_read_cb)(const char* keyUtf8, char* buf, int32_t cap); // offset 16
+typedef int32_t (*bn_storage_write_cb)(const char* keyUtf8, const char* valueUtf8); // offset 24
+typedef int32_t (*bn_storage_delete_cb)(const char* keyUtf8);               // offset 32
+// FetchBegin: the request struct is ignored by the shell's honest stub, so it is
+// typed as an opaque pointer here (BlazorNativeFetchRequest* on the .NET side).
+typedef int32_t (*bn_fetch_begin_cb)(int64_t requestId, const void* request); // offset 40
+
+typedef struct {
+    bn_navigate_cb       navigate;      // offset 0
+    bn_current_route_cb  currentRoute;  // offset 8
+    bn_storage_read_cb   storageRead;   // offset 16
+    bn_storage_write_cb  storageWrite;  // offset 24
+    bn_storage_delete_cb storageDelete; // offset 32
+    bn_fetch_begin_cb    fetchBegin;    // offset 40
+} bn_bridge_callbacks;                  // 48 bytes
+
+// COPIES the callbacks struct (the host may free it after; the fn pointers must
+// stay alive). Call BEFORE mount so components resolving the bridge find a live
+// host. Returns 0 on success, 2 on null pointer / failure.
+int32_t blazornative_register_bridge(bn_bridge_callbacks* callbacks);
 
 #ifdef __cplusplus
 }
