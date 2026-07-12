@@ -64,6 +64,11 @@ class ClipboardAndroidTest {
                 pollForProbe(scenario)
             )
 
+            // Android 10+ gates clipboard READS on window focus (an ANR/overlay
+            // stealing focus → the read is denied and returns ""). Wait until the
+            // activity holds focus before driving Copy/Paste so the reads can land.
+            awaitWindowFocus(scenario)
+
             // Tap Copy → clipboardWrite → the system clipboard holds the payload.
             tapButton(scenario, "Copy")
             assertTrue(
@@ -93,6 +98,9 @@ class ClipboardAndroidTest {
         try {
             launchProbe().use { scenario ->
                 assertNotNull("boot failed", pollForProbe(scenario))
+
+                // Wait for window focus — Paste's clipboard read is focus-gated.
+                awaitWindowFocus(scenario)
 
                 // Seed the echo (Share shares the current echo): Copy → Paste.
                 tapButton(scenario, "Copy")
@@ -180,6 +188,15 @@ class ClipboardAndroidTest {
             Thread.sleep(250)
         }
         return found.get()
+    }
+
+    /** Waits (up to 10s) until the activity holds window focus — the precondition
+     * for Android 10+ clipboard READS. Best-effort: a false return still lets the
+     * test proceed (and fail loudly on the clipboard assertion) rather than mask a
+     * genuine regression as a focus timeout. The CI lane also sets
+     * hide_error_dialogs=1 so a boot ANR can't hold focus. */
+    private fun awaitWindowFocus(scenario: ActivityScenario<MainActivity>) {
+        pollUntil(scenario, deadlineMs = 10_000) { act -> act.hasWindowFocus() }
     }
 
     private fun pollUntil(

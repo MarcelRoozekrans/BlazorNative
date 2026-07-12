@@ -508,6 +508,31 @@ public sealed class NativeShellBridgeTests
     }
 
     [Fact]
+    public async Task NegativeStructSize_ClampsToNoCopy_EverythingUnsupported()
+    {
+        // The Clamp lower-bound invariant (Gate 1 review nit): a stray negative
+        // structSize reaching Register must be a SAFE no-copy (Clamp(-8,0,72)=0 →
+        // every slot stays zero → everything unsupported), never an
+        // OverflowException from a negative Buffer.MemoryCopy length. Register the
+        // full 72-byte struct but claim -8 bytes: nothing is copied, so all three
+        // guarded capabilities read back as unsupported and Register itself does
+        // not throw.
+        FakeShellHost.Reset();
+        NativeShellBridge.Register(structSize: -8, FakeShellHost.BuildCallbacks());
+        var bridge = new NativeShellBridge();
+        try
+        {
+            await Assert.ThrowsAsync<NotSupportedException>(
+                () => bridge.ClipboardReadAsync().AsTask());
+            await Assert.ThrowsAsync<NotSupportedException>(
+                () => bridge.ClipboardWriteAsync("x").AsTask());
+            await Assert.ThrowsAsync<NotSupportedException>(
+                () => bridge.ShareAsync("x").AsTask());
+        }
+        finally { NativeShellBridge.ResetForTests(); }
+    }
+
+    [Fact]
     public async Task UnregisteredHost_Throws()
     {
         NativeShellBridge.ResetForTests();

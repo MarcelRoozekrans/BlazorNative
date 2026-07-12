@@ -208,6 +208,10 @@ jobs:
           working-directory: src/BlazorNative.Jni
           script: |
             adb logcat -c || true
+            # Suppress ANR/crash dialogs — a boot ANR stealing window focus would
+            # deny the Android 10+ clipboard READ (ClipboardAndroidTest); this plus
+            # the in-test hasWindowFocus() wait keep that lane stable on a cold AVD.
+            adb shell settings put global hide_error_dialogs 1 || true
             ./gradlew --no-daemon connectedAndroidTest "-PciSoDir=${{ runner.temp }}/ci-so" || touch "${{ runner.temp }}/gradle-failed"
             adb logcat -d > "${{ runner.temp }}/logcat.txt" || true
             test ! -f "${{ runner.temp }}/gradle-failed"

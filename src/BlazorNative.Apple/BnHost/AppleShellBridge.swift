@@ -186,7 +186,7 @@ final class AppleShellBridge {
     }
 }
 
-// ── The six global @convention(c) trampolines (no capture; singleton-routed) ──
+// ── The nine global @convention(c) trampolines (no capture; singleton-routed) ─
 // Held as top-level `let`s for the process lifetime — the fn pointers must outlive
 // register_bridge (the JNA strong-ref rule's Swift form). A nil singleton → -1.
 
@@ -220,7 +220,8 @@ let bnBridgeFetchBegin: bn_fetch_begin_cb = { requestId, _ in
     return bridge.fetchBegin(requestId)
 }
 
-// Phase 5.4 clipboard/share trampolines (Gate-3 stubs; return -1 = unsupported).
+// Phase 5.4 clipboard/share trampolines — route to the REAL UIPasteboard /
+// UIActivityViewController methods (Gate 3). A nil singleton → -1.
 let bnBridgeClipboardRead: bn_clipboard_read_cb = { buf, cap in
     guard let buf = buf, let bridge = AppleShellBridge.shared else { return -1 }
     return bridge.clipboardRead(buf, cap)
