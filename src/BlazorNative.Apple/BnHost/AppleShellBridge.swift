@@ -6,8 +6,10 @@
 // registered BEFORE mount.
 //
 // No-capture, singleton-routed (the 5.2 frame-callback pattern): the six global
-// `@convention(c)` trampolines forward to `AppleShellBridge.shared`; a nil
-// singleton or a would-be throw returns -1 (nothing unwinds across the C ABI).
+// `@convention(c)` trampolines forward to `AppleShellBridge.shared`. Nothing can
+// throw across the C ABI BY CONSTRUCTION — `@convention(c)` closures are
+// non-throwing (compiler-enforced) and the bridge methods they call don't throw —
+// so -1 is returned ONLY on the nil-singleton guard, never from a caught exception.
 // Process-lifetime retention — app-scoped state only (route slot + storage dict),
 // no view controllers.
 //

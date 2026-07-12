@@ -156,6 +156,20 @@ to an `emulator` job on ubuntu-latest (KVM), which runs
 x86_64 Pixel 6 image — mirroring the local AVD `blazornative-pixel6-x86_64`
 — and asserts 32 passed / 0 failed.
 
+The iOS-simulator workflow (`ios.yml`, `macos-latest`, on `pull_request` for
+iOS-relevant paths + manual dispatch) is likewise **informational, not a required
+check** — simulator-on-CI has flake modes (sim boot, test-host launch) and the
+lane is young, so it stays advisory. Promotion mirrors the emulator lane: after a
+stability baseline (≈10 consecutive green runs on `main` with no sim-flake reds)
+it can be promoted to a required check. Shape: a **single** job (iOS both
+publishes and tests on macOS) publishes the `iossimulator-arm64` NativeAOT
+**static** archive (the runtime-pack bypass + `NativeLib=Static`; 4 IL2072 +
+nine-export `nm -gU` assertions), assembles the static-embed link inputs
+(`bootstrapperdll.o` direct-link + the merged support archive), then runs the
+hosted XCTest suite via `xcodebuild test` on a runner-selected simulator —
+asserting **9 passed / 0 failed** (the render pin + the wire-drift guard + the
+interactive two-page demo: bind/echo, Clear, Theme, Settings⇄Back).
+
 ### PR-merge workflow (from Phase 4.1 onward)
 
 Once branch protection is live, phases merge **via PR** instead of a local
@@ -182,15 +196,15 @@ Live in `.github/ISSUE_TEMPLATE/`:
 ### PR template
 
 Lives at `.github/pull_request_template.md`. The platform checklist matches the
-two surfaces every change must hold on:
+surfaces every change must hold on — the iOS row joined in M5 once the Swift
+shell landed (render in Phase 5.2, interactivity in Phase 5.3):
 
 ```markdown
 ## Platform tested
 - [ ] JVM dev loop (`testDebugUnitTest`)
 - [ ] Android emulator (`connectedAndroidTest`)
+- [ ] iOS simulator (`ios.yml` — `xcodebuild test`)
 ```
-
-(iOS rows return when the Swift shell lands in M5.)
 
 ---
 
