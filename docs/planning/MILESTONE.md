@@ -1,6 +1,8 @@
 # Milestone 4 — P3: Production-Shippable
 
-**Status:** in progress — opened 2026-07-11
+**Status:** complete — closed 2026-07-12, tag `v4.0` (post-merge on `main`).
+[Final audit](../plans/2026-07-12-milestone-4-final-audit.md): **PASS, all 8 DoD
+criteria** (honesty notes on #1/#2/#4/#5/#6/#7 recorded per criterion).
 **Source:** maps to BACKLOG.md "P3 — Production readiness"
 **Predecessor:** Milestone 3 — complete 2026-07-10, tagged `v3.0` ([final audit](../plans/2026-07-10-milestone-3-final-audit.md): PASS, all 11 DoD criteria)
 
@@ -115,9 +117,27 @@ refinement during the Phase 4.0 brainstorm.
    separate decision at milestone close). The proof is a consumer smoke: a blank
    project referencing only the packages mounts a `Bn*` component and produces
    frames. The analyzers package ships its `.props`/`.targets` correctly.
+   ✅ **CLOSED 2026-07-12 (Phase 4.5):** five packages pack clean (zero warnings)
+   at `1.2.0-phase-4.5`; analyzers layout unzip-verified (`analyzers/dotnet/cs`,
+   no `lib/`, DevelopmentDependency, pinned Roslyn deps) — props/targets verified
+   **not needed** for plain DiagnosticAnalyzers, proven live in the consumer;
+   `samples/ConsumerSmoke` (outside the sln) restores from the local feed only
+   (provenance asserted from `.nupkg.metadata`), mounts BnView/BnText/BnButton,
+   asserts the patch set, and pins analyzer activity both directions (BN0011 trip
+   + zero-BN clean build) — green locally AND as a ci.yml step on every PR
+   (PR #46). MIT LICENSE added (the public repo lacked one). Honesty:
+   `BlazorNative.Runtime` deliberately not packaged (app-shape concern; M6
+   template/story); nuget.org deferred to M6. See
+   [Phase 4.5 conclusion](../plans/2026-07-12-phase-4.5-conclusion.md).
 
 8. **Decision log committed.** Same pattern as M1–M3: design + plan + conclusion doc
    per phase, plus an M4 final-audit doc at close → tag `v4.0`.
+   ✅ **CLOSED 2026-07-12 (Phase 4.5):** design + plan + conclusion per phase
+   (4.0–4.5, plus the 4.2 hardening-triage ledger of record), two in-place
+   wording corrections recorded honestly (4.3 unload-API, 4.5
+   SuppressDependenciesWhenPacking), and the
+   [M4 final audit](../plans/2026-07-12-milestone-4-final-audit.md) — PASS on all
+   8 criteria; tag command recorded for post-merge.
 
 ## Out of scope for this milestone
 
@@ -167,3 +187,24 @@ project someone can evaluate, and packages + a dev loop are the difference betwe
 "the demo works on the author's machine" and "you can try this yourself." Doing the
 hardening triage now — while the ledger is small and each item's context is fresh —
 is dramatically cheaper than letting it compound under M5's platform expansion.
+
+## Closure (2026-07-12)
+
+All six phases shipped; the [final audit](../plans/2026-07-12-milestone-4-final-audit.md)
+walks each DoD criterion against evidence — **PASS on all 8**. Counts at close
+(all CI-asserted): .NET **203/0**, JVM **73/0**, Android **35/35**; version
+`1.2.0-phase-4.5`; the shipped C-ABI unchanged at exactly eight exports.
+
+Honesty summary (details per criterion above and in the audit): repo home is the
+personal account (revised from ZeroAlloc-Net) with protection applied post-flip;
+the instrumented CI job stays informational pending a green-nightly baseline; five
+hardening items remain deliberately re-ledgered (issues #8/#9/#12/#13 + the
+NativeEvents → M5 fork) with the [triage doc](../plans/2026-07-11-phase-4.2-hardening-triage.md)
+as ledger of record; the dev loop is fast-restart, not hot-reload; the inspector
+session is JVM-hosted native (on-device channel = M5); `BlazorNative.Runtime` is
+deliberately unpackaged and nuget.org is deferred to M6.
+
+Tag (controller, post-merge of PR #46 on `main`):
+`git tag -a v4.0 -m "Milestone 4: P3 — Production-Shippable complete"`.
+Next: **M5 — P4: Full Platform Coverage** (pointer open in
+[ROADMAP.md](ROADMAP.md); opens via `new-milestone`).

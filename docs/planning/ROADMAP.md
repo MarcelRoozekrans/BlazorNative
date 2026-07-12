@@ -241,15 +241,19 @@ Maps to BACKLOG.md "P2 — Real apps can be built".
 
 ---
 
-### 🔄 Milestone 4 — P3: Production-Shippable  *(in progress — opened 2026-07-11)*
+### ✅ Milestone 4 — P3: Production-Shippable  *(complete 2026-07-12, tagged `v4.0`)*
 
-The repo goes public with CI as the safety net; the BN analyzers are re-attached and
-tested; the runtime-hardening ledger is triaged into fixed-or-deliberately-deferred;
-the dev inner loop (fast-restart, honestly not hot-reload) and NuGet packages exist
-for outside consumers. **Windows + Android only — the iOS Swift shell is deferred to
-M5** (decided at milestone-open; the BACKLOG's WasmKit framing is obsolete — it will
-be a NativeAOT `ios-arm64` static lib + Swift shell). Full 8-point DoD:
-[MILESTONE.md](MILESTONE.md).
+6 phases (4.0–4.5) shipped. The repo is public with branch protection and an
+assert-don't-observe CI pipeline on every PR; the BN analyzer suite is rescoped
+for NativeAOT, tested, and rides every src build under a zero-warning bar; the
+runtime-hardening ledger is triaged (4 fixed with tests, 5 re-ledgered with
+rationale + revisit triggers); the measured fast-restart dev loop and the
+live-native-session DevTools inspector exist; and the five NuGet packages are
+proven by a blank-consumer smoke that runs on every PR. **Windows + Android only —
+the iOS Swift shell deferred to M5** (milestone-open decision). Audit verdict:
+**PASS — all 8 DoD criteria PASS** (honesty notes on #1/#2/#4/#5/#6/#7 recorded
+per criterion). See [final audit](../plans/2026-07-12-milestone-4-final-audit.md).
+Full 8-point DoD: [MILESTONE.md](MILESTONE.md).
 
 Maps to BACKLOG.md "P3 — Production readiness". Triage input: the [M3 final audit](../plans/2026-07-10-milestone-3-final-audit.md) carryover table (host-initiated nav is M5; the packaging ledger is M6; the diagnostics/host-error surface + still-open runtime items land in Phase 4.2's triage).
 
@@ -264,15 +268,35 @@ Phases (approved at milestone-open 2026-07-11):
    - The one-command native dev loop, **measured**: `make devloop` watches `src/BlazorNative.{Core,Renderer,Http,Components,Runtime}/**/*.cs` (500 ms debounce, obj/bin excluded) and turns every save into win-x64 publish → **`PreviewHost`** — the repo's first interactive JVM surface: a `main()` that boots the dll via `BlazorNativeRuntime`, mounts a component (`-Pcomponent=`, default BnDemo), and prints the widget tree via **`TreeSnapshot`** (pure-JVM WidgetMapper-parity node model, 13 TDD tests: bucket-local InsertIndex, text-child collapse, last-wins re-attach, subtree remove, out-of-range-throws pin) + per-stage timings, exit-code honest (a dropped frame → PARTIAL + exit 1). `make devloop-android`: bionic-x64 publish → `installDebug` → `am start` with `EXTRA_COMPONENT` → logcat `[BOOT] mounted` marker, round-trip stamped. **Warm numbers (each reproduced ≥2×):** incremental publish 8.2–9.4 s · boot-to-tree ~0.3 s · JVM cycle 9.9–11.2 s · ADB cycle 14.1–14.5 s — the NativeAOT publish dominates; the gradle-overhead contingency was not needed (warm exec leg ~2 s, daemon kept — `JavaExec` forks, the daemon never loads the dll). **Fast-restart, not hot-reload**, honestly documented in the README's three-lane Dev experience rewrite (NativeAOT can't hot-patch; Windows locks the loaded dll; the design doc's "no unload API" wording corrected in the conclusion — `NativeLibrary.dispose()` exists but the other two legs make restart correct regardless). No .NET changes; version stays `1.1.0-phase-4.2`; JVM **47** (was 34), .NET 203/0 + Android 35 untouched. Gates `8ac3fb8` (PreviewHost TDD) / `9966b4f` (devloop + measurements + README) + docs close-out. See [design](../plans/2026-07-11-phase-4.3-design.md) + [plan](../plans/2026-07-11-phase-4.3-implementation-plan.md) + [conclusion](../plans/2026-07-11-phase-4.3-conclusion.md).
 - ✅ **Phase 4.4** — DevTools render-tree inspector (DoD #6) — *complete (2026-07-11)*
    - `make inspect` serves a localhost DevTools page over a **live native session**: **`InspectorHost`** (PreviewHost's long-lived sibling) boots the real NativeAOT dll and serves the live patch stream (bounded ring, 500), the collapsible `<details>` widget tree, the event log (bounded, 200 — frame deliveries, dispatches with rc, onError faults), and **dispatch-from-the-page** (interactive-lite: "fire click" buttons, payload input + "send change") — same dll, C-ABI frames, and dispatch lane the APK rides. Zero new dependencies: JDK `com.sun.net.httpserver` + hand-rolled JSON (the FlatJson escaping contract, shared not copied); the page is ONE self-contained inline HTML+CSS+JS string (7.2 KB, `textContent`-only DOM — XSS-clean, no external requests, asserted in the e2e). **Forced discovery:** `com.sun.net.httpserver` is absent from `android.jar` and every AGP compilation targets it, so the server/host live in a `src/jvmHost/kotlin` source dir compiled by a dedicated plain-JVM KotlinCompile (KGP's sanctioned `KotlinBaseApiPlugin` factory + one reflective convention-set whose failure mode on a KGP bump is loud-by-design). New public `BlazorNativeRuntime.dispatchEventAndWait` (lane-marshalled blocking dispatch, self-deadlock carve-out pinned); ONE coarse state lock, SSE pull model with slow-client drop; in-memory `InspectorHostBridge` (fetch = honest transport failure). E2e over a real session rides the 3.5 navigation (harvested handlerId → dispatch rc 0 → settings tree → SSE `tree-changed`); Gate 2 smoke drove the page's own buttons in headless Chrome via CDP. No .NET changes; version stays `1.1.0-phase-4.2`; JVM **73** (was 47), .NET 203/0 + Android 35 untouched. Gates `0c49cc2` (host + API TDD) / `db3a726` (page + docs) + docs close-out. See [design](../plans/2026-07-11-phase-4.4-design.md) + [plan](../plans/2026-07-11-phase-4.4-implementation-plan.md) + [conclusion](../plans/2026-07-11-phase-4.4-conclusion.md).
-- ⏳ **Phase 4.5** — NuGet packaging + consumer smoke + M4 final audit → `v4.0` (DoD #7, #8)
+- ✅ **Phase 4.5** — NuGet packaging + consumer smoke + M4 final audit → `v4.0` (DoD #7, #8) — *complete (2026-07-12, the LAST M4 phase)*
+   - **All 3 gates GREEN — M4 DoD #7 CLOSED; #8 closed by the final audit; milestone complete.** The five packages (`BlazorNative.Core`/`.Renderer`/`.Http`/`.Components`/`.Analyzers`) pack **clean** (zero warnings, NU5xxx included) at **`1.2.0-phase-4.5`** with per-csproj metadata (MIT, repo URL, descriptions; documented call — no `Directory.Build.props` exists and a scoped one would leak onto the non-packed Runtime/Blazor projects). Analyzers package verified by unzip inspection: dll in `analyzers/dotnet/cs`, **no `lib/`**, `DevelopmentDependency=true`, Roslyn refs pinned (`4.1*`→4.14.0, `3.1*`→3.11.0), empty dependency group suppressed (the NU5128 metadata fix); **props/targets verified NOT needed** (plain DiagnosticAnalyzers; NuGet auto-loads the folder — proven live in the consumer). Library nuspecs carry correct deps (ZeroAlloc + AspNetCore concretes; no PrivateAssets leaks). **MIT LICENSE added — the repo had been public without one since 4.0** (Gate 1 step-0 finding).
+   - **The DoD #7 proof (Gate 2):** `samples/ConsumerSmoke` — a blank console project **outside the solution**, restoring the five packages from the local `artifacts/packages` feed only (own `nuget.config` with `<clear/>`; provenance **asserted** from NuGet's `.nupkg.metadata`: BlazorNative.* ← local feed, transitives ← nuget.org) — mounts BnView/BnText/BnButton via the renderer harness shape and asserts the patch set (1 frame, 10 patches, exactly one click AttachEvent). Analyzers-live pin both directions: a `#if ANALYZER_TRIP` parameterless `HttpClient` fires **BN0011** under `-p:AnalyzerTrip=true`, zero BN diagnostics clean. `scripts/consumer-smoke.ps1` green locally and as a **ci.yml step on every PR** (PR #46 green first attempt, 6m59s; smoke step ~21 s).
+   - **Honesty notes:** `BlazorNative.Runtime` deliberately NOT packaged (the NativeAOT composition root is an app-shape concern — M6 template/story); **nuget.org deferred** (local/CI feed only; re-decide at M6 — `PackageReadmeFile` is the recorded prerequisite). Version churn exercised the full contract: `Exports.cs` + both Kotlin assertions → `1.2.0-phase-4.5`, forcing both bionic republishes + the instrumented rerun (now five version-bearing surfaces incl. the smoke script/csproj — recorded carryover).
+   - **Final counts (all CI-asserted):** .NET **203/0** · JVM **73/0** · Android **35/35** · 4 IL2072s ×3 RIDs unchanged. Commits `d54c761` (Gate 1) / `c4e4ac1` (Gate 2) + docs close-out. See [design](../plans/2026-07-12-phase-4.5-design.md) + [plan](../plans/2026-07-12-phase-4.5-implementation-plan.md) + [conclusion](../plans/2026-07-12-phase-4.5-conclusion.md) + [M4 final audit](../plans/2026-07-12-milestone-4-final-audit.md).
 
 ---
 
-### ⏳ Milestone 5 — P4: Full Platform Coverage  *(pending, parallel with M6/M7)*
+### 🔜 Milestone 5 — P4: Full Platform Coverage  *(next — opens via `new-milestone`; parallel with M6/M7 permitted)*
 
-Android shell complete (lifecycle, permissions, FCM, secure storage, deep links, predictive back). iOS shell complete (APNs, Keychain, universal links, App Store validation). Cross-platform APIs: geolocation, camera, clipboard, share, haptics, biometrics, purchases, background tasks.
+The M4-close pointer (2026-07-12). Scope sketch for the M5 brainstorm, mapped to
+BACKLOG "P4 — Full platform coverage" + the [M4 final audit](../plans/2026-07-12-milestone-4-final-audit.md)
+carryover table:
 
-Maps to BACKLOG.md "P4 — Full platform coverage".
+- **iOS Swift shell** (issue #17): NativeAOT `ios-arm64` static lib + a Swift shell
+  mirroring the Kotlin one — needs Mac hardware / a CI Mac runner (the M4
+  milestone-open deferral; the BACKLOG's WasmKit framing is obsolete post-3.0e).
+- **Android shell completeness** (issue #16): lifecycle, permissions, FCM, secure
+  storage, deep links, predictive back.
+- **Host-initiated navigation + lifecycle events** (issue #19): back button / deep
+  links over the existing `Navigate`/`CurrentRoute` plumbing — the `NativeEvents`
+  redesign fork from the [4.2 triage](../plans/2026-07-11-phase-4.2-hardening-triage.md).
+- **Cross-platform APIs** (issue #18): geolocation, camera, clipboard, share,
+  haptics, biometrics, purchases, background tasks.
+- Inherited smaller items: on-device inspector channel (4.4), instrumented-job
+  promotion criteria (4.0), re-ledgered hardening items as their triggers fire.
+
+Maps to BACKLOG.md "P4 — Full platform coverage" (iOS shell specifics there: APNs,
+Keychain, universal links, App Store validation).
 
 ---
 
