@@ -1,6 +1,9 @@
 package io.blazornative.shell
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
 import android.content.SharedPreferences
 import android.util.Log
 import io.blazornative.jni.BridgeFetchCompleter
@@ -120,21 +123,52 @@ class AndroidShellBridge(
         fetchExecutor.execute { performFetch(requestId, request) }
     }
 
-    // ── Clipboard + Share (Phase 5.4) — Gate-1 stubs, Gate-2 makes them real ──
+    // ── Clipboard + Share (Phase 5.4 Gate 2 — real Android backends) ──────────
     //
-    // Gate 2 wires clipboard → ClipboardManager (appContext) and share →
-    // Intent.ACTION_SEND + EXTRA_TEXT + FLAG_ACTIVITY_NEW_TASK from appContext.
-    // Until then they THROW (guarded → -1 host error), so a stray call surfaces
-    // loudly rather than silently succeeding — the honest-stub posture.
+    // Clipboard → the system ClipboardManager (appContext service). read/write run
+    // on the .NET dispatch lane (the sync-handler contract) — get/setPrimaryClip
+    // are Binder calls that need no Looper (we register no clip listener, which is
+    // the only ClipboardManager path that would). Android 10+ only returns clip
+    // data to the FOREGROUND app; the shell reads while its own Activity has focus,
+    // so this holds. The buffer -needed protocol is applied by BridgeRegistrar's
+    // writeUtf8 wrapper — the handler just returns the String (the storageRead twin).
+    //
+    // Share → an ACTION_SEND text/plain Intent (built by [buildShareIntent], the
+    // test seam) wrapped in a chooser and launched from appContext with
+    // FLAG_ACTIVITY_NEW_TASK: appContext is NOT an Activity (the retention rule —
+    // ShellBridgeHandlers KDoc — forbids retaining one), and starting an Activity
+    // from a non-Activity context REQUIRES NEW_TASK. Caveat: with no source
+    // Activity the chooser opens as its own task (acceptable for the POC share
+    // affordance). [shareLaunchHook], when set (instrumented test only), captures
+    // the built Intent and SKIPS the launch so the test asserts the Intent without
+    // popping the system share sheet.
+
+    private val clipboardManager: ClipboardManager by lazy {
+        appContext.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+    }
 
     override fun clipboardRead(): String =
-        throw NotImplementedError("AndroidShellBridge.clipboardRead — real ClipboardManager wiring lands in Phase 5.4 Gate 2")
+        clipboardManager.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.text?.toString() ?: ""
 
-    override fun clipboardWrite(text: String): Unit =
-        throw NotImplementedError("AndroidShellBridge.clipboardWrite — real ClipboardManager wiring lands in Phase 5.4 Gate 2")
+    override fun clipboardWrite(text: String) {
+        clipboardManager.setPrimaryClip(ClipData.newPlainText(CLIP_LABEL, text))
+    }
 
-    override fun share(text: String): Unit =
-        throw NotImplementedError("AndroidShellBridge.share — real ACTION_SEND wiring lands in Phase 5.4 Gate 2")
+    override fun share(text: String) {
+        val send = buildShareIntent(text)
+        shareLaunchHook?.let { it(send); return } // test seam — assert, do not launch
+        appContext.startActivity(
+            Intent.createChooser(send, null).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        )
+    }
+
+    /** The ACTION_SEND text/plain share Intent (the seam the instrumented test
+     * asserts — EXTRA_TEXT + type — without launching the chooser). */
+    internal fun buildShareIntent(text: String): Intent =
+        Intent(Intent.ACTION_SEND).apply {
+            type = SHARE_MIME
+            putExtra(Intent.EXTRA_TEXT, text)
+        }
 
     private fun performFetch(requestId: Long, request: BridgeFetchRequest) {
         try {
@@ -180,13 +214,25 @@ class AndroidShellBridge(
         }
     }
 
-    private companion object {
-        const val TAG = "BlazorNative"
-        const val PREFS_NAME = "blazornative"
+    companion object {
+        private const val TAG = "BlazorNative"
+        private const val PREFS_NAME = "blazornative"
+
+        /** ClipData label for clipboard writes + the share Intent MIME type. */
+        private const val CLIP_LABEL = "BlazorNative"
+        private const val SHARE_MIME = "text/plain"
 
         /** HttpURLConnection timeouts. READ_TIMEOUT_MS bounds each read(),
          * not the whole response — see the slow-drip note on [fetchExecutor]. */
-        const val CONNECT_TIMEOUT_MS = 10_000
-        const val READ_TIMEOUT_MS = 10_000
+        private const val CONNECT_TIMEOUT_MS = 10_000
+        private const val READ_TIMEOUT_MS = 10_000
+
+        /** Test seam (instrumented ClipboardAndroidTest): when non-null, [share]
+         * hands the built ACTION_SEND Intent here and does NOT startActivity, so
+         * the test can assert the Intent (EXTRA_TEXT + type) without popping the
+         * system share sheet. Null in production. Process-static because the test
+         * cannot reach MainActivity's private bridge instance; reset it in the
+         * test's finally so it never leaks across tests. */
+        @Volatile @JvmStatic var shareLaunchHook: ((Intent) -> Unit)? = null
     }
 }

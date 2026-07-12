@@ -89,7 +89,12 @@ public sealed class NativeShellBridge : IMobileBridge
     internal static unsafe void Register(int structSize, BlazorNativeBridgeCallbacks* source)
     {
         int known = sizeof(BlazorNativeBridgeCallbacks);
-        int toCopy = Math.Min(structSize, known);
+        // Clamp both bounds so the copy length is a self-contained invariant: the
+        // upper bound truncates a newer host's extra tail; the lower bound makes a
+        // stray negative size a safe no-copy (all-zero → everything unsupported)
+        // rather than an OverflowException, independent of the export's structSize
+        // guard (defense in depth).
+        int toCopy = Math.Clamp(structSize, 0, known);
         BlazorNativeBridgeCallbacks dest = default; // zero-fills the whole struct, incl. any un-copied tail
         Buffer.MemoryCopy(source, &dest, known, toCopy);
         Volatile.Write(ref s_callbacks, new CallbackHolder(in dest));
