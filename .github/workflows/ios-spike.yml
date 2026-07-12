@@ -180,19 +180,21 @@ jobs:
           } 2>&1 | tee spike-out/rung3-nuget-probe.json
           echo "::endgroup::"
 
+          # The bypass (PublishAotUsingRuntimePack + DisableUnsupportedError +
+          # RuntimeFrameworkVersion pin) now lives in the Runtime csproj's
+          # ios-conditional PropertyGroup, so it applies ONLY to Runtime and is
+          # NOT propagated to P2P refs as global properties (that propagation was
+          # the rung-3 iteration-1 NETSDK1207 on the netstandard2.0 analyzer).
           run_publish () {
             rid="$1"; tag="$2"
             echo "::group::rung3 $tag ($rid)"
             dotnet publish src/BlazorNative.Runtime -c Release -r "$rid" \
-              -p:PublishAot=true \
-              -p:PublishAotUsingRuntimePack=true \
-              -p:DisableUnsupportedError=true \
-              -p:RuntimeFrameworkVersion="${RUNTIME_PACK_PIN}" \
               -bl:"spike-out/rung3-$tag.binlog" 2>&1 | tee "spike-out/rung3-$tag.log"
             echo "rung3_${tag}_exit=${PIPESTATUS[0]}" | tee -a spike-out/exit-codes.txt
             echo "::endgroup::"
           }
           run_publish iossimulator-arm64 sim
+          run_publish ios-arm64          dev
           exit 0
 
       # ── Collect any produced artifacts (any rung, any RID) ──────────────────
