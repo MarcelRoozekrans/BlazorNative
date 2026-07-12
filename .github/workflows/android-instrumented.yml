@@ -9,7 +9,7 @@
 # Two jobs:
 #   publish-so (windows-latest) — the only toolchain we build the bionic .so
 #     on (mirrors ci.yml verbatim: pinned NDK 26.3.11579264, 4 accepted
-#     IL2072s, eight blazornative_* exports via llvm-readelf) → uploads the
+#     IL2072s, nine blazornative_* exports via llvm-readelf) → uploads the
 #     linux-bionic-x64 BlazorNative.Runtime.so as an artifact.
 #   emulator (ubuntu-latest, KVM) — downloads the .so, boots the API 34
 #     google_apis x86_64 Pixel 6 image (mirrors the local AVD
@@ -129,7 +129,7 @@ jobs:
           $out = & $readelf --dyn-syms $so
           $expected = @(
             'blazornative_dispatch_event', 'blazornative_fetch_complete',
-            'blazornative_init', 'blazornative_mount',
+            'blazornative_host_event', 'blazornative_init', 'blazornative_mount',
             'blazornative_register_bridge', 'blazornative_register_frame_callback',
             'blazornative_shutdown', 'blazornative_version'
           )
@@ -138,7 +138,7 @@ jobs:
           $diff = Compare-Object $expected $actual
           if ($diff) {
             $diff | Format-Table | Out-String | Write-Host
-            throw "linux-bionic-x64 export surface drift: expected exactly the 8 blazornative_* exports"
+            throw "linux-bionic-x64 export surface drift: expected exactly the 9 blazornative_* exports"
           }
 
       - name: Upload artifact — linux-bionic-x64 binary

@@ -1,5 +1,6 @@
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using BlazorNative.Core;
 using BlazorNative.Renderer;
 
 namespace BlazorNative.Runtime;
@@ -9,7 +10,7 @@ namespace BlazorNative.Runtime;
 // protocol + Phase 3.1 shell bridge (Phase 3.0e gave the library its final
 // name — the version string below is the JNA-visible one).
 //
-// Eight exports:
+// Nine exports:
 //   init                    — load runtime, verify Blazor accessors, store
 //                             platform-info options for the shell bridge
 //   shutdown                — clears the frame callback (frame flush lands later)
@@ -21,6 +22,10 @@ namespace BlazorNative.Runtime;
 //                             handler → re-render → frame callback; 0/1/2/3)
 //   register_bridge         — Phase 3.1: copy the host's 6-callback struct
 //   fetch_complete          — Phase 3.1: deliver an async fetch response
+//   host_event              — Phase 5.1 (M5 DoD #5): host-INITIATED lifecycle
+//                             ingress (pause/resume, back, deep links) — fires
+//                             the real NativeShellBridge.NativeEvents to mounted
+//                             components; name + optional payload; 0/2/3
 //
 // Phase 3.5 (M3 close): the two diagnostic probe exports —
 // blazornative_run_trim_probes (3.0c Gate 4) + blazornative_run_bridge_probes
@@ -72,7 +77,7 @@ public static class Exports
     /// <summary>Single source of truth for the runtime version — the
     /// JNA-visible version cstring and NativeShellBridge.PlatformInfo both
     /// derive from it.</summary>
-    internal const string VersionNumber = "1.2.0-phase-4.5";
+    internal const string VersionNumber = "1.3.0-phase-5.1";
 
     static Exports()
     {
@@ -378,6 +383,78 @@ public static class Exports
         catch (Exception ex)
         {
             Console.Error.WriteLine($"[Exports] fetch_complete id {requestId} failed: {ex}");
+            return 2;
+        }
+    }
+
+    /// <summary>
+    /// Phase 5.1 (M5 DoD #5): host-INITIATED event ingress. Thin ABI wrapper
+    /// over <see cref="DispatchHostEventCore"/> (same wrapper/core split as
+    /// dispatch_event → DispatchEventCore) — marshals the two caller-allocated
+    /// UTF-8 pointers (name required, payload optional/NULL) and guarantees no
+    /// exception crosses the ABI. Unlike dispatch_event this carries NO
+    /// handlerId: it fires the real <see cref="NativeShellBridge.NativeEvents"/>
+    /// multicast, so a mounted component's subscriber (and the re-render its
+    /// StateHasChanged drives) runs synchronously before this returns.
+    /// </summary>
+    [UnmanagedCallersOnly(EntryPoint = "blazornative_host_event", CallConvs = new[] { typeof(CallConvCdecl) })]
+    public static int HostEvent(IntPtr nameUtf8, IntPtr payloadUtf8)
+    {
+        try
+        {
+            string? name = nameUtf8 == IntPtr.Zero
+                ? null
+                : Marshal.PtrToStringUTF8(nameUtf8);
+            string? payload = payloadUtf8 == IntPtr.Zero
+                ? null
+                : Marshal.PtrToStringUTF8(payloadUtf8);
+            return DispatchHostEventCore(name, payload);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[Exports] host_event failed: {ex}");
+            return 2;
+        }
+    }
+
+    /// <summary>
+    /// Managed core of blazornative_host_event (testable without the ABI
+    /// crossing). Fires <see cref="NativeShellBridge.RaiseNativeEvent"/> — the
+    /// real host→.NET lifecycle multicast (the 3.2 no-op is gone).
+    ///
+    /// Return codes:
+    ///   0 = delivered — the event reached every subscriber (or there were
+    ///       none: an unheard lifecycle signal is not an error, so there is no
+    ///       "no session" rc here, unlike dispatch_event);
+    ///   2 = a subscriber (or the re-render its StateHasChanged drove, when
+    ///       strict rethrows it) faulted — the fault was CONTAINED (isolation:
+    ///       every other subscriber still ran) but is surfaced so the host can
+    ///       log loudly; detail ex.ToString() on stderr;
+    ///   3 = malformed input: a NULL or empty event name (an unnamed lifecycle
+    ///       event is undispatchable — mirrors dispatch_event's rc 3). A NULL
+    ///       payload is LEGAL (most lifecycle events carry none).
+    ///
+    /// SYNCHRONOUS by contract, like dispatch_event: raised on the calling
+    /// (dispatch-lane) thread, so a subscriber's StateHasChanged re-render +
+    /// frame delivery have completed when this returns. Not called from inside a
+    /// dispatch window (host-initiated, between clicks), so StateHasChanged's
+    /// batch starts cleanly — see the off-lane RunAfterDispatch pin.
+    /// </summary>
+    internal static int DispatchHostEventCore(string? name, string? payload)
+    {
+        if (string.IsNullOrEmpty(name))
+            return 3; // an unnamed host event is not dispatchable
+
+        try
+        {
+            bool faulted = NativeShellBridge.RaiseNativeEvent(new NativeEvent(name, payload));
+            return faulted ? 2 : 0;
+        }
+        catch (Exception ex)
+        {
+            // Defensive: RaiseNativeEvent isolates per-subscriber, so this only
+            // trips on an unexpected fault OUTSIDE a subscriber body.
+            Console.Error.WriteLine($"[Exports] host_event '{name}' faulted: {ex}");
             return 2;
         }
     }

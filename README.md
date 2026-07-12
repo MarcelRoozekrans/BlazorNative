@@ -146,7 +146,7 @@ BlazorNative/
 ## Status
 
 - [x] Headless Blazor renderer with typed patch protocol (composition-grade: nested components, keyed lists, real disposal)
-- [x] NativeAOT runtime for win-x64 + linux-bionic-x64/arm64 (Android, built on Windows) — eight-export C-ABI
+- [x] NativeAOT runtime for win-x64 + linux-bionic-x64/arm64 (Android, built on Windows) — nine-export C-ABI
 - [x] Bidirectional events (`@onclick` → native tap → .NET handler → re-render) — Phase 3.2
 - [x] Shell bridge as host-registered C-ABI callbacks (navigate/storage/fetch, plain `HttpClient` works on Android) — Phase 3.1
 - [x] `Bn*` component library, `@bind` mechanics, cascading values, navigation — a two-page demo app on the AVD (~1.6 s cold boot) — Milestone 3

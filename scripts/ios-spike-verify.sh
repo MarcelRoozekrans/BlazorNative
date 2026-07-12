@@ -2,7 +2,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # Phase 5.0 iOS spike — verification (the GREEN bar). Runs on macos-latest after
 # the ladder. Given a RID, finds any produced NativeAOT artifact (.a / .dylib),
-# verifies all EIGHT blazornative_* symbols (normalizing the Apple leading
+# verifies all NINE blazornative_* symbols (normalizing the Apple leading
 # underscore), sanity-checks the arch (lipo/file), then LINK-PROBES a ~30-line C
 # stub against it with the simulator SDK — an executable that BUILDS is the bar.
 # Bonus (attempt, don't gate): boot a sim and spawn the stub to print version.
@@ -15,7 +15,7 @@ set -u
 RID="${1:-iossimulator-arm64}"
 EXPECTED=(
   blazornative_dispatch_event blazornative_fetch_complete
-  blazornative_init blazornative_mount
+  blazornative_host_event blazornative_init blazornative_mount
   blazornative_register_bridge blazornative_register_frame_callback
   blazornative_shutdown blazornative_version
 )
@@ -42,8 +42,8 @@ fi
 echo "Candidate artifacts (${#CANDIDATES[@]}):"
 printf '  %s\n' "${CANDIDATES[@]}"
 
-# GREEN requires ONE artifact that is BOTH complete (all 8 symbols) AND links.
-# The link stub only references 2 of the 8 symbols, so link-pass alone cannot
+# GREEN requires ONE artifact that is BOTH complete (all 9 symbols) AND links.
+# The link stub only references 2 of the 9 symbols, so link-pass alone cannot
 # stand in for the symbol half of the bar — track both, gate on both. This keeps
 # the script honest if Phase 5.2 promotes it to a real CI gate.
 OVERALL_LINK_OK=0
@@ -70,7 +70,7 @@ for ART in "${CANDIDATES[@]}"; do
     echo "$RAW" | grep -qx "$sym" || MISSING+=("$sym")
   done
   if [ "${#MISSING[@]}" -eq 0 ]; then
-    echo "SYMBOLS: all 8 blazornative_* present."
+    echo "SYMBOLS: all 9 blazornative_* present."
     ART_SYMS_OK=1
     OVERALL_SYMS_OK=1
   else
@@ -138,7 +138,7 @@ EOF
     echo "LINK PROBE: FAIL (clang exit $LRC) for $ART"
   fi
 
-  # This artifact is fully good only if it carries ALL 8 symbols AND links.
+  # This artifact is fully good only if it carries ALL 9 symbols AND links.
   if [ "$ART_SYMS_OK" -eq 1 ] && [ "$ART_LINK_OK" -eq 1 ]; then
     OVERALL_GREEN=1
   fi
@@ -147,10 +147,10 @@ done
 echo
 echo "=================================================================="
 if [ "$OVERALL_GREEN" -eq 1 ]; then
-  echo "VERDICT: GREEN — at least one artifact carries all 8 exports AND link-probes."
+  echo "VERDICT: GREEN — at least one artifact carries all 9 exports AND link-probes."
   exit 0
 else
   echo "VERDICT: RED — no single artifact met BOTH bars (symbols=$OVERALL_SYMS_OK link=$OVERALL_LINK_OK)."
-  echo "  (GREEN requires ONE artifact with all 8 blazornative_* symbols AND a clean link probe.)"
+  echo "  (GREEN requires ONE artifact with all 9 blazornative_* symbols AND a clean link probe.)"
   exit 2
 fi

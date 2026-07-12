@@ -3,10 +3,10 @@
 # rides on. Single windows-latest job mirroring the local verification
 # procedure verbatim (setup.ps1 §1–7 documents the toolchain pins):
 #
-#   build (analyzers ride it) → .NET tests (203 passed / 0 skipped) →
+#   build (analyzers ride it) → .NET tests (210 passed / 0 skipped) →
 #   three NativeAOT publishes (win-x64, linux-bionic-x64, linux-bionic-arm64;
 #   each publish must show exactly the 4 accepted IL2072 trim warnings) →
-#   eight-export verification (dumpbin via vswhere / llvm-readelf from the
+#   nine-export verification (dumpbin via vswhere / llvm-readelf from the
 #   pinned NDK) → Gradle testDebugUnitTest against the fresh win-x64 dll
 #   (73 passed / 0 failed) → consumer smoke (five packages from the local
 #   feed mount a Bn* component + analyzer trip; Phase 4.5, M4 DoD #7) →
@@ -124,7 +124,7 @@ jobs:
           dotnet build BlazorNative.sln -c Release -tl:off -nologo
           if ($LASTEXITCODE -ne 0) { throw "dotnet build failed (exit $LASTEXITCODE)" }
 
-      - name: .NET tests (assert 203 passed / 0 skipped)
+      - name: .NET tests (assert 210 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -135,11 +135,11 @@ jobs:
           $passed  = ($summaries | ForEach-Object { [int]$_.Matches[0].Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($summaries | ForEach-Object { [int]$_.Matches[0].Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($summaries.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 203 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 203 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 210 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 210 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
-      # ── NativeAOT publishes + eight-export verification ────────────────────
+      # ── NativeAOT publishes + nine-export verification ────────────────────
       - name: Publish win-x64 (assert exactly 4 IL2072 warnings)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "publish-win-x64.log"
@@ -162,7 +162,7 @@ jobs:
           $out = & $dumpbin /exports $dll
           $expected = @(
             'blazornative_dispatch_event', 'blazornative_fetch_complete',
-            'blazornative_init', 'blazornative_mount',
+            'blazornative_host_event', 'blazornative_init', 'blazornative_mount',
             'blazornative_register_bridge', 'blazornative_register_frame_callback',
             'blazornative_shutdown', 'blazornative_version'
           )
@@ -171,7 +171,7 @@ jobs:
           $diff = Compare-Object $expected $actual
           if ($diff) {
             $diff | Format-Table | Out-String | Write-Host
-            throw "win-x64 export surface drift: expected exactly the 8 blazornative_* exports"
+            throw "win-x64 export surface drift: expected exactly the 9 blazornative_* exports"
           }
 
       - name: Publish linux-bionic-x64 (assert exactly 4 IL2072 warnings)
@@ -194,7 +194,7 @@ jobs:
           $out = & $readelf --dyn-syms $so
           $expected = @(
             'blazornative_dispatch_event', 'blazornative_fetch_complete',
-            'blazornative_init', 'blazornative_mount',
+            'blazornative_host_event', 'blazornative_init', 'blazornative_mount',
             'blazornative_register_bridge', 'blazornative_register_frame_callback',
             'blazornative_shutdown', 'blazornative_version'
           )
@@ -203,7 +203,7 @@ jobs:
           $diff = Compare-Object $expected $actual
           if ($diff) {
             $diff | Format-Table | Out-String | Write-Host
-            throw "linux-bionic-x64 export surface drift: expected exactly the 8 blazornative_* exports"
+            throw "linux-bionic-x64 export surface drift: expected exactly the 9 blazornative_* exports"
           }
 
       - name: Publish linux-bionic-arm64 (assert exactly 4 IL2072 warnings)
@@ -226,7 +226,7 @@ jobs:
           $out = & $readelf --dyn-syms $so
           $expected = @(
             'blazornative_dispatch_event', 'blazornative_fetch_complete',
-            'blazornative_init', 'blazornative_mount',
+            'blazornative_host_event', 'blazornative_init', 'blazornative_mount',
             'blazornative_register_bridge', 'blazornative_register_frame_callback',
             'blazornative_shutdown', 'blazornative_version'
           )
@@ -235,7 +235,7 @@ jobs:
           $diff = Compare-Object $expected $actual
           if ($diff) {
             $diff | Format-Table | Out-String | Write-Host
-            throw "linux-bionic-arm64 export surface drift: expected exactly the 8 blazornative_* exports"
+            throw "linux-bionic-arm64 export surface drift: expected exactly the 9 blazornative_* exports"
           }
 
       # ── JVM tests against the fresh win-x64 publish ────────────────────────

@@ -129,6 +129,48 @@ public sealed class NavigationTests
         }
     }
 
+    // ── Phase 5.1 named risk: SwapRoot's RunAfterDispatch drains OFF the ──────
+    // dispatch lane (host-initiated back, no open dispatch batch). NavigateBack
+    // rides this: a host event arriving between clicks calls the swap with
+    // _uiEventDispatchDepth == 0, where RunAfterDispatch must run the action
+    // IMMEDIATELY (not queue it — nothing would ever drain the queue off-lane).
+    // The 3.5 KDoc frames deferral around the in-click case; this pins the
+    // no-open-batch path the back button depends on.
+
+    [Fact]
+    public void SwapRoot_OffDispatchLane_NoOpenBatch_DrainsImmediately()
+    {
+        var (_, frames) = StartSession();
+        try
+        {
+            Assert.Equal(0, HostSession.TryMount("BnDemo"));
+            RenderFrame demoMount = frames[0];
+            int demoRoot = Root(demoMount).NodeId;
+            int demoInput = InputNode(demoMount).NodeId;
+            frames.Clear();
+
+            bool afterSwapRan = false;
+            // Called directly — NOT inside any blazornative_dispatch_event
+            // window, so _uiEventDispatchDepth == 0 (host-initiated posture).
+            HostSession.SwapRoot("BnSettingsPage", afterSwap: () => afterSwapRan = true);
+
+            // The swap ran SYNCHRONOUSLY here (no queue, no pending dispatch to
+            // unwind): the old root's removes AND BnSettingsPage's creates were
+            // delivered before SwapRoot returned, and afterSwap fired.
+            Assert.True(afterSwapRan, "afterSwap must run immediately off the dispatch lane");
+            Assert.Equal(2, frames.Count);
+            var removed = RemovedNodes(frames[0]);
+            Assert.Contains(demoRoot, removed);
+            Assert.Contains(demoInput, removed);
+            Assert.True(HasText(frames[1], "Settings"),
+                "the swap's mount frame must land synchronously off-lane");
+        }
+        finally
+        {
+            TearDown();
+        }
+    }
+
     // ── The swap: removes then creates, host notified ─────────────────────────
 
     [Fact]

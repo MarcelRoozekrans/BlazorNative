@@ -63,6 +63,14 @@ public sealed class NativeShellBridge : IMobileBridge
     private static readonly ConcurrentDictionary<long, TaskCompletionSource<BridgeHttpResponse>>
         s_pendingFetches = new();
 
+    /// <summary>Real host→.NET event multicast (Phase 5.1, replacing the 3.2
+    /// no-op). Static, like every other bridge field: the C ABI has one bridge
+    /// per process, so components resolving the DI singleton and the
+    /// blazornative_host_event export both address THIS invocation list.
+    /// Single-threaded post-boot (the dispatch lane), but a bare field is fine —
+    /// += / -= produce a new immutable delegate the raiser snapshots.</summary>
+    private static Action<NativeEvent>? s_nativeEvents;
+
     // Init-time platform options (Exports.Init stores them; PlatformInfo serves them).
     private sealed record PlatformOptions(string Os, int ApiLevel, string? Note);
     private static PlatformOptions? s_platformOptions;
@@ -93,6 +101,7 @@ public sealed class NativeShellBridge : IMobileBridge
                 tcs.TrySetCanceled();
         }
         Volatile.Write(ref s_platformOptions, null);
+        s_nativeEvents = null; // drop subscribers so they can't leak across tests
     }
 
     private static BlazorNativeBridgeCallbacks GetCallbacks()
@@ -301,16 +310,56 @@ public sealed class NativeShellBridge : IMobileBridge
 
     // ── Events ────────────────────────────────────────────────────────────────
 
-    /// <summary>Documented no-op: UI events took the
-    /// blazornative_dispatch_event path instead (Phase 3.2); nothing ever
-    /// fires through the production bridge. Subscribing stays legal so the
-    /// DevHost-parity surface (DevHostBridge DOES fire; Home.razor consumes)
-    /// and the BN0014 sync-handler contract survive. RE-LEDGERED → M5 —
-    /// Phase 4.2 triage item 9 (ledger of record:
-    /// docs/plans/2026-07-11-phase-4.2-hardening-triage.md): host-INITIATED
-    /// lifecycle ingress (pause/resume, back button, deep links) owns the
-    /// redesign.</summary>
-    public event Action<NativeEvent> NativeEvents { add { } remove { } }
+    /// <summary>Real host→.NET lifecycle event ingress (Phase 5.1, closing the
+    /// M5 DoD #5 fork the 3.2 no-op deferred). The 9th export
+    /// blazornative_host_event → <see cref="Exports.DispatchHostEventCore"/>
+    /// raises this; a mounted component (HostEventProbe, the on-device consumer)
+    /// subscribes with a SYNC handler (BN0014 contract intact — the dispatch
+    /// window is still synchronous). Static invocation list: one bridge per
+    /// process, so the DI singleton components inject and the export both fire
+    /// through the same subscribers.</summary>
+    public event Action<NativeEvent> NativeEvents
+    {
+        add    => s_nativeEvents += value;
+        remove => s_nativeEvents -= value;
+    }
+
+    /// <summary>Fires <see cref="NativeEvents"/> with per-subscriber isolation
+    /// (the DevHostBridge.RaiseNativeEvent pattern): GetInvocationList + a
+    /// per-subscriber try/catch so one faulting subscriber is stderr-logged and
+    /// the remaining subscribers still run — the host event is still DELIVERED.
+    /// Returns true if ANY subscriber (or the re-render its StateHasChanged
+    /// drove, when strict rethrows it) faulted, so
+    /// <see cref="Exports.DispatchHostEventCore"/> can surface it as export
+    /// rc 2 for host (logcat) visibility. Strict-posture note: containment wins
+    /// over abort — a lifecycle-handler bug must not strand later subscribers —
+    /// but unlike RouteChanged (a post-success notification, always rc 0) a
+    /// host-event fault IS reported up the rc channel because the host owns the
+    /// lifecycle signal and wants to know its consumer choked.</summary>
+    internal static bool RaiseNativeEvent(NativeEvent evt)
+    {
+        Action<NativeEvent>? handlers = s_nativeEvents;
+        if (handlers is null)
+            return false;
+
+        bool faulted = false;
+        foreach (Delegate subscriber in handlers.GetInvocationList())
+        {
+            try
+            {
+                ((Action<NativeEvent>)subscriber)(evt);
+            }
+            catch (Exception ex)
+            {
+                // ex.ToString(): the subscriber (and any re-render it drove) is
+                // app code — keep its stack for logcat, same as RouteChanged.
+                faulted = true;
+                Console.Error.WriteLine(
+                    $"[NativeShellBridge] NativeEvents subscriber threw: {ex}");
+            }
+        }
+        return faulted;
+    }
 
     // ── Callback invokers ─────────────────────────────────────────────────────
 
