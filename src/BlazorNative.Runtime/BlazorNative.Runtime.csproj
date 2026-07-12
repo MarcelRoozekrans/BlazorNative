@@ -66,6 +66,15 @@
     <PublishAotUsingRuntimePack>true</PublishAotUsingRuntimePack>
     <DisableUnsupportedError>true</DisableUnsupportedError>
     <RuntimeFrameworkVersion>10.0.9</RuntimeFrameworkVersion>
+    <!-- Phase 5.2 (M5 DoD #2): emit a STATIC archive (libBlazorNative.Runtime.a)
+         instead of the default shared library, so the Swift/UIKit shell links the
+         NativeAOT runtime directly into the iOS app binary (the app-embed shape an
+         iOS app wants; the 5.0 spike deferred this packaging decision). RID-gated
+         to iOS ONLY — win-x64 stays a .dll and linux-bionic stays a .so (the RID
+         condition never matches them), so this is behavior-neutral for the three
+         shipping RIDs. The proven xcrun link flags (scripts/ios-spike-verify.sh)
+         carry over to the Xcode app target. See docs/plans/2026-07-12-phase-5.2-design.md. -->
+    <NativeLib>Static</NativeLib>
   </PropertyGroup>
 
   <Import Project="..\..\build\BionicNativeAot.targets" />

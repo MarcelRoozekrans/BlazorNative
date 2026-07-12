@@ -1,0 +1,3 @@
+# The NativeAOT static archive libBlazorNative.Runtime.a is copied here by
+# .github/workflows/ios.yml from the iossimulator-arm64 publish output. It is a
+# build artifact (gitignored) — the app target links it via OTHER_LDFLAGS.

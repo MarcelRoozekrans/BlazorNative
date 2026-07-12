@@ -52,3 +52,12 @@ src/BlazorNative.Jni/src/androidMain/jniLibs/
 # Phase 3.0c - NDK shims BionicNativeAot.targets writes next to the publishing csproj (deleted only when linking succeeds)
 android_clang.cmd
 android_llvm-objcopy.cmd
+
+# Phase 5.2 - iOS Swift shell (src/BlazorNative.Apple)
+#   - BnHost.xcodeproj is generated from project.yml by XcodeGen at CI time
+#   - vendor/*.a is the NativeAOT static archive copied from the publish output
+#   - DerivedData is Xcode's build cache
+src/BlazorNative.Apple/BnHost.xcodeproj/
+src/BlazorNative.Apple/vendor/*.a
+src/BlazorNative.Apple/DerivedData/
+*.xcresult

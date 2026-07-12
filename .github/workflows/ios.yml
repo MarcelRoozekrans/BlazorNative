@@ -1,0 +1,205 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# BlazorNative iOS lane (Phase 5.2, M5 DoD #2 + #4) — macos-latest, single job.
+#
+# INFORMATIONAL — this workflow is NOT a required check (mirrors the
+# android-instrumented posture): simulator-on-CI has flake modes and the lane is
+# young. Promotion criteria: N consecutive green runs on main → promotable to a
+# required check (documented in docs/GITHUB-SETUP.md alongside the emulator lane).
+#
+# Unlike Android (which splits publish-on-Windows from test-on-Linux), iOS both
+# PUBLISHES and TESTS on macOS, so this is one job:
+#   1. publish src/BlazorNative.Runtime -r iossimulator-arm64 -p:PublishAot=true
+#      (the csproj runtime-pack bypass + NativeLib=Static → libBlazorNative.Runtime.a;
+#      assert exactly the 4 accepted IL2072 trim warnings, like win-x64/bionic)
+#   2. nm -gU asserts the NINE blazornative_* exports in the .a (the spike's
+#      underscore-normalized check)
+#   3. XcodeGen materialises BnHost.xcodeproj; xcodebuild test runs the hosted
+#      XCTest on the simulator; the DoD #2 render pins must pass
+# Artifact-upload heavy: every publish log, nm dump, xcodebuild log, and the
+# .xcresult bundle is uploaded each run (CI-only iteration — upload everything).
+#
+# The temporary `push` trigger on the branch is the documented bootstrap for the
+# `gh workflow run` 404 quirk (Phase 4.0 conclusion, ledger item 1); it is REMOVED
+# once the lane is green (workflow_dispatch + pull_request remain). Public-repo
+# macOS minutes are free, so +pull_request (iOS-relevant paths) is kept.
+# ─────────────────────────────────────────────────────────────────────────────
+name: ios
+
+on:
+  workflow_dispatch:
+  # Temporary bootstrap trigger (removed once green — see the header note).
+  push:
+    branches: [phase-5.2-swift-shell]
+  pull_request:
+    paths:
+      - 'src/BlazorNative.Apple/**'
+      - 'src/BlazorNative.Runtime/**'
+      - 'src/BlazorNative.Components/**'
+      - 'src/BlazorNative.Renderer/**'
+      - 'src/BlazorNative.Core/**'
+      - '.github/workflows/ios.yml'
+      - 'global.json'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  RID: iossimulator-arm64
+
+jobs:
+  ios:
+    runs-on: macos-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET SDK (global.json — 10.0.3xx band)
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      # ── Toolchain fingerprint (macos-latest drifts — record, assert nothing) ─
+      - name: Record toolchain (dotnet + Xcode + clang + sim SDK)
+        continue-on-error: true
+        run: |
+          mkdir -p ios-out
+          {
+            echo "=== dotnet ==="; dotnet --version
+            echo "=== runner ==="; uname -a; sw_vers || true
+            echo "=== Xcode ==="; xcode-select -p; xcodebuild -version || true
+            echo "=== sim SDK ==="; xcrun --sdk iphonesimulator --show-sdk-version || true
+            echo "=== clang ==="; xcrun -sdk iphonesimulator clang --version || true
+          } 2>&1 | tee ios-out/toolchain.txt
+
+      # ── Publish the static NativeAOT archive (assert 4 IL2072) ───────────────
+      - name: Publish iossimulator-arm64 (NativeLib=Static; assert exactly 4 IL2072)
+        run: |
+          set -o pipefail
+          dotnet publish src/BlazorNative.Runtime -c Release -r "$RID" \
+            -p:PublishAot=true -tl:off -nologo 2>&1 | tee ios-out/publish.log
+          il2072=$(grep -c 'warning IL2072' ios-out/publish.log || true)
+          echo "IL2072 count: $il2072"
+          if [ "$il2072" -ne 4 ]; then
+            grep 'warning IL2072' ios-out/publish.log || true
+            echo "iossimulator-arm64 publish IL2072 drift: expected exactly 4, got $il2072" >&2
+            exit 1
+          fi
+
+      # ── Locate the archive + assert the 9 blazornative_* exports (nm -gU) ────
+      - name: Locate libBlazorNative.Runtime.a + verify 9 exports
+        run: |
+          set -euo pipefail
+          # Find the archive that actually carries the C-ABI (skip any obj/ deps).
+          archive=""
+          while IFS= read -r a; do
+            if nm -gU "$a" 2>/dev/null | grep -q '_blazornative_init'; then archive="$a"; break; fi
+          done < <(find src/BlazorNative.Runtime/bin -type f -name '*.a' | grep "$RID" | sort -u)
+          if [ -z "$archive" ]; then
+            echo "No .a carrying blazornative_init found under the $RID publish output" >&2
+            find src/BlazorNative.Runtime/bin -type f -name '*.a' | grep "$RID" || true
+            exit 1
+          fi
+          echo "Archive: $archive"
+          ls -la "$archive" | tee -a ios-out/archive-info.txt
+          file "$archive" | tee -a ios-out/archive-info.txt
+          lipo -info "$archive" 2>/dev/null | tee -a ios-out/archive-info.txt || true
+
+          expected=(
+            blazornative_dispatch_event blazornative_fetch_complete
+            blazornative_host_event blazornative_init blazornative_mount
+            blazornative_register_bridge blazornative_register_frame_callback
+            blazornative_shutdown blazornative_version
+          )
+          actual=$(nm -gU "$archive" 2>/dev/null | grep -Eo '_?blazornative_[A-Za-z_]+' | sed 's/^_//' | sort -u)
+          echo "$actual" | tee ios-out/nm-symbols.txt
+          missing=()
+          for s in "${expected[@]}"; do echo "$actual" | grep -qx "$s" || missing+=("$s"); done
+          if [ "${#missing[@]}" -ne 0 ]; then
+            echo "Export surface drift: missing ${missing[*]}" >&2
+            exit 1
+          fi
+          echo "SYMBOLS: all 9 blazornative_* present."
+
+          # Stage the archive where the Xcode app target links it (OTHER_LDFLAGS).
+          mkdir -p src/BlazorNative.Apple/vendor
+          cp "$archive" src/BlazorNative.Apple/vendor/libBlazorNative.Runtime.a
+          echo "Staged → src/BlazorNative.Apple/vendor/libBlazorNative.Runtime.a"
+
+      # ── Generate the Xcode project from project.yml ──────────────────────────
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate BnHost.xcodeproj
+        working-directory: src/BlazorNative.Apple
+        run: xcodegen generate --spec project.yml 2>&1 | tee ../../ios-out/xcodegen.log
+
+      # ── Run the hosted XCTest on a simulator ─────────────────────────────────
+      - name: Select an available iPhone simulator
+        id: sim
+        run: |
+          set -euo pipefail
+          udid=$(xcrun simctl list devices available -j \
+            | jq -r '[.devices[][] | select(.name|test("^iPhone")) | .udid] | .[0] // empty')
+          if [ -z "$udid" ]; then
+            echo "No available iPhone simulator found" >&2
+            xcrun simctl list devices available || true
+            exit 1
+          fi
+          name=$(xcrun simctl list devices available -j \
+            | jq -r --arg u "$udid" '[.devices[][] | select(.udid==$u)] | .[0].name')
+          echo "Selected simulator: $name ($udid)"
+          echo "udid=$udid" >> "$GITHUB_OUTPUT"
+
+      - name: xcodebuild test (hosted XCTest — the DoD #2 render proof)
+        working-directory: src/BlazorNative.Apple
+        run: |
+          set -o pipefail
+          xcodebuild test \
+            -project BnHost.xcodeproj \
+            -scheme BnHost \
+            -destination "platform=iOS Simulator,id=${{ steps.sim.outputs.udid }}" \
+            -resultBundlePath ../../ios-out/BnHost.xcresult \
+            -derivedDataPath ../../ios-out/DerivedData \
+            CODE_SIGNING_ALLOWED=NO \
+            2>&1 | tee ../../ios-out/xcodebuild-test.log
+
+      - name: Assert XCTest pass count (>=1 passed / 0 failed)
+        if: always()
+        run: |
+          log=ios-out/xcodebuild-test.log
+          [ -f "$log" ] || { echo "no xcodebuild log" >&2; exit 1; }
+          passed=$(grep -cE "Test Case '.*' passed" "$log" || true)
+          failed=$(grep -cE "Test Case '.*' failed" "$log" || true)
+          echo "XCTest cases: passed=$passed failed=$failed"
+          if [ "$failed" -ne 0 ] || [ "$passed" -lt 1 ]; then
+            grep -E "Test Case '.*' (passed|failed)" "$log" || true
+            echo "iOS XCTest drift: expected >=1 passed / 0 failed, got passed=$passed failed=$failed" >&2
+            exit 1
+          fi
+
+      # ── Uploads (always — evidence regardless of outcome) ────────────────────
+      - name: Upload — ios-out (logs, nm dump, xcresult, DerivedData)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-out
+          path: ios-out
+          if-no-files-found: warn
+
+      - name: Upload — the NativeAOT static archive
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: BlazorNative.Runtime-iossimulator-arm64
+          path: src/BlazorNative.Apple/vendor/libBlazorNative.Runtime.a
+          if-no-files-found: warn
