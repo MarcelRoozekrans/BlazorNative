@@ -1,0 +1,110 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# BnHost — Phase 5.2 (M5 DoD #2): the Swift/UIKit shell's Xcode project, declared
+# for XcodeGen so the project is a small readable spec instead of a hand-rolled,
+# merge-hostile .pbxproj. `xcodegen generate` (run in ios.yml before xcodebuild)
+# materialises BnHost.xcodeproj from this file. XcodeGen is installed on the macOS
+# runner via `brew install xcodegen` — the only build-surface tool this lane adds.
+#
+# Two targets:
+#   BnHost       (iOS app) — the Swift shell (BnFrameAdapter/BnWidgetMapper/
+#                BnRuntime) + the minimal host (AppDelegate/HostViewController).
+#                Links the NativeAOT static archive vendor/libBlazorNative.Runtime.a
+#                (copied there by ios.yml from the iossimulator-arm64 publish) with
+#                the 5.0 spike's proven flag set (recorded in the Phase 5.2
+#                conclusion: docs/plans/2026-07-12-phase-5.2-conclusion.md).
+#   BnHostTests  (hosted unit-test bundle) — the DoD #2 render proof; TEST_HOST is
+#                BnHost, so it runs inside the app with the linked runtime and
+#                asserts the real UIView tree (@testable import BnHost).
+# ─────────────────────────────────────────────────────────────────────────────
+name: BnHost
+
+options:
+  bundleIdPrefix: io.blazornative
+  deploymentTarget:
+    iOS: "13.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    # The static archive is simulator-arm64 only (that is the CI target); do not
+    # let a stray x86_64 slice request break the link.
+    ONLY_ACTIVE_ARCH: YES
+    CODE_SIGNING_ALLOWED: NO
+    CODE_SIGNING_REQUIRED: NO
+
+targets:
+  BnHost:
+    type: application
+    platform: iOS
+    sources:
+      - path: BnHost
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.blazornative.bnhost
+        INFOPLIST_FILE: BnHost/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        ENABLE_TESTABILITY: YES
+        SWIFT_OBJC_BRIDGING_HEADER: BnHost/BlazorNativeRuntimeC.h
+        # Link the NativeAOT static runtime. A NativeLib=Static .a carries ONLY
+        # the compiled managed->native app code — NOT the NativeAOT runtime
+        # bootstrapper/GC (_Rh*) or the platform native support libs
+        # (_AppleCryptoNative_*, System.Native, ...), which NativeAOT bundles
+        # itself only when it emits a .dylib. For a static embed the app must link
+        # them too. ios.yml merges the runtime pack's native/*.a + *.o into one
+        # on-demand support archive (libBnRuntimeSupport.a) alongside the app .a.
+        #   - vendor/bootstrapperdll.o is linked as a DIRECT object (always
+        #     included) so its __attribute__((constructor)) runtime-init runs at
+        #     app launch → RuntimeInstance is set up before blazornative_init. As
+        #     an archive member it would be on-demand and never pulled (its
+        #     constructor is not a "referenced symbol") → SIGSEGV in the runtime's
+        #     ThreadStore::AttachCurrentThread. This is the load-bearing fix.
+        #   - -force_load on the app archive: pulls the exports + module cctors.
+        #   - the support archive stays ON-DEMAND — the linker pulls the
+        #     library-appropriate runtime objects (via _Rh*) without dragging in
+        #     the exe bootstrapper or the Network-framework transport.
+        #   - the framework/lib set is the 5.0 spike's proven list
+        #     (recorded in docs/plans/2026-07-12-phase-5.2-conclusion.md); Security
+        #     covers AppleCrypto.
+        # BnHost-target-only (NOT global) so the hosted test bundle, which links
+        # against the app via BUNDLE_LOADER, does not re-link the runtime.
+        OTHER_LDFLAGS:
+          - $(SRCROOT)/vendor/bootstrapperdll.o
+          - -force_load
+          - $(SRCROOT)/vendor/libBlazorNative.Runtime.a
+          - $(SRCROOT)/vendor/libBnRuntimeSupport.a
+          - -lc++
+          - -lz
+          - -licucore
+          - -lobjc
+          - -framework
+          - Foundation
+          - -framework
+          - Security
+          - -framework
+          - CoreFoundation
+
+  BnHostTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: BnHostTests
+    dependencies:
+      - target: BnHost
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.blazornative.bnhost.tests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_HOST: $(BUILT_PRODUCTS_DIR)/BnHost.app/BnHost
+        BUNDLE_LOADER: $(TEST_HOST)
+
+schemes:
+  BnHost:
+    build:
+      targets:
+        BnHost: all
+        BnHostTests: [test]
+    test:
+      targets:
+        - BnHostTests
+      gatherCoverageData: false
