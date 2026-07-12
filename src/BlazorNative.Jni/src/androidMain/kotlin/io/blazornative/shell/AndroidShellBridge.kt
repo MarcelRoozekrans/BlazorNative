@@ -24,6 +24,15 @@ import java.util.concurrent.Executors
  */
 class AndroidShellBridge(
     context: Context,
+    // Phase 5.1 (M5 DoD #5): the startup route slot for deep links. MainActivity
+    // parses a VIEW-intent `blazornative://<route>` and passes it here BEFORE
+    // boot, so the .NET nav manager's QueryStartupRoute (which calls
+    // currentRoute()) reads it and the 3.5 startup-honor mounts the linked
+    // page. Default "/" = normal launch. NOT a navigation — just the seed the
+    // first mount resolves against (design §4). BEFORE onError so the existing
+    // trailing-lambda callers (AndroidShellBridge(ctx) { … }) keep binding the
+    // lambda to onError.
+    initialRoute: String = "/",
     private val onError: (String, Throwable) -> Unit,
 ) : ShellBridgeHandlers {
 
@@ -38,7 +47,7 @@ class AndroidShellBridge(
 
     // ── Route ────────────────────────────────────────────────────────────────
 
-    @Volatile private var route: String = "/"
+    @Volatile private var route: String = initialRoute
 
     override fun navigate(route: String) {
         this.route = route

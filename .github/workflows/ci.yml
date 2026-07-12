@@ -8,7 +8,7 @@
 #   each publish must show exactly the 4 accepted IL2072 trim warnings) →
 #   nine-export verification (dumpbin via vswhere / llvm-readelf from the
 #   pinned NDK) → Gradle testDebugUnitTest against the fresh win-x64 dll
-#   (76 passed / 0 failed) → consumer smoke (five packages from the local
+#   (78 passed / 0 failed) → consumer smoke (five packages from the local
 #   feed mount a Bn* component + analyzer trip; Phase 4.5, M4 DoD #7) →
 #   artifacts for the instrumented (Gate 3) job.
 #
@@ -242,7 +242,7 @@ jobs:
       # testDebugUnitTest → preBuild → copyRuntimeSo → verifyNativeAssets needs
       # BOTH bionic .so publish outputs, hence this step runs after them; the
       # unit tests themselves load the win-x64 dll via jna.library.path.
-      - name: JVM tests (Gradle testDebugUnitTest — assert 76 passed / 0 failed)
+      - name: JVM tests (Gradle testDebugUnitTest — assert 78 passed / 0 failed)
         working-directory: src/BlazorNative.Jni
         run: |
           .\gradlew.bat --no-daemon testDebugUnitTest
@@ -256,8 +256,8 @@ jobs:
             $errors += [int]$suite.errors; $skipped += [int]$suite.skipped
           }
           Write-Host "JVM test totals across $($xmls.Count) suites: tests=$tests failures=$failures errors=$errors skipped=$skipped"
-          if ($tests -ne 76 -or $failures -ne 0 -or $errors -ne 0 -or $skipped -ne 0) {
-            throw "JVM test baseline drift: expected 76 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped"
+          if ($tests -ne 78 -or $failures -ne 0 -or $errors -ne 0 -or $skipped -ne 0) {
+            throw "JVM test baseline drift: expected 78 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped"
           }
 
       # ── Consumer smoke (Phase 4.5 Gate 2 — the M4 DoD #7 proof) ────────────

@@ -4,6 +4,9 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import java.util.Collections
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 /**
  * Phase 5.1 Gate 2 — host-INITIATED events driven through the published
@@ -178,5 +181,58 @@ class HostEventTest {
             "a not-handled back must not swap anything")
 
         s.runtime.retire()
+    }
+
+    // ── nit: the onError message contract (frozen rc-2 wording) ──────────────
+
+    @Test
+    fun describeHostEventFailure_rc2_carries_frozen_wording() {
+        // Parity with DispatchEventTest.describeDispatchFailure_rc2_… — the
+        // KDoc claims "unit-tested", so pin the rc-2 wording + the desktop-JVM
+        // reproduction hint (Android stderr is /dev/null).
+        val runtime = BlazorNativeRuntime(onFrame = {})
+
+        val msg = runtime.describeHostEventFailure(2, name = "onPause")
+
+        assertTrue(
+            msg.contains("faulted — a NativeEvents subscriber, its re-render, or the back swap threw"),
+            "rc-2 message must carry the frozen wording; got: $msg"
+        )
+        assertTrue(
+            msg.contains("reproduce on desktop JVM to see it"),
+            "rc-2 message must carry the desktop-JVM reproduction hint; got: $msg"
+        )
+    }
+
+    // ── nit: the async PRODUCTION path routes a non-zero rc to onError ───────
+
+    @Test
+    fun async_dispatchHostEvent_nonzero_rc_routes_to_onError() {
+        // Closes the coverage asymmetry vs dispatchEvent: the async production
+        // path (dispatchHostEvent → the BlazorNative-Dispatch lane) must route
+        // a non-zero rc to onError. An empty name → rc 3 (malformed) is chosen
+        // because it is DETERMINISTIC regardless of the process-global session's
+        // nav state (a "back" rc would depend on whether a prior test left a
+        // previous-route slot). The point is the routing, not the specific rc.
+        val errors = Collections.synchronizedList(mutableListOf<String>())
+        val latch = CountDownLatch(1)
+        val host = InertHost()
+        val runtime = BlazorNativeRuntime(
+            onFrame = {},
+            onError = { msg, _ -> errors.add(msg); latch.countDown() },
+        )
+        runtime.start(componentName = "BnDemo", platformOs = "test-host", bridge = host)
+
+        runtime.dispatchHostEvent("") // empty name → rc 3 → onError, on the lane
+
+        assertTrue(
+            latch.await(5, TimeUnit.SECONDS),
+            "onError must fire for a non-zero host_event rc; errors=$errors"
+        )
+        assertTrue(
+            errors.any { it.contains("rc 3") },
+            "onError message must describe the non-zero rc; got $errors"
+        )
+        assertTrue(runtime.retire(), "the lane must drain after the dispatch")
     }
 }
