@@ -150,7 +150,8 @@ BlazorNative/
 - [x] Bidirectional events (`@onclick` → native tap → .NET handler → re-render) — Phase 3.2
 - [x] Shell bridge as host-registered C-ABI callbacks (navigate/storage/fetch, plain `HttpClient` works on Android) — Phase 3.1
 - [x] `Bn*` component library, `@bind` mechanics, cascading values, navigation — a two-page demo app on the AVD (~1.6 s cold boot) — Milestone 3
-- [ ] Public repo + CI, analyzer rescope, hardening triage, dev inner loop, NuGet packages — Milestone 4 (in progress)
+- [x] Public repo + CI, analyzer rescope, hardening triage, dev inner loop, NuGet packages — Milestone 4
+- [ ] Full platform coverage — iOS proven feasible on the simulator, host-initiated events (lifecycle + predictive back + deep links) on Android — Milestone 5 (in progress)
 - [ ] iOS Swift shell — Milestone 5
 
 ## Compatibility

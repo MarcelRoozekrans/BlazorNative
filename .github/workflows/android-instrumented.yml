@@ -229,7 +229,7 @@ jobs:
             s=$(attr skipped "$x");  skipped=$((skipped + ${s:-0}))
           done
           echo "Instrumented totals across ${#xmls[@]} suite(s): tests=$tests failures=$failures errors=$errors skipped=$skipped"
-          if [ "$tests" -ne 35 ] || [ "$failures" -ne 0 ] || [ "$errors" -ne 0 ] || [ "$skipped" -ne 0 ]; then
+          if [ "$tests" -ne 38 ] || [ "$failures" -ne 0 ] || [ "$errors" -ne 0 ] || [ "$skipped" -ne 0 ]; then
             echo "Instrumented test baseline drift: expected 38 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped" >&2
             exit 1
           fi
