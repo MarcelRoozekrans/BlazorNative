@@ -96,7 +96,18 @@ Phase 5.0 brainstorm — and explicitly subject to the Phase 5.0 spike verdict.
    `1.3.0-phase-5.1`. See [conclusion](../plans/2026-07-12-phase-5.1-conclusion.md).
 6. **Clipboard + share on both platforms**, with the bridge-extension pattern
    documented (how a new host API joins the C-ABI: struct slot vs new callback,
-   versioning posture, per-platform impl shape).
+   versioning posture, per-platform impl shape). **Closed (Phase 5.4):** the bridge
+   grew 6→9 callbacks (clipboard read/write + share) through a **size-negotiated**
+   `register_bridge` (leading `structSize`, min-copy + zero-fill + clamp,
+   null-slot = `NotSupportedException`) — forward/backward-compatible, not a raw
+   lockstep edit. Clipboard is real on both platforms (`ClipboardManager` /
+   `UIPasteboard`); share is real (`ACTION_SEND` / `UIActivityViewController`),
+   asserted at the callback-content bar via a capture seam (the system UI is not
+   assertable). The pattern is documented in
+   [docs/bridge-extension.md](../bridge-extension.md) — the M6+ recipe for
+   camera/geo/etc. .NET 230 / JVM 79 / Android 40 / iOS XCTest 12; version
+   `1.4.0-phase-5.4`; exports unchanged at 9. See
+   [conclusion](../plans/2026-07-12-phase-5.4-conclusion.md).
 7. **Every new surface is CI-asserted.** Test counts recorded and asserted at each
    phase close (the M4 discipline continues); the iOS lane's counts join them when
    the lane stabilizes.

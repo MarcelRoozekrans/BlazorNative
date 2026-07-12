@@ -38,19 +38,20 @@ class ShellBridgeTest {
     // ── Struct drift tests ───────────────────────────────────────────────────
 
     /**
-     * BlazorNativeBridgeCallbacks must be 48 bytes on x64 (6 × 8-byte fn
-     * pointers); both fetch structs 32 bytes (request: 4 pointers; response:
-     * 2 × int + 3 pointers). Mirrors BridgeProtocolNativeTests.cs — if either
-     * side drifts, this catches it before pointers read garbage.
+     * BlazorNativeBridgeCallbacks must be 72 bytes on x64 since Phase 5.4
+     * (9 × 8-byte fn pointers — clipboard read/write + share appended); both
+     * fetch structs 32 bytes (request: 4 pointers; response: 2 × int + 3
+     * pointers). Mirrors BridgeProtocolNativeTests.cs — if either side drifts,
+     * this catches it before pointers read garbage.
      */
     @Test
-    fun callbacks_struct_is_48_bytes() {
+    fun callbacks_struct_is_72_bytes() {
         // NOTE: Native.getNativeSize(cls) reports POINTER size (8) for
         // non-ByValue Structure classes (struct-by-reference IS a pointer);
         // Structure.size() computes the actual layout.
         assertEquals(
-            48, BlazorNativeBridgeCallbacks().size(),
-            "BlazorNativeBridgeCallbacks must be 6 × 8-byte fn pointers = 48 bytes; " +
+            72, BlazorNativeBridgeCallbacks().size(),
+            "BlazorNativeBridgeCallbacks must be 9 × 8-byte fn pointers = 72 bytes; " +
                 "FieldOrder drifted from BridgeProtocolNative.cs"
         )
         assertEquals(
@@ -86,6 +87,9 @@ class ShellBridgeTest {
             override fun storageWrite(key: String, value: String) {}
             override fun storageDelete(key: String) {}
             override fun fetchBegin(requestId: Long, request: BridgeFetchRequest) {}
+            override fun clipboardRead(): String = ""
+            override fun clipboardWrite(text: String) {}
+            override fun share(text: String) {}
         }
         // NOT registered — the guarded() wrapper is exercised directly on the
         // callback object (registration/park semantics are BridgeRegistrar

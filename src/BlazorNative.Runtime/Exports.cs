@@ -20,7 +20,9 @@ namespace BlazorNative.Runtime;
 //   dispatch_event          — Phase 3.2: host→renderer event ingress
 //                             (handlerId + flat-JSON args; synchronous
 //                             handler → re-render → frame callback; 0/1/2/3)
-//   register_bridge         — Phase 3.1: copy the host's 6-callback struct
+//   register_bridge         — Phase 3.1 / 5.4: size-negotiated copy of the
+//                             host's callback struct (leading structSize;
+//                             min-copy + zero-fill — 9 slots since 5.4)
 //   fetch_complete          — Phase 3.1: deliver an async fetch response
 //   host_event              — Phase 5.1 (M5 DoD #5): host-INITIATED lifecycle
 //                             ingress (pause/resume, back, deep links) — fires
@@ -77,7 +79,7 @@ public static class Exports
     /// <summary>Single source of truth for the runtime version — the
     /// JNA-visible version cstring and NativeShellBridge.PlatformInfo both
     /// derive from it.</summary>
-    internal const string VersionNumber = "1.3.0-phase-5.1";
+    internal const string VersionNumber = "1.4.0-phase-5.4";
 
     static Exports()
     {
@@ -332,22 +334,30 @@ public static class Exports
     }
 
     /// <summary>
-    /// Phase 3.1: COPIES the host's 6-callback struct into NativeShellBridge
-    /// (the host may free its struct memory after this returns; the function
-    /// pointers themselves must stay alive — JNA STRONG-ref rule, same as the
-    /// frame callback). Re-registration is allowed (last wins). Returns 0 on
-    /// success, 2 on null pointer / failure (detail on stderr). Call BEFORE
-    /// blazornative_mount so components resolving IMobileBridge find a live
-    /// host. Full ABI contract: BridgeProtocolNative.cs.
+    /// Phase 3.1 / Phase 5.4: COPIES the host's callback struct into
+    /// NativeShellBridge (the host may free its struct memory after this returns;
+    /// the function pointers themselves must stay alive — JNA STRONG-ref rule,
+    /// same as the frame callback). Re-registration is allowed (last wins).
+    /// Returns 0 on success, 2 on null pointer / bad size / failure (detail on
+    /// stderr). Call BEFORE blazornative_mount so components resolving
+    /// IMobileBridge find a live host.
+    ///
+    /// SIZE NEGOTIATION (Phase 5.4, DoD #6): <paramref name="structSize"/> is the
+    /// byte size of the caller's <c>BlazorNativeBridgeCallbacks</c>. The runtime
+    /// copies <c>min(structSize, sizeof(its own struct))</c> bytes and zero-fills
+    /// the tail — an OLD shell (fewer slots) leaves the new slots null
+    /// (capability unsupported), and a NEWER shell's extra tail is ignored. The
+    /// export never over-reads the caller's buffer. Full ABI contract:
+    /// BridgeProtocolNative.cs.
     /// </summary>
     [UnmanagedCallersOnly(EntryPoint = "blazornative_register_bridge", CallConvs = new[] { typeof(CallConvCdecl) })]
-    public static unsafe int RegisterBridge(BlazorNativeBridgeCallbacks* callbacks)
+    public static unsafe int RegisterBridge(int structSize, BlazorNativeBridgeCallbacks* callbacks)
     {
         try
         {
-            if (callbacks == null)
+            if (callbacks == null || structSize <= 0)
                 return 2;
-            NativeShellBridge.Register(in *callbacks);
+            NativeShellBridge.Register(structSize, callbacks);
             return 0;
         }
         catch (Exception ex)

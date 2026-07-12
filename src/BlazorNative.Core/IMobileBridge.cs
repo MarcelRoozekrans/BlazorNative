@@ -21,6 +21,13 @@ public interface IMobileBridge
     // Network (thin fetch — TLS handled by native layer)
     ValueTask<BridgeHttpResponse> FetchAsync(BridgeHttpRequest request, CancellationToken ct = default);
 
+    // Clipboard + Share (Phase 5.4 — size-negotiated bridge slots). A host that
+    // predates these slots surfaces NotSupportedException (the null-slot guard);
+    // the dev-host mock and both native shells implement them.
+    ValueTask<string> ClipboardReadAsync(CancellationToken ct = default);
+    ValueTask ClipboardWriteAsync(string text, CancellationToken ct = default);
+    ValueTask ShareAsync(string text, CancellationToken ct = default);
+
     // Platform info — sync raw-JSON form (read from BLAZOR_PLATFORM_INFO env
     // var on Mono-WASI; Phase 2.3 env-var bridge) + async typed form.
     string PlatformInfo { get; }

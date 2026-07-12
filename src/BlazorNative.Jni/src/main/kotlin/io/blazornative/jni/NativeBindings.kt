@@ -75,18 +75,24 @@ interface NativeBindings : Library {
     fun blazornative_dispatch_event(handlerId: Long, argsJsonUtf8: ByteArray): Int
 
     /**
-     * Phase 3.1: copies the host's six-callback struct into the runtime's
-     * shell bridge (the struct memory may be freed after this returns; the
-     * CALLBACK OBJECTS must stay strongly referenced — see the lifetime note
-     * on [BlazorNativeBridgeCallbacks]). Returns 0 on success, 2 on null
-     * pointer / failure (detail on the process stderr). Re-registration is
-     * allowed (last wins) — but the PREVIOUS registration's callback objects
-     * must stay alive too (an in-flight .NET op may still hold the old
-     * snapshot); BridgeRegistrar parks every registration forever (POC rule
-     * from BridgeProtocolNative.cs). Call BEFORE blazornative_mount so
-     * components resolving IMobileBridge find a live host.
+     * Phase 3.1 / Phase 5.4: copies the host's callback struct into the
+     * runtime's shell bridge (the struct memory may be freed after this returns;
+     * the CALLBACK OBJECTS must stay strongly referenced — see the lifetime note
+     * on [BlazorNativeBridgeCallbacks]). Returns 0 on success, 2 on null pointer /
+     * bad size / failure (detail on the process stderr). Re-registration is
+     * allowed (last wins) — but the PREVIOUS registration's callback objects must
+     * stay alive too (an in-flight .NET op may still hold the old snapshot);
+     * BridgeRegistrar parks every registration forever (POC rule from
+     * BridgeProtocolNative.cs). Call BEFORE blazornative_mount so components
+     * resolving IMobileBridge find a live host.
+     *
+     * SIZE NEGOTIATION (Phase 5.4): [structSize] is the byte size of the Kotlin
+     * struct (BridgeRegistrar passes `struct.size()`); the runtime copies
+     * `min(structSize, sizeof(its struct))` bytes and zero-fills the tail, so a
+     * shell that predates a slot leaves it null (capability unsupported) rather
+     * than the runtime over-reading a shorter buffer.
      */
-    fun blazornative_register_bridge(callbacks: BlazorNativeBridgeCallbacks): Int
+    fun blazornative_register_bridge(structSize: Int, callbacks: BlazorNativeBridgeCallbacks): Int
 
     /**
      * Phase 5.1 (M5 DoD #5): host-INITIATED event ingress. Two routes on ONE
@@ -203,6 +209,25 @@ interface NativeBindings : Library {
         fun invoke(requestId: Long, request: Pointer): Int
     }
 
+    // ── Phase 5.4 clipboard + share callbacks (size-negotiated slots) ────────
+    // A NULL slot (an old shell predating these) = capability unsupported; the
+    // .NET null-slot guard surfaces NotSupportedException.
+
+    /** Cdecl `int (char* buf, int cap)` — buffer protocol (clipboardRead). */
+    interface BridgeClipboardReadCallback : Callback {
+        fun invoke(buf: Pointer, cap: Int): Int
+    }
+
+    /** Cdecl `int (const char* textUtf8)` (clipboardWrite). */
+    interface BridgeClipboardWriteCallback : Callback {
+        fun invoke(textUtf8: Pointer): Int
+    }
+
+    /** Cdecl `int (const char* textUtf8)` — fire-and-forget share. */
+    interface BridgeShareCallback : Callback {
+        fun invoke(textUtf8: Pointer): Int
+    }
+
     companion object {
         // JNA library name "BlazorNative.Runtime" → maps to:
         //   Windows: BlazorNative.Runtime.dll
@@ -255,27 +280,36 @@ open class BlazorNativeInitResult : Structure() {
 }
 
 /**
- * Mirror of BridgeProtocolNative.cs BlazorNativeBridgeCallbacks — the six
+ * Mirror of BridgeProtocolNative.cs BlazorNativeBridgeCallbacks — the
  * host-implemented shell operations, registered once at boot via
  * `blazornative_register_bridge`. JNA maps Callback-typed Structure fields to
  * native function pointers automatically.
  *
- * x64 layout: 6 × 8-byte fn pointers = 48 bytes — asserted on both sides
+ * x64 layout: 9 × 8-byte fn pointers = 72 bytes since Phase 5.4 (clipboard
+ * read/write + share appended at 48/56/64) — asserted on both sides
  * (ShellBridgeTest.kt here, BridgeProtocolNativeTests.cs on .NET). If you
- * change ANY field, update the .NET mirror + both drift tests.
+ * change ANY field, update the .NET mirror + the Swift header + both drift
+ * tests. A left-null clipboard/share slot = capability unsupported (the
+ * size-negotiated register + the .NET null-slot guard).
  *
  * The struct itself is COPIED by register_bridge (free after the call is
  * fine); the callback OBJECTS must stay strongly referenced — see the
  * lifetime note on the callback interfaces above.
  */
-@Structure.FieldOrder("navigate", "currentRoute", "storageRead", "storageWrite", "storageDelete", "fetchBegin")
+@Structure.FieldOrder(
+    "navigate", "currentRoute", "storageRead", "storageWrite", "storageDelete", "fetchBegin",
+    "clipboardRead", "clipboardWrite", "share"
+)
 open class BlazorNativeBridgeCallbacks : Structure() {
-    @JvmField var navigate: NativeBindings.BridgeNavigateCallback? = null           // offset 0
-    @JvmField var currentRoute: NativeBindings.BridgeCurrentRouteCallback? = null   // offset 8
-    @JvmField var storageRead: NativeBindings.BridgeStorageReadCallback? = null     // offset 16
-    @JvmField var storageWrite: NativeBindings.BridgeStorageWriteCallback? = null   // offset 24
-    @JvmField var storageDelete: NativeBindings.BridgeStorageDeleteCallback? = null // offset 32
-    @JvmField var fetchBegin: NativeBindings.BridgeFetchBeginCallback? = null       // offset 40
+    @JvmField var navigate: NativeBindings.BridgeNavigateCallback? = null              // offset 0
+    @JvmField var currentRoute: NativeBindings.BridgeCurrentRouteCallback? = null      // offset 8
+    @JvmField var storageRead: NativeBindings.BridgeStorageReadCallback? = null        // offset 16
+    @JvmField var storageWrite: NativeBindings.BridgeStorageWriteCallback? = null      // offset 24
+    @JvmField var storageDelete: NativeBindings.BridgeStorageDeleteCallback? = null    // offset 32
+    @JvmField var fetchBegin: NativeBindings.BridgeFetchBeginCallback? = null          // offset 40
+    @JvmField var clipboardRead: NativeBindings.BridgeClipboardReadCallback? = null    // offset 48 — null = unsupported
+    @JvmField var clipboardWrite: NativeBindings.BridgeClipboardWriteCallback? = null  // offset 56 — null = unsupported
+    @JvmField var share: NativeBindings.BridgeShareCallback? = null                    // offset 64 — null = unsupported
 }
 
 /**

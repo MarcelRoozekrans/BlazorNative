@@ -1,37 +1,51 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// AppleShellBridge — Phase 5.3 (M5 DoD #3): the host half of the shell bridge —
-// the six `@convention(c)` callbacks .NET calls INTO through
+// AppleShellBridge — Phase 5.3 (M5 DoD #3) + Phase 5.4 (DoD #6): the host half of
+// the shell bridge — the `@convention(c)` callbacks .NET calls INTO through
 // `blazornative_register_bridge`. The Swift twin of Android's AndroidShellBridge +
-// ShellBridge.kt, register_bridge is all-or-nothing (all six supplied) and is
-// registered BEFORE mount.
+// ShellBridge.kt; register_bridge is size-negotiated (structSize + min-copy) and
+// registered BEFORE mount. Phase 5.4 appended clipboard read/write + share (offsets
+// 48/56/64) — REAL since Gate 3: clipboard → UIPasteboard.general, share →
+// UIActivityViewController.
 //
-// No-capture, singleton-routed (the 5.2 frame-callback pattern): the six global
+// No-capture, singleton-routed (the 5.2 frame-callback pattern): the nine global
 // `@convention(c)` trampolines forward to `AppleShellBridge.shared`. Nothing can
 // throw across the C ABI BY CONSTRUCTION — `@convention(c)` closures are
 // non-throwing (compiler-enforced) and the bridge methods they call don't throw —
 // so -1 is returned ONLY on the nil-singleton guard, never from a caught exception.
-// Process-lifetime retention — app-scoped state only (route slot + storage dict),
-// no view controllers.
+// Process-lifetime retention — app-scoped state only (route slot + storage dict).
 //
-// Threading: bridge ops are DATA, not UI — no main-thread hop. `navigate` (lane
-// thread, during dispatch) and `currentRoute` (boot thread at mount AND the lane)
-// can race on the route slot → it is lock-guarded (the @Volatile twin). storage is
-// touched only on the dispatch lane (serial), so the in-memory dict is safe as-is.
+// Threading: bridge ops are DATA, not UI — the sync handlers (navigate, storage,
+// clipboard) run on the .NET dispatch lane. `navigate` (lane) and `currentRoute`
+// (boot thread at mount AND the lane) can race on the route slot → it is
+// lock-guarded (the @Volatile twin). UIPasteboard.general get/set is safe off the
+// main thread (cross-process, not a UIView), so clipboard stays on the lane
+// (Android reads/writes ClipboardManager on its lane too). Share is the ONE UI
+// affordance: it MUST build/present its UIActivityViewController on the MAIN thread,
+// so `share` hops to DispatchQueue.main and presents from the key window's root VC —
+// unless the `shareHook` seam is set (test only), which captures the content
+// synchronously and skips the sheet (the Android `shareLaunchHook` twin).
 //
 // Return-code protocol (BridgeProtocolNative.cs): buffer-writing calls
-// (currentRoute, storageRead) return the byte count written INCLUDING the NUL on
-// success, or `-(utf8Bytes + 1)` when the value does not fit the offered cap
-// (the -needed protocol — the .NET side retries once at that size); -1 = host
-// error; -2 = key absent (storageRead).
+// (currentRoute, storageRead, clipboardRead) return the byte count written
+// INCLUDING the NUL on success, or `-(utf8Bytes + 1)` when the value does not fit
+// the offered cap (the -needed protocol — the .NET side retries once at that size);
+// -1 = host error; -2 = key absent (storageRead).
 // ─────────────────────────────────────────────────────────────────────────────
 
-import Foundation
+import UIKit
 
 final class AppleShellBridge {
 
-    /// Routes the six `@convention(c)` trampolines to the live instance (the
+    /// Routes the nine `@convention(c)` trampolines to the live instance (the
     /// frame-callback singleton pattern). Set before register_bridge + mount.
     static var shared: AppleShellBridge?
+
+    /// Share test seam (the AndroidShellBridge.shareLaunchHook twin): when set, a
+    /// `share(_:)` hands the activityItems here and does NOT present the sheet, so a
+    /// hosted XCTest can assert the share content without popping the system UI.
+    /// Null in production. Process-static (the test cannot reach the app's bridge
+    /// instance directly); reset it in the test's teardown so it never leaks.
+    static var shareHook: (([Any]) -> Void)?
 
     private var route: String
     private let routeLock = NSLock()
@@ -94,6 +108,67 @@ final class AppleShellBridge {
         return -1
     }
 
+    // ── clipboard + share (Phase 5.4 Gate 3 — real UIPasteboard / share sheet) ─
+    //
+    // Clipboard → the system UIPasteboard.general (the ClipboardManager twin). read/
+    // write run on the .NET dispatch lane (the sync-handler contract); UIPasteboard
+    // string get/set is a cross-process op safe off the main thread. The buffer
+    // -needed protocol is applied by writeUtf8 (the storageRead twin) — the handler
+    // just returns the current string (empty when the pasteboard has no string).
+    //
+    // Share → a UIActivityViewController over [text], presented on the MAIN thread
+    // from the key window's root VC (the bridge is off-main, so `share` hops). The
+    // [shareHook] seam, when set (test only), captures the activityItems and SKIPS
+    // present(...), so the XCTest asserts the share content without popping the
+    // system sheet (the Android shareLaunchHook twin). "No presenter available" is
+    // handled gracefully (log + return) — never a crash.
+
+    func clipboardRead(_ buf: UnsafeMutablePointer<CChar>, _ cap: Int32) -> Int32 {
+        let text = UIPasteboard.general.string ?? ""
+        return AppleShellBridge.writeUtf8(text, buf, cap)
+    }
+
+    func clipboardWrite(_ text: String) -> Int32 {
+        UIPasteboard.general.string = text
+        return 0
+    }
+
+    func share(_ text: String) -> Int32 {
+        let items: [Any] = [text]
+        // Test seam (checked synchronously on the calling/lane thread): capture the
+        // content and do NOT present. Mirrors AndroidShellBridge.shareLaunchHook.
+        if let hook = AppleShellBridge.shareHook {
+            hook(items)
+            return 0
+        }
+        // Production: build + present the share sheet on the MAIN thread.
+        DispatchQueue.main.async {
+            guard let presenter = AppleShellBridge.topPresenter() else {
+                NSLog("[AppleShellBridge] share: no presenter available — skipped")
+                return
+            }
+            let avc = UIActivityViewController(activityItems: items, applicationActivities: nil)
+            // iPad: a nil popover source would crash — anchor to the presenter's view.
+            avc.popoverPresentationController?.sourceView = presenter.view
+            presenter.present(avc, animated: true)
+        }
+        return 0
+    }
+
+    /// The top-most presenting view controller (key window's root, walking any
+    /// presented chain). nil when no foreground window/root exists — share then
+    /// logs and returns (graceful). Avoids the iOS-15-deprecated
+    /// `UIApplication.shared.windows` by going through the active window scene.
+    private static func topPresenter() -> UIViewController? {
+        let keyWindow = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap { $0.windows }
+            .first { $0.isKeyWindow }
+        var top = keyWindow?.rootViewController
+        while let presented = top?.presentedViewController { top = presented }
+        return top
+    }
+
     // ── the -needed buffer-write helper (twin of ShellBridge.writeUtf8) ──────
 
     /// UTF-8-encode `value`; when bytes + 1 (NUL) fits in `cap`, write bytes + NUL
@@ -111,7 +186,7 @@ final class AppleShellBridge {
     }
 }
 
-// ── The six global @convention(c) trampolines (no capture; singleton-routed) ──
+// ── The nine global @convention(c) trampolines (no capture; singleton-routed) ─
 // Held as top-level `let`s for the process lifetime — the fn pointers must outlive
 // register_bridge (the JNA strong-ref rule's Swift form). A nil singleton → -1.
 
@@ -143,4 +218,21 @@ let bnBridgeStorageDelete: bn_storage_delete_cb = { keyPtr in
 let bnBridgeFetchBegin: bn_fetch_begin_cb = { requestId, _ in
     guard let bridge = AppleShellBridge.shared else { return -1 }
     return bridge.fetchBegin(requestId)
+}
+
+// Phase 5.4 clipboard/share trampolines — route to the REAL UIPasteboard /
+// UIActivityViewController methods (Gate 3). A nil singleton → -1.
+let bnBridgeClipboardRead: bn_clipboard_read_cb = { buf, cap in
+    guard let buf = buf, let bridge = AppleShellBridge.shared else { return -1 }
+    return bridge.clipboardRead(buf, cap)
+}
+
+let bnBridgeClipboardWrite: bn_clipboard_write_cb = { textPtr in
+    guard let textPtr = textPtr, let bridge = AppleShellBridge.shared else { return -1 }
+    return bridge.clipboardWrite(String(cString: textPtr))
+}
+
+let bnBridgeShare: bn_share_cb = { textPtr in
+    guard let textPtr = textPtr, let bridge = AppleShellBridge.shared else { return -1 }
+    return bridge.share(String(cString: textPtr))
 }

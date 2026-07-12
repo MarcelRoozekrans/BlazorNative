@@ -3,12 +3,12 @@
 # rides on. Single windows-latest job mirroring the local verification
 # procedure verbatim (setup.ps1 §1–7 documents the toolchain pins):
 #
-#   build (analyzers ride it) → .NET tests (220 passed / 0 skipped) →
+#   build (analyzers ride it) → .NET tests (230 passed / 0 skipped) →
 #   three NativeAOT publishes (win-x64, linux-bionic-x64, linux-bionic-arm64;
 #   each publish must show exactly the 4 accepted IL2072 trim warnings) →
 #   nine-export verification (dumpbin via vswhere / llvm-readelf from the
 #   pinned NDK) → Gradle testDebugUnitTest against the fresh win-x64 dll
-#   (78 passed / 0 failed) → consumer smoke (five packages from the local
+#   (79 passed / 0 failed) → consumer smoke (five packages from the local
 #   feed mount a Bn* component + analyzer trip; Phase 4.5, M4 DoD #7) →
 #   artifacts for the instrumented (Gate 3) job.
 #
@@ -124,7 +124,7 @@ jobs:
           dotnet build BlazorNative.sln -c Release -tl:off -nologo
           if ($LASTEXITCODE -ne 0) { throw "dotnet build failed (exit $LASTEXITCODE)" }
 
-      - name: .NET tests (assert 220 passed / 0 skipped)
+      - name: .NET tests (assert 230 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -135,8 +135,8 @@ jobs:
           $passed  = ($summaries | ForEach-Object { [int]$_.Matches[0].Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($summaries | ForEach-Object { [int]$_.Matches[0].Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($summaries.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 220 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 220 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 230 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 230 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # ── NativeAOT publishes + nine-export verification ────────────────────
@@ -242,7 +242,7 @@ jobs:
       # testDebugUnitTest → preBuild → copyRuntimeSo → verifyNativeAssets needs
       # BOTH bionic .so publish outputs, hence this step runs after them; the
       # unit tests themselves load the win-x64 dll via jna.library.path.
-      - name: JVM tests (Gradle testDebugUnitTest — assert 78 passed / 0 failed)
+      - name: JVM tests (Gradle testDebugUnitTest — assert 79 passed / 0 failed)
         working-directory: src/BlazorNative.Jni
         run: |
           .\gradlew.bat --no-daemon testDebugUnitTest
@@ -256,8 +256,8 @@ jobs:
             $errors += [int]$suite.errors; $skipped += [int]$suite.skipped
           }
           Write-Host "JVM test totals across $($xmls.Count) suites: tests=$tests failures=$failures errors=$errors skipped=$skipped"
-          if ($tests -ne 78 -or $failures -ne 0 -or $errors -ne 0 -or $skipped -ne 0) {
-            throw "JVM test baseline drift: expected 78 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped"
+          if ($tests -ne 79 -or $failures -ne 0 -or $errors -ne 0 -or $skipped -ne 0) {
+            throw "JVM test baseline drift: expected 79 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped"
           }
 
       # ── Consumer smoke (Phase 4.5 Gate 2 — the M4 DoD #7 proof) ────────────

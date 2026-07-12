@@ -58,6 +58,10 @@ internal static unsafe class HostSession
         // Phase 5.1: the host-event proof app (IMobileBridge.NativeEvents →
         // echo BnText — M5 DoD #5). Scaffolding, like FocusProbe.
         ["HostEventProbe"] = r => r.Mount<HostEventProbe>(),
+        // Phase 5.4: the clipboard/share proof app (IMobileBridge clipboard
+        // read/write + share → echo BnText — M5 DoD #6). Scaffolding, like
+        // HostEventProbe.
+        ["ClipboardProbe"] = r => r.Mount<ClipboardProbe>(),
     };
 
     /// <summary>Stores the host's frame callback. IntPtr.Zero disables

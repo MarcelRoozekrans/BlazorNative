@@ -47,7 +47,7 @@ public sealed class NativeShellBridge : IMobileBridge
 
     /// <summary>Immutable snapshot of the registered callbacks. The holder
     /// REFERENCE is swapped atomically via Volatile.Write/Read, so a reader
-    /// can never observe a torn 48-byte struct during re-registration — an
+    /// can never observe a torn 72-byte struct during re-registration — an
     /// in-flight op sees either the old snapshot or the new one, whole.
     /// (The host-side liveness obligation for the OLD pointers is documented
     /// in BridgeProtocolNative.cs.)</summary>
@@ -77,11 +77,49 @@ public sealed class NativeShellBridge : IMobileBridge
 
     // ── Registration (blazornative_register_bridge / Exports.Init plumbing) ──
 
-    /// <summary>Copies the host's callback struct into a fresh immutable
-    /// holder and swaps the reference atomically. Re-registration is allowed
-    /// (last wins) — same posture as the frame callback.</summary>
-    internal static void Register(in BlazorNativeBridgeCallbacks callbacks)
-        => Volatile.Write(ref s_callbacks, new CallbackHolder(in callbacks));
+    /// <summary>Size-negotiated registration (Phase 5.4, DoD #6). Copies
+    /// <c>min(structSize, sizeof(BlazorNativeBridgeCallbacks))</c> bytes from the
+    /// host's (possibly shorter) struct into a fresh, ZERO-INITIALISED holder and
+    /// swaps the reference atomically. The min-copy never over-reads the caller's
+    /// buffer; the zero-fill leaves any slot the host didn't supply as
+    /// <c>IntPtr.Zero</c> — the "capability unsupported" signal the invokers
+    /// guard on. A newer host's extra tail (structSize &gt; ours) is ignored.
+    /// Re-registration is allowed (last wins) — same posture as the frame
+    /// callback.</summary>
+    internal static unsafe void Register(int structSize, BlazorNativeBridgeCallbacks* source)
+    {
+        int known = sizeof(BlazorNativeBridgeCallbacks);
+        // Clamp both bounds so the copy length is a self-contained invariant: the
+        // upper bound truncates a newer host's extra tail; the lower bound makes a
+        // stray negative size a safe no-copy (all-zero → everything unsupported)
+        // rather than an OverflowException, independent of the export's structSize
+        // guard (defense in depth).
+        int toCopy = Math.Clamp(structSize, 0, known);
+        BlazorNativeBridgeCallbacks dest = default; // zero-fills the whole struct, incl. any un-copied tail
+        Buffer.MemoryCopy(source, &dest, known, toCopy);
+        Volatile.Write(ref s_callbacks, new CallbackHolder(in dest));
+    }
+
+    /// <summary>Full-struct registration convenience (in-process managed callers
+    /// + tests): forwards to the size-negotiated core with
+    /// <c>structSize == sizeof</c>, so all slots are copied. A test may instead
+    /// call the (structSize, in) overload with a smaller size to exercise the
+    /// forward-compat truncation.</summary>
+    internal static unsafe void Register(in BlazorNativeBridgeCallbacks callbacks)
+    {
+        fixed (BlazorNativeBridgeCallbacks* p = &callbacks)
+            Register(sizeof(BlazorNativeBridgeCallbacks), p);
+    }
+
+    /// <summary>Test seam: register a managed struct as if the host had declared
+    /// only <paramref name="structSize"/> bytes — the min-copy truncates and the
+    /// tail zero-fills, exactly like a shorter native buffer (drives the 48-byte
+    /// old-shell → unsupported-clipboard forward-compat path).</summary>
+    internal static unsafe void Register(int structSize, in BlazorNativeBridgeCallbacks callbacks)
+    {
+        fixed (BlazorNativeBridgeCallbacks* p = &callbacks)
+            Register(structSize, p);
+    }
 
     /// <summary>Stores Init's platform options; <see cref="PlatformInfo"/> and
     /// <see cref="GetPlatformInfoAsync"/> serve them.</summary>
@@ -157,6 +195,56 @@ public sealed class NativeShellBridge : IMobileBridge
         if (rc < 0)
             throw HostError("storage-delete", rc);
         return ValueTask.CompletedTask;
+    }
+
+    // ── Clipboard + Share (Phase 5.4 — size-negotiated slots) ─────────────────
+    //
+    // Each is guarded by RequireSlot: a null callback pointer (an old host that
+    // predates the slot, left zero by the register min-copy + zero-fill) surfaces
+    // as NotSupportedException, never a null-pointer call. ClipboardRead reuses
+    // the -needed buffer protocol (CurrentRoute's twin); ClipboardWrite + Share
+    // reuse the one-string invoker (Navigate's twin).
+
+    public ValueTask<string> ClipboardReadAsync(CancellationToken ct = default)
+    {
+        var cb = GetCallbacks();
+        RequireSlot(cb.ClipboardRead, "clipboard-read");
+        // Clipboard never legitimately answers -2/absent — an empty clipboard is
+        // the empty string (rc <= 1), so nullOnAbsent is false and the
+        // null-forgiving result is safe.
+        string text = InvokeBufferProtocol("clipboard-read", cb.ClipboardRead, key: null, nullOnAbsent: false)!;
+        return ValueTask.FromResult(text);
+    }
+
+    public ValueTask ClipboardWriteAsync(string text, CancellationToken ct = default)
+    {
+        var cb = GetCallbacks();
+        RequireSlot(cb.ClipboardWrite, "clipboard-write");
+        int rc = InvokeWithOneString(cb.ClipboardWrite, text);
+        if (rc < 0)
+            throw HostError("clipboard-write", rc);
+        return ValueTask.CompletedTask;
+    }
+
+    public ValueTask ShareAsync(string text, CancellationToken ct = default)
+    {
+        var cb = GetCallbacks();
+        RequireSlot(cb.Share, "share");
+        int rc = InvokeWithOneString(cb.Share, text);
+        if (rc < 0)
+            throw HostError("share", rc);
+        return ValueTask.CompletedTask;
+    }
+
+    /// <summary>The null-slot guard that makes the size negotiation real: a
+    /// callback the host never supplied (Zero after the register zero-fill) means
+    /// the capability is unsupported by THIS host — a graceful
+    /// <see cref="NotSupportedException"/>, never a crash into a null pointer.</summary>
+    private static void RequireSlot(IntPtr fnPtr, string op)
+    {
+        if (fnPtr == IntPtr.Zero)
+            throw new NotSupportedException(
+                $"shell bridge '{op}' is not supported by this host (callback slot not registered)");
     }
 
     // ── Network (async completion pattern) ────────────────────────────────────

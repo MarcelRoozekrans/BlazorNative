@@ -14,7 +14,7 @@
 #   emulator (ubuntu-latest, KVM) — downloads the .so, boots the API 34
 #     google_apis x86_64 Pixel 6 image (mirrors the local AVD
 #     blazornative-pixel6-x86_64), runs connectedAndroidTest with
-#     -PciSoDir pointing at the artifact → asserts 38 passed / 0 failed.
+#     -PciSoDir pointing at the artifact → asserts 40 passed / 0 failed.
 #
 # Baselines are asserted, not observed: count drift fails the job loudly.
 # ─────────────────────────────────────────────────────────────────────────────
@@ -208,11 +208,15 @@ jobs:
           working-directory: src/BlazorNative.Jni
           script: |
             adb logcat -c || true
+            # Suppress ANR/crash dialogs — a boot ANR stealing window focus would
+            # deny the Android 10+ clipboard READ (ClipboardAndroidTest); this plus
+            # the in-test hasWindowFocus() wait keep that lane stable on a cold AVD.
+            adb shell settings put global hide_error_dialogs 1 || true
             ./gradlew --no-daemon connectedAndroidTest "-PciSoDir=${{ runner.temp }}/ci-so" || touch "${{ runner.temp }}/gradle-failed"
             adb logcat -d > "${{ runner.temp }}/logcat.txt" || true
             test ! -f "${{ runner.temp }}/gradle-failed"
 
-      - name: Assert instrumented baseline (38 passed / 0 failed)
+      - name: Assert instrumented baseline (40 passed / 0 failed)
         run: |
           shopt -s globstar nullglob
           xmls=(src/BlazorNative.Jni/build/outputs/androidTest-results/connected/**/*.xml)
@@ -229,8 +233,8 @@ jobs:
             s=$(attr skipped "$x");  skipped=$((skipped + ${s:-0}))
           done
           echo "Instrumented totals across ${#xmls[@]} suite(s): tests=$tests failures=$failures errors=$errors skipped=$skipped"
-          if [ "$tests" -ne 38 ] || [ "$failures" -ne 0 ] || [ "$errors" -ne 0 ] || [ "$skipped" -ne 0 ]; then
-            echo "Instrumented test baseline drift: expected 38 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped" >&2
+          if [ "$tests" -ne 40 ] || [ "$failures" -ne 0 ] || [ "$errors" -ne 0 ] || [ "$skipped" -ne 0 ]; then
+            echo "Instrumented test baseline drift: expected 40 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped" >&2
             exit 1
           fi
 

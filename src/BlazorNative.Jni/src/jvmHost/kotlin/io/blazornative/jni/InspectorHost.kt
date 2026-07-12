@@ -68,6 +68,13 @@ private class InspectorHostBridge : ShellBridgeHandlers {
     override fun fetchBegin(requestId: Long, request: BridgeFetchRequest) {
         BridgeFetchCompleter.completeFailure(requestId, "InspectorHost performs no network fetches")
     }
+
+    // Phase 5.4: in-memory clipboard (round-trips through the inspector like
+    // storage does); share is logged (no system share sheet in a headless host).
+    @Volatile private var clipboard: String = ""
+    override fun clipboardRead(): String = clipboard
+    override fun clipboardWrite(text: String) { clipboard = text }
+    override fun share(text: String) { println("[BRIDGE] share → $text") }
 }
 
 fun main(args: Array<String>) {

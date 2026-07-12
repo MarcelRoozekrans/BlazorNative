@@ -5,7 +5,8 @@
 // boot+render subset (init / register_frame_callback / mount / version / shutdown
 // + the init structs + the frame-callback typedef). Phase 5.3 (M5 DoD #3,
 // interactivity) adds the INPUT direction: dispatch_event (taps→renderer) +
-// register_bridge (the 6-callback shell bridge, .NET→host). This is the Swift twin
+// register_bridge (the shell bridge, .NET→host; 9 callbacks since Phase 5.4's
+// size-negotiated clipboard/share growth). This is the Swift twin
 // of the Kotlin JNA `NativeBindings` interface; Swift's native C interop replaces
 // the JNA layer entirely (no reflection, no Structure classes — direct externs).
 //
@@ -89,13 +90,18 @@ void blazornative_shutdown(void);
 // 3 malformed args or handlerId out of int range.
 int32_t blazornative_dispatch_event(uint64_t handlerId, const char* argsJsonUtf8);
 
-// The six host-implemented shell callbacks (BridgeProtocolNative.cs
-// BlazorNativeBridgeCallbacks — 6 × 8-byte fn pointers = 48 bytes). All cdecl,
-// int-returning. Buffer-writing calls (currentRoute, storageRead) use the
-// -needed protocol: return the byte count written INCLUDING NUL on success, or
-// -(bytesNeeded+... i.e. -(utf8Bytes+1)) when the value does not fit the offered
-// cap; -1 = host error; -2 = key absent (storageRead only). Input strings are
-// .NET-owned, valid only during the callback (copy before returning).
+// The host-implemented shell callbacks (BridgeProtocolNative.cs
+// BlazorNativeBridgeCallbacks — 9 × 8-byte fn pointers = 72 bytes since Phase 5.4).
+// All cdecl, int-returning. Buffer-writing calls (currentRoute, storageRead,
+// clipboardRead) use the -needed protocol: return the byte count written INCLUDING
+// NUL on success, or -(utf8Bytes+1) when the value does not fit the offered cap;
+// -1 = host error; -2 = key absent (storageRead only). Input strings are .NET-owned,
+// valid only during the callback (copy before returning).
+//
+// A NULL slot = capability unsupported (the .NET null-slot guard surfaces
+// NotSupportedException). Phase 5.4 appended clipboardRead/Write + share at 48/56/64
+// with the size-negotiated register (structSize below); existing offsets (0…40) are
+// unchanged.
 typedef int32_t (*bn_navigate_cb)(const char* routeUtf8);                    // offset 0
 typedef int32_t (*bn_current_route_cb)(char* buf, int32_t cap);              // offset 8
 typedef int32_t (*bn_storage_read_cb)(const char* keyUtf8, char* buf, int32_t cap); // offset 16
@@ -104,20 +110,28 @@ typedef int32_t (*bn_storage_delete_cb)(const char* keyUtf8);               // o
 // FetchBegin: the request struct is ignored by the shell's honest stub, so it is
 // typed as an opaque pointer here (BlazorNativeFetchRequest* on the .NET side).
 typedef int32_t (*bn_fetch_begin_cb)(int64_t requestId, const void* request); // offset 40
+typedef int32_t (*bn_clipboard_read_cb)(char* buf, int32_t cap);            // offset 48
+typedef int32_t (*bn_clipboard_write_cb)(const char* textUtf8);            // offset 56
+typedef int32_t (*bn_share_cb)(const char* textUtf8);                       // offset 64
 
 typedef struct {
-    bn_navigate_cb       navigate;      // offset 0
-    bn_current_route_cb  currentRoute;  // offset 8
-    bn_storage_read_cb   storageRead;   // offset 16
-    bn_storage_write_cb  storageWrite;  // offset 24
-    bn_storage_delete_cb storageDelete; // offset 32
-    bn_fetch_begin_cb    fetchBegin;    // offset 40
-} bn_bridge_callbacks;                  // 48 bytes
+    bn_navigate_cb        navigate;       // offset 0
+    bn_current_route_cb   currentRoute;   // offset 8
+    bn_storage_read_cb    storageRead;    // offset 16
+    bn_storage_write_cb   storageWrite;   // offset 24
+    bn_storage_delete_cb  storageDelete;  // offset 32
+    bn_fetch_begin_cb     fetchBegin;     // offset 40
+    bn_clipboard_read_cb  clipboardRead;  // offset 48 — NULL = unsupported
+    bn_clipboard_write_cb clipboardWrite; // offset 56 — NULL = unsupported
+    bn_share_cb           share;          // offset 64 — NULL = unsupported
+} bn_bridge_callbacks;                     // 72 bytes
 
-// COPIES the callbacks struct (the host may free it after; the fn pointers must
-// stay alive). Call BEFORE mount so components resolving the bridge find a live
-// host. Returns 0 on success, 2 on null pointer / failure.
-int32_t blazornative_register_bridge(bn_bridge_callbacks* callbacks);
+// COPIES min(structSize, sizeof(runtime's struct)) bytes of the callbacks struct
+// and zero-fills the tail (Phase 5.4 size negotiation — pass sizeof(bn_bridge_callbacks)
+// as structSize; the host may free the struct after; the fn pointers must stay
+// alive). Call BEFORE mount so components resolving the bridge find a live host.
+// Returns 0 on success, 2 on null pointer / bad size / failure.
+int32_t blazornative_register_bridge(int32_t structSize, bn_bridge_callbacks* callbacks);
 
 #ifdef __cplusplus
 }

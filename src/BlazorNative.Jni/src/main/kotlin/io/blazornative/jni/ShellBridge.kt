@@ -81,6 +81,21 @@ interface ShellBridgeHandlers {
 
     /** Begin an async fetch; answer later via [BridgeFetchCompleter]. */
     fun fetchBegin(requestId: Long, request: BridgeFetchRequest)
+
+    // ── Phase 5.4 clipboard + share (size-negotiated slots) ──────────────────
+    // Always supplied by the JVM registrar (all 9 callbacks registered); a host
+    // that cannot honour one THROWS (guarded → -1 host error). Cross-version
+    // "unsupported" (an old shell with fewer slots) is handled by the runtime's
+    // null-slot guard, not here.
+
+    /** The host clipboard's current text (empty string when empty). */
+    fun clipboardRead(): String
+
+    /** Write [text] to the host clipboard. */
+    fun clipboardWrite(text: String)
+
+    /** Share [text] via the host share sheet (fire-and-forget). */
+    fun share(text: String)
 }
 
 /**
@@ -172,6 +187,28 @@ class BridgeRegistrar(
         }
     }
 
+    // ── Phase 5.4 clipboard + share (buffer read / one-string write+share) ───
+
+    private val clipboardReadCallback = object : NativeBindings.BridgeClipboardReadCallback {
+        override fun invoke(buf: Pointer, cap: Int): Int = guarded("clipboardRead") {
+            writeUtf8(handlers.clipboardRead(), buf, cap)
+        }
+    }
+
+    private val clipboardWriteCallback = object : NativeBindings.BridgeClipboardWriteCallback {
+        override fun invoke(textUtf8: Pointer): Int = guarded("clipboardWrite") {
+            handlers.clipboardWrite(textUtf8.getString(0, "UTF-8"))
+            0
+        }
+    }
+
+    private val shareCallback = object : NativeBindings.BridgeShareCallback {
+        override fun invoke(textUtf8: Pointer): Int = guarded("share") {
+            handlers.share(textUtf8.getString(0, "UTF-8"))
+            0
+        }
+    }
+
     /**
      * Wraps every callback body: a Kotlin throw must surface as -1, never
      * escape into JNA's default callback exception handler (which prints to
@@ -211,8 +248,13 @@ class BridgeRegistrar(
             storageWrite = storageWriteCallback
             storageDelete = storageDeleteCallback
             fetchBegin = fetchBeginCallback
+            clipboardRead = clipboardReadCallback
+            clipboardWrite = clipboardWriteCallback
+            share = shareCallback
         }
-        val rc = NativeBindings.INSTANCE.blazornative_register_bridge(struct)
+        // Phase 5.4 size negotiation: pass the Kotlin struct's native size (72);
+        // the runtime min-copies + zero-fills against its own known size.
+        val rc = NativeBindings.INSTANCE.blazornative_register_bridge(struct.size(), struct)
         check(rc == 0) { "blazornative_register_bridge failed with status $rc" }
         registered = true
         synchronized(registeredForever) { registeredForever.add(this) }
