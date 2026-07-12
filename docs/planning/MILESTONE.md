@@ -44,12 +44,31 @@ Phase 5.0 brainstorm — and explicitly subject to the Phase 5.0 spike verdict.
 2. **Swift shell boots and renders.** The Kotlin shell's Swift twin (bindings, frame
    adapter, widget mapper over native views) boots the dll on the CI simulator and
    renders BnDemo's widget tree.
+   ✅ **CLOSED 2026-07-12 (Phase 5.2): GREEN** — a Swift/UIKit shell
+   (`BnFrameAdapter` at the pinned 48/24-byte offsets, `BnWidgetMapper` over
+   `UIStackView`/`UILabel`/`UIButton`/`UITextField`, `BnRuntime`'s singleton-routed
+   `@convention(c)` callback) boots the NativeAOT **static `.a`** and renders
+   BnDemo; a hosted **XCTest** asserts the real `UIView` tree (6 arranged subviews
+   in order, mid-list echo panel at index 2, `#FFEEAA`, button titles, title
+   fontSize 24). The link discovery — `bootstrapperdll.o` direct-link + `-force_load`
+   the app `.a` + a merged on-demand support archive + the spike frameworks — is the
+   foundation 5.3/device inherit. See [conclusion](../plans/2026-07-12-phase-5.2-conclusion.md).
 3. **Two-page demo parity on the simulator** — the headline: bound input + live echo,
    button events, cascading theme, and Settings ⇄ Back navigation, all on the iOS
    simulator, mirroring the Android v3.0 bar.
 4. **iOS CI lane.** A macOS two-job workflow (publish → simulator tests),
    informational-first with promotion criteria, mirroring the Android emulator lane's
    posture.
+   ✅ **CLOSED 2026-07-12 (Phase 5.2): GREEN** — `.github/workflows/ios.yml` on
+   `macos-latest`. **Single job** (deviation from the "two-job" estimate: iOS both
+   publishes AND tests on macOS, unlike Android's Windows-publish/Linux-test split):
+   publish `-r iossimulator-arm64` (assert 4 IL2072) → `nm -gU` asserts the 9
+   `blazornative_*` exports → XcodeGen + `xcodebuild test` on a runner-selected sim →
+   assert **2 passed / 0 failed** (render pin + wire-drift guard). **INFORMATIONAL**
+   (not required) with promotion criteria (≈10 consecutive green runs → promotable),
+   mirroring `android-instrumented.yml`; `workflow_dispatch` + `pull_request` (iOS
+   paths). The 5.0 `ios-spike.yml`/`ios-spike-verify.sh`/`spikes/ios-aot-probe/` are
+   retired (superseded). See [conclusion](../plans/2026-07-12-phase-5.2-conclusion.md).
 5. **Host-initiated events land (Android + .NET).** The `NativeEvents` redesign:
    lifecycle (`onPause`/`onResume`/`onDestroy`) flows into .NET as native events;
    predictive back triggers navigation-back; a deep link resolves to the startup
