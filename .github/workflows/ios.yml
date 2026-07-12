@@ -148,10 +148,36 @@ jobs:
           fi
           echo "SYMBOLS: all 9 blazornative_* present."
 
-          # Stage the archive where the Xcode app target links it (OTHER_LDFLAGS).
+          # Stage the app archive where the Xcode app target force-loads it.
           mkdir -p src/BlazorNative.Apple/vendor
           cp "$archive" src/BlazorNative.Apple/vendor/libBlazorNative.Runtime.a
-          echo "Staged → src/BlazorNative.Apple/vendor/libBlazorNative.Runtime.a"
+          echo "Staged → vendor/libBlazorNative.Runtime.a"
+
+          # ── Merge the NativeAOT runtime + platform native support libs ────────
+          # A NativeLib=Static .a omits the runtime bootstrapper/GC (_Rh*) and the
+          # platform native libs (_AppleCryptoNative_*, System.Native, ...). Those
+          # live in the runtime pack's native/ dir; merge them into ONE on-demand
+          # support archive the app links alongside the app archive.
+          pack_native=$(find "$HOME/.nuget/packages/microsoft.netcore.app.runtime.nativeaot.iossimulator-arm64" \
+            -type d -path '*runtimes/iossimulator-arm64/native' 2>/dev/null | sort | tail -1)
+          if [ -z "$pack_native" ] || [ ! -d "$pack_native" ]; then
+            echo "NativeAOT iossimulator runtime pack native dir not found" >&2
+            find "$HOME/.nuget/packages" -maxdepth 1 -iname '*nativeaot*ios*' 2>/dev/null || true
+            exit 1
+          fi
+          echo "=== runtime pack native dir: $pack_native ===" | tee ios-out/support-libs.txt
+          ls -la "$pack_native" | tee -a ios-out/support-libs.txt
+          shopt -s nullglob
+          support=("$pack_native"/*.a "$pack_native"/*.o)
+          shopt -u nullglob
+          if [ "${#support[@]}" -eq 0 ]; then
+            echo "No .a/.o support libs under $pack_native" >&2
+            exit 1
+          fi
+          echo "Merging ${#support[@]} support libs → vendor/libBnRuntimeSupport.a" | tee -a ios-out/support-libs.txt
+          printf '  %s\n' "${support[@]}" | tee -a ios-out/support-libs.txt
+          xcrun libtool -static -o src/BlazorNative.Apple/vendor/libBnRuntimeSupport.a "${support[@]}"
+          echo "Staged → vendor/libBnRuntimeSupport.a"
 
       # ── Generate the Xcode project from project.yml ──────────────────────────
       - name: Install XcodeGen

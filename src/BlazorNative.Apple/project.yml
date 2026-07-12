@@ -45,17 +45,27 @@ targets:
         GENERATE_INFOPLIST_FILE: NO
         ENABLE_TESTABILITY: YES
         SWIFT_OBJC_BRIDGING_HEADER: BnHost/BlazorNativeRuntimeC.h
-        # Link the NativeAOT static runtime + the system deps a NativeAOT archive
-        # pulls in (the exact framework/lib set the 5.0 spike link-probe proved —
-        # scripts/ios-spike-verify.sh:106-114). DEVIATION from the spike, which
-        # link-probed a .dylib positionally: this is a STATIC .a, and NativeAOT's
-        # runtime init rides module constructors that on-demand archive loading can
-        # strip — so -force_load pulls the WHOLE archive (runtime + constructors +
-        # all exports) into the app binary, the robust embed shape for a NativeAOT
-        # static lib. See docs/plans/2026-07-12-phase-5.2-design.md risk table.
+        # Link the NativeAOT static runtime. A NativeLib=Static .a carries ONLY
+        # the compiled managed->native app code — NOT the NativeAOT runtime
+        # bootstrapper/GC (_Rh*) or the platform native support libs
+        # (_AppleCryptoNative_*, System.Native, ...), which NativeAOT bundles
+        # itself only when it emits a .dylib. For a static embed the app must link
+        # them too. ios.yml merges the runtime pack's native/*.a + *.o into one
+        # on-demand support archive (libBnRuntimeSupport.a) alongside the app .a.
+        #   - -force_load on the app archive: pulls the exports + module
+        #     constructors (runtime init rides them; on-demand loading would strip
+        #     them) into the app binary.
+        #   - the support archive is on-demand (NOT force-loaded): only the runtime
+        #     objects the app actually references get pulled (InvariantGlobalization
+        #     keeps that minimal).
+        #   - the framework/lib set is the 5.0 spike's proven list
+        #     (scripts/ios-spike-verify.sh:106-114) + Security covers AppleCrypto.
+        # BnHost-target-only (NOT global) so the hosted test bundle, which links
+        # against the app via BUNDLE_LOADER, does not re-link the runtime.
         OTHER_LDFLAGS:
           - -force_load
           - $(SRCROOT)/vendor/libBlazorNative.Runtime.a
+          - $(SRCROOT)/vendor/libBnRuntimeSupport.a
           - -lc++
           - -lz
           - -licucore
