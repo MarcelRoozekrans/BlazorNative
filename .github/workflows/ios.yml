@@ -167,12 +167,35 @@ jobs:
           fi
           echo "=== runtime pack native dir: $pack_native ===" | tee ios-out/support-libs.txt
           ls -la "$pack_native" | tee -a ios-out/support-libs.txt
-          shopt -s nullglob
-          support=("$pack_native"/*.a "$pack_native"/*.o)
-          shopt -u nullglob
+
+          # The runtime is bootstrapped by a __attribute__((constructor)) inside
+          # libbootstrapperdll.o (the LIBRARY bootstrapper). It MUST be linked as a
+          # direct object so its constructor lands in the app's init_array and runs
+          # at launch → RuntimeInstance is initialised before blazornative_init.
+          # As an archive member it would be on-demand and its constructor would
+          # never be pulled (RuntimeInstance stays NULL → SIGSEGV in
+          # ThreadStore::AttachCurrentThread). libbootstrapper.o is the EXE variant
+          # (needs __managed__Main) — dropped.
+          if [ ! -f "$pack_native/libbootstrapperdll.o" ]; then
+            echo "libbootstrapperdll.o missing under $pack_native" >&2; exit 1
+          fi
+          cp "$pack_native/libbootstrapperdll.o" src/BlazorNative.Apple/vendor/bootstrapperdll.o
+          echo "Staged → vendor/bootstrapperdll.o (direct-linked runtime bootstrapper)"
+
+          # Merge the remaining support .a into ONE on-demand archive. Exclude the
+          # non-default runtime variants (the app is ILC-compiled for WorkstationGC
+          # + eventpipe/standalonegc DISABLED — mirrors the win-x64 link.rsp); the
+          # -enabled/ServerGC members would define the same symbols and be
+          # ambiguously pulled. Bootstrapper .o are handled above, not merged.
+          support=()
+          for f in "$pack_native"/*.a; do
+            case "$(basename "$f")" in
+              libRuntime.ServerGC.a|libeventpipe-enabled.a|libstandalonegc-enabled.a) continue;;
+            esac
+            support+=("$f")
+          done
           if [ "${#support[@]}" -eq 0 ]; then
-            echo "No .a/.o support libs under $pack_native" >&2
-            exit 1
+            echo "No support .a under $pack_native" >&2; exit 1
           fi
           echo "Merging ${#support[@]} support libs → vendor/libBnRuntimeSupport.a" | tee -a ios-out/support-libs.txt
           printf '  %s\n' "${support[@]}" | tee -a ios-out/support-libs.txt

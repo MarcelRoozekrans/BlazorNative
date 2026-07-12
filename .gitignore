@@ -59,5 +59,6 @@ android_llvm-objcopy.cmd
 #   - DerivedData is Xcode's build cache
 src/BlazorNative.Apple/BnHost.xcodeproj/
 src/BlazorNative.Apple/vendor/*.a
+src/BlazorNative.Apple/vendor/*.o
 src/BlazorNative.Apple/DerivedData/
 *.xcresult
