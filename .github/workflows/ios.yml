@@ -104,15 +104,29 @@ jobs:
       # ── Locate the archive + assert the 9 blazornative_* exports (nm -gU) ────
       - name: Locate libBlazorNative.Runtime.a + verify 9 exports
         run: |
-          set -euo pipefail
-          # Find the archive that actually carries the C-ABI (skip any obj/ deps).
+          set -uo pipefail
+          # Evidence first: dump the whole iossimulator native output tree so a
+          # missing/renamed/shared artifact is diagnosable from one run.
+          tree_root="src/BlazorNative.Runtime/bin/Release/net10.0/$RID"
+          echo "=== native output tree ($tree_root) ===" | tee ios-out/native-tree.txt
+          find "$tree_root" -type f \( -name '*.a' -o -name '*.dylib' -o -name '*.o' \) 2>/dev/null \
+            | sort | tee -a ios-out/native-tree.txt || true
+          echo "=== any .a anywhere under bin ===" | tee -a ios-out/native-tree.txt
+          find src/BlazorNative.Runtime/bin -type f -name '*.a' 2>/dev/null | sort | tee -a ios-out/native-tree.txt || true
+
+          set -e
+          # Find the static archive that actually carries the C-ABI (skip obj/ deps).
           archive=""
           while IFS= read -r a; do
+            [ -n "$a" ] || continue
             if nm -gU "$a" 2>/dev/null | grep -q '_blazornative_init'; then archive="$a"; break; fi
           done < <(find src/BlazorNative.Runtime/bin -type f -name '*.a' | grep "$RID" | sort -u)
           if [ -z "$archive" ]; then
-            echo "No .a carrying blazornative_init found under the $RID publish output" >&2
-            find src/BlazorNative.Runtime/bin -type f -name '*.a' | grep "$RID" || true
+            echo "No .a carrying blazornative_init found under the $RID publish output." >&2
+            echo "Any .dylib produced (would mean NativeLib=Static did not take):" >&2
+            find "$tree_root" -type f -name '*.dylib' 2>/dev/null | while read -r d; do
+              echo "  $d"; nm -gU "$d" 2>/dev/null | grep -Eo '_?blazornative_[A-Za-z_]+' | sed 's/^_/    /' | sort -u || true
+            done
             exit 1
           fi
           echo "Archive: $archive"
