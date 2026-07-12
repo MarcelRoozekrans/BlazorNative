@@ -48,6 +48,26 @@
     <RuntimeFrameworkVersion>10.0.9</RuntimeFrameworkVersion>
   </PropertyGroup>
 
+  <!-- Phase 5.0: NativeAOT for the iOS simulator via the SAME runtime-pack
+       bypass. The .NET 10 SDK gates PublishAot on a hardcoded AOT-RID allow-list
+       (error NETSDK1203) even though the packs exist on nuget.org
+       (Microsoft.NETCore.App.Runtime.NativeAOT.iossimulator-arm64 10.0.9 AND the
+       RID-specific runtime.iossimulator-arm64.microsoft.dotnet.ilcompiler 10.0.9
+       — the latter, unlike linux-bionic, actually exists). DisableUnsupportedError
+       lifts the gate; PublishAotUsingRuntimePack restores the packs; the version
+       is pinned to 10.0.9 so a servicing release can't shift the toolchain. These
+       properties live HERE (not on the CLI) so they never propagate to P2P
+       references as global properties — the Phase 3.0c bionic pattern. The Apple
+       toolchain (clang/ld via xcrun) is found natively on the macOS runner, so no
+       vendored linker shim is needed (contrast BionicNativeAot.targets on Windows).
+       Behavior-neutral for win-x64/linux-bionic (RID condition never matches).
+       See docs/plans/2026-07-12-phase-5.0-spike-conclusion.md. -->
+  <PropertyGroup Condition="$(RuntimeIdentifier.StartsWith('iossimulator')) Or $(RuntimeIdentifier.StartsWith('ios-'))">
+    <PublishAotUsingRuntimePack>true</PublishAotUsingRuntimePack>
+    <DisableUnsupportedError>true</DisableUnsupportedError>
+    <RuntimeFrameworkVersion>10.0.9</RuntimeFrameworkVersion>
+  </PropertyGroup>
+
   <Import Project="..\..\build\BionicNativeAot.targets" />
 
   <ItemGroup>
@@ -63,8 +83,16 @@
     <ProjectReference Include="..\BlazorNative.Components\BlazorNative.Components.csproj" />
     <!-- Phase 4.1: BN rules ride every src build (zero-warning bar, M4 DoD #3).
          Exports.cs is the BN0020/BN0021 reference conformer. -->
+    <!-- Phase 5.0: shield the netstandard2.0 analyzer from the target RID. An
+         AOT publish (-r <rid>) propagates RuntimeIdentifier to every P2P ref;
+         on a netstandard2.0 project that combination surfaces AOT-for-TFM
+         errors (NETSDK1207 seen in the iossimulator spike). The analyzer is
+         RID-agnostic (ReferenceOutputAssembly=false), so building it RID-less
+         is behavior-neutral for every RID — proven by the unchanged win-x64 +
+         linux-bionic 4-IL2072 publishes. -->
     <ProjectReference Include="..\BlazorNative.Analyzers\BlazorNative.Analyzers.csproj"
-                      OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+                      OutputItemType="Analyzer" ReferenceOutputAssembly="false"
+                      UndefineProperties="RuntimeIdentifier;PublishAot;PublishAotUsingRuntimePack" />
   </ItemGroup>
 
   <ItemGroup>

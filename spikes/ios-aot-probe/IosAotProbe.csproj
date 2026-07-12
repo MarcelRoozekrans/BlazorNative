@@ -1,0 +1,45 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- ─────────────────────────────────────────────────────────────────────
+       Phase 5.0 iOS feasibility spike — RUNG 2 scaffold (throwaway).
+       A thin net10.0-ios wrapper around BlazorNative.Runtime so the official
+       iOS workload lane (Microsoft.NET.Sdk.iOS) can NativeAOT-compile the real
+       eight-export C-ABI surface into a linkable static lib. NOT in
+       BlazorNative.sln — mirrors the Phase 3.0c spikes/bionic-aot-probe
+       convention. May be deleted/evolved by Phase 5.2.
+       See docs/plans/2026-07-12-phase-5.0-design.md (the ladder, rung 2).
+       ───────────────────────────────────────────────────────────────────── -->
+
+  <PropertyGroup>
+    <!-- iOS TFM — the officially-blessed mobile lane. Bare version resolves to
+         the workload's default platform version. -->
+    <TargetFramework>net10.0-ios</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>BlazorNative.Spikes.IosAotProbe</RootNamespace>
+    <OutputType>Library</OutputType>
+
+    <PublishAot>true</PublishAot>
+    <!-- Static is the production iOS shape (link the .a into the app); the
+         spike accepts a .dylib too (verification link-probes whichever lands). -->
+    <NativeLib>Static</NativeLib>
+    <SelfContained>true</SelfContained>
+    <InvariantGlobalization>true</InvariantGlobalization>
+
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- Spike scaffold: don't let the M4 zero-warning bar gate a feasibility probe. -->
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\BlazorNative.Runtime\BlazorNative.Runtime.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Force-root the Runtime assembly so ILC keeps the reachable graph behind
+         its eight [UnmanagedCallersOnly] entry points (the exports themselves
+         are always rooted as native entry points, but this keeps their deps). -->
+    <TrimmerRootAssembly Include="BlazorNative.Runtime" />
+  </ItemGroup>
+
+</Project>

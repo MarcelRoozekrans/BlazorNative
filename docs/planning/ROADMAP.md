@@ -276,27 +276,33 @@ Phases (approved at milestone-open 2026-07-11):
 
 ---
 
-### 🔜 Milestone 5 — P4: Full Platform Coverage  *(next — opens via `new-milestone`; parallel with M6/M7 permitted)*
+### 🔄 Milestone 5 — P4: Full Platform Coverage  *(in progress — opened 2026-07-12)*
 
-The M4-close pointer (2026-07-12). Scope sketch for the M5 brainstorm, mapped to
-BACKLOG "P4 — Full platform coverage" + the [M4 final audit](../plans/2026-07-12-milestone-4-final-audit.md)
-carryover table:
+The two-page demo runs on the **iOS simulator** in CI (the same dll-per-platform
+architecture, second shell in Swift); the Android shell handles real app lifecycle
+(host-initiated events — the `NativeEvents` fork from the
+[4.2 triage](../plans/2026-07-11-phase-4.2-hardening-triage.md)); clipboard + share
+prove the bridge-extension pattern on both platforms. Full 8-point DoD:
+[MILESTONE.md](MILESTONE.md).
 
-- **iOS Swift shell** (issue #17): NativeAOT `ios-arm64` static lib + a Swift shell
-  mirroring the Kotlin one — needs Mac hardware / a CI Mac runner (the M4
-  milestone-open deferral; the BACKLOG's WasmKit framing is obsolete post-3.0e).
-- **Android shell completeness** (issue #16): lifecycle, permissions, FCM, secure
-  storage, deep links, predictive back.
-- **Host-initiated navigation + lifecycle events** (issue #19): back button / deep
-  links over the existing `Navigate`/`CurrentRoute` plumbing — the `NativeEvents`
-  redesign fork from the [4.2 triage](../plans/2026-07-11-phase-4.2-hardening-triage.md).
-- **Cross-platform APIs** (issue #18): geolocation, camera, clipboard, share,
-  haptics, biometrics, purchases, background tasks.
-- Inherited smaller items: on-device inspector channel (4.4), instrumented-job
-  promotion criteria (4.0), re-ledgered hardening items as their triggers fire.
+**Locked at milestone-open (2026-07-12):** iOS via **free public-repo GitHub macOS
+runners** (no Mac hardware — user decision), **simulator-only** (no signing/Apple
+Developer account; device + App Store validation deferred), **spike-first** (a
+feasibility RED reshapes the milestone early); Android scope = the host-initiated
+events cluster only (FCM + secure storage stay BACKLOG); APIs = clipboard + share
+only (the pattern is the deliverable).
 
-Maps to BACKLOG.md "P4 — Full platform coverage" (iOS shell specifics there: APNs,
-Keychain, universal links, App Store validation).
+Maps to BACKLOG.md "P4 — Full platform coverage" (scoped subset; iOS device
+specifics — APNs, Keychain, universal links, App Store validation — deferred there).
+Issues: #16 (Android, narrowed), #17 (iOS), #18 (APIs, narrowed), #19 (host-initiated).
+
+Phases (approved at milestone-open):
+- ⏳ **Phase 5.0** — iOS feasibility spike (DoD #1) — *next; the named risk, verified first on a macOS runner*
+- ⏳ **Phase 5.1** — Host-initiated events: lifecycle + predictive back + deep links (DoD #5)
+- ⏳ **Phase 5.2** — Swift shell foundation: boot + tree render on the simulator (DoD #2, #4)
+- ⏳ **Phase 5.3** — Swift shell interactivity: events + bridge + navigation parity (DoD #3)
+- ⏳ **Phase 5.4** — Clipboard + share + the bridge-extension pattern (DoD #6)
+- ⏳ **Phase 5.5** — M5 final audit + close (DoD #7, #8) → `v5.0`
 
 ---
 

@@ -1,0 +1,250 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# BlazorNative iOS feasibility spike (Phase 5.0) — macos-latest, dispatch-only.
+#
+# The named-risk probe: can .NET 10 NativeAOT produce a LINKABLE iOS-simulator
+# artifact carrying the eight-export blazornative_* C-ABI, on a free public-repo
+# macOS runner? Three rungs are attempted IN ORDER, each continue-on-error so one
+# run captures maximal evidence; the first rung that produces an artifact feeds
+# the verification (nm + link probe). Artifact-upload heavy by design — every
+# publish log, binlog, nm dump, and produced artifact is uploaded.
+#
+# This is a SPIKE, not a lane (Phase 5.2 builds the real lane). The temporary
+# `push` trigger below is the documented bootstrap for the `gh workflow run` 404
+# quirk (Phase 4.0 conclusion, diagnosis ledger item 1) and is REMOVED before the
+# PR merges — see docs/plans/2026-07-12-phase-5.0-spike-conclusion.md.
+# ─────────────────────────────────────────────────────────────────────────────
+name: ios-spike
+
+on:
+  # workflow_dispatch only — a spike, not a lane (Phase 5.2 builds the real lane).
+  # The temporary `push: branches: [phase-5.0-ios-spike]` bootstrap trigger (the
+  # gh-workflow-run-404 workaround, Phase 4.0 ledger item 1) was removed here now
+  # that the spike has run; the workflow is dispatchable thereafter.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-spike-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  # The pinned runtime pack / ILCompiler feature version (mirrors the Phase 3.0c
+  # bionic bypass pin — used only by rung 3's runtime-pack attempt).
+  RUNTIME_PACK_PIN: 10.0.9
+
+jobs:
+  ios-spike:
+    runs-on: macos-latest
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET SDK (global.json — 10.0.3xx band)
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      # ── Toolchain fingerprint (Xcode pin duty — record, don't guess-pin) ────
+      - name: Record toolchain (dotnet + Xcode + clang)
+        continue-on-error: true
+        run: |
+          mkdir -p spike-out
+          {
+            echo "=== dotnet ==="
+            dotnet --version
+            dotnet --info
+            echo "=== global.json ==="
+            cat global.json
+            echo "=== runner ==="
+            uname -a
+            sw_vers || true
+            echo "=== Xcode (selected) ==="
+            xcode-select -p
+            xcodebuild -version || true
+            echo "=== Xcode (available) ==="
+            ls -1 /Applications | grep -i '^Xcode' || true
+            echo "=== clang ==="
+            xcrun --sdk iphonesimulator --show-sdk-path || true
+            xcrun --sdk iphonesimulator --show-sdk-version || true
+            xcrun -sdk iphonesimulator clang --version || true
+          } 2>&1 | tee spike-out/toolchain.txt
+
+      # ── RUNG 1 — plain-RID NativeAOT publish (no workload) ──────────────────
+      # Mirrors the 3.0c linux-bionic posture: host ILC + Apple toolchain, no
+      # mobile workload. Simulator is the primary target; device is a secondary
+      # audit probe. Expected friction: ILC iossimulator RID support, Xcode
+      # linker paths. Captures the FULL error either way.
+      - name: "Rung 1 — plain-RID publish (iossimulator-arm64 + ios-arm64)"
+        id: rung1
+        continue-on-error: true
+        run: |
+          set +e
+          run_publish () {
+            rid="$1"; tag="$2"
+            echo "::group::rung1 $tag ($rid)"
+            dotnet publish src/BlazorNative.Runtime -c Release -r "$rid" \
+              -p:PublishAot=true \
+              -bl:"spike-out/rung1-$tag.binlog" 2>&1 | tee "spike-out/rung1-$tag.log"
+            rc=${PIPESTATUS[0]}
+            echo "rung1_${tag}_exit=$rc" | tee -a spike-out/exit-codes.txt
+            echo "::endgroup::"
+          }
+          run_publish iossimulator-arm64 sim
+          run_publish ios-arm64          dev
+          # Never fail the step — evidence over exit code (continue-on-error too).
+          exit 0
+
+      # ── RUNG 2 — the official iOS workload lane ─────────────────────────────
+      # `dotnet workload install ios`, then (2a) retry the plain net10.0 Runtime
+      # publish now that the workload's packs are present, and (2b) the
+      # net10.0-ios wrapper (spikes/ios-aot-probe) with NativeLib=Static.
+      - name: "Rung 2 — install ios workload"
+        id: rung2-install
+        continue-on-error: true
+        run: |
+          set +e
+          echo "::group::workload install ios"
+          dotnet workload install ios 2>&1 | tee spike-out/rung2-workload-install.log
+          echo "rung2_install_exit=${PIPESTATUS[0]}" | tee -a spike-out/exit-codes.txt
+          echo "::endgroup::"
+          echo "::group::workload list"
+          dotnet workload list 2>&1 | tee spike-out/rung2-workload-list.log
+          echo "::endgroup::"
+          exit 0
+
+      - name: "Rung 2a — plain Runtime publish, post-workload"
+        id: rung2a
+        continue-on-error: true
+        run: |
+          set +e
+          run_publish () {
+            rid="$1"; tag="$2"
+            echo "::group::rung2a $tag ($rid)"
+            dotnet publish src/BlazorNative.Runtime -c Release -r "$rid" \
+              -p:PublishAot=true \
+              -bl:"spike-out/rung2a-$tag.binlog" 2>&1 | tee "spike-out/rung2a-$tag.log"
+            echo "rung2a_${tag}_exit=${PIPESTATUS[0]}" | tee -a spike-out/exit-codes.txt
+            echo "::endgroup::"
+          }
+          run_publish iossimulator-arm64 sim
+          run_publish ios-arm64          dev
+          exit 0
+
+      - name: "Rung 2b — net10.0-ios wrapper (NativeLib=Static)"
+        id: rung2b
+        continue-on-error: true
+        run: |
+          set +e
+          run_publish () {
+            rid="$1"; tag="$2"
+            echo "::group::rung2b $tag ($rid)"
+            dotnet publish spikes/ios-aot-probe/IosAotProbe.csproj -c Release -r "$rid" \
+              -bl:"spike-out/rung2b-$tag.binlog" 2>&1 | tee "spike-out/rung2b-$tag.log"
+            echo "rung2b_${tag}_exit=${PIPESTATUS[0]}" | tee -a spike-out/exit-codes.txt
+            echo "::endgroup::"
+          }
+          run_publish iossimulator-arm64 sim
+          run_publish ios-arm64          dev
+          exit 0
+
+      # ── RUNG 3 — runtime-pack bypass (the 3.0c trick, Apple edition) ─────────
+      # First probe nuget.org for a NativeAOT iossimulator runtime pack; if it
+      # exists, attempt PublishAotUsingRuntimePack=true against the plain net10.0
+      # Runtime (no wrapper), pinning the runtime framework version.
+      - name: "Rung 3 — runtime-pack existence probe + bypass publish"
+        id: rung3
+        continue-on-error: true
+        run: |
+          set +e
+          echo "::group::rung3 nuget existence probe"
+          {
+            for pkg in \
+              microsoft.netcore.app.runtime.nativeaot.iossimulator-arm64 \
+              microsoft.netcore.app.runtime.nativeaot.ios-arm64 \
+              microsoft.netcore.app.runtime.mono.iossimulator-arm64 \
+              runtime.iossimulator-arm64.microsoft.dotnet.ilcompiler \
+              microsoft.dotnet.ilcompiler ; do
+              echo "--- $pkg ---"
+              curl -s "https://api.nuget.org/v3-flatcontainer/${pkg}/index.json" || true
+              echo
+            done
+          } 2>&1 | tee spike-out/rung3-nuget-probe.json
+          echo "::endgroup::"
+
+          # The bypass (PublishAotUsingRuntimePack + DisableUnsupportedError +
+          # RuntimeFrameworkVersion pin) now lives in the Runtime csproj's
+          # ios-conditional PropertyGroup, so it applies ONLY to Runtime and is
+          # NOT propagated to P2P refs as global properties (that propagation was
+          # the rung-3 iteration-1 NETSDK1207 on the netstandard2.0 analyzer).
+          run_publish () {
+            rid="$1"; tag="$2"
+            echo "::group::rung3 $tag ($rid)"
+            dotnet publish src/BlazorNative.Runtime -c Release -r "$rid" \
+              -bl:"spike-out/rung3-$tag.binlog" 2>&1 | tee "spike-out/rung3-$tag.log"
+            echo "rung3_${tag}_exit=${PIPESTATUS[0]}" | tee -a spike-out/exit-codes.txt
+            echo "::endgroup::"
+          }
+          run_publish iossimulator-arm64 sim
+          run_publish ios-arm64          dev
+          exit 0
+
+      # ── Collect any produced artifacts (any rung, any RID) ──────────────────
+      - name: "Collect produced artifacts"
+        id: collect
+        continue-on-error: true
+        run: |
+          set +e
+          mkdir -p spike-out/artifacts
+          echo "=== candidate publish outputs (.a / .dylib / native lib) ===" | tee spike-out/collect.txt
+          # NativeAOT native outputs land in bin/**/publish and bin/**/native.
+          found=0
+          while IFS= read -r f; do
+            [ -z "$f" ] && continue
+            echo "FOUND: $f ($(file -b "$f"))" | tee -a spike-out/collect.txt
+            dest="spike-out/artifacts/$(echo "$f" | sed 's#[/\\]#__#g')"
+            cp "$f" "$dest" 2>/dev/null && found=$((found+1))
+          done < <(find src/BlazorNative.Runtime/bin spikes/ios-aot-probe/bin -type f \
+                     \( -name '*.a' -o -name '*.dylib' -o -name 'IosAotProbe' -o -name 'BlazorNative.Runtime' \) \
+                     2>/dev/null | grep -Ei '(iossimulator|ios-arm64|/ios/)' | grep -v '\.dSYM/' )
+          echo "collected=$found" | tee -a spike-out/collect.txt
+          echo "collected=$found" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      # ── VERIFICATION — symbols + link probe (the GREEN bar) ─────────────────
+      - name: "Verification — nm + lipo + link probe"
+        id: verify
+        continue-on-error: true
+        run: |
+          set +e
+          bash scripts/ios-spike-verify.sh iossimulator-arm64 2>&1 | tee spike-out/verify.log
+          echo "verify_exit=${PIPESTATUS[0]}" | tee -a spike-out/exit-codes.txt
+          exit 0
+
+      # ── Uploads (always — evidence regardless of rung outcomes) ─────────────
+      - name: "Upload — spike-out (logs, binlogs, nm dumps, verdict evidence)"
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-spike-out
+          path: spike-out
+          if-no-files-found: warn
+
+      - name: "Upload — raw publish native output trees (best-effort)"
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-spike-native-trees
+          path: |
+            src/BlazorNative.Runtime/bin/Release/**/iossimulator-arm64/**
+            src/BlazorNative.Runtime/bin/Release/**/ios-arm64/**
+            spikes/ios-aot-probe/bin/Release/**/iossimulator-arm64/**
+            spikes/ios-aot-probe/bin/Release/**/ios-arm64/**
+          if-no-files-found: warn
