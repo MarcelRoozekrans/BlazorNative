@@ -57,6 +57,13 @@ internal static unsafe class FakeShellHost
     public static string AutoCompleteError = "fake transport error";
     public static string? AutoCompleteHeadersJson;
 
+    // Phase 5.4 — clipboard/share host state.
+    public static string Clipboard = "";
+    public static string? LastShared;
+    /// <summary>When non-zero, ClipboardWrite returns this instead of 0 — drives
+    /// the -1 host-error path.</summary>
+    public static int ClipboardWriteReturnCode;
+
     public static void Reset()
     {
         Route = "/";
@@ -72,16 +79,22 @@ internal static unsafe class FakeShellHost
         AutoCompleteBody = "";
         AutoCompleteError = "fake transport error";
         AutoCompleteHeadersJson = null;
+        Clipboard = "";
+        LastShared = null;
+        ClipboardWriteReturnCode = 0;
     }
 
     public static BlazorNativeBridgeCallbacks BuildCallbacks() => new()
     {
-        Navigate      = (IntPtr)(delegate* unmanaged[Cdecl]<byte*, int>)&NavigateFn,
-        CurrentRoute  = (IntPtr)(delegate* unmanaged[Cdecl]<byte*, int, int>)&CurrentRouteFn,
-        StorageRead   = (IntPtr)(delegate* unmanaged[Cdecl]<byte*, byte*, int, int>)&StorageReadFn,
-        StorageWrite  = (IntPtr)(delegate* unmanaged[Cdecl]<byte*, byte*, int>)&StorageWriteFn,
-        StorageDelete = (IntPtr)(delegate* unmanaged[Cdecl]<byte*, int>)&StorageDeleteFn,
-        FetchBegin    = (IntPtr)(delegate* unmanaged[Cdecl]<long, BlazorNativeFetchRequest*, int>)&FetchBeginFn,
+        Navigate       = (IntPtr)(delegate* unmanaged[Cdecl]<byte*, int>)&NavigateFn,
+        CurrentRoute   = (IntPtr)(delegate* unmanaged[Cdecl]<byte*, int, int>)&CurrentRouteFn,
+        StorageRead    = (IntPtr)(delegate* unmanaged[Cdecl]<byte*, byte*, int, int>)&StorageReadFn,
+        StorageWrite   = (IntPtr)(delegate* unmanaged[Cdecl]<byte*, byte*, int>)&StorageWriteFn,
+        StorageDelete  = (IntPtr)(delegate* unmanaged[Cdecl]<byte*, int>)&StorageDeleteFn,
+        FetchBegin     = (IntPtr)(delegate* unmanaged[Cdecl]<long, BlazorNativeFetchRequest*, int>)&FetchBeginFn,
+        ClipboardRead  = (IntPtr)(delegate* unmanaged[Cdecl]<byte*, int, int>)&ClipboardReadFn,
+        ClipboardWrite = (IntPtr)(delegate* unmanaged[Cdecl]<byte*, int>)&ClipboardWriteFn,
+        Share          = (IntPtr)(delegate* unmanaged[Cdecl]<byte*, int>)&ShareFn,
     };
 
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
@@ -127,6 +140,32 @@ internal static unsafe class FakeShellHost
         string? key = Marshal.PtrToStringUTF8((IntPtr)keyUtf8);
         if (key is null) return -1;
         Store.Remove(key);
+        return 0;
+    }
+
+    // ── Phase 5.4 clipboard/share callbacks ──────────────────────────────────
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    private static int ClipboardReadFn(byte* buf, int cap)
+        => WriteUtf8(Clipboard, buf, cap); // buffer protocol — large values force -needed
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    private static int ClipboardWriteFn(byte* textUtf8)
+    {
+        if (ClipboardWriteReturnCode != 0)
+            return ClipboardWriteReturnCode;
+        string? text = Marshal.PtrToStringUTF8((IntPtr)textUtf8);
+        if (text is null) return -1;
+        Clipboard = text; // copy — the pointer dies when we return
+        return 0;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    private static int ShareFn(byte* textUtf8)
+    {
+        string? text = Marshal.PtrToStringUTF8((IntPtr)textUtf8);
+        if (text is null) return -1;
+        LastShared = text; // copy — fire-and-forget record for the assertion
         return 0;
     }
 
@@ -365,6 +404,105 @@ public sealed class NativeShellBridgeTests
                 () => bridge.FetchAsync(new BridgeHttpRequest("http://fake.test/boom")).AsTask());
             Assert.Contains("fetch-begin", ex.Message);
             Assert.Contains("return code -1", ex.Message);
+        }
+        finally { NativeShellBridge.ResetForTests(); }
+    }
+
+    // ── Phase 5.4: clipboard/share round-trip + size negotiation ─────────────
+
+    [Fact]
+    public async Task Clipboard_Write_Read_RoundTrip()
+    {
+        var bridge = RegisterFake();
+        try
+        {
+            await bridge.ClipboardWriteAsync("copied text");
+            Assert.Equal("copied text", FakeShellHost.Clipboard);
+            Assert.Equal("copied text", await bridge.ClipboardReadAsync());
+        }
+        finally { NativeShellBridge.ResetForTests(); }
+    }
+
+    [Fact]
+    public async Task ClipboardRead_Empty_ReturnsEmptyString()
+    {
+        var bridge = RegisterFake();
+        try
+        {
+            Assert.Equal("", await bridge.ClipboardReadAsync());
+        }
+        finally { NativeShellBridge.ResetForTests(); }
+    }
+
+    [Fact]
+    public async Task ClipboardRead_LargeValue_BufferRetry()
+    {
+        var bridge = RegisterFake();
+        try
+        {
+            // > 4 KB clipboard: first call (4096 buffer) gets -needed, the single
+            // retry at the exact size succeeds (the CurrentRoute buffer protocol,
+            // reused unchanged).
+            string big = new string('c', 5000);
+            FakeShellHost.Clipboard = big;
+            Assert.Equal(big, await bridge.ClipboardReadAsync());
+        }
+        finally { NativeShellBridge.ResetForTests(); }
+    }
+
+    [Fact]
+    public async Task ClipboardWrite_HostErrorReturnCode_ThrowsHostError()
+    {
+        var bridge = RegisterFake();
+        try
+        {
+            FakeShellHost.ClipboardWriteReturnCode = -1;
+            var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+                () => bridge.ClipboardWriteAsync("x").AsTask());
+            Assert.Contains("clipboard-write", ex.Message);
+            Assert.Contains("return code -1", ex.Message);
+        }
+        finally { NativeShellBridge.ResetForTests(); }
+    }
+
+    [Fact]
+    public async Task Share_ForwardsText()
+    {
+        var bridge = RegisterFake();
+        try
+        {
+            await bridge.ShareAsync("share me");
+            Assert.Equal("share me", FakeShellHost.LastShared);
+        }
+        finally { NativeShellBridge.ResetForTests(); }
+    }
+
+    [Fact]
+    public async Task OldShell_48ByteRegistration_ClipboardUnsupported_ButNavigateStillWorks()
+    {
+        // The forward-compat proof of the size negotiation: build the FULL
+        // 72-byte struct (all 9 slots set, clipboard/share are REAL pointers) but
+        // register with structSize == 48 (an old shell that predates the slots).
+        // The register min-copy truncates to the first 6 slots and zero-fills the
+        // tail, so clipboard/share read back as Zero → NotSupportedException — yet
+        // Navigate (a copied slot) still works.
+        FakeShellHost.Reset();
+        NativeShellBridge.Register(structSize: 48, FakeShellHost.BuildCallbacks());
+        var bridge = new NativeShellBridge();
+        try
+        {
+            var readEx = await Assert.ThrowsAsync<NotSupportedException>(
+                () => bridge.ClipboardReadAsync().AsTask());
+            Assert.Contains("not supported", readEx.Message);
+
+            await Assert.ThrowsAsync<NotSupportedException>(
+                () => bridge.ClipboardWriteAsync("x").AsTask());
+            await Assert.ThrowsAsync<NotSupportedException>(
+                () => bridge.ShareAsync("x").AsTask());
+
+            // The graceful forward-compat: a copied slot still works.
+            await bridge.NavigateAsync("/still-works");
+            Assert.Equal("/still-works", await bridge.GetCurrentRouteAsync());
         }
         finally { NativeShellBridge.ResetForTests(); }
     }

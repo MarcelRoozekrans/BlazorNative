@@ -54,11 +54,25 @@ namespace BlazorNative.Runtime;
 //     POC: park superseded registrations in a list, never release them).
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// <summary>The six host-implemented shell operations, registered once at
-/// boot via <c>blazornative_register_bridge</c>. All pointers are cdecl
-/// <c>int</c>-returning functions — see the return-code table above.</summary>
+/// <summary>The host-implemented shell operations, registered once at boot via
+/// <c>blazornative_register_bridge</c>. All pointers are cdecl <c>int</c>-returning
+/// functions — see the return-code table above.
+///
+/// SIZE-NEGOTIATED GROWTH (Phase 5.4, DoD #6): the struct grows by APPENDING new
+/// slots at the end; the existing offsets (0…40) never move. register_bridge takes
+/// a leading <c>structSize</c> and the runtime copies <c>min(structSize, sizeof)</c>
+/// bytes + zero-fills the tail, so an OLD shell (48-byte struct) and a NEW runtime
+/// (72-byte struct) interoperate: the un-supplied slots read back as
+/// <c>IntPtr.Zero</c> and the managed side surfaces them as "not supported"
+/// (NotSupportedException) rather than crashing. A null slot is ALWAYS the
+/// capability-unsupported signal — never dereferenced.
+///
+/// Phase 5.4 appended clipboard read/write + share (offsets 48/56/64). If you add a
+/// slot, append it here, in the Kotlin @Structure.FieldOrder mirror, in the Swift
+/// header, and pin its offset in BOTH drift tests (BridgeProtocolNativeTests.cs /
+/// ShellBridgeTest.kt).</summary>
 [StructLayout(LayoutKind.Sequential)]
-public struct BlazorNativeBridgeCallbacks           // 6 × IntPtr = 48 bytes
+public struct BlazorNativeBridgeCallbacks           // 9 × IntPtr = 72 bytes
 {
     public IntPtr Navigate;        // offset 0  — int (const char* routeUtf8)
     public IntPtr CurrentRoute;    // offset 8  — int (char* buf, int cap)
@@ -66,6 +80,9 @@ public struct BlazorNativeBridgeCallbacks           // 6 × IntPtr = 48 bytes
     public IntPtr StorageWrite;    // offset 24 — int (const char* keyUtf8, const char* valueUtf8)
     public IntPtr StorageDelete;   // offset 32 — int (const char* keyUtf8)
     public IntPtr FetchBegin;      // offset 40 — int (long requestId, BlazorNativeFetchRequest* req)
+    public IntPtr ClipboardRead;   // offset 48 — int (char* buf, int cap)   — null = unsupported
+    public IntPtr ClipboardWrite;  // offset 56 — int (const char* textUtf8)  — null = unsupported
+    public IntPtr Share;           // offset 64 — int (const char* textUtf8)  — null = unsupported
 }
 
 /// <summary>Fetch request handed to the host's FetchBegin callback.

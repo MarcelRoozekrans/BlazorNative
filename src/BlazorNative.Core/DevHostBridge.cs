@@ -92,6 +92,32 @@ public sealed class DevHostBridge : IMobileBridge, IDisposable
             res.Headers.ToDictionary(h => h.Key, h => string.Join(", ", h.Value)));
     }
 
+    // ── Clipboard + Share (Phase 5.4 — in-memory mock) ────────────────────────
+
+    private string _clipboard = "";
+
+    public ValueTask<string> ClipboardReadAsync(CancellationToken ct = default)
+    {
+        Console.WriteLine($"[DevBridge] Clipboard.Read → {_clipboard}");
+        return ValueTask.FromResult(_clipboard);
+    }
+
+    public ValueTask ClipboardWriteAsync(string text, CancellationToken ct = default)
+    {
+        _clipboard = text;
+        Console.WriteLine($"[DevBridge] Clipboard.Write = {text}");
+        return ValueTask.CompletedTask;
+    }
+
+    public ValueTask ShareAsync(string text, CancellationToken ct = default)
+    {
+        Console.WriteLine($"[DevBridge] Share → {text}");
+        return ValueTask.CompletedTask;
+    }
+
+    /// <summary>Snapshot of the in-memory clipboard — useful in tests.</summary>
+    public string ClipboardSnapshot => _clipboard;
+
     // ── Platform info ─────────────────────────────────────────────────────────
 
     public string PlatformInfo =>
