@@ -16,12 +16,11 @@
 name: ios-spike
 
 on:
+  # workflow_dispatch only — a spike, not a lane (Phase 5.2 builds the real lane).
+  # The temporary `push: branches: [phase-5.0-ios-spike]` bootstrap trigger (the
+  # gh-workflow-run-404 workaround, Phase 4.0 ledger item 1) was removed here now
+  # that the spike has run; the workflow is dispatchable thereafter.
   workflow_dispatch:
-  # TEMPORARY bootstrap trigger — a workflow that never existed on the default
-  # branch 404s under `gh workflow run` (Phase 4.0 ledger item 1). Removed after
-  # the spike runs; the PR that merges this must NOT carry this push trigger.
-  push:
-    branches: [phase-5.0-ios-spike]
 
 permissions:
   contents: read
