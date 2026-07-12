@@ -213,9 +213,23 @@ jobs:
             -scheme BnHost \
             -destination "platform=iOS Simulator,id=${{ steps.sim.outputs.udid }}" \
             -resultBundlePath ../../ios-out/BnHost.xcresult \
-            -derivedDataPath ../../ios-out/DerivedData \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
             CODE_SIGNING_ALLOWED=NO \
             2>&1 | tee ../../ios-out/xcodebuild-test.log
+
+      - name: Collect crash reports + test console (on crash/failure)
+        if: always()
+        run: |
+          mkdir -p ios-out/crash
+          # Simulator app crashes land in the host's DiagnosticReports.
+          cp "$HOME"/Library/Logs/DiagnosticReports/BnHost* ios-out/crash/ 2>/dev/null || true
+          cp "$HOME"/Library/Logs/DiagnosticReports/*.ips ios-out/crash/ 2>/dev/null || true
+          # Dump the .xcresult test log (best-effort; format is Xcode-version-sensitive).
+          xcrun xcresulttool get --legacy --path ios-out/BnHost.xcresult --format json \
+            > ios-out/xcresult.json 2>/dev/null || \
+            xcrun xcresulttool get --path ios-out/BnHost.xcresult --format json \
+            > ios-out/xcresult.json 2>/dev/null || true
+          ls -la ios-out/crash || true
 
       - name: Assert XCTest pass count (>=1 passed / 0 failed)
         if: always()
