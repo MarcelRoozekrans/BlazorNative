@@ -30,7 +30,8 @@ CANDIDATES=()
 while IFS= read -r line; do
   [ -n "$line" ] && CANDIDATES+=("$line")
 done < <(find src/BlazorNative.Runtime/bin spikes/ios-aot-probe/bin -type f \
-  \( -name '*.a' -o -name '*.dylib' \) 2>/dev/null | grep -F "$RID" | sort -u)
+  \( -name '*.a' -o -name '*.dylib' \) 2>/dev/null \
+  | grep -F "$RID" | grep -v '\.dSYM/' | sort -u)
 
 if [ "${#CANDIDATES[@]}" -eq 0 ]; then
   echo "RESULT: NO ARTIFACT produced for $RID — nothing to verify."
@@ -88,13 +89,16 @@ EOF
   echo "-- link probe (xcrun -sdk iphonesimulator clang) --"
   # NativeAOT static libs pull in system frameworks/libs; supply the usual set.
   # For a .dylib we link -L/-l; for a .a we pass the archive directly.
-  LINK_INPUT=("$ART")
+  # The NativeAOT dylib records its install name as @rpath/<name>.dylib, so add an
+  # rpath to its own directory — lets the bonus simctl run actually dlopen it.
+  ART_DIR=$(cd "$(dirname "$ART")" && pwd)
   set -x
   xcrun -sdk iphonesimulator clang -arch arm64 \
     -isysroot "$SDKPATH" \
     -mios-simulator-version-min=13.0 \
-    "$STUB" "${LINK_INPUT[@]}" \
+    "$STUB" "$ART" \
     -o "$OUT" \
+    -Wl,-rpath,"$ART_DIR" \
     -lc++ -lz -licucore -lobjc \
     -framework Foundation -framework Security -framework CoreFoundation \
     2>&1

@@ -214,7 +214,7 @@ jobs:
             cp "$f" "$dest" 2>/dev/null && found=$((found+1))
           done < <(find src/BlazorNative.Runtime/bin spikes/ios-aot-probe/bin -type f \
                      \( -name '*.a' -o -name '*.dylib' -o -name 'IosAotProbe' -o -name 'BlazorNative.Runtime' \) \
-                     2>/dev/null | grep -Ei '(iossimulator|ios-arm64|/ios/)' )
+                     2>/dev/null | grep -Ei '(iossimulator|ios-arm64|/ios/)' | grep -v '\.dSYM/' )
           echo "collected=$found" | tee -a spike-out/collect.txt
           echo "collected=$found" >> "$GITHUB_OUTPUT"
           exit 0
