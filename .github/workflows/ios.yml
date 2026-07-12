@@ -85,8 +85,14 @@ jobs:
       - name: Publish iossimulator-arm64 (NativeLib=Static; assert exactly 4 IL2072)
         run: |
           set -o pipefail
+          # NOTE: PublishAot is NOT passed on the CLI. It lives in the Runtime
+          # csproj's own PropertyGroup (local, non-propagating); a CLI -p:PublishAot
+          # would become a GLOBAL property and propagate to the P2P refs (Core/
+          # Renderer/Http/Components), which lack the runtime-pack bypass → NETSDK1203.
+          # This mirrors the proven 5.0 spike rung-3 invocation and the win-x64/
+          # bionic ci.yml publishes (which also never pass -p:PublishAot).
           dotnet publish src/BlazorNative.Runtime -c Release -r "$RID" \
-            -p:PublishAot=true -tl:off -nologo 2>&1 | tee ios-out/publish.log
+            -tl:off -nologo 2>&1 | tee ios-out/publish.log
           il2072=$(grep -c 'warning IL2072' ios-out/publish.log || true)
           echo "IL2072 count: $il2072"
           if [ "$il2072" -ne 4 ]; then
