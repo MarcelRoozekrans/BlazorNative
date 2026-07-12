@@ -33,10 +33,14 @@ Phase 5.0 brainstorm — and explicitly subject to the Phase 5.0 spike verdict.
 
 1. **iOS feasibility spike verdict committed.** A time-boxed spike on a free macOS
    runner proves (or refutes) that .NET 10 NativeAOT produces a linkable
-   iOS-simulator artifact carrying the eight-export `blazornative_*` C-ABI (symbol
+   iOS-simulator artifact carrying the `blazornative_*` C-ABI (symbol
    dump as evidence; device `ios-arm64` probed secondarily). A RED comes with a
    documented fallback decision, and the milestone re-scopes — this criterion passes
-   with EITHER verdict; what it demands is the *committed evidence*.
+   with EITHER verdict; what it demands is the *committed evidence*. ✅ **CLOSED
+   2026-07-12 (Phase 5.0): GREEN** — the runtime-pack bypass produces a linkable
+   `.dylib` for `iossimulator-arm64` AND `ios-arm64` with all `blazornative_*` exports;
+   link probe builds a simulator executable; the runtime boots on the simulator via the
+   C-ABI (bonus). Fallback not triggered. See [spike conclusion](../plans/2026-07-12-phase-5.0-spike-conclusion.md).
 2. **Swift shell boots and renders.** The Kotlin shell's Swift twin (bindings, frame
    adapter, widget mapper over native views) boots the dll on the CI simulator and
    renders BnDemo's widget tree.

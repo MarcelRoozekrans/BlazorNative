@@ -297,8 +297,9 @@ specifics — APNs, Keychain, universal links, App Store validation — deferred
 Issues: #16 (Android, narrowed), #17 (iOS), #18 (APIs, narrowed), #19 (host-initiated).
 
 Phases (approved at milestone-open):
-- ⏳ **Phase 5.0** — iOS feasibility spike (DoD #1) — *next; the named risk, verified first on a macOS runner*
-- ⏳ **Phase 5.1** — Host-initiated events: lifecycle + predictive back + deep links (DoD #5)
+- ✅ **Phase 5.0** — iOS feasibility spike (DoD #1) — *complete (2026-07-12, PR #47 `16a637a`)*
+   - **GREEN — .NET 10 NativeAOT works on iOS.** The runtime-pack bypass (3.0c's linux-bionic trick) ports to iOS via `PublishAotUsingRuntimePack=true` + `DisableUnsupportedError=true`, RID-gated in `BlazorNative.Runtime.csproj` (behavior-neutral for win-x64/bionic — verified). Rungs 1/2 (plain-RID publish, iOS workload) RED on the SDK's `NETSDK1203` AOT-RID gate; rung 3 (bypass) GREEN. Produces a linkable `.dylib` for **`iossimulator-arm64` AND `ios-arm64`** with all 8 `blazornative_*` exports; the link probe builds a simulator executable; **bonus: the runtime BOOTS on the simulator via the C-ABI** (`simctl spawn` printed the version). Pinned: SDK 10.0.301, ILC+packs 10.0.9, `runtime.iossimulator-arm64.microsoft.dotnet.ilcompiler` 10.0.9 (the RID ILC exists on nuget.org, unlike bionic), Xcode 26.5 on `macos-latest`. Fallback ladder NOT triggered. `.github/workflows/ios-spike.yml` (dispatch-only), `scripts/ios-spike-verify.sh`, throwaway `spikes/ios-aot-probe/`. **DoD #1 closed.** See [design](../plans/2026-07-12-phase-5.0-design.md) + [spike conclusion](../plans/2026-07-12-phase-5.0-spike-conclusion.md).
+- 🔄 **Phase 5.1** — Host-initiated events: lifecycle + predictive back + deep links (DoD #5) — *in progress; the `NativeEvents` fork from the 4.2 triage; 9th C-ABI export, previous-route back, launch-time deep links*
 - ⏳ **Phase 5.2** — Swift shell foundation: boot + tree render on the simulator (DoD #2, #4)
 - ⏳ **Phase 5.3** — Swift shell interactivity: events + bridge + navigation parity (DoD #3)
 - ⏳ **Phase 5.4** — Clipboard + share + the bridge-extension pattern (DoD #6)
