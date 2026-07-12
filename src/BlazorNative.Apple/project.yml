@@ -10,7 +10,8 @@
 #                BnRuntime) + the minimal host (AppDelegate/HostViewController).
 #                Links the NativeAOT static archive vendor/libBlazorNative.Runtime.a
 #                (copied there by ios.yml from the iossimulator-arm64 publish) with
-#                the 5.0 spike's proven flag set (scripts/ios-spike-verify.sh).
+#                the 5.0 spike's proven flag set (recorded in the Phase 5.2
+#                conclusion: docs/plans/2026-07-12-phase-5.2-conclusion.md).
 #   BnHostTests  (hosted unit-test bundle) — the DoD #2 render proof; TEST_HOST is
 #                BnHost, so it runs inside the app with the linked runtime and
 #                asserts the real UIView tree (@testable import BnHost).
@@ -63,7 +64,8 @@ targets:
         #     library-appropriate runtime objects (via _Rh*) without dragging in
         #     the exe bootstrapper or the Network-framework transport.
         #   - the framework/lib set is the 5.0 spike's proven list
-        #     (scripts/ios-spike-verify.sh:106-114); Security covers AppleCrypto.
+        #     (recorded in docs/plans/2026-07-12-phase-5.2-conclusion.md); Security
+        #     covers AppleCrypto.
         # BnHost-target-only (NOT global) so the hosted test bundle, which links
         # against the app via BUNDLE_LOADER, does not re-link the runtime.
         OTHER_LDFLAGS:

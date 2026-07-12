@@ -72,8 +72,9 @@
          iOS app wants; the 5.0 spike deferred this packaging decision). RID-gated
          to iOS ONLY — win-x64 stays a .dll and linux-bionic stays a .so (the RID
          condition never matches them), so this is behavior-neutral for the three
-         shipping RIDs. The proven xcrun link flags (scripts/ios-spike-verify.sh)
-         carry over to the Xcode app target. See docs/plans/2026-07-12-phase-5.2-design.md. -->
+         shipping RIDs. The static-embed link recipe (bootstrapperdll.o direct-link
+         + force_load .a + merged support archive + the spike frameworks) is
+         documented in docs/plans/2026-07-12-phase-5.2-conclusion.md. See docs/plans/2026-07-12-phase-5.2-design.md. -->
     <NativeLib>Static</NativeLib>
   </PropertyGroup>
 

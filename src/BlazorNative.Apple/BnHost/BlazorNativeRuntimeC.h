@@ -19,7 +19,8 @@
 // little-endian, 8-byte pointers). The C compiler reproduces the same layout:
 //   bn_init_options : os@0(ptr) apiLevel@8(int) pad@12 note@16(ptr)  → 24 bytes
 //   bn_init_result  : status@0(int) pad@4 error@8(ptr) version@16(ptr) → 24 bytes
-// (This mirrors the proven 5.0 spike stub — ios-spike-verify.sh:85-88.)
+// (This mirrors the proven 5.0 spike stub, recorded in the Phase 5.2 conclusion:
+// docs/plans/2026-07-12-phase-5.2-conclusion.md.)
 //
 // String ownership: input strings (os/note/mount name) are caller-allocated
 // NUL-terminated UTF-8, callee-borrowed during the call. The version/error

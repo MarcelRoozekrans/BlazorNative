@@ -1,35 +1,37 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # BlazorNative iOS lane (Phase 5.2, M5 DoD #2 + #4) — macos-latest, single job.
 #
-# INFORMATIONAL — this workflow is NOT a required check (mirrors the
-# android-instrumented posture): simulator-on-CI has flake modes and the lane is
-# young. Promotion criteria: N consecutive green runs on main → promotable to a
-# required check (documented in docs/GITHUB-SETUP.md alongside the emulator lane).
+# INFORMATIONAL — this workflow is NOT a required check, mirroring the
+# android-instrumented lane's posture: simulator-on-CI has flake modes (sim boot,
+# test-host launch) and the lane is young, so it stays advisory. PROMOTION
+# CRITERIA: after a stability baseline (e.g. ~10 consecutive green runs on main
+# with no sim-flake reds) it is promotable to a required check (documented in
+# docs/GITHUB-SETUP.md → "Branch protection", alongside the emulator lane).
 #
 # Unlike Android (which splits publish-on-Windows from test-on-Linux), iOS both
 # PUBLISHES and TESTS on macOS, so this is one job:
-#   1. publish src/BlazorNative.Runtime -r iossimulator-arm64 -p:PublishAot=true
-#      (the csproj runtime-pack bypass + NativeLib=Static → libBlazorNative.Runtime.a;
-#      assert exactly the 4 accepted IL2072 trim warnings, like win-x64/bionic)
-#   2. nm -gU asserts the NINE blazornative_* exports in the .a (the spike's
-#      underscore-normalized check)
+#   1. publish src/BlazorNative.Runtime -r iossimulator-arm64 (PublishAot lives in
+#      the csproj — NOT on the CLI, which would propagate globally → NETSDK1203 on
+#      the P2P refs; the runtime-pack bypass + NativeLib=Static → the static
+#      libBlazorNative.Runtime.a; assert exactly the 4 accepted IL2072s)
+#   2. nm -gU asserts the NINE blazornative_* exports in the .a; then assemble the
+#      STATIC-EMBED link inputs: libbootstrapperdll.o (direct-linked so its
+#      constructor initialises the runtime) + a merged libBnRuntimeSupport.a (the
+#      runtime pack's native/*.a minus the non-default GC/eventpipe variants)
 #   3. XcodeGen materialises BnHost.xcodeproj; xcodebuild test runs the hosted
-#      XCTest on the simulator; the DoD #2 render pins must pass
-# Artifact-upload heavy: every publish log, nm dump, xcodebuild log, and the
-# .xcresult bundle is uploaded each run (CI-only iteration — upload everything).
+#      XCTest on the simulator; the DoD #2 render pins + the wire-drift guard pass
+# Artifact-upload heavy: every publish log, nm dump, xcodebuild log, crash report,
+# and the .xcresult bundle is uploaded each run (CI-only iteration — upload all).
 #
-# The temporary `push` trigger on the branch is the documented bootstrap for the
-# `gh workflow run` 404 quirk (Phase 4.0 conclusion, ledger item 1); it is REMOVED
-# once the lane is green (workflow_dispatch + pull_request remain). Public-repo
-# macOS minutes are free, so +pull_request (iOS-relevant paths) is kept.
+# Triggers: workflow_dispatch + pull_request (iOS-relevant paths). Public-repo
+# macOS minutes are free, so +pull_request is kept. (The temporary branch `push`
+# bootstrap trigger — the `gh workflow run` 404 workaround, Phase 4.0 ledger
+# item 1 — was removed once the lane went green.)
 # ─────────────────────────────────────────────────────────────────────────────
 name: ios
 
 on:
   workflow_dispatch:
-  # Temporary bootstrap trigger (removed once green — see the header note).
-  push:
-    branches: [phase-5.2-swift-shell]
   pull_request:
     paths:
       - 'src/BlazorNative.Apple/**'
@@ -254,7 +256,7 @@ jobs:
             > ios-out/xcresult.json 2>/dev/null || true
           ls -la ios-out/crash || true
 
-      - name: Assert XCTest pass count (>=1 passed / 0 failed)
+      - name: Assert XCTest baseline (2 passed / 0 failed)
         if: always()
         run: |
           log=ios-out/xcodebuild-test.log
@@ -262,9 +264,12 @@ jobs:
           passed=$(grep -cE "Test Case '.*' passed" "$log" || true)
           failed=$(grep -cE "Test Case '.*' failed" "$log" || true)
           echo "XCTest cases: passed=$passed failed=$failed"
-          if [ "$failed" -ne 0 ] || [ "$passed" -lt 1 ]; then
+          # Baseline asserted, not observed (house style): the render pin
+          # (BnRenderTests) + the wire-drift guard (BnDriftTests) = 2 tests. Count
+          # drift fails loudly — a deliberate baseline change must update this too.
+          if [ "$failed" -ne 0 ] || [ "$passed" -ne 2 ]; then
             grep -E "Test Case '.*' (passed|failed)" "$log" || true
-            echo "iOS XCTest drift: expected >=1 passed / 0 failed, got passed=$passed failed=$failed" >&2
+            echo "iOS XCTest baseline drift: expected 2 passed / 0 failed, got passed=$passed failed=$failed" >&2
             exit 1
           fi
 
