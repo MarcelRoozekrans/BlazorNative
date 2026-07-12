@@ -1,0 +1,194 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// BnInteractionTests — Phase 5.3 (M5 DoD #3): the interactive two-page proof. The
+// iOS twin of BnDemoAndroidTest (bind/clear/theme) + NavigationAndroidTest
+// (Settings⇄Back). A HOSTED XCTest (NOT XCUITest) so it reads the exact UIView
+// tree + colors, driving controls via `sendActions` (the performClick analog —
+// UIKit needs the explicit action for .editingChanged) and polling the tree
+// (dispatch is async off the BlazorNative-Dispatch lane).
+//
+// The v3.0 bar on the simulator: type→echo (input not clobbered), Clear, cascading
+// theme (both directions), Settings→ (settings shown, no textfield), ←Back (fresh
+// empty remount — state does not survive the swap).
+// ─────────────────────────────────────────────────────────────────────────────
+
+import XCTest
+import UIKit
+@testable import BnHost
+
+final class BnInteractionTests: XCTestCase {
+
+    private static let defaultBg = "#FFEEAA"
+    private static let altBg = "#334455"
+
+    /// Held for the test's lifetime so the callback + lane outlive the dispatch.
+    private var runtime: BnRuntime?
+    private var root: UIView!
+
+    override func setUpWithError() throws {
+        root = UIView(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+        let mapper = BnWidgetMapper(root: root)
+        let runtime = BnRuntime(mapper: mapper)
+        runtime.onError = { msg, err in NSLog("[BnInteractionTests] \(msg): \(err)") }
+        self.runtime = runtime
+        try runtime.start(component: "BnDemo", os: "ios")
+        XCTAssertTrue(pollUntil { self.demoForm() != nil }, "BnDemo never rendered its 6-child form")
+    }
+
+    // ── bind + echo: type "héllo→世界" → echo == typed, input not clobbered ────
+
+    func testBindLoopTypeEchoesAndInputNotClobbered() throws {
+        let input = try XCTUnwrap(demoInput(), "the bound input")
+        let typed = "héllo→世界" // the UTF-8/IME leg
+        input.text = typed
+        input.sendActions(for: .editingChanged)
+
+        XCTAssertTrue(pollUntil { self.demoEchoLabel()?.text == typed },
+                      "echo never showed '\(typed)' after typing")
+        // The echo frame's value write-back must NOT clobber the input (the
+        // inequality check skips the redundant set; UIKit fires no re-entrant
+        // .editingChanged on a programmatic set — the iOS simplification).
+        XCTAssertEqual(demoInput()?.text, typed, "the input keeps the user's text")
+    }
+
+    // ── Clear: both halves reset ─────────────────────────────────────────────
+
+    func testClearResetsInputAndEcho() throws {
+        let input = try XCTUnwrap(demoInput())
+        input.text = "hello"
+        input.sendActions(for: .editingChanged)
+        XCTAssertTrue(pollUntil { self.demoEchoLabel()?.text == "hello" }, "echo never showed the seed")
+
+        try tapButton("Clear")
+        XCTAssertTrue(pollUntil { self.demoInput()?.text == "" && self.demoEchoLabel()?.text == "" },
+                      "input + echo never both emptied after Clear")
+    }
+
+    // ── theme: cascading flip on form + echo, both directions ────────────────
+
+    func testThemeFlipsBothBackgroundsBothWays() throws {
+        // Mount: both themed containers carry the default background.
+        XCTAssertTrue(colorMatches(demoForm()?.backgroundColor, Self.defaultBg), "form mounts #FFEEAA")
+        XCTAssertTrue(colorMatches(demoEchoPanel()?.backgroundColor, Self.defaultBg), "echo mounts #FFEEAA")
+
+        try tapButton("Theme")
+        XCTAssertTrue(pollUntil {
+            self.colorMatches(self.demoForm()?.backgroundColor, Self.altBg) &&
+            self.colorMatches(self.demoEchoPanel()?.backgroundColor, Self.altBg)
+        }, "both themed backgrounds never flipped to #334455")
+
+        try tapButton("Theme")
+        XCTAssertTrue(pollUntil {
+            self.colorMatches(self.demoForm()?.backgroundColor, Self.defaultBg) &&
+            self.colorMatches(self.demoEchoPanel()?.backgroundColor, Self.defaultBg)
+        }, "both themed backgrounds never flipped back to #FFEEAA")
+    }
+
+    // ── nav Settings→: settings shown, no textfield, 2-child settings view ────
+
+    func testSettingsNavigationShowsSettingsNoTextField() throws {
+        try tapButton("Settings →")
+        XCTAssertTrue(pollUntil { self.settingsView() != nil }, "settings page never appeared")
+
+        let settings = try XCTUnwrap(settingsView(), "the settings stack")
+        XCTAssertEqual(settings.arrangedSubviews.count, 2, "settings view has exactly title + back")
+        XCTAssertEqual((settings.arrangedSubviews[0] as? UILabel)?.text, "Settings")
+        XCTAssertEqual((settings.arrangedSubviews[1] as? UIButton)?.title(for: .normal), "← Back")
+        XCTAssertFalse(containsTextField(root), "the BnDemo input must have left the screen")
+    }
+
+    // ── nav ←Back: fresh empty BnDemo remount ────────────────────────────────
+
+    func testBackReturnsFreshEmptyBnDemo() throws {
+        // Seed state, then navigate away and back.
+        let input = try XCTUnwrap(demoInput())
+        input.text = "seeded"
+        input.sendActions(for: .editingChanged)
+        XCTAssertTrue(pollUntil { self.demoEchoLabel()?.text == "seeded" }, "seed echo never showed")
+
+        try tapButton("Settings →")
+        XCTAssertTrue(pollUntil { self.settingsView() != nil }, "settings never appeared")
+
+        try tapButton("← Back")
+        // BnDemo remounts FRESH — empty input + empty echo, the seeded text nowhere.
+        XCTAssertTrue(pollUntil {
+            guard let form = self.demoForm() else { return false }
+            let freshInput = form.arrangedSubviews[safe: 1] as? UITextField
+            let freshEcho = (form.arrangedSubviews[safe: 2] as? UIStackView)?.arrangedSubviews.first as? UILabel
+            return freshInput?.text == "" && freshEcho?.text == ""
+        }, "BnDemo did not remount fresh+empty after Back")
+        XCTAssertEqual(demoInput()?.text, "", "the seeded text must not survive the swap")
+        XCTAssertEqual(demoEchoLabel()?.text, "", "the seeded echo must not survive the swap")
+    }
+
+    // ── Tree accessors (re-derived each call — nav/theme mutate the tree) ─────
+
+    /// The BnDemo form: root's single child once it has all 6 arranged subviews.
+    private func demoForm() -> UIStackView? {
+        guard let form = root.subviews.first as? UIStackView, form.arrangedSubviews.count >= 6 else { return nil }
+        return form
+    }
+    private func demoInput() -> UITextField? { demoForm()?.arrangedSubviews[safe: 1] as? UITextField }
+    private func demoEchoPanel() -> UIStackView? { demoForm()?.arrangedSubviews[safe: 2] as? UIStackView }
+    private func demoEchoLabel() -> UILabel? { demoEchoPanel()?.arrangedSubviews.first as? UILabel }
+
+    /// The settings page: root's single child, a 2-arranged-subview stack whose
+    /// first child is the "Settings" title (distinguishes it from the 6-child demo).
+    private func settingsView() -> UIStackView? {
+        guard let stack = root.subviews.first as? UIStackView,
+              stack.arrangedSubviews.count == 2,
+              (stack.arrangedSubviews[0] as? UILabel)?.text == "Settings" else { return nil }
+        return stack
+    }
+
+    // ── Helpers ──────────────────────────────────────────────────────────────
+
+    /// Finds a UIButton by title anywhere under root and sends .touchUpInside (the
+    /// performClick twin). Fails if the button is not on screen.
+    private func tapButton(_ title: String, file: StaticString = #filePath, line: UInt = #line) throws {
+        let button = try XCTUnwrap(findButton(in: root, title: title),
+                                   "button '\(title)' not on screen", file: file, line: line)
+        button.sendActions(for: .touchUpInside)
+    }
+
+    private func findButton(in view: UIView, title: String) -> UIButton? {
+        if let b = view as? UIButton, b.title(for: .normal) == title { return b }
+        for sub in view.subviews {
+            if let f = findButton(in: sub, title: title) { return f }
+        }
+        return nil
+    }
+
+    private func containsTextField(_ view: UIView) -> Bool {
+        if view is UITextField { return true }
+        return view.subviews.contains { containsTextField($0) }
+    }
+
+    /// Pumps the MAIN runloop (draining the mapper's main-queue batch) until the
+    /// condition holds or a 10s deadline. Dispatch is async off the lane, so every
+    /// interaction assertion polls.
+    private func pollUntil(deadline seconds: TimeInterval = 10, _ cond: () -> Bool) -> Bool {
+        let end = Date().addingTimeInterval(seconds)
+        while Date() < end {
+            RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.05))
+            if cond() { return true }
+        }
+        return cond()
+    }
+
+    /// UIColor ≈ #RRGGBB by RGBA components (the ColorDrawable.color twin).
+    private func colorMatches(_ color: UIColor?, _ hex: String) -> Bool {
+        guard let color = color, let expected = BnColor.parse(hex) else { return false }
+        var r1: CGFloat = 0, g1: CGFloat = 0, b1: CGFloat = 0, a1: CGFloat = 0
+        var r2: CGFloat = 0, g2: CGFloat = 0, b2: CGFloat = 0, a2: CGFloat = 0
+        color.getRed(&r1, green: &g1, blue: &b1, alpha: &a1)
+        expected.getRed(&r2, green: &g2, blue: &b2, alpha: &a2)
+        let tol: CGFloat = 0.004
+        return abs(r1 - r2) < tol && abs(g1 - g2) < tol && abs(b1 - b2) < tol && abs(a1 - a2) < tol
+    }
+}
+
+private extension Array {
+    subscript(safe index: Int) -> Element? {
+        indices.contains(index) ? self[index] : nil
+    }
+}

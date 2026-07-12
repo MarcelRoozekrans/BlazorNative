@@ -256,7 +256,7 @@ jobs:
             > ios-out/xcresult.json 2>/dev/null || true
           ls -la ios-out/crash || true
 
-      - name: Assert XCTest baseline (2 passed / 0 failed)
+      - name: Assert XCTest baseline (9 passed / 0 failed)
         if: always()
         run: |
           log=ios-out/xcodebuild-test.log
@@ -264,12 +264,14 @@ jobs:
           passed=$(grep -cE "Test Case '.*' passed" "$log" || true)
           failed=$(grep -cE "Test Case '.*' failed" "$log" || true)
           echo "XCTest cases: passed=$passed failed=$failed"
-          # Baseline asserted, not observed (house style): the render pin
-          # (BnRenderTests) + the wire-drift guard (BnDriftTests) = 2 tests. Count
-          # drift fails loudly — a deliberate baseline change must update this too.
-          if [ "$failed" -ne 0 ] || [ "$passed" -ne 2 ]; then
+          # Baseline asserted, not observed (house style). Phase 5.3 grew the suite
+          # from 2 to 9: BnRenderTests (render pin) + BnDriftTests (wire-drift guard)
+          # + BnInteractionTests ×5 (bind/echo, Clear, Theme flip, Settings→, ←Back)
+          # + BnBridgeTests ×2 (the -needed buffer protocol, the FlatJson args).
+          # Count drift fails loudly — a deliberate baseline change updates this too.
+          if [ "$failed" -ne 0 ] || [ "$passed" -ne 9 ]; then
             grep -E "Test Case '.*' (passed|failed)" "$log" || true
-            echo "iOS XCTest baseline drift: expected 2 passed / 0 failed, got passed=$passed failed=$failed" >&2
+            echo "iOS XCTest baseline drift: expected 9 passed / 0 failed, got passed=$passed failed=$failed" >&2
             exit 1
           fi
 
