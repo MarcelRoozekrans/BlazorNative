@@ -2,7 +2,7 @@
 
 [![ci](https://github.com/MarcelRoozekrans/BlazorNative/actions/workflows/ci.yml/badge.svg)](https://github.com/MarcelRoozekrans/BlazorNative/actions/workflows/ci.yml)
 
-> **Status: pre-release proof of concept.** Milestones 1–3 are complete (tagged `v1.0`–`v3.0`); Milestone 4 (production-shippable) is in progress. Not production-ready — the API surface is unstable and changes without notice.
+> **Status: pre-release proof of concept.** Milestones 1–4 are complete (tagged `v1.0`–`v4.0`); Milestone 5 (full platform coverage) is in progress — iOS proven feasible on the simulator, host-initiated events (lifecycle + predictive back + deep links) landed on Android. Not production-ready — the API surface is unstable and changes without notice.
 
 > .NET → NativeAOT → native mobile widgets. Blazor components rendered as real Android views, no WebView, no JavaScript, no wasm.
 

@@ -54,6 +54,15 @@ Phase 5.0 brainstorm — and explicitly subject to the Phase 5.0 spike verdict.
    lifecycle (`onPause`/`onResume`/`onDestroy`) flows into .NET as native events;
    predictive back triggers navigation-back; a deep link resolves to the startup
    route — proven on the AVD. Closes the 4.2-triaged fork (issue trail updated).
+   ✅ **CLOSED 2026-07-12 (Phase 5.1): GREEN** — a 9th C-ABI export
+   `blazornative_host_event` fires the *real* `NativeShellBridge.NativeEvents`
+   (the 3.2 no-op retired); Android lifecycle → events; predictive back
+   (`OnBackInvokedCallback` → the reserved "back" host event, mapped to
+   `NavigateBackAsync` in .NET, rc 1 = at-root → finish) → navigation-back
+   (previous-route slot); a `blazornative://` deep link → startup route
+   (BnSettingsPage at launch) — all live on the AVD (API 34). The `NativeEvents`
+   fork from the 4.2 triage is closed. .NET 220 / JVM 78 / Android 38; version
+   `1.3.0-phase-5.1`. See [conclusion](../plans/2026-07-12-phase-5.1-conclusion.md).
 6. **Clipboard + share on both platforms**, with the bridge-extension pattern
    documented (how a new host API joins the C-ABI: struct slot vs new callback,
    versioning posture, per-platform impl shape).
@@ -75,8 +84,9 @@ Phase 5.0 brainstorm — and explicitly subject to the Phase 5.0 spike verdict.
 
 ## Inherited from M4
 
-- **NativeEvents redesign** (4.2 triage → M5) — covered by DoD #5; `NativeShellBridge`
-  stubs the event no-op today, BN0014 guards the contract.
+- **NativeEvents redesign** (4.2 triage → M5) — covered by DoD #5; **closed
+  (Phase 5.1)**: `NativeShellBridge.NativeEvents` is a real multicast fired by the
+  9th export `blazornative_host_event`, BN0014 now guards the live contract.
 - **Host-initiated navigation** (M3 audit carryover) — covered by DoD #5 (predictive
   back + deep links ARE host-initiated navigation).
 - **On-device inspector channel** (4.4 carryover) — NOT pulled in; stays ledgered
