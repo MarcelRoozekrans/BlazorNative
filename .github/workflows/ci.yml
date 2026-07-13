@@ -70,7 +70,7 @@ jobs:
 
       # ── Toolchain ──────────────────────────────────────────────────────────
       - name: Setup .NET SDK (global.json — 10.0.3xx band)
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         with:
           global-json-file: global.json
 
