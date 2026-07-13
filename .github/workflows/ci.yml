@@ -42,7 +42,7 @@ jobs:
         shell: pwsh
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # ── Cross-shell pins (Phase 6.0) ───────────────────────────────────────
       # Yoga is ONE engine used by TWO shells: Android pulls the prebuilt Maven
