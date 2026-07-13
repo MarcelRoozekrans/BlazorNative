@@ -235,6 +235,12 @@ jobs:
           # Stage headers so HEADER_SEARCH_PATHS=vendor/yoga-include resolves <yoga/*.h>.
           mkdir -p src/BlazorNative.Apple/vendor/yoga-include
           cp -R "$yroot/yoga" src/BlazorNative.Apple/vendor/yoga-include/yoga
+          # Drop Yoga's bundled module.modulemap: with it present, Clang's
+          # explicit-module scanner tries to build a `yoga` MODULE from the bridging
+          # header include and fails to resolve the module's own headers
+          # ('yoga/Yoga.h' not found). Removing it forces plain TEXTUAL includes via
+          # HEADER_SEARCH_PATHS (the proven path — the runtime C-ABI header is textual too).
+          rm -f src/BlazorNative.Apple/vendor/yoga-include/yoga/module.modulemap
           ls -la src/BlazorNative.Apple/vendor/libyoga.a | tee -a ios-out/yoga-build.txt
           file src/BlazorNative.Apple/vendor/libyoga.a | tee -a ios-out/yoga-build.txt
           # Evidence: the Yoga C-API symbols are present in the archive.
