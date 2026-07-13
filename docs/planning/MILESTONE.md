@@ -1,184 +1,111 @@
-# Milestone 5 — P4: Full Platform Coverage
+# Milestone 6 — Real-UI Foundation: Layout + Scroll + Image
 
-**Status:** ✅ complete — opened 2026-07-12, closed 2026-07-13, tagged `v5.0` ([final audit](../plans/2026-07-13-milestone-5-final-audit.md): PASS, all 8 DoD criteria)
-**Source:** maps to BACKLOG.md "P4 — Full platform coverage" (scoped subset — see below)
-**Predecessor:** Milestone 4 — complete 2026-07-12, tagged `v4.0` ([final audit](../plans/2026-07-12-milestone-4-final-audit.md): PASS, all 8 DoD criteria)
-
-## Closure (2026-07-13, Phase 5.5)
-
-**M5 complete — all 8 DoD criteria PASS** ([final audit](../plans/2026-07-13-milestone-5-final-audit.md);
-[Phase 5.5 conclusion](../plans/2026-07-13-phase-5.5-conclusion.md)). Two native
-platforms in fact: the same `BnDemo` runs interactively on the **iOS simulator**
-(Swift/UIKit over a NativeAOT static `.a`) and the **Android AVD** (Kotlin/JNA over a
-bionic `.so`), from one runtime and one nine-export C-ABI. Counts at close (all
-CI-asserted): **.NET 230 / JVM 79 / Android 40 / iOS XCTest 13**; version
-`1.4.0-phase-5.4`; ABI 9 exports + the 72-byte 9-callback size-negotiated bridge.
-Tag command for the controller (post-merge on main):
-`git tag -a v5.0 -m "Milestone 5: P4 — Full Platform Coverage complete"`.
-
-Two docs-only honesty fixes applied in the close gate (flagged in the audit): DoD #4's
-"two-job" wording → **"single job"** (the shipped `ios.yml` publishes AND tests on one
-macOS runner), and DoD #6's iOS-XCTest count string → **13** (the shipped `ios.yml`
-asserts 13; the "12" prose predated commit `c9ac4f2`'s struct-drift pin). CI is the
-ground truth in both cases.
+**Status:** in progress — opened 2026-07-13
+**Source:** the 2026-07-13 roadmap re-plan (capability before ecosystem) — the layout
+engine the original P0–P7 list never had; the #1 gap between "proven POC" and "usable
+framework" per the React-Native comparison.
+**Predecessor:** Milestone 5 — complete 2026-07-13, tagged `v5.0` ([final audit](../plans/2026-07-13-milestone-5-final-audit.md): PASS, all 8 DoD criteria)
 
 ## Goal
 
-M4 made the project shippable and public. M5 makes it *cross-platform in fact, not in
-architecture diagrams*: the same dll-per-platform design running the two-page demo on
-the **iOS simulator** in CI, the Android shell handling real app lifecycle
-(host-initiated events — the `NativeEvents` fork the Phase 4.2 triage routed here),
-and the first cross-platform host APIs proving the bridge-extension pattern.
+M5 proved the architecture on two platforms. M6 makes it *build real screens*: a real
+flexbox **layout engine** (there is only vertical stacking today), plus the two stubbed
+leaf types — **scrolling** and **URL images** — filled in. After M6 a developer can lay
+out a genuine multi-element screen (rows, columns, grow/shrink, wrap, alignment) that
+scrolls and shows remote images, rendering identically on Android and iOS from one
+runtime.
 
-Scope boundaries decided at milestone-open (2026-07-12):
+## The architecture decision (2026-07-13 brainstorm)
 
-- **iOS without Mac hardware**: free public-repo GitHub macOS runners (Apple Silicon,
-  Xcode preinstalled); **simulator-only** (no signing, no Apple Developer account —
-  device + App Store validation deferred until an account exists, recorded honestly);
-  **spike-first** (a feasibility RED reshapes the milestone early). The iOS inner loop
-  is CI-only — minutes per cycle — so phase designs push all platform-neutral
-  verification to the existing fast surfaces (win-x64 / JVM / .NET tests).
-- **Android completeness = the host-initiated events cluster only** (lifecycle,
-  predictive back, deep links). FCM push and secure-storage hardening stay in BACKLOG
-  (M6/M7).
-- **Cross-platform APIs = clipboard + share only** — permission-free, both platforms;
-  the deliverable is the *documented bridge-extension pattern*, not API breadth.
+**Yoga (C++, Facebook's flexbox engine) linked into both shells** — the React Native
+model. Android via JNI/JNA, iOS via Yoga's C-API (the same interop the shells already
+use for the NativeAOT runtime). Rationale: flexbox must **measure leaf content** (text,
+images) to lay out, and measurement is inherently platform-specific (font metrics), so
+layout cannot live purely in the .NET core — Yoga's native measure callback is the
+designed solution, and one C++ library serves both platforms (measurement "just works").
+
+**Key consequence — no C-ABI change.** Flex properties ride the *existing* `SetStyle`
+wire as new style keys; the layout computation is entirely shell-local (the shell builds
+a Yoga node tree mirroring the view tree, applies flex props, measures leaves natively,
+computes, and places views at computed frames). The renderer stays thin. The ABI stays
+at **9 exports + the 72-byte 9-callback bridge** — this is a shell + component-params
+change, not an ABI evolution. The shell's placement model changes from
+"stack in a `LinearLayout`/`UIStackView`" to "Yoga computes frames, apply to a plain
+container."
 
 ## Definition of Done
 
-Initial M5 contract drafted at milestone-open. Subject to refinement during the
-Phase 5.0 brainstorm — and explicitly subject to the Phase 5.0 spike verdict.
+Initial M6 contract drafted at milestone-open. Subject to refinement during the
+Phase 6.0 brainstorm — and explicitly subject to the Phase 6.0 Yoga-integration spike
+verdict.
 
-1. **iOS feasibility spike verdict committed.** A time-boxed spike on a free macOS
-   runner proves (or refutes) that .NET 10 NativeAOT produces a linkable
-   iOS-simulator artifact carrying the `blazornative_*` C-ABI (symbol
-   dump as evidence; device `ios-arm64` probed secondarily). A RED comes with a
-   documented fallback decision, and the milestone re-scopes — this criterion passes
-   with EITHER verdict; what it demands is the *committed evidence*. ✅ **CLOSED
-   2026-07-12 (Phase 5.0): GREEN** — the runtime-pack bypass produces a linkable
-   `.dylib` for `iossimulator-arm64` AND `ios-arm64` with all `blazornative_*` exports;
-   link probe builds a simulator executable; the runtime boots on the simulator via the
-   C-ABI (bonus). Fallback not triggered. See [spike conclusion](../plans/2026-07-12-phase-5.0-spike-conclusion.md).
-2. **Swift shell boots and renders.** The Kotlin shell's Swift twin (bindings, frame
-   adapter, widget mapper over native views) boots the dll on the CI simulator and
-   renders BnDemo's widget tree.
-   ✅ **CLOSED 2026-07-12 (Phase 5.2): GREEN** — a Swift/UIKit shell
-   (`BnFrameAdapter` at the pinned 48/24-byte offsets, `BnWidgetMapper` over
-   `UIStackView`/`UILabel`/`UIButton`/`UITextField`, `BnRuntime`'s singleton-routed
-   `@convention(c)` callback) boots the NativeAOT **static `.a`** and renders
-   BnDemo; a hosted **XCTest** asserts the real `UIView` tree (6 arranged subviews
-   in order, mid-list echo panel at index 2, `#FFEEAA`, button titles, title
-   fontSize 24). The link discovery — `bootstrapperdll.o` direct-link + `-force_load`
-   the app `.a` + a merged on-demand support archive + the spike frameworks — is the
-   foundation 5.3/device inherit. See [conclusion](../plans/2026-07-12-phase-5.2-conclusion.md).
-3. **Two-page demo parity on the simulator** — the headline: bound input + live echo,
-   button events, cascading theme, and Settings ⇄ Back navigation, all on the iOS
-   simulator, mirroring the Android v3.0 bar.
-   ✅ **CLOSED 2026-07-12 (Phase 5.3): GREEN** — the interactive two-page BnDemo runs
-   on the iOS simulator, reaching the Android v3.0 bar. A serial dispatch lane crosses
-   taps to `blazornative_dispatch_event`; `BnWidgetMapper` wires `AttachEvent` to
-   UIControl targets; `AppleShellBridge` supplies all 6 `@convention(c)` callbacks
-   (navigate/current-route real via the -needed protocol, storage/fetch honest stubs),
-   registered before mount. The `@bind` write-back needs no re-entrancy guard (UIKit
-   doesn't fire `.editingChanged` on a programmatic set — the loop can't form). The
-   interactive hosted XCTests (2 → 9) prove bound input + live echo (the `héllo→世界`
-   UTF-8 leg, input not clobbered), Clear, cascading theme (both directions), and
-   Settings⇄Back (fresh remount) on the simulator. **Swift + `ios.yml` only — zero
-   shared change** (version stays `1.3.0-phase-5.1`; .NET 220 / JVM 78 / Android 38
-   untouched). See [conclusion](../plans/2026-07-12-phase-5.3-conclusion.md).
-4. **iOS CI lane.** A macOS single-job workflow (publish + simulator tests on one
-   runner — corrected from the initial "two-job" estimate in the Phase 5.5 audit; iOS
-   publishes AND tests on macOS, unlike Android's Windows-publish/Linux-test split),
-   informational-first with promotion criteria, mirroring the Android emulator lane's
-   posture.
-   ✅ **CLOSED 2026-07-12 (Phase 5.2): GREEN** — `.github/workflows/ios.yml` on
-   `macos-latest`. **Single job** (deviation from the "two-job" estimate: iOS both
-   publishes AND tests on macOS, unlike Android's Windows-publish/Linux-test split):
-   publish `-r iossimulator-arm64` (assert 4 IL2072) → `nm -gU` asserts the 9
-   `blazornative_*` exports → XcodeGen + `xcodebuild test` on a runner-selected sim →
-   assert **2 passed / 0 failed** (render pin + wire-drift guard). **INFORMATIONAL**
-   (not required) with promotion criteria (≈10 consecutive green runs → promotable),
-   mirroring `android-instrumented.yml`; `workflow_dispatch` + `pull_request` (iOS
-   paths). The 5.0 `ios-spike.yml`/`ios-spike-verify.sh`/`spikes/ios-aot-probe/` are
-   retired (superseded). See [conclusion](../plans/2026-07-12-phase-5.2-conclusion.md).
-5. **Host-initiated events land (Android + .NET).** The `NativeEvents` redesign:
-   lifecycle (`onPause`/`onResume`/`onDestroy`) flows into .NET as native events;
-   predictive back triggers navigation-back; a deep link resolves to the startup
-   route — proven on the AVD. Closes the 4.2-triaged fork (issue trail updated).
-   ✅ **CLOSED 2026-07-12 (Phase 5.1): GREEN** — a 9th C-ABI export
-   `blazornative_host_event` fires the *real* `NativeShellBridge.NativeEvents`
-   (the 3.2 no-op retired); Android lifecycle → events; predictive back
-   (`OnBackInvokedCallback` → the reserved "back" host event, mapped to
-   `NavigateBackAsync` in .NET, rc 1 = at-root → finish) → navigation-back
-   (previous-route slot); a `blazornative://` deep link → startup route
-   (BnSettingsPage at launch) — all live on the AVD (API 34). The `NativeEvents`
-   fork from the 4.2 triage is closed. .NET 220 / JVM 78 / Android 38; version
-   `1.3.0-phase-5.1`. See [conclusion](../plans/2026-07-12-phase-5.1-conclusion.md).
-6. **Clipboard + share on both platforms**, with the bridge-extension pattern
-   documented (how a new host API joins the C-ABI: struct slot vs new callback,
-   versioning posture, per-platform impl shape). **Closed (Phase 5.4):** the bridge
-   grew 6→9 callbacks (clipboard read/write + share) through a **size-negotiated**
-   `register_bridge` (leading `structSize`, min-copy + zero-fill + clamp,
-   null-slot = `NotSupportedException`) — forward/backward-compatible, not a raw
-   lockstep edit. Clipboard is real on both platforms (`ClipboardManager` /
-   `UIPasteboard`); share is real (`ACTION_SEND` / `UIActivityViewController`),
-   asserted at the callback-content bar via a capture seam (the system UI is not
-   assertable). The pattern is documented in
-   [docs/bridge-extension.md](../bridge-extension.md) — the M6+ recipe for
-   camera/geo/etc. .NET 230 / JVM 79 / Android 40 / iOS XCTest 13 (the shipped
-   `ios.yml` baseline — the "12" in the 5.4 conclusion predated the `bn_bridge_callbacks`
-   struct-drift pin `c9ac4f2`; reconciled in the Phase 5.5 audit); version
-   `1.4.0-phase-5.4`; exports unchanged at 9. See
-   [conclusion](../plans/2026-07-12-phase-5.4-conclusion.md).
-7. **Every new surface is CI-asserted.** Test counts recorded and asserted at each
-   phase close (the M4 discipline continues); the iOS lane's counts join them when
-   the lane stabilizes.
-8. **Decision log committed.** Design + plan + conclusion per phase, plus the M5
-   final audit at close → tag `v5.0`.
+1. **Yoga-integration spike verdict committed.** A named-risk-first spike (M5-style)
+   proves (or refutes) that Yoga links cleanly into BOTH shells alongside the NativeAOT
+   runtime (Android bionic + iOS static `.a`) and that the native measure-callback
+   round-trip works (a text leaf's intrinsic size drives a minimal flex layout). A RED
+   comes with a documented fallback (managed flexbox / native-layout mapping) and the
+   milestone re-scopes — this passes with EITHER verdict; what it demands is committed
+   evidence.
+2. **Flexbox layout on both platforms.** Flex props (`flexDirection`, `justifyContent`,
+   `alignItems`, `alignSelf`, `flexGrow`/`flexShrink`/`flexBasis`, `flexWrap`, `gap`,
+   absolute positioning, width/height) ride `SetStyle`; the shell runs Yoga; a flex demo
+   (row + column + grow + wrap + alignment) lays out **identically** on the AVD and the
+   iOS simulator (asserted structurally against computed frames).
+3. **Native measurement.** Text (and image) leaves are measured via Yoga's measure
+   callback using real platform font/image metrics, so intrinsic content sizes drive
+   layout (a long label wraps/sizes correctly).
+4. **Real scrolling.** The `scroll` NodeType (stubbed today) → `ScrollView` /
+   `UIScrollView`; content taller than the viewport scrolls on both platforms, with Yoga
+   laying out the scroll content.
+5. **URL images.** The `image` NodeType (stubbed today) → async URL load into
+   `ImageView` / `UIImageView` on both platforms, measured by Yoga (intrinsic/explicit
+   size).
+6. **Flex container components.** `BnView` gains flex parameters; `BnRow`/`BnColumn`/
+   `BnStack` ship as thin wrappers; a layout-demo component (registry scaffolding) is the
+   cross-platform proof surface.
+7. **Every new surface is CI-asserted.** Test counts recorded/asserted at each phase
+   close (the M4-onward discipline); the layout/scroll/image demos asserted on all
+   surfaces (.NET frames, JVM, Android instrumented, iOS XCTest).
+8. **Decision log committed.** Design + plan + conclusion per phase, plus the M6 final
+   audit at close → tag `v6.0`.
 
 ## Out of scope for this milestone
 
-- Real-device iOS, code signing, App Store validation — needs an Apple Developer
-  account; deferred with the simulator-only honesty note
-- FCM / push notifications, secure-storage hardening — M6/M7 per BACKLOG
-- Cross-platform APIs beyond clipboard + share (camera, geolocation, biometrics,
-  purchases, background tasks) — M6+
-- nuget.org publication — still deferred (M6, PackageReadmeFile prerequisite)
-- The M6 packaging/ecosystem ledger — untouched
+- `.razor` compilation + the broader component library (virtualized list, modal, form
+  controls) — Milestone 7
+- nuget.org publication, CLI, docs site — Milestone 8
+- Camera/geolocation/biometrics/notifications, real-device iOS — Milestone 9
+- Accessibility, i18n, perf/security hardening — Milestone 10
+- CSS/stylesheet parsing, animations, gestures beyond tap/change/focus — later (M7/M10)
+- Grid layout (`display:grid`) — flexbox only this milestone
 
-## Inherited from M4
+## Inherited from prior milestones
 
-- **NativeEvents redesign** (4.2 triage → M5) — covered by DoD #5; **closed
-  (Phase 5.1)**: `NativeShellBridge.NativeEvents` is a real multicast fired by the
-  9th export `blazornative_host_event`, BN0014 now guards the live contract.
-- **Host-initiated navigation** (M3 audit carryover) — covered by DoD #5 (predictive
-  back + deep links ARE host-initiated navigation).
-- **On-device inspector channel** (4.4 carryover) — NOT pulled in; stays ledgered
-  (revisit after the iOS lane exists; a cross-platform diagnostics channel is
-  M6-shaped).
-- **Open hardening issues #8/#9/#12/#13** — stay open per the 4.2 triage doc (ledger
-  of record); revisit triggers unchanged.
+- **The `image`/`scroll` NodeTypes** — wired in the mapper switch since Phase 2.5 but
+  unexercised (survey-noted); M6 makes them real (DoD #4/#5).
+- **Stringly `FontSize`/`Padding`** (M4 ledger) — flex props join them as style keys;
+  the typed-props cleanup stays M7 (component library) unless cheap here.
+- **Open hardening issues #8/#9/#12/#13** — unchanged; the TranslateToViewIndex/
+  RemoveComponent perf items (#12/#13) may be *touched* by the placement-model change
+  (Yoga owns placement now) — reassess at the relevant phase, re-ledger if not closed.
 
 ## Initial phase plan
 
 Tracked in `ROADMAP.md`. Approved at milestone-open:
 
-- **Phase 5.0** — iOS feasibility spike (DoD #1) — *the named risk, verified first*
-- **Phase 5.1** — Host-initiated events: lifecycle + back + deep links (DoD #5)
-- **Phase 5.2** — Swift shell foundation: boot + tree render on simulator (DoD #2, #4)
-- **Phase 5.3** — Swift shell interactivity: events + bridge + navigation parity (DoD #3)
-- **Phase 5.4** — Clipboard + share + the bridge-extension pattern (DoD #6)
-- **Phase 5.5** — M5 final audit + close (DoD #7, #8) → `v5.0`
+- **Phase 6.0** — Yoga-integration spike (DoD #1) — *the named risk, verified first (both shells)*
+- **Phase 6.1** — Flexbox layout core: flex props + the shell Yoga pass + the flex demo (DoD #2, #3, #6)
+- **Phase 6.2** — Real scrolling on both platforms (DoD #4)
+- **Phase 6.3** — URL images on both platforms (DoD #5)
+- **Phase 6.4** — M6 final audit + close (DoD #7, #8) → `v6.0`
 
-Sequencing rationale: the spike's verdict gates everything iOS; 5.1 is local-iteration
-Android work that proceeds regardless; 5.2/5.3 ride the spike's learnings; the API
-phase lands last so it extends a settled two-platform bridge.
+Sequencing: the spike gates the whole approach; 6.1 is the engine (the big phase); 6.2/6.3
+fill the two leaf types on top of the working engine; 6.4 audits and tags.
 
 ## Why this milestone exists
 
-The architecture has claimed "per-platform NativeAOT + thin native shell" since M3 —
-with exactly one shell. A second platform is the only honest test of that claim: it
-forces the C-ABI to prove it's actually the portable seam, surfaces every
-Android-shaped assumption in the renderer contract, and turns the bridge from "the
-thing the Kotlin shell does" into a specified, extensible pattern. Doing it
-simulator-first on free CI keeps the cost of being wrong small.
+The architecture is proven, but you cannot build a real UI with vertical stacking and
+three style props. A flexbox layout engine is the foundation every component and every
+real screen sits on — it is the single thing most separating BlazorNative from a usable
+framework. Doing it now, before the ecosystem/packaging work (M8), means what eventually
+ships is a framework you can actually build with, not a toy that packages cleanly.

@@ -46,6 +46,27 @@ targets:
         GENERATE_INFOPLIST_FILE: NO
         ENABLE_TESTABILITY: YES
         SWIFT_OBJC_BRIDGING_HEADER: BnHost/BlazorNativeRuntimeC.h
+        # Phase 6.0 Yoga spike: the app links Yoga's static lib (built from source by
+        # ios.yml) ALONGSIDE the runtime .a — the coexistence proof. libyoga.a is
+        # appended to OTHER_LDFLAGS below (C++, so the existing -lc++ covers it).
+        #
+        # Yoga's headers are visible to ONE file: BnYogaProbe.mm (Objective-C++), an
+        # ordinary Clang compile that HEADER_SEARCH_PATHS reaches. They are deliberately
+        # NOT visible to Swift: the Swift explicit-module dependency SCANNER processes
+        # the bridging header with a path-less search that honours neither
+        # HEADER_SEARCH_PATHS nor `-Xcc -I` (via OTHER_SWIFT_FLAGS), so an
+        # `#include <yoga/Yoga.h>` reachable from it fails with "file not found" during
+        # scanning. So Swift sees only plain C: BnYogaProbe.h (a SHELL-owned header —
+        # deliberately NOT the runtime C-ABI mirror) declares bn_yoga_result /
+        # bn_yoga_compute_flex_row / bn_yoga_warm_up, BnYogaProbe.mm implements them,
+        # and the bridging header includes it. Same plain-C discipline the shell already
+        # uses for the NativeAOT runtime.
+        HEADER_SEARCH_PATHS:
+          - $(inherited)
+          - $(SRCROOT)/vendor/yoga-include
+        # Yoga 3.x is a C++20 codebase — its headers do not compile at Xcode's default
+        # standard, so the .mm that includes them needs c++20.
+        CLANG_CXX_LANGUAGE_STANDARD: c++20
         # Link the NativeAOT static runtime. A NativeLib=Static .a carries ONLY
         # the compiled managed->native app code — NOT the NativeAOT runtime
         # bootstrapper/GC (_Rh*) or the platform native support libs
@@ -73,6 +94,9 @@ targets:
           - -force_load
           - $(SRCROOT)/vendor/libBlazorNative.Runtime.a
           - $(SRCROOT)/vendor/libBnRuntimeSupport.a
+          # Phase 6.0 Yoga spike: the C++ flexbox engine, linked alongside the
+          # runtime archives (coexistence proof). -lc++ (below) covers its C++ runtime.
+          - $(SRCROOT)/vendor/libyoga.a
           - -lc++
           - -lz
           - -licucore

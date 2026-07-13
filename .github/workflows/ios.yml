@@ -53,6 +53,8 @@ env:
   DOTNET_NOLOGO: true
   DOTNET_CLI_TELEMETRY_OPTOUT: true
   RID: iossimulator-arm64
+  # Phase 6.0 Yoga spike: the pinned Yoga version (built from source for the sim).
+  YOGA_VERSION: 3.2.1
 
 jobs:
   ios:
@@ -204,6 +206,64 @@ jobs:
           xcrun libtool -static -o src/BlazorNative.Apple/vendor/libBnRuntimeSupport.a "${support[@]}"
           echo "Staged → vendor/libBnRuntimeSupport.a"
 
+      # ── Phase 6.0 Yoga spike: build libyoga.a from source for the simulator ────
+      # Yoga is C++/C-API. Build its static lib the same way the runtime .a is
+      # embedded (the M5 recipe): compile every yoga/**/*.cpp with the simulator
+      # SDK clang++ (C++20 — Yoga 3.x requires it), then libtool -static. Stage the
+      # headers so <yoga/Yoga.h> resolves for BnYogaProbe.mm — the ONE file that sees
+      # them (Swift must not: its module scanner cannot resolve them; see project.yml).
+      # The app links libyoga.a alongside the runtime .a — the coexistence proof.
+      - name: "Yoga: build libyoga.a (v${{ env.YOGA_VERSION }}) for iossimulator-arm64"
+        run: |
+          set -euo pipefail
+          curl -sSL "https://github.com/facebook/yoga/archive/refs/tags/v${YOGA_VERSION}.tar.gz" -o yoga-src.tgz
+          tar xzf yoga-src.tgz
+          yroot="yoga-${YOGA_VERSION}"
+          [ -f "$yroot/yoga/Yoga.h" ] || { echo "Yoga.h not found under $yroot/yoga" >&2; ls -la "$yroot" || true; exit 1; }
+          sdk=$(xcrun --sdk iphonesimulator --show-sdk-path)
+          mkdir -p yoga-obj
+          count=0
+          while IFS= read -r cpp; do
+            obj="yoga-obj/$(echo "$cpp" | tr '/.' '__').o"
+            xcrun -sdk iphonesimulator clang++ -arch arm64 -isysroot "$sdk" \
+              -mios-simulator-version-min=13.0 -std=c++20 -O2 -fPIC \
+              -I"$yroot" -c "$cpp" -o "$obj"
+            count=$((count+1))
+          done < <(find "$yroot/yoga" -name '*.cpp' | sort)
+          echo "Compiled $count Yoga translation units" | tee ios-out/yoga-build.txt
+          [ "$count" -gt 0 ] || { echo "no Yoga .cpp compiled" >&2; exit 1; }
+          xcrun libtool -static -o src/BlazorNative.Apple/vendor/libyoga.a yoga-obj/*.o
+          # Stage headers so HEADER_SEARCH_PATHS=vendor/yoga-include resolves <yoga/*.h>.
+          mkdir -p src/BlazorNative.Apple/vendor/yoga-include
+          cp -R "$yroot/yoga" src/BlazorNative.Apple/vendor/yoga-include/yoga
+          # Drop Yoga's bundled module.modulemap: with it present, Clang's
+          # explicit-module scanner tries to build a `yoga` MODULE and fails to resolve
+          # the module's own headers ('yoga/Yoga.h' not found). Removing it forces plain
+          # TEXTUAL includes via HEADER_SEARCH_PATHS (the proven path — the runtime
+          # C-ABI header is textual too).
+          rm -f src/BlazorNative.Apple/vendor/yoga-include/yoga/module.modulemap
+          ls -la src/BlazorNative.Apple/vendor/libyoga.a | tee -a ios-out/yoga-build.txt
+          file src/BlazorNative.Apple/vendor/libyoga.a | tee -a ios-out/yoga-build.txt
+          # ASSERT (not just observe — house style, same shape as the 9-export check
+          # above): the Yoga C-API symbols the probe calls must be defined in the
+          # archive. A silent `|| true` here would let a header-only/empty libyoga.a
+          # sail through and only fail later at link time, far from the cause.
+          echo "=== nm -gU (YGNode*) ===" | tee -a ios-out/yoga-build.txt
+          # `|| true` on the EXTRACTION only (no matches must not kill the step before
+          # the assertion below can name what is missing); the assertion itself is hard.
+          ysyms=$(nm -gU src/BlazorNative.Apple/vendor/libyoga.a 2>/dev/null \
+            | grep -Eo '_?YGNode[A-Za-z]+' | sed 's/^_//' | sort -u || true)
+          echo "$ysyms" | grep -E '^YGNode(New|CalculateLayout|SetMeasureFunc)$' | tee -a ios-out/yoga-build.txt || true
+          ymissing=()
+          for s in YGNodeNew YGNodeCalculateLayout YGNodeSetMeasureFunc; do
+            echo "$ysyms" | grep -qx "$s" || ymissing+=("$s")
+          done
+          if [ "${#ymissing[@]}" -ne 0 ]; then
+            echo "libyoga.a is missing Yoga C-API symbols: ${ymissing[*]}" >&2
+            exit 1
+          fi
+          echo "SYMBOLS: the Yoga C-API entry points are present in libyoga.a."
+
       # ── Generate the Xcode project from project.yml ──────────────────────────
       - name: Install XcodeGen
         run: brew install xcodegen
@@ -256,7 +316,7 @@ jobs:
             > ios-out/xcresult.json 2>/dev/null || true
           ls -la ios-out/crash || true
 
-      - name: Assert XCTest baseline (13 passed / 0 failed)
+      - name: Assert XCTest baseline (14 passed / 0 failed)
         if: always()
         run: |
           log=ios-out/xcodebuild-test.log
@@ -270,10 +330,11 @@ jobs:
           # Phase 5.4 Gate 3 adds BnClipboardTests ×3 (ClipboardProbe Copy→Paste→
           # echo, the direct UIPasteboard round-trip, the share-hook seam) → 12; and
           # the bn_bridge_callbacks struct drift pin (BnDriftTests, the third mirror
-          # of the 72-byte bridge struct) → 13. Count drift fails loudly.
-          if [ "$failed" -ne 0 ] || [ "$passed" -ne 13 ]; then
+          # of the 72-byte bridge struct) → 13; Phase 6.0 adds BnYogaTests ×1 (the
+          # Yoga flex-row + measure-callback spike proof) → 14. Count drift fails loudly.
+          if [ "$failed" -ne 0 ] || [ "$passed" -ne 14 ]; then
             grep -E "Test Case '.*' (passed|failed)" "$log" || true
-            echo "iOS XCTest baseline drift: expected 13 passed / 0 failed, got passed=$passed failed=$failed" >&2
+            echo "iOS XCTest baseline drift: expected 14 passed / 0 failed, got passed=$passed failed=$failed" >&2
             exit 1
           fi
 
