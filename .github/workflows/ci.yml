@@ -3,7 +3,7 @@
 # rides on. Single windows-latest job mirroring the local verification
 # procedure verbatim (setup.ps1 §1–7 documents the toolchain pins):
 #
-#   build (analyzers ride it) → .NET tests (289 passed / 0 skipped) →
+#   build (analyzers ride it) → .NET tests (292 passed / 0 skipped) →
 #   three NativeAOT publishes (win-x64, linux-bionic-x64, linux-bionic-arm64;
 #   each publish must show exactly the 4 accepted IL2072 trim warnings) →
 #   nine-export verification (dumpbin via vswhere / llvm-readelf from the
@@ -179,9 +179,16 @@ jobs:
       # build-test lane because that is the only one where .NET, Kotlin and (soon) the
       # .mm are all checkout-visible — neither shell lane can see the other's source.
       #
+      # 289 -> 292 (Phase 6.1 Gate 3, +3): the THIRD mirror lands, and the same file
+      # pins it — BnYogaLayout.mm's `kYogaStyles` gets its own set-equality and
+      # disjointness arms, plus a direct Kotlin-vs-.mm equality (the sentence DoD #2
+      # actually rests on: a name one shell honours and the other drops makes the two
+      # frame tables disagree, and the failure reads as "the engine is broken").
+      #
       # Nothing Kotlin-side moved on the JVM rung: the JVM baseline below stays 79.
-      # (The Android instrumented suite is 52 -> 71 — its own lane asserts that.)
-      - name: .NET tests (assert 289 passed / 0 skipped)
+      # (The Android instrumented suite is 52 -> 71 — its own lane asserts that; the
+      # iOS XCTest suite is 14 -> 26 — ios.yml asserts that.)
+      - name: .NET tests (assert 292 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -192,8 +199,8 @@ jobs:
           $passed  = ($summaries | ForEach-Object { [int]$_.Matches[0].Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($summaries | ForEach-Object { [int]$_.Matches[0].Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($summaries.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 289 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 289 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 292 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 292 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # ── NativeAOT publishes + nine-export verification ────────────────────

@@ -1,8 +1,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // BnWidgetMapper — Phase 5.2 (M5 DoD #2): maps decoded [BnFrame] patches to real
 // UIKit view mutations. The imperative UIKit twin of the Android
-// io.blazornative.shell.WidgetMapper — UIStackView ↔ LinearLayout, UILabel ↔
-// TextView, UIButton ↔ Button, UITextField ↔ EditText.
+// io.blazornative.shell.WidgetMapper — UILabel ↔ TextView, UIButton ↔ Button,
+// UITextField ↔ EditText.
 //
 // Threading (design §2): `apply(frame)` runs on the native frame-callback thread.
 // The mapper BUFFERS patches until the CommitFrame patch, then hops to
@@ -10,18 +10,40 @@
 // twin of the Kotlin mainHandler.post(applyBatch) batch. Every frame ends with a
 // CommitFrame patch. UIKit is main-thread-only, so ALL view work happens there.
 //
-// Node identity: an [Int32: UIView] registry (`nodes`). The Phase 2.8 text
-// collapse aliases a text child's nodeId onto its text-bearing parent (a
-// UILabel/UIButton/UITextField, i.e. a non-container), so a subsequent
-// ReplaceText routes through the parent's title/text — mirroring Android's
-// TextView-but-not-ViewGroup collapse. RemoveNode purges by IDENTITY (=== ), not
-// key, because the collapse can alias several ids onto one view.
+// Node identity: an [Int32: UIView] registry (`views`) alongside an
+// [Int32: bn_yoga_node] one (`yogaNodes`). The Phase 2.8 text collapse aliases a
+// text child's nodeId onto its text-bearing parent (a UILabel/UIButton/
+// UITextField), so a subsequent ReplaceText routes through the parent's
+// title/text — mirroring Android's TextView-but-not-ViewGroup collapse.
 //
-// Scope: CreateNode (view/text/button/input wired; image/scroll/picker → a
-// placeholder UIView + log, to keep container indices consistent), ReplaceText,
-// RemoveNode, UpdateProp(value/placeholder), SetStyle(backgroundColor/fontSize/
-// padding), CommitFrame. Phase 5.3 wires AttachEvent/DetachEvent to UIControl
-// targets (the 4 BnDemo events 5.2 skipped) via the `onUiEvent` seam.
+// ── PHASE 6.1: YOGA OWNS PLACEMENT ───────────────────────────────────────────
+// This class no longer stacks anything. `view` is a plain UIView (the UIStackView
+// — and with it `insertArrangedSubview` and the layout-margins padding — is GONE);
+// every node gets a Yoga node mirrored against the view tree; CommitFrame runs ONE
+// `bn_yoga_calculate` and assigns every computed frame. An un-styled tree still
+// renders as a vertical stack — that is Yoga's default `flexDirection: column`,
+// not a UIStackView, and it is the regression signal that the ENGINE changed and
+// the BEHAVIOUR did not.
+//
+// The three invariants this class exists to hold:
+//
+//   1. **The Yoga tree mirrors the VIEW tree, not the patch tree.** A collapsed
+//      text node gets no view — and therefore NO YOGA NODE, or the two trees'
+//      child indices skew and every frame after it is wrong.
+//   2. **The measure func attaches BY NODETYPE** ([measuredNodeTypes]) — never by
+//      "this node has no children". BnLayoutDemo's row is three CHILDLESS `view`s,
+//      and a measure func on them would let a UIView's intrinsic size speak over
+//      Yoga, destroying the `Grow=1` box's computed 200.
+//   3. **[handleSetStyle] is a ROUTER over the partitioned allow-list.** A LAYOUT
+//      name (`bn_yoga_is_layout_style` — the mirror of
+//      `NativeRenderer.YogaStyleAttributes`) goes to the Yoga node and NOWHERE
+//      else. In particular `padding` no longer touches `layoutMargins`: Yoga lays
+//      a container's children out inside its padding box, and a surviving view-level
+//      inset would apply it a second time.
+//
+// And the Yoga node is a RAW native allocation: nothing will ever free it for you.
+// [handleRemove] purges whole subtrees (one RemoveNodePatch stands for one) and
+// [deinit] drops the tree — every navigation replaces it.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import UIKit
@@ -35,6 +57,43 @@ final class BnControlTarget: NSObject {
     @objc func fire() { handler() }
 }
 
+// ── The native measurement callback (DoD #3) ─────────────────────────────────
+
+/// Yoga's measure func → `UIView.sizeThatFits`. A `@convention(c)` function CANNOT
+/// capture, so the node's identity travels in the `void*` context: an UNRETAINED
+/// UIView pointer (the view is owned by the mapper's registry and its superview,
+/// and `bn_yoga_node_free_subtree` clears the measure func before either lets go).
+/// The same constraint the runtime's frame callback lives under.
+///
+/// The mode mapping is the design's: `Exactly` → the imposed size, verbatim;
+/// `AtMost` → fit within it; `Undefined` → no constraint at all, i.e.
+/// `.greatestFiniteMagnitude` (which is how a UILabel is asked "how tall are you
+/// if you may wrap freely?").
+private let bnYogaMeasureTrampoline: bn_yoga_measure_fn = { context, width, widthMode, height, heightMode in
+    guard let context = context else { return bn_yoga_size(width: 0, height: 0) }
+    let view = Unmanaged<UIView>.fromOpaque(context).takeUnretainedValue()
+    let fit = view.sizeThatFits(CGSize(
+        width: bnMeasureConstraint(width, widthMode),
+        height: bnMeasureConstraint(height, heightMode)))
+    return bn_yoga_size(
+        width: bnMeasureResolve(Float(fit.width), width, widthMode),
+        height: bnMeasureResolve(Float(fit.height), height, heightMode))
+}
+
+/// What to ASK the view for, per mode.
+private func bnMeasureConstraint(_ value: Float, _ mode: bn_yoga_measure_mode) -> CGFloat {
+    if mode == bn_yoga_measure_undefined || value.isNaN { return .greatestFiniteMagnitude }
+    return CGFloat(value)
+}
+
+/// What to TELL Yoga, per mode: an imposed size is returned unchanged; an at-most
+/// constraint clamps the measurement; an unconstrained axis reports the measurement.
+private func bnMeasureResolve(_ measured: Float, _ value: Float, _ mode: bn_yoga_measure_mode) -> Float {
+    if mode == bn_yoga_measure_exactly { return value }
+    if mode == bn_yoga_measure_at_most { return min(measured, value) }
+    return measured
+}
+
 final class BnWidgetMapper {
 
     /// UI-event seam (the Kotlin mapper's `onUiEvent` constructor arg): wired by
@@ -42,11 +101,38 @@ final class BnWidgetMapper {
     /// (5.2 tests) working. Called on the main thread from control targets.
     var onUiEvent: (_ handlerId: Int32, _ eventName: String, _ payload: String?) -> Void = { _, _, _ in }
 
-    /// The host container the top-level (parentless) node is added into — the
-    /// twin of Android's widget_root FrameLayout.
+    /// NODETYPES whose size is the native widget's business (DoD #3) — and the ONLY
+    /// nodes that get a measure function. NOT "the nodes with no children": a
+    /// childless `view` is a container (non-negotiable #6).
+    private static let measuredNodeTypes: Set<String> = ["text", "button", "input", "image"]
+
+    /// The host container the top-level (parentless) node is added into — the twin
+    /// of Android's widget_root. A plain UIView does not re-place its subviews (no
+    /// autoresizing mask is set, and `layoutSubviews` places nothing), so unlike
+    /// Android's FrameLayout it needs no layout-suppressing subclass: Yoga's frames
+    /// survive the framework's own pass. `BnLayoutDemoTests` pins that by asserting
+    /// the root column HUGS its content instead of filling the host.
     private let root: UIView
 
-    private var nodes: [Int32: UIView] = [:]
+    private var views: [Int32: UIView] = [:]
+    private var yogaNodes: [Int32: UnsafeMutableRawPointer] = [:]
+
+    /// The reverse of [views] for the nodes that own one — the lookup [markDirty]
+    /// needs, because a collapsed text node's ReplaceText must dirty its PARENT's
+    /// (the UIButton's) measure cache, and the only handle we have at that point is
+    /// the VIEW. Keyed by object identity.
+    private var viewToNode: [ObjectIdentifier: UnsafeMutableRawPointer] = [:]
+
+    /// The nodeIds that are ALIASES, not owners: a `text` node COLLAPSED onto its
+    /// text-bearing parent by [handleCreate]. It owns NO view and NO Yoga node, so
+    /// removing it must drop only the map entry — detaching the parent UIButton (or
+    /// removing "its" Yoga node, which is the button's) would be catastrophic.
+    private var collapsedAliases: Set<Int32> = []
+
+    /// The synthetic Yoga root: not a patch node, it IS the host view. Its children
+    /// mirror `root.subviews` (the top-level nodes).
+    private let hostRoot: UnsafeMutableRawPointer
+
     /// Patches accumulate here until a CommitFrame flushes the batch to main.
     /// Touched only on the callback thread before the main hop.
     private var pending: [BnPatch] = []
@@ -60,6 +146,14 @@ final class BnWidgetMapper {
 
     init(root: UIView) {
         self.root = root
+        self.hostRoot = bn_yoga_node_new()
+    }
+
+    deinit {
+        // The Yoga tree is RAW native memory owned by the .mm — nothing collects it.
+        // Freeing the host root frees every node still hanging off it (and clears
+        // their measure funcs, breaking the last edges to the UIViews).
+        bn_yoga_node_free_subtree(hostRoot)
     }
 
     // ── Buffer on the callback thread; flush atomically on the main queue ─────
@@ -91,7 +185,9 @@ final class BnWidgetMapper {
             case .setStyle(let nodeId, let property, let value):
                 handleSetStyle(nodeId: nodeId, property: property, value: value)
             case .commitFrame:
-                break // boundary marker; no-op here
+                // Phase 6.1: the frame boundary IS the layout trigger — ONE pass over
+                // the whole tree, then every computed frame assigned.
+                calculateAndApply()
             case .attachEvent(let nodeId, let eventName, let handlerId):
                 handleAttachEvent(nodeId: nodeId, eventName: eventName, handlerId: handlerId)
             case .detachEvent(let nodeId, _, let eventName):
@@ -100,19 +196,48 @@ final class BnWidgetMapper {
         }
     }
 
+    // ── The layout pass (Phase 6.1) ──────────────────────────────────────────
+
+    /// ONE `bn_yoga_calculate` over the whole tree, then a walk that assigns every
+    /// computed frame. Called at CommitFrame and on a host resize
+    /// (`HostViewController.viewDidLayoutSubviews`).
+    ///
+    /// Yoga's frames are PARENT-RELATIVE, and so is `UIView.frame` — and because the
+    /// two trees mirror each other node-for-node, a node's Yoga parent's view IS its
+    /// view's superview. So each frame is assigned directly; no tree walk, no
+    /// coordinate conversion, and **no rounding of our own** (the shared config has
+    /// Yoga's pixel-grid rounding OFF; see BnYogaLayout.mm's header — iOS must stay
+    /// exact and fractional or it disagrees with Android on measured content).
+    ///
+    /// A host with no bounds yet (a detached root — every synthetic-frame test, and
+    /// the first commit if it beats the first layout pass) sizes to CONTENT rather
+    /// than to zero: `bn_yoga_calculate` reads a non-positive available dimension as
+    /// `auto`.
+    func calculateAndApply() {
+        guard !yogaNodes.isEmpty else { return }
+        let bounds = root.bounds
+        bn_yoga_calculate(hostRoot, Float(bounds.width), Float(bounds.height))
+        for (nodeId, node) in yogaNodes {
+            guard let view = views[nodeId] else { continue }
+            let frame = bn_yoga_node_get_frame(node)
+            view.frame = CGRect(x: CGFloat(frame.x), y: CGFloat(frame.y),
+                                width: CGFloat(frame.width), height: CGFloat(frame.height))
+        }
+    }
+
     // ── AttachEvent/DetachEvent → UIControl targets (Phase 5.3) ───────────────
 
     /// Wires a control-event target that forwards to `onUiEvent`. NodeId resolution
     /// rides the text-collapse (twin of WidgetMapper.handleAttachEvent): the
     /// renderer attaches against the interactive element's OWN nodeId (e.g. the
-    /// button view, not its text child), so `nodes[nodeId]` is the real control.
+    /// button view, not its text child), so `views[nodeId]` is the real control.
     /// Last-wins: a re-attach for the same (node, event) removes the prior target
     /// before adding — no stacked dispatches.
     ///   click → UIButton .touchUpInside (payload nil)
     ///   change → UITextField .editingChanged (payload = current text)
     ///   focus/blur → UITextField .editingDidBegin/.editingDidEnd (payload nil)
     private func handleAttachEvent(nodeId: Int32, eventName: String, handlerId: Int32) {
-        guard let control = nodes[nodeId] as? UIControl else {
+        guard let control = views[nodeId] as? UIControl else {
             NSLog("[BnWidgetMapper] AttachEvent '\(eventName)' for node \(nodeId): not a UIControl — ignored")
             return
         }
@@ -172,55 +297,62 @@ final class BnWidgetMapper {
         }
     }
 
-    // ── CreateNode: build the view, honor the text collapse + mid-list insert ─
+    // ── CreateNode: build the view + its Yoga twin, honour the collapse ───────
 
     private func handleCreate(nodeId: Int32, nodeType: String, parentId: Int32?, insertIndex: Int32) {
-        // Text-child-of-non-container collapse (twin of WidgetMapper.handleCreate
-        // ~267-283): a `text` node whose parent is a text-bearing NON-container
-        // (UILabel/UIButton/UITextField) does not get its own view — alias its
-        // nodeId onto the parent so the subsequent ReplaceText sets the parent's
-        // title/text. UIStackView is the only container, so anything else is a
-        // collapse target.
-        if nodeType == "text", let pid = parentId, let rawParent = nodes[pid],
+        // Text-child-of-non-container collapse (twin of WidgetMapper.handleCreate):
+        // a `text` node whose parent is a text-bearing NON-container (UILabel/
+        // UIButton/UITextField) does not get its own view — alias its nodeId onto the
+        // parent so the subsequent ReplaceText sets the parent's title/text.
+        //
+        // Phase 6.1: it therefore gets NO YOGA NODE either. The Yoga tree mirrors the
+        // VIEW tree, not the patch tree — give this node one and the two trees' child
+        // indices skew from here on, and every frame after it is wrong.
+        if nodeType == "text", let pid = parentId, let rawParent = views[pid],
            isTextBearingNonContainer(rawParent) {
-            nodes[nodeId] = rawParent
+            views[nodeId] = rawParent
+            collapsedAliases.insert(nodeId) // it ALIASES the parent; it owns nothing
             return
         }
 
         let view: UIView = makeView(nodeType: nodeType)
-        nodes[nodeId] = view
+        views[nodeId] = view
 
-        let parent: UIView = parentId.flatMap { nodes[$0] } ?? root
-        if let stack = parent as? UIStackView {
-            // insertIndex counts arranged subviews 1:1 (collapsed text nodes never
-            // materialize a view, and they alias onto non-container parents, so
-            // they can't skew a stack's indices — same invariant as Android).
-            // -1 = append (explicit; 0 is a valid front index).
-            if insertIndex >= 0 && Int(insertIndex) <= stack.arrangedSubviews.count {
-                stack.insertArrangedSubview(view, at: Int(insertIndex))
-            } else {
-                stack.addArrangedSubview(view)
-            }
+        // insertIndex counts HOST views in the target container 1:1 (collapsed text
+        // nodes never materialize a view, and they alias onto non-container parents,
+        // so they cannot skew a container's indices — the same invariant as Android).
+        // -1 = append (explicit; 0 is a valid front index).
+        let parentView: UIView = parentId.flatMap { views[$0] } ?? root
+        if insertIndex >= 0 && Int(insertIndex) <= parentView.subviews.count {
+            parentView.insertSubview(view, at: Int(insertIndex))
         } else {
-            // The top-level form lands in the plain `root` container — pin its
-            // edges so it lays out (the twin of adding to widget_root).
-            view.translatesAutoresizingMaskIntoConstraints = false
-            parent.addSubview(view)
-            NSLayoutConstraint.activate([
-                view.topAnchor.constraint(equalTo: parent.safeAreaLayoutGuide.topAnchor),
-                view.leadingAnchor.constraint(equalTo: parent.leadingAnchor),
-                view.trailingAnchor.constraint(equalTo: parent.trailingAnchor),
-            ])
+            parentView.addSubview(view)
         }
+
+        // The Yoga twin, inserted at the SAME index in the SAME parent. The parent is
+        // re-derived from the view we ACTUALLY parented to (not from the patch), so an
+        // unknown parentId that fell back to the host root falls back to the Yoga host
+        // root too — or the two trees diverge.
+        let node = bn_yoga_node_new()
+        yogaNodes[nodeId] = node
+        viewToNode[ObjectIdentifier(view)] = node
+        if Self.measuredNodeTypes.contains(nodeType) {
+            bn_yoga_node_set_measure(node, bnYogaMeasureTrampoline,
+                                     Unmanaged.passUnretained(view).toOpaque())
+        }
+        let parentNode: UnsafeMutableRawPointer = (parentView === root)
+            ? hostRoot
+            : (viewToNode[ObjectIdentifier(parentView)] ?? hostRoot)
+        bn_yoga_node_insert_child(parentNode, node, insertIndex)
     }
 
     private func makeView(nodeType: String) -> UIView {
         switch nodeType {
         case "view":
-            let stack = UIStackView()
-            stack.axis = .vertical
-            stack.alignment = .fill
-            return stack
+            // Phase 6.1: a plain UIView — children are absolutely placed by Yoga,
+            // nothing is stacked. (An un-styled tree still LOOKS stacked: Yoga's
+            // default flexDirection is column.)
+            return UIView()
         case "text":
             let label = UILabel()
             label.numberOfLines = 0
@@ -234,8 +366,10 @@ final class BnWidgetMapper {
             return field
         case "image", "scroll", "picker":
             // Stubbed (design §1c): keep a placeholder so container indices stay
-            // consistent; BnDemo uses none of these. Phase 5.3+ wires them.
-            NSLog("[BnWidgetMapper] nodeType '\(nodeType)' stubbed as a placeholder UIView (Phase 5.3+)")
+            // consistent. Scroll/picker are 6.2's — the honest boundary is that a
+            // framework container runs its OWN layout over its children, so Yoga does
+            // not get the final word inside one.
+            NSLog("[BnWidgetMapper] nodeType '\(nodeType)' stubbed as a placeholder UIView (Phase 6.2+)")
             return UIView()
         default:
             NSLog("[BnWidgetMapper] Unknown nodeType '\(nodeType)' — falling back to UILabel")
@@ -243,8 +377,10 @@ final class BnWidgetMapper {
         }
     }
 
-    /// A UIStackView is the only container; UILabel/UIButton/UITextField are the
-    /// text-bearing collapse targets (twin of `is TextView && !is ViewGroup`).
+    /// UILabel/UIButton/UITextField are the text-bearing collapse targets (twin of
+    /// Android's `is TextView && !is ViewGroup`). A plain UIView — what a `view` node
+    /// is since 6.1 — is not one, so a text child of a container still gets its own
+    /// UILabel.
     private func isTextBearingNonContainer(_ view: UIView) -> Bool {
         return view is UILabel || view is UIButton || view is UITextField
     }
@@ -252,40 +388,95 @@ final class BnWidgetMapper {
     // ── ReplaceText: route through the collapsed parent's title/text ──────────
 
     private func handleReplaceText(nodeId: Int32, text: String) {
-        guard let view = nodes[nodeId] else { return }
+        guard let view = views[nodeId] else { return }
         if let label = view as? UILabel {
             label.text = text
         } else if let button = view as? UIButton {
             button.setTitle(text, for: .normal)
         } else if let field = view as? UITextField {
             field.text = text
+        } else {
+            return
         }
+        // Phase 6.1: new text = new intrinsic size. Yoga CACHES a measure function's
+        // result and will not re-run it unless the node is dirtied — without this the
+        // label keeps the frame its OLD text measured to, and the row keeps hugging
+        // that. Resolved by VIEW, which is what makes the collapse work: this nodeId
+        // may be an alias for the parent UIButton.
+        markDirty(view)
     }
 
+    /// Invalidates the measure cache of the node that PLACES [view]. A no-op for a
+    /// view whose node carries no measure function.
+    private func markDirty(_ view: UIView) {
+        guard let node = viewToNode[ObjectIdentifier(view)] else { return }
+        bn_yoga_node_mark_dirty(node)
+    }
+
+    // ── RemoveNode: ONE patch stands for a WHOLE SUBTREE ─────────────────────
+
+    /// The renderer emits **one** `RemoveNodePatch` for a whole subtree — its
+    /// `PurgeNodeSubtree` is .NET-side bookkeeping. So the host purges the subtree
+    /// itself, in BOTH trees. Dropping only the named node would leave every
+    /// descendant in the registries forever, each pinning a UIView — and, worse than
+    /// on Android, leaking its RAW Yoga node, which nothing will ever free. Every
+    /// navigation replaces the tree.
+    ///
+    /// The subtree is read off the VIEW hierarchy and matched by IDENTITY, never by
+    /// key: the text collapse aliases nodeIds onto a view they do not own.
     private func handleRemove(nodeId: Int32) {
-        guard let v = nodes.removeValue(forKey: nodeId) else { return }
-        // Purge every registry entry aliasing the SAME view (identity, not key —
-        // the collapse can map several ids to one view).
-        for (key, value) in nodes where value === v {
-            nodes.removeValue(forKey: key)
+        // An ALIAS (collapsed text node) owns NO view and NO Yoga node: drop the map
+        // entry and stop. Removing its view would detach the parent UIButton, and the
+        // Yoga node it would remove is the button's — Yoga would keep reserving space
+        // for a widget no longer on screen.
+        if collapsedAliases.remove(nodeId) != nil {
+            views.removeValue(forKey: nodeId)
+            return
         }
-        // Purge event targets registered on the removed control by IDENTITY (the
-        // collapse can alias several nodeIds onto one control, so the target may
+        guard let view = views[nodeId] else { return }
+        let doomed = subtree(of: view)
+
+        // Yoga FIRST: free_subtree clears every measure function in the subtree,
+        // breaking the last edge from a native node to a UIView that is about to be
+        // released.
+        if let node = yogaNodes[nodeId] {
+            if let owner = bn_yoga_node_get_owner(node) {
+                bn_yoga_node_remove_child(owner, node)
+            }
+            bn_yoga_node_free_subtree(node)
+        }
+
+        for (id, mapped) in views where doomed.contains(ObjectIdentifier(mapped)) {
+            views.removeValue(forKey: id)
+            yogaNodes.removeValue(forKey: id)
+            collapsedAliases.remove(id) // an aliased text child of a doomed UIButton
+        }
+        for identity in doomed {
+            viewToNode.removeValue(forKey: identity)
+        }
+        // Purge event targets registered anywhere in the doomed subtree, by IDENTITY
+        // (the collapse can alias several nodeIds onto one control, so a target may
         // sit under a different key than the one being removed).
-        for (key, entry) in eventTargets where entry.control === v {
+        for (key, entry) in eventTargets where doomed.contains(ObjectIdentifier(entry.control)) {
             entry.control.removeTarget(entry.target, action: nil, for: .allEvents)
             eventTargets.removeValue(forKey: key)
         }
-        if let stack = v.superview as? UIStackView {
-            stack.removeArrangedSubview(v)
-        }
-        v.removeFromSuperview()
+        view.removeFromSuperview()
     }
 
-    // ── UpdateProp: value / placeholder (twin of WidgetMapper ~332-367) ───────
+    /// [view] and every descendant, as an identity set.
+    private func subtree(of view: UIView) -> Set<ObjectIdentifier> {
+        var out: Set<ObjectIdentifier> = [ObjectIdentifier(view)]
+        for sub in view.subviews {
+            out.formUnion(subtree(of: sub))
+        }
+        return out
+    }
+
+    // ── UpdateProp: value / placeholder ──────────────────────────────────────
 
     private func handleUpdateProp(nodeId: Int32, name: String, value: String?) {
-        guard let view = nodes[nodeId] else {
+        guard let view = views[nodeId] else {
             NSLog("[BnWidgetMapper] UpdateProp for unknown nodeId \(nodeId): ignored")
             return
         }
@@ -293,6 +484,7 @@ final class BnWidgetMapper {
         case "placeholder":
             if let field = view as? UITextField {
                 field.placeholder = value
+                markDirty(field) // the placeholder sizes an empty UITextField
             } else {
                 NSLog("[BnWidgetMapper] UpdateProp placeholder ignored: node \(nodeId) is not a UITextField")
             }
@@ -311,6 +503,7 @@ final class BnWidgetMapper {
                     field.text = newValue
                     let end = field.endOfDocument
                     field.selectedTextRange = field.textRange(from: end, to: end)
+                    markDirty(field) // new content = new intrinsic size
                 }
             } else {
                 NSLog("[BnWidgetMapper] UpdateProp value ignored: node \(nodeId) is not a UITextField")
@@ -320,15 +513,49 @@ final class BnWidgetMapper {
                 control.isEnabled = (value as NSString?)?.boolValue ?? true
             }
         default:
-            NSLog("[BnWidgetMapper] UpdateProp '\(name)' not yet supported (Phase 5.3+ extends)")
+            NSLog("[BnWidgetMapper] UpdateProp '\(name)' not yet supported (Phase 6.2+ extends)")
         }
     }
 
-    // ── SetStyle: backgroundColor / fontSize / padding (twin ~369-403) ────────
+    // ── SetStyle: THE ROUTER (Phase 6.1) ─────────────────────────────────────
 
+    /// The SetStyle allow-list is PARTITIONED (design §"The allow-list is a routing
+    /// table"), and every style name goes to exactly ONE destination:
+    ///
+    ///  - a **LAYOUT** name (`bn_yoga_is_layout_style` — flexDirection, width,
+    ///    height, padding, margin, …) → the node's **Yoga node**, and nowhere else.
+    ///  - a **VISUAL** name (backgroundColor, fontSize, …) → the **UIView** (paint).
+    ///
+    /// `padding`'s old `layoutMargins` / `isLayoutMarginsRelativeArrangement` arm is
+    /// GONE, deliberately: Yoga lays a container's children out INSIDE its padding
+    /// box, so a surviving view-level inset would apply it a SECOND time and put
+    /// every child in that container off by it. Same reasoning retires any view-level
+    /// width/height/margin.
+    ///
+    /// Matching is ordinal/case-sensitive — the same discipline .NET's ordinal
+    /// allow-list and Kotlin's keep, so a mis-cased name falls onto the prop wire
+    /// (visible) rather than being silently swallowed here.
     private func handleSetStyle(nodeId: Int32, property: String, value: String?) {
-        guard let view = nodes[nodeId] else {
+        guard let view = views[nodeId] else {
             NSLog("[BnWidgetMapper] SetStyle for unknown nodeId \(nodeId): ignored")
+            return
+        }
+        if bn_yoga_is_layout_style(property) != 0 {
+            guard let node = yogaNodes[nodeId] else {
+                // A collapsed text alias owns no Yoga node. Android drops the style the
+                // same way (its YogaLayout has no entry for the alias id).
+                NSLog("[BnWidgetMapper] SetStyle \(property) ignored: node \(nodeId) has no Yoga node")
+                return
+            }
+            // A NULL value RESETS the property to Yoga's default — the wire's reset
+            // (the other half of Gate 1's UpdateProp→SetStyle null-reset fix).
+            property.withCString { name in
+                if let value = value {
+                    value.withCString { _ = bn_yoga_node_set_style(node, name, $0) }
+                } else {
+                    _ = bn_yoga_node_set_style(node, name, nil)
+                }
+            }
             return
         }
         switch property {
@@ -348,23 +575,17 @@ final class BnWidgetMapper {
                 return
             }
             label.font = UIFont.systemFont(ofSize: size)
-        case "padding":
-            guard let pad = parseCGFloat(value) else {
-                NSLog("[BnWidgetMapper] SetStyle padding ignored: \(value ?? "nil")")
-                return
-            }
-            if let stack = view as? UIStackView {
-                stack.isLayoutMarginsRelativeArrangement = true
-                stack.layoutMargins = UIEdgeInsets(top: pad, left: pad, bottom: pad, right: pad)
-            } else {
-                view.layoutMargins = UIEdgeInsets(top: pad, left: pad, bottom: pad, right: pad)
-            }
+            markDirty(label) // a bigger font is a bigger intrinsic size
         default:
-            NSLog("[BnWidgetMapper] SetStyle '\(property)' not yet supported (Phase 5.3+ extends)")
+            NSLog("[BnWidgetMapper] SetStyle '\(property)' not yet supported (Phase 6.2+ extends)")
         }
     }
 
-    /// Twin of Kotlin parseFloatOrNull — strips sp/dp/px suffixes.
+    /// The LEGACY VISUAL props' tolerant number parser (fontSize) — it strips a
+    /// trailing sp/dp/px, exactly as Kotlin's `parseFloatOrNull` still does. The
+    /// LAYOUT grammar has NO unit suffixes and `BnYogaLayout.mm` does not strip them;
+    /// this tolerance survives only for the visual props that shipped before the
+    /// grammar existed.
     private func parseCGFloat(_ s: String?) -> CGFloat? {
         guard var t = s else { return nil }
         for suffix in ["sp", "dp", "px"] where t.hasSuffix(suffix) {

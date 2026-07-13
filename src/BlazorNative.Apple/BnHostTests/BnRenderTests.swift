@@ -5,24 +5,34 @@
 // it can read the exact UIView tree + colors, the analog of the Android
 // ActivityScenario/WidgetMapper structural test.
 //
-// Boot BnDemo through the linked NativeAOT static archive → the mount frame fires
-// synchronously and the mapper hops its batch to the main queue → poll the main
-// runloop until the form appears → assert the structural pins mirroring
-// BnDemoAndroidTest:
+// ── PHASE 6.1: THE CHURN, AND WHY IT IS THE STRONGER TEST ────────────────────
+//
+// This file used to pin the form BY TYPE — `root.subviews.first as? UIStackView`,
+// then index `arrangedSubviews`. Yoga owns placement now and a `view` node is a
+// plain UIView, so the helpers broke, not just the assertions. They are rewritten to
+// walk `subviews` and to assert FRAMES.
+//
+// **BnDemo is an UN-STYLED tree, and it must still render as a vertical stack** —
+// that is Yoga's default `flexDirection: column`, not a UIStackView. It is the
+// strongest regression signal in the suite that this phase changed the ENGINE and
+// not the BEHAVIOUR: no golden moved, no patch changed, and the form still stacks.
+// [assertStacksVertically] is the frame form of that sentence.
+//
+// The mounted shape (unchanged in meaning):
 //
 //   root: the host UIView
-//     └── form UIStackView (#FFEEAA, layoutMargins 16), 6 arranged subviews:
+//     └── form UIView (#FFEEAA, Yoga padding 16), 6 subviews, stacked:
 //           [0] UILabel  "BnDemo"          (title, fontSize 24, text-collapsed)
 //           [1] UITextField                 (bound input; placeholder "Type here...")
-//           [2] UIStackView echo panel (#FFEEAA)
+//           [2] UIView echo panel (#FFEEAA)
 //                 └── UILabel               (the live echo, "" on mount)
 //           [3] UIButton "Clear"
 //           [4] UIButton "Theme"
 //           [5] UIButton "Settings →"
 //
 // The echo panel's create carries the MID-LIST insertIndex 2 (Blazor's FIFO queue
-// creates it after the buttons) — the shape only lands right if the mapper honors
-// it, which is exactly what child-order [2] asserts.
+// creates it after the buttons) — the shape only lands right if the mapper honors it
+// in BOTH trees (view and Yoga), which is exactly what child-order [2] asserts.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import XCTest
@@ -58,36 +68,56 @@ final class BnRenderTests: XCTestCase {
         XCTAssertNil(decodeError, "a frame was dropped during mount")
 
         // The form is the host view's single child.
-        XCTAssertEqual(root.subviews.count, 1, "root must have exactly the form stack")
+        XCTAssertEqual(root.subviews.count, 1, "root must have exactly the form")
+        XCTAssertEqual(form.subviews.count, 6, "form must have exactly 6 children")
 
-        // 6 arranged subviews, in order.
-        XCTAssertEqual(form.arrangedSubviews.count, 6, "form must have exactly 6 arranged subviews")
+        // ── THE ENGINE CHANGED; THE BEHAVIOUR DID NOT ────────────────────────
+        // An un-styled tree still stacks, because Yoga's default flexDirection is
+        // column. This replaces the old `as? UIStackView` + `axis == .vertical` pin.
+        assertStacksVertically(form)
+
+        // The form is a top-level node under the Yoga host root: `alignItems: stretch`
+        // gives it the host's width, and it hugs its content vertically (no height).
+        XCTAssertEqual(form.frame.minX, 0, accuracy: 0.5)
+        XCTAssertEqual(form.frame.minY, 0, accuracy: 0.5)
+        XCTAssertEqual(form.frame.width, root.bounds.width, accuracy: 0.5,
+                       "the form stretches to the host's width")
+
+        // `padding: 16` is LAYOUT — it belongs to the Yoga node, which insets the
+        // form's CHILDREN. The UIView's own bounds are NOT inset (the pre-6.1 shell
+        // set layoutMargins here; a surviving view-level inset would double-apply it).
+        XCTAssertEqual(form.subviews[0].frame.minX, 16, accuracy: 0.5,
+                       "Yoga's padding insets the CHILDREN by 16")
+        XCTAssertEqual(form.subviews[0].frame.minY, 16, accuracy: 0.5)
 
         // [0] title UILabel "BnDemo", fontSize 24 (text-collapsed span).
-        let title = try XCTUnwrap(form.arrangedSubviews[0] as? UILabel, "[0] must be the title UILabel")
+        let title = try XCTUnwrap(form.subviews[0] as? UILabel, "[0] must be the title UILabel")
         XCTAssertEqual(title.text, "BnDemo")
         XCTAssertEqual(title.font.pointSize, 24, accuracy: 0.01, "title fontSize must be 24")
 
         // [1] the bound UITextField with placeholder.
-        let input = try XCTUnwrap(form.arrangedSubviews[1] as? UITextField, "[1] must be the bound UITextField")
+        let input = try XCTUnwrap(form.subviews[1] as? UITextField, "[1] must be the bound UITextField")
         XCTAssertEqual(input.placeholder, "Type here...")
 
-        // [2] the echo panel stack (mid-list insertIndex 2) with one empty label.
-        let echo = try XCTUnwrap(form.arrangedSubviews[2] as? UIStackView, "[2] must be the echo panel UIStackView")
-        XCTAssertEqual(echo.arrangedSubviews.count, 1, "echo panel must have exactly the echo label")
-        let echoLabel = try XCTUnwrap(echo.arrangedSubviews[0] as? UILabel, "echo child must be a UILabel")
+        // [2] the echo panel (mid-list insertIndex 2) with one empty label.
+        let echo = try XCTUnwrap(form.subviews[2] as? UIView, "[2] must be the echo panel")
+        XCTAssertEqual(echo.subviews.count, 1, "echo panel must have exactly the echo label")
+        let echoLabel = try XCTUnwrap(echo.subviews[0] as? UILabel, "echo child must be a UILabel")
         XCTAssertEqual(echoLabel.text, "", "the echo must be empty on mount")
 
-        // backgroundColor #FFEEAA on BOTH themed containers (DoD #6 surface).
+        // backgroundColor #FFEEAA on BOTH themed containers (DoD #6 surface) — VISUAL
+        // names still route to the UIView; only LAYOUT names go to Yoga.
         assertColor(form.backgroundColor, equals: Self.defaultBackground, "form background")
         assertColor(echo.backgroundColor, equals: Self.defaultBackground, "echo panel background")
 
-        // [3][4][5] the three buttons, by title (text-collapsed onto the UIButton).
-        let clear = try XCTUnwrap(form.arrangedSubviews[3] as? UIButton, "[3] must be the Clear UIButton")
+        // [3][4][5] the three buttons, by title (text-collapsed onto the UIButton), each
+        // sized by its own MEASURED intrinsic size (a `button` is a measured nodetype).
+        let clear = try XCTUnwrap(form.subviews[3] as? UIButton, "[3] must be the Clear UIButton")
         XCTAssertEqual(clear.title(for: .normal), "Clear")
-        let theme = try XCTUnwrap(form.arrangedSubviews[4] as? UIButton, "[4] must be the Theme UIButton")
+        XCTAssertGreaterThan(clear.frame.height, 0, "the button is sized by native measurement")
+        let theme = try XCTUnwrap(form.subviews[4] as? UIButton, "[4] must be the Theme UIButton")
         XCTAssertEqual(theme.title(for: .normal), "Theme")
-        let settings = try XCTUnwrap(form.arrangedSubviews[5] as? UIButton, "[5] must be the Settings UIButton")
+        let settings = try XCTUnwrap(form.subviews[5] as? UIButton, "[5] must be the Settings UIButton")
         XCTAssertEqual(settings.title(for: .normal), "Settings →")
     }
 
@@ -100,14 +130,14 @@ final class BnRenderTests: XCTestCase {
         }
     }
 
-    /// Polls the MAIN runloop (draining the mapper's DispatchQueue.main.async
-    /// batch) until the form stack with all 6 children appears, or the deadline.
-    /// A timeout THROWS (fails the test) — it must never skip.
-    private func pollForForm(in root: UIView, deadline seconds: TimeInterval) throws -> UIStackView {
+    /// Polls the MAIN runloop (draining the mapper's DispatchQueue.main.async batch)
+    /// until the form with all 6 children appears AND has been laid out, or the
+    /// deadline. A timeout THROWS (fails the test) — it must never skip.
+    private func pollForForm(in root: UIView, deadline seconds: TimeInterval) throws -> UIView {
         let end = Date().addingTimeInterval(seconds)
         while Date() < end {
             RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.05))
-            if let form = root.subviews.first as? UIStackView, form.arrangedSubviews.count >= 6 {
+            if let form = root.subviews.first, form.subviews.count >= 6, form.frame.height > 0 {
                 return form
             }
         }

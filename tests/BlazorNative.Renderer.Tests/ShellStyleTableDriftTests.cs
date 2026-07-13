@@ -26,13 +26,13 @@ namespace BlazorNative.Renderer.Tests;
 // 4 Task 4.0 recommends for the FRAME TABLE — built here, one gate early, so the
 // name table and the frame table are pinned the same way.
 //
-// ── GATE 3: EXTEND THIS FILE, DO NOT COPY IT ─────────────────────────────────
-// When `src/BlazorNative.Apple/BnHost/BnYogaLayout.mm` lands with its own
-// string→setter name table, add ONE arm: a `ParseNameTable(AppleYogaLayout, …)`
-// call and the same two assertions against it. The parser below is deliberately
+// ── GATE 3 LANDED: THE THIRD MIRROR IS PINNED HERE TOO ───────────────────────
+// `src/BlazorNative.Apple/BnHost/BnYogaLayout.mm` carries the iOS shell's own
+// string→setter name table (`kYogaStyles`), and it is asserted below by the SAME
+// parser and the SAME two assertions as Kotlin's. The parser is deliberately
 // source-format-agnostic (find the declaration, take every quoted name inside its
-// braces/parens) so the `.mm`'s `static const char* kYogaStyles[] = { "…" };`
-// needs no new machinery.
+// braces/parens), so the `.mm`'s C array needed no new machinery — which is the
+// point: a fourth shell adds two `[Fact]`s, never a fourth hand-copy nobody checks.
 // ─────────────────────────────────────────────────────────────────────────────
 
 public sealed class ShellStyleTableDriftTests
@@ -40,10 +40,18 @@ public sealed class ShellStyleTableDriftTests
     private const string KotlinYogaLayout =
         "src/BlazorNative.Jni/src/androidMain/kotlin/io/blazornative/shell/YogaLayout.kt";
 
+    private const string AppleYogaLayout =
+        "src/BlazorNative.Apple/BnHost/BnYogaLayout.mm";
+
     /// <summary>The Kotlin declaration — anchored at line start, so a mention of the
     /// name in a comment cannot be mistaken for the table itself.</summary>
     private const string KotlinYogaStylesDeclaration =
         @"(?m)^\s*private val YOGA_STYLES = setOf\((?<body>[^)]*)\)";
+
+    /// <summary>The Objective-C++ declaration — anchored at line start for the same
+    /// reason (the .mm's file header talks ABOUT the table at length).</summary>
+    private const string AppleYogaStylesDeclaration =
+        @"(?m)^static const char\* const kYogaStyles\[\] = \{(?<body>[^}]*)\}";
 
     /// <summary>THE DRIFT PIN. The Android shell's layout-style table must be
     /// exactly `NativeRenderer.YogaStyleAttributes` — no more (a name the renderer
@@ -78,6 +86,64 @@ public sealed class ShellStyleTableDriftTests
             !overlap.Any(),
             $"a style name routed to Yoga must not ALSO be a visual name: {Join(overlap)}. "
             + "The shell would apply it twice — once as layout, once as paint.");
+    }
+
+    /// <summary>THE SAME DRIFT PIN, on the THIRD mirror (Phase 6.1 Gate 3).
+    /// `BnYogaLayout.mm`'s `kYogaStyles` is what `BnWidgetMapper.handleSetStyle`
+    /// routes on (via `bn_yoga_is_layout_style`), so a name missing from it lands in
+    /// the iOS shell's VISUAL branch, is logged "not yet supported", and the style is
+    /// SILENTLY DROPPED — on ONE platform. Which surfaces as "Android and iOS
+    /// disagree", i.e. as the exact bug DoD #2 exists to catch, with the engine taking
+    /// the blame for a hand-copy.</summary>
+    [Fact]
+    public void AppleYogaStyles_AreExactlyTheRenderersYogaHalf()
+    {
+        var apple = ParseNameTable(AppleYogaLayout, AppleYogaStylesDeclaration);
+
+        Assert.True(
+            apple.SetEquals(NativeRenderer.YogaStyleAttributes),
+            "BnYogaLayout.mm's kYogaStyles must mirror NativeRenderer.YogaStyleAttributes exactly.\n"
+            + $"  only in .NET : {Join(NativeRenderer.YogaStyleAttributes.Except(apple))}\n"
+            + $"  only in the .mm: {Join(apple.Except(NativeRenderer.YogaStyleAttributes))}\n"
+            + "A name .NET emits and the shell does not know is not a loud failure: the iOS "
+            + "router sends it to the VISUAL branch, which logs 'not yet supported' and DROPS it. "
+            + "Add the name to all three, in the same commit.");
+    }
+
+    /// <summary>…and the iOS table must be DISJOINT from the visual half, for the same
+    /// double-apply reason: `padding` reaching both the Yoga node (which insets the
+    /// children) and the UIView's `layoutMargins` (which insets them again) is exactly
+    /// the bug the partition — and Gate 3's deletion of that arm — exists to prevent.</summary>
+    [Fact]
+    public void AppleYogaStyles_ContainNoVisualStyleName()
+    {
+        var apple = ParseNameTable(AppleYogaLayout, AppleYogaStylesDeclaration);
+        var overlap = apple.Intersect(NativeRenderer.VisualStyleAttributes, StringComparer.Ordinal);
+
+        Assert.True(
+            !overlap.Any(),
+            $"a style name routed to Yoga must not ALSO be a visual name: {Join(overlap)}. "
+            + "The shell would apply it twice — once as layout, once as paint.");
+    }
+
+    /// <summary>The two shells' tables must be identical to each other, which follows
+    /// from the two set-equality facts above — but stated directly, because THIS is the
+    /// sentence DoD #2 rests on and a reader should not have to derive it. It is also
+    /// the assertion that survives if the .NET set is ever refactored out from under
+    /// the other two.</summary>
+    [Fact]
+    public void TheTwoShellsYogaTables_AreIdenticalToEachOther()
+    {
+        var kotlin = ParseNameTable(KotlinYogaLayout, KotlinYogaStylesDeclaration);
+        var apple = ParseNameTable(AppleYogaLayout, AppleYogaStylesDeclaration);
+
+        Assert.True(
+            kotlin.SetEquals(apple),
+            "the Android and iOS shells must route the SAME style names to Yoga.\n"
+            + $"  only in Kotlin : {Join(kotlin.Except(apple))}\n"
+            + $"  only in the .mm: {Join(apple.Except(kotlin))}\n"
+            + "A name one shell honours and the other drops makes the two frame tables "
+            + "disagree — the failure reads as 'the engine is broken' and is not.");
     }
 
     // ── The parser ───────────────────────────────────────────────────────────
