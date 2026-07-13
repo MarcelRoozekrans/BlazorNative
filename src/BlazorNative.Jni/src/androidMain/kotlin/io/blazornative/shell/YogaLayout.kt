@@ -99,6 +99,16 @@ internal class BnYogaFrameLayout(context: Context) : android.widget.FrameLayout(
  * drift. Anything the grammar does not accept is **logged and ignored**, never
  * guessed.
  *
+ * ## The honest boundary: `scroll` and `picker`
+ *
+ * A `view` becomes a [BnYogaFrameLayout], which does not lay out its own children
+ * — so Yoga's frames survive. `scroll` (ScrollView) and `picker` (Spinner) are
+ * FRAMEWORK ViewGroups that run their own layout, and they will overwrite the
+ * frames Yoga computed for their children. Their nodes still take part in the
+ * Yoga tree (so a ScrollView is itself placed correctly by its parent); it is
+ * only what is INSIDE them that Yoga does not get the final word on. Out of scope
+ * here by design — 6.2 owns scroll.
+ *
  * Threading: main-thread only. Every entry point is called from inside
  * [WidgetMapper.applyBatch] (already posted to the main looper) or from the host
  * root's layout listener.
