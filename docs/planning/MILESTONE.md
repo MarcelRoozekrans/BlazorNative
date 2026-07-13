@@ -47,23 +47,27 @@ verdict.
    shells, no C-ABI change — and the fallback ladder (managed flexbox / native-layout
    mapping) is closed. Verdict + the pinned per-platform integration recipes:
    [spike conclusion](../plans/2026-07-13-phase-6.0-spike-conclusion.md).
-2. **Flexbox layout on both platforms.** Flex props (`flexDirection`, `justifyContent`,
-   `alignItems`, `alignSelf`, `flexGrow`/`flexShrink`/`flexBasis`, `flexWrap`, `gap`,
-   absolute positioning, width/height) ride `SetStyle`; the shell runs Yoga; a flex demo
-   (row + column + grow + wrap + alignment) lays out **identically** on the AVD and the
-   iOS simulator (asserted structurally against computed frames).
-3. **Native measurement.** Text (and image) leaves are measured via Yoga's measure
-   callback using real platform font/image metrics, so intrinsic content sizes drive
-   layout (a long label wraps/sizes correctly).
+2. ✅ **Flexbox layout on both platforms.** — *closed by Phase 6.1 (2026-07-13).* Flex props
+   ride `SetStyle` (no ABI change); both shells run Yoga and place every child at a computed
+   frame. `BnLayoutDemo` (row + column + grow + wrap + alignment) lays out **identically** on
+   the AVD and the iOS simulator — the same frame table asserted number-for-number on both
+   (`BnLayoutDemoAndroidTest` / `BnLayoutDemoTests`), derived from the .NET patch golden.
+3. ✅ **Native measurement.** — *closed by Phase 6.1.* Text/button/input leaves are measured
+   through Yoga's measure callback using real platform metrics (a long label wraps and its
+   measured height drives its row). Attached **by NodeType**, never by childlessness. Pinned
+   by an independent oracle on both platforms — a constant-size measure func passes every
+   relational assertion and fails the oracle.
 4. **Real scrolling.** The `scroll` NodeType (stubbed today) → `ScrollView` /
    `UIScrollView`; content taller than the viewport scrolls on both platforms, with Yoga
    laying out the scroll content.
 5. **URL images.** The `image` NodeType (stubbed today) → async URL load into
    `ImageView` / `UIImageView` on both platforms, measured by Yoga (intrinsic/explicit
    size).
-6. **Flex container components.** `BnView` gains flex parameters; `BnRow`/`BnColumn`/
-   `BnStack` ship as thin wrappers; a layout-demo component (registry scaffolding) is the
-   cross-platform proof surface.
+6. ✅ **Flex container components.** — *closed by Phase 6.1.* `BnView` gains the typed flex
+   parameter surface (enums/numerics that stringify onto the wire); `BnRow`/`BnColumn` ship as
+   thin presets; `BnLayoutDemo` at `/layout` is the cross-platform proof surface.
+   **Deviation, consciously taken:** **no `BnStack`** — it would be a synonym for `BnColumn`,
+   and two names for one thing is a library smell on day one.
 7. **Every new surface is CI-asserted.** Test counts recorded/asserted at each phase
    close (the M4-onward discipline); the layout/scroll/image demos asserted on all
    surfaces (.NET frames, JVM, Android instrumented, iOS XCTest).
