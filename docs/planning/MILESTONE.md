@@ -1,8 +1,26 @@
 # Milestone 5 — P4: Full Platform Coverage
 
-**Status:** in progress — opened 2026-07-12
+**Status:** ✅ complete — opened 2026-07-12, closed 2026-07-13, tagged `v5.0` ([final audit](../plans/2026-07-13-milestone-5-final-audit.md): PASS, all 8 DoD criteria)
 **Source:** maps to BACKLOG.md "P4 — Full platform coverage" (scoped subset — see below)
 **Predecessor:** Milestone 4 — complete 2026-07-12, tagged `v4.0` ([final audit](../plans/2026-07-12-milestone-4-final-audit.md): PASS, all 8 DoD criteria)
+
+## Closure (2026-07-13, Phase 5.5)
+
+**M5 complete — all 8 DoD criteria PASS** ([final audit](../plans/2026-07-13-milestone-5-final-audit.md);
+[Phase 5.5 conclusion](../plans/2026-07-13-phase-5.5-conclusion.md)). Two native
+platforms in fact: the same `BnDemo` runs interactively on the **iOS simulator**
+(Swift/UIKit over a NativeAOT static `.a`) and the **Android AVD** (Kotlin/JNA over a
+bionic `.so`), from one runtime and one nine-export C-ABI. Counts at close (all
+CI-asserted): **.NET 230 / JVM 79 / Android 40 / iOS XCTest 13**; version
+`1.4.0-phase-5.4`; ABI 9 exports + the 72-byte 9-callback size-negotiated bridge.
+Tag command for the controller (post-merge on main):
+`git tag -a v5.0 -m "Milestone 5: P4 — Full Platform Coverage complete"`.
+
+Two docs-only honesty fixes applied in the close gate (flagged in the audit): DoD #4's
+"two-job" wording → **"single job"** (the shipped `ios.yml` publishes AND tests on one
+macOS runner), and DoD #6's iOS-XCTest count string → **13** (the shipped `ios.yml`
+asserts 13; the "12" prose predated commit `c9ac4f2`'s struct-drift pin). CI is the
+ground truth in both cases.
 
 ## Goal
 
@@ -68,7 +86,9 @@ Phase 5.0 brainstorm — and explicitly subject to the Phase 5.0 spike verdict.
    Settings⇄Back (fresh remount) on the simulator. **Swift + `ios.yml` only — zero
    shared change** (version stays `1.3.0-phase-5.1`; .NET 220 / JVM 78 / Android 38
    untouched). See [conclusion](../plans/2026-07-12-phase-5.3-conclusion.md).
-4. **iOS CI lane.** A macOS two-job workflow (publish → simulator tests),
+4. **iOS CI lane.** A macOS single-job workflow (publish + simulator tests on one
+   runner — corrected from the initial "two-job" estimate in the Phase 5.5 audit; iOS
+   publishes AND tests on macOS, unlike Android's Windows-publish/Linux-test split),
    informational-first with promotion criteria, mirroring the Android emulator lane's
    posture.
    ✅ **CLOSED 2026-07-12 (Phase 5.2): GREEN** — `.github/workflows/ios.yml` on
@@ -105,7 +125,9 @@ Phase 5.0 brainstorm — and explicitly subject to the Phase 5.0 spike verdict.
    asserted at the callback-content bar via a capture seam (the system UI is not
    assertable). The pattern is documented in
    [docs/bridge-extension.md](../bridge-extension.md) — the M6+ recipe for
-   camera/geo/etc. .NET 230 / JVM 79 / Android 40 / iOS XCTest 12; version
+   camera/geo/etc. .NET 230 / JVM 79 / Android 40 / iOS XCTest 13 (the shipped
+   `ios.yml` baseline — the "12" in the 5.4 conclusion predated the `bn_bridge_callbacks`
+   struct-drift pin `c9ac4f2`; reconciled in the Phase 5.5 audit); version
    `1.4.0-phase-5.4`; exports unchanged at 9. See
    [conclusion](../plans/2026-07-12-phase-5.4-conclusion.md).
 7. **Every new surface is CI-asserted.** Test counts recorded and asserted at each
