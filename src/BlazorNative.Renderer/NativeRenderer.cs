@@ -584,6 +584,20 @@ public sealed class NativeRenderer : BlazorRenderer
                                     _eventHandlers.Remove(slot.NodeId);
                             }
                         }
+                        else if (StyleAttributes.Contains(removedName))
+                        {
+                            // Phase 6.1 (the null-reset fix): a removed STYLE
+                            // leaves on the STYLE wire. A null SetStyle value
+                            // already means "reset to default" (PatchProtocol),
+                            // and the shells route it to the node's Yoga
+                            // property; the same null on the PROP wire — what
+                            // this arm used to emit for every name — is a prop
+                            // no shell routes to Yoga, so a conditionally-null
+                            // flex prop (Grow = cond ? 1 : null) would keep its
+                            // old value forever. Harmless before flex, fatal
+                            // with it (design §"The null-reset bug").
+                            patches.Add(new SetStylePatch(slot.NodeId, removedName, null));
+                        }
                         else
                         {
                             patches.Add(new UpdatePropPatch(slot.NodeId, removedName, null));
@@ -1026,10 +1040,23 @@ public sealed class NativeRenderer : BlazorRenderer
         _          => "view"
     };
 
+    /// <summary>The SetStyle allow-list: attribute names that ride the STYLE
+    /// wire (patch kind 6) instead of the prop wire. Phase 6.1 extends it with
+    /// the flex surface — no ABI change, the wire was already there; the shells
+    /// now map each name to a Yoga setter (design §"No ABI change").
+    /// Membership is checked at BOTH emission sites: ProcessAttribute (set) and
+    /// the RemoveAttribute arm (reset — see the null-reset fix), so a style
+    /// that goes away leaves on the same wire it arrived on.</summary>
     private static readonly HashSet<string> StyleAttributes = new(StringComparer.OrdinalIgnoreCase)
     {
+        // Pre-6.1 (visual + the flex-ish names the shells used to ignore)
         "style", "color", "background", "backgroundColor", "fontSize",
         "fontWeight", "padding", "margin", "width", "height",
-        "display", "flex", "flexDirection", "alignItems", "justifyContent"
+        "display", "flex", "flexDirection", "alignItems", "justifyContent",
+        // Phase 6.1 — the flex surface (BnView's typed params stringify to these)
+        "flexGrow", "flexShrink", "flexBasis", "alignSelf", "alignContent",
+        "flexWrap", "gap", "rowGap", "columnGap", "position",
+        "top", "right", "bottom", "left",
+        "minWidth", "maxWidth", "minHeight", "maxHeight",
     };
 }
