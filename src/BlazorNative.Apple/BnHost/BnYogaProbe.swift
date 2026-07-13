@@ -1,31 +1,27 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// BnYogaProbe — Phase 6.0 Yoga spike (M6 DoD #1, iOS rung): proves Facebook's Yoga
-// C++ flexbox engine links into the app alongside the NativeAOT runtime .a and
-// that the native MEASURE CALLBACK round-trip works — the load-bearing part of the
-// spike (linking is table-stakes; measurement is what makes flexbox usable).
+// BnYogaProbe — Phase 6.0 Yoga spike (M6 DoD #1, iOS rung): the Swift face of the
+// flexbox probe.
 //
-// Yoga's C-API (<yoga/Yoga.h>, via the bridging header) is the same C-interop the
-// shell uses for the runtime. The @convention(c) measure func can't capture, so it
-// signals through a global — the exact runtime-callback pattern (BnRuntime's frame
-// trampoline, AppleShellBridge's bridge trampolines). Phase 6.1 replaces the fixed
-// stub size with real UILabel/UIImageView measurement and drives the whole view
-// tree; this spike only proves the mechanism.
+// This file contains NO Yoga interop. All of it lives in BnYogaProbe.mm
+// (Objective-C++), which exposes a plain-C surface (bn_yoga_result /
+// bn_yoga_compute_flex_row / bn_yoga_warm_up) that the bridging header declares.
+//
+// Why: Xcode's Swift explicit-module dependency SCANNER processes the bridging
+// header with a path-less search that honours neither HEADER_SEARCH_PATHS nor
+// `-Xcc -I`, so a `#include <yoga/Yoga.h>` there fails the build ("'yoga/Yoga.h'
+// file not found") even though the ordinary Clang compile resolves it fine.
+// Keeping Yoga's headers out of Swift's sight — reaching them only from the .mm,
+// which IS a plain Clang compile — is the spike's iOS-rung fix.
+//
+// This mirrors how the shell already talks to the NativeAOT runtime: plain C
+// across the boundary, no foreign headers in the bridging header. See
+// BnYogaProbe.mm for the Yoga tree and the full story.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import UIKit
 
-/// The measure callback fired (the load-bearing round-trip proof). A global
-/// because a `@convention(c)` closure cannot capture context.
-private var bnYogaMeasureFired = false
-
-/// Yoga invokes this to measure a leaf whose size is `auto` (no width/height set).
-/// The spike returns a FIXED size (80×20); Phase 6.1 measures real native content.
-private let bnYogaMeasureFunc: YGMeasureFunc = { _, _, _, _, _ in
-    bnYogaMeasureFired = true
-    return YGSize(width: 80, height: 20)
-}
-
-/// The computed frames of the minimal flex-row proof.
+/// The computed frames of the minimal flex-row proof, plus whether the native
+/// measure callback fired (the load-bearing round-trip).
 struct BnYogaFlexResult {
     let box1: CGRect
     let box2: CGRect
@@ -37,59 +33,29 @@ enum BnYogaProbe {
 
     /// Referenced from AppDelegate at launch so the linker keeps Yoga (and this
     /// probe) live in the app binary — proving Yoga is callable in-process
-    /// alongside the runtime .a — and as a smoke of the full flex computation.
+    /// alongside the runtime's static .a — and as a smoke of the full computation.
     static func warmUp() {
+        bn_yoga_warm_up()
         let r = computeMinimalFlexRow()
         NSLog("[BnYogaProbe] Yoga warm-up ok — box2.width=\(r.box2.width) measureFired=\(r.measureFired)")
     }
 
-    /// The minimal flex-row: a `row` container (width 300, height 100) with
-    ///   box1  — fixed 50×50
+    /// The minimal flex-row (built in BnYogaProbe.mm): a `row` container
+    /// (300 × 100) with
+    ///   box1  — fixed 50 × 50
     ///   box2  — flexGrow 1, height 50 (fills the remaining width)
-    ///   text  — auto size, a registered measure func → 80×20
+    ///   text  — auto size, a registered measure func → 80 × 20
     /// Left-to-right, box2 absorbs `300 - 50 - 80 = 170`.
     static func computeMinimalFlexRow() -> BnYogaFlexResult {
-        bnYogaMeasureFired = false
-
-        let root = YGNodeNew()
-        // Swift prefix-strips Yoga's C enums: YGFlexDirectionRow → .row.
-        YGNodeStyleSetFlexDirection(root, .row)
-        YGNodeStyleSetWidth(root, 300)
-        YGNodeStyleSetHeight(root, 100)
-
-        let box1 = YGNodeNew()
-        YGNodeStyleSetWidth(box1, 50)
-        YGNodeStyleSetHeight(box1, 50)
-        YGNodeInsertChild(root, box1, 0)
-
-        let box2 = YGNodeNew()
-        YGNodeStyleSetFlexGrow(box2, 1)
-        YGNodeStyleSetHeight(box2, 50)
-        YGNodeInsertChild(root, box2, 1)
-
-        let text = YGNodeNew()
-        YGNodeSetMeasureFunc(text, bnYogaMeasureFunc)
-        YGNodeInsertChild(root, text, 2)
-
-        // Available size UNDEFINED (NaN) — Yoga uses the root's styled 300×100.
-        // Owner direction .inherit at the root defaults to LTR (left-to-right) —
-        // same layout as .LTR, and an unambiguous member name (no acronym).
-        YGNodeCalculateLayout(root, Float.nan, Float.nan, .inherit)
-
-        let result = BnYogaFlexResult(
-            box1: frame(box1),
-            box2: frame(box2),
-            text: frame(text),
-            measureFired: bnYogaMeasureFired)
-
-        YGNodeFreeRecursive(root) // frees the whole tree
-        return result
-    }
-
-    private static func frame(_ node: YGNodeRef?) -> CGRect {
-        CGRect(x: CGFloat(YGNodeLayoutGetLeft(node)),
-               y: CGFloat(YGNodeLayoutGetTop(node)),
-               width: CGFloat(YGNodeLayoutGetWidth(node)),
-               height: CGFloat(YGNodeLayoutGetHeight(node)))
+        let r = bn_yoga_compute_flex_row()
+        return BnYogaFlexResult(
+            box1: CGRect(x: CGFloat(r.box1X), y: CGFloat(r.box1Y),
+                         width: CGFloat(r.box1W), height: CGFloat(r.box1H)),
+            box2: CGRect(x: CGFloat(r.box2X), y: CGFloat(r.box2Y),
+                         width: CGFloat(r.box2W), height: CGFloat(r.box2H)),
+            text: CGRect(x: CGFloat(r.textX), y: CGFloat(r.textY),
+                         width: CGFloat(r.textW), height: CGFloat(r.textH)),
+            measureFired: r.measureFired != 0
+        )
     }
 }

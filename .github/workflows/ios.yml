@@ -210,8 +210,9 @@ jobs:
       # Yoga is C++/C-API. Build its static lib the same way the runtime .a is
       # embedded (the M5 recipe): compile every yoga/**/*.cpp with the simulator
       # SDK clang++ (C++20 — Yoga 3.x requires it), then libtool -static. Stage the
-      # headers so <yoga/Yoga.h> resolves from the app's bridging header. The app
-      # links libyoga.a alongside the runtime .a — the coexistence proof.
+      # headers so <yoga/Yoga.h> resolves for BnYogaProbe.mm — the ONE file that sees
+      # them (Swift must not: its module scanner cannot resolve them; see project.yml).
+      # The app links libyoga.a alongside the runtime .a — the coexistence proof.
       - name: "Yoga: build libyoga.a (v${{ env.YOGA_VERSION }}) for iossimulator-arm64"
         run: |
           set -euo pipefail
@@ -236,10 +237,10 @@ jobs:
           mkdir -p src/BlazorNative.Apple/vendor/yoga-include
           cp -R "$yroot/yoga" src/BlazorNative.Apple/vendor/yoga-include/yoga
           # Drop Yoga's bundled module.modulemap: with it present, Clang's
-          # explicit-module scanner tries to build a `yoga` MODULE from the bridging
-          # header include and fails to resolve the module's own headers
-          # ('yoga/Yoga.h' not found). Removing it forces plain TEXTUAL includes via
-          # HEADER_SEARCH_PATHS (the proven path — the runtime C-ABI header is textual too).
+          # explicit-module scanner tries to build a `yoga` MODULE and fails to resolve
+          # the module's own headers ('yoga/Yoga.h' not found). Removing it forces plain
+          # TEXTUAL includes via HEADER_SEARCH_PATHS (the proven path — the runtime
+          # C-ABI header is textual too).
           rm -f src/BlazorNative.Apple/vendor/yoga-include/yoga/module.modulemap
           ls -la src/BlazorNative.Apple/vendor/libyoga.a | tee -a ios-out/yoga-build.txt
           file src/BlazorNative.Apple/vendor/libyoga.a | tee -a ios-out/yoga-build.txt

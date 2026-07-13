@@ -5,9 +5,10 @@
 // BnHost), so the app's linked libyoga.a coexists with the runtime .a — a green
 // run IS the coexistence proof (both static native libs in one binary + loaded).
 //
-// Calls BnYogaProbe (@testable) rather than Yoga directly: the Yoga C-API is
-// exposed to the APP via the bridging header, and BnYogaProbe is the app-side
-// Swift wrapper the linker keeps live (AppDelegate.warmUp references it).
+// Calls BnYogaProbe (@testable) rather than Yoga directly: Yoga's headers are
+// visible ONLY to BnYogaProbe.mm (Objective-C++) — never to Swift, whose module
+// scanner cannot resolve them — so the app exposes the probe as plain C and
+// BnYogaProbe is the Swift wrapper the linker keeps live (AppDelegate.warmUp).
 // ─────────────────────────────────────────────────────────────────────────────
 
 import XCTest

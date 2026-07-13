@@ -35,18 +35,6 @@
 
 #include <stdint.h>
 
-// Phase 6.0 Yoga spike (M6): the Yoga flexbox C-API. Yoga.h is C-compatible
-// (YG_EXTERN_C-wrapped), so the Clang importer surfaces YGNodeNew /
-// YGNodeStyleSet* / YGNodeSetMeasureFunc / YGNodeCalculateLayout / YGNodeLayoutGet*
-// to Swift (BnYogaProbe.swift). Resolved via HEADER_SEARCH_PATHS=vendor/yoga-include
-// (staged by ios.yml from the pinned Yoga source build). A PLAIN #include only —
-// no inline definitions here: an inline fn body referencing Yoga types forces the
-// Swift explicit-module dependency SCANNER to fully resolve <yoga/Yoga.h> (which it
-// does with a different, path-less search than the compile), so BnYogaProbe uses
-// Swift's prefix-stripped enum members (YGFlexDirection.row, YGDirection.inherit)
-// directly instead.
-#include <yoga/Yoga.h>
-
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -144,6 +132,28 @@ typedef struct {
 // alive). Call BEFORE mount so components resolving the bridge find a live host.
 // Returns 0 on success, 2 on null pointer / bad size / failure.
 int32_t blazornative_register_bridge(int32_t structSize, bn_bridge_callbacks* callbacks);
+
+// ── Phase 6.0 Yoga spike (M6): the flexbox probe surface ──────────────────────
+// ALL Yoga (<yoga/Yoga.h>) interop lives in BnYogaProbe.mm (Objective-C++), NOT in
+// this Swift-visible bridging header: HEADER_SEARCH_PATHS reaches the Clang compile
+// of the .mm but NOT the Swift explicit-module dependency scanner, which chokes on
+// <yoga/Yoga.h> ("file not found"). So this header exposes only plain-C results.
+
+// The computed frames of the minimal flex-row proof (x/y/w/h per node) + whether
+// the measure callback fired.
+typedef struct {
+    float box1X, box1Y, box1W, box1H;
+    float box2X, box2Y, box2W, box2H;
+    float textX, textY, textW, textH;
+    int32_t measureFired;
+} bn_yoga_result;
+
+// Builds a row container (300) with box1 (fixed 50), box2 (flexGrow 1), and an auto
+// text leaf with a measure func, computes the layout, and returns the frames.
+bn_yoga_result bn_yoga_compute_flex_row(void);
+
+// A launch-time smoke that keeps Yoga linked + callable in-process (AppDelegate).
+void bn_yoga_warm_up(void);
 
 #ifdef __cplusplus
 }
