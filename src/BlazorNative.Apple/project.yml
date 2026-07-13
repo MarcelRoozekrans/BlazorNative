@@ -53,6 +53,14 @@ targets:
         # is appended to OTHER_LDFLAGS below (C++, so the existing -lc++ covers it).
         HEADER_SEARCH_PATHS:
           - $(SRCROOT)/vendor/yoga-include
+        # HEADER_SEARCH_PATHS reaches the Clang compile but NOT the Swift
+        # explicit-module dependency SCANNER that processes the bridging header —
+        # so <yoga/Yoga.h> reported "file not found" during scanning. Pass the
+        # include path via -Xcc so it reaches every swift-frontend job (scan + PCH
+        # + compile).
+        OTHER_SWIFT_FLAGS:
+          - -Xcc
+          - -I$(SRCROOT)/vendor/yoga-include
         # Link the NativeAOT static runtime. A NativeLib=Static .a carries ONLY
         # the compiled managed->native app code — NOT the NativeAOT runtime
         # bootstrapper/GC (_Rh*) or the platform native support libs
