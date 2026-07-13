@@ -319,52 +319,95 @@ Phases (approved at milestone-open):
 
 ---
 
-### ⏳ Milestone 6 — P5: Developer Ecosystem  *(next — opens via `new-milestone`; parallel with M7)*
+> **Roadmap re-planned 2026-07-13** (after the M5 close + a React-Native capability
+> comparison). The original P0–P7 list had no milestone for a real **layout engine** —
+> the single biggest gap between "proven POC" and "usable framework" — and it sequenced
+> *ecosystem/packaging* (old P5) before the *capability* that makes packaging worthwhile.
+> The re-plan applies **capability before ecosystem**: build what makes real apps
+> possible (layout → components → platform breadth), then package/publish, then harden.
+> M1–M5 (shipped, v1.0–v5.0) are unaffected; a new capability milestone (M6) is inserted,
+> `.razor` compilation is promoted to its own milestone concern (M7), and the old
+> Ecosystem/Hardening/Enterprise milestones shift down.
 
-With M5 closed (two native platforms in fact), M6 turns the framework into a
-consumable ecosystem: the `BlazorNative.Components` / `BlazorNative.Styling` /
-`BlazorNative.State` / `BlazorNative.Navigation` packages (the M3-audit navigation
-package lift #23 + the M4-ledger stringly FontSize/Padding land here), the
-`BlazorNative.Cli` global tool, full test infrastructure, a CI/CD release pipeline, a
-documentation site, **nuget.org publication** (the M4-deferred item — `PackageReadmeFile`
-is the recorded prerequisite), and **`.razor` compilation** (`@bind-Value` as syntax,
-not just mechanics). The M6+ host-API growth (camera/geo/biometrics) follows the
-[bridge-extension pattern](../bridge-extension.md); the on-device inspector channel
-(4.4 carryover) and the route→component registry unify (5.1 carryover) are revisitable
-now the iOS lane exists.
+### ⏳ Milestone 6 — Real-UI Foundation: Layout + Scroll + Image  *(next — opens via `new-milestone`)*
 
-Triage input: the [M5 final audit](../plans/2026-07-13-milestone-5-final-audit.md)
-carryover table. Maps to BACKLOG.md "P5 — Developer experience and ecosystem". Opens
-via `new-milestone`; explicitly parallel with M7.
+The capability that unblocks real screens. **Yoga (C++, Facebook's flexbox engine) linked
+into both shells** — Android via JNI/JNA, iOS via its C-API (the same interop the shells
+already use for the runtime); the renderer stays thin (flex props —
+`flexDirection`/`justifyContent`/`alignItems`/`flexGrow`/`flexWrap`/absolute — ride the
+existing `SetStyle` wire), the shell builds a Yoga node tree, **measures text/images
+natively** (Yoga's measure callback — the reason layout can't live purely in .NET), computes,
+and places. Plus **real scrolling** (the `scroll` NodeType is stubbed today → `ScrollView`/
+`UIScrollView`) and **URL images** (the `image` NodeType stub → async load into
+`ImageView`/`UIImageView`). Flex containers (`BnRow`/`BnColumn`/`BnStack`) come as thin
+`BnView` wrappers. This closes the #1 RN-parity gap (there is only vertical stacking today).
 
----
+First phase is a **Yoga-integration spike** (does Yoga link cleanly into both shells
+alongside the NativeAOT runtime; does the native measure-callback round-trip work) — the
+M5-style named-risk-first approach.
 
-### ⏳ Milestone 7 — P6: Framework Hardening  *(pending, parallel with M5/M6)*
-
-Security model (signed WASM, URL allowlist, secure buffers, crash isolation), error handling and crash recovery, accessibility, i18n (with `InvariantGlobalization` workaround), performance monitoring, memory management, WIT contract hardening.
-
-Maps to BACKLOG.md "P6 — Framework hardening".
-
----
-
-### ⏳ Milestone 8 — P7: Enterprise Readiness  *(pending)*
-
-OTA updates with delta + rollback, multi-window support, Material Design 3 / iOS HIG compliance, platform gesture recognition, keyboard avoidance, safe-area handling, legal compliance (SBOM, license audit, GDPR, export control, FIPS), observability and analytics, performance budget enforcement.
-
-Maps to BACKLOG.md "P7 — Enterprise readiness".
+Maps to BACKLOG "P4/P5 UI/styling" (re-scoped). Opens via `new-milestone`.
 
 ---
 
-### 🔮 Future / Exploratory  *(no milestone assigned)*
+### ⏳ Milestone 7 — Components + Razor  *(pending)*
 
-WASM Component Model migration, Windows/macOS shells, BlazorNative Studio, `RAG.net` integration, `ZeroAlloc.EventSourcing` deep integration, ZeroFlux/StaticFlux as default state, `BlazorNative.Templates`, bol.com reference app.
+The things you build UIs *with*: wire real **`.razor` compilation** (author components in
+Razor syntax — `@bind-Value` as syntax, not just the mechanics — instead of hand-written
+`BuildRenderTree`; the standing M3/M6-ledger item), and grow the `Bn*` component library
+on top of M6's layout engine — a **virtualized list** (the FlatList-equivalent: RecyclerView
+/ UITableView), modal/dialog, form controls, and the M4-ledger cleanups (stringly
+`FontSize`/`Padding` → typed). Maps to BACKLOG "P5 — components".
 
-See BACKLOG.md "Future / exploratory" — these promote into milestones when ecosystem maturity and demand justify them.
+---
+
+### ⏳ Milestone 8 — Developer Ecosystem  *(pending — the old P5, repositioned after capability)*
+
+Now there's a real layout engine + component library worth shipping: **nuget.org
+publication** (the M4-deferred item — `PackageReadmeFile` is the recorded prerequisite),
+`BlazorNative.Cli` + `dotnet new` project templates, a documentation site, the CI/CD
+release pipeline, and full test infrastructure. Maps to BACKLOG.md "P5 — Developer
+experience and ecosystem".
+
+---
+
+### ⏳ Milestone 9 — Platform Breadth + Real Device  *(pending)*
+
+More host APIs via the [bridge-extension pattern](../bridge-extension.md) (camera,
+geolocation, biometrics, notifications), **real-device iOS** (code signing, provisioning,
+App Store validation — **requires an Apple Developer account**, the M5 simulator-only
+deferral), and the Android completeness deferred from M5 (FCM push, secure storage). The
+route→component registry unify (5.1 carryover) and the on-device inspector channel (4.4
+carryover) land here. Maps to BACKLOG.md "P4 — full platform coverage" (remainder).
+
+---
+
+### ⏳ Milestone 10 — Framework Hardening  *(pending — old P6)*
+
+Accessibility, i18n (with the `InvariantGlobalization` workaround), performance & memory
+budgets (the M1-deferred allocation-budget work continues), a security model (URL
+allowlist, secure buffers, crash isolation), error handling & crash recovery, and the
+**open hardening ledger** (issues #8/#9/#12/#13 — async-handler window, dispatch-lane
+starvation, RemoveComponent bucket scan, TranslateToViewIndex memoization). Maps to
+BACKLOG.md "P6 — Framework hardening".
+
+---
+
+### 🔮 Backlog / Future *(uncommitted — promote to a dated milestone when they approach)*
+
+**Enterprise readiness** (old P7): OTA updates with delta + rollback, MD3 / iOS HIG
+compliance defaults, legal compliance (SBOM, license audit, GDPR, export control, FIPS),
+observability/analytics, performance-budget enforcement. **Also:** multi-window support,
+Windows/macOS shells, WASM Component Model migration, BlazorNative Studio, the ZeroAlloc
+deep integrations, a reference app. See BACKLOG.md "P7 — Enterprise readiness" + "Future /
+exploratory".
 
 ---
 
 ## Notes
 
-- Milestones M5, M6, M7 are explicitly **parallel** per BACKLOG's phase summary — they may be worked concurrently after M4 is complete.
-- M8 requires M6 + M7.
-- Each milestone closes with `audit-milestone` → `complete-milestone` → tag `vN.0`.
+- **Capability before ecosystem** (2026-07-13 re-plan): M6 (layout) → M7 (components+razor)
+  → M8 (ecosystem/publish) → M9 (platform breadth + real device) → M10 (hardening).
+- M9's real-device iOS is gated on an **Apple Developer account** (user dependency).
+- Each milestone closes with `audit-milestone` → `complete-milestone` → tag `vN.0`
+  (M6 → `v6.0`, and so on).
