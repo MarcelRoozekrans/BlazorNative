@@ -47,7 +47,7 @@ jobs:
         shell: pwsh
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup .NET SDK (global.json — 10.0.3xx band)
         uses: actions/setup-dotnet@v4
@@ -158,7 +158,7 @@ jobs:
         shell: bash
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup JDK 21 (Temurin — Gradle daemon)
         uses: actions/setup-java@v4
