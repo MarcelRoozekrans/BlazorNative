@@ -42,6 +42,14 @@
 // (staged by ios.yml from the pinned Yoga source build).
 #include <yoga/Yoga.h>
 
+// Yoga's C enum MEMBERS import into Swift with prefix-stripping (YGFlexDirectionRow
+// → YGFlexDirection.row, YGDirectionLTR → YGDirection.LTR), whose exact spelling for
+// acronyms is Swift-version-sensitive. Expose the two the spike needs as stable
+// inline accessors so BnYogaProbe.swift is version-robust (the C names are always
+// valid in C). The YG* FUNCTIONS import cleanly, so only the enum literals need this.
+static inline YGFlexDirection bnYogaFlexDirectionRow(void) { return YGFlexDirectionRow; }
+static inline YGDirection bnYogaDirectionLTR(void) { return YGDirectionLTR; }
+
 #ifdef __cplusplus
 extern "C" {
 #endif
