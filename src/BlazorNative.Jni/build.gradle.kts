@@ -45,6 +45,13 @@ dependencies {
         exclude(group = "net.java.dev.jna", module = "jna")
     }
 
+    // Phase 6.0 Yoga spike (M6): Facebook's Yoga flexbox engine — the prebuilt
+    // JNI bindings React Native Android uses (YogaNode Java API over the C++ core).
+    // `implementation` so libyoga.so ships in the APK alongside libBlazorNative.
+    // Runtime.so — the coexistence proof. Pulls fbjni + soloader (the native-lib
+    // loader) transitively. 6.1 builds the real BnWidgetMapper-over-Yoga placement.
+    implementation("com.facebook.yoga:yoga:3.2.1")
+
     // Kotlin stdlib
     implementation(kotlin("stdlib-jdk8"))
 
@@ -53,6 +60,13 @@ dependencies {
     testImplementation("org.junit.jupiter:junit-jupiter-params:5.11.3")
     testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine:5.11.3")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher:1.11.3")
+
+    // Phase 6.0 Yoga spike: yoga declares soloader (its native-lib loader) at
+    // RUNTIME scope, so it's in the APK but off the compile classpath — the Yoga
+    // instrumented test needs it on the test COMPILE classpath to call
+    // SoLoader.init(context) before the first YogaNode. Pinned to the version yoga
+    // 3.2.1 resolves (0.10.5) so the compile + runtime SoLoader agree.
+    androidTestImplementation("com.facebook.soloader:soloader:0.10.5")
 
     // Android instrumented tests (Phase 2.2 Task 7 fills in)
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
