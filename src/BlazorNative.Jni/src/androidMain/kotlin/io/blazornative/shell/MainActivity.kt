@@ -67,8 +67,17 @@ class MainActivity : Activity() {
          * resolution is robust in all three; the route slot is still seeded so
          * .NET's CurrentRoute agrees. Unknown route → default (BnDemo). A shared
          * route registry is M6 work (nav lifts into a package).
+         *
+         * Phase 6.1 adds "/layout" → BnLayoutDemo, the flexbox proof page (a
+         * THIRD root page, deliberately: BnDemo and BnSettingsPage keep their
+         * goldens, so layout-engine bugs never arrive mixed with golden-rewrite
+         * noise). Reachable by route AND by mount name (EXTRA_COMPONENT), which
+         * is how BnLayoutDemoAndroidTest mounts it.
          */
-        private val DEEP_LINK_COMPONENTS = mapOf("/settings" to "BnSettingsPage")
+        private val DEEP_LINK_COMPONENTS = mapOf(
+            "/settings" to "BnSettingsPage",
+            "/layout" to "BnLayoutDemo",
+        )
     }
 
     private val tag = "BlazorNative"
@@ -94,6 +103,15 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // Phase 6.1: Yoga's JNI core loads through SoLoader, which must be
+        // initialised once per process BEFORE the first YogaNode — and every
+        // node the WidgetMapper creates below allocates one. Done at shell start
+        // (the 6.0 conclusion's Android note; the spike did it from the test).
+        // Idempotent, so YogaLayout's own guard can also call it in the
+        // Activity-less synthetic-frame tests.
+        YogaLayout.ensureSoLoader(this)
+
         setContentView(R.layout.main)
 
         val view = findViewById<TextView>(R.id.markers)

@@ -13,7 +13,6 @@ import android.view.ViewGroup
 import android.widget.Button
 import android.widget.EditText
 import android.widget.ImageView
-import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.Spinner
 import android.widget.TextView
@@ -46,6 +45,22 @@ import io.blazornative.jni.RenderPatch
  * Patch model: src/BlazorNative.Renderer/PatchProtocol.cs (the wire itself is
  * the typed-struct C ABI decoded by [io.blazornative.jni.NativeFrameAdapter]).
  * Source of truth for the NodeType → widget table: docs/planning/MILESTONE.md DoD #6.
+ *
+ * ── PHASE 6.1: YOGA OWNS PLACEMENT ───────────────────────────────────────────
+ * This class no longer places anything. Every node gets a [YogaLayout] node
+ * mirrored against the view tree; `view` containers are [BnYogaFrameLayout]s
+ * (children absolutely placed, nothing stacked); CommitFrame runs ONE
+ * `calculateLayout` and applies every computed frame. An un-styled tree still
+ * renders as a vertical stack — that is Yoga's default `flexDirection: column`,
+ * not a LinearLayout, and it is the regression signal that the ENGINE changed
+ * and the BEHAVIOUR did not.
+ *
+ * [handleSetStyle] is now a ROUTER over the partitioned allow-list
+ * (`NativeRenderer.YogaStyleAttributes` / `VisualStyleAttributes`): a LAYOUT name
+ * goes to the Yoga node and NOWHERE else — in particular `padding` no longer
+ * reaches `view.setPadding(...)`, because Yoga already lays a container's
+ * children out inside its padding box and the surviving call would apply the
+ * inset a second time.
  */
 class WidgetMapper(
     private val context: Context,
@@ -55,6 +70,10 @@ class WidgetMapper(
     private val nodes = mutableMapOf<Int, View>()
     private val mainHandler = Handler(Looper.getMainLooper())
     private val pending = mutableListOf<RenderPatch>()
+
+    /** The layout engine (Phase 6.1). Mirrors this class's view tree; runs one
+     * layout pass per committed frame and on every host resize. */
+    private val yoga = YogaLayout(context, root)
 
     /**
      * Phase 3.2 re-entrancy guard: true while [applyBatch] runs. A programmatic
@@ -116,7 +135,12 @@ class WidgetMapper(
                 is RenderPatch.RemoveNode  -> handleRemove(patch)
                 is RenderPatch.UpdateProp  -> handleUpdateProp(patch)
                 is RenderPatch.SetStyle    -> handleSetStyle(patch)
-                is RenderPatch.CommitFrame -> { /* boundary marker; no-op here */ }
+                // Phase 6.1: the frame boundary IS the layout trigger — ONE
+                // calculateLayout over the whole tree, then every computed frame
+                // applied. Inside the applyingBatch guard on purpose: the pass
+                // measures real widgets, and a measure that moved focus or text
+                // must not dispatch back into .NET.
+                is RenderPatch.CommitFrame -> yoga.calculateAndApply()
                 is RenderPatch.AttachEvent -> handleAttachEvent(patch)
                 is RenderPatch.DetachEvent -> handleDetachEvent(patch)
             }
@@ -274,6 +298,11 @@ class WidgetMapper(
         //
         // Without this, the renderer's child text frames orphan to widget_root
         // because `as? ViewGroup` returns null for Button/EditText/etc.
+        //
+        // Phase 6.1: a collapsed text node gets no view AND THEREFORE NO YOGA
+        // NODE. The Yoga tree mirrors the VIEW tree, not the patch tree — give
+        // this node one and the two trees' child indices skew from here on, and
+        // every frame after it is wrong.
         if (p.nodeType == "text") {
             val rawParent = p.parentId?.let { nodes[it] }
             if (rawParent is TextView && rawParent !is android.view.ViewGroup) {
@@ -283,7 +312,10 @@ class WidgetMapper(
         }
 
         val view: View = when (p.nodeType) {
-            "view"   -> LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+            // Phase 6.1: a plain FrameLayout — children are absolutely placed by
+            // Yoga, nothing is stacked. (An un-styled tree still LOOKS stacked:
+            // Yoga's default flexDirection is column.)
+            "view"   -> BnYogaFrameLayout(context)
             "text"   -> TextView(context)
             "button" -> Button(context)
             "input"  -> EditText(context)
@@ -310,10 +342,25 @@ class WidgetMapper(
         // index throws on the main thread — inherently strict placement.
         if (p.insertIndex >= 0) parent.addView(view, p.insertIndex)
         else parent.addView(view)
+
+        // Phase 6.1: the Yoga twin, inserted at the SAME index in the SAME
+        // parent. `parent === root` (an unknown / non-ViewGroup parentId fell
+        // back to the host root) must fall back to the Yoga host root too, or the
+        // trees diverge — hence the parentId is re-derived from the view we
+        // actually parented to, not from the patch.
+        val yogaParentId = if (parent === root) null else p.parentId
+        yoga.createNode(p.nodeId, p.nodeType, view, yogaParentId, p.insertIndex)
     }
 
     private fun handleReplaceText(p: RenderPatch.ReplaceText) {
-        (nodes[p.nodeId] as? TextView)?.text = p.text
+        val view = nodes[p.nodeId] as? TextView ?: return
+        view.text = p.text
+        // Phase 6.1: new text = new intrinsic size. Yoga caches a measure
+        // function's result and will not re-run it unless the node is dirtied —
+        // without this the label keeps the frame its OLD text measured to.
+        // markDirty resolves by VIEW, which is what makes the collapse work: this
+        // nodeId may be an alias for the parent Button.
+        yoga.markDirty(view)
     }
 
     private fun handleRemove(p: RenderPatch.RemoveNode) {
@@ -327,6 +374,10 @@ class WidgetMapper(
         watchers.entries.removeAll { it.value.first === v }
         focusEntries.entries.removeAll { it.value.view === v }
         (v.parent as? ViewGroup)?.removeView(v)
+        // Phase 6.1: and the Yoga twin, or the detached view keeps consuming
+        // space in its parent's layout. A collapsed text nodeId has no Yoga node
+        // — removeNode no-ops, which is the mirror of it having had no view.
+        yoga.removeNode(p.nodeId)
     }
 
     private fun handleUpdateProp(p: RenderPatch.UpdateProp) {
@@ -336,8 +387,10 @@ class WidgetMapper(
         }
         when (p.name) {
             "placeholder" -> {
-                if (view is EditText) view.hint = p.value
-                else Log.w(TAG, "UpdateProp placeholder ignored: $view is not EditText")
+                if (view is EditText) {
+                    view.hint = p.value
+                    yoga.markDirty(view) // the hint sizes an empty EditText
+                } else Log.w(TAG, "UpdateProp placeholder ignored: $view is not EditText")
             }
             // Phase 3.4 (DoD #5): the bound input's write-back half of the bind
             // loop. Runs inside [applyBatch], so the [applyingBatch] guard
@@ -356,6 +409,7 @@ class WidgetMapper(
                     if (view.text.toString() != (p.value ?: "")) {
                         view.setText(p.value ?: "")
                         view.setSelection(view.text.length)
+                        yoga.markDirty(view) // new content = new intrinsic size
                     }
                 } else Log.w(TAG, "UpdateProp value ignored: $view is not EditText")
             }
@@ -366,11 +420,35 @@ class WidgetMapper(
         }
     }
 
+    /**
+     * Phase 6.1 — THE ROUTER. The SetStyle allow-list is PARTITIONED
+     * (`NativeRenderer.YogaStyleAttributes` / `VisualStyleAttributes`, design
+     * §"The allow-list is a routing table"), and every style name goes to exactly
+     * ONE destination:
+     *
+     *  - a **LAYOUT** name ([YogaLayout.owns] — flexDirection, width, height,
+     *    padding, margin, …) → the node's **Yoga node**, and nowhere else.
+     *  - a **VISUAL** name (backgroundColor, fontSize, …) → the **View** (paint).
+     *
+     * `padding`'s old `view.setPadding(...)` arm is GONE, deliberately: Yoga lays
+     * a container's children out inside its padding box, so a surviving setPadding
+     * would apply the inset a SECOND time and put every child in that container
+     * off by it. Same reasoning retires any view-level width/height/margin.
+     *
+     * Matching is ordinal/case-sensitive — the same discipline .NET's ordinal
+     * allow-list keeps, so a mis-cased name falls onto the prop wire (visible)
+     * rather than being silently swallowed here.
+     */
     private fun handleSetStyle(p: RenderPatch.SetStyle) {
-        val view = nodes[p.nodeId] ?: run {
+        if (nodes[p.nodeId] == null) {
             Log.w(TAG, "SetStyle for unknown nodeId ${p.nodeId}: ignored")
             return
         }
+        if (yoga.owns(p.property)) {
+            yoga.setStyle(p.nodeId, p.property, p.value)
+            return
+        }
+        val view = nodes.getValue(p.nodeId)
         when (p.property) {
             "backgroundColor" -> {
                 val color = p.value?.let { parseColorOrNull(it) }
@@ -383,14 +461,7 @@ class WidgetMapper(
                 val sp = p.value?.let { parseFloatOrNull(it) }
                     ?: return logIgnore("fontSize", p.value)
                 tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, sp)
-            }
-            "padding" -> {
-                val dp = p.value?.let { parseFloatOrNull(it) }
-                    ?: return logIgnore("padding", p.value)
-                val px = TypedValue.applyDimension(
-                    TypedValue.COMPLEX_UNIT_DIP, dp, context.resources.displayMetrics
-                ).toInt()
-                view.setPadding(px, px, px, px)
+                yoga.markDirty(tv) // a bigger font is a bigger intrinsic size
             }
             else -> Log.w(TAG, "SetStyle '${p.property}' not yet supported (Phase 3+ extends)")
         }
@@ -399,6 +470,11 @@ class WidgetMapper(
     private fun parseColorOrNull(s: String): Int? =
         try { Color.parseColor(s) } catch (_: IllegalArgumentException) { null }
 
+    /** The LEGACY VISUAL props' tolerant number parser (fontSize). The layout
+     * grammar has NO unit suffixes (design §"Style value grammar"; `px` is not
+     * dp, `sp` is font-scaled, neither exists on iOS) and [YogaLayout] does not
+     * strip them — this defensive strip survives only for the visual props that
+     * shipped before the grammar existed. */
     private fun parseFloatOrNull(s: String): Float? =
         s.removeSuffix("sp").removeSuffix("dp").removeSuffix("px").toFloatOrNull()
 
