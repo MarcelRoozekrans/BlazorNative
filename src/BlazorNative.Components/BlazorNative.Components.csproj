@@ -7,6 +7,11 @@
        (M6 names this package). Public, sealed, hand-written BuildRenderTree
        components (Razor syntax awaits .razor compilation, M6):
          BnView / BnText / BnButton / BnInput + BnDemo + BnTheme.
+       Phase 6.1 adds the flex surface: FlexStyles (the enums + their wire
+       words), BnRow / BnColumn (direction presets over BnView, sharing
+       BnFlexPreset) and BnLayoutDemo (the "/layout" proof page whose computed
+       frames Gates 2/3 assert on both shells). No BnStack — it would be a
+       BnColumn synonym (6.1 design decision 3).
 
        Trim posture: statically referenced through the annotated
        OpenComponent/Mount<T> paths; the Runtime publish gate proves no new
