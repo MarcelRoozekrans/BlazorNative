@@ -43,7 +43,11 @@
 //
 // And the Yoga node is a RAW native allocation: nothing will ever free it for you.
 // [handleRemove] purges whole subtrees (one RemoveNodePatch stands for one) and
-// [deinit] drops the tree — every navigation replaces it.
+// [destroy] drops the tree — every navigation replaces it. `BnYogaLifecycleTests`
+// is the pin on the first (a leaked node lays out nothing, so no frame assertion can
+// see it); `destroy` is called deterministically from `HostViewController.deinit`
+// because the mapper's own `deinit` would run on whatever thread dropped the last
+// reference, and the .mm's registries are main-thread-only.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import UIKit
@@ -144,17 +148,75 @@ final class BnWidgetMapper {
     private struct EventKey: Hashable { let nodeId: Int32; let event: String }
     private var eventTargets: [EventKey: (control: UIControl, target: BnControlTarget)] = [:]
 
+    /// Set by [destroy]. The tree is gone; a late batch (one already hopped to main
+    /// when the host tore down) must not resurrect it into freed native memory.
+    private var destroyed = false
+
     init(root: UIView) {
         self.root = root
         self.hostRoot = bn_yoga_node_new()
     }
 
-    deinit {
+    /// **Explicit, DETERMINISTIC teardown — the twin of Android's
+    /// `WidgetMapper.destroy()` (called from `MainActivity.onDestroy`).**
+    ///
+    /// `deinit` alone is not enough, and the difference is a threading one. `deinit`
+    /// runs on whatever thread happens to drop the last reference, and
+    /// `HostViewController` boots on a BACKGROUND queue — so a second boot would
+    /// release the previous mapper off-main and free its Yoga subtree (mutating the
+    /// `.mm`'s unsynchronised `static std::unordered_map` measure registry)
+    /// concurrently with the new mapper's main-thread `applyBatch`. One boot today, so
+    /// this is latent rather than live; it costs a function to make it impossible.
+    ///
+    /// Idempotent: `HostViewController.deinit` calls it, and so does [deinit] as the
+    /// backstop for a mapper nobody owned.
+    func destroy() {
+        guard !destroyed else { return }
+        destroyed = true
+
         // The Yoga tree is RAW native memory owned by the .mm — nothing collects it.
         // Freeing the host root frees every node still hanging off it (and clears
         // their measure funcs, breaking the last edges to the UIViews).
         bn_yoga_node_free_subtree(hostRoot)
+
+        yogaNodes.removeAll()
+        viewToNode.removeAll()
+        for (_, entry) in eventTargets {
+            entry.control.removeTarget(entry.target, action: nil, for: .allEvents)
+        }
+        eventTargets.removeAll()
+        views.removeAll()
+        collapsedAliases.removeAll()
+        // `pending` is deliberately NOT touched: it is the ONE field written on the
+        // frame-callback thread, and reaching across for it here would be the very
+        // cross-thread mutation this method exists to make impossible. It is a Swift
+        // array of value types on an object that is going away — the `destroyed` flag
+        // is what stops a late batch, not an emptied buffer.
     }
+
+    deinit {
+        destroy()
+    }
+
+    // ── Test-only bookkeeping (the twins of WidgetMapper's `nodeCount` /
+    // `yogaNodeCount` / `yogaViewCount`) ──────────────────────────────────────
+    //
+    // `BnYogaLifecycleTests` asserts all three return to their baseline after
+    // add→remove cycles — the regression pin for [handleRemove]'s subtree purge, which
+    // NO FRAME ASSERTION CAN SEE (a leaked node lays out nothing and shows nothing).
+    // On iOS a missed descendant is not a GC-rooted view: it is a malloc'd YGNodeRef
+    // nothing will ever free, plus a UIView still on the far end of a live node's
+    // measure-func edge.
+
+    /// The view registry — collapsed text aliases included (they hold a map entry
+    /// and nothing else).
+    var nodeCount: Int { views.count }
+
+    /// The Yoga tree's live nodes. Collapsed aliases are absent BY DESIGN.
+    var yogaNodeCount: Int { yogaNodes.count }
+
+    /// The Yoga tree's view mappings — must track [yogaNodeCount] one-for-one.
+    var yogaViewCount: Int { viewToNode.count }
 
     // ── Buffer on the callback thread; flush atomically on the main queue ─────
 
@@ -172,6 +234,12 @@ final class BnWidgetMapper {
     }
 
     private func applyBatch(_ patches: [BnPatch]) {
+        // THE THREADING CONTRACT, ASSERTED. UIKit is main-thread-only, and so is the
+        // `.mm` — whose measure registry is a bare `std::unordered_map` whose safety
+        // rests ENTIRELY on "main-thread only". A claim that load-bearing deserves a
+        // runtime pin, not a comment.
+        dispatchPrecondition(condition: .onQueue(.main))
+        guard !destroyed else { return }
         for patch in patches {
             switch patch {
             case .createNode(let nodeId, let nodeType, let parentId, let insertIndex):
@@ -214,7 +282,8 @@ final class BnWidgetMapper {
     /// than to zero: `bn_yoga_calculate` reads a non-positive available dimension as
     /// `auto`.
     func calculateAndApply() {
-        guard !yogaNodes.isEmpty else { return }
+        dispatchPrecondition(condition: .onQueue(.main)) // see [applyBatch]
+        guard !destroyed, !yogaNodes.isEmpty else { return }
         let bounds = root.bounds
         bn_yoga_calculate(hostRoot, Float(bounds.width), Float(bounds.height))
         for (nodeId, node) in yogaNodes {
@@ -364,7 +433,19 @@ final class BnWidgetMapper {
             let field = UITextField()
             field.borderStyle = .roundedRect
             return field
-        case "image", "scroll", "picker":
+        case "image":
+            // A REAL UIImageView, not a placeholder UIView — because `image` is a
+            // MEASURED nodetype ([measuredNodeTypes]) and `UIView.sizeThatFits`
+            // returns the view's CURRENT BOUNDS: a placeholder would measure ITSELF,
+            // a self-referential answer that converges to 0 and diverges from
+            // Android's `ImageView`, which measures its drawable. Benign today (no
+            // demo mounts an `image`) and a trap for 6.3. An empty UIImageView
+            // answers `sizeThatFits` with .zero, which is exactly what an
+            // ImageView with no drawable measures to — so the two shells agree, by
+            // construction, on the only case that exists today. (Gate 4 ledger,
+            // entry 1.)
+            return UIImageView()
+        case "scroll", "picker":
             // Stubbed (design §1c): keep a placeholder so container indices stay
             // consistent. Scroll/picker are 6.2's — the honest boundary is that a
             // framework container runs its OWN layout over its children, so Yoga does

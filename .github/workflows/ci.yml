@@ -3,7 +3,7 @@
 # rides on. Single windows-latest job mirroring the local verification
 # procedure verbatim (setup.ps1 §1–7 documents the toolchain pins):
 #
-#   build (analyzers ride it) → .NET tests (292 passed / 0 skipped) →
+#   build (analyzers ride it) → .NET tests (294 passed / 0 skipped) →
 #   three NativeAOT publishes (win-x64, linux-bionic-x64, linux-bionic-arm64;
 #   each publish must show exactly the 4 accepted IL2072 trim warnings) →
 #   nine-export verification (dumpbin via vswhere / llvm-readelf from the
@@ -185,10 +185,24 @@ jobs:
       # actually rests on: a name one shell honours and the other drops makes the two
       # frame tables disagree, and the failure reads as "the engine is broken").
       #
+      # 292 -> 294 (Phase 6.1 Gate 3 review, +2): the same file pins the DISPATCH
+      # behind the tables. A name being ON a table only says the shell ROUTES it to
+      # Yoga; whether a SETTER exists at the other end is a separate fact, and a name
+      # with no arm behaves EXACTLY like a rejected value (the .mm's if/else chain
+      # falls through to 0; Kotlin's `when` lands on `else -> logIgnore`). So six iOS
+      # arms were only ever asserted rc == 0 — which a missing arm returns too.
+      #   +1 AppleParserTestsRoutedNames_AreExactlyTheRenderersYogaHalf — iOS is pinned
+      #      at RUNTIME (BnYogaStyleParserTests feeds every routed name a legal value
+      #      and demands rc == 1); this pins that test's own hand-written name list, so
+      #      the pin cannot quietly stop covering a name.
+      #   +1 AndroidSetStyleDispatch_HasAnArmForEveryYogaStyle — Kotlin's setStyle
+      #      returns Unit (no rc to demand), so its dispatch is pinned at the SOURCE:
+      #      every routed name must appear as a `when` literal in setStyle's body.
+      #
       # Nothing Kotlin-side moved on the JVM rung: the JVM baseline below stays 79.
       # (The Android instrumented suite is 52 -> 71 — its own lane asserts that; the
-      # iOS XCTest suite is 14 -> 26 — ios.yml asserts that.)
-      - name: .NET tests (assert 292 passed / 0 skipped)
+      # iOS XCTest suite is 14 -> 29 — ios.yml asserts that.)
+      - name: .NET tests (assert 294 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -199,8 +213,8 @@ jobs:
           $passed  = ($summaries | ForEach-Object { [int]$_.Matches[0].Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($summaries | ForEach-Object { [int]$_.Matches[0].Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($summaries.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 292 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 292 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 294 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 294 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # ── NativeAOT publishes + nine-export verification ────────────────────

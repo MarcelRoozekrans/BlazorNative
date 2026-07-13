@@ -34,6 +34,46 @@ import UIKit
 
 final class BnYogaStyleParserTests: XCTestCase {
 
+    /// **THE ROUTING TABLE, as this suite knows it** — the names
+    /// `bn_yoga_is_layout_style` answers 1 for, i.e. the mirror of
+    /// `NativeRenderer.YogaStyleAttributes` and of Kotlin's `YOGA_STYLES`.
+    ///
+    /// Declared as a plain bracket literal at the start of its line because
+    /// `ShellStyleTableDriftTests` (the .NET suite — the one lane where every mirror
+    /// is checkout-visible) PARSES IT OUT OF THIS FILE and asserts set-equality with
+    /// .NET's set. Without that pin this list is a FOURTH hand-copy, and a test's own
+    /// hand-copy drifting is how a table gets "pinned" by a test that no longer covers
+    /// it.
+    static let routedStyleNames: [String] = [
+        "flexDirection", "justifyContent", "alignItems", "flexWrap", "gap",
+        "alignSelf", "flexGrow", "flexShrink", "flexBasis",
+        "width", "height", "minWidth", "maxWidth", "minHeight", "maxHeight",
+        "padding", "margin",
+        "position", "top", "right", "bottom", "left",
+    ]
+
+    /// A value each routed name must ACCEPT — the grammar's, per property. The
+    /// `default` is the guard: a name added to [routedStyleNames] with no sample value
+    /// fails loudly here instead of quietly skipping the arm it was added to test.
+    private func legalValue(for name: String) -> String? {
+        switch name {
+        case "flexDirection": return "row"
+        case "justifyContent": return "space-between"
+        case "alignItems", "alignSelf": return "center"
+        case "flexWrap": return "wrap"
+        case "position": return "absolute"
+        case "flexGrow", "flexShrink": return "1"
+        case "gap", "padding", "margin", "flexBasis",
+             "width", "height", "minWidth", "maxWidth", "minHeight", "maxHeight",
+             "top", "right", "bottom", "left":
+            return "8"
+        default:
+            XCTFail("'\(name)' is routed to Yoga but this test has no legal sample value for it "
+                    + "— add one, or the arm it needs is untested")
+            return nil
+        }
+    }
+
     /// A bare Yoga node, freed at the end of the test. (These are RAW native
     /// allocations — nothing collects them.)
     private func withNode(_ body: (UnsafeMutableRawPointer) -> Void) {
@@ -259,10 +299,7 @@ final class BnYogaStyleParserTests: XCTestCase {
     /// against `NativeRenderer.YogaStyleAttributes` by `ShellStyleTableDriftTests` in
     /// the .NET suite, the one lane where all three mirrors are checkout-visible.)
     func testTheRoutingTableSendsLayoutToYogaAndPaintToTheView() {
-        for name in ["flexDirection", "justifyContent", "alignItems", "flexWrap", "gap",
-                     "alignSelf", "flexGrow", "flexShrink", "flexBasis",
-                     "width", "height", "minWidth", "maxWidth", "minHeight", "maxHeight",
-                     "padding", "margin", "position", "top", "right", "bottom", "left"] {
+        for name in Self.routedStyleNames {
             XCTAssertEqual(bn_yoga_is_layout_style(name), 1, "'\(name)' is LAYOUT — it belongs to Yoga")
         }
         for name in ["backgroundColor", "color", "fontSize", "fontWeight", "background", "style"] {
@@ -276,5 +313,43 @@ final class BnYogaStyleParserTests: XCTestCase {
         XCTAssertEqual(bn_yoga_is_layout_style("alignContent"), 0,
                        "alignContent is deliberately NOT on the allow-list — the wrap demo RELIES "
                        + "on Yoga's flex-start default, and nothing types it")
+    }
+
+    /// **THE DISPATCH CHAIN, PINNED — the hole every other test in this file leaves
+    /// open.**
+    ///
+    /// `bn_yoga_node_set_style` is an if/else chain over the style name, and its
+    /// FALL-THROUGH returns 0 ("not a Yoga style — routing bug"). So does a rejected
+    /// value. Which means every REJECTION test above (`assertRejected` ⇒ `rc == 0`)
+    /// passes **whether the arm exists or not**: delete the `gap` arm entirely and
+    /// `gap: auto` still "is rejected", `gap: -1` still "is rejected", and the suite
+    /// stays green while `gap` silently does nothing on iOS and works on Android.
+    ///
+    /// Six names — `minWidth`, `maxWidth`, `minHeight`, `maxHeight`, `gap` and
+    /// `padding` — appeared ONLY in rejection tests, i.e. were never once asserted
+    /// ACCEPTED. `bn_yoga_is_layout_style` is drift-tested against .NET and Kotlin;
+    /// the chain BEHIND it was not pinned against it at all.
+    ///
+    /// This is that pin: every routed name, fed a legal value, must be ACCEPTED —
+    /// which can only happen by reaching a real Yoga setter. The list it iterates is
+    /// itself pinned against .NET by `ShellStyleTableDriftTests` (see
+    /// [routedStyleNames]), so the test's own map cannot drift either.
+    func testEveryRoutedNameReachesASetter() {
+        withNode { node in
+            for name in Self.routedStyleNames {
+                guard let value = legalValue(for: name) else { continue }
+                XCTAssertEqual(set(node, name, value), 1,
+                               "'\(name)' is routed to Yoga by bn_yoga_is_layout_style, so "
+                               + "bn_yoga_node_set_style MUST have an arm for it — with '\(value)' "
+                               + "(a legal value by the grammar) it returned 0, which is what the "
+                               + "chain's FALL-THROUGH returns. The name is routed to a setter that "
+                               + "does not exist: the style is accepted by .NET, sent on the wire, "
+                               + "and silently dropped on iOS alone")
+                // …and the RESET path of the same arm (a null value is the wire's
+                // reset), which is the other half of the arm and equally un-pinned.
+                XCTAssertEqual(set(node, name, nil), 1,
+                               "'\(name)' must also accept the wire's NULL RESET")
+            }
+        }
     }
 }

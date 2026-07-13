@@ -137,9 +137,20 @@ final class BnInteractionTests: XCTestCase {
     // UIStackView. The demo form is still root's single child with 6 children, and
     // the settings page is still root's single child with 2 — the SHAPE is what
     // identifies them, and the shape did not change.
+    //
+    // The shape alone would be a weaker pin than the `as? UIStackView` cast it
+    // replaced, so the type check is not dropped — it is INVERTED: a `view` node must
+    // now be a PLAIN UIView. That is exactly what 6.1 changed (a container stacks
+    // nothing; Yoga places its children), and exactly what a regression would undo.
+
+    /// A `view` node: a plain UIView — not a UIStackView, not a UILabel, not a
+    /// UIControl. `type(of:)`, because a subclass is precisely what is being excluded.
+    private func isPlainContainer(_ view: UIView) -> Bool { type(of: view) == UIView.self }
 
     private func demoForm() -> UIView? {
-        guard let form = root.subviews.first, form.subviews.count >= 6 else { return nil }
+        guard let form = root.subviews.first,
+              isPlainContainer(form),
+              form.subviews.count >= 6 else { return nil }
         return form
     }
     private func demoInput() -> UITextField? { demoForm()?.subviews[safe: 1] as? UITextField }
@@ -150,6 +161,7 @@ final class BnInteractionTests: XCTestCase {
     /// "Settings" title (distinguishes it from the 6-child demo).
     private func settingsView() -> UIView? {
         guard let view = root.subviews.first,
+              isPlainContainer(view),
               view.subviews.count == 2,
               (view.subviews[0] as? UILabel)?.text == "Settings" else { return nil }
         return view

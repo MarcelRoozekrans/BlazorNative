@@ -269,11 +269,19 @@ class YogaLayout(private val context: Context, private val root: ViewGroup) {
             measured.add(node)
         }
         val parent = parentId?.let { nodes[it] } ?: hostRoot
-        // −1 = append; anything else is the exact index the VIEW went to, and an
-        // out-of-range one THROWS (YogaNode.addChildAt → List.add(i, …)). Deliberately
-        // strict, mirroring WidgetMapper.addView: an index the two trees cannot both
-        // honour is a renderer bug, and a silent clamp would skew them against each
-        // other — which is the one thing the mirroring exists to prevent.
+        // −1 = append; anything else is the exact index the VIEW went to.
+        //
+        // **An out-of-range insertIndex is a RENDERER BUG, and the two shells answer
+        // it differently ON PURPOSE — ONE recorded decision, not two parsers
+        // disagreeing.** See the Gate 4 ledger
+        // (docs/plans/2026-07-13-phase-6.1-implementation-plan.md §"Recorded decisions
+        // carried in from the Gate 3 review", entry 2), which is the single statement;
+        // `bn_yoga_node_insert_child`'s comment points at the same entry.
+        // Here: it THROWS (YogaNode.addChildAt → List.add(i, …)), mirroring
+        // WidgetMapper.addView, because a JNI throw surfaces as a stack trace naming
+        // the renderer. iOS clamps instead — it clamps BOTH trees identically, so they
+        // cannot skew against each other, and trapping inside a render callback there
+        // aborts the app with no diagnostic at all.
         val index = if (insertIndex >= 0) insertIndex else parent.childCount
         parent.addChildAt(node, index)
     }

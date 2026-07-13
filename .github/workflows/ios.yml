@@ -317,7 +317,7 @@ jobs:
             > ios-out/xcresult.json 2>/dev/null || true
           ls -la ios-out/crash || true
 
-      - name: Assert XCTest baseline (27 passed / 0 failed)
+      - name: Assert XCTest baseline (29 passed / 0 failed)
         if: always()
         run: |
           log=ios-out/xcodebuild-test.log
@@ -353,10 +353,27 @@ jobs:
           #       platforms"); the measured leaves are pinned by ORACLE, not relationally.
           # (BnRenderTests / BnInteractionTests were REWRITTEN — UIStackView is gone —
           # but their count is unchanged: same six assertions, now pinned on frames.)
+          #
+          # 27 -> 29 (Phase 6.1 Gate 3 REVIEW, +2) — two tests that bite where the
+          # suite was green on nothing:
+          #   +1  BnYogaLifecycleTests — ONE RemoveNodePatch stands for a whole SUBTREE,
+          #       and a leaked descendant lays out nothing, so NO FRAME ASSERTION CAN
+          #       SEE IT: deleting BnWidgetMapper's purge loop left this entire suite
+          #       green. On iOS the leak is a malloc'd YGNodeRef nothing will ever free
+          #       (Android's twin leaks a GC-rooted View). Mounts CompositionProbe and
+          #       cycles add→remove three times; the node/Yoga-node/Yoga-view counts
+          #       must return to baseline. The iOS twin of YogaNodeLifecycleAndroidTest.
+          #   +1  BnYogaStyleParserTests.testEveryRoutedNameReachesASetter — the DISPATCH
+          #       CHAIN, pinned. bn_yoga_node_set_style's fall-through returns 0 — and so
+          #       does a rejected value, so every rejection test passes whether the arm
+          #       EXISTS or not. Six names (minWidth/maxWidth/minHeight/maxHeight/gap/
+          #       padding) were never once asserted ACCEPTED. Now every routed name is
+          #       fed a legal value and must return 1, and the list it iterates is itself
+          #       pinned against .NET by ShellStyleTableDriftTests (build-test: 292 -> 294).
           # Count drift fails loudly.
-          if [ "$failed" -ne 0 ] || [ "$passed" -ne 27 ]; then
+          if [ "$failed" -ne 0 ] || [ "$passed" -ne 29 ]; then
             grep -E "Test Case '.*' (passed|failed)" "$log" || true
-            echo "iOS XCTest baseline drift: expected 27 passed / 0 failed, got passed=$passed failed=$failed" >&2
+            echo "iOS XCTest baseline drift: expected 29 passed / 0 failed, got passed=$passed failed=$failed" >&2
             exit 1
           fi
 

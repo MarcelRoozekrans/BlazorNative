@@ -26,6 +26,21 @@ final class HostViewController: UIViewController {
     /// Held so the resize hook can re-run the layout pass.
     private var mapper: BnWidgetMapper?
 
+    /// The bounds size the tree was last SOLVED against — the guard in
+    /// [viewDidLayoutSubviews]. `nil` until the first pass.
+    private var lastSolvedSize: CGSize?
+
+    deinit {
+        // DETERMINISTIC teardown, on the main thread — the twin of Android's
+        // `MainActivity.onDestroy → mapper.destroy()`. Leaving it to the mapper's own
+        // `deinit` would free the Yoga tree on whatever thread dropped the last
+        // reference, and this class boots on a BACKGROUND queue: a second boot would
+        // race the previous mapper's subtree free (which mutates the .mm's
+        // unsynchronised registry) against the new mapper's main-thread applyBatch.
+        // A UIViewController's deinit is main-thread by UIKit's contract.
+        mapper?.destroy()
+    }
+
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
@@ -53,8 +68,21 @@ final class HostViewController: UIViewController {
     /// with the new bounds; rotation therefore works for free. The mapper's own pass
     /// assigns subview frames, so this must run AFTER the framework's layout of
     /// `view` itself — which is exactly what `viewDidLayoutSubviews` is.
+    ///
+    /// **Guarded on a genuine bounds-SIZE change**, exactly as Android's twin is
+    /// (`YogaLayout`'s OnLayoutChangeListener: "the listener also fires on passes that
+    /// did not move the host"). `viewDidLayoutSubviews` runs on every layout pass, and
+    /// every `addSubview`/`insertSubview` in a batch calls `setNeedsLayout` on the
+    /// host — so each commit would be followed by a full, redundant re-solve of the
+    /// whole tree for an identical answer.
+    ///
+    /// The guard lives HERE and not in `calculateAndApply()`: CommitFrame must ALWAYS
+    /// re-solve (the tree changed, the bounds did not).
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
+        let size = view.bounds.size
+        guard size != lastSolvedSize else { return }
+        lastSolvedSize = size
         mapper?.calculateAndApply()
     }
 }

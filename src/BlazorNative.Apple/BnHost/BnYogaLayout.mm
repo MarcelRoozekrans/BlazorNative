@@ -66,7 +66,9 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
+#include <string>
 #include <unordered_map>
+#include <xlocale.h> // strtof_l — see [bn_parse_number]
 
 // The re-declared measure modes must still BE Yoga's, or the trampoline hands
 // Swift the wrong mode and every measured leaf is subtly mis-sized.
@@ -124,12 +126,19 @@ int32_t bn_yoga_is_layout_style(const char* name) {
 
 /// Every node in every tree shares one config, and its whole job is
 /// `pointScaleFactor = 0` — see the file header, reason #1.
+///
+/// A function-local static initialised by a lambda, not the `if (ptr == NULL)`
+/// idiom: this file is C++, so the static's initialisation is guaranteed to run
+/// exactly once even if two threads reach it together (the "magic static" of
+/// [stmt.dcl]). The check-then-assign form is not — it would race two YGConfigNew
+/// calls and leak one. The rest of this file is main-thread-only by contract, but a
+/// thread-safety story that costs a lambda is not worth having a caveat about.
 static YGConfigRef bn_yoga_config(void) {
-    static YGConfigRef config = NULL;
-    if (config == NULL) {
-        config = YGConfigNew();
-        YGConfigSetPointScaleFactor(config, 0.0f);
-    }
+    static YGConfigRef config = [] {
+        YGConfigRef c = YGConfigNew();
+        YGConfigSetPointScaleFactor(c, 0.0f);
+        return c;
+    }();
     return config;
 }
 
@@ -183,9 +192,19 @@ bn_yoga_node bn_yoga_node_new(void) {
 void bn_yoga_node_insert_child(bn_yoga_node parent, bn_yoga_node child, int32_t index) {
     YGNodeRef p = (YGNodeRef)parent;
     const int32_t count = (int32_t)YGNodeGetChildCount(p);
-    // −1 = append; anything else is the exact index the VIEW went to. Clamped, not
-    // trapped: an out-of-range index is a renderer bug, and aborting the app in a
-    // render callback is a worse diagnostic than a logged skew.
+    // −1 = append; anything else is the exact index the VIEW went to.
+    //
+    // **An out-of-range insertIndex is a RENDERER BUG, and the two shells answer it
+    // differently ON PURPOSE — ONE recorded decision, not two parsers disagreeing.**
+    // See the Gate 4 ledger (docs/plans/2026-07-13-phase-6.1-implementation-plan.md
+    // §"Recorded decisions carried in from the Gate 3 review", entry 2), which is the
+    // single statement; `YogaLayout.createNode`'s comment points at the same entry.
+    // Here: CLAMPED and logged, because `BnWidgetMapper.handleCreate` clamps the VIEW
+    // insert identically (`insertIndex <= subviews.count`, else append) — so the two
+    // trees cannot skew against each other, which is the only thing the mirroring
+    // exists to prevent — and because trapping inside a render callback on iOS aborts
+    // the app with no diagnostic at all. Android throws, where a JNI throw surfaces as
+    // a stack trace naming the renderer.
     int32_t at = (index < 0 || index > count) ? count : index;
     if (index > count) {
         NSLog(@"%s insert index %d out of range (childCount=%d) — appending", kTag, index, count);
@@ -199,10 +218,6 @@ void bn_yoga_node_remove_child(bn_yoga_node parent, bn_yoga_node child) {
 
 bn_yoga_node bn_yoga_node_get_owner(bn_yoga_node node) {
     return (bn_yoga_node)YGNodeGetOwner((YGNodeRef)node);
-}
-
-int32_t bn_yoga_node_child_count(bn_yoga_node node) {
-    return (int32_t)YGNodeGetChildCount((YGNodeRef)node);
 }
 
 /// Clears one node's measure function (breaking the last edge to its UIView) and
@@ -272,8 +287,19 @@ static int bn_parse_number(const char* s, float* out) {
     // The production is guaranteed now, so strtof cannot wander off into hex /
     // inf / nan; the endptr check is belt-and-braces, and the finiteness check
     // rejects an overflowing literal ("1e40") exactly as Kotlin's does.
+    //
+    // **strtof_l with the C locale — a CROSS-SHELL PARITY GUARD, not a micro-
+    // optimisation.** Plain `strtof` honours `LC_NUMERIC`: under a comma-decimal
+    // locale it stops at the `.` of "12.5", the endptr check then REJECTS the whole
+    // value — while Kotlin's `Float.parseFloat` is locale-INDEPENDENT and accepts it.
+    // That is exactly the "one shell HONOURS what the other IGNORES" divergence the
+    // strict-parse rule exists to prevent (file header, reason #3), reintroduced
+    // through the one call the grammar screen was meant to make safe. Apple defaults
+    // to the C locale, so it is latent — but it is one `setlocale` in one linked
+    // dependency away, and the symptom (every fractional frame wrong, iOS only) is
+    // maximally confusing. A NULL locale_t IS the C locale on Darwin.
     char* end = NULL;
-    const float value = strtof(s, &end);
+    const float value = strtof_l(s, &end, NULL);
     if (end != s + strlen(s)) return 0;
     if (std::isnan(value) || std::isinf(value)) return 0;
     *out = value;
@@ -335,20 +361,17 @@ static BnLength bn_parse_length(const char* property,
     const size_t len = strlen(value);
     const int percent = (len > 0 && value[len - 1] == '%');
 
-    char scratch[64];
-    const char* number = value;
-    if (percent) {
-        if (len - 1 >= sizeof(scratch)) {
-            bn_log_ignore(property, value);
-            return out;
-        }
-        memcpy(scratch, value, len - 1);
-        scratch[len - 1] = '\0';
-        number = scratch;
-    }
+    // A std::string, not a fixed `char scratch[64]`: with a buffer, a percentage
+    // literal LONGER than the buffer is rejected on iOS for a reason that has
+    // nothing to do with the grammar — and Kotlin's `value.dropLast(1)` has no such
+    // limit, so the two shells would disagree on the wire's REJECTION path. Nothing
+    // .NET emits comes close to 64 chars, so this is unreachable in practice; the
+    // grammar is nonetheless meant to be comparable on BOTH paths, and the file is
+    // C++, so the asymmetry costs one line to delete rather than one line to excuse.
+    const std::string number = percent ? std::string(value, len - 1) : std::string(value);
 
     float parsed = 0.0f;
-    if (!bn_parse_number(number, &parsed)) {
+    if (!bn_parse_number(number.c_str(), &parsed)) {
         bn_log_ignore(property, value); // "not a number, a percentage or 'auto'"
         return out;
     }

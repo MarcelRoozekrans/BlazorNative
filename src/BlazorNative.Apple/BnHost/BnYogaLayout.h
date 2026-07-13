@@ -109,8 +109,6 @@ void bn_yoga_node_remove_child(bn_yoga_node _Nonnull parent, bn_yoga_node _Nonnu
 /// `RemoveNode` needs, since the patch carries only the node's own id.
 bn_yoga_node _Nullable bn_yoga_node_get_owner(bn_yoga_node _Nonnull node);
 
-int32_t bn_yoga_node_child_count(bn_yoga_node _Nonnull node);
-
 /// FREES [node] AND EVERY DESCENDANT, clearing each one's measure function first.
 ///
 /// The renderer emits **one** `RemoveNodePatch` for a whole subtree (its

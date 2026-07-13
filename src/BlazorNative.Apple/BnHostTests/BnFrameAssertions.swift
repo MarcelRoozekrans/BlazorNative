@@ -58,18 +58,32 @@ func assertFrame(_ what: String, _ view: UIView,
 /// This is the pin that replaced `as? UIStackView` + `axis == .vertical`: an
 /// UN-STYLED tree must still stack, because Yoga's default flexDirection is column.
 ///
-/// Heights are NOT asserted non-zero here (Android's twin does): an empty `UILabel`
-/// answers `sizeThatFits` with height 0 where an empty `TextView` answers one line
-/// height, and BnDemo mounts with an EMPTY echo label. That is a real (and honest)
-/// platform difference in what a widget measures to — it is not a frame-table
+/// PER-CHILD heights are NOT asserted non-zero here (Android's twin does): an empty
+/// `UILabel` answers `sizeThatFits` with height 0 where an empty `TextView` answers
+/// one line height, and BnDemo mounts with an EMPTY echo label. That is a real (and
+/// honest) platform difference in what a widget measures to — it is not a frame-table
 /// number, and inventing a minimum here to paper over it would be exactly the kind
 /// of "helpful" correction the engine must not make.
+///
+/// **But the container must have CONSUMED vertical space, and that is asserted.**
+/// Without it this helper VACUOUSLY PASSES on a tree that was never laid out: with
+/// every frame `.zero`, `contentLeft` is 0, `expectedTop` starts at 0, every child's
+/// `minX == 0` ✓ and `minY == 0 == expectedTop` ✓, and `expectedTop = maxY = 0` for
+/// the next one. Every assertion above holds and NOTHING was laid out. The type-pin
+/// this helper replaced (`as? UIStackView` + `axis == .vertical`) could not pass
+/// vacuously, so without this line the replacement is a strict WEAKENING — and
+/// `BnInteractionTests.testSettingsNavigationShowsSettingsNoTextField` would be
+/// pinning the settings page's layout with an assertion that holds on a completely
+/// un-laid-out tree.
 func assertStacksVertically(_ container: UIView,
                             file: StaticString = #filePath, line: UInt = #line) {
     guard let first = container.subviews.first else {
         XCTFail("a stacking container must have children", file: file, line: line)
         return
     }
+    XCTAssertTrue(container.subviews.contains { $0.frame.height > 0 },
+                  "the stack must have CONSUMED vertical space — every frame at zero "
+                  + "means the layout pass never ran", file: file, line: line)
     let contentLeft = first.frame.minX
     var expectedTop = first.frame.minY
     for (i, child) in container.subviews.enumerated() {

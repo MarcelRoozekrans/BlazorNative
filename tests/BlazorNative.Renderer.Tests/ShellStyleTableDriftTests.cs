@@ -33,6 +33,21 @@ namespace BlazorNative.Renderer.Tests;
 // source-format-agnostic (find the declaration, take every quoted name inside its
 // braces/parens), so the `.mm`'s C array needed no new machinery — which is the
 // point: a fourth shell adds two `[Fact]`s, never a fourth hand-copy nobody checks.
+//
+// ── AND THE TABLE IS NOT THE WHOLE CONTRACT: THE DISPATCH BEHIND IT ──────────
+// (Gate 3 review, I4.) A name being ON the table only says the shell ROUTES it to
+// Yoga. Whether a SETTER exists at the other end is a separate fact, and in both
+// shells a name with no arm behaves exactly like a rejected value: the `.mm`'s
+// if/else chain falls through and returns 0, Kotlin's `when` lands on
+// `else -> logIgnore("routing bug")`. A style .NET emits, the wire carries, and one
+// shell silently drops. Two more `[Fact]`s below close it:
+//
+//   - iOS is pinned at RUNTIME (`BnYogaStyleParserTests.testEveryRoutedNameReachesASetter`
+//     feeds every routed name a legal value and demands rc == 1); what is pinned HERE
+//     is that test's own hand-written name list, so the pin cannot quietly stop
+//     covering a name.
+//   - Kotlin's `setStyle` returns Unit — there is no rc to demand — so its dispatch is
+//     pinned at the SOURCE: every routed name must appear as a `when` literal.
 // ─────────────────────────────────────────────────────────────────────────────
 
 public sealed class ShellStyleTableDriftTests
@@ -43,6 +58,9 @@ public sealed class ShellStyleTableDriftTests
     private const string AppleYogaLayout =
         "src/BlazorNative.Apple/BnHost/BnYogaLayout.mm";
 
+    private const string AppleStyleParserTests =
+        "src/BlazorNative.Apple/BnHostTests/BnYogaStyleParserTests.swift";
+
     /// <summary>The Kotlin declaration — anchored at line start, so a mention of the
     /// name in a comment cannot be mistaken for the table itself.</summary>
     private const string KotlinYogaStylesDeclaration =
@@ -52,6 +70,16 @@ public sealed class ShellStyleTableDriftTests
     /// reason (the .mm's file header talks ABOUT the table at length).</summary>
     private const string AppleYogaStylesDeclaration =
         @"(?m)^static const char\* const kYogaStyles\[\] = \{(?<body>[^}]*)\}";
+
+    /// <summary>The XCTest suite's own copy of the routing table (Gate 3 review, I4).</summary>
+    private const string AppleParserTestNamesDeclaration =
+        @"(?m)^\s*static let routedStyleNames: \[String\] = \[(?<body>[^\]]*)\]";
+
+    /// <summary>Kotlin's `setStyle` body: from the declaration to the first line that
+    /// is exactly a 4-space-indented `}` — the function's own closing brace (every
+    /// brace inside it is indented deeper).</summary>
+    private const string KotlinSetStyleBody =
+        @"(?ms)^    fun setStyle\(nodeId: Int, property: String, value: String\?\) \{(?<body>.*?)^    \}";
 
     /// <summary>THE DRIFT PIN. The Android shell's layout-style table must be
     /// exactly `NativeRenderer.YogaStyleAttributes` — no more (a name the renderer
@@ -144,6 +172,65 @@ public sealed class ShellStyleTableDriftTests
             + $"  only in the .mm: {Join(apple.Except(kotlin))}\n"
             + "A name one shell honours and the other drops makes the two frame tables "
             + "disagree — the failure reads as 'the engine is broken' and is not.");
+    }
+
+    /// <summary>THE XCTEST'S OWN MAP MUST NOT DRIFT (Gate 3 review, I4).
+    ///
+    /// `BnYogaStyleParserTests.testEveryRoutedNameReachesASetter` is what pins the iOS
+    /// dispatch chain — it feeds every routed name a legal value and demands the setter
+    /// ACCEPT it, which is the only thing a missing if/else arm cannot do (the chain's
+    /// fall-through returns 0, exactly as a rejected VALUE does, so every rejection
+    /// test in that file passes whether the arm exists or not).
+    ///
+    /// But it iterates a list written by hand in Swift. If a name joins the routing
+    /// table and not that list, the arm it needs goes untested and the pin quietly
+    /// stops covering it. So the list is pinned here, in the one lane that can see both
+    /// files — the same mechanism, and for the same reason, as the tables above.</summary>
+    [Fact]
+    public void AppleParserTestsRoutedNames_AreExactlyTheRenderersYogaHalf()
+    {
+        var names = ParseNameTable(AppleStyleParserTests, AppleParserTestNamesDeclaration);
+
+        Assert.True(
+            names.SetEquals(NativeRenderer.YogaStyleAttributes),
+            "BnYogaStyleParserTests.routedStyleNames must mirror NativeRenderer.YogaStyleAttributes "
+            + "exactly — it is the list the DISPATCH-CHAIN pin iterates.\n"
+            + $"  only in .NET   : {Join(NativeRenderer.YogaStyleAttributes.Except(names))}\n"
+            + $"  only in XCTest : {Join(names.Except(NativeRenderer.YogaStyleAttributes))}\n"
+            + "A routed name missing from that list is a Yoga setter arm NOBODY asserts exists, "
+            + "and a missing arm is a style silently dropped on iOS alone.");
+    }
+
+    /// <summary>THE SAME HOLE, ON THE KOTLIN SIDE — pinned at the SOURCE because Kotlin
+    /// has no rc to pin it at runtime.
+    ///
+    /// `YogaLayout.setStyle` is a `when (property)` whose `else` arm logs and ignores
+    /// ("routing bug — owns() said it was"). So a name in `YOGA_STYLES` with no `when`
+    /// arm behind it does exactly what a name missing from the table does: nothing,
+    /// quietly, on one platform. iOS pins this at runtime (the `.mm` returns an rc, and
+    /// `testEveryRoutedNameReachesASetter` demands a 1); Kotlin's `setStyle` returns
+    /// Unit, so the equivalent runtime assertion would need an instrumented device and
+    /// a new signature. It is pinned here instead: every name the shell ROUTES to Yoga
+    /// must appear as a dispatch literal inside `setStyle`'s own body.
+    ///
+    /// Weaker than the iOS pin, and honestly so: this proves the arm is WRITTEN, not
+    /// that it reaches a setter. It still catches the failure that actually happens —
+    /// a name added to the table and to .NET, and forgotten in the `when`.</summary>
+    [Fact]
+    public void AndroidSetStyleDispatch_HasAnArmForEveryYogaStyle()
+    {
+        var routed = ParseNameTable(KotlinYogaLayout, KotlinYogaStylesDeclaration);
+        var dispatched = ParseNameTable(KotlinYogaLayout, KotlinSetStyleBody);
+
+        var missing = routed.Except(dispatched).ToList();
+
+        Assert.True(
+            missing.Count == 0,
+            $"YogaLayout.setStyle has no `when` arm for: {Join(missing)}.\n"
+            + "The name is on YOGA_STYLES, so `owns()` routes it to the Yoga node — and the "
+            + "`when` drops it on `else -> logIgnore(\"routing bug\")`. .NET emits the style, the "
+            + "wire carries it, Android ignores it and iOS honours it: the two frame tables "
+            + "disagree and the ENGINE gets the blame.");
     }
 
     // ── The parser ───────────────────────────────────────────────────────────
