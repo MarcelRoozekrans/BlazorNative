@@ -3,7 +3,7 @@
 # rides on. Single windows-latest job mirroring the local verification
 # procedure verbatim (setup.ps1 §1–7 documents the toolchain pins):
 #
-#   build (analyzers ride it) → .NET tests (287 passed / 0 skipped) →
+#   build (analyzers ride it) → .NET tests (289 passed / 0 skipped) →
 #   three NativeAOT publishes (win-x64, linux-bionic-x64, linux-bionic-arm64;
 #   each publish must show exactly the 4 accepted IL2072 trim warnings) →
 #   nine-export verification (dumpbin via vswhere / llvm-readelf from the
@@ -167,8 +167,21 @@ jobs:
       # null-through-the-preset round trip, the Flex*-prefix type-name pin, and
       # the 2 BnLayoutDemo goldens Gates 2/3 derive their frame expectations from.
       #
-      # Nothing Kotlin-side moved: the JVM baseline below stays 79.
-      - name: .NET tests (assert 287 passed / 0 skipped)
+      # 287 -> 289 (Phase 6.1 Gate 2 review, +2): ShellStyleTableDriftTests. The
+      # shells carry HAND-WRITTEN mirrors of the SetStyle layout allow-list
+      # (YogaLayout.kt's YOGA_STYLES today; BnYogaLayout.mm's name table from Gate
+      # 3), and a name that exists in .NET but is missing from a shell does NOT fail
+      # loudly — the shell's router drops it into the visual branch, logs "not yet
+      # supported" and SILENTLY discards the style. So the mirror is pinned the way
+      # this repo pins every cross-language contract (the patch struct, the export
+      # count, the Yoga version): a drift test, parsing the Kotlin literal out of the
+      # checkout and asserting set-equality + disjointness. It lives in the REQUIRED
+      # build-test lane because that is the only one where .NET, Kotlin and (soon) the
+      # .mm are all checkout-visible — neither shell lane can see the other's source.
+      #
+      # Nothing Kotlin-side moved on the JVM rung: the JVM baseline below stays 79.
+      # (The Android instrumented suite is 52 -> 71 — its own lane asserts that.)
+      - name: .NET tests (assert 289 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -179,8 +192,8 @@ jobs:
           $passed  = ($summaries | ForEach-Object { [int]$_.Matches[0].Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($summaries | ForEach-Object { [int]$_.Matches[0].Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($summaries.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 287 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 287 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 289 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 289 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # ── NativeAOT publishes + nine-export verification ────────────────────
