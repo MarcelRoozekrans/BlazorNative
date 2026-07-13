@@ -7,6 +7,7 @@ import android.view.View.MeasureSpec
 import android.view.ViewGroup
 import com.facebook.soloader.SoLoader
 import com.facebook.yoga.YogaAlign
+import com.facebook.yoga.YogaConfigFactory
 import com.facebook.yoga.YogaConstants
 import com.facebook.yoga.YogaDirection
 import com.facebook.yoga.YogaEdge
@@ -116,36 +117,63 @@ class YogaLayout(private val context: Context, private val root: ViewGroup) {
      * THROWS on a node without one, so [markDirty] checks membership first. */
     private val measured = mutableSetOf<YogaNode>()
 
-    // MUST precede [hostRoot]: Kotlin runs initializers in DECLARATION order, and
-    // YogaNodeFactory.create() links Yoga's JNI core through SoLoader — which
-    // throws "SoLoader.init() not yet called" if it has not been.
+    // MUST precede [config]/[hostRoot]: Kotlin runs initializers in DECLARATION
+    // order, and YogaNodeFactory.create() links Yoga's JNI core through SoLoader —
+    // which throws "SoLoader.init() not yet called" if it has not been.
     init {
         ensureSoLoader(context)
     }
+
+    /**
+     * Every node in this tree shares one config, and its whole job is to turn
+     * Yoga's OWN pixel-grid rounding **off** (`pointScaleFactor = 0`).
+     *
+     * Yoga defaults it to 1, meaning it rounds every computed frame to a whole
+     * POINT — and, worse for us, it rounds them by two different rules: a node
+     * with a measure function has its size **CEILED** (Yoga's "text rounding", so
+     * a fractional measurement can never clip a glyph) while its siblings' offsets
+     * are **ROUNDED**. Adjacent frames then stop tiling: on the AVD a measured
+     * label came out 1dp taller than the container hugging it, and the next
+     * sibling started 1dp (3px) above where the previous one ended.
+     *
+     * The design's rule is that Yoga computes in density-independent units with
+     * exactly ONE conversion site ([applyFrame]). Turning Yoga's rounding off is
+     * what makes that literally true: Yoga's output stays exact and fractional,
+     * and ALL pixel snapping happens in one place, on absolute edges, where
+     * adjacent frames tile by construction. It is also lossless for a measured
+     * leaf — Android measures in whole pixels, so px → dp → px round-trips exactly
+     * and nothing is ever clipped.
+     *
+     * (The alternative, `pointScaleFactor = density`, would move rounding INTO
+     * Yoga and make the layout dp-values device-dependent — precisely the thing
+     * that must not differ between the two platforms.)
+     */
+    private val config = YogaConfigFactory.create().apply { setPointScaleFactor(0f) }
 
     /** The synthetic host root: not a patch node, it IS the host ViewGroup.
      * Its children mirror [root]'s children (the top-level nodes). Direction is
      * set EXPLICITLY to LTR — a platform default is exactly the kind of thing the
      * two shells could silently disagree on. */
-    private val hostRoot: YogaNode = YogaNodeFactory.create().apply {
+    private val hostRoot: YogaNode = YogaNodeFactory.create(config).apply {
         setDirection(YogaDirection.LTR)
     }
 
     private val density: Float get() = context.resources.displayMetrics.density
 
-    /** Last host bounds a layout was computed against (px) — the resize guard:
-     * the host root's layout listener fires on every layout pass, but only a
-     * genuine bounds CHANGE needs a recompute (Task 2.3). */
-    private var lastWidthPx = -1
-    private var lastHeightPx = -1
-
     init {
-        // Task 2.3 — relayout on host resize. A rotation / split-screen / any
-        // resize of the host changes the available space Yoga solved against, so
-        // it must re-solve. No patch is involved: this is a pure host event.
-        root.addOnLayoutChangeListener { _, l, t, r, b, ol, ot, or_, ob ->
-            val changed = (r - l) != (or_ - ol) || (b - t) != (ob - ot)
-            if (changed && nodes.isNotEmpty()) calculateAndApply()
+        // Task 2.3 — RELAYOUT ON HOST RESIZE. A rotation / split-screen / any
+        // resize changes the available space Yoga solved against, so it must
+        // re-solve. No patch is involved: .NET never learns the host got wider,
+        // and nothing in the render tree changed — this is a pure host event.
+        //
+        // Guarded on a genuine bounds CHANGE: the listener also fires on layout
+        // passes that did not move the host (a child's requestLayout re-runs the
+        // traversal), and re-solving the whole tree on each of those is work for
+        // an identical answer. The framework calls this AFTER the host's own
+        // onLayout, so nothing it did is left standing.
+        root.addOnLayoutChangeListener { _, left, top, right, bottom, oldL, oldT, oldR, oldB ->
+            val resized = (right - left) != (oldR - oldL) || (bottom - top) != (oldB - oldT)
+            if (resized && nodes.isNotEmpty()) calculateAndApply()
         }
     }
 
@@ -161,7 +189,7 @@ class YogaLayout(private val context: Context, private val root: ViewGroup) {
      * everything else is a container Yoga sizes itself.
      */
     fun createNode(nodeId: Int, nodeType: String, view: View, parentId: Int?, insertIndex: Int) {
-        val node = YogaNodeFactory.create()
+        val node = YogaNodeFactory.create(config)
         nodes[nodeId] = node
         views[node] = view
         if (nodeType in MEASURED_NODE_TYPES) {
@@ -219,19 +247,25 @@ class YogaLayout(private val context: Context, private val root: ViewGroup) {
      */
     fun calculateAndApply() {
         val d = density
-        lastWidthPx = root.width
-        lastHeightPx = root.height
-        if (lastWidthPx > 0) hostRoot.setWidth(lastWidthPx / d) else hostRoot.setWidthAuto()
-        if (lastHeightPx > 0) hostRoot.setHeight(lastHeightPx / d) else hostRoot.setHeightAuto()
+        val widthPx = root.width
+        val heightPx = root.height
+        if (widthPx > 0) hostRoot.setWidth(widthPx / d) else hostRoot.setWidthAuto()
+        if (heightPx > 0) hostRoot.setHeight(heightPx / d) else hostRoot.setHeightAuto()
 
         hostRoot.calculateLayout(YogaConstants.UNDEFINED, YogaConstants.UNDEFINED)
 
-        for (i in 0 until hostRoot.childCount) applyFrames(hostRoot.getChildAt(i), d)
+        for (i in 0 until hostRoot.childCount) applyFrames(hostRoot.getChildAt(i), 0f, 0f, d)
     }
 
-    private fun applyFrames(node: YogaNode, d: Float) {
-        views[node]?.let { applyFrame(node, it, d) }
-        for (i in 0 until node.childCount) applyFrames(node.getChildAt(i), d)
+    /**
+     * Walks the tree carrying each node's ABSOLUTE position in dp, because that
+     * is what the dp→px conversion has to be done on. See [applyFrame].
+     */
+    private fun applyFrames(node: YogaNode, parentX: Float, parentY: Float, d: Float) {
+        val x = parentX + node.layoutX
+        val y = parentY + node.layoutY
+        views[node]?.let { applyFrame(node, it, x, y, parentX, parentY, d) }
+        for (i in 0 until node.childCount) applyFrames(node.getChildAt(i), x, y, d)
     }
 
     /**
@@ -239,22 +273,44 @@ class YogaLayout(private val context: Context, private val root: ViewGroup) {
      * dp and relative to its parent — which is precisely `view.layout`'s contract
      * once the parent is a container that does not place its own children.
      *
+     * **Every EDGE is rounded in absolute space, and the size is the difference of
+     * two rounded edges** — never `round(position) + round(size)`. On a device
+     * whose density is not a whole number (the Pixel 6 AVD is 2.625) those two are
+     * not the same number: a child at y=20dp h=19dp lands at
+     * `round(52.5) + round(49.875) = 53 + 50 = 103`px, while its sibling at y=39dp
+     * starts at `round(102.375) = 102`px — a ONE-PIXEL GAP that compounds down a
+     * long column and shows up as siblings that no longer tile. Rounding the
+     * absolute edges makes adjacent frames share the pixel by construction, and it
+     * is exactly how Yoga's own YGRoundToPixelGrid derives a size.
+     *
      * The `measure(EXACTLY, EXACTLY)` before the `layout` is not ceremony: a View
      * that was never measured has no internal layout (a TextView would have to
      * assume one at draw time), and widgets read `measuredWidth/Height` in
      * `onLayout`. React Native's NativeViewHierarchyManager does the same two
      * calls for the same reason.
      */
-    private fun applyFrame(node: YogaNode, view: View, d: Float) {
-        val x = (node.layoutX * d).roundToInt()
-        val y = (node.layoutY * d).roundToInt()
-        val w = (node.layoutWidth * d).roundToInt()
-        val h = (node.layoutHeight * d).roundToInt()
+    private fun applyFrame(
+        node: YogaNode,
+        view: View,
+        absX: Float,
+        absY: Float,
+        parentX: Float,
+        parentY: Float,
+        d: Float,
+    ) {
+        // The parent's own rounded absolute origin — the frame below is expressed
+        // relative to it, which is what View.layout() wants.
+        val originX = (parentX * d).roundToInt()
+        val originY = (parentY * d).roundToInt()
+        val left = (absX * d).roundToInt() - originX
+        val top = (absY * d).roundToInt() - originY
+        val right = ((absX + node.layoutWidth) * d).roundToInt() - originX
+        val bottom = ((absY + node.layoutHeight) * d).roundToInt() - originY
         view.measure(
-            MeasureSpec.makeMeasureSpec(w, MeasureSpec.EXACTLY),
-            MeasureSpec.makeMeasureSpec(h, MeasureSpec.EXACTLY),
+            MeasureSpec.makeMeasureSpec(right - left, MeasureSpec.EXACTLY),
+            MeasureSpec.makeMeasureSpec(bottom - top, MeasureSpec.EXACTLY),
         )
-        view.layout(x, y, x + w, y + h)
+        view.layout(left, top, right, bottom)
     }
 
     /** Yoga's measure mode → Android's MeasureSpec mode, with the dp→px hop.

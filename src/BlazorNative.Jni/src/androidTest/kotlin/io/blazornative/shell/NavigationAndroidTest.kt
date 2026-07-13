@@ -5,7 +5,6 @@ import android.view.ViewGroup
 import android.widget.Button
 import android.widget.EditText
 import android.widget.FrameLayout
-import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -29,10 +28,10 @@ import java.util.concurrent.atomic.AtomicReference
  * freshness pin).
  *
  * Shapes: BnDemo per src/BlazorNative.Components/BnDemo.cs's canonical
- * header (form LinearLayout, 6 children — see BnDemoAndroidTest's tree).
+ * header (form ViewGroup, 6 children — see BnDemoAndroidTest's tree).
  * BnSettingsPage per BnSettingsPage.cs's, on-screen:
  *   widget_root: FrameLayout
- *     └── settings LinearLayout (#FFEEAA), 2 children IN THIS ORDER:
+ *     └── settings ViewGroup (#FFEEAA), 2 children IN THIS ORDER:
  *           [0] TextView "Settings"        (title span, text-collapsed)
  *           [1] Button "← Back"
  *   — and NO EditText anywhere: the shape pin BnSettingsPage lacks by
@@ -86,9 +85,9 @@ class NavigationAndroidTest {
             // widget_root holding exactly title + back button.
             scenario.onActivity { act ->
                 val container = rootChild(act)
-                assertTrue("settings root must be a LinearLayout, got " +
-                    "${container?.let { it::class.simpleName }}", container is LinearLayout)
-                container as LinearLayout
+                assertTrue("settings root must be a ViewGroup, got " +
+                    "${container?.let { it::class.simpleName }}", container is ViewGroup)
+                container as ViewGroup
                 assertEquals("settings page must hold exactly title + back button",
                     2, container.childCount)
                 assertEquals("child 0 must be the title span",
@@ -160,8 +159,8 @@ class NavigationAndroidTest {
             ?.getChildAt(0)
 
     /** The BnDemo form div: widget_root's child once BnDemo is mounted. */
-    private fun form(act: MainActivity): LinearLayout? =
-        (rootChild(act) as? LinearLayout)?.takeIf { it.childCount >= 6 }
+    private fun form(act: MainActivity): ViewGroup? =
+        (rootChild(act) as? ViewGroup)?.takeIf { it.childCount >= 6 }
 
     /** Form child [1]: the bound EditText. */
     private fun editText(act: MainActivity): EditText? =
@@ -169,7 +168,7 @@ class NavigationAndroidTest {
 
     /** The echo TextView: form child [2]'s single (text-collapsed) child. */
     private fun echoText(act: MainActivity): TextView? =
-        (form(act)?.getChildAt(2) as? LinearLayout)
+        (form(act)?.getChildAt(2) as? ViewGroup)
             ?.takeIf { it.childCount >= 1 }
             ?.getChildAt(0) as? TextView
 
@@ -196,9 +195,9 @@ class NavigationAndroidTest {
     private fun pollForForm(
         scenario: ActivityScenario<MainActivity>,
         deadlineMs: Long = 60_000,
-    ): LinearLayout? {
+    ): ViewGroup? {
         val deadline = System.currentTimeMillis() + deadlineMs
-        val found = AtomicReference<LinearLayout?>(null)
+        val found = AtomicReference<ViewGroup?>(null)
         while (System.currentTimeMillis() < deadline) {
             scenario.onActivity { act -> found.set(form(act)) }
             if (found.get() != null) break

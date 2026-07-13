@@ -61,18 +61,15 @@ class YogaMeasureAndroidTest {
             label.height / d > 0f)
         assertTrue("the label must have WRAPPED — a single line of this text is far wider " +
             "than 150dp, so it must occupy >1 line", label.lineCount > 1)
-        // The label is constrained to the row's main axis — but it may end up up
-        // to ONE dp wider than it, and that is Yoga, working as designed:
-        // YGRoundToPixelGrid CEILS the dimensions of a node that has a MEASURE
-        // FUNCTION (its "text rounding" rule) so a fractional measured width can
-        // never clip the glyph it was measured from. Measured 150.1dp → frame
-        // 151dp. It is the same C++ core with the same default pointScaleFactor
-        // on iOS, so it is not a platform divergence — and it is precisely why
-        // the demo's two measured leaves are asserted RELATIONALLY rather than
-        // as pinned numbers.
-        assertTrue("the label must be constrained to the row's main axis, give or take Yoga's " +
-            "one-point text-rounding ceil (row=${row.width}px, label=${label.width}px)",
-            label.width <= row.width + d)
+        // The label never overflows the row it was measured inside. In PIXELS that
+        // is exact — the AT_MOST spec Yoga's measure func hands the TextView is
+        // the row's own width converted by the same rounding the frame-apply uses
+        // — so it is asserted in px, not dp. (In dp the label can read a hair over
+        // 150: 150dp is 393.75px, the spec rounds to 394px, and 394px back is
+        // 150.095dp. That is the density, not the engine.)
+        assertTrue("the label must not overflow the row it was measured inside " +
+            "(row=${row.width}px, label=${label.width}px)",
+            label.width <= row.width)
         assertEquals("the row declares NO height: it must hug the label's MEASURED height " +
             "— that is the whole DoD #3 claim", label.height.toFloat(), row.height.toFloat(), 1f)
     }

@@ -14,7 +14,7 @@
 #   emulator (ubuntu-latest, KVM) — downloads the .so, boots the API 34
 #     google_apis x86_64 Pixel 6 image (mirrors the local AVD
 #     blazornative-pixel6-x86_64), runs connectedAndroidTest with
-#     -PciSoDir pointing at the artifact → asserts 41 passed / 0 failed.
+#     -PciSoDir pointing at the artifact → asserts 52 passed / 0 failed.
 #
 # Baselines are asserted, not observed: count drift fails the job loudly.
 # ─────────────────────────────────────────────────────────────────────────────
@@ -218,7 +218,28 @@ jobs:
 
       # Baseline asserted, not observed (house style): 40 through M5; Phase 6.0 adds
       # YogaSpikeAndroidTest ×1 (the Yoga flex-row + measure-callback spike proof) → 41.
-      - name: Assert instrumented baseline (41 passed / 0 failed)
+      # Phase 6.1 Gate 2 (Yoga owns placement) adds 11 → 52:
+      #   +4  YogaLayoutAndroidTest    — the row's computed frames, an un-styled tree
+      #                                  still stacking, a null SetStyle resetting to
+      #                                  Yoga's default, padding as a YOGA property
+      #                                  (children inset, view.setPadding NOT called)
+      #   +3  YogaMeasureAndroidTest   — DoD #3: a long label WRAPS and its measured
+      #                                  height drives its row; a short one yields a
+      #                                  shorter row; and the regression guard that
+      #                                  CHILDLESS `view`s get no measure func
+      #   +1  YogaResizeAndroidTest    — a host resize re-solves the tree (no patch)
+      #   +1  BnLayoutDemoAndroidTest  — EVERY frame of the canonical table, on the
+      #                                  device (the iOS XCTest asserts the same
+      #                                  numbers — that pairing IS M6 DoD #2)
+      #   +1  BnDemoAndroidTest        — the un-styled tree still renders as a
+      #                                  vertical stack, asserted on FRAMES now
+      #   +1  WidgetMapperSetStyleTest — an unparseable layout value is logged and
+      #                                  ignored (the grammar has no unit suffixes)
+      # The four churned classes (WidgetMapperTest, BnDemoAndroidTest,
+      # CompositionAndroidTest, WidgetMapperSetStyleTest) were REWRITTEN from type
+      # pins (LinearLayout / orientation == VERTICAL) to FRAME pins; only the two
+      # counts above are new methods, the rest are same-count rewrites.
+      - name: Assert instrumented baseline (52 passed / 0 failed)
         run: |
           shopt -s globstar nullglob
           xmls=(src/BlazorNative.Jni/build/outputs/androidTest-results/connected/**/*.xml)
@@ -235,8 +256,8 @@ jobs:
             s=$(attr skipped "$x");  skipped=$((skipped + ${s:-0}))
           done
           echo "Instrumented totals across ${#xmls[@]} suite(s): tests=$tests failures=$failures errors=$errors skipped=$skipped"
-          if [ "$tests" -ne 41 ] || [ "$failures" -ne 0 ] || [ "$errors" -ne 0 ] || [ "$skipped" -ne 0 ]; then
-            echo "Instrumented test baseline drift: expected 41 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped" >&2
+          if [ "$tests" -ne 52 ] || [ "$failures" -ne 0 ] || [ "$errors" -ne 0 ] || [ "$skipped" -ne 0 ]; then
+            echo "Instrumented test baseline drift: expected 52 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped" >&2
             exit 1
           fi
 
