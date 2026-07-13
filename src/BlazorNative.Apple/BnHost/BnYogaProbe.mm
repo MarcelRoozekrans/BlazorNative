@@ -13,10 +13,11 @@
 //
 //   The fix: keep Yoga's headers out of Swift's sight entirely. This .mm is a
 //   plain Clang compile (HEADER_SEARCH_PATHS *does* reach it), so it can include
-//   <yoga/Yoga.h> freely; it exposes only a plain-C result struct + two C
-//   functions, which the bridging header declares. Swift calls those. This mirrors
-//   how the shell already talks to the NativeAOT runtime: hand-declared plain C,
-//   no foreign headers in Swift's sight.
+//   <yoga/Yoga.h> freely; it implements only the plain-C surface declared in
+//   BnYogaProbe.h (a SHELL-owned header — NOT the runtime C-ABI mirror), which the
+//   bridging header includes and Swift calls. This mirrors how the shell already
+//   talks to the NativeAOT runtime: hand-declared plain C, no foreign headers in
+//   Swift's sight.
 //
 // The spike proves two things the Phase 6.1 layout engine depends on:
 //   1. libyoga.a links and is callable in-process ALONGSIDE the runtime's static
@@ -31,7 +32,7 @@
 // measurement and drives the whole view tree; this spike proves only the mechanism.
 // ─────────────────────────────────────────────────────────────────────────────
 
-#include "BlazorNativeRuntimeC.h"
+#include "BnYogaProbe.h"
 
 #include <yoga/Yoga.h>
 
@@ -127,7 +128,8 @@ bn_yoga_result bn_yoga_compute_flex_row(void) {
 }
 
 // Referenced from AppDelegate at launch so the linker keeps Yoga (and this probe)
-// live in the app binary — the in-process coexistence smoke.
-void bn_yoga_warm_up(void) {
-    (void)bn_yoga_compute_flex_row();
+// live in the app binary — the in-process coexistence smoke. Returns the computed
+// frames so the caller can log them without a second layout pass.
+bn_yoga_result bn_yoga_warm_up(void) {
+    return bn_yoga_compute_flex_row();
 }

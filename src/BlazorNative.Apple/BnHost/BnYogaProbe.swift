@@ -3,8 +3,10 @@
 // flexbox probe.
 //
 // This file contains NO Yoga interop. All of it lives in BnYogaProbe.mm
-// (Objective-C++), which exposes a plain-C surface (bn_yoga_result /
-// bn_yoga_compute_flex_row / bn_yoga_warm_up) that the bridging header declares.
+// (Objective-C++), which implements the plain-C surface declared in BnYogaProbe.h
+// (bn_yoga_result / bn_yoga_compute_flex_row / bn_yoga_warm_up) — a SHELL-owned
+// header, deliberately not part of the runtime C-ABI mirror; the bridging header
+// merely includes it so Swift sees the plain C.
 //
 // Why: Xcode's Swift explicit-module dependency SCANNER processes the bridging
 // header with a path-less search that honours neither HEADER_SEARCH_PATHS nor
@@ -34,9 +36,10 @@ enum BnYogaProbe {
     /// Referenced from AppDelegate at launch so the linker keeps Yoga (and this
     /// probe) live in the app binary — proving Yoga is callable in-process
     /// alongside the runtime's static .a — and as a smoke of the full computation.
+    /// ONE layout pass: `bn_yoga_warm_up()` returns the frames it computed (it used
+    /// to compute, then discard, then have Swift compute the very same tree again).
     static func warmUp() {
-        bn_yoga_warm_up()
-        let r = computeMinimalFlexRow()
+        let r = toResult(bn_yoga_warm_up())
         NSLog("[BnYogaProbe] Yoga warm-up ok — box2.width=\(r.box2.width) text.height=\(r.text.height) measureFired=\(r.measureFired)")
     }
 

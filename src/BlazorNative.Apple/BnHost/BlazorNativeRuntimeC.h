@@ -133,30 +133,17 @@ typedef struct {
 // Returns 0 on success, 2 on null pointer / bad size / failure.
 int32_t blazornative_register_bridge(int32_t structSize, bn_bridge_callbacks* callbacks);
 
-// ── Phase 6.0 Yoga spike (M6): the flexbox probe surface ──────────────────────
-// ALL Yoga (<yoga/Yoga.h>) interop lives in BnYogaProbe.mm (Objective-C++), NOT in
-// this Swift-visible bridging header: HEADER_SEARCH_PATHS reaches the Clang compile
-// of the .mm but NOT the Swift explicit-module dependency scanner, which chokes on
-// <yoga/Yoga.h> ("file not found"). So this header exposes only plain-C results.
-
-// The computed frames of the minimal flex-row proof (x/y/w/h per node) + whether
-// the measure callback fired.
-typedef struct {
-    float box1X, box1Y, box1W, box1H;
-    float box2X, box2Y, box2W, box2H;
-    float textX, textY, textW, textH;
-    int32_t measureFired;
-} bn_yoga_result;
-
-// Builds a row container (300) with box1 (fixed 50), box2 (flexGrow 1), and an auto
-// text leaf with a measure func, computes the layout, and returns the frames.
-bn_yoga_result bn_yoga_compute_flex_row(void);
-
-// A launch-time smoke that keeps Yoga linked + callable in-process (AppDelegate).
-void bn_yoga_warm_up(void);
-
 #ifdef __cplusplus
 }
 #endif
+
+// ── Shell-owned C surfaces (NOT runtime exports — keep them out of the mirror) ─
+// Everything ABOVE this line mirrors Exports.cs. Everything the SHELL itself
+// implements in C/Objective-C++ and wants Swift to see gets its own header and is
+// included here, so the mirror stays a mirror. Phase 6.0's Yoga probe is the first
+// (its bn_yoga_* symbols live in BnYogaProbe.mm; Phase 6.1's node-tree API grows in
+// BnYogaProbe.h, never here). Note this includes only the probe's PLAIN-C header —
+// Yoga's own headers must never become reachable from Swift (see BnYogaProbe.h).
+#include "BnYogaProbe.h"
 
 #endif /* BLAZORNATIVE_RUNTIME_C_H */
