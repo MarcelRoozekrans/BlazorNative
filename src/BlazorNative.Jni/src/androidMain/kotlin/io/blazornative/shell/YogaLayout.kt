@@ -1,6 +1,7 @@
 package io.blazornative.shell
 
 import android.content.Context
+import android.util.AttributeSet
 import android.util.Log
 import android.view.View
 import android.view.View.MeasureSpec
@@ -36,18 +37,68 @@ import kotlin.math.roundToInt
  * layout is suppressed and Yoga's is the only one: exactly what React Native's
  * `ReactViewGroup` does, and for exactly this reason.
  *
+ * **THE HOST ROOT IS ONE OF THESE TOO** (`res/layout/main.xml`'s `widget_root`),
+ * which is why the class is public and XML-inflatable. A stock FrameLayout there
+ * would put the TOP-LEVEL nodes' frames back under the framework's control: every
+ * `addView`/`setText` in a batch calls `requestLayout()`, the ensuing traversal
+ * re-measures the host and `FrameLayout.onLayout` re-places each top-level child
+ * at (0, 0, hostW, hostH) — and the resize listener's bounds guard sees no change,
+ * so nothing repairs it. With ONE top-level node whose width happens to match the
+ * host that is invisible; with TWO they would overlap on Android and lay out
+ * correctly on iOS, i.e. a cross-platform divergence in exactly the numbers DoD #2
+ * asserts. `BnLayoutDemoAndroidTest` pins it by asserting the root column HUGS its
+ * content instead of filling the host.
+ *
  * It is still a `FrameLayout` in every sense that matters to a caller — z-ordered
  * overlapping children, no stacking, no orientation.
  */
-internal class BnYogaFrameLayout(context: Context) : android.widget.FrameLayout(context) {
+open class BnYogaFrameLayout @JvmOverloads constructor(
+    context: Context,
+    attrs: AttributeSet? = null,
+) : android.widget.FrameLayout(context, attrs) {
 
-    /** Yoga sized this node; adopt the spec (which [YogaLayout.applyFrame] built
-     * from the computed frame) instead of re-measuring children behind its back. */
+    init {
+        // Yoga's `overflow` default is VISIBLE and `UIView.clipsToBounds` is false,
+        // but `ViewGroup.clipChildren` defaults to TRUE — so an overflowing child
+        // would be clipped on Android and drawn on iOS. Not a frame-number
+        // divergence (DoD #2 still passes) but a "renders identically" one, and it
+        // costs one line to align the two shells on Yoga's default.
+        clipChildren = false
+    }
+
+    /** The last size Yoga applied to this container, in px — recorded from the
+     * EXACTLY spec [YogaLayout.applyFrame] measures with, which is this
+     * container's only notion of an intrinsic size (it never measures children). */
+    private var yogaWidth = 0
+    private var yogaHeight = 0
+
+    /**
+     * Yoga sized this node; adopt the spec (which [YogaLayout.applyFrame] built
+     * from the computed frame) instead of re-measuring children behind its back.
+     *
+     * Under a NON-EXACTLY spec the answer is the last size Yoga applied, not
+     * `getDefaultSize(0, …)`'s zero: `UNSPECIFIED` is exactly what a `ScrollView`
+     * hands its child, and a `view` inside a `scroll` that reported 0 tall would
+     * have its content vanish. (Scroll is still 6.2's — Yoga does not get the final
+     * word on what is INSIDE a framework ViewGroup — but "as tall as Yoga made me"
+     * is strictly the better answer than zero.) Before the first layout pass there
+     * is no Yoga size yet, so an `AT_MOST` spec falls back to filling it, which is
+     * what a stock FrameLayout would have said.
+     */
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-        setMeasuredDimension(
-            getDefaultSize(0, widthMeasureSpec),
-            getDefaultSize(0, heightMeasureSpec),
-        )
+        val w = resolve(widthMeasureSpec, yogaWidth)
+        val h = resolve(heightMeasureSpec, yogaHeight)
+        yogaWidth = w
+        yogaHeight = h
+        setMeasuredDimension(w, h)
+    }
+
+    private fun resolve(spec: Int, lastYogaSize: Int): Int = when (MeasureSpec.getMode(spec)) {
+        MeasureSpec.EXACTLY -> MeasureSpec.getSize(spec)
+        MeasureSpec.AT_MOST ->
+            if (lastYogaSize > 0) minOf(lastYogaSize, MeasureSpec.getSize(spec))
+            else MeasureSpec.getSize(spec)
+        else -> lastYogaSize // UNSPECIFIED — the ScrollView path
     }
 
     /** Deliberately empty: the children's frames are Yoga's, applied directly. */
@@ -118,10 +169,16 @@ class YogaLayout(private val context: Context, private val root: ViewGroup) {
     /** nodeId → Yoga node. Collapsed text nodes are absent BY DESIGN (see KDoc). */
     private val nodes = mutableMapOf<Int, YogaNode>()
 
-    /** Yoga node → the View it places. Populated for every node in [nodes]; also
-     * the reverse lookup [markDirty] needs, because a collapsed text node's
-     * ReplaceText must dirty its PARENT's (the Button's) measure cache. */
+    /** Yoga node → the View it places. Populated for every node in [nodes]. */
     private val views = mutableMapOf<YogaNode, View>()
+
+    /** The reverse of [views] — the lookup [markDirty] needs, because a collapsed
+     * text node's ReplaceText must dirty its PARENT's (the Button's) measure cache,
+     * and the only handle the mapper has at that point is the VIEW. A map, not a
+     * scan of [views]: markDirty runs once per changed leaf per frame, on the main
+     * thread, inside the commit path. `View` does not override `equals`, so the
+     * key semantics are identity — which is exactly what is wanted. */
+    private val viewToNode = mutableMapOf<View, YogaNode>()
 
     /** The subset of [nodes] carrying a measure function. `YogaNode.dirty()`
      * THROWS on a node without one, so [markDirty] checks membership first. */
@@ -202,6 +259,7 @@ class YogaLayout(private val context: Context, private val root: ViewGroup) {
         val node = YogaNodeFactory.create(config)
         nodes[nodeId] = node
         views[node] = view
+        viewToNode[view] = node
         if (nodeType in MEASURED_NODE_TYPES) {
             node.setMeasureFunction { _, width, widthMode, height, heightMode ->
                 val d = density
@@ -211,24 +269,61 @@ class YogaLayout(private val context: Context, private val root: ViewGroup) {
             measured.add(node)
         }
         val parent = parentId?.let { nodes[it] } ?: hostRoot
-        val index = if (insertIndex in 0..parent.childCount) insertIndex else parent.childCount
+        // −1 = append; anything else is the exact index the VIEW went to, and an
+        // out-of-range one THROWS (YogaNode.addChildAt → List.add(i, …)). Deliberately
+        // strict, mirroring WidgetMapper.addView: an index the two trees cannot both
+        // honour is a renderer bug, and a silent clamp would skew them against each
+        // other — which is the one thing the mirroring exists to prevent.
+        val index = if (insertIndex >= 0) insertIndex else parent.childCount
         parent.addChildAt(node, index)
     }
 
-    /** Detaches [nodeId]'s node (with its whole subtree) from the tree. The
-     * subtree's map entries are left behind exactly as [WidgetMapper] leaves its
-     * own — unreachable from [hostRoot], they are never laid out again. */
+    /**
+     * Detaches [nodeId]'s node from the tree and PURGES ITS WHOLE SUBTREE from
+     * every map.
+     *
+     * The subtree part is not defensive tidiness — it is the contract. The renderer
+     * emits **one** `RemoveNodePatch` for a whole subtree (`NativeRenderer`'s
+     * `PurgeNodeSubtree` is .NET-side bookkeeping; the host contract at its
+     * `ProcessDisposedComponent` says hosts must tolerate — and here, must handle —
+     * the descendants themselves). Dropping only this node's entry would leave every
+     * descendant in [nodes]/[views]/[measured] forever, and [views] holds a STRONG
+     * ref to the View → to the Activity Context; the Java `YogaNode`'s native peer is
+     * only reclaimed once nothing references it, so a dead subtree would keep its
+     * native Yoga memory alive too. Every navigation would leak a complete tree.
+     *
+     * `setMeasureFunction(null)` is part of the purge on purpose: the measure lambda
+     * CAPTURES the View, so clearing it breaks the last edge from the (native-backed)
+     * node to the view hierarchy.
+     */
     fun removeNode(nodeId: Int) {
-        val node = nodes.remove(nodeId) ?: return
-        views.remove(node)
-        measured.remove(node)
-        val owner = node.owner ?: return
-        for (i in 0 until owner.childCount) {
-            if (owner.getChildAt(i) === node) {
-                owner.removeChildAt(i)
-                return
+        val node = nodes[nodeId] ?: return
+        node.owner?.let { owner ->
+            for (i in 0 until owner.childCount) {
+                if (owner.getChildAt(i) === node) {
+                    owner.removeChildAt(i)
+                    break
+                }
             }
         }
+        val doomed = mutableSetOf<YogaNode>()
+        collectSubtree(node, doomed)
+        nodes.entries.removeAll { it.value in doomed }
+        for (dead in doomed) purge(dead)
+    }
+
+    /** [node] and every descendant — the set ONE RemoveNodePatch stands for. */
+    private fun collectSubtree(node: YogaNode, into: MutableSet<YogaNode>) {
+        into.add(node)
+        for (i in 0 until node.childCount) collectSubtree(node.getChildAt(i), into)
+    }
+
+    /** Drops one node's every reference: its measure function (which captures the
+     * View), its view mapping, and its dirty-lookup entry. */
+    private fun purge(node: YogaNode) {
+        if (measured.remove(node)) node.setMeasureFunction(null)
+        val view = views.remove(node) ?: return
+        if (viewToNode[view] === node) viewToNode.remove(view)
     }
 
     /**
@@ -236,14 +331,41 @@ class YogaLayout(private val context: Context, private val root: ViewGroup) {
      * measure function's result and will not re-run it unless the node is marked
      * dirty — so a ReplaceText / value / fontSize change that alters a widget's
      * intrinsic size must land here or the next layout reuses the stale size.
+     * (`YogaDirtyAndroidTest` is the pin: delete this call and a re-texted label
+     * keeps the frame its OLD text measured to, and the row keeps hugging that.)
      *
      * Keyed by VIEW, not nodeId, because the text collapse aliases a text node's
      * id onto its parent Button/EditText: the id has no Yoga node, the view does.
      */
     fun markDirty(view: View) {
-        val node = views.entries.firstOrNull { it.value === view }?.key ?: return
+        val node = viewToNode[view] ?: return
         if (node in measured && !node.isDirty) node.dirty()
     }
+
+    /**
+     * Activity teardown: drop the whole tree. Same purge as [removeNode], applied
+     * to every top-level node — the host root's children go, the measure functions
+     * (and with them their captured Views) go, and the maps empty out, so nothing
+     * pins the Activity's Context past `onDestroy`. `config`/[hostRoot] are Java
+     * objects with native peers and are reclaimed with this instance once the maps
+     * no longer hold the tree.
+     */
+    fun destroy() {
+        for (i in hostRoot.childCount - 1 downTo 0) hostRoot.removeChildAt(i)
+        for (node in nodes.values.toList()) purge(node)
+        nodes.clear()
+        views.clear()
+        viewToNode.clear()
+        measured.clear()
+    }
+
+    /** Test-only: the live node count. `YogaNodeLifecycleAndroidTest` asserts it
+     * returns to its baseline after mount → remove cycles — the regression pin for
+     * the subtree purge above. */
+    internal val nodeCount: Int get() = nodes.size
+
+    /** Test-only: the live view mappings (must track [nodeCount] one-for-one). */
+    internal val viewCount: Int get() = views.size
 
     // ── The layout pass ──────────────────────────────────────────────────────
 
@@ -396,11 +518,13 @@ class YogaLayout(private val context: Context, private val root: ViewGroup) {
             "flexShrink" -> node.setFlexShrink(unitless(property, value, default = 0f) ?: return)
 
             // ── Layout lengths ──
-            "width" -> length(property, value, auto = true)
+            // width/height/flexBasis: `auto` is BOTH a legal value AND the Yoga
+            // default, so a null reset lands on setWidthAuto() and friends.
+            "width" -> length(property, value, auto = true, autoIsDefault = true)
                 ?.applyTo(node::setWidth, node::setWidthPercent, node::setWidthAuto) ?: return
-            "height" -> length(property, value, auto = true)
+            "height" -> length(property, value, auto = true, autoIsDefault = true)
                 ?.applyTo(node::setHeight, node::setHeightPercent, node::setHeightAuto) ?: return
-            "flexBasis" -> length(property, value, auto = true)
+            "flexBasis" -> length(property, value, auto = true, autoIsDefault = true)
                 ?.applyTo(node::setFlexBasis, node::setFlexBasisPercent, node::setFlexBasisAuto) ?: return
             "minWidth" -> length(property, value)
                 ?.applyTo(node::setMinWidth, node::setMinWidthPercent) ?: return
@@ -418,6 +542,13 @@ class YogaLayout(private val context: Context, private val root: ViewGroup) {
                 ?: return
             // margin and the position offsets are the ONLY places a negative is
             // meaningful (Yoga defines both) — see [length]'s `negative` flag.
+            //
+            // `auto = true, autoIsDefault = false` — and the second half is the
+            // whole point (see [length]). `margin: auto` is a legal VALUE (it
+            // absorbs free space and re-centres the node) but it is NOT margin's
+            // DEFAULT, which is undefined → 0. Resetting a removed margin to `auto`
+            // would MOVE the node instead of putting it back, on the exact wire path
+            // Gate 1's UpdateProp→SetStyle null-reset fix exists to serve.
             "margin" -> length(property, value, auto = true, negative = true)
                 ?.applyTo({ node.setMargin(YogaEdge.ALL, it) },
                     { node.setMarginPercent(YogaEdge.ALL, it) },
@@ -465,26 +596,38 @@ class YogaLayout(private val context: Context, private val root: ViewGroup) {
      * There are NO unit suffixes in this grammar (`px` is not dp; `sp` is
      * font-scaled; neither exists on iOS).
      *
-     * `null` → the property's Yoga default, expressed as the undefined/auto form
-     * the setters take: `YGUndefined` points for most, and `auto` where the
-     * property has one. Returns null (→ the caller returns) when the value is not
-     * in the grammar; the negative rule is enforced here so it is enforced once.
+     * `null` → **the property's Yoga default**, and the two flags are what make
+     * that a per-property fact rather than a guess:
+     *
+     *  - [auto] — `auto` is an accepted VALUE here (Yoga has a setter for it).
+     *  - [autoIsDefault] — `auto` is also the property's DEFAULT.
+     *
+     * They coincide for `width`/`height`/`flexBasis` and they DO NOT for `margin`,
+     * whose default is undefined → 0 while `auto` means "absorb the free space".
+     * One flag doing both jobs is how a null reset silently re-centres a node.
+     * Everything else resets to `YGUndefined` points, which is Yoga's "unset".
+     *
+     * Returns null (→ the caller returns) when the value is not in the grammar; the
+     * negative rule is enforced here so it is enforced once.
      */
     private fun length(
         property: String,
         value: String?,
         auto: Boolean = false,
+        autoIsDefault: Boolean = false,
         negative: Boolean = false,
     ): Length? {
-        if (value == null) return if (auto) Length.Auto else Length.Points(YogaConstants.UNDEFINED)
+        if (value == null) {
+            return if (autoIsDefault) Length.Auto else Length.Points(YogaConstants.UNDEFINED)
+        }
         if (value == "auto") {
             if (auto) return Length.Auto
             logIgnore(property, "'auto' is not a legal value for $property")
             return null
         }
         val percent = value.endsWith("%")
-        val n = (if (percent) value.dropLast(1) else value).toFloatOrNull()
-        if (n == null || n.isNaN()) {
+        val n = number(if (percent) value.dropLast(1) else value)
+        if (n == null) {
             logIgnore(property, "'$value' is not a number, a percentage or 'auto'")
             return null
         }
@@ -502,8 +645,8 @@ class YogaLayout(private val context: Context, private val root: ViewGroup) {
      * `auto`, no units, no negatives. `null` → [default] (Yoga's). */
     private fun unitless(property: String, value: String?, default: Float): Float? {
         if (value == null) return default
-        val n = value.toFloatOrNull()
-        if (n == null || n.isNaN()) {
+        val n = number(value)
+        if (n == null) {
             logIgnore(property, "'$value' is not a unitless number")
             return null
         }
@@ -513,6 +656,25 @@ class YogaLayout(private val context: Context, private val root: ViewGroup) {
         }
         return n
     }
+
+    /**
+     * THE number production of the grammar (design §"Style value grammar
+     * (normative)"), screened BEFORE parsing so that **the whole string must be
+     * consumed** — trailing garbage is a rejection, never a prefix parse.
+     *
+     * The screen is not paranoia about `"12px"` alone (Kotlin's `toFloatOrNull`
+     * already rejects that); it is about the two platform parsers being written to
+     * the SAME production. Left to their natural implementations they diverge in
+     * both directions: Java's float grammar (which `toFloatOrNull` screens with)
+     * accepts a trailing `f`/`d` — `"12f"` → 12.0 — while C's `strtof` accepts hex
+     * (`0x10`), `inf`, `nan` and a leading-whitespace prefix parse. A value one
+     * shell HONOURS and the other IGNORES makes the two frame tables disagree for a
+     * reason that has nothing to do with the engine. So both shells screen against
+     * this production, and the rejection tests are the contract.
+     */
+    private fun number(value: String): Float? =
+        if (NUMBER.matches(value)) value.toFloatOrNull()?.takeIf { !it.isNaN() && !it.isInfinite() }
+        else null
 
     private fun alignOrNull(value: String?): YogaAlign? = when (value) {
         "auto" -> YogaAlign.AUTO
@@ -531,6 +693,10 @@ class YogaLayout(private val context: Context, private val root: ViewGroup) {
     companion object {
         private const val TAG = "BlazorNative.YogaLayout"
 
+        /** `[+-]? ( digit+ ('.' digit*)? | '.' digit+ ) ( [eE] [+-]? digit+ )?` —
+         * anchored, so the ENTIRE string must be consumed. See [number]. */
+        private val NUMBER = Regex("""[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?""")
+
         /**
          * NODETYPES whose size is the native widget's business (DoD #3) — and the
          * ONLY nodes that get a measure function. NOT "the nodes with no
@@ -539,11 +705,29 @@ class YogaLayout(private val context: Context, private val root: ViewGroup) {
          */
         private val MEASURED_NODE_TYPES = setOf("text", "button", "input", "image")
 
-        /** The LAYOUT half of the SetStyle partition — the mirror of
+        /**
+         * The LAYOUT half of the SetStyle partition — the mirror of
          * `NativeRenderer.YogaStyleAttributes` (design §"The allow-list is a
          * routing table"). Every name here goes to the Yoga node and to NOTHING
          * else; in particular `padding`/`margin`/`width`/`height` do NOT also
-         * reach the View, which would double-apply them. */
+         * reach the View, which would double-apply them.
+         *
+         * **This is a hand-written MIRROR of a .NET set, and it is pinned by a
+         * DRIFT TEST** — `ShellStyleTableDriftTests` (tests/BlazorNative.Renderer.Tests),
+         * which parses this literal out of this file and asserts set-equality with
+         * `NativeRenderer.YogaStyleAttributes` plus disjointness from
+         * `VisualStyleAttributes`. Without it, a name added on the .NET side and
+         * missed here does not fail loudly: it falls into [WidgetMapper]'s visual
+         * branch and is logged as "not yet supported", i.e. the style is SILENTLY
+         * DROPPED. The drift test runs in the required `build-test` lane (the only
+         * one where .NET, Kotlin and — from Gate 3 — the `.mm` are all
+         * checkout-visible), and Gate 3 extends it with `BnYogaLayout.mm`'s name
+         * table rather than adding a third un-pinned copy.
+         *
+         * Keep the declaration a plain `setOf` of quoted names, declared at the start
+         * of its line: the drift test parses that literal out of this file, and a
+         * declaration it cannot find fails it LOUDLY (never silently-empty).
+         */
         private val YOGA_STYLES = setOf(
             "flexDirection", "justifyContent", "alignItems", "flexWrap", "gap",
             "alignSelf", "flexGrow", "flexShrink", "flexBasis",

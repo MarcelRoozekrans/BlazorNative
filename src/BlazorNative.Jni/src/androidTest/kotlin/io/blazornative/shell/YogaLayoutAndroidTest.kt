@@ -1,14 +1,8 @@
 package io.blazornative.shell
 
-import android.view.View
 import android.view.ViewGroup
-import android.widget.FrameLayout
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import androidx.test.platform.app.InstrumentationRegistry
-import io.blazornative.jni.RenderFrame
-import io.blazornative.jni.RenderPatch
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -117,55 +111,6 @@ class YogaLayoutAndroidTest {
         assertEquals(0, box.paddingTop)
     }
 
-    // ── Helpers ──────────────────────────────────────────────────────────────
-
-    private fun density() =
-        InstrumentationRegistry.getInstrumentation().targetContext.resources.displayMetrics.density
-
-    private fun create(nodeId: Int, nodeType: String, parentId: Int?) =
-        RenderPatch.CreateNode(nodeId = nodeId, nodeType = nodeType, parentId = parentId)
-
-    private fun style(nodeId: Int, property: String, value: String?) =
-        RenderPatch.SetStyle(nodeId = nodeId, property = property, value = value)
-
-    /** Asserts a View's frame in DP (design: Yoga computes in dp; the mapper's
-     * frame-apply is the one place density enters). 0.5dp tolerance — the frame
-     * is rounded to whole pixels on apply. */
-    private fun assertFrame(what: String, v: View, x: Float, y: Float, w: Float, h: Float) {
-        val d = density()
-        assertEquals("$what.x", x, v.left / d, 0.5f)
-        assertEquals("$what.y", y, v.top / d, 0.5f)
-        assertEquals("$what.w", w, v.width / d, 0.5f)
-        assertEquals("$what.h", h, v.height / d, 0.5f)
-    }
-
-    /**
-     * Drives [WidgetMapper] with one frame per patch list and returns the host
-     * root. The root is given a real 400×800dp bound (via [View.layout]) BEFORE
-     * the patches arrive: a detached ViewGroup has no size, and Yoga's available
-     * space is the host's — the same bound the Activity's widget_root supplies in
-     * production.
-     */
-    private fun render(vararg frames: List<RenderPatch>): FrameLayout {
-        val instr = InstrumentationRegistry.getInstrumentation()
-        val ctx = instr.targetContext
-        val d = ctx.resources.displayMetrics.density
-        lateinit var root: FrameLayout
-        instr.runOnMainSync {
-            root = FrameLayout(ctx)
-            root.layout(0, 0, (400 * d).toInt(), (800 * d).toInt())
-            val mapper = WidgetMapper(ctx, root)
-            frames.forEachIndexed { i, patches ->
-                mapper.apply(RenderFrame(
-                    frameId = i + 1, timestampMs = 0L,
-                    patches = patches + RenderPatch.CommitFrame(i + 1, 0L),
-                ))
-            }
-        }
-        instr.waitForIdleSync()
-        var ok = false
-        instr.runOnMainSync { ok = root.childCount > 0 }
-        assertTrue("no child created in root after apply", ok)
-        return root
-    }
+    // Helpers (assertFrame / create / style / render — the 400×800dp synthetic
+    // host, rooted in the PRODUCTION BnYogaFrameLayout) live in FrameAssertions.kt.
 }

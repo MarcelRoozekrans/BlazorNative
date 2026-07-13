@@ -71,6 +71,20 @@ class WidgetMapper(
     private val mainHandler = Handler(Looper.getMainLooper())
     private val pending = mutableListOf<RenderPatch>()
 
+    /**
+     * The nodeIds that are ALIASES, not owners: a `text` node COLLAPSED onto its
+     * text-bearing parent (Button/EditText/TextView) by [handleCreate]. Its
+     * `nodes` entry points at the PARENT's view, which it does not own.
+     *
+     * Tracked explicitly because [handleRemove] cannot tell the two apart from the
+     * map alone, and guessing wrong is expensive in both directions: removing an
+     * alias must NOT detach the parent Button (pre-6.1 it did — `removeView(nodes[textId])`
+     * removes the BUTTON) and must NOT remove a Yoga node (the alias has none, so
+     * Yoga would keep laying out and reserving space for a Button that is no longer
+     * in the view hierarchy, offsetting every sibling after it by a ghost).
+     */
+    private val collapsedAliases = mutableSetOf<Int>()
+
     /** The layout engine (Phase 6.1). Mirrors this class's view tree; runs one
      * layout pass per committed frame and on every host resize. */
     private val yoga = YogaLayout(context, root)
@@ -307,6 +321,7 @@ class WidgetMapper(
             val rawParent = p.parentId?.let { nodes[it] }
             if (rawParent is TextView && rawParent !is android.view.ViewGroup) {
                 nodes[p.nodeId] = rawParent
+                collapsedAliases.add(p.nodeId) // it ALIASES the parent; it owns nothing
                 return  // no separate view; subsequent ReplaceText sets parent's text
             }
         }
@@ -363,22 +378,82 @@ class WidgetMapper(
         yoga.markDirty(view)
     }
 
+    /**
+     * ONE RemoveNodePatch arrives for a WHOLE SUBTREE — the renderer does not emit
+     * one per node (`NativeRenderer.PurgeNodeSubtree` is .NET-side bookkeeping; the
+     * host contract on `ProcessDisposedComponent` spells it out). So the host must
+     * purge the subtree itself, in BOTH trees: here (views/watchers/focus entries/
+     * aliases) and in [YogaLayout.removeNode] (Yoga nodes + their measure funcs).
+     * Purging only the named node leaks every descendant — each entry pinning a
+     * View, hence the Activity Context, hence a native Yoga peer that can never be
+     * reclaimed — once per navigation, forever.
+     *
+     * The subtree is read off the VIEW hierarchy (the mapper's own tree) and matched
+     * by IDENTITY, never by key: the text collapse aliases nodeIds onto a view they
+     * do not own, so a map entry may sit under a different id than the one removed.
+     */
     private fun handleRemove(p: RenderPatch.RemoveNode) {
-        val v = nodes.remove(p.nodeId) ?: return
-        // Purge change watchers and focus entries registered on the removed
-        // view — the detached EditText would otherwise pin itself (and its
-        // watcher/pair) in the maps forever. Identity match, NOT key match:
-        // the collapse can alias several nodeIds to one view, and the map
-        // entry may sit under a different (aliased) nodeId than the one
-        // being removed.
-        watchers.entries.removeAll { it.value.first === v }
-        focusEntries.entries.removeAll { it.value.view === v }
+        // An ALIAS (collapsed text node) owns NO view and NO Yoga node: drop the
+        // map entry and stop. Removing its view would detach the parent BUTTON, and
+        // the Yoga node it would leave behind is the Button's — Yoga would keep
+        // reserving space for a widget no longer on screen.
+        if (collapsedAliases.remove(p.nodeId)) {
+            nodes.remove(p.nodeId)
+            return
+        }
+        val v = nodes[p.nodeId] ?: return
+        val doomed = subtreeOf(v)
+        val removedIds = nodes.entries.filter { it.value in doomed }.map { it.key }
+        for (id in removedIds) {
+            nodes.remove(id)
+            collapsedAliases.remove(id) // an aliased text child of a doomed Button
+        }
+        // The detached EditText would otherwise pin itself (and its watcher/focus
+        // pair) in these maps forever.
+        watchers.entries.removeAll { it.value.first in doomed }
+        focusEntries.entries.removeAll { it.value.view in doomed }
         (v.parent as? ViewGroup)?.removeView(v)
-        // Phase 6.1: and the Yoga twin, or the detached view keeps consuming
-        // space in its parent's layout. A collapsed text nodeId has no Yoga node
-        // — removeNode no-ops, which is the mirror of it having had no view.
+        // Phase 6.1: and the Yoga twin, or the detached view keeps consuming space
+        // in its parent's layout. Purges ITS subtree too, for the same reason.
         yoga.removeNode(p.nodeId)
     }
+
+    /** [root] and every descendant view. A `HashSet<View>` IS an identity set —
+     * `View` does not override `equals`. */
+    private fun subtreeOf(root: View): Set<View> {
+        val out = mutableSetOf<View>()
+        fun walk(v: View) {
+            out.add(v)
+            if (v is ViewGroup) for (i in 0 until v.childCount) walk(v.getChildAt(i))
+        }
+        walk(root)
+        return out
+    }
+
+    /**
+     * Activity teardown (`MainActivity.onDestroy`): drop every map entry and the
+     * whole Yoga tree. Without it the mapper — reachable from the runtime's frame
+     * callback, which outlives the Activity (the native session is process-global)
+     * — keeps a dead Activity's entire view hierarchy and its native Yoga peers
+     * alive across every recreation.
+     */
+    fun destroy() {
+        nodes.clear()
+        collapsedAliases.clear()
+        watchers.clear()
+        focusEntries.clear()
+        yoga.destroy()
+    }
+
+    /** Test-only: the live node count, the pin for the subtree purge above
+     * (`YogaNodeLifecycleAndroidTest` asserts it returns to baseline). */
+    internal val nodeCount: Int get() = nodes.size
+
+    /** Test-only: the Yoga tree's live node count — must track the view tree's. */
+    internal val yogaNodeCount: Int get() = yoga.nodeCount
+
+    /** Test-only: the Yoga tree's live view mappings — must track [yogaNodeCount]. */
+    internal val yogaViewCount: Int get() = yoga.viewCount
 
     private fun handleUpdateProp(p: RenderPatch.UpdateProp) {
         val view = nodes[p.nodeId] ?: run {

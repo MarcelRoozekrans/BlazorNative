@@ -5,11 +5,8 @@ import android.graphics.drawable.ColorDrawable
 import android.util.TypedValue
 import android.view.View
 import android.view.ViewGroup
-import android.widget.FrameLayout
 import android.widget.TextView
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import androidx.test.platform.app.InstrumentationRegistry
-import io.blazornative.jni.RenderFrame
 import io.blazornative.jni.RenderPatch
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -146,27 +143,37 @@ class WidgetMapperSetStyleTest {
         assertEquals("the rest of the node is untouched", 60f, view.height / d, 0.5f)
     }
 
+    /**
+     * The same contract, on the arm the two parsers were always going to differ on:
+     * **a value is accepted only if the ENTIRE string is consumed** (design §"Style
+     * value grammar", the number production). `12f` is what Java's float grammar
+     * calls a float — Kotlin's `toFloatOrNull` reads it as 12.0 — and it is what C's
+     * `strtof` would reject via `endptr`. Left alone, ANDROID would honour a value
+     * iOS ignores, on the wire's REJECTION path, and the two frame tables would
+     * disagree for a reason that has nothing to do with the engine.
+     *
+     * So the shell screens against the grammar's number production BEFORE parsing,
+     * and this test is the contract Gate 3's parser must also satisfy. The
+     * observable proof is the same as `12px`'s: the width was never set at all, so
+     * the node keeps Yoga's default `width: auto` and stays stretched to the host.
+     */
+    @Test fun a_trailing_float_suffix_is_rejected_like_any_other_garbage() {
+        val root = render(listOf(
+            RenderPatch.CreateNode(nodeId = 1, nodeType = "view", parentId = null),
+            RenderPatch.SetStyle(nodeId = 1, property = "height", value = "60"),
+            RenderPatch.SetStyle(nodeId = 1, property = "width", value = "12f"),
+        ))
+        val view = root.getChildAt(0)
+        val d = view.context.resources.displayMetrics.density
+        assertEquals("'12f' is a legal Java float literal and is NOT in this grammar — it must " +
+            "be IGNORED, or Android would honour a value iOS's strtof/endptr rejects",
+            400f, view.width / d, 0.5f)
+        assertEquals("the rest of the node is untouched", 60f, view.height / d, 0.5f)
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────────
+    // render() (the 400×800dp synthetic host, rooted in the PRODUCTION
+    // BnYogaFrameLayout) lives in FrameAssertions.kt.
 
     private fun renderSingle(patches: List<RenderPatch>): View = render(patches).getChildAt(0)
-
-    private fun render(patches: List<RenderPatch>): FrameLayout {
-        val instr = InstrumentationRegistry.getInstrumentation()
-        val ctx = instr.targetContext
-        val d = ctx.resources.displayMetrics.density
-        lateinit var root: FrameLayout
-        instr.runOnMainSync {
-            root = FrameLayout(ctx)
-            root.layout(0, 0, (400 * d).toInt(), (800 * d).toInt())
-            WidgetMapper(ctx, root).apply(RenderFrame(
-                frameId = 1, timestampMs = 0L,
-                patches = patches + RenderPatch.CommitFrame(1, 0L)
-            ))
-        }
-        instr.waitForIdleSync()
-        var ok = false
-        instr.runOnMainSync { ok = root.childCount > 0 }
-        assertTrue("no child created in root after apply", ok)
-        return root
-    }
 }

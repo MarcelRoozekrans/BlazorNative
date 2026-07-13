@@ -126,25 +126,7 @@ class CompositionAndroidTest {
         }
     }
 
-    /** The frame form of "this container is a vertical stack": every child shares
-     * the container's CONTENT-BOX left edge (read from child [0] — a padded
-     * container insets its children, and after Phase 6.1 that inset is the Yoga
-     * node's, so it lives in the children's frames rather than in
-     * `view.paddingLeft`), every child non-empty, each butted up against the
-     * previous one's bottom edge. */
-    private fun assertStacksVertically(container: ViewGroup) {
-        val contentLeft = container.getChildAt(0).left
-        var expectedTop = container.getChildAt(0).top
-        for (i in 0 until container.childCount) {
-            val child = container.getChildAt(i)
-            assertEquals("child $i must share the container's content-box left edge",
-                contentLeft, child.left)
-            assertTrue("child $i must have a real height", child.height > 0)
-            assertEquals("child $i must start exactly where child ${i - 1} ended",
-                expectedTop, child.top)
-            expectedTop = child.bottom
-        }
-    }
+    // assertStacksVertically lives in FrameAssertions.kt (shared with WidgetMapperTest).
 
     // ── Insert-at-front: InsertIndex 0 lands the new item FIRST on screen ───
 

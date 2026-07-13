@@ -1,7 +1,6 @@
 package io.blazornative.shell
 
 import android.content.Intent
-import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.FrameLayout
@@ -10,6 +9,7 @@ import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -46,12 +46,29 @@ import java.util.concurrent.atomic.AtomicReference
  *
  * ── THE TWO FRAMES THAT ARE *NOT* NUMBERS ────────────────────────────────────
  *
- * The text leaf and the "← Back" button are asserted **RELATIONALLY** (H > 0; the
- * row's height EQUALS the leaf's measured height; the back row starts where the
- * text row ended). Deliberately: a font's metrics are not a constant anyone gets
- * to invent, and pinning a number there would be pinning the AVD's font. They sit
- * at the END of the column precisely so a font-dependent height cannot shift
- * anything above them — every frame the parity assertion rests on is fixed.
+ * The text leaf and the "← Back" button carry no pinned pixel count: a font's
+ * metrics are not a constant anyone gets to invent, and pinning one would be
+ * pinning the AVD's font. They sit at the END of the column precisely so a
+ * font-dependent height cannot shift anything above them — every frame the parity
+ * assertion rests on is fixed.
+ *
+ * They are asserted **RELATIONALLY** (H > 0; the row's height EQUALS the leaf's
+ * measured height; the back row starts where the text row ended) **and by ORACLE**
+ * — and the oracle is the one that carries the DoD #3 claim. Every relational
+ * assertion here also passes with a FABRICATED measure function: run the 6.0
+ * spike's constant 80×20 stub through them and all of them stay green, so the
+ * measurement could be entirely invented and this file — the file Gate 3 mirrors —
+ * would not notice. [assertOracle] measures the same widget, with the same text and
+ * font, under the same spec the measure func hands Yoga, and demands the laid-out
+ * frame EQUAL it. Still no font metric written down; no room left to invent one.
+ *
+ * ── AND ONE FRAME THAT IS A *NEGATIVE* ───────────────────────────────────────
+ *
+ * The root column **hugs its five sections** rather than filling the host. That is
+ * the assertion that catches a stock-`FrameLayout` host root re-laying out every
+ * TOP-LEVEL node behind Yoga's back (see [BnYogaFrameLayout]) — a bug invisible to
+ * every frame above, because with a single full-width top-level node the framework
+ * and Yoga happen to agree on x, y and width. They do not agree on HEIGHT.
  */
 @RunWith(AndroidJUnit4::class)
 class BnLayoutDemoAndroidTest {
@@ -80,32 +97,32 @@ class BnLayoutDemoAndroidTest {
 
                 // ── [0] the row: fixed 50 · flexGrow:1 · fixed 50 ────────────
                 val row = root.getChildAt(0) as ViewGroup
-                assertFrame(d, "row section", row, 0f, 0f, 300f, 100f)
-                assertFrame(d, "box A (W=50, cross-stretched)", row.getChildAt(0), 0f, 0f, 50f, 100f)
-                assertFrame(d, "box B (Grow=1 absorbs 300-50-50)", row.getChildAt(1), 50f, 0f, 200f, 100f)
-                assertFrame(d, "box C (W=50)", row.getChildAt(2), 250f, 0f, 50f, 100f)
+                assertFrame("row section", row, 0f, 0f, 300f, 100f)
+                assertFrame("box A (W=50, cross-stretched)", row.getChildAt(0), 0f, 0f, 50f, 100f)
+                assertFrame("box B (Grow=1 absorbs 300-50-50)", row.getChildAt(1), 50f, 0f, 200f, 100f)
+                assertFrame("box C (W=50)", row.getChildAt(2), 250f, 0f, 50f, 100f)
 
                 // ── [1] the column: space-between + one alignSelf:center ─────
                 // free = 200 − 3×40 = 80, split into two 40dp gaps → y 0/80/160.
                 val col = root.getChildAt(1) as ViewGroup
-                assertFrame(d, "column section", col, 0f, 100f, 300f, 200f)
-                assertFrame(d, "item 0", col.getChildAt(0), 0f, 0f, 100f, 40f)
-                assertFrame(d, "item 1 (AlignSelf=Center → x = (300-100)/2)",
+                assertFrame("column section", col, 0f, 100f, 300f, 200f)
+                assertFrame("item 0", col.getChildAt(0), 0f, 0f, 100f, 40f)
+                assertFrame("item 1 (AlignSelf=Center → x = (300-100)/2)",
                     col.getChildAt(1), 100f, 80f, 100f, 40f)
-                assertFrame(d, "item 2", col.getChildAt(2), 0f, 160f, 100f, 40f)
+                assertFrame("item 2", col.getChildAt(2), 0f, 160f, 100f, 40f)
 
                 // ── [2] the wrap row: 3 × 90 on line 1, the 4th onto line 2 ───
                 val wrap = root.getChildAt(2) as ViewGroup
-                assertFrame(d, "wrap section", wrap, 0f, 300f, 300f, 100f)
-                assertFrame(d, "wrap 0", wrap.getChildAt(0), 0f, 0f, 90f, 40f)
-                assertFrame(d, "wrap 1", wrap.getChildAt(1), 90f, 0f, 90f, 40f)
-                assertFrame(d, "wrap 2 (270 of 300 consumed — it still fits)",
+                assertFrame("wrap section", wrap, 0f, 300f, 300f, 100f)
+                assertFrame("wrap 0", wrap.getChildAt(0), 0f, 0f, 90f, 40f)
+                assertFrame("wrap 1", wrap.getChildAt(1), 90f, 0f, 90f, 40f)
+                assertFrame("wrap 2 (270 of 300 consumed — it still fits)",
                     wrap.getChildAt(2), 180f, 0f, 90f, 40f)
-                assertFrame(d, "wrap 3 — line 2, at y = 40 BECAUSE Yoga's alignContent " +
+                assertFrame("wrap 3 — line 2, at y = 40 BECAUSE Yoga's alignContent " +
                     "defaults to flex-start (CSS says stretch; do not 'correct' it)",
                     wrap.getChildAt(3), 0f, 40f, 90f, 40f)
 
-                // ── [3] the text row: the DoD #3 proof, asserted RELATIONALLY ─
+                // ── [3] the text row: the DoD #3 proof ───────────────────────
                 val textRow = root.getChildAt(3) as ViewGroup
                 val label = textRow.getChildAt(0) as TextView
                 assertEquals("the text row starts where the wrap row ended", wrap.bottom, textRow.top)
@@ -120,6 +137,13 @@ class BnLayoutDemoAndroidTest {
                 assertTrue("the label must not overflow the 150dp row it was measured inside " +
                     "(label=${label.width}px, row=${textRow.width}px)",
                     label.width <= textRow.width)
+                // …AND THE ORACLE. Every assertion above passes with a FABRICATED
+                // measure function (feed them the 6.0 spike's constant 80×20 stub and
+                // all of them stay green), which would leave the DoD #3 half of this
+                // table — and the file Gate 3 mirrors — asserting nothing about the
+                // measurement. See assertOracle: same widget, same text, same spec the
+                // measure func hands Yoga, no font metric written down anywhere.
+                assertOracle("the measured label", label, availableWidthPx = textRow.width)
 
                 // ── [4] the back row: a second MEASURED leaf ─────────────────
                 val backRow = root.getChildAt(4) as ViewGroup
@@ -134,20 +158,32 @@ class BnLayoutDemoAndroidTest {
                     back.height, backRow.height)
                 assertEquals("the button starts at the row's origin", 0, back.left)
                 assertEquals(0, back.top)
+                assertOracle("the measured button", back, availableWidthPx = backRow.width)
+
+                // ── THE ROOT COLUMN HUGS ITS CONTENT ─────────────────────────
+                // The root BnColumn declares no height, so Yoga sizes it to the sum
+                // of its five sections — and NOTHING ELSE may size it. This is the
+                // assertion that catches a stock-FrameLayout host root: `addView`/
+                // `setText` inside a batch call requestLayout(), and the framework
+                // traversal that follows would re-measure the host and re-place every
+                // TOP-LEVEL child at (0, 0, hostW, hostH) behind Yoga's back — which
+                // the resize listener's bounds guard cannot see and nothing repairs.
+                // The host is a BnYogaFrameLayout (main.xml) precisely so it cannot.
+                assertEquals("the root column must HUG its five sections, not fill the host",
+                    backRow.bottom, root.height)
+                assertNotEquals("…and that height must not COINCIDE with the host's, or the " +
+                    "assertion above proves nothing on this device (host=${host.height}px, " +
+                    "content=${root.height}px)",
+                    host.height, root.height)
             }
         }
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
 
-    /** Every frame in dp, with the 0.5dp tolerance a whole-pixel frame-apply
-     * needs (the AVD is density 2.625 — 300dp is 787.5px). */
-    private fun assertFrame(d: Float, what: String, v: View, x: Float, y: Float, w: Float, h: Float) {
-        assertEquals("$what.x", x, v.left / d, 0.5f)
-        assertEquals("$what.y", y, v.top / d, 0.5f)
-        assertEquals("$what.w", w, v.width / d, 0.5f)
-        assertEquals("$what.h", h, v.height / d, 0.5f)
-    }
+    // assertFrame / assertOracle live in FrameAssertions.kt (shared with the
+    // synthetic-frame tests — the dp contract and its 0.5dp whole-pixel tolerance
+    // are stated once).
 
     /** Polls until the mount frame has been applied AND laid out: five sections
      * under the root column, and the root actually has a computed height. */

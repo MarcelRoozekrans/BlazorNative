@@ -101,6 +101,17 @@ class MainActivity : Activity() {
      * deprecated [onBackPressed] fallback). Held so it could be unregistered. */
     private var backCallback: OnBackInvokedCallback? = null
 
+    /** Phase 6.1: held as a field so [onDestroy] can tear its trees down. The
+     * runtime's frame callback captures it and OUTLIVES this Activity (the native
+     * session is process-global), so an un-destroyed mapper keeps a dead Activity's
+     * whole view hierarchy — and its native Yoga peers — alive across recreation.
+     *
+     * `internal` rather than private so YogaNodeLifecycleAndroidTest can read its
+     * node counts: the subtree-purge regression is only observable in the mapper's
+     * BOOKKEEPING (a leaked node still lays out nothing and shows nothing), and the
+     * only honest way to see it is against the real renderer's patch stream. */
+    internal lateinit var mapper: WidgetMapper
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -121,7 +132,7 @@ class MainActivity : Activity() {
         // safe: onUiEvent only fires from listeners that AttachEvent installs,
         // i.e. after runtime.start() has mounted, long after assignment.
         // dispatchEvent is a non-blocking submit — UI-thread safe.
-        val mapper = WidgetMapper(this, widgetRoot, onUiEvent = { h, n, p ->
+        mapper = WidgetMapper(this, widgetRoot, onUiEvent = { h, n, p ->
             runtime.dispatchEvent(h, n, p)
         })
 
@@ -202,6 +213,14 @@ class MainActivity : Activity() {
         // recreated Activity expects. shutdown() is reserved for genuine
         // process-exit paths, which Android does not give an Activity.
         if (booted) runtime.dispatchHostEvent("onDestroy")
+        // Phase 6.1: the view tree and the Yoga tree die with the Activity. The
+        // mapper is reachable from the runtime's frame callback (process-global
+        // session), so without this every recreation would leak a complete view
+        // hierarchy plus a complete native Yoga tree. A frame that lands on this
+        // mapper after teardown is harmless — it renders into a detached root and
+        // the recreated Activity's start() re-registers its own mapper.
+        // (isInitialized: a throw in onCreate before the assignment still destroys.)
+        if (::mapper.isInitialized) mapper.destroy()
         super.onDestroy()
     }
 

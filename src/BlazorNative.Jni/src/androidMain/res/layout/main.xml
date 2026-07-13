@@ -4,7 +4,14 @@
     android:layout_height="match_parent"
     android:orientation="vertical">
 
-    <FrameLayout
+    <!-- Phase 6.1: the host root is a BnYogaFrameLayout, NOT a stock FrameLayout.
+         A stock one is not inert: every addView/setText in a batch calls
+         requestLayout(), and the ensuing traversal re-measures this container and
+         re-places every TOP-LEVEL node at (0, 0, hostW, hostH) — behind Yoga's
+         back, in the real Activity only (never in a detached-root test), and the
+         resize listener's bounds guard sees no change so nothing repairs it. Yoga
+         owns ALL placement, including the top level. See BnYogaFrameLayout's KDoc. -->
+    <io.blazornative.shell.BnYogaFrameLayout
         android:id="@+id/widget_root"
         android:layout_width="match_parent"
         android:layout_height="0dp"

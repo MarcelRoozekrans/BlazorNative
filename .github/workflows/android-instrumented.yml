@@ -14,7 +14,7 @@
 #   emulator (ubuntu-latest, KVM) — downloads the .so, boots the API 34
 #     google_apis x86_64 Pixel 6 image (mirrors the local AVD
 #     blazornative-pixel6-x86_64), runs connectedAndroidTest with
-#     -PciSoDir pointing at the artifact → asserts 52 passed / 0 failed.
+#     -PciSoDir pointing at the artifact → asserts 71 passed / 0 failed.
 #
 # Baselines are asserted, not observed: count drift fails the job loudly.
 # ─────────────────────────────────────────────────────────────────────────────
@@ -218,7 +218,45 @@ jobs:
 
       # Baseline asserted, not observed (house style): 40 through M5; Phase 6.0 adds
       # YogaSpikeAndroidTest ×1 (the Yoga flex-row + measure-callback spike proof) → 41.
-      # Phase 6.1 Gate 2 (Yoga owns placement) adds 11 → 52:
+      #
+      # ── Phase 6.1 Gate 2 REVIEW (52 → 71, +19) ─────────────────────────────
+      # The review found five holes that the 52 could not see, and each one is now a
+      # test that BITES (verified by mutation — break the thing, watch it go red):
+      #   +14 YogaStyleResetAndroidTest — the null-reset wire, ARM BY ARM. Gate 1
+      #                                   built that path (a removed style now leaves
+      #                                   on the SetStyle wire, not the prop wire) and
+      #                                   NOTHING exercised it but flexGrow. It hid a
+      #                                   real bug: `margin: null` reset margin to
+      #                                   `auto` — which is not margin's default and
+      #                                   is not inert (it re-centres the node).
+      #    +2 YogaDirtyAndroidTest      — dirty-on-content-change. Both measure tests
+      #                                   mount FRESH trees, so Yoga's measure cache
+      #                                   was cold and markDirty could be DELETED with
+      #                                   the whole suite still green. These are
+      #                                   two-frame on the SAME node: delete the call
+      #                                   and only these two go red.
+      #    +1 YogaNodeLifecycleAndroidTest — ONE RemoveNodePatch stands for a whole
+      #                                   SUBTREE (the renderer purges descendants
+      #                                   .NET-side). The shell dropped one map entry
+      #                                   and leaked every descendant — pinning Views,
+      #                                   the Activity Context and native Yoga peers,
+      #                                   once per navigation. Only the mapper's
+      #                                   bookkeeping can see it; no frame can.
+      #    +1 WidgetMapperTextChildOnButtonTest — removing a COLLAPSED text node used
+      #                                   to detach its parent BUTTON (nodes[textId]
+      #                                   IS the Button) while leaving its Yoga node
+      #                                   laying out a ghost.
+      #    +1 WidgetMapperSetStyleTest   — "12f" is a legal Java float and is NOT in
+      #                                   the grammar: the whole string must be
+      #                                   consumed (design §grammar), or Android would
+      #                                   honour a value iOS's strtof/endptr rejects.
+      # Also strengthened WITHOUT adding tests: BnLayoutDemoAndroidTest +
+      # YogaMeasureAndroidTest gained a measure ORACLE (their relational assertions
+      # all pass with a FABRICATED 80×20 measure func — the oracle does not), and the
+      # demo now pins that the root column HUGS its content, which is what catches the
+      # host root re-laying out top-level nodes behind Yoga's back.
+      #
+      # ── Phase 6.1 Gate 2 (Yoga owns placement) added 11 → 52 ────────────────
       #   +4  YogaLayoutAndroidTest    — the row's computed frames, an un-styled tree
       #                                  still stacking, a null SetStyle resetting to
       #                                  Yoga's default, padding as a YOGA property
@@ -239,7 +277,7 @@ jobs:
       # CompositionAndroidTest, WidgetMapperSetStyleTest) were REWRITTEN from type
       # pins (LinearLayout / orientation == VERTICAL) to FRAME pins; only the two
       # counts above are new methods, the rest are same-count rewrites.
-      - name: Assert instrumented baseline (52 passed / 0 failed)
+      - name: Assert instrumented baseline (71 passed / 0 failed)
         run: |
           shopt -s globstar nullglob
           xmls=(src/BlazorNative.Jni/build/outputs/androidTest-results/connected/**/*.xml)
@@ -256,8 +294,8 @@ jobs:
             s=$(attr skipped "$x");  skipped=$((skipped + ${s:-0}))
           done
           echo "Instrumented totals across ${#xmls[@]} suite(s): tests=$tests failures=$failures errors=$errors skipped=$skipped"
-          if [ "$tests" -ne 52 ] || [ "$failures" -ne 0 ] || [ "$errors" -ne 0 ] || [ "$skipped" -ne 0 ]; then
-            echo "Instrumented test baseline drift: expected 52 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped" >&2
+          if [ "$tests" -ne 71 ] || [ "$failures" -ne 0 ] || [ "$errors" -ne 0 ] || [ "$skipped" -ne 0 ]; then
+            echo "Instrumented test baseline drift: expected 71 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped" >&2
             exit 1
           fi
 
