@@ -434,4 +434,90 @@ public sealed class BnComponentTests
         Assert.Equal("absolute", Position.Absolute.ToStyleValue());
     }
 
+    // ── BnRow / BnColumn (Phase 6.1 Task 1.3) ─────────────────────────────────
+    //
+    // Thin presets over BnView. A BnRow IS a row: it does not expose Direction
+    // at all, so the preset cannot be silently overridden. No BnStack (design
+    // decision 3 — it would be a BnColumn synonym, and two names for one thing
+    // is a library smell on day one).
+
+    [Fact]
+    public void BnRow_Mount_EmitsFlexDirectionRowAndForwardsParams()
+    {
+        var (renderer, frames) = CreateCapturingSession();
+
+        renderer.Mount<BnRow>(ParameterView.FromDictionary(new Dictionary<string, object?>
+        {
+            [nameof(BnRow.Width)] = "300",
+            [nameof(BnRow.Justify)] = Justify.SpaceBetween,
+            [nameof(BnRow.ChildContent)] = (RenderFragment)(b =>
+            {
+                b.OpenElement(0, "span");
+                b.AddContent(1, "in-row");
+                b.CloseElement();
+            }),
+        }));
+        Assert.NotEmpty(frames);
+        var mount = frames[0];
+
+        var root = Assert.Single(mount.Patches.OfType<CreateNodePatch>(), p => p.ParentId is null);
+        Assert.Equal("view", root.NodeType);
+        Assert.Equal("row", StyleOn(mount, root.NodeId, "flexDirection").Value);
+        Assert.Equal("300", StyleOn(mount, root.NodeId, "width").Value);
+        Assert.Equal("space-between", StyleOn(mount, root.NodeId, "justifyContent").Value);
+
+        // Children parent under the preset's own view (it IS a BnView).
+        var text = Assert.Single(mount.Patches.OfType<ReplaceTextPatch>(), p => p.Text == "in-row");
+        var span = CreateOf(mount, Assert.IsType<int>(CreateOf(mount, text.NodeId).ParentId));
+        Assert.Equal(root.NodeId, span.ParentId);
+    }
+
+    [Fact]
+    public void BnColumn_Mount_EmitsFlexDirectionColumn()
+    {
+        var (renderer, frames) = CreateCapturingSession();
+
+        renderer.Mount<BnColumn>(ParameterView.FromDictionary(new Dictionary<string, object?>
+        {
+            [nameof(BnColumn.Height)] = "200",
+        }));
+        Assert.NotEmpty(frames);
+        var mount = frames[0];
+
+        var root = Assert.Single(mount.Patches.OfType<CreateNodePatch>(), p => p.ParentId is null);
+        Assert.Equal("column", StyleOn(mount, root.NodeId, "flexDirection").Value);
+        Assert.Equal("200", StyleOn(mount, root.NodeId, "height").Value);
+        // The preset emits its direction and NOTHING it wasn't asked for.
+        Assert.Equal(2, mount.Patches.OfType<SetStylePatch>().Count());
+    }
+
+    /// <summary>The preset WINS by construction: neither BnRow nor BnColumn
+    /// exposes a Direction parameter, so an author cannot make a row a column.
+    /// Pinned reflectively — the ABSENCE of the param is the design decision.</summary>
+    [Fact]
+    public void BnRowAndBnColumn_DoNotExposeDirection()
+    {
+        Assert.Null(typeof(BnRow).GetProperty("Direction"));
+        Assert.Null(typeof(BnColumn).GetProperty("Direction"));
+        Assert.NotNull(typeof(BnView).GetProperty("Direction"));
+    }
+
+    /// <summary>The presets forward the WHOLE BnView surface minus Direction: a
+    /// param that exists on BnView but not on the preset is a hole an author
+    /// falls into — so this is pinned, not eyeballed. Adding a BnView param
+    /// without forwarding it fails HERE.</summary>
+    [Theory]
+    [InlineData(typeof(BnRow))]
+    [InlineData(typeof(BnColumn))]
+    public void Presets_ForwardEveryBnViewParameterExceptDirection(Type preset)
+    {
+        static IEnumerable<string> Parameters(Type t) => t.GetProperties()
+            .Where(p => p.IsDefined(typeof(ParameterAttribute), inherit: true))
+            .Select(p => p.Name)
+            .OrderBy(n => n, StringComparer.Ordinal);
+
+        Assert.Equal(
+            Parameters(typeof(BnView)).Where(n => n != nameof(BnView.Direction)),
+            Parameters(preset));
+    }
 }
