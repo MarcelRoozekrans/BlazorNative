@@ -244,9 +244,25 @@ jobs:
           rm -f src/BlazorNative.Apple/vendor/yoga-include/yoga/module.modulemap
           ls -la src/BlazorNative.Apple/vendor/libyoga.a | tee -a ios-out/yoga-build.txt
           file src/BlazorNative.Apple/vendor/libyoga.a | tee -a ios-out/yoga-build.txt
-          # Evidence: the Yoga C-API symbols are present in the archive.
-          echo "=== nm -gU (YGNode*) sample ===" | tee -a ios-out/yoga-build.txt
-          nm -gU src/BlazorNative.Apple/vendor/libyoga.a 2>/dev/null | grep -E '_YGNode(New|CalculateLayout|SetMeasureFunc)' | head | tee -a ios-out/yoga-build.txt || true
+          # ASSERT (not just observe — house style, same shape as the 9-export check
+          # above): the Yoga C-API symbols the probe calls must be defined in the
+          # archive. A silent `|| true` here would let a header-only/empty libyoga.a
+          # sail through and only fail later at link time, far from the cause.
+          echo "=== nm -gU (YGNode*) ===" | tee -a ios-out/yoga-build.txt
+          # `|| true` on the EXTRACTION only (no matches must not kill the step before
+          # the assertion below can name what is missing); the assertion itself is hard.
+          ysyms=$(nm -gU src/BlazorNative.Apple/vendor/libyoga.a 2>/dev/null \
+            | grep -Eo '_?YGNode[A-Za-z]+' | sed 's/^_//' | sort -u || true)
+          echo "$ysyms" | grep -E '^YGNode(New|CalculateLayout|SetMeasureFunc)$' | tee -a ios-out/yoga-build.txt || true
+          ymissing=()
+          for s in YGNodeNew YGNodeCalculateLayout YGNodeSetMeasureFunc; do
+            echo "$ysyms" | grep -qx "$s" || ymissing+=("$s")
+          done
+          if [ "${#ymissing[@]}" -ne 0 ]; then
+            echo "libyoga.a is missing Yoga C-API symbols: ${ymissing[*]}" >&2
+            exit 1
+          fi
+          echo "SYMBOLS: the Yoga C-API entry points are present in libyoga.a."
 
       # ── Generate the Xcode project from project.yml ──────────────────────────
       - name: Install XcodeGen

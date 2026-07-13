@@ -44,6 +44,30 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # ── Cross-shell pins (Phase 6.0) ───────────────────────────────────────
+      # Yoga is ONE engine used by TWO shells: Android pulls the prebuilt Maven
+      # artifact (build.gradle.kts), iOS builds the same release from source
+      # (ios.yml's YOGA_VERSION). Identical frames on both platforms is the whole
+      # reason for choosing Yoga — two different engine versions would erode that
+      # silently, and neither shell's own lane can see the other's pin. So the pin
+      # is asserted HERE, in the REQUIRED lane, where it can never rot. Bumping
+      # Yoga means bumping BOTH files in one commit. (Baselines are asserted, not
+      # observed — the same house rule as the export/test-count checks below.)
+      - name: Assert Yoga version parity (Android Gradle pin == iOS lane pin)
+        run: |
+          $gradle = Get-Content "src\BlazorNative.Jni\build.gradle.kts" -Raw
+          $ios    = Get-Content ".github\workflows\ios.yml" -Raw
+          $gm = [regex]::Match($gradle, '(?m)^\s*implementation\("com\.facebook\.yoga:yoga:([^"]+)"\)')
+          $im = [regex]::Match($ios, '(?m)^\s*YOGA_VERSION:\s*([0-9][^\s#]*)')
+          if (-not $gm.Success) { throw "Could not find the com.facebook.yoga:yoga pin in build.gradle.kts — did the declaration move?" }
+          if (-not $im.Success) { throw "Could not find YOGA_VERSION in .github/workflows/ios.yml — did the env pin move?" }
+          $android = $gm.Groups[1].Value.Trim()
+          $apple   = $im.Groups[1].Value.Trim()
+          Write-Host "Yoga pins: android(build.gradle.kts)=$android  ios(ios.yml)=$apple"
+          if ($android -ne $apple) {
+            throw "Yoga version drift: Android pins $android but the iOS lane builds $apple. One engine, two shells — bump both files together."
+          }
+
       # ── Toolchain ──────────────────────────────────────────────────────────
       - name: Setup .NET SDK (global.json — 10.0.3xx band)
         uses: actions/setup-dotnet@v4
