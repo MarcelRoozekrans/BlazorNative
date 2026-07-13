@@ -3,7 +3,7 @@
 # rides on. Single windows-latest job mirroring the local verification
 # procedure verbatim (setup.ps1 §1–7 documents the toolchain pins):
 #
-#   build (analyzers ride it) → .NET tests (262 passed / 0 skipped) →
+#   build (analyzers ride it) → .NET tests (287 passed / 0 skipped) →
 #   three NativeAOT publishes (win-x64, linux-bionic-x64, linux-bionic-arm64;
 #   each publish must show exactly the 4 accepted IL2072 trim warnings) →
 #   nine-export verification (dumpbin via vswhere / llvm-readelf from the
@@ -148,15 +148,27 @@ jobs:
           dotnet build BlazorNative.sln -c Release -tl:off -nologo
           if ($LASTEXITCODE -ne 0) { throw "dotnet build failed (exit $LASTEXITCODE)" }
 
-      # 230 → 262 (Phase 6.1 Gate 1, +32): the flex surface arrives on the .NET
-      # side. Renderer.Tests 60 → 80 (+20: the 18 new SetStyle allow-list names,
-      # one theory case each, + the null-reset regression pair — a removed style
-      # must leave on the STYLE wire, a removed prop must not). Runtime.Tests
-      # 147 → 159 (+12: 5 BnView flex-param pins incl. the un-styled invariant
-      # and the invariant-culture float, 5 BnRow/BnColumn preset pins, and the
-      # 2 BnLayoutDemo goldens that Gates 2/3 derive their frame expectations
-      # from). Nothing Kotlin-side moved: the JVM baseline below stays 79.
-      - name: .NET tests (assert 262 passed / 0 skipped)
+      # 230 → 287 (Phase 6.1 Gate 1, +57): the flex surface arrives on the .NET
+      # side.
+      #
+      # Renderer.Tests 60 → 100 (+40). The SetStyle allow-list gained the flex
+      # names (15 theory cases, one each) plus the null-reset regression pair (a
+      # removed STYLE must leave on the style wire; a removed prop must not), and
+      # the Gate 1 review added StyleAttributePartitionTests (23): the allow-list
+      # is the SHELLS' ROUTING TABLE, so its union/disjointness (Yoga-layout vs
+      # view-visual), its ordinal case rule, and the names deliberately NOT on it
+      # (alignContent/rowGap/columnGap/display/flex — no producer) are pinned.
+      #
+      # Runtime.Tests 147 → 164 (+17): BnView flex-param pins (incl. the
+      # un-styled invariant and the invariant-culture float), BnRow/BnColumn
+      # preset pins — both DECLARATION (reflective) and FORWARDING (the presets,
+      # fed the full param dictionary, must emit BnView's whole wire table; a
+      # deleted forwarding line reddens THIS one, review finding C1) — the
+      # null-through-the-preset round trip, the Flex*-prefix type-name pin, and
+      # the 2 BnLayoutDemo goldens Gates 2/3 derive their frame expectations from.
+      #
+      # Nothing Kotlin-side moved: the JVM baseline below stays 79.
+      - name: .NET tests (assert 287 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -167,8 +179,8 @@ jobs:
           $passed  = ($summaries | ForEach-Object { [int]$_.Matches[0].Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($summaries | ForEach-Object { [int]$_.Matches[0].Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($summaries.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 262 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 262 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 287 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 287 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # ── NativeAOT publishes + nine-export verification ────────────────────
