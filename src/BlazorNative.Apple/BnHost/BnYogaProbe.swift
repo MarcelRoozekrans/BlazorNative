@@ -52,9 +52,8 @@ enum BnYogaProbe {
         bnYogaMeasureFired = false
 
         let root = YGNodeNew()
-        // bnYogaFlexDirectionRow() / bnYogaDirectionLTR(): stable C accessors for the
-        // enum members (Swift prefix-strips them; see the bridging header note).
-        YGNodeStyleSetFlexDirection(root, bnYogaFlexDirectionRow())
+        // Swift prefix-strips Yoga's C enums: YGFlexDirectionRow → .row.
+        YGNodeStyleSetFlexDirection(root, .row)
         YGNodeStyleSetWidth(root, 300)
         YGNodeStyleSetHeight(root, 100)
 
@@ -73,7 +72,9 @@ enum BnYogaProbe {
         YGNodeInsertChild(root, text, 2)
 
         // Available size UNDEFINED (NaN) — Yoga uses the root's styled 300×100.
-        YGNodeCalculateLayout(root, Float.nan, Float.nan, bnYogaDirectionLTR())
+        // Owner direction .inherit at the root defaults to LTR (left-to-right) —
+        // same layout as .LTR, and an unambiguous member name (no acronym).
+        YGNodeCalculateLayout(root, Float.nan, Float.nan, .inherit)
 
         let result = BnYogaFlexResult(
             box1: frame(box1),

@@ -39,16 +39,13 @@
 // (YG_EXTERN_C-wrapped), so the Clang importer surfaces YGNodeNew /
 // YGNodeStyleSet* / YGNodeSetMeasureFunc / YGNodeCalculateLayout / YGNodeLayoutGet*
 // to Swift (BnYogaProbe.swift). Resolved via HEADER_SEARCH_PATHS=vendor/yoga-include
-// (staged by ios.yml from the pinned Yoga source build).
+// (staged by ios.yml from the pinned Yoga source build). A PLAIN #include only —
+// no inline definitions here: an inline fn body referencing Yoga types forces the
+// Swift explicit-module dependency SCANNER to fully resolve <yoga/Yoga.h> (which it
+// does with a different, path-less search than the compile), so BnYogaProbe uses
+// Swift's prefix-stripped enum members (YGFlexDirection.row, YGDirection.inherit)
+// directly instead.
 #include <yoga/Yoga.h>
-
-// Yoga's C enum MEMBERS import into Swift with prefix-stripping (YGFlexDirectionRow
-// → YGFlexDirection.row, YGDirectionLTR → YGDirection.LTR), whose exact spelling for
-// acronyms is Swift-version-sensitive. Expose the two the spike needs as stable
-// inline accessors so BnYogaProbe.swift is version-robust (the C names are always
-// valid in C). The YG* FUNCTIONS import cleanly, so only the enum literals need this.
-static inline YGFlexDirection bnYogaFlexDirectionRow(void) { return YGFlexDirectionRow; }
-static inline YGDirection bnYogaDirectionLTR(void) { return YGDirectionLTR; }
 
 #ifdef __cplusplus
 extern "C" {
