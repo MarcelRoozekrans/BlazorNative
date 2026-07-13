@@ -257,4 +257,181 @@ public sealed class BnComponentTests
         var root = Assert.Single(mount.Patches.OfType<CreateNodePatch>(), p => p.ParentId is null);
         Assert.Equal("false", PropOn(mount, root.NodeId, "enabled").Value);
     }
+
+    // ── BnView flex surface (Phase 6.1 Task 1.1) ──────────────────────────────
+    //
+    // Typed C# params → strings on the EXISTING SetStyle wire (design decision
+    // 4): compile-time safety for the author, zero ABI change. The value
+    // grammar the shells parse is pinned here, once, on the .NET side.
+
+    /// <summary>The un-styled invariant (non-negotiable #4): a BnView with NO
+    /// flex params must emit NO style patches at all — the whole reason the
+    /// existing BnDemo/BnSettingsPage goldens do not churn when flex lands.
+    /// If this ever fails, some new param stopped defaulting to null.</summary>
+    [Fact]
+    public void BnView_NoFlexParams_EmitsNoStylePatches()
+    {
+        var (renderer, frames) = CreateCapturingSession();
+
+        renderer.Mount<BnView>();
+        Assert.NotEmpty(frames);
+
+        Assert.Empty(frames[0].Patches.OfType<SetStylePatch>());
+        Assert.Empty(frames[0].Patches.OfType<UpdatePropPatch>());
+    }
+
+    [Fact]
+    public void BnView_FlexParams_EmitTypedValuesOnTheSetStyleWire()
+    {
+        var (renderer, frames) = CreateCapturingSession();
+
+        renderer.Mount<BnView>(ParameterView.FromDictionary(new Dictionary<string, object?>
+        {
+            [nameof(BnView.Direction)] = FlexDirection.Row,
+            [nameof(BnView.Grow)] = 1f,
+        }));
+        Assert.NotEmpty(frames);
+        var mount = frames[0];
+        var root = Assert.Single(mount.Patches.OfType<CreateNodePatch>(), p => p.ParentId is null);
+
+        Assert.Equal("row", StyleOn(mount, root.NodeId, "flexDirection").Value);
+        Assert.Equal("1", StyleOn(mount, root.NodeId, "flexGrow").Value);
+        // Nothing else — the unset params stay off the wire.
+        Assert.Equal(2, mount.Patches.OfType<SetStylePatch>().Count());
+    }
+
+    /// <summary>The whole style surface, param → wire name/value. This table is
+    /// the contract the shells' string→Yoga mapping is written against.</summary>
+    [Fact]
+    public void BnView_FullFlexSurface_EmitsEveryWireName()
+    {
+        var (renderer, frames) = CreateCapturingSession();
+
+        renderer.Mount<BnView>(ParameterView.FromDictionary(new Dictionary<string, object?>
+        {
+            [nameof(BnView.BackgroundColor)] = "#112233",
+            [nameof(BnView.Padding)] = "16",
+            [nameof(BnView.Margin)] = "4",
+            [nameof(BnView.Direction)] = FlexDirection.ColumnReverse,
+            [nameof(BnView.Justify)] = Justify.SpaceBetween,
+            [nameof(BnView.Align)] = Align.Center,
+            [nameof(BnView.AlignSelf)] = Align.FlexEnd,
+            [nameof(BnView.Grow)] = 2f,
+            [nameof(BnView.Shrink)] = 0f,
+            [nameof(BnView.Basis)] = "auto",
+            [nameof(BnView.Wrap)] = Wrap.WrapReverse,
+            [nameof(BnView.Gap)] = "8",
+            [nameof(BnView.Width)] = "300",
+            [nameof(BnView.Height)] = "100",
+            [nameof(BnView.MinWidth)] = "10",
+            [nameof(BnView.MaxWidth)] = "50%",
+            [nameof(BnView.MinHeight)] = "20",
+            [nameof(BnView.MaxHeight)] = "400",
+            [nameof(BnView.Position)] = Position.Absolute,
+            [nameof(BnView.Top)] = "1",
+            [nameof(BnView.Right)] = "2",
+            [nameof(BnView.Bottom)] = "3",
+            [nameof(BnView.Left)] = "4",
+        }));
+        Assert.NotEmpty(frames);
+        var mount = frames[0];
+        var root = Assert.Single(mount.Patches.OfType<CreateNodePatch>(), p => p.ParentId is null);
+
+        var expected = new Dictionary<string, string>
+        {
+            ["backgroundColor"] = "#112233",
+            ["padding"] = "16",
+            ["margin"] = "4",
+            ["flexDirection"] = "column-reverse",
+            ["justifyContent"] = "space-between",
+            ["alignItems"] = "center",
+            ["alignSelf"] = "flex-end",
+            ["flexGrow"] = "2",
+            ["flexShrink"] = "0",
+            ["flexBasis"] = "auto",
+            ["flexWrap"] = "wrap-reverse",
+            ["gap"] = "8",
+            ["width"] = "300",
+            ["height"] = "100",
+            ["minWidth"] = "10",
+            ["maxWidth"] = "50%",
+            ["minHeight"] = "20",
+            ["maxHeight"] = "400",
+            ["position"] = "absolute",
+            ["top"] = "1",
+            ["right"] = "2",
+            ["bottom"] = "3",
+            ["left"] = "4",
+        };
+
+        var actual = mount.Patches.OfType<SetStylePatch>()
+            .Where(p => p.NodeId == root.NodeId)
+            .ToDictionary(p => p.Property, p => p.Value!);
+        Assert.Equal(expected, actual);
+        // Every flex prop rides SetStyle — none leaked onto the prop wire.
+        Assert.Empty(mount.Patches.OfType<UpdatePropPatch>());
+    }
+
+    /// <summary>Numeric params stringify INVARIANTLY: a Dutch locale must not
+    /// put "1,5" on the wire (the shells parse with a C/Java float parser).</summary>
+    [Fact]
+    public void BnView_FloatParams_StringifyInvariantlyUnderADutchLocale()
+    {
+        var original = System.Globalization.CultureInfo.CurrentCulture;
+        try
+        {
+            System.Globalization.CultureInfo.CurrentCulture =
+                new System.Globalization.CultureInfo("nl-NL");
+
+            var (renderer, frames) = CreateCapturingSession();
+            renderer.Mount<BnView>(ParameterView.FromDictionary(new Dictionary<string, object?>
+            {
+                [nameof(BnView.Grow)] = 1.5f,
+                [nameof(BnView.Shrink)] = 0.25f,
+            }));
+            Assert.NotEmpty(frames);
+            var mount = frames[0];
+            var root = Assert.Single(mount.Patches.OfType<CreateNodePatch>(), p => p.ParentId is null);
+
+            Assert.Equal("1.5", StyleOn(mount, root.NodeId, "flexGrow").Value);
+            Assert.Equal("0.25", StyleOn(mount, root.NodeId, "flexShrink").Value);
+        }
+        finally
+        {
+            System.Globalization.CultureInfo.CurrentCulture = original;
+        }
+    }
+
+    /// <summary>The enum → CSS-cased string mapping, exhaustively (the shells
+    /// parse exactly these words).</summary>
+    [Fact]
+    public void FlexEnums_ToStyleValue_AreCssCased()
+    {
+        Assert.Equal("row", FlexDirection.Row.ToStyleValue());
+        Assert.Equal("column", FlexDirection.Column.ToStyleValue());
+        Assert.Equal("row-reverse", FlexDirection.RowReverse.ToStyleValue());
+        Assert.Equal("column-reverse", FlexDirection.ColumnReverse.ToStyleValue());
+
+        Assert.Equal("flex-start", Justify.FlexStart.ToStyleValue());
+        Assert.Equal("center", Justify.Center.ToStyleValue());
+        Assert.Equal("flex-end", Justify.FlexEnd.ToStyleValue());
+        Assert.Equal("space-between", Justify.SpaceBetween.ToStyleValue());
+        Assert.Equal("space-around", Justify.SpaceAround.ToStyleValue());
+        Assert.Equal("space-evenly", Justify.SpaceEvenly.ToStyleValue());
+
+        Assert.Equal("auto", Align.Auto.ToStyleValue());
+        Assert.Equal("flex-start", Align.FlexStart.ToStyleValue());
+        Assert.Equal("center", Align.Center.ToStyleValue());
+        Assert.Equal("flex-end", Align.FlexEnd.ToStyleValue());
+        Assert.Equal("stretch", Align.Stretch.ToStyleValue());
+        Assert.Equal("baseline", Align.Baseline.ToStyleValue());
+
+        Assert.Equal("nowrap", Wrap.NoWrap.ToStyleValue());
+        Assert.Equal("wrap", Wrap.Wrap.ToStyleValue());
+        Assert.Equal("wrap-reverse", Wrap.WrapReverse.ToStyleValue());
+
+        Assert.Equal("relative", Position.Relative.ToStyleValue());
+        Assert.Equal("absolute", Position.Absolute.ToStyleValue());
+    }
+
 }
