@@ -27,10 +27,13 @@ final class BnYogaTests: XCTestCase {
         XCTAssertEqual(r.box2.minX, 50, accuracy: 0.5, "box2 follows box1 (left-to-right)")
         XCTAssertEqual(r.box2.width, 170, accuracy: 0.5, "flexGrow:1 fills the remaining width")
 
-        // text: laid out after box2 (left 220), sized by the MEASURE callback (80 wide).
+        // text: after box2 (left 220); its MAIN-axis (width) is the measured 80 —
+        // the load-bearing proof the measure func's returned size drives layout.
         XCTAssertEqual(r.text.minX, 220, accuracy: 0.5, "the measured leaf follows box2")
         XCTAssertEqual(r.text.width, 80, accuracy: 0.5, "the leaf width comes from the measure func")
-        XCTAssertEqual(r.text.height, 20, accuracy: 0.5, "the leaf height comes from the measure func")
+        // The CROSS-axis (height) stretches to the row's 100 (default alignItems:
+        // stretch); the measured 20 is the intrinsic size, overridden cross-axis.
+        XCTAssertEqual(r.text.height, 100, accuracy: 0.5, "cross-axis stretches to the row height")
 
         // Left-to-right placement (row direction).
         XCTAssertLessThan(r.box1.minX, r.box2.minX)
