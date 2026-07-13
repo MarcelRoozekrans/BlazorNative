@@ -38,6 +38,13 @@ public sealed class NativeNavigationManager : INavigationManager
     {
         [DefaultRoute] = "BnDemo",
         ["/settings"] = "BnSettingsPage",
+        // Phase 6.1: the flexbox proof page. Its "← Back" navigates to "/", so
+        // it rides the same nav path the other pages do. Nothing on BnDemo links
+        // HERE — a "Layout →" button would churn BnDemo's four goldens for no
+        // engine reason; the shells reach it by mount name (Intent extra) or by
+        // deep link. The shells' own route mirrors (MainActivity's
+        // DEEP_LINK_COMPONENTS) gain "/layout" in Gate 2.
+        ["/layout"] = "BnLayoutDemo",
     };
 
     /// <summary>The default route's component — the name a host mounts to get

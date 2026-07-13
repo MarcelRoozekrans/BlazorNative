@@ -52,6 +52,12 @@ internal static unsafe class HostSession
         ["BnDemo"] = r => r.Mount<BlazorNative.Components.BnDemo>(),
         // Phase 3.5: the demo's second page (route "/settings" — DoD #7).
         ["BnSettingsPage"] = r => r.Mount<BlazorNative.Components.BnSettingsPage>(),
+        // Phase 6.1: the flexbox proof page (route "/layout" — M6 DoD #2/#3).
+        // A THIRD page on purpose: BnDemo/BnSettingsPage keep their goldens, so
+        // layout bugs never arrive mixed with golden-rewrite noise. Its computed
+        // frames are asserted identically on the AVD (Gate 2) and the iOS
+        // simulator (Gate 3) — see BnLayoutDemo.cs's frame table.
+        ["BnLayoutDemo"] = r => r.Mount<BlazorNative.Components.BnLayoutDemo>(),
         // Phase 4.2: the focus/blur proof app (BnInput OnFocus/OnBlur →
         // echo BnText — M4 DoD #4). Scaffolding, like CompositionProbe.
         ["FocusProbe"] = r => r.Mount<FocusProbe>(),
