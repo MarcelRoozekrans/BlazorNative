@@ -39,13 +39,14 @@ Initial M6 contract drafted at milestone-open. Subject to refinement during the
 Phase 6.0 brainstorm — and explicitly subject to the Phase 6.0 Yoga-integration spike
 verdict.
 
-1. **Yoga-integration spike verdict committed.** A named-risk-first spike (M5-style)
-   proves (or refutes) that Yoga links cleanly into BOTH shells alongside the NativeAOT
-   runtime (Android bionic + iOS static `.a`) and that the native measure-callback
-   round-trip works (a text leaf's intrinsic size drives a minimal flex layout). A RED
-   comes with a documented fallback (managed flexbox / native-layout mapping) and the
-   milestone re-scopes — this passes with EITHER verdict; what it demands is committed
-   evidence.
+1. ✅ **Yoga-integration spike verdict committed.** — *closed by Phase 6.0 (2026-07-13,
+   PR #54).* **GREEN on both rungs:** Yoga 3.2.1 links alongside the NativeAOT runtime on
+   both shells, the native measure-callback round-trip works in both channels (measured
+   width AND height reach the frame), and both shells compute *identical frames from an
+   identical tree* (twelve numbers asserted per rung). The architecture holds — Yoga in the
+   shells, no C-ABI change — and the fallback ladder (managed flexbox / native-layout
+   mapping) is closed. Verdict + the pinned per-platform integration recipes:
+   [spike conclusion](../plans/2026-07-13-phase-6.0-spike-conclusion.md).
 2. **Flexbox layout on both platforms.** Flex props (`flexDirection`, `justifyContent`,
    `alignItems`, `alignSelf`, `flexGrow`/`flexShrink`/`flexBasis`, `flexWrap`, `gap`,
    absolute positioning, width/height) ride `SetStyle`; the shell runs Yoga; a flex demo
@@ -93,8 +94,8 @@ verdict.
 
 Tracked in `ROADMAP.md`. Approved at milestone-open:
 
-- **Phase 6.0** — Yoga-integration spike (DoD #1) — *the named risk, verified first (both shells)*
-- **Phase 6.1** — Flexbox layout core: flex props + the shell Yoga pass + the flex demo (DoD #2, #3, #6)
+- ✅ **Phase 6.0** — Yoga-integration spike (DoD #1) — *the named risk, verified first (both shells)* — **GREEN, complete 2026-07-13**
+- **Phase 6.1** — Flexbox layout core: flex props + the shell Yoga pass + the flex demo (DoD #2, #3, #6) — *next*
 - **Phase 6.2** — Real scrolling on both platforms (DoD #4)
 - **Phase 6.3** — URL images on both platforms (DoD #5)
 - **Phase 6.4** — M6 final audit + close (DoD #7, #8) → `v6.0`

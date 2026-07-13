@@ -329,7 +329,7 @@ Phases (approved at milestone-open):
 > `.razor` compilation is promoted to its own milestone concern (M7), and the old
 > Ecosystem/Hardening/Enterprise milestones shift down.
 
-### ⏳ Milestone 6 — Real-UI Foundation: Layout + Scroll + Image  *(next — opens via `new-milestone`)*
+### 🚧 Milestone 6 — Real-UI Foundation: Layout + Scroll + Image  *(in progress — opened 2026-07-13)*
 
 The capability that unblocks real screens. **Yoga (C++, Facebook's flexbox engine) linked
 into both shells** — Android via JNI/JNA, iOS via its C-API (the same interop the shells
@@ -342,11 +342,38 @@ and places. Plus **real scrolling** (the `scroll` NodeType is stubbed today → 
 `ImageView`/`UIImageView`). Flex containers (`BnRow`/`BnColumn`/`BnStack`) come as thin
 `BnView` wrappers. This closes the #1 RN-parity gap (there is only vertical stacking today).
 
-First phase is a **Yoga-integration spike** (does Yoga link cleanly into both shells
-alongside the NativeAOT runtime; does the native measure-callback round-trip work) — the
-M5-style named-risk-first approach.
+Maps to BACKLOG "P4/P5 UI/styling" (re-scoped). Full 8-point DoD: [MILESTONE.md](MILESTONE.md).
 
-Maps to BACKLOG "P4/P5 UI/styling" (re-scoped). Opens via `new-milestone`.
+Phases (approved at milestone-open 2026-07-13):
+- ✅ **Phase 6.0** — Yoga-integration spike, both shells (DoD #1) — *complete (2026-07-13)*
+   - **Verdict: GREEN on both rungs.** Yoga **3.2.1** links alongside the NativeAOT runtime
+     artifact on both shells (Android `libyoga.so` from the `com.facebook.yoga:yoga` Maven
+     JNI bindings — no NDK build needed; iOS `libyoga.a` built from source for the simulator,
+     C++20, no duplicate symbols against the runtime archives), and the **native
+     measure-callback round-trip works in BOTH channels** — the measured width *and* height
+     reach the frame. So the architecture holds: **Yoga in the shells, no C-ABI change**
+     (flex props ride the existing `SetStyle` wire); the fallback ladder (managed flexbox in
+     .NET / native-layout mapping) is closed.
+   - **Frame parity is asserted, not assumed:** both rungs build one canonical tree (row
+     300×100 · box1 50×50 · box2 `flexGrow:1` · text auto-sized by a measure func with
+     `alignSelf: flex-start`) and each asserts **all twelve numbers** (x/y/w/h × 3 frames) —
+     the same twelve. A review caught the two rungs originally building *different* trees and
+     both staying green only because neither asserted the heights that differed.
+   - **The load-bearing iOS lesson (six red CI runs):** Xcode's Swift explicit-module
+     dependency scanner reads the bridging header with a path-less header search — it honours
+     neither `HEADER_SEARCH_PATHS` nor `-Xcc -I`. **Yoga's headers must never be visible to
+     Swift.** All Yoga interop lives in Objective-C++ (`BnYogaProbe.mm`) behind a plain-C
+     surface — the same discipline the shell already uses for the runtime. **Phase 6.1's iOS
+     Yoga layer is therefore Objective-C++, budgeted, not re-litigated.**
+   - **Final counts (all CI-asserted):** .NET **230/0** · JVM **79/0** · Android instrumented
+     **41/41** · iOS XCTest **14/14**; the Yoga version pin (3.2.1 in both shells) is now
+     enforced by the required lane. Merged in `#54`. See
+     [design](../plans/2026-07-13-phase-6.0-design.md) +
+     [spike conclusion](../plans/2026-07-13-phase-6.0-spike-conclusion.md).
+- ⏳ **Phase 6.1** — Flexbox layout core: flex props + the shell Yoga pass + the flex demo (DoD #2, #3, #6) — *next*
+- ⏳ **Phase 6.2** — Real scrolling on both platforms (DoD #4)
+- ⏳ **Phase 6.3** — URL images on both platforms (DoD #5)
+- ⏳ **Phase 6.4** — M6 final audit + close (DoD #7, #8) → `v6.0`
 
 ---
 
