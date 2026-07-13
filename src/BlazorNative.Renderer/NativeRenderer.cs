@@ -1040,23 +1040,65 @@ public sealed class NativeRenderer : BlazorRenderer
         _          => "view"
     };
 
-    /// <summary>The SetStyle allow-list: attribute names that ride the STYLE
-    /// wire (patch kind 6) instead of the prop wire. Phase 6.1 extends it with
-    /// the flex surface — no ABI change, the wire was already there; the shells
-    /// now map each name to a Yoga setter (design §"No ABI change").
-    /// Membership is checked at BOTH emission sites: ProcessAttribute (set) and
-    /// the RemoveAttribute arm (reset — see the null-reset fix), so a style
-    /// that goes away leaves on the same wire it arrived on.</summary>
-    private static readonly HashSet<string> StyleAttributes = new(StringComparer.OrdinalIgnoreCase)
+    // ── The SetStyle allow-list, PARTITIONED (Phase 6.1) ──────────────────────
+    //
+    // Names on this list ride the STYLE wire (patch kind 6) instead of the prop
+    // wire. Membership is checked at BOTH emission sites: ProcessAttribute (set)
+    // and the RemoveAttribute arm (reset — the null-reset fix), so a style that
+    // goes away leaves on the same wire it arrived on.
+    //
+    // The partition is the SHELLS' ROUTING TABLE, not decoration. After 6.1 a
+    // shell receiving a SetStyle must send each name to EXACTLY ONE of two
+    // places, and "which one?" must not be a judgement call in two hand-written
+    // parsers:
+    //   • YogaStyleAttributes  → the node's YOGA node (a Yoga style setter).
+    //   • VisualStyleAttributes → the View / UIView itself (paint, not placement).
+    //
+    // The sharp edge this exists to prevent: `padding` is LAYOUT. Yoga places a
+    // container's children inside its padding box, so padding belongs to the
+    // Yoga node — a shell that ALSO calls view.setPadding(...) (as Android does
+    // today) double-applies it. Same for width/height/margin. Gate 2/3 must
+    // delete those view-level calls; the plan says so explicitly.
+    //
+    // Comparer is ORDINAL, deliberately. Both shells match style names
+    // case-SENSITIVELY, so an OrdinalIgnoreCase list here would classify
+    // "FlexGrow" as a style that the shells then silently drop — .NET promising
+    // routing it cannot deliver. Ordinal means a mis-cased name falls onto the
+    // prop wire, where the shells already log "unknown prop".
+    //
+    // NOT on the list, on purpose (ledgered for a later phase): `alignContent`,
+    // `rowGap`, `columnGap` — no typed BnView param and no producer, so
+    // accepting them would only be two hand-written parsers implementing a name
+    // nothing emits. (Note the wrap demo RELIES on Yoga's alignContent default
+    // of flex-start; not setting it is precisely how it gets that.) Likewise
+    // `display` and `flex`, dropped from the pre-6.1 list: nothing types them
+    // and the shells never implemented them.
+
+    /// <summary>Style names that are LAYOUT: the shells route these to the
+    /// node's Yoga node, never to the view. See the partition note above.</summary>
+    internal static readonly HashSet<string> YogaStyleAttributes = new(StringComparer.Ordinal)
     {
-        // Pre-6.1 (visual + the flex-ish names the shells used to ignore)
-        "style", "color", "background", "backgroundColor", "fontSize",
-        "fontWeight", "padding", "margin", "width", "height",
-        "display", "flex", "flexDirection", "alignItems", "justifyContent",
-        // Phase 6.1 — the flex surface (BnView's typed params stringify to these)
-        "flexGrow", "flexShrink", "flexBasis", "alignSelf", "alignContent",
-        "flexWrap", "gap", "rowGap", "columnGap", "position",
-        "top", "right", "bottom", "left",
-        "minWidth", "maxWidth", "minHeight", "maxHeight",
+        // Container
+        "flexDirection", "justifyContent", "alignItems", "flexWrap", "gap",
+        // Item
+        "alignSelf", "flexGrow", "flexShrink", "flexBasis",
+        // Box — LAYOUT, even the two that predate 6.1 (padding/margin)
+        "width", "height", "minWidth", "maxWidth", "minHeight", "maxHeight",
+        "padding", "margin",
+        // Positioning
+        "position", "top", "right", "bottom", "left",
     };
+
+    /// <summary>Style names that are VISUAL: the shells route these to the
+    /// View / UIView (paint), never to Yoga. See the partition note above.</summary>
+    internal static readonly HashSet<string> VisualStyleAttributes = new(StringComparer.Ordinal)
+    {
+        "backgroundColor", "color", "fontSize", "fontWeight", "background", "style",
+    };
+
+    /// <summary>The union — what "is a style" MEANS to the renderer. Pinned
+    /// equal to (and disjointly partitioned by) the two sets above in
+    /// StyleAttributePartitionTests.</summary>
+    internal static readonly HashSet<string> StyleAttributes =
+        new(YogaStyleAttributes.Concat(VisualStyleAttributes), StringComparer.Ordinal);
 }

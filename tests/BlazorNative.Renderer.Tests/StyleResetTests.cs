@@ -12,11 +12,12 @@ namespace BlazorNative.Renderer.Tests;
 // Two things, both about the SetStyle allow-list (NativeRenderer.StyleAttributes):
 //
 //   1. Classification. The flex surface (flexGrow, flexShrink, flexBasis,
-//      alignSelf, alignContent, flexWrap, gap, rowGap, columnGap, position,
-//      top, right, bottom, left, minWidth, maxWidth, minHeight, maxHeight —
-//      joining the eight flex-ish names already there) must route to
-//      SetStylePatch, not UpdatePropPatch. No ABI change: these ride the
-//      EXISTING SetStyle wire (patch kind 6).
+//      alignSelf, flexWrap, gap, position, top, right, bottom, left, minWidth,
+//      maxWidth, minHeight, maxHeight — joining the flex-ish names already
+//      there) must route to SetStylePatch, not UpdatePropPatch. No ABI change:
+//      these ride the EXISTING SetStyle wire (patch kind 6). The allow-list's
+//      SHAPE (Yoga-vs-visual partition, ordinal matching, what is deliberately
+//      NOT on it) is pinned next door in StyleAttributePartitionTests.
 //
 //   2. THE BUG (found by the 6.1 codebase survey). REMOVING an attribute on
 //      re-render emitted UpdatePropPatch(name, null) for EVERY name, style or
@@ -33,11 +34,14 @@ namespace BlazorNative.Renderer.Tests;
 
 public sealed class StyleResetTests
 {
-    /// <summary>The names Phase 6.1 ADDS to the allow-list (the flex surface).</summary>
+    /// <summary>The names Phase 6.1 ADDS to the allow-list (the flex surface).
+    /// Every one has a typed BnView param behind it — see
+    /// StyleAttributePartitionTests for why alignContent/rowGap/columnGap are
+    /// deliberately NOT here.</summary>
     public static TheoryData<string> NewStyleNames() =>
     [
-        "flexGrow", "flexShrink", "flexBasis", "alignSelf", "alignContent",
-        "flexWrap", "gap", "rowGap", "columnGap", "position",
+        "flexGrow", "flexShrink", "flexBasis", "alignSelf",
+        "flexWrap", "gap", "position",
         "top", "right", "bottom", "left",
         "minWidth", "maxWidth", "minHeight", "maxHeight",
     ];
