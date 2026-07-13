@@ -19,6 +19,11 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
 
     func application(_ application: UIApplication,
                      didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
+        // Phase 6.0 Yoga spike: reference the Yoga probe at launch so the linker
+        // keeps Yoga live in the app binary (proving it coexists with the runtime
+        // .a) + a launch smoke that Yoga is callable in-process.
+        BnYogaProbe.warmUp()
+
         let window = UIWindow(frame: UIScreen.main.bounds)
         window.rootViewController = HostViewController()
         window.makeKeyAndVisible()

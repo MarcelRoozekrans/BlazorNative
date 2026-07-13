@@ -35,6 +35,13 @@
 
 #include <stdint.h>
 
+// Phase 6.0 Yoga spike (M6): the Yoga flexbox C-API. Yoga.h is C-compatible
+// (YG_EXTERN_C-wrapped), so the Clang importer surfaces YGNodeNew /
+// YGNodeStyleSet* / YGNodeSetMeasureFunc / YGNodeCalculateLayout / YGNodeLayoutGet*
+// to Swift (BnYogaProbe.swift). Resolved via HEADER_SEARCH_PATHS=vendor/yoga-include
+// (staged by ios.yml from the pinned Yoga source build).
+#include <yoga/Yoga.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif

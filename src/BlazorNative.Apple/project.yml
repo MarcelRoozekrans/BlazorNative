@@ -46,6 +46,13 @@ targets:
         GENERATE_INFOPLIST_FILE: NO
         ENABLE_TESTABILITY: YES
         SWIFT_OBJC_BRIDGING_HEADER: BnHost/BlazorNativeRuntimeC.h
+        # Phase 6.0 Yoga spike: the app links Yoga's static lib (built from source by
+        # ios.yml) ALONGSIDE the runtime .a — the coexistence proof. Its headers
+        # (vendor/yoga-include/yoga/*.h) are on the search path so the bridging header
+        # can `#include <yoga/Yoga.h>`; BnYogaProbe.swift calls the C-API. libyoga.a
+        # is appended to OTHER_LDFLAGS below (C++, so the existing -lc++ covers it).
+        HEADER_SEARCH_PATHS:
+          - $(SRCROOT)/vendor/yoga-include
         # Link the NativeAOT static runtime. A NativeLib=Static .a carries ONLY
         # the compiled managed->native app code — NOT the NativeAOT runtime
         # bootstrapper/GC (_Rh*) or the platform native support libs
@@ -73,6 +80,9 @@ targets:
           - -force_load
           - $(SRCROOT)/vendor/libBlazorNative.Runtime.a
           - $(SRCROOT)/vendor/libBnRuntimeSupport.a
+          # Phase 6.0 Yoga spike: the C++ flexbox engine, linked alongside the
+          # runtime archives (coexistence proof). -lc++ (below) covers its C++ runtime.
+          - $(SRCROOT)/vendor/libyoga.a
           - -lc++
           - -lz
           - -licucore
