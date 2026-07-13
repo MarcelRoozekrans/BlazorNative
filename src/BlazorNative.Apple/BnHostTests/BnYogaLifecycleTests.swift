@@ -30,6 +30,20 @@
 // baseline**. With the purge missing they grow by one node per cycle, forever.
 //
 // The iOS twin of `YogaNodeLifecycleAndroidTest`, assertion for assertion.
+//
+// ── MUTATION EVIDENCE (measured on CI, not asserted from an armchair) ────────
+//
+// Delete `handleRemove`'s purge loop and drop only the NAMED node, and this test
+// fails exactly as predicted: nodes 18 → **21**, Yoga nodes 15 → **18** — +1 leaked
+// text child per cycle, three cycles, one per navigation in the real app.
+//
+// And it fails LOUDER than a leak, which is the part worth writing down: the two
+// navigation tests (`testSettingsNavigation…`, `testBackReturnsFresh…`) **CRASH the
+// test host**. `bn_yoga_node_free_subtree` frees every descendant's `YGNodeRef` —
+// so a descendant left behind in `yogaNodes` is not merely leaked, it is a DANGLING
+// POINTER into freed native memory, and the next `calculateAndApply` dereferences it.
+// The purge loop is load-bearing for MEMORY SAFETY, not just for bookkeeping hygiene.
+// A crash in a nav test names the nav test; only this file names the cause.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import XCTest
