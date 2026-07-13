@@ -13,8 +13,27 @@ namespace BlazorNative.Components;
 // question to answer at runtime.
 //
 // One body, not two copy-pasted ones: a new BnView param that someone forgets
-// to forward is a hole an author falls into. BnComponentTests pins the
-// forwarding reflectively (Presets_ForwardEveryBnViewParameterExceptDirection).
+// to forward is a hole an author falls into. BnComponentTests pins BOTH halves
+// of that, because either test alone is a green light over the other's bug:
+//   • Presets_ForwardEveryBnViewParameterExceptDirection — DECLARATION (the
+//     preset exposes exactly BnView's params minus Direction), reflectively. It
+//     cannot see BuildRenderTree at all.
+//   • BnRow_/BnColumn_ForwardsTheWholeFlexSurface_* — FORWARDING (mounted with
+//     the full param dictionary, the preset emits BnView's whole SetStyle table
+//     plus its own flexDirection). Delete any one line from BuildRenderTree
+//     below and THAT test goes red; the reflective one stays green while
+//     <BnRow Grow="1"> silently does nothing.
+//
+// ── DO NOT GUARD THE FORWARDING ON null ──────────────────────────────────────
+// Every AddComponentParameter below fires UNCONDITIONALLY, nulls included, and
+// that is load-bearing. Blazor hands a component a ParameterView containing
+// only the parameters that were SUPPLIED; anything absent is simply not written,
+// so the target keeps whatever it held from the previous render. An
+// `if (Grow is not null)` "optimisation" (saving 23 boxed nulls per render)
+// would therefore leave BnView holding a STALE Grow the moment an author writes
+// `Grow = cond ? 1 : null` — resurrecting, one level up, the exact null-reset
+// bug Task 1.2 fixed in the renderer. Null must travel. (Pinned:
+// BnRow_GrowGoesNull_ForwardsTheNullThroughToTheStyleWire.)
 //
 // There is deliberately NO BnStack: it would be a synonym for BnColumn, and two
 // names for one thing is a library smell on day one. (The M6 contract named it;
@@ -41,19 +60,19 @@ public abstract class BnFlexPreset : ComponentBase
     [Parameter] public string? Margin { get; set; }
 
     /// <inheritdoc cref="BnView.Justify"/>
-    [Parameter] public Justify? Justify { get; set; }
+    [Parameter] public FlexJustify? Justify { get; set; }
 
     /// <inheritdoc cref="BnView.Align"/>
-    [Parameter] public Align? Align { get; set; }
+    [Parameter] public FlexAlign? Align { get; set; }
 
     /// <inheritdoc cref="BnView.Wrap"/>
-    [Parameter] public Wrap? Wrap { get; set; }
+    [Parameter] public FlexWrap? Wrap { get; set; }
 
     /// <inheritdoc cref="BnView.Gap"/>
     [Parameter] public string? Gap { get; set; }
 
     /// <inheritdoc cref="BnView.AlignSelf"/>
-    [Parameter] public Align? AlignSelf { get; set; }
+    [Parameter] public FlexAlign? AlignSelf { get; set; }
 
     /// <inheritdoc cref="BnView.Grow"/>
     [Parameter] public float? Grow { get; set; }
@@ -83,7 +102,7 @@ public abstract class BnFlexPreset : ComponentBase
     [Parameter] public string? MaxHeight { get; set; }
 
     /// <inheritdoc cref="BnView.Position"/>
-    [Parameter] public Position? Position { get; set; }
+    [Parameter] public FlexPosition? Position { get; set; }
 
     /// <inheritdoc cref="BnView.Top"/>
     [Parameter] public string? Top { get; set; }

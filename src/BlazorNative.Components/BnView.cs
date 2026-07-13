@@ -38,10 +38,11 @@ public sealed class BnView : ComponentBase
     /// <summary>Background color, e.g. <c>"#FFEEAA"</c>. Null = unset.</summary>
     [Parameter] public string? BackgroundColor { get; set; }
 
-    /// <summary>Padding in dp, e.g. <c>"16"</c>. Null = unset.</summary>
+    /// <summary>Padding, e.g. <c>"16"</c> — a LAYOUT length (Yoga owns it: children
+    /// are placed inside the padding box). Null = unset.</summary>
     [Parameter] public string? Padding { get; set; }
 
-    /// <summary>Margin in dp, e.g. <c>"8"</c>. Null = unset.</summary>
+    /// <summary>Margin, e.g. <c>"8"</c> — a LAYOUT length. Null = unset.</summary>
     [Parameter] public string? Margin { get; set; }
 
     // ── Container layout (how THIS view arranges its children) ────────────────
@@ -50,13 +51,13 @@ public sealed class BnView : ComponentBase
     [Parameter] public FlexDirection? Direction { get; set; }
 
     /// <summary>Main-axis distribution (<c>justifyContent</c>). Null = flex-start.</summary>
-    [Parameter] public Justify? Justify { get; set; }
+    [Parameter] public FlexJustify? Justify { get; set; }
 
     /// <summary>Cross-axis alignment of the children (<c>alignItems</c>). Null = stretch.</summary>
-    [Parameter] public Align? Align { get; set; }
+    [Parameter] public FlexAlign? Align { get; set; }
 
     /// <summary>Line wrapping (<c>flexWrap</c>). Null = nowrap.</summary>
-    [Parameter] public Wrap? Wrap { get; set; }
+    [Parameter] public FlexWrap? Wrap { get; set; }
 
     /// <summary>Gap between children, e.g. <c>"8"</c> (<c>gap</c>). Null = 0.</summary>
     [Parameter] public string? Gap { get; set; }
@@ -65,26 +66,32 @@ public sealed class BnView : ComponentBase
 
     /// <summary>Cross-axis override for this item (<c>alignSelf</c>). Null = auto
     /// (inherit the parent's <see cref="Align"/>).</summary>
-    [Parameter] public Align? AlignSelf { get; set; }
+    [Parameter] public FlexAlign? AlignSelf { get; set; }
 
     /// <summary>Share of the free main-axis space this item absorbs
-    /// (<c>flexGrow</c>). Null = 0.</summary>
+    /// (<c>flexGrow</c>) — a UNITLESS number, not a length. Null = 0.</summary>
     [Parameter] public float? Grow { get; set; }
 
     /// <summary>Share of the main-axis overflow this item gives back
-    /// (<c>flexShrink</c>). Null = Yoga's default.</summary>
+    /// (<c>flexShrink</c>) — a UNITLESS number. Null = Yoga's default.</summary>
     [Parameter] public float? Shrink { get; set; }
 
     /// <summary>Main-axis base size (<c>flexBasis</c>): <c>"auto"</c> | <c>"50%"</c>
-    /// | <c>"120"</c> (dp). Null = auto.</summary>
+    /// | <c>"120"</c>. Null = auto.</summary>
     [Parameter] public string? Basis { get; set; }
 
-    // ── Box (the value grammar the shells parse: "12" | "12dp" | "50%" | "auto") ─
+    // ── Box ───────────────────────────────────────────────────────────────────
+    //
+    // Every string-valued param below is a LAYOUT LENGTH and speaks the ONE
+    // normative grammar — design §"Style value grammar (normative)": a bare
+    // number (density-independent units: dp on Android, points on iOS), "N%",
+    // or "auto" where Yoga allows it. NO unit suffix: "12dp"/"12px"/"12sp" are
+    // not in the grammar and nothing here emits one.
 
-    /// <summary>Width, e.g. <c>"300"</c> (dp) or <c>"50%"</c>. Null = auto.</summary>
+    /// <summary>Width, e.g. <c>"300"</c> or <c>"50%"</c>. Null = auto.</summary>
     [Parameter] public string? Width { get; set; }
 
-    /// <summary>Height, e.g. <c>"100"</c> (dp) or <c>"50%"</c>. Null = auto.</summary>
+    /// <summary>Height, e.g. <c>"100"</c> or <c>"50%"</c>. Null = auto.</summary>
     [Parameter] public string? Height { get; set; }
 
     /// <summary>Minimum width. Null = unset.</summary>
@@ -102,7 +109,7 @@ public sealed class BnView : ComponentBase
     // ── Positioning ───────────────────────────────────────────────────────────
 
     /// <summary>Positioning mode (<c>position</c>). Null = relative (in flow).</summary>
-    [Parameter] public Position? Position { get; set; }
+    [Parameter] public FlexPosition? Position { get; set; }
 
     /// <summary>Top inset. Null = unset.</summary>
     [Parameter] public string? Top { get; set; }

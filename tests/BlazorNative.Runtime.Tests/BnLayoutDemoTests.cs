@@ -90,16 +90,34 @@ public sealed class BnLayoutDemoTests
             .Where(p => p.NodeId == nodeId)
             .ToDictionary(p => p.Property, p => p.Value);
 
+    /// <summary>Asserts a node's whole style table. <paramref name="what"/> is the
+    /// frame-table name of the node ("box B", "wrap box", …) and is threaded into
+    /// the failure message: this golden fails as a WALL of anonymous nodeIds
+    /// otherwise, and the first question is always "which node?".</summary>
     private static void AssertStyles(
         RenderFrame frame, int nodeId, string what, params (string Property, string Value)[] expected)
     {
         Dictionary<string, string?> actual = StylesOf(frame, nodeId);
-        Assert.Equal(
-            expected.ToDictionary(e => e.Property, e => (string?)e.Value),
-            actual);
-        Assert.Equal("view", CreateOf(frame, nodeId).NodeType); // sanity: `what` is a container
-        Assert.NotNull(what);
+        Dictionary<string, string?> want = expected.ToDictionary(e => e.Property, e => (string?)e.Value);
+
+        Assert.True(
+            want.Count == actual.Count
+                && want.All(kv => actual.TryGetValue(kv.Key, out string? v) && v == kv.Value),
+            $"""
+             styles of "{what}" (node {nodeId}) do not match the golden:
+               expected: {Render(want)}
+               actual:   {Render(actual)}
+             """);
+
+        // Sanity: every node this golden names is a container view.
+        Assert.True(CreateOf(frame, nodeId).NodeType == "view",
+            $"""expected "{what}" (node {nodeId}) to be a view, not a {CreateOf(frame, nodeId).NodeType}""");
     }
+
+    private static string Render(Dictionary<string, string?> styles)
+        => "{" + string.Join(", ", styles
+            .OrderBy(kv => kv.Key, StringComparer.Ordinal)
+            .Select(kv => $"{kv.Key}={kv.Value ?? "<null>"}")) + "}";
 
     // ── The golden ────────────────────────────────────────────────────────────
 
@@ -145,14 +163,19 @@ public sealed class BnLayoutDemoTests
             AssertStyles(mount, items[2], "item 2",
                 ("width", "100"), ("height", "40"), ("backgroundColor", "#4DB6AC"));
 
-            // [2] wrap row 300×100, four 100-wide boxes → 3 on line 1, the 4th at y=40
+            // [2] wrap row 300×100, four 90-wide boxes → 3 on line 1 (270 of 300),
+            //     the 4th at y=40. NINETY, not 100: four 100s would put the row
+            //     exactly ON Yoga's break boundary (consumed + item > available;
+            //     300 > 300 is false), where a half-dp of rounding on either shell
+            //     flips box 3 onto line 2 and the two platforms "disagree" for a
+            //     non-engine reason. 30dp of slack makes the break a fact.
             AssertStyles(mount, wrapSection, "wrap section",
                 ("flexDirection", "row"), ("width", "300"), ("height", "100"),
                 ("flexWrap", "wrap"));
             List<int> wrapped = ChildrenOf(mount, wrapSection);
             Assert.Equal(4, wrapped.Count);
             Assert.All(wrapped, id => AssertStyles(mount, id, "wrap box",
-                ("width", "100"), ("height", "40"), ("backgroundColor", "#90A4AE")));
+                ("width", "90"), ("height", "40"), ("backgroundColor", "#90A4AE")));
 
             // [3] the measured text (DoD #3): a 150-wide row with NO height — the
             //     label wraps and its MEASURED height becomes the row's height.
@@ -170,6 +193,10 @@ public sealed class BnLayoutDemoTests
                 ("flexDirection", "row"), ("width", "300"));
             int back = Assert.Single(ChildrenOf(mount, backSection));
             Assert.Equal("button", CreateOf(mount, back).NodeType);
+            // The button carries NO style at all — its size is the MEASURED one
+            // (DoD #3's second leaf). If a style ever appears here, the shells'
+            // measure func is no longer what decides its frame.
+            Assert.Empty(StylesOf(mount, back));
             ReplaceTextPatch caption = Assert.Single(mount.Patches.OfType<ReplaceTextPatch>(),
                 p => p.Text == "← Back");
             Assert.Equal(back, CreateOf(mount, caption.NodeId).ParentId);

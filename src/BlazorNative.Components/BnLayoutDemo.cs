@@ -34,10 +34,10 @@ namespace BlazorNative.Components;
 //  │    ├─ item 1       (100, 80, 100,  40)   AlignSelf=Center   split into 2 gaps
 //  │    └─ item 2       (0, 160, 100,  40)                       of 40 → y 0/80/160
 //  ├─ [2] wrap section  (0, 300, 300, 100)   BnRow    W=300 H=100 Wrap=Wrap
-//  │    ├─ wrap 0       (0,   0, 100,  40)   line 1 (3 × 100 fills exactly 300)
-//  │    ├─ wrap 1       (100, 0, 100,  40)   line 1
-//  │    ├─ wrap 2       (200, 0, 100,  40)   line 1
-//  │    └─ wrap 3       (0,  40, 100,  40)   line 2 — alignContent defaults to
+//  │    ├─ wrap 0       (0,   0,  90,  40)   line 1 (3 × 90 = 270 of 300 — 30dp
+//  │    ├─ wrap 1       (90,  0,  90,  40)   line 1   of slack, see below)
+//  │    ├─ wrap 2       (180, 0,  90,  40)   line 1
+//  │    └─ wrap 3       (0,  40,  90,  40)   line 2 — alignContent defaults to
 //  │                                          flex-start in Yoga, so line 2 sits
 //  │                                          at the line-1 cross size (40)
 //  ├─ [3] text section  (0, 400, 150,  H)    BnRow W=150, NO height
@@ -45,6 +45,13 @@ namespace BlazorNative.Components;
 //  │                                          height of the wrapped label
 //  └─ [4] back section  (0, 400+H, 300, Hb)  BnRow W=300, NO height
 //       └─ "← Back"     (0,   0, Wb,   Hb)   Hb/Wb = the button's measured size
+//
+// The wrap row's boxes are 90dp, not 100. Four 100s in a 300 row would put three
+// on line 1 ONLY because Yoga's break test is `consumed + item > available` and
+// 300 > 300 is false — i.e. the demo would sit EXACTLY on the wrap boundary, and
+// half a dp of rounding drift on either shell would drop box 3 to line 2 and make
+// the two platforms "disagree" for a reason that has nothing to do with the
+// engine. 90 × 3 = 270 leaves 30dp of slack: the break is unambiguous.
 //
 // The last two rows are the DoD #3 proof and are the ONLY frames without fixed
 // numbers — deliberately: a font's metrics are not a constant we get to invent.
@@ -137,7 +144,7 @@ public sealed class BnLayoutDemo : ComponentBase
         b.OpenComponent<BnColumn>(seq);
         b.AddComponentParameter(seq + 1, nameof(BnColumn.Width), "300");
         b.AddComponentParameter(seq + 2, nameof(BnColumn.Height), "200");
-        b.AddComponentParameter(seq + 3, nameof(BnColumn.Justify), Justify.SpaceBetween);
+        b.AddComponentParameter(seq + 3, nameof(BnColumn.Justify), FlexJustify.SpaceBetween);
         b.AddComponentParameter(seq + 4, nameof(BnColumn.ChildContent), (RenderFragment)(cb =>
         {
             cb.OpenComponent<BnView>(0);
@@ -149,7 +156,7 @@ public sealed class BnLayoutDemo : ComponentBase
             cb.OpenComponent<BnView>(10);
             cb.AddComponentParameter(11, nameof(BnView.Width), "100");
             cb.AddComponentParameter(12, nameof(BnView.Height), "40");
-            cb.AddComponentParameter(13, nameof(BnView.AlignSelf), Align.Center);
+            cb.AddComponentParameter(13, nameof(BnView.AlignSelf), FlexAlign.Center);
             cb.AddComponentParameter(14, nameof(BnView.BackgroundColor), Item1);
             cb.CloseComponent();
 
@@ -162,21 +169,25 @@ public sealed class BnLayoutDemo : ComponentBase
         b.CloseComponent();
     }
 
-    /// <summary>[2] four 100-wide boxes in a 300-wide wrapping row: three fill
-    /// line 1 exactly, the fourth overflows onto line 2 at y = 40 (the line-1
-    /// cross size — Yoga's alignContent defaults to flex-start).</summary>
+    /// <summary>[2] four 90-wide boxes in a 300-wide wrapping row: three fit on
+    /// line 1 (270 of 300), the fourth overflows onto line 2 at y = 40 (the line-1
+    /// cross size — Yoga's alignContent defaults to flex-start).
+    /// <para>90, not 100, ON PURPOSE: four 100s would leave the row sitting exactly
+    /// on Yoga's break boundary (<c>consumed + item &gt; available</c>; 300 &gt; 300
+    /// is false), where a half-dp of rounding on either shell flips box 3 onto
+    /// line 2. 30dp of slack makes the break a fact, not a coin toss.</para></summary>
     private static void BuildWrapSection(RenderTreeBuilder b, int seq)
     {
         b.OpenComponent<BnRow>(seq);
         b.AddComponentParameter(seq + 1, nameof(BnRow.Width), "300");
         b.AddComponentParameter(seq + 2, nameof(BnRow.Height), "100");
-        b.AddComponentParameter(seq + 3, nameof(BnRow.Wrap), Wrap.Wrap);
+        b.AddComponentParameter(seq + 3, nameof(BnRow.Wrap), FlexWrap.Wrap);
         b.AddComponentParameter(seq + 4, nameof(BnRow.ChildContent), (RenderFragment)(wb =>
         {
             for (var i = 0; i < 4; i++)
             {
                 wb.OpenComponent<BnView>(i * 10);
-                wb.AddComponentParameter((i * 10) + 1, nameof(BnView.Width), "100");
+                wb.AddComponentParameter((i * 10) + 1, nameof(BnView.Width), "90");
                 wb.AddComponentParameter((i * 10) + 2, nameof(BnView.Height), "40");
                 wb.AddComponentParameter((i * 10) + 3, nameof(BnView.BackgroundColor), WrapBox);
                 wb.CloseComponent();

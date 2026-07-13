@@ -1,3 +1,5 @@
+using System.Runtime.CompilerServices;
+
 namespace BlazorNative.Components;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -13,9 +15,20 @@ namespace BlazorNative.Components;
 // two mappings are held to the same table. Never emit a .NET ToString() of an
 // enum here — "RowReverse" is not a word any shell parses.
 //
-// The value grammar for the string-valued params (Width/Basis/Gap/Top/…) is
-// shared with the shells: bare number ("12" = dp) | "12dp"/"12px" | "50%" |
-// "auto". A NULL value on the wire means "reset to the Yoga default".
+// ── THE VALUE GRAMMAR IS NORMATIVE AND LIVES IN ONE PLACE ────────────────────
+// docs/plans/2026-07-13-phase-6.1-design.md §"Style value grammar (normative)".
+// Both shell parsers are written FROM that section; it is not restated here,
+// because three copies of a grammar is how the two parsers drift. The two
+// things worth knowing at THIS file's altitude:
+//   • .NET never emits a unit suffix. Every string-valued param below reaches
+//     the wire as a bare number ("12" — density-independent units), a percent
+//     ("50%") or "auto". "12dp"/"12px"/"12sp" are NOT in the 6.1 grammar.
+//   • A NULL value on the wire means "reset to the Yoga default".
+//
+// Type names are prefixed Flex* on purpose (FlexAlign, not Align): these ship
+// on nuget.org in M8 and a bare `Align`/`Wrap`/`Position` in a library's root
+// namespace collides with app-side types. The PARAM names on BnView stay short
+// (Align="…", Wrap="…") — that is the ergonomic surface.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// <summary>Main-axis direction of a flex container (<c>flexDirection</c>).
@@ -34,7 +47,7 @@ public enum FlexDirection
 }
 
 /// <summary>Main-axis distribution (<c>justifyContent</c>).</summary>
-public enum Justify
+public enum FlexJustify
 {
     /// <summary><c>"flex-start"</c> — Yoga's default.</summary>
     FlexStart,
@@ -52,7 +65,7 @@ public enum Justify
 
 /// <summary>Cross-axis alignment — <c>alignItems</c> on a container,
 /// <c>alignSelf</c> on a child.</summary>
-public enum Align
+public enum FlexAlign
 {
     /// <summary><c>"auto"</c> — inherit the parent's alignItems (alignSelf only).</summary>
     Auto,
@@ -69,7 +82,7 @@ public enum Align
 }
 
 /// <summary>Line wrapping of a flex container (<c>flexWrap</c>).</summary>
-public enum Wrap
+public enum FlexWrap
 {
     /// <summary><c>"nowrap"</c> — Yoga's default. Note the CSS spelling: ONE word.</summary>
     NoWrap,
@@ -82,7 +95,7 @@ public enum Wrap
 /// <summary>Positioning mode (<c>position</c>). <see cref="Absolute"/> takes the
 /// node out of flow; <c>Top/Right/Bottom/Left</c> then place it against the
 /// padding box of its parent.</summary>
-public enum Position
+public enum FlexPosition
 {
     /// <summary><c>"relative"</c> — Yoga's default (in flow).</summary>
     Relative,
@@ -107,43 +120,43 @@ public static class FlexStyleValues
     };
 
     /// <summary>CSS-cased wire value for <paramref name="value"/>.</summary>
-    public static string ToStyleValue(this Justify value) => value switch
+    public static string ToStyleValue(this FlexJustify value) => value switch
     {
-        Justify.FlexStart => "flex-start",
-        Justify.Center => "center",
-        Justify.FlexEnd => "flex-end",
-        Justify.SpaceBetween => "space-between",
-        Justify.SpaceAround => "space-around",
-        Justify.SpaceEvenly => "space-evenly",
+        FlexJustify.FlexStart => "flex-start",
+        FlexJustify.Center => "center",
+        FlexJustify.FlexEnd => "flex-end",
+        FlexJustify.SpaceBetween => "space-between",
+        FlexJustify.SpaceAround => "space-around",
+        FlexJustify.SpaceEvenly => "space-evenly",
         _ => throw Undefined(value),
     };
 
     /// <summary>CSS-cased wire value for <paramref name="value"/>.</summary>
-    public static string ToStyleValue(this Align value) => value switch
+    public static string ToStyleValue(this FlexAlign value) => value switch
     {
-        Align.Auto => "auto",
-        Align.FlexStart => "flex-start",
-        Align.Center => "center",
-        Align.FlexEnd => "flex-end",
-        Align.Stretch => "stretch",
-        Align.Baseline => "baseline",
+        FlexAlign.Auto => "auto",
+        FlexAlign.FlexStart => "flex-start",
+        FlexAlign.Center => "center",
+        FlexAlign.FlexEnd => "flex-end",
+        FlexAlign.Stretch => "stretch",
+        FlexAlign.Baseline => "baseline",
         _ => throw Undefined(value),
     };
 
     /// <summary>CSS-cased wire value for <paramref name="value"/>.</summary>
-    public static string ToStyleValue(this Wrap value) => value switch
+    public static string ToStyleValue(this FlexWrap value) => value switch
     {
-        Wrap.NoWrap => "nowrap",
-        Wrap.Wrap => "wrap",
-        Wrap.WrapReverse => "wrap-reverse",
+        FlexWrap.NoWrap => "nowrap",
+        FlexWrap.Wrap => "wrap",
+        FlexWrap.WrapReverse => "wrap-reverse",
         _ => throw Undefined(value),
     };
 
     /// <summary>CSS-cased wire value for <paramref name="value"/>.</summary>
-    public static string ToStyleValue(this Position value) => value switch
+    public static string ToStyleValue(this FlexPosition value) => value switch
     {
-        Position.Relative => "relative",
-        Position.Absolute => "absolute",
+        FlexPosition.Relative => "relative",
+        FlexPosition.Absolute => "absolute",
         _ => throw Undefined(value),
     };
 
@@ -153,20 +166,20 @@ public static class FlexStyleValues
     public static string? ToStyleValue(this FlexDirection? value)
         => value is { } v ? v.ToStyleValue() : null;
 
-    /// <inheritdoc cref="ToStyleValue(Justify)"/>
-    public static string? ToStyleValue(this Justify? value)
+    /// <inheritdoc cref="ToStyleValue(FlexJustify)"/>
+    public static string? ToStyleValue(this FlexJustify? value)
         => value is { } v ? v.ToStyleValue() : null;
 
-    /// <inheritdoc cref="ToStyleValue(Align)"/>
-    public static string? ToStyleValue(this Align? value)
+    /// <inheritdoc cref="ToStyleValue(FlexAlign)"/>
+    public static string? ToStyleValue(this FlexAlign? value)
         => value is { } v ? v.ToStyleValue() : null;
 
-    /// <inheritdoc cref="ToStyleValue(Wrap)"/>
-    public static string? ToStyleValue(this Wrap? value)
+    /// <inheritdoc cref="ToStyleValue(FlexWrap)"/>
+    public static string? ToStyleValue(this FlexWrap? value)
         => value is { } v ? v.ToStyleValue() : null;
 
-    /// <inheritdoc cref="ToStyleValue(Position)"/>
-    public static string? ToStyleValue(this Position? value)
+    /// <inheritdoc cref="ToStyleValue(FlexPosition)"/>
+    public static string? ToStyleValue(this FlexPosition? value)
         => value is { } v ? v.ToStyleValue() : null;
 
     /// <summary>Numeric → wire string, INVARIANTLY (the shells parse with a
@@ -175,6 +188,12 @@ public static class FlexStyleValues
     public static string? ToStyleValue(this float? value)
         => value?.ToString(System.Globalization.CultureInfo.InvariantCulture);
 
-    private static ArgumentOutOfRangeException Undefined<T>(T value) where T : struct, Enum
-        => new(nameof(value), value, $"undefined {typeof(T).Name} value — no wire word exists for it");
+    /// <summary>The "enum value outside the declared set" guard (a cast int).
+    /// <paramref name="paramName"/> is captured from the CALL SITE, so the
+    /// exception names the caller's parameter rather than this helper's.</summary>
+    private static ArgumentOutOfRangeException Undefined<T>(
+        T value,
+        [CallerArgumentExpression(nameof(value))] string? paramName = null)
+        where T : struct, Enum
+        => new(paramName, value, $"undefined {typeof(T).Name} value — no wire word exists for it");
 }
