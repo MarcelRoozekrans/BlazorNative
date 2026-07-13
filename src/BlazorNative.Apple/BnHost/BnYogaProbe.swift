@@ -8,19 +8,19 @@
 //
 // Why: Xcode's Swift explicit-module dependency SCANNER processes the bridging
 // header with a path-less search that honours neither HEADER_SEARCH_PATHS nor
-// `-Xcc -I`, so a `#include <yoga/Yoga.h>` there fails the build ("'yoga/Yoga.h'
-// file not found") even though the ordinary Clang compile resolves it fine.
-// Keeping Yoga's headers out of Swift's sight — reaching them only from the .mm,
-// which IS a plain Clang compile — is the spike's iOS-rung fix.
+// `-Xcc -I`, so a `#include <yoga/Yoga.h>` reachable from it fails the build
+// ("'yoga/Yoga.h' file not found") even though the ordinary Clang compile resolves
+// it fine. Keeping Yoga's headers out of Swift's sight — reaching them only from
+// the .mm, which IS a plain Clang compile — is the spike's iOS-rung fix.
 //
 // This mirrors how the shell already talks to the NativeAOT runtime: plain C
-// across the boundary, no foreign headers in the bridging header. See
-// BnYogaProbe.mm for the Yoga tree and the full story.
+// across the boundary, no foreign headers in Swift's sight. See BnYogaProbe.mm for
+// the canonical tree and the full story.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import UIKit
 
-/// The computed frames of the minimal flex-row proof, plus whether the native
+/// The computed frames of the canonical flex-row proof, plus whether the native
 /// measure callback fired (the load-bearing round-trip).
 struct BnYogaFlexResult {
     let box1: CGRect
@@ -37,18 +37,24 @@ enum BnYogaProbe {
     static func warmUp() {
         bn_yoga_warm_up()
         let r = computeMinimalFlexRow()
-        NSLog("[BnYogaProbe] Yoga warm-up ok — box2.width=\(r.box2.width) measureFired=\(r.measureFired)")
+        NSLog("[BnYogaProbe] Yoga warm-up ok — box2.width=\(r.box2.width) text.height=\(r.text.height) measureFired=\(r.measureFired)")
     }
 
-    /// The minimal flex-row (built in BnYogaProbe.mm): a `row` container
-    /// (300 × 100) with
-    ///   box1  — fixed 50 × 50
-    ///   box2  — flexGrow 1, height 50 (fills the remaining width)
-    ///   text  — auto size, a registered measure func → 80 × 20
-    /// Left-to-right, box2 absorbs `300 - 50 - 80 = 170`.
+    /// The CANONICAL tree (built in BnYogaProbe.mm; byte-identical to the one the
+    /// Android rung builds) — a `row` container, 300 × 100, direction LTR:
+    ///   box1  — width 50, height 50                       → x=0,   y=0, w=50,  h=50
+    ///   box2  — flexGrow 1, height 50                     → x=50,  y=0, w=170, h=50
+    ///   text  — no width/height, measure func → 80 × 20,
+    ///           alignSelf flex-start                      → x=220, y=0, w=80,  h=20
+    /// Left-to-right; box2 absorbs `300 - 50 - 80 = 170`; the text leaf's frame
+    /// height is the MEASURED 20 (flex-start, not stretched), which is what proves
+    /// the height channel of the measure round-trip.
     static func computeMinimalFlexRow() -> BnYogaFlexResult {
-        let r = bn_yoga_compute_flex_row()
-        return BnYogaFlexResult(
+        toResult(bn_yoga_compute_flex_row())
+    }
+
+    private static func toResult(_ r: bn_yoga_result) -> BnYogaFlexResult {
+        BnYogaFlexResult(
             box1: CGRect(x: CGFloat(r.box1X), y: CGFloat(r.box1Y),
                          width: CGFloat(r.box1W), height: CGFloat(r.box1H)),
             box2: CGRect(x: CGFloat(r.box2X), y: CGFloat(r.box2Y),
