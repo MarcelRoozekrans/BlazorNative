@@ -58,7 +58,7 @@
     <PackageReference Include="Microsoft.AspNetCore.Components" Version="10.0.1*" />
     <!-- MouseEventArgs (BnButton.OnClick) lives in Components.Web — same
          pinned pair as BlazorNative.Renderer. -->
-    <PackageReference Include="Microsoft.AspNetCore.Components.Web" Version="10.0.*" />
+    <PackageReference Include="Microsoft.AspNetCore.Components.Web" Version="10.0.1*" />
     <!-- Phase 3.5: INavigationManager (the Core contract) — BnSettingsPage /
          BnDemo are the first real DI consumers in Components. -->
     <ProjectReference Include="..\BlazorNative.Core\BlazorNative.Core.csproj" />
