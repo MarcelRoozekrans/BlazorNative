@@ -98,7 +98,7 @@ jobs:
 
       - name: Cache NDK ${{ env.NDK_PIN }}
         if: steps.check-ndk.outputs.present != 'True'
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ env.ANDROID_NDK_ROOT }}
           key: ndk-${{ runner.os }}-${{ env.NDK_PIN }}
@@ -125,7 +125,7 @@ jobs:
 
       # ── Caches (no lockfiles in the repo — keyed on project-file hashes) ───
       - name: Cache NuGet packages
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.nuget/packages
           key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', '**/*.props', '**/*.targets', 'global.json') }}
@@ -133,7 +133,7 @@ jobs:
             nuget-${{ runner.os }}-
 
       - name: Cache Gradle
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.gradle/caches
