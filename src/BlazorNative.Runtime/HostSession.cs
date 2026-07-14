@@ -65,6 +65,15 @@ internal static unsafe class HostSession
         // (800) and row frames are asserted identically on the AVD (Gate 2) and
         // the iOS simulator (Gate 3) — see BnScrollDemo.cs's frame table.
         ["BnScrollDemo"] = r => r.Mount<BlazorNative.Components.BnScrollDemo>(),
+        // Phase 6.3: the image proof page (route "/image" — M6 DoD #5). A FIFTH
+        // page, same rationale a fourth time: BnLayoutDemo's and BnScrollDemo's
+        // frame tables ARE the parity contract, and a new capability does not get
+        // to rewrite them. Its THREE measurement paths — fixed (never measured),
+        // intrinsic (0×0 → the natural size, and the sibling below it MOVES) and
+        // failure (0×0 forever, reserving nothing) — are asserted identically on
+        // the AVD (Gate 2, Coil) and the iOS simulator (Gate 3, Kingfisher). See
+        // BnImageDemo.cs's TWO frame tables: before the bytes land, and after.
+        ["BnImageDemo"] = r => r.Mount<BlazorNative.Components.BnImageDemo>(),
         // Phase 4.2: the focus/blur proof app (BnInput OnFocus/OnBlur →
         // echo BnText — M4 DoD #4). Scaffolding, like CompositionProbe.
         ["FocusProbe"] = r => r.Mount<FocusProbe>(),

@@ -51,6 +51,14 @@ public sealed class NativeNavigationManager : INavigationManager
         // mirrors (MainActivity's DEEP_LINK_COMPONENTS) gain "/scroll" in Gate 2;
         // iOS has no route mirror — it mounts by NAME (BnRuntime.start).
         ["/scroll"] = "BnScrollDemo",
+        // Phase 6.3: the image proof page — same shape as "/layout" and "/scroll".
+        // Its "← Back" navigates to "/"; nothing on BnDemo links here. THE SHELL
+        // MIRRORS THIS TABLE OWES: Android's MainActivity.DEEP_LINK_COMPONENTS
+        // gains "/image" → "BnImageDemo" in Gate 2 (a map that must not drift from
+        // this one); iOS has no route mirror at all — it mounts by NAME
+        // (BnRuntime.start), so Gate 3 touches no registry, only its test's mount
+        // name.
+        ["/image"] = "BnImageDemo",
     };
 
     /// <summary>The default route's component — the name a host mounts to get
