@@ -19,7 +19,9 @@ import com.facebook.yoga.YogaMeasureMode
 import com.facebook.yoga.YogaMeasureOutput
 import com.facebook.yoga.YogaNode
 import com.facebook.yoga.YogaNodeFactory
+import com.facebook.yoga.YogaOverflow
 import com.facebook.yoga.YogaPositionType
+import com.facebook.yoga.YogaUnit
 import com.facebook.yoga.YogaWrap
 import kotlin.math.roundToInt
 
@@ -150,15 +152,25 @@ open class BnYogaFrameLayout @JvmOverloads constructor(
  * drift. Anything the grammar does not accept is **logged and ignored**, never
  * guessed.
  *
- * ## The honest boundary: `scroll` and `picker`
+ * ## `scroll` — the SYNTHETIC CONTENT NODE (Phase 6.2)
+ *
+ * A `scroll` node is a **viewport**, and its wire children live one level deeper
+ * than the wire says: under a synthetic content node the shell creates and the
+ * renderer never hears about (see [contentNodes] and [attachContentNode]). That
+ * node's COMPUTED HEIGHT *is* the content size — Yoga's number, not a shell-side
+ * union of child frames. **A scroll node's wire child at index *i* is the CONTENT
+ * node's child at index *i***, in this tree and in [WidgetMapper]'s view tree: the
+ * second index-mapping rule after the text collapse above, failing the same way if
+ * broken — silently, as a skew.
+ *
+ * ## The honest boundary that is left: `picker`
  *
  * A `view` becomes a [BnYogaFrameLayout], which does not lay out its own children
- * — so Yoga's frames survive. `scroll` (ScrollView) and `picker` (Spinner) are
- * FRAMEWORK ViewGroups that run their own layout, and they will overwrite the
- * frames Yoga computed for their children. Their nodes still take part in the
- * Yoga tree (so a ScrollView is itself placed correctly by its parent); it is
- * only what is INSIDE them that Yoga does not get the final word on. Out of scope
- * here by design — 6.2 owns scroll.
+ * — so Yoga's frames survive. `picker` (Spinner) is a FRAMEWORK ViewGroup that runs
+ * its own layout and will overwrite the frames Yoga computed for its children. Its
+ * node still takes part in the Yoga tree (so the Spinner is itself placed correctly
+ * by its parent); it is only what is INSIDE it that Yoga does not get the final word
+ * on. `scroll` used to be in this paragraph; 6.2 took it out.
  *
  * Threading: main-thread only. Every entry point is called from inside
  * [WidgetMapper.applyBatch] (already posted to the main looper) or from the host
@@ -168,6 +180,24 @@ class YogaLayout(private val context: Context, private val root: ViewGroup) {
 
     /** nodeId → Yoga node. Collapsed text nodes are absent BY DESIGN (see KDoc). */
     private val nodes = mutableMapOf<Int, YogaNode>()
+
+    /**
+     * Phase 6.2 — **the SYNTHETIC content nodes**: a `scroll` node's id → the Yoga
+     * node that holds its wire children. Keyed by the SCROLL node's id because that
+     * is the only id there is: the content node is the shell's, never on the wire.
+     *
+     * Its presence in this map is also what makes a node "a scroll node" to
+     * [setStyle] (the container-style ignore rule) and to [calculateAndApply] (the
+     * definite-height warning) — there is no separate nodeType table, and adding one
+     * would be a second thing to keep in step with this one.
+     *
+     * NOT in [nodes]: [nodeCount] counts WIRE nodes, and a synthetic node in there
+     * would make the mapper's two trees look mismatched. It IS in [views] (it places
+     * the content view) and it IS a Yoga child of its scroll node — which is what
+     * makes 6.1's subtree purge free it for nothing, and `YogaNodeLifecycleAndroidTest`
+     * is where that stops being an assumption.
+     */
+    private val contentNodes = mutableMapOf<Int, YogaNode>()
 
     /** Yoga node → the View it places. Populated for every node in [nodes]. */
     private val views = mutableMapOf<YogaNode, View>()
@@ -183,6 +213,11 @@ class YogaLayout(private val context: Context, private val root: ViewGroup) {
     /** The subset of [nodes] carrying a measure function. `YogaNode.dirty()`
      * THROWS on a node without one, so [markDirty] checks membership first. */
     private val measured = mutableSetOf<YogaNode>()
+
+    /** The scroll-node diagnostics already emitted, and the warn-once keys that got
+     * them there — see [diagnose]. */
+    private val diagnosed = mutableListOf<String>()
+    private val diagnosedKeys = mutableSetOf<String>()
 
     // MUST precede [config]/[hostRoot]: Kotlin runs initializers in DECLARATION
     // order, and YogaNodeFactory.create() links Yoga's JNI core through SoLoader —
@@ -254,8 +289,20 @@ class YogaLayout(private val context: Context, private val root: ViewGroup) {
      * [nodeType] decides the measure function and nothing else: the size of a
      * `text`/`button`/`input`/`image` is the NATIVE widget's business (DoD #3);
      * everything else is a container Yoga sizes itself.
+     *
+     * **[contentView] is the Phase 6.2 half**: for a `scroll` node the mapper passes
+     * the content `View` it created inside the `ScrollView`, and this method creates
+     * the matching SYNTHETIC content NODE (see [contentNodes]) — the two trees get
+     * their synthetic node together or not at all. Null for every other nodeType.
      */
-    fun createNode(nodeId: Int, nodeType: String, view: View, parentId: Int?, insertIndex: Int) {
+    fun createNode(
+        nodeId: Int,
+        nodeType: String,
+        view: View,
+        parentId: Int?,
+        insertIndex: Int,
+        contentView: View? = null,
+    ) {
         val node = YogaNodeFactory.create(config)
         nodes[nodeId] = node
         views[node] = view
@@ -268,7 +315,15 @@ class YogaLayout(private val context: Context, private val root: ViewGroup) {
             }
             measured.add(node)
         }
-        val parent = parentId?.let { nodes[it] } ?: hostRoot
+        if (nodeType == SCROLL) {
+            requireNotNull(contentView) { "a scroll node must be created with its content view" }
+            node.setOverflow(YogaOverflow.SCROLL)
+            attachContentNode(nodeId, node, contentView)
+        }
+        // A child of a SCROLL node is a child of its CONTENT node — in this tree and
+        // in the view tree, at the same index (non-negotiable #2). The scroll node's
+        // only Yoga child IS the content node; nothing else is ever inserted into it.
+        val parent = parentId?.let { contentNodes[it] ?: nodes[it] } ?: hostRoot
         // −1 = append; anything else is the exact index the VIEW went to.
         //
         // **An out-of-range insertIndex is a RENDERER BUG, and the two shells answer
@@ -284,6 +339,47 @@ class YogaLayout(private val context: Context, private val root: ViewGroup) {
         // aborts the app with no diagnostic at all.
         val index = if (insertIndex >= 0) insertIndex else parent.childCount
         parent.addChildAt(node, index)
+    }
+
+    /**
+     * **THE SYNTHETIC CONTENT NODE** (design §"The model") — the scroll node's only
+     * Yoga child, and the parent of every one of its wire children.
+     *
+     * Its three styles are the whole of it, and the one it must NOT have is the
+     * load-bearing one:
+     *
+     *  - `height: auto` — **its computed height IS the content size.** Yoga sizes it
+     *    to its children (800 for ten 80-high rows), and the shell READS that number
+     *    rather than deriving one from a union of child frames (non-negotiable #3;
+     *    two shells deriving it independently is exactly where Android and iOS drift).
+     *  - `width: 100%` — it spans the viewport, so a row with no width stretches to it.
+     *  - `flexDirection: column` — Yoga's default, set anyway: this node's layout is
+     *    the SHELL's, and an explicit column is one less thing for the two shells to
+     *    silently disagree about.
+     *  - **`flexShrink`: NEVER SET.** Yoga's default is **0** where CSS's is 1, and
+     *    that default is the ENTIRE mechanism by which this node keeps its 800 against
+     *    a 200-high viewport: free space is `200 − 800 = −600`, negative free space is
+     *    distributed by the SHRINK pass in proportion to `flexShrink`, and 0 means
+     *    "none of it". It is **not** `overflow: scroll` that does this —
+     *    `YogaScrollNodeAndroidTest` computes the same 800 with `overflow: visible`,
+     *    and computes 200 the moment `flexShrink: 1` is set. Write that one line here
+     *    and the page stops scrolling with no error anywhere.
+     *
+     * (`overflow: scroll` is set on the SCROLL node, in [createNode], because that is
+     * what a scrolling viewport *means* and what React Native sets — not because it
+     * computes anything. The contract does not claim it does.)
+     */
+    private fun attachContentNode(scrollId: Int, scrollNode: YogaNode, contentView: View) {
+        val content = YogaNodeFactory.create(config).apply {
+            setHeightAuto()
+            setWidthPercent(100f)
+            setFlexDirection(YogaFlexDirection.COLUMN)
+            // NO setFlexShrink. See above. This absence is the mechanism.
+        }
+        scrollNode.addChildAt(content, 0)
+        contentNodes[scrollId] = content
+        views[content] = contentView
+        viewToNode[contentView] = content
     }
 
     /**
@@ -317,6 +413,13 @@ class YogaLayout(private val context: Context, private val root: ViewGroup) {
         val doomed = mutableSetOf<YogaNode>()
         collectSubtree(node, doomed)
         nodes.entries.removeAll { it.value in doomed }
+        // Phase 6.2: the SYNTHETIC content node is a Yoga child of its scroll node, so
+        // [collectSubtree] already found it and [purge] already dropped its view
+        // mapping — but THIS map would keep the YogaNode itself (and with it the native
+        // peer) alive forever, and would keep answering "yes" to "is node N a scroll
+        // node?" long after N was reused. One RemoveNodePatch means a whole subtree, and
+        // the synthetic node is now part of that subtree.
+        contentNodes.entries.removeAll { it.value in doomed }
         for (dead in doomed) purge(dead)
     }
 
@@ -361,19 +464,35 @@ class YogaLayout(private val context: Context, private val root: ViewGroup) {
     fun destroy() {
         for (i in hostRoot.childCount - 1 downTo 0) hostRoot.removeChildAt(i)
         for (node in nodes.values.toList()) purge(node)
+        // The synthetic content nodes are not in [nodes] — teardown must name them.
+        for (node in contentNodes.values.toList()) purge(node)
         nodes.clear()
+        contentNodes.clear()
         views.clear()
         viewToNode.clear()
         measured.clear()
+        diagnosed.clear()
+        diagnosedKeys.clear()
     }
+
+    /** The scroll-node diagnostics, in order — see [diagnose]. */
+    internal val diagnostics: List<String> get() = diagnosed.toList()
 
     /** Test-only: the live node count. `YogaNodeLifecycleAndroidTest` asserts it
      * returns to its baseline after mount → remove cycles — the regression pin for
-     * the subtree purge above. */
+     * the subtree purge above. WIRE nodes only: the synthetic content nodes are
+     * counted by [contentNodeCount], because a synthetic node in here would make the
+     * mapper's view-tree/Yoga-tree count comparison lie. */
     internal val nodeCount: Int get() = nodes.size
 
-    /** Test-only: the live view mappings (must track [nodeCount] one-for-one). */
+    /** Test-only: the live view mappings. Tracks [nodeCount] + [contentNodeCount] —
+     * a synthetic content node places the content View, so it holds a mapping too. */
     internal val viewCount: Int get() = views.size
+
+    /** Test-only: the live SYNTHETIC content nodes (Phase 6.2). Its return to zero
+     * after a scroll node is removed is what proves the subtree purge reaches the one
+     * node no patch ever names — on Android a leak, on iOS a dangling YGNodeRef. */
+    internal val contentNodeCount: Int get() = contentNodes.size
 
     // ── The layout pass ──────────────────────────────────────────────────────
 
@@ -394,7 +513,44 @@ class YogaLayout(private val context: Context, private val root: ViewGroup) {
 
         hostRoot.calculateLayout(YogaConstants.UNDEFINED, YogaConstants.UNDEFINED)
 
+        for ((scrollId, content) in contentNodes) warnIfIndefiniteHeight(scrollId, content)
+
         for (i in 0 until hostRoot.childCount) applyFrames(hostRoot.getChildAt(i), 0f, 0f, d)
+    }
+
+    /**
+     * **THE DEFINITE-HEIGHT WARNING** (design §"The constraint this introduces").
+     *
+     * An `auto`-height scroll node takes its height **from** its content: the viewport
+     * IS the content, the scrollable range is zero, and the page silently never moves.
+     * No exception, no dropped patch, no wrong frame — which makes it one of the most
+     * baffling symptoms this engine can produce, and the reason it gets a diagnostic
+     * of its own.
+     *
+     * Two conditions, and BOTH are needed:
+     *
+     *  - the declared height is not a POINT or a PERCENT — i.e. the author gave the
+     *    node no definite height of its own. (Not sufficient alone: `Grow="1"` inside
+     *    a bounded parent is the *recommended* shape and declares no height at all.)
+     *  - and it ended up exactly as tall as its content — i.e. flex did not give it a
+     *    bounded height either. That is the symptom itself, read off the computed
+     *    frames after `calculateLayout`, so it cannot be fooled by the route the
+     *    height took.
+     *
+     * Warn-once per node ([diagnose]): a layout pass runs per committed frame, and a
+     * warning per frame is a flood — and a flood is a thing people mute.
+     */
+    private fun warnIfIndefiniteHeight(scrollId: Int, content: YogaNode) {
+        val scroll = nodes[scrollId] ?: return
+        val unit = scroll.height.unit
+        if (unit == YogaUnit.POINT || unit == YogaUnit.PERCENT) return
+        if (content.layoutHeight <= 0f) return
+        if (scroll.layoutHeight < content.layoutHeight - EPSILON) return
+        diagnose("auto-height/$scrollId",
+            "scroll node $scrollId has no definite height: it computed to " +
+                "${scroll.layoutHeight}dp, which is exactly its content's height — so there is " +
+                "NOTHING TO SCROLL. A viewport takes its height from somewhere definite: an " +
+                "explicit Height, or Grow=\"1\" inside a bounded parent.")
     }
 
     /**
@@ -483,6 +639,13 @@ class YogaLayout(private val context: Context, private val root: ViewGroup) {
      */
     fun setStyle(nodeId: Int, property: String, value: String?) {
         val node = nodes[nodeId] ?: return logIgnore(property, "node $nodeId has no Yoga node")
+        if (nodeId in contentNodes && property in SCROLL_IGNORED_CONTAINER_STYLES) {
+            return diagnose("$nodeId/$property",
+                "SetStyle $property ignored: node $nodeId is a `scroll` node, and a scroll " +
+                    "node's CONTAINER layout belongs to the shell — its only Yoga child is the " +
+                    "synthetic content node, whose styles are fixed. Put the layout on a column " +
+                    "INSIDE the scroll. (Item styles and backgroundColor apply normally.)")
+        }
         when (property) {
             // ── Enum words ──
             "flexDirection" -> node.setFlexDirection(when (value) {
@@ -698,8 +861,62 @@ class YogaLayout(private val context: Context, private val root: ViewGroup) {
         Log.w(TAG, "SetStyle $property ignored: $detail")
     }
 
+    /**
+     * A scroll node's runtime diagnostics — **warn-once**, keyed by [key].
+     *
+     * Both of them (the container-style drop and the definite-height warning) name a
+     * failure whose symptom is a page that does not move: no exception, no wrong
+     * frame, nothing to see. So they are recorded as well as logged — logcat is not an
+     * assertion surface, and a diagnostic no test can see is a diagnostic that can
+     * quietly stop firing (`WidgetMapperScrollTest` asserts both, and asserts that the
+     * WORKING case produces neither).
+     */
+    private fun diagnose(key: String, message: String) {
+        if (!diagnosedKeys.add(key)) return
+        diagnosed.add(message)
+        Log.w(TAG, message)
+    }
+
     companion object {
         private const val TAG = "BlazorNative.YogaLayout"
+
+        /** The one nodeType that carries a synthetic content node. */
+        private const val SCROLL = "scroll"
+
+        /** Half a dp — below the tolerance every frame assertion in this engine
+         * already uses; a float comparison of two computed heights needs one. */
+        private const val EPSILON = 0.5f
+
+        /**
+         * **IGNORED AND LOGGED on a `scroll` node** (design decision 6, NORMATIVE for
+         * both shells). Every one of these styles the *scroll* node, whose only Yoga
+         * child is the synthetic content node — so every one of them fails silently
+         * and bafflingly:
+         *
+         *  - `flexDirection: row` lays the content node out across the cross axis and
+         *    stretches it to the viewport height: **the page just stops scrolling.**
+         *  - `justifyContent` / `alignItems` — the free space on a scrolling viewport
+         *    is NEGATIVE (200 − 800 = −600), so `center` offsets the content to
+         *    y = −300 and `flex-end` to −600, and a ScrollView cannot scroll above 0:
+         *    **the top of the content becomes permanently unreachable.**
+         *  - `gap` spaces the scroll node's ONE child against nothing.
+         *  - `padding` insets the content node, moving every frame in the parity table.
+         *
+         * `BnScroll`'s component surface cannot produce them (it forwards `BnView`'s
+         * ITEM parameters and none of its CONTAINER ones) — but `YogaStyleAttributes`
+         * is a global, name-keyed allow-list and `scroll` is a mappable element name,
+         * so `OpenElement("scroll") + AddAttribute("gap", …)` still reaches the wire. A
+         * .NET test pins that the hatch is genuinely open, precisely so this rule is
+         * known to be LIVE code rather than silently becoming dead.
+         *
+         * ITEM styles (`flexGrow`, `flexShrink`, `flexBasis`, `alignSelf`, the box,
+         * `margin`, `position`, the offsets) and `backgroundColor` apply NORMALLY: a
+         * `BnScroll` *is* a flex item, and how the viewport is placed in its parent is
+         * the author's business. Over-broad filtering here would be as wrong as none.
+         */
+        private val SCROLL_IGNORED_CONTAINER_STYLES = setOf(
+            "flexDirection", "justifyContent", "alignItems", "flexWrap", "gap", "padding",
+        )
 
         /** `[+-]? ( digit+ ('.' digit*)? | '.' digit+ ) ( [eE] [+-]? digit+ )?` —
          * anchored, so the ENTIRE string must be consumed. See [number]. */

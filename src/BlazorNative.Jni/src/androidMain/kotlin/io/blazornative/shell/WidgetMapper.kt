@@ -85,6 +85,23 @@ class WidgetMapper(
      */
     private val collapsedAliases = mutableSetOf<Int>()
 
+    /**
+     * Phase 6.2 — **the SYNTHETIC content views**: a `scroll` node's id → the
+     * [BnYogaFrameLayout] inside its `ScrollView` that holds its wire children.
+     *
+     * A `ScrollView` hosts exactly ONE direct child (it throws on a second), and that
+     * child is the thing whose height becomes the scroll range. So the scroll node's
+     * wire children go **into the content view**, at the index the patch names — and
+     * the Yoga tree does the same, into the synthetic content NODE, or the two trees'
+     * child indices skew and every frame after the first row is wrong. The synthetic
+     * node is in BOTH trees or NEITHER: this map's entry and [YogaLayout]'s are made
+     * in the same breath and purged in the same breath.
+     *
+     * It is also the answer to "what container does a child of node N parent into?" —
+     * see [containerFor]. Never on the wire; the renderer knows nothing about it.
+     */
+    private val scrollContents = mutableMapOf<Int, ViewGroup>()
+
     /** The layout engine (Phase 6.1). Mirrors this class's view tree; runs one
      * layout pass per committed frame and on every host resize. */
     private val yoga = YogaLayout(context, root)
@@ -335,6 +352,9 @@ class WidgetMapper(
             "button" -> Button(context)
             "input"  -> EditText(context)
             "image"  -> ImageView(context)
+            // Phase 6.2: a VIEWPORT — vertical (Android's ScrollView is vertical-only;
+            // horizontal is a different widget class and is ledgered). Its single
+            // child, the synthetic content view, is created just below.
             "scroll" -> ScrollView(context)
             "picker" -> Spinner(context)
             else     -> {
@@ -343,7 +363,23 @@ class WidgetMapper(
             }
         }
         nodes[p.nodeId] = view
-        val parent = p.parentId?.let { nodes[it] as? ViewGroup } ?: root
+
+        // Phase 6.2 — THE SYNTHETIC CONTENT VIEW. A BnYogaFrameLayout, not a stock
+        // one, for the 6.1 reason (a stock FrameLayout's onLayout would re-place every
+        // row by gravity on the framework's next pass) AND for a new one: ScrollView
+        // measures its single child with an UNSPECIFIED height spec, and
+        // BnYogaFrameLayout.onMeasure answers with the last size Yoga applied — the
+        // 800dp that becomes the scroll range. The 6.1 review added that fallback for a
+        // boundary we were then only documenting; it is load-bearing now.
+        if (view is ScrollView) {
+            val content = BnYogaFrameLayout(context)
+            view.addView(content)
+            scrollContents[p.nodeId] = content
+        }
+
+        // The container this node's view parents INTO: for a child of a scroll node
+        // that is the CONTENT view, never the ScrollView (non-negotiable #2).
+        val parent = containerFor(p.parentId) ?: root
         // Phase 3.3 Task 9 (DoD #10): honor the renderer-computed placement.
         // insertIndex counts HOST views in the target container — and a
         // WidgetMapper ViewGroup's children ARE exactly those host views 1:1
@@ -364,7 +400,32 @@ class WidgetMapper(
         // trees diverge — hence the parentId is re-derived from the view we
         // actually parented to, not from the patch.
         val yogaParentId = if (parent === root) null else p.parentId
-        yoga.createNode(p.nodeId, p.nodeType, view, yogaParentId, p.insertIndex)
+        yoga.createNode(
+            p.nodeId, p.nodeType, view, yogaParentId, p.insertIndex,
+            // …and the Yoga tree gets its synthetic node in the same breath as the view
+            // tree got its synthetic view. BOTH TREES OR NEITHER.
+            contentView = scrollContents[p.nodeId],
+        )
+    }
+
+    /**
+     * The ViewGroup a child of [parentId] parents into — **the second index-mapping
+     * rule** (non-negotiable #2), stated once.
+     *
+     * A `scroll` node's children go into its CONTENT view, not into the `ScrollView`
+     * itself, whose only child *is* the content view. `insertIndex` then counts the
+     * content view's children, and `-1` (append) appends to them — exactly mirroring
+     * [YogaLayout.createNode], which redirects to the synthetic content NODE by the
+     * same rule. The two trees mirror each other; neither mirrors the patch tree.
+     *
+     * Null when [parentId] is null or names a non-container (an unknown id, or a text
+     * node's Button parent) — the caller falls back to the host root, and re-derives
+     * the Yoga parent from the view it actually parented to.
+     */
+    private fun containerFor(parentId: Int?): ViewGroup? {
+        if (parentId == null) return null
+        scrollContents[parentId]?.let { return it }
+        return nodes[parentId] as? ViewGroup
     }
 
     private fun handleReplaceText(p: RenderPatch.ReplaceText) {
@@ -412,6 +473,12 @@ class WidgetMapper(
         // pair) in these maps forever.
         watchers.entries.removeAll { it.value.first in doomed }
         focusEntries.entries.removeAll { it.value.view in doomed }
+        // Phase 6.2: a doomed ScrollView takes its SYNTHETIC content view with it —
+        // the view is in `doomed` (it is a child of the ScrollView, and subtreeOf walks
+        // the view hierarchy), so this entry is the only thing that would survive, and
+        // it would pin the content view, the rows under it and the Activity Context.
+        // The synthetic node is part of the subtree ONE RemoveNodePatch stands for.
+        scrollContents.entries.removeAll { it.value in doomed }
         (v.parent as? ViewGroup)?.removeView(v)
         // Phase 6.1: and the Yoga twin, or the detached view keeps consuming space
         // in its parent's layout. Purges ITS subtree too, for the same reason.
@@ -440,6 +507,7 @@ class WidgetMapper(
     fun destroy() {
         nodes.clear()
         collapsedAliases.clear()
+        scrollContents.clear()
         watchers.clear()
         focusEntries.clear()
         yoga.destroy()
@@ -452,8 +520,22 @@ class WidgetMapper(
     /** Test-only: the Yoga tree's live node count — must track the view tree's. */
     internal val yogaNodeCount: Int get() = yoga.nodeCount
 
-    /** Test-only: the Yoga tree's live view mappings — must track [yogaNodeCount]. */
+    /** Test-only: the Yoga tree's live view mappings — must track [yogaNodeCount]
+     * plus [yogaContentNodeCount] (a synthetic content node places a view too). */
     internal val yogaViewCount: Int get() = yoga.viewCount
+
+    /** Test-only: the live SYNTHETIC content nodes (Phase 6.2) — no patch ever names
+     * one, so only this can witness that removing a scroll node freed it. */
+    internal val yogaContentNodeCount: Int get() = yoga.contentNodeCount
+
+    /** Test-only: the live SYNTHETIC content VIEWS — the view-tree half of the same. */
+    internal val scrollContentCount: Int get() = scrollContents.size
+
+    /** The scroll node's two runtime diagnostics (Phase 6.2): the container-style
+     * ignore-and-log rule, and the definite-height warning. Exposed because logcat
+     * is not an assertion surface and both failures are SILENT on the device — a
+     * page that simply does not move. `WidgetMapperScrollTest` asserts them. */
+    internal val scrollDiagnostics: List<String> get() = yoga.diagnostics
 
     private fun handleUpdateProp(p: RenderPatch.UpdateProp) {
         val view = nodes[p.nodeId] ?: run {
