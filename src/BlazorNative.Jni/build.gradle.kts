@@ -128,10 +128,6 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
-    }
-
     buildTypes {
         getByName("debug") {
             isMinifyEnabled = false
@@ -161,6 +157,17 @@ android {
                 "META-INF/*.kotlin_module"
             )
         }
+    }
+}
+
+// Kotlin JVM target. Set through the `compilerOptions` DSL rather than the
+// android `kotlinOptions { jvmTarget = "17" }` block: Kotlin 2.4 turned the
+// String-typed `jvmTarget` setter into a hard error ("Using 'jvmTarget: String'
+// is an error"), so the enum is now the only accepted form. Supported since
+// Kotlin 2.0, so this compiles on the current 2.0.21 and on 2.4+.
+kotlin {
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
     }
 }
 
