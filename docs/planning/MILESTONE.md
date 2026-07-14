@@ -57,9 +57,12 @@ verdict.
    measured height drives its row). Attached **by NodeType**, never by childlessness. Pinned
    by an independent oracle on both platforms — a constant-size measure func passes every
    relational assertion and fails the oracle.
-4. **Real scrolling.** The `scroll` NodeType (stubbed today) → `ScrollView` /
-   `UIScrollView`; content taller than the viewport scrolls on both platforms, with Yoga
-   laying out the scroll content.
+4. ✅ **Real scrolling.** — *closed by Phase 6.2 (2026-07-14).* The `scroll` NodeType →
+   `ScrollView` / `UIScrollView`, each over a **synthetic content node** (`height: auto`, not on
+   the wire) whose Yoga-computed height *is* the content size. `BnScrollDemo` (`/scroll`) computes
+   the same frames and the same 800dp content over a 200dp viewport on the AVD and the iOS
+   simulator, and **actually scrolls** on both (asserted by driving the scroll position and
+   observing the rows move). `BnScroll` is a flex *item*, not a flex *container*.
 5. **URL images.** The `image` NodeType (stubbed today) → async URL load into
    `ImageView` / `UIImageView` on both platforms, measured by Yoga (intrinsic/explicit
    size).
