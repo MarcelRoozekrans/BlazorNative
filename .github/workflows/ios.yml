@@ -380,7 +380,7 @@ jobs:
       # ── Uploads (always — evidence regardless of outcome) ────────────────────
       - name: Upload — ios-out (logs, nm dump, xcresult, DerivedData)
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ios-out
           path: ios-out
@@ -388,7 +388,7 @@ jobs:
 
       - name: Upload — the NativeAOT static archive
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: BlazorNative.Runtime-iossimulator-arm64
           path: src/BlazorNative.Apple/vendor/libBlazorNative.Runtime.a

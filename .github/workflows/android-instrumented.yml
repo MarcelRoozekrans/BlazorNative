@@ -142,7 +142,7 @@ jobs:
           }
 
       - name: Upload artifact — linux-bionic-x64 binary
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: BlazorNative.Runtime-linux-bionic-x64
           path: src/BlazorNative.Runtime/bin/Release/net10.0/linux-bionic-x64/publish/BlazorNative.Runtime.so
@@ -175,7 +175,7 @@ jobs:
           sudo udevadm trigger --name-match=kvm
 
       - name: Download artifact — linux-bionic-x64 binary
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: BlazorNative.Runtime-linux-bionic-x64
           path: ${{ runner.temp }}/ci-so
@@ -301,7 +301,7 @@ jobs:
 
       - name: Upload artifact — instrumented JUnit XML
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: instrumented-test-results
           path: src/BlazorNative.Jni/build/outputs/androidTest-results/
@@ -309,7 +309,7 @@ jobs:
 
       - name: Upload artifact — logcat (failure only)
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: instrumented-logcat
           path: ${{ runner.temp }}/logcat.txt
