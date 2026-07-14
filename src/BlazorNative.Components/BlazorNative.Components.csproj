@@ -12,6 +12,10 @@
        BnFlexPreset) and BnLayoutDemo (the "/layout" proof page whose computed
        frames Gates 2/3 assert on both shells). No BnStack — it would be a
        BnColumn synonym (6.1 design decision 3).
+       Phase 6.2 adds BnScroll (the `scroll` element — NodeType 6, on the wire
+       since 2.5; BnView's surface minus Direction, because scrolling is
+       vertical-only) and BnScrollDemo (the "/scroll" proof page whose content
+       size and row frames Gates 2/3 assert on both shells).
 
        Trim posture: statically referenced through the annotated
        OpenComponent/Mount<T> paths; the Runtime publish gate proves no new

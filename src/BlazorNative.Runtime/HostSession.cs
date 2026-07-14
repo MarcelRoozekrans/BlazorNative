@@ -58,6 +58,13 @@ internal static unsafe class HostSession
         // frames are asserted identically on the AVD (Gate 2) and the iOS
         // simulator (Gate 3) — see BnLayoutDemo.cs's frame table.
         ["BnLayoutDemo"] = r => r.Mount<BlazorNative.Components.BnLayoutDemo>(),
+        // Phase 6.2: the scrolling proof page (route "/scroll" — M6 DoD #4). A
+        // FOURTH page, same rationale: BnLayoutDemo's 22-number frame table IS
+        // the parity contract, and wrapping it in a scroll view would rewrite it
+        // in the same phase that introduces the scroll engine. Its content size
+        // (800) and row frames are asserted identically on the AVD (Gate 2) and
+        // the iOS simulator (Gate 3) — see BnScrollDemo.cs's frame table.
+        ["BnScrollDemo"] = r => r.Mount<BlazorNative.Components.BnScrollDemo>(),
         // Phase 4.2: the focus/blur proof app (BnInput OnFocus/OnBlur →
         // echo BnText — M4 DoD #4). Scaffolding, like CompositionProbe.
         ["FocusProbe"] = r => r.Mount<FocusProbe>(),

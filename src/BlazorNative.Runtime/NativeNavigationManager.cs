@@ -45,6 +45,12 @@ public sealed class NativeNavigationManager : INavigationManager
         // deep link. The shells' own route mirrors (MainActivity's
         // DEEP_LINK_COMPONENTS) gain "/layout" in Gate 2.
         ["/layout"] = "BnLayoutDemo",
+        // Phase 6.2: the scrolling proof page — same shape as "/layout". Its
+        // "← Back" (outside the viewport, so scrolling cannot hide the exit)
+        // navigates to "/"; nothing on BnDemo links here. The shells' route
+        // mirrors (MainActivity's DEEP_LINK_COMPONENTS) gain "/scroll" in Gate 2;
+        // iOS has no route mirror — it mounts by NAME (BnRuntime.start).
+        ["/scroll"] = "BnScrollDemo",
     };
 
     /// <summary>The default route's component — the name a host mounts to get
