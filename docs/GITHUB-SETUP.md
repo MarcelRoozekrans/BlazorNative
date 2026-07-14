@@ -66,12 +66,28 @@ Phase labels map to milestones (see `docs/planning/ROADMAP.md`):
 | `phase/p0` | 🔴 Red | M1 — Runtime boots end-to-end *(complete)* |
 | `phase/p1` | 🟠 Orange | M2 — First end-to-end demo on Android *(complete)* |
 | `phase/p2` | 🟡 Amber | M3 — Real apps can be built *(complete)* |
-| `phase/p3` | 🩷 Pink | M4 — Production-shippable |
-| `phase/p4` | 🟨 Cream | M5 — Full platform coverage |
-| `phase/p5` | 🟢 Light green | M6 — Developer ecosystem |
-| `phase/p6` | 🔵 Light blue | M7 — Framework hardening |
-| `phase/p7` | 🟣 Lavender | M8 — Enterprise readiness |
+| `phase/p3` | 🩷 Pink | M4 — Production-shippable *(complete, `v4.0`)* |
+| `phase/p4` | 🟨 Cream | M5 — Full platform coverage *(complete, `v5.0`)* |
+| `phase/p5` | 🟢 Light green | M6 — Real-UI foundation: layout + scroll + image *(in progress)* |
+| `phase/p6` | 🔵 Light blue | M7 — Components + Razor |
+| `phase/p7` | 🟣 Lavender | M8 — Developer ecosystem |
 | `phase/future` | ⚪ Grey | Long-term vision |
+
+The milestones after M5 were **renumbered when M6 opened**: real-UI capability
+(layout/scroll/image) was promoted ahead of the developer ecosystem, which moved
+from M6 to M8. The table above reflects the renumbering;
+`docs/planning/ROADMAP.md` is the source of truth.
+
+Two consequences, recorded rather than silently left to be discovered:
+
+- **M9 (Platform breadth + real device) and M10 (Framework hardening) have no
+  phase label yet** — the scheme stops at `phase/p7`. They get one when they
+  approach.
+- `scripts/create-github-issues.sh` still *creates* `phase/p5`–`phase/p7` with
+  their **pre-renumber descriptions** ("M6 — Developer ecosystem", "M7 —
+  Framework hardening", "M8 — Enterprise readiness"). The labels themselves are
+  already created on the repo, so this only bites on a fresh bootstrap; the
+  descriptions want a pass the next time that script is touched.
 
 ### Type labels
 `type/core` · `type/android` · `type/ios` · `type/renderer` · `type/components` · `type/styling` · `type/navigation` · `type/state` · `type/http` · `type/analyzer` · `type/tooling` · `type/testing` · `type/ci` · `type/docs` · `type/security` · `type/a11y` · `type/i18n` · `type/perf` · `type/memory` · `type/ota` · `type/compliance` · `type/nativeaot` · `type/nuget`
@@ -154,7 +170,7 @@ IL2072 and nine-export assertions as `ci.yml`) and hands it as an artifact
 to an `emulator` job on ubuntu-latest (KVM), which runs
 `connectedAndroidTest -PciSoDir=<artifact dir>` on an API 34 google_apis
 x86_64 Pixel 6 image — mirroring the local AVD `blazornative-pixel6-x86_64`
-— and asserts 32 passed / 0 failed.
+— and asserts 96 passed / 0 failed.
 
 The iOS-simulator workflow (`ios.yml`, `macos-latest`, on `pull_request` for
 iOS-relevant paths + manual dispatch) is likewise **informational, not a required
@@ -167,8 +183,12 @@ publishes and tests on macOS) publishes the `iossimulator-arm64` NativeAOT
 nine-export `nm -gU` assertions), assembles the static-embed link inputs
 (`bootstrapperdll.o` direct-link + the merged support archive), then runs the
 hosted XCTest suite via `xcodebuild test` on a runner-selected simulator —
-asserting **9 passed / 0 failed** (the render pin + the wire-drift guard + the
-interactive two-page demo: bind/echo, Clear, Theme, Settings⇄Back).
+asserting **50 passed / 0 failed**. The suite grew through M6 and now covers the
+render pin and the wire-drift guard; the interactive demo (bind/echo, Clear,
+Theme, Settings⇄Back, clipboard); the Yoga layer (style parsing, node lifecycle,
+dirty-on-change, resize); and — the point of M6 — the **computed-frame
+assertions** for `BnLayoutDemo` and `BnScrollDemo`, which pin *the same numbers*
+the Android instrumented lane asserts.
 
 ### PR-merge workflow (from Phase 4.1 onward)
 
