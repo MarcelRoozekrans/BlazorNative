@@ -2,15 +2,15 @@
 
 [![ci](https://github.com/MarcelRoozekrans/BlazorNative/actions/workflows/ci.yml/badge.svg)](https://github.com/MarcelRoozekrans/BlazorNative/actions/workflows/ci.yml)
 
-> **Status: pre-release proof of concept.** Milestones 1–4 are complete (tagged `v1.0`–`v4.0`); Milestone 5 (full platform coverage) is in progress — iOS proven feasible on the simulator, host-initiated events (lifecycle + predictive back + deep links) landed on Android. Not production-ready — the API surface is unstable and changes without notice.
+> **Status: pre-release proof of concept.** Milestones 1–5 are complete (tagged `v1.0`–`v5.0`); Milestone 6 (Real-UI Foundation: layout + scroll + image) is in progress — Yoga flexbox owns all placement on both shells and real scrolling landed; images (6.3) and the milestone audit (6.4) remain. Not production-ready — the API surface is unstable and changes without notice.
 
-> .NET → NativeAOT → native mobile widgets. Blazor components rendered as real Android views, no WebView, no JavaScript, no wasm.
+> .NET → NativeAOT → native mobile widgets. Blazor components rendered as real Android and iOS views, no WebView, no JavaScript, no wasm.
 
 BlazorNative is a proof-of-concept framework for running .NET Blazor applications as native mobile apps — without React Native, Flutter, or MAUI. The approach:
 
 1. Your Blazor UI and business logic are compiled **ahead-of-time into a platform-native shared library** (`BlazorNative.Runtime`) — a .NET NativeAOT binary, one per platform/ABI
 2. A headless `NativeRenderer` drives the Blazor render tree and emits **typed struct patches** (create node, set style, replace text, …) through a C-ABI frame callback
-3. A thin native shell (Kotlin on Android) loads the library via JNA, reads the patch structs, and maps them to **real platform widgets** (`LinearLayout`, `TextView`, `Button`, `EditText`, …)
+3. A thin native shell (Kotlin on Android, Swift/UIKit on iOS) loads the library, reads the patch structs, and builds **two mirrored trees**: a tree of real platform widgets (`TextView`/`UILabel`, `Button`, `EditText`/`UITextField`, …) and a **Yoga node tree** beside it. Style names are partitioned by an allow-list — layout names (`flexDirection`, `justifyContent`, `width`, `margin`, …) go to the Yoga node, visual names (`backgroundColor`, `color`, `fontSize`, …) to the view. Text and other leaves are **measured natively** through Yoga's measure callback, Yoga computes, and every child is placed at its **computed frame**. Containers are plain layout-suppressed frame containers that never re-place a child themselves.
 
 ## Quick start
 
@@ -40,7 +40,7 @@ powershell -ExecutionPolicy Bypass -File scripts\devloop.ps1 -Android # device l
 ## Architecture
 
 ```
-[Blazor Components]           ← your UI, plain Razor/C#
+[Blazor Components]           ← your UI, plain Razor/C# (BnView / BnRow / BnColumn / BnScroll …)
         ↓
 [BlazorNative.Renderer]       ← headless NativeRenderer + RenderPatch model
         ↓
@@ -51,15 +51,107 @@ powershell -ExecutionPolicy Bypass -File scripts\devloop.ps1 -Android # device l
    BlazorNative.Runtime.dll      win-x64 — JVM dev loop
    libBlazorNative.Runtime.so    linux-bionic-x64 / arm64 — Android, cross-compiled
                                  from Windows via the runtime-pack bypass
-        ↓  JNA (cdecl callback)
-[BlazorNative.Jni]            ← Kotlin shell: NativeBindings → NativeFrameAdapter
-        ↓                        (offset reads) → WidgetMapper
-[Android widgets]             ← LinearLayout / TextView / Button / EditText …
+   BlazorNative.Runtime.a        iossimulator-arm64 — static archive, linked into the app
+        ↓                             ↓
+   JNA (cdecl callback)          direct static link (C-ABI, no JNA)
+        ↓                             ↓
+[BlazorNative.Jni]            [BlazorNative.Apple]
+   Kotlin shell:                 Swift/UIKit shell:
+   NativeBindings →              BnBridge → BnFrameAdapter (offset reads)
+   NativeFrameAdapter →          → BnWidgetMapper
+   WidgetMapper
+        ↓                             ↓
+        └──────── each shell builds TWO mirrored trees ────────┘
+                              ↓
+        [view tree]                        [Yoga node tree]
+   real platform widgets              Yoga 3.2.1 (Facebook's C++ flexbox engine)
+   TextView / UILabel                   Android: com.facebook.yoga:yoga (Maven JNI)
+   Button, EditText / UITextField        iOS: source-built libyoga.a, reached through
+   ScrollView / UIScrollView                  Objective-C++ behind a plain-C surface
+   containers = layout-suppressed             (Yoga's C++ headers can never be
+   frame containers                            visible to Swift)
+   (BnYogaFrameLayout / plain UIView)
+                              ↓
+   style names are partitioned by an allow-list:
+      layout names  → the Yoga node   (flexDirection, justifyContent, width, margin, …)
+      visual names  → the View        (backgroundColor, color, fontSize, …)
+   leaves are measured natively via Yoga's measure callback (a long label wraps,
+   and its measured height drives its row)
+                              ↓
+   Yoga computes → every child is placed at its COMPUTED FRAME
 ```
 
-One runtime, one transport: the same NativeAOT library and typed-struct protocol run everywhere — the JVM desktop loop is the fast feedback surface, the Android `.so` is the product. There is no interpreter and no serialization on the frame path.
+One runtime, one transport, one layout engine: the same NativeAOT library, typed-struct protocol and Yoga tree run everywhere — the JVM desktop loop is the fast feedback surface, the Android `.so` and the iOS `.a` are the product. There is no interpreter and no serialization on the frame path.
+
+The style routing table is hand-written in three places (`NativeRenderer.cs`, `YogaLayout.kt`, `BnYogaLayout.mm`); a drift test in the required CI lane parses all three and asserts set-equality, because a name present in one and missing from another is silently dropped rather than failing loudly.
 
 `BlazorNative.Core` / `.Renderer` / `.Http` are pure libraries. `BlazorNative.Runtime` is the publishable composition root that wires DI and owns the `[UnmanagedCallersOnly]` export surface.
+
+## Layout and styling
+
+**Yoga owns all placement.** You write typed flex parameters in C#; they ride the existing `SetStyle` wire (no ABI change), and both shells compute the same frames from them. The proof is a test result, not a claim: `BnLayoutDemo` and `BnScrollDemo` assert the *same numbers* on an Android emulator and an iOS simulator, frame for frame.
+
+`BnView` carries the flex surface:
+
+| | Parameters |
+|---|---|
+| **Container** | `Direction` · `Justify` · `Align` · `Wrap` · `Gap` · `Padding` |
+| **Item** | `AlignSelf` · `Grow` · `Shrink` · `Basis` · `Margin` |
+| **Size** | `Width` · `Height` · `MinWidth` · `MaxWidth` · `MinHeight` · `MaxHeight` |
+| **Position** | `Position` · `Top` · `Right` · `Bottom` · `Left` |
+| **Visual** | `BackgroundColor` |
+
+`BnRow` and `BnColumn` are thin presets over it — they forward every parameter *except* `Direction`, because a `BnRow` **is** a row. Reach for `BnView` when the direction is dynamic. **There is deliberately no `BnStack`**: it would be a synonym for `BnColumn`, and two names for one thing is a library smell on day one.
+
+```razor
+<BnColumn Gap="16" Padding="16">
+
+  @* Grow absorbs the free space: box B computes to exactly 200 on both platforms *@
+  <BnRow Width="300" Height="100">
+    <BnView Width="50" BackgroundColor="#E57373" />
+    <BnView Grow="1"   BackgroundColor="#64B5F6" />
+    <BnView Width="50" BackgroundColor="#81C784" />
+  </BnRow>
+
+  <BnRow Justify="FlexJustify.SpaceBetween" Align="FlexAlign.Center">
+    <BnText Text="Left" />
+    <BnText Text="Right" />
+  </BnRow>
+
+  @* A long label wraps, and its NATIVELY MEASURED height drives its row *@
+  <BnRow Width="150">
+    <BnText Text="A label long enough to wrap onto several lines." />
+  </BnRow>
+
+  @* BnScroll is a VIEWPORT: give it a definite height, compose the content inside *@
+  <BnScroll Height="200">
+    <BnColumn Gap="8">
+      @foreach (var row in Rows)
+      {
+        <BnRow Height="80"><BnText Text="@row" /></BnRow>
+      }
+    </BnColumn>
+  </BnScroll>
+
+</BnColumn>
+```
+
+**`BnScroll` is a flex *item*, not a flex *container*.** It has no `Direction`/`Justify`/`Align`/`Wrap`/`Gap`/`Padding` by construction — those would style the *viewport*, whose only child is a shell-synthesised content node, and `Justify="Center"` over 800dp of content in a 200dp viewport would offset it to y = −300 and make the top of the page permanently unreachable. To shape the content, compose a `BnColumn Gap="8"` **inside** the scroll (React Native's `contentContainerStyle`, without a second style surface). The shells enforce the same rule at the wire, so the raw-element hatch is closed by the same sentence.
+
+Give a `BnScroll` a **definite height** (`Height`, or `Grow="1" Basis="0"` in a bounded parent). `Grow="1"` alone leaves `flexBasis: auto` — the basis becomes the *content's* height, the free space is negative, and `flexGrow` distributes only positive free space, so the viewport hugs its content and never scrolls. That is exactly why CSS's `flex: 1` shorthand sets basis to `0`; the shells emit a diagnostic when a viewport is indefinite.
+
+Two demo pages are mountable in the app: **`/layout`** (`BnLayoutDemo` — row/column/wrap/`Grow`/`AlignSelf` with a natively measured text leaf) and **`/scroll`** (`BnScrollDemo` — a 300×200 viewport over 800dp of content that actually scrolls).
+
+### Not yet
+
+Honest boundaries, all ledgered:
+
+- **`image` has no source-loading path** on either shell. It creates a widget and measures to zero. Phase 6.3 owns it.
+- **`picker` does not flex its children** — `Spinner`/`UIPickerView` are framework containers that run their own layout inside themselves. The picker node itself is placed correctly by its parent.
+- **No horizontal scroll.** Android's `ScrollView` is vertical-only; horizontal is a different widget class that would have to be chosen at `CreateNode` from a `flexDirection` that arrives in a *later* `SetStyle` patch.
+- **No `onScroll` / `scrollTo`**, and no scroll-offset restore across navigation. `onScroll` fires at 60 Hz and would be the first high-frequency producer on a wire designed for taps; it needs its own design.
+- **`alignContent`, `rowGap`, `columnGap`, `display`, `flex`** are accepted by nothing — no typed parameter, no producer. Every accepted name is a name three parsers must implement.
+- **iOS is simulator-only.** Real-device iOS (code signing, provisioning, App Store validation) needs an Apple Developer account and is Milestone 9.
 
 ## Dev experience
 
@@ -121,12 +213,19 @@ BlazorNative/
 │   ├── BlazorNative.Core/                 ← IMobileBridge contract, bridge impls (library)
 │   ├── BlazorNative.Renderer/             ← headless NativeRenderer + RenderPatch model (library)
 │   ├── BlazorNative.Http/                 ← BridgeHttpHandler + DI (library)
-│   ├── BlazorNative.Analyzers/            ← Roslyn analyzers (legacy pre-NativeAOT rules; rescope + tests = Phase 4.1)
+│   ├── BlazorNative.Analyzers/            ← Roslyn analyzers
 │   ├── BlazorNative.Blazor/               ← Razor components
-│   ├── BlazorNative.Components/           ← Bn* component library (BnView/BnText/BnButton/BnInput)
+│   ├── BlazorNative.Components/           ← Bn* component library: BnView (flex surface),
+│   │                                         BnRow/BnColumn (presets), BnScroll (viewport),
+│   │                                         BnText/BnButton/BnInput, BnTheme + the demo
+│   │                                         pages (BnDemo, BnSettingsPage, BnLayoutDemo,
+│   │                                         BnScrollDemo)
 │   ├── BlazorNative.Runtime/              ← NativeAOT composition root + C-ABI exports + FrameEncoder
-│   ├── BlazorNative.Jni/                  ← Kotlin shell: JNA bindings, frame adapter,
-│   │                                         WidgetMapper, MainActivity (Android + JVM tests)
+│   ├── BlazorNative.Jni/                  ← Kotlin shell: JNA bindings, frame adapter, WidgetMapper,
+│   │                                         YogaLayout, MainActivity (Android + JVM tests)
+│   ├── BlazorNative.Apple/                ← Swift/UIKit shell (iOS simulator): BnBridge, frame
+│   │                                         adapter, BnWidgetMapper, BnYogaLayout.mm (Obj-C++
+│   │                                         over libyoga.a), XCTest suite + vendored Yoga
 │   └── BlazorNative.Host.Android/         ← DevHost (ASP.NET) + DevTools API
 ├── tests/
 │   ├── BlazorNative.Renderer.Tests/       ← renderer, bridge, trim-safety, frame-sink tests
@@ -137,22 +236,32 @@ BlazorNative/
 
 ## Test surface
 
+All four counts are asserted in CI — a drift from the baseline fails the build.
+
 | Surface | Command | Count |
 |---|---|---|
-| .NET | `dotnet test` | 177 passed / 2 skipped |
-| JVM (JNA + win-x64 .dll) | `gradlew testDebugUnitTest` | 32 |
-| Android (instrumented, AVD) | `gradlew connectedAndroidTest` | 32 |
+| .NET | `dotnet test` | 304 passed / 0 skipped |
+| JVM (JNA + win-x64 .dll) | `gradlew testDebugUnitTest` | 79 |
+| Android (instrumented, AVD) | `gradlew connectedAndroidTest` | 96 |
+| iOS (XCTest, simulator) | `xcodebuild test` | 50 |
 
 ## Status
 
 - [x] Headless Blazor renderer with typed patch protocol (composition-grade: nested components, keyed lists, real disposal)
-- [x] NativeAOT runtime for win-x64 + linux-bionic-x64/arm64 (Android, built on Windows) — nine-export C-ABI
+- [x] NativeAOT runtime for win-x64 + linux-bionic-x64/arm64 (Android) + iossimulator-arm64 — nine-export C-ABI
 - [x] Bidirectional events (`@onclick` → native tap → .NET handler → re-render) — Phase 3.2
 - [x] Shell bridge as host-registered C-ABI callbacks (navigate/storage/fetch, plain `HttpClient` works on Android) — Phase 3.1
-- [x] `Bn*` component library, `@bind` mechanics, cascading values, navigation — a two-page demo app on the AVD (~1.6 s cold boot) — Milestone 3
+- [x] `Bn*` component library, `@bind` mechanics, cascading values, navigation — a demo app on the AVD (~1.6 s cold boot) — Milestone 3
 - [x] Public repo + CI, analyzer rescope, hardening triage, dev inner loop, NuGet packages — Milestone 4
-- [ ] Full platform coverage — iOS proven feasible on the simulator, host-initiated events (lifecycle + predictive back + deep links) on Android — Milestone 5 (in progress)
-- [ ] iOS Swift shell — Milestone 5
+- [x] Full platform coverage — the **iOS Swift/UIKit shell** (simulator, on CI macOS runners) + host-initiated events (lifecycle, predictive back, deep links) on Android — Milestone 5
+- [ ] **Real-UI foundation — Milestone 6 (in progress)**
+  - [x] Yoga 3.2.1 linked into both shells — Phase 6.0
+  - [x] Yoga owns all placement; native text measurement; `BnView`'s flex surface + `BnRow`/`BnColumn` — Phase 6.1
+  - [x] Real scrolling — `BnScroll` as a viewport over a synthesised content node — Phase 6.2
+  - [ ] Images (a source-loading path on both shells) — Phase 6.3
+  - [ ] Milestone audit → `v6.0` — Phase 6.4
+
+Four pages are mountable in the demo app: `BnDemo`, `BnSettingsPage`, `BnLayoutDemo` (`/layout`) and `BnScrollDemo` (`/scroll`).
 
 ## Compatibility
 
