@@ -58,7 +58,7 @@ dependencies {
     // MainActivity), so it needs it on the MAIN compile classpath too — pinned to
     // the version yoga 3.2.1 resolves (0.10.5) so compile and runtime agree, the
     // same pin the androidTest classpath already carries below.
-    implementation("com.facebook.soloader:soloader:0.10.5")
+    implementation("com.facebook.soloader:soloader:0.12.1")
 
     // Kotlin stdlib
     implementation(kotlin("stdlib-jdk8"))
@@ -74,7 +74,7 @@ dependencies {
     // instrumented test needs it on the test COMPILE classpath to call
     // SoLoader.init(context) before the first YogaNode. Pinned to the version yoga
     // 3.2.1 resolves (0.10.5) so the compile + runtime SoLoader agree.
-    androidTestImplementation("com.facebook.soloader:soloader:0.10.5")
+    androidTestImplementation("com.facebook.soloader:soloader:0.12.1")
 
     // Android instrumented tests (Phase 2.2 Task 7 fills in)
     androidTestImplementation("androidx.test.ext:junit:1.3.0")
