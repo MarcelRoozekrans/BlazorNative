@@ -709,4 +709,123 @@ public sealed class BnComponentTests
         Assert.Equal("flexGrow", style.Property);
         Assert.Null(style.Value);
     }
+
+    // ── BnScroll (Phase 6.2 Task 1.1) ─────────────────────────────────────────
+    //
+    // The `scroll` element — NodeType 6, on the wire since Phase 2.5 and stubbed
+    // in both shells until 6.2. NO ABI CHANGE: MapElementToNodeType already maps
+    // "scroll"/"overflow" → "scroll", so BnScroll is a pure Components-side
+    // addition.
+    //
+    // Surface: BnView's, MINUS Direction (6.2 design decision 2 — scroll is
+    // VERTICAL-ONLY). Direction is absent BY CONSTRUCTION, the way BnRow's is:
+    // the shells parent a scroll node's wire children into a SYNTHETIC content
+    // node (flexDirection column, height auto — its computed height IS the
+    // content size), and a flexDirection on the scroll node would re-orient THAT
+    // node's placement, whose symptom is "the page silently stops scrolling".
+    // A param that cannot be set is a bug that cannot be written.
+    //
+    // Null-forwarding is not a hazard here: BnScroll emits ELEMENT attributes
+    // (like BnView), and a null element attribute is simply not appended to the
+    // frame array — the un-styled invariant. It is the PRESETS that forward
+    // component parameters and must therefore forward nulls unconditionally.
+
+    [Fact]
+    public void BnScroll_Mount_EmitsScrollNodeTypeAndParentsItsChildren()
+    {
+        var (renderer, frames) = CreateCapturingSession();
+
+        renderer.Mount<BnScroll>(ParameterView.FromDictionary(new Dictionary<string, object?>
+        {
+            [nameof(BnScroll.Width)] = "300",
+            [nameof(BnScroll.Height)] = "200",
+            [nameof(BnScroll.ChildContent)] = (RenderFragment)(b =>
+            {
+                b.OpenElement(0, "span");
+                b.AddContent(1, "scrolled");
+                b.CloseElement();
+            }),
+        }));
+        Assert.NotEmpty(frames);
+        var mount = frames[0];
+
+        var root = Assert.Single(mount.Patches.OfType<CreateNodePatch>(), p => p.ParentId is null);
+        Assert.Equal("scroll", root.NodeType);
+        Assert.Equal("300", StyleOn(mount, root.NodeId, "width").Value);
+        Assert.Equal("200", StyleOn(mount, root.NodeId, "height").Value);
+
+        // Children parent under the SCROLL node ON THE WIRE. The content node the
+        // shells interpose (scroll → content → children in the view/Yoga trees) is
+        // SYNTHETIC: it is created shell-side and never appears in a patch.
+        var text = Assert.Single(mount.Patches.OfType<ReplaceTextPatch>(), p => p.Text == "scrolled");
+        var span = CreateOf(mount, Assert.IsType<int>(CreateOf(mount, text.NodeId).ParentId));
+        Assert.Equal("text", span.NodeType);
+        Assert.Equal(root.NodeId, span.ParentId);
+    }
+
+    /// <summary>The un-styled invariant, on the new element too: no flex param
+    /// supplied → no attribute → NO SetStyle patch. (A scroll node with no height
+    /// sizes to its content and never scrolls — that is the shells' definite-height
+    /// warning, Gates 2/3 — but it must not be papered over with a default HERE:
+    /// the wire says exactly what the author said.)</summary>
+    [Fact]
+    public void BnScroll_Unstyled_EmitsNoStyleAtAll()
+    {
+        var (renderer, frames) = CreateCapturingSession();
+
+        renderer.Mount<BnScroll>();
+        Assert.NotEmpty(frames);
+        var mount = frames[0];
+
+        var root = Assert.Single(mount.Patches.OfType<CreateNodePatch>(), p => p.ParentId is null);
+        Assert.Equal("scroll", root.NodeType);
+        Assert.Empty(mount.Patches.OfType<SetStylePatch>());
+        Assert.Empty(mount.Patches.OfType<UpdatePropPatch>());
+    }
+
+    /// <summary>DECLARATION (the BnRow/BnColumn pair, applied to BnScroll): the
+    /// whole BnView surface minus Direction. A BnView param missing from BnScroll
+    /// is a hole an author falls into; a Direction param PRESENT on BnScroll is a
+    /// vertical-only decision an author can break.
+    /// <para>This test is a green light over a forwarding bug — it cannot see
+    /// BuildRenderTree at all. The behavioural one below is what bites (6.1's Gate
+    /// 1 mutation lesson: two deleted forwarding lines, suite still green).</para></summary>
+    [Fact]
+    public void BnScroll_ExposesEveryBnViewParameterExceptDirection()
+    {
+        static IEnumerable<string> Parameters(Type t) => t.GetProperties()
+            .Where(p => p.IsDefined(typeof(ParameterAttribute), inherit: true))
+            .Select(p => p.Name)
+            .OrderBy(n => n, StringComparer.Ordinal);
+
+        Assert.Equal(
+            Parameters(typeof(BnView)).Where(n => n != nameof(BnView.Direction)),
+            Parameters(typeof(BnScroll)));
+    }
+
+    /// <summary>FORWARDING: fed the SAME full parameter dictionary BnView is fed
+    /// by BnView_FullFlexSurface_EmitsEveryWireName, BnScroll must put BnView's
+    /// entire SetStyle table on the wire — and, because it has no Direction, no
+    /// flexDirection at all. Delete any one AddAttribute from BnScroll and this
+    /// goes red (the reflective test above stays green while
+    /// <c>&lt;BnScroll Grow="1"&gt;</c> silently does nothing).</summary>
+    [Fact]
+    public void BnScroll_ForwardsTheWholeFlexSurface_AsBnViewDoes()
+    {
+        var (renderer, frames) = CreateCapturingSession();
+
+        renderer.Mount<BnScroll>(ParameterView.FromDictionary(FullFlexParams()));
+        Assert.NotEmpty(frames);
+        var mount = frames[0];
+        var root = Assert.Single(mount.Patches.OfType<CreateNodePatch>(), p => p.ParentId is null);
+        Assert.Equal("scroll", root.NodeType);
+
+        // FullFlexWireTable() carries NO flexDirection (BnView adds its own from
+        // Direction; the presets add their fixed one) — and neither does BnScroll.
+        Assert.Equal(
+            FullFlexWireTable().ToDictionary(e => e.Key, e => (string?)e.Value),
+            StylesOf(mount, root.NodeId));
+        // Every flex prop rides SetStyle — none leaked onto the prop wire.
+        Assert.Empty(mount.Patches.OfType<UpdatePropPatch>());
+    }
 }
