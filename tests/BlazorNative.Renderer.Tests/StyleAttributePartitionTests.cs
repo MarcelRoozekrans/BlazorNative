@@ -121,6 +121,40 @@ public sealed class StyleAttributePartitionTests
         Assert.Equal(name, Assert.Single(frames[0].Patches.OfType<UpdatePropPatch>()).Name);
     }
 
+    /// <summary>PHASE 6.3 NON-NEGOTIABLE #1: <c>src</c> is a PROP, not a style.
+    /// <para>It is the one name a 6.3 implementer is most likely to add to the
+    /// partition by reflex — it arrives on an element, it looks declarative, and
+    /// <see cref="NativeRenderer.StyleAttributes"/> is right there. But the
+    /// partition is a ROUTING TABLE with exactly two destinations (the Yoga node,
+    /// or the View/UIView), and a URL belongs to NEITHER: a shell would have to
+    /// grow a third arm inside a two-arm contract, in two hand-written parsers, for
+    /// a name that is not layout and is not paint. It rides the existing UpdateProp
+    /// wire instead, which is where <c>value</c> / <c>placeholder</c> / <c>enabled</c>
+    /// already ride — no ABI change, no new patch kind (design §"No ABI change").
+    /// </para>
+    /// If this ever goes red, an image source has become a style and both shells'
+    /// SetStyle dispatch has quietly acquired a case that routes nowhere.</summary>
+    [Fact]
+    public async Task Src_IsAProp_NotAStyle()
+    {
+        Assert.DoesNotContain("src", NativeRenderer.StyleAttributes);
+        Assert.DoesNotContain("src", NativeRenderer.YogaStyleAttributes);
+        Assert.DoesNotContain("src", NativeRenderer.VisualStyleAttributes);
+
+        var (renderer, frames) = BuildRenderer();
+        await renderer.MountAsync<OneAttribute>(ParameterView.FromDictionary(
+            new Dictionary<string, object?>
+            {
+                [nameof(OneAttribute.Name)] = "src",
+                [nameof(OneAttribute.Value)] = "http://127.0.0.1:8099/a.png",
+            }));
+
+        Assert.Empty(frames[0].Patches.OfType<SetStylePatch>());
+        UpdatePropPatch src = Assert.Single(frames[0].Patches.OfType<UpdatePropPatch>());
+        Assert.Equal("src", src.Name);
+        Assert.Equal("http://127.0.0.1:8099/a.png", src.Value);
+    }
+
     /// <summary>THE CASE RULE (N1). Both shells match style names
     /// case-SENSITIVELY, so .NET must too: an OrdinalIgnoreCase allow-list would
     /// classify "FlexGrow" as a style that the shells then silently DROP — .NET

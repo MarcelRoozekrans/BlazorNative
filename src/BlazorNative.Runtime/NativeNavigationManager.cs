@@ -51,12 +51,29 @@ public sealed class NativeNavigationManager : INavigationManager
         // mirrors (MainActivity's DEEP_LINK_COMPONENTS) gain "/scroll" in Gate 2;
         // iOS has no route mirror — it mounts by NAME (BnRuntime.start).
         ["/scroll"] = "BnScrollDemo",
+        // Phase 6.3: the image proof page — same shape as "/layout" and "/scroll".
+        // Its "← Back" navigates to "/"; nothing on BnDemo links here. THE SHELL
+        // MIRRORS THIS TABLE OWES: Android's MainActivity.DEEP_LINK_COMPONENTS
+        // gains "/image" → "BnImageDemo" in Gate 2 (a map that must not drift from
+        // this one); iOS has no route mirror at all — it mounts by NAME
+        // (BnRuntime.start), so Gate 3 touches no registry, only its test's mount
+        // name.
+        ["/image"] = "BnImageDemo",
     };
 
     /// <summary>The default route's component — the name a host mounts to get
     /// "the routed app" (MainActivity's no-extra default). HostSession's
     /// route-aware initial mount only ever overrides THIS name.</summary>
     internal static string DefaultComponent => s_routes[DefaultRoute];
+
+    /// <summary>Test-only: the whole route table. There are TWO hand-maintained
+    /// registries — this one and <c>HostSession</c>'s mount registry — and until
+    /// Phase 6.3 nothing asserted that every route's VALUE is a name the mount
+    /// registry actually knows. A route whose component is missing throws only when
+    /// a user navigates to it (<c>SwapRoot</c>: "not in the mount registry"), which
+    /// is a runtime crash on a device for a typo a set-equality test catches at
+    /// build time. Five demo pages in, that is worth one line.</summary>
+    internal static IReadOnlyDictionary<string, string> RoutesForTests => s_routes;
 
     /// <summary>Reverse lookup for HostSession's mount tracking: true when
     /// <paramref name="component"/> is a routed page, with its route.</summary>

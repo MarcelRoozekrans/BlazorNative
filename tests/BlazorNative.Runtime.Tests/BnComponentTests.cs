@@ -986,4 +986,295 @@ public sealed class BnComponentTests : IDisposable
         // Every flex prop rides SetStyle — none leaked onto the prop wire.
         Assert.Empty(mount.Patches.OfType<UpdatePropPatch>());
     }
+
+    // ── BnImage (Phase 6.3 Task 1.1) ──────────────────────────────────────────
+    //
+    // The `img` element — MapElementToNodeType has mapped it to NodeType 5
+    // ("image") since Phase 2.5. NO ABI CHANGE: BnImage is a pure Components-side
+    // addition, exactly as BnScroll was.
+    //
+    // ── `Src` IS A PROP, NOT A STYLE ──────────────────────────────────────────
+    // It rides the EXISTING UpdateProp wire (kind 5), and it must NOT be added to
+    // NativeRenderer's YogaStyleAttributes/VisualStyleAttributes partition — a
+    // URL is neither a Yoga setter nor a paint attribute, and putting it on the
+    // style wire would force both hand-written shell parsers to grow an arm that
+    // routes to NEITHER destination the partition promises (6.3 non-negotiable #1;
+    // the partition itself is pinned in Renderer.Tests/StyleAttributePartitionTests,
+    // which owns the `src`-is-not-a-style half). The tests below assert the patch
+    // KIND, not merely the value — a `src` that silently became a SetStyle would
+    // still carry the right string.
+    //
+    // ── SURFACE: BnView's ITEM parameters, and NOT its CONTAINER ones ─────────
+    // A BnImage is a LEAF: it has no children, so there is nothing for the
+    // container-layout family (Direction, Justify, Align, Wrap, Gap, Padding) to
+    // arrange. Same exclusion as BnScroll's — for a different reason, which is why
+    // it is said out loud rather than inherited: BnScroll excludes them because
+    // its only Yoga child is the shells' synthetic content node; BnImage excludes
+    // them because it has NO Yoga children at all. And on top of BnScroll's
+    // exclusion, BnImage drops ChildContent too (a leaf has no content), and adds
+    // Src.
+    //
+    // NOT here, on purpose (6.3 design decision 3): Placeholder, OnError,
+    // ContentMode. Each CHANGES MEASUREMENT — does a placeholder measure like the
+    // image? does a failure keep the reserved space? does `cover` report the
+    // natural size or the box? — so each deserves its own design rather than a
+    // footnote in the fetch phase. Ledgered for M7.
+
+    private const string ImageSrc = "http://127.0.0.1:8099/a.png";
+
+    /// <summary>EVERY BnImage parameter, with a distinct value each. Its OWN table
+    /// (BnScroll's rationale): BnImage's surface is BnScroll's minus ChildContent
+    /// plus Src, and mutating a shared dictionary to suit it would silently weaken
+    /// the tests BnView/BnRow/BnColumn/BnScroll are held to.</summary>
+    private static Dictionary<string, object?> ImageParams() => new()
+    {
+        [nameof(BnImage.Src)] = ImageSrc,
+        [nameof(BnImage.BackgroundColor)] = "#112233",
+        [nameof(BnImage.Margin)] = "4",
+        [nameof(BnImage.AlignSelf)] = FlexAlign.FlexEnd,
+        [nameof(BnImage.Grow)] = 2f,
+        [nameof(BnImage.Shrink)] = 0f,
+        [nameof(BnImage.Basis)] = "auto",
+        [nameof(BnImage.Width)] = "300",
+        [nameof(BnImage.Height)] = "100",
+        [nameof(BnImage.MinWidth)] = "10",
+        [nameof(BnImage.MaxWidth)] = "50%",
+        [nameof(BnImage.MinHeight)] = "20",
+        [nameof(BnImage.MaxHeight)] = "400",
+        [nameof(BnImage.Position)] = FlexPosition.Absolute,
+        [nameof(BnImage.Top)] = "1",
+        [nameof(BnImage.Right)] = "2",
+        [nameof(BnImage.Bottom)] = "3",
+        [nameof(BnImage.Left)] = "4",
+    };
+
+    /// <summary>What <see cref="ImageParams"/> must become on the SETSTYLE wire —
+    /// the ITEM half, identical to BnScroll's (the two surfaces differ only in
+    /// ChildContent and Src, neither of which is a style). `src` is DELIBERATELY
+    /// ABSENT: it is a prop, and the forwarding test asserts the style table is
+    /// EXACTLY this, so a `src` that drifted onto the style wire fails here as an
+    /// unexpected key.</summary>
+    private static Dictionary<string, string> ImageItemWireTable() => new()
+    {
+        ["backgroundColor"] = "#112233",
+        ["margin"] = "4",
+        ["alignSelf"] = "flex-end",
+        ["flexGrow"] = "2",
+        ["flexShrink"] = "0",
+        ["flexBasis"] = "auto",
+        ["width"] = "300",
+        ["height"] = "100",
+        ["minWidth"] = "10",
+        ["maxWidth"] = "50%",
+        ["minHeight"] = "20",
+        ["maxHeight"] = "400",
+        ["position"] = "absolute",
+        ["top"] = "1",
+        ["right"] = "2",
+        ["bottom"] = "3",
+        ["left"] = "4",
+    };
+
+    /// <summary>The element→NodeType half of "no ABI change": BnImage emits `img`,
+    /// and MapElementToNodeType has mapped `img` → "image" (NodeType 5) since Phase
+    /// 2.5. Nothing new reaches the wire — the last stubbed leaf simply gains a
+    /// producer.
+    /// <para>And <c>Src</c> rides the <b>UpdateProp</b> wire. The assertion is on
+    /// the patch KIND: a `src` that drifted onto the style wire would still carry
+    /// the right URL, so a value-only test would not see it.</para></summary>
+    [Fact]
+    public void BnImage_Mount_EmitsImageNodeType_AndSrcRidesTheUpdatePropWire()
+    {
+        var (renderer, frames) = CreateCapturingSession();
+
+        renderer.Mount<BnImage>(ParameterView.FromDictionary(new Dictionary<string, object?>
+        {
+            [nameof(BnImage.Src)] = ImageSrc,
+        }));
+
+        Assert.NotEmpty(frames);
+        RenderFrame mount = frames[0];
+        CreateNodePatch root = Root(mount);
+        Assert.Equal("image", root.NodeType);
+
+        // THE KIND. `src` is an UpdateProp…
+        UpdatePropPatch src = Assert.Single(mount.Patches.OfType<UpdatePropPatch>());
+        Assert.Equal(root.NodeId, src.NodeId);
+        Assert.Equal("src", src.Name);
+        Assert.Equal(ImageSrc, src.Value);
+        // …and NOT a SetStyle. With Src as the ONLY parameter supplied, the style
+        // wire must be completely silent: an image with a source and no declared
+        // size carries no style at all, which is exactly the state whose measured
+        // size is 0×0 until the bytes land (the parity contract's first row).
+        Assert.Empty(mount.Patches.OfType<SetStylePatch>());
+
+        // A LEAF. No ChildContent parameter exists, so nothing can parent under it.
+        Assert.Single(mount.Patches.OfType<CreateNodePatch>());
+    }
+
+    /// <summary>The un-styled invariant, on the image element too: no parameter
+    /// supplied → no attribute → NO patch of any kind. Not even a `src`: a null Src
+    /// is an image with no source, and the wire says exactly what the author said
+    /// (the shells then leave the node measuring 0×0 — nothing to cancel, nothing
+    /// to fetch).</summary>
+    [Fact]
+    public void BnImage_Unstyled_EmitsNoStyleAndNoProp()
+    {
+        var (renderer, frames) = CreateCapturingSession();
+
+        renderer.Mount<BnImage>();
+        Assert.NotEmpty(frames);
+        RenderFrame mount = frames[0];
+
+        Assert.Equal("image", Root(mount).NodeType);
+        Assert.Empty(mount.Patches.OfType<SetStylePatch>());
+        Assert.Empty(mount.Patches.OfType<UpdatePropPatch>());
+    }
+
+    /// <summary>DECLARATION (the BnScroll pair, applied to BnImage): BnView's
+    /// surface MINUS the container-layout family MINUS ChildContent, PLUS Src. An
+    /// item param missing from BnImage is a hole an author falls into; a container
+    /// param present on a LEAF is a parameter that can only ever do nothing.
+    /// <para>This test is a green light over a forwarding bug — it cannot see
+    /// BuildRenderTree at all. The behavioural one below is what bites (6.1's Gate 1
+    /// mutation lesson: two deleted forwarding lines, suite still green).</para></summary>
+    [Fact]
+    public void BnImage_ExposesEveryBnViewItemParameter_PlusSrc_AndIsALeaf()
+    {
+        static IEnumerable<string> Parameters(Type t) => t.GetProperties()
+            .Where(p => p.IsDefined(typeof(ParameterAttribute), inherit: true))
+            .Select(p => p.Name)
+            .OrderBy(n => n, StringComparer.Ordinal);
+
+        IEnumerable<string> expected = Parameters(typeof(BnView))
+            .Where(n => !ContainerLayoutParams.Contains(n))
+            .Where(n => n != nameof(BnView.ChildContent))
+            .Append(nameof(BnImage.Src))
+            .OrderBy(n => n, StringComparer.Ordinal);
+
+        Assert.Equal(expected, Parameters(typeof(BnImage)));
+
+        // Said again, bluntly, because the set arithmetic above reads as arithmetic
+        // and THESE are the decisions.
+        // (a) A leaf: no children, so no container-layout family…
+        Assert.All(ContainerLayoutParams, p => Assert.Null(typeof(BnImage).GetProperty(p)));
+        Assert.All(ContainerLayoutParams, p => Assert.NotNull(typeof(BnView).GetProperty(p)));
+        // (b) …and no ChildContent at all — the one place BnImage's surface is
+        //     narrower than BnScroll's.
+        Assert.Null(typeof(BnImage).GetProperty(nameof(BnView.ChildContent)));
+        Assert.NotNull(typeof(BnScroll).GetProperty(nameof(BnView.ChildContent)));
+        // (c) 6.3 design decision 3: NOT Placeholder, NOT OnError, NOT ContentMode.
+        //     Each changes MEASUREMENT and gets its own design (M7). A parameter
+        //     that cannot be set is a bug that cannot be written.
+        Assert.Null(typeof(BnImage).GetProperty("Placeholder"));
+        Assert.Null(typeof(BnImage).GetProperty("OnError"));
+        Assert.Null(typeof(BnImage).GetProperty("ContentMode"));
+    }
+
+    /// <summary>FORWARDING: fed its whole parameter surface, BnImage must put the
+    /// ITEM style table on the SetStyle wire and `src` on the PROP wire — and NOT
+    /// ONE container name. Delete any one AddAttribute from BnImage and this goes
+    /// red (the reflective test above stays green while
+    /// <c>&lt;BnImage Grow="1"&gt;</c> silently does nothing).</summary>
+    [Fact]
+    public void BnImage_ForwardsTheWholeItemSurface_AndSrcOnThePropWire()
+    {
+        var (renderer, frames) = CreateCapturingSession();
+
+        renderer.Mount<BnImage>(ParameterView.FromDictionary(ImageParams()));
+        Assert.NotEmpty(frames);
+        RenderFrame mount = frames[0];
+        CreateNodePatch root = Root(mount);
+        Assert.Equal("image", root.NodeType);
+
+        // The WHOLE style table, exactly — `src` absent from it is the pin that the
+        // prop did not drift onto the style wire.
+        Assert.Equal(
+            ImageItemWireTable().ToDictionary(e => e.Key, e => (string?)e.Value),
+            StylesOf(mount, root.NodeId));
+
+        // …and the WHOLE prop table, exactly: one prop, `src`. A flex name falling
+        // out of the renderer's allow-list would land here as a second UpdateProp.
+        UpdatePropPatch src = Assert.Single(mount.Patches.OfType<UpdatePropPatch>());
+        Assert.Equal(root.NodeId, src.NodeId);
+        Assert.Equal("src", src.Name);
+        Assert.Equal(ImageSrc, src.Value);
+    }
+
+    /// <summary>Host for the `src` → null transition: an image with a source, and a
+    /// button whose click takes the source away. (An image has no events of its own —
+    /// it is a leaf — so the re-render has to be driven from a sibling.)</summary>
+    private sealed class ClearSrcHost : ComponentBase
+    {
+        private bool _cleared;
+
+        protected override void BuildRenderTree(Microsoft.AspNetCore.Components.Rendering.RenderTreeBuilder b)
+        {
+            b.OpenComponent<BnColumn>(0);
+            b.AddComponentParameter(1, nameof(BnColumn.ChildContent), (RenderFragment)(cb =>
+            {
+                cb.OpenComponent<BnImage>(0);
+                cb.AddComponentParameter(1, nameof(BnImage.Src), _cleared ? null : ImageSrc);
+                cb.CloseComponent();
+
+                cb.OpenComponent<BnButton>(10);
+                cb.AddComponentParameter(11, nameof(BnButton.Label), "Clear");
+                cb.AddComponentParameter(12, nameof(BnButton.OnClick),
+                    EventCallback.Factory.Create<MouseEventArgs>(this, () => _cleared = true));
+                cb.CloseComponent();
+            }));
+            b.CloseComponent();
+        }
+    }
+
+    /// <summary><c>Src</c> → null IS A WIRE EVENT, and the renderer emits it TODAY —
+    /// which is why it needs a spec and a test rather than a silence for Gates 2/3 to
+    /// each guess at differently.
+    /// <para>A null attribute is not appended to the frame at all, so taking
+    /// <c>Src</c> away is a <c>RemoveAttribute</c> on a NON-STYLE name, and the
+    /// renderer turns that into <c>UpdateProp(nodeId, "src", null)</c> — structurally
+    /// the same event as
+    /// <see cref="BnButton_ReEnabled_EmitsEnabledNullProp"/> (the established
+    /// precedent: a null on the prop wire means "the author took the attribute away",
+    /// and the shell restores the default).</para>
+    /// <para><b>What the shells owe</b> (BnImage.cs's header, normative): cancel the
+    /// in-flight request, CLEAR the image, <c>markDirty</c>, re-solve — so an
+    /// intrinsic image collapses back to <c>0 × 0</c> and its siblings move back UP.
+    /// That is a SECOND REFLOW DIRECTION, and it is the one the parity contract would
+    /// otherwise never have mentioned. This test pins the emission; Gates 2/3 pin the
+    /// behaviour at the mapper level (no demo page flips a Src at run time — see the
+    /// scope note in BnImage.cs).</para></summary>
+    [Fact]
+    public void BnImage_SrcGoesNull_EmitsUpdatePropNullOnThePropWire()
+    {
+        var (renderer, frames) = CreateCapturingSession();
+
+        renderer.Mount<ClearSrcHost>();
+        Assert.NotEmpty(frames);
+        RenderFrame mount = frames[0];
+
+        CreateNodePatch image = Assert.Single(
+            mount.Patches.OfType<CreateNodePatch>(), p => p.NodeType == "image");
+        Assert.Equal(ImageSrc, PropOn(mount, image.NodeId, "src").Value);
+
+        AttachEventPatch clear = Assert.Single(mount.Patches.OfType<AttachEventPatch>());
+        Assert.Equal(0, Exports.DispatchEventCore(
+            (ulong)clear.HandlerId, /*lang=json*/ """{"name":"click"}"""));
+
+        Assert.True(frames.Count >= 2, "expected a synchronous re-render frame");
+        RenderFrame after = frames[^1];
+
+        // THE PROP WIRE, with a null value — and the assertion is on the patch KIND
+        // by construction (it looks only at UpdatePropPatch). Exactly one: the image
+        // is the only node that changed.
+        UpdatePropPatch cleared = Assert.Single(after.Patches.OfType<UpdatePropPatch>());
+        Assert.Equal(image.NodeId, cleared.NodeId);
+        Assert.Equal("src", cleared.Name);
+        Assert.Null(cleared.Value);
+
+        // …and NOT the style wire. `src` leaving is not a layout event in .NET — the
+        // re-layout is the SHELL's, off the back of this prop (clear + markDirty +
+        // re-solve). Nothing here touches a style.
+        Assert.Empty(after.Patches.OfType<SetStylePatch>());
+    }
 }

@@ -417,8 +417,33 @@ Phases (approved at milestone-open 2026-07-13):
      [design](../plans/2026-07-14-phase-6.2-design.md) +
      [plan](../plans/2026-07-14-phase-6.2-implementation-plan.md) +
      [conclusion](../plans/2026-07-14-phase-6.2-conclusion.md).
-- ⏳ **Phase 6.3** — URL images on both platforms (DoD #5)
-- ⏳ **Phase 6.4** — M6 final audit + close (DoD #7, #8) → `v6.0`
+- ✅ **Phase 6.3** — URL images on both platforms (DoD #5) — *complete (2026-07-14, the last capability criterion)*
+   - `<BnImage Src="…" />` fetches, decodes, measures and lays out — **Coil** on Android, **Kingfisher**
+     on iOS, with **identical computed frames**. The `image` NodeType, stubbed since Phase 2.5, is
+     real. **No ABI change** (`Src` rides the existing `UpdateProp` wire; the shell fetches the bytes).
+   - **The sibling is the witness, not the image.** An intrinsic image measures 0×0 until its bytes
+     land, then marks the Yoga node dirty and re-solves — and the proof is that *the band below it
+     moves*. A shell could paint the bytes and never re-solve, and the image would still look right;
+     deleting `markDirty` produces exactly that, and only the band says otherwise.
+   - **The unit rule — one file pixel is one dp/pt — is the divergence no frame table could have
+     caught.** An `ImageView`'s intrinsic size is in *pixels*, so the generic measure path reports
+     `px/density` (**61dp** at the AVD's 2.625) where iOS reports **160** (`UIImage(data:).scale == 1`).
+     Both shells now read the decoded pixel buffer directly, and Kingfisher's documented
+     `.scaleFactor(UIScreen.main.scale)` idiom is **forbidden** (it would give 53.3pt vs 160dp).
+   - **Two of three demo cases assert that *nothing moved*** — so without awaiting each loader's
+     terminal callback, a suite could be **fully green on a device that never loaded a byte** (a
+     blocked cleartext fetch is indistinguishable from a 404). Defended by awaiting all three
+     outcomes by name, asserting the fixture's decoded size before any frame, and a loopback fixture
+     server so CI never touches the internet.
+   - **Frames are necessary but not sufficient**: making the re-solve re-enter mid-batch reddens
+     *only* a layout-pass counter — every frame stays correct. Mechanism-level pins (layout-pass
+     count, in-flight count, a pure guard with a unit test) come from reasoning, not from more frame
+     tests.
+   - **Final counts (all CI-asserted):** .NET **319/0** · JVM **83/0** · Android instrumented
+     **111/111** · iOS XCTest **72/72**. See [design](../plans/2026-07-14-phase-6.3-design.md) +
+     [plan](../plans/2026-07-14-phase-6.3-implementation-plan.md) +
+     [conclusion](../plans/2026-07-14-phase-6.3-conclusion.md).
+- ⏳ **Phase 6.4** — M6 final audit + close (DoD #7, #8) → `v6.0` — *next; DoD #1–#6 all closed*
 
 ---
 

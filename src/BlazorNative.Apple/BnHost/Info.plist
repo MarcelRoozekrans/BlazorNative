@@ -20,6 +20,32 @@
 	<string>1</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<!-- ── Phase 6.3 Gate 3: ATS, AND THE NARROWEST EXEMPTION THAT WORKS ──────────
+	     App Transport Security blocks cleartext HTTP, and **Kingfisher fetches through
+	     URLSession, so ATS applies to it**. The image fixtures live on a LOOPBACK HTTP
+	     server the XCTest target stands up in-process (http://127.0.0.1:8099 — 6.3
+	     non-negotiable #5: CI never touches the public internet), and in the SIMULATOR
+	     127.0.0.1 is the HOST MAC's loopback, so this is a real ATS-governed request.
+
+	     Without this key every fetch fails — and the failure mode is the phase's most
+	     dangerous one: a BLOCKED load is INDISTINGUISHABLE from the 404 that /image's
+	     case [2] expects, so case [0] ("the frame did not move") and case [2] ("the
+	     failure reserved nothing") BOTH STILL PASS on a device that loaded nothing. Only
+	     case [1] reddens, and it reads as a reflow bug.
+
+	     NSAllowsLocalNetworking, NOT NSAllowsArbitraryLoads: the narrow exemption for
+	     loopback/link-local/.local destinations only. Public-internet HTTP stays blocked,
+	     which is exactly the posture Android's debug network-security-config takes
+	     (cleartext permitted to 127.0.0.1/localhost and nothing else).
+
+	     `BnImageDemoTests.testCleartextLoopbackIsPermittedByATS` is what turns this from an
+	     assumption into a checked fact — it pulls a fixture over the same cleartext
+	     loopback Kingfisher uses, through URLSession, so a block names itself. -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
 	<key>UILaunchStoryboardName</key>
 	<string></string>
 	<key>UIRequiredDeviceCapabilities</key>

@@ -167,6 +167,14 @@ open class BnYogaFrameLayout @JvmOverloads constructor(
  * destroying the `flexGrow:1` box's computed width. A childless container is a
  * container.
  *
+ * **…and an `image` measures its BYTES, not its widget** (Phase 6.3). It is the ONE
+ * measured nodeType whose native widget answers in the WRONG UNIT: an `ImageView`'s
+ * intrinsic size is its drawable's size in PIXELS, so the generic `view.measure` path
+ * would report `px / density` — a number that differs on every device and can never
+ * agree with iOS, where a `UIImage`'s size is already in points. `image` therefore
+ * gets a measure function of its own, fed by [setImageNaturalSize] — which is where
+ * the rule (ONE FILE PIXEL IS ONE dp/pt) is stated, and why.
+ *
  * **Yoga computes in density-independent units.** dp in, dp out; the ONE place
  * `density` enters is [applyFrame] (and its mirror, the px MeasureSpec inside the
  * measure func). Style values arrive as dp by contract. That is what lets the
@@ -246,6 +254,14 @@ class YogaLayout(private val context: Context, private val root: ViewGroup) {
     /** The subset of [nodes] carrying a measure function. `YogaNode.dirty()`
      * THROWS on a node without one, so [markDirty] checks membership first. */
     private val measured = mutableSetOf<YogaNode>()
+
+    /**
+     * Phase 6.3 — **the natural size of the bytes an `image` node currently holds**, in dp.
+     * Absent = no bytes (never fetched, failed, cancelled, or cleared): the node measures
+     * **0 × 0**. See [setImageNaturalSize], which is where the number comes from and where
+     * the parity rule that governs it is stated.
+     */
+    private val imageSizes = mutableMapOf<YogaNode, NaturalSize>()
 
     /**
      * The scroll-node diagnostics already emitted — `(nodeId, message)` in order —
@@ -350,10 +366,21 @@ class YogaLayout(private val context: Context, private val root: ViewGroup) {
         views[node] = view
         viewToNode[view] = node
         if (nodeType in MEASURED_NODE_TYPES) {
-            node.setMeasureFunction { _, width, widthMode, height, heightMode ->
-                val d = density
-                view.measure(measureSpec(width, widthMode, d), measureSpec(height, heightMode, d))
-                YogaMeasureOutput.make(view.measuredWidth / d, view.measuredHeight / d)
+            // Phase 6.3: an `image` measures its BYTES, not its widget — see
+            // [setImageNaturalSize]. Everything else asks the native widget (DoD #3).
+            if (nodeType == IMAGE) {
+                node.setMeasureFunction { n, _, _, _, _ ->
+                    val size = imageSizes[n]
+                    if (size == null) YogaMeasureOutput.make(0f, 0f)
+                    else YogaMeasureOutput.make(size.widthDp, size.heightDp)
+                }
+            } else {
+                node.setMeasureFunction { _, width, widthMode, height, heightMode ->
+                    val d = density
+                    view.measure(
+                        measureSpec(width, widthMode, d), measureSpec(height, heightMode, d))
+                    YogaMeasureOutput.make(view.measuredWidth / d, view.measuredHeight / d)
+                }
             }
             measured.add(node)
         }
@@ -484,6 +511,10 @@ class YogaLayout(private val context: Context, private val root: ViewGroup) {
      * View), its view mapping, and its dirty-lookup entry. */
     private fun purge(node: YogaNode) {
         if (measured.remove(node)) node.setMeasureFunction(null)
+        // Phase 6.3: an image node's recorded natural size dies with it. The measure
+        // lambda captures the node (not the View), so this entry is the last edge from a
+        // purged node into this class's maps.
+        imageSizes.remove(node)
         val view = views.remove(node) ?: return
         if (viewToNode[view] === node) viewToNode.remove(view)
     }
@@ -505,6 +536,52 @@ class YogaLayout(private val context: Context, private val root: ViewGroup) {
     }
 
     /**
+     * Phase 6.3 — records (or, with a null [naturalPx], CLEARS) the natural size of the
+     * bytes [view]'s `image` node now holds. It is the ONLY input to an image's measure
+     * function; absent, the node measures **0 × 0**.
+     *
+     * It does **NOT** dirty the node, deliberately: `markDirty` is the caller's next call
+     * (the 6.1 path, mutation-proven), and folding the two together would hide the one that
+     * a mutation test needs to be able to delete on its own.
+     *
+     * ── ONE PIXEL OF THE FILE IS ONE dp/pt. THE WHOLE OF THE PARITY RULE. ───────────────
+     * The contract says an intrinsic image measures "the image's NATURAL pixel size in
+     * dp/pt", and the two shells only compute the same number if that is read literally:
+     * `UIImage(data:)` has `scale = 1`, so on iOS a 160-pixel-wide PNG has `size.width ==
+     * 160 POINTS` and Yoga measures 160. Android must therefore report **160 dp** — not
+     * `160 px / density` (61dp on the Pixel 6 AVD's 2.625), which is what the generic
+     * `view.measure` path above would have said, because an `ImageView`'s intrinsic size is
+     * its drawable's size in PIXELS.
+     *
+     * That is exactly why `image` gets a measure function of its own rather than the widget
+     * one: the widget's answer is in the wrong unit, and it is wrong by a factor that is
+     * DIFFERENT ON EVERY DEVICE — a divergence no frame table on a single AVD would ever
+     * reveal.
+     *
+     * ── AND NO DOWNSAMPLING (the contract's last row) ───────────────────────────────────
+     * [naturalPx] is the size of the DECODED BITMAP, and the shell asks Coil for
+     * `Size.ORIGINAL` so that is the size of the FILE. A decoder that quietly halved it
+     * would halve the reported size; `WidgetMapperImageTest` and `BnImageDemoAndroidTest`
+     * assert the measured frame against the decoded fixture's own pixel count, so it cannot.
+     *
+     * The natural size is reported UNCLAMPED — Yoga is told what the image *is*, and what to
+     * do when that exceeds the available space is a `ContentMode` question this phase
+     * deliberately does not answer (design decision 3; the fixtures are ≤ 300 wide so it is
+     * never asked).
+     */
+    fun setImageNaturalSize(view: View, naturalPx: NaturalSize?) {
+        val node = viewToNode[view] ?: return
+        if (naturalPx == null) imageSizes.remove(node) else imageSizes[node] = naturalPx
+    }
+
+    /** An image's natural size — the PIXEL count of its decoded bytes, which by the rule in
+     * [setImageNaturalSize] *is* its size in dp. */
+    data class NaturalSize(val widthPx: Int, val heightPx: Int) {
+        val widthDp: Float get() = widthPx.toFloat()
+        val heightDp: Float get() = heightPx.toFloat()
+    }
+
+    /**
      * Activity teardown: drop the whole tree. Same purge as [removeNode], applied
      * to every top-level node — the host root's children go, the measure functions
      * (and with them their captured Views) go, and the maps empty out, so nothing
@@ -522,6 +599,7 @@ class YogaLayout(private val context: Context, private val root: ViewGroup) {
         views.clear()
         viewToNode.clear()
         measured.clear()
+        imageSizes.clear()
         diagnosed.clear()
         diagnosedKeys.clear()
     }
@@ -960,6 +1038,10 @@ class YogaLayout(private val context: Context, private val root: ViewGroup) {
 
         /** The one nodeType that carries a synthetic content node. */
         private const val SCROLL = "scroll"
+
+        /** Phase 6.3 — the one nodeType whose measured size is its BYTES' rather than its
+         * widget's. See [setImageNaturalSize]. */
+        private const val IMAGE = "image"
 
         /** Half a dp — below the tolerance every frame assertion in this engine
          * already uses; a float comparison of two computed heights needs one. */

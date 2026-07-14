@@ -63,9 +63,13 @@ verdict.
    the same frames and the same 800dp content over a 200dp viewport on the AVD and the iOS
    simulator, and **actually scrolls** on both (asserted by driving the scroll position and
    observing the rows move). `BnScroll` is a flex *item*, not a flex *container*.
-5. **URL images.** The `image` NodeType (stubbed today) → async URL load into
-   `ImageView` / `UIImageView` on both platforms, measured by Yoga (intrinsic/explicit
-   size).
+5. ✅ **URL images.** — *closed by Phase 6.3 (2026-07-14).* The `image` NodeType → async URL load
+   (Coil / Kingfisher) into `ImageView` / `UIImageView`, measured by Yoga. An image with no declared
+   size measures 0×0 until its bytes land, then marks the node dirty and **reflows its siblings**; a
+   declared `Width`/`Height` short-circuits measurement entirely. `BnImageDemo` (`/image`) asserts
+   the same frames on the AVD and the iOS simulator. **The unit rule — one file pixel is one dp/pt —
+   is the divergence no frame table could have caught** (an `ImageView`'s intrinsic size is in
+   *pixels*, so the generic measure path would have reported 61dp where iOS reports 160).
 6. ✅ **Flex container components.** — *closed by Phase 6.1.* `BnView` gains the typed flex
    parameter surface (enums/numerics that stringify onto the wire); `BnRow`/`BnColumn` ship as
    thin presets; `BnLayoutDemo` at `/layout` is the cross-platform proof surface.

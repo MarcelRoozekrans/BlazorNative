@@ -3,12 +3,12 @@
 # rides on. Single windows-latest job mirroring the local verification
 # procedure verbatim (setup.ps1 §1–7 documents the toolchain pins):
 #
-#   build (analyzers ride it) → .NET tests (304 passed / 0 skipped) →
+#   build (analyzers ride it) → .NET tests (318 passed / 0 skipped) →
 #   three NativeAOT publishes (win-x64, linux-bionic-x64, linux-bionic-arm64;
 #   each publish must show exactly the 4 accepted IL2072 trim warnings) →
 #   nine-export verification (dumpbin via vswhere / llvm-readelf from the
 #   pinned NDK) → Gradle testDebugUnitTest against the fresh win-x64 dll
-#   (79 passed / 0 failed) → consumer smoke (five packages from the local
+#   (83 passed / 0 failed) → consumer smoke (five packages from the local
 #   feed mount a Bn* component + analyzer trip; Phase 4.5, M4 DoD #7) →
 #   artifacts for the instrumented (Gate 3) job.
 #
@@ -270,7 +270,142 @@ jobs:
       #      asserts the ABSENCE of both and names exactly what iOS owes; the moment the
       #      viewport lands, the gate opens and it becomes a hard set-equality pin that
       #      reddens in the commit that ships a viewport without the list.
-      - name: .NET tests (assert 304 passed / 0 skipped)
+      #
+      # 304 -> 316 (Phase 6.3 Gate 1, +12): the `image` NodeType stops being a stub —
+      # the LAST stubbed leaf gains a producer. Renderer.Tests 109 -> 110,
+      # Runtime.Tests 172 -> 183, Analyzers.Tests unchanged at 23. There is NO ABI/wire
+      # change: MapElementToNodeType has mapped `img` to NodeType 5 since Phase 2.5, and
+      # `src` rides the EXISTING UpdateProp wire (still 9 exports on 3 RIDs, still 4
+      # accepted IL2072s, still the 72-byte bridge).
+      #
+      # The +10, by provenance:
+      #   +1  Renderer.Tests/StyleAttributePartitionTests — `src` IS A PROP, NOT A STYLE
+      #       (6.3 non-negotiable #1). The one name a 6.3 implementer is most likely to
+      #       add to the partition by reflex: it arrives on an element and it looks
+      #       declarative. But after 6.1 that list is a ROUTING TABLE with exactly two
+      #       destinations — the Yoga node (layout) or the View/UIView (paint) — and a
+      #       URL is NEITHER, so a shell would have to grow a third arm inside a two-arm
+      #       contract, in two hand-written parsers. Pinned out of both halves, and
+      #       pinned onto the prop wire.
+      #   +4  BnComponentTests — BnImage's surface: the `image` NodeType + `src` on the
+      #       UpdateProp wire (the assertion is on the patch KIND — a `src` that drifted
+      #       onto the style wire would still carry the right URL, so a value-only test
+      #       would not see it); the un-styled invariant on the new element; and the
+      #       6.1 DECLARATION/FORWARDING pair, both of which are needed. The reflective
+      #       one pins the surface (BnScroll's, minus ChildContent — an image is a LEAF —
+      #       plus Src, and NOT Placeholder/OnError/ContentMode: design decision 3, each
+      #       changes MEASUREMENT); the BEHAVIOURAL one is what BITES (6.1's Gate 1
+      #       review proved a reflective test does not: two deleted forwarding lines left
+      #       the suite green).
+      #   +4  BnImageDemoTests — the "/image" patch golden Gates 2/3 derive their frame
+      #       expectations from: the three cases (fixed 200x120 -> never measured;
+      #       intrinsic -> 0x0 then the natural size; a 404 -> 0x0 forever), each with a
+      #       20dp band beneath it whose y is the ONLY honest witness of a reflow. Plus
+      #       the contract's arithmetic (120 + 20 = 140 -> sections at 140/160/180), the
+      #       Align=FlexStart pin (a column's cross axis is WIDTH and Yoga's default is
+      #       STRETCH — under the default the intrinsic image would be stretched to 300
+      #       and its measured width would never be seen), and the route/back-nav pin.
+      #       Its counts pin the delta: 13 creates, 23 styles, and EXACTLY 3 props, all
+      #       of them `src`.
+      #   +1  BnScrollDemoTests — TheImageCannotMoveTheFrameTable. 6.3 non-negotiable #2
+      #       as an ASSERTION rather than a promise: the row's height is DEFINITE (a
+      #       child cannot grow it) and the image's size is DEFINITE (Yoga never calls
+      #       its measure func, so the bytes — or a failure — cannot move a frame even in
+      #       principle). Two independent reasons, either one sufficient.
+      #       GATE 1 REVIEW: it asserts the second reason ON THE WIRE now, not on two
+      #       compile-time constants. It used to check `RowImageWidthDp > 0 &&
+      #       RowImageHeightDp > 0` and CLAIM to be the guard that reddens if the image
+      #       goes intrinsic. It was not one: delete the `Width` parameter from
+      #       BnScrollDemo.BuildRowImage and the image is intrinsic ON THE WIRE while the
+      #       constant still reads 40 — the test stayed green. It now mounts, resolves the
+      #       image node and pins its style table as EXACTLY {width:40, height:40}
+      #       (present => definite => Yoga never measures it), and the mutation reddens it:
+      #         expected: {height=40, width=40}   actual: {height=40}
+      #
+      # …and +2 MORE from the Gate 1 review, both closing a silence rather than adding a
+      # number (Runtime.Tests 181 -> 183):
+      #   +1  BnComponentTests/BnImage_SrcGoesNull_EmitsUpdatePropNullOnThePropWire —
+      #       `Src` -> null IS a wire event and the renderer EMITS IT TODAY (a
+      #       RemoveAttribute on a non-style name -> UpdateProp(nodeId, "src", null), the
+      #       BnButton.Enabled precedent). It had no spec and no test, so two shells would
+      #       have guessed at it differently — or NPE'd on a null value. The honest
+      #       answer is a SECOND REFLOW DIRECTION the parity contract never mentioned:
+      #       cancel, CLEAR the image, markDirty, re-solve -> the node collapses to 0x0
+      #       and its siblings move back UP. Now normative in the design's contract table
+      #       and in BnImage.cs's header; the SHELL half is a Gate 2/3 mapper test (no
+      #       demo page flips a Src at run time, and adding one would rewrite this phase's
+      #       frame tables — said out loud rather than left to be inferred).
+      #   +1  NavigationTests/EveryRoute_ResolvesToAComponentTheMountRegistryKnows — there
+      #       are now FIVE demo pages and TWO hand-maintained registries
+      #       (NativeNavigationManager.s_routes and HostSession's mount registry) with
+      #       nothing asserting they agree. A route whose component name is a typo is
+      #       accepted by NavigateToAsync (the ROUTE exists), reaches SwapRoot, and throws
+      #       there — a runtime crash on a device, inside a click handler, for a mistake a
+      #       set test catches at build time. Routes ⊆ registry (the registry legitimately
+      #       holds UNROUTED probe entries), plus the five routed names by name.
+      #
+      # THE 6.2 FRAME TABLE DID NOT MOVE, and that is the assertion that matters most.
+      # BnScrollDemo gains ONE image inside an existing 80dp row, at a fixed 40x40: its
+      # golden's COUNTS move by exactly that one node (19 -> 20 creates, 33 -> 35 styles,
+      # and the page gains its first UpdateProp), but every FRAME is unchanged — the same
+      # ten rows at y = 80*i, the same 800dp content node, the same 600 scroll range.
+      # TheContentSizeIsTheContractsArithmetic is untouched and still green. BnDemo,
+      # BnSettingsPage and BnLayoutDemo keep their goldens byte-for-byte. The JVM baseline
+      # below stays 79 (nothing Kotlin-side moves until Gate 2).
+      #
+      # 316 -> 318 (Phase 6.3 Gate 2 REVIEW, +2): THE SPEC BLOCKER — the parity rule Gate 2
+      # INVENTED lived only in a Kotlin comment. Both are Runtime.Tests/BnImageDemoTests
+      # (183 -> 185); Renderer.Tests (110) and Analyzers.Tests (23) do not move.
+      #
+      # The contract said only "the image's natural pixel size in dp/pt", which is exactly
+      # the ambiguity Gate 2 had to resolve — and it resolved it (ONE FILE PIXEL IS ONE
+      # dp/pt: read the decoded bitmap's own pixel count, never the density-scaled
+      # intrinsicWidth) without amending the sentence. Meanwhile `Wi x Hi` was declared
+      # "SYMBOLIC and Gate-supplied", so Gate 3 could pick a DIFFERENT fixture, reach for
+      # KINGFISHER'S OWN DOCUMENTED IDIOM for crisp images (.scaleFactor(UIScreen.main
+      # .scale)) — which divides the reported size by the screen scale, 160/3 ~ 53.3pt
+      # against Android's 160dp — and be ENTIRELY GREEN. Each shell stays internally
+      # consistent; only the two frame tables side by side disagree, and NO SINGLE-DEVICE
+      # TEST IN EITHER SUITE CAN SEE IT. Verification bar #1 ("the same frames on both
+      # devices") was enforced by nobody.
+      #
+      # So the rule is now a NORMATIVE ROW of the parity contract with both platform
+      # corollaries spelled out (Android: bitmap.width, never intrinsicWidth; iOS: rely on
+      # UIImage(data:).scale == 1, and do NOT set Kingfisher's scaleFactor or any
+      # downsampling processor), it is in BnImageDemo.cs's header, and the fixture's pixel
+      # size is `internal const` in BnImageDemo.cs so BOTH SHELLS ASSERT THE SAME NUMBERS:
+      #   +1 TheFixtureContract_IsAFactOfTheConstants_NotOfACheckedInPng — 0 < Wi <= 300,
+      #      Hi > 0, and the FIXED fixture is neither (200,120) (its declared size — else
+      #      "it measures 200x120" is a coincidence, not a proof that a declared size
+      #      short-circuits measurement) nor (40,40) (BnScrollDemo's row image).
+      #   +1 TheAndroidFixtureServer_ServesExactlyBnImageDemosNaturalPixelSizes — THE DRIFT
+      #      PIN. A device-side test cannot read a .cs file, so ImageFixtureServer.kt
+      #      transcribes the four integers; this parses them back out and asserts equality.
+      #      It lives here for the reason ShellStyleTableDriftTests does: build-test is the
+      #      ONE required lane where the shells' sources are checkout-visible. GATE 3 ADDS
+      #      THE iOS TWIN alongside it. (Each shell ALSO asserts against its DECODED
+      #      bitmap — that, and only that, is what pins "no downsampling"; a shell
+      #      asserting its own transcription asserts nothing.)
+      #
+      # The JVM baseline below moves too (79 -> 83) and the instrumented lane 107 -> 109 —
+      # see their own provenance blocks.
+      #
+      # 318 -> 319 (Phase 6.3 Gate 3, +1): THE OTHER HALF OF THE DRIFT PIN. Gate 2's block
+      # above says "GATE 3 ADDS THE iOS TWIN alongside it", and this is it:
+      #   +1 BnImageDemoTests.TheIosFixtureServer_ServesExactlyBnImageDemosNaturalPixelSizes
+      #      (Runtime.Tests 185 -> 186) — the same four integers parsed out of
+      #      src/BlazorNative.Apple/BnHostTests/BnImageFixtureServer.swift and asserted equal
+      #      to BnImageDemo.cs's constants. Only the PAIRING of the two pins makes the three
+      #      transcriptions one number, and nothing else in the repo enforces verification
+      #      bar #1 ("the same frames on both devices"): each shell asserts its OWN fixture's
+      #      decoded size, so each stays green while the two measure different images. It also
+      #      catches the iOS-specific trap the Android pin cannot see — a Swift fixture emitted
+      #      at the SCREEN's scale (UIGraphicsImageRendererFormat.scale defaults to it) is a
+      #      480x270 file for a 160x90 request, and the iOS suite would assert 480 against its
+      #      own decoded bytes and be entirely green, at three times Android's number.
+      # Renderer.Tests (110) and Analyzers.Tests (23) do not move. The iOS XCTest baseline
+      # moves 50 -> 70 (ios.yml has its own provenance block); Android is untouched.
+      - name: .NET tests (assert 319 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -288,8 +423,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 304 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 304 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 319 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 319 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # ── NativeAOT publishes + nine-export verification ────────────────────
@@ -395,7 +530,29 @@ jobs:
       # testDebugUnitTest → preBuild → copyRuntimeSo → verifyNativeAssets needs
       # BOTH bionic .so publish outputs, hence this step runs after them; the
       # unit tests themselves load the win-x64 dll via jna.library.path.
-      - name: JVM tests (Gradle testDebugUnitTest — assert 79 passed / 0 failed)
+      # ── Phase 6.3 Gate 2 REVIEW: the JVM baseline moves for the first time since
+      #    6.1 (79 → 83, +4) — and WHERE it moves is the finding.
+      #
+      # ImageRequestGuardTest ×4. The shell's stale-completion guard asks TWO questions
+      # (has this node's `src` been written since the request was issued? is the view the
+      # callback captured still the view that node id names?) and its KDoc called the
+      # second one "not belt-and-braces theatre" — while NOTHING checked it. Deleting the
+      # identity half left the instrumented suite fully green at 107, because the case it
+      # exists for CANNOT BE STAGED ON A DEVICE by any demo page: it needs a node id to be
+      # REUSED after a reset (/image → back → /image), so that a stale callback carrying
+      # generation 1 meets a BRAND-NEW node that is also on generation 1 — the generations
+      # MATCH, and only the view's identity separates them. Every demo mounts once.
+      #
+      # So the decision was extracted into a pure `internal fun isLiveImageRequest(...)`
+      # (its own file, no Android types in the signature) and pinned HERE, off the device,
+      # where the four states can simply be written down: same-generation+same-view (live);
+      # superseded generation; purged node; and THE RESET COLLISION. The last one is also
+      # the reasoning WidgetMapper.clearIfMine depends on (Gate 2 review, C1) — a
+      # generation-only eviction lets the stale callback drop the LIVE request's
+      # Disposable, leaving a request nothing can cancel, whose completion on iOS runs
+      # against a FREED YGNodeRef. MUTATION: revert the guard to a generation-only check
+      # and exactly the reset-collision test reddens.
+      - name: JVM tests (Gradle testDebugUnitTest — assert 83 passed / 0 failed)
         working-directory: src/BlazorNative.Jni
         run: |
           .\gradlew.bat --no-daemon testDebugUnitTest
@@ -409,8 +566,8 @@ jobs:
             $errors += [int]$suite.errors; $skipped += [int]$suite.skipped
           }
           Write-Host "JVM test totals across $($xmls.Count) suites: tests=$tests failures=$failures errors=$errors skipped=$skipped"
-          if ($tests -ne 79 -or $failures -ne 0 -or $errors -ne 0 -or $skipped -ne 0) {
-            throw "JVM test baseline drift: expected 79 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped"
+          if ($tests -ne 83 -or $failures -ne 0 -or $errors -ne 0 -or $skipped -ne 0) {
+            throw "JVM test baseline drift: expected 83 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped"
           }
 
       # ── Consumer smoke (Phase 4.5 Gate 2 — the M4 DoD #7 proof) ────────────

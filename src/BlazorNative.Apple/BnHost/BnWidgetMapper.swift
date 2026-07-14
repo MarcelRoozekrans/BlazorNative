@@ -63,6 +63,39 @@
 // see it); `destroy` is called deterministically from `HostViewController.deinit`
 // because the mapper's own `deinit` would run on whatever thread dropped the last
 // reference, and the .mm's registries are main-thread-only.
+//
+// ── PHASE 6.3: `image` — THE LAST STUBBED LEAF GETS A SOURCE ─────────────────
+// `image` made a widget and measured ZERO, because no shell had a source-loading
+// path. `UpdateProp("src", …)` now drives one ([handleSrc]): Kingfisher fetches and
+// decodes, and on the MAIN thread the shell sets the image, records the decoded
+// bytes' NATURAL PIXEL SIZE, marks the Yoga node dirty (the 6.1 path) and re-solves
+// (the 6.2 path). **ONE reflow, never two.** `src` is a PROP, not a style — a URL is
+// neither layout nor paint — so it rides the `UpdateProp` wire and not the
+// partitioned SetStyle routing table.
+//
+// Four rules of the parity contract are held HERE and are stated where they bite,
+// because Coil and Kingfisher do NOT do them the same way by default:
+//
+//   1. **THE UNIT — one file pixel is one point.** [BnImageLoader.naturalPixelSize]
+//      and [BnImageView]; Android's twin is `bitmap.width`. An `image` therefore gets
+//      a MEASURE FUNCTION OF ITS OWN ([bnYogaImageMeasureTrampoline]) — it measures
+//      its BYTES, not its widget.
+//   2. **A MEMORY-CACHE HIT COMPLETES SYNCHRONOUSLY**, inside the patch batch — so
+//      [resolveLayout] is a NO-OP inside a batch, and the in-flight task is recorded
+//      only if it is STILL LIVE ([handleSrc]'s tail).
+//   3. **THE STALE-CALLBACK GUARD IS GENERATION *AND* IDENTITY**, in EVERY terminal
+//      callback and not just the painting one — and it is **ONE function asked at BOTH
+//      call sites** (`bnIsLiveImageRequest`, from [isLive] and from [clearIfMine]), so
+//      the one unit test that pins the conjunction defends both. Getting this wrong
+//      leaves a request nothing can cancel, whose completion marks a **freed
+//      `YGNodeRef`** dirty.
+//   5. **EVERY `src` WRITE BUMPS THE GENERATION — INCLUDING A CLEAR** ([handleSrc]).
+//      `cancelImageRequest` is best-effort BY DEFINITION; the generation is what makes
+//      the completion it failed to prevent harmless. A `Src` → null whose cancel lost
+//      the race would otherwise RE-INFLATE the node the author just cleared.
+//   4. **CONTENT MODE: aspect-fit, EXPLICITLY** ([makeView]) — `UIImageView`'s default
+//      is `.scaleToFill` (a STRETCH) and Android's `ImageView` is `FIT_CENTER`. The
+//      divergence is FRAME-NEUTRAL, so no frame table on either platform can see it.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import UIKit
@@ -127,6 +160,38 @@ private func bnMeasureResolve(_ measured: Float, _ value: Float, _ mode: bn_yoga
     return measured
 }
 
+/// **AN `image` MEASURES ITS BYTES, NOT ITS WIDGET** (Phase 6.3 — the parity
+/// contract's UNIT row). The twin of Kotlin's dedicated `image` measure function, and
+/// it exists for the same reason on both platforms: **`image` is the one measured
+/// nodeType whose native widget answers in the WRONG UNIT.**
+///
+///  - Android — an `ImageView`'s intrinsic size is its drawable's size in **pixels**,
+///    which 6.1's generic measure path divides by density (61dp for a 160px file on
+///    the Pixel 6 AVD's 2.625).
+///  - iOS — a `UIImageView`'s `sizeThatFits` answers with `image.size`, which is
+///    `pixels / image.scale`. Correct today (`UIImage(data:)` has `scale == 1`) and
+///    one `.scaleFactor` option away from silently reporting a THIRD of the number
+///    Android does, with no test in either suite able to see it.
+///
+/// So both shells read the DECODED PIXEL COUNT and report it directly:
+/// [BnImageView.bnNaturalSize], recorded by [BnWidgetMapper.onImageLoaded].
+///
+/// **The measure MODES are deliberately ignored, exactly as Android's twin ignores
+/// them** — Yoga itself applies them (`YGNodeWithMeasureFuncSetMeasuredDimensions`
+/// substitutes the imposed size for an `EXACTLY` axis and bounds an `AT_MOST` one by
+/// the node's own min/max styles), so a measure func that second-guessed it would be
+/// two clamping rules where the contract has one. No bytes ⇒ **0 × 0**, which is the
+/// pre-load state, the failure state and the cleared state — one answer, three rows of
+/// the contract.
+private let bnYogaImageMeasureTrampoline: bn_yoga_measure_fn = { context, _, _, _, _ in
+    guard let context = context else { return bn_yoga_size(width: 0, height: 0) }
+    let view = Unmanaged<UIView>.fromOpaque(context).takeUnretainedValue()
+    guard let image = view as? BnImageView, let size = image.bnNaturalSize else {
+        return bn_yoga_size(width: 0, height: 0)
+    }
+    return bn_yoga_size(width: Float(size.width), height: Float(size.height))
+}
+
 final class BnWidgetMapper {
 
     /// UI-event seam (the Kotlin mapper's `onUiEvent` constructor arg): wired by
@@ -146,6 +211,12 @@ final class BnWidgetMapper {
     /// The same constant the `.mm` keys the content node's styles on — one contract, one
     /// spelling.
     private static let scroll = "scroll"
+
+    /// Phase 6.3 — the one measured nodeType that measures its **BYTES** rather than its
+    /// widget, and therefore the one that gets [bnYogaImageMeasureTrampoline] instead of
+    /// the generic `sizeThatFits` one. Keyed on the NODETYPE (the contract) and not on
+    /// `view is UIImageView` (a row in a table), for the reason [Self.scroll] is.
+    private static let image = "image"
 
     /// The host container the top-level (parentless) node is added into — the twin
     /// of Android's widget_root. A plain UIView does not re-place its subviews (no
@@ -230,6 +301,71 @@ final class BnWidgetMapper {
     /// when the host tore down) must not resurrect it into freed native memory.
     private var destroyed = false
 
+    // ── Phase 6.3: the image request bookkeeping ─────────────────────────────
+
+    /// **ONE IN-FLIGHT REQUEST PER `image` NODE**, and everything a terminal callback
+    /// needs to decide whether it still owns it.
+    ///
+    /// The entry is disposed on a `Src` change ([handleSrc]), on node removal
+    /// ([handleRemove] — as part of the SUBTREE purge, which is what navigation actually
+    /// emits) and on teardown ([destroy]). **That is memory safety, not hygiene** (6.3
+    /// non-negotiable #4): a completion firing into a purged node marks a **freed
+    /// `YGNodeRef`** dirty — `bn_yoga_node_free_subtree` has already reclaimed it.
+    ///
+    /// It carries the `view` as well as the `generation` because **[clearIfMine] must ask
+    /// BOTH**. See `bnIsLiveImageRequest`.
+    private struct InFlight {
+        let generation: Int
+        let view: BnImageView
+        let task: BnImageTask
+    }
+    private var imageRequests: [Int32: InFlight] = [:]
+
+    /// The node's CURRENT generation — bumped by every `src` write, and **deliberately
+    /// not folded into [imageRequests]**, because the two answer different questions and
+    /// one of them has an answer when the other has none:
+    ///
+    ///  - [imageRequests] answers *"which request does this node have in flight, and
+    ///    whose is it?"* — and there may be **none** even while a request is completing:
+    ///    a Kingfisher memory-cache hit runs its completion **inside** `retrieveImage`,
+    ///    before [handleSrc] has had a chance to record anything.
+    ///  - THIS answers *"has this node's `src` been written since that request was
+    ///    issued?"* — the question `bnIsLiveImageRequest` must be able to ask about a node
+    ///    with no live entry at all, and about one that has been purged (absent ⇒ `nil` ⇒
+    ///    never live).
+    private var imageGenerations: [Int32: Int] = [:]
+
+    /// Test-only: every image request that has TERMINATED, in order — Kingfisher's own
+    /// per-node completion verdict, which is **the synchronization gate** the tests await
+    /// (6.3 non-negotiable #6).
+    ///
+    /// It exists because THE WIRE CARRIES NO COMPLETION SIGNAL, by design (no `OnLoad`, no
+    /// `OnError` — each changes measurement), and two of `/image`'s three cases assert that
+    /// **nothing moved**: a suite that reads the AFTER table before the bytes land passes
+    /// both of them having proven nothing.
+    ///
+    /// **A BOUNDED RING** (last [maxImageResults]), because it is appended by every terminal
+    /// callback and it lives in PRODUCTION code: unbounded it grows one entry per image, per
+    /// navigation, for as long as the app runs. It is a diagnostic, not a ledger.
+    private static let maxImageResults = 64
+    private var imageResultLog: [BnImageResult] = []
+
+    /// Phase 6.3 — **THE BATCH GUARD**, and it exists for exactly ONE caller.
+    ///
+    /// A Kingfisher memory-cache hit completes SYNCHRONOUSLY, on the main thread, inside the
+    /// `retrieveImage` that [handleSrc] issues from within [applyBatch] — so [resolveLayout]
+    /// has a RE-ENTRANT caller. Inside a batch it must be a **no-op**: the batch's own
+    /// `CommitFrame` re-solves the whole tree at the end, and a re-solve from inside it would
+    /// run Yoga against a HALF-APPLIED tree and then again at commit — **two reflows, where
+    /// the contract says ONE.**
+    ///
+    /// (Android's mapper has this flag already, for a second reason iOS does not share: its
+    /// programmatic `setText` fires a change event, so patch application is guarded against
+    /// re-entrant dispatch — and an inner re-solve's `finally` would clear that guard for the
+    /// REST of the batch. UIKit does not fire `.editingChanged` on a programmatic `.text` set,
+    /// so on iOS the flag carries only the reflow rule. One flag, one of its two reasons.)
+    private var applyingBatch = false
+
     init(root: UIView) {
         self.root = root
         self.hostRoot = bn_yoga_node_new()
@@ -246,11 +382,31 @@ final class BnWidgetMapper {
     /// concurrently with the new mapper's main-thread `applyBatch`. One boot today, so
     /// this is latent rather than live; it costs a function to make it impossible.
     ///
+    /// **AND THE PRECONDITION IS THE PIN, NOT THE PARAGRAPH ABOVE IT.** [applyBatch] and
+    /// [calculateAndApply] both assert `.onQueue(.main)`; this method mutates the SAME
+    /// main-thread-only state ([imageRequests], [imageGenerations], and — through
+    /// `bn_yoga_node_free_subtree` — the `.mm`'s unsynchronised measure registry), and Phase
+    /// 6.3 GREW that surface: `task.cancel()` now runs in here too, on a Kingfisher handle
+    /// whose completion queue is the main one. A comment is not the pin the rest of this class
+    /// uses.
+    ///
     /// Idempotent: `HostViewController.deinit` calls it, and so does [deinit] as the
     /// backstop for a mapper nobody owned.
     func destroy() {
+        dispatchPrecondition(condition: .onQueue(.main)) // see [applyBatch]
         guard !destroyed else { return }
         destroyed = true
+
+        // Phase 6.3 — THE IN-FLIGHT IMAGE REQUESTS GO FIRST, and the order is the same one
+        // [handleRemove] keeps: a request still in flight when the Yoga tree below is freed
+        // would complete into a node whose `YGNodeRef` no longer exists. The generation map
+        // is emptied with it, so a completion that was ALREADY in its main-thread
+        // continuation when `cancel()` ran finds `nil` and drops itself (`bnIsLiveImageRequest`
+        // — the guard behind the cancel, for the completion the cancel could not prevent).
+        for (_, request) in imageRequests { request.task.cancel() }
+        imageRequests.removeAll()
+        imageGenerations.removeAll()
+        imageResultLog.removeAll()
 
         // The Yoga tree is RAW native memory owned by the .mm — nothing collects it.
         // Freeing the host root frees every node still hanging off it (and clears
@@ -279,8 +435,29 @@ final class BnWidgetMapper {
         // is what stops a late batch, not an emptied buffer.
     }
 
+    /// **THE BACKSTOP, AND IT HAS TO GET ITSELF ONTO THE MAIN THREAD.**
+    ///
+    /// `deinit` runs on whatever thread drops the last reference — which is precisely the
+    /// thread [destroy] must not run on, and [destroy] now TRAPS on it (`dispatchPrecondition`).
+    /// The owner (`HostViewController.deinit`, main-thread by UIKit's contract) calls [destroy]
+    /// deterministically and this is a no-op; a mapper nobody owned — a test's, a future
+    /// second boot's — still has to free a raw Yoga tree and cancel Kingfisher tasks, and it
+    /// may only do that from main.
+    ///
+    /// So: `assertionFailure` names the ownership bug (loud in every XCTest run, a no-op in
+    /// release), and then the work HOPS — synchronously, because after this returns the object
+    /// is gone and an async block would capture a `self` that no longer exists.
     deinit {
-        destroy()
+        if Thread.isMainThread {
+            destroy()
+        } else {
+            assertionFailure(
+                "BnWidgetMapper was deallocated OFF THE MAIN THREAD — its owner should have "
+                + "called destroy() deterministically (HostViewController.deinit does). Freeing "
+                + "the Yoga tree here would mutate the .mm's unsynchronised measure registry from "
+                + "this thread, concurrently with any main-thread applyBatch.")
+            DispatchQueue.main.sync { self.destroy() }
+        }
     }
 
     // ── Test-only bookkeeping (the twins of WidgetMapper's `nodeCount` /
@@ -321,6 +498,53 @@ final class BnWidgetMapper {
     /// `WidgetMapper.scrollDiagnostics`.
     var scrollDiagnostics: [String] { diagnosed.map { $0.message } }
 
+    // ── Phase 6.3 test-only bookkeeping (the twins of Kotlin's) ──────────────
+
+    /// The last [maxImageResults] image requests that TERMINATED, with Kingfisher's own
+    /// verdict. **The AFTER frames of `/image` may only be asserted once this holds all
+    /// three** (6.3 non-negotiable #6 — the synchronization gate).
+    var imageResults: [BnImageResult] { imageResultLog }
+
+    /// How many have terminated IN TOTAL — which [imageResults] deliberately cannot say,
+    /// because it is a bounded ring. A test that waited for "more than the cap" on the ring
+    /// would wait forever.
+    var imageTerminalCount: Int = 0
+
+    /// The ring's cap, so the bound is asserted against the shell's own number rather than
+    /// one a test invented.
+    var imageResultCap: Int { Self.maxImageResults }
+
+    /// Requests currently in flight. **Its return to 0 is an invariant several tests
+    /// assert** — a synchronously-completed request that was recorded anyway sits here
+    /// forever (its completion's bookkeeping ran before the entry existed), and a later
+    /// removal would "cancel" a request that finished long ago.
+    var inFlightImageCount: Int { imageRequests.count }
+
+    /// Test-only: a node's CURRENT generation (`nil` = it has none — it was purged, or never
+    /// carried a `src`). The twin of Kotlin's `WidgetMapper.imageGeneration`.
+    ///
+    /// It is exposed for ONE reason, and it is the reason [layoutPassCount] is: **the rule it
+    /// pins is invisible in every frame.** *Every* `src` write bumps the generation, **including
+    /// a CLEAR** — because a clear cancels, a cancel races its own completion, and the
+    /// generation is the only thing that stops the loser painting ([handleSrc]). A shell that
+    /// bumped only on a real URL is GREEN on every frame table in this repo: the cancel wins
+    /// that race in every ordering a device test can produce (the main queue is FIFO, so a
+    /// completion already enqueued runs BEFORE any batch a test enqueues after it — a device
+    /// test can only ever stage the clear WINNING). The bump is therefore asserted as the
+    /// number it is, and `BnImageGuardTests.testASupersededGenerationIsNotLive` is what that
+    /// number then BUYS.
+    func imageGeneration(of nodeId: Int32) -> Int? { imageGenerations[nodeId] }
+
+    /// **HOW MANY LAYOUT PASSES HAVE RUN** — the only way to assert *"ONE reflow, never
+    /// two"* as a fact rather than as prose.
+    ///
+    /// It is what pins [resolveLayout]'s batch guard: with a WARM cache both completions run
+    /// synchronously INSIDE `applyBatch`, and a re-solve from in there would run Yoga against
+    /// a half-applied tree and then AGAIN at `CommitFrame`. The final frames would be
+    /// identical (the commit fixes them up), so **no frame assertion anywhere can see it** —
+    /// only the pass count can.
+    var layoutPassCount: Int = 0
+
     // ── Buffer on the callback thread; flush atomically on the main queue ─────
 
     func apply(_ frame: BnFrame) {
@@ -343,6 +567,11 @@ final class BnWidgetMapper {
         // runtime pin, not a comment.
         dispatchPrecondition(condition: .onQueue(.main))
         guard !destroyed else { return }
+        // Phase 6.3 — see [applyingBatch]: an image completion that lands INSIDE this loop
+        // (a memory-cache hit completes synchronously, from `UpdateProp("src")`) must not
+        // re-solve. The batch's own CommitFrame does that, once.
+        applyingBatch = true
+        defer { applyingBatch = false }
         for patch in patches {
             switch patch {
             case .createNode(let nodeId, let nodeType, let parentId, let insertIndex):
@@ -388,6 +617,7 @@ final class BnWidgetMapper {
         dispatchPrecondition(condition: .onQueue(.main)) // see [applyBatch]
         guard !destroyed, !yogaNodes.isEmpty else { return }
         let bounds = root.bounds
+        layoutPassCount += 1 // Phase 6.3: "ONE reflow, never two" is a COUNT — see [layoutPassCount]
         bn_yoga_calculate(hostRoot, Float(bounds.width), Float(bounds.height))
         for (nodeId, node) in yogaNodes {
             guard let view = views[nodeId] else { continue }
@@ -739,8 +969,13 @@ final class BnWidgetMapper {
         yogaNodes[nodeId] = node
         viewToNode[ObjectIdentifier(view)] = node
         if Self.measuredNodeTypes.contains(nodeType) {
-            bn_yoga_node_set_measure(node, bnYogaMeasureTrampoline,
-                                     Unmanaged.passUnretained(view).toOpaque())
+            // Phase 6.3: an `image` measures its BYTES, not its widget — the ONE measured
+            // nodeType whose native widget answers in the wrong unit. See
+            // [bnYogaImageMeasureTrampoline]; everything else asks the widget (DoD #3).
+            let measure = (nodeType == Self.image)
+                ? bnYogaImageMeasureTrampoline
+                : bnYogaMeasureTrampoline
+            bn_yoga_node_set_measure(node, measure, Unmanaged.passUnretained(view).toOpaque())
         }
         // …and the Yoga tree gets its synthetic node in the same breath as the view tree
         // got its synthetic view. BOTH TREES OR NEITHER. (The `.mm` sets the viewport's
@@ -794,18 +1029,31 @@ final class BnWidgetMapper {
             let field = UITextField()
             field.borderStyle = .roundedRect
             return field
-        case "image":
-            // A REAL UIImageView, not a placeholder UIView — because `image` is a
-            // MEASURED nodetype ([measuredNodeTypes]) and `UIView.sizeThatFits`
-            // returns the view's CURRENT BOUNDS: a placeholder would measure ITSELF,
-            // a self-referential answer that converges to 0 and diverges from
-            // Android's `ImageView`, which measures its drawable. Benign today (no
-            // demo mounts an `image`) and a trap for 6.3. An empty UIImageView
-            // answers `sizeThatFits` with .zero, which is exactly what an
-            // ImageView with no drawable measures to — so the two shells agree, by
-            // construction, on the only case that exists today. (Gate 4 ledger,
-            // entry 1.)
-            return UIImageView()
+        case Self.image:
+            // A REAL UIImageView (6.1's Gate 3 review made it one, so an EMPTY image
+            // measures .zero by construction rather than by accident — exactly the
+            // pre-load state 6.3 needs). Phase 6.3 gives it its natural size, and
+            // therefore its own subclass: [BnImageView] carries the decoded bytes'
+            // PIXEL COUNT, which is what its measure func reports.
+            let image = BnImageView()
+            // ── THE CONTENT MODE IS PART OF THE PARITY CONTRACT, AND IT IS SET
+            //    EXPLICITLY BECAUSE THE TWO FRAMEWORK DEFAULTS DISAGREE ──────────────
+            // `UIImageView`'s default is `.scaleToFill` — a STRETCH — and Android's
+            // `ImageView` is `FIT_CENTER` (aspect-preserving). For `/image`'s case [0]
+            // (a 64 × 48 fixture inside a DECLARED 200 × 120 frame) that means Android
+            // letterboxes and iOS would DISTORT.
+            //
+            // It is FRAME-NEUTRAL, so every number in every frame table survives it and
+            // **no test on either platform could catch it**: what breaks is "renders
+            // identically", silently, on one platform. Aspect-fit because it cannot LIE
+            // about the pixels (and this phase's whole subject is an image reporting its
+            // true size); because it is free on the intrinsic path (there the frame IS
+            // the natural size, so fit and fill are pixel-identical); and because it is
+            // what an M7 `ContentMode` would default to. **Deferring the ContentMode API
+            // (design decision 3) does not defer the DEFAULT** — 6.1's `clipChildren =
+            // false` precedent: it costs one line to align the two shells.
+            image.contentMode = .scaleAspectFit
+            return image
         case Self.scroll:
             // Phase 6.2 — a VIEWPORT. Vertical, like Android's ScrollView (design
             // decision 2 — horizontal is ledgered); its single meaningful child, the
@@ -931,6 +1179,20 @@ final class BnWidgetMapper {
         // loop it was a `removeAll` over the whole diagnostics list PER doomed id.
         let doomedIds = Set(views.filter { doomed.contains(ObjectIdentifier($0.value)) }.keys)
         for id in doomedIds {
+            // ── Phase 6.3: CANCEL, AND IT IS MEMORY SAFETY (non-negotiable #4) ──────────
+            // The Yoga subtree was freed four lines up. A request still in flight into a node
+            // in it would complete into a DETACHED UIImageView — harmless — and then
+            // `markDirty` a **freed `YGNodeRef`**. That is 6.2's dangling-pointer lesson in a
+            // new costume, and it is why this hangs off the SUBTREE purge rather than off the
+            // named node: navigation emits ONE RemoveNodePatch, and it names the PAGE's root
+            // column — never the image inside it.
+            //
+            // The generation goes with it, which is what makes the guard behind the cancel
+            // work: a completion already in its main-thread continuation when `cancel()` ran
+            // finds `imageGenerations[id] == nil` and drops itself (`bnIsLiveImageRequest`).
+            cancelImageRequest(id)
+            imageGenerations.removeValue(forKey: id)
+
             views.removeValue(forKey: id)
             yogaNodes.removeValue(forKey: id)
             collapsedAliases.remove(id) // an aliased text child of a doomed UIButton
@@ -1007,9 +1269,291 @@ final class BnWidgetMapper {
             if let control = view as? UIControl {
                 control.isEnabled = (value as NSString?)?.boolValue ?? true
             }
+        // Phase 6.3 (M6 DoD #5): the LAST stubbed leaf stops being one. `src` is a PROP,
+        // not a style — a URL is neither layout nor paint, so it rides this wire and not
+        // the partitioned SetStyle routing table (BnImage.cs's header).
+        case "src":
+            if let image = view as? BnImageView {
+                handleSrc(nodeId: nodeId, view: image, url: value)
+            } else {
+                NSLog("[BnWidgetMapper] UpdateProp src ignored: node \(nodeId) is a "
+                      + "\(type(of: view)), not an image")
+            }
         default:
-            NSLog("[BnWidgetMapper] UpdateProp '\(name)' not yet supported (Phase 6.2+ extends)")
+            NSLog("[BnWidgetMapper] UpdateProp '\(name)' not yet supported (Phase 6.3+ extends)")
         }
+    }
+
+    // ── Phase 6.3: IMAGES ────────────────────────────────────────────────────
+    //
+    // The model (design §"The model") — and there is no binary path on the wire, by
+    // design: .NET names the source, THE SHELL FETCHES THE BYTES (React Native's model).
+    //
+    //   UpdateProp(nodeId, "src", url)
+    //         → cancel any in-flight request for this node
+    //         → clear the bytes it already holds  ← back to 0 × 0 until the new ones land
+    //         → Kingfisher fetches + decodes (off the main thread)
+    //         → on the MAIN thread: set the UIImage
+    //                               record the NATURAL PIXEL SIZE (BnImageView)
+    //                               markDirty            ← the 6.1 path
+    //                               re-solve + apply     ← the 6.2 path
+    //
+    // ONE reflow, never two. That is why there is no placeholder (design decision 3): a
+    // placeholder that MEASURED would reflow the page twice.
+
+    /// `src` arrived — with a URL, or with **null**.
+    ///
+    /// Both are the same code path, and that is the point: the renderer emits
+    /// `UpdateProp(nodeId, "src", null)` when an author sets `Src` back to null (a
+    /// `RemoveAttribute` on a non-style name — `BnButton.Enabled`'s precedent, pinned in
+    /// .NET by `BnComponentTests.BnImage_SrcGoesNull_EmitsUpdatePropNullOnThePropWire`),
+    /// and the contract for it is *cancel, CLEAR, markDirty, re-solve* — an intrinsic node
+    /// collapses back to 0 × 0 and **its siblings move back UP**. Which is exactly the
+    /// first half of what a `src` CHANGE owes as well ("back to 0 × 0 until the new bytes
+    /// land"). Two rows of the parity contract, one path; a shell that split them is a
+    /// shell where one of them rots.
+    ///
+    /// No re-solve here: this runs inside [applyBatch], whose `CommitFrame` re-solves the
+    /// whole tree at the end. Only the ASYNCHRONOUS completion — which arrives with no
+    /// patch behind it — has to trigger its own ([resolveLayout]).
+    private func handleSrc(nodeId: Int32, view: BnImageView, url: String?) {
+        // ── THE GENERATION IS BUMPED FIRST, AND IT IS BUMPED BY *EVERY* `src` WRITE —
+        //    INCLUDING A CLEAR. It sits above the early returns on purpose ──────────────
+        //
+        // **A clear cancels; a cancel RACES ITS OWN COMPLETION; and the generation is the only
+        // thing that stops the loser painting.** [cancelImageRequest] is best-effort *by
+        // definition* — that is the whole reason this counter exists. When `Src` goes to null
+        // (or `""`, or an unparseable string) while a request is in flight **whose download has
+        // already finished and whose completion is already on its way to the main queue**, the
+        // `cancel()` below arrives too late: that completion reaches [onImageLoaded] with
+        // generation *N*. If the clear had not bumped, it would find `imageGenerations[nodeId]`
+        // still *N* and the very same view — `bnIsLiveImageRequest` would say **LIVE** — and it
+        // would paint the stale bytes, record their natural size, `markDirty` and re-solve.
+        // **The node the author just cleared would RE-INFLATE, and its sibling would move back
+        // down** — defeating the contract's `Src` → `null` row ("cancel, CLEAR, collapse to
+        // 0 × 0, siblings move UP") *and* "one reflow, never two", on this phase's own home
+        // ground.
+        //
+        // Pinned by `BnImageTests.testEVERYSrcWriteBumpsTheGenerationINCLUDINGAClear…` (the bump
+        // itself, as the number it is — no frame can see it) composed with
+        // `BnImageGuardTests.testASupersededGenerationIsNotLive` (what the bump then BUYS).
+        let generation = (imageGenerations[nodeId] ?? 0) + 1
+        imageGenerations[nodeId] = generation
+
+        cancelImageRequest(nodeId)
+        // The bytes the node already holds go NOW, not when (or if) the new ones arrive:
+        // "on a Src change the node measures 0 × 0 again until the new bytes land".
+        view.image = nil
+        view.bnNaturalSize = nil
+        markDirty(view)
+
+        // An EMPTY string is the null/clear contract, not a fetch of "". On iOS that is
+        // not a nicety: **`URL(string: "")` is `nil`**, so a shell that force-unwrapped it
+        // would CRASH — an NPE by another name. It is a SHELL decision, so it is written
+        // into the shared contract rather than left for the two shells to make differently
+        // (design §"The parity contract", the `Src` → `null` row).
+        guard let raw = url, !raw.isEmpty else { return }
+        guard let parsed = URL(string: raw) else {
+            NSLog("[BnWidgetMapper] UpdateProp src ignored: node \(nodeId)'s value is not a URL "
+                  + "(\(raw)). The node stays 0 × 0 and reserves nothing.")
+            return
+        }
+
+        // …and the generation the load below is issued under is the one taken above — which is
+        // also load-bearing in the OTHER direction: a Kingfisher memory-cache hit completes
+        // SYNCHRONOUSLY (see below), inside the call, and its completion asks
+        // `bnIsLiveImageRequest` for this very number.
+
+        // ── A MEMORY-CACHE HIT COMPLETES *INSIDE* THIS CALL ──────────────────────────
+        // Kingfisher's callback queue is `.mainCurrentOrAsync` and [handleSrc] runs on the
+        // main thread (inside [applyBatch]). So a request that hits the memory cache runs
+        // the WHOLE completion — set-image, natural size, markDirty, [resolveLayout] — TO
+        // COMPLETION BEFORE `load` RETURNS. That is the ordinary case on the SECOND mount of
+        // any page whose images the process has already fetched (the cache is process-wide),
+        // and it means the handle this line receives can already be spent.
+        //
+        // Recording it unconditionally is a PERMANENT LEAK: the entry is never removed (the
+        // completion's [clearIfMine] ran before it existed), [inFlightImageCount] never
+        // returns to 0 — an invariant several tests assert — and [handleRemove] would later
+        // "cancel" a request that finished long ago. So: record only what is STILL LIVE.
+        // `terminated` is the Swift shape of Coil's `disposable.isDisposed`.
+        var terminated = false
+        let task = BnImageLoader.load(url: parsed) { [weak self] outcome in
+            terminated = true
+            guard let self = self else { return }
+            switch outcome {
+            case .success(let image):
+                self.onImageLoaded(nodeId: nodeId, generation: generation, view: view,
+                                   url: raw, image: image)
+            case .failure(let error):
+                self.onImageFailed(nodeId: nodeId, generation: generation, view: view,
+                                   url: raw, error: error)
+            case .cancelled:
+                self.onImageCancelled(nodeId: nodeId, generation: generation, view: view, url: raw)
+            }
+        }
+        if let task = task, !terminated {
+            imageRequests[nodeId] = InFlight(generation: generation, view: view, task: task)
+        }
+    }
+
+    /// The bytes landed. On the MAIN thread (Kingfisher's callback queue is
+    /// `.mainCurrentOrAsync`), which is what makes the four calls below safe to make
+    /// back-to-back.
+    private func onImageLoaded(nodeId: Int32, generation: Int, view: BnImageView,
+                               url: String, image: UIImage) {
+        guard !destroyed else { return } // see [recordImageResult]
+        recordImageResult(BnImageResult(nodeId: nodeId, url: url, outcome: .success))
+        guard isLive(nodeId: nodeId, generation: generation, view: view, url: url,
+                     what: "completion") else { return }
+        clearIfMine(nodeId: nodeId, generation: generation, view: view)
+
+        view.image = image
+        // THE NATURAL SIZE — the decoded PIXEL COUNT, read as points. One file pixel is one
+        // dp/pt: the parity contract's UNIT row, and the only reading under which iOS and
+        // Android compute the same frame. See [BnImageLoader.naturalPixelSize] (and its
+        // 0 × 0 answer for a decoded image with no pixel buffer — the GIF/SVG ledger).
+        if let natural = BnImageLoader.naturalPixelSize(of: image) {
+            view.bnNaturalSize = natural
+        } else {
+            view.bnNaturalSize = .zero
+            NSLog("[BnWidgetMapper] the image for node \(nodeId) (\(url)) decoded to a UIImage "
+                  + "with NO pixel buffer (an animated/vector format): it has no natural size "
+                  + "this shell knows how to read in the contract's unit (one FILE PIXEL is one "
+                  + "dp/pt), so it measures 0 × 0 and reserves nothing. Ledgered — those formats "
+                  + "need a design, not a guess.")
+        }
+        // …and the 6.1 path, WITHOUT WHICH THE IMAGE PAINTS AND THE PAGE NEVER MOVES: Yoga
+        // caches a measure function's result and will not re-run it on a clean node.
+        markDirty(view)
+        // …and the 6.2 path. No patch is behind this frame — the wire carries no completion
+        // signal — so the re-solve is the shell's to trigger. A NO-OP inside a batch.
+        resolveLayout()
+    }
+
+    /// The load failed — a 404, a refused connection, a blocked cleartext fetch, a timeout.
+    /// The node **keeps measuring 0 × 0** (it was cleared when the request was issued), it
+    /// **reserves nothing**, and it **does not retry**. There is nothing to markDirty and
+    /// nothing to re-solve: no frame changed, which is the whole content of the contract's
+    /// failure row.
+    private func onImageFailed(nodeId: Int32, generation: Int, view: BnImageView,
+                               url: String, error: Error) {
+        guard !destroyed else { return } // see [recordImageResult]
+        recordImageResult(BnImageResult(nodeId: nodeId, url: url, outcome: .error))
+        clearIfMine(nodeId: nodeId, generation: generation, view: view)
+        NSLog("[BnWidgetMapper] image load failed for node \(nodeId) (\(url)): \(error) — the "
+              + "node stays 0 × 0 and reserves nothing")
+    }
+
+    /// We cancelled it: a `Src` change, a node removal, or teardown. Nothing is painted and
+    /// nothing is re-solved — that is what "cancelled" means.
+    private func onImageCancelled(nodeId: Int32, generation: Int, view: BnImageView, url: String) {
+        guard !destroyed else { return } // see [recordImageResult]
+        recordImageResult(BnImageResult(nodeId: nodeId, url: url, outcome: .cancelled))
+        clearIfMine(nodeId: nodeId, generation: generation, view: view)
+    }
+
+    /// Appends to the bounded [imageResultLog], evicting the oldest. Main-thread only —
+    /// every Kingfisher completion is.
+    ///
+    /// **A completion that lands AFTER [destroy] is dropped before it gets here** (the
+    /// `guard !destroyed` at the top of all three terminal callbacks): [destroy] cancels every
+    /// in-flight request and empties the log, and a completion already in its main-thread
+    /// continuation when `cancel()` ran would otherwise RE-GROW the log and bump
+    /// [imageTerminalCount] on a torn-down mapper — resurrecting, in bookkeeping, the very
+    /// state the teardown exists to end.
+    private func recordImageResult(_ result: BnImageResult) {
+        imageTerminalCount += 1
+        imageResultLog.append(result)
+        if imageResultLog.count > Self.maxImageResults {
+            imageResultLog.removeFirst(imageResultLog.count - Self.maxImageResults)
+        }
+    }
+
+    /// **DROP THE IN-FLIGHT ENTRY ONLY IF IT IS THIS CALLBACK'S OWN.**
+    ///
+    /// Every terminal callback ends here, and every one of them asks BOTH questions — which
+    /// is the whole of the rule. A `clearIfMine` that evicted on a **generation match alone**
+    /// is exactly the case a generation cannot decide: `/image` → back → `/image` re-uses
+    /// this mapper, **node ids restart at 1**, and the OLD node 2's cancellation callback
+    /// (generation 1) arrives as a later main-thread message to find the NEW node 2 also on
+    /// generation 1. It matches, and it evicts the LIVE request's `DownloadTask` — leaving a
+    /// request nothing can cancel, **whose completion then marks a freed `YGNodeRef` dirty**
+    /// (non-negotiable #4, arrived at through the guard that was supposed to prevent it).
+    ///
+    /// Comparing against the ENTRY (its generation, its view) rather than against
+    /// `views`/`imageGenerations` is deliberate: it is a question about the *request*, and it
+    /// answers correctly even for a node that has since been purged from both maps.
+    ///
+    /// **AND THE DECISION IS `bnIsLiveImageRequest`'s — the SAME pure function [isLive] asks,
+    /// not a second inline copy of the conjunction.** It used to be a copy, and the copy was
+    /// UNPINNED: `BnImageGuardTests` tests the function, so dropping `&& entry.view === view`
+    /// from HERE ALONE left all 70 tests green — the mutation had to be applied in two places
+    /// to redden one test, which is the definition of a second site nothing defends. One
+    /// decision, one function, one unit test, two call sites. (What differs between the two
+    /// call sites is only WHERE the "current" facts come from — the ENTRY here, the LIVE maps
+    /// there — and that distinction is deliberate and is preserved.)
+    private func clearIfMine(nodeId: Int32, generation: Int, view: BnImageView) {
+        guard let entry = imageRequests[nodeId] else { return }
+        if bnIsLiveImageRequest(currentGeneration: entry.generation,
+                                requestGeneration: generation,
+                                currentView: entry.view,
+                                requestView: view) {
+            imageRequests.removeValue(forKey: nodeId)
+        }
+    }
+
+    /// **THE PURGED-NODE GUARD** — the defence behind the cancel, and it is not
+    /// belt-and-braces theatre: [cancelImageRequest] is what *prevents* a completion, and
+    /// this is what makes one HARMLESS if it ever arrives anyway (a completion already in
+    /// its main-thread continuation when `cancel()` ran — and, on iOS, every cache-hit
+    /// completion, for which Kingfisher hands back no cancellation handle at all).
+    ///
+    /// The DECISION is `bnIsLiveImageRequest` — a pure function, in its own file,
+    /// **unit-tested with no UIKit tree at all** (`BnImageGuardTests`), including the reset
+    /// collision that no single-mount test can stage. This method is the lookup and the log
+    /// around it; the reasoning lives with the function.
+    private func isLive(nodeId: Int32, generation: Int, view: BnImageView,
+                        url: String, what: String) -> Bool {
+        if !bnIsLiveImageRequest(currentGeneration: imageGenerations[nodeId],
+                                 requestGeneration: generation,
+                                 currentView: views[nodeId],
+                                 requestView: view) {
+            NSLog("[BnWidgetMapper] stale image \(what) for node \(nodeId) (\(url)) dropped: the "
+                  + "node was removed, or its src was written again. Nothing painted, and no "
+                  + "freed YGNodeRef was touched.")
+            return false
+        }
+        return true
+    }
+
+    /// Cancels [nodeId]'s in-flight request, if any. Idempotent; safe for a node that never
+    /// had one.
+    private func cancelImageRequest(_ nodeId: Int32) {
+        imageRequests.removeValue(forKey: nodeId)?.task.cancel()
+    }
+
+    /// A layout pass triggered by something that is NOT a patch — an image completion.
+    ///
+    /// **IT MUST NOT RUN INSIDE A BATCH.** A Kingfisher memory-cache hit completes
+    /// SYNCHRONOUSLY, on the main thread, inside the `retrieveImage` that [handleSrc] issues
+    /// from within [applyBatch] — so this method has exactly one RE-ENTRANT caller. Inside a
+    /// batch it would re-solve Yoga against a HALF-APPLIED tree (the image's sibling band may
+    /// not have been created yet — the patches are still arriving) and then again at
+    /// `CommitFrame`: **two reflows, where the contract says ONE.**
+    ///
+    /// The final frames would be IDENTICAL either way, because the commit's pass fixes them
+    /// up — which is exactly why no frame assertion can see this, and why
+    /// [layoutPassCount] is pinned instead.
+    ///
+    /// So inside a batch this is a NO-OP, and it loses nothing: the batch's own `CommitFrame`
+    /// re-solves the whole tree at the end, which is where the synchronously-recorded natural
+    /// size and `markDirty` are picked up. Only a completion that arrives with NO patch
+    /// behind it — the asynchronous case, the one the wire carries no signal for — has a
+    /// layout pass to trigger.
+    private func resolveLayout() {
+        guard !applyingBatch else { return }
+        calculateAndApply()
     }
 
     // ── SetStyle: THE ROUTER (Phase 6.1) ─────────────────────────────────────

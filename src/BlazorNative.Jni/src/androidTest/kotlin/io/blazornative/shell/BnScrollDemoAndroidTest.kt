@@ -5,12 +5,15 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.ScrollView
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.util.concurrent.atomic.AtomicReference
@@ -56,9 +59,36 @@ import java.util.concurrent.atomic.AtomicReference
  * The back button is the page's only measured leaf and sits OUTSIDE the viewport, so
  * it is asserted RELATIONALLY (it starts where the viewport ends) and by ORACLE — no
  * invented font constant, same as [BnLayoutDemoAndroidTest].
+ *
+ * ── AND SINCE 6.3: THE OTHER HALF OF THE IMAGE PROOF (Gate 2 review, I5) ────
+ *
+ * Row 0 now holds an image. This class **stands up no fixture server**, so that image
+ * **FAILS to load** — connection refused, immediately, offline — and the table above is
+ * asserted UNCHANGED anyway. That is not an accident to be tidied away: it is the other
+ * half of [BnScrollDemoImageAndroidTest]'s proof. Between the two classes, the 6.2 table
+ * is pinned against an image that **loaded** and against one that **did not**.
+ *
+ * **The claim used to be false, and order-dependent.** This class asserted nothing about
+ * the image's outcome and did not clear Coil's caches — so run after
+ * [BnScrollDemoImageAndroidTest], `fixed.png` was a MEMORY-CACHE HIT and the image
+ * **succeeded**. The class was quietly proving the same thing as its sibling, and the
+ * header said otherwise. Now: the caches are cleared in `@Before`, the failure is
+ * **awaited and asserted** (`ERROR`, on the URL the wire carried), and nothing was
+ * painted. The claim is real, and it is true in any test order.
  */
 @RunWith(AndroidJUnit4::class)
 class BnScrollDemoAndroidTest {
+
+    /**
+     * **NO FIXTURE SERVER — and the caches are CLEARED so that means something.** Coil's
+     * cache is process-wide and outlives an Activity, so without this the row image would
+     * be served from memory whenever an image test ran first, and "a FAILED load moves
+     * nothing" would silently become "a CACHED load moves nothing" — the sibling class's
+     * claim, made twice, with this one's header lying about it.
+     */
+    @Before fun clearTheImageCaches() {
+        ImageFixtureServer.clearCoilCaches()
+    }
 
     private companion object {
         /** BnScrollDemo's four inputs (BnScrollDemo.cs: RowCount, RowHeightDp,
@@ -83,6 +113,23 @@ class BnScrollDemoAndroidTest {
         val host = act.findViewById<FrameLayout>(R.id.widget_root)
         val root = host.getChildAt(0) as ViewGroup
 
+        // ── THE OTHER HALF OF THE IMAGE PROOF: THE ROW IMAGE *FAILED* ────────
+        // No fixture server is running (this class starts none), and Coil's caches were
+        // cleared — so the fetch is a REAL, immediate connection refusal, offline. The
+        // whole table below is then asserted UNCHANGED, which is the claim: a FAILED load
+        // moves nothing, for two independent reasons (the row's height is definite, and
+        // the image's size is definite — Yoga never calls its measure func at all).
+        //
+        // Asserted, not assumed. Without this the class proved nothing about the image and
+        // was ORDER-DEPENDENT: run after BnScrollDemoImageAndroidTest, fixed.png was a
+        // memory-cache HIT and the image quietly SUCCEEDED.
+        assertEquals("THE ROW IMAGE FAILED — Coil's own terminal callback says so. This class " +
+            "stands up NO fixture server and clears the caches, so the fetch is a real, " +
+            "immediate connection refusal. Everything below is asserted about a page whose " +
+            "image DID NOT LOAD, which is the half BnScrollDemoImageAndroidTest cannot prove.",
+            listOf(ImageFixtureServer.FIXED_URL to WidgetMapper.ImageOutcome.ERROR),
+            act.mapper.imageResults.map { it.url to it.outcome })
+
         assertEquals("the demo has two sections: the viewport and the back row", 2, root.childCount)
 
         // ── [0] the VIEWPORT, and the SYNTHETIC content node inside it ───────
@@ -101,6 +148,10 @@ class BnScrollDemoAndroidTest {
             content.height > scroll.height)
         assertEquals("…by exactly the scrollable range, 800 − 200",
             SCROLL_RANGE, (content.height - scroll.height) / d, 0.5f)
+
+        assertNull("…and NOTHING WAS PAINTED into the row image: a failure reserves nothing " +
+            "and paints nothing",
+            ((content.getChildAt(0) as ViewGroup).getChildAt(0) as ImageView).drawable)
 
         // ── the ten rows, inside the content node ────────────────────────────
         assertEquals("ten rows, all children of the CONTENT view", ROWS, content.childCount)
@@ -263,8 +314,15 @@ class BnScrollDemoAndroidTest {
         ((act.findViewById<FrameLayout>(R.id.widget_root).getChildAt(0) as ViewGroup)
             .getChildAt(0)) as ScrollView
 
-    /** Mounts BnScrollDemo, waits for a laid-out tree, and runs [block] on the main
-     * thread. Both tests want exactly this. */
+    /** Mounts BnScrollDemo, waits for a laid-out tree **and for the row image's request to
+     * TERMINATE**, then runs [block] on the main thread.
+     *
+     * The image wait is the synchronization gate in its one-request form, and it is needed
+     * for the same reason it is needed on `/image`: "the failed load moved nothing" is a
+     * statement about a request that FINISHED. Read the table while the fetch is still in
+     * flight and the assertion is vacuous — the frames would not have moved YET. (Here the
+     * fetch is an immediate connection refusal, so the wait is milliseconds; that is not a
+     * licence to skip it.) */
     private fun withDemo(block: (MainActivity) -> Unit) {
         val ctx = InstrumentationRegistry.getInstrumentation().targetContext
         val intent = Intent(ctx, MainActivity::class.java)
@@ -272,8 +330,28 @@ class BnScrollDemoAndroidTest {
 
         ActivityScenario.launch<MainActivity>(intent).use { scenario ->
             assertTrue("BnScrollDemo never rendered a laid-out tree within 60s", pollForDemo(scenario))
+            awaitTheRowImage(scenario)
             scenario.onActivity(block)
         }
+    }
+
+    /** Waits for the row image's request to reach a TERMINAL state — here, an ERROR (no
+     * fixture server is running). A timeout FAILS: the frame table below is only worth
+     * asserting about a request that ended. */
+    private fun awaitTheRowImage(scenario: ActivityScenario<MainActivity>) {
+        val deadline = System.currentTimeMillis() + 30_000
+        val seen = AtomicReference(0)
+        while (System.currentTimeMillis() < deadline) {
+            scenario.onActivity { act -> seen.set(act.mapper.imageResults.size) }
+            if (seen.get() >= 1) {
+                InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+                return
+            }
+            Thread.sleep(100)
+        }
+        throw AssertionError("the row image's request never terminated within 30s. It is expected " +
+            "to FAIL (this class stands up no fixture server) — but it must fail, not hang: " +
+            "'a failed load moves nothing' is a statement about a request that ENDED.")
     }
 
     /** Polls until the mount frame has been applied AND laid out: a viewport with its

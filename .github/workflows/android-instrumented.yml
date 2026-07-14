@@ -14,7 +14,7 @@
 #   emulator (ubuntu-latest, KVM) — downloads the .so, boots the API 34
 #     google_apis x86_64 Pixel 6 image (mirrors the local AVD
 #     blazornative-pixel6-x86_64), runs connectedAndroidTest with
-#     -PciSoDir pointing at the artifact → asserts 96 passed / 0 failed.
+#     -PciSoDir pointing at the artifact → asserts 111 passed / 0 failed.
 #
 # Baselines are asserted, not observed: count drift fails the job loudly.
 # ─────────────────────────────────────────────────────────────────────────────
@@ -219,6 +219,61 @@ jobs:
       # Baseline asserted, not observed (house style): 40 through M5; Phase 6.0 adds
       # YogaSpikeAndroidTest ×1 (the Yoga flex-row + measure-callback spike proof) → 41.
       #
+      # ── Phase 6.3 Gate 2 — URL IMAGES, via Coil (96 → 107, +11) ────────────
+      # `image` was the LAST stubbed leaf: it made an ImageView and measured ZERO,
+      # because no shell had a source-loading path. Coil now drives one, wired to the
+      # normative parity contract (design §"The parity contract") — which iOS mirrors
+      # with Kingfisher and asserts THE SAME FRAMES. Each count verified by MUTATION
+      # (break the thing, watch the RIGHT test go red — the Gate 2 report has the
+      # transcript):
+      #    +7 WidgetMapperImageTest      — the contract, row by row. The two measurement
+      #                                   paths (intrinsic → 0×0 then the NATURAL size;
+      #                                   definite → those numbers ALWAYS, Yoga never
+      #                                   calling the measure func at all); failure
+      #                                   (0×0, reserves nothing, no retry); `src` →
+      #                                   null (THE SECOND REFLOW DIRECTION — the
+      #                                   siblings move back UP; the renderer emits it
+      #                                   today and no shell had been told what it
+      #                                   means); and CANCELLATION on a `Src` change and
+      #                                   on node removal, each proven to cancel a
+      #                                   request that had REACHED the fixture server
+      #                                   (cancelling one that never started proves
+      #                                   nothing). Cancellation is MEMORY SAFETY, not
+      #                                   hygiene: on iOS a completion into a purged
+      #                                   node touches a freed YGNodeRef.
+      #    +3 BnImageDemoAndroidTest     — the /image page's TWO frame tables, before
+      #                                   the bytes and after, gated on ALL THREE of
+      #                                   Coil's per-node TERMINAL callbacks (the
+      #                                   synchronization gate, non-negotiable #6). It
+      #                                   is not ceremony: two of the three cases assert
+      #                                   that NOTHING MOVED, so a suite that reads the
+      #                                   AFTER table straight after mount passes both
+      #                                   having fetched nothing — and a device with
+      #                                   cleartext BLOCKED passes both too, because a
+      #                                   blocked load is INDISTINGUISHABLE from the 404
+      #                                   the failure case expects. Hence also: the
+      #                                   outcomes are asserted (2 SUCCESS + 1 ERROR,
+      #                                   against the URLs the WIRE carried), the
+      #                                   intrinsic image is asserted POSITIVELY against
+      #                                   the DECODED FIXTURE's own pixel count, and one
+      #                                   test does nothing but VERIFY the cleartext
+      #                                   inheritance (src/debug/…/network_security_
+      #                                   config.xml, Phase 3.1) rather than assume it.
+      #    +1 BnScrollDemoImageAndroidTest — an image INSIDE a scrolled, re-parented
+      #                                   subtree under the synthetic content node — and
+      #                                   every number of BnScrollDemo's 6.2 frame table
+      #                                   re-asserted UNCHANGED with the bytes loaded
+      #                                   (non-negotiable #2: if one of them moves, the
+      #                                   change is wrong). BnScrollDemoAndroidTest,
+      #                                   which stands up no fixture server, pins the
+      #                                   other half — a FAILED load moves nothing
+      #                                   either.
+      # CI never touches the public internet: the fixtures are served IN-PROCESS from a
+      # loopback ServerSocket (ImageFixtureServer), the failing case is a real 404 from
+      # it, and the PNGs are generated in code so the fixture contract (0 < Wi ≤ 300;
+      # Hi > 0; (Wfixed,Hfixed) ≠ (200,120)) is a fact of the source, asserted on the
+      # DECODED bytes before any frame is read.
+      #
       # ── Phase 6.2 Gate 2 REVIEW (86 → 96, +10) ─────────────────────────────
       # The engine was right; every finding was a guard that did not bite, a false
       # causal story, or a rule Gate 3 was about to hand-copy unpinned. Each count is
@@ -363,7 +418,104 @@ jobs:
       # CompositionAndroidTest, WidgetMapperSetStyleTest) were REWRITTEN from type
       # pins (LinearLayout / orientation == VERTICAL) to FRAME pins; only the two
       # counts above are new methods, the rest are same-count rewrites.
-      - name: Assert instrumented baseline (96 passed / 0 failed)
+      # ── Phase 6.3 Gate 2 REVIEW (107 → 109, +2) ────────────────────────────
+      # Both findings were LATENT — CI was green at 107 — and both are TWO-SHELL
+      # LANDMINES that Gate 3 would have copied verbatim into Kingfisher, where two of
+      # them end at a freed YGNodeRef (non-negotiable #4). Each count mutation-verified:
+      #    +1 BnImageDemoAndroidTest
+      #       .the_second_mount_with_a_WARM_cache_completes_inside_applyBatch
+      #       THE PATH EVERY OTHER TEST CLEARS AWAY. Coil 2 dispatches on
+      #       Dispatchers.Main.immediate and the shell enqueues from `UpdateProp("src")`,
+      #       which runs ON THE MAIN THREAD INSIDE applyBatch — so a MEMORY-CACHE HIT runs
+      #       the whole request (onSuccess → setImage → markDirty → re-solve) TO COMPLETION
+      #       INSIDE enqueue(). Every existing test calls clearCoilCaches() in @Before, so
+      #       this was unexercised. It hid two bugs: (a) resolveLayout()'s `finally` set
+      #       applyingBatch = false FOR THE REST OF THE BATCH — the 3.2/4.2 re-entrancy
+      #       guard is a plain boolean and this was its first RE-ENTRANT caller — and Yoga
+      #       re-solved mid-batch against a half-applied tree and again at CommitFrame (TWO
+      #       reflows, where the contract says ONE); (b) the already-completed Disposable
+      #       was recorded as in-flight and never removed, so inFlightImageCount — an
+      #       invariant THREE tests assert — never returned to 0. MUTATION: revert either
+      #       fix and this test reddens (the leak first: 2 stale entries, one per cached
+      #       image). KINGFISHER'S setImage CALLS ITS completionHandler SYNCHRONOUSLY ON A
+      #       MEMORY HIT TOO — Gate 3 inherits this verbatim, and the design says so.
+      #    +1 WidgetMapperImageTest.the_result_log_is_a_BOUNDED_ring_it_cannot_grow_forever
+      #       imageResultLog is appended by every terminal callback and lives in PRODUCTION
+      #       code: unbounded it grows one entry per image, per navigation, forever
+      #       (evicted only by destroy()). YogaLayout.diagnosed is evicted on removal for
+      #       exactly this reason, one file away, citing the 6.2 lesson by name — but
+      #       eviction-on-removal is not available here (a test reads the log AFTER the
+      #       purge that is its subject), so it is CAPPED at 64. MUTATION: remove the cap
+      #       and this reddens (70 terminals ⇒ a 70-entry log).
+      #
+      # Also fixed, WITHOUT new tests (they strengthen assertions inside existing ones):
+      #   · C1 — the stale-callback guard is now GENERATION *AND* IDENTITY in EVERY
+      #     terminal callback (WidgetMapper.clearIfMine over an InFlight record), not just
+      #     the painting one. onError/onCancel evicted on a generation match ALONE, which
+      #     is precisely the case a generation cannot decide: /image → back → /image reuses
+      #     one mapper, NODE IDS RESTART AT 1, and the old node 2's onCancel (generation 1)
+      #     matches the NEW node 2's generation 1 and evicted the LIVE request's Disposable
+      #     — leaving a request nothing could cancel. Pinned OFF the device, in the JVM lane
+      #     (ImageRequestGuardTest, 79 → 83): the reset collision cannot be staged by any
+      #     single-mount instrumented test, which is exactly why it survived.
+      #   · I5 — BnScrollDemoAndroidTest's "a FAILED load moves nothing either" was FALSE
+      #     and ORDER-DEPENDENT: it asserted nothing about the image and cleared no caches,
+      #     so after BnScrollDemoImageAndroidTest the image was a cache HIT and SUCCEEDED.
+      #     It now clears the caches, awaits the terminal callback and asserts ERROR.
+      #   · I4 — the fixture server RECORDS its swallowed IOExceptions (path + exception);
+      #     the two classes that cancel NOTHING assert the list is empty. An IOException
+      #     there is a real server bug whose only previous symptom was the synchronization
+      #     gate timing out 30s later and taking the blame.
+      #   · F4 — ImageView.scaleType is set EXPLICITLY to FIT_CENTER. The two frameworks'
+      #     defaults DISAGREE (UIImageView's is .scaleToFill — a STRETCH) and the
+      #     divergence is FRAME-NEUTRAL, so no frame table on either platform could ever
+      #     see it. Normative in the parity contract now; Gate 3 owes .scaleAspectFit.
+      #   · The fixture server's close() now JOINS its accept thread. ServerSocket.close()
+      #     returns before the blocked accept() unwinds, so the next @Before could bind
+      #     :8099 while our own previous listener still held it — surfacing as EADDRINUSE
+      #     from ourselves, which the (correctly loud) bind message must never be true of.
+      # ── Phase 6.3 Gate 3 REVIEW (109 → 111, +2) ───────────────────────────
+      # THE REVIEW WAS OF THE *iOS* GATE — and it traced THREE of its findings back to
+      # ANDROID'S TWIN. They are ONE CROSS-SHELL CONTRACT, so they are fixed on both, and
+      # two of them owe a test here. Both counts mutation-verified.
+      #    +1 WidgetMapperImageTest.a_clear_while_the_request_is_IN_FLIGHT_cancels_it_and_
+      #       nothing_re_inflates
+      #       THE COVERAGE GAP: **no test in either suite cancelled via the NULL path.**
+      #       src_to_null_clears_the_image… AWAITS THE LOAD FIRST, so nothing was ever in
+      #       flight when the clear arrived — the `Src` → null row's "cancel" was pure prose.
+      #       This one holds /slow.png open (awaitPath: the request has REACHED the server),
+      #       clears, and then releases the bytes at nobody. MUTATION: drop
+      #       cancelImageRequest(nodeId) from handleSrc ⇒ reddens on inFlightImageCount (the
+      #       clear cancelled nothing) and on the OUTCOME (SUCCESS, not CANCELLED). Note it does
+      #       NOT redden on the band: the generation bump below is what keeps that un-cancelled
+      #       callback from painting. TWO independent guards, and the pair of tests separates
+      #       them — which is the whole shape of this contract row.
+      #    +1 WidgetMapperImageTest.every_src_write_bumps_the_generation_INCLUDING_a_clear
+      #       THE CRITICAL. The generation bump sat BELOW `if (url.isNullOrEmpty()) return`,
+      #       so a CLEAR never bumped it — and `dispose()` is best-effort BY DEFINITION (that
+      #       is why the generation exists). A clear whose dispose loses the race delivers
+      #       onSuccess with generation N, finds imageGenerations still on N and the same
+      #       view, isLiveImageRequest says LIVE — and it PAINTS: the node the author just
+      #       cleared RE-INFLATES and its sibling moves back down. Both halves of the `Src` →
+      #       null row, and "one reflow never two", defeated on the phase's home ground.
+      #       Asserted as a NUMBER because no frame can see it and no device test can stage
+      #       the race (the main looper is FIFO: a posted callback runs BEFORE any batch a
+      #       test posts after it, so a device test can only stage the clear WINNING).
+      #       MUTATION (RUN, throwaway branch): move the bump back below the early return ⇒
+      #       1 RED, this test, NOTHING ELSE — "A CLEAR BUMPS IT TOO … expected:<2> but was:<1>".
+      #       Not a frame table, not the clear-in-flight test above it. The iOS twin reddens
+      #       identically. And the I1 mutation (drop the identity half from the ONE guard
+      #       function) ⇒ JVM lane 82/1, on ImageRequestGuardTest's RESET COLLISION — which is
+      #       exactly what routing clearIfMine through that function bought.
+      #
+      # Also fixed, WITHOUT new tests:
+      #   · I1 — WidgetMapper.clearIfMine re-implemented the generation-AND-identity
+      #     conjunction INLINE instead of calling isLiveImageRequest, so ImageRequestGuardTest
+      #     (JVM lane) defended only the PAINTING path: dropping `&& entry.view === view` from
+      #     clearIfMine ALONE left the whole suite green. A mutation that must be applied in
+      #     two places to redden one test is a mutation whose second site is unpinned. Both
+      #     call sites now route through the one pure function — one decision, one unit test.
+      - name: Assert instrumented baseline (111 passed / 0 failed)
         run: |
           shopt -s globstar nullglob
           xmls=(src/BlazorNative.Jni/build/outputs/androidTest-results/connected/**/*.xml)
@@ -380,8 +532,8 @@ jobs:
             s=$(attr skipped "$x");  skipped=$((skipped + ${s:-0}))
           done
           echo "Instrumented totals across ${#xmls[@]} suite(s): tests=$tests failures=$failures errors=$errors skipped=$skipped"
-          if [ "$tests" -ne 96 ] || [ "$failures" -ne 0 ] || [ "$errors" -ne 0 ] || [ "$skipped" -ne 0 ]; then
-            echo "Instrumented test baseline drift: expected 96 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped" >&2
+          if [ "$tests" -ne 111 ] || [ "$failures" -ne 0 ] || [ "$errors" -ne 0 ] || [ "$skipped" -ne 0 ]; then
+            echo "Instrumented test baseline drift: expected 111 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped" >&2
             exit 1
           fi
 

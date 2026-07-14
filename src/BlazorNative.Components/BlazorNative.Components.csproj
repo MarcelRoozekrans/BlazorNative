@@ -16,6 +16,13 @@
        since 2.5; BnView's surface minus Direction, because scrolling is
        vertical-only) and BnScrollDemo (the "/scroll" proof page whose content
        size and row frames Gates 2/3 assert on both shells).
+       Phase 6.3 adds BnImage (the `img` element — NodeType 5, on the wire since
+       2.5, and the LAST stubbed leaf; BnScroll's item surface minus ChildContent
+       — an image has no children — plus Src, which is a PROP and rides the
+       existing UpdateProp wire) and BnImageDemo (the "/image" proof page whose
+       TWO frame tables — before the bytes land and after — Gates 2/3 assert on
+       both shells). No Placeholder/OnError/ContentMode: each changes MEASUREMENT
+       and gets its own design (6.3 decision 3).
 
        Trim posture: statically referenced through the annotated
        OpenComponent/Mount<T> paths; the Runtime publish gate proves no new
