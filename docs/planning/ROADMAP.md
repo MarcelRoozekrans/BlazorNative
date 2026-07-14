@@ -394,7 +394,29 @@ Phases (approved at milestone-open 2026-07-13):
      **71/71** · iOS XCTest **29/29**. See [design](../plans/2026-07-13-phase-6.1-design.md) +
      [plan](../plans/2026-07-13-phase-6.1-implementation-plan.md) +
      [conclusion](../plans/2026-07-13-phase-6.1-conclusion.md).
-- ⏳ **Phase 6.2** — Real scrolling on both platforms (DoD #4) — *next; the demo already overflows the pane*
+- ✅ **Phase 6.2** — Real scrolling on both platforms (DoD #4) — *complete (2026-07-14)*
+   - The `scroll` NodeType, stubbed since Phase 2.5, is real. A `scroll` node is a **viewport**;
+     the shell synthesises a **content node** (`height: auto`, *not on the wire*) whose
+     Yoga-computed height **is** the content size — read straight out of Yoga, never derived by
+     each shell. `BnScrollDemo` (`/scroll`) computes the same 800dp of content over a 200dp
+     viewport, and the same row frames, on the AVD **and** the iOS simulator — and actually
+     scrolls on both. **No ABI change.**
+   - **`BnScroll` is a flex ITEM, not a flex CONTAINER** — the container family is absent by
+     construction (`Justify="Center"` over 800 of content in a 200 viewport would offset it to
+     y = −300 and make the top of the page permanently unreachable). Compose a `BnColumn` inside.
+     The shells enforce the same rule at the wire, pinned by a Kotlin ≡ Objective-C++ drift test.
+   - **The phase's real lesson: four plausible causal stories were written into this design, and
+     every one was wrong.** `overflow: scroll` does not produce the 800 (**Yoga's `flexShrink`
+     default of 0** does); the `onMeasure` fallback does not make the page scroll (it stops it
+     snapping to the top on re-render); `Grow="1"` does not bound a viewport (it needs
+     `Basis="0"` — which is why CSS's `flex: 1` sets basis to 0); and the iOS `contentOffset` clamp
+     did not fire "on shrink" but on *every commit*, killing a rubber-band under the user's finger.
+     Each was caught only by writing the test — none survived one.
+   - **Final counts (all CI-asserted):** .NET **304/0** · JVM **79/0** · Android instrumented
+     **96/96** · iOS XCTest **50/50**. See
+     [design](../plans/2026-07-14-phase-6.2-design.md) +
+     [plan](../plans/2026-07-14-phase-6.2-implementation-plan.md) +
+     [conclusion](../plans/2026-07-14-phase-6.2-conclusion.md).
 - ⏳ **Phase 6.3** — URL images on both platforms (DoD #5)
 - ⏳ **Phase 6.4** — M6 final audit + close (DoD #7, #8) → `v6.0`
 

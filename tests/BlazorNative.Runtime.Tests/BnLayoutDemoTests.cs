@@ -1,6 +1,7 @@
 using BlazorNative.Core;
 using BlazorNative.Renderer;
 using BlazorNative.Runtime;
+using static BlazorNative.Runtime.Tests.GoldenAssertions;
 
 namespace BlazorNative.Runtime.Tests;
 
@@ -59,65 +60,13 @@ public sealed class BnLayoutDemoTests
         NativeShellBridge.ResetForTests();
     }
 
-    // ── Structural pins (never raw nodeIds — BnDemoTests conventions) ─────────
-
-    private static CreateNodePatch Root(RenderFrame mount)
-        => Assert.Single(mount.Patches.OfType<CreateNodePatch>(), p => p.ParentId is null);
-
-    private static CreateNodePatch CreateOf(RenderFrame frame, int nodeId)
-        => Assert.Single(frame.Patches.OfType<CreateNodePatch>(), p => p.NodeId == nodeId);
-
-    /// <summary>A node's children in their FINAL sibling order — the shell's own
-    /// algorithm: walk the creates in patch order, append on InsertIndex -1,
-    /// insert at the index otherwise.</summary>
-    private static List<int> ChildrenOf(RenderFrame frame, int parentId)
-    {
-        var order = new List<int>();
-        foreach (CreateNodePatch c in frame.Patches.OfType<CreateNodePatch>()
-                     .Where(p => p.ParentId == parentId))
-        {
-            if (c.InsertIndex < 0)
-                order.Add(c.NodeId);
-            else
-                order.Insert(c.InsertIndex, c.NodeId);
-        }
-        return order;
-    }
-
-    /// <summary>Every style a node carries in this frame — the golden's unit.</summary>
-    private static Dictionary<string, string?> StylesOf(RenderFrame frame, int nodeId)
-        => frame.Patches.OfType<SetStylePatch>()
-            .Where(p => p.NodeId == nodeId)
-            .ToDictionary(p => p.Property, p => p.Value);
-
-    /// <summary>Asserts a node's whole style table. <paramref name="what"/> is the
-    /// frame-table name of the node ("box B", "wrap box", …) and is threaded into
-    /// the failure message: this golden fails as a WALL of anonymous nodeIds
-    /// otherwise, and the first question is always "which node?".</summary>
-    private static void AssertStyles(
-        RenderFrame frame, int nodeId, string what, params (string Property, string Value)[] expected)
-    {
-        Dictionary<string, string?> actual = StylesOf(frame, nodeId);
-        Dictionary<string, string?> want = expected.ToDictionary(e => e.Property, e => (string?)e.Value);
-
-        Assert.True(
-            want.Count == actual.Count
-                && want.All(kv => actual.TryGetValue(kv.Key, out string? v) && v == kv.Value),
-            $"""
-             styles of "{what}" (node {nodeId}) do not match the golden:
-               expected: {Render(want)}
-               actual:   {Render(actual)}
-             """);
-
-        // Sanity: every node this golden names is a container view.
-        Assert.True(CreateOf(frame, nodeId).NodeType == "view",
-            $"""expected "{what}" (node {nodeId}) to be a view, not a {CreateOf(frame, nodeId).NodeType}""");
-    }
-
-    private static string Render(Dictionary<string, string?> styles)
-        => "{" + string.Join(", ", styles
-            .OrderBy(kv => kv.Key, StringComparer.Ordinal)
-            .Select(kv => $"{kv.Key}={kv.Value ?? "<null>"}")) + "}";
+    // ── Structural pins ───────────────────────────────────────────────────────
+    //
+    // Root / CreateOf / ChildrenOf / StylesOf / AssertStyles live in
+    // GoldenAssertions (`using static`, above) — SHARED with BnScrollDemoTests.
+    // They used to be a verbatim copy in each golden, and ChildrenOf *is* the
+    // shells' insert algorithm: if it drifts between the two goldens, the two
+    // demo pages are being held to different contracts (6.2 Gate 1 review).
 
     // ── The golden ────────────────────────────────────────────────────────────
 

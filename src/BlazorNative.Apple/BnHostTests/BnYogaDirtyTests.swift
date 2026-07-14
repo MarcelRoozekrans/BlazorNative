@@ -26,7 +26,7 @@ import XCTest
 import UIKit
 @testable import BnHost
 
-final class BnYogaDirtyTests: XCTestCase {
+final class BnYogaDirtyTests: BnHostTestCase {
 
     private let longText =
         "This label is measured natively: it wraps inside 150dp and its measured height drives the row."

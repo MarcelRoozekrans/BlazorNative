@@ -12,6 +12,10 @@
        BnFlexPreset) and BnLayoutDemo (the "/layout" proof page whose computed
        frames Gates 2/3 assert on both shells). No BnStack — it would be a
        BnColumn synonym (6.1 design decision 3).
+       Phase 6.2 adds BnScroll (the `scroll` element — NodeType 6, on the wire
+       since 2.5; BnView's surface minus Direction, because scrolling is
+       vertical-only) and BnScrollDemo (the "/scroll" proof page whose content
+       size and row frames Gates 2/3 assert on both shells).
 
        Trim posture: statically referenced through the annotated
        OpenComponent/Mount<T> paths; the Runtime publish gate proves no new
@@ -39,6 +43,16 @@
     <RepositoryUrl>https://github.com/MarcelRoozekrans/BlazorNative</RepositoryUrl>
     <PackageTags>blazor;native;components;nativeaot;android;mobile;ui</PackageTags>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Phase 6.2 Gate 1 review: BnScrollDemo's arithmetic (RowCount ×
+         RowHeightDp = the content size; − ViewportHeightDp = the scrollable
+         range) is `internal const`, and BnScrollDemoTests — the contract Gates
+         2/3 assert their device frames against — asserts the PRODUCTS. The
+         content size is computed by the contract, not restated by a human in
+         three file headers. -->
+    <InternalsVisibleTo Include="BlazorNative.Runtime.Tests" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Components" Version="10.0.*" />

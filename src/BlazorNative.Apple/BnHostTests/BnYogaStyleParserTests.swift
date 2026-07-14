@@ -32,7 +32,7 @@ import XCTest
 import UIKit
 @testable import BnHost
 
-final class BnYogaStyleParserTests: XCTestCase {
+final class BnYogaStyleParserTests: BnHostTestCase {
 
     /// **THE ROUTING TABLE, as this suite knows it** — the names
     /// `bn_yoga_is_layout_style` answers 1 for, i.e. the mirror of

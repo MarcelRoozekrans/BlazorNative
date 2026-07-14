@@ -3,6 +3,7 @@ using BlazorNative.Renderer;
 using BlazorNative.Runtime;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Web;
+using static BlazorNative.Runtime.Tests.GoldenAssertions;
 
 namespace BlazorNative.Runtime.Tests;
 
@@ -22,8 +23,23 @@ namespace BlazorNative.Runtime.Tests;
 // ─────────────────────────────────────────────────────────────────────────────
 
 [Collection("host-session")]
-public sealed class BnComponentTests
+public sealed class BnComponentTests : IDisposable
 {
+    /// <summary>TEARDOWN — 6.2 Gate 1 review. Every test here mutates the SHARED
+    /// static session (HostSession.EnsureSession) and none of them used to hand it
+    /// back: the class relied on whichever class ran NEXT calling ResetForTests
+    /// first. Under the full suite that happens to hold; run this class as a
+    /// FILTERED SUBSET and the live renderer it leaves behind is the next golden's
+    /// problem — a suite that only passes in one order is a trap for every future
+    /// phase. xUnit calls this after each test (the class is the fixture), which is
+    /// the same posture BnLayoutDemoTests/BnScrollDemoTests get from their
+    /// try/finally TearDown.</summary>
+    public void Dispose()
+    {
+        HostSession.ResetForTests();
+        NativeShellBridge.ResetForTests();
+    }
+
     private static (NativeRenderer Renderer, List<RenderFrame> Frames) CreateCapturingSession()
     {
         HostSession.ResetForTests();
@@ -37,8 +53,8 @@ public sealed class BnComponentTests
         return (renderer, frames);
     }
 
-    private static CreateNodePatch CreateOf(RenderFrame frame, int nodeId)
-        => Assert.Single(frame.Patches.OfType<CreateNodePatch>(), p => p.NodeId == nodeId);
+    // CreateOf / StylesOf come from GoldenAssertions (`using static`) — they were
+    // a third partial copy of the goldens' helpers (6.2 Gate 1 review).
 
     private static SetStylePatch StyleOn(RenderFrame frame, int nodeId, string prop)
         => Assert.Single(frame.Patches.OfType<SetStylePatch>(),
@@ -360,12 +376,6 @@ public sealed class BnComponentTests
         ["bottom"] = "3",
         ["left"] = "4",
     };
-
-    /// <summary>The SetStyle name→value table a node carries in this frame.</summary>
-    private static Dictionary<string, string?> StylesOf(RenderFrame frame, int nodeId)
-        => frame.Patches.OfType<SetStylePatch>()
-            .Where(p => p.NodeId == nodeId)
-            .ToDictionary(p => p.Property, p => p.Value);
 
     /// <summary>The whole style surface, param → wire name/value. This table is
     /// the contract the shells' string→Yoga mapping is written against.</summary>
@@ -708,5 +718,272 @@ public sealed class BnComponentTests
         Assert.Equal(root.NodeId, style.NodeId);
         Assert.Equal("flexGrow", style.Property);
         Assert.Null(style.Value);
+    }
+
+    // ── BnScroll (Phase 6.2 Task 1.1) ─────────────────────────────────────────
+    //
+    // The `scroll` element — NodeType 6, on the wire since Phase 2.5 and stubbed
+    // in both shells until 6.2. NO ABI CHANGE: MapElementToNodeType already maps
+    // "scroll"/"overflow" → "scroll", so BnScroll is a pure Components-side
+    // addition.
+    //
+    // SURFACE: BnView's ITEM parameters, and NOT its CONTAINER ones. A BnScroll
+    // is a flex ITEM that scrolls its content; how the CONTENT lays out is the
+    // synthetic content node's job, and that node is the shells' (6.2 decision 1,
+    // Gate 1 review). So Direction, Justify, Align, Wrap, Gap and Padding are
+    // absent BY CONSTRUCTION, the way BnRow's Direction is — each would land on
+    // the SCROLL node, whose only Yoga child is the content node:
+    //
+    //   Direction  → lays the content node out across the cross axis: the page
+    //                silently stops scrolling (scrolling is VERTICAL-ONLY).
+    //   Gap        → spaces ONE child against nothing.
+    //   Justify /  → free space is NEGATIVE on a scrolling viewport (200 − 800 =
+    //   Align        −600), so Center offsets the content to y = −300 and FlexEnd
+    //                to −600 — and a scroll view cannot scroll above offset 0, so
+    //                the top of the content is PERMANENTLY unreachable.
+    //   Padding    → insets the content node and moves every frame in the shells'
+    //                parity table ("does contentSize include the padding?" — two
+    //                shells would answer differently).
+    //
+    // An author who wants the content laid out COMPOSES: <BnScroll><BnColumn
+    // Gap="8" Padding="16">…</BnColumn></BnScroll>. That is RN's
+    // contentContainerStyle without a second style surface.
+    //
+    // Null-forwarding is not a hazard here: BnScroll emits ELEMENT attributes
+    // (like BnView), and a null element attribute is simply not appended to the
+    // frame array — the un-styled invariant. It is the PRESETS that forward
+    // component parameters and must therefore forward nulls unconditionally.
+
+    /// <summary>EVERY BnScroll parameter except ChildContent, with a distinct
+    /// value each. Deliberately its OWN table and NOT FullFlexParams(): BnScroll's
+    /// surface is a strict subset (no container-layout family), and BnView/BnRow/
+    /// BnColumn are held to FullFlexParams — mutating that shared dictionary to
+    /// suit BnScroll would silently weaken THEIR forwarding tests.</summary>
+    private static Dictionary<string, object?> ScrollItemParams() => new()
+    {
+        [nameof(BnScroll.BackgroundColor)] = "#112233",
+        [nameof(BnScroll.Margin)] = "4",
+        [nameof(BnScroll.AlignSelf)] = FlexAlign.FlexEnd,
+        [nameof(BnScroll.Grow)] = 2f,
+        [nameof(BnScroll.Shrink)] = 0f,
+        [nameof(BnScroll.Basis)] = "auto",
+        [nameof(BnScroll.Width)] = "300",
+        [nameof(BnScroll.Height)] = "100",
+        [nameof(BnScroll.MinWidth)] = "10",
+        [nameof(BnScroll.MaxWidth)] = "50%",
+        [nameof(BnScroll.MinHeight)] = "20",
+        [nameof(BnScroll.MaxHeight)] = "400",
+        [nameof(BnScroll.Position)] = FlexPosition.Absolute,
+        [nameof(BnScroll.Top)] = "1",
+        [nameof(BnScroll.Right)] = "2",
+        [nameof(BnScroll.Bottom)] = "3",
+        [nameof(BnScroll.Left)] = "4",
+    };
+
+    /// <summary>What <see cref="ScrollItemParams"/> must become on the SetStyle
+    /// wire — the ITEM half of FullFlexWireTable(), with the container names
+    /// (flexDirection, justifyContent, alignItems, flexWrap, gap, padding)
+    /// ABSENT. THE table the shells' scroll-node mapping is written against.</summary>
+    private static Dictionary<string, string> ScrollItemWireTable() => new()
+    {
+        ["backgroundColor"] = "#112233",
+        ["margin"] = "4",
+        ["alignSelf"] = "flex-end",
+        ["flexGrow"] = "2",
+        ["flexShrink"] = "0",
+        ["flexBasis"] = "auto",
+        ["width"] = "300",
+        ["height"] = "100",
+        ["minWidth"] = "10",
+        ["maxWidth"] = "50%",
+        ["minHeight"] = "20",
+        ["maxHeight"] = "400",
+        ["position"] = "absolute",
+        ["top"] = "1",
+        ["right"] = "2",
+        ["bottom"] = "3",
+        ["left"] = "4",
+    };
+
+    /// <summary>The container-layout family: the six style names that are NOT
+    /// BnScroll parameters, and that the shells must IGNORE-AND-LOG on a node of
+    /// type `scroll` (6.2 design, "Container styles on a scroll node"). Stated
+    /// once here, in the same order the design states it.</summary>
+    private static readonly string[] ContainerLayoutParams =
+    [
+        nameof(BnView.Direction), nameof(BnView.Justify), nameof(BnView.Align),
+        nameof(BnView.Wrap), nameof(BnView.Gap), nameof(BnView.Padding),
+    ];
+
+    [Fact]
+    public void BnScroll_Mount_EmitsScrollNodeTypeAndParentsItsChildren()
+    {
+        var (renderer, frames) = CreateCapturingSession();
+
+        renderer.Mount<BnScroll>(ParameterView.FromDictionary(new Dictionary<string, object?>
+        {
+            [nameof(BnScroll.Width)] = "300",
+            [nameof(BnScroll.Height)] = "200",
+            [nameof(BnScroll.ChildContent)] = (RenderFragment)(b =>
+            {
+                b.OpenElement(0, "span");
+                b.AddContent(1, "scrolled");
+                b.CloseElement();
+            }),
+        }));
+        Assert.NotEmpty(frames);
+        var mount = frames[0];
+
+        var root = Assert.Single(mount.Patches.OfType<CreateNodePatch>(), p => p.ParentId is null);
+        Assert.Equal("scroll", root.NodeType);
+        Assert.Equal("300", StyleOn(mount, root.NodeId, "width").Value);
+        Assert.Equal("200", StyleOn(mount, root.NodeId, "height").Value);
+
+        // Children parent under the SCROLL node ON THE WIRE. The content node the
+        // shells interpose (scroll → content → children in the view/Yoga trees) is
+        // SYNTHETIC: it is created shell-side and never appears in a patch.
+        var text = Assert.Single(mount.Patches.OfType<ReplaceTextPatch>(), p => p.Text == "scrolled");
+        var span = CreateOf(mount, Assert.IsType<int>(CreateOf(mount, text.NodeId).ParentId));
+        Assert.Equal("text", span.NodeType);
+        Assert.Equal(root.NodeId, span.ParentId);
+
+        // …AND THE PLACEMENT IS PINNED, not assumed: InsertIndex -1 = APPEND.
+        // The other half of non-negotiable #2 — a scroll node's wire child at
+        // index i is the CONTENT node's child at index i, in both trees — so a
+        // shell must apply this -1 by appending to the CONTENT node's children,
+        // never to the scroll node's (whose only child is the content node
+        // itself: appending there would give the ScrollView/UIScrollView a second
+        // child and Yoga a sibling of the content node). BnScrollDemoTests owns
+        // the many-children half of the placement contract; this owns the claim
+        // that the number reaches the wire at all.
+        Assert.Equal(-1, span.InsertIndex);
+    }
+
+    /// <summary>THE RAW-ELEMENT HATCH — the reason the shells' ignore-and-warn
+    /// rule (6.2 decision 2) has to exist at all, pinned so it cannot quietly stop
+    /// being true. Closing the container-layout family on BnScroll does NOT close
+    /// it on the WIRE: YogaStyleAttributes is a global name-keyed allow-list and
+    /// `scroll` is a mappable element, so a hand-written element still puts
+    /// SetStyle(flexDirection=row) on a scroll node — which would kill scrolling.
+    /// .NET deliberately does NOT filter here (the wire says exactly what the
+    /// author said); the SHELLS ignore-and-log these six names on a `scroll` node.
+    /// If this test ever goes red because the style stopped reaching the wire,
+    /// the shells' rule is dead code — delete it deliberately, not by accident.</summary>
+    [Fact]
+    public void RawScrollElement_StillPutsContainerStylesOnTheWire_WhichIsWhyTheShellsIgnoreThem()
+    {
+        var (renderer, frames) = CreateCapturingSession();
+
+        renderer.Mount<RawScrollHost>();
+        Assert.NotEmpty(frames);
+        var mount = frames[0];
+        var root = Assert.Single(mount.Patches.OfType<CreateNodePatch>(), p => p.ParentId is null);
+        Assert.Equal("scroll", root.NodeType);
+
+        Assert.Equal(
+            new Dictionary<string, string?>
+            {
+                ["flexDirection"] = "row",
+                ["justifyContent"] = "center",
+                ["alignItems"] = "center",
+                ["flexWrap"] = "wrap",
+                ["gap"] = "8",
+                ["padding"] = "16",
+            },
+            StylesOf(mount, root.NodeId));
+    }
+
+    /// <summary>A hand-written `scroll` element carrying the whole container-layout
+    /// family — the surface BnScroll refuses to expose.</summary>
+    private sealed class RawScrollHost : ComponentBase
+    {
+        protected override void BuildRenderTree(Microsoft.AspNetCore.Components.Rendering.RenderTreeBuilder b)
+        {
+            b.OpenElement(0, "scroll");
+            b.AddAttribute(1, "flexDirection", "row");
+            b.AddAttribute(2, "justifyContent", "center");
+            b.AddAttribute(3, "alignItems", "center");
+            b.AddAttribute(4, "flexWrap", "wrap");
+            b.AddAttribute(5, "gap", "8");
+            b.AddAttribute(6, "padding", "16");
+            b.CloseElement();
+        }
+    }
+
+    /// <summary>The un-styled invariant, on the new element too: no flex param
+    /// supplied → no attribute → NO SetStyle patch. (A scroll node with no height
+    /// sizes to its content and never scrolls — that is the shells' definite-height
+    /// warning, Gates 2/3 — but it must not be papered over with a default HERE:
+    /// the wire says exactly what the author said.)</summary>
+    [Fact]
+    public void BnScroll_Unstyled_EmitsNoStyleAtAll()
+    {
+        var (renderer, frames) = CreateCapturingSession();
+
+        renderer.Mount<BnScroll>();
+        Assert.NotEmpty(frames);
+        var mount = frames[0];
+
+        var root = Assert.Single(mount.Patches.OfType<CreateNodePatch>(), p => p.ParentId is null);
+        Assert.Equal("scroll", root.NodeType);
+        Assert.Empty(mount.Patches.OfType<SetStylePatch>());
+        Assert.Empty(mount.Patches.OfType<UpdatePropPatch>());
+    }
+
+    /// <summary>DECLARATION (the BnRow/BnColumn pair, applied to BnScroll): the
+    /// BnView surface MINUS the container-layout family — Direction, Justify,
+    /// Align, Wrap, Gap, Padding. A BnView ITEM param missing from BnScroll is a
+    /// hole an author falls into; a CONTAINER param present on BnScroll is a
+    /// silent, baffling layout bug an author can write (see the block comment
+    /// above). The exclusion set is the DESIGN, pinned in both directions: this
+    /// fails if a container param appears AND if an item param disappears.
+    /// <para>This test is a green light over a forwarding bug — it cannot see
+    /// BuildRenderTree at all. The behavioural one below is what bites (6.1's Gate
+    /// 1 mutation lesson: two deleted forwarding lines, suite still green).</para></summary>
+    [Fact]
+    public void BnScroll_ExposesEveryBnViewItemParameter_AndNoContainerLayoutParameter()
+    {
+        static IEnumerable<string> Parameters(Type t) => t.GetProperties()
+            .Where(p => p.IsDefined(typeof(ParameterAttribute), inherit: true))
+            .Select(p => p.Name)
+            .OrderBy(n => n, StringComparer.Ordinal);
+
+        Assert.Equal(
+            Parameters(typeof(BnView)).Where(n => !ContainerLayoutParams.Contains(n)),
+            Parameters(typeof(BnScroll)));
+
+        // Said again, bluntly, because the set-difference above reads as arithmetic
+        // and THIS is the decision: none of the six is settable on a BnScroll.
+        Assert.All(ContainerLayoutParams, p => Assert.Null(typeof(BnScroll).GetProperty(p)));
+        // …and every one of them IS settable on a BnView — so the list above is a
+        // real exclusion, not six misspelled names that exclude nothing.
+        Assert.All(ContainerLayoutParams, p => Assert.NotNull(typeof(BnView).GetProperty(p)));
+    }
+
+    /// <summary>FORWARDING: fed its whole parameter surface, BnScroll must put the
+    /// ITEM style table on the wire — and NOT ONE container name (no flexDirection,
+    /// justifyContent, alignItems, flexWrap, gap or padding: it has no parameter
+    /// that could produce one). Delete any one AddAttribute from BnScroll and this
+    /// goes red (the reflective test above stays green while
+    /// <c>&lt;BnScroll Grow="1"&gt;</c> silently does nothing).</summary>
+    [Fact]
+    public void BnScroll_ForwardsTheWholeItemSurface_AndNoContainerStyle()
+    {
+        var (renderer, frames) = CreateCapturingSession();
+
+        renderer.Mount<BnScroll>(ParameterView.FromDictionary(ScrollItemParams()));
+        Assert.NotEmpty(frames);
+        var mount = frames[0];
+        var root = Assert.Single(mount.Patches.OfType<CreateNodePatch>(), p => p.ParentId is null);
+        Assert.Equal("scroll", root.NodeType);
+
+        // The WHOLE table, exactly — so a container style appearing here (from a
+        // re-added parameter, or a copy-paste of BnView's BuildRenderTree) fails
+        // as an unexpected key, not as a silent extra patch.
+        Assert.Equal(
+            ScrollItemWireTable().ToDictionary(e => e.Key, e => (string?)e.Value),
+            StylesOf(mount, root.NodeId));
+        // Every flex prop rides SetStyle — none leaked onto the prop wire.
+        Assert.Empty(mount.Patches.OfType<UpdatePropPatch>());
     }
 }

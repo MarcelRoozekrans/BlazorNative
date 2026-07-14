@@ -63,7 +63,7 @@ import XCTest
 import UIKit
 @testable import BnHost
 
-final class BnLayoutDemoTests: XCTestCase {
+final class BnLayoutDemoTests: BnHostTestCase {
 
     /// Hold the runtime for the test's lifetime so the @convention(c) callback
     /// trampoline is never released mid-render.
@@ -71,7 +71,7 @@ final class BnLayoutDemoTests: XCTestCase {
 
     func testLayoutDemoMatchesTheCanonicalFrameTable() throws {
         let host = UIView(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
-        let mapper = BnWidgetMapper(root: host)
+        let mapper = bnMapper(root: host)
         let runtime = BnRuntime(mapper: mapper)
         self.runtime = runtime
         runtime.onError = { msg, err in NSLog("[BnLayoutDemoTests] \(msg): \(err)") }

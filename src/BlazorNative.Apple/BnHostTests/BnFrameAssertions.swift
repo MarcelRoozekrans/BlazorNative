@@ -20,6 +20,54 @@ import XCTest
 import UIKit
 @testable import BnHost
 
+// ── DETERMINISTIC TEARDOWN — the contract, honoured by the suite too ─────────
+
+/// Every [BnWidgetMapper] this target builds, so [BnHostTestCase] can `destroy()` them
+/// **deterministically, on the main thread, at the end of the test that made them**.
+///
+/// `BnWidgetMapper.destroy()`'s own doc comment says why it exists: `deinit` runs on
+/// whatever thread drops the LAST REFERENCE, and the mapper's Yoga tree and the `.mm`'s
+/// unsynchronised measure registry are **main-thread-only**. Every production owner calls
+/// `destroy()` explicitly (`HostViewController.deinit`) — and until now the ONE place that
+/// did not was the test suite, which left the tree to `deinit` and to whichever thread
+/// released the last reference (a `BnRuntime` frame callback can hold one). Harmless under
+/// XCTest's main-thread teardown, and exactly the wrong place to leave the contract
+/// unhonoured: the suite is the executable statement of it.
+///
+/// Registration is at CONSTRUCTION ([bnMapper]) rather than at use, so a mapper cannot be
+/// built and forgotten.
+enum BnTestMappers {
+    private static var live: [BnWidgetMapper] = []
+
+    static func track(_ mapper: BnWidgetMapper) -> BnWidgetMapper {
+        live.append(mapper)
+        return mapper
+    }
+
+    /// Idempotent, and `destroy()` is too — a suite may destroy its own mapper first.
+    static func destroyAll() {
+        let doomed = live
+        live.removeAll()
+        for mapper in doomed { mapper.destroy() }
+    }
+}
+
+/// A mapper that will be torn down deterministically. The only way this target should
+/// build one.
+func bnMapper(root: UIView) -> BnWidgetMapper {
+    BnTestMappers.track(BnWidgetMapper(root: root))
+}
+
+/// The base class for every suite that builds a mapper (directly or through
+/// [BnSyntheticHost]) — it destroys them in `tearDown`, on the main thread, one test at a
+/// time. Contributes no tests of its own.
+class BnHostTestCase: XCTestCase {
+    override func tearDown() {
+        BnTestMappers.destroyAll()
+        super.tearDown()
+    }
+}
+
 // ── Patch builders (the RenderPatch/`create`/`style`/`text` twins) ───────────
 
 func bnCreate(_ nodeId: Int32, _ nodeType: String, _ parentId: Int32?, insertIndex: Int32 = -1) -> BnPatch {
@@ -32,6 +80,35 @@ func bnStyle(_ nodeId: Int32, _ property: String, _ value: String?) -> BnPatch {
 
 func bnText(_ nodeId: Int32, _ text: String) -> BnPatch {
     .replaceText(nodeId: nodeId, text: text)
+}
+
+// ── The scroll view and its SYNTHETIC content view (Phase 6.2) ───────────────
+
+/// A `scroll` node's view, unwrapped — the VIEWPORT.
+func bnScrollView(_ view: UIView,
+                  file: StaticString = #filePath, line: UInt = #line) throws -> UIScrollView {
+    try XCTUnwrap(view as? UIScrollView,
+                  "a `scroll` node's view must be a UIScrollView (got \(type(of: view)))",
+                  file: file, line: line)
+}
+
+/// The SYNTHETIC content view inside a viewport — the single meaningful child of a
+/// `UIScrollView`, holding every one of the scroll node's wire children.
+///
+/// Found by TYPE, never by index, and that is not fussiness: **`UIScrollView` keeps its
+/// own scroll-indicator subviews**, so `scroll.subviews[0]` is a coin flip and
+/// `subviews.count == 1` is simply false. Android can say "the ScrollView's ONLY child
+/// is the content view" because a `ScrollView` throws on a second; iOS cannot, and a
+/// test that assumed it would be pinning UIKit's private view hierarchy instead of this
+/// shell's contract.
+func bnContentView(of scroll: UIScrollView,
+                   file: StaticString = #filePath, line: UInt = #line) throws -> UIView {
+    let content = scroll.subviews.compactMap { $0 as? BnScrollContentView }
+    XCTAssertEqual(content.count, 1,
+                   "a viewport has exactly ONE synthetic content view — the shell creates it with "
+                   + "the UIScrollView and purges it with it (got \(content.count))",
+                   file: file, line: line)
+    return try XCTUnwrap(content.first, "no content view under the viewport", file: file, line: line)
 }
 
 // ── Frame assertions ─────────────────────────────────────────────────────────
@@ -171,7 +248,7 @@ final class BnSyntheticHost {
 
     init(width: CGFloat = 400, height: CGFloat = 800) {
         root = UIView(frame: CGRect(x: 0, y: 0, width: width, height: height))
-        mapper = BnWidgetMapper(root: root)
+        mapper = bnMapper(root: root) // …and it is destroyed in BnHostTestCase.tearDown
     }
 
     /// Applies one frame (the CommitFrame is appended) and pumps the main runloop

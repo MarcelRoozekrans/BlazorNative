@@ -73,10 +73,16 @@ class MainActivity : Activity() {
          * goldens, so layout-engine bugs never arrive mixed with golden-rewrite
          * noise). Reachable by route AND by mount name (EXTRA_COMPONENT), which
          * is how BnLayoutDemoAndroidTest mounts it.
+         *
+         * Phase 6.2 adds "/scroll" → BnScrollDemo, the scrolling proof page, a
+         * FOURTH root page for the same reason — and mirrors .NET's route table
+         * (NativeNavigationManager), which is the thing this map must not drift
+         * from. Same two doors: BnScrollDemoAndroidTest mounts it by NAME.
          */
         private val DEEP_LINK_COMPONENTS = mapOf(
             "/settings" to "BnSettingsPage",
             "/layout" to "BnLayoutDemo",
+            "/scroll" to "BnScrollDemo",
         )
     }
 
