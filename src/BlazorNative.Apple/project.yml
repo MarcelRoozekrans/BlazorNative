@@ -24,6 +24,37 @@ options:
     iOS: "13.0"
   createIntermediateGroups: true
 
+# ── Phase 6.3 Gate 3: KINGFISHER, via SPM ────────────────────────────────────
+# The `image` NodeType's bytes. Kingfisher is the iOS twin of Android's Coil
+# (design decision 1) and is the FIRST SwiftPM dependency this repo has taken —
+# `xcodebuild` resolves it during the build, which is the only network the iOS
+# lane needs beyond the Yoga tarball and brew. **The TESTS never touch the public
+# internet** (non-negotiable #5): they fetch from an in-process loopback fixture
+# server on :8099.
+#
+# It is declared on the **BnHost** target ONLY. The XCTest bundle does not import
+# Kingfisher — it drives the shell's own facade (`BnImageLoader`) through
+# `@testable import BnHost`, so exactly ONE file in this repo imports Kingfisher
+# and the test bundle does not re-link it (a hosted bundle that linked the same
+# product alongside its BUNDLE_LOADER is how duplicate-symbol warnings start).
+#
+# **It does not disturb the Yoga static-lib link** (the 5.2 recipe): SPM adds its
+# product to the target's own link phase; OTHER_LDFLAGS below — bootstrapperdll.o,
+# -force_load libBlazorNative.Runtime.a, libBnRuntimeSupport.a, libyoga.a — is
+# untouched, and Kingfisher is pure Swift (no C++, so `-lc++` still covers Yoga
+# alone). Kingfisher NEVER sees Yoga's headers; it does not need to, and the 6.0
+# non-negotiable ("Yoga's headers must never be visible to Swift") is unaffected —
+# the image code calls Yoga only through the plain-C `bn_yoga_*` surface, exactly
+# as every other Swift file does.
+#
+# Pinned to 7.x: Kingfisher 7 supports iOS 12+ (this project targets 13.0) and its
+# `KingfisherManager.retrieveImage` is the API the shell is written against. A
+# major bump is a deliberate change, not a resolver's choice.
+packages:
+  Kingfisher:
+    url: https://github.com/onevcat/Kingfisher.git
+    from: 7.12.0
+
 settings:
   base:
     SWIFT_VERSION: "5.0"
@@ -39,6 +70,9 @@ targets:
     platform: iOS
     sources:
       - path: BnHost
+    dependencies:
+      # Phase 6.3 — see the `packages:` block above. The ONLY target that links it.
+      - package: Kingfisher
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.blazornative.bnhost

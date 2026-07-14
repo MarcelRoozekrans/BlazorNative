@@ -253,6 +253,76 @@ final class BnYogaLifecycleTests: BnHostTestCase {
         XCTAssertEqual(host.mapper.yogaViewCount, 0, "…and its Yoga view mapping — the last edge")
     }
 
+    // ── Phase 6.3: …AND THE SUBTREE MAY HAVE A REQUEST IN FLIGHT INTO IT ────
+
+    /// **AN IMAGE REQUEST THAT OUTLIVES ITS NODE IS A WRITE THROUGH A FREED `YGNodeRef`**
+    /// (6.3 non-negotiable #4) — the same class of bug this file was created for, arriving by
+    /// a new route.
+    ///
+    /// The completion's job is to set the image, record the natural size, **`markDirty` the
+    /// node** and re-solve. `bn_yoga_node_free_subtree` has by then freed that node's raw
+    /// `YGNodeRef`, so the `markDirty` is a write into reclaimed native memory. On Android the
+    /// same miss merely paints into a detached `ImageView`; **here it is memory safety**, which
+    /// is why the phase's non-negotiable says "cancellation is not hygiene".
+    ///
+    /// So the cancel hangs off the **SUBTREE purge**, and this test emits the patch the app
+    /// actually emits: **ONE `RemoveNode` naming the page's root column**, two levels above the
+    /// image. Nothing in it mentions the image node — the same transitivity the scroll tests
+    /// above rely on, now carrying a live network request.
+    ///
+    /// And then it **lets the bytes arrive anyway** — because a test that merely never saw the
+    /// completion has proven nothing. `/slow.png` is released after the purge, settled for, and
+    /// the node it would have painted into is asserted untouched.
+    func testAnInFlightImageIsCancelledWhenAnANCESTORIsPurged() throws {
+        bnClearImageCaches()
+        let server = try BnImageFixtureServer()
+        defer { server.close() }
+
+        let host = BnSyntheticHost()
+        // The demo's shape: a root column (what navigation disposes), a section inside it, an
+        // image inside that.
+        host.render([
+            bnCreate(1, "view", nil),                                   // ← the page's root column
+            bnCreate(2, "view", 1),
+            bnCreate(3, "image", 2),
+            .updateProp(nodeId: 3, name: "src", value: BnImageFixtureServer.SLOW_URL),
+        ])
+
+        XCTAssertTrue(server.awaitPath("/slow.png"),
+                      "the request never reached the fixture server — cancelling a request that "
+                      + "had not started proves nothing about cancellation")
+        XCTAssertEqual(host.mapper.inFlightImageCount, 1,
+                       "…and the shell is holding its cancellation handle")
+        XCTAssertEqual(host.mapper.yogaNodeCount, 3, "three wire nodes, three Yoga nodes")
+        let doomed = try bnImageIn(host.root.subviews[0].subviews[0])
+
+        // THE PATCH NAVIGATION ACTUALLY EMITS: it names the GRANDPARENT.
+        host.render([.removeNode(nodeId: 1)])
+
+        bnAwaitImageResults(host.mapper, 1)
+        XCTAssertEqual(host.mapper.imageResults.first?.outcome, .cancelled,
+                       "THE PIN: the in-flight request was cancelled by the SUBTREE purge, by a "
+                       + "patch that names the image's GRANDPARENT")
+        XCTAssertEqual(host.mapper.inFlightImageCount, 0, "nothing is left in flight")
+        XCTAssertEqual(host.mapper.nodeCount, 0, "…and the subtree is gone from the view tree")
+        XCTAssertEqual(host.mapper.yogaNodeCount, 0,
+                       "…and from the Yoga tree: the node the completion would have marked dirty "
+                       + "has had its YGNodeRef FREED")
+        XCTAssertEqual(host.mapper.yogaViewCount, 0, "…and the last view→node edge with it")
+
+        // …AND NOW LET THE BYTES ARRIVE.
+        server.releaseSlow()
+        bnSettle()
+
+        XCTAssertEqual(host.mapper.imageResults.map { $0.outcome }, [.cancelled],
+                       "a LATE completion painted nothing: still exactly one terminal result, and "
+                       + "it is still CANCELLED")
+        XCTAssertNil(doomed.image, "…nothing was set on the purged image view")
+        XCTAssertNil(doomed.bnNaturalSize,
+                     "…and no natural size was recorded on it — which is the write that would have "
+                     + "been followed by a markDirty into freed native memory")
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────────
 
     private func counts() -> Counts {

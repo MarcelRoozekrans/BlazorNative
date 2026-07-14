@@ -240,8 +240,53 @@ public sealed class BnImageDemoTests
         Assert.Equal(BnImageDemo.FixedNaturalHeightPx, KotlinIntConst(kotlin, "FIXED_H"));
     }
 
+    /// <summary>THE SAME DRIFT PIN, ON THE iOS SIDE (Gate 3) — and it is the OTHER HALF of
+    /// the one above, not a duplicate of it.
+    ///
+    /// <para>The phase's verification bar #1 is "BnImageDemo renders on the AVD and the iOS
+    /// simulator <b>WITH THE SAME FRAMES</b>", and <b>nothing else in the repo enforces
+    /// it</b>: each shell's suite asserts its OWN fixture's decoded size, so each stays
+    /// internally consistent while the two measure different images. Only the pairing of
+    /// these two tests makes the three transcriptions — <c>BnImageDemo.cs</c>,
+    /// <c>ImageFixtureServer.kt</c>, <c>BnImageFixtureServer.swift</c> — one number.</para>
+    ///
+    /// <para>It also catches the trap Gate 3 could not otherwise see: a Swift fixture emitted
+    /// at the SCREEN's scale (<c>UIGraphicsImageRendererFormat.scale</c> defaults to it) would
+    /// be a 480 × 270 file for a 160 × 90 request — the iOS suite would assert 480 against its
+    /// own decoded bytes and be entirely green, three times Android's number.</para></summary>
+    [Fact]
+    public void TheIosFixtureServer_ServesExactlyBnImageDemosNaturalPixelSizes()
+    {
+        var swift = ShellSource(IosImageFixtureServer);
+
+        Assert.Equal(BnImageDemo.IntrinsicNaturalWidthPx, SwiftIntConst(swift, "INTRINSIC_W"));
+        Assert.Equal(BnImageDemo.IntrinsicNaturalHeightPx, SwiftIntConst(swift, "INTRINSIC_H"));
+        Assert.Equal(BnImageDemo.FixedNaturalWidthPx, SwiftIntConst(swift, "FIXED_W"));
+        Assert.Equal(BnImageDemo.FixedNaturalHeightPx, SwiftIntConst(swift, "FIXED_H"));
+    }
+
     private const string AndroidImageFixtureServer =
         "src/BlazorNative.Jni/src/androidTest/kotlin/io/blazornative/shell/ImageFixtureServer.kt";
+
+    private const string IosImageFixtureServer =
+        "src/BlazorNative.Apple/BnHostTests/BnImageFixtureServer.swift";
+
+    /// <summary>One <c>static let NAME = &lt;int&gt;</c> out of a Swift source — the twin of
+    /// <see cref="KotlinIntConst"/>, and it fails just as loudly when the declaration is not
+    /// found: a renamed constant must BREAK this pin rather than quietly pass it.</summary>
+    private static int SwiftIntConst(string source, string name)
+    {
+        var match = System.Text.RegularExpressions.Regex.Match(
+            source,
+            $@"(?m)^\s*static let {System.Text.RegularExpressions.Regex.Escape(name)} = (?<v>-?\d+)\s*$");
+
+        Assert.True(match.Success,
+            $"could not find `static let {name} = <int>` in {IosImageFixtureServer}. It was "
+            + "renamed or reshaped — this drift pin IS the contract that both shells measure the "
+            + "same fixture, so re-point it deliberately rather than deleting it.");
+
+        return int.Parse(match.Groups["v"].Value, System.Globalization.CultureInfo.InvariantCulture);
+    }
 
     /// <summary>One <c>const val NAME = &lt;int&gt;</c> out of a Kotlin source. Anchored at
     /// the start of a line, so a mention of the name in a KDoc cannot be mistaken for the

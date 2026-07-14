@@ -317,7 +317,7 @@ jobs:
             > ios-out/xcresult.json 2>/dev/null || true
           ls -la ios-out/crash || true
 
-      - name: Assert XCTest baseline (50 passed / 0 failed)
+      - name: Assert XCTest baseline (70 passed / 0 failed)
         if: always()
         run: |
           log=ios-out/xcodebuild-test.log
@@ -425,10 +425,69 @@ jobs:
           # now it could be DELETED with all 49 green while real devices diverged by a
           # safe-area inset Android has no notion of. Asserted on the PROPERTY, because there
           # is no number to assert it on.)
+          #
+          # 50 -> 70 (Phase 6.3 Gate 3, +20) — the `image` NodeType stops being a stub: the
+          # LAST stubbed leaf gains a source. Kingfisher (via SPM) fetches, the shell records
+          # the decoded bytes' NATURAL PIXEL SIZE, marks the Yoga node dirty (6.1) and
+          # re-solves (6.2). Every frame below is one BnImageDemoAndroidTest /
+          # WidgetMapperImageTest already assert on the AVD — that PAIRING is DoD #5, and it
+          # is the whole point of the phase.
+          #   +10 BnImageTests — the parity contract at the MAPPER level, the twin of Kotlin's
+          #       WidgetMapperImageTest: the two measurement paths (intrinsic 0x0 -> its
+          #       NATURAL size, asserted against the DECODED fixture's own pixel count and
+          #       POSITIVELY (Wi>0, Hi>0); definite -> never measured, so the bytes cannot move
+          #       the frame even in principle) plus the CONTENT MODE (.scaleAspectFit —
+          #       frame-neutral, so NO frame table on either platform can catch it, and
+          #       UIImageView's default would STRETCH what Android letterboxes); failure (0x0,
+          #       reserves nothing, no retry); `src` -> null AND `src` -> "" (the reflow in the
+          #       OTHER direction — the siblings move back UP; and on iOS `URL(string: "")` is
+          #       nil, i.e. a crash if a shell force-unwraps it); cancellation on a `Src` change
+          #       and on node REMOVAL (the request is proven to have REACHED the fixture server
+          #       BEFORE it is cancelled, so CANCELLED is not the trivially-true answer about a
+          #       request that never started — and the bytes are then released ANYWAY and the
+          #       purged node asserted untouched: on iOS a completion into a purged node marks a
+          #       FREED YGNodeRef dirty, which is memory safety, not hygiene); the WARM-CACHE
+          #       mount, which is the only test that can see "ONE reflow, never two" — a
+          #       memory-cache hit completes SYNCHRONOUSLY inside applyBatch, so the shell's
+          #       re-solve must NO-OP there (the commit's own pass fixes the frames up either
+          #       way, so only the LAYOUT PASS COUNT can see it) and the spent DownloadTask must
+          #       not be recorded (or inFlightImageCount never returns to 0); the bounded result
+          #       ring; and `src` on a non-image node.
+          #   +4  BnImageGuardTests — THE PURGED-NODE GUARD, as a pure decision (the twin of
+          #       Kotlin's ImageRequestGuardTest, on the JVM lane). Generation AND identity, and
+          #       NEITHER ALONE: node ids RESTART AT 1 after a reset, so /image -> back ->
+          #       /image lets a stale callback carrying generation 1 meet a BRAND-NEW node also
+          #       on generation 1 — the generations MATCH, and a generation-only guard evicts
+          #       the LIVE request's DownloadTask, leaving a request nothing can cancel whose
+          #       completion runs against a freed YGNodeRef. NO SINGLE-MOUNT DEVICE TEST CAN
+          #       STAGE THAT COLLISION, which is why the decision is a pure function.
+          #   +4  BnImageDemoTests — THE DEMO, on the simulator: both canonical frame tables
+          #       from BnImageDemo.cs's header (BEFORE the bytes and AFTER — the difference IS
+          #       the phase), the fixture preconditions asserted on the DECODED UIImage before
+          #       any frame, the three OUTCOMES (2 SUCCESS + 1 ERROR, none CANCELLED) against
+          #       the URLs THE WIRE carried, the root's asymmetric frame (fills the host's
+          #       WIDTH, HUGS in HEIGHT), the warm-cache DOUBLE MOUNT, the back row by ORACLE —
+          #       and the CLEARTEXT PROBE. ATS blocks cleartext HTTP and Kingfisher fetches
+          #       through URLSession, so Info.plist gains NSAllowsLocalNetworking; without it
+          #       every fetch fails and — because a blocked load is INDISTINGUISHABLE from the
+          #       404 case [2] expects — cases [0] and [2] STILL PASS. Two of three assertions
+          #       would certify a contract on a simulator that loaded nothing. The
+          #       SYNCHRONIZATION GATE (all three requests terminated, counted on Kingfisher's
+          #       own completionHandler, with a timeout that FAILS) is what makes the AFTER
+          #       table honest at all.
+          #   +1  BnScrollDemoImageTests — an image inside a SCROLL, and every number of the 6.2
+          #       frame table re-asserted UNCHANGED (non-negotiable #2: if one of them moves,
+          #       the change is wrong). The image sits in a re-parented subtree under the
+          #       SYNTHETIC content node — a node no patch ever names — and still fetches, still
+          #       paints, and still gets cancelled with the page.
+          #   +1  BnYogaLifecycleTests — the subtree purge now has to cancel a live NETWORK
+          #       REQUEST into a node it is about to free, by a patch that names the image's
+          #       GRANDPARENT (which is what navigation actually emits). The bytes are then
+          #       released anyway and the purged node asserted untouched.
           # Count drift fails loudly.
-          if [ "$failed" -ne 0 ] || [ "$passed" -ne 50 ]; then
+          if [ "$failed" -ne 0 ] || [ "$passed" -ne 70 ]; then
             grep -E "Test Case '.*' (passed|failed)" "$log" || true
-            echo "iOS XCTest baseline drift: expected 50 passed / 0 failed, got passed=$passed failed=$failed" >&2
+            echo "iOS XCTest baseline drift: expected 70 passed / 0 failed, got passed=$passed failed=$failed" >&2
             exit 1
           fi
 

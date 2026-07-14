@@ -389,7 +389,23 @@ jobs:
       #
       # The JVM baseline below moves too (79 -> 83) and the instrumented lane 107 -> 109 —
       # see their own provenance blocks.
-      - name: .NET tests (assert 318 passed / 0 skipped)
+      #
+      # 318 -> 319 (Phase 6.3 Gate 3, +1): THE OTHER HALF OF THE DRIFT PIN. Gate 2's block
+      # above says "GATE 3 ADDS THE iOS TWIN alongside it", and this is it:
+      #   +1 BnImageDemoTests.TheIosFixtureServer_ServesExactlyBnImageDemosNaturalPixelSizes
+      #      (Runtime.Tests 185 -> 186) — the same four integers parsed out of
+      #      src/BlazorNative.Apple/BnHostTests/BnImageFixtureServer.swift and asserted equal
+      #      to BnImageDemo.cs's constants. Only the PAIRING of the two pins makes the three
+      #      transcriptions one number, and nothing else in the repo enforces verification
+      #      bar #1 ("the same frames on both devices"): each shell asserts its OWN fixture's
+      #      decoded size, so each stays green while the two measure different images. It also
+      #      catches the iOS-specific trap the Android pin cannot see — a Swift fixture emitted
+      #      at the SCREEN's scale (UIGraphicsImageRendererFormat.scale defaults to it) is a
+      #      480x270 file for a 160x90 request, and the iOS suite would assert 480 against its
+      #      own decoded bytes and be entirely green, at three times Android's number.
+      # Renderer.Tests (110) and Analyzers.Tests (23) do not move. The iOS XCTest baseline
+      # moves 50 -> 70 (ios.yml has its own provenance block); Android is untouched.
+      - name: .NET tests (assert 319 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -407,8 +423,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 318 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 318 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 319 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 319 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # ── NativeAOT publishes + nine-export verification ────────────────────
