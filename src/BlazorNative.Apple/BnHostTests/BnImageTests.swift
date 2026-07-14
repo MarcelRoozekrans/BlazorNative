@@ -31,7 +31,7 @@
 //
 // ── MUTATION EVIDENCE (measured on CI, not reasoned about from an armchair) ──────────
 //
-// The green bar is 70/0. Each mutation below was pushed to a throwaway branch and RUN:
+// The green bar is 72/0. Each mutation below was pushed to a throwaway branch and RUN:
 //
 //  1. **The loader reports a CONSTANT size** (`BnImageLoader.naturalPixelSize` → 100 × 100)
 //     ⇒ **63 passed / 7 failed**, the first of them naming the number:
@@ -54,15 +54,31 @@
 //     expired, and the red would be an anonymous timeout instead of the contract row that
 //     broke. (Android gets the same shape free from OkHttp's 10s read timeout; the Gate 2
 //     conclusion warned Gate 3 not to assume it, and it was right.)
-//  4. **The identity half of the guard removed** (`bnIsLiveImageRequest` and `clearIfMine`
-//     ask the generation alone) ⇒ `BnImageGuardTests.testTheRESETCollision…` goes red — the
-//     ONLY test in either suite that can, because no single-mount device test can stage a
-//     re-used node id.
+//  4. **The identity half of the guard removed** — and it is now **ONE line, in ONE place**
+//     (`bnIsLiveImageRequest`, which `clearIfMine` also asks since the Gate 3 review; it used
+//     to hold a second, unpinned copy) ⇒ **70 passed / 2 failed**, and the one that matters is
+//     `BnImageGuardTests.testTheRESETCollision…` — the ONLY test in either suite that can catch
+//     it, because no single-mount device test can stage a re-used node id.
 //  5. **`resolveLayout`'s batch guard removed** (the completion re-solves from inside
 //     `applyBatch`) ⇒ `testAWarmCacheCompletesInsideTheBatch…` goes red on
 //     `("2") is not equal to ("1")` — **the LAYOUT PASS COUNT, and nothing else.** Every
 //     frame in the suite stays correct (the commit's own pass fixes them up), which is
 //     precisely why "one reflow, never two" had to be pinned as a count.
+//
+// ── AND THE GATE 3 REVIEW'S TWO (run on throwaway branches, same way) ────────────────
+//
+//  6. **The generation bump moved back below `handleSrc`'s early returns** (i.e. a CLEAR stops
+//     bumping) ⇒ `testEVERYSrcWriteBumpsTheGenerationINCLUDINGAClear` goes red **and nothing
+//     else does.** Not one frame table, not the clear-in-flight test above it, not the demo:
+//     the cancel WINS the race in every ordering a device test can produce (the main queue is
+//     FIFO), so the number is the only witness there can be. That is not a weakness of the
+//     pin — it is the finding.
+//  7. **`.scaleFactor(UIScreen.main.scale)` added to the Kingfisher request** — its own
+//     documented idiom, and the first thing an implementer reaches for ⇒ **70 passed / 2
+//     failed**, on `testAnIntrinsicImageMeasuresZero…`'s **`scale == 1` assertion on the image
+//     THE SHELL RECEIVED.** Before the review that assertion did not exist and this mutation
+//     left all 70 GREEN — `bnAssertFixtureContract` only ever decoded the fixture's own bytes,
+//     which cannot see a Kingfisher option.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import XCTest
@@ -352,7 +368,7 @@ final class BnImageTests: BnHostTestCase {
     /// fact then BUYS. Two pinned facts, one contract row.
     ///
     /// **MUTATION:** move the bump back below the early returns ⇒ this reddens by name, on the
-    /// clear, on the empty string and on the unparseable URL.
+    /// clear and on the empty string.
     func testEVERYSrcWriteBumpsTheGenerationINCLUDINGAClear() throws {
         let host = makeSection(src: BnImageFixtureServer.SLOW_URL)
         XCTAssertEqual(host.mapper.imageGeneration(of: image), 1,
@@ -368,21 +384,19 @@ final class BnImageTests: BnHostTestCase {
         XCTAssertEqual(host.mapper.imageGeneration(of: image), 3,
                        "…and so does an EMPTY string, which takes the same clear path")
 
-        // The premise, stated: `URL(string:)` is STRICT (RFC 3986 — a space is not a URL), so
-        // this value takes `handleSrc`'s third early return. Asserted rather than assumed: if a
-        // future Foundation ever parses it, this line says so instead of the outcome assertion
-        // below blaming the shell for a request it never meant to issue.
-        let unparseable = "not a url at all"
-        XCTAssertNil(URL(string: unparseable), "the premise: this value does not parse as a URL")
-
-        host.render([.updateProp(nodeId: image, name: "src", value: unparseable)])
-        XCTAssertEqual(host.mapper.imageGeneration(of: image), 4,
-                       "…and so does an UNPARSEABLE one: it clears the node just as surely, and a "
-                       + "request in flight when it arrived is just as able to lose the race")
+        // ── AND THE THIRD EARLY RETURN — `URL(string:)` — IS ALL BUT UNREACHABLE ON iOS ──
+        // This test tried to drive it with `"not a url at all"` and CI said no: modern Foundation
+        // percent-ENCODES rather than rejecting (`URL(string:)` defaults to
+        // `encodingInvalidCharacters: true`), so that value parses to `not%20a%20url%20at%20all`
+        // and the shell FETCHES it. `handleSrc`'s `guard let parsed = URL(string:)` is therefore
+        // defensive, not a path a demo or a test can stage — and the bump sits ABOVE it either
+        // way, which is the only thing that matters here. It is recorded rather than papered over:
+        // the empty string is the case that REALLY reaches a nil URL on iOS (`URL(string: "")` is
+        // nil), and it is the case above, and that is exactly why the contract names it.
 
         host.render([.updateProp(nodeId: image, name: "src",
                                  value: BnImageFixtureServer.INTRINSIC_URL)])
-        XCTAssertEqual(host.mapper.imageGeneration(of: image), 5,
+        XCTAssertEqual(host.mapper.imageGeneration(of: image), 4,
                        "…and a real URL bumps it exactly once, as it always did — the bump moved, "
                        + "it did not multiply")
 
@@ -392,9 +406,9 @@ final class BnImageTests: BnHostTestCase {
         XCTAssertEqual(Set(host.mapper.imageResults.map { BnUrlOutcome($0) }),
                        [BnUrlOutcome(url: BnImageFixtureServer.SLOW_URL, outcome: .cancelled),
                         BnUrlOutcome(url: BnImageFixtureServer.INTRINSIC_URL, outcome: .success)],
-                       "and only the two REAL requests were ever issued: the clear, the empty "
-                       + "string and the unparseable value fetched NOTHING — they are not requests "
-                       + "that fail, they are not requests at all")
+                       "and only the two REAL requests were ever issued: the clear and the empty "
+                       + "string fetched NOTHING — they are not requests that fail, they are not "
+                       + "requests at all")
 
         host.render([.removeNode(nodeId: section)])
         XCTAssertNil(host.mapper.imageGeneration(of: image),
