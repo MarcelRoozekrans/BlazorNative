@@ -1,9 +1,13 @@
 import org.gradle.api.tasks.testing.logging.TestExceptionFormat
 
 plugins {
-    id("com.android.application") version "8.13.2"
-    kotlin("android") version "2.4.10"
+    id("com.android.application") version "9.2.1"
 }
+
+// AGP 9 ships built-in Kotlin (KGP 2.2.10) and the org.jetbrains.kotlin.android plugin is
+// gone, so the `kotlin("…")` helper no longer has a version injected for custom
+// configurations — pin it explicitly to the KGP that AGP 9.2.1 bundles.
+val kotlinVersion = "2.2.10"
 
 group = "io.blazornative"
 version = "0.1.0-SNAPSHOT"
@@ -61,7 +65,7 @@ dependencies {
     implementation("com.facebook.soloader:soloader:0.12.1")
 
     // Kotlin stdlib
-    implementation(kotlin("stdlib-jdk8"))
+    implementation(kotlin("stdlib-jdk8", kotlinVersion))
 
     // JVM unit tests (Phase 2.1)
     testImplementation("org.junit.jupiter:junit-jupiter-api:6.1.2")
@@ -205,7 +209,7 @@ val previewHostRuntime: Configuration by configurations.creating {
 
 dependencies {
     previewHostRuntime("net.java.dev.jna:jna:5.19.1")
-    previewHostRuntime(kotlin("stdlib-jdk8"))
+    previewHostRuntime(kotlin("stdlib-jdk8", kotlinVersion))
 }
 
 tasks.register<JavaExec>("runPreviewHost") {
@@ -213,7 +217,7 @@ tasks.register<JavaExec>("runPreviewHost") {
     group = "blazornative"
     dependsOn("compileDebugKotlin")
     mainClass.set("io.blazornative.jni.PreviewHostKt")
-    classpath = files(layout.buildDirectory.dir("tmp/kotlin-classes/debug")) + previewHostRuntime
+    classpath = files(debugKotlinClasses) + previewHostRuntime
     systemProperty("jna.library.path", winX64PublishPath)
     // Deterministic UTF-8 on Windows consoles (BnDemo's "Settings →" label).
     systemProperty("stdout.encoding", "UTF-8")
@@ -245,7 +249,20 @@ val inspectorHostRuntime: Configuration by configurations.creating {
 
 dependencies {
     inspectorHostRuntime("net.java.dev.jna:jna:5.19.1")
-    inspectorHostRuntime(kotlin("stdlib-jdk8"))
+    inspectorHostRuntime(kotlin("stdlib-jdk8", kotlinVersion))
+}
+
+// AGP 9's built-in Kotlin emits the debug classes under
+// build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes — NOT KGP's old
+// build/tmp/kotlin-classes/debug. Derive the directory from the task's own outputs rather
+// than hardcoding either location, so a future AGP/KGP move cannot silently break the
+// jvmHost compile and the two JavaExec runners below.
+// Wrapped in provider {}: AGP registers compileDebugKotlin lazily, so a bare
+// tasks.named() here (top-level configuration) runs too early and fails with
+// "Task with name 'compileDebugKotlin' not found". The consumers below each
+// declare dependsOn("compileDebugKotlin") explicitly, so ordering is still safe.
+val debugKotlinClasses: Provider<FileCollection> = provider {
+    tasks.named("compileDebugKotlin").get().outputs.files
 }
 
 // Registering a KotlinCompile outside the plugin's source-set machinery needs
@@ -262,7 +279,7 @@ compileJvmHostKotlin.configure {
     description = "Compiles the host-JVM-only inspector surface (src/jvmHost/kotlin) against the full JDK"
     dependsOn("compileDebugKotlin")
     source(layout.projectDirectory.dir("src/jvmHost/kotlin"))
-    libraries.from(layout.buildDirectory.dir("tmp/kotlin-classes/debug"), inspectorHostRuntime)
+    libraries.from(debugKotlinClasses, inspectorHostRuntime)
     destinationDirectory.set(layout.buildDirectory.dir("tmp/kotlin-classes/jvmHost"))
     compilerOptions.jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
     // The factory leaves this REQUIRED internal convention unset (its getter
@@ -294,7 +311,7 @@ tasks.register<JavaExec>("runInspectorHost") {
     mainClass.set("io.blazornative.jni.InspectorHostKt")
     classpath = files(
         layout.buildDirectory.dir("tmp/kotlin-classes/jvmHost"),
-        layout.buildDirectory.dir("tmp/kotlin-classes/debug"),
+        debugKotlinClasses,
     ) + inspectorHostRuntime
     systemProperty("jna.library.path", winX64PublishPath)
     // Deterministic UTF-8 on Windows consoles (BnDemo's "Settings →" label).
