@@ -570,6 +570,22 @@ jobs:
             throw "JVM test baseline drift: expected 83 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped"
           }
 
+      # ── The instrumented sources must COMPILE in the required lane ─────────
+      # They need a device to RUN, but not to COMPILE — and the compile is where
+      # a whole source set can silently vanish. The AGP 9 migration stopped feeding
+      # `java.srcDirs` to the Kotlin compiler, so `src/androidMain/kotlin` (the ENTIRE
+      # Android shell: MainActivity, WidgetMapper, YogaLayout) went uncompiled. The app
+      # still "built" (nothing references MainActivity at compile time — only the
+      # manifest names it) and the JVM tests still passed (they touch src/main/kotlin
+      # only), so the ONLY lane that could see it was android-instrumented — which is
+      # dispatch/nightly and does NOT gate PRs. It landed on main green and sat there.
+      # Compiling androidTest here costs ~40s and closes that hole permanently.
+      - name: Compile the instrumented sources (no device — the source sets must resolve)
+        working-directory: src/BlazorNative.Jni
+        run: |
+          .\gradlew.bat --no-daemon compileDebugAndroidTestKotlin
+          if ($LASTEXITCODE -ne 0) { throw "compileDebugAndroidTestKotlin failed (exit $LASTEXITCODE) — the instrumented sources do not compile. A device is needed to RUN them, not to COMPILE them; this gate exists because android-instrumented does not gate PRs." }
+
       # ── Consumer smoke (Phase 4.5 Gate 2 — the M4 DoD #7 proof) ────────────
       # Packs the five packages, restores samples/ConsumerSmoke from the local
       # feed only (+nuget.org transitives) into a clean temp cache, asserts
