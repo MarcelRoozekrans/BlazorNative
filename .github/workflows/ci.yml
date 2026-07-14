@@ -3,7 +3,7 @@
 # rides on. Single windows-latest job mirroring the local verification
 # procedure verbatim (setup.ps1 §1–7 documents the toolchain pins):
 #
-#   build (analyzers ride it) → .NET tests (304 passed / 0 skipped) →
+#   build (analyzers ride it) → .NET tests (314 passed / 0 skipped) →
 #   three NativeAOT publishes (win-x64, linux-bionic-x64, linux-bionic-arm64;
 #   each publish must show exactly the 4 accepted IL2072 trim warnings) →
 #   nine-export verification (dumpbin via vswhere / llvm-readelf from the
@@ -270,7 +270,58 @@ jobs:
       #      asserts the ABSENCE of both and names exactly what iOS owes; the moment the
       #      viewport lands, the gate opens and it becomes a hard set-equality pin that
       #      reddens in the commit that ships a viewport without the list.
-      - name: .NET tests (assert 304 passed / 0 skipped)
+      #
+      # 304 -> 314 (Phase 6.3 Gate 1, +10): the `image` NodeType stops being a stub —
+      # the LAST stubbed leaf gains a producer. Renderer.Tests 109 -> 110,
+      # Runtime.Tests 172 -> 181, Analyzers.Tests unchanged at 23. There is NO ABI/wire
+      # change: MapElementToNodeType has mapped `img` to NodeType 5 since Phase 2.5, and
+      # `src` rides the EXISTING UpdateProp wire (still 9 exports on 3 RIDs, still 4
+      # accepted IL2072s, still the 72-byte bridge).
+      #
+      # The +10, by provenance:
+      #   +1  Renderer.Tests/StyleAttributePartitionTests — `src` IS A PROP, NOT A STYLE
+      #       (6.3 non-negotiable #1). The one name a 6.3 implementer is most likely to
+      #       add to the partition by reflex: it arrives on an element and it looks
+      #       declarative. But after 6.1 that list is a ROUTING TABLE with exactly two
+      #       destinations — the Yoga node (layout) or the View/UIView (paint) — and a
+      #       URL is NEITHER, so a shell would have to grow a third arm inside a two-arm
+      #       contract, in two hand-written parsers. Pinned out of both halves, and
+      #       pinned onto the prop wire.
+      #   +4  BnComponentTests — BnImage's surface: the `image` NodeType + `src` on the
+      #       UpdateProp wire (the assertion is on the patch KIND — a `src` that drifted
+      #       onto the style wire would still carry the right URL, so a value-only test
+      #       would not see it); the un-styled invariant on the new element; and the
+      #       6.1 DECLARATION/FORWARDING pair, both of which are needed. The reflective
+      #       one pins the surface (BnScroll's, minus ChildContent — an image is a LEAF —
+      #       plus Src, and NOT Placeholder/OnError/ContentMode: design decision 3, each
+      #       changes MEASUREMENT); the BEHAVIOURAL one is what BITES (6.1's Gate 1
+      #       review proved a reflective test does not: two deleted forwarding lines left
+      #       the suite green).
+      #   +4  BnImageDemoTests — the "/image" patch golden Gates 2/3 derive their frame
+      #       expectations from: the three cases (fixed 200x120 -> never measured;
+      #       intrinsic -> 0x0 then the natural size; a 404 -> 0x0 forever), each with a
+      #       20dp band beneath it whose y is the ONLY honest witness of a reflow. Plus
+      #       the contract's arithmetic (120 + 20 = 140 -> sections at 140/160/180), the
+      #       Align=FlexStart pin (a column's cross axis is WIDTH and Yoga's default is
+      #       STRETCH — under the default the intrinsic image would be stretched to 300
+      #       and its measured width would never be seen), and the route/back-nav pin.
+      #       Its counts pin the delta: 13 creates, 23 styles, and EXACTLY 3 props, all
+      #       of them `src`.
+      #   +1  BnScrollDemoTests — TheImageCannotMoveTheFrameTable. 6.3 non-negotiable #2
+      #       as an ASSERTION rather than a promise: the row's height is DEFINITE (a
+      #       child cannot grow it) and the image's size is DEFINITE (Yoga never calls
+      #       its measure func, so the bytes — or a failure — cannot move a frame even in
+      #       principle). Two independent reasons, either one sufficient.
+      #
+      # THE 6.2 FRAME TABLE DID NOT MOVE, and that is the assertion that matters most.
+      # BnScrollDemo gains ONE image inside an existing 80dp row, at a fixed 40x40: its
+      # golden's COUNTS move by exactly that one node (19 -> 20 creates, 33 -> 35 styles,
+      # and the page gains its first UpdateProp), but every FRAME is unchanged — the same
+      # ten rows at y = 80*i, the same 800dp content node, the same 600 scroll range.
+      # TheContentSizeIsTheContractsArithmetic is untouched and still green. BnDemo,
+      # BnSettingsPage and BnLayoutDemo keep their goldens byte-for-byte. The JVM baseline
+      # below stays 79 (nothing Kotlin-side moves until Gate 2).
+      - name: .NET tests (assert 314 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -288,8 +339,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 304 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 304 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 314 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 314 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # ── NativeAOT publishes + nine-export verification ────────────────────

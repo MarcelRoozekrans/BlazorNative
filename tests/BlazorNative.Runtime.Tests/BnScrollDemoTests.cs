@@ -28,6 +28,32 @@ namespace BlazorNative.Runtime.Tests;
 // the rows are children of the SCROLL node — a shell that put them there in its
 // own trees too would be the bug (non-negotiable #2: a scroll node's wire child
 // at index i is the CONTENT node's child at index i, in both trees).
+//
+// ── PHASE 6.3: A ROW GAINS AN IMAGE, AND THE FRAME TABLE DOES NOT MOVE ───────
+// Images-in-a-scroll-viewport is the most common real usage of both features, and
+// leaving it unexercised until someone hits it is how you find out the hard way.
+// But this page's frame table IS the 6.2 cross-platform parity contract, and 6.3
+// non-negotiable #2 is blunt about it: IF A NUMBER IN THAT TABLE MOVES, THE CHANGE
+// IS WRONG.
+//
+// So the image goes INSIDE an existing row, at a FIXED size SMALLER than the row:
+// 40 × 40 in a row that is 80 high and 300 wide. Two independent reasons the table
+// cannot move, and both are pinned below (TheImageCannotMoveTheFrameTable):
+//
+//   • THE ROW'S HEIGHT IS DEFINITE (80). A child cannot grow a definite-height
+//     parent, so the row is 80 whatever the image does — and every row's y is
+//     80·i, the content node is 10 × 80 = 800, and the scroll range is 600.
+//     Unchanged, all of it.
+//   • THE IMAGE'S SIZE IS DEFINITE (40 × 40), so Yoga never calls its measure func
+//     at all. Even a FAILED load moves nothing: there is no measurement to change.
+//
+// What DOES move, by exactly one node: the create count (19 → 20) and the style
+// count (33 → 35, the image's width + height). Those are counts, not frames. And
+// the page gains its first UpdateProp — the image's `src` — which is why the
+// "not one prop patch" assertion below became "exactly one, and it is `src`":
+// the guard it was really making (no flex name has fallen out of the renderer's
+// style allow-list onto the prop wire) is preserved by NAMING the one prop that
+// is allowed.
 // ─────────────────────────────────────────────────────────────────────────────
 
 [Collection("host-session")]
@@ -49,6 +75,13 @@ public sealed class BnScrollDemoTests
     /// FIRST screenshot the shells take, while rows 7-9 (y 560..800) are what
     /// scrolling has to reveal.</summary>
     private const int FlexRowIndex = 1;
+
+    /// <summary>The row that hosts the 6.3 image (design §"The proof surface":
+    /// images-in-scroll, proven, WITHOUT touching this page's parity table). Row 0
+    /// on purpose — like the flex row, it is fully inside the viewport at offset 0
+    /// (y 0..80 of a 200-high viewport), so the load and the (absent) reflow are in
+    /// the FIRST screenshot the shells take rather than behind a scroll.</summary>
+    private const int ImageRowIndex = 0;
 
     private static (RenderFrame Mount, List<RenderFrame> Frames) MountScrollDemo()
     {
@@ -98,6 +131,56 @@ public sealed class BnScrollDemoTests
         Assert.Equal(200, BnScrollDemo.ViewportHeightDp);
         // One colour per row — this golden's row identity depends on it.
         Assert.Equal(BnScrollDemo.RowCount, RowColors.Length);
+    }
+
+    /// <summary>PHASE 6.3 NON-NEGOTIABLE #2, AS AN ASSERTION RATHER THAN A PROMISE.
+    /// The frame table above is the 6.2 cross-platform parity contract; adding an
+    /// image to this page must not move a single number in it. It cannot, and here
+    /// are the two independent reasons, both checked:
+    /// <list type="number">
+    /// <item><b>The row's height is definite (80).</b> A child cannot grow a
+    /// definite-height parent. So every row is still 80 high, still at y = 80·i,
+    /// the synthetic content node still computes to 800, and the scrollable range
+    /// is still 600 — asserted, unchanged, in
+    /// <see cref="TheContentSizeIsTheContractsArithmetic_NotAProseNumber"/>, which
+    /// this phase did not touch.</item>
+    /// <item><b>The image's size is definite (40 × 40).</b> Both axes are declared,
+    /// so Yoga NEVER CALLS ITS MEASURE FUNC — which means the bytes cannot move
+    /// anything even in principle, and a FAILED load moves nothing either. There is
+    /// no measurement to change.</item>
+    /// </list>
+    /// The image is also strictly smaller than the row in BOTH axes, so it cannot
+    /// overflow it and raise a clipping question two shells would answer
+    /// differently. If a future edit makes the image intrinsic (drops a dimension)
+    /// or taller than 80, THIS is the test that goes red — before any device
+    /// test does, and with the reason written down.</summary>
+    [Fact]
+    public void TheImageCannotMoveTheFrameTable()
+    {
+        // Definite in both axes → never measured → the bytes can never move a frame.
+        Assert.True(BnScrollDemo.RowImageWidthDp > 0 && BnScrollDemo.RowImageHeightDp > 0,
+            "the row's image must declare BOTH dimensions — an intrinsic image inside a "
+            + "scrolled row would reflow the row when its bytes land, and this page's frame "
+            + "table is the 6.2 parity contract (6.3 non-negotiable #2).");
+
+        // …and strictly smaller than the row it sits in, in both axes.
+        Assert.True(BnScrollDemo.RowImageHeightDp < BnScrollDemo.RowHeightDp,
+            $"the image ({BnScrollDemo.RowImageHeightDp}dp) must be SHORTER than the row "
+            + $"({BnScrollDemo.RowHeightDp}dp) it sits in.");
+        Assert.True(BnScrollDemo.RowImageWidthDp < BnScrollDemo.ViewportWidthDp,
+            $"the image ({BnScrollDemo.RowImageWidthDp}dp) must be NARROWER than the row "
+            + $"({BnScrollDemo.ViewportWidthDp}dp — the content node spans the viewport).");
+
+        // One image, in one row, and NOT the row that already hosts the nested flex
+        // row: two features in one row would make a failure ambiguous.
+        Assert.NotEqual(FlexRowIndex, ImageRowIndex);
+        Assert.InRange(ImageRowIndex, 0, BnScrollDemo.RowCount - 1);
+        Assert.Equal(ImageRowIndex, BnScrollDemo.ImageRowIndex);
+
+        // The fixture is the SAME one BnImageDemo's fixed case uses — one fixture,
+        // one loopback origin, both demos (the shells stand up one server, and CI
+        // never touches the public internet — non-negotiable #5).
+        Assert.Equal(BnImageDemo.FixedSrc, BnScrollDemo.RowImageSrc);
     }
 
     [Fact]
@@ -163,11 +246,27 @@ public sealed class BnScrollDemoTests
             AssertNode(mount, boxes[2], "box C", "view",
                 ("width", "50"), ("backgroundColor", "#43A047"));
 
+            // Row 0 hosts THE 6.3 IMAGE (design §"The proof surface": images inside
+            // a scroll viewport, proven — without touching this page's parity
+            // table). 40 × 40, FIXED, inside a row that is 80 high and 300 wide:
+            //   • the row's height is DEFINITE, so the image cannot grow it;
+            //   • the image's size is DEFINITE, so Yoga never calls its measure
+            //     func — the bytes cannot move a frame even in principle, and a
+            //     failed load moves nothing either.
+            // Its frame is (0, 0, 40, 40) in the row's coordinates (the row is a
+            // column with Yoga's default alignItems:stretch, but a definite width
+            // does not stretch). EVERY NUMBER IN THE 6.2 FRAME TABLE IS UNCHANGED —
+            // same ten rows at y = 80·i, same 800dp content node, same 600 range.
+            // Pinned as a decision in TheImageCannotMoveTheFrameTable.
+            int rowImage = Assert.Single(ChildrenOf(mount, rows[ImageRowIndex]));
+            AssertNode(mount, rowImage, "row 0's image", "image",
+                ("width", "40"), ("height", "40"));
+
             // Every OTHER row is childless — a scrolled row is a plain coloured
-            // band, so nothing but row 1 can perturb the 80-high grid.
+            // band, so nothing but rows 0 and 1 can perturb the 80-high grid.
             for (var i = 0; i < rows.Count; i++)
             {
-                if (i == FlexRowIndex)
+                if (i == FlexRowIndex || i == ImageRowIndex)
                     continue;
                 Assert.Empty(ChildrenOf(mount, rows[i]));
             }
@@ -185,34 +284,50 @@ public sealed class BnScrollDemoTests
                 p => p.Text == "← Back");
             Assert.Equal(back, CreateOf(mount, caption.NodeId).ParentId);
 
-            // One event on the page: the back click. And NOT ONE prop patch —
-            // every style rides the SetStyle wire (kind 6); if a flex name ever
-            // falls out of the renderer allow-list it lands here as an UpdateProp
-            // and this fails.
+            // One event on the page: the back click.
             AttachEventPatch attach = Assert.Single(mount.Patches.OfType<AttachEventPatch>());
             Assert.Equal(back, attach.NodeId);
             Assert.Equal("click", attach.EventName);
-            Assert.Empty(mount.Patches.OfType<UpdatePropPatch>());
 
-            // The whole tree, counted: 1 root + 1 scroll + 10 rows + 1 flex row
-            // + 3 boxes + 1 back section + 1 button + 1 label node = 19 creates.
-            // NINETEEN, not twenty: the content node is SYNTHETIC. A twentieth
-            // create here would mean it leaked onto the wire.
-            Assert.Equal(19, mount.Patches.OfType<CreateNodePatch>().Count());
+            // EXACTLY ONE prop patch: the image's `src` (Phase 6.3). This used to be
+            // Assert.Empty, and the guard it was really making is preserved by
+            // NAMING the one prop that is allowed: every STYLE rides the SetStyle
+            // wire (kind 6), so if a flex name ever falls out of the renderer's
+            // allow-list it lands here as a SECOND UpdateProp — with a name that is
+            // not "src" — and this fails. (And `src` itself must never move the
+            // other way, onto the style wire: pinned in
+            // Renderer.Tests/StyleAttributePartitionTests.Src_IsAProp_NotAStyle.)
+            UpdatePropPatch src = Assert.Single(mount.Patches.OfType<UpdatePropPatch>());
+            Assert.Equal(rowImage, src.NodeId);
+            Assert.Equal("src", src.Name);
+            Assert.Equal(BnScrollDemo.RowImageSrc, src.Value);
 
-            // …and the MIRROR pin on the styles. AssertNode covers 18 of the 19
-            // nodes — a stray SetStyle on the 19th (the button's caption text node)
+            // The whole tree, counted: 1 root + 1 scroll + 10 rows + 1 image
+            // + 1 flex row + 3 boxes + 1 back section + 1 button + 1 label node
+            // = 20 creates. 19 → 20 IS THE 6.3 DELTA, and it is exactly one node:
+            // the image. TWENTY, not twenty-one: the content node is SYNTHETIC. A
+            // twenty-first create here would mean it leaked onto the wire.
+            Assert.Equal(20, mount.Patches.OfType<CreateNodePatch>().Count());
+
+            // …and the MIRROR pin on the styles. AssertNode covers 19 of the 20
+            // nodes — a stray SetStyle on the 20th (the button's caption text node)
             // would pass every assertion above. The arithmetic:
             //     root         flexDirection                                 1
             //     scroll       width, height                                 2
             //     rows 0-9     height + backgroundColor, ×10                20
+            //     row 0 image  width, height                                 2  ← 6.3
             //     flex row     flexDirection, flexGrow                       2
             //     boxes A/B/C  (width|flexGrow) + backgroundColor, ×3        6
             //     back section flexDirection, width                          2
             //     button       (none — its size is MEASURED)                 0
             //     caption      (none — a text node carries no style)         0
-            //                                                        total  33
-            Assert.Equal(33, mount.Patches.OfType<SetStylePatch>().Count());
+            //                                                        total  35
+            // 33 → 35: the image's two, and NOTHING ELSE. These are COUNTS, not
+            // frames — the 6.2 frame table is untouched (non-negotiable #2).
+            Assert.Equal(35, mount.Patches.OfType<SetStylePatch>().Count());
+
+            // Exactly ONE image node on the page — in exactly one row.
+            Assert.Single(mount.Patches.OfType<CreateNodePatch>(), p => p.NodeType == "image");
 
             // Exactly ONE scroll node on the page. The shells create exactly one
             // synthetic content node in response.

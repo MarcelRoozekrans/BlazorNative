@@ -68,6 +68,7 @@ namespace BlazorNative.Components;
 //  ├─ [0] scroll  (0,   0, 300, 200)   BnScroll W=300 H=200 — the VIEWPORT
 //  │    └─ content (0,  0, 300, 800)   SYNTHETIC. 10 × 80 = 800 → THE CONTENT SIZE
 //  │         ├─ row 0  (0,   0, 300, 80)   H=80; no width → stretched to the
+//  │         │    └─ image (0, 0, 40, 40)  6.3 — FIXED, and SMALLER than the row
 //  │         ├─ row 1  (0,  80, 300, 80)   content node's 300 (alignItems:stretch)
 //  │         │    └─ flex row (0, 0, 300, 80)   Grow=1 in an 80-high column
 //  │         │         ├─ box A  (0,   0,  50, 80)   W=50   ← cross-stretch → h=80
@@ -100,6 +101,43 @@ namespace BlazorNative.Components;
 // The load-bearing assertion is contentSize > viewport, FROM YOGA — that is the
 // whole phase; the scroll-and-assert step proves the viewport actually moves over
 // the content, not merely that the numbers add up.
+//
+// ── PHASE 6.3: AN IMAGE IN ROW 0, AND EVERY NUMBER ABOVE IS UNCHANGED ────────
+// Images inside a scroll viewport is the most common real usage of both features,
+// and leaving it unexercised until someone hits it is how you find out the hard
+// way. But the table above is the 6.2 CROSS-PLATFORM PARITY CONTRACT, and 6.3
+// non-negotiable #2 is blunt: IF A NUMBER IN IT MOVES, THE CHANGE IS WRONG.
+//
+// It cannot move, and there are TWO independent reasons — either one alone would
+// be enough, which is the point of stating both (BnScrollDemoTests
+// .TheImageCannotMoveTheFrameTable pins them):
+//
+//   • THE ROW'S HEIGHT IS DEFINITE (80). A child cannot grow a definite-height
+//     parent, so row 0 is 80 high whatever the image does. Every row stays at
+//     y = 80·i, the content node stays 10 × 80 = 800, the range stays 600.
+//   • THE IMAGE'S SIZE IS DEFINITE (40 × 40). Both axes declared → YOGA NEVER
+//     CALLS ITS MEASURE FUNC. The bytes cannot move a frame even in principle,
+//     and a FAILED load moves nothing either: there is no measurement to change.
+//     (That is precisely the parity contract's second row — "Width/Height set →
+//     exactly those, always; the bytes never move the frame" — and here it is
+//     doing structural work, not just being asserted.)
+//
+// It is also strictly smaller than the row in BOTH axes, so it cannot overflow and
+// raise a clipping question two shells would answer differently.
+//
+// Row 0, not a deeper one: like the flex row, it is fully inside the viewport at
+// offset 0 (y 0..80 of a 200-high viewport), so the shells see the image load in
+// the FIRST screenshot they take rather than behind a scroll — while rows 7-9
+// remain what scrolling has to reveal. And NOT row 1: two features in one row would
+// make a failure ambiguous.
+//
+// What this page therefore proves for 6.3 is not "an image lays out" (that is
+// /image's job, with its two frame tables and its measured sibling) but the thing
+// only a scroll can prove: an image that lives inside a scrolled, re-parented,
+// synthetic-content-node subtree still fetches, still paints, and — when the page
+// is navigated away from — has its in-flight request CANCELLED as part of the
+// subtree purge. A completion firing into a removed row is 6.2's dangling-pointer
+// lesson in a new costume (on iOS, a freed YGNodeRef).
 //
 // ── THE TWO NESTINGS (design §Verification #4) ───────────────────────────────
 // The scroll sits INSIDE a flex column (the root), and a flex ROW sits inside a
@@ -156,6 +194,35 @@ public sealed class BnScrollDemo : ComponentBase
 
     /// <summary>The row that hosts the nested flex row — see the header.</summary>
     private const int FlexRowIndex = 1;
+
+    /// <summary>The row that hosts the 6.3 image — see the header. Row 0: fully
+    /// inside the viewport at offset 0, so the load is in the FIRST screenshot the
+    /// shells take. NOT row 1 (two features in one row make a failure
+    /// ambiguous).</summary>
+    internal const int ImageRowIndex = 0;
+
+    /// <summary>The row image's DECLARED size — 40 × 40. Both axes, deliberately:
+    /// a definite size means Yoga never calls the measure func, so the bytes cannot
+    /// move a frame in the 6.2 parity table even in principle (and neither can a
+    /// failed load). Strictly smaller than the row in both axes, so it cannot
+    /// overflow it. Pinned in BnScrollDemoTests.TheImageCannotMoveTheFrameTable.
+    /// </summary>
+    internal const int RowImageWidthDp = 40;
+
+    /// <inheritdoc cref="RowImageWidthDp"/>
+    internal const int RowImageHeightDp = 40;
+
+    /// <summary>The row image's source — THE SAME fixture BnImageDemo's fixed case
+    /// loads, from the same loopback origin. One fixture, one server, both demos:
+    /// the shells stand up one in-process fixture server and CI never touches the
+    /// public internet (6.3 non-negotiable #5).</summary>
+    internal const string RowImageSrc = BnImageDemo.FixedSrc;
+
+    private static readonly string RowImageWidth =
+        RowImageWidthDp.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    private static readonly string RowImageHeight =
+        RowImageHeightDp.ToString(System.Globalization.CultureInfo.InvariantCulture);
 
     // ── THE PAGE'S ARITHMETIC, AS CONSTANTS ───────────────────────────────────
     //
@@ -249,9 +316,33 @@ public sealed class BnScrollDemo : ComponentBase
                 // content node actually spans the viewport.
                 if (i == FlexRowIndex)
                     rb.AddComponentParameter((i * 10) + 3, nameof(BnView.ChildContent), (RenderFragment)BuildFlexRow);
+                else if (i == ImageRowIndex)
+                    rb.AddComponentParameter((i * 10) + 3, nameof(BnView.ChildContent), (RenderFragment)BuildRowImage);
                 rb.CloseComponent();
             }
         }));
+        b.CloseComponent();
+    }
+
+    /// <summary>The 6.3 image, nested INSIDE the scroll (design §"The proof
+    /// surface"): images-in-a-viewport proven, with the 6.2 frame table untouched.
+    /// <para>40 × 40 inside an 80-high, 300-wide row. FIXED in both axes, which is
+    /// what makes it safe: Yoga never calls its measure func, so the bytes cannot
+    /// move a frame — and neither can a failure. Its frame is (0, 0, 40, 40) in the
+    /// row's coordinates (the row is a column whose default alignItems is stretch,
+    /// but a definite width does not stretch). See the file header for the two
+    /// independent reasons this page's parity table cannot move.</para>
+    /// <para>What the shells owe here that /image cannot ask of them: this image
+    /// lives inside a re-parented subtree under a SYNTHETIC content node, and when
+    /// the page is navigated away its in-flight request must be CANCELLED as part of
+    /// the subtree purge — a completion painting into a removed row is 6.2's
+    /// dangling-pointer lesson in a new costume.</para></summary>
+    private static void BuildRowImage(RenderTreeBuilder b)
+    {
+        b.OpenComponent<BnImage>(0);
+        b.AddComponentParameter(1, nameof(BnImage.Src), RowImageSrc);
+        b.AddComponentParameter(2, nameof(BnImage.Width), RowImageWidth);
+        b.AddComponentParameter(3, nameof(BnImage.Height), RowImageHeight);
         b.CloseComponent();
     }
 
