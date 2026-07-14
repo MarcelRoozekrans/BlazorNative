@@ -29,8 +29,12 @@ Platform APIs flow through the host-registered C-ABI callback struct
 ## Platform implementations
 
 - **Android (Kotlin shell):** which platform API backs it, permissions needed
-- **iOS (Swift shell, M5):** feasibility notes — iOS lands in Milestone 5, so
-  Android-first proposals are fine
+- **iOS (Swift/UIKit shell — shipped in M5):** which platform API backs it,
+  permissions needed. The shell exists and runs on the **simulator** (exercised
+  on CI macOS runners), so iOS proposals are actionable today. Note that
+  anything needing **physical iOS hardware** (or App Store validation) is gated
+  on an Apple Developer account and lands in **M9** — Android-first proposals
+  are still fine.
 
 ## Fallback behavior
 

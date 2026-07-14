@@ -1,6 +1,42 @@
 # BlazorNative — Session History
+
+> # 🛑 HISTORICAL — SUPERSEDED. Do not build against this document.
+>
+> **This is a dated session log from May 2026, not reference material.** The
+> architecture it describes **no longer exists in this repository**.
+>
+> Everything below is written around a design that has since been **deleted**:
+>
+> - a `.wasm` binary produced by NativeAOT + WASI, loaded by an **embedded
+>   Wasmtime** runtime inside each native shell;
+> - **`tools/wit/mobile-bridge.wit`** as "the canonical source of truth" for the
+>   bridge, with WASI P/Invoke on either side of it;
+> - a **JSON patch protocol** on the frame path;
+> - analyzer rules written for that world.
+>
+> **What actually happened.** The WASI/Wasmtime approach was abandoned in the
+> **3.0e architecture collapse (2026-07-09)**. Wasmtime and the `.wasm` were
+> deleted outright. What shipped instead is a **direct NativeAOT C-ABI**: the
+> app compiles to a real native library per platform (`.so` on Android, a static
+> `.a` on iOS), the shell links or `dlopen`s it and calls **nine exported
+> C functions**, and frames cross as **typed structs** — no interpreter, no WIT,
+> no JSON on the frame path. The demo's cold boot went from ~36 s to ~1.6 s.
+> `mobile-bridge.wit` is retired, and the analyzer rules that policed the old
+> model were retired in Phase 4.1.
+>
+> **Where the live documentation is:**
+> [`README.md`](../README.md) (current architecture) ·
+> [`planning/ROADMAP.md`](planning/ROADMAP.md) (milestone + phase state) ·
+> [`plans/`](plans/) (the per-phase decision log, including
+> [the 3.0e conclusion](plans/2026-07-09-phase-3.0e-conclusion.md) that closed
+> this design out).
+>
+> This file is kept only as a record of **how the project reasoned its way in**
+> — the landscape survey and the false starts have value precisely because they
+> were wrong. Read it as history. Nothing below is a description of the code.
+
 *Conversation log with design decisions, rationale, and context*
-*Written: May 2026*
+*Written: May 2026 — architecture superseded 2026-07-09 (Phase 3.0e)*
 
 ---
 

@@ -202,5 +202,6 @@ host error, the **48-byte old-shell → unsupported** forward-compat, and the
 `ClipboardAndroidTest` (real `ClipboardManager` + the share-Intent seam). iOS
 `BnClipboardTests` (real `UIPasteboard` + the activity-controller seam).
 
-**Counts at 5.4 close:** .NET 230 / JVM 79 / Android 40 / iOS XCTest 12; version
+**Counts at 5.4 close** *(a historical snapshot — not current; see `README.md`
+for today's numbers)*: .NET 230 / JVM 79 / Android 40 / iOS XCTest 13; version
 `1.4.0-phase-5.4`; exports unchanged at 9.
