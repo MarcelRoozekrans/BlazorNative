@@ -84,9 +84,15 @@
 //      [resolveLayout] is a NO-OP inside a batch, and the in-flight task is recorded
 //      only if it is STILL LIVE ([handleSrc]'s tail).
 //   3. **THE STALE-CALLBACK GUARD IS GENERATION *AND* IDENTITY**, in EVERY terminal
-//      callback and not just the painting one — see [clearIfMine] and
-//      `bnIsLiveImageRequest`. Getting this wrong leaves a request nothing can
-//      cancel, whose completion marks a **freed `YGNodeRef`** dirty.
+//      callback and not just the painting one — and it is **ONE function asked at BOTH
+//      call sites** (`bnIsLiveImageRequest`, from [isLive] and from [clearIfMine]), so
+//      the one unit test that pins the conjunction defends both. Getting this wrong
+//      leaves a request nothing can cancel, whose completion marks a **freed
+//      `YGNodeRef`** dirty.
+//   5. **EVERY `src` WRITE BUMPS THE GENERATION — INCLUDING A CLEAR** ([handleSrc]).
+//      `cancelImageRequest` is best-effort BY DEFINITION; the generation is what makes
+//      the completion it failed to prevent harmless. A `Src` → null whose cancel lost
+//      the race would otherwise RE-INFLATE the node the author just cleared.
 //   4. **CONTENT MODE: aspect-fit, EXPLICITLY** ([makeView]) — `UIImageView`'s default
 //      is `.scaleToFill` (a STRETCH) and Android's `ImageView` is `FIT_CENTER`. The
 //      divergence is FRAME-NEUTRAL, so no frame table on either platform can see it.
@@ -376,9 +382,18 @@ final class BnWidgetMapper {
     /// concurrently with the new mapper's main-thread `applyBatch`. One boot today, so
     /// this is latent rather than live; it costs a function to make it impossible.
     ///
+    /// **AND THE PRECONDITION IS THE PIN, NOT THE PARAGRAPH ABOVE IT.** [applyBatch] and
+    /// [calculateAndApply] both assert `.onQueue(.main)`; this method mutates the SAME
+    /// main-thread-only state ([imageRequests], [imageGenerations], and — through
+    /// `bn_yoga_node_free_subtree` — the `.mm`'s unsynchronised measure registry), and Phase
+    /// 6.3 GREW that surface: `task.cancel()` now runs in here too, on a Kingfisher handle
+    /// whose completion queue is the main one. A comment is not the pin the rest of this class
+    /// uses.
+    ///
     /// Idempotent: `HostViewController.deinit` calls it, and so does [deinit] as the
     /// backstop for a mapper nobody owned.
     func destroy() {
+        dispatchPrecondition(condition: .onQueue(.main)) // see [applyBatch]
         guard !destroyed else { return }
         destroyed = true
 
@@ -420,8 +435,29 @@ final class BnWidgetMapper {
         // is what stops a late batch, not an emptied buffer.
     }
 
+    /// **THE BACKSTOP, AND IT HAS TO GET ITSELF ONTO THE MAIN THREAD.**
+    ///
+    /// `deinit` runs on whatever thread drops the last reference — which is precisely the
+    /// thread [destroy] must not run on, and [destroy] now TRAPS on it (`dispatchPrecondition`).
+    /// The owner (`HostViewController.deinit`, main-thread by UIKit's contract) calls [destroy]
+    /// deterministically and this is a no-op; a mapper nobody owned — a test's, a future
+    /// second boot's — still has to free a raw Yoga tree and cancel Kingfisher tasks, and it
+    /// may only do that from main.
+    ///
+    /// So: `assertionFailure` names the ownership bug (loud in every XCTest run, a no-op in
+    /// release), and then the work HOPS — synchronously, because after this returns the object
+    /// is gone and an async block would capture a `self` that no longer exists.
     deinit {
-        destroy()
+        if Thread.isMainThread {
+            destroy()
+        } else {
+            assertionFailure(
+                "BnWidgetMapper was deallocated OFF THE MAIN THREAD — its owner should have "
+                + "called destroy() deterministically (HostViewController.deinit does). Freeing "
+                + "the Yoga tree here would mutate the .mm's unsynchronised measure registry from "
+                + "this thread, concurrently with any main-thread applyBatch.")
+            DispatchQueue.main.sync { self.destroy() }
+        }
     }
 
     // ── Test-only bookkeeping (the twins of WidgetMapper's `nodeCount` /
@@ -483,6 +519,21 @@ final class BnWidgetMapper {
     /// forever (its completion's bookkeeping ran before the entry existed), and a later
     /// removal would "cancel" a request that finished long ago.
     var inFlightImageCount: Int { imageRequests.count }
+
+    /// Test-only: a node's CURRENT generation (`nil` = it has none — it was purged, or never
+    /// carried a `src`). The twin of Kotlin's `WidgetMapper.imageGeneration`.
+    ///
+    /// It is exposed for ONE reason, and it is the reason [layoutPassCount] is: **the rule it
+    /// pins is invisible in every frame.** *Every* `src` write bumps the generation, **including
+    /// a CLEAR** — because a clear cancels, a cancel races its own completion, and the
+    /// generation is the only thing that stops the loser painting ([handleSrc]). A shell that
+    /// bumped only on a real URL is GREEN on every frame table in this repo: the cancel wins
+    /// that race in every ordering a device test can produce (the main queue is FIFO, so a
+    /// completion already enqueued runs BEFORE any batch a test enqueues after it — a device
+    /// test can only ever stage the clear WINNING). The bump is therefore asserted as the
+    /// number it is, and `BnImageGuardTests.testASupersededGenerationIsNotLive` is what that
+    /// number then BUYS.
+    func imageGeneration(of nodeId: Int32) -> Int? { imageGenerations[nodeId] }
 
     /// **HOW MANY LAYOUT PASSES HAVE RUN** — the only way to assert *"ONE reflow, never
     /// two"* as a fact rather than as prose.
@@ -1266,6 +1317,29 @@ final class BnWidgetMapper {
     /// whole tree at the end. Only the ASYNCHRONOUS completion — which arrives with no
     /// patch behind it — has to trigger its own ([resolveLayout]).
     private func handleSrc(nodeId: Int32, view: BnImageView, url: String?) {
+        // ── THE GENERATION IS BUMPED FIRST, AND IT IS BUMPED BY *EVERY* `src` WRITE —
+        //    INCLUDING A CLEAR. It sits above the early returns on purpose ──────────────
+        //
+        // **A clear cancels; a cancel RACES ITS OWN COMPLETION; and the generation is the only
+        // thing that stops the loser painting.** [cancelImageRequest] is best-effort *by
+        // definition* — that is the whole reason this counter exists. When `Src` goes to null
+        // (or `""`, or an unparseable string) while a request is in flight **whose download has
+        // already finished and whose completion is already on its way to the main queue**, the
+        // `cancel()` below arrives too late: that completion reaches [onImageLoaded] with
+        // generation *N*. If the clear had not bumped, it would find `imageGenerations[nodeId]`
+        // still *N* and the very same view — `bnIsLiveImageRequest` would say **LIVE** — and it
+        // would paint the stale bytes, record their natural size, `markDirty` and re-solve.
+        // **The node the author just cleared would RE-INFLATE, and its sibling would move back
+        // down** — defeating the contract's `Src` → `null` row ("cancel, CLEAR, collapse to
+        // 0 × 0, siblings move UP") *and* "one reflow, never two", on this phase's own home
+        // ground.
+        //
+        // Pinned by `BnImageTests.testEVERYSrcWriteBumpsTheGenerationINCLUDINGAClear…` (the bump
+        // itself, as the number it is — no frame can see it) composed with
+        // `BnImageGuardTests.testASupersededGenerationIsNotLive` (what the bump then BUYS).
+        let generation = (imageGenerations[nodeId] ?? 0) + 1
+        imageGenerations[nodeId] = generation
+
         cancelImageRequest(nodeId)
         // The bytes the node already holds go NOW, not when (or if) the new ones arrive:
         // "on a Src change the node measures 0 × 0 again until the new bytes land".
@@ -1285,11 +1359,10 @@ final class BnWidgetMapper {
             return
         }
 
-        // BEFORE the load, and that ordering is load-bearing: a Kingfisher memory-cache hit
-        // completes SYNCHRONOUSLY (see below), inside the call, and its completion asks
+        // …and the generation the load below is issued under is the one taken above — which is
+        // also load-bearing in the OTHER direction: a Kingfisher memory-cache hit completes
+        // SYNCHRONOUSLY (see below), inside the call, and its completion asks
         // `bnIsLiveImageRequest` for this very number.
-        let generation = (imageGenerations[nodeId] ?? 0) + 1
-        imageGenerations[nodeId] = generation
 
         // ── A MEMORY-CACHE HIT COMPLETES *INSIDE* THIS CALL ──────────────────────────
         // Kingfisher's callback queue is `.mainCurrentOrAsync` and [handleSrc] runs on the
@@ -1329,6 +1402,7 @@ final class BnWidgetMapper {
     /// back-to-back.
     private func onImageLoaded(nodeId: Int32, generation: Int, view: BnImageView,
                                url: String, image: UIImage) {
+        guard !destroyed else { return } // see [recordImageResult]
         recordImageResult(BnImageResult(nodeId: nodeId, url: url, outcome: .success))
         guard isLive(nodeId: nodeId, generation: generation, view: view, url: url,
                      what: "completion") else { return }
@@ -1364,6 +1438,7 @@ final class BnWidgetMapper {
     /// failure row.
     private func onImageFailed(nodeId: Int32, generation: Int, view: BnImageView,
                                url: String, error: Error) {
+        guard !destroyed else { return } // see [recordImageResult]
         recordImageResult(BnImageResult(nodeId: nodeId, url: url, outcome: .error))
         clearIfMine(nodeId: nodeId, generation: generation, view: view)
         NSLog("[BnWidgetMapper] image load failed for node \(nodeId) (\(url)): \(error) — the "
@@ -1373,12 +1448,20 @@ final class BnWidgetMapper {
     /// We cancelled it: a `Src` change, a node removal, or teardown. Nothing is painted and
     /// nothing is re-solved — that is what "cancelled" means.
     private func onImageCancelled(nodeId: Int32, generation: Int, view: BnImageView, url: String) {
+        guard !destroyed else { return } // see [recordImageResult]
         recordImageResult(BnImageResult(nodeId: nodeId, url: url, outcome: .cancelled))
         clearIfMine(nodeId: nodeId, generation: generation, view: view)
     }
 
     /// Appends to the bounded [imageResultLog], evicting the oldest. Main-thread only —
     /// every Kingfisher completion is.
+    ///
+    /// **A completion that lands AFTER [destroy] is dropped before it gets here** (the
+    /// `guard !destroyed` at the top of all three terminal callbacks): [destroy] cancels every
+    /// in-flight request and empties the log, and a completion already in its main-thread
+    /// continuation when `cancel()` ran would otherwise RE-GROW the log and bump
+    /// [imageTerminalCount] on a torn-down mapper — resurrecting, in bookkeeping, the very
+    /// state the teardown exists to end.
     private func recordImageResult(_ result: BnImageResult) {
         imageTerminalCount += 1
         imageResultLog.append(result)
@@ -1401,9 +1484,21 @@ final class BnWidgetMapper {
     /// Comparing against the ENTRY (its generation, its view) rather than against
     /// `views`/`imageGenerations` is deliberate: it is a question about the *request*, and it
     /// answers correctly even for a node that has since been purged from both maps.
+    ///
+    /// **AND THE DECISION IS `bnIsLiveImageRequest`'s — the SAME pure function [isLive] asks,
+    /// not a second inline copy of the conjunction.** It used to be a copy, and the copy was
+    /// UNPINNED: `BnImageGuardTests` tests the function, so dropping `&& entry.view === view`
+    /// from HERE ALONE left all 70 tests green — the mutation had to be applied in two places
+    /// to redden one test, which is the definition of a second site nothing defends. One
+    /// decision, one function, one unit test, two call sites. (What differs between the two
+    /// call sites is only WHERE the "current" facts come from — the ENTRY here, the LIVE maps
+    /// there — and that distinction is deliberate and is preserved.)
     private func clearIfMine(nodeId: Int32, generation: Int, view: BnImageView) {
         guard let entry = imageRequests[nodeId] else { return }
-        if entry.generation == generation && entry.view === view {
+        if bnIsLiveImageRequest(currentGeneration: entry.generation,
+                                requestGeneration: generation,
+                                currentView: entry.view,
+                                requestView: view) {
             imageRequests.removeValue(forKey: nodeId)
         }
     }

@@ -12,12 +12,13 @@
 //
 // | contract row | pinned by |
 // |---|---|
-// | THE UNIT — one file pixel is one point | every natural size below is asserted against the DECODED fixture's own PIXEL COUNT, and `bnAssertFixtureContract` pins `scale == 1` |
+// | THE UNIT — one file pixel is one point | every natural size below is asserted against the DECODED fixture's own PIXEL COUNT — **and `testAnIntrinsicImage…` asserts `scale == 1` on the `UIImage` KINGFISHER HANDED THE SHELL**, which is the only object that carries the loader's configuration (the fixture the test decodes for itself cannot see a `.scaleFactor`) |
 // | no `Width`/`Height` → 0×0, then the NATURAL size | `testAnIntrinsicImage…` (+ `/image`) |
 // | `Width`/`Height` set → exactly those, always | `testADefiniteImage…` (+ `/image`) |
 // | on failure → 0×0, reserves nothing, no retry | `testAFailedLoad…` (+ `/image`) |
 // | on `Src` change → cancel; back to 0×0 | `testASrcChangeCancels…` |
-// | on **`Src` → null** (and `""`) → cancel, CLEAR, collapse; **siblings move back UP** | `testSrcToNull…`, `testAnEmptyString…` |
+// | on **`Src` → null** (and `""`) → cancel, CLEAR, collapse; **siblings move back UP** | `testSrcToNull…`, `testAnEmptyString…`, and — **with a request genuinely IN FLIGHT** — `testAClearWhileTheRequestIsINFLIGHT…` |
+// | **every `src` write bumps the generation, INCLUDING a clear** | `testEVERYSrcWriteBumpsTheGeneration…` (a NUMBER: no frame can see it, and the FIFO main queue means no device test can stage the race it defends — see that test) |
 // | on node removal → **cancel** | `testRemovingTheNode…` |
 // | on load → markDirty + re-solve. **ONE reflow, never two** | `testAWarmCache…` (the layout-pass COUNT — no frame assertion can see this) |
 // | content mode: aspect-fit, explicitly | `testADefiniteImage…` (frame-neutral: nothing else can) |
@@ -79,18 +80,16 @@ final class BnImageTests: BnHostTestCase {
     private let bandH: CGFloat = 20
 
     override func setUpWithError() throws {
+        try super.setUpWithError()
         bnClearImageCaches()
-        server = try BnImageFixtureServer()
-    }
-
-    override func tearDown() {
-        // The server is closed even if setUp threw (a taken port) — and its own errors are
-        // NOT asserted empty here, unlike the demo suites': the cancellation tests in this
-        // class DO drop connections, which is cancellation seen from the other end of the
-        // socket and exactly what they are asking for.
-        server?.close()
-        server = nil
-        super.tearDown()
+        // The close is STRUCTURAL — [BnImageFixtureServer.started] registers a teardown block,
+        // which runs however this test ends. A server nobody closed is immortal and keeps :8099
+        // bound, and the class that pays for it is a LATER one.
+        //
+        // This class's server errors are deliberately NOT asserted empty (unlike the demo
+        // suites'): the cancellation tests here DO drop connections, which is cancellation seen
+        // from the other end of the socket and exactly what they are asking for.
+        server = try BnImageFixtureServer.started(for: self)
     }
 
     // ── The two measurement paths ────────────────────────────────────────────
@@ -144,6 +143,29 @@ final class BnImageTests: BnHostTestCase {
         assertFrame("…and the section grew by exactly Hi",
                     host.root.subviews[0], 0, 0, sectionW, hi + bandH)
         XCTAssertNotNil(img.image, "the bytes were also PAINTED")
+
+        // ── THE UNIT RULE'S *SECOND* ENFORCEMENT, ON THE IMAGE THE SHELL ACTUALLY GOT ──
+        // `bnAssertFixtureContract` decodes the fixture's OWN bytes with `UIImage(data:)`, which
+        // **cannot see a Kingfisher option at all** — so it says nothing about how the LOADER was
+        // configured, and adding `.scaleFactor(UIScreen.main.scale)` (Kingfisher's own documented
+        // idiom for crisp images, and the first thing an implementer reaches for) used to leave
+        // every test in this suite GREEN. THIS is the assertion that reddens: it reads the scale
+        // off the `UIImage` KINGFISHER HANDED THE MAPPER, which is the only object in the process
+        // that carries the loader's configuration.
+        //
+        // It is green today by construction (`UIImage(data:).scale == 1`) and the FRAME is immune
+        // anyway (`naturalPixelSize` reads `cgImage.width`, the pixel buffer's own dimension). The
+        // hazard is two steps long and both steps look like tidying: set `.scaleFactor` (still
+        // green), then "simplify" `naturalPixelSize` back to `image.size` (still green, since
+        // `scale` is 1 — until it isn't) — and the shell reports 160/3 ≈ 53.3pt against Android's
+        // 160dp, with no single-device test in either suite able to see it.
+        XCTAssertEqual(try XCTUnwrap(img.image).scale, 1, accuracy: 0.001,
+                       "THE UNIT: the UIImage the SHELL received has scale == 1, which is what makes "
+                       + "one FILE PIXEL one POINT. A `.scaleFactor(UIScreen.main.scale)` on the "
+                       + "Kingfisher request makes this 3 on a 3× simulator — and the fixture the "
+                       + "test decodes for itself would still say 1, because it never went through "
+                       + "Kingfisher")
+
         XCTAssertEqual(host.mapper.inFlightImageCount, 0, "nothing is left in flight")
     }
 
@@ -263,6 +285,122 @@ final class BnImageTests: BnHostTestCase {
                        + "real load. An empty string is not a request that fails — it is not a "
                        + "request at all")
         XCTAssertEqual(host.mapper.inFlightImageCount, 0, "nothing is left in flight")
+    }
+
+    /// **THE CLEAR PATH, WITH A REQUEST ACTUALLY IN FLIGHT** — the coverage gap the Gate 3
+    /// review found: both `Src` → null tests above **await the load first**, so nothing was
+    /// ever in flight when the clear arrived, and *no test in either suite cancelled via the
+    /// null path.*
+    ///
+    /// Here the request has genuinely REACHED the fixture server (`awaitPath`) and is being held
+    /// there when the clear lands. The contract's `Src` → `null` row in full: **cancel**, CLEAR,
+    /// collapse to 0 × 0, siblings move UP — and then the bytes are released anyway, because a
+    /// test that merely never saw the completion has proven nothing.
+    func testAClearWhileTheRequestIsINFLIGHTCancelsItAndNothingReInflatesTheNode() throws {
+        let host = makeSection(src: BnImageFixtureServer.SLOW_URL)
+        server.release() // the ordinary paths answer; /slow.png is held on its own gate
+
+        XCTAssertTrue(server.awaitPath("/slow.png"),
+                      "the request never reached the fixture server — clearing a `Src` whose "
+                      + "request had not started proves nothing about the CANCEL")
+        XCTAssertEqual(host.mapper.inFlightImageCount, 1,
+                       "…and the shell is holding its cancellation handle")
+
+        // THE CLEAR, ON A LIVE REQUEST.
+        host.render([.updateProp(nodeId: image, name: "src", value: nil)])
+
+        XCTAssertEqual(host.mapper.inFlightImageCount, 0,
+                       "the clear CANCELLED it — a `Src` → null is not 'stop painting', it is "
+                       + "'stop fetching' as well")
+
+        // …and NOW let the bytes arrive, at nobody.
+        server.releaseSlow()
+        bnAwaitImageResults(host.mapper, 1)
+        bnSettle()
+
+        XCTAssertEqual(host.mapper.imageResults.map { $0.outcome }, [.cancelled],
+                       "exactly one terminal result, and it is CANCELLED — the request the clear "
+                       + "cancelled did not then quietly succeed into the node behind it")
+        let img = try imageView(host)
+        XCTAssertNil(img.image, "NOTHING WAS PAINTED into the cleared node")
+        XCTAssertNil(img.bnNaturalSize, "…and no natural size was recorded on it, or it would "
+                     + "keep MEASURING bytes it never received")
+        assertFrame("the node is still 0 × 0", img, 0, 0, 0, 0)
+        assertFrame("THE BAND IS STILL AT y = 0: the node the author cleared did NOT re-inflate",
+                    bandView(host), 0, 0, sectionW, bandH)
+        assertFrame("…and the section still hugs its band alone",
+                    host.root.subviews[0], 0, 0, sectionW, bandH)
+    }
+
+    /// **EVERY `src` WRITE BUMPS THE GENERATION — INCLUDING A CLEAR.** (Gate 3 review, C1.)
+    ///
+    /// `cancelImageRequest` is best-effort **by definition** — that is the whole reason the
+    /// generation exists. A clear whose cancel LOSES the race (the download finished, the
+    /// completion is already on its way to the main queue) delivers `onImageLoaded` carrying
+    /// generation *N*; if the clear did not bump, that completion finds `imageGenerations` still
+    /// on *N* and the same view, `bnIsLiveImageRequest` says **LIVE**, and it paints the stale
+    /// bytes, records their natural size and re-solves — **the node the author just cleared
+    /// re-inflates and its sibling moves back down.**
+    ///
+    /// ── WHY THIS IS ASSERTED AS A NUMBER AND NOT AS A FRAME ─────────────────────────────
+    /// **No frame in this repo can see it, and no device test can stage it.** The main queue is
+    /// FIFO: a completion already enqueued runs BEFORE any batch a test enqueues after it, so
+    /// the only orderings a test can produce are the ones where the clear WINS the race — which
+    /// is exactly the case the bump is not needed for. (`testAClearWhileTheRequestIsINFLIGHT…`
+    /// above is that case, and it is green with or without the bump.) So the bump is pinned as
+    /// the fact it is, and `BnImageGuardTests.testASupersededGenerationIsNotLive` is what that
+    /// fact then BUYS. Two pinned facts, one contract row.
+    ///
+    /// **MUTATION:** move the bump back below the early returns ⇒ this reddens by name, on the
+    /// clear, on the empty string and on the unparseable URL.
+    func testEVERYSrcWriteBumpsTheGenerationINCLUDINGAClear() throws {
+        let host = makeSection(src: BnImageFixtureServer.SLOW_URL)
+        XCTAssertEqual(host.mapper.imageGeneration(of: image), 1,
+                       "the first `src` write puts the node on generation 1")
+
+        host.render([.updateProp(nodeId: image, name: "src", value: nil)])
+        XCTAssertEqual(host.mapper.imageGeneration(of: image), 2,
+                       "A CLEAR BUMPS IT TOO. The clear cancels, the cancel races its own "
+                       + "completion, and this number is the ONLY thing that stops the loser "
+                       + "painting into a node that has been cleared")
+
+        host.render([.updateProp(nodeId: image, name: "src", value: "")])
+        XCTAssertEqual(host.mapper.imageGeneration(of: image), 3,
+                       "…and so does an EMPTY string, which takes the same clear path")
+
+        // The premise, stated: `URL(string:)` is STRICT (RFC 3986 — a space is not a URL), so
+        // this value takes `handleSrc`'s third early return. Asserted rather than assumed: if a
+        // future Foundation ever parses it, this line says so instead of the outcome assertion
+        // below blaming the shell for a request it never meant to issue.
+        let unparseable = "not a url at all"
+        XCTAssertNil(URL(string: unparseable), "the premise: this value does not parse as a URL")
+
+        host.render([.updateProp(nodeId: image, name: "src", value: unparseable)])
+        XCTAssertEqual(host.mapper.imageGeneration(of: image), 4,
+                       "…and so does an UNPARSEABLE one: it clears the node just as surely, and a "
+                       + "request in flight when it arrived is just as able to lose the race")
+
+        host.render([.updateProp(nodeId: image, name: "src",
+                                 value: BnImageFixtureServer.INTRINSIC_URL)])
+        XCTAssertEqual(host.mapper.imageGeneration(of: image), 5,
+                       "…and a real URL bumps it exactly once, as it always did — the bump moved, "
+                       + "it did not multiply")
+
+        server.release()
+        server.releaseSlow()
+        bnAwaitImageResults(host.mapper, 2)
+        XCTAssertEqual(Set(host.mapper.imageResults.map { BnUrlOutcome($0) }),
+                       [BnUrlOutcome(url: BnImageFixtureServer.SLOW_URL, outcome: .cancelled),
+                        BnUrlOutcome(url: BnImageFixtureServer.INTRINSIC_URL, outcome: .success)],
+                       "and only the two REAL requests were ever issued: the clear, the empty "
+                       + "string and the unparseable value fetched NOTHING — they are not requests "
+                       + "that fail, they are not requests at all")
+
+        host.render([.removeNode(nodeId: section)])
+        XCTAssertNil(host.mapper.imageGeneration(of: image),
+                     "THE PURGE TAKES THE GENERATION WITH IT — node ids RESTART at 1, so a "
+                     + "generation that outlived its node would be handed to the node that "
+                     + "inherits its id, and a stale completion carrying it would match")
     }
 
     // ── Cancellation: MEMORY SAFETY, NOT HYGIENE (non-negotiable #4) ─────────

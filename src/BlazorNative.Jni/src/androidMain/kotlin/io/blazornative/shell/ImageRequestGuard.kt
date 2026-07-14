@@ -3,10 +3,18 @@ package io.blazornative.shell
 /**
  * Phase 6.3 Gate 2 review (I1) — **THE PURGED-NODE GUARD, AS A PURE DECISION.**
  *
- * `WidgetMapper` asks this before an image completion is allowed to paint: *may the request
- * that just terminated touch the node it was issued for?* The answer is the conjunction of
- * two facts, and the whole point of this file is that **neither one alone is sufficient** —
- * a claim the shell used to make in a KDoc and pin nowhere.
+ * `WidgetMapper` asks this at **BOTH** of the places the decision is made — before an image
+ * completion is allowed to PAINT (`isLive`), and before any terminal callback is allowed to
+ * EVICT an in-flight entry (`clearIfMine`): *may the request that just terminated touch the
+ * node it was issued for?* The answer is the conjunction of two facts, and the whole point of
+ * this file is that **neither one alone is sufficient** — a claim the shell used to make in a
+ * KDoc and pin nowhere.
+ *
+ * **ONE decision, TWO call sites, ONE unit test.** `clearIfMine` used to re-implement the
+ * conjunction inline, which meant this file — and the test below — defended only the painting
+ * path: dropping the identity half from `clearIfMine` ALONE left the whole suite green. A
+ * mutation that must be applied in two places to redden one test is a mutation whose second
+ * site is unpinned. Both sites now route through here.
  *
  *  - **GENERATION** — has the node's `src` been written again since this request was issued?
  *    Every `src` write bumps the node's generation, so a superseded request carries an old

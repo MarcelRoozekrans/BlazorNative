@@ -42,6 +42,15 @@
 // wins the race against the test's first look at the tree, and the BEFORE table is
 // asserted on a page that has already reflowed.
 //
+// ── THE CLOSE IS STRUCTURAL: `started(for:)` IS THE ONLY CONSTRUCTOR ─────────
+// A server that is never closed is IMMORTAL — the accept thread holds a strong `self`
+// and exits only when `close()` sets `closed`, so a missed `close()` leaks the object,
+// spins the thread forever and KEEPS :8099 BOUND. No `deinit` backstop can exist (that
+// same thread is what prevents `deinit` from ever running). And the symptom lands on a
+// LATER class, as a `portTaken` whose message blames a foreign process that is not
+// there. So `init` is private and [started] registers `addTeardownBlock { close() }` —
+// which runs however the test ends, including a `setUp` that threw half-way.
+//
 // ── TEARDOWN JOINS, AND IT HAS TO: THE NEXT `setUp` BINDS THE SAME PORT ──────
 // Gate 2 ate this one. Closing the listening socket signals the thread blocked in
 // `accept()` — but it **returns before that thread has unwound**, and until it has,
@@ -309,7 +318,26 @@ final class BnImageFixtureServer {
     private var closed = false
     private let acceptFinished = DispatchSemaphore(value: 0)
 
-    init() throws {
+    /// **THE ONLY WAY THIS TARGET BUILDS A SERVER — AND THE CLOSE IS STRUCTURAL.**
+    ///
+    /// [init] is `private` precisely so it is. A server that is never closed is **IMMORTAL**:
+    /// [acceptLoop] holds a strong `self` for its whole life and exits only when [close] flips
+    /// `closed`, so the object leaks, the thread spins, and `listenFd` **keeps :8099 bound** —
+    /// and a `deinit` backstop cannot help, because that thread is exactly what stops `deinit`
+    /// ever running. Every later class then dies in `portTaken`, whose message points at a
+    /// FOREIGN process that does not exist.
+    ///
+    /// `addTeardownBlock` and not `defer`: a `defer` in `setUp` closes it before the test body
+    /// has run, and a `defer` in the test body is one `throw` away from being skipped. A
+    /// teardown block runs after the test method **however it ended** — including a `setUp` that
+    /// threw half-way through, and including an `XCTUnwrap` that threw mid-test.
+    static func started(for testCase: XCTestCase) throws -> BnImageFixtureServer {
+        let server = try BnImageFixtureServer()
+        testCase.addTeardownBlock { server.close() }
+        return server
+    }
+
+    private init() throws {
         let fd = Darwin.socket(AF_INET, SOCK_STREAM, 0)
         guard fd >= 0 else { throw BnFixtureServerError.socketFailed("open a socket", errno: errno) }
 
@@ -399,7 +427,18 @@ final class BnImageFixtureServer {
         // immediately would let the test read the BEFORE table while the failure had already
         // landed, and "the failure reserved nothing" would be asserted against a request that
         // had not happened.
-        if path == "/slow.png" { slowGate.waitUntilOpen(30) } else { gate.waitUntilOpen(30) }
+        //
+        // **AND ITS VERDICT IS NOT DISCARDED.** A gate that TIMED OUT means the test never
+        // released it, and serving the bytes 30 seconds late is the worst of both worlds: the
+        // synchronization gate has long since failed, and the response arrives anyway. It is a
+        // server-side fact and it is RECORDED as one — the classes that cancel nothing assert
+        // this list is empty, so it surfaces there by name instead of as a mystery timeout.
+        let gateForPath = (path == "/slow.png") ? slowGate : gate
+        if !gateForPath.waitUntilOpen(30) {
+            record(error: "\(path): the response gate was NEVER OPENED (30s). The test did not "
+                   + "call release()/releaseSlow(), so this response is being served 30 seconds "
+                   + "late — long after the test's synchronization gate gave up on it.")
+        }
 
         let status: Int
         let reason: String
@@ -426,10 +465,14 @@ final class BnImageFixtureServer {
         head += "Cache-Control: no-store\r\n"
         head += "\r\n"
 
-        if !writeAll(fd, Data(head.utf8)) || !writeAll(fd, body) {
+        // **THE `errno` IS CAPTURED INSIDE [writeAll], WHERE IT IS STILL TRUE.** `errno` is a
+        // per-thread global that ANY intervening libc call may overwrite, and reading it out
+        // here — after `writeAll` has returned through a Swift call boundary — was reporting a
+        // number with no relationship to the failure it names.
+        if let failure = writeAll(fd, Data(head.utf8)) ?? writeAll(fd, body) {
             // The client went away (a CANCELLATION — see [errors]), or the server broke. This
             // side cannot tell the two apart; the TEST can, because only some tests cancel.
-            record(error: "\(path): the write failed (EPIPE \(errno)) — the client dropped the "
+            record(error: "\(path): the write failed (errno \(failure)) — the client dropped the "
                    + "connection. That IS cancellation, seen from this end of the socket… in a "
                    + "test that cancels.")
         }
@@ -455,17 +498,21 @@ final class BnImageFixtureServer {
         return String(parts[1])
     }
 
-    private func writeAll(_ fd: Int32, _ data: Data) -> Bool {
-        if data.isEmpty { return true }
-        return data.withUnsafeBytes { (raw: UnsafeRawBufferPointer) -> Bool in
-            guard let base = raw.baseAddress else { return true }
+    /// Writes every byte. Returns `nil` on success, or **the `errno` READ IMMEDIATELY AFTER THE
+    /// FAILING `write(2)`** — the only place it is still the failure's own. (A cancelled request
+    /// closes the socket under us, so this is normally `EPIPE`; `SO_NOSIGPIPE` is what makes it
+    /// a return value rather than a signal that kills the test host.)
+    private func writeAll(_ fd: Int32, _ data: Data) -> Int32? {
+        if data.isEmpty { return nil }
+        return data.withUnsafeBytes { (raw: UnsafeRawBufferPointer) -> Int32? in
+            guard let base = raw.baseAddress else { return nil }
             var sent = 0
             while sent < raw.count {
                 let n = Darwin.write(fd, base.advanced(by: sent), raw.count - sent)
-                if n <= 0 { return false }
+                if n <= 0 { return errno }
                 sent += n
             }
-            return true
+            return nil
         }
     }
 

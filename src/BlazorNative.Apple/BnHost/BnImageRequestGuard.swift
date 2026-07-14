@@ -4,11 +4,18 @@
 // function, and it exists for the same reason: so it can be tested WITHOUT A
 // DEVICE and without a mount.
 //
-// `BnWidgetMapper` asks this before an image completion is allowed to paint, and
-// before any terminal callback is allowed to evict an in-flight entry: *may the
-// request that just terminated touch the node it was issued for?* The answer is
-// the CONJUNCTION of two facts, and the whole point of this file is that
-// **neither one alone is sufficient**:
+// `BnWidgetMapper` asks this at **BOTH** of the places the decision is made — before
+// an image completion is allowed to PAINT ([BnWidgetMapper.isLive]) and before any
+// terminal callback is allowed to EVICT an in-flight entry
+// ([BnWidgetMapper.clearIfMine]): *may the request that just terminated touch the node
+// it was issued for?* The answer is the CONJUNCTION of two facts, and the whole point
+// of this file is that **neither one alone is sufficient**:
+//
+// **ONE decision, TWO call sites, ONE unit test.** `clearIfMine` used to re-implement
+// the conjunction inline, so this file — and `BnImageGuardTests` — defended only the
+// painting path: dropping `&& entry.view === view` from `clearIfMine` ALONE left all 70
+// tests green. A mutation that must be applied in two places to redden one test is a
+// mutation whose second site is unpinned. Both sites now route through here.
 //
 //   - **GENERATION** — has the node's `src` been written again since this request
 //     was issued? Every `src` write bumps the node's generation, so a superseded

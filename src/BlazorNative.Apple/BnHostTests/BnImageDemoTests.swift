@@ -73,8 +73,11 @@ final class BnImageDemoTests: BnHostTestCase {
     private var mapper: BnWidgetMapper!
 
     override func setUpWithError() throws {
+        try super.setUpWithError()
         bnClearImageCaches()
-        server = try BnImageFixtureServer()
+        // The close is STRUCTURAL (a teardown block registered by `started(for:)`) — a server
+        // nobody closed keeps :8099 bound forever, and the class that pays is a LATER one.
+        server = try BnImageFixtureServer.started(for: self)
     }
 
     /// **THE SERVER'S OWN ERRORS ARE ASSERTED EMPTY.** The fixture server swallows a failed
@@ -84,12 +87,10 @@ final class BnImageDemoTests: BnHostTestCase {
     /// BUG. Unrecorded and unasserted, its only symptom would be the synchronization gate
     /// timing out 30 seconds later and taking the blame for it.
     override func tearDown() {
-        let errors = server?.errors ?? []
-        server?.close()
-        server = nil
-        XCTAssertEqual(errors, [],
+        XCTAssertEqual(server?.errors ?? [], [],
                        "the fixture server failed a write, and NOTHING ON THIS PAGE CANCELS "
                        + "ANYTHING — so this is a real server bug, not a dropped client")
+        server = nil // …and the CLOSE is the teardown block `started(for:)` registered
         super.tearDown()
     }
 
@@ -315,11 +316,12 @@ final class BnImageDemoTests: BnHostTestCase {
     /// the SECOND mount of any page the process has already fetched, and it is exactly what
     /// `setUp`'s `bnClearImageCaches()` hides.
     ///
-    /// **`/image` → back → `/image` is also the RESET COLLISION's habitat**: the second mount
-    /// hands out the same node ids from 1, so this is the only device-level test in which a
-    /// stale callback could meet a brand-new node on the same generation. It cannot be *forced*
-    /// here (that is `BnImageGuardTests`' job — no single-mount test can stage it); what this
-    /// test proves is that the ordinary double mount is clean.
+    /// **This is NOT the reset collision's habitat, and it is worth saying so**: [mount] builds
+    /// a FRESH `BnWidgetMapper` each time, so the second mount's node ids are handed out into
+    /// empty maps and no stale entry from the first can survive to meet them. The collision
+    /// needs ONE mapper outliving a navigation, which no test here can stage and which is
+    /// exactly why `BnImageGuardTests` writes the four states down as a pure function. What THIS
+    /// test proves is the synchronous-completion path: that a warm double mount is clean.
     ///
     /// The mapper-level twin (`BnImageTests.testAWarmCacheCompletesInsideTheBatch…`) is where
     /// the LAYOUT PASS COUNT is pinned — the one assertion that can see "one reflow, never two"

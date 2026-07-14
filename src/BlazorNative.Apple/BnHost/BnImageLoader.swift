@@ -26,11 +26,19 @@
 //     contract, not a departure from it: the contract says "the pixel count of the
 //     decoded file", and this asks for exactly that.
 //  2. **The request is configured with NO `scaleFactor` and NO processor** (see
-//     [load]), so `UIImage(data:).scale` stays 1 and `image.size` AGREES with the
-//     pixel count. `BnImageTests` asserts BOTH — the decoded image's `scale == 1`
-//     and its `size`, and the measured FRAME against `BnImageDemo.cs`'s declared
-//     pixel constants — because a shell that asserted only one of them would have
-//     no way to notice the other drifting.
+//     [load]), so the `UIImage` Kingfisher hands the shell keeps `scale == 1` and its
+//     `size` AGREES with the pixel count.
+//
+//     **AND THAT IS ASSERTED ON THE IMAGE THE *SHELL* RECEIVED**, not on a fixture the
+//     test decoded for itself — `BnImageTests.testAnIntrinsicImageMeasuresZero…` reads
+//     `img.image?.scale` off the `BnImageView` the mapper painted into. The distinction
+//     is the whole of the pin: `bnAssertFixtureContract` decodes the fixture's OWN bytes
+//     with `UIImage(data:)`, which **cannot see a Kingfisher option at all** — so before
+//     this line existed, adding `.scaleFactor(UIScreen.main.scale)` left all 70 tests
+//     GREEN. Harmless only by luck (1's `cgImage` read makes the FRAME immune), and the
+//     two-step hazard was real: "simplify" `naturalPixelSize` back to `image.size` — still
+//     green, since `scale == 1` — and the shell is one option away from a silent 3×
+//     divergence from Android.
 //
 //   ✗ **DO NOT set `.scaleFactor(UIScreen.main.scale)`.** It is Kingfisher's own
 //     documented idiom for crisp images and it is the first thing an implementer

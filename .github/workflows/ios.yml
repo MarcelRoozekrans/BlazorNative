@@ -317,7 +317,7 @@ jobs:
             > ios-out/xcresult.json 2>/dev/null || true
           ls -la ios-out/crash || true
 
-      - name: Assert XCTest baseline (70 passed / 0 failed)
+      - name: Assert XCTest baseline (72 passed / 0 failed)
         if: always()
         run: |
           log=ios-out/xcodebuild-test.log
@@ -484,10 +484,76 @@ jobs:
           #       REQUEST into a node it is about to free, by a patch that names the image's
           #       GRANDPARENT (which is what navigation actually emits). The bytes are then
           #       released anyway and the purged node asserted untouched.
+          #
+          # 70 -> 72 (Phase 6.3 Gate 3 REVIEW, +2) — and the CRITICAL was in BOTH shells (the
+          # reviewer traced it to WidgetMapper.kt's twin), so it is fixed on both and Android's
+          # instrumented lane moves 109 -> 111 with the same two tests.
+          #   +1  BnImageTests.testAClearWhileTheRequestIsINFLIGHTCancelsItAndNothingReInflates…
+          #       THE COVERAGE GAP: **no test in either suite cancelled via the NULL path.**
+          #       Both `Src` -> null tests AWAIT THE LOAD FIRST, so nothing was ever in flight
+          #       when the clear arrived, and the `Src` -> null row's "cancel" was pure prose.
+          #       This one holds /slow.png open (awaitPath: the request has REACHED the server),
+          #       clears, and then releases the bytes at nobody. MUTATION: drop
+          #       cancelImageRequest(nodeId) from handleSrc ⇒ reddens on the OUTCOME (.success,
+          #       not .cancelled) *and* on the band's y — the node re-inflates.
+          #   +1  BnImageTests.testEVERYSrcWriteBumpsTheGenerationINCLUDINGAClear
+          #       THE CRITICAL. The generation bump sat BELOW the null/empty/unparseable early
+          #       returns, so a CLEAR never bumped it — and cancelImageRequest is best-effort BY
+          #       DEFINITION (that is the whole reason the generation exists). A clear whose
+          #       cancel loses the race (download finished, completion already on its way to the
+          #       main queue) delivers onImageLoaded with generation N, finds imageGenerations
+          #       still on N and the view identical, bnIsLiveImageRequest says LIVE — and it
+          #       PAINTS: **the node the author just cleared RE-INFLATES and its sibling moves
+          #       back down.** Both halves of the `Src` -> null row, and "one reflow never two",
+          #       defeated on the phase's own home ground. Asserted as a NUMBER because no frame
+          #       can see it and NO DEVICE TEST CAN STAGE THE RACE (the main queue is FIFO: a
+          #       completion already enqueued runs BEFORE any batch a test enqueues after it, so
+          #       a device test can only ever stage the clear WINNING). Composed with
+          #       BnImageGuardTests.testASupersededGenerationIsNotLive, which is what the bump
+          #       BUYS. MUTATION: move the bump back below the early returns ⇒ reddens by name.
+          #
+          # Also fixed, WITHOUT new tests (assertions added inside existing ones, or prose):
+          #   · I1 — BnWidgetMapper.clearIfMine re-implemented the generation-AND-identity
+          #     conjunction INLINE instead of calling bnIsLiveImageRequest, so BnImageGuardTests
+          #     defended only the PAINTING path: dropping `&& entry.view === view` from
+          #     clearIfMine ALONE left all 70 green. A mutation that must be applied in two
+          #     places to redden one test is a mutation whose second site is unpinned. Both call
+          #     sites now route through the one pure function. (Android's twin owed the same.)
+          #   · I2 — BnScrollDemoTests claimed to pin the 6.2 table against an image that FAILED
+          #     to load, and did not: it cleared no caches and asserted no outcome, and XCTest
+          #     runs classes ALPHABETICALLY, so BnScrollDemoImageTests left fixed.png in the
+          #     memory AND disk cache and row 0 was a cache HIT — the image SUCCEEDED. It now
+          #     clears the caches, AWAITS the one result and asserts .error on the URL the wire
+          #     carried, with nothing painted. (Android hit this, fixed it, and recorded the fix;
+          #     Gate 3 copied the claim and not the fix.)
+          #   · I3 — BnImageFixtureServer's close is now STRUCTURAL: `started(for: testCase)`
+          #     registers addTeardownBlock { close() } and `init` is private. The accept thread
+          #     holds a strong self, so a server nobody closed is IMMORTAL — the thread spins and
+          #     :8099 stays BOUND, and a deinit backstop cannot exist (that thread is what stops
+          #     deinit running). Every later class then died on portTaken, blaming a foreign
+          #     process that was not there.
+          #   · I4 — destroy() now asserts dispatchPrecondition(.onQueue(.main)) like applyBatch
+          #     and calculateAndApply, and deinit HOPS to main (assertionFailure + main.sync).
+          #     destroy() mutates the same main-thread-only state — and 6.3 GREW it: task.cancel()
+          #     runs in there now, and bn_yoga_node_free_subtree mutates the .mm's unsynchronised
+          #     static std::unordered_map. It is the one method reachable from deinit, i.e. from
+          #     whatever thread drops the last reference.
+          #   · The unit rule's SECOND enforcement now EXISTS: BnImageTests asserts scale == 1 on
+          #     the UIImage KINGFISHER HANDED THE SHELL. bnAssertFixtureContract only ever
+          #     decoded the fixture's own bytes with UIImage(data:), which cannot see a Kingfisher
+          #     option at all — so adding `.scaleFactor(UIScreen.main.scale)` left all 70 GREEN,
+          #     and two files claimed otherwise. Harmless today (naturalPixelSize reads cgImage),
+          #     but the two-step hazard was real: add the option (green), then "simplify"
+          #     naturalPixelSize to image.size (green, since scale == 1) ⇒ a silent 3× divergence
+          #     from Android that no single-device test in either suite could see.
+          #   · The three terminal callbacks guard on `destroyed` (a completion after destroy()
+          #     re-grew imageResultLog and bumped imageTerminalCount on a torn-down mapper); the
+          #     fixture server RECORDS a gate that never opened and captures errno INSIDE
+          #     writeAll; setUpWithError overrides call super.
           # Count drift fails loudly.
-          if [ "$failed" -ne 0 ] || [ "$passed" -ne 70 ]; then
+          if [ "$failed" -ne 0 ] || [ "$passed" -ne 72 ]; then
             grep -E "Test Case '.*' (passed|failed)" "$log" || true
-            echo "iOS XCTest baseline drift: expected 70 passed / 0 failed, got passed=$passed failed=$failed" >&2
+            echo "iOS XCTest baseline drift: expected 72 passed / 0 failed, got passed=$passed failed=$failed" >&2
             exit 1
           fi
 

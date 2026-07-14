@@ -14,7 +14,7 @@
 #   emulator (ubuntu-latest, KVM) — downloads the .so, boots the API 34
 #     google_apis x86_64 Pixel 6 image (mirrors the local AVD
 #     blazornative-pixel6-x86_64), runs connectedAndroidTest with
-#     -PciSoDir pointing at the artifact → asserts 109 passed / 0 failed.
+#     -PciSoDir pointing at the artifact → asserts 111 passed / 0 failed.
 #
 # Baselines are asserted, not observed: count drift fails the job loudly.
 # ─────────────────────────────────────────────────────────────────────────────
@@ -474,7 +474,40 @@ jobs:
       #     returns before the blocked accept() unwinds, so the next @Before could bind
       #     :8099 while our own previous listener still held it — surfacing as EADDRINUSE
       #     from ourselves, which the (correctly loud) bind message must never be true of.
-      - name: Assert instrumented baseline (109 passed / 0 failed)
+      # ── Phase 6.3 Gate 3 REVIEW (109 → 111, +2) ───────────────────────────
+      # THE REVIEW WAS OF THE *iOS* GATE — and it traced THREE of its findings back to
+      # ANDROID'S TWIN. They are ONE CROSS-SHELL CONTRACT, so they are fixed on both, and
+      # two of them owe a test here. Both counts mutation-verified.
+      #    +1 WidgetMapperImageTest.a_clear_while_the_request_is_IN_FLIGHT_cancels_it_and_
+      #       nothing_re_inflates
+      #       THE COVERAGE GAP: **no test in either suite cancelled via the NULL path.**
+      #       src_to_null_clears_the_image… AWAITS THE LOAD FIRST, so nothing was ever in
+      #       flight when the clear arrived — the `Src` → null row's "cancel" was pure prose.
+      #       This one holds /slow.png open (awaitPath: the request has REACHED the server),
+      #       clears, and then releases the bytes at nobody. MUTATION: drop
+      #       cancelImageRequest(nodeId) from handleSrc and this reddens on the OUTCOME
+      #       (SUCCESS, not CANCELLED) *and* on the band's y (the node re-inflates).
+      #    +1 WidgetMapperImageTest.every_src_write_bumps_the_generation_INCLUDING_a_clear
+      #       THE CRITICAL. The generation bump sat BELOW `if (url.isNullOrEmpty()) return`,
+      #       so a CLEAR never bumped it — and `dispose()` is best-effort BY DEFINITION (that
+      #       is why the generation exists). A clear whose dispose loses the race delivers
+      #       onSuccess with generation N, finds imageGenerations still on N and the same
+      #       view, isLiveImageRequest says LIVE — and it PAINTS: the node the author just
+      #       cleared RE-INFLATES and its sibling moves back down. Both halves of the `Src` →
+      #       null row, and "one reflow never two", defeated on the phase's home ground.
+      #       Asserted as a NUMBER because no frame can see it and no device test can stage
+      #       the race (the main looper is FIFO: a posted callback runs BEFORE any batch a
+      #       test posts after it, so a device test can only stage the clear WINNING).
+      #       MUTATION: move the bump back below the early return ⇒ reddens by name.
+      #
+      # Also fixed, WITHOUT new tests:
+      #   · I1 — WidgetMapper.clearIfMine re-implemented the generation-AND-identity
+      #     conjunction INLINE instead of calling isLiveImageRequest, so ImageRequestGuardTest
+      #     (JVM lane) defended only the PAINTING path: dropping `&& entry.view === view` from
+      #     clearIfMine ALONE left the whole suite green. A mutation that must be applied in
+      #     two places to redden one test is a mutation whose second site is unpinned. Both
+      #     call sites now route through the one pure function — one decision, one unit test.
+      - name: Assert instrumented baseline (111 passed / 0 failed)
         run: |
           shopt -s globstar nullglob
           xmls=(src/BlazorNative.Jni/build/outputs/androidTest-results/connected/**/*.xml)
@@ -491,8 +524,8 @@ jobs:
             s=$(attr skipped "$x");  skipped=$((skipped + ${s:-0}))
           done
           echo "Instrumented totals across ${#xmls[@]} suite(s): tests=$tests failures=$failures errors=$errors skipped=$skipped"
-          if [ "$tests" -ne 109 ] || [ "$failures" -ne 0 ] || [ "$errors" -ne 0 ] || [ "$skipped" -ne 0 ]; then
-            echo "Instrumented test baseline drift: expected 109 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped" >&2
+          if [ "$tests" -ne 111 ] || [ "$failures" -ne 0 ] || [ "$errors" -ne 0 ] || [ "$skipped" -ne 0 ]; then
+            echo "Instrumented test baseline drift: expected 111 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped" >&2
             exit 1
           fi
 

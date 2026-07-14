@@ -48,6 +48,27 @@
 //
 // There is no iOS route registry (`HostViewController` hardcodes `BnDemo`), so the demo
 // is mounted by its registry NAME — the pattern `BnLayoutDemoTests` uses.
+//
+// ── AND SINCE 6.3: THE OTHER HALF OF THE IMAGE PROOF ────────────────────────
+//
+// Row 0 now holds an image. This class **stands up no fixture server**, so that image
+// **FAILS to load** — connection refused, immediately, offline — and the table above is
+// asserted UNCHANGED anyway. That is not an accident to be tidied away: it is the other
+// half of `BnScrollDemoImageTests`' proof. Between the two classes, the 6.2 table is
+// pinned against an image that **loaded** and against one that **did not**.
+//
+// **The claim was FALSE when Gate 3 first made it, and it was order-dependent.** This
+// class asserted nothing about the image's outcome and did not clear Kingfisher's caches
+// — and **XCTest runs classes ALPHABETICALLY**, so `BnScrollDemoImageTests` sorts BEFORE
+// `BnScrollDemoTests` and left `fixed.png` in the memory *and disk* cache. Row 0 was a
+// cache **HIT**: the image **succeeded**, and the class quietly proved the same thing as
+// its sibling while its header said the opposite. (Gate 2 hit this on Android, fixed it,
+// and recorded the fix verbatim in `BnScrollDemoAndroidTest`; Gate 3 copied the claim and
+// not the fix.)
+//
+// Now: the caches are cleared in `setUp`, the failure is **awaited and asserted**
+// (`ERROR`, on the URL the wire carried), and nothing was painted. The claim is real, and
+// it is true in any test order.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import XCTest
@@ -72,10 +93,22 @@ final class BnScrollDemoTests: BnHostTestCase {
     /// trampoline is never released mid-render.
     private var runtime: BnRuntime?
     private var host: UIView!
+    private var mapper: BnWidgetMapper!
 
+    /// **NO FIXTURE SERVER — AND THE CACHES ARE CLEARED SO THAT MEANS SOMETHING.**
+    ///
+    /// Kingfisher's memory cache is process-wide and its DISK cache outlives the process, so
+    /// without this the row image would be served from cache whenever an image class ran first
+    /// — and XCTest runs classes alphabetically, so one always does. "A FAILED load moves
+    /// nothing" would silently become "a CACHED load moves nothing": the sibling class's claim,
+    /// made twice, with this one's header lying about it.
     override func setUpWithError() throws {
+        try super.setUpWithError()
+        bnClearImageCaches()
+
         host = UIView(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
         let mapper = bnMapper(root: host)
+        self.mapper = mapper
         let runtime = BnRuntime(mapper: mapper)
         self.runtime = runtime
         runtime.onError = { msg, err in NSLog("[BnScrollDemoTests] \(msg): \(err)") }
@@ -88,6 +121,18 @@ final class BnScrollDemoTests: BnHostTestCase {
         let root = try pollForDemo()
         XCTAssertEqual(root.subviews.count, 2,
                        "the demo has two sections: the viewport and the back row")
+
+        // ── THE ROW IMAGE FAILED, AND THAT IS THIS CLASS'S HALF OF THE PROOF ──
+        // Awaited on Kingfisher's own terminal callback, not guessed at: everything below is a
+        // statement about a page whose image DID NOT LOAD, and it is only that if the request
+        // has ENDED. (A timeout here is a failure — see `bnAwaitImageResults`.)
+        bnAwaitImageResults(mapper, 1)
+        XCTAssertEqual(mapper.imageResults.map { BnUrlOutcome($0) },
+                       [BnUrlOutcome(url: BnImageFixtureServer.FIXED_URL, outcome: .error)],
+                       "THE ROW IMAGE FAILED — Kingfisher's own terminal callback says so. This "
+                       + "class stands up NO fixture server and clears the caches, so the fetch is "
+                       + "a real, immediate connection refusal. That is the half "
+                       + "BnScrollDemoImageTests cannot prove")
 
         // ── [0] the VIEWPORT, and the SYNTHETIC content node inside it ───────
         let scroll = try bnScrollView(root.subviews[0])
@@ -107,6 +152,12 @@ final class BnScrollDemoTests: BnHostTestCase {
                              + "bookkeeping")
         XCTAssertEqual(scroll.contentSize.height - scroll.bounds.height, scrollRange, accuracy: 0.5,
                        "…by exactly the scrollable range, 800 − 200")
+
+        // …and NOTHING WAS PAINTED into the row image: a failure reserves nothing and paints
+        // nothing. (Row 0's only child is the image — `BnScrollDemoImageTests` pins that shape.)
+        XCTAssertNil(try bnImageIn(content.subviews[0]).image,
+                     "a failed load paints nothing — and it is a FAILED load, not a cached "
+                     + "success, because setUp cleared Kingfisher's memory AND disk caches")
 
         // ── the ten rows, inside the content node ────────────────────────────
         XCTAssertEqual(content.subviews.count, rows, "ten rows, all children of the CONTENT view")

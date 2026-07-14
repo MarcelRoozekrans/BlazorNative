@@ -30,7 +30,8 @@ import org.junit.runner.RunWith
  * | `Width`/`Height` set → exactly those, always | [a_definite_image_is_never_measured_so_the_bytes_cannot_move_its_frame] (+ `/image`) |
  * | on failure → 0×0, reserves nothing, no retry | [a_failed_load_stays_zero_and_reserves_nothing] (+ `/image`) |
  * | on `Src` change → cancel; back to 0×0 | [a_src_change_cancels_the_request_in_flight] |
- * | on **`Src` → null** → cancel, CLEAR, collapse; **siblings move back UP** | [src_to_null_clears_the_image_and_the_sibling_moves_back_UP] |
+ * | on **`Src` → null** → cancel, CLEAR, collapse; **siblings move back UP** | [src_to_null_clears_the_image_and_the_sibling_moves_back_UP], and — **with a request genuinely IN FLIGHT** — [a_clear_while_the_request_is_IN_FLIGHT_cancels_it_and_nothing_re_inflates] |
+ * | **every `src` write bumps the generation, INCLUDING a clear** | [every_src_write_bumps_the_generation_INCLUDING_a_clear] (a NUMBER: no frame can see it, and the FIFO main looper means no device test can stage the race it defends — see that test) |
  * | on node removal → **cancel** | [removing_the_node_cancels_the_request_IN_FLIGHT] |
  * | no downsampling that changes the reported size | every natural size below is asserted against the DECODED fixture's own pixel count |
  *
@@ -220,6 +221,119 @@ class WidgetMapperImageTest {
                 host.root.getChildAt(0), 0f, 0f, SECTION_W, BAND_H)
         }
         assertEquals("nothing was left in flight", 0, host.read { host.mapper.inFlightImageCount })
+    }
+
+    /**
+     * **THE CLEAR PATH, WITH A REQUEST ACTUALLY IN FLIGHT** (Gate 3 review, C1) — the coverage
+     * gap the review found: [src_to_null_clears_the_image_and_the_sibling_moves_back_UP] **awaits
+     * the load first**, so nothing was ever in flight when the clear arrived, and *no test in
+     * either suite cancelled via the null path.*
+     *
+     * Here the request has genuinely REACHED the fixture server ([ImageFixtureServer.awaitPath])
+     * and is held there when the clear lands. The contract's `Src` → `null` row in full:
+     * **cancel**, CLEAR, collapse to 0 × 0, siblings move UP — and then the bytes are released
+     * anyway, because a test that merely never saw the callback has proven nothing.
+     */
+    @Test fun a_clear_while_the_request_is_IN_FLIGHT_cancels_it_and_nothing_re_inflates() {
+        val host = section(src = ImageFixtureServer.SLOW_URL)
+        server.release() // the ordinary paths answer; /slow.png is held on its own gate
+
+        assertTrue("the request never reached the fixture server — clearing a `Src` whose " +
+            "request had not started proves nothing about the CANCEL",
+            server.awaitPath("/slow.png"))
+        assertEquals("…and the shell is holding its cancellation handle",
+            1, host.read { host.mapper.inFlightImageCount })
+
+        // THE CLEAR, ON A LIVE REQUEST.
+        host.render(listOf(RenderPatch.UpdateProp(nodeId = IMAGE, name = "src", value = null)))
+
+        assertEquals("the clear CANCELLED it — a `Src` → null is not 'stop painting', it is " +
+            "'stop fetching' as well", 0, host.read { host.mapper.inFlightImageCount })
+
+        // …and NOW let the bytes arrive, at nobody.
+        server.releaseSlow()
+        awaitResults(host, 1)
+        settle()
+
+        assertEquals("exactly one terminal result, and it is CANCELLED — the request the clear " +
+            "cancelled did not then quietly succeed into the node behind it",
+            listOf(WidgetMapper.ImageOutcome.CANCELLED),
+            host.read { host.mapper.imageResults.map { it.outcome } })
+        host.read {
+            assertNull("NOTHING WAS PAINTED into the cleared node", image(host).drawable)
+            assertFrame("the node is still 0 × 0", image(host), 0f, 0f, 0f, 0f)
+            assertFrame("THE BAND IS STILL AT y = 0: the node the author cleared did NOT " +
+                "re-inflate", band(host), 0f, 0f, SECTION_W, BAND_H)
+            assertFrame("…and the section still hugs its band alone",
+                host.root.getChildAt(0), 0f, 0f, SECTION_W, BAND_H)
+        }
+    }
+
+    /**
+     * **EVERY `src` WRITE BUMPS THE GENERATION — INCLUDING A CLEAR.** (Gate 3 review, C1.)
+     *
+     * `cancelImageRequest` is best-effort **by definition** — that is the whole reason the
+     * generation exists. A clear whose dispose LOSES the race (the work finished, the callback is
+     * already on its way to the main thread) delivers `onSuccess` carrying generation *N*; if the
+     * clear did not bump, that callback finds `imageGenerations` still on *N* and the same view,
+     * [isLiveImageRequest] says **LIVE**, and it paints the stale bytes, records their natural
+     * size and re-solves — **the node the author just cleared re-inflates and its sibling moves
+     * back down.**
+     *
+     * ── WHY THIS IS ASSERTED AS A NUMBER AND NOT AS A FRAME ─────────────────────────────
+     * **No frame in this repo can see it, and no device test can stage it.** The main looper is
+     * FIFO: a callback already posted runs BEFORE any batch a test posts after it, so the only
+     * orderings a device test can produce are the ones where the clear WINS the race — which is
+     * exactly the case the bump is not needed for ([a_clear_while_the_request_is_IN_FLIGHT_cancels_it_and_nothing_re_inflates]
+     * is that case, and it is green with or without the bump). So the bump is pinned as the fact
+     * it is, and `ImageRequestGuardTest.a_superseded_generation_is_not_live` (JVM lane) is what
+     * that fact then BUYS. Two pinned facts, one contract row.
+     *
+     * **MUTATION:** move the bump back below `if (url.isNullOrEmpty()) return` ⇒ this reddens by
+     * name, on the clear and on the empty string.
+     */
+    @Test fun every_src_write_bumps_the_generation_INCLUDING_a_clear() {
+        val host = section(src = ImageFixtureServer.SLOW_URL)
+        assertGeneration(host, 1, "the first `src` write puts the node on generation 1")
+
+        host.render(listOf(RenderPatch.UpdateProp(nodeId = IMAGE, name = "src", value = null)))
+        assertGeneration(host, 2,
+            "A CLEAR BUMPS IT TOO. The clear cancels, the cancel races its own callback, and " +
+                "this number is the ONLY thing that stops the loser painting into a node that " +
+                "has been cleared")
+
+        host.render(listOf(RenderPatch.UpdateProp(nodeId = IMAGE, name = "src", value = "")))
+        assertGeneration(host, 3, "…and so does an EMPTY string, which takes the same clear path")
+
+        host.render(listOf(RenderPatch.UpdateProp(
+            nodeId = IMAGE, name = "src", value = ImageFixtureServer.INTRINSIC_URL)))
+        assertGeneration(host, 4,
+            "…and a real URL bumps it exactly once, as it always did — the bump MOVED, it did " +
+                "not multiply")
+
+        server.release()
+        server.releaseSlow()
+        awaitResults(host, 2)
+        assertEquals("and only the two REAL requests were ever issued: the clear and the empty " +
+            "string fetched nothing",
+            setOf(
+                ImageFixtureServer.SLOW_URL to WidgetMapper.ImageOutcome.CANCELLED,
+                ImageFixtureServer.INTRINSIC_URL to WidgetMapper.ImageOutcome.SUCCESS,
+            ),
+            host.read { host.mapper.imageResults.map { it.url to it.outcome }.toSet() })
+
+        host.render(listOf(RenderPatch.RemoveNode(nodeId = SECTION)))
+        assertGeneration(host, null,
+            "THE PURGE TAKES THE GENERATION WITH IT — node ids RESTART at 1, so a generation " +
+                "that outlived its node would be handed to the node that inherits its id, and a " +
+                "stale callback carrying it would match")
+    }
+
+    /** The image node's CURRENT generation, read on the main thread. Typed `Int?` on both sides
+     * so the null case is the same assertion as the others. */
+    private fun assertGeneration(host: SyntheticHost, expected: Int?, what: String) {
+        val actual: Int? = host.read { host.mapper.imageGeneration(IMAGE) }
+        assertEquals(what, expected, actual)
     }
 
     // ── Cancellation: MEMORY SAFETY, NOT HYGIENE (non-negotiable #4) ─────────────

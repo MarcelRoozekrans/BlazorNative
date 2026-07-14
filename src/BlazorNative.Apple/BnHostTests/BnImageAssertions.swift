@@ -93,28 +93,39 @@ func bnClearImageCaches(file: StaticString = #filePath, line: UInt = #line) {
 /// from **our** server (port 8099 is HOST-GLOBAL on the macOS runner: a foreign listener
 /// cannot serve an image whose natural size is the one we assert).
 ///
-/// It asserts BOTH halves of the unit rule, and they are independent:
+/// It asserts, on the fixture's OWN bytes:
 ///
-///  - the decoded image's `scale == 1` and its `size` in POINTS — which is what pins **"no
-///    `.scaleFactor`, no downsampling processor"**. Set Kingfisher's documented
-///    `.scaleFactor(UIScreen.main.scale)` idiom and this is the assertion that reddens.
 ///  - the pixel buffer's own `cgImage.width/height` — the number the shell actually MEASURES
-///    with (`BnImageLoader.naturalPixelSize`), and the exact twin of Android's `bitmap.width`.
+///    with (`BnImageLoader.naturalPixelSize`), and the exact twin of Android's `bitmap.width`;
+///  - the same numbers in POINTS, which agree ONLY because `UIImage(data:)` has `scale == 1`
+///    — asserting both is what catches a *fixture* that did not survive its PNG encode;
 ///  - …and both against **`BnImageDemo.cs`'s declared constants**, transcribed into
 ///    `BnImageFixtureServer` and pinned against the `.cs` by a .NET drift test. Three copies
 ///    of four numbers, pinned rather than trusted — because **no single-device test in either
 ///    suite can catch a breach of the unit rule**: each shell stays internally consistent, and
 ///    nothing compares the two frame tables automatically.
+///
+/// ── WHAT THIS FUNCTION CANNOT SEE, AND WHERE THAT IS ASSERTED INSTEAD ────────────────
+/// **It never touches the `UIImage` Kingfisher handed the shell.** Everything here is decoded
+/// by `UIImage(data:)`, in the test, from the fixture's own bytes — and `UIImage(data:)`
+/// **cannot see a Kingfisher option**. So a `.scaleFactor(UIScreen.main.scale)` on the request
+/// (Kingfisher's own documented idiom, and the first thing an implementer reaches for) leaves
+/// every assertion below GREEN. This comment used to claim the opposite, which is worse than
+/// silence.
+///
+/// The loader's configuration is pinned where it can be: **`BnImageTests
+/// .testAnIntrinsicImageMeasuresZero…` reads `scale` off the `UIImage` in the shell's own
+/// `BnImageView`** — the only object in the process that carries it.
 func bnAssertFixtureContract(intrinsic: UIImage, fixed: UIImage,
                              file: StaticString = #filePath, line: UInt = #line) {
     let sectionWidth: CGFloat = 300
 
     XCTAssertEqual(intrinsic.scale, 1, accuracy: 0.001,
                    "UIImage(data:) has scale == 1, and THAT is what makes one FILE PIXEL one "
-                   + "POINT. Set Kingfisher's `.scaleFactor(UIScreen.main.scale)` — its own "
-                   + "documented idiom for crisp images, and the first thing an implementer "
-                   + "reaches for — and a 160px fixture reports 160/3 ≈ 53.3pt against Android's "
-                   + "160dp. THE PARITY IS GONE, and no frame table in either suite can see it.",
+                   + "POINT — so the POINT assertions below are the same numbers as the PIXEL "
+                   + "ones. (This says nothing about the LOADER: a `.scaleFactor` on the "
+                   + "Kingfisher request cannot reach a UIImage the test decoded itself. That is "
+                   + "asserted on the shell's own image — see the note above.)",
                    file: file, line: line)
 
     let cg = intrinsic.cgImage

@@ -84,7 +84,13 @@ import io.blazornative.jni.RenderPatch
  *      the tail of [handleSrc] — the re-entrancy guard and the in-flight bookkeeping
  *      both depend on knowing it.
  *   3. THE STALE-CALLBACK GUARD IS GENERATION *AND* IDENTITY, in EVERY callback — not
- *      just the painting one. See [clearIfMine] and [isLiveImageRequest].
+ *      just the painting one — and it is ONE FUNCTION asked at BOTH call sites
+ *      ([isLiveImageRequest], from [isLive] and from [clearIfMine]), so the one unit test
+ *      that pins the conjunction defends both.
+ *   4. EVERY `src` WRITE BUMPS THE GENERATION — **INCLUDING A CLEAR** ([handleSrc]).
+ *      `cancelImageRequest` is best-effort BY DEFINITION; the generation is what makes the
+ *      callback it failed to prevent harmless. A `Src` → null whose dispose lost the race
+ *      would otherwise RE-INFLATE the node the author just cleared.
  *
  * [handleSetStyle] is now a ROUTER over the partitioned allow-list
  * (`NativeRenderer.YogaStyleAttributes` / `VisualStyleAttributes`): a LAYOUT name
@@ -748,6 +754,23 @@ class WidgetMapper(
      * that, on iOS, is a dangling `YGNodeRef`. */
     internal val inFlightImageCount: Int get() = imageRequests.size
 
+    /**
+     * Test-only (Phase 6.3 Gate 3 review, C1): a node's CURRENT generation (`null` = it has
+     * none — it was purged, or never carried a `src`). The twin of Swift's
+     * `BnWidgetMapper.imageGeneration(of:)`.
+     *
+     * It is exposed for ONE reason: **the rule it pins is invisible in every frame.** *Every*
+     * `src` write bumps the generation, **including a CLEAR** — because a clear cancels, a
+     * cancel races its own callback, and the generation is the only thing that stops the loser
+     * painting ([handleSrc]). A shell that bumped only on a real URL is GREEN on every frame
+     * table in this repo: the dispose wins that race in every ordering a device test can
+     * produce (the main looper is FIFO, so a callback already posted runs BEFORE any batch a
+     * test posts after it — a device test can only ever stage the clear WINNING). The bump is
+     * therefore asserted as the number it is, and [isLiveImageRequest]'s superseded-generation
+     * row is what that number then BUYS.
+     */
+    internal fun imageGeneration(nodeId: Int): Int? = imageGenerations[nodeId]
+
     private fun handleUpdateProp(p: RenderPatch.UpdateProp) {
         val view = nodes[p.nodeId] ?: run {
             Log.w(TAG, "UpdateProp for unknown nodeId ${p.nodeId}: ignored")
@@ -830,6 +853,28 @@ class WidgetMapper(
      * with no patch behind it — has to trigger its own ([resolveLayout]).
      */
     private fun handleSrc(nodeId: Int, view: ImageView, url: String?) {
+        // ── THE GENERATION IS BUMPED FIRST, AND IT IS BUMPED BY *EVERY* `src` WRITE —
+        //    INCLUDING A CLEAR. It sits above the early returns on purpose ──────────────
+        //
+        // **A clear cancels; a cancel RACES ITS OWN COMPLETION; and the generation is the only
+        // thing that stops the loser painting.** [cancelImageRequest] is best-effort *by
+        // definition* — that is the whole reason this counter exists. When `Src` goes to null
+        // (or `""`) while a request is in flight **whose work has already finished and whose
+        // callback is already on its way to the main thread**, the `dispose()` below arrives
+        // too late: that callback reaches [onImageLoaded] with generation *N*. If the clear had
+        // not bumped, it would find `imageGenerations[nodeId]` still *N* and the very same view
+        // — [isLiveImageRequest] would say **LIVE** — and it would paint the stale bytes,
+        // record their natural size, `markDirty` and re-solve. **The node the author just
+        // cleared would RE-INFLATE, and its sibling would move back down** — defeating the
+        // contract's `Src` → `null` row ("cancel, CLEAR, collapse to 0 × 0, siblings move UP")
+        // *and* "one reflow, never two", on this phase's own home ground.
+        //
+        // Pinned by `WidgetMapperImageTest.every_src_write_bumps_the_generation_INCLUDING_a_clear`
+        // (the bump itself, as the number it is — no frame can see it) composed with
+        // `ImageRequestGuardTest.a_superseded_generation_is_not_live` (what the bump then BUYS).
+        val generation = (imageGenerations[nodeId] ?: 0) + 1
+        imageGenerations[nodeId] = generation
+
         cancelImageRequest(nodeId)
         // The bytes the node already holds go NOW, not when (or if) the new ones arrive:
         // "on a Src change the node measures 0 × 0 again until the new bytes land".
@@ -844,11 +889,10 @@ class WidgetMapper(
         // shells to make differently (design §"The parity contract", the `Src` → `null` row).
         if (url.isNullOrEmpty()) return
 
-        // BEFORE the enqueue, and that ordering is load-bearing: a Coil memory-cache hit
-        // completes SYNCHRONOUSLY (see below), inside `enqueue`, and its completion asks
+        // …and the generation the enqueue below is issued under is the one taken above — which
+        // is also load-bearing in the OTHER direction: a Coil memory-cache hit completes
+        // SYNCHRONOUSLY (see below), inside `enqueue`, and its completion asks
         // [isLiveImageRequest] for this very number.
-        val generation = (imageGenerations[nodeId] ?: 0) + 1
-        imageGenerations[nodeId] = generation
 
         val request = ImageRequest.Builder(context)
             .data(url)
@@ -960,10 +1004,21 @@ class WidgetMapper(
      * Comparing against the ENTRY (its generation, its view) rather than against `nodes`/
      * `imageGenerations` is deliberate: it is a question about the *request*, and it answers
      * correctly even for a node that has since been purged from both maps.
+     *
+     * **AND THE DECISION IS [isLiveImageRequest]'s — the SAME pure function [isLive] asks, not
+     * a second inline copy of the conjunction.** It used to be a copy, and the copy was
+     * UNPINNED: `ImageRequestGuardTest` tests the FUNCTION, so dropping `&& entry.view === view`
+     * from HERE ALONE left the whole suite green — the mutation had to be applied in two places
+     * to redden one test, which is the definition of a second site nothing defends. One
+     * decision, one function, one unit test, two call sites. (What differs between the two call
+     * sites is only WHERE the "current" facts come from — the ENTRY here, the LIVE maps there —
+     * and that distinction is deliberate and is preserved.)
      */
     private fun clearIfMine(nodeId: Int, generation: Int, view: ImageView) {
         val entry = imageRequests[nodeId] ?: return
-        if (entry.generation == generation && entry.view === view) imageRequests.remove(nodeId)
+        if (isLiveImageRequest(entry.generation, generation, entry.view, view)) {
+            imageRequests.remove(nodeId)
+        }
     }
 
     /**

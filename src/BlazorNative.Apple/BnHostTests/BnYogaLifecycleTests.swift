@@ -275,8 +275,9 @@ final class BnYogaLifecycleTests: BnHostTestCase {
     /// the node it would have painted into is asserted untouched.
     func testAnInFlightImageIsCancelledWhenAnANCESTORIsPurged() throws {
         bnClearImageCaches()
-        let server = try BnImageFixtureServer()
-        defer { server.close() }
+        // `started(for:)` is the only constructor: the close is STRUCTURAL (a teardown block),
+        // because a server nobody closed keeps :8099 bound forever and kills a LATER class.
+        let server = try BnImageFixtureServer.started(for: self)
 
         let host = BnSyntheticHost()
         // The demo's shape: a root column (what navigation disposes), a section inside it, an

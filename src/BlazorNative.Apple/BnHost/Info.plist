@@ -38,7 +38,7 @@
 	     which is exactly the posture Android's debug network-security-config takes
 	     (cleartext permitted to 127.0.0.1/localhost and nothing else).
 
-	     `BnImageDemoTests.testCleartextLoopbackIsPermitted` is what turns this from an
+	     `BnImageDemoTests.testCleartextLoopbackIsPermittedByATS` is what turns this from an
 	     assumption into a checked fact — it pulls a fixture over the same cleartext
 	     loopback Kingfisher uses, through URLSession, so a block names itself. -->
 	<key>NSAppTransportSecurity</key>

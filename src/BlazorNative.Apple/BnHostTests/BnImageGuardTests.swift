@@ -26,12 +26,19 @@
 // by REFERENCE (`===`), which is the whole of the point, and it takes `AnyObject?`
 // precisely so this test needs no UIKit tree, no mapper and no mount.
 //
+// **AND IT NOW DEFENDS BOTH CALL SITES.** `BnWidgetMapper.clearIfMine` used to re-implement
+// the conjunction inline — so this file defended only the PAINTING path, and dropping
+// `&& entry.view === view` from `clearIfMine` **alone** left all 70 tests green. The
+// tell-tale was in this very comment: it said the mutation had to be applied *in two
+// places*. **A mutation that must be applied in two places to redden one test is a mutation
+// whose second site is unpinned.** Both sites now route through `bnIsLiveImageRequest`.
+//
 // **MUTATION EVIDENCE (measured on CI):** remove the identity half from
-// `bnIsLiveImageRequest` AND from `BnWidgetMapper.clearIfMine` — i.e. ask the generation
-// alone — and `testTheRESETCollisionIsNotLiveEvenThoughTheGenerationsMatch` is **the only
-// test in the whole 70-case suite that goes red for it.** Not one device test, not the
-// double mount, not the lifecycle tests. That is not an argument for the unit test's
-// convenience; it is the argument for its EXISTENCE.
+// `bnIsLiveImageRequest` — ONE line, ONE place, and the shell's only copy of the decision —
+// and `testTheRESETCollisionIsNotLiveEvenThoughTheGenerationsMatch` is **the only test in
+// the whole suite that goes red for it.** Not one device test, not the double mount, not
+// the lifecycle tests. That is not an argument for the unit test's convenience; it is the
+// argument for its EXISTENCE.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import XCTest

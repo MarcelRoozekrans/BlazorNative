@@ -11,12 +11,22 @@
 // loaded*, which is the state `BnScrollDemoTests` never sees.
 //
 // ── WHY `BnScrollDemoTests` IS NOT THIS TEST, AND MUST NOT BECOME IT ─────────────
-// That class does not stand up the fixture server, so its row-0 image **fails to load**
-// (connection refused, immediately, offline). It asserts the same table and still
-// passes — which is not an accident to be tidied away but the *other half of the
-// proof*: **a failed load moves nothing either**, because the image's size is definite
-// and there is no measurement for a failure to change. Between the two classes, the 6.2
-// table is pinned against an image that loaded and against one that did not.
+// That class stands up NO fixture server and **clears Kingfisher's caches**, so its row-0
+// image **fails to load** (connection refused, immediately, offline) — and it now AWAITS
+// that failure and ASSERTS it (`ERROR`, on the URL the wire carried, nothing painted).
+// It asserts the same table and still passes, which is not an accident to be tidied away
+// but the *other half of the proof*: **a failed load moves nothing either**, because the
+// image's size is definite and there is no measurement for a failure to change. Between
+// the two classes, the 6.2 table is pinned against an image that loaded and against one
+// that did not.
+//
+// **The claim used to be FALSE, and order-dependent** — the Gate 3 review caught it. That
+// class cleared no caches and asserted nothing about the outcome, and XCTest runs classes
+// ALPHABETICALLY: `BnScrollDemoImage…` sorts BEFORE `BnScrollDemoTests`, so `fixed.png` sat
+// in Kingfisher's memory *and disk* cache and row 0 was a cache HIT — **the image
+// SUCCEEDED**, and the class quietly proved the same thing as this one while its header
+// said the opposite. (Android hit exactly this, fixed it, and recorded the fix; Gate 3
+// copied the claim and not the fix.)
 //
 // ── THE TWO INDEPENDENT REASONS THE TABLE CANNOT MOVE ───────────────────────────
 //  - **the row's height is DEFINITE (80)** — a child cannot grow a definite-height parent;
@@ -54,8 +64,10 @@ final class BnScrollDemoImageTests: BnHostTestCase {
     private var mapper: BnWidgetMapper!
 
     override func setUpWithError() throws {
+        try super.setUpWithError()
         bnClearImageCaches()
-        server = try BnImageFixtureServer()
+        // The close is STRUCTURAL (a teardown block registered by `started(for:)`).
+        server = try BnImageFixtureServer.started(for: self)
         server.release() // this page has no BEFORE table to protect — 6.2's table is the contract
 
         host = UIView(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
@@ -72,12 +84,10 @@ final class BnScrollDemoImageTests: BnHostTestCase {
     /// fixture-server worker thread is a real server bug, and the swallow that (correctly)
     /// keeps a broken pipe from killing the test host would otherwise make it silent.
     override func tearDown() {
-        let errors = server?.errors ?? []
-        server?.close()
-        server = nil
-        XCTAssertEqual(errors, [],
+        XCTAssertEqual(server?.errors ?? [], [],
                        "the fixture server failed a write, and NOTHING ON THIS PAGE CANCELS "
                        + "ANYTHING — so it is a real server bug rather than a dropped client")
+        server = nil // …and the CLOSE is the teardown block `started(for:)` registered
         super.tearDown()
     }
 
