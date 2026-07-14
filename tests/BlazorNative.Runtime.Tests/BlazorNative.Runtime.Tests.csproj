@@ -41,7 +41,7 @@
 
   <ItemGroup>
     <!-- xUnit + test SDK versions: mirror tests/BlazorNative.Renderer.Tests verbatim -->
-    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.1*" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.*" />
     <PackageReference Include="xunit" Version="2.*" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.*" />
     <PackageReference Include="Microsoft.AspNetCore.Components" Version="10.0.*" />
