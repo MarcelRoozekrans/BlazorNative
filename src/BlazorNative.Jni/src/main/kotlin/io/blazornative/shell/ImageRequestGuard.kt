@@ -3,6 +3,13 @@ package io.blazornative.shell
 /**
  * Phase 6.3 Gate 2 review (I1) — **THE PURGED-NODE GUARD, AS A PURE DECISION.**
  *
+ * **It lives in `src/main/kotlin`, NOT `src/androidMain`, and that is load-bearing.** The whole
+ * point of extracting it is that it is unit-testable *without a device* — and `src/test/kotlin`
+ * (the JVM suite) compiles against the shared source set, not the Android one. Put it back in
+ * `androidMain` and `compileDebugUnitTestKotlin` fails with `Unresolved reference` — which is
+ * exactly what CI caught. It takes `Any?`, not `View`: it has no Android dependency to justify
+ * living there, and the reset collision it pins is the one thing **no device test can stage**.
+ *
  * `WidgetMapper` asks this at **BOTH** of the places the decision is made — before an image
  * completion is allowed to PAINT (`isLive`), and before any terminal callback is allowed to
  * EVICT an in-flight entry (`clearIfMine`): *may the request that just terminated touch the
