@@ -5,7 +5,6 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.FrameLayout
-import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -24,17 +23,23 @@ import java.util.concurrent.atomic.AtomicReference
  * [MainActivity.EXTRA_COMPONENT] Intent extra so the NativeAOT boot mounts
  * "CompositionProbe" instead of the Hello demo, then asserts what Tasks 1-5
  * only proved at the patch level: the view TREE — child ORDER inside real
- * LinearLayouts after WidgetMapper's addView(view, index).
+ * containers after WidgetMapper's addView(view, index).
+ *
+ * PHASE 6.1: the containers are Yoga-placed FrameLayouts now, not vertical
+ * LinearLayouts, so the ORDER assertion gained a companion — the children must
+ * also STACK (each at x = 0, starting exactly where the last one ended). Order
+ * is what this test always cared about; the stack pin is what the LinearLayout
+ * type used to give it for free and now has to be asserted on the frames.
  *
  * Expected mount tree (CompositionProbe.cs shape × WidgetMapper's NodeType
- * table; divs → vertical LinearLayouts, buttons → Button with the Phase 2.8
+ * table; divs → containers, buttons → Button with the Phase 2.8
  * text collapse, ItemComponent divs each hold one TextView "<Label> (taps: N)"):
  *   widget_root: FrameLayout
- *     └── root LinearLayout (root div), 7 children IN THIS ORDER:
- *           [0] header  LinearLayout ("CompositionProbe")
- *           [1] badge   LinearLayout ("badge (taps: 0)")   ← the InsertIndex=1
- *           [2] label   LinearLayout ("list:")               mount proof: the
- *           [3] list    LinearLayout (item-1, item-2)        badge's create runs
+ *     └── root ViewGroup (root div), 7 children IN THIS ORDER:
+ *           [0] header  ViewGroup ("CompositionProbe")
+ *           [1] badge   ViewGroup ("badge (taps: 0)")   ← the InsertIndex=1
+ *           [2] label   ViewGroup ("list:")               mount proof: the
+ *           [3] list    ViewGroup (item-1, item-2)        badge's create runs
  *           [4] Button "Add"                                 AFTER the parent
  *           [5] Button "Insert"                              walk appended
  *           [6] Button "Remove"                              children 2..6
@@ -85,8 +90,8 @@ class CompositionAndroidTest {
                 // must have landed it BETWEEN header and label even though the
                 // ItemComponent's own diff ran after the parent's full walk.
                 val badge = container.getChildAt(1)
-                assertTrue("child 1 (badge ItemComponent root) must be a LinearLayout, " +
-                    "got ${badge::class.simpleName}", badge is LinearLayout)
+                assertTrue("child 1 (badge ItemComponent root) must be a ViewGroup, " +
+                    "got ${badge::class.simpleName}", badge is ViewGroup)
                 assertEquals("child 1 must be the interleaved badge (InsertIndex=1 proof)",
                     "badge (taps: 0)", firstTextIn(badge))
 
@@ -94,9 +99,9 @@ class CompositionAndroidTest {
                 assertEquals("child 2 must be the list label",
                     "list:", firstTextIn(container.getChildAt(2)))
                 val list = container.getChildAt(3)
-                assertTrue("child 3 (list container) must be a LinearLayout",
-                    list is LinearLayout)
-                list as LinearLayout
+                assertTrue("child 3 (list container) must be a ViewGroup",
+                    list is ViewGroup)
+                list as ViewGroup
                 assertEquals("list must hold the two seed items; got ${describeChildren(list)}",
                     2, list.childCount)
                 assertEquals("item-1 (taps: 0)", firstTextIn(list.getChildAt(0)))
@@ -110,9 +115,18 @@ class CompositionAndroidTest {
                     assertEquals("child $i must be the $label button",
                         label, (v as Button).text.toString())
                 }
+
+                // Phase 6.1: child ORDER is only half the claim once Yoga places
+                // things absolutely — the seven children must also tile the column
+                // top to bottom with no gap and no overlap. CompositionProbe is
+                // UN-STYLED, and an un-styled tree is a Yoga column.
+                assertStacksVertically(container)
+                assertStacksVertically(list as ViewGroup)
             }
         }
     }
+
+    // assertStacksVertically lives in FrameAssertions.kt (shared with WidgetMapperTest).
 
     // ── Insert-at-front: InsertIndex 0 lands the new item FIRST on screen ───
 
@@ -165,7 +179,7 @@ class CompositionAndroidTest {
 
             // The badge ItemComponent's clickable view is its own root div
             // (ItemComponent attaches @onclick to the div, so AttachEvent
-            // lands on the badge LinearLayout — root child [1]).
+            // lands on the badge ViewGroup — root child [1]).
             scenario.onActivity { act ->
                 rootContainer(act)!!.getChildAt(1).performClick()
             }
@@ -182,10 +196,10 @@ class CompositionAndroidTest {
     // ── Helpers ──────────────────────────────────────────────────────────────
 
     /** The CompositionProbe root container: widget_root's single child. */
-    private fun rootContainer(act: MainActivity): LinearLayout? =
+    private fun rootContainer(act: MainActivity): ViewGroup? =
         act.findViewById<FrameLayout>(R.id.widget_root)
             ?.takeIf { it.childCount > 0 }
-            ?.getChildAt(0) as? LinearLayout
+            ?.getChildAt(0) as? ViewGroup
 
     /** Polls until the mount frame has been applied: the root container
      * exists AND already carries the full 7-child composite (the batch is
@@ -194,9 +208,9 @@ class CompositionAndroidTest {
     private fun pollForRootContainer(
         scenario: ActivityScenario<MainActivity>,
         deadlineMs: Long = 60_000,
-    ): LinearLayout? {
+    ): ViewGroup? {
         val deadline = System.currentTimeMillis() + deadlineMs
-        val found = AtomicReference<LinearLayout?>(null)
+        val found = AtomicReference<ViewGroup?>(null)
         while (System.currentTimeMillis() < deadline) {
             scenario.onActivity { act ->
                 found.set(rootContainer(act)?.takeIf { it.childCount >= 7 })

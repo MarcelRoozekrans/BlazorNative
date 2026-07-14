@@ -2,9 +2,9 @@ package io.blazornative.shell
 
 import android.content.Intent
 import android.view.View
+import android.view.ViewGroup
 import android.widget.EditText
 import android.widget.FrameLayout
-import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -28,7 +28,7 @@ import java.util.concurrent.atomic.AtomicReference
  *
  * Shape (FocusProbe.cs's file header): root div → BnInput (focus + blur +
  * the always-on change attach) + BnText echo ("" → "focused"/"blurred").
- * On-screen: widget_root → LinearLayout div → [0] EditText, [1] TextView
+ * On-screen: widget_root → ViewGroup div → [0] EditText, [1] TextView
  * (the echo span, text-collapsed).
  *
  * FOCUS PARKING (the judgment call): blur only fires when focus actually
@@ -205,10 +205,10 @@ class FocusBlurAndroidTest {
     // ── Structural pins (FocusProbe's tree; positions, not nodeIds) ─────────
 
     /** The probe's root div: widget_root's single child, once mounted. */
-    private fun probeRoot(act: MainActivity): LinearLayout? =
+    private fun probeRoot(act: MainActivity): ViewGroup? =
         act.findViewById<FrameLayout>(R.id.widget_root)
             ?.takeIf { it.childCount > 0 }
-            ?.getChildAt(0) as? LinearLayout
+            ?.getChildAt(0) as? ViewGroup
 
     /** Root child [0]: the BnInput's EditText. */
     private fun editText(act: MainActivity): EditText? =

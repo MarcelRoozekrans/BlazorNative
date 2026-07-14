@@ -1,10 +1,11 @@
 package io.blazornative.shell
 
 import android.content.Intent
+import android.view.View
+import android.view.ViewGroup
 import android.widget.Button
 import android.widget.EditText
 import android.widget.FrameLayout
-import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -18,47 +19,48 @@ import org.junit.runner.RunWith
 import java.util.concurrent.atomic.AtomicReference
 
 /**
- * Phase 2.5 / 2.8 end-to-end widget-mapper assertion.
+ * Phase 2.5 / 2.8 end-to-end widget-mapper assertion — **rewritten to FRAMES in
+ * Phase 6.1**.
  *
  * Launches MainActivity (which boots the NativeAOT runtime on a background
  * thread, posts adapter-decoded patches to the main looper via WidgetMapper),
- * polls the
- * widget_root for the rendered tree, asserts the resulting view tree.
+ * polls widget_root for the rendered tree, asserts the result.
  *
  * Mounts HelloComponent via an explicit [MainActivity.EXTRA_COMPONENT] extra
  * (the no-extra default is "BnDemo" since Phase 3.4 Gate 4). Expected tree:
  *   widget_root: FrameLayout
- *     └── outer LinearLayout (from outer <div>)
- *           ├── inner LinearLayout (from inner <div>)
+ *     └── outer container (from outer <div>)
+ *           ├── inner container (from inner <div>)
  *           │     └── TextView ("Hello, BlazorNative! (taps: 0)")   [counter since Phase 3.2]
  *           ├── Button ("Tap")
  *           └── EditText (hint="Type here...")
  *
- * Phase 2.8 Task 3b fixed the text-child-of-TextView collapse in WidgetMapper
- * so that Blazor's `<button>Tap</button>` (a button with a text-node child)
- * renders correctly: the text-node child is absorbed onto Button.setText
- * instead of orphaning as a sibling at widget_root. See
- * WidgetMapperTextChildOnButtonTest for the targeted regression coverage.
+ * ── WHAT PHASE 6.1 CHANGED, AND WHY THIS TEST GOT STRONGER ───────────────────
+ * It used to pin `outer is LinearLayout` and `orientation == VERTICAL` — i.e. it
+ * asserted the MECHANISM of the vertical stack. Yoga is the mechanism now, and
+ * the containers are plain FrameLayouts whose children are absolutely placed, so
+ * those pins are gone. What replaced them is the thing they were a proxy for:
+ * **the children actually stack.** Each child starts at x = 0 and at exactly the
+ * y its predecessor ended — asserted on the real, computed frames.
  *
- * Polling loop: the 120s deadline is a wasm-era relic (cold wasmtime JIT of
- * the ~14 MB .wasm took 30-75s; the NativeAOT pipeline mounts in ~1-2s since
- * Phase 3.0d). Kept as generous headroom — the poller breaks as soon as
- * widget_root has children (the commit-frame post has fired), so the deadline
- * only bounds fail-detection latency. All assertions then run inside
- * scenario.onActivity { } so they see the latest widget tree on the UI thread.
+ * That is the stronger assertion, and it is the load-bearing regression signal of
+ * the whole phase: HelloComponent is an UN-STYLED tree, and an un-styled tree must
+ * lay out exactly as it did before the engine was swapped. It does, because Yoga's
+ * default flexDirection is `column`.
  *
- * The test method name retains the Phase 2.5 "sentinel_" prefix to avoid churn;
- * the assertions now target HelloComponent's shape.
+ * Phase 2.8 Task 3b's text-child-of-TextView collapse still holds (the Button's
+ * text child is absorbed onto Button.setText rather than orphaning as a sibling)
+ * — see WidgetMapperTextChildOnButtonTest, and note the collapse is now also what
+ * keeps the Yoga tree's child indices aligned with the view tree's.
+ *
+ * Polling loop: the 120s deadline is a wasm-era relic; the poller breaks as soon
+ * as widget_root has children, so it only bounds fail-detection latency.
  */
 @RunWith(AndroidJUnit4::class)
 class WidgetMapperTest {
 
     @Test
-    fun sentinel_renders_as_linearlayout_containing_textview() {
-        // Phase 3.4 Gate 4: MainActivity's no-extra default flipped to
-        // "BnDemo", but every assertion below pins HELLO's shape — so this
-        // test must now request HelloComponent explicitly instead of riding
-        // the default (per the 3.4 design risk table).
+    fun hello_renders_as_a_vertical_stack_of_computed_frames() {
         val ctx = InstrumentationRegistry.getInstrumentation().targetContext
         val intent = Intent(ctx, MainActivity::class.java)
             .putExtra(MainActivity.EXTRA_COMPONENT, "HelloComponent")
@@ -69,57 +71,65 @@ class WidgetMapperTest {
             while (System.currentTimeMillis() < deadline) {
                 scenario.onActivity { act ->
                     val root = act.findViewById<FrameLayout>(R.id.widget_root)
-                    if (root != null && root.childCount > 0) ready.set(true)
+                    // Wait for the frames too, not just the views: the mount batch
+                    // creates the views and lays them out in the same applyBatch,
+                    // but a zero-height child would mean we read mid-flight.
+                    val outer = root?.takeIf { it.childCount > 0 }?.getChildAt(0)
+                    if (outer != null && outer.height > 0) ready.set(true)
                 }
                 if (ready.get()) break
                 Thread.sleep(250)
             }
 
-            assertTrue("widget_root never received children within 60s — mapper did not apply", ready.get())
+            assertTrue("widget_root never received a laid-out tree — mapper did not apply", ready.get())
 
             scenario.onActivity { act ->
                 val root = act.findViewById<FrameLayout>(R.id.widget_root)
-                assertEquals("widget_root should have exactly one top-level child (the outer <div> container)",
+                assertEquals("widget_root should have exactly one top-level child (the outer <div>)",
                     1, root.childCount)
 
                 val outer = root.getChildAt(0)
-                assertTrue("top-level child should be a LinearLayout (mapped from outer <div>)",
-                    outer is LinearLayout)
-                outer as LinearLayout
-                assertEquals("outer LinearLayout should be vertical",
-                    LinearLayout.VERTICAL, outer.orientation)
-                assertEquals("outer LinearLayout should contain 3 children (inner div + button + input)",
+                assertTrue("the outer <div> must be a container", outer is ViewGroup)
+                outer as ViewGroup
+                assertEquals("outer container should hold 3 children (inner div + button + input)",
                     3, outer.childCount)
 
-                // Child [0]: inner div → LinearLayout containing the Hello TextView
+                // THE VERTICAL-STACK PIN, as frames. An un-styled tree is a Yoga
+                // column: children at x = 0, each starting exactly where the last
+                // one ended, none of them empty.
+                assertStacksVertically(outer)
+
+                // Child [0]: inner div → container holding the Hello TextView.
                 val innerDiv = outer.getChildAt(0)
-                assertTrue("first child should be inner LinearLayout (mapped from inner <div>)",
-                    innerDiv is LinearLayout)
-                innerDiv as LinearLayout
-                assertEquals("inner LinearLayout should contain 1 child (the Hello text)",
+                assertTrue("first child should be the inner container", innerDiv is ViewGroup)
+                innerDiv as ViewGroup
+                assertEquals("inner container should hold 1 child (the Hello text)",
                     1, innerDiv.childCount)
                 val helloText = innerDiv.getChildAt(0)
                 assertTrue("inner child should be a TextView", helloText is TextView)
                 helloText as TextView
-                // Phase 3.2: HelloComponent is interactive — the counter lives
-                // in this text (fresh mount ⇒ taps: 0; the tap round-trip is
-                // EventRoundTripAndroidTest's job, not this shape test's).
+                // Phase 3.2: HelloComponent is interactive — the counter lives in
+                // this text (fresh mount ⇒ taps: 0).
                 assertEquals("Hello, BlazorNative! (taps: 0)", helloText.text.toString())
+                // DoD #3, in passing: the label was MEASURED — the inner container
+                // has no size of its own and hugs whatever the TextView reported.
+                assertTrue("the Hello label must have a measured height", helloText.height > 0)
+                assertEquals("the inner container must hug its measured label",
+                    helloText.height, innerDiv.height)
 
-                // Child [1]: button (with text collapsed via Phase 2.8 Task 3b fix)
+                // Child [1]: button (with text collapsed via the Phase 2.8 fix).
                 val button = outer.getChildAt(1)
-                assertTrue("second child should be a Button (mapped from <button>)",
-                    button is Button)
-                button as Button
-                assertEquals("Tap", button.text.toString())
+                assertTrue("second child should be a Button", button is Button)
+                assertEquals("Tap", (button as Button).text.toString())
 
-                // Child [2]: input
+                // Child [2]: input.
                 val input = outer.getChildAt(2)
-                assertTrue("third child should be an EditText (mapped from <input>)",
-                    input is EditText)
-                input as EditText
-                assertEquals("Type here...", input.hint.toString())
+                assertTrue("third child should be an EditText", input is EditText)
+                assertEquals("Type here...", (input as EditText).hint.toString())
             }
         }
     }
+
+    // assertStacksVertically (the frame form of "this container is a vertical
+    // stack") lives in FrameAssertions.kt — it is shared with CompositionAndroidTest.
 }

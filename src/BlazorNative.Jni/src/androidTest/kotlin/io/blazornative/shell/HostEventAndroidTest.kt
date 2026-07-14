@@ -7,7 +7,6 @@ import android.view.ViewGroup
 import android.widget.Button
 import android.widget.EditText
 import android.widget.FrameLayout
-import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.lifecycle.Lifecycle
 import androidx.test.core.app.ActivityScenario
@@ -153,9 +152,9 @@ class HostEventAndroidTest {
             ?.let { firstMatch(it) { v -> v is TextView && v !is Button } } as? TextView
 
     /** The BnDemo form div: widget_root's child once BnDemo is mounted. */
-    private fun form(act: MainActivity): LinearLayout? =
+    private fun form(act: MainActivity): ViewGroup? =
         (act.findViewById<FrameLayout>(R.id.widget_root)?.takeIf { it.childCount > 0 }
-            ?.getChildAt(0) as? LinearLayout)?.takeIf { it.childCount >= 6 }
+            ?.getChildAt(0) as? ViewGroup)?.takeIf { it.childCount >= 6 }
 
     /** The settings title: a non-Button TextView reading exactly "Settings". */
     private fun settingsTitle(act: MainActivity): TextView? =

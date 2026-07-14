@@ -52,6 +52,14 @@ dependencies {
     // loader) transitively. 6.1 builds the real BnWidgetMapper-over-Yoga placement.
     implementation("com.facebook.yoga:yoga:3.2.1")
 
+    // Phase 6.1: yoga declares soloader (its native-lib loader) at RUNTIME scope,
+    // so it ships in the APK but is OFF the compile classpath. The shell itself
+    // now calls SoLoader.init(context) before the first YogaNode (YogaLayout /
+    // MainActivity), so it needs it on the MAIN compile classpath too — pinned to
+    // the version yoga 3.2.1 resolves (0.10.5) so compile and runtime agree, the
+    // same pin the androidTest classpath already carries below.
+    implementation("com.facebook.soloader:soloader:0.10.5")
+
     // Kotlin stdlib
     implementation(kotlin("stdlib-jdk8"))
 

@@ -6,7 +6,6 @@ import android.view.ViewGroup
 import android.widget.Button
 import android.widget.EditText
 import android.widget.FrameLayout
-import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -28,10 +27,10 @@ import java.util.concurrent.atomic.AtomicReference
  * canonical pinned tree lives there. On-screen (WidgetMapper's NodeType
  * table + the Phase 2.8 text collapse):
  *   widget_root: FrameLayout
- *     └── form LinearLayout (#FFEEAA), 6 children IN THIS ORDER:
+ *     └── form ViewGroup (#FFEEAA), 6 children IN THIS ORDER:
  *           [0] TextView "BnDemo"          (title span, text-collapsed)
  *           [1] EditText                    (the bound input; hint "Type here...")
- *           [2] LinearLayout echo panel (#FFEEAA)
+ *           [2] ViewGroup echo panel (#FFEEAA)
  *                 └── TextView              (the live echo, "" on mount)
  *           [3] Button "Clear"
  *           [4] Button "Theme"
@@ -177,21 +176,88 @@ class BnDemoAndroidTest {
         }
     }
 
+    // ── Phase 6.1: the un-styled tree still stacks (THE regression signal) ───
+
+    /**
+     * BnDemo declares no flex anything — and after Phase 6.1 that is exactly the
+     * point. Yoga owns placement now, its default `flexDirection` is `column`,
+     * and so an un-styled tree must lay out **exactly as it did before the engine
+     * was swapped**: six children, top to bottom, no gaps, no overlap.
+     *
+     * This is the strongest evidence the phase changed the ENGINE and not the
+     * BEHAVIOUR. It is asserted on the real computed frames rather than on a
+     * `LinearLayout.orientation`, because the LinearLayout is gone — and the
+     * frames were what the orientation was ever a proxy for.
+     */
+    @Test
+    fun unstyled_bndemo_still_renders_as_a_vertical_stack() {
+        launchDefault().use { scenario ->
+            assertNotNull("BnDemo never rendered within 60s — boot/mapper failed",
+                pollForForm(scenario))
+            // The form's own frame must be real before the children's mean anything.
+            assertTrue("the form never got a computed frame within 10s",
+                pollUntil(scenario, deadlineMs = 10_000) { act ->
+                    (form(act)?.height ?: 0) > 0
+                })
+
+            scenario.onActivity { act ->
+                val f = form(act)!!
+                val d = act.resources.displayMetrics.density
+                assertEquals("the form sits at the host's origin", 0, f.left)
+                assertEquals(0, f.top)
+
+                // BnDemo's form carries Padding="16", and after Phase 6.1 padding
+                // is LAYOUT: the YOGA node owns it and lays the children out
+                // inside the padding box. So the inset shows up in the CHILDREN's
+                // frames, and the View's own padding must be ZERO — a surviving
+                // view.setPadding would apply it a SECOND time and every child
+                // below would be 16dp further in than the frame table says.
+                assertEquals("the form's own View padding must be 0 — Yoga owns the inset",
+                    0, f.paddingLeft)
+                assertEquals("the form's children are inset by its 16dp Yoga padding",
+                    16f, f.getChildAt(0).left / d, 0.5f)
+
+                var expectedTop = f.getChildAt(0).top
+                for (i in 0 until f.childCount) {
+                    val child = f.getChildAt(i)
+                    assertEquals("child $i must share the form's content-box left edge",
+                        f.getChildAt(0).left, child.left)
+                    assertTrue("child $i must have a real height (got ${child.height}px)",
+                        child.height > 0)
+                    assertEquals("child $i must start exactly where child ${i - 1} ended — " +
+                        "an un-styled tree is a Yoga COLUMN and must stack like the old " +
+                        "vertical LinearLayout did", expectedTop, child.top)
+                    expectedTop = child.bottom
+                }
+
+                // The echo panel (child [2]) is itself a container: it must hug its
+                // single text child — Yoga sized it from a NATIVE measurement.
+                // (It carries Padding="8", so it hugs the text PLUS 2 × 8dp.)
+                val panel = echoPanel(act)!!
+                val text = echoText(act)!!
+                assertEquals("the echo panel's own View padding must be 0 too", 0, panel.paddingTop)
+                assertEquals("the echo panel must hug its MEASURED text child plus its 8dp of " +
+                    "Yoga padding, top and bottom",
+                    (text.height + 2 * 8f * d) / d, panel.height / d, 0.5f)
+            }
+        }
+    }
+
     // ── Structural pins (the KDoc tree; positions, not nodeIds) ─────────────
 
     /** The BnDemo form div: widget_root's single child, once fully mounted. */
-    private fun form(act: MainActivity): LinearLayout? =
+    private fun form(act: MainActivity): ViewGroup? =
         act.findViewById<FrameLayout>(R.id.widget_root)
             ?.takeIf { it.childCount > 0 }
-            ?.getChildAt(0) as? LinearLayout
+            ?.getChildAt(0) as? ViewGroup
 
     /** Form child [1]: the bound EditText. */
     private fun editText(act: MainActivity): EditText? =
         form(act)?.takeIf { it.childCount >= 6 }?.getChildAt(1) as? EditText
 
     /** Form child [2]: the echo panel div (themed container #2). */
-    private fun echoPanel(act: MainActivity): LinearLayout? =
-        form(act)?.takeIf { it.childCount >= 6 }?.getChildAt(2) as? LinearLayout
+    private fun echoPanel(act: MainActivity): ViewGroup? =
+        form(act)?.takeIf { it.childCount >= 6 }?.getChildAt(2) as? ViewGroup
 
     /** The echo TextView: the echo panel's single (text-collapsed) child. */
     private fun echoText(act: MainActivity): TextView? =
@@ -209,9 +275,9 @@ class BnDemoAndroidTest {
     private fun pollForForm(
         scenario: ActivityScenario<MainActivity>,
         deadlineMs: Long = 60_000,
-    ): LinearLayout? {
+    ): ViewGroup? {
         val deadline = System.currentTimeMillis() + deadlineMs
-        val found = AtomicReference<LinearLayout?>(null)
+        val found = AtomicReference<ViewGroup?>(null)
         while (System.currentTimeMillis() < deadline) {
             scenario.onActivity { act ->
                 found.set(form(act)?.takeIf { it.childCount >= 6 })

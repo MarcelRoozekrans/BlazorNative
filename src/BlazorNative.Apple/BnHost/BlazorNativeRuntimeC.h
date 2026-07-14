@@ -140,10 +140,17 @@ int32_t blazornative_register_bridge(int32_t structSize, bn_bridge_callbacks* ca
 // ── Shell-owned C surfaces (NOT runtime exports — keep them out of the mirror) ─
 // Everything ABOVE this line mirrors Exports.cs. Everything the SHELL itself
 // implements in C/Objective-C++ and wants Swift to see gets its own header and is
-// included here, so the mirror stays a mirror. Phase 6.0's Yoga probe is the first
-// (its bn_yoga_* symbols live in BnYogaProbe.mm; Phase 6.1's node-tree API grows in
-// BnYogaProbe.h, never here). Note this includes only the probe's PLAIN-C header —
-// Yoga's own headers must never become reachable from Swift (see BnYogaProbe.h).
+// included here, so the mirror stays a mirror. Phase 6.0's Yoga probe was the first
+// (bn_yoga_compute_flex_row / bn_yoga_warm_up, implemented in BnYogaProbe.mm);
+// Phase 6.1 adds the real node-tree API (BnYogaLayout.{h,mm}) — the engine that
+// places every view.
+//
+// Both are PLAIN-C headers, and that is the load-bearing part: Yoga's OWN headers
+// must never become reachable from Swift, because Xcode's Swift explicit-module
+// dependency scanner reads this bridging header with a path-less search that
+// honours neither HEADER_SEARCH_PATHS nor `-Xcc -I` (six red CI runs in Phase 6.0
+// proved it). All Yoga interop stays inside the .mm files.
 #include "BnYogaProbe.h"
+#include "BnYogaLayout.h"
 
 #endif /* BLAZORNATIVE_RUNTIME_C_H */

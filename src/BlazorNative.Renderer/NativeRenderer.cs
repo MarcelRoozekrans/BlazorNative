@@ -584,6 +584,20 @@ public sealed class NativeRenderer : BlazorRenderer
                                     _eventHandlers.Remove(slot.NodeId);
                             }
                         }
+                        else if (StyleAttributes.Contains(removedName))
+                        {
+                            // Phase 6.1 (the null-reset fix): a removed STYLE
+                            // leaves on the STYLE wire. A null SetStyle value
+                            // already means "reset to default" (PatchProtocol),
+                            // and the shells route it to the node's Yoga
+                            // property; the same null on the PROP wire — what
+                            // this arm used to emit for every name — is a prop
+                            // no shell routes to Yoga, so a conditionally-null
+                            // flex prop (Grow = cond ? 1 : null) would keep its
+                            // old value forever. Harmless before flex, fatal
+                            // with it (design §"The null-reset bug").
+                            patches.Add(new SetStylePatch(slot.NodeId, removedName, null));
+                        }
                         else
                         {
                             patches.Add(new UpdatePropPatch(slot.NodeId, removedName, null));
@@ -1026,10 +1040,65 @@ public sealed class NativeRenderer : BlazorRenderer
         _          => "view"
     };
 
-    private static readonly HashSet<string> StyleAttributes = new(StringComparer.OrdinalIgnoreCase)
+    // ── The SetStyle allow-list, PARTITIONED (Phase 6.1) ──────────────────────
+    //
+    // Names on this list ride the STYLE wire (patch kind 6) instead of the prop
+    // wire. Membership is checked at BOTH emission sites: ProcessAttribute (set)
+    // and the RemoveAttribute arm (reset — the null-reset fix), so a style that
+    // goes away leaves on the same wire it arrived on.
+    //
+    // The partition is the SHELLS' ROUTING TABLE, not decoration. After 6.1 a
+    // shell receiving a SetStyle must send each name to EXACTLY ONE of two
+    // places, and "which one?" must not be a judgement call in two hand-written
+    // parsers:
+    //   • YogaStyleAttributes  → the node's YOGA node (a Yoga style setter).
+    //   • VisualStyleAttributes → the View / UIView itself (paint, not placement).
+    //
+    // The sharp edge this exists to prevent: `padding` is LAYOUT. Yoga places a
+    // container's children inside its padding box, so padding belongs to the
+    // Yoga node — a shell that ALSO calls view.setPadding(...) (as Android does
+    // today) double-applies it. Same for width/height/margin. Gate 2/3 must
+    // delete those view-level calls; the plan says so explicitly.
+    //
+    // Comparer is ORDINAL, deliberately. Both shells match style names
+    // case-SENSITIVELY, so an OrdinalIgnoreCase list here would classify
+    // "FlexGrow" as a style that the shells then silently drop — .NET promising
+    // routing it cannot deliver. Ordinal means a mis-cased name falls onto the
+    // prop wire, where the shells already log "unknown prop".
+    //
+    // NOT on the list, on purpose (ledgered for a later phase): `alignContent`,
+    // `rowGap`, `columnGap` — no typed BnView param and no producer, so
+    // accepting them would only be two hand-written parsers implementing a name
+    // nothing emits. (Note the wrap demo RELIES on Yoga's alignContent default
+    // of flex-start; not setting it is precisely how it gets that.) Likewise
+    // `display` and `flex`, dropped from the pre-6.1 list: nothing types them
+    // and the shells never implemented them.
+
+    /// <summary>Style names that are LAYOUT: the shells route these to the
+    /// node's Yoga node, never to the view. See the partition note above.</summary>
+    internal static readonly HashSet<string> YogaStyleAttributes = new(StringComparer.Ordinal)
     {
-        "style", "color", "background", "backgroundColor", "fontSize",
-        "fontWeight", "padding", "margin", "width", "height",
-        "display", "flex", "flexDirection", "alignItems", "justifyContent"
+        // Container
+        "flexDirection", "justifyContent", "alignItems", "flexWrap", "gap",
+        // Item
+        "alignSelf", "flexGrow", "flexShrink", "flexBasis",
+        // Box — LAYOUT, even the two that predate 6.1 (padding/margin)
+        "width", "height", "minWidth", "maxWidth", "minHeight", "maxHeight",
+        "padding", "margin",
+        // Positioning
+        "position", "top", "right", "bottom", "left",
     };
+
+    /// <summary>Style names that are VISUAL: the shells route these to the
+    /// View / UIView (paint), never to Yoga. See the partition note above.</summary>
+    internal static readonly HashSet<string> VisualStyleAttributes = new(StringComparer.Ordinal)
+    {
+        "backgroundColor", "color", "fontSize", "fontWeight", "background", "style",
+    };
+
+    /// <summary>The union — what "is a style" MEANS to the renderer. Pinned
+    /// equal to (and disjointly partitioned by) the two sets above in
+    /// StyleAttributePartitionTests.</summary>
+    internal static readonly HashSet<string> StyleAttributes =
+        new(YogaStyleAttributes.Concat(VisualStyleAttributes), StringComparer.Ordinal);
 }

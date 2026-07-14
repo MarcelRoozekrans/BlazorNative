@@ -7,7 +7,6 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.FrameLayout
-import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -29,7 +28,7 @@ import java.util.concurrent.atomic.AtomicReference
  *
  * Shape (ClipboardProbe.cs's file header): root div → Copy/Paste/Share BnButtons
  * + BnText echo. On-screen (WidgetMapper's NodeType table): widget_root →
- * LinearLayout div → [0] Button "Copy", [1] Button "Paste", [2] Button "Share",
+ * ViewGroup div → [0] Button "Copy", [1] Button "Paste", [2] Button "Share",
  * [3] TextView (the echo span, text-collapsed).
  *
  * CLIPBOARD ROUND-TRIP: tap Copy → the dispatch loop calls
@@ -144,10 +143,10 @@ class ClipboardAndroidTest {
     // ── Structural pins (the KDoc tree; positions/type, not nodeIds) ─────────
 
     /** The probe's root div: widget_root's single child, once mounted. */
-    private fun probeRoot(act: MainActivity): LinearLayout? =
+    private fun probeRoot(act: MainActivity): ViewGroup? =
         act.findViewById<FrameLayout>(R.id.widget_root)
             ?.takeIf { it.childCount > 0 }
-            ?.getChildAt(0) as? LinearLayout
+            ?.getChildAt(0) as? ViewGroup
 
     /** The echo TextView: the root's single child that is a TextView but NOT a
      * Button (Button extends TextView — the three buttons must not match). */

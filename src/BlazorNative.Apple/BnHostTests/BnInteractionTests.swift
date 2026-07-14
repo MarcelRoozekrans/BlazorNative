@@ -9,6 +9,15 @@
 // The v3.0 bar on the simulator: type→echo (input not clobbered), Clear, cascading
 // theme (both directions), Settings→ (settings shown, no textfield), ←Back (fresh
 // empty remount — state does not survive the swap).
+//
+// ── PHASE 6.1: THE CHURN ─────────────────────────────────────────────────────
+// The five assertions above are UNCHANGED IN MEANING. What broke is the tree
+// ACCESSORS: they cast the form to `UIStackView` and indexed `arrangedSubviews`.
+// Yoga owns placement now and a `view` node is a plain UIView, so they walk
+// `subviews` instead. The interaction lane — attach, dispatch, re-render, patch
+// apply — never went through the stack view; this is a pure accessor rewrite, and
+// that is precisely what makes these five tests the regression signal that the
+// ENGINE changed and the BEHAVIOUR did not.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import XCTest
@@ -89,11 +98,13 @@ final class BnInteractionTests: XCTestCase {
         try tapButton("Settings →")
         XCTAssertTrue(pollUntil { self.settingsView() != nil }, "settings page never appeared")
 
-        let settings = try XCTUnwrap(settingsView(), "the settings stack")
-        XCTAssertEqual(settings.arrangedSubviews.count, 2, "settings view has exactly title + back")
-        XCTAssertEqual((settings.arrangedSubviews[0] as? UILabel)?.text, "Settings")
-        XCTAssertEqual((settings.arrangedSubviews[1] as? UIButton)?.title(for: .normal), "← Back")
+        let settings = try XCTUnwrap(settingsView(), "the settings view")
+        XCTAssertEqual(settings.subviews.count, 2, "settings view has exactly title + back")
+        XCTAssertEqual((settings.subviews[0] as? UILabel)?.text, "Settings")
+        XCTAssertEqual((settings.subviews[1] as? UIButton)?.title(for: .normal), "← Back")
         XCTAssertFalse(containsTextField(root), "the BnDemo input must have left the screen")
+        // The settings page is un-styled too — Yoga's default column still stacks it.
+        assertStacksVertically(settings)
     }
 
     // ── nav ←Back: fresh empty BnDemo remount ────────────────────────────────
@@ -112,8 +123,8 @@ final class BnInteractionTests: XCTestCase {
         // BnDemo remounts FRESH — empty input + empty echo, the seeded text nowhere.
         XCTAssertTrue(pollUntil {
             guard let form = self.demoForm() else { return false }
-            let freshInput = form.arrangedSubviews[safe: 1] as? UITextField
-            let freshEcho = (form.arrangedSubviews[safe: 2] as? UIStackView)?.arrangedSubviews.first as? UILabel
+            let freshInput = form.subviews[safe: 1] as? UITextField
+            let freshEcho = (form.subviews[safe: 2])?.subviews.first as? UILabel
             return freshInput?.text == "" && freshEcho?.text == ""
         }, "BnDemo did not remount fresh+empty after Back")
         XCTAssertEqual(demoInput()?.text, "", "the seeded text must not survive the swap")
@@ -121,23 +132,39 @@ final class BnInteractionTests: XCTestCase {
     }
 
     // ── Tree accessors (re-derived each call — nav/theme mutate the tree) ─────
+    //
+    // Phase 6.1: `subviews`, not `arrangedSubviews`; a plain UIView, not a
+    // UIStackView. The demo form is still root's single child with 6 children, and
+    // the settings page is still root's single child with 2 — the SHAPE is what
+    // identifies them, and the shape did not change.
+    //
+    // The shape alone would be a weaker pin than the `as? UIStackView` cast it
+    // replaced, so the type check is not dropped — it is INVERTED: a `view` node must
+    // now be a PLAIN UIView. That is exactly what 6.1 changed (a container stacks
+    // nothing; Yoga places its children), and exactly what a regression would undo.
 
-    /// The BnDemo form: root's single child once it has all 6 arranged subviews.
-    private func demoForm() -> UIStackView? {
-        guard let form = root.subviews.first as? UIStackView, form.arrangedSubviews.count >= 6 else { return nil }
+    /// A `view` node: a plain UIView — not a UIStackView, not a UILabel, not a
+    /// UIControl. `type(of:)`, because a subclass is precisely what is being excluded.
+    private func isPlainContainer(_ view: UIView) -> Bool { type(of: view) == UIView.self }
+
+    private func demoForm() -> UIView? {
+        guard let form = root.subviews.first,
+              isPlainContainer(form),
+              form.subviews.count >= 6 else { return nil }
         return form
     }
-    private func demoInput() -> UITextField? { demoForm()?.arrangedSubviews[safe: 1] as? UITextField }
-    private func demoEchoPanel() -> UIStackView? { demoForm()?.arrangedSubviews[safe: 2] as? UIStackView }
-    private func demoEchoLabel() -> UILabel? { demoEchoPanel()?.arrangedSubviews.first as? UILabel }
+    private func demoInput() -> UITextField? { demoForm()?.subviews[safe: 1] as? UITextField }
+    private func demoEchoPanel() -> UIView? { demoForm()?.subviews[safe: 2] }
+    private func demoEchoLabel() -> UILabel? { demoEchoPanel()?.subviews.first as? UILabel }
 
-    /// The settings page: root's single child, a 2-arranged-subview stack whose
-    /// first child is the "Settings" title (distinguishes it from the 6-child demo).
-    private func settingsView() -> UIStackView? {
-        guard let stack = root.subviews.first as? UIStackView,
-              stack.arrangedSubviews.count == 2,
-              (stack.arrangedSubviews[0] as? UILabel)?.text == "Settings" else { return nil }
-        return stack
+    /// The settings page: root's single child with 2 children whose first is the
+    /// "Settings" title (distinguishes it from the 6-child demo).
+    private func settingsView() -> UIView? {
+        guard let view = root.subviews.first,
+              isPlainContainer(view),
+              view.subviews.count == 2,
+              (view.subviews[0] as? UILabel)?.text == "Settings" else { return nil }
+        return view
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────

@@ -82,6 +82,44 @@ class WidgetMapperTextChildOnButtonTest {
             1, actualChildCount)
     }
 
+    /**
+     * **THE ALIAS, ON THE REMOVE PATH (Phase 6.1).** A collapsed text node's map
+     * entry points at its PARENT's view — the Button — which it does not own. So a
+     * `RemoveNode` for that text id must drop the map entry and NOTHING else.
+     *
+     * Untracked, it removes the wrong things in both trees: `removeView(nodes[textId])`
+     * detaches the **Button** (pre-6.1 behaviour, already wrong), while
+     * `yoga.removeNode(textId)` correctly no-ops — so Yoga keeps laying out and
+     * reserving space for a widget that is no longer in the view hierarchy, and
+     * every sibling after it is offset by a GHOST. Reachable whenever a button's
+     * text child is conditionally removed.
+     */
+    @Test fun removing_a_collapsed_text_node_leaves_its_parent_button_on_screen() {
+        val root = render(
+            listOf(
+                create(1, "view", null), style(1, "width", "300"),
+                create(2, "button", 1),
+                create(3, "text", 2),          // COLLAPSED onto the Button — no view, no Yoga node
+                text(3, "Tap"),
+                create(4, "view", 1), style(4, "width", "50"), style(4, "height", "50"),
+            ),
+            // Frame 2: the button's text child is conditionally removed.
+            listOf(RenderPatch.RemoveNode(nodeId = 3)),
+        )
+        val col = root.getChildAt(0) as android.view.ViewGroup
+
+        assertEquals("removing the COLLAPSED text child must NOT detach its parent Button — " +
+            "nodes[textId] IS the Button, and removeView() on it takes the whole widget off screen",
+            2, col.childCount)
+        val button = col.getChildAt(0)
+        assertTrue("child 0 must still be the Button", button is Button)
+        assertEquals("Tap", (button as Button).text.toString())
+        assertTrue("the Button must still have a measured frame", button.height > 0)
+        assertEquals("the sibling must still start exactly where the Button ends — with the " +
+            "Button detached but its Yoga node alive, this space would be reserved for a GHOST",
+            button.bottom, col.getChildAt(1).top)
+    }
+
     // ── Helper (duplicated from sibling test files for now; share later) ──
 
     private fun renderFrame(patches: List<RenderPatch>): View {

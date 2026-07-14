@@ -210,8 +210,9 @@ jobs:
       # Yoga is C++/C-API. Build its static lib the same way the runtime .a is
       # embedded (the M5 recipe): compile every yoga/**/*.cpp with the simulator
       # SDK clang++ (C++20 — Yoga 3.x requires it), then libtool -static. Stage the
-      # headers so <yoga/Yoga.h> resolves for BnYogaProbe.mm — the ONE file that sees
-      # them (Swift must not: its module scanner cannot resolve them; see project.yml).
+      # headers so <yoga/Yoga.h> resolves for the two .mm files that see them —
+      # BnYogaProbe.mm (the 6.0 spike) and BnYogaLayout.mm (the 6.1 engine). Swift must
+      # not: its module scanner cannot resolve them; see project.yml.
       # The app links libyoga.a alongside the runtime .a — the coexistence proof.
       - name: "Yoga: build libyoga.a (v${{ env.YOGA_VERSION }}) for iossimulator-arm64"
         run: |
@@ -316,7 +317,7 @@ jobs:
             > ios-out/xcresult.json 2>/dev/null || true
           ls -la ios-out/crash || true
 
-      - name: Assert XCTest baseline (14 passed / 0 failed)
+      - name: Assert XCTest baseline (29 passed / 0 failed)
         if: always()
         run: |
           log=ios-out/xcodebuild-test.log
@@ -331,10 +332,48 @@ jobs:
           # echo, the direct UIPasteboard round-trip, the share-hook seam) → 12; and
           # the bn_bridge_callbacks struct drift pin (BnDriftTests, the third mirror
           # of the 72-byte bridge struct) → 13; Phase 6.0 adds BnYogaTests ×1 (the
-          # Yoga flex-row + measure-callback spike proof) → 14. Count drift fails loudly.
-          if [ "$failed" -ne 0 ] || [ "$passed" -ne 14 ]; then
+          # Yoga flex-row + measure-callback spike proof) → 14.
+          #
+          # 14 -> 27 (Phase 6.1 Gate 3, +13) — Yoga becomes THE ENGINE on iOS:
+          #   +9  BnYogaStyleParserTests — the VALUE GRAMMAR, unit-tested straight off
+          #       the plain-C surface: the number production, `N%`/`auto`, the enum
+          #       words, the negative rule, the routing table, and the two null-reset
+          #       rules (margin → 0, NOT auto; width → auto, which IS its default).
+          #       Includes the strict-parse pair every shell must pass ("12px", "12f").
+          #   +2  BnYogaDirtyTests — two-frame, same node: Yoga CACHES a measure
+          #       function's result, so ReplaceText / fontSize must mark the node dirty
+          #       or the row keeps the frame the OLD text measured to. Nothing else in
+          #       the suite has a warm cache, so nothing else can catch it.
+          #   +1  BnYogaResizeTests — a host resize must RE-SOLVE the tree (the
+          #       viewDidLayoutSubviews hook); pinned on a PERCENTAGE width, because a
+          #       fixed one looks identical whether the tree re-solved or not.
+          #   +1  BnLayoutDemoTests — THE FRAME TABLE, on the simulator: every number
+          #       BnLayoutDemoAndroidTest asserts on the AVD, asserted here on the same
+          #       tree. That PAIRING is M6 DoD #2 ("lays out identically on both
+          #       platforms"); the measured leaves are pinned by ORACLE, not relationally.
+          # (BnRenderTests / BnInteractionTests were REWRITTEN — UIStackView is gone —
+          # but their count is unchanged: same six assertions, now pinned on frames.)
+          #
+          # 27 -> 29 (Phase 6.1 Gate 3 REVIEW, +2) — two tests that bite where the
+          # suite was green on nothing:
+          #   +1  BnYogaLifecycleTests — ONE RemoveNodePatch stands for a whole SUBTREE,
+          #       and a leaked descendant lays out nothing, so NO FRAME ASSERTION CAN
+          #       SEE IT: deleting BnWidgetMapper's purge loop left this entire suite
+          #       green. On iOS the leak is a malloc'd YGNodeRef nothing will ever free
+          #       (Android's twin leaks a GC-rooted View). Mounts CompositionProbe and
+          #       cycles add→remove three times; the node/Yoga-node/Yoga-view counts
+          #       must return to baseline. The iOS twin of YogaNodeLifecycleAndroidTest.
+          #   +1  BnYogaStyleParserTests.testEveryRoutedNameReachesASetter — the DISPATCH
+          #       CHAIN, pinned. bn_yoga_node_set_style's fall-through returns 0 — and so
+          #       does a rejected value, so every rejection test passes whether the arm
+          #       EXISTS or not. Six names (minWidth/maxWidth/minHeight/maxHeight/gap/
+          #       padding) were never once asserted ACCEPTED. Now every routed name is
+          #       fed a legal value and must return 1, and the list it iterates is itself
+          #       pinned against .NET by ShellStyleTableDriftTests (build-test: 292 -> 294).
+          # Count drift fails loudly.
+          if [ "$failed" -ne 0 ] || [ "$passed" -ne 29 ]; then
             grep -E "Test Case '.*' (passed|failed)" "$log" || true
-            echo "iOS XCTest baseline drift: expected 14 passed / 0 failed, got passed=$passed failed=$failed" >&2
+            echo "iOS XCTest baseline drift: expected 29 passed / 0 failed, got passed=$passed failed=$failed" >&2
             exit 1
           fi
 

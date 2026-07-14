@@ -10,8 +10,13 @@
 // twin): the built activity content is captured WITHOUT popping the system sheet.
 //
 // ClipboardProbe tree (ClipboardProbe.cs → div/Copy/Paste/Share/echo, WidgetMapper
-// NodeType table): root → UIStackView (div) → [0] UIButton "Copy", [1] "Paste",
+// NodeType table): root → UIView (div) → [0] UIButton "Copy", [1] "Paste",
 // [2] "Share", [3] UILabel echo (text-collapsed span).
+//
+// Phase 6.1: the tree ACCESSORS churned with the rest — the div was a UIStackView
+// and is now a plain UIView (Yoga owns placement), so `probeForm` walks `subviews`.
+// The clipboard/share assertions themselves are untouched: this lane never went
+// through the stack view, and that is exactly why it is a regression signal.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import XCTest
@@ -92,7 +97,7 @@ final class BnClipboardTests: XCTestCase {
 
     struct BootTimeout: Error {}
 
-    private func bootClipboardProbe() throws -> UIStackView {
+    private func bootClipboardProbe() throws -> UIView {
         root = UIView(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
         let mapper = BnWidgetMapper(root: root)
         let runtime = BnRuntime(mapper: mapper)
@@ -106,17 +111,17 @@ final class BnClipboardTests: XCTestCase {
         return form
     }
 
-    /// The probe root: root's single child, a UIStackView with the 4 arranged
-    /// subviews (Copy/Paste/Share buttons + echo label).
-    private func probeForm() -> UIStackView? {
-        guard let form = root.subviews.first as? UIStackView, form.arrangedSubviews.count >= 4 else { return nil }
+    /// The probe root: root's single child (a plain UIView since 6.1) with the 4
+    /// children (Copy/Paste/Share buttons + echo label).
+    private func probeForm() -> UIView? {
+        guard let form = root.subviews.first, form.subviews.count >= 4 else { return nil }
         return form
     }
 
-    /// The echo: the only UILabel that is a direct arranged subview of the div (the
-    /// buttons' internal titleLabels are not arranged subviews).
+    /// The echo: the only UILabel that is a DIRECT child of the div (a UIButton's
+    /// internal titleLabel is a subview of the BUTTON, never of the div).
     private func echoLabel() -> UILabel? {
-        probeForm()?.arrangedSubviews.first { $0 is UILabel } as? UILabel
+        probeForm()?.subviews.first { $0 is UILabel } as? UILabel
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
