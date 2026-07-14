@@ -114,6 +114,16 @@ android {
         getByName("main") {
             // Shared Kotlin sources from Phase 2.1 stay in src/main/kotlin
             java.srcDirs("src/main/kotlin", "src/androidMain/kotlin")
+            // AGP 9 (the built-in Kotlin plugin) NO LONGER feeds `java.srcDirs` to the
+            // KOTLIN compiler — it only picks up its own defaults (`src/<name>/kotlin`
+            // and `src/<name>/java`). `src/androidMain/kotlin` is a NON-DEFAULT name, so
+            // the whole Android shell — MainActivity, WidgetMapper, YogaLayout — silently
+            // STOPPED BEING COMPILED at the AGP 9 migration. The app still "built" (nothing
+            // references MainActivity at compile time; only the manifest names it), and the
+            // JVM unit tests still passed (they touch src/main/kotlin only) — so the ONLY
+            // lane that could see it was the instrumented one, which does not gate PRs.
+            // It went unnoticed on main. Declare it for Kotlin explicitly:
+            kotlin.srcDirs("src/main/kotlin", "src/androidMain/kotlin")
             manifest.srcFile("src/androidMain/AndroidManifest.xml")
             res.srcDirs("src/androidMain/res")
             assets.srcDirs("src/androidMain/assets")
