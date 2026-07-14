@@ -60,16 +60,23 @@ namespace BlazorNative.Components;
 //
 // ── THE FRAME TABLE (dp, each frame RELATIVE TO ITS PARENT) ──────────────────
 //
-// root BnColumn                        HUGS its two sections; children stack down
-//                                      (it does NOT fill the host — the Android test
-//                                      asserts backRow.bottom == root.height, which is
-//                                      the 6.1 pin that catches the host root re-laying
-//                                      out top-level nodes behind Yoga's back)
+// root BnColumn                        WIDTH: fills the HOST's (it declares none, and
+//                                      the shells' synthetic host root is a column
+//                                      whose default alignItems is stretch — so NOT
+//                                      300, which is the sections' width).
+//                                      HEIGHT: HUGS its two sections; children stack
+//                                      down. It does NOT fill the host — the Android
+//                                      test asserts backRow.bottom == root.height,
+//                                      which is the 6.1 pin that catches the host root
+//                                      re-laying out top-level nodes behind Yoga's back.
 //  ├─ [0] scroll  (0,   0, 300, 200)   BnScroll W=300 H=200 — the VIEWPORT
 //  │    └─ content (0,  0, 300, 800)   SYNTHETIC. 10 × 80 = 800 → THE CONTENT SIZE
-//  │         ├─ row 0  (0,   0, 300, 80)   H=80; no width → stretched to the
+//  │         ├─ row 0  (0,   0, 300, 80)   H=80; no width → stretched to the content
+//  │         │    │                        node's 300 (Yoga's default alignItems:
+//  │         │    │                        stretch — which is what proves the content
+//  │         │    │                        node actually spans the viewport)
 //  │         │    └─ image (0, 0, 40, 40)  6.3 — FIXED, and SMALLER than the row
-//  │         ├─ row 1  (0,  80, 300, 80)   content node's 300 (alignItems:stretch)
+//  │         ├─ row 1  (0,  80, 300, 80)
 //  │         │    └─ flex row (0, 0, 300, 80)   Grow=1 in an 80-high column
 //  │         │         ├─ box A  (0,   0,  50, 80)   W=50   ← cross-stretch → h=80
 //  │         │         ├─ box B  (50,  0, 200, 80)   Grow=1 ← absorbs 300-50-50
@@ -195,35 +202,6 @@ public sealed class BnScrollDemo : ComponentBase
     /// <summary>The row that hosts the nested flex row — see the header.</summary>
     private const int FlexRowIndex = 1;
 
-    /// <summary>The row that hosts the 6.3 image — see the header. Row 0: fully
-    /// inside the viewport at offset 0, so the load is in the FIRST screenshot the
-    /// shells take. NOT row 1 (two features in one row make a failure
-    /// ambiguous).</summary>
-    internal const int ImageRowIndex = 0;
-
-    /// <summary>The row image's DECLARED size — 40 × 40. Both axes, deliberately:
-    /// a definite size means Yoga never calls the measure func, so the bytes cannot
-    /// move a frame in the 6.2 parity table even in principle (and neither can a
-    /// failed load). Strictly smaller than the row in both axes, so it cannot
-    /// overflow it. Pinned in BnScrollDemoTests.TheImageCannotMoveTheFrameTable.
-    /// </summary>
-    internal const int RowImageWidthDp = 40;
-
-    /// <inheritdoc cref="RowImageWidthDp"/>
-    internal const int RowImageHeightDp = 40;
-
-    /// <summary>The row image's source — THE SAME fixture BnImageDemo's fixed case
-    /// loads, from the same loopback origin. One fixture, one server, both demos:
-    /// the shells stand up one in-process fixture server and CI never touches the
-    /// public internet (6.3 non-negotiable #5).</summary>
-    internal const string RowImageSrc = BnImageDemo.FixedSrc;
-
-    private static readonly string RowImageWidth =
-        RowImageWidthDp.ToString(System.Globalization.CultureInfo.InvariantCulture);
-
-    private static readonly string RowImageHeight =
-        RowImageHeightDp.ToString(System.Globalization.CultureInfo.InvariantCulture);
-
     // ── THE PAGE'S ARITHMETIC, AS CONSTANTS ───────────────────────────────────
     //
     // The content size is COMPUTED BY THE CONTRACT, not restated by a human in
@@ -256,6 +234,48 @@ public sealed class BnScrollDemo : ComponentBase
 
     /// <summary>The scrollable range Gates 2/3 drive: 800 − 200 = 600.</summary>
     internal const int ScrollRangeDp = ContentHeightDp - ViewportHeightDp;
+
+    // ── PHASE 6.3: THE ROW IMAGE ──────────────────────────────────────────────
+    //
+    // Part of the same arithmetic, which is why it lives here: the image's size is
+    // asserted AGAINST the row's (smaller in both axes) and its definiteness is what
+    // keeps every product above unchanged.
+
+    /// <summary>The row that hosts the 6.3 image — see the header. Row 0: fully
+    /// inside the viewport at offset 0, so the load is in the FIRST screenshot the
+    /// shells take. NOT row 1 (two features in one row make a failure
+    /// ambiguous).</summary>
+    internal const int ImageRowIndex = 0;
+
+    /// <summary>The row image's DECLARED width — 40. Both axes are declared,
+    /// deliberately: a definite size means Yoga never calls the measure func, so the
+    /// bytes cannot move a frame in the 6.2 parity table even in principle (and
+    /// neither can a failed load). Strictly smaller than the row in both axes, so it
+    /// cannot overflow it.
+    /// <para>The GUARANTEE, though, is not this constant — it is the image node's
+    /// WIRE style table, which BnScrollDemoTests.TheImageCannotMoveTheFrameTable
+    /// asserts is exactly <c>{width:40, height:40}</c>. A constant that says 40 while
+    /// the component forgot to forward it would be a lie a const check cannot
+    /// see.</para></summary>
+    internal const int RowImageWidthDp = 40;
+
+    /// <summary>The row image's DECLARED height — 40. Same rule, same guarantee; see
+    /// <see cref="RowImageWidthDp"/>.</summary>
+    internal const int RowImageHeightDp = 40;
+
+    /// <summary>The row image's source — THE SAME fixture BnImageDemo's fixed case
+    /// loads, from the same loopback origin. One fixture, one server, both demos:
+    /// the shells stand up one in-process fixture server and CI never touches the
+    /// public internet (6.3 non-negotiable #5). The cleartext opt-in that server
+    /// needs on each platform is in BnImageDemo.cs's header, and it applies to THIS
+    /// page's image too.</summary>
+    internal const string RowImageSrc = BnImageDemo.FixedSrc;
+
+    private static readonly string RowImageWidth =
+        RowImageWidthDp.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    private static readonly string RowImageHeight =
+        RowImageHeightDp.ToString(System.Globalization.CultureInfo.InvariantCulture);
 
     private static readonly string RowHeight =
         RowHeightDp.ToString(System.Globalization.CultureInfo.InvariantCulture);

@@ -152,6 +152,16 @@ internal static unsafe class HostSession
         }
     }
 
+    /// <summary>Test-only: the mount registry's KEYS — every name
+    /// <see cref="TryMount"/> and <see cref="SwapRoot"/> accept. Paired with
+    /// <see cref="NativeNavigationManager.RoutesForTests"/> so the two
+    /// hand-maintained registries can be checked against each other: every route's
+    /// component must be mountable, or navigating to it throws on a device (Phase
+    /// 6.3 Gate 1 review — five demo pages, two mirrors, nothing asserting
+    /// they agree).</summary>
+    internal static IReadOnlyCollection<string> RegisteredComponentsForTests
+        => s_components.Keys;
+
     /// <summary>Test-only (same posture as StrictErrorsForTests): swaps a
     /// mount-registry entry so failure paths — a navigation swap whose
     /// target mount THROWS — are testable without a throwing production

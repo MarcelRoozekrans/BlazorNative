@@ -80,6 +80,41 @@ namespace BlazorNative.Components;
 // or did not happen. See that file's frame table: it is the spec Gates 2/3 are
 // held to.
 //
+// ── `Src` → null: THE OTHER REFLOW DIRECTION, AND IT IS ON THE WIRE TODAY ────
+// NORMATIVE — because the renderer ALREADY EMITS IT and no shell has been told what
+// it means. `Src` is an ordinary nullable attribute: setting it back to null on a
+// re-render is a RemoveAttribute on a non-style name, which the renderer turns into
+//
+//     UpdatePropPatch(nodeId, "src", null)
+//
+// exactly as BnButton's `Enabled` false→true does (BnButton_ReEnabled_
+// EmitsEnabledNullProp — the established precedent; a value of null on the prop
+// wire means "the author took the attribute away", and the shell restores the
+// default). Pinned from the component's side in
+// BnComponentTests.BnImage_SrcGoesNull_EmitsUpdatePropNullOnThePropWire.
+//
+// WHAT THE SHELLS OWE (Gates 2/3, and it is not a footnote — it is a SECOND REFLOW
+// DIRECTION, upward, which the parity contract otherwise never mentions):
+//
+//     src → null  → CANCEL the in-flight request for the node
+//                 → CLEAR the image (setImageDrawable(null) / .image = nil)
+//                 → markDirty the Yoga node
+//                 → re-solve
+//                 → the node collapses back to 0 × 0 (if it is intrinsic) and its
+//                   SIBLINGS BELOW IT MOVE BACK UP.
+//
+// A definite (Width+Height) image keeps its frame, of course — Yoga still never
+// calls its measure func; only the pixels go away. And a shell that instead NPEs on
+// a null value, or that keeps painting the old bytes, is wrong in the way two shells
+// wrong DIFFERENTLY is worst: silently, on one platform.
+//
+// SCOPE, said out loud rather than left to be inferred: `/image` has no runtime
+// affordance that flips a `Src` to null (adding one would rewrite this phase's frame
+// tables), so Gates 2/3 assert this at the MAPPER level — where they already assert
+// UpdateProp behaviour — and not on the demo page. The wire emission is pinned in
+// .NET, the shell behaviour is pinned by the mapper tests, and the demo pages stay
+// as they are. That is the whole of the 6.3 decision on `src → null`.
+//
 // ── WHAT IS DELIBERATELY ABSENT (6.3 design decision 3) ──────────────────────
 // No `Placeholder`. No `OnError`. No `ContentMode`. Not an oversight and not
 // laziness: EACH OF THEM CHANGES MEASUREMENT, which is the one thing this phase
@@ -125,7 +160,12 @@ namespace BlazorNative.Components;
 /// <b>On failure the node stays <c>0 × 0</c></b>: it reserves no space, and it does
 /// not retry. On a <see cref="Src"/> change, or when the node is removed, the shell
 /// cancels the in-flight request — a completion must never paint into a removed
-/// node (on iOS that would touch a freed Yoga handle).
+/// node (on iOS that would touch a freed Yoga handle). And on
+/// <b><see cref="Src"/> → <c>null</c></b> — which the renderer emits as
+/// <c>UpdateProp("src", null)</c> — the shell cancels, <em>clears</em> the image,
+/// marks the node dirty and re-solves: an intrinsic image collapses back to
+/// <c>0 × 0</c> and its siblings move back <em>up</em>. That is the reflow in the
+/// other direction, and it is part of the contract.
 /// </para>
 /// <para>
 /// <b>Not a flex container, and not a container at all.</b> There is no
@@ -152,6 +192,12 @@ public sealed class BnImage : ComponentBase
     /// <para>Null = no source: nothing is fetched and the node keeps measuring
     /// <c>0 × 0</c> (unless <see cref="Width"/>/<see cref="Height"/> say
     /// otherwise). Changing it cancels any in-flight request for this node.</para>
+    /// <para><b>Setting it BACK to null is a real wire event</b>, not a no-op: it
+    /// emits <c>UpdateProp(nodeId, "src", null)</c> (the same shape
+    /// <see cref="BnButton.Enabled"/> uses when it leaves the tree), and the shells
+    /// must cancel, CLEAR the image, <c>markDirty</c> and re-solve — so an intrinsic
+    /// image collapses to <c>0 × 0</c> and its siblings move back UP. That is the
+    /// reflow in the other direction; see the file header.</para>
     /// </summary>
     [Parameter] public string? Src { get; set; }
 
@@ -183,14 +229,18 @@ public sealed class BnImage : ComponentBase
 
     // ── Box ───────────────────────────────────────────────────────────────────
 
-    /// <summary>Declared width, e.g. <c>"200"</c>. Null = auto. Set together with
-    /// <see cref="Height"/> the image is sized IMMEDIATELY and its frame never
-    /// moves when the bytes land; set NEITHER and the image is intrinsic —
-    /// <c>0 × 0</c> until the bytes, its natural size after (see the class
-    /// remarks).</summary>
+    /// <summary>Declared width, e.g. <c>"200"</c>. Null = auto. Set it together
+    /// <em>with</em> <see cref="Height"/> and the image is sized IMMEDIATELY — its
+    /// frame never moves when the bytes land; set NEITHER and the image is
+    /// intrinsic: <c>0 × 0</c> until the bytes, its natural size after (see the
+    /// class remarks).</summary>
     [Parameter] public string? Width { get; set; }
 
-    /// <inheritdoc cref="Width"/>
+    /// <summary>Declared height, e.g. <c>"120"</c>. Null = auto. The sizing rule is
+    /// <see cref="Width"/>'s and is stated there: BOTH set → definite, never
+    /// measured; NEITHER set → intrinsic. (Its own summary rather than an
+    /// <c>inheritdoc</c> of <see cref="Width"/>, which would document this property
+    /// as "declared width" — <see cref="BnScroll"/>'s precedent.)</summary>
     [Parameter] public string? Height { get; set; }
 
     /// <inheritdoc cref="BnView.MinWidth"/>

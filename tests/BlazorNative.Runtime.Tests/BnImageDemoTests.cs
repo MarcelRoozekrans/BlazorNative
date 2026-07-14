@@ -42,6 +42,28 @@ namespace BlazorNative.Runtime.Tests;
 // intrinsic image would silently turn the reflow proof into the no-reflow proof,
 // and both shells would still be "green". AssertNode pins the WHOLE table, so a
 // style appearing on either of them fails here first.
+//
+// ── AND THE THREE THINGS THIS GOLDEN CANNOT PIN, WHICH GATES 2/3 MUST ───────
+// Stated here as well as in BnImageDemo.cs's header, because this is the file a
+// Gate 2/3 implementer reads to learn what to assert — and all three are ways a
+// device suite goes GREEN having loaded nothing:
+//
+//   1. THE SYNCHRONIZATION GATE. The AFTER table may only be asserted once ALL
+//      THREE requests have TERMINATED. Two of the three cases assert "nothing
+//      moved", so asserting the AFTER table straight after mount passes both of
+//      them. Await each loader's PER-NODE TERMINAL CALLBACK (Coil's
+//      ImageRequest.Listener onSuccess/onError; Kingfisher's completionHandler) for
+//      all three nodes — NOT band I's movement, which only witnesses case [1].
+//   2. THE CLEARTEXT OPT-IN. Cleartext HTTP is blocked by default on BOTH
+//      platforms, and a blocked load is INDISTINGUISHABLE from the 404 case [2]
+//      expects. Android: covered for instrumented tests by the debug
+//      network_security_config (release blocks it — see the header). iOS: ATS,
+//      and Info.plist has no NSAppTransportSecurity key yet. Gate 3 must add one.
+//   3. THE FIXTURE PRECONDITIONS, ASSERTED IN THE TEST, before any frame:
+//      0 < Wi ≤ 300, Hi > 0, and (Wfixed, Hfixed) ≠ (200, 120). Plus the positive
+//      assertion Wi > 0 && Hi > 0 on the intrinsic image's computed frame, so that
+//      "band F did not move" means "the bytes landed and did not move it" rather
+//      than "no bytes landed".
 // ─────────────────────────────────────────────────────────────────────────────
 
 [Collection("host-session")]
@@ -96,10 +118,11 @@ public sealed class BnImageDemoTests
     /// by a human into three file headers.
     /// <para>The two that MATTER, and why:</para>
     /// <list type="bullet">
-    /// <item>The fixed image (120 high) is STRICTLY SHORTER than nothing above it —
-    /// it is the FIRST section, so no reflow anywhere on the page can move it. That
-    /// is what makes "its sibling's y is 120 before AND after the bytes" a real
-    /// no-reflow assertion instead of a coincidence.</item>
+    /// <item><b>NOTHING SITS ABOVE THE FIXED IMAGE.</b> Section [0] is the root
+    /// column's FIRST child, so its y is 0 by construction and no reflow anywhere on
+    /// this page can move it. That is what makes "band F's y is 120 before AND after
+    /// the bytes" a real no-reflow assertion about the IMAGE, instead of a
+    /// coincidence about the page.</item>
     /// <item>Every section is a hugging column, so a section's height is the sum of
     /// its two children — which is why the intrinsic image's Hi propagates DOWN the
     /// page (and only down) when the bytes land.</item>
@@ -160,7 +183,14 @@ public sealed class BnImageDemoTests
         var (mount, _) = MountImageDemo();
         try
         {
-            foreach (int section in ChildrenOf(mount, Root(mount).NodeId).Take(3))
+            // The count FIRST: Take(3) iterates however many exist, so on a
+            // truncated tree (two sections, or none) this test would pass while
+            // asserting nothing. The page has FOUR sections — the three cases and
+            // the back row — and only the three cases are columns holding an image.
+            List<int> sections = ChildrenOf(mount, Root(mount).NodeId);
+            Assert.Equal(4, sections.Count);
+
+            foreach (int section in sections.Take(3))
             {
                 Assert.Equal("flex-start", StylesOf(mount, section)["alignItems"]);
             }
@@ -180,8 +210,8 @@ public sealed class BnImageDemoTests
         try
         {
             // The root: a BnColumn. The three cases stack down it, and the back row
-            // last — so a reflow in case 2 can move case 3 and the back row, and
-            // NOTHING can move case 1.
+            // last — so a reflow in [1] can move [2] and the back row, and NOTHING
+            // can move [0].
             CreateNodePatch root = Root(mount);
             AssertNode(mount, root.NodeId, "root", "view", ("flexDirection", "column"));
 

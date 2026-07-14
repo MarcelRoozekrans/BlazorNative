@@ -133,37 +133,86 @@ public sealed class BnScrollDemoTests
         Assert.Equal(BnScrollDemo.RowCount, RowColors.Length);
     }
 
-    /// <summary>PHASE 6.3 NON-NEGOTIABLE #2, AS AN ASSERTION RATHER THAN A PROMISE.
-    /// The frame table above is the 6.2 cross-platform parity contract; adding an
-    /// image to this page must not move a single number in it. It cannot, and here
-    /// are the two independent reasons, both checked:
+    /// <summary>PHASE 6.3 NON-NEGOTIABLE #2, AS AN ASSERTION RATHER THAN A PROMISE —
+    /// AND THE ASSERTION IS ON THE <b>WIRE</b>, NOT ON A CONSTANT.
+    /// <para>The frame table above is the 6.2 cross-platform parity contract; adding
+    /// an image to this page must not move a single number in it. It cannot, for two
+    /// independent reasons:</para>
     /// <list type="number">
     /// <item><b>The row's height is definite (80).</b> A child cannot grow a
-    /// definite-height parent. So every row is still 80 high, still at y = 80·i,
-    /// the synthetic content node still computes to 800, and the scrollable range
-    /// is still 600 — asserted, unchanged, in
+    /// definite-height parent. So every row is still 80 high, still at y = 80·i, the
+    /// synthetic content node still computes to 800, and the scrollable range is
+    /// still 600 — asserted, unchanged, in
     /// <see cref="TheContentSizeIsTheContractsArithmetic_NotAProseNumber"/>, which
     /// this phase did not touch.</item>
-    /// <item><b>The image's size is definite (40 × 40).</b> Both axes are declared,
-    /// so Yoga NEVER CALLS ITS MEASURE FUNC — which means the bytes cannot move
-    /// anything even in principle, and a FAILED load moves nothing either. There is
-    /// no measurement to change.</item>
+    /// <item><b>The image's size is definite.</b> Both axes are declared, so Yoga
+    /// NEVER CALLS ITS MEASURE FUNC — the bytes cannot move anything even in
+    /// principle, and a FAILED load moves nothing either. There is no measurement to
+    /// change.</item>
     /// </list>
-    /// The image is also strictly smaller than the row in BOTH axes, so it cannot
-    /// overflow it and raise a clipping question two shells would answer
-    /// differently. If a future edit makes the image intrinsic (drops a dimension)
-    /// or taller than 80, THIS is the test that goes red — before any device
-    /// test does, and with the reason written down.</summary>
+    /// <para><b>Reason 2 is a property of the WIRE, so that is where it is checked.</b>
+    /// This test used to assert <c>RowImageWidthDp &gt; 0 &amp;&amp; RowImageHeightDp
+    /// &gt; 0</c> — two compile-time constants — and claimed to be the guard that
+    /// reddens if a future edit makes the image intrinsic. IT WAS NOT ONE. Delete the
+    /// <c>Width</c> parameter from <c>BnScrollDemo.BuildRowImage</c> and the image
+    /// becomes intrinsic ON THE WIRE while the constant still reads 40: the old test
+    /// stayed green. What actually makes the frame table safe is that the image node
+    /// ARRIVES AT THE SHELL carrying a definite width AND a definite height — present
+    /// ⇒ definite ⇒ Yoga never calls its measure func ⇒ neither bytes nor failure can
+    /// move a frame. So: mount, resolve the image node, and assert its style table is
+    /// EXACTLY <c>{width:40, height:40}</c> — nothing missing (an absent axis is an
+    /// intrinsic axis) and nothing extra.</para>
+    /// <para>The constants are still checked, below, as a SECONDARY sanity check on
+    /// the page's arithmetic — the image must be strictly smaller than the row in
+    /// both axes, so it cannot overflow it and raise a clipping question two shells
+    /// would answer differently. They are the arithmetic; they are not the
+    /// guarantee.</para></summary>
     [Fact]
     public void TheImageCannotMoveTheFrameTable()
     {
-        // Definite in both axes → never measured → the bytes can never move a frame.
-        Assert.True(BnScrollDemo.RowImageWidthDp > 0 && BnScrollDemo.RowImageHeightDp > 0,
-            "the row's image must declare BOTH dimensions — an intrinsic image inside a "
-            + "scrolled row would reflow the row when its bytes land, and this page's frame "
-            + "table is the 6.2 parity contract (6.3 non-negotiable #2).");
+        var (mount, _) = MountScrollDemo();
+        try
+        {
+            // ── THE GUARANTEE: the image node's WIRE style table ────────────────
+            // Resolved structurally (Root → scroll → rows → the image row's child),
+            // exactly the way a shell resolves it — never by a raw nodeId.
+            int scroll = ChildrenOf(mount, Root(mount).NodeId)[0];
+            List<int> rows = ChildrenOf(mount, scroll);
+            Assert.Equal(BnScrollDemo.RowCount, rows.Count);
+            int image = Assert.Single(ChildrenOf(mount, rows[ImageRowIndex]));
 
-        // …and strictly smaller than the row it sits in, in both axes.
+            // EXACTLY these two styles. AssertNode pins the WHOLE table, so:
+            //   • a MISSING axis (someone drops Width) → the image is intrinsic on
+            //     the wire, Yoga calls its measure func, and the bytes reflow a row
+            //     of the 6.2 parity table. RED, here, before any device test runs.
+            //   • an EXTRA style (a margin, a grow) → also red: it could move the
+            //     image inside the row, or the row itself.
+            AssertNode(mount, image, "row 0's image", "image",
+                ("width", Dp(BnScrollDemo.RowImageWidthDp)),
+                ("height", Dp(BnScrollDemo.RowImageHeightDp)));
+
+            // …and the component really forwarded the CONSTANTS, not two numbers
+            // that happen to be 40 — so the arithmetic checked below is arithmetic
+            // about the thing on the wire.
+            Dictionary<string, string?> styles = StylesOf(mount, image);
+            Assert.Equal(Dp(BnScrollDemo.RowImageWidthDp), styles["width"]);
+            Assert.Equal(Dp(BnScrollDemo.RowImageHeightDp), styles["height"]);
+
+            // One image, on the whole page — and it is in THIS row.
+            CreateNodePatch onlyImage = Assert.Single(
+                mount.Patches.OfType<CreateNodePatch>(), p => p.NodeType == "image");
+            Assert.Equal(image, onlyImage.NodeId);
+        }
+        finally
+        {
+            TearDown();
+        }
+
+        // ── SECONDARY: the page's arithmetic (NOT the guarantee) ───────────────
+        // The image is strictly smaller than the row in both axes, so it cannot
+        // overflow it and raise a clipping question two shells would answer
+        // differently. One conjunct per Assert — a two-conjunct Assert.True names
+        // neither half when it fails (the 6.2 review's finding).
         Assert.True(BnScrollDemo.RowImageHeightDp < BnScrollDemo.RowHeightDp,
             $"the image ({BnScrollDemo.RowImageHeightDp}dp) must be SHORTER than the row "
             + $"({BnScrollDemo.RowHeightDp}dp) it sits in.");
@@ -182,6 +231,11 @@ public sealed class BnScrollDemoTests
         // never touches the public internet — non-negotiable #5).
         Assert.Equal(BnImageDemo.FixedSrc, BnScrollDemo.RowImageSrc);
     }
+
+    /// <summary>A dp constant as the renderer puts it on the wire — bare, invariant,
+    /// no unit suffix (the style value grammar, 6.1 non-negotiable).</summary>
+    private static string Dp(int value)
+        => value.ToString(System.Globalization.CultureInfo.InvariantCulture);
 
     [Fact]
     public void Mount_Golden_ViewportRowsStylesAndInsertIndices()

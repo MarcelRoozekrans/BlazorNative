@@ -66,6 +66,15 @@ public sealed class NativeNavigationManager : INavigationManager
     /// route-aware initial mount only ever overrides THIS name.</summary>
     internal static string DefaultComponent => s_routes[DefaultRoute];
 
+    /// <summary>Test-only: the whole route table. There are TWO hand-maintained
+    /// registries — this one and <c>HostSession</c>'s mount registry — and until
+    /// Phase 6.3 nothing asserted that every route's VALUE is a name the mount
+    /// registry actually knows. A route whose component is missing throws only when
+    /// a user navigates to it (<c>SwapRoot</c>: "not in the mount registry"), which
+    /// is a runtime crash on a device for a typo a set-equality test catches at
+    /// build time. Five demo pages in, that is worth one line.</summary>
+    internal static IReadOnlyDictionary<string, string> RoutesForTests => s_routes;
+
     /// <summary>Reverse lookup for HostSession's mount tracking: true when
     /// <paramref name="component"/> is a routed page, with its route.</summary>
     internal static bool TryGetRouteForComponent(string component, out string route)

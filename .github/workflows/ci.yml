@@ -3,7 +3,7 @@
 # rides on. Single windows-latest job mirroring the local verification
 # procedure verbatim (setup.ps1 §1–7 documents the toolchain pins):
 #
-#   build (analyzers ride it) → .NET tests (314 passed / 0 skipped) →
+#   build (analyzers ride it) → .NET tests (316 passed / 0 skipped) →
 #   three NativeAOT publishes (win-x64, linux-bionic-x64, linux-bionic-arm64;
 #   each publish must show exactly the 4 accepted IL2072 trim warnings) →
 #   nine-export verification (dumpbin via vswhere / llvm-readelf from the
@@ -271,9 +271,9 @@ jobs:
       #      viewport lands, the gate opens and it becomes a hard set-equality pin that
       #      reddens in the commit that ships a viewport without the list.
       #
-      # 304 -> 314 (Phase 6.3 Gate 1, +10): the `image` NodeType stops being a stub —
+      # 304 -> 316 (Phase 6.3 Gate 1, +12): the `image` NodeType stops being a stub —
       # the LAST stubbed leaf gains a producer. Renderer.Tests 109 -> 110,
-      # Runtime.Tests 172 -> 181, Analyzers.Tests unchanged at 23. There is NO ABI/wire
+      # Runtime.Tests 172 -> 183, Analyzers.Tests unchanged at 23. There is NO ABI/wire
       # change: MapElementToNodeType has mapped `img` to NodeType 5 since Phase 2.5, and
       # `src` rides the EXISTING UpdateProp wire (still 9 exports on 3 RIDs, still 4
       # accepted IL2072s, still the 72-byte bridge).
@@ -312,6 +312,37 @@ jobs:
       #       child cannot grow it) and the image's size is DEFINITE (Yoga never calls
       #       its measure func, so the bytes — or a failure — cannot move a frame even in
       #       principle). Two independent reasons, either one sufficient.
+      #       GATE 1 REVIEW: it asserts the second reason ON THE WIRE now, not on two
+      #       compile-time constants. It used to check `RowImageWidthDp > 0 &&
+      #       RowImageHeightDp > 0` and CLAIM to be the guard that reddens if the image
+      #       goes intrinsic. It was not one: delete the `Width` parameter from
+      #       BnScrollDemo.BuildRowImage and the image is intrinsic ON THE WIRE while the
+      #       constant still reads 40 — the test stayed green. It now mounts, resolves the
+      #       image node and pins its style table as EXACTLY {width:40, height:40}
+      #       (present => definite => Yoga never measures it), and the mutation reddens it:
+      #         expected: {height=40, width=40}   actual: {height=40}
+      #
+      # …and +2 MORE from the Gate 1 review, both closing a silence rather than adding a
+      # number (Runtime.Tests 181 -> 183):
+      #   +1  BnComponentTests/BnImage_SrcGoesNull_EmitsUpdatePropNullOnThePropWire —
+      #       `Src` -> null IS a wire event and the renderer EMITS IT TODAY (a
+      #       RemoveAttribute on a non-style name -> UpdateProp(nodeId, "src", null), the
+      #       BnButton.Enabled precedent). It had no spec and no test, so two shells would
+      #       have guessed at it differently — or NPE'd on a null value. The honest
+      #       answer is a SECOND REFLOW DIRECTION the parity contract never mentioned:
+      #       cancel, CLEAR the image, markDirty, re-solve -> the node collapses to 0x0
+      #       and its siblings move back UP. Now normative in the design's contract table
+      #       and in BnImage.cs's header; the SHELL half is a Gate 2/3 mapper test (no
+      #       demo page flips a Src at run time, and adding one would rewrite this phase's
+      #       frame tables — said out loud rather than left to be inferred).
+      #   +1  NavigationTests/EveryRoute_ResolvesToAComponentTheMountRegistryKnows — there
+      #       are now FIVE demo pages and TWO hand-maintained registries
+      #       (NativeNavigationManager.s_routes and HostSession's mount registry) with
+      #       nothing asserting they agree. A route whose component name is a typo is
+      #       accepted by NavigateToAsync (the ROUTE exists), reaches SwapRoot, and throws
+      #       there — a runtime crash on a device, inside a click handler, for a mistake a
+      #       set test catches at build time. Routes ⊆ registry (the registry legitimately
+      #       holds UNROUTED probe entries), plus the five routed names by name.
       #
       # THE 6.2 FRAME TABLE DID NOT MOVE, and that is the assertion that matters most.
       # BnScrollDemo gains ONE image inside an existing 80dp row, at a fixed 40x40: its
@@ -321,7 +352,7 @@ jobs:
       # TheContentSizeIsTheContractsArithmetic is untouched and still green. BnDemo,
       # BnSettingsPage and BnLayoutDemo keep their goldens byte-for-byte. The JVM baseline
       # below stays 79 (nothing Kotlin-side moves until Gate 2).
-      - name: .NET tests (assert 314 passed / 0 skipped)
+      - name: .NET tests (assert 316 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -339,8 +370,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 314 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 314 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 316 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 316 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # ── NativeAOT publishes + nine-export verification ────────────────────

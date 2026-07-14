@@ -1200,4 +1200,81 @@ public sealed class BnComponentTests : IDisposable
         Assert.Equal("src", src.Name);
         Assert.Equal(ImageSrc, src.Value);
     }
+
+    /// <summary>Host for the `src` → null transition: an image with a source, and a
+    /// button whose click takes the source away. (An image has no events of its own —
+    /// it is a leaf — so the re-render has to be driven from a sibling.)</summary>
+    private sealed class ClearSrcHost : ComponentBase
+    {
+        private bool _cleared;
+
+        protected override void BuildRenderTree(Microsoft.AspNetCore.Components.Rendering.RenderTreeBuilder b)
+        {
+            b.OpenComponent<BnColumn>(0);
+            b.AddComponentParameter(1, nameof(BnColumn.ChildContent), (RenderFragment)(cb =>
+            {
+                cb.OpenComponent<BnImage>(0);
+                cb.AddComponentParameter(1, nameof(BnImage.Src), _cleared ? null : ImageSrc);
+                cb.CloseComponent();
+
+                cb.OpenComponent<BnButton>(10);
+                cb.AddComponentParameter(11, nameof(BnButton.Label), "Clear");
+                cb.AddComponentParameter(12, nameof(BnButton.OnClick),
+                    EventCallback.Factory.Create<MouseEventArgs>(this, () => _cleared = true));
+                cb.CloseComponent();
+            }));
+            b.CloseComponent();
+        }
+    }
+
+    /// <summary><c>Src</c> → null IS A WIRE EVENT, and the renderer emits it TODAY —
+    /// which is why it needs a spec and a test rather than a silence for Gates 2/3 to
+    /// each guess at differently.
+    /// <para>A null attribute is not appended to the frame at all, so taking
+    /// <c>Src</c> away is a <c>RemoveAttribute</c> on a NON-STYLE name, and the
+    /// renderer turns that into <c>UpdateProp(nodeId, "src", null)</c> — structurally
+    /// the same event as
+    /// <see cref="BnButton_ReEnabled_EmitsEnabledNullProp"/> (the established
+    /// precedent: a null on the prop wire means "the author took the attribute away",
+    /// and the shell restores the default).</para>
+    /// <para><b>What the shells owe</b> (BnImage.cs's header, normative): cancel the
+    /// in-flight request, CLEAR the image, <c>markDirty</c>, re-solve — so an
+    /// intrinsic image collapses back to <c>0 × 0</c> and its siblings move back UP.
+    /// That is a SECOND REFLOW DIRECTION, and it is the one the parity contract would
+    /// otherwise never have mentioned. This test pins the emission; Gates 2/3 pin the
+    /// behaviour at the mapper level (no demo page flips a Src at run time — see the
+    /// scope note in BnImage.cs).</para></summary>
+    [Fact]
+    public void BnImage_SrcGoesNull_EmitsUpdatePropNullOnThePropWire()
+    {
+        var (renderer, frames) = CreateCapturingSession();
+
+        renderer.Mount<ClearSrcHost>();
+        Assert.NotEmpty(frames);
+        RenderFrame mount = frames[0];
+
+        CreateNodePatch image = Assert.Single(
+            mount.Patches.OfType<CreateNodePatch>(), p => p.NodeType == "image");
+        Assert.Equal(ImageSrc, PropOn(mount, image.NodeId, "src").Value);
+
+        AttachEventPatch clear = Assert.Single(mount.Patches.OfType<AttachEventPatch>());
+        Assert.Equal(0, Exports.DispatchEventCore(
+            (ulong)clear.HandlerId, /*lang=json*/ """{"name":"click"}"""));
+
+        Assert.True(frames.Count >= 2, "expected a synchronous re-render frame");
+        RenderFrame after = frames[^1];
+
+        // THE PROP WIRE, with a null value — and the assertion is on the patch KIND
+        // by construction (it looks only at UpdatePropPatch). Exactly one: the image
+        // is the only node that changed.
+        UpdatePropPatch cleared = Assert.Single(after.Patches.OfType<UpdatePropPatch>());
+        Assert.Equal(image.NodeId, cleared.NodeId);
+        Assert.Equal("src", cleared.Name);
+        Assert.Null(cleared.Value);
+
+        // …and NOT the style wire. `src` leaving is not a layout event in .NET — the
+        // re-layout is the SHELL's, off the back of this prop (clear + markDirty +
+        // re-solve). Nothing here touches a style.
+        Assert.Empty(after.Patches.OfType<SetStylePatch>());
+    }
 }
