@@ -166,6 +166,117 @@ public sealed class BnImageDemoTests
         Assert.StartsWith("http://127.0.0.1:", BnImageDemo.FixtureOrigin, StringComparison.Ordinal);
     }
 
+    // ── THE FIXTURE, AND THE UNIT (Gate 2 review — the BLOCKER) ───────────────
+    //
+    // `Wi × Hi` used to be "SYMBOLIC, Gate-supplied". That is a hole the size of the
+    // phase: Gate 2 picks a 160 × 90 fixture and reads `bitmap.width`; Gate 3 picks a
+    // different fixture, reaches for Kingfisher's documented `.scaleFactor(UIScreen
+    // .main.scale)` idiom, measures 160/3 ≈ 53.3pt — and BOTH SUITES ARE GREEN. Each
+    // shell is internally consistent; only the two tables side by side disagree, and
+    // nothing compares them. Verification bar #1 ("the same frames on both devices")
+    // was enforced by nobody.
+    //
+    // So BnImageDemo now DECLARES the fixture's pixel size, the header states the UNIT
+    // rule (one file pixel is one dp/pt) with both platform corollaries, and the two
+    // tests below make the declaration bite: the constants satisfy the fixture contract,
+    // and the Android shell's fixture server serves EXACTLY these numbers.
+
+    /// <summary>THE FIXTURE CONTRACT, AS A FACT OF THE CONSTANTS — not of a PNG
+    /// somebody once checked in (neither shell commits one: both GENERATE the fixture,
+    /// so its size is a fact of code on all three surfaces).
+    /// <para>Each clause is load-bearing and is stated in the header: a fixture wider
+    /// than a section asks a clamping question this phase does not answer; a 0-high one
+    /// makes the reflow assertion vacuously true; and a fixed-case fixture that happened
+    /// to BE 200 × 120 would turn "[0] measures 200 × 120" from a proof that a declared
+    /// size short-circuits measurement into a coincidence.</para></summary>
+    [Fact]
+    public void TheFixtureContract_IsAFactOfTheConstants_NotOfACheckedInPng()
+    {
+        // Wi ≤ the section width: the measure func is called with AT_MOST(300).
+        Assert.InRange(BnImageDemo.IntrinsicNaturalWidthPx, 1, BnImageDemo.SectionWidthDp);
+        // Hi > 0, comfortably — Hi IS the reflow.
+        Assert.True(BnImageDemo.IntrinsicNaturalHeightPx > 0);
+
+        // The FIXED case's fixture must NOT be its declared size, or the no-reflow proof
+        // is a coincidence rather than a proof.
+        Assert.False(
+            BnImageDemo.FixedNaturalWidthPx == BnImageDemo.FixedWidthDp
+            && BnImageDemo.FixedNaturalHeightPx == BnImageDemo.FixedHeightDp,
+            "the FIXED image's fixture must not be 200 × 120: 'it measures 200 × 120' would "
+            + "then be true of a shell that measured the BYTES, which is exactly the bug the "
+            + "case exists to exclude.");
+
+        // …nor BnScrollDemo's 40 × 40 row image, which buys the same proof inside the scroll
+        // and shares this fixture file (FixedSrc).
+        Assert.False(
+            BnImageDemo.FixedNaturalWidthPx == 40 && BnImageDemo.FixedNaturalHeightPx == 40,
+            "the same fixture is BnScrollDemo's row image (declared 40 × 40) — its natural size "
+            + "must differ from that too, or the scroll demo's no-reflow proof is a coincidence.");
+    }
+
+    /// <summary>THE DRIFT PIN: the Android shell's fixture server must serve <b>exactly
+    /// the pixel sizes BnImageDemo declares</b>.
+    ///
+    /// <para>A device-side test cannot read a <c>.cs</c> file, so `ImageFixtureServer.kt`
+    /// transcribes these four integers — and a transcription nobody checks is a
+    /// transcription that drifts. It drifts SILENTLY here, in the worst possible way: the
+    /// Android suite would still be green (it asserts its own fixture's decoded size), the
+    /// iOS suite would still be green (it asserts its own), and the two would simply be
+    /// measuring different images. THE PHASE'S ENTIRE CLAIM IS THAT THEY MEASURE THE
+    /// SAME.</para>
+    ///
+    /// <para>It lives in .NET for the reason `ShellStyleTableDriftTests` does:
+    /// <c>build-test</c> is the ONE required lane where the shells' sources are
+    /// checkout-visible. <b>Gate 3 adds the iOS twin here</b>, against its own fixture
+    /// server — three copies of four numbers, pinned rather than trusted.</para></summary>
+    [Fact]
+    public void TheAndroidFixtureServer_ServesExactlyBnImageDemosNaturalPixelSizes()
+    {
+        var kotlin = ShellSource(AndroidImageFixtureServer);
+
+        Assert.Equal(BnImageDemo.IntrinsicNaturalWidthPx, KotlinIntConst(kotlin, "INTRINSIC_W"));
+        Assert.Equal(BnImageDemo.IntrinsicNaturalHeightPx, KotlinIntConst(kotlin, "INTRINSIC_H"));
+        Assert.Equal(BnImageDemo.FixedNaturalWidthPx, KotlinIntConst(kotlin, "FIXED_W"));
+        Assert.Equal(BnImageDemo.FixedNaturalHeightPx, KotlinIntConst(kotlin, "FIXED_H"));
+    }
+
+    private const string AndroidImageFixtureServer =
+        "src/BlazorNative.Jni/src/androidTest/kotlin/io/blazornative/shell/ImageFixtureServer.kt";
+
+    /// <summary>One <c>const val NAME = &lt;int&gt;</c> out of a Kotlin source. Anchored at
+    /// the start of a line, so a mention of the name in a KDoc cannot be mistaken for the
+    /// declaration — and it FAILS LOUDLY when the declaration is not found, because a
+    /// renamed constant must break this pin rather than quietly pass it.</summary>
+    private static int KotlinIntConst(string source, string name)
+    {
+        var match = System.Text.RegularExpressions.Regex.Match(
+            source,
+            $@"(?m)^\s*const val {System.Text.RegularExpressions.Regex.Escape(name)} = (?<v>-?\d+)\s*$");
+
+        Assert.True(match.Success,
+            $"could not find `const val {name} = <int>` in {AndroidImageFixtureServer}. It was "
+            + "renamed or reshaped — this drift pin IS the contract that both shells measure the "
+            + "same fixture, so re-point it deliberately rather than deleting it.");
+
+        return int.Parse(match.Groups["v"].Value, System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    /// <summary>A shell source, read from the checkout — the shells are not build inputs of
+    /// this project, which is what makes <c>build-test</c> the only lane that can host this.
+    /// (Same mechanism as <c>ShellStyleTableDriftTests</c>.)</summary>
+    private static string ShellSource(string relativePath)
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "BlazorNative.sln")))
+            dir = dir.Parent;
+
+        Assert.True(dir is not null, "BlazorNative.sln not found above " + AppContext.BaseDirectory);
+
+        var file = Path.Combine(dir!.FullName, relativePath.Replace('/', Path.DirectorySeparatorChar));
+        Assert.True(File.Exists(file), $"shell source not found: {file}");
+        return File.ReadAllText(file);
+    }
+
     /// <summary>WHY EVERY SECTION IS <c>Align=FlexStart</c>, pinned as a decision
     /// rather than left as a value in the golden below.
     /// <para>A section is a COLUMN, so its cross axis is WIDTH — and Yoga's default

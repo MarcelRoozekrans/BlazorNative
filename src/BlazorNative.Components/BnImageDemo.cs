@@ -80,9 +80,9 @@ namespace BlazorNative.Components;
 //
 // The intrinsic image's bytes arrive; the shell sets the image ON THE MAIN THREAD,
 // marks the Yoga node dirty (the 6.1 path) and re-solves (the 6.2 path). ONE
-// reflow, never two. `Wi × Hi` is THE FIXTURE'S NATURAL PIXEL SIZE IN dp/pt —
-// SYMBOLIC, deliberately: Gates 2/3 supply the fixture and assert against its real
-// size. It is NOT a constant this file gets to invent.
+// reflow, never two. `Wi × Hi` is THE FIXTURE'S NATURAL PIXEL SIZE IN dp/pt — and
+// it is NOT symbolic: it is IntrinsicNaturalWidthPx × IntrinsicNaturalHeightPx,
+// 160 × 90, declared as constants BELOW and asserted by BOTH shells. See "THE UNIT".
 //
 // THIS TABLE MAY ONLY BE ASSERTED ONCE ALL THREE REQUESTS HAVE TERMINATED — see
 // "THE SYNCHRONIZATION GATE" below. It is the single most dangerous thing on this
@@ -184,26 +184,136 @@ namespace BlazorNative.Components;
 //     contract below — `0 < Wi ≤ 300`, `Hi > 0`, `(Wfixed, Hfixed) ≠ (200, 120)`.
 //     An unasserted fixture constraint is a coincidence waiting to happen.
 //
-// ── THE FIXTURE'S CONTRACT (what Gates 2/3 must pick, and why) ──────────────
-//   • Wi ≤ 300. A section is 300 wide, so the measure func is called with
+// ═══════════════════════════════════════════════════════════════════════════
+// ── THE UNIT: ONE FILE PIXEL IS ONE dp/pt ──────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// NORMATIVE, AND IT IS THE ROW OF THE PARITY CONTRACT THAT DECIDES WHETHER THE TWO
+// SHELLS COMPUTE THE SAME NUMBER AT ALL. (Design §"The parity contract" carries the
+// same row; this is its statement to the shells.)
+//
+//   An image's MEASURED SIZE is the PIXEL COUNT OF THE DECODED FILE, read directly
+//   as dp (Android) / points (iOS). A 160-pixel-wide PNG measures 160. On every
+//   device, at every density, on both platforms.
+//
+// "The image's natural pixel size in dp/pt" is the only reading under which Android
+// and iOS can agree, and it has to be said out loud because BOTH platforms hand you
+// a plausible WRONG number for free:
+//
+//   ANDROID — read the DECODED BITMAP's own `bitmap.width`. NEVER `intrinsicWidth`:
+//     a BitmapDrawable scales that by `targetDensity / bitmap.density`, so it is
+//     `px × (deviceDensity / 160dpi-ish)` — a number that DIFFERS ON EVERY DEVICE and
+//     across platform versions. Likewise never the generic `view.measure` path, whose
+//     answer for an ImageView is `px`, which Yoga would then read as dp only after
+//     6.1's `/ density` — 61dp for a 160px file on the Pixel 6 AVD's 2.625. That is
+//     why `image` has a MEASURE FUNCTION OF ITS OWN in the Android shell.
+//
+//   iOS — `UIImage(data:)` has `scale == 1`, so its `size` is ALREADY the file's pixel
+//     count expressed in points. Gate 3 gets the rule for free — AND MUST NOT TAKE IT
+//     AWAY:
+//       ✗ DO NOT set Kingfisher's `.scaleFactor(UIScreen.main.scale)`. It is
+//         Kingfisher's own documented idiom for "crisp images", it is the first thing
+//         an implementer reaches for, and it divides the reported size by the screen
+//         scale: a 160px file would measure 160/3 ≈ 53.3pt on a 3× simulator against
+//         Android's 160dp. THE PARITY IS GONE, and NO SINGLE-DEVICE TEST IN EITHER
+//         SUITE CAN SEE IT — each shell is internally consistent; only the two tables
+//         side by side disagree, and nothing compares them automatically.
+//       ✗ DO NOT add a `DownsamplingImageProcessor` / `ResizingImageProcessor`, for the
+//         same reason and the contract's "no downsampling" row.
+//     (Android's mirror of that trap is `Size.ORIGINAL` on the Coil request: Coil's
+//     default sizes a request to its target — with none, to the DISPLAY.)
+//
+// ── AND THE HONEST CONSEQUENCE, SAID OUT LOUD ──────────────────────────────
+// A "2×" asset (a 320 × 180 file drawn to be shown at 160 × 90) renders at TWICE its
+// intended physical size. So does a 3×. That is the rule working as specified, it is
+// CONSISTENT ACROSS BOTH PLATFORMS (iOS does exactly this by default for network
+// images), and it is the price of a unit that two shells can agree on without a
+// density round-trip.
+//
+// It is NOT inherited from React Native, and the ledger says so: RN auto-sizes only
+// BUNDLED assets, where the packager's `@2x`/`@3x` filename suffix supplies the scale
+// it needs. For NETWORK images RN requires an explicit size and answers this question
+// not at all. So the phase inherits RN's model for the REFLOW (design decision 2) and
+// NOT for the UNIT — the unit is un-inherited ground this phase broke by itself.
+// Ledgered for Gate 4: a scale-aware `Src` (an `@2x` convention, or a `Scale`
+// parameter) is a real M7 question and is not answered here.
+//
+// ── THE FIXTURE'S CONTRACT (and its numbers are DECLARED, not Gate-supplied) ─
+//
+// The four natural pixel sizes are `internal const` BELOW — IntrinsicNaturalWidthPx /
+// HeightPx and FixedNaturalWidthPx / HeightPx — and **BOTH SHELLS ASSERT THE SAME
+// NUMBERS**. They used to be "symbolic, Gates 2/3 supply the fixture", which meant
+// Gate 3 could pick a different fixture, apply a different unit rule, and be entirely
+// green: nothing enforced this phase's own verification bar #1 ("the same frames on
+// both devices"). Now the .cs owns them, and a drift test pins each shell's fixture
+// server against these constants (Android: BnImageDemoTests
+// .TheAndroidFixtureServer_ServesExactlyBnImageDemosNaturalPixelSizes; Gate 3 adds its
+// iOS twin the same way).
+//
+// Why THESE numbers, and the constraints any replacement must keep:
+//   • Wi ≤ 300 (160). A section is 300 wide, so the measure func is called with
 //     AT_MOST(300); a wider fixture would raise "does the shell clamp, and does it
 //     clamp the same way on both platforms?", which is a question this phase
 //     deliberately does not answer (no ContentMode — design decision 3).
-//   • Hi > 0, and comfortably so: Hi IS the reflow. A 0-high fixture would make
+//   • Hi > 0, and comfortably so (90): Hi IS the reflow. A 0-high fixture would make
 //     the reflow assertion vacuously true.
-//   • The FIXED image's fixture must have a natural size that is NOT 200 × 120.
-//     Otherwise "it measures 200 × 120" is a coincidence, not a proof that the
-//     declared size short-circuits measurement. (It may be the same file as the
-//     intrinsic fixture — Wi × Hi ≠ 200 × 120 is the only requirement.)
+//   • The FIXED image's fixture is 64 × 48 — NOT 200 × 120. Otherwise "it measures
+//     200 × 120" is a coincidence, not a proof that the declared size short-circuits
+//     measurement. (It is also ≠ 40 × 40, BnScrollDemo's row image, which buys the
+//     same proof inside the scroll.)
 //   • No downsampling that changes the reported size. The measured size is the
 //     image's NATURAL size, not a decoder's chosen sample size (the parity
-//     contract's last row) — configure Coil and Kingfisher to it, and assert the
-//     number against a fixture whose pixel size you know.
+//     contract's last row) — configure Coil and Kingfisher to it.
 //
-// EVERY ONE OF THOSE FOUR IS AN ASSERTION IN THE TEST, evaluated on the DECODED
-// fixture before any frame is looked at — not a comment, and not a property of a
-// file someone once checked in. They are also the probe that the bytes came from
-// OUR fixture server (see the port note below).
+// AND THE SHELLS STILL ASSERT AGAINST THE **DECODED BITMAP**, not against the constant
+// alone: that is what pins "NO DOWNSAMPLING". A shell that asserted only the constant
+// would be asserting its own transcription. Both, therefore: the decoded fixture's own
+// pixel count == the measured frame == these constants.
+//
+// EVERY ONE OF THOSE IS AN ASSERTION IN THE TEST, evaluated on the DECODED fixture
+// before any frame is looked at — not a comment, and not a property of a file someone
+// once checked in. They are also the probe that the bytes came from OUR fixture server
+// (see the port note below).
+//
+// ── THE CONTENT MODE IS PART OF THE CONTRACT TOO (aspect-fit, both shells) ──
+// NORMATIVE. The two frameworks' defaults DISAGREE — Android's ImageView is FIT_CENTER
+// (aspect-preserving), UIImageView's is .scaleToFill (STRETCH) — and for case [0] (a
+// 64 × 48 fixture in a declared 200 × 120 frame) that means Android letterboxes and iOS
+// would distort. It is FRAME-NEUTRAL, so every number in the tables above survives it
+// and no test on either side could catch it: what breaks is "renders identically", on
+// one platform, silently.
+//
+// So both shells set it EXPLICITLY to aspect-fit — Android `ImageView.ScaleType
+// .FIT_CENTER`, iOS `contentMode = .scaleAspectFit`. Aspect-fit because it cannot LIE
+// (a stretched image misrepresents its own pixels, and this phase's subject is an image
+// reporting its true size); because it is free on the intrinsic path (there the frame IS
+// the natural size, so fit and fill are pixel-identical — the choice only bites on a
+// DECLARED frame of a different aspect); and because it is the value an M7 `ContentMode`
+// would default to. DEFERRING THE ContentMode *API* (decision 3) DOES NOT DEFER THE
+// *DEFAULT* — 6.1 set that precedent with `clipChildren = false` ("it costs one line to
+// align the two shells").
+//
+// ── A MEMORY-CACHE HIT COMPLETES *SYNCHRONOUSLY* ───────────────────────────
+// NORMATIVE, and it bites BOTH shells (Coil dispatches on Dispatchers.Main.immediate;
+// Kingfisher's `setImage` calls its completionHandler synchronously on a memory hit).
+// The shell issues its request from the MAIN thread, inside the patch batch — so on the
+// SECOND mount of any page whose images the process has already fetched, the completion
+// (set image → markDirty → re-solve) runs TO COMPLETION INSIDE THE `UpdateProp("src")`
+// HANDLER, before the enqueue call even returns. Two consequences a shell must handle:
+//
+//   1. THE RE-SOLVE MUST NOT RUN INSIDE A BATCH. The batch's own frame-commit re-solves
+//      the whole tree at the end; a re-solve from inside it means Yoga runs against a
+//      HALF-APPLIED tree and then again at commit — TWO reflows, where the contract says
+//      ONE. And where the shell guards patch application against re-entrant dispatch (a
+//      programmatic setText firing a change event), that guard is not re-entrant: an
+//      inner re-solve's `finally` clears it for the REST of the batch.
+//   2. THE IN-FLIGHT REQUEST MUST ONLY BE RECORDED IF IT IS STILL LIVE. The completion
+//      already ran, so its own bookkeeping found nothing to clear; storing the (already
+//      finished) cancellation handle afterwards leaks it forever.
+//
+// Every existing test clears the image caches before mounting, which means this whole
+// path is UNEXERCISED unless a test deliberately mounts TWICE WITH A WARM CACHE. Both
+// gates owe that test.
 //
 // ── CLEARTEXT HTTP IS BLOCKED BY DEFAULT. ON BOTH PLATFORMS. ────────────────
 //
@@ -236,12 +346,27 @@ namespace BlazorNative.Components;
 // ── THE URLS ARE LOOPBACK. CI NEVER TOUCHES THE PUBLIC INTERNET ─────────────
 // 6.3 non-negotiable #5, and it is not negotiable because a suite whose green
 // depends on a remote host is not a suite. The three sources point at a fixture
-// server the SHELLS run IN-PROCESS, and the failing case is a path that server
-// 404s. So:
+// server **THE TEST TARGETS** run IN-PROCESS, and the failing case is a path that
+// server 404s. So:
 //   • the fetch is a REAL network fetch, through Coil and Kingfisher, over HTTP —
 //     which is the capability this phase is actually shipping;
 //   • the failure is a REAL failure, deterministic, and offline;
 //   • no test anywhere depends on a host that can go down.
+//
+// THE TEST TARGETS — NOT THE APP. Said precisely, because the imprecise version
+// ("the shells run it") is what Gate 3 would otherwise build to. The fixture server
+// lives in the TEST source set on each platform (Android: `src/androidTest`; iOS: the
+// XCTest target), so:
+//   • under the instrumented / XCTest suites, it is in the app's own process and the
+//     three URLs resolve — that is the whole proof surface above;
+//   • in the DEMO APP, in EVERY build type including debug, NOTHING is listening on
+//     8099, so `/image` shows THREE FAILED IMAGES and the page renders its "before"
+//     table forever. That is correct and expected for a demo whose fixtures are
+//     loopback HTTP; it is not a debug-vs-release distinction (the release cleartext
+//     block below is a SECOND, INDEPENDENT reason the release app cannot load them).
+//     If a demo app must ever show the images, the answer is to bundle the fixture as
+//     an asset — never to weaken the release network config, and never to ship a
+//     ServerSocket in the app.
 //
 // WHAT "LOOPBACK" ACTUALLY MEANS, PER PLATFORM — because the two are NOT the same,
 // and the difference is exactly the sentence Gate 3 would otherwise trust:
@@ -290,10 +415,11 @@ public sealed class BnImageDemo : ComponentBase
 {
     // ── THE FIXTURE ORIGIN ────────────────────────────────────────────────────
     //
-    // Loopback. The shells serve the fixture in-process and CI never reaches the
-    // public internet (non-negotiable #5). Gates 2/3 read these constants rather
-    // than transcribing the strings — a URL retyped in three places is a URL that
-    // drifts in two.
+    // Loopback. Each platform's TEST TARGET serves the fixture in-process (the demo
+    // app does not — see the header's "THE TEST TARGETS — NOT THE APP") and CI never
+    // reaches the public internet (non-negotiable #5). Gates 2/3 read these constants
+    // rather than transcribing the strings — a URL retyped in three places is a URL
+    // that drifts in two.
     //
     // WHOSE loopback it is DIFFERS BY PLATFORM, and the file header says so at
     // length because Gate 3 depends on it: on the AVD, 127.0.0.1 is the emulated
@@ -325,6 +451,48 @@ public sealed class BnImageDemo : ComponentBase
     /// deterministic and offline — the node must stay 0 × 0, log, reserve nothing,
     /// and NOT retry.</summary>
     internal const string FailingSrc = FixtureOrigin + "/missing.png";
+
+    // ── THE FIXTURES' NATURAL PIXEL SIZES ─────────────────────────────────────
+    //
+    // THE NUMBERS BOTH SHELLS ASSERT — and the reason they live here rather than in
+    // each shell's fixture server is the phase's verification bar #1: "BnImageDemo
+    // renders on the AVD and the iOS simulator WITH THE SAME FRAMES". While `Wi × Hi`
+    // was symbolic and Gate-supplied, Gate 3 could pick a different fixture, apply a
+    // different unit rule, and be fully green — nothing compared the two tables, and
+    // nothing ever will automatically. So the .cs owns the fixture, both shells
+    // generate a PNG of exactly this pixel size, and a drift test pins each shell's
+    // transcription against these four constants.
+    //
+    // They are PIXELS, and by the contract's UNIT row (see the header, "THE UNIT")
+    // they are therefore also the dp/pt the image MEASURES to. That equality is the
+    // whole parity rule, in four integers.
+    //
+    // The shells assert them against the DECODED BITMAP as well, never against the
+    // constant alone — that is what pins "no downsampling". A shell asserting only its
+    // own transcription is asserting nothing.
+
+    /// <summary><b>[1]</b>'s fixture width in FILE PIXELS — and therefore <b>Wi</b>, the
+    /// width it measures to, in dp/pt. ≤ <see cref="SectionWidthDp"/> by the fixture
+    /// contract: a wider fixture asks a clamping question this phase does not
+    /// answer.</summary>
+    internal const int IntrinsicNaturalWidthPx = 160;
+
+    /// <summary><b>[1]</b>'s fixture height in FILE PIXELS — and therefore <b>Hi</b>.
+    /// <b>Hi IS THE REFLOW</b>: it is exactly how far band I moves, and how far
+    /// everything below [1] slides down, when the bytes land. A 0-high fixture would
+    /// make the reflow assertion vacuously true.</summary>
+    internal const int IntrinsicNaturalHeightPx = 90;
+
+    /// <summary><b>[0]</b>'s fixture width in FILE PIXELS. Deliberately <b>NOT</b>
+    /// <see cref="FixedWidthDp"/>: if the fixture were 200 × 120, "[0] measures
+    /// 200 × 120" would be a coincidence rather than a proof that a declared size
+    /// short-circuits measurement entirely.</summary>
+    internal const int FixedNaturalWidthPx = 64;
+
+    /// <summary><b>[0]</b>'s fixture height in FILE PIXELS. See
+    /// <see cref="FixedNaturalWidthPx"/> — and it is also ≠ 40 × 40, BnScrollDemo's row
+    /// image, which buys the same proof inside the scroll.</summary>
+    internal const int FixedNaturalHeightPx = 48;
 
     // ── THE PAGE'S ARITHMETIC, AS CONSTANTS ───────────────────────────────────
     //
