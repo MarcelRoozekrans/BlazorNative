@@ -8,6 +8,7 @@ import android.widget.FrameLayout
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import io.blazornative.jni.RenderPatch
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -81,9 +82,81 @@ class YogaNodeLifecycleAndroidTest {
         }
     }
 
+    /**
+     * Phase 6.2 — **AND THE SUBTREE INCLUDES THE NODE NO PATCH EVER NAMES.**
+     *
+     * A `scroll` node's synthetic content node is created by the shell, lives in both
+     * trees, and is on **neither wire**: the renderer emits one `RemoveNodePatch` for
+     * the scroll node and knows nothing about the node underneath it. So the purge has
+     * to reach it — and the reason it does is structural rather than special-cased:
+     * the content node is a Yoga CHILD of its scroll node, so 6.1's subtree walk finds
+     * it for free.
+     *
+     * **Prove it, do not assume it.** The failure is asymmetric across the two shells
+     * and worse on the far one: on Android a missed content node is a leak (it pins the
+     * content View, the rows under it, and the Activity Context, once per navigation);
+     * **on iOS the `.mm` owns raw `YGNodeRef`s and a descendant left in the map after
+     * `YGNodeFreeRecursive` is a DANGLING POINTER** — the 6.1 mutation test proved that
+     * crashes navigation rather than merely leaking. Gate 3 inherits this test
+     * directly.
+     *
+     * Synthetic (not the real renderer, unlike the test above) because a `RemoveNode`
+     * for a scroll node is exactly the patch under test, and there is no demo that
+     * mounts and unmounts one — the point here is the shell's bookkeeping under a patch
+     * whose shape the .NET golden already pins.
+     */
+    @Test fun removing_a_scroll_node_frees_the_SYNTHETIC_content_node_too() {
+        val host = SyntheticHost()
+        val baseline = host.read { counts(host.mapper) }
+
+        host.render(listOf(
+            create(1, "scroll", null),
+            style(1, "width", "300"), style(1, "height", "200"),
+            create(10, "view", 1), style(10, "height", "80"),
+            create(11, "view", 1), style(11, "height", "80"),
+            create(12, "view", 11),   // a grandchild, INSIDE the content subtree
+        ))
+
+        val mounted = host.read { counts(host.mapper) }
+        assertEquals("four WIRE nodes: the scroll and its three descendants", 4, mounted.nodes)
+        assertEquals("ONE synthetic content node — the shell's, never the renderer's",
+            1, mounted.contentNodes)
+        assertEquals("…and it is in the VIEW tree too, or it is in neither",
+            1, mounted.contentViews)
+        assertEquals("the Yoga tree holds the four wire nodes AND the synthetic one — five " +
+            "view mappings, four of which any patch can name", 5, mounted.yogaViews)
+
+        // ONE patch. It stands for the scroll node, its content node, and everything
+        // under them.
+        host.render(listOf(RenderPatch.RemoveNode(nodeId = 1)))
+
+        val after = host.read { counts(host.mapper) }
+        assertEquals("the wire nodes are gone", baseline.nodes, after.nodes)
+        assertEquals("THE PIN: the SYNTHETIC content node is gone with them. No patch named it; " +
+            "the purge reached it because it is a Yoga CHILD of the scroll node and 6.1's subtree " +
+            "walk finds it. Miss it and Android leaks a View, its rows and the Activity Context " +
+            "once per navigation — and iOS is left with a DANGLING YGNodeRef.",
+            0, after.contentNodes)
+        assertEquals("…and its VIEW mapping with it (that is the reference that pins the Context)",
+            baseline.yogaViews, after.yogaViews)
+        assertEquals("…and the view-tree half of the synthetic pair", 0, after.contentViews)
+        assertEquals("…and the Yoga nodes", baseline.yogaNodes, after.yogaNodes)
+        assertEquals("the ScrollView itself is detached from the host root", 0,
+            host.read { host.root.childCount })
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────────
 
-    private data class Counts(val nodes: Int, val yogaNodes: Int, val yogaViews: Int)
+    private data class Counts(
+        val nodes: Int,
+        val yogaNodes: Int,
+        val yogaViews: Int,
+        val contentNodes: Int = 0,
+        val contentViews: Int = 0,
+    )
+
+    private fun counts(m: WidgetMapper) = Counts(
+        m.nodeCount, m.yogaNodeCount, m.yogaViewCount, m.yogaContentNodeCount, m.scrollContentCount)
 
     /** The mapper's live bookkeeping, read on the main thread. */
     private fun readCounts(scenario: ActivityScenario<MainActivity>): Counts {
