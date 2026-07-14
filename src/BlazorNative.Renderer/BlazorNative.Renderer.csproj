@@ -58,7 +58,7 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Components" Version="10.0.1*" />
-    <PackageReference Include="Microsoft.AspNetCore.Components.Web" Version="10.0.*" />
+    <PackageReference Include="Microsoft.AspNetCore.Components.Web" Version="10.0.1*" />
     <PackageReference Include="ZeroAlloc.AsyncEvents" Version="*" />
     <PackageReference Include="ZeroAlloc.Collections" Version="*" />
     <PackageReference Include="ZeroAlloc.Inject" Version="*" />
