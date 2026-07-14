@@ -60,7 +60,11 @@ namespace BlazorNative.Components;
 //
 // ── THE FRAME TABLE (dp, each frame RELATIVE TO ITS PARENT) ──────────────────
 //
-// root BnColumn                        fills the host; children stack vertically
+// root BnColumn                        HUGS its two sections; children stack down
+//                                      (it does NOT fill the host — the Android test
+//                                      asserts backRow.bottom == root.height, which is
+//                                      the 6.1 pin that catches the host root re-laying
+//                                      out top-level nodes behind Yoga's back)
 //  ├─ [0] scroll  (0,   0, 300, 200)   BnScroll W=300 H=200 — the VIEWPORT
 //  │    └─ content (0,  0, 300, 800)   SYNTHETIC. 10 × 80 = 800 → THE CONTENT SIZE
 //  │         ├─ row 0  (0,   0, 300, 80)   H=80; no width → stretched to the
@@ -218,10 +222,12 @@ public sealed class BnScrollDemo : ComponentBase
     /// height is what makes it a viewport at all — an auto-height scroll node
     /// takes its height FROM its content, so viewport == content and there is
     /// nothing to scroll (the shells warn once when that happens; here it simply
-    /// cannot). Note what is NOT here: no Gap, no Padding, no Justify — BnScroll
-    /// is a flex ITEM (see BnScroll's header); the rows' layout is the synthetic
-    /// content node's business, and an author who wants to shape it puts a
-    /// BnColumn inside.</summary>
+    /// cannot). An explicit Height, deliberately: the flex-sized alternative is
+    /// <c>Grow="1" Basis="0"</c> (CSS's <c>flex: 1</c>) and NOT <c>Grow="1"</c>
+    /// alone — see BnScroll's header, which used to say otherwise. Note what is
+    /// NOT here: no Gap, no Padding, no Justify — BnScroll is a flex ITEM (see
+    /// BnScroll's header); the rows' layout is the synthetic content node's
+    /// business, and an author who wants to shape it puts a BnColumn inside.</summary>
     private static void BuildScrollSection(RenderTreeBuilder b, int seq)
     {
         b.OpenComponent<BnScroll>(seq);

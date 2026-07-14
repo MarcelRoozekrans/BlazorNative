@@ -355,7 +355,7 @@ class WidgetMapper(
             // Phase 6.2: a VIEWPORT — vertical (Android's ScrollView is vertical-only;
             // horizontal is a different widget class and is ledgered). Its single
             // child, the synthetic content view, is created just below.
-            "scroll" -> ScrollView(context)
+            SCROLL   -> ScrollView(context)
             "picker" -> Spinner(context)
             else     -> {
                 Log.w(TAG, "Unknown nodeType ${p.nodeType} — falling back to TextView")
@@ -368,12 +368,41 @@ class WidgetMapper(
         // one, for the 6.1 reason (a stock FrameLayout's onLayout would re-place every
         // row by gravity on the framework's next pass) AND for a new one: ScrollView
         // measures its single child with an UNSPECIFIED height spec, and
-        // BnYogaFrameLayout.onMeasure answers with the last size Yoga applied — the
-        // 800dp that becomes the scroll range. The 6.1 review added that fallback for a
-        // boundary we were then only documenting; it is load-bearing now.
-        if (view is ScrollView) {
+        // BnYogaFrameLayout.onMeasure answers with the last size Yoga applied — which
+        // is what keeps ScrollView's per-layout offset re-clamp from snapping a
+        // scrolled page back to the top (see BnYogaFrameLayout.onMeasure's KDoc; the
+        // mechanism is ANDROID-SPECIFIC and iOS must NOT go looking for it).
+        //
+        // Keyed on the NODETYPE, not on `view is ScrollView`: the nodeType is the
+        // CONTRACT ("a `scroll` node is a viewport"), and the widget class is a row in
+        // a table that could change (a horizontal `scroll` would be a
+        // HorizontalScrollView and would still owe a content node). Two ways of asking
+        // one question is how the two trees end up disagreeing about which nodes are
+        // scroll nodes.
+        if (p.nodeType == SCROLL) {
+            val scroll = view as ScrollView
+            // ── isFillViewport: EXPLICIT, and its value is LOAD-BEARING ────────────
+            // `false` IS the framework default — and it is the ONLY reason ScrollView
+            // does not re-measure the content child with EXACTLY(viewportHeight) when
+            // the content is SHORTER than the viewport. Set it to `true` (an entirely
+            // ordinary thing to reach for — "make my content fill the empty space")
+            // and Android stretches the content behind Yoga's back: the 6.1
+            // FrameLayout lesson in a new costume. Worse, that EXACTLY spec is written
+            // back into BnYogaFrameLayout.yogaHeight, so the framework's stretched
+            // number then answers every later UNSPECIFIED measure AS IF Yoga had
+            // computed it. iOS has NO equivalent knob, so the divergence would be
+            // Android-only and invisible in a diff. Written out so the default is a
+            // DECISION rather than an accident.
+            scroll.isFillViewport = false
+            // ── clipChildren: the viewport KEEPS the framework default (true) ──────
+            // Every BnYogaFrameLayout turns clipping OFF to match iOS's
+            // `UIView.clipsToBounds == NO`. A ScrollView is NOT one of those and must
+            // NOT be made one: a viewport that does not clip DRAWS ITS 800dp OF
+            // CONTENT OVER THE WHOLE SCREEN. `true` here is what matches
+            // `UIScrollView.clipsToBounds == YES` — so this is the one container in
+            // the shell where "our containers don't clip" is the WRONG rule to mirror.
             val content = BnYogaFrameLayout(context)
-            view.addView(content)
+            scroll.addView(content)
             scrollContents[p.nodeId] = content
         }
 
@@ -639,5 +668,12 @@ class WidgetMapper(
         Log.w(TAG, "SetStyle $prop ignored: $detail")
     }
 
-    private companion object { const val TAG = "BlazorNative.WidgetMapper" }
+    private companion object {
+        const val TAG = "BlazorNative.WidgetMapper"
+
+        /** The one nodeType that is a VIEWPORT and owns a synthetic content view.
+         * The same constant [YogaLayout] keys its half of the pair on — one contract,
+         * one spelling. */
+        const val SCROLL = "scroll"
+    }
 }

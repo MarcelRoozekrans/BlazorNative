@@ -81,6 +81,18 @@ public sealed class ShellStyleTableDriftTests
     private const string KotlinSetStyleBody =
         @"(?ms)^    fun setStyle\(nodeId: Int, property: String, value: String\?\) \{(?<body>.*?)^    \}";
 
+    private const string AppleWidgetMapper =
+        "src/BlazorNative.Apple/BnHost/BnWidgetMapper.swift";
+
+    /// <summary>Phase 6.2 — the six CONTAINER-layout names a `scroll` node IGNORES AND
+    /// LOGS (design decision 6). Same anchoring rule as the tables above.</summary>
+    private const string KotlinScrollIgnoredDeclaration =
+        @"(?m)^\s*private val SCROLL_IGNORED_CONTAINER_STYLES = setOf\((?<body>[^)]*)\)";
+
+    /// <summary>…and its iOS mirror. Lands with Gate 3 (see the gate below).</summary>
+    private const string AppleScrollIgnoredDeclaration =
+        @"(?m)^static const char\* const kScrollIgnoredContainerStyles\[\] = \{(?<body>[^}]*)\}";
+
     /// <summary>THE DRIFT PIN. The Android shell's layout-style table must be
     /// exactly `NativeRenderer.YogaStyleAttributes` — no more (a name the renderer
     /// never emits is dead parser code), no less (a name the renderer DOES emit and
@@ -233,6 +245,95 @@ public sealed class ShellStyleTableDriftTests
             + "disagree and the ENGINE gets the blame.");
     }
 
+    // ── PHASE 6.2: THE SCROLL-NODE IGNORE LIST IS THE SECOND TWO-SHELL NAME TABLE ─
+    //
+    // On a `scroll` node the six CONTAINER-layout names (flexDirection, justifyContent,
+    // alignItems, flexWrap, gap, padding) are IGNORED AND LOGGED — design decision 6,
+    // normative for BOTH shells. It was held by a KDoc comment and a Kotlin `setOf`,
+    // with nothing checking that iOS copies it correctly; a shell that misses
+    // `justifyContent` offsets the content node to y = −300 (free space on a scrolling
+    // viewport is NEGATIVE) and PERMANENTLY HIDES THE TOP OF THE PAGE — silently, on one
+    // platform, with every frame in the parity table still correct. Exactly the class of
+    // contract this file exists for, so it is pinned by the SAME parser.
+
+    /// <summary>THE IGNORE LIST MUST BE A SUBSET OF THE ROUTING TABLE — and this is
+    /// **not** ceremony.
+    ///
+    /// The ignore rule lives in `YogaLayout.setStyle`, which is ONLY ever reached when
+    /// `owns(property)` says the name is a Yoga style. A name on the ignore list but OFF
+    /// `YOGA_STYLES` would therefore never reach the rule at all: `WidgetMapper`'s router
+    /// would send it down the VISUAL branch, where it lands on
+    /// `else -> Log.w("not yet supported")` and is SILENTLY DROPPED — the precise failure
+    /// this file was created to prevent, arrived at from the other direction. The author
+    /// would have written a rule that reads as "we handle this deliberately" over a
+    /// codepath that does not run.</summary>
+    [Fact]
+    public void AndroidScrollIgnoredStyles_AreAllRoutedToYoga()
+    {
+        var routed = ParseNameTable(KotlinYogaLayout, KotlinYogaStylesDeclaration);
+        var ignored = ParseNameTable(KotlinYogaLayout, KotlinScrollIgnoredDeclaration);
+
+        var offTable = ignored.Except(routed).ToList();
+
+        Assert.True(
+            offTable.Count == 0,
+            $"SCROLL_IGNORED_CONTAINER_STYLES names a style that is not on YOGA_STYLES: {Join(offTable)}.\n"
+            + "The scroll ignore-and-log rule lives in YogaLayout.setStyle, which is only reached "
+            + "when owns() routes the name to Yoga. A name here but not there NEVER REACHES THE "
+            + "RULE: it falls into WidgetMapper's visual branch and is dropped with a 'not yet "
+            + "supported' log — the same silent-drop this file exists to catch. Add it to both, "
+            + "or to neither.");
+    }
+
+    /// <summary>THE SIX NAMES ARE A TWO-SHELL CONTRACT — and Gate 3 is about to hand-copy
+    /// them into the `.mm`.
+    ///
+    /// **This test is GATED on the iOS shell having a scroll viewport at all**, and that
+    /// is a deliberate call. `build-test` is a REQUIRED check: a test that is red until
+    /// Gate 3 lands would block every push on this branch — including Gate 3's own — and a
+    /// permanently-red required lane is how a suite stops being read. So instead:
+    ///
+    ///   - **Until iOS has a `UIScrollView`**, this asserts that it has *neither* — no
+    ///     viewport and no ignore list — and NAMES EXACTLY WHAT GATE 3 OWES. (The
+    ///     implementation plan's Gate 3 carries it as an explicit task.)
+    ///   - **The moment iOS ships a scroll viewport**, the gate opens and this becomes the
+    ///     hard set-equality pin. Ship the `UIScrollView` without the list and it goes RED,
+    ///     naming the missing names — which is the failure it exists to catch, caught in
+    ///     the commit that causes it.</summary>
+    [Fact]
+    public void TheTwoShellsScrollIgnoreLists_AreIdenticalToEachOther()
+    {
+        var kotlin = ParseNameTable(KotlinYogaLayout, KotlinScrollIgnoredDeclaration);
+        var apple = TryParseNameTable(AppleYogaLayout, AppleScrollIgnoredDeclaration);
+
+        if (apple is null)
+        {
+            var swift = ReadShellSource(AppleWidgetMapper);
+            Assert.False(
+                swift.Contains("UIScrollView", StringComparison.Ordinal),
+                "THE IOS SHELL HAS A UIScrollView AND NO SCROLL-IGNORE LIST.\n"
+                + "BnYogaLayout.mm must declare `static const char* const kScrollIgnoredContainerStyles[]` "
+                + $"holding exactly: {Join(kotlin)}.\n"
+                + "On a `scroll` node those six CONTAINER styles are IGNORED AND LOGGED (design "
+                + "decision 6; the scroll node's only Yoga child is the synthetic content node, whose "
+                + "styles are the shell's). A shell that misses `justifyContent` offsets the content "
+                + "to y = −300 — free space on a scrolling viewport is NEGATIVE — and the top of the "
+                + "page becomes PERMANENTLY UNREACHABLE, silently, on iOS alone.");
+            return; // Gate 3 has not landed: nothing to compare against, and iOS owes the above.
+        }
+
+        Assert.True(
+            kotlin.SetEquals(apple),
+            "the Android and iOS shells must IGNORE-AND-LOG the same container styles on a "
+            + "`scroll` node (design decision 6 — normative for both).\n"
+            + $"  only in Kotlin : {Join(kotlin.Except(apple))}\n"
+            + $"  only in the .mm: {Join(apple.Except(kotlin))}\n"
+            + "A name one shell drops and the other honours is not a loud failure: `justifyContent` "
+            + "on a scroll node offsets the content to y = −300 (the free space is NEGATIVE) and the "
+            + "top of the page becomes permanently unreachable — on ONE platform, with every frame in "
+            + "the parity table still correct.");
+    }
+
     // ── The parser ───────────────────────────────────────────────────────────
 
     /// <summary>Every quoted name inside the declaration <paramref name="pattern"/>
@@ -241,21 +342,37 @@ public sealed class ShellStyleTableDriftTests
     /// silently pass it with an empty set.</summary>
     private static HashSet<string> ParseNameTable(string relativePath, string pattern)
     {
-        var file = Path.Combine(RepoRoot(), relativePath.Replace('/', Path.DirectorySeparatorChar));
-        Assert.True(File.Exists(file), $"shell source not found: {file}");
-
-        var match = Regex.Match(File.ReadAllText(file), pattern, RegexOptions.Singleline);
-        Assert.True(match.Success,
+        var names = TryParseNameTable(relativePath, pattern);
+        Assert.True(names is not null,
             $"could not find the style-name table in {relativePath} (pattern: {pattern}). "
             + "It moved or was renamed — this drift test IS the contract, so re-point it "
             + "deliberately rather than deleting it.");
+
+        Assert.NotEmpty(names!);
+        return names!;
+    }
+
+    /// <summary>…and the form that tolerates an ABSENT declaration, returning null.
+    /// Used only where absence is itself a meaningful state the caller asserts about —
+    /// today, "Gate 3 has not written its ignore list yet". Never used to make a
+    /// missing table pass quietly.</summary>
+    private static HashSet<string>? TryParseNameTable(string relativePath, string pattern)
+    {
+        var match = Regex.Match(ReadShellSource(relativePath), pattern, RegexOptions.Singleline);
+        if (!match.Success) return null;
 
         var names = new HashSet<string>(StringComparer.Ordinal);
         foreach (Match name in Regex.Matches(match.Groups["body"].Value, "\"([^\"]+)\""))
             names.Add(name.Groups[1].Value);
 
-        Assert.NotEmpty(names);
         return names;
+    }
+
+    private static string ReadShellSource(string relativePath)
+    {
+        var file = Path.Combine(RepoRoot(), relativePath.Replace('/', Path.DirectorySeparatorChar));
+        Assert.True(File.Exists(file), $"shell source not found: {file}");
+        return File.ReadAllText(file);
     }
 
     /// <summary>The repo root — the nearest ancestor of the test binary holding

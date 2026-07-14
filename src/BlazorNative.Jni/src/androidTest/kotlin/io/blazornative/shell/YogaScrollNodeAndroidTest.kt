@@ -3,6 +3,7 @@ package io.blazornative.shell
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.facebook.soloader.SoLoader
+import com.facebook.yoga.YogaConfigFactory
 import com.facebook.yoga.YogaConstants
 import com.facebook.yoga.YogaDirection
 import com.facebook.yoga.YogaFlexDirection
@@ -70,6 +71,27 @@ class YogaScrollNodeAndroidTest {
         private const val CONTENT_HEIGHT = ROW_COUNT * ROW_HEIGHT   // 800
         private const val SCROLL_RANGE = CONTENT_HEIGHT - VIEWPORT_HEIGHT // 600
 
+        /**
+         * **THE SHELL'S CONFIG, NOT YOGA'S DEFAULT ONE.** This file's whole claim is
+         * "this is the engine, before any widget" — so it must be the engine
+         * [YogaLayout] actually runs. Yoga's default `pointScaleFactor` is **1** (it
+         * rounds every computed frame to a whole point, and by two different rules for
+         * measured nodes and their siblings); the shell sets it to **0** and does all
+         * pixel snapping itself, in one place, on absolute edges (see
+         * [YogaLayout.config]'s KDoc — 6.1 bought that with a 1dp tiling gap on the
+         * AVD). The numbers here are integral either way, so it does not bite today;
+         * a test that quietly runs a different engine than the shell is the kind of
+         * thing that bites LATER, on the one number that isn't integral.
+         *
+         * `by lazy`, not an eager initializer: a companion's properties are built in the
+         * class's static initializer, which runs BEFORE [initSoLoader] — and
+         * `YogaConfigFactory.create()` links Yoga's JNI core through SoLoader. (The same
+         * ordering hazard [YogaLayout]'s own `init` block calls out.)
+         */
+        private val config by lazy {
+            YogaConfigFactory.create().apply { setPointScaleFactor(0f) }
+        }
+
         @JvmStatic
         @BeforeClass
         fun initSoLoader() {
@@ -92,14 +114,14 @@ class YogaScrollNodeAndroidTest {
         overflow: YogaOverflow,
         contentFlexShrink: Float? = null,
     ) {
-        val scroll: YogaNode = YogaNodeFactory.create().apply {
+        val scroll: YogaNode = YogaNodeFactory.create(config).apply {
             setDirection(YogaDirection.LTR)
             setWidth(VIEWPORT_WIDTH)
             if (viewportHeight != null) setHeight(viewportHeight) else setHeightAuto()
             setOverflow(overflow)
         }
 
-        val content: YogaNode = YogaNodeFactory.create().apply {
+        val content: YogaNode = YogaNodeFactory.create(config).apply {
             setWidthPercent(100f)
             setHeightAuto()
             setFlexDirection(YogaFlexDirection.COLUMN)
@@ -108,7 +130,7 @@ class YogaScrollNodeAndroidTest {
         }
 
         val rows: List<YogaNode> = (0 until ROW_COUNT).map {
-            YogaNodeFactory.create().apply { setHeight(ROW_HEIGHT) }
+            YogaNodeFactory.create(config).apply { setHeight(ROW_HEIGHT) }
         }
 
         init {

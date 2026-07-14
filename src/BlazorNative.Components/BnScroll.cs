@@ -84,12 +84,35 @@ namespace BlazorNative.Components;
 // Those are correct on a scroll node and mean exactly what they mean on a BnView.
 //
 // ── A SCROLL NODE NEEDS A DEFINITE HEIGHT ────────────────────────────────────
-// Give it an explicit Height, or Grow="1" inside a bounded parent (the common
-// case: a scroll filling the screen under the host root). With neither, the
-// scroll node's height is `auto` — it takes its height from its content, so
-// viewport == content and there is nothing to scroll. Nothing is defaulted here
-// — the wire says exactly what the author said (the un-styled invariant); the
-// SHELLS warn once at runtime when a scroll node ends up auto-height (Gates 2/3).
+// With no definite height the scroll node is `auto` — it takes its height FROM
+// its content, so viewport == content and there is nothing to scroll. Nothing is
+// defaulted here (the wire says exactly what the author said — the un-styled
+// invariant); the SHELLS warn once at runtime when it happens (Gates 2/3).
+//
+// The shapes that give it one:
+//
+//     <BnScroll Height="200">                  an explicit height (what the demo does)
+//     <BnScroll Grow="1" Basis="0">            CSS's `flex: 1`, in a bounded parent
+//     <BnScroll Grow="1" Shrink="1">           …the other way round
+//
+// ── AND *Grow="1"* ALONE IS **NOT** ONE OF THEM (Gate 2 review) ──────────────
+// This file used to say it was. It is not, and the reason is THE PHASE'S OWN
+// MECHANISM, one level up — nobody looked:
+//
+//   Grow="1" leaves flexBasis at `auto`, so the scroll node's flex BASIS is its
+//   CONTENT's height (800). Against a 200-high parent the free space is
+//   200 − 800 = −600 — NEGATIVE. flexGrow only ever distributes POSITIVE free
+//   space, so it never gets a say; the negative goes to the SHRINK pass, in
+//   proportion to flexShrink — WHICH YOGA DEFAULTS TO 0. Nothing shrinks. The
+//   viewport keeps its 800, spills out of its 200-high parent, and equals its
+//   own content: nothing scrolls.
+//
+// That is the same sentence this phase writes in bold about the CONTENT node
+// (Yoga's flexShrink default of 0 is why IT keeps its 800) — it is just as true
+// of the VIEWPORT. `Basis="0"` is what makes the free space positive again, and
+// that is why CSS's `flex: 1` shorthand sets basis to 0 and not to auto.
+// Asserted on the device: WidgetMapperScrollTest
+// .a_Grow_ONLY_scroll_node_does_NOT_get_a_definite_height_and_is_warned_about.
 //
 // Sequence numbers mirror BnView's exactly, with the gaps (2 `padding`,
 // 4 `flexDirection`, 5-8 the container family) left EMPTY: the two
@@ -121,11 +144,23 @@ namespace BlazorNative.Components;
 /// different widget class on Android and is ledgered, not stubbed.
 /// </para>
 /// <para>
-/// <b>Give it a definite height.</b> A <c>BnScroll</c> with no
-/// <see cref="Height"/> (and no <see cref="Grow"/> inside a bounded parent) is
-/// <c>auto</c>-height: it takes its height from its content, so the viewport
-/// equals the content and nothing scrolls. The shells log one warning when that
-/// happens.
+/// <b>Give it a definite height.</b> An <c>auto</c>-height <c>BnScroll</c> takes
+/// its height <em>from</em> its content, so the viewport equals the content and
+/// nothing scrolls; the shells log one warning when that happens. Use an explicit
+/// <see cref="Height"/>, or — inside a parent with a definite height —
+/// <c>Grow="1" Basis="0"</c> (CSS's <c>flex: 1</c>).
+/// </para>
+/// <para>
+/// <b><see cref="Grow"/> ALONE IS NOT ENOUGH</b>, and this component's docs used
+/// to say it was (corrected at the Phase 6.2 Gate 2 review). With
+/// <see cref="Basis"/> left at <c>auto</c>, the scroll node's flex basis is its
+/// <em>content's</em> height, so the free space against a shorter parent is
+/// <b>negative</b> — and <see cref="Grow"/> only distributes <em>positive</em>
+/// free space. The negative goes to the shrink pass, and Yoga's
+/// <see cref="Shrink"/> default is <b>0</b>, so nothing shrinks: the viewport
+/// keeps its content's full height, overflows its parent, and does not scroll.
+/// <c>Basis="0"</c> (or <c>Shrink="1"</c>) is what fixes it — which is exactly why
+/// CSS's <c>flex: 1</c> shorthand sets the basis to <c>0</c>.
 /// </para>
 /// <para>
 /// Children ride the wire as children of the scroll node; the shells re-parent
@@ -168,7 +203,9 @@ public sealed class BnScroll : ComponentBase
 
     /// <summary>Height of the VIEWPORT, e.g. <c>"200"</c>. Null = auto — and an
     /// auto-height scroll takes its height from its content, so nothing scrolls
-    /// (see the class remarks). Either this or <see cref="Grow"/> in a bounded
+    /// (see the class remarks). Either this, or <see cref="Grow"/> <b>plus</b>
+    /// <see cref="Basis"/><c>="0"</c> inside a bounded parent — <see cref="Grow"/>
+    /// on its own does NOT bound a viewport whose content is taller than its
     /// parent.</summary>
     [Parameter] public string? Height { get; set; }
 

@@ -245,7 +245,32 @@ jobs:
       # their tables byte-for-byte (non-negotiable #4 — scroll must not perturb an
       # un-scrolled tree), and the JVM baseline below stays 79 (nothing Kotlin-side
       # moves until Gate 2).
-      - name: .NET tests (assert 302 passed / 0 skipped)
+      #
+      # 302 -> 304 (Phase 6.2 Gate 2 REVIEW, +2): the SCROLL-NODE IGNORE LIST becomes
+      # a PINNED TWO-SHELL CONTRACT instead of a KDoc comment. Both are
+      # Renderer.Tests/ShellStyleTableDriftTests (107 -> 109) — the same parser and the
+      # same lane that already pin the three YOGA_STYLES mirrors, because build-test is
+      # the ONE required lane where .NET, Kotlin and the .mm are all checkout-visible.
+      #   +1 AndroidScrollIgnoredStyles_AreAllRoutedToYoga — every name on
+      #      SCROLL_IGNORED_CONTAINER_STYLES must ALSO be on YOGA_STYLES. Not ceremony:
+      #      the ignore rule lives in YogaLayout.setStyle, which is only reached when
+      #      owns() routes the name to Yoga. A name on the ignore list but OFF the
+      #      routing table never reaches the rule at all — it falls into WidgetMapper's
+      #      VISUAL branch and is dropped with a "not yet supported" log, i.e. the exact
+      #      silent-drop this file exists to prevent, arrived at from the other side.
+      #   +1 TheTwoShellsScrollIgnoreLists_AreIdenticalToEachOther — the six names are
+      #      normative for BOTH shells (design decision 6) and Gate 3 is about to
+      #      hand-copy them into the .mm with nothing checking them. A shell that misses
+      #      `justifyContent` offsets the content node to y = -300 (free space on a
+      #      scrolling viewport is NEGATIVE) and PERMANENTLY HIDES the top of the page —
+      #      silently, on ONE platform, with every frame in the parity table still
+      #      correct. GATED until Gate 3 lands: build-test is a REQUIRED check, so a
+      #      test red until the iOS shell exists would block every push on the branch
+      #      (including Gate 3's own). Until BnWidgetMapper.swift has a UIScrollView it
+      #      asserts the ABSENCE of both and names exactly what iOS owes; the moment the
+      #      viewport lands, the gate opens and it becomes a hard set-equality pin that
+      #      reddens in the commit that ships a viewport without the list.
+      - name: .NET tests (assert 304 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -263,8 +288,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 302 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 302 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 304 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 304 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # ── NativeAOT publishes + nine-export verification ────────────────────

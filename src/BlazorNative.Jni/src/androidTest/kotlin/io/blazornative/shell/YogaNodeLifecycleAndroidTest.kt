@@ -145,6 +145,62 @@ class YogaNodeLifecycleAndroidTest {
             host.read { host.root.childCount })
     }
 
+    /**
+     * **…AND THE PATCH THE APP ACTUALLY EMITS DOES NOT NAME THE SCROLL NODE AT ALL.**
+     *
+     * The test above removes the scroll node itself. **Navigation never does that.**
+     * `BnScrollDemo`'s scroll lives inside a root `BnColumn`, and navigating away
+     * disposes the **page** — so the real `RemoveNodePatch` names the **column**, and
+     * the scroll node (and, two levels down, the synthetic content node that no patch
+     * could name even in principle) has to be reached **transitively**.
+     *
+     * It works today: both subtree walks — the view hierarchy's in
+     * [WidgetMapper.handleRemove] and the Yoga tree's in [YogaLayout.removeNode] — are
+     * structural and find it for free. But the one path the app actually takes was the
+     * one nothing asserted, and "it works transitively" is an assumption until a test
+     * says so. Same five counts as above; the only difference is the patch, and the
+     * patch is the whole point.
+     */
+    @Test fun removing_a_WRAPPER_frees_the_scroll_node_and_its_synthetic_content_node() {
+        val host = SyntheticHost()
+        val baseline = host.read { counts(host.mapper) }
+
+        // The demo's shape: a root column, a scroll inside it, rows inside that.
+        host.render(listOf(
+            create(1, "view", null),                                    // ← the root BnColumn
+            create(2, "scroll", 1),
+            style(2, "width", "300"), style(2, "height", "200"),
+            create(10, "view", 2), style(10, "height", "80"),
+            create(11, "view", 2), style(11, "height", "80"),
+            create(12, "view", 11),   // a grandchild, INSIDE the content subtree
+        ))
+
+        val mounted = host.read { counts(host.mapper) }
+        assertEquals("five WIRE nodes: the wrapper, the scroll and its three descendants",
+            5, mounted.nodes)
+        assertEquals("ONE synthetic content node, two levels below the node the patch will name",
+            1, mounted.contentNodes)
+        assertEquals("…and its view-tree half", 1, mounted.contentViews)
+        assertEquals("six Yoga view mappings — the five wire nodes plus the synthetic one",
+            6, mounted.yogaViews)
+
+        // THE PATCH NAVIGATION ACTUALLY EMITS: it names the WRAPPER. Nothing in it
+        // mentions the scroll node, and nothing could ever mention the content node.
+        host.render(listOf(RenderPatch.RemoveNode(nodeId = 1)))
+
+        val after = host.read { counts(host.mapper) }
+        assertEquals("the wrapper and everything under it are gone", baseline.nodes, after.nodes)
+        assertEquals("THE PIN: the SYNTHETIC content node is freed by a patch that names its " +
+            "grandparent. This is the path the app takes on EVERY navigation away from a page " +
+            "with a scroll on it — the other test's patch (RemoveNode on the scroll itself) is " +
+            "the one the app never emits.",
+            0, after.contentNodes)
+        assertEquals("…and the view-tree half", 0, after.contentViews)
+        assertEquals("…and its Yoga view mapping, which is what pins the Activity Context " +
+            "(on iOS: a dangling YGNodeRef)", baseline.yogaViews, after.yogaViews)
+        assertEquals("…and the Yoga nodes", baseline.yogaNodes, after.yogaNodes)
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────────
 
     private data class Counts(
