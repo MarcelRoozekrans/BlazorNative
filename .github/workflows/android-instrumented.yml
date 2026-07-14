@@ -14,7 +14,7 @@
 #   emulator (ubuntu-latest, KVM) — downloads the .so, boots the API 34
 #     google_apis x86_64 Pixel 6 image (mirrors the local AVD
 #     blazornative-pixel6-x86_64), runs connectedAndroidTest with
-#     -PciSoDir pointing at the artifact → asserts 96 passed / 0 failed.
+#     -PciSoDir pointing at the artifact → asserts 107 passed / 0 failed.
 #
 # Baselines are asserted, not observed: count drift fails the job loudly.
 # ─────────────────────────────────────────────────────────────────────────────
@@ -219,6 +219,61 @@ jobs:
       # Baseline asserted, not observed (house style): 40 through M5; Phase 6.0 adds
       # YogaSpikeAndroidTest ×1 (the Yoga flex-row + measure-callback spike proof) → 41.
       #
+      # ── Phase 6.3 Gate 2 — URL IMAGES, via Coil (96 → 107, +11) ────────────
+      # `image` was the LAST stubbed leaf: it made an ImageView and measured ZERO,
+      # because no shell had a source-loading path. Coil now drives one, wired to the
+      # normative parity contract (design §"The parity contract") — which iOS mirrors
+      # with Kingfisher and asserts THE SAME FRAMES. Each count verified by MUTATION
+      # (break the thing, watch the RIGHT test go red — the Gate 2 report has the
+      # transcript):
+      #    +7 WidgetMapperImageTest      — the contract, row by row. The two measurement
+      #                                   paths (intrinsic → 0×0 then the NATURAL size;
+      #                                   definite → those numbers ALWAYS, Yoga never
+      #                                   calling the measure func at all); failure
+      #                                   (0×0, reserves nothing, no retry); `src` →
+      #                                   null (THE SECOND REFLOW DIRECTION — the
+      #                                   siblings move back UP; the renderer emits it
+      #                                   today and no shell had been told what it
+      #                                   means); and CANCELLATION on a `Src` change and
+      #                                   on node removal, each proven to cancel a
+      #                                   request that had REACHED the fixture server
+      #                                   (cancelling one that never started proves
+      #                                   nothing). Cancellation is MEMORY SAFETY, not
+      #                                   hygiene: on iOS a completion into a purged
+      #                                   node touches a freed YGNodeRef.
+      #    +3 BnImageDemoAndroidTest     — the /image page's TWO frame tables, before
+      #                                   the bytes and after, gated on ALL THREE of
+      #                                   Coil's per-node TERMINAL callbacks (the
+      #                                   synchronization gate, non-negotiable #6). It
+      #                                   is not ceremony: two of the three cases assert
+      #                                   that NOTHING MOVED, so a suite that reads the
+      #                                   AFTER table straight after mount passes both
+      #                                   having fetched nothing — and a device with
+      #                                   cleartext BLOCKED passes both too, because a
+      #                                   blocked load is INDISTINGUISHABLE from the 404
+      #                                   the failure case expects. Hence also: the
+      #                                   outcomes are asserted (2 SUCCESS + 1 ERROR,
+      #                                   against the URLs the WIRE carried), the
+      #                                   intrinsic image is asserted POSITIVELY against
+      #                                   the DECODED FIXTURE's own pixel count, and one
+      #                                   test does nothing but VERIFY the cleartext
+      #                                   inheritance (src/debug/…/network_security_
+      #                                   config.xml, Phase 3.1) rather than assume it.
+      #    +1 BnScrollDemoImageAndroidTest — an image INSIDE a scrolled, re-parented
+      #                                   subtree under the synthetic content node — and
+      #                                   every number of BnScrollDemo's 6.2 frame table
+      #                                   re-asserted UNCHANGED with the bytes loaded
+      #                                   (non-negotiable #2: if one of them moves, the
+      #                                   change is wrong). BnScrollDemoAndroidTest,
+      #                                   which stands up no fixture server, pins the
+      #                                   other half — a FAILED load moves nothing
+      #                                   either.
+      # CI never touches the public internet: the fixtures are served IN-PROCESS from a
+      # loopback ServerSocket (ImageFixtureServer), the failing case is a real 404 from
+      # it, and the PNGs are generated in code so the fixture contract (0 < Wi ≤ 300;
+      # Hi > 0; (Wfixed,Hfixed) ≠ (200,120)) is a fact of the source, asserted on the
+      # DECODED bytes before any frame is read.
+      #
       # ── Phase 6.2 Gate 2 REVIEW (86 → 96, +10) ─────────────────────────────
       # The engine was right; every finding was a guard that did not bite, a false
       # causal story, or a rule Gate 3 was about to hand-copy unpinned. Each count is
@@ -363,7 +418,7 @@ jobs:
       # CompositionAndroidTest, WidgetMapperSetStyleTest) were REWRITTEN from type
       # pins (LinearLayout / orientation == VERTICAL) to FRAME pins; only the two
       # counts above are new methods, the rest are same-count rewrites.
-      - name: Assert instrumented baseline (96 passed / 0 failed)
+      - name: Assert instrumented baseline (107 passed / 0 failed)
         run: |
           shopt -s globstar nullglob
           xmls=(src/BlazorNative.Jni/build/outputs/androidTest-results/connected/**/*.xml)
@@ -380,8 +435,8 @@ jobs:
             s=$(attr skipped "$x");  skipped=$((skipped + ${s:-0}))
           done
           echo "Instrumented totals across ${#xmls[@]} suite(s): tests=$tests failures=$failures errors=$errors skipped=$skipped"
-          if [ "$tests" -ne 96 ] || [ "$failures" -ne 0 ] || [ "$errors" -ne 0 ] || [ "$skipped" -ne 0 ]; then
-            echo "Instrumented test baseline drift: expected 96 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped" >&2
+          if [ "$tests" -ne 107 ] || [ "$failures" -ne 0 ] || [ "$errors" -ne 0 ] || [ "$skipped" -ne 0 ]; then
+            echo "Instrumented test baseline drift: expected 107 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped" >&2
             exit 1
           fi
 
