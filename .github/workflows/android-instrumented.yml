@@ -485,8 +485,11 @@ jobs:
       #       flight when the clear arrived — the `Src` → null row's "cancel" was pure prose.
       #       This one holds /slow.png open (awaitPath: the request has REACHED the server),
       #       clears, and then releases the bytes at nobody. MUTATION: drop
-      #       cancelImageRequest(nodeId) from handleSrc and this reddens on the OUTCOME
-      #       (SUCCESS, not CANCELLED) *and* on the band's y (the node re-inflates).
+      #       cancelImageRequest(nodeId) from handleSrc ⇒ reddens on inFlightImageCount (the
+      #       clear cancelled nothing) and on the OUTCOME (SUCCESS, not CANCELLED). Note it does
+      #       NOT redden on the band: the generation bump below is what keeps that un-cancelled
+      #       callback from painting. TWO independent guards, and the pair of tests separates
+      #       them — which is the whole shape of this contract row.
       #    +1 WidgetMapperImageTest.every_src_write_bumps_the_generation_INCLUDING_a_clear
       #       THE CRITICAL. The generation bump sat BELOW `if (url.isNullOrEmpty()) return`,
       #       so a CLEAR never bumped it — and `dispose()` is best-effort BY DEFINITION (that
