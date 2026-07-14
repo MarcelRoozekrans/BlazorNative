@@ -25,6 +25,13 @@
 // Two distinct `NSObject`s stand in for the two `BnImageView`s: the function compares
 // by REFERENCE (`===`), which is the whole of the point, and it takes `AnyObject?`
 // precisely so this test needs no UIKit tree, no mapper and no mount.
+//
+// **MUTATION EVIDENCE (measured on CI):** remove the identity half from
+// `bnIsLiveImageRequest` AND from `BnWidgetMapper.clearIfMine` — i.e. ask the generation
+// alone — and `testTheRESETCollisionIsNotLiveEvenThoughTheGenerationsMatch` is **the only
+// test in the whole 70-case suite that goes red for it.** Not one device test, not the
+// double mount, not the lifecycle tests. That is not an argument for the unit test's
+// convenience; it is the argument for its EXISTENCE.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import XCTest

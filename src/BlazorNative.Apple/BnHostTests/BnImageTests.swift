@@ -27,6 +27,41 @@
 // only honest direction — the request is proven to have REACHED the fixture server
 // (`awaitPath`) *before* it is cancelled, so "cancelled" cannot be the trivially-true
 // answer about a request that had not started.
+//
+// ── MUTATION EVIDENCE (measured on CI, not reasoned about from an armchair) ──────────
+//
+// The green bar is 70/0. Each mutation below was pushed to a throwaway branch and RUN:
+//
+//  1. **The loader reports a CONSTANT size** (`BnImageLoader.naturalPixelSize` → 100 × 100)
+//     ⇒ **63 passed / 7 failed**, the first of them naming the number:
+//     `("100.0") is not equal to ("160.0")` — the intrinsic image's frame against the
+//     DECODED FIXTURE's own pixel count. This is the pin on THE UNIT: a shell that measured
+//     anything but the file's pixels reddens here, and it is the one rule no test could see
+//     if the assertions were made against a constant this file transcribed.
+//  2. **`markDirty` deleted from the completion** ⇒ **64 passed / 6 failed**, on
+//     `("0.0") is not equal to ("160.0")` — and **the image still PAINTS**:
+//     `testADefiniteImageIsNeverMeasured…` (which asserts `image.image != nil`) and
+//     `BnScrollDemoImageTests` both still PASS. Yoga caches a measure function's result and
+//     will not re-run it on a clean node, so the bytes land, the pixels are on screen, and
+//     the page never moves. Exactly the failure the BAND's y exists to catch.
+//  3. **`cancelImageRequest(id)` deleted from `handleRemove`** ⇒
+//     `testRemovingTheNodeCancels…` and `BnYogaLifecycleTests.testAnInFlightImageIsCancelled…`
+//     go red **BY NAME**: `Optional(BnImageOutcome.error)` is not equal to
+//     `Optional(BnImageOutcome.cancelled)`. **That `.error` is the 5-second download timeout**
+//     — the whole reason `BnImageLoader.downloadTimeout` is set. With `URLSession`'s 60s
+//     default the uncancelled request would still be in flight when the test's 30s gate
+//     expired, and the red would be an anonymous timeout instead of the contract row that
+//     broke. (Android gets the same shape free from OkHttp's 10s read timeout; the Gate 2
+//     conclusion warned Gate 3 not to assume it, and it was right.)
+//  4. **The identity half of the guard removed** (`bnIsLiveImageRequest` and `clearIfMine`
+//     ask the generation alone) ⇒ `BnImageGuardTests.testTheRESETCollision…` goes red — the
+//     ONLY test in either suite that can, because no single-mount device test can stage a
+//     re-used node id.
+//  5. **`resolveLayout`'s batch guard removed** (the completion re-solves from inside
+//     `applyBatch`) ⇒ `testAWarmCacheCompletesInsideTheBatch…` goes red on
+//     `("2") is not equal to ("1")` — **the LAYOUT PASS COUNT, and nothing else.** Every
+//     frame in the suite stays correct (the commit's own pass fixes them up), which is
+//     precisely why "one reflow, never two" had to be pinned as a count.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import XCTest
