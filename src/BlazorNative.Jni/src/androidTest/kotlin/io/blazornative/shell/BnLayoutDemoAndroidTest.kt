@@ -31,6 +31,14 @@ import java.util.concurrent.atomic.AtomicReference
  * Android multiplies by `density` at frame-apply time, the one conversion site).
  * So every expectation below is in **dp**, read back as `view.left / density`.
  *
+ * **And since the M6 audit (F2), "the same numbers" is an INVARIANT rather than a
+ * discipline.** This file writes down no frame number at all: it consumes
+ * [bnLayoutDemoFrames] (BnDemoFrameTables.kt), whose iOS twin
+ * `BnDemoFrameTables.swift` declares the same table — and `ShellFrameTableDriftTests`,
+ * in the REQUIRED lane, demands the two be equal key for key and number for number.
+ * Before that, the two shells agreed because someone transcribed carefully. Nothing
+ * would have caught one shell's `90` becoming `100` while the other's stayed.
+ *
  * ── THE TWO NUMBERS THAT ARE LOAD-BEARING AND EASY TO UNDO ───────────────────
  *
  * 1. **wrap 3 sits at y = 40** — the line-1 cross size. Yoga's `alignContent`
@@ -85,8 +93,14 @@ class BnLayoutDemoAndroidTest {
 
             scenario.onActivity { act ->
                 val host = act.findViewById<FrameLayout>(R.id.widget_root)
-                val d = act.resources.displayMetrics.density
                 val root = host.getChildAt(0) as ViewGroup
+
+                // THE CANONICAL TABLE — declared in BnDemoFrameTables.kt, and pinned
+                // against the iOS shell's own declaration by ShellFrameTableDriftTests in
+                // the REQUIRED lane. No frame number is written down in this file any more:
+                // that is the F2 fix. A number that appears here and not there (or moves on
+                // one shell and not the other) now reddens a required check.
+                val f = bnLayoutDemoFrames
 
                 // The root BnColumn fills the host's width (Yoga's default
                 // alignItems: stretch) and stacks its five sections.
@@ -97,36 +111,39 @@ class BnLayoutDemoAndroidTest {
 
                 // ── [0] the row: fixed 50 · flexGrow:1 · fixed 50 ────────────
                 val row = root.getChildAt(0) as ViewGroup
-                assertFrame("row section", row, 0f, 0f, 300f, 100f)
-                assertFrame("box A (W=50, cross-stretched)", row.getChildAt(0), 0f, 0f, 50f, 100f)
-                assertFrame("box B (Grow=1 absorbs 300-50-50)", row.getChildAt(1), 50f, 0f, 200f, 100f)
-                assertFrame("box C (W=50)", row.getChildAt(2), 250f, 0f, 50f, 100f)
+                assertFrame(f, "row section", row)
+                assertFrame(f, "row box A", row.getChildAt(0), "W=50, cross-stretched")
+                assertFrame(f, "row box B", row.getChildAt(1), "Grow=1 absorbs 300-50-50")
+                assertFrame(f, "row box C", row.getChildAt(2), "W=50")
 
                 // ── [1] the column: space-between + one alignSelf:center ─────
                 // free = 200 − 3×40 = 80, split into two 40dp gaps → y 0/80/160.
                 val col = root.getChildAt(1) as ViewGroup
-                assertFrame("column section", col, 0f, 100f, 300f, 200f)
-                assertFrame("item 0", col.getChildAt(0), 0f, 0f, 100f, 40f)
-                assertFrame("item 1 (AlignSelf=Center → x = (300-100)/2)",
-                    col.getChildAt(1), 100f, 80f, 100f, 40f)
-                assertFrame("item 2", col.getChildAt(2), 0f, 160f, 100f, 40f)
+                assertFrame(f, "column section", col)
+                assertFrame(f, "column item 0", col.getChildAt(0))
+                assertFrame(f, "column item 1", col.getChildAt(1),
+                    "AlignSelf=Center → x = (300-100)/2")
+                assertFrame(f, "column item 2", col.getChildAt(2))
 
                 // ── [2] the wrap row: 3 × 90 on line 1, the 4th onto line 2 ───
                 val wrap = root.getChildAt(2) as ViewGroup
-                assertFrame("wrap section", wrap, 0f, 300f, 300f, 100f)
-                assertFrame("wrap 0", wrap.getChildAt(0), 0f, 0f, 90f, 40f)
-                assertFrame("wrap 1", wrap.getChildAt(1), 90f, 0f, 90f, 40f)
-                assertFrame("wrap 2 (270 of 300 consumed — it still fits)",
-                    wrap.getChildAt(2), 180f, 0f, 90f, 40f)
-                assertFrame("wrap 3 — line 2, at y = 40 BECAUSE Yoga's alignContent " +
-                    "defaults to flex-start (CSS says stretch; do not 'correct' it)",
-                    wrap.getChildAt(3), 0f, 40f, 90f, 40f)
+                assertFrame(f, "wrap section", wrap)
+                assertFrame(f, "wrap 0", wrap.getChildAt(0))
+                assertFrame(f, "wrap 1", wrap.getChildAt(1))
+                assertFrame(f, "wrap 2", wrap.getChildAt(2), "270 of 300 consumed — it still fits")
+                assertFrame(f, "wrap 3", wrap.getChildAt(3),
+                    "line 2, at y = 40 BECAUSE Yoga's alignContent defaults to flex-start " +
+                        "(CSS says stretch; do not 'correct' it)")
 
                 // ── [3] the text row: the DoD #3 proof ───────────────────────
                 val textRow = root.getChildAt(3) as ViewGroup
                 val label = textRow.getChildAt(0) as TextView
+                // x = 0, y = 400 (the wrap row ended there), w = 150 — from the table. Its
+                // HEIGHT is MEASURED and therefore absent from the table: a font's metrics
+                // are not a constant anyone gets to invent. It is pinned below, relationally
+                // and by oracle.
+                assertFrame(f, "text row", textRow)
                 assertEquals("the text row starts where the wrap row ended", wrap.bottom, textRow.top)
-                assertEquals("the text row is 150dp wide", 150f, textRow.width / d, 0.5f)
                 assertTrue("the label must have a MEASURED height (> 0)", label.height > 0)
                 assertTrue("the label must have WRAPPED inside 150dp — that is the measurement " +
                     "reaching Yoga (lines=${label.lineCount})", label.lineCount > 1)
@@ -148,9 +165,12 @@ class BnLayoutDemoAndroidTest {
                 // ── [4] the back row: a second MEASURED leaf ─────────────────
                 val backRow = root.getChildAt(4) as ViewGroup
                 val back = backRow.getChildAt(0) as Button
+                // x = 0, w = 300 from the table; its y AND height are MEASURED (both depend
+                // on the text row's font-dependent height above it), so both are declared
+                // MEASURED in the table and pinned relationally + by oracle here.
+                assertFrame(f, "back row", backRow)
                 assertEquals("the back row starts where the text row ended (y = 400 + H)",
                     textRow.bottom, backRow.top)
-                assertEquals("the back row is 300dp wide", 300f, backRow.width / d, 0.5f)
                 assertEquals("← Back", back.text.toString())
                 assertTrue("the button must have a MEASURED height", back.height > 0)
                 assertTrue("the button must have a MEASURED width", back.width > 0)

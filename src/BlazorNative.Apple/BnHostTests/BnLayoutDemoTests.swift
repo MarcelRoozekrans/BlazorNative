@@ -15,6 +15,14 @@
 // on both: iOS points map 1:1, Android multiplies by `density` at frame-apply time
 // (the one conversion site). So every expectation below is in **points = dp**.
 //
+// **And since the M6 audit (F2), "the same numbers" is an INVARIANT rather than a
+// discipline.** This file writes down no frame number at all: it consumes
+// `bnLayoutDemoFrames` (BnDemoFrameTables.swift), whose Android twin
+// `BnDemoFrameTables.kt` declares the same table — and `ShellFrameTableDriftTests`, in
+// the REQUIRED lane, demands the two be equal key for key and number for number. Before
+// that, the two shells agreed because someone transcribed carefully. Nothing would have
+// caught one shell's `90` becoming `100` while the other's stayed.
+//
 // There is no iOS route registry (`HostViewController` hardcodes `BnDemo`), so the
 // test starts the runtime with "BnLayoutDemo" by NAME — the mount registry key.
 //
@@ -83,6 +91,13 @@ final class BnLayoutDemoTests: BnHostTestCase {
         let root = try pollForDemo(in: host)
         XCTAssertEqual(root.subviews.count, 5, "the demo has five sections")
 
+        // THE CANONICAL TABLE — declared in BnDemoFrameTables.swift, and pinned against the
+        // Android shell's own declaration by ShellFrameTableDriftTests in the REQUIRED lane.
+        // No frame number is written down in this file any more: that is the F2 fix. A number
+        // that appears here and not there (or moves on one shell and not the other) now
+        // reddens a required check.
+        let f = bnLayoutDemoFrames
+
         // The root BnColumn fills the host's width (Yoga's default alignItems:
         // stretch) and stacks its five sections.
         XCTAssertEqual(root.frame.minX, 0, accuracy: 0.5, "the root column starts at the host's origin")
@@ -92,35 +107,38 @@ final class BnLayoutDemoTests: BnHostTestCase {
 
         // ── [0] the row: fixed 50 · flexGrow:1 · fixed 50 ────────────────────
         let row = root.subviews[0]
-        assertFrame("row section", row, 0, 0, 300, 100)
-        assertFrame("box A (W=50, cross-stretched)", row.subviews[0], 0, 0, 50, 100)
-        assertFrame("box B (Grow=1 absorbs 300-50-50)", row.subviews[1], 50, 0, 200, 100)
-        assertFrame("box C (W=50)", row.subviews[2], 250, 0, 50, 100)
+        assertFrame(f, "row section", row)
+        assertFrame(f, "row box A", row.subviews[0], "W=50, cross-stretched")
+        assertFrame(f, "row box B", row.subviews[1], "Grow=1 absorbs 300-50-50")
+        assertFrame(f, "row box C", row.subviews[2], "W=50")
 
         // ── [1] the column: space-between + one alignSelf:center ─────────────
         // free = 200 − 3×40 = 80, split into two 40 gaps → y 0/80/160.
         let col = root.subviews[1]
-        assertFrame("column section", col, 0, 100, 300, 200)
-        assertFrame("item 0", col.subviews[0], 0, 0, 100, 40)
-        assertFrame("item 1 (AlignSelf=Center → x = (300-100)/2)", col.subviews[1], 100, 80, 100, 40)
-        assertFrame("item 2", col.subviews[2], 0, 160, 100, 40)
+        assertFrame(f, "column section", col)
+        assertFrame(f, "column item 0", col.subviews[0])
+        assertFrame(f, "column item 1", col.subviews[1], "AlignSelf=Center → x = (300-100)/2")
+        assertFrame(f, "column item 2", col.subviews[2])
 
         // ── [2] the wrap row: 3 × 90 on line 1, the 4th onto line 2 ──────────
         let wrap = root.subviews[2]
-        assertFrame("wrap section", wrap, 0, 300, 300, 100)
-        assertFrame("wrap 0", wrap.subviews[0], 0, 0, 90, 40)
-        assertFrame("wrap 1", wrap.subviews[1], 90, 0, 90, 40)
-        assertFrame("wrap 2 (270 of 300 consumed — it still fits)", wrap.subviews[2], 180, 0, 90, 40)
-        assertFrame("wrap 3 — line 2, at y = 40 BECAUSE Yoga's alignContent defaults to "
-                    + "flex-start (CSS says stretch; do not 'correct' it)",
-                    wrap.subviews[3], 0, 40, 90, 40)
+        assertFrame(f, "wrap section", wrap)
+        assertFrame(f, "wrap 0", wrap.subviews[0])
+        assertFrame(f, "wrap 1", wrap.subviews[1])
+        assertFrame(f, "wrap 2", wrap.subviews[2], "270 of 300 consumed — it still fits")
+        assertFrame(f, "wrap 3", wrap.subviews[3],
+                    "line 2, at y = 40 BECAUSE Yoga's alignContent defaults to flex-start "
+                    + "(CSS says stretch; do not 'correct' it)")
 
         // ── [3] the text row: the DoD #3 proof ───────────────────────────────
         let textRow = root.subviews[3]
         let label = try XCTUnwrap(textRow.subviews[0] as? UILabel, "the text leaf must be a UILabel")
+        // x = 0, y = 400 (the wrap row ended there), w = 150 — from the table. Its HEIGHT is
+        // MEASURED and therefore absent from the table: a font's metrics are not a constant
+        // anyone gets to invent. It is pinned below, relationally and by oracle.
+        assertFrame(f, "text row", textRow)
         XCTAssertEqual(textRow.frame.minY, wrap.frame.maxY, accuracy: 0.5,
                        "the text row starts where the wrap row ended (y = 400)")
-        XCTAssertEqual(textRow.frame.width, 150, accuracy: 0.5, "the text row is 150 wide")
         XCTAssertGreaterThan(label.frame.height, 0, "the label must have a MEASURED height (> 0)")
         XCTAssertGreaterThan(
             label.frame.height, label.font.lineHeight * 1.5,
@@ -142,9 +160,12 @@ final class BnLayoutDemoTests: BnHostTestCase {
         // ── [4] the back row: a second MEASURED leaf ─────────────────────────
         let backRow = root.subviews[4]
         let back = try XCTUnwrap(backRow.subviews[0] as? UIButton, "the back leaf must be a UIButton")
+        // x = 0, w = 300 from the table; its y AND height are MEASURED (both depend on the
+        // text row's font-dependent height above it), so both are declared MEASURED in the
+        // table and pinned relationally + by oracle here.
+        assertFrame(f, "back row", backRow)
         XCTAssertEqual(backRow.frame.minY, textRow.frame.maxY, accuracy: 0.5,
                        "the back row starts where the text row ended (y = 400 + H)")
-        XCTAssertEqual(backRow.frame.width, 300, accuracy: 0.5, "the back row is 300 wide")
         XCTAssertEqual(back.title(for: .normal), "← Back")
         XCTAssertGreaterThan(back.frame.height, 0, "the button must have a MEASURED height")
         XCTAssertGreaterThan(back.frame.width, 0, "the button must have a MEASURED width")

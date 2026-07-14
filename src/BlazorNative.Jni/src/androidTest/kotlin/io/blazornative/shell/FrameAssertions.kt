@@ -37,6 +37,75 @@ internal fun assertFrame(what: String, v: View, x: Float, y: Float, w: Float, h:
     assertEquals("$what.h", h, v.height / d, 0.5f)
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// THE FRAME-TABLE VOCABULARY (M6 audit, finding F2)
+//
+// The demo pages' canonical frame tables are the M6 parity contract — "the same
+// numbers on both platforms" is the whole architectural claim. They used to live as
+// HAND-TRANSCRIBED LITERALS inside each shell's test bodies, and the two shells
+// agreed by careful transcription rather than by any invariant. Nothing checked
+// them against each other; the audit found this was the last cross-shell contract in
+// the repo that nothing pinned.
+//
+// They are now DECLARED, once per shell, in a machine-readable table
+// ([BnDemoFrameTables.kt] here, `BnDemoFrameTables.swift` on iOS) — and the required
+// .NET lane (`ShellFrameTableDriftTests`, which is the only lane where Kotlin, Swift
+// and .NET are all checkout-visible) parses BOTH files and demands they be equal,
+// number for number.
+//
+// **The test body consumes the same table the parser reads**, which is the point: a
+// parse target that is not the assertion is a parse target that can drift away from
+// it. There is nowhere left to write a frame number that is not in the table.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** One row of a canonical frame table: a parent-relative frame, in dp. */
+internal data class BnRect(val x: Float, val y: Float, val w: Float, val h: Float)
+
+/** A table cell whose value is a **measured** quantity — a font's metrics, which are
+ * not a constant anyone gets to invent (see [assertOracle]). The dimension is
+ * declared present but NOT asserted; the measured leaves are pinned relationally and
+ * by oracle instead. It is a token the drift parser reads on both shells, so a
+ * dimension that is measured on one platform and pinned on the other is a failure. */
+internal val MEASURED: Float = Float.NaN
+
+internal fun bnRect(x: Float, y: Float, w: Float, h: Float) = BnRect(x, y, w, h)
+
+/** Builds a canonical frame table. Duplicate keys throw: two rows named the same
+ * thing means one of them is silently unasserted, and the drift test would compare a
+ * table that is not the one the device asserts. */
+internal fun bnFrameTable(vararg entries: Pair<String, BnRect>): Map<String, BnRect> {
+    val table = LinkedHashMap<String, BnRect>(entries.size)
+    for ((key, rect) in entries) {
+        if (table.containsKey(key)) {
+            throw AssertionError("duplicate frame-table key \"$key\" — one of the two rows is " +
+                "dead, and the drift test would be comparing a table the device does not assert")
+        }
+        table[key] = rect
+    }
+    return table
+}
+
+/**
+ * Asserts a View's frame against its row of a canonical frame table.
+ *
+ * A missing key FAILS: this is the only lookup path, so a typo must not silently
+ * assert nothing. [MEASURED] dimensions are skipped by design (a font metric is not
+ * a number this repo pins) — and they are skipped IDENTICALLY on iOS, because the
+ * drift test compares the `MEASURED` token itself.
+ */
+internal fun assertFrame(table: Map<String, BnRect>, key: String, v: View, why: String = "") {
+    val r = table[key] ?: throw AssertionError(
+        "no frame named \"$key\" in the canonical table. The table (BnDemoFrameTables.kt) is " +
+            "the ONE place a frame number is written down, and its iOS twin must declare the " +
+            "same key — add it to both, in the same commit.")
+    val what = if (why.isEmpty()) key else "$key — $why"
+    val d = density()
+    if (!r.x.isNaN()) assertEquals("$what.x", r.x, v.left / d, 0.5f)
+    if (!r.y.isNaN()) assertEquals("$what.y", r.y, v.top / d, 0.5f)
+    if (!r.w.isNaN()) assertEquals("$what.w", r.w, v.width / d, 0.5f)
+    if (!r.h.isNaN()) assertEquals("$what.h", r.h, v.height / d, 0.5f)
+}
+
 /**
  * The frame form of "this container is a vertical stack": every child shares the
  * container's CONTENT-BOX left edge, every child is non-empty, and each is butted

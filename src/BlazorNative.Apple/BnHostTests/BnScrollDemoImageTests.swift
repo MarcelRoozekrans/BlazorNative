@@ -50,7 +50,6 @@ final class BnScrollDemoImageTests: BnHostTestCase {
     // BnScrollDemo.cs's constants and the two products it COMPUTES from them.
     private let rows = 10
     private let rowH: CGFloat = 80
-    private let viewW: CGFloat = 300
     private let viewH: CGFloat = 200
     private var contentH: CGFloat { CGFloat(rows) * rowH }   // 800
     private var scrollRange: CGFloat { contentH - viewH }    // 600
@@ -118,20 +117,24 @@ final class BnScrollDemoImageTests: BnHostTestCase {
         XCTAssertNotNil(image.image,
                         "THE BYTES LANDED, inside a scrolled, re-parented subtree under the "
                         + "SYNTHETIC content node")
-        assertFrame("the row image: (0, 0, 40, 40) in the row's coordinates. Both axes declared ⇒ "
-                    + "Yoga never called its measure func, so the fixture's own "
-                    + "\(Int(fixture.size.width)) × \(Int(fixture.size.height)) is nowhere in this "
-                    + "frame", image, 0, 0, imageW, imageH)
+        assertFrame(bnScrollDemoImageFrames, "row image", image,
+                    "in the row's coordinates. Both axes declared ⇒ Yoga never called its measure "
+                    + "func, so the fixture's own \(Int(fixture.size.width)) × "
+                    + "\(Int(fixture.size.height)) is nowhere in this frame")
         XCTAssertTrue(image.frame.width < row0.frame.width && image.frame.height < row0.frame.height,
                       "…and it is strictly SMALLER than its row in both axes, so it cannot overflow "
                       + "and raise a clipping question the two shells would answer differently")
 
         // ── AND NOW: EVERY NUMBER OF THE 6.2 TABLE, UNCHANGED ────────────────
-        // Non-negotiable #2. If one of these moves, the change is wrong.
-        assertFrame("the viewport", scroll, 0, 0, viewW, viewH)
-        assertFrame("THE CONTENT SIZE: still 800 — ten 80-high rows in a height:auto column, "
+        // Non-negotiable #2. If one of these moves, the change is wrong. It is the SAME
+        // DECLARATION BnScrollDemoTests consumes (BnDemoFrameTables.swift) — so "unchanged"
+        // is now a fact about one table read twice, not two transcriptions that agree.
+        let f = bnScrollDemoFrames
+        assertFrame(f, "viewport", scroll)
+        assertFrame(f, "content", content,
+                    "THE CONTENT SIZE: still 800 — ten 80-high rows in a height:auto column, "
                     + "computed by Yoga. A child that MEASURED could have grown row 0 and every "
-                    + "number after it", content, 0, 0, viewW, contentH)
+                    + "number after it")
         XCTAssertEqual(scroll.contentSize.height, contentH, accuracy: 0.5,
                        "…and contentSize is still that frame")
         XCTAssertEqual(scroll.contentSize.height - scroll.bounds.height, scrollRange, accuracy: 0.5,
@@ -139,20 +142,17 @@ final class BnScrollDemoImageTests: BnHostTestCase {
 
         XCTAssertEqual(content.subviews.count, rows, "still ten rows")
         for i in 0..<rows {
-            assertFrame("row \(i) is still at y = 80×\(i), 300 × 80",
-                        content.subviews[i], 0, rowH * CGFloat(i), viewW, rowH)
+            assertFrame(f, "row \(i)", content.subviews[i], "still at y = 80×\(i), 300 × 80")
         }
 
         let flexRow = content.subviews[1].subviews[0]
-        assertFrame("the nested flex row", flexRow, 0, 0, viewW, rowH)
-        assertFrame("box A", flexRow.subviews[0], 0, 0, 50, rowH)
-        assertFrame("box B (Grow=1) — still absorbing 300 − 50 − 50",
-                    flexRow.subviews[1], 50, 0, 200, rowH)
-        assertFrame("box C", flexRow.subviews[2], 250, 0, 50, rowH)
+        assertFrame(f, "nested flex row", flexRow)
+        assertFrame(f, "nested box A", flexRow.subviews[0])
+        assertFrame(f, "nested box B", flexRow.subviews[1], "Grow=1 — still absorbing 300 − 50 − 50")
+        assertFrame(f, "nested box C", flexRow.subviews[2])
 
         let backRow = root.subviews[1]
-        XCTAssertEqual(backRow.frame.minY, viewH, accuracy: 0.5,
-                       "the back row still starts where the viewport ends (y = 200)")
+        assertFrame(f, "back row", backRow, "still starts where the viewport ends (y = 200)")
         XCTAssertEqual(root.frame.height, backRow.frame.maxY, accuracy: 0.5,
                        "the root column still HUGS its two sections")
     }

@@ -430,7 +430,48 @@ jobs:
       #      own decoded bytes and be entirely green, at three times Android's number.
       # Renderer.Tests (110) and Analyzers.Tests (23) do not move. The iOS XCTest baseline
       # moves 50 -> 70 (ios.yml has its own provenance block); Android is untouched.
-      - name: .NET tests (assert 319 passed / 0 skipped)
+      #
+      # 319 -> 324 (M6 FINAL AUDIT, finding F2, +5): THE LAST HAND-TRANSCRIBED CROSS-SHELL
+      # CONTRACT GETS PINNED. All five are Renderer.Tests/ShellFrameTableDriftTests
+      # (110 -> 115); Runtime.Tests (186) and Analyzers.Tests (23) do not move, and NO DEMO'S
+      # FRAMES CHANGE — the device baselines stay 111 / 72.
+      #
+      # The audit's verdict on DoD #2 was PASS with a gap: the two shells' frame tables agree,
+      # number for number, **by careful transcription and by nothing else**. There was no shared
+      # constant, no generated table, no cross-suite diff — and "identical frames on both
+      # platforms" is M6's whole architectural claim (DoD #2, #4 and #5 are all that one
+      # sentence). One shell's `90` becoming `100` while the other's stayed would have left BOTH
+      # device suites green, BOTH platforms internally consistent, and the claim quietly false.
+      # It was the one contract of this shape the repo had NOT pinned — the style routing tables,
+      # the fixture pixel sizes, the 72-byte bridge struct and the Yoga version all are.
+      #
+      # The literals could not be parsed where they lay (two of the three pages built their
+      # frames from EXPRESSIONS over per-class constants — `ROW_H * i` vs `rowH * CGFloat(i)`,
+      # `hi + BAND_H` vs `hi + bandH` — and there was no key pairing a Kotlin assertion with its
+      # Swift twin but CALL ORDER). A regex over that is a drift test nobody would trust, and a
+      # parse target that is not the assertion can drift away from the assertion — the very bug,
+      # reintroduced by its own fix. So each shell now DECLARES its tables once, machine-readably
+      # (BnDemoFrameTables.kt / BnDemoFrameTables.swift), and THE DEVICE TESTS CONSUME THAT
+      # DECLARATION. There is nowhere left to write a frame number the drift test cannot see.
+      #   +1 TheFrameTables_AreExactlyTheExpectedFive_OnBothShells — a page whose table exists on
+      #      ONE shell is a page whose frames nothing compares.
+      #   +1 EachFrameTable_NamesTheSameNodes_OnBothShells — a node one shell pins and the other
+      #      does not is a frame asserted on one platform.
+      #   +1 EachFrameTable_IsIdenticalNumberForNumber_OnBothShells — THE PIN. `wi`/`hi` (the
+      #      fixture's natural pixel size, which NEITHER shell may write down) are compared as
+      #      SYMBOLS, so it proves both shells say `hi + 20` without learning what `hi` is; sums
+      #      compare by VALUE, so `160 + hi` == `hi + 160` and there is no spurious red to teach
+      #      anyone to ignore it. MUTATION-VERIFIED: Kotlin's wrap-3 width 90 -> 100 with iOS
+      #      untouched reddens by name (`Kotlin: (0, 40, 100, 40) / Swift: (0, 40, 90, 40)`), as
+      #      does replacing the `hi` symbol with a literal on one shell alone.
+      #   +1 EachFrameTable_HasItsPinnedRowCount_OnBothShells — baselines are asserted, not
+      #      observed: this is what stops a red drift test from being "fixed" by deleting the row
+      #      that reddened it FROM BOTH SHELLS.
+      #   +1 EveryFrameTable_IsConsumedByADeviceTest_OnBothShells — a DECLARED table that no
+      #      device test READS is a contract nothing asserts, and it passes all four tests above.
+      #      The AGP 9 incident in miniature: an assertion can be green and STRUCTURALLY
+      #      UNREACHABLE, which is the lesson this whole audit-fix is built around.
+      - name: .NET tests (assert 324 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -448,8 +489,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 319 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 319 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 324 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 324 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # ── NativeAOT publishes + nine-export verification ────────────────────

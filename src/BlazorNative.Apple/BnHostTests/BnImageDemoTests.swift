@@ -12,6 +12,14 @@
 // density-independent units on both: iOS points map 1:1, Android multiplies by
 // `density` at frame-apply time.
 //
+// Both tables are declared in `bnImageDemoBeforeFrames` / `bnImageDemoAfterFrames`
+// (BnDemoFrameTables.swift) — never inline here — and `ShellFrameTableDriftTests` demands
+// the Android shell's twin declaration be equal to them, in the REQUIRED lane (M6 audit,
+// F2). The AFTER table is parameterised by the DECODED fixture's own `wi`/`hi`, which the
+// drift test compares AS SYMBOLS: it can check that both shells say `hi + 20` without
+// knowing what `hi` is, which is exactly the point — neither shell is allowed to write that
+// number down.
+//
 // ── THE TRAP THIS FILE EXISTS TO NOT FALL INTO ──────────────────────────────────
 //
 // **Two of the three cases assert that NOTHING MOVED** — [0]'s frame is definite and
@@ -52,17 +60,13 @@ import UIKit
 
 final class BnImageDemoTests: BnHostTestCase {
 
-    // BnImageDemo.cs's constants (SectionWidthDp, FixedWidthDp, FixedHeightDp,
-    // SiblingHeightDp) and the four offsets it COMPUTES from them. Derived here too, not
-    // transcribed: a changed band height must move both sides at once.
+    /// BnImageDemo.cs's `SectionWidthDp`. Every OTHER number this page's frames are made of
+    /// now lives in the canonical tables (`bnImageDemoBeforeFrames` / `bnImageDemoAfterFrames`,
+    /// BnDemoFrameTables.swift), which the Android shell declares too and
+    /// `ShellFrameTableDriftTests` pins the two against each other in the REQUIRED lane (M6
+    /// audit, F2). This one survives because it is not a frame: it bounds the fixture
+    /// (`0 < Wi ≤ 300` — a section is 300 wide, so the measure func is asked at most 300).
     private let sectionW: CGFloat = 300
-    private let fixedW: CGFloat = 200
-    private let fixedH: CGFloat = 120
-    private let bandH: CGFloat = 20
-    private var fixedSectionH: CGFloat { fixedH + bandH }            // 140
-    private var intrinsicSectionY: CGFloat { fixedSectionH }         // 140
-    private var failingSectionY: CGFloat { intrinsicSectionY + bandH } // 160
-    private var backSectionY: CGFloat { failingSectionY + bandH }      // 180
 
     private var server: BnImageFixtureServer!
 
@@ -199,6 +203,10 @@ final class BnImageDemoTests: BnHostTestCase {
 
         let root = try mount()
 
+        // THE CANONICAL BEFORE TABLE — BnDemoFrameTables.swift, pinned against the Android
+        // shell's twin in the REQUIRED lane (M6 audit, F2).
+        let b = bnImageDemoBeforeFrames
+
         // ══ BEFORE THE BYTES ═════════════════════════════════════════════════
         XCTAssertEqual(mapper.imageTerminalCount, 0,
                        "no request has terminated — the fixture server is HOLDING every response, "
@@ -209,33 +217,29 @@ final class BnImageDemoTests: BnHostTestCase {
         // [0] FIXED — first on purpose: nothing above it can ever move it, so its "did not
         // move" is a fact about the IMAGE and not about the page.
         let fixedSection = root.subviews[0]
-        assertFrame("[0] the fixed section HUGS 120 + 20", fixedSection, 0, 0, sectionW, fixedSectionH)
-        assertFrame("[0] the fixed image: Width AND Height declared",
-                    try bnImageIn(fixedSection), 0, 0, fixedW, fixedH)
-        assertFrame("[0] band F, BEFORE: y = 120", fixedSection.subviews[1], 0, fixedH, sectionW, bandH)
+        assertFrame(b, "[0] fixed section", fixedSection, "HUGS 120 + 20")
+        assertFrame(b, "[0] fixed image", try bnImageIn(fixedSection), "Width AND Height declared")
+        assertFrame(b, "[0] band F", fixedSection.subviews[1], "BEFORE: y = 120")
         let fixedImageFrameBefore = try bnImageIn(fixedSection).frame
 
         // [1] INTRINSIC — 0 × 0. Not "small": ZERO.
         let intrinsicSection = root.subviews[1]
-        assertFrame("[1] the intrinsic section HUGS 0 + 20",
-                    intrinsicSection, 0, intrinsicSectionY, sectionW, bandH)
-        assertFrame("[1] the intrinsic image, BEFORE: a measured leaf with no bytes measures 0 × 0",
-                    try bnImageIn(intrinsicSection), 0, 0, 0, 0)
-        assertFrame("[1] band I, BEFORE: y = 0 — THE REFLOW HAS NOT HAPPENED",
-                    intrinsicSection.subviews[1], 0, 0, sectionW, bandH)
+        assertFrame(b, "[1] intrinsic section", intrinsicSection, "HUGS 0 + 20")
+        assertFrame(b, "[1] intrinsic image", try bnImageIn(intrinsicSection),
+                    "BEFORE: a measured leaf with no bytes measures 0 × 0")
+        assertFrame(b, "[1] band I", intrinsicSection.subviews[1],
+                    "BEFORE: y = 0 — THE REFLOW HAS NOT HAPPENED")
         XCTAssertNil(try bnImageIn(intrinsicSection).image, "[1] nothing painted yet")
 
         // [2] FAILING — structurally identical to [1]; only the URL differs.
         let failingSection = root.subviews[2]
-        assertFrame("[2] the failing section HUGS 0 + 20",
-                    failingSection, 0, failingSectionY, sectionW, bandH)
-        assertFrame("[2] the failing image, BEFORE: 0 × 0", try bnImageIn(failingSection), 0, 0, 0, 0)
-        assertFrame("[2] band X, BEFORE: y = 0 in its parent",
-                    failingSection.subviews[1], 0, 0, sectionW, bandH)
+        assertFrame(b, "[2] failing section", failingSection, "HUGS 0 + 20")
+        assertFrame(b, "[2] failing image", try bnImageIn(failingSection), "BEFORE: 0 × 0")
+        assertFrame(b, "[2] band X", failingSection.subviews[1], "BEFORE: y = 0 in its parent")
 
-        // [3] the back row — the page's only measured leaf, deliberately LAST.
-        XCTAssertEqual(root.subviews[3].frame.minY, backSectionY, accuracy: 0.5,
-                       "[3] the back row starts at y = 180")
+        // [3] the back row — the page's only measured leaf, deliberately LAST. Its HEIGHT is
+        // MEASURED in the table (a font metric is nobody's to invent); its y = 180 is not.
+        assertFrame(b, "[3] back section", root.subviews[3])
         assertRootFrame(root: root, backSection: root.subviews[3])
 
         // ══ THE GATE OPENS ═══════════════════════════════════════════════════
@@ -256,49 +260,54 @@ final class BnImageDemoTests: BnHostTestCase {
                        + "cancels anything: a cancel here is a setup failure)")
 
         // ══ AFTER THE BYTES ══════════════════════════════════════════════════
+        // THE CANONICAL AFTER TABLE, parameterised by the DECODED fixture's own pixel size —
+        // never a constant this file invents. Its Android twin declares the same rows with the
+        // same `wi`/`hi` symbols, and the drift test compares them AS SYMBOLS: `hi + 20` on
+        // both shells is an equality it can check without knowing the number.
+        let a = bnImageDemoAfterFrames(wi: wi, hi: hi)
+
         // [0] THE NO-REFLOW PROOF — asserted as an IDENTITY between two frames of the same
         // node, not as a number. Both axes are definite, so Yoga never called its measure func
         // at all and the fixture's own size is nowhere in this frame.
-        assertFrame("[0] the fixed section, AFTER: UNCHANGED",
-                    fixedSection, 0, 0, sectionW, fixedSectionH)
+        assertFrame(a, "[0] fixed section", fixedSection, "AFTER: UNCHANGED")
         XCTAssertEqual(try bnImageIn(fixedSection).frame, fixedImageFrameBefore,
                        "[0] THE NO-REFLOW PROOF: the fixed image's frame is IDENTICAL, number for "
                        + "number, to the one it had before its bytes landed")
-        assertFrame("[0] band F, AFTER: y = 120. IT DID NOT MOVE",
-                    fixedSection.subviews[1], 0, fixedH, sectionW, bandH)
+        assertFrame(a, "[0] band F", fixedSection.subviews[1], "AFTER: y = 120. IT DID NOT MOVE")
         XCTAssertNotNil(try bnImageIn(fixedSection).image,
                         "[0] …and its bytes DID land — which is what makes 'it did not move' mean "
                         + "something")
 
         // [1] THE REFLOW.
         let intrinsicImage = try bnImageIn(intrinsicSection)
-        assertFrame("[1] the intrinsic image, AFTER: its NATURAL size — the DECODED FIXTURE's own "
-                    + "\(Int(wi)) × \(Int(hi)) PIXELS, read as POINTS. One file pixel is one dp/pt, "
-                    + "which is the only reading under which iOS and Android compute the same frame",
-                    intrinsicImage, 0, 0, wi, hi)
+        assertFrame(a, "[1] intrinsic image", intrinsicImage,
+                    "AFTER: its NATURAL size — the DECODED FIXTURE's own \(Int(wi)) × \(Int(hi)) "
+                    + "PIXELS, read as POINTS. One file pixel is one dp/pt, which is the only "
+                    + "reading under which iOS and Android compute the same frame")
         XCTAssertTrue(intrinsicImage.frame.width > 0 && intrinsicImage.frame.height > 0,
                       "[1] POSITIVELY: Wi > 0 AND Hi > 0. Two of this page's three cases assert "
                       + "'nothing moved', and a suite of negatives is one that a TOTAL FAILURE "
                       + "satisfies")
-        assertFrame("[1] THE REFLOW PROOF: band I moved from y = 0 to y = Hi. The image's own frame "
+        assertFrame(a, "[1] band I", intrinsicSection.subviews[1],
+                    "THE REFLOW PROOF: band I moved from y = 0 to y = Hi. The image's own frame "
                     + "could be faked by a shell that painted and never re-solved; the BAND's y "
-                    + "could not", intrinsicSection.subviews[1], 0, hi, sectionW, bandH)
-        assertFrame("[1] …and the section grew by exactly Hi",
-                    intrinsicSection, 0, intrinsicSectionY, sectionW, hi + bandH)
+                    + "could not")
+        assertFrame(a, "[1] intrinsic section", intrinsicSection,
+                    "…and the section grew by exactly Hi")
 
         // [2] THE FAILURE RESERVED NOTHING — two facts at once, and the frames are
         // parent-relative so both are visible: the SECTION slid down by Hi (because [1] grew
         // above it) while the band INSIDE it stayed at y = 0.
-        assertFrame("[2] the failing section moved down by Hi — [1]'s reflow, propagating downward",
-                    failingSection, 0, failingSectionY + hi, sectionW, bandH)
-        assertFrame("[2] …but ITS image stayed 0 × 0", try bnImageIn(failingSection), 0, 0, 0, 0)
-        assertFrame("[2] …so band X is still at y = 0 IN ITS PARENT: THE FAILURE RESERVED NOTHING",
-                    failingSection.subviews[1], 0, 0, sectionW, bandH)
+        assertFrame(a, "[2] failing section", failingSection,
+                    "moved down by Hi — [1]'s reflow, propagating downward")
+        assertFrame(a, "[2] failing image", try bnImageIn(failingSection),
+                    "…but ITS image stayed 0 × 0")
+        assertFrame(a, "[2] band X", failingSection.subviews[1],
+                    "…so band X is still at y = 0 IN ITS PARENT: THE FAILURE RESERVED NOTHING")
         XCTAssertNil(try bnImageIn(failingSection).image, "[2] and nothing was painted")
 
         // [3]
-        XCTAssertEqual(root.subviews[3].frame.minY, backSectionY + hi, accuracy: 0.5,
-                       "[3] the back row moved down by Hi too")
+        assertFrame(a, "[3] back section", root.subviews[3], "moved down by Hi too")
 
         assertRootFrame(root: root, backSection: root.subviews[3])
         XCTAssertEqual(mapper.inFlightImageCount, 0, "nothing is left in flight")
@@ -357,33 +366,36 @@ final class BnImageDemoTests: BnHostTestCase {
                        + "mapper. On iOS that stale entry is a request nothing can cancel, whose "
                        + "completion marks a freed YGNodeRef dirty.")
 
-        // …AND THE FRAMES ARE THE SAME ONES.
+        // …AND THE FRAMES ARE THE SAME ONES — literally: the SAME AFTER table the network mount
+        // asserts, read a second time rather than transcribed a second time.
+        let a = bnImageDemoAfterFrames(wi: wi, hi: hi)
+
         let fixedSection = root.subviews[0]
-        assertFrame("[0] the fixed section, from cache: UNCHANGED",
-                    fixedSection, 0, 0, sectionW, fixedSectionH)
-        assertFrame("[0] the fixed image, from cache: its DECLARED size, still",
-                    try bnImageIn(fixedSection), 0, 0, fixedW, fixedH)
+        assertFrame(a, "[0] fixed section", fixedSection, "from cache: UNCHANGED")
+        assertFrame(a, "[0] fixed image", try bnImageIn(fixedSection),
+                    "from cache: its DECLARED size, still")
         XCTAssertNotNil(try bnImageIn(fixedSection).image, "[0] …and the cached bytes were painted")
 
         let intrinsicSection = root.subviews[1]
-        assertFrame("[1] the intrinsic image, from cache: its NATURAL size — the same \(Int(wi)) × "
-                    + "\(Int(hi)) it measured from the network. One reflow, never two, whether the "
-                    + "bytes arrive synchronously or not",
-                    try bnImageIn(intrinsicSection), 0, 0, wi, hi)
-        assertFrame("[1] THE REFLOW STILL HAPPENED, from inside the batch: band I is at y = Hi",
-                    intrinsicSection.subviews[1], 0, hi, sectionW, bandH)
-        assertFrame("[1] …and the section grew by exactly Hi",
-                    intrinsicSection, 0, intrinsicSectionY, sectionW, hi + bandH)
+        assertFrame(a, "[1] intrinsic image", try bnImageIn(intrinsicSection),
+                    "from cache: its NATURAL size — the same \(Int(wi)) × \(Int(hi)) it measured "
+                    + "from the network. One reflow, never two, whether the bytes arrive "
+                    + "synchronously or not")
+        assertFrame(a, "[1] band I", intrinsicSection.subviews[1],
+                    "THE REFLOW STILL HAPPENED, from inside the batch: band I is at y = Hi")
+        assertFrame(a, "[1] intrinsic section", intrinsicSection,
+                    "…and the section grew by exactly Hi")
 
         // [2] still fails — a 404 is not cached, so this one really did go to the wire, which is
         // what keeps the synchronization gate above honest on this mount.
         let failingSection = root.subviews[2]
-        assertFrame("[2] the failure still reserves nothing", try bnImageIn(failingSection), 0, 0, 0, 0)
-        assertFrame("[2] …and its band is still at y = 0 in its parent",
-                    failingSection.subviews[1], 0, 0, sectionW, bandH)
+        assertFrame(a, "[2] failing image", try bnImageIn(failingSection),
+                    "the failure still reserves nothing")
+        assertFrame(a, "[2] band X", failingSection.subviews[1],
+                    "…and its band is still at y = 0 in its parent")
 
-        XCTAssertEqual(root.subviews[3].frame.minY, backSectionY + hi, accuracy: 0.5,
-                       "[3] the back row is where the reflow put it")
+        assertFrame(a, "[3] back section", root.subviews[3],
+                    "the back row is where the reflow put it")
         assertRootFrame(root: root, backSection: root.subviews[3])
     }
 

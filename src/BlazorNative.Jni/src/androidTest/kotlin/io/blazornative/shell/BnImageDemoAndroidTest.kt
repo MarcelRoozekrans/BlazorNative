@@ -30,6 +30,13 @@ import java.util.concurrent.atomic.AtomicReference
  * computes in density-independent units on both platforms, so every expectation here is in
  * **dp**, read back as `view.left / density`.
  *
+ * Both tables are declared in [bnImageDemoBeforeFrames] / [bnImageDemoAfterFrames]
+ * (BnDemoFrameTables.kt) — never inline here — and `ShellFrameTableDriftTests` demands the
+ * iOS shell's twin declaration be equal to them, in the REQUIRED lane (M6 audit, F2). The
+ * AFTER table is parameterised by the DECODED fixture's own `wi`/`hi`, which the drift test
+ * compares AS SYMBOLS: it can check that both shells say `hi + 20` without knowing what `hi`
+ * is, which is exactly the point — neither shell is allowed to write that number down.
+ *
  * ── THE TRAP THIS FILE EXISTS TO NOT FALL INTO ──────────────────────────────────────
  *
  * **Two of the three cases assert that NOTHING MOVED** — [0]'s frame is definite and [2]'s
@@ -68,17 +75,14 @@ class BnImageDemoAndroidTest {
     private lateinit var server: ImageFixtureServer
 
     private companion object {
-        // BnImageDemo.cs's constants (SectionWidthDp, FixedWidthDp, FixedHeightDp,
-        // SiblingHeightDp) and the four offsets it COMPUTES from them. Derived here too, not
-        // transcribed: a changed band height must move both sides at once.
+        /** BnImageDemo.cs's `SectionWidthDp`. Every OTHER number this page's frames are
+         * made of now lives in the canonical tables ([bnImageDemoBeforeFrames] /
+         * [bnImageDemoAfterFrames], BnDemoFrameTables.kt), which the iOS shell declares
+         * too and `ShellFrameTableDriftTests` pins the two against each other in the
+         * REQUIRED lane (M6 audit, F2). This one survives because it is not a frame: it
+         * bounds the fixture (`0 < Wi ≤ 300` — a section is 300 wide, so the measure func
+         * is called with AT_MOST(300)). */
         const val SECTION_W = 300f
-        const val FIXED_W = 200f
-        const val FIXED_H = 120f
-        const val BAND_H = 20f
-        const val FIXED_SECTION_H = FIXED_H + BAND_H          // 140
-        const val INTRINSIC_SECTION_Y = FIXED_SECTION_H       // 140
-        const val FAILING_SECTION_Y = INTRINSIC_SECTION_Y + BAND_H // 160
-        const val BACK_SECTION_Y = FAILING_SECTION_Y + BAND_H      // 180
     }
 
     @Before fun startFixtureServer() {
@@ -211,7 +215,10 @@ class BnImageDemoAndroidTest {
                     "(Coil's caches were cleared, so all three go to the wire.)",
                     emptyList<WidgetMapper.ImageResult>(), act.mapper.imageResults)
 
-                val d = act.resources.displayMetrics.density
+                // THE CANONICAL BEFORE TABLE — BnDemoFrameTables.kt, pinned against the iOS
+                // shell's twin in the REQUIRED lane (M6 audit, F2).
+                val b = bnImageDemoBeforeFrames
+
                 val host = act.findViewById<FrameLayout>(R.id.widget_root)
                 val root = host.getChildAt(0) as ViewGroup
                 assertEquals("four sections: fixed, intrinsic, failing, back", 4, root.childCount)
@@ -219,37 +226,33 @@ class BnImageDemoAndroidTest {
                 // [0] FIXED — first on purpose: nothing above it can ever move it, so its
                 // "did not move" is a fact about the IMAGE and not about the page.
                 val fixedSection = root.getChildAt(0) as ViewGroup
-                assertFrame("[0] the fixed section HUGS 120 + 20",
-                    fixedSection, 0f, 0f, SECTION_W, FIXED_SECTION_H)
-                assertFrame("[0] the fixed image: Width AND Height declared",
-                    imageIn(fixedSection), 0f, 0f, FIXED_W, FIXED_H)
-                assertFrame("[0] band F, BEFORE: y = 120",
-                    fixedSection.getChildAt(1), 0f, FIXED_H, SECTION_W, BAND_H)
+                assertFrame(b, "[0] fixed section", fixedSection, "HUGS 120 + 20")
+                assertFrame(b, "[0] fixed image", imageIn(fixedSection),
+                    "Width AND Height declared")
+                assertFrame(b, "[0] band F", fixedSection.getChildAt(1), "BEFORE: y = 120")
                 fixedImageFrameBefore.set(frameOf(imageIn(fixedSection)))
 
                 // [1] INTRINSIC — 0 × 0. Not "small": ZERO.
                 val intrinsicSection = root.getChildAt(1) as ViewGroup
-                assertFrame("[1] the intrinsic section HUGS 0 + 20",
-                    intrinsicSection, 0f, INTRINSIC_SECTION_Y, SECTION_W, BAND_H)
-                assertFrame("[1] the intrinsic image, BEFORE: a measured leaf with no bytes " +
-                    "measures 0 × 0", imageIn(intrinsicSection), 0f, 0f, 0f, 0f)
-                assertFrame("[1] band I, BEFORE: y = 0 — THE REFLOW HAS NOT HAPPENED",
-                    intrinsicSection.getChildAt(1), 0f, 0f, SECTION_W, BAND_H)
+                assertFrame(b, "[1] intrinsic section", intrinsicSection, "HUGS 0 + 20")
+                assertFrame(b, "[1] intrinsic image", imageIn(intrinsicSection),
+                    "BEFORE: a measured leaf with no bytes measures 0 × 0")
+                assertFrame(b, "[1] band I", intrinsicSection.getChildAt(1),
+                    "BEFORE: y = 0 — THE REFLOW HAS NOT HAPPENED")
                 assertNull("[1] nothing painted yet", imageIn(intrinsicSection).drawable)
 
                 // [2] FAILING — structurally identical to [1]; only the URL differs.
                 val failingSection = root.getChildAt(2) as ViewGroup
-                assertFrame("[2] the failing section HUGS 0 + 20",
-                    failingSection, 0f, FAILING_SECTION_Y, SECTION_W, BAND_H)
-                assertFrame("[2] the failing image, BEFORE: 0 × 0",
-                    imageIn(failingSection), 0f, 0f, 0f, 0f)
-                assertFrame("[2] band X, BEFORE: y = 0 in its parent",
-                    failingSection.getChildAt(1), 0f, 0f, SECTION_W, BAND_H)
+                assertFrame(b, "[2] failing section", failingSection, "HUGS 0 + 20")
+                assertFrame(b, "[2] failing image", imageIn(failingSection), "BEFORE: 0 × 0")
+                assertFrame(b, "[2] band X", failingSection.getChildAt(1),
+                    "BEFORE: y = 0 in its parent")
 
-                // [3] the back row — the page's only measured leaf, deliberately LAST.
+                // [3] the back row — the page's only measured leaf, deliberately LAST. Its
+                // HEIGHT is MEASURED in the table (a font metric is nobody's to invent); its
+                // y = 180 is not.
                 val backSection = root.getChildAt(3) as ViewGroup
-                assertEquals("[3] the back row starts at y = 180",
-                    BACK_SECTION_Y, backSection.top / d, 0.5f)
+                assertFrame(b, "[3] back section", backSection)
 
                 assertRootFrame(act, root, backSection)
             }
@@ -277,58 +280,60 @@ class BnImageDemoAndroidTest {
 
             // ══ AFTER THE BYTES ══════════════════════════════════════════════════
             scenario.onActivity { act ->
-                val d = act.resources.displayMetrics.density
+                // THE CANONICAL AFTER TABLE, parameterised by the DECODED fixture's own pixel
+                // size — never a constant this file invents. Its iOS twin declares the same
+                // rows with the same `wi`/`hi` symbols, and the drift test compares them AS
+                // SYMBOLS: `hi + 20` on both shells is an equality it can check without
+                // knowing the number.
+                val a = bnImageDemoAfterFrames(wi, hi)
                 val root = act.findViewById<FrameLayout>(R.id.widget_root).getChildAt(0) as ViewGroup
 
                 // [0] THE NO-REFLOW PROOF — asserted as an IDENTITY between two frames of the
                 // same node, not as a number. Both axes are definite, so Yoga never called
                 // its measure func at all and the fixture's own size is nowhere in this frame.
                 val fixedSection = root.getChildAt(0) as ViewGroup
-                assertFrame("[0] the fixed section, AFTER: UNCHANGED",
-                    fixedSection, 0f, 0f, SECTION_W, FIXED_SECTION_H)
+                assertFrame(a, "[0] fixed section", fixedSection, "AFTER: UNCHANGED")
                 assertEquals("[0] THE NO-REFLOW PROOF: the fixed image's frame is IDENTICAL, " +
                     "number for number, to the one it had before its bytes landed",
                     fixedImageFrameBefore.get(), frameOf(imageIn(fixedSection)))
-                assertFrame("[0] band F, AFTER: y = 120. IT DID NOT MOVE",
-                    fixedSection.getChildAt(1), 0f, FIXED_H, SECTION_W, BAND_H)
+                assertFrame(a, "[0] band F", fixedSection.getChildAt(1),
+                    "AFTER: y = 120. IT DID NOT MOVE")
                 assertNotNull("[0] …and its bytes DID land — which is what makes 'it did not " +
                     "move' mean something", imageIn(fixedSection).drawable)
 
                 // [1] THE REFLOW.
                 val intrinsicSection = root.getChildAt(1) as ViewGroup
                 val intrinsicImage = imageIn(intrinsicSection)
-                assertFrame("[1] the intrinsic image, AFTER: its NATURAL size — the DECODED " +
-                    "FIXTURE's own ${intrinsic.width} × ${intrinsic.height} PIXELS, read as dp. " +
-                    "One file pixel is one dp/pt, which is the only reading under which Android " +
-                    "and iOS compute the same frame (UIImage(data:).size is already in points)",
-                    intrinsicImage, 0f, 0f, wi, hi)
+                assertFrame(a, "[1] intrinsic image", intrinsicImage,
+                    "AFTER: its NATURAL size — the DECODED FIXTURE's own ${intrinsic.width} × " +
+                        "${intrinsic.height} PIXELS, read as dp. One file pixel is one dp/pt, " +
+                        "which is the only reading under which Android and iOS compute the same " +
+                        "frame (UIImage(data:).size is already in points)")
                 assertTrue("[1] POSITIVELY: Wi > 0 AND Hi > 0. Two of this page's three cases " +
                     "assert 'nothing moved', and a suite of negatives is one that a TOTAL " +
                     "FAILURE satisfies", intrinsicImage.width > 0 && intrinsicImage.height > 0)
-                assertFrame("[1] THE REFLOW PROOF: band I moved from y = 0 to y = Hi. The " +
-                    "image's own frame could be faked by a shell that painted and never " +
-                    "re-solved; the BAND's y could not",
-                    intrinsicSection.getChildAt(1), 0f, hi, SECTION_W, BAND_H)
-                assertFrame("[1] …and the section grew by exactly Hi",
-                    intrinsicSection, 0f, INTRINSIC_SECTION_Y, SECTION_W, hi + BAND_H)
+                assertFrame(a, "[1] band I", intrinsicSection.getChildAt(1),
+                    "THE REFLOW PROOF: band I moved from y = 0 to y = Hi. The image's own frame " +
+                        "could be faked by a shell that painted and never re-solved; the BAND's " +
+                        "y could not")
+                assertFrame(a, "[1] intrinsic section", intrinsicSection,
+                    "…and the section grew by exactly Hi")
 
                 // [2] THE FAILURE RESERVED NOTHING — two facts at once, and the frames are
                 // parent-relative so both are visible: the SECTION slid down by Hi (because
                 // [1] grew above it) while the band INSIDE it stayed at y = 0.
                 val failingSection = root.getChildAt(2) as ViewGroup
-                assertFrame("[2] the failing section moved down by Hi — [1]'s reflow, " +
-                    "propagating downward", failingSection,
-                    0f, FAILING_SECTION_Y + hi, SECTION_W, BAND_H)
-                assertFrame("[2] …but ITS image stayed 0 × 0", imageIn(failingSection),
-                    0f, 0f, 0f, 0f)
-                assertFrame("[2] …so band X is still at y = 0 IN ITS PARENT: THE FAILURE " +
-                    "RESERVED NOTHING", failingSection.getChildAt(1), 0f, 0f, SECTION_W, BAND_H)
+                assertFrame(a, "[2] failing section", failingSection,
+                    "moved down by Hi — [1]'s reflow, propagating downward")
+                assertFrame(a, "[2] failing image", imageIn(failingSection),
+                    "…but ITS image stayed 0 × 0")
+                assertFrame(a, "[2] band X", failingSection.getChildAt(1),
+                    "…so band X is still at y = 0 IN ITS PARENT: THE FAILURE RESERVED NOTHING")
                 assertNull("[2] and nothing was painted", imageIn(failingSection).drawable)
 
                 // [3]
                 val backSection = root.getChildAt(3) as ViewGroup
-                assertEquals("[3] the back row moved down by Hi too",
-                    BACK_SECTION_Y + hi, backSection.top / d, 0.5f)
+                assertFrame(a, "[3] back section", backSection, "moved down by Hi too")
 
                 assertRootFrame(act, root, backSection)
                 assertEquals("nothing is left in flight", 0, act.mapper.inFlightImageCount)
@@ -395,7 +400,10 @@ class BnImageDemoAndroidTest {
             awaitAllThreeTerminated(scenario)
 
             scenario.onActivity { act ->
-                val d = act.resources.displayMetrics.density
+                // THE SAME AFTER TABLE the network mount asserts — read a second time, not
+                // transcribed a second time. "One reflow, never two, whether the bytes arrive
+                // synchronously or not" is now a statement about one declaration.
+                val a = bnImageDemoAfterFrames(wi, hi)
                 val root = act.findViewById<FrameLayout>(R.id.widget_root).getChildAt(0) as ViewGroup
 
                 // THE INVARIANT THAT BROKE. A synchronously-completed request that was recorded
@@ -413,33 +421,32 @@ class BnImageDemoAndroidTest {
                 // the markDirty land mid-batch, and the batch's own CommitFrame is the ONE re-solve
                 // that applies them.
                 val fixedSection = root.getChildAt(0) as ViewGroup
-                assertFrame("[0] the fixed section, from cache: UNCHANGED",
-                    fixedSection, 0f, 0f, SECTION_W, FIXED_SECTION_H)
-                assertFrame("[0] the fixed image, from cache: its DECLARED size, still",
-                    imageIn(fixedSection), 0f, 0f, FIXED_W, FIXED_H)
+                assertFrame(a, "[0] fixed section", fixedSection, "from cache: UNCHANGED")
+                assertFrame(a, "[0] fixed image", imageIn(fixedSection),
+                    "from cache: its DECLARED size, still")
                 assertNotNull("[0] …and the cached bytes were painted", imageIn(fixedSection).drawable)
 
                 val intrinsicSection = root.getChildAt(1) as ViewGroup
-                assertFrame("[1] the intrinsic image, from cache: its NATURAL size — the same " +
-                    "$wi × $hi it measured from the network. One reflow, never two, whether the " +
-                    "bytes arrive synchronously or not",
-                    imageIn(intrinsicSection), 0f, 0f, wi, hi)
-                assertFrame("[1] THE REFLOW STILL HAPPENED, from inside the batch: band I is at " +
-                    "y = Hi", intrinsicSection.getChildAt(1), 0f, hi, SECTION_W, BAND_H)
-                assertFrame("[1] …and the section grew by exactly Hi",
-                    intrinsicSection, 0f, INTRINSIC_SECTION_Y, SECTION_W, hi + BAND_H)
+                assertFrame(a, "[1] intrinsic image", imageIn(intrinsicSection),
+                    "from cache: its NATURAL size — the same $wi × $hi it measured from the " +
+                        "network. One reflow, never two, whether the bytes arrive synchronously " +
+                        "or not")
+                assertFrame(a, "[1] band I", intrinsicSection.getChildAt(1),
+                    "THE REFLOW STILL HAPPENED, from inside the batch: band I is at y = Hi")
+                assertFrame(a, "[1] intrinsic section", intrinsicSection,
+                    "…and the section grew by exactly Hi")
 
                 // [2] still fails — a 404 is not cached, so this one really did go to the wire,
                 // which is what keeps the synchronization gate above honest on this mount.
                 val failingSection = root.getChildAt(2) as ViewGroup
-                assertFrame("[2] the failure still reserves nothing",
-                    imageIn(failingSection), 0f, 0f, 0f, 0f)
-                assertFrame("[2] …and its band is still at y = 0 in its parent",
-                    failingSection.getChildAt(1), 0f, 0f, SECTION_W, BAND_H)
+                assertFrame(a, "[2] failing image", imageIn(failingSection),
+                    "the failure still reserves nothing")
+                assertFrame(a, "[2] band X", failingSection.getChildAt(1),
+                    "…and its band is still at y = 0 in its parent")
 
                 val backSection = root.getChildAt(3) as ViewGroup
-                assertEquals("[3] the back row is where the reflow put it",
-                    BACK_SECTION_Y + hi, backSection.top / d, 0.5f)
+                assertFrame(a, "[3] back section", backSection,
+                    "the back row is where the reflow put it")
                 assertRootFrame(act, root, backSection)
             }
         }
