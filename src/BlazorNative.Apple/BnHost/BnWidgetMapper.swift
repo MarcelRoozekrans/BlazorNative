@@ -413,10 +413,11 @@ final class BnWidgetMapper {
     ///     the loop above never sees it);
     ///  2. `contentSize` becomes that frame's size — which is what makes the viewport
     ///     scrollable at all;
-    ///  3. **`contentOffset` is CLAMPED when the content SHRINKS.** `UIScrollView` does
-    ///     not move `contentOffset` when `contentSize` gets smaller, so a page scrolled
-    ///     to 600 whose content later drops to 300 is left scrolled 300pt past its own
-    ///     end — a blank viewport the user cannot scroll back into except by flinging.
+    ///  3. **`contentOffset` is CLAMPED when the content SHRINKS — AND ONLY WHEN THE USER
+    ///     IS NOT HOLDING IT.** `UIScrollView` does not move `contentOffset` when
+    ///     `contentSize` gets smaller, so a page scrolled to 600 whose content later drops
+    ///     to 300 is left scrolled 300pt past its own end — a blank viewport the user
+    ///     cannot scroll back into except by flinging.
     ///     **Android gets this for free** (`ScrollView.onLayout` ends with
     ///     `scrollTo(mScrollX, mScrollY)`, which re-clamps against the content child's
     ///     just-laid-out height on every layout it takes part in) — and the mechanism
@@ -427,11 +428,33 @@ final class BnWidgetMapper {
     ///     pin.)
     ///
     /// A clamp, not a reset: an offset still INSIDE the new range is the user's and is
-    /// left alone. Only the part that is now past the end is taken back.
+    /// left alone. Only the part that is now past the end is taken back — and while the
+    /// user's FINGER is on the glass, none of it is (see the gesture gate below).
     private func applyScrollFrames() {
         for (scrollId, contentNode) in contentNodes {
             guard let scroll = views[scrollId] as? UIScrollView,
-                  let contentView = scrollContents[scrollId] else { continue }
+                  let contentView = scrollContents[scrollId] else {
+                // **THE GUARD THAT HOLDS UP MEMORY SAFETY, SAID OUT LOUD.** A `contentNodes`
+                // entry whose scroll node has no view is not a missing view: the content node
+                // is a Yoga CHILD of the scroll node, so whatever freed the scroll node's
+                // subtree ALREADY FREED THIS HANDLE ([handleRemove] / [destroy]). It is a
+                // DANGLING `YGNodeRef`, and `bn_yoga_node_get_frame(contentNode)` — three
+                // lines below — dereferences it.
+                //
+                // The mutation run proves the shape: drop the purge in [handleRemove] and
+                // nothing crashes, because this `continue` silently skips the freed node.
+                // The ONLY thing between a use-after-free and a dereference is a line that
+                // reads like bookkeeping — so it says what it is, and it TRAPS. A hoist of
+                // the frame read above this guard is an ordinary-looking refactor and is a
+                // use-after-free; `assertionFailure` is a no-op in release (a shell crash is
+                // a black screen) and traps in every XCTest run, turning a latent dangling
+                // pointer into a loud failure AT THE MOMENT OF DESYNC rather than leaving it
+                // to a count assertion two tests happen to make.
+                assertionFailure(
+                    "scroll node \(scrollId) has a content node but no view — the purge "
+                    + "desynced, and this handle is a DANGLING YGNodeRef")
+                continue
+            }
 
             warnIfIndefiniteHeight(scrollId: scrollId, contentNode: contentNode)
 
@@ -441,19 +464,59 @@ final class BnWidgetMapper {
                                        size: size)
             scroll.contentSize = size
 
-            // The reachable range, in the viewport's own terms. `contentInsetAdjustment`
-            // is OFF (see [makeView]), so there is no inset to fold in and this is the
-            // same arithmetic Android's ScrollView does: content − viewport, floored at 0
-            // (content SHORTER than the viewport has no range at all, and a negative
-            // maximum would drag the offset above the top of the content).
-            let maxX = max(0, size.width - scroll.bounds.width)
-            let maxY = max(0, size.height - scroll.bounds.height)
+            // ── THE GESTURE GATE — the offset is the USER'S while their finger is down ──
+            // `UIScrollView.bounces` defaults to `true`, and vertical bouncing is live
+            // whenever the content is scrollable. So mid-drag, rubber-banding past the top,
+            // `contentOffset.y` is LEGITIMATELY NEGATIVE (−30, say) — and the clamp below
+            // computes 0 for it and assigns, KILLING THE RUBBER BAND UNDER THE USER'S
+            // FINGER. Same at the bottom edge during an overscroll bounce. Every commit
+            // landing inside that window does it again.
+            //
+            // Nothing in BnScrollDemo re-renders while you drag, so this is invisible in
+            // this phase and CONSTANT in the next: **M7's virtualized list commits
+            // continuously while scrolling**, and it is the named customer of this whole
+            // mechanism.
+            //
+            // Skipping is safe because `UIScrollView` settles the offset back into range
+            // ITSELF when the gesture ends. What it does not do — and the ONLY thing the
+            // clamp exists for — is correct a programmatically-invalidated offset AT REST,
+            // which by definition is not happening while `isTracking` is true.
+            //
+            // **Android has no equivalent and needs none**: its overscroll is a GLOW, not a
+            // moved offset, so `ScrollView`'s per-layout re-clamp can never fight a gesture.
+            // The clamp is iOS's alone, and so is its gate.
+            guard !scroll.isTracking else { continue }
+
             let offset = scroll.contentOffset
-            let clamped = CGPoint(x: min(max(0, offset.x), maxX), y: min(max(0, offset.y), maxY))
+            let clamped = Self.clampedOffset(offset, contentSize: size, viewport: scroll.bounds.size)
             if clamped != offset {
                 scroll.contentOffset = clamped
             }
         }
+    }
+
+    /// **THE CLAMP'S ARITHMETIC, EXTRACTED SO IT CAN BE TESTED.** The gesture gate above is
+    /// awkward to drive from a unit test (it wants a real touch on a real window), so the
+    /// gate is kept to ONE commented line sitting over arithmetic that IS tested — a table
+    /// in `BnScrollTests.testTheOffsetClampIsAClampAndItsFloorIsNotDecoration`.
+    ///
+    /// The reachable range, in the viewport's own terms: content − viewport, **floored at
+    /// 0**. `contentInsetAdjustmentBehavior` is OFF (see [makeView]), so there is no inset
+    /// to fold in, and this is the same arithmetic Android's `ScrollView` does.
+    ///
+    /// **THE FLOOR IS NOT DECORATION.** Content SHORTER than the viewport — a list that
+    /// empties, a filter matching nothing, M7's first under-full frame — makes the maximum
+    /// NEGATIVE, and `min(max(0, 600), −120)` is **−120**: the page would sit scrolled
+    /// 120pt ABOVE its own content, permanently, because `UIScrollView` does not correct a
+    /// programmatically-set out-of-range offset at rest. Floored, the answer is 0. (The
+    /// shrink test's three acts are what keep the floor honest: 800 → 240 leaves a POSITIVE
+    /// maximum of 40 and never engages it.)
+    internal static func clampedOffset(_ offset: CGPoint,
+                                       contentSize: CGSize,
+                                       viewport: CGSize) -> CGPoint {
+        let maxX = max(0, contentSize.width - viewport.width)
+        let maxY = max(0, contentSize.height - viewport.height)
+        return CGPoint(x: min(max(0, offset.x), maxX), y: min(max(0, offset.y), maxY))
     }
 
     /// **THE DEFINITE-HEIGHT WARNING** (design §"The constraint this introduces") — the
@@ -616,7 +679,6 @@ final class BnWidgetMapper {
         }
 
         let view: UIView = makeView(nodeType: nodeType)
-        views[nodeId] = view
 
         // Phase 6.2 — THE SYNTHETIC CONTENT VIEW. Keyed on the NODETYPE, not on
         // `view is UIScrollView`: the nodeType is the CONTRACT ("a `scroll` node is a
@@ -624,11 +686,35 @@ final class BnWidgetMapper {
         // horizontal `scroll` would be a different configuration and would still owe a
         // content node). Two ways of asking one question is how the two trees end up
         // disagreeing about which nodes are scroll nodes.
-        if nodeType == Self.scroll, let scroll = view as? UIScrollView {
+        if nodeType == Self.scroll {
+            // …and the cast is a GUARD, not a condition, because **a `scroll` node that
+            // failed it would silently STOP BEING A SCROLL NODE.** As an `if` this branch
+            // could do NOTHING and say nothing, and all four of the consequences are
+            // silent: no content VIEW, so [containerFor] parents the wire children
+            // straight into the viewport; no content NODE, so `contentSize` is never set
+            // and the page cannot scroll; membership in [contentNodes] is what makes a
+            // node "a scroll node" to [handleSetStyle], so the container-style ignore rule
+            // stops applying; and it is also what drives [warnIfIndefiniteHeight], so the
+            // one diagnostic that would have explained the dead page never fires either.
+            // Unreachable while [makeView] answers `scroll` with a `UIScrollView` — this
+            // is posture, on the platform where silence is the risk. **Android's twin
+            // THROWS** (`view as ScrollView`); this aborts the create, loudly in debug and
+            // logged in release, and registers NOTHING (the `views` entry is made below).
+            guard let scroll = view as? UIScrollView else {
+                NSLog("[BnWidgetMapper] node \(nodeId) is a `scroll` node but its view is a "
+                      + "\(type(of: view)), not a UIScrollView — the node is DROPPED. It would "
+                      + "otherwise be a scroll node with no content view (children parented into "
+                      + "the viewport itself), no content node (no contentSize, nothing scrolls), "
+                      + "no container-style ignore rule, and no definite-height diagnostic.")
+                assertionFailure("`scroll` node \(nodeId) did not get a UIScrollView from makeView")
+                return
+            }
             let content = BnScrollContentView()
             scroll.addSubview(content)
             scrollContents[nodeId] = content
         }
+
+        views[nodeId] = view
 
         // The view a child of this node parents INTO: for a child of a scroll node that
         // is the CONTENT view, never the UIScrollView (non-negotiable #2).
@@ -838,7 +924,13 @@ final class BnWidgetMapper {
             bn_yoga_node_free_subtree(node)
         }
 
-        for (id, mapped) in views where doomed.contains(ObjectIdentifier(mapped)) {
+        // The doomed IDS first, then ONE sweep per map — the shape Kotlin's
+        // `YogaLayout.removeNode` already has (`doomedIds` → `removeAll { it.first in
+        // doomedIds }`). The two purges are meant to be read side by side, and the
+        // diagnostics sweep is the reason it is not merely cosmetic: nested in the map
+        // loop it was a `removeAll` over the whole diagnostics list PER doomed id.
+        let doomedIds = Set(views.filter { doomed.contains(ObjectIdentifier($0.value)) }.keys)
+        for id in doomedIds {
             views.removeValue(forKey: id)
             yogaNodes.removeValue(forKey: id)
             collapsedAliases.remove(id) // an aliased text child of a doomed UIButton
@@ -847,13 +939,13 @@ final class BnWidgetMapper {
             // only thing that would survive to pin it).
             contentNodes.removeValue(forKey: id)
             scrollContents.removeValue(forKey: id)
-            // …and the DIAGNOSTICS BOOKKEEPING, for the reason [diagnose] gives: node ids
-            // are REUSED. A warn-once key that outlives its node silences the warning the
-            // node inheriting its id would have earned — and the message list would
-            // otherwise grow by one per navigation, forever.
-            diagnosed.removeAll { $0.nodeId == id }
-            diagnosedKeys = diagnosedKeys.filter { $0.nodeId != id }
         }
+        // …and the DIAGNOSTICS BOOKKEEPING, for the reason [diagnose] gives: node ids are
+        // REUSED. A warn-once key that outlives its node silences the warning the node
+        // inheriting its id would have earned — and the message list would otherwise grow
+        // by one per navigation, forever.
+        diagnosed.removeAll { doomedIds.contains($0.nodeId) }
+        diagnosedKeys = diagnosedKeys.filter { !doomedIds.contains($0.nodeId) }
         for identity in doomed {
             viewToNode.removeValue(forKey: identity)
         }

@@ -20,6 +20,54 @@ import XCTest
 import UIKit
 @testable import BnHost
 
+// ── DETERMINISTIC TEARDOWN — the contract, honoured by the suite too ─────────
+
+/// Every [BnWidgetMapper] this target builds, so [BnHostTestCase] can `destroy()` them
+/// **deterministically, on the main thread, at the end of the test that made them**.
+///
+/// `BnWidgetMapper.destroy()`'s own doc comment says why it exists: `deinit` runs on
+/// whatever thread drops the LAST REFERENCE, and the mapper's Yoga tree and the `.mm`'s
+/// unsynchronised measure registry are **main-thread-only**. Every production owner calls
+/// `destroy()` explicitly (`HostViewController.deinit`) — and until now the ONE place that
+/// did not was the test suite, which left the tree to `deinit` and to whichever thread
+/// released the last reference (a `BnRuntime` frame callback can hold one). Harmless under
+/// XCTest's main-thread teardown, and exactly the wrong place to leave the contract
+/// unhonoured: the suite is the executable statement of it.
+///
+/// Registration is at CONSTRUCTION ([bnMapper]) rather than at use, so a mapper cannot be
+/// built and forgotten.
+enum BnTestMappers {
+    private static var live: [BnWidgetMapper] = []
+
+    static func track(_ mapper: BnWidgetMapper) -> BnWidgetMapper {
+        live.append(mapper)
+        return mapper
+    }
+
+    /// Idempotent, and `destroy()` is too — a suite may destroy its own mapper first.
+    static func destroyAll() {
+        let doomed = live
+        live.removeAll()
+        for mapper in doomed { mapper.destroy() }
+    }
+}
+
+/// A mapper that will be torn down deterministically. The only way this target should
+/// build one.
+func bnMapper(root: UIView) -> BnWidgetMapper {
+    BnTestMappers.track(BnWidgetMapper(root: root))
+}
+
+/// The base class for every suite that builds a mapper (directly or through
+/// [BnSyntheticHost]) — it destroys them in `tearDown`, on the main thread, one test at a
+/// time. Contributes no tests of its own.
+class BnHostTestCase: XCTestCase {
+    override func tearDown() {
+        BnTestMappers.destroyAll()
+        super.tearDown()
+    }
+}
+
 // ── Patch builders (the RenderPatch/`create`/`style`/`text` twins) ───────────
 
 func bnCreate(_ nodeId: Int32, _ nodeType: String, _ parentId: Int32?, insertIndex: Int32 = -1) -> BnPatch {
@@ -200,7 +248,7 @@ final class BnSyntheticHost {
 
     init(width: CGFloat = 400, height: CGFloat = 800) {
         root = UIView(frame: CGRect(x: 0, y: 0, width: width, height: height))
-        mapper = BnWidgetMapper(root: root)
+        mapper = bnMapper(root: root) // …and it is destroyed in BnHostTestCase.tearDown
     }
 
     /// Applies one frame (the CommitFrame is appended) and pumps the main runloop

@@ -24,7 +24,7 @@ import XCTest
 import UIKit
 @testable import BnHost
 
-final class BnInteractionTests: XCTestCase {
+final class BnInteractionTests: BnHostTestCase {
 
     private static let defaultBg = "#FFEEAA"
     private static let altBg = "#334455"
@@ -35,7 +35,7 @@ final class BnInteractionTests: XCTestCase {
 
     override func setUpWithError() throws {
         root = UIView(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
-        let mapper = BnWidgetMapper(root: root)
+        let mapper = bnMapper(root: root)
         let runtime = BnRuntime(mapper: mapper)
         runtime.onError = { msg, err in NSLog("[BnInteractionTests] \(msg): \(err)") }
         self.runtime = runtime

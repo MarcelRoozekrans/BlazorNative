@@ -47,6 +47,14 @@
 // later drops to 300 is left scrolled past its own end. Android's per-layout re-clamp
 // handles that for free; iOS must handle it itself.
 //
+// …and the clamp iOS owes brings a HAZARD Android does not have, which is the other
+// half of the same asymmetry: `UIScrollView.bounces` moves `contentOffset` OUT OF RANGE
+// on purpose while the user's finger is down (Android's overscroll is a GLOW — the
+// offset never moves), so an unconditional clamp fights the rubber band mid-drag. The
+// clamp is therefore gated on `!scroll.isTracking`, and its ARITHMETIC is extracted and
+// tabled ([testTheOffsetClampIsAClampAndItsFloorIsNotDecoration]) precisely because the
+// gate itself cannot be unit-tested: an untestable guard over TESTED arithmetic.
+//
 // ── MUTATION EVIDENCE (measured on CI, not asserted from an armchair) ────────
 //
 // **`flexShrink: 1` on the content node** (the CSS instinct — the `.mm`'s one absent
@@ -80,7 +88,7 @@ import XCTest
 import UIKit
 @testable import BnHost
 
-final class BnScrollTests: XCTestCase {
+final class BnScrollTests: BnHostTestCase {
 
     private let rows = 10
     private let rowH: CGFloat = 80
@@ -172,6 +180,24 @@ final class BnScrollTests: XCTestCase {
                       + "sets clipChildren = false to match). A viewport that did not clip would "
                       + "draw all 800pt of content over the whole screen; this is the one place "
                       + "'our containers don't clip' is the WRONG rule to mirror")
+
+        // **THE PARITY KNOB — ASSERTED ON THE PROPERTY, BECAUSE IT CANNOT BE ASSERTED ON A
+        // NUMBER.** `.automatic` folds the safe-area inset into `adjustedContentInset`,
+        // which shifts the resting `contentOffset` to −inset and moves the maximum offset
+        // by a device constant Android's ScrollView has no notion of — so the two shells'
+        // scroll ranges would differ, ON THE DEVICE ONLY. Its effect here is exactly ZERO
+        // (a detached test host has no safe area), which is what makes this line the one
+        // knob in the file whose own comment says "the tests cannot see this" — and, until
+        // this assertion, the one knob you could DELETE with all 49 tests still green while
+        // real devices diverged. There is no number to pin, so the PROPERTY is pinned.
+        XCTAssertEqual(scroll.contentInsetAdjustmentBehavior, .never,
+                       "contentInsetAdjustmentBehavior must be .never — a CROSS-SHELL PARITY knob. "
+                       + "The default (.automatic) shifts the resting contentOffset to −safeArea and "
+                       + "moves the maximum by the same amount; Android has no such notion, so the "
+                       + "600pt range BnScrollDemoAndroidTest asserts would be a different number "
+                       + "here. It is zero in this detached host — which is why nothing but this "
+                       + "assertion can see it, and why the divergence would first show up on a "
+                       + "device")
 
         XCTAssertEqual(content.subviews.count, rows, "all ten rows are children of the CONTENT view")
         for i in 0..<rows {
@@ -373,11 +399,20 @@ final class BnScrollTests: XCTestCase {
     /// So the shell clamps it itself, in `applyScrollFrames`. Remove that clamp and this
     /// test — and only this test — goes red.
     ///
-    /// A CLAMP, not a reset: the second half asserts an offset still INSIDE the new range
+    /// A CLAMP, not a reset: the second act asserts an offset still INSIDE the new range
     /// is the USER'S and is left alone. (A `contentOffset = .zero` "fix" would pass the
     /// first assertion and fail this one — and would snap a scrolled page to the top on
     /// every commit, which is exactly the Android bug the UNSPECIFIED fallback exists to
     /// prevent, re-introduced on the other platform.)
+    ///
+    /// **And a THIRD act, which is the one the `max(0, …)` FLOOR exists for.** Acts one and
+    /// two shrink 800 → 240 against a 200 viewport, so the new maximum is a POSITIVE 40 and
+    /// the floor never engages — **delete it and they both still pass.** Content that
+    /// shrinks BELOW the viewport (a list that empties; a filter matching nothing; M7's
+    /// first under-full frame) gives a NEGATIVE maximum: `min(max(0, 40), −120)` is −120,
+    /// and the page would sit scrolled 120pt ABOVE its own content, permanently, because
+    /// `UIScrollView` does not correct a programmatically-set out-of-range offset at rest.
+    /// Act three shrinks to ONE row and pins the answer at 0.
     func testShrinkingTheContentClampsAScrolledOffset() throws {
         let host = BnSyntheticHost()
         host.render(scrollTree())
@@ -406,6 +441,74 @@ final class BnScrollTests: XCTestCase {
                        "a clamp, NOT a reset: an offset still inside the range is the USER's and "
                        + "must survive the commit. Snapping it to 0 here would be the Android "
                        + "'page jumps to the top on every re-render' bug, re-introduced on iOS")
+
+        // ── ACT THREE — the content shrinks BELOW the viewport, and the FLOOR is the only
+        // thing standing between the user and a page scrolled above its own first row ────
+        // Everything above leaves a POSITIVE maximum (240 − 200 = 40), so `max(0, …)` never
+        // engages and DELETING IT CHANGES NOTHING. One row of 80 inside a 200-high viewport
+        // makes the maximum −120: unfloored, `min(max(0, 20), −120)` is −120 and the shell
+        // ASSIGNS it. UIScrollView keeps it (it does not correct an out-of-range offset set
+        // programmatically at rest), so the page shows 120pt of nothing above its own
+        // content, forever. This is M7's first under-full frame, and an emptied list.
+        // rows 10/11/12 survived act one; 99 was added in act two. Leave ONE row.
+        let doomed: [Int32] = [11, 12, 99]
+        host.render(doomed.map { BnPatch.removeNode(nodeId: $0) })
+
+        XCTAssertEqual(scroll.contentSize.height, rowH, accuracy: 0.5,
+                       "one row left: the content is now SHORTER than the viewport")
+        XCTAssertLessThan(scroll.contentSize.height, scroll.bounds.height,
+                          "…which is the whole precondition — the maximum offset is NEGATIVE")
+        XCTAssertEqual(scroll.contentOffset.y, 0, accuracy: 0.5,
+                       "THE FLOOR: a maximum of 80 − 200 = −120 must be floored to 0. Without "
+                       + "max(0, …) the clamp assigns −120 and the page is left scrolled 120pt "
+                       + "ABOVE its own content — permanently, because UIScrollView does not "
+                       + "correct a programmatically-set out-of-range offset at rest. Content "
+                       + "shorter than its viewport has NO scrollable range, not a negative one")
+    }
+
+    /// **THE CLAMP'S ARITHMETIC, AS A TABLE** — `BnWidgetMapper.clampedOffset`, unit-tested.
+    ///
+    /// The clamp in `applyScrollFrames` is now gated on `!scroll.isTracking` (a commit that
+    /// lands while the user's finger is down must NOT fight the rubber band: `bounces` is
+    /// on by default, so a legitimate mid-drag `contentOffset.y` is NEGATIVE, and clamping
+    /// it to 0 kills the bounce under the finger — M7's virtualized list commits
+    /// continuously WHILE scrolling, which is when that stops being hypothetical).
+    ///
+    /// A gesture is awkward to synthesize in a unit test, so the gate is deliberately ONE
+    /// commented line sitting over arithmetic that is tested HERE, exhaustively — the shape
+    /// the review asked for: *an untestable guard over tested arithmetic, not an untested
+    /// blob.*
+    func testTheOffsetClampIsAClampAndItsFloorIsNotDecoration() {
+        let viewport = CGSize(width: 300, height: 200)
+        let tall = CGSize(width: 300, height: 800)     // range 0…600
+        let short = CGSize(width: 300, height: 80)     // NO range at all
+        let cases: [(String, CGPoint, CGSize, CGPoint)] = [
+            ("IN RANGE — the offset is the USER's and must not move",
+             CGPoint(x: 0, y: 250), tall, CGPoint(x: 0, y: 250)),
+            ("at the very end — still in range, still untouched",
+             CGPoint(x: 0, y: 600), tall, CGPoint(x: 0, y: 600)),
+            ("PAST THE END — clamped back to the maximum, not reset to 0 (a reset would snap "
+             + "a scrolled page to the top on every commit)",
+             CGPoint(x: 0, y: 900), tall, CGPoint(x: 0, y: 600)),
+            ("NEGATIVE input — floored to 0 (this is the state a rubber-band leaves behind, "
+             + "which is why the caller does not run this while isTracking)",
+             CGPoint(x: 0, y: -30), tall, CGPoint(x: 0, y: 0)),
+            ("**CONTENT SHORTER THAN THE VIEWPORT — 0, NEVER NEGATIVE.** The maximum is "
+             + "80 − 200 = −120, and un-floored the clamp would ASSIGN −120: a page scrolled "
+             + "above its own content. This is the case the `max(0, …)` floor exists for and "
+             + "the one the 800 → 240 shrink test cannot see",
+             CGPoint(x: 0, y: 300), short, CGPoint(x: 0, y: 0)),
+            ("…and it holds for an offset that was already 0",
+             CGPoint(x: 0, y: 0), short, CGPoint(x: 0, y: 0)),
+            ("the horizontal axis obeys the same two rules — no range, so 0",
+             CGPoint(x: 120, y: 0), tall, CGPoint(x: 0, y: 0)),
+        ]
+        for (what, offset, contentSize, expected) in cases {
+            let actual = BnWidgetMapper.clampedOffset(offset, contentSize: contentSize,
+                                                      viewport: viewport)
+            XCTAssertEqual(actual.x, expected.x, accuracy: 0.5, "\(what) — x")
+            XCTAssertEqual(actual.y, expected.y, accuracy: 0.5, "\(what) — y")
+        }
     }
 
     // ── The two diagnostics ──────────────────────────────────────────────────

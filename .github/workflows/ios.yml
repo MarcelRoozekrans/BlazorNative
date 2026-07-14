@@ -317,7 +317,7 @@ jobs:
             > ios-out/xcresult.json 2>/dev/null || true
           ls -la ios-out/crash || true
 
-      - name: Assert XCTest baseline (49 passed / 0 failed)
+      - name: Assert XCTest baseline (50 passed / 0 failed)
         if: always()
         run: |
           log=ios-out/xcodebuild-test.log
@@ -401,10 +401,34 @@ jobs:
           #       emits — the page's root column is what gets disposed). On iOS a missed
           #       descendant is a DANGLING YGNodeRef (YGNodeFreeRecursive already freed it),
           #       not a leak; 6.1 proved that crashes navigation.
+          #
+          # 49 -> 50 (Phase 6.2 Gate 3 REVIEW, +1) — the offset clamp had a REAL BUG and a
+          # DECORATIVE guard, and one test closes both:
+          #   +1  BnScrollTests.testTheOffsetClampIsAClampAndItsFloorIsNotDecoration — the
+          #       clamp's arithmetic, extracted to `BnWidgetMapper.clampedOffset` and tabled.
+          #       (a) The clamp ran on EVERY commit with no gesture guard: `bounces` is on by
+          #       default, so a mid-drag rubber-band leaves contentOffset.y legitimately
+          #       NEGATIVE, the clamp computed 0 and ASSIGNED it — killing the bounce under
+          #       the user's finger. Invisible in 6.2 (nothing re-renders mid-drag) and
+          #       CONSTANT in M7, whose virtualized list commits continuously WHILE
+          #       scrolling. Now gated on `!scroll.isTracking`; a gesture cannot be
+          #       synthesized in a unit test, so the gate is one commented line over
+          #       arithmetic that IS tested — this table. (b) The `max(0, …)` floor was
+          #       UNPINNED: the shrink test goes 800 -> 240 against a 200 viewport, leaving a
+          #       POSITIVE maximum of 40, so the floor never engaged and dropping it kept the
+          #       suite green. Content shrinking BELOW the viewport gives a NEGATIVE maximum
+          #       (min(max(0,20), -120) = -120 — a page scrolled above its own first row,
+          #       permanently). Covered here AND as a third act of the shrink test.
+          # (No new test for `contentInsetAdjustmentBehavior = .never` — the assertion joined
+          # the existing viewport test, next to `clipsToBounds`. It is the one knob whose own
+          # comment says the tests cannot see its effect (zero in a detached host), and until
+          # now it could be DELETED with all 49 green while real devices diverged by a
+          # safe-area inset Android has no notion of. Asserted on the PROPERTY, because there
+          # is no number to assert it on.)
           # Count drift fails loudly.
-          if [ "$failed" -ne 0 ] || [ "$passed" -ne 49 ]; then
+          if [ "$failed" -ne 0 ] || [ "$passed" -ne 50 ]; then
             grep -E "Test Case '.*' (passed|failed)" "$log" || true
-            echo "iOS XCTest baseline drift: expected 49 passed / 0 failed, got passed=$passed failed=$failed" >&2
+            echo "iOS XCTest baseline drift: expected 50 passed / 0 failed, got passed=$passed failed=$failed" >&2
             exit 1
           fi
 

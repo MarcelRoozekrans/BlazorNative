@@ -23,7 +23,7 @@ import XCTest
 import UIKit
 @testable import BnHost
 
-final class BnClipboardTests: XCTestCase {
+final class BnClipboardTests: BnHostTestCase {
 
     private static let copyPayload = "clip!" // mirror of ClipboardProbe.CopyPayload
 
@@ -99,7 +99,7 @@ final class BnClipboardTests: XCTestCase {
 
     private func bootClipboardProbe() throws -> UIView {
         root = UIView(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
-        let mapper = BnWidgetMapper(root: root)
+        let mapper = bnMapper(root: root)
         let runtime = BnRuntime(mapper: mapper)
         runtime.onError = { msg, err in NSLog("[BnClipboardTests] \(msg): \(err)") }
         self.runtime = runtime

@@ -18,7 +18,7 @@ import XCTest
 import UIKit
 @testable import BnHost
 
-final class BnYogaResizeTests: XCTestCase {
+final class BnYogaResizeTests: BnHostTestCase {
 
     func testAHostResizeReSolvesTheTree() {
         let host = BnSyntheticHost(width: 400, height: 800)

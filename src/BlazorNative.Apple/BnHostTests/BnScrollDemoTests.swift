@@ -54,7 +54,7 @@ import XCTest
 import UIKit
 @testable import BnHost
 
-final class BnScrollDemoTests: XCTestCase {
+final class BnScrollDemoTests: BnHostTestCase {
 
     /// BnScrollDemo's four inputs (BnScrollDemo.cs: RowCount, RowHeightDp,
     /// ViewportWidthDp, ViewportHeightDp) and the two products the contract COMPUTES
@@ -75,7 +75,7 @@ final class BnScrollDemoTests: XCTestCase {
 
     override func setUpWithError() throws {
         host = UIView(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
-        let mapper = BnWidgetMapper(root: host)
+        let mapper = bnMapper(root: host)
         let runtime = BnRuntime(mapper: mapper)
         self.runtime = runtime
         runtime.onError = { msg, err in NSLog("[BnScrollDemoTests] \(msg): \(err)") }

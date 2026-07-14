@@ -70,7 +70,7 @@ import XCTest
 import UIKit
 @testable import BnHost
 
-final class BnYogaLifecycleTests: XCTestCase {
+final class BnYogaLifecycleTests: BnHostTestCase {
 
     /// Hold the runtime for the test's lifetime so the @convention(c) callback
     /// trampoline is never released mid-render.
@@ -86,7 +86,7 @@ final class BnYogaLifecycleTests: XCTestCase {
 
     func testRemovingASubtreePurgesEveryDescendantFromBothTrees() throws {
         root = UIView(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
-        let mapper = BnWidgetMapper(root: root)
+        let mapper = bnMapper(root: root)
         self.mapper = mapper
         let runtime = BnRuntime(mapper: mapper)
         self.runtime = runtime

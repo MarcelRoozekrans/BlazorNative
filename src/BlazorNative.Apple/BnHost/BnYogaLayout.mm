@@ -281,6 +281,16 @@ bn_yoga_node bn_yoga_node_get_owner(bn_yoga_node node) {
 // back as `contentSize`. The symptom is 600pt of content that can never be reached.
 // ─────────────────────────────────────────────────────────────────────────────
 
+// **The NULL guard the file's precedent asks for is on [bn_yoga_node_has_declared_height]
+// and DELIBERATELY NOT here**, and the asymmetry is the return type. `set_style` and
+// `has_declared_height` both have a FAILURE VALUE to hand back (`0` — "did nothing"), so a
+// defensive `node == NULL` check costs one line and says something true. This function's
+// return is `_Nonnull` and there is no null answer to give: `return NULL` from it warns
+// under `-Wnonnull` and hands Swift a non-optional pointer that is zero anyway, while
+// widening the header to `_Nullable` would force its one caller to swallow a nil — which
+// is precisely the "a `scroll` node silently stops being a scroll node" failure the
+// guard in `BnWidgetMapper.handleCreate` was just written to close. Its only caller passes
+// `bn_yoga_node_new()`'s result from the same function, three lines up.
 bn_yoga_node bn_yoga_node_attach_scroll_content(bn_yoga_node scroll) {
     YGNodeRef viewport = (YGNodeRef)scroll;
 
@@ -300,6 +310,7 @@ bn_yoga_node bn_yoga_node_attach_scroll_content(bn_yoga_node scroll) {
 }
 
 int32_t bn_yoga_node_has_declared_height(bn_yoga_node node) {
+    if (node == NULL) return 0; // same precedent as bn_yoga_node_set_style — see above
     const YGValue height = YGNodeStyleGetHeight((YGNodeRef)node);
     return (height.unit == YGUnitPoint || height.unit == YGUnitPercent) ? 1 : 0;
 }
