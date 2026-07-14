@@ -14,7 +14,7 @@
 #   emulator (ubuntu-latest, KVM) — downloads the .so, boots the API 34
 #     google_apis x86_64 Pixel 6 image (mirrors the local AVD
 #     blazornative-pixel6-x86_64), runs connectedAndroidTest with
-#     -PciSoDir pointing at the artifact → asserts 71 passed / 0 failed.
+#     -PciSoDir pointing at the artifact → asserts 86 passed / 0 failed.
 #
 # Baselines are asserted, not observed: count drift fails the job loudly.
 # ─────────────────────────────────────────────────────────────────────────────
@@ -219,6 +219,47 @@ jobs:
       # Baseline asserted, not observed (house style): 40 through M5; Phase 6.0 adds
       # YogaSpikeAndroidTest ×1 (the Yoga flex-row + measure-callback spike proof) → 41.
       #
+      # ── Phase 6.2 Gate 2 — REAL SCROLLING (71 → 86, +15) ───────────────────
+      # The `scroll` NodeType stops being a stub. A scroll node is a VIEWPORT whose
+      # wire children live one level deeper than the wire says — under a SYNTHETIC
+      # content node the shell creates and the renderer never hears about, whose
+      # computed height IS the content size. Each count below was verified by
+      # MUTATION (break the thing, watch the RIGHT test go red — see the Gate 2
+      # report in the conclusion):
+      #    +4 YogaScrollNodeAndroidTest  — THE MECHANISM, in Yoga alone, before any
+      #                                   widget exists. The content node computes to
+      #                                   800; it STILL computes to 800 with
+      #                                   `overflow: visible` (so the flag is NOT what
+      #                                   produces it — Yoga's flexShrink default of 0
+      #                                   is, and the design's original claim was
+      #                                   wrong); `flexShrink: 1` collapses it to 200;
+      #                                   and an auto-height scroll node HUGS its
+      #                                   content (the definite-height warning is
+      #                                   written against that answer).
+      #    +8 WidgetMapperScrollTest     — the ScrollView + the synthetic content view;
+      #                                   wire children parented into the CONTENT view
+      #                                   in both trees (append AND at an index — the
+      #                                   second index-mapping rule after 6.1's text
+      #                                   collapse); the UNSPECIFIED-spec measure
+      #                                   boundary ScrollView actually uses; and the two
+      #                                   scroll-node diagnostics (container styles
+      #                                   ignored-and-logged; the definite-height
+      #                                   warning) plus the negative that the WORKING
+      #                                   case warns about nothing.
+      #    +2 BnScrollDemoAndroidTest    — the canonical frame table (BnScrollDemo.cs's
+      #                                   header) on the device, AND the load-bearing
+      #                                   half: drive the scroll position and assert the
+      #                                   rows MOVE. At offset 600 row 7 is PARTIALLY
+      #                                   visible (its bottom 40dp), rows 8 and 9 fully.
+      #                                   The iOS XCTest (Gate 3) asserts the same
+      #                                   numbers — that pairing IS DoD #4.
+      #    +1 YogaNodeLifecycleAndroidTest — one RemoveNodePatch now stands for a
+      #                                   subtree containing a node NO PATCH EVER NAMES.
+      #                                   Miss the synthetic content node and Android
+      #                                   leaks a View, its rows and the Activity
+      #                                   Context once per navigation; iOS is left with
+      #                                   a dangling YGNodeRef.
+      #
       # ── Phase 6.1 Gate 2 REVIEW (52 → 71, +19) ─────────────────────────────
       # The review found five holes that the 52 could not see, and each one is now a
       # test that BITES (verified by mutation — break the thing, watch it go red):
@@ -277,7 +318,7 @@ jobs:
       # CompositionAndroidTest, WidgetMapperSetStyleTest) were REWRITTEN from type
       # pins (LinearLayout / orientation == VERTICAL) to FRAME pins; only the two
       # counts above are new methods, the rest are same-count rewrites.
-      - name: Assert instrumented baseline (71 passed / 0 failed)
+      - name: Assert instrumented baseline (86 passed / 0 failed)
         run: |
           shopt -s globstar nullglob
           xmls=(src/BlazorNative.Jni/build/outputs/androidTest-results/connected/**/*.xml)
@@ -294,8 +335,8 @@ jobs:
             s=$(attr skipped "$x");  skipped=$((skipped + ${s:-0}))
           done
           echo "Instrumented totals across ${#xmls[@]} suite(s): tests=$tests failures=$failures errors=$errors skipped=$skipped"
-          if [ "$tests" -ne 71 ] || [ "$failures" -ne 0 ] || [ "$errors" -ne 0 ] || [ "$skipped" -ne 0 ]; then
-            echo "Instrumented test baseline drift: expected 71 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped" >&2
+          if [ "$tests" -ne 86 ] || [ "$failures" -ne 0 ] || [ "$errors" -ne 0 ] || [ "$skipped" -ne 0 ]; then
+            echo "Instrumented test baseline drift: expected 86 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped" >&2
             exit 1
           fi
 
