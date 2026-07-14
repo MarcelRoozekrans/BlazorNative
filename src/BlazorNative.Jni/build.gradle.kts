@@ -64,6 +64,23 @@ dependencies {
     // same pin the androidTest classpath already carries below.
     implementation("com.facebook.soloader:soloader:0.12.1")
 
+    // Phase 6.3 (M6 DoD #5): Coil — the platform-standard Android image loader, and
+    // the Android half of the two-library parity risk the design manages explicitly
+    // (Kingfisher is Gate 3's). It brings fetch, decode, downsampling, CANCELLATION
+    // and caching; the shell brings the contract those must be configured TO
+    // (docs/plans/2026-07-14-phase-6.3-design.md §"The parity contract").
+    //
+    // `implementation`, so it also lands on the androidTest COMPILE classpath (the
+    // same route yoga takes — YogaSpikeAndroidTest imports com.facebook.yoga.* with
+    // no androidTest declaration of its own). The instrumented tests need it to CLEAR
+    // Coil's memory + disk caches before mounting: a cached fixture completes without
+    // touching the loopback server, which would un-gate the "BEFORE the bytes" frame
+    // table (BnImageDemoAndroidTest).
+    //
+    // Coil 2.x, not 3.x: 3.x is the coil3/multiplatform rewrite with a different
+    // package and a different ImageLoader surface. 2.7.0 is the last 2.x, minSdk 21.
+    implementation("io.coil-kt:coil:2.7.0")
+
     // Kotlin stdlib
     implementation(kotlin("stdlib-jdk8", kotlinVersion))
 

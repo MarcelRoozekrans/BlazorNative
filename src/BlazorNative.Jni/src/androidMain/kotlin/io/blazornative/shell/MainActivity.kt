@@ -78,11 +78,20 @@ class MainActivity : Activity() {
          * FOURTH root page for the same reason — and mirrors .NET's route table
          * (NativeNavigationManager), which is the thing this map must not drift
          * from. Same two doors: BnScrollDemoAndroidTest mounts it by NAME.
+         *
+         * Phase 6.3 adds "/image" → BnImageDemo, the image proof page (M6 DoD #5) —
+         * a FIFTH root page, same reason again, and the same mirror of .NET's
+         * NativeNavigationManager route table. Its images fetch from a LOOPBACK
+         * fixture server, so in a RELEASE build (whose network-security-config
+         * permits no cleartext) all three show as failed. That is correct and
+         * expected — see BnImageDemo.cs's header; the fix is never to weaken the
+         * release config.
          */
         private val DEEP_LINK_COMPONENTS = mapOf(
             "/settings" to "BnSettingsPage",
             "/layout" to "BnLayoutDemo",
             "/scroll" to "BnScrollDemo",
+            "/image" to "BnImageDemo",
         )
     }
 

@@ -2,6 +2,8 @@ package io.blazornative.shell
 
 import android.content.Context
 import android.graphics.Color
+import android.graphics.drawable.BitmapDrawable
+import android.graphics.drawable.Drawable
 import android.os.Handler
 import android.os.Looper
 import android.text.Editable
@@ -16,6 +18,10 @@ import android.widget.ImageView
 import android.widget.ScrollView
 import android.widget.Spinner
 import android.widget.TextView
+import coil.imageLoader
+import coil.request.Disposable
+import coil.request.ImageRequest
+import coil.size.Size
 import io.blazornative.jni.RenderFrame
 import io.blazornative.jni.RenderPatch
 
@@ -54,6 +60,17 @@ import io.blazornative.jni.RenderPatch
  * renders as a vertical stack — that is Yoga's default `flexDirection: column`,
  * not a LinearLayout, and it is the regression signal that the ENGINE changed
  * and the BEHAVIOUR did not.
+ *
+ * ── PHASE 6.3: THE SHELL FETCHES THE BYTES ───────────────────────────────────
+ * `image` was the last stubbed leaf — it made a widget and measured ZERO, because
+ * no shell had a source-loading path. `UpdateProp("src", …)` now drives one
+ * ([handleSrc]): Coil fetches and decodes off the main thread, and on the main
+ * thread the shell sets the drawable, records the NATURAL size, `markDirty`s the
+ * Yoga node (the 6.1 path) and re-solves (the 6.2 path). ONE reflow, never two.
+ * There is no binary path on the wire and there does not need to be — .NET names
+ * the source. The normative contract (and the SEVEN rows this class owes it) is
+ * docs/plans/2026-07-14-phase-6.3-design.md §"The parity contract"; iOS mirrors it
+ * with Kingfisher, and asserts THE SAME FRAMES.
  *
  * [handleSetStyle] is now a ROUTER over the partitioned allow-list
  * (`NativeRenderer.YogaStyleAttributes` / `VisualStyleAttributes`): a LAYOUT name
@@ -101,6 +118,58 @@ class WidgetMapper(
      * see [containerFor]. Never on the wire; the renderer knows nothing about it.
      */
     private val scrollContents = mutableMapOf<Int, ViewGroup>()
+
+    /**
+     * Phase 6.3 — **the in-flight image request per `image` node**, and the handle that
+     * CANCELS it.
+     *
+     * Cancellation is **memory safety, not hygiene** (6.3 non-negotiable #4): a completion
+     * firing into a removed node would paint into a detached widget here and touch a
+     * **freed `YGNodeRef`** on iOS. So the entry is disposed on a `Src` change
+     * ([handleSrc]), on node removal ([handleRemove] — as part of the SUBTREE purge, which
+     * is the shape navigation actually emits) and on teardown ([destroy]).
+     */
+    private val imageRequests = mutableMapOf<Int, Disposable>()
+
+    /**
+     * The GENERATION of the request a node's image callbacks may act on — bumped by every
+     * `src` write. It is the second half of the "a late completion paints nothing" guard,
+     * and it exists because [imageRequests] alone cannot express it: a superseded request's
+     * `onCancel` would otherwise `remove(nodeId)` the disposable of the request that
+     * REPLACED it, and a completion that races its own `dispose()` would paint stale bytes
+     * over fresh ones.
+     *
+     * The other half is an IDENTITY check (`nodes[nodeId] === view`) in the callbacks, and
+     * it is not redundant: **node ids restart at 1 after a reset** (6.2's lesson, learned on
+     * the warn-once keys), so a stale callback carrying generation 1 can meet a brand-new
+     * node that is also on generation 1. Only identity separates them.
+     */
+    private val imageGenerations = mutableMapOf<Int, Int>()
+
+    /**
+     * Test-only: every image request that has TERMINATED, in order — Coil's own per-node
+     * `ImageRequest.Listener` verdict.
+     *
+     * It is the shell's half of **the synchronization gate** (6.3 non-negotiable #6, design
+     * §"The synchronization gate"), which is normative and is the phase's most dangerous
+     * failure mode: THE WIRE CARRIES NO COMPLETION SIGNAL, and two of `/image`'s three cases
+     * assert that **nothing moved** — so a suite that reads the "after" frames straight
+     * after mount passes both of them having fetched nothing, and a suite whose HTTP is
+     * BLOCKED passes both of them too (a blocked load is indistinguishable from the 404 the
+     * failure case expects). The tests therefore await THIS, counted, with a timeout that
+     * fails — never a poll on a frame.
+     */
+    private val imageResultLog = mutableListOf<ImageResult>()
+
+    /** What Coil's listener said about one request. `CANCELLED` is a normal outcome of a
+     * `Src` change or a node removal — and a SETUP FAILURE on `/image`, where nothing
+     * cancels anything. */
+    internal enum class ImageOutcome { SUCCESS, ERROR, CANCELLED }
+
+    /** One terminated image request. The [url] is the one the WIRE carried, which is what
+     * lets a test assert the demo pages point at the fixture server without transcribing a
+     * URL out of a `.cs` file it cannot read. */
+    internal data class ImageResult(val nodeId: Int, val url: String, val outcome: ImageOutcome)
 
     /** The layout engine (Phase 6.1). Mirrors this class's view tree; runs one
      * layout pass per committed frame and on every host resize. */
@@ -497,6 +566,14 @@ class WidgetMapper(
         for (id in removedIds) {
             nodes.remove(id)
             collapsedAliases.remove(id) // an aliased text child of a doomed Button
+            // Phase 6.3 — **CANCEL, and it is MEMORY SAFETY rather than hygiene**
+            // (non-negotiable #4). A completion that fires after this patch would paint
+            // into a detached ImageView here and would touch a FREED YGNodeRef on iOS —
+            // 6.2's dangling-pointer lesson in a new costume. It rides the SUBTREE purge
+            // because that is the shape the renderer actually emits: navigating away from
+            // /image or /scroll names the PAGE, never the image inside it.
+            cancelImageRequest(id)
+            imageGenerations.remove(id)
         }
         // The detached EditText would otherwise pin itself (and its watcher/focus
         // pair) in these maps forever.
@@ -539,6 +616,13 @@ class WidgetMapper(
         scrollContents.clear()
         watchers.clear()
         focusEntries.clear()
+        // Phase 6.3: every in-flight fetch dies with the Activity. A completion landing on
+        // a destroyed mapper would paint into a dead view hierarchy and re-solve a torn-down
+        // Yoga tree.
+        for (request in imageRequests.values) request.dispose()
+        imageRequests.clear()
+        imageGenerations.clear()
+        imageResultLog.clear()
         yoga.destroy()
     }
 
@@ -565,6 +649,16 @@ class WidgetMapper(
      * is not an assertion surface and both failures are SILENT on the device — a
      * page that simply does not move. `WidgetMapperScrollTest` asserts them. */
     internal val scrollDiagnostics: List<String> get() = yoga.diagnostics
+
+    /** Test-only (Phase 6.3) — **the synchronization gate's observation surface**: every
+     * image request that has TERMINATED, with Coil's own verdict. See [imageResultLog];
+     * the AFTER frames of `/image` may only be asserted once this holds all three. */
+    internal val imageResults: List<ImageResult> get() = imageResultLog.toList()
+
+    /** Test-only (Phase 6.3): the requests still in flight. Returns to 0 after every
+     * completion, cancellation and purge — a non-zero count after a removal is the leak
+     * that, on iOS, is a dangling `YGNodeRef`. */
+    internal val inFlightImageCount: Int get() = imageRequests.size
 
     private fun handleUpdateProp(p: RenderPatch.UpdateProp) {
         val view = nodes[p.nodeId] ?: run {
@@ -602,7 +696,189 @@ class WidgetMapper(
             "enabled" -> {
                 view.isEnabled = p.value?.toBoolean() ?: true
             }
+            // Phase 6.3 (M6 DoD #5): the LAST stubbed leaf stops being one. `src` is a
+            // PROP, not a style — a URL is neither layout nor paint, so it rides this wire
+            // and not the partitioned SetStyle routing table (BnImage.cs's header).
+            "src" -> {
+                if (view is ImageView) handleSrc(p.nodeId, view, p.value)
+                else Log.w(TAG, "UpdateProp src ignored: node ${p.nodeId} is " +
+                    "${view::class.simpleName}, not ImageView")
+            }
             else -> Log.w(TAG, "UpdateProp '${p.name}' not yet supported (Phase 3+ extends)")
+        }
+    }
+
+    // ── Phase 6.3: IMAGES ────────────────────────────────────────────────────────
+    //
+    // The model (design §"The model") — and there is no binary path on the wire, by
+    // design: .NET names the source, THE SHELL FETCHES THE BYTES (React Native's model).
+    //
+    //   UpdateProp(nodeId, "src", url)
+    //         → cancel any in-flight request for this node
+    //         → clear the bytes it already holds  ← back to 0 × 0 until the new ones land
+    //         → Coil fetches + decodes (off the main thread)
+    //         → on the MAIN thread: set the drawable
+    //                               record the NATURAL size (YogaLayout.setImageNaturalSize)
+    //                               markDirty            ← the 6.1 path
+    //                               re-solve + apply     ← the 6.2 path
+    //
+    // ONE reflow, never two. That is why there is no placeholder (design decision 3): a
+    // placeholder that MEASURED would reflow the page twice.
+
+    /**
+     * `src` arrived — with a URL, or with **null**.
+     *
+     * Both are the same code path, and that is the point: the renderer emits
+     * `UpdateProp(nodeId, "src", null)` when an author sets `Src` back to null (a
+     * `RemoveAttribute` on a non-style name — `BnButton.Enabled`'s precedent), and the
+     * contract for it is *cancel, CLEAR, markDirty, re-solve* — an intrinsic node collapses
+     * back to 0 × 0 and **its siblings move back UP**. Which is exactly the first half of
+     * what a `src` CHANGE owes as well ("back to 0 × 0 until the new bytes land"). Two rows
+     * of the parity contract, one path; a shell that split them is a shell where one of them
+     * rots.
+     *
+     * No re-solve here: this runs inside [applyBatch], whose `CommitFrame` re-solves the
+     * whole tree at the end of the batch. Only the ASYNCHRONOUS completion — which arrives
+     * with no patch behind it — has to trigger its own ([resolveLayout]).
+     */
+    private fun handleSrc(nodeId: Int, view: ImageView, url: String?) {
+        cancelImageRequest(nodeId)
+        // The bytes the node already holds go NOW, not when (or if) the new ones arrive:
+        // "on a Src change the node measures 0 × 0 again until the new bytes land".
+        view.setImageDrawable(null)
+        yoga.setImageNaturalSize(view, null)
+        yoga.markDirty(view)
+
+        if (url.isNullOrEmpty()) return
+
+        val generation = (imageGenerations[nodeId] ?: 0) + 1
+        imageGenerations[nodeId] = generation
+
+        val request = ImageRequest.Builder(context)
+            .data(url)
+            // ── NO DOWNSAMPLING THAT CHANGES THE REPORTED SIZE ──────────────────────
+            // The contract's last row, and the one a library gets to break for free.
+            // Coil's default sizes a request to its TARGET; with no target it would use
+            // the display. Size.ORIGINAL is what makes the decoded bitmap the FILE's own
+            // pixels — so the size we report to Yoga is the image's NATURAL size and not
+            // a decoder's chosen sample size. The tests assert the measured frame against
+            // the decoded fixture's own pixel count, so a sampled decode reddens them.
+            .size(Size.ORIGINAL)
+            .listener(
+                onSuccess = { _, result -> onImageLoaded(nodeId, generation, view, url, result.drawable) },
+                onError = { _, result -> onImageFailed(nodeId, generation, url, result.throwable) },
+                onCancel = { _ -> onImageCancelled(nodeId, generation, url) },
+            )
+            .build()
+        imageRequests[nodeId] = context.imageLoader.enqueue(request)
+    }
+
+    /**
+     * The bytes landed. On the MAIN thread (Coil dispatches its listener there), which is
+     * what makes the three calls below safe to make back-to-back.
+     */
+    private fun onImageLoaded(
+        nodeId: Int,
+        generation: Int,
+        view: ImageView,
+        url: String,
+        drawable: Drawable,
+    ) {
+        imageResultLog.add(ImageResult(nodeId, url, ImageOutcome.SUCCESS))
+        if (!isLiveImageRequest(nodeId, generation, view, url, "completion")) return
+        imageRequests.remove(nodeId)
+
+        view.setImageDrawable(drawable)
+        // The NATURAL size (pixels, read as dp — YogaLayout.setImageNaturalSize states the
+        // rule and why it is the only reading that agrees with iOS). Taken from the decoded
+        // BITMAP where there is one: `Bitmap.width` is the raw pixel count and is immune to
+        // the density metadata a `BitmapDrawable`'s intrinsicWidth is scaled by.
+        yoga.setImageNaturalSize(view, naturalSizeOf(drawable))
+        // …and the 6.1 path, WITHOUT WHICH THE IMAGE PAINTS AND THE PAGE NEVER MOVES: Yoga
+        // caches a measure function's result and will not re-run it on a clean node.
+        yoga.markDirty(view)
+        // …and the 6.2 path. No patch is behind this frame — the wire carries no completion
+        // signal — so the re-solve is the shell's to trigger.
+        resolveLayout()
+    }
+
+    /**
+     * The load failed — a 404, a refused connection, a blocked cleartext fetch. The node
+     * **keeps measuring 0 × 0** (it was cleared when the request was issued), it **reserves
+     * nothing**, and it **does not retry**. There is nothing to markDirty and nothing to
+     * re-solve: no frame changed, which is the whole content of the contract's failure row.
+     */
+    private fun onImageFailed(nodeId: Int, generation: Int, url: String, error: Throwable) {
+        imageResultLog.add(ImageResult(nodeId, url, ImageOutcome.ERROR))
+        if (imageGenerations[nodeId] == generation) imageRequests.remove(nodeId)
+        Log.w(TAG, "image load failed for node $nodeId ($url): ${error.javaClass.simpleName}: " +
+            "${error.message} — the node stays 0 × 0 and reserves nothing")
+    }
+
+    /** We cancelled it: a `Src` change, a node removal, or teardown. Nothing is painted and
+     * nothing is re-solved — that is what "cancelled" means. */
+    private fun onImageCancelled(nodeId: Int, generation: Int, url: String) {
+        imageResultLog.add(ImageResult(nodeId, url, ImageOutcome.CANCELLED))
+        if (imageGenerations[nodeId] == generation) imageRequests.remove(nodeId)
+    }
+
+    /**
+     * **THE PURGED-NODE GUARD** — the defence behind the cancel, and it is not belt-and-
+     * braces theatre: [cancelImageRequest] is what *prevents* a completion, and this is what
+     * makes one HARMLESS if it ever arrives anyway (a completion already in its main-thread
+     * continuation when `dispose()` ran).
+     *
+     * Two questions, because one does not answer it:
+     *  - the GENERATION — has this node's `src` been written since this request was issued?
+     *  - the IDENTITY — is the view this callback captured still the view that node id
+     *    names? **Node ids restart at 1 after a reset** (6.2's warn-once lesson), so a stale
+     *    callback can meet a *different* node wearing its id — and possibly on the same
+     *    generation.
+     */
+    private fun isLiveImageRequest(
+        nodeId: Int,
+        generation: Int,
+        view: ImageView,
+        url: String,
+        what: String,
+    ): Boolean {
+        if (imageGenerations[nodeId] != generation || nodes[nodeId] !== view) {
+            Log.w(TAG, "stale image $what for node $nodeId ($url) dropped: the node was " +
+                "removed, or its src was written again. Nothing painted.")
+            return false
+        }
+        return true
+    }
+
+    /** An image's natural size in PIXELS — the decoded bitmap's own, never a density-scaled
+     * `intrinsicWidth` (a `BitmapDrawable` scales that by `targetDensity / bitmap.density`,
+     * so it is the wrong number on any device whose density is not 1). */
+    private fun naturalSizeOf(drawable: Drawable): YogaLayout.NaturalSize {
+        val bitmap = (drawable as? BitmapDrawable)?.bitmap
+        return if (bitmap != null) YogaLayout.NaturalSize(bitmap.width, bitmap.height)
+        else YogaLayout.NaturalSize(
+            drawable.intrinsicWidth.coerceAtLeast(0), drawable.intrinsicHeight.coerceAtLeast(0))
+    }
+
+    /** Cancels [nodeId]'s in-flight request, if any. Idempotent; safe for a node that never
+     * had one. */
+    private fun cancelImageRequest(nodeId: Int) {
+        imageRequests.remove(nodeId)?.dispose()
+    }
+
+    /**
+     * A layout pass triggered by something that is NOT a patch — an image completion.
+     *
+     * Inside the [applyingBatch] guard for the reason `CommitFrame`'s pass is: the pass
+     * MEASURES REAL WIDGETS, and a measure that moved focus or text must not dispatch back
+     * into .NET.
+     */
+    private fun resolveLayout() {
+        applyingBatch = true
+        try {
+            yoga.calculateAndApply()
+        } finally {
+            applyingBatch = false
         }
     }
 
