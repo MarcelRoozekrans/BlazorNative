@@ -207,12 +207,19 @@ jobs:
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
           if ($LASTEXITCODE -ne 0) { throw "dotnet test failed (exit $LASTEXITCODE)" }
-          $summaries = @(Select-String -Path $log -Pattern 'Failed:\s*(\d+),\s*Passed:\s*(\d+),\s*Skipped:\s*(\d+),\s*Total:\s*(\d+)')
-          if ($summaries.Count -eq 0) { throw "Could not parse any test-project summary lines — output format drift?" }
-          $failed  = ($summaries | ForEach-Object { [int]$_.Matches[0].Groups[1].Value } | Measure-Object -Sum).Sum
-          $passed  = ($summaries | ForEach-Object { [int]$_.Matches[0].Groups[2].Value } | Measure-Object -Sum).Sum
-          $skipped = ($summaries | ForEach-Object { [int]$_.Matches[0].Groups[3].Value } | Measure-Object -Sum).Sum
-          Write-Host "dotnet test totals across $($summaries.Count) projects: passed=$passed skipped=$skipped failed=$failed"
+          # -AllMatches + iterating every match, not just $_.Matches[0]: `dotnet test`
+          # runs projects in parallel and their summary lines can land on ONE physical
+          # line with no separator ("...Duration: 319 msPassed! - Failed: 0, Passed: 147,
+          # ..."). Select-String returns only the FIRST match per line by default, so a
+          # concatenated line silently dropped a whole project's counts and tripped this
+          # baseline guard on unrelated PRs.
+          $summaries = @(Select-String -Path $log -Pattern 'Failed:\s*(\d+),\s*Passed:\s*(\d+),\s*Skipped:\s*(\d+),\s*Total:\s*(\d+)' -AllMatches)
+          $results = @($summaries | ForEach-Object { $_.Matches })
+          if ($results.Count -eq 0) { throw "Could not parse any test-project summary lines — output format drift?" }
+          $failed  = ($results | ForEach-Object { [int]$_.Groups[1].Value } | Measure-Object -Sum).Sum
+          $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
+          $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
+          Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
           if ($failed -ne 0 -or $passed -ne 294 -or $skipped -ne 0) {
             throw ".NET test baseline drift: expected 294 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
