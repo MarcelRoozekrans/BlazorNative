@@ -1,6 +1,24 @@
 # BlazorNative — Feature Backlog
 *Last updated: May 2026*
 
+> ## ⚠️ This file is a stale wishlist, not a plan
+>
+> It was written **before the 3.0e architecture collapse** (which retired the
+> WASI/Wasmtime design for a direct NativeAOT C-ABI) and **before the M6
+> re-plan** (which renumbered every milestone after M5). It has not been kept in
+> step with either.
+>
+> **Items here may already have shipped, or may have been deliberately retired.**
+> Unchecked boxes below are *not* evidence that something is undone, and the
+> "P5 / P6 / P7" headings do **not** correspond to today's milestone numbers.
+>
+> **The live planning documents are [`planning/ROADMAP.md`](planning/ROADMAP.md)
+> and [`planning/MILESTONE.md`](planning/MILESTONE.md).** Check there first. The
+> per-phase decision log lives in [`plans/`](plans/).
+>
+> The file is kept because it still holds useful long-tail ideas that nothing
+> else records. It is being corrected opportunistically, not rewritten.
+
 ---
 
 ## P0 — Blocks everything
@@ -62,13 +80,13 @@
   Map `NodeType` strings to Android widget classes:
   | NodeType | Android widget |
   |---|---|
-  | `view` | `FrameLayout` / `LinearLayout` |
+  | `view` | `BnYogaFrameLayout` — a **layout-suppressed** frame container *(shipped 6.1; NOT a `LinearLayout` — Yoga computes every child's frame, nothing is appended in order)* |
   | `text` | `TextView` |
   | `button` | `Button` |
   | `input` | `EditText` |
-  | `image` | `ImageView` |
-  | `scroll` | `ScrollView` |
-  | `picker` | `Spinner` |
+  | `image` | `ImageView` *(created, but no source-loading path — Phase 6.3)* |
+  | `scroll` | `ScrollView` *(**shipped 6.2** — a viewport over a shell-synthesised content node; vertical only)* |
+  | `picker` | `Spinner` *(does not flex its children — it runs its own layout)* |
 
 - [ ] **`BlazorNativeHostElement` stub**
   `Renderer.AddRootComponent` needs a host element descriptor. Create a minimal stub that satisfies Blazor's requirements without a real DOM.
@@ -232,9 +250,9 @@
   | `text` | `UILabel` |
   | `button` | `UIButton` |
   | `input` | `UITextField` |
-  | `image` | `UIImageView` |
-  | `scroll` | `UIScrollView` |
-  | `picker` | `UIPickerView` |
+  | `image` | `UIImageView` *(created, but no source-loading path — Phase 6.3)* |
+  | `scroll` | `UIScrollView` *(**shipped 6.2** — a viewport over a shell-synthesised content node; vertical only)* |
+  | `picker` | `UIPickerView` *(does not flex its children)* |
 
 - [ ] **iOS push notifications (APNs)**
   `UNUserNotificationCenter` integration. APNs token surfaced via bridge. Incoming notification → `NativeEvent("push", payload)`.
@@ -272,7 +290,12 @@ Each platform API follows the same pattern:
 
 ### Component library (`BlazorNative.Components`)
 - [ ] **Project scaffold** — `src/BlazorNative.Components/BlazorNative.Components.csproj`
-- [ ] **Layout components** — `BnView`, `BnScroll`, `BnSafeArea`, `BnStack` (VStack/HStack), `BnGrid`
+- [x] **Layout components** — **`BnView` and `BnScroll` shipped (M6).** `BnView` carries the
+  full typed flex surface (`Direction`/`Justify`/`Align`/`Grow`/`Wrap`/`Gap`/sizing/…), with
+  `BnRow` and `BnColumn` as thin presets over it; `BnScroll` is a real scrolling viewport (6.2).
+  **`BnStack` is a deliberate non-goal** — it would be a synonym for `BnColumn`, and two names
+  for one thing is a library smell on day one; `BnRow`/`BnColumn` say which axis they mean.
+  Still open: `BnSafeArea`, `BnGrid`.
 - [ ] **Typography** — `BnText`, `BnHeading`, `BnLabel`, `BnLink`
 - [ ] **Input components** — `BnButton`, `BnInput`, `BnTextArea`, `BnCheckbox`, `BnSwitch`, `BnSlider`, `BnPicker`, `BnDatePicker`
 - [ ] **Media** — `BnImage`, `BnIcon` (SF Symbols / Material Icons mapping)
