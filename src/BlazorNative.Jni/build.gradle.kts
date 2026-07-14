@@ -1,7 +1,7 @@
 import org.gradle.api.tasks.testing.logging.TestExceptionFormat
 
 plugins {
-    id("com.android.application") version "9.2.1"
+    id("com.android.application") version "8.13.2"
     kotlin("android") version "2.4.10"
 }
 
