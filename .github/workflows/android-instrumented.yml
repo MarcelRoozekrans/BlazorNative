@@ -14,7 +14,7 @@
 #   emulator (ubuntu-latest, KVM) — downloads the .so, boots the API 34
 #     google_apis x86_64 Pixel 6 image (mirrors the local AVD
 #     blazornative-pixel6-x86_64), runs connectedAndroidTest with
-#     -PciSoDir pointing at the artifact → asserts 107 passed / 0 failed.
+#     -PciSoDir pointing at the artifact → asserts 109 passed / 0 failed.
 #
 # Baselines are asserted, not observed: count drift fails the job loudly.
 # ─────────────────────────────────────────────────────────────────────────────
@@ -418,7 +418,63 @@ jobs:
       # CompositionAndroidTest, WidgetMapperSetStyleTest) were REWRITTEN from type
       # pins (LinearLayout / orientation == VERTICAL) to FRAME pins; only the two
       # counts above are new methods, the rest are same-count rewrites.
-      - name: Assert instrumented baseline (107 passed / 0 failed)
+      # ── Phase 6.3 Gate 2 REVIEW (107 → 109, +2) ────────────────────────────
+      # Both findings were LATENT — CI was green at 107 — and both are TWO-SHELL
+      # LANDMINES that Gate 3 would have copied verbatim into Kingfisher, where two of
+      # them end at a freed YGNodeRef (non-negotiable #4). Each count mutation-verified:
+      #    +1 BnImageDemoAndroidTest
+      #       .the_second_mount_with_a_WARM_cache_completes_inside_applyBatch
+      #       THE PATH EVERY OTHER TEST CLEARS AWAY. Coil 2 dispatches on
+      #       Dispatchers.Main.immediate and the shell enqueues from `UpdateProp("src")`,
+      #       which runs ON THE MAIN THREAD INSIDE applyBatch — so a MEMORY-CACHE HIT runs
+      #       the whole request (onSuccess → setImage → markDirty → re-solve) TO COMPLETION
+      #       INSIDE enqueue(). Every existing test calls clearCoilCaches() in @Before, so
+      #       this was unexercised. It hid two bugs: (a) resolveLayout()'s `finally` set
+      #       applyingBatch = false FOR THE REST OF THE BATCH — the 3.2/4.2 re-entrancy
+      #       guard is a plain boolean and this was its first RE-ENTRANT caller — and Yoga
+      #       re-solved mid-batch against a half-applied tree and again at CommitFrame (TWO
+      #       reflows, where the contract says ONE); (b) the already-completed Disposable
+      #       was recorded as in-flight and never removed, so inFlightImageCount — an
+      #       invariant THREE tests assert — never returned to 0. MUTATION: revert either
+      #       fix and this test reddens (the leak first: 2 stale entries, one per cached
+      #       image). KINGFISHER'S setImage CALLS ITS completionHandler SYNCHRONOUSLY ON A
+      #       MEMORY HIT TOO — Gate 3 inherits this verbatim, and the design says so.
+      #    +1 WidgetMapperImageTest.the_result_log_is_a_BOUNDED_ring_it_cannot_grow_forever
+      #       imageResultLog is appended by every terminal callback and lives in PRODUCTION
+      #       code: unbounded it grows one entry per image, per navigation, forever
+      #       (evicted only by destroy()). YogaLayout.diagnosed is evicted on removal for
+      #       exactly this reason, one file away, citing the 6.2 lesson by name — but
+      #       eviction-on-removal is not available here (a test reads the log AFTER the
+      #       purge that is its subject), so it is CAPPED at 64. MUTATION: remove the cap
+      #       and this reddens (70 terminals ⇒ a 70-entry log).
+      #
+      # Also fixed, WITHOUT new tests (they strengthen assertions inside existing ones):
+      #   · C1 — the stale-callback guard is now GENERATION *AND* IDENTITY in EVERY
+      #     terminal callback (WidgetMapper.clearIfMine over an InFlight record), not just
+      #     the painting one. onError/onCancel evicted on a generation match ALONE, which
+      #     is precisely the case a generation cannot decide: /image → back → /image reuses
+      #     one mapper, NODE IDS RESTART AT 1, and the old node 2's onCancel (generation 1)
+      #     matches the NEW node 2's generation 1 and evicted the LIVE request's Disposable
+      #     — leaving a request nothing could cancel. Pinned OFF the device, in the JVM lane
+      #     (ImageRequestGuardTest, 79 → 83): the reset collision cannot be staged by any
+      #     single-mount instrumented test, which is exactly why it survived.
+      #   · I5 — BnScrollDemoAndroidTest's "a FAILED load moves nothing either" was FALSE
+      #     and ORDER-DEPENDENT: it asserted nothing about the image and cleared no caches,
+      #     so after BnScrollDemoImageAndroidTest the image was a cache HIT and SUCCEEDED.
+      #     It now clears the caches, awaits the terminal callback and asserts ERROR.
+      #   · I4 — the fixture server RECORDS its swallowed IOExceptions (path + exception);
+      #     the two classes that cancel NOTHING assert the list is empty. An IOException
+      #     there is a real server bug whose only previous symptom was the synchronization
+      #     gate timing out 30s later and taking the blame.
+      #   · F4 — ImageView.scaleType is set EXPLICITLY to FIT_CENTER. The two frameworks'
+      #     defaults DISAGREE (UIImageView's is .scaleToFill — a STRETCH) and the
+      #     divergence is FRAME-NEUTRAL, so no frame table on either platform could ever
+      #     see it. Normative in the parity contract now; Gate 3 owes .scaleAspectFit.
+      #   · The fixture server's close() now JOINS its accept thread. ServerSocket.close()
+      #     returns before the blocked accept() unwinds, so the next @Before could bind
+      #     :8099 while our own previous listener still held it — surfacing as EADDRINUSE
+      #     from ourselves, which the (correctly loud) bind message must never be true of.
+      - name: Assert instrumented baseline (109 passed / 0 failed)
         run: |
           shopt -s globstar nullglob
           xmls=(src/BlazorNative.Jni/build/outputs/androidTest-results/connected/**/*.xml)
@@ -435,8 +491,8 @@ jobs:
             s=$(attr skipped "$x");  skipped=$((skipped + ${s:-0}))
           done
           echo "Instrumented totals across ${#xmls[@]} suite(s): tests=$tests failures=$failures errors=$errors skipped=$skipped"
-          if [ "$tests" -ne 107 ] || [ "$failures" -ne 0 ] || [ "$errors" -ne 0 ] || [ "$skipped" -ne 0 ]; then
-            echo "Instrumented test baseline drift: expected 107 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped" >&2
+          if [ "$tests" -ne 109 ] || [ "$failures" -ne 0 ] || [ "$errors" -ne 0 ] || [ "$skipped" -ne 0 ]; then
+            echo "Instrumented test baseline drift: expected 109 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped" >&2
             exit 1
           fi
 

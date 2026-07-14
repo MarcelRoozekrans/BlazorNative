@@ -3,12 +3,12 @@
 # rides on. Single windows-latest job mirroring the local verification
 # procedure verbatim (setup.ps1 §1–7 documents the toolchain pins):
 #
-#   build (analyzers ride it) → .NET tests (316 passed / 0 skipped) →
+#   build (analyzers ride it) → .NET tests (318 passed / 0 skipped) →
 #   three NativeAOT publishes (win-x64, linux-bionic-x64, linux-bionic-arm64;
 #   each publish must show exactly the 4 accepted IL2072 trim warnings) →
 #   nine-export verification (dumpbin via vswhere / llvm-readelf from the
 #   pinned NDK) → Gradle testDebugUnitTest against the fresh win-x64 dll
-#   (79 passed / 0 failed) → consumer smoke (five packages from the local
+#   (83 passed / 0 failed) → consumer smoke (five packages from the local
 #   feed mount a Bn* component + analyzer trip; Phase 4.5, M4 DoD #7) →
 #   artifacts for the instrumented (Gate 3) job.
 #
@@ -352,7 +352,44 @@ jobs:
       # TheContentSizeIsTheContractsArithmetic is untouched and still green. BnDemo,
       # BnSettingsPage and BnLayoutDemo keep their goldens byte-for-byte. The JVM baseline
       # below stays 79 (nothing Kotlin-side moves until Gate 2).
-      - name: .NET tests (assert 316 passed / 0 skipped)
+      #
+      # 316 -> 318 (Phase 6.3 Gate 2 REVIEW, +2): THE SPEC BLOCKER — the parity rule Gate 2
+      # INVENTED lived only in a Kotlin comment. Both are Runtime.Tests/BnImageDemoTests
+      # (183 -> 185); Renderer.Tests (110) and Analyzers.Tests (23) do not move.
+      #
+      # The contract said only "the image's natural pixel size in dp/pt", which is exactly
+      # the ambiguity Gate 2 had to resolve — and it resolved it (ONE FILE PIXEL IS ONE
+      # dp/pt: read the decoded bitmap's own pixel count, never the density-scaled
+      # intrinsicWidth) without amending the sentence. Meanwhile `Wi x Hi` was declared
+      # "SYMBOLIC and Gate-supplied", so Gate 3 could pick a DIFFERENT fixture, reach for
+      # KINGFISHER'S OWN DOCUMENTED IDIOM for crisp images (.scaleFactor(UIScreen.main
+      # .scale)) — which divides the reported size by the screen scale, 160/3 ~ 53.3pt
+      # against Android's 160dp — and be ENTIRELY GREEN. Each shell stays internally
+      # consistent; only the two frame tables side by side disagree, and NO SINGLE-DEVICE
+      # TEST IN EITHER SUITE CAN SEE IT. Verification bar #1 ("the same frames on both
+      # devices") was enforced by nobody.
+      #
+      # So the rule is now a NORMATIVE ROW of the parity contract with both platform
+      # corollaries spelled out (Android: bitmap.width, never intrinsicWidth; iOS: rely on
+      # UIImage(data:).scale == 1, and do NOT set Kingfisher's scaleFactor or any
+      # downsampling processor), it is in BnImageDemo.cs's header, and the fixture's pixel
+      # size is `internal const` in BnImageDemo.cs so BOTH SHELLS ASSERT THE SAME NUMBERS:
+      #   +1 TheFixtureContract_IsAFactOfTheConstants_NotOfACheckedInPng — 0 < Wi <= 300,
+      #      Hi > 0, and the FIXED fixture is neither (200,120) (its declared size — else
+      #      "it measures 200x120" is a coincidence, not a proof that a declared size
+      #      short-circuits measurement) nor (40,40) (BnScrollDemo's row image).
+      #   +1 TheAndroidFixtureServer_ServesExactlyBnImageDemosNaturalPixelSizes — THE DRIFT
+      #      PIN. A device-side test cannot read a .cs file, so ImageFixtureServer.kt
+      #      transcribes the four integers; this parses them back out and asserts equality.
+      #      It lives here for the reason ShellStyleTableDriftTests does: build-test is the
+      #      ONE required lane where the shells' sources are checkout-visible. GATE 3 ADDS
+      #      THE iOS TWIN alongside it. (Each shell ALSO asserts against its DECODED
+      #      bitmap — that, and only that, is what pins "no downsampling"; a shell
+      #      asserting its own transcription asserts nothing.)
+      #
+      # The JVM baseline below moves too (79 -> 83) and the instrumented lane 107 -> 109 —
+      # see their own provenance blocks.
+      - name: .NET tests (assert 318 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -370,8 +407,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 316 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 316 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 318 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 318 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # ── NativeAOT publishes + nine-export verification ────────────────────
@@ -477,7 +514,29 @@ jobs:
       # testDebugUnitTest → preBuild → copyRuntimeSo → verifyNativeAssets needs
       # BOTH bionic .so publish outputs, hence this step runs after them; the
       # unit tests themselves load the win-x64 dll via jna.library.path.
-      - name: JVM tests (Gradle testDebugUnitTest — assert 79 passed / 0 failed)
+      # ── Phase 6.3 Gate 2 REVIEW: the JVM baseline moves for the first time since
+      #    6.1 (79 → 83, +4) — and WHERE it moves is the finding.
+      #
+      # ImageRequestGuardTest ×4. The shell's stale-completion guard asks TWO questions
+      # (has this node's `src` been written since the request was issued? is the view the
+      # callback captured still the view that node id names?) and its KDoc called the
+      # second one "not belt-and-braces theatre" — while NOTHING checked it. Deleting the
+      # identity half left the instrumented suite fully green at 107, because the case it
+      # exists for CANNOT BE STAGED ON A DEVICE by any demo page: it needs a node id to be
+      # REUSED after a reset (/image → back → /image), so that a stale callback carrying
+      # generation 1 meets a BRAND-NEW node that is also on generation 1 — the generations
+      # MATCH, and only the view's identity separates them. Every demo mounts once.
+      #
+      # So the decision was extracted into a pure `internal fun isLiveImageRequest(...)`
+      # (its own file, no Android types in the signature) and pinned HERE, off the device,
+      # where the four states can simply be written down: same-generation+same-view (live);
+      # superseded generation; purged node; and THE RESET COLLISION. The last one is also
+      # the reasoning WidgetMapper.clearIfMine depends on (Gate 2 review, C1) — a
+      # generation-only eviction lets the stale callback drop the LIVE request's
+      # Disposable, leaving a request nothing can cancel, whose completion on iOS runs
+      # against a FREED YGNodeRef. MUTATION: revert the guard to a generation-only check
+      # and exactly the reset-collision test reddens.
+      - name: JVM tests (Gradle testDebugUnitTest — assert 83 passed / 0 failed)
         working-directory: src/BlazorNative.Jni
         run: |
           .\gradlew.bat --no-daemon testDebugUnitTest
@@ -491,8 +550,8 @@ jobs:
             $errors += [int]$suite.errors; $skipped += [int]$suite.skipped
           }
           Write-Host "JVM test totals across $($xmls.Count) suites: tests=$tests failures=$failures errors=$errors skipped=$skipped"
-          if ($tests -ne 79 -or $failures -ne 0 -or $errors -ne 0 -or $skipped -ne 0) {
-            throw "JVM test baseline drift: expected 79 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped"
+          if ($tests -ne 83 -or $failures -ne 0 -or $errors -ne 0 -or $skipped -ne 0) {
+            throw "JVM test baseline drift: expected 83 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped"
           }
 
       # ── Consumer smoke (Phase 4.5 Gate 2 — the M4 DoD #7 proof) ────────────
