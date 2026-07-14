@@ -363,28 +363,28 @@ jobs:
           Copy-Item "src\BlazorNative.Runtime\bin\Release\net10.0\linux-bionic-x64\publish\BlazorNative.Runtime.so" (Join-Path $dest "libBlazorNative.Runtime.so")
 
       - name: Upload artifact — win-x64 binary
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: BlazorNative.Runtime-win-x64
           path: src/BlazorNative.Runtime/bin/Release/net10.0/win-x64/publish/BlazorNative.Runtime.dll
           if-no-files-found: error
 
       - name: Upload artifact — linux-bionic-x64 binary
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: BlazorNative.Runtime-linux-bionic-x64
           path: src/BlazorNative.Runtime/bin/Release/net10.0/linux-bionic-x64/publish/BlazorNative.Runtime.so
           if-no-files-found: error
 
       - name: Upload artifact — linux-bionic-arm64 binary
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: BlazorNative.Runtime-linux-bionic-arm64
           path: src/BlazorNative.Runtime/bin/Release/net10.0/linux-bionic-arm64/publish/BlazorNative.Runtime.so
           if-no-files-found: error
 
       - name: Upload artifact — jniLibs staging layout
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: jniLibs-staging
           path: ${{ runner.temp }}/jniLibs-staging
