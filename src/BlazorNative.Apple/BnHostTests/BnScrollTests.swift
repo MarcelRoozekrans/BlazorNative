@@ -80,8 +80,29 @@
 // them is freed. It does NOT crash, and the reason is worth writing down: the stale
 // entry IS a handle into memory `YGNodeFreeRecursive` has already released, and the only
 // thing standing between it and a dereference is `applyScrollFrames`' `guard let scroll
-// = views[scrollId]` — the view is gone, so the loop skips it. The guard is load-bearing
-// for memory safety and reads like bookkeeping. THAT is why the counts are pinned.
+// = views[scrollId]` — the view is gone, so the loop skips it. A guard that reads like
+// bookkeeping was holding up memory safety; it now `assertionFailure`s and SAYS SO, so
+// the desync is loud at the moment it happens rather than two counts later.
+//
+// ── …AND THE GATE 3 REVIEW'S TWO (same lane, same shape) ─────────────────────
+//
+// **Dropping the clamp's `max(0, …)` floor** (`clampedOffset`): **48 green / 2 red** —
+// [testShrinkingTheContentClampsAScrolledOffset] (act three) and
+// [testTheOffsetClampIsAClampAndItsFloorIsNotDecoration]. And the simulator settles the
+// argument the floor is *about*: with the maximum negative, the shell assigns −120 and
+// `UIScrollView` **KEEPS IT** — `contentOffset.y` reads back **−120.0** at rest, a page
+// scrolled 120pt above its own first row. Before this review the shrink test only went
+// 800 → 240 against a 200 viewport (a POSITIVE maximum of 40), so **the floor could be
+// deleted with the whole suite green.**
+//
+// **Deleting `contentInsetAdjustmentBehavior = .never`** (`makeView`): **49 green / 1
+// red** — only [testAScrollNodeIsAUIScrollViewOverASyntheticContentView]'s new property
+// assertion. That 49 IS the finding: every frame, every contentSize, every row, the whole
+// demo table — all still green, because the safe-area inset a detached test host folds in
+// is ZERO. The knob's own comment says the tests cannot see its effect, and until that
+// assertion existed the line could be deleted with a green suite while real devices
+// diverged from Android by a device constant. It is asserted on the PROPERTY because
+// there is no number to assert it on.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import XCTest

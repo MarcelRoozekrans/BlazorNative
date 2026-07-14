@@ -48,8 +48,17 @@
 // owned them was freed. It does **not** crash, and the reason is the interesting part:
 // the one thing between that stale handle and a dereference is `applyScrollFrames`'
 // `guard let scroll = views[scrollId]` — the view is gone, so the loop skips the entry.
-// A guard that reads like bookkeeping is holding up memory safety, and no frame
+// A guard that reads like bookkeeping was holding up memory safety, and no frame
 // assertion anywhere can see it. That is why the counts are pinned.
+//
+// **Gate 3 review:** that guard now `assertionFailure`s and NAMES the condition (a
+// dangling `YGNodeRef`, not a missing view) before it `continue`s — a no-op in release,
+// a trap in every XCTest run. So the mutation above would now fail at the MOMENT OF
+// DESYNC as well as on these counts, and a future refactor that hoists
+// `bn_yoga_node_get_frame(contentNode)` above the guard — an entirely ordinary-looking
+// change, and a use-after-free — can no longer do so in silence. The counts stay pinned
+// anyway: `assertionFailure` is compiled out of the shipping shell, and these are what
+// hold in release.
 //
 // ── MUTATION EVIDENCE (measured on CI, not asserted from an armchair) ────────
 //
