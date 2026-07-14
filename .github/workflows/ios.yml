@@ -8,6 +8,13 @@
 # with no sim-flake reds) it is promotable to a required check (documented in
 # docs/GITHUB-SETUP.md → "Branch protection", alongside the emulator lane).
 #
+# **But the iOS shell's COMPILE is no longer advisory.** `ci.yml`'s `ios-build` job
+# (macos-latest, REQUIRED) publishes the same archive, builds the same libyoga.a at
+# the same pinned version, and runs `xcodebuild build-for-testing` — Swift and
+# Objective-C++ compiled, app and XCTest bundle LINKED — without booting a simulator
+# or running a test. A device is needed to RUN, not to COMPILE. This lane is what
+# adds EXECUTION on top of that, and execution is where the flake is.
+#
 # Unlike Android (which splits publish-on-Windows from test-on-Linux), iOS both
 # PUBLISHES and TESTS on macOS, so this is one job:
 #   1. publish src/BlazorNative.Runtime -r iossimulator-arm64 (PublishAot lives in
@@ -23,24 +30,39 @@
 # Artifact-upload heavy: every publish log, nm dump, xcodebuild log, crash report,
 # and the .xcresult bundle is uploaded each run (CI-only iteration — upload all).
 #
-# Triggers: workflow_dispatch + pull_request (iOS-relevant paths). Public-repo
-# macOS minutes are free, so +pull_request is kept. (The temporary branch `push`
-# bootstrap trigger — the `gh workflow run` 404 workaround, Phase 4.0 ledger
-# item 1 — was removed once the lane went green.)
+# ── TRIGGERS: push(main) + pull_request (EVERY PR) + workflow_dispatch ────────
+# Both of these changed in the M6-audit fix, and both changes are the same finding
+# (audit F1):
+#
+#   1. **`push: branches: [main]` was ADDED.** The lane had NO push trigger, so it
+#      NEVER RAN ON `main` — an iOS regression that landed could sit undetected for
+#      exactly as long as the AGP 9 bug did. A lane that cannot see the branch it is
+#      defending is not defending it.
+#
+#   2. **The `paths:` filter was DELETED.** It listed the Apple/Runtime/Components/
+#      Renderer/Core trees — so a PR touching only `src/BlazorNative.Jni/**`,
+#      `tests/**`, `scripts/**`, `Directory.Build.props` or `global.json` could break
+#      the Swift shell and NOT EVEN RUN THIS LANE. That is not a saving, it is a blind
+#      spot with a green tick on it: the filter's only job was to save macOS minutes,
+#      and public-repo macOS minutes are FREE. It also made the ADVISORY behaviour lane
+#      NARROWER than the REQUIRED compile lane (`ci.yml`'s `ios-build`, which is
+#      unfiltered) — the wrong way round.
+#
+# Renovate's Kingfisher v8 PR (#82) ran this lane only because it happened to touch an
+# Apple path. Nothing made that so. Now nothing has to.
+#
+# The lane's POSTURE is unchanged and deliberately so: it remains INFORMATIONAL. What
+# it adds over `ios-build` is EXECUTION on a simulator, and that is where the flake
+# lives. Compilation — which cannot flake that way — is now behind a required check;
+# see `ci.yml`'s `ios-build` job.
 # ─────────────────────────────────────────────────────────────────────────────
 name: ios
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
   pull_request:
-    paths:
-      - 'src/BlazorNative.Apple/**'
-      - 'src/BlazorNative.Runtime/**'
-      - 'src/BlazorNative.Components/**'
-      - 'src/BlazorNative.Renderer/**'
-      - 'src/BlazorNative.Core/**'
-      - '.github/workflows/ios.yml'
-      - 'global.json'
 
 permissions:
   contents: read
