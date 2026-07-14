@@ -3,7 +3,7 @@
 # rides on. Single windows-latest job mirroring the local verification
 # procedure verbatim (setup.ps1 §1–7 documents the toolchain pins):
 #
-#   build (analyzers ride it) → .NET tests (294 passed / 0 skipped) →
+#   build (analyzers ride it) → .NET tests (304 passed / 0 skipped) →
 #   three NativeAOT publishes (win-x64, linux-bionic-x64, linux-bionic-arm64;
 #   each publish must show exactly the 4 accepted IL2072 trim warnings) →
 #   nine-export verification (dumpbin via vswhere / llvm-readelf from the
