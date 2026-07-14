@@ -34,13 +34,29 @@ namespace BlazorNative.Components;
 //    └─ …                                         ├─ row 1   the wire
 //                                                 └─ …
 //
-// The content node is `height: auto`, `width: 100%`, `flexDirection: column`,
-// and the scroll node is `overflow: scroll` so Yoga does not clamp the content
-// to the viewport. THE CONTENT NODE'S COMPUTED HEIGHT *IS* THE CONTENT SIZE —
-// read straight out of Yoga, never derived shell-side from a union of child
-// frames (two shells deriving it independently is precisely where Android and
-// iOS drift apart). A scroll node's wire child at index i is the CONTENT node's
-// child at index i, in the Yoga tree AND the view tree, on both platforms.
+// The content node is `height: auto`, `width: 100%`, `flexDirection: column`.
+// THE CONTENT NODE'S COMPUTED HEIGHT *IS* THE CONTENT SIZE — read straight out
+// of Yoga, never derived shell-side from a union of child frames (two shells
+// deriving it independently is precisely where Android and iOS drift apart). A
+// scroll node's wire child at index i is the CONTENT node's child at index i, in
+// the Yoga tree AND the view tree, on both platforms.
+//
+// ── WHY THE CONTENT NODE COMPUTES TO 800 AND NOT 200 ─────────────────────────
+// Because YOGA'S `flexShrink` DEFAULT IS 0 (CSS's is 1). The content node is a
+// 200-high viewport's only child with 800 of children: free space is 200 − 800 =
+// −600, and the shrink pass distributes negative free space across flexShrink —
+// which is 0, so nothing shrinks and the node keeps its 800. It is NOT
+// `overflow: scroll` that produces the 800 (that flag is about how a node sizes
+// ITSELF under fit-content/auto-height, not about clamping an overflowing child);
+// the same 800 comes out with `overflow: visible`.
+//
+// THE ONE THING A SHELL MUST NOT DO: set `flexShrink` on the content node. A
+// Gate 2/3 implementer reaching for CSS instincts and writing `flexShrink: 1`
+// collapses 800 → 200 and the page silently stops scrolling. Yoga's default 0 is
+// LOAD-BEARING; leave it alone. (Gate 2's Yoga-only unit test asserts BOTH
+// mechanisms explicitly, and settles empirically whether `overflow: scroll` needs
+// setting at all — we keep it because it is semantically right and is what RN
+// does, not because it is what makes 800.)
 //
 // ── THE FRAME TABLE (dp, each frame RELATIVE TO ITS PARENT) ──────────────────
 //
@@ -68,12 +84,18 @@ namespace BlazorNative.Components;
 //   viewport         300 × 200
 //   scrollable range 800 - 200 = 600      initial offset 0
 //
-// At offset 0: rows 0 and 1 are fully inside the viewport, row 2 straddles its
-// bottom edge (160..240 against a 200 cut), and rows 3-9 are entirely below it.
-// At offset 600 (the maximum): rows 7, 8 and 9 fill the viewport and the content
-// cannot scroll further. The load-bearing assertion is contentSize > viewport,
-// FROM YOGA — that is the whole phase; the scroll-and-assert step proves the
-// viewport actually moves over the content, not merely that the numbers add up.
+// At offset 0 the visible window is content y 0..200: rows 0 and 1 are fully
+// inside it, row 2 straddles its bottom edge (160..240 against a 200 cut), and
+// rows 3-9 are entirely below it.
+// At offset 600 (the maximum) the visible window is content y 600..800: row 7
+// (560..640) is PARTIALLY visible — only its bottom 40dp — and rows 8 (640..720)
+// and 9 (720..800) are fully visible. The content cannot scroll further. Write
+// the shell assertions against those numbers, not against "rows 7, 8 and 9 fill
+// the viewport": row 7 does not.
+//
+// The load-bearing assertion is contentSize > viewport, FROM YOGA — that is the
+// whole phase; the scroll-and-assert step proves the viewport actually moves over
+// the content, not merely that the numbers add up.
 //
 // ── THE TWO NESTINGS (design §Verification #4) ───────────────────────────────
 // The scroll sits INSIDE a flex column (the root), and a flex ROW sits inside a
@@ -102,9 +124,12 @@ namespace BlazorNative.Components;
 /// cascaded theme crosses a root swap.</summary>
 public sealed class BnScrollDemo : ComponentBase
 {
-    /// <summary>The ten row colours, in row order. Distinct per row: a scrolled
-    /// row is identified in a screenshot by its colour, not by a nodeId.
-    /// Mirrored by BnScrollDemoTests.RowColors — the golden asserts them.</summary>
+    /// <summary>The row colours, in row order — exactly <see cref="RowCount"/> of
+    /// them (the golden pins the two counts equal; the render loop runs to
+    /// RowCount, so a colour added here without bumping RowCount would be dead).
+    /// Distinct per row: a scrolled row is identified in a screenshot by its
+    /// colour, not by a nodeId. Mirrored by BnScrollDemoTests.RowColors — the
+    /// golden asserts them.</summary>
     private static readonly string[] RowColors =
     [
         "#E57373", // 0 red
@@ -128,10 +153,47 @@ public sealed class BnScrollDemo : ComponentBase
     /// <summary>The row that hosts the nested flex row — see the header.</summary>
     private const int FlexRowIndex = 1;
 
-    /// <summary>Ten rows × 80dp. Both numbers are load-bearing: their product
-    /// (800) is the content size Gates 2/3 read out of Yoga, and 800 - 200 = 600
-    /// is the scrollable range they drive.</summary>
-    private const string RowHeight = "80";
+    // ── THE PAGE'S ARITHMETIC, AS CONSTANTS ───────────────────────────────────
+    //
+    // The content size is COMPUTED BY THE CONTRACT, not restated by a human in
+    // three file headers. BnScrollDemoTests asserts the products
+    // (RowCount × RowHeightDp == 800; 800 − ViewportHeightDp == 600), so a
+    // changed row height reddens the golden instead of quietly desynchronising
+    // the prose from the wire — and Gates 2/3 read ContentHeightDp/ScrollRangeDp
+    // rather than transcribing 800 and 600 by hand.
+
+    /// <summary>Ten rows — <see cref="RowColors"/> has one colour each (the
+    /// golden pins the two counts equal).</summary>
+    internal const int RowCount = 10;
+
+    /// <summary>Each row is 80dp tall. Load-bearing: RowCount × RowHeightDp is
+    /// the content size Gates 2/3 read out of Yoga.</summary>
+    internal const int RowHeightDp = 80;
+
+    /// <summary>The viewport: 300 × 200. Load-bearing the same way — the
+    /// scrollable range is the content height minus this.</summary>
+    internal const int ViewportWidthDp = 300;
+
+    /// <inheritdoc cref="ViewportWidthDp"/>
+    internal const int ViewportHeightDp = 200;
+
+    /// <summary>What the SYNTHETIC content node must compute to in Yoga — 800.
+    /// Not a number the shells invent: it is what ten 80-high rows in a
+    /// height:auto column add up to, and the shells READ it (contentSize) rather
+    /// than deriving it.</summary>
+    internal const int ContentHeightDp = RowCount * RowHeightDp;
+
+    /// <summary>The scrollable range Gates 2/3 drive: 800 − 200 = 600.</summary>
+    internal const int ScrollRangeDp = ContentHeightDp - ViewportHeightDp;
+
+    private static readonly string RowHeight =
+        RowHeightDp.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    private static readonly string ViewportWidth =
+        ViewportWidthDp.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    private static readonly string ViewportHeight =
+        ViewportHeightDp.ToString(System.Globalization.CultureInfo.InvariantCulture);
 
     [Inject] public INavigationManager Navigation { get; set; } = default!;
 
@@ -154,16 +216,20 @@ public sealed class BnScrollDemo : ComponentBase
 
     /// <summary>[0] the viewport: 300×200 over 800dp of content. A DEFINITE
     /// height is what makes it a viewport at all — an auto-height scroll node
-    /// sizes itself to its content and never scrolls (the shells warn once when
-    /// that happens; here it simply cannot).</summary>
+    /// takes its height FROM its content, so viewport == content and there is
+    /// nothing to scroll (the shells warn once when that happens; here it simply
+    /// cannot). Note what is NOT here: no Gap, no Padding, no Justify — BnScroll
+    /// is a flex ITEM (see BnScroll's header); the rows' layout is the synthetic
+    /// content node's business, and an author who wants to shape it puts a
+    /// BnColumn inside.</summary>
     private static void BuildScrollSection(RenderTreeBuilder b, int seq)
     {
         b.OpenComponent<BnScroll>(seq);
-        b.AddComponentParameter(seq + 1, nameof(BnScroll.Width), "300");
-        b.AddComponentParameter(seq + 2, nameof(BnScroll.Height), "200");
+        b.AddComponentParameter(seq + 1, nameof(BnScroll.Width), ViewportWidth);
+        b.AddComponentParameter(seq + 2, nameof(BnScroll.Height), ViewportHeight);
         b.AddComponentParameter(seq + 3, nameof(BnScroll.ChildContent), (RenderFragment)(rb =>
         {
-            for (var i = 0; i < RowColors.Length; i++)
+            for (var i = 0; i < RowCount; i++)
             {
                 // Sequence numbers: i * 10, stable and unique across renders (the
                 // loop's shape is constant — ten rows, always, with the flex row

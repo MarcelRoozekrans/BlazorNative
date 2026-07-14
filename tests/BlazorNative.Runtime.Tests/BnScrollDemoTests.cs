@@ -1,6 +1,8 @@
+using BlazorNative.Components;
 using BlazorNative.Core;
 using BlazorNative.Renderer;
 using BlazorNative.Runtime;
+using static BlazorNative.Runtime.Tests.GoldenAssertions;
 
 namespace BlazorNative.Runtime.Tests;
 
@@ -71,68 +73,32 @@ public sealed class BnScrollDemoTests
         NativeShellBridge.ResetForTests();
     }
 
-    // ── Structural pins (never raw nodeIds — BnLayoutDemoTests conventions) ───
-
-    private static CreateNodePatch Root(RenderFrame mount)
-        => Assert.Single(mount.Patches.OfType<CreateNodePatch>(), p => p.ParentId is null);
-
-    private static CreateNodePatch CreateOf(RenderFrame frame, int nodeId)
-        => Assert.Single(frame.Patches.OfType<CreateNodePatch>(), p => p.NodeId == nodeId);
-
-    /// <summary>A node's children in their FINAL sibling order — the shell's own
-    /// algorithm: walk the creates in patch order, append on InsertIndex -1,
-    /// insert at the index otherwise. (Blazor's FIFO render queue does not create
-    /// children in sibling order, so CreateNodePatch carries its own placement;
-    /// the shells' Yoga tree must land on the same order or every frame is wrong.)</summary>
-    private static List<int> ChildrenOf(RenderFrame frame, int parentId)
-    {
-        var order = new List<int>();
-        foreach (CreateNodePatch c in frame.Patches.OfType<CreateNodePatch>()
-                     .Where(p => p.ParentId == parentId))
-        {
-            if (c.InsertIndex < 0)
-                order.Add(c.NodeId);
-            else
-                order.Insert(c.InsertIndex, c.NodeId);
-        }
-        return order;
-    }
-
-    private static Dictionary<string, string?> StylesOf(RenderFrame frame, int nodeId)
-        => frame.Patches.OfType<SetStylePatch>()
-            .Where(p => p.NodeId == nodeId)
-            .ToDictionary(p => p.Property, p => p.Value);
-
-    /// <summary>Asserts a node's whole style table AND its NodeType.
-    /// <paramref name="what"/> is the frame-table name of the node ("row 3", "box
-    /// B", …), threaded into the failure message: this golden fails as a wall of
-    /// anonymous nodeIds otherwise, and the first question is always "which node?".</summary>
-    private static void AssertNode(
-        RenderFrame frame, int nodeId, string what, string nodeType,
-        params (string Property, string Value)[] expected)
-    {
-        Dictionary<string, string?> actual = StylesOf(frame, nodeId);
-        Dictionary<string, string?> want = expected.ToDictionary(e => e.Property, e => (string?)e.Value);
-
-        Assert.True(
-            want.Count == actual.Count
-                && want.All(kv => actual.TryGetValue(kv.Key, out string? v) && v == kv.Value),
-            $"""
-             styles of "{what}" (node {nodeId}) do not match the golden:
-               expected: {Render(want)}
-               actual:   {Render(actual)}
-             """);
-
-        Assert.True(CreateOf(frame, nodeId).NodeType == nodeType,
-            $"""expected "{what}" (node {nodeId}) to be a {nodeType}, not a {CreateOf(frame, nodeId).NodeType}""");
-    }
-
-    private static string Render(Dictionary<string, string?> styles)
-        => "{" + string.Join(", ", styles
-            .OrderBy(kv => kv.Key, StringComparer.Ordinal)
-            .Select(kv => $"{kv.Key}={kv.Value ?? "<null>"}")) + "}";
+    // ── Structural pins ───────────────────────────────────────────────────────
+    //
+    // Root / CreateOf / ChildrenOf / StylesOf / AssertNode live in
+    // GoldenAssertions (`using static`, above) — SHARED with BnLayoutDemoTests.
+    // ChildrenOf *is* the shells' insert algorithm; two copies of it would mean
+    // the two demo pages are held to different contracts (6.2 Gate 1 review).
 
     // ── The golden ────────────────────────────────────────────────────────────
+
+    /// <summary>THE PAGE'S ARITHMETIC, CHECKED — not restated. BnScrollDemo owns
+    /// the four numbers as `internal const`; this pins the PRODUCTS that Gates 2/3
+    /// assert on a device, so the content size is computed by the contract rather
+    /// than transcribed by a human into three file headers. Change RowHeightDp and
+    /// this goes red before a shell test does.</summary>
+    [Fact]
+    public void TheContentSizeIsTheContractsArithmetic_NotAProseNumber()
+    {
+        Assert.Equal(800, BnScrollDemo.RowCount * BnScrollDemo.RowHeightDp);
+        Assert.Equal(800, BnScrollDemo.ContentHeightDp);
+        Assert.Equal(600, BnScrollDemo.ContentHeightDp - BnScrollDemo.ViewportHeightDp);
+        Assert.Equal(600, BnScrollDemo.ScrollRangeDp);
+        Assert.Equal(300, BnScrollDemo.ViewportWidthDp);
+        Assert.Equal(200, BnScrollDemo.ViewportHeightDp);
+        // One colour per row — this golden's row identity depends on it.
+        Assert.Equal(BnScrollDemo.RowCount, RowColors.Length);
+    }
 
     [Fact]
     public void Mount_Golden_ViewportRowsStylesAndInsertIndices()
@@ -152,9 +118,14 @@ public sealed class BnScrollDemoTests
             (int scroll, int backSection) = (sections[0], sections[1]);
 
             // [0] THE VIEWPORT: NodeType "scroll" (NodeType 6 — the stub since 2.5),
-            //     300×200. NO flexDirection: BnScroll has no Direction param
-            //     (vertical-only), and the synthetic content node's direction is the
-            //     shells' business, not the wire's.
+            //     300×200 and NOTHING ELSE. AssertNode pins the WHOLE style table,
+            //     so this is also the pin on decision 1: BnScroll is a flex ITEM.
+            //     No flexDirection, no justifyContent/alignItems/flexWrap, no gap,
+            //     no padding — the container-layout family is not a parameter, and
+            //     on a scroll node the shells IGNORE those style names anyway (they
+            //     would style the node whose only child is the synthetic content
+            //     node: gap spaces nothing, justify pushes the content to a
+            //     negative offset a scroll view can never scroll back to).
             AssertNode(mount, scroll, "scroll viewport", "scroll",
                 ("width", "300"), ("height", "200"));
 
@@ -162,9 +133,10 @@ public sealed class BnScrollDemoTests
             // wire. The shells re-parent them into the synthetic content node —
             // whose Yoga-computed height is therefore 10 × 80 = 800, against a
             // 200-high viewport: contentSize 800, scrollable range 600. THAT is
-            // the whole phase, and it is arithmetic on THESE numbers.
+            // the whole phase, and it is arithmetic on THESE numbers (pinned as
+            // products in TheContentSizeIsTheContractsArithmetic).
             List<int> rows = ChildrenOf(mount, scroll);
-            Assert.Equal(10, rows.Count);
+            Assert.Equal(BnScrollDemo.RowCount, rows.Count);
             for (var i = 0; i < rows.Count; i++)
             {
                 AssertNode(mount, rows[i], $"row {i}", "view",
@@ -227,6 +199,20 @@ public sealed class BnScrollDemoTests
             // NINETEEN, not twenty: the content node is SYNTHETIC. A twentieth
             // create here would mean it leaked onto the wire.
             Assert.Equal(19, mount.Patches.OfType<CreateNodePatch>().Count());
+
+            // …and the MIRROR pin on the styles. AssertNode covers 18 of the 19
+            // nodes — a stray SetStyle on the 19th (the button's caption text node)
+            // would pass every assertion above. The arithmetic:
+            //     root         flexDirection                                 1
+            //     scroll       width, height                                 2
+            //     rows 0-9     height + backgroundColor, ×10                20
+            //     flex row     flexDirection, flexGrow                       2
+            //     boxes A/B/C  (width|flexGrow) + backgroundColor, ×3        6
+            //     back section flexDirection, width                          2
+            //     button       (none — its size is MEASURED)                 0
+            //     caption      (none — a text node carries no style)         0
+            //                                                        total  33
+            Assert.Equal(33, mount.Patches.OfType<SetStylePatch>().Count());
 
             // Exactly ONE scroll node on the page. The shells create exactly one
             // synthetic content node in response.

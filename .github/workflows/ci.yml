@@ -203,13 +203,28 @@ jobs:
       # (The Android instrumented suite is 52 -> 71 — its own lane asserts that; the
       # iOS XCTest suite is 14 -> 29 — ios.yml asserts that.)
       #
-      # 294 -> 300 (Phase 6.2 Gate 1, +6): the `scroll` NodeType stops being a stub.
-      # ALL SIX are Runtime.Tests (164 -> 170); Renderer.Tests (107) and
+      # 294 -> 302 (Phase 6.2 Gate 1, +8): the `scroll` NodeType stops being a stub.
+      # ALL EIGHT are Runtime.Tests (164 -> 172); Renderer.Tests (107) and
       # Analyzers.Tests (23) do not move, because there is NO ABI/wire change —
       # MapElementToNodeType has mapped "scroll"/"overflow" to NodeType 6 since
       # Phase 2.5, so 6.2 Gate 1 is a Components-side addition and nothing in the
       # renderer's allow-list, patch set or export surface is touched (still 9
       # exports on 3 RIDs, still 4 accepted IL2072s).
+      #
+      # The +8, by provenance:
+      #   +5  BnComponentTests — BnScroll's surface: the scroll NodeType + its
+      #       children's placement; the un-styled invariant; DECLARATION (the item
+      #       surface, and NOT the container-layout family — 6.2 decision 1);
+      #       FORWARDING (the item styles reach the wire, no container style does);
+      #       and the RAW-ELEMENT HATCH (a hand-written `scroll` element STILL puts
+      #       flexDirection/gap/padding on the wire — which is precisely why the
+      #       shells must ignore-and-log those six names on a scroll node, 6.2
+      #       decision 2. If that test ever goes red, the shells' rule is dead code).
+      #   +3  BnScrollDemoTests — the "/scroll" patch golden (creates, insert
+      #       indices, the whole style table AND its count), the back-nav round
+      #       trip, and the CONTRACT'S ARITHMETIC (RowCount × RowHeightDp == 800;
+      #       800 - ViewportHeightDp == 600 — the content size is computed by the
+      #       contract, not restated in prose that Gates 2/3 then transcribe).
       #   +4  BnComponentTests — BnScroll: the `scroll` NodeType + its children
       #       parenting to it ON THE WIRE (the content node the shells interpose is
       #       SYNTHETIC — never a patch); the un-styled invariant on the new element;
@@ -230,7 +245,7 @@ jobs:
       # their tables byte-for-byte (non-negotiable #4 — scroll must not perturb an
       # un-scrolled tree), and the JVM baseline below stays 79 (nothing Kotlin-side
       # moves until Gate 2).
-      - name: .NET tests (assert 300 passed / 0 skipped)
+      - name: .NET tests (assert 302 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -248,8 +263,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 300 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 300 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 302 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 302 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # ── NativeAOT publishes + nine-export verification ────────────────────

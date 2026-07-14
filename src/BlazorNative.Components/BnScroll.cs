@@ -18,56 +18,114 @@ namespace BlazorNative.Components;
 // the wire:
 //
 //     wire tree:            view/Yoga trees:
-//     scroll                scroll                 overflow: scroll  (viewport)
+//     scroll                scroll                 the VIEWPORT (definite height)
 //      ├─ child 0            └─ content            height:auto, width:100%,
-//      ├─ child 1                 ├─ child 0       flexDirection:column
-//      └─ …                       ├─ child 1       ← its COMPUTED HEIGHT
-//                                 └─ …               *is* the content size
+//      ├─ child 1                 ├─ child 0       flexDirection:column,
+//      └─ …                       ├─ child 1       flexShrink NEVER set
+//                                 └─ …             ← its COMPUTED HEIGHT *is*
+//                                                    the content size
 //
 // Yoga owns every frame, including the off-screen ones, and `contentSize` is
 // read straight out of the content node — never derived by a shell from a union
 // of child frames (two shells deriving it independently is exactly where Android
 // and iOS drift apart).
 //
-// ── DIRECTION IS ABSENT BY CONSTRUCTION ──────────────────────────────────────
-// The surface is BnView's MINUS Direction, the way BnRow's is: scrolling is
-// VERTICAL-ONLY (6.2 design decision 2 — Android's ScrollView is a vertical-only
-// widget class, and horizontal is ledgered). A `flexDirection` on the scroll node
-// governs the placement of its only child — the synthetic content node — so a
-// row direction would lay that node out across the cross axis, stretch it to the
-// viewport height and silently kill scrolling. The symptom ("this page just
-// doesn't scroll") is baffling; a parameter that cannot be set is a bug that
-// cannot be written.
+// ── BnScroll IS A FLEX *ITEM*, NOT A FLEX *CONTAINER* ────────────────────────
+// This is the whole shape of the surface below, so it is worth being blunt: a
+// BnScroll is a flex ITEM that scrolls its content. How that CONTENT lays out is
+// the CONTENT NODE's job — and the content node is the shells' node, not the
+// author's. So the container-layout family is ABSENT BY CONSTRUCTION, the way
+// BnRow's Direction is:
+//
+//     Direction · Justify · Align · Wrap · Gap · Padding   ← NOT parameters
+//
+// Every one of them would land on the SCROLL node, whose only Yoga child is the
+// content node — and each fails silently and bafflingly:
+//
+//   • Direction  — `row` lays the content node out across the cross axis and
+//                  stretches it to the viewport height: the page just stops
+//                  scrolling. (Scrolling is VERTICAL-ONLY — 6.2 decision 2:
+//                  Android's ScrollView is a vertical-only widget class, and
+//                  horizontal is ledgered.)
+//   • Gap        — spaces the scroll node's ONE child against nothing. The
+//                  author meant "8dp between my rows"; the rows are children of
+//                  the CONTENT node and never see it.
+//   • Justify /  — free space on a scrolling viewport is NEGATIVE (content 800
+//     Align        against a 200 viewport → −600), so `Center` offsets the
+//                  content node to y = −300 and `FlexEnd` to −600. A scroll view
+//                  cannot scroll above offset 0: the top of the content becomes
+//                  PERMANENTLY UNREACHABLE.
+//   • Padding    — insets the content node, moving every frame in the shells'
+//                  parity table and raising "does contentSize include the
+//                  padding?" — a question two shells would answer differently.
+//
+// A parameter that cannot be set is a bug that cannot be written. The author who
+// wants to control the content's layout COMPOSES:
+//
+//     <BnScroll Height="200">
+//         <BnColumn Gap="8" Padding="16">   ← the content's layout, in a node
+//             …rows…                          the author owns
+//         </BnColumn>
+//     </BnScroll>
+//
+// which already works, needs no new concept, and is React Native's
+// `contentContainerStyle` escape hatch without a second style surface. A
+// first-class `ContentPadding`/`ContentGap` (RN's content-container style, set
+// on the synthetic node) is LEDGERED, not stubbed.
+//
+// The shells enforce the same rule at the raw-element hatch: `scroll` is a
+// mappable element name, so `OpenElement("scroll") + AddAttribute("gap", …)`
+// still reaches SetStyle. On a node of type `scroll` the names flexDirection,
+// justifyContent, alignItems, flexWrap, gap and padding are IGNORED AND LOGGED
+// (6.2 design, "Container styles on a scroll node"). One rule, both doors.
+//
+// What REMAINS is the item surface — how this viewport is placed IN ITS PARENT
+// (Grow/Shrink/Basis/AlignSelf, the box, Margin, Position) — plus BackgroundColor.
+// Those are correct on a scroll node and mean exactly what they mean on a BnView.
 //
 // ── A SCROLL NODE NEEDS A DEFINITE HEIGHT ────────────────────────────────────
-// An auto-height scroll node sizes itself TO its content and therefore never
-// scrolls. Give it an explicit Height, or Grow="1" inside a bounded parent (the
-// common case: a scroll filling the screen under the host root). Nothing is
-// defaulted here — the wire says exactly what the author said (the un-styled
-// invariant); the SHELLS warn once at runtime when a scroll node ends up
-// auto-height (Gates 2/3).
+// Give it an explicit Height, or Grow="1" inside a bounded parent (the common
+// case: a scroll filling the screen under the host root). With neither, the
+// scroll node's height is `auto` — it takes its height from its content, so
+// viewport == content and there is nothing to scroll. Nothing is defaulted here
+// — the wire says exactly what the author said (the un-styled invariant); the
+// SHELLS warn once at runtime when a scroll node ends up auto-height (Gates 2/3).
 //
-// Sequence numbers mirror BnView's exactly, gap at 4 (`flexDirection`) included:
-// the two BuildRenderTrees are meant to be read side by side, and the gap is the
+// Sequence numbers mirror BnView's exactly, with the gaps (2 `padding`,
+// 4 `flexDirection`, 5-8 the container family) left EMPTY: the two
+// BuildRenderTrees are meant to be read side by side, and the gaps are the
 // decision, visible.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// <summary>
 /// A scrolling viewport — emits the <c>scroll</c> element (host NodeType
-/// "scroll"). It <em>is</em> a flex item (<see cref="BnView"/>'s whole
-/// parameter surface except <c>Direction</c>); it just scrolls its content.
+/// "scroll"). It <em>is</em> a flex <b>item</b> (<see cref="BnView"/>'s item
+/// parameters: <see cref="Grow"/>, <see cref="Shrink"/>, <see cref="Basis"/>,
+/// <see cref="AlignSelf"/>, the box, <see cref="Margin"/>,
+/// <see cref="Position"/>) that scrolls its content.
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Vertical only</b> (6.2 design decision 2) — hence no <c>Direction</c>
-/// parameter. Horizontal scrolling is a different widget class on Android and
-/// is ledgered, not stubbed.
+/// <b>Not a flex container.</b> There is no <c>Direction</c>, <c>Justify</c>,
+/// <c>Align</c>, <c>Wrap</c>, <c>Gap</c> or <c>Padding</c> parameter: those
+/// would style the scroll node, whose only child is the shells' synthetic
+/// content node — they would space nothing, or push the content to a negative
+/// offset a scroll view can never scroll back to. To lay out the content, put a
+/// <see cref="BnColumn"/> inside: <c>&lt;BnScroll Height="200"&gt;&lt;BnColumn
+/// Gap="8"&gt;…&lt;/BnColumn&gt;&lt;/BnScroll&gt;</c>. The shells IGNORE (and
+/// log) those style names on a scroll node, so the raw-element route is closed
+/// too.
+/// </para>
+/// <para>
+/// <b>Vertical only</b> (6.2 design decision 2). Horizontal scrolling is a
+/// different widget class on Android and is ledgered, not stubbed.
 /// </para>
 /// <para>
 /// <b>Give it a definite height.</b> A <c>BnScroll</c> with no
-/// <see cref="Height"/> (and no <see cref="Grow"/> inside a bounded parent)
-/// sizes itself to its content and never scrolls. The shells log one warning
-/// when that happens.
+/// <see cref="Height"/> (and no <see cref="Grow"/> inside a bounded parent) is
+/// <c>auto</c>-height: it takes its height from its content, so the viewport
+/// equals the content and nothing scrolls. The shells log one warning when that
+/// happens.
 /// </para>
 /// <para>
 /// Children ride the wire as children of the scroll node; the shells re-parent
@@ -80,27 +138,14 @@ public sealed class BnScroll : ComponentBase
     /// <inheritdoc cref="BnView.BackgroundColor"/>
     [Parameter] public string? BackgroundColor { get; set; }
 
-    /// <inheritdoc cref="BnView.Padding"/>
-    [Parameter] public string? Padding { get; set; }
-
     /// <inheritdoc cref="BnView.Margin"/>
     [Parameter] public string? Margin { get; set; }
 
-    // ── Container layout (applies to the scroll node's content) ───────────────
+    // ── NO container layout ───────────────────────────────────────────────────
     //
-    // NO Direction: vertical-only (see the file header).
-
-    /// <inheritdoc cref="BnView.Justify"/>
-    [Parameter] public FlexJustify? Justify { get; set; }
-
-    /// <inheritdoc cref="BnView.Align"/>
-    [Parameter] public FlexAlign? Align { get; set; }
-
-    /// <inheritdoc cref="BnView.Wrap"/>
-    [Parameter] public FlexWrap? Wrap { get; set; }
-
-    /// <inheritdoc cref="BnView.Gap"/>
-    [Parameter] public string? Gap { get; set; }
+    // No Direction, Justify, Align, Wrap, Gap or Padding: a BnScroll is a flex
+    // ITEM, and its content's layout belongs to the synthetic content node. Put
+    // a BnColumn inside. See the file header — this absence is the design.
 
     // ── Item layout (how the viewport behaves INSIDE its parent) ──────────────
 
@@ -122,8 +167,9 @@ public sealed class BnScroll : ComponentBase
     [Parameter] public string? Width { get; set; }
 
     /// <summary>Height of the VIEWPORT, e.g. <c>"200"</c>. Null = auto — and an
-    /// auto-height scroll sizes to its content and never scrolls (see the class
-    /// remarks). Either this or <see cref="Grow"/> in a bounded parent.</summary>
+    /// auto-height scroll takes its height from its content, so nothing scrolls
+    /// (see the class remarks). Either this or <see cref="Grow"/> in a bounded
+    /// parent.</summary>
     [Parameter] public string? Height { get; set; }
 
     /// <inheritdoc cref="BnView.MinWidth"/>
@@ -156,7 +202,8 @@ public sealed class BnScroll : ComponentBase
     [Parameter] public string? Left { get; set; }
 
     /// <summary>The scrolled content. Rides the wire as children of the scroll
-    /// node; the shells parent it into the synthetic content node.</summary>
+    /// node; the shells parent it into the synthetic content node. Wrap it in a
+    /// <see cref="BnColumn"/> to give it a gap, a padding or an alignment.</summary>
     [Parameter] public RenderFragment? ChildContent { get; set; }
 
     protected override void BuildRenderTree(RenderTreeBuilder b)
@@ -167,14 +214,13 @@ public sealed class BnScroll : ComponentBase
         // how "unset" reaches the wire as "absent" (BnView's un-styled invariant,
         // and the reason this component needs no null guards).
         b.AddAttribute(1, "backgroundColor", BackgroundColor);
-        b.AddAttribute(2, "padding", Padding);
+        // 2 ("padding") is deliberately UNUSED — see the file header.
         b.AddAttribute(3, "margin", Margin);
 
-        // 4 ("flexDirection") is deliberately UNUSED — see the file header.
-        b.AddAttribute(5, "justifyContent", Justify.ToStyleValue());
-        b.AddAttribute(6, "alignItems", Align.ToStyleValue());
-        b.AddAttribute(7, "flexWrap", Wrap.ToStyleValue());
-        b.AddAttribute(8, "gap", Gap);
+        // 4 ("flexDirection") and 5-8 (justifyContent / alignItems / flexWrap /
+        // gap) are deliberately UNUSED: the container-layout family styles the
+        // SCROLL node, whose only child is the synthetic content node. The gaps
+        // are the decision — see the file header.
 
         b.AddAttribute(9, "alignSelf", AlignSelf.ToStyleValue());
         b.AddAttribute(10, "flexGrow", Grow.ToStyleValue());
