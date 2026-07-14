@@ -68,9 +68,23 @@ import io.blazornative.jni.RenderPatch
  * thread the shell sets the drawable, records the NATURAL size, `markDirty`s the
  * Yoga node (the 6.1 path) and re-solves (the 6.2 path). ONE reflow, never two.
  * There is no binary path on the wire and there does not need to be — .NET names
- * the source. The normative contract (and the SEVEN rows this class owes it) is
+ * the source. The normative contract (and the rows this class owes it) is
  * docs/plans/2026-07-14-phase-6.3-design.md §"The parity contract"; iOS mirrors it
  * with Kingfisher, and asserts THE SAME FRAMES.
+ *
+ * THREE THINGS IN THAT PATH ARE TWO-SHELL LANDMINES, and Kingfisher steps on two of
+ * them the same way Coil does — so they are stated in the contract, not just here:
+ *   1. THE UNIT — one FILE PIXEL is one dp/pt. Read the DECODED BITMAP's own pixel
+ *      count ([naturalSizeOf]), never `intrinsicWidth` (density-scaled, device- and
+ *      version-dependent). iOS gets it free from `UIImage(data:).scale == 1` and must
+ *      therefore NOT set Kingfisher's `scaleFactor` or any downsampling processor.
+ *   2. A MEMORY-CACHE HIT COMPLETES SYNCHRONOUSLY, inside `enqueue`, inside applyBatch
+ *      (Coil dispatches on `Dispatchers.Main.immediate`; Kingfisher's `setImage` calls
+ *      its completionHandler synchronously on a memory hit). See [resolveLayout] and
+ *      the tail of [handleSrc] — the re-entrancy guard and the in-flight bookkeeping
+ *      both depend on knowing it.
+ *   3. THE STALE-CALLBACK GUARD IS GENERATION *AND* IDENTITY, in EVERY callback — not
+ *      just the painting one. See [clearIfMine] and [isLiveImageRequest].
  *
  * [handleSetStyle] is now a ROUTER over the partitioned allow-list
  * (`NativeRenderer.YogaStyleAttributes` / `VisualStyleAttributes`): a LAYOUT name
@@ -120,29 +134,54 @@ class WidgetMapper(
     private val scrollContents = mutableMapOf<Int, ViewGroup>()
 
     /**
-     * Phase 6.3 — **the in-flight image request per `image` node**, and the handle that
-     * CANCELS it.
+     * Phase 6.3 — **one in-flight image request per `image` node**, and everything a callback
+     * needs to know whether the entry it is looking at **is its own**.
      *
      * Cancellation is **memory safety, not hygiene** (6.3 non-negotiable #4): a completion
      * firing into a removed node would paint into a detached widget here and touch a
      * **freed `YGNodeRef`** on iOS. So the entry is disposed on a `Src` change
      * ([handleSrc]), on node removal ([handleRemove] — as part of the SUBTREE purge, which
      * is the shape navigation actually emits) and on teardown ([destroy]).
+     *
+     * ── WHY THE ENTRY CARRIES THE GENERATION *AND* THE VIEW (Gate 2 review, C1) ─────────
+     * It used to be a bare `Disposable`, and the two terminal callbacks that do not paint
+     * ([onImageFailed], [onImageCancelled]) evicted it on a **generation match alone** —
+     * which is precisely the case a generation cannot decide. `/image` → back → `/image`
+     * re-uses this mapper and **node ids restart at 1**, so the OLD node 2's `onCancel`
+     * (generation 1) lands as a later main-thread message, matches the **NEW** node 2's
+     * generation 1, and **evicts the live new request's `Disposable`**. That request is then
+     * un-cancellable: the next [handleRemove] finds nothing to cancel, [inFlightImageCount]
+     * under-reports, and on iOS the un-cancelled completion runs against a freed node.
+     *
+     * So every callback goes through [clearIfMine], which drops the entry **only if the
+     * entry IS the one this callback owns** — same generation AND the same `ImageView`
+     * instance. See [isLiveImageRequest] (a pure function, unit-tested on the JVM lane) for
+     * the same conjunction on the PAINT side.
      */
-    private val imageRequests = mutableMapOf<Int, Disposable>()
+    private data class InFlight(
+        val generation: Int,
+        val view: ImageView,
+        val disposable: Disposable,
+    )
+    private val imageRequests = mutableMapOf<Int, InFlight>()
 
     /**
-     * The GENERATION of the request a node's image callbacks may act on — bumped by every
-     * `src` write. It is the second half of the "a late completion paints nothing" guard,
-     * and it exists because [imageRequests] alone cannot express it: a superseded request's
-     * `onCancel` would otherwise `remove(nodeId)` the disposable of the request that
-     * REPLACED it, and a completion that races its own `dispose()` would paint stale bytes
-     * over fresh ones.
+     * The node's CURRENT generation — bumped by every `src` write, and **deliberately not
+     * folded into [imageRequests]**, because the two answer different questions and one of
+     * them has to survive the entry.
      *
-     * The other half is an IDENTITY check (`nodes[nodeId] === view`) in the callbacks, and
-     * it is not redundant: **node ids restart at 1 after a reset** (6.2's lesson, learned on
-     * the warn-once keys), so a stale callback carrying generation 1 can meet a brand-new
-     * node that is also on generation 1. Only identity separates them.
+     *  - [imageRequests] answers *"which request does this node have in flight, and whose is
+     *    it?"* — and there may be **none** even while a request is completing: a Coil
+     *    **memory-cache hit dispatches on `Dispatchers.Main.immediate`**, so `onSuccess` runs
+     *    to completion **inside** `enqueue()`, before [handleSrc] has had a chance to record
+     *    anything (Gate 2 review, C2 — the same is true of Kingfisher's `setImage` on a
+     *    memory hit, so Gate 3 inherits it verbatim).
+     *  - THIS answers *"has this node's `src` been written since that request was issued?"* —
+     *    the question [isLiveImageRequest] must be able to ask on a node with no live entry
+     *    at all. It is written BEFORE the enqueue, which is what makes the synchronous
+     *    completion above still see itself as live and still paint.
+     *
+     * Purged with the node ([handleRemove]) for 6.2's reason: ids are reused.
      */
     private val imageGenerations = mutableMapOf<Int, Int>()
 
@@ -158,8 +197,25 @@ class WidgetMapper(
      * BLOCKED passes both of them too (a blocked load is indistinguishable from the 404 the
      * failure case expects). The tests therefore await THIS, counted, with a timeout that
      * fails — never a poll on a frame.
+     *
+     * **BOUNDED — a RING of the last [MAX_IMAGE_RESULTS]** (Gate 2 review, I3). This list is
+     * appended by every terminal callback and it lives in PRODUCTION code, so unbounded it grows
+     * for as long as the app runs: one entry per image, per navigation, forever, evicted only by
+     * [destroy]. [YogaLayout.diagnosed] is evicted on node removal for exactly this reason, one
+     * file away, citing the 6.2 lesson by name — but eviction-on-removal is not available here
+     * (`removing_the_node_cancels_the_request_IN_FLIGHT` reads this log *after* the purge that is
+     * the whole subject of the test). So it is CAPPED instead. The tests read a handful of entries
+     * and never notice; the bound exists for the app, not for the suite.
      */
-    private val imageResultLog = mutableListOf<ImageResult>()
+    private val imageResultLog = ArrayDeque<ImageResult>()
+
+    /** Appends to the bounded [imageResultLog], evicting the oldest. Main-thread only — every
+     * Coil listener callback is. */
+    private fun recordImageResult(result: ImageResult) {
+        imageTerminalCount++
+        imageResultLog.addLast(result)
+        while (imageResultLog.size > MAX_IMAGE_RESULTS) imageResultLog.removeFirst()
+    }
 
     /** What Coil's listener said about one request. `CANCELLED` is a normal outcome of a
      * `Src` change or a node removal — and a SETUP FAILURE on `/image`, where nothing
@@ -420,7 +476,28 @@ class WidgetMapper(
             "text"   -> TextView(context)
             "button" -> Button(context)
             "input"  -> EditText(context)
-            "image"  -> ImageView(context)
+            // Phase 6.3 — **THE CONTENT MODE IS SET EXPLICITLY, AND IT IS A TWO-SHELL
+            // CONTRACT** (Gate 2 review, F4; design §"The parity contract").
+            //
+            // Nothing here used to set it, so each shell took its FRAMEWORK default — and
+            // the two defaults DISAGREE: Android's `ImageView` is `FIT_CENTER`
+            // (aspect-preserving) and `UIImageView`'s is `.scaleToFill` (STRETCH). For
+            // `/image`'s case [0] — a 64 × 48 fixture inside a declared 200 × 120 frame —
+            // Android letterboxes and iOS would distort. It is FRAME-NEUTRAL, so the parity
+            // contract's numbers survive it and no test on either side could see it; it is
+            // "renders identically" that breaks, silently, on one platform. 6.1 set the
+            // precedent (`clipChildren = false`: "it costs one line to align the two
+            // shells"), and deferring the `ContentMode` *API* (design decision 3) does not
+            // defer the *default*.
+            //
+            // ASPECT-FIT is the one picked, and the reason is that it cannot LIE: a stretched
+            // image misrepresents its own pixels, and this phase's whole subject is an image
+            // reporting its true size. It is also free on the intrinsic path (there the frame
+            // IS the natural size, so fit and fill are pixel-identical — the choice only bites
+            // on a DECLARED frame of a different aspect), it is already Android's default, and
+            // it is the value an M7 `ContentMode` would default to. Gate 3 owes
+            // `contentMode = .scaleAspectFit` — one line, and it is normative.
+            "image"  -> ImageView(context).apply { scaleType = ImageView.ScaleType.FIT_CENTER }
             // Phase 6.2: a VIEWPORT — vertical (Android's ScrollView is vertical-only;
             // horizontal is a different widget class and is ledgered). Its single
             // child, the synthetic content view, is created just below.
@@ -619,7 +696,7 @@ class WidgetMapper(
         // Phase 6.3: every in-flight fetch dies with the Activity. A completion landing on
         // a destroyed mapper would paint into a dead view hierarchy and re-solve a torn-down
         // Yoga tree.
-        for (request in imageRequests.values) request.dispose()
+        for (request in imageRequests.values) request.disposable.dispose()
         imageRequests.clear()
         imageGenerations.clear()
         imageResultLog.clear()
@@ -650,10 +727,21 @@ class WidgetMapper(
      * page that simply does not move. `WidgetMapperScrollTest` asserts them. */
     internal val scrollDiagnostics: List<String> get() = yoga.diagnostics
 
-    /** Test-only (Phase 6.3) — **the synchronization gate's observation surface**: every
-     * image request that has TERMINATED, with Coil's own verdict. See [imageResultLog];
-     * the AFTER frames of `/image` may only be asserted once this holds all three. */
+    /** Test-only (Phase 6.3) — **the synchronization gate's observation surface**: the last
+     * [MAX_IMAGE_RESULTS] image requests that TERMINATED, with Coil's own verdict. See
+     * [imageResultLog]; the AFTER frames of `/image` may only be asserted once this holds all
+     * three. */
     internal val imageResults: List<ImageResult> get() = imageResultLog.toList()
+
+    /** Test-only (Phase 6.3, Gate 2 review I3): how many requests have terminated ALTOGETHER —
+     * which [imageResults] deliberately cannot say, because it is a bounded ring. A test that
+     * wants to overflow that ring has to be able to wait for the overflow. */
+    internal var imageTerminalCount: Int = 0
+        private set
+
+    /** Test-only: the cap on [imageResultLog], so the bound is asserted against the shell's own
+     * number rather than a constant a test invented. */
+    internal val imageResultCap: Int get() = MAX_IMAGE_RESULTS
 
     /** Test-only (Phase 6.3): the requests still in flight. Returns to 0 after every
      * completion, cancellation and purge — a non-zero count after a removal is the leak
@@ -749,8 +837,16 @@ class WidgetMapper(
         yoga.setImageNaturalSize(view, null)
         yoga.markDirty(view)
 
+        // An EMPTY string is the null/clear contract, not a fetch of "" (which would be an
+        // immediate, pointless ERROR on Android and — on iOS — a `URL(string:)` that returns
+        // nil, i.e. an NPE-shaped crash if the shell force-unwraps it). It is a SHELL
+        // decision, so it is written into the shared contract rather than left for the two
+        // shells to make differently (design §"The parity contract", the `Src` → `null` row).
         if (url.isNullOrEmpty()) return
 
+        // BEFORE the enqueue, and that ordering is load-bearing: a Coil memory-cache hit
+        // completes SYNCHRONOUSLY (see below), inside `enqueue`, and its completion asks
+        // [isLiveImageRequest] for this very number.
         val generation = (imageGenerations[nodeId] ?: 0) + 1
         imageGenerations[nodeId] = generation
 
@@ -765,12 +861,32 @@ class WidgetMapper(
             // the decoded fixture's own pixel count, so a sampled decode reddens them.
             .size(Size.ORIGINAL)
             .listener(
-                onSuccess = { _, result -> onImageLoaded(nodeId, generation, view, url, result.drawable) },
-                onError = { _, result -> onImageFailed(nodeId, generation, url, result.throwable) },
-                onCancel = { _ -> onImageCancelled(nodeId, generation, url) },
+                onSuccess = { _, result ->
+                    onImageLoaded(nodeId, generation, view, url, result.drawable)
+                },
+                onError = { _, result -> onImageFailed(nodeId, generation, view, url, result.throwable) },
+                onCancel = { _ -> onImageCancelled(nodeId, generation, view, url) },
             )
             .build()
-        imageRequests[nodeId] = context.imageLoader.enqueue(request)
+
+        // ── A MEMORY-CACHE HIT COMPLETES *INSIDE* THIS CALL (Gate 2 review, C2) ──────────
+        // Coil 2 dispatches on `Dispatchers.Main.immediate`, and [handleSrc] runs on the main
+        // thread (inside [applyBatch]). So an `enqueue` that hits the memory cache runs the
+        // whole request — including `onSuccess`, including [resolveLayout] — TO COMPLETION
+        // BEFORE IT RETURNS. That is the ordinary case on the SECOND mount of any page whose
+        // images the process has already fetched (Coil's cache is process-wide), and it means
+        // the disposable this line receives can already be DISPOSED.
+        //
+        // Recording it unconditionally is a permanent leak: the entry is never removed (the
+        // completion's [clearIfMine] ran before it existed), [inFlightImageCount] never
+        // returns to 0 — an invariant three tests assert — and [handleRemove] would later
+        // "cancel" a request that finished long ago. So: record only what is STILL LIVE.
+        //
+        // **Kingfisher's `setImage` calls its completionHandler synchronously on a memory
+        // hit too**, so Gate 3 inherits this verbatim; the design says so, and
+        // `the_second_mount_with_a_WARM_cache_completes_inside_applyBatch` is the test.
+        val disposable = context.imageLoader.enqueue(request)
+        if (!disposable.isDisposed) imageRequests[nodeId] = InFlight(generation, view, disposable)
     }
 
     /**
@@ -784,16 +900,16 @@ class WidgetMapper(
         url: String,
         drawable: Drawable,
     ) {
-        imageResultLog.add(ImageResult(nodeId, url, ImageOutcome.SUCCESS))
-        if (!isLiveImageRequest(nodeId, generation, view, url, "completion")) return
-        imageRequests.remove(nodeId)
+        recordImageResult(ImageResult(nodeId, url, ImageOutcome.SUCCESS))
+        if (!isLive(nodeId, generation, view, url, "completion")) return
+        clearIfMine(nodeId, generation, view)
 
         view.setImageDrawable(drawable)
         // The NATURAL size (pixels, read as dp — YogaLayout.setImageNaturalSize states the
         // rule and why it is the only reading that agrees with iOS). Taken from the decoded
         // BITMAP where there is one: `Bitmap.width` is the raw pixel count and is immune to
         // the density metadata a `BitmapDrawable`'s intrinsicWidth is scaled by.
-        yoga.setImageNaturalSize(view, naturalSizeOf(drawable))
+        yoga.setImageNaturalSize(view, naturalSizeOf(nodeId, url, drawable))
         // …and the 6.1 path, WITHOUT WHICH THE IMAGE PAINTS AND THE PAGE NEVER MOVES: Yoga
         // caches a measure function's result and will not re-run it on a clean node.
         yoga.markDirty(view)
@@ -808,18 +924,46 @@ class WidgetMapper(
      * nothing**, and it **does not retry**. There is nothing to markDirty and nothing to
      * re-solve: no frame changed, which is the whole content of the contract's failure row.
      */
-    private fun onImageFailed(nodeId: Int, generation: Int, url: String, error: Throwable) {
-        imageResultLog.add(ImageResult(nodeId, url, ImageOutcome.ERROR))
-        if (imageGenerations[nodeId] == generation) imageRequests.remove(nodeId)
+    private fun onImageFailed(
+        nodeId: Int,
+        generation: Int,
+        view: ImageView,
+        url: String,
+        error: Throwable,
+    ) {
+        recordImageResult(ImageResult(nodeId, url, ImageOutcome.ERROR))
+        clearIfMine(nodeId, generation, view)
         Log.w(TAG, "image load failed for node $nodeId ($url): ${error.javaClass.simpleName}: " +
             "${error.message} — the node stays 0 × 0 and reserves nothing")
     }
 
     /** We cancelled it: a `Src` change, a node removal, or teardown. Nothing is painted and
      * nothing is re-solved — that is what "cancelled" means. */
-    private fun onImageCancelled(nodeId: Int, generation: Int, url: String) {
-        imageResultLog.add(ImageResult(nodeId, url, ImageOutcome.CANCELLED))
-        if (imageGenerations[nodeId] == generation) imageRequests.remove(nodeId)
+    private fun onImageCancelled(nodeId: Int, generation: Int, view: ImageView, url: String) {
+        recordImageResult(ImageResult(nodeId, url, ImageOutcome.CANCELLED))
+        clearIfMine(nodeId, generation, view)
+    }
+
+    /**
+     * **DROP THE IN-FLIGHT ENTRY ONLY IF IT IS THIS CALLBACK'S OWN** (Gate 2 review, C1).
+     *
+     * Every terminal callback ends here, and every one of them asks BOTH questions — which is
+     * the whole of the fix. `onError`/`onCancel` used to evict on a **generation match alone**,
+     * and that is exactly the case a generation cannot decide: `/image` → back → `/image`
+     * re-uses this mapper, **node ids restart at 1**, and the OLD node 2's `onCancel`
+     * (generation 1) arrives as a later main-thread message to find the NEW node 2 also on
+     * generation 1. It matched, and it evicted the LIVE request's `Disposable` — leaving a
+     * request nothing could cancel any more. On Android [isLive] still stopped the paint, so
+     * the symptom was invisible; **on iOS the Kingfisher task is not cancelled and its
+     * completion runs against a freed `YGNodeRef`.**
+     *
+     * Comparing against the ENTRY (its generation, its view) rather than against `nodes`/
+     * `imageGenerations` is deliberate: it is a question about the *request*, and it answers
+     * correctly even for a node that has since been purged from both maps.
+     */
+    private fun clearIfMine(nodeId: Int, generation: Int, view: ImageView) {
+        val entry = imageRequests[nodeId] ?: return
+        if (entry.generation == generation && entry.view === view) imageRequests.remove(nodeId)
     }
 
     /**
@@ -828,21 +972,19 @@ class WidgetMapper(
      * makes one HARMLESS if it ever arrives anyway (a completion already in its main-thread
      * continuation when `dispose()` ran).
      *
-     * Two questions, because one does not answer it:
-     *  - the GENERATION — has this node's `src` been written since this request was issued?
-     *  - the IDENTITY — is the view this callback captured still the view that node id
-     *    names? **Node ids restart at 1 after a reset** (6.2's warn-once lesson), so a stale
-     *    callback can meet a *different* node wearing its id — and possibly on the same
-     *    generation.
+     * The DECISION is [isLiveImageRequest] — a pure function, in its own file, **unit-tested
+     * on the JVM lane** (`ImageRequestGuardTest`), including the reset collision that no
+     * single-mount instrumented test can stage. This method is the lookup and the log around
+     * it; the reasoning lives with the function.
      */
-    private fun isLiveImageRequest(
+    private fun isLive(
         nodeId: Int,
         generation: Int,
         view: ImageView,
         url: String,
         what: String,
     ): Boolean {
-        if (imageGenerations[nodeId] != generation || nodes[nodeId] !== view) {
+        if (!isLiveImageRequest(imageGenerations[nodeId], generation, nodes[nodeId], view)) {
             Log.w(TAG, "stale image $what for node $nodeId ($url) dropped: the node was " +
                 "removed, or its src was written again. Nothing painted.")
             return false
@@ -850,30 +992,61 @@ class WidgetMapper(
         return true
     }
 
-    /** An image's natural size in PIXELS — the decoded bitmap's own, never a density-scaled
-     * `intrinsicWidth` (a `BitmapDrawable` scales that by `targetDensity / bitmap.density`,
-     * so it is the wrong number on any device whose density is not 1). */
-    private fun naturalSizeOf(drawable: Drawable): YogaLayout.NaturalSize {
+    /**
+     * An image's natural size in PIXELS — **the decoded bitmap's own**, never a density-scaled
+     * `intrinsicWidth` (a `BitmapDrawable` scales that by `targetDensity / bitmap.density`, so
+     * it is the wrong number on any device whose density is not 1, and it can never agree with
+     * iOS). One file pixel is one dp/pt: the parity contract's UNIT row, stated at length in
+     * [YogaLayout.setImageNaturalSize].
+     *
+     * **A drawable with no bitmap reports NO NATURAL SIZE — 0 × 0 — and says so** (Gate 2
+     * review, F3). The fallback used to return `intrinsicWidth`, which is a SECOND, CONTRADICTORY
+     * unit rule sitting in the same file as the first: nothing reaches it today (Coil decodes a
+     * PNG to a `BitmapDrawable`), and the thing that WOULD reach it is animated GIF / SVG — both
+     * ledgered, both arriving in some later phase, and both landing on a number that is wrong by
+     * the device's density with no test anywhere to notice. A capability we have not designed
+     * measures ZERO and logs; it does not silently get a made-up frame.
+     */
+    private fun naturalSizeOf(nodeId: Int, url: String, drawable: Drawable): YogaLayout.NaturalSize {
         val bitmap = (drawable as? BitmapDrawable)?.bitmap
-        return if (bitmap != null) YogaLayout.NaturalSize(bitmap.width, bitmap.height)
-        else YogaLayout.NaturalSize(
-            drawable.intrinsicWidth.coerceAtLeast(0), drawable.intrinsicHeight.coerceAtLeast(0))
+        if (bitmap != null) return YogaLayout.NaturalSize(bitmap.width, bitmap.height)
+        Log.w(TAG, "image for node $nodeId ($url) decoded to a ${drawable::class.simpleName}, " +
+            "not a BitmapDrawable: it has NO natural size this shell knows how to read in the " +
+            "contract's unit (one FILE PIXEL is one dp/pt), so it measures 0 × 0 and reserves " +
+            "nothing. Animated/vector formats are ledgered — they need a design, not a guess.")
+        return YogaLayout.NaturalSize(0, 0)
     }
 
     /** Cancels [nodeId]'s in-flight request, if any. Idempotent; safe for a node that never
      * had one. */
     private fun cancelImageRequest(nodeId: Int) {
-        imageRequests.remove(nodeId)?.dispose()
+        imageRequests.remove(nodeId)?.disposable?.dispose()
     }
 
     /**
      * A layout pass triggered by something that is NOT a patch — an image completion.
      *
-     * Inside the [applyingBatch] guard for the reason `CommitFrame`'s pass is: the pass
-     * MEASURES REAL WIDGETS, and a measure that moved focus or text must not dispatch back
+     * **IT MUST NOT RUN INSIDE A BATCH** (Gate 2 review, C2). A Coil memory-cache hit completes
+     * SYNCHRONOUSLY, on the main thread, inside the `enqueue` that [handleSrc] issues from
+     * within [applyBatch] — so this method has exactly one RE-ENTRANT caller, and the
+     * [applyingBatch] guard is a plain boolean that is not re-entrant: its `finally` would set
+     * the flag back to **false FOR THE REST OF THE BATCH**, and every subsequent `setText` /
+     * `value` / focus change in that batch would dispatch back into .NET — the change →
+     * re-render → setText loop the 3.2/4.2 guard exists to prevent. It would also re-solve Yoga
+     * against a HALF-APPLIED tree, and then again at `CommitFrame`: **two reflows, where the
+     * contract says ONE.**
+     *
+     * So inside a batch this is a NO-OP, and it loses nothing: the batch's own `CommitFrame`
+     * re-solves the whole tree at the end, which is where the synchronously-set natural size and
+     * `markDirty` are picked up. Only a completion that arrives with NO patch behind it — the
+     * asynchronous case, the one the wire carries no signal for — has a layout pass to trigger.
+     *
+     * When it DOES run, it runs inside the guard for the reason `CommitFrame`'s pass does: the
+     * pass MEASURES REAL WIDGETS, and a measure that moved focus or text must not dispatch back
      * into .NET.
      */
     private fun resolveLayout() {
+        if (applyingBatch) return
         applyingBatch = true
         try {
             yoga.calculateAndApply()
@@ -951,5 +1124,12 @@ class WidgetMapper(
          * The same constant [YogaLayout] keys its half of the pair on — one contract,
          * one spelling. */
         const val SCROLL = "scroll"
+
+        /** Phase 6.3 (Gate 2 review, I3) — the bound on [imageResultLog]. It is a DIAGNOSTIC
+         * ring, not a ledger: the tests read the last handful of entries and an app that runs
+         * for a day must not accumulate one entry per image per navigation, forever. Large
+         * enough that no realistic test can notice the eviction; small enough that it is a
+         * bound. */
+        const val MAX_IMAGE_RESULTS = 64
     }
 }

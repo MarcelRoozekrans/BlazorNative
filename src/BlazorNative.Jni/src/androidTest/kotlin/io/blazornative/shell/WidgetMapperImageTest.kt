@@ -157,6 +157,19 @@ class WidgetMapperImageTest {
             assertFrame("band F, AFTER: y = 120, UNCHANGED — THE NO-REFLOW PROOF",
                 band(host), 0f, 120f, SECTION_W, BAND_H)
             assertNotNull("…and the bytes were painted all the same", image(host).drawable)
+
+            // THE CONTENT MODE — and THIS is the case where it bites: a 64 × 48 fixture
+            // inside a DECLARED 200 × 120 frame. The two frameworks' defaults DISAGREE
+            // (Android FIT_CENTER; UIImageView .scaleToFill — a STRETCH), the divergence is
+            // FRAME-NEUTRAL (every number above survives it), and so no frame table on either
+            // platform can see it: what breaks is "renders identically", silently, on one
+            // platform. It is normative in the parity contract, and Gate 3 owes
+            // `contentMode = .scaleAspectFit`. Deferring the ContentMode API (decision 3) does
+            // not defer the default — 6.1's clipChildren precedent.
+            assertEquals("the content mode is ASPECT-FIT, and it is set EXPLICITLY rather than " +
+                "inherited from the framework — the two frameworks' defaults disagree, and the " +
+                "disagreement is invisible to every frame assertion in this file",
+                ImageView.ScaleType.FIT_CENTER, image(host).scaleType)
         }
     }
 
@@ -225,12 +238,19 @@ class WidgetMapperImageTest {
         awaitResults(host, 2)
         server.releaseSlow() // and now the old bytes arrive at nobody
 
+        // A SET, not a list. What this test claims is *what happened to each request* — the
+        // in-flight one was cancelled, the new one succeeded — and that claim is
+        // order-independent. The ORDER (cancel before success) is a fact about the fixture
+        // server's gate and about a cold Coil cache, not about the contract, and asserting it
+        // here would make this test redden for a reason it is not about. (It is exactly the
+        // ordering the WARM-cache path inverts: a memory hit completes SYNCHRONOUSLY, before
+        // the cancelled request's own callback has been posted.)
         assertEquals("the IN-FLIGHT request was CANCELLED, and the new one succeeded",
-            listOf(
+            setOf(
                 ImageFixtureServer.SLOW_URL to WidgetMapper.ImageOutcome.CANCELLED,
                 ImageFixtureServer.INTRINSIC_URL to WidgetMapper.ImageOutcome.SUCCESS,
             ),
-            host.read { host.mapper.imageResults.map { it.url to it.outcome } })
+            host.read { host.mapper.imageResults.map { it.url to it.outcome }.toSet() })
         host.read {
             assertFrame("the node measures the NEW bytes", image(host),
                 0f, 0f, fixture.width.toFloat(), fixture.height.toFloat())
@@ -238,6 +258,26 @@ class WidgetMapperImageTest {
         assertEquals("nothing is left in flight", 0, host.read { host.mapper.inFlightImageCount })
     }
 
+    /**
+     * **THE MUTATION THIS TEST EXISTS FOR, AND WHAT IT ACTUALLY LOOKS LIKE** — recorded because
+     * the Gate 2 review disputed it, and re-running it settled the question:
+     *
+     *   delete `cancelImageRequest(id)` from `WidgetMapper.handleRemove` ⇒ **1 red, here, with
+     *   `expected:<CANCELLED> but was:<ERROR>`**, in ~10s.
+     *
+     * The **`ERROR` is `OkHttp`'s 10-second READ TIMEOUT.** `/slow.png` is held on its own gate for
+     * the whole test, so an *uncancelled* request does not hang and does not reach
+     * [awaitResults]' 30s deadline — it sits on the socket until OkHttp gives up, and Coil reports
+     * `onError`. That is what makes the assertion below fail on the OUTCOME rather than on a
+     * timeout, which is a far better failure: it names the contract row that broke.
+     *
+     * **GATE 3 MUST NOT ASSUME THIS.** `URLSession`'s default `timeoutIntervalForRequest` is
+     * **60 seconds**, not 10 — so on iOS the same mutation would NOT terminate inside the test's
+     * own gate, and the red would be the gate timing out instead. If Gate 3 wants the same clean
+     * outcome-shaped failure, it must shorten its fixture's timeout (or its `KingfisherOptionsInfo`
+     * `downloadTimeout`) to something below the test gate. Either way the mutation must be RUN, not
+     * reasoned about — this note exists because reasoning about it got it wrong once.
+     */
     @Test fun removing_the_node_cancels_the_request_IN_FLIGHT() {
         val host = section(src = ImageFixtureServer.SLOW_URL)
         assertEquals("the section, the image and the band", 3, host.read { host.mapper.nodeCount })
@@ -274,6 +314,54 @@ class WidgetMapperImageTest {
     }
 
     // ── Robustness ───────────────────────────────────────────────────────────────
+
+    /**
+     * **THE RESULT LOG IS A BOUNDED RING** (Gate 2 review, I3) — because it is appended by every
+     * terminal callback and it lives in PRODUCTION code.
+     *
+     * Unbounded, it grows one entry per image per navigation, for as long as the app runs, evicted
+     * only by `destroy()`. [YogaLayout.diagnosed] is evicted on node removal for exactly this
+     * reason, one file away, citing the 6.2 lesson by name — and eviction-on-removal is not
+     * available here, because [removing_the_node_cancels_the_request_IN_FLIGHT] reads the log
+     * *after* the purge that is its whole subject. So it is CAPPED, and the cap is asserted against
+     * the shell's own number rather than one this test invented.
+     *
+     * `imageTerminalCount` is what makes the overflow observable at all: [imageResults] cannot
+     * count past the cap, so a test that waits for "more than the cap" on IT would wait forever.
+     */
+    @Test fun the_result_log_is_a_BOUNDED_ring_it_cannot_grow_forever() {
+        val host = SyntheticHost()
+        val cap = host.read { host.mapper.imageResultCap }
+        val overflow = cap + 6
+
+        // One image node per request — all 404s, all from the loopback fixture, all terminal.
+        val patches = mutableListOf<RenderPatch>()
+        for (i in 1..overflow) {
+            patches += create(i, "image", null)
+            patches += RenderPatch.UpdateProp(
+                nodeId = i, name = "src", value = ImageFixtureServer.MISSING_URL)
+        }
+        host.render(patches)
+        server.release()
+
+        // Wait on the TOTAL, not on the log — the log is exactly the thing that cannot count
+        // this high, which is the property under test.
+        val deadline = System.currentTimeMillis() + 60_000
+        while (System.currentTimeMillis() < deadline &&
+            host.read { host.mapper.imageTerminalCount } < overflow) {
+            Thread.sleep(50)
+        }
+        assertEquals("all $overflow requests must terminate — otherwise 'the log is bounded' is a " +
+            "statement about a log nothing filled",
+            overflow, host.read { host.mapper.imageTerminalCount })
+
+        assertEquals("THE BOUND: $overflow requests terminated and the log holds the last $cap. " +
+            "An unbounded list here is a leak that grows with every image, on every navigation, " +
+            "for the life of the process",
+            cap, host.read { host.mapper.imageResults.size })
+        assertEquals("…and nothing is left in flight", 0,
+            host.read { host.mapper.inFlightImageCount })
+    }
 
     @Test fun src_on_a_non_image_node_is_logged_and_ignored() {
         val host = SyntheticHost()

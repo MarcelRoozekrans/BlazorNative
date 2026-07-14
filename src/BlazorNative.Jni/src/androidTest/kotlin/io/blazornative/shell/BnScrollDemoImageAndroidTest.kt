@@ -71,9 +71,22 @@ class BnScrollDemoImageAndroidTest {
         server.release() // this page has no BEFORE table to protect — 6.2's is the contract
     }
 
-    // isInitialized: a @Before that THREW (a taken port) must not have its cause masked.
+    /**
+     * isInitialized: a @Before that THREW (a taken port) must not have its cause masked.
+     *
+     * **AND THE SERVER'S OWN ERRORS ARE ASSERTED EMPTY** (Gate 2 review, I4): this class, like
+     * [BnImageDemoAndroidTest], **cancels nothing** — no client here drops a connection — so an
+     * `IOException` on a fixture-server worker thread is a real server bug, and the swallow that
+     * (correctly) keeps a broken pipe from killing the app process would otherwise make it
+     * completely silent.
+     */
     @After fun stopFixtureServer() {
-        if (::server.isInitialized) server.close()
+        if (!::server.isInitialized) return
+        val errors = server.errors
+        server.close()
+        assertEquals("the fixture server hit an IOException, and NOTHING ON THIS PAGE CANCELS " +
+            "ANYTHING — so it is a real server bug rather than a dropped client",
+            emptyList<String>(), errors)
     }
 
     @Test fun the_row_image_loads_and_the_6_2_frame_table_is_UNCHANGED() {

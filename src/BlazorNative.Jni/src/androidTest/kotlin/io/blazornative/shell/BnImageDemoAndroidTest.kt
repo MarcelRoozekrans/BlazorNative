@@ -86,9 +86,27 @@ class BnImageDemoAndroidTest {
         server = ImageFixtureServer()
     }
 
-    // isInitialized: a @Before that THREW (a taken port) must not have its cause masked.
+    /**
+     * isInitialized: a @Before that THREW (a taken port) must not have its cause masked.
+     *
+     * **AND THE SERVER'S OWN ERRORS ARE ASSERTED EMPTY** (Gate 2 review, I4). The fixture server
+     * swallows `IOException` on its worker threads, and the scoping is right — a broken pipe IS
+     * cancellation, seen from the other end of the socket, and uncaught it would take the app
+     * process down. But **NOTHING ON THIS PAGE CANCELS ANYTHING**: there is no client here that
+     * could drop a connection, so an `IOException` in this class is a REAL SERVER BUG. Unrecorded
+     * it produced no signal at all — the test simply timed out 30 seconds later in
+     * [awaitAllThreeTerminated] and blamed the synchronization gate. Now the server records them
+     * and this class, which cancels nothing, demands the list be empty.
+     * (`WidgetMapperImageTest` DOES cancel, expects entries, and asserts nothing here.)
+     */
     @After fun stopFixtureServer() {
-        if (::server.isInitialized) server.close()
+        if (!::server.isInitialized) return
+        val errors = server.errors
+        server.close()
+        assertEquals("the fixture server hit an IOException, and NOTHING ON THIS PAGE CANCELS " +
+            "ANYTHING — so this is a real server bug, not a dropped client. Without this " +
+            "assertion its only symptom is the synchronization gate timing out and taking the " +
+            "blame for it.", emptyList<String>(), errors)
     }
 
     /**
@@ -314,6 +332,115 @@ class BnImageDemoAndroidTest {
 
                 assertRootFrame(act, root, backSection)
                 assertEquals("nothing is left in flight", 0, act.mapper.inFlightImageCount)
+            }
+        }
+    }
+
+    /**
+     * **THE SECOND MOUNT, WITH A WARM COIL CACHE — THE PATH EVERY OTHER TEST CLEARS AWAY**
+     * (Gate 2 review, C2).
+     *
+     * Coil 2 dispatches on `Dispatchers.Main.immediate`, and the shell issues its request from
+     * `UpdateProp("src", …)`, which runs **on the main thread inside `applyBatch`**. So on a
+     * **memory-cache hit** the whole request — decode lookup, `onSuccess`, set-image, `markDirty`,
+     * re-solve — runs **to completion inside the `enqueue` call**, before it returns. That is the
+     * ordinary case on the SECOND mount of any page the process has already fetched (Coil's cache
+     * is process-wide), and it is exactly what **`@Before`'s `clearCoilCaches()` hides** — every
+     * other test in this repo mounts against a cold cache, so this path was **entirely
+     * unexercised**.
+     *
+     * Two bugs lived in it, and both are two-shell landmines (**Kingfisher's `setImage` calls its
+     * completionHandler synchronously on a memory hit too** — Gate 3 inherits this verbatim):
+     *
+     *  1. **The re-solve clobbered the re-entrancy guard.** `resolveLayout`'s `finally` set
+     *     `applyingBatch = false` **for the rest of the batch** — the guard is a plain boolean and
+     *     this is its first re-entrant caller — so every subsequent `setText`/`value`/focus change
+     *     in that batch would dispatch back into .NET: the change → re-render → setText loop the
+     *     3.2/4.2 guard exists to prevent. And Yoga re-solved against a HALF-APPLIED tree, then
+     *     again at `CommitFrame` — **two reflows, where the contract says ONE.**
+     *  2. **The completed request was recorded as in-flight, forever.** The completion's own
+     *     bookkeeping ran *before* the map write, so it cleared nothing; the already-disposed
+     *     handle was then stored and never removed. `inFlightImageCount` — an invariant **three**
+     *     tests assert — never returned to 0.
+     *
+     * **This test reddens on (2) under the old code** (two stale entries, one per cached image),
+     * and it is the only thing standing between Gate 3 and the same two bugs. The frames are
+     * asserted too: the AFTER table must be identical whether the bytes came from the network or
+     * from the cache — that is what "one reflow, never two" means when the reflow is synchronous.
+     */
+    @Test fun the_second_mount_with_a_WARM_cache_completes_inside_applyBatch() {
+        val intrinsic = server.decoded(server.intrinsicPng)
+        val hi = intrinsic.height.toFloat()
+        val wi = intrinsic.width.toFloat()
+
+        server.release() // both mounts fetch freely; there is no BEFORE table to protect here
+
+        // ── MOUNT 1: cold cache (the @Before cleared it). This is what WARMS it. ──
+        withDemo { act ->
+            assertEquals("mount 1 fetched all three over real HTTP", 3, act.mapper.imageResults.size)
+            assertEquals("…and left nothing in flight", 0, act.mapper.inFlightImageCount)
+        }
+
+        // ── MOUNT 2: NO clearCoilCaches(). fixed.png and intrinsic.png are MEMORY-CACHE
+        //    HITS, so their completions run INSIDE applyBatch, synchronously, before
+        //    `enqueue` even returns. missing.png still goes to the wire (a 404 is not
+        //    cached), which is why the synchronization gate below still has work to do.
+        val ctx = InstrumentationRegistry.getInstrumentation().targetContext
+        val intent = Intent(ctx, MainActivity::class.java)
+            .putExtra(MainActivity.EXTRA_COMPONENT, "BnImageDemo")
+
+        ActivityScenario.launch<MainActivity>(intent).use { scenario ->
+            assertTrue("BnImageDemo never rendered a laid-out tree within 60s",
+                pollForDemo(scenario))
+            awaitAllThreeTerminated(scenario)
+
+            scenario.onActivity { act ->
+                val d = act.resources.displayMetrics.density
+                val root = act.findViewById<FrameLayout>(R.id.widget_root).getChildAt(0) as ViewGroup
+
+                // THE INVARIANT THAT BROKE. A synchronously-completed request that was recorded
+                // anyway sits in the in-flight map forever: the completion's clear ran BEFORE the
+                // entry existed. Two cached images ⇒ this was 2.
+                assertEquals("NOTHING IS LEFT IN FLIGHT after a WARM-cache mount. A memory hit " +
+                    "completes INSIDE enqueue(), so its bookkeeping runs BEFORE the shell has " +
+                    "anything to record — and an unconditional record leaks the handle for the " +
+                    "life of the mapper. On iOS that stale entry is a request nothing can cancel, " +
+                    "whose completion runs against a freed YGNodeRef.",
+                    0, act.mapper.inFlightImageCount)
+
+                // …AND THE FRAMES ARE THE SAME ONES. A synchronous completion inside the batch
+                // must produce the SAME AFTER table as an asynchronous one: the natural size and
+                // the markDirty land mid-batch, and the batch's own CommitFrame is the ONE re-solve
+                // that applies them.
+                val fixedSection = root.getChildAt(0) as ViewGroup
+                assertFrame("[0] the fixed section, from cache: UNCHANGED",
+                    fixedSection, 0f, 0f, SECTION_W, FIXED_SECTION_H)
+                assertFrame("[0] the fixed image, from cache: its DECLARED size, still",
+                    imageIn(fixedSection), 0f, 0f, FIXED_W, FIXED_H)
+                assertNotNull("[0] …and the cached bytes were painted", imageIn(fixedSection).drawable)
+
+                val intrinsicSection = root.getChildAt(1) as ViewGroup
+                assertFrame("[1] the intrinsic image, from cache: its NATURAL size — the same " +
+                    "$wi × $hi it measured from the network. One reflow, never two, whether the " +
+                    "bytes arrive synchronously or not",
+                    imageIn(intrinsicSection), 0f, 0f, wi, hi)
+                assertFrame("[1] THE REFLOW STILL HAPPENED, from inside the batch: band I is at " +
+                    "y = Hi", intrinsicSection.getChildAt(1), 0f, hi, SECTION_W, BAND_H)
+                assertFrame("[1] …and the section grew by exactly Hi",
+                    intrinsicSection, 0f, INTRINSIC_SECTION_Y, SECTION_W, hi + BAND_H)
+
+                // [2] still fails — a 404 is not cached, so this one really did go to the wire,
+                // which is what keeps the synchronization gate above honest on this mount.
+                val failingSection = root.getChildAt(2) as ViewGroup
+                assertFrame("[2] the failure still reserves nothing",
+                    imageIn(failingSection), 0f, 0f, 0f, 0f)
+                assertFrame("[2] …and its band is still at y = 0 in its parent",
+                    failingSection.getChildAt(1), 0f, 0f, SECTION_W, BAND_H)
+
+                val backSection = root.getChildAt(3) as ViewGroup
+                assertEquals("[3] the back row is where the reflow put it",
+                    BACK_SECTION_Y + hi, backSection.top / d, 0.5f)
+                assertRootFrame(act, root, backSection)
             }
         }
     }

@@ -56,12 +56,19 @@ import kotlin.concurrent.thread
  * positive `Wi > 0` assertion reddens), never silently.
  *
  * ── BIND EXCLUSIVELY, FAIL LOUDLY ───────────────────────────────────────────────────
- * `setReuseAddress(false)` and no fallback: if 8099 is taken — a leaked server from an
- * earlier class, anything else on the device — the bind throws and the test fails naming
- * the port. Never "someone is already listening, good enough": a foreign server on 8099
- * would serve foreign bytes, and a 200 on `/missing.png` would fail case [2] *silently*.
- * (The fixture-contract assertions in the tests are the second half of that probe: a
- * foreign server cannot serve an image whose natural size is the one we assert.)
+ * No fallback: if 8099 is taken — a leaked server from an earlier class, anything else on
+ * the device — the bind throws, and it throws a message that NAMES THE PORT and says why a
+ * foreign server would be worse than a missing one. Never "someone is already listening,
+ * good enough": a foreign server on 8099 serves foreign bytes, and a 200 on `/missing.png`
+ * would fail case [2] *silently*. (The fixture-contract assertions in the tests are the
+ * second half of that probe: a foreign server cannot serve an image whose natural size is
+ * the one we assert.)
+ *
+ * **`reuseAddress = true` is what makes that exclusive — it is not a weakening.**
+ * `SO_REUSEADDR` is NOT `SO_REUSEPORT`: it does not let a second process LISTEN on a port
+ * someone is already listening on (that still throws `BindException`), it only permits
+ * re-binding over the TIME_WAIT *connections* our own previous test class left behind. See
+ * the inline comment on the socket.
  */
 internal class ImageFixtureServer {
 
@@ -72,10 +79,10 @@ internal class ImageFixtureServer {
          *
          * They are Kotlin constants because a device-side test cannot read a `.cs` file —
          * so the drift pin is asserted on the **WIRE** instead, which is stronger than a
-         * transcription check anyway: [assertServesTheDemosUrls] takes the URLs the
-         * renderer actually put on the `UpdateProp` wire and asserts they are exactly the
-         * three this server routes. Change a URL in `BnImageDemo.cs` and that assertion
-         * reddens by name, rather than the page quietly 404ing three times.
+         * transcription check anyway: `BnImageDemoAndroidTest` asserts the outcomes against
+         * the URLs the renderer actually put on the `UpdateProp` wire, and they must be
+         * exactly the three this server routes. Change a URL in `BnImageDemo.cs` and that
+         * assertion reddens by name, rather than the page quietly 404ing three times.
          */
         const val ORIGIN = "http://127.0.0.1:8099"
         const val FIXED_URL = "$ORIGIN/fixed.png"
@@ -105,6 +112,20 @@ internal class ImageFixtureServer {
          *    measures 200 × 120" is a coincidence, not a proof that a declared size
          *    short-circuits measurement. It is also ≠ (40, 40), `BnScrollDemo`'s row
          *    image, which buys the same proof inside the scroll.
+         *
+         * ── THESE FOUR NUMBERS ARE NOT THIS FILE'S TO CHOOSE (Gate 2 review, the BLOCKER) ──
+         * **`BnImageDemo.cs` owns them** — `IntrinsicNaturalWidthPx` / `…HeightPx` /
+         * `FixedNaturalWidthPx` / `…HeightPx` — because **both shells must assert the SAME
+         * numbers** and the `.cs` is the one file both gates read. They were "symbolic and
+         * Gate-supplied", which meant Gate 3 could legitimately pick a different fixture,
+         * apply a different unit rule, and be fully green: nothing enforced the phase's own
+         * verification bar #1 ("the same frames on both devices").
+         *
+         * The transcription is **pinned by a drift test** — `BnImageDemoTests
+         * .TheAndroidFixtureServer_ServesExactlyBnImageDemosNaturalPixelSizes` parses these
+         * four `const val`s out of THIS file and asserts equality with the `.cs`. Keep them
+         * as plain `const val NAME = <int>` declarations at the start of their line: that is
+         * what the parser looks for, and a declaration it cannot find fails it LOUDLY.
          */
         const val INTRINSIC_W = 160
         const val INTRINSIC_H = 90
@@ -112,10 +133,11 @@ internal class ImageFixtureServer {
         const val FIXED_H = 48
 
         /**
-         * **ONE PIXEL OF THE FILE IS ONE dp/pt.** The parity contract's "natural size" is
-         * the image's pixel size *read as* density-independent units — that is what
-         * `UIImage(data:).size` gives iOS for free (scale 1.0), so it is what Android must
-         * report for the two shells to compute the same frame. See
+         * **ONE PIXEL OF THE FILE IS ONE dp/pt** — the parity contract's UNIT row (design
+         * §"The parity contract"), and the rule that says these `Int`s of PIXELS are also the
+         * `Float`s of dp Yoga computes with. It is what `UIImage(data:).size` gives iOS for
+         * free (`scale == 1`), so it is what Android must report for the two shells to compute
+         * the same frame — and it is why Gate 3 must NOT set Kingfisher's `scaleFactor`. See
          * [YogaLayout.setImageNaturalSize], which is where the shell states it.
          */
         const val INTRINSIC_W_DP = INTRINSIC_W.toFloat()
@@ -200,6 +222,28 @@ internal class ImageFixtureServer {
         return false
     }
 
+    /**
+     * **THE SERVER'S OWN FAILURES** — path + exception, in order (Gate 2 review, I4).
+     *
+     * [serveQuietly] swallows `IOException`, and the SCOPING of that swallow is right: when the
+     * shell CANCELS a request, Coil closes the connection and this side's next write is a broken
+     * pipe. That is cancellation observed from the other end of the socket — the very thing the
+     * cancellation tests ask for, and uncaught on a background thread it would take the app
+     * process down (Android's default handler), failing the run with a crash instead of a result.
+     *
+     * But it was SILENT and UNCONDITIONAL, and the classes that **cancel nothing**
+     * ([BnImageDemoAndroidTest], [BnScrollDemoImageAndroidTest]) have no client that could drop a
+     * connection — so an `IOException` there is a REAL SERVER BUG that produced no signal at all,
+     * and the test merely timed out in its synchronization gate, blaming the gate. So every
+     * swallowed exception is RECORDED, and the classes that cancel nothing **assert this list is
+     * empty**. The classes that DO cancel (`WidgetMapperImageTest`) expect entries here and do
+     * not assert it.
+     */
+    private val serverErrors = java.util.Collections.synchronizedList(mutableListOf<String>())
+
+    /** See [serverErrors]. A snapshot, safe to read from the test thread. */
+    val errors: List<String> get() = serverErrors.toList()
+
     private val gate = CountDownLatch(1)
     private val slowGate = CountDownLatch(1)
     private val closed = AtomicBoolean(false)
@@ -213,22 +257,38 @@ internal class ImageFixtureServer {
         // — and `false` refuses even that, so the second test class to want the port dies
         // for a reason that has nothing to do with anyone taking it.
         reuseAddress = true
-        bind(InetSocketAddress("127.0.0.1", PORT), 16)
+        // …and the bind is wrapped so the failure NAMES THE PORT and says what it means. A
+        // bare `BindException: bind failed: EADDRINUSE` at the top of a stack trace inside
+        // a @Before reads as flake; it is not. It is the ONE outcome this server must never
+        // paper over — a foreign listener on 8099 is strictly WORSE than no listener at all,
+        // because a missing server 404s/refuses everything (loud), while a foreign one can
+        // 200 `/missing.png` and quietly certify a contract nobody tested.
+        try {
+            bind(InetSocketAddress("127.0.0.1", PORT), 16)
+        } catch (e: IOException) {
+            throw IllegalStateException(
+                "the image fixture server could not bind 127.0.0.1:$PORT — something else is " +
+                    "already listening on it (a leaked server from an earlier class, or another " +
+                    "process on the device). THIS IS NOT FLAKE AND MUST NOT BE RETRIED AROUND: a " +
+                    "FOREIGN server on $PORT is worse than none, because it would serve foreign " +
+                    "bytes to /fixed.png and /intrinsic.png and could answer /missing.png with a " +
+                    "200 — and case [2] of /image asserts a FAILURE, so it would pass SILENTLY on " +
+                    "a page that loaded someone else's images. Find the listener and kill it.", e)
+        }
     }
 
-    init {
-        thread(name = "bn-image-fixture-accept", isDaemon = true) {
-            while (!closed.get()) {
-                val socket = try {
-                    server.accept()
-                } catch (_: IOException) {
-                    break // closed
-                }
-                // A thread PER CONNECTION: the three demo requests are held on [gate] at
-                // the same time, so a single-threaded responder would serialise them and
-                // the third would never even reach the gate.
-                thread(name = "bn-image-fixture-serve", isDaemon = true) { serveQuietly(socket) }
+    /** The accept loop's thread — kept so [close] can JOIN it. See [close]. */
+    private val acceptThread: Thread = thread(name = "bn-image-fixture-accept", isDaemon = true) {
+        while (!closed.get()) {
+            val socket = try {
+                server.accept()
+            } catch (_: IOException) {
+                break // closed
             }
+            // A thread PER CONNECTION: the three demo requests are held on [gate] at
+            // the same time, so a single-threaded responder would serialise them and
+            // the third would never even reach the gate.
+            thread(name = "bn-image-fixture-serve", isDaemon = true) { serveQuietly(socket) }
         }
     }
 
@@ -238,15 +298,38 @@ internal class ImageFixtureServer {
     /** Opens the SLOW path's gate (the cancellation tests' "now complete it"). */
     fun releaseSlow() = slowGate.countDown()
 
+    /**
+     * **TEARDOWN IS SYNCHRONOUS, AND IT HAS TO BE: THE NEXT `@Before` BINDS THE SAME PORT.**
+     *
+     * `ServerSocket.close()` closes the descriptor and signals the thread blocked in `accept()`
+     * — but it **returns before that thread has actually unwound**, and until it has, the
+     * listener can still be holding :8099. The next test's `@Before` then binds within
+     * milliseconds and gets `EADDRINUSE` from **our own previous instance**, which is a
+     * pathology the bind message correctly refuses to retry around (a foreign listener on 8099
+     * is a real and dangerous thing, and this teardown is what makes that message TRUE when it
+     * fires).
+     *
+     * So `close()` **joins the accept thread**: when it returns, nothing of this server is
+     * listening. It is bounded rather than indefinite — a join that timed out would mean the
+     * accept loop ignored a closed socket, which is a bug in THIS file and should surface as the
+     * next bind failing loudly, not as a hang.
+     *
+     * The per-connection SERVE threads are deliberately NOT joined: they hold *accepted* sockets
+     * (whose local port is 8099 but which are `ESTABLISHED`/`TIME_WAIT`, not `LISTEN`), and
+     * `SO_REUSEADDR` — set on the socket above — is precisely the option that lets a fresh
+     * listener bind over those. Joining them would also mean waiting on the 30-second gate awaits
+     * of a cancelled test.
+     */
     fun close() {
         closed.set(true)
         release()
         releaseSlow()
         try { server.close() } catch (_: IOException) { /* already closed */ }
+        acceptThread.join(5_000)
     }
 
     /**
-     * **A DROPPED CLIENT IS THE NORMAL CASE HERE, NOT AN ERROR.**
+     * **A DROPPED CLIENT IS THE NORMAL CASE HERE, NOT AN ERROR — BUT IT IS NEVER SILENT.**
      *
      * When the shell CANCELS a request — a `Src` change, a node removal — Coil closes the
      * connection, and this thread's next write gets an `IOException: Broken pipe`. That is
@@ -254,16 +337,24 @@ internal class ImageFixtureServer {
      * cancellation tests are asking for. Uncaught on a background thread it would take the
      * whole app process down with it (Android's default handler), failing the run with a
      * crash rather than a result — which is exactly what it did the first time this ran.
+     *
+     * So it is caught — and **RECORDED** ([serverErrors]), with the path it happened on.
+     * `BnImageDemoAndroidTest` and `BnScrollDemoImageAndroidTest` cancel NOTHING, so an
+     * `IOException` in either is a real server bug; unrecorded, its only symptom was the
+     * synchronization gate timing out 30 seconds later and taking the blame for it.
      */
     private fun serveQuietly(socket: Socket) {
+        val path = java.util.concurrent.atomic.AtomicReference("<no request line read>")
         try {
-            serve(socket)
-        } catch (_: IOException) {
-            // the client went away — see the KDoc
+            serve(socket, path)
+        } catch (e: IOException) {
+            // The client went away (cancellation — see the KDoc), or the server broke. This
+            // side cannot tell the two apart; the TEST can, because only some tests cancel.
+            serverErrors.add("${path.get()}: ${e.javaClass.simpleName}: ${e.message}")
         }
     }
 
-    private fun serve(socket: Socket) {
+    private fun serve(socket: Socket, servedPath: java.util.concurrent.atomic.AtomicReference<String>) {
         socket.use {
             val input = it.getInputStream().bufferedReader()
             val requestLine = input.readLine() ?: return
@@ -273,6 +364,7 @@ internal class ImageFixtureServer {
                 if (line.isEmpty()) break
             }
             val path = requestLine.split(' ').getOrNull(1) ?: "/"
+            servedPath.set(path) // so a swallowed IOException can NAME the path it died on
             requested.add(path) // BEFORE the gate — see [requested]
 
             // THE GATE — every response, including the 404, waits here. A blocked case [2]
