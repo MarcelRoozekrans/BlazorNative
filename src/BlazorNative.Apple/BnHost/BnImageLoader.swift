@@ -143,6 +143,18 @@ enum BnImageLoader {
     /// that broke instead of blaming the harness.
     static let downloadTimeout: TimeInterval = 5
 
+    /// **THE TIMEOUT IS A PROPERTY OF THE `ImageDownloader`, NOT A PER-REQUEST OPTION.**
+    /// `KingfisherOptionsInfoItem` carries no `downloadTimeout` case (CI said so, in as
+    /// many words), so the knob is set once on the shared downloader — a `static let`
+    /// whose initializer is the side effect, which Swift runs exactly once, lazily, on
+    /// first touch from [load]. There is no other configuration of the library anywhere
+    /// in this shell: **no `scaleFactor`, no processor, no cache policy** — every one of
+    /// those would change the number this phase exists to make identical on two
+    /// platforms.
+    private static let configureDownloader: Void = {
+        KingfisherManager.shared.downloader.downloadTimeout = downloadTimeout
+    }()
+
     /// Fetch + decode. The completion fires **on the main thread** — synchronously,
     /// from inside this call, on a memory-cache hit (see the file header).
     ///
@@ -152,14 +164,17 @@ enum BnImageLoader {
     @discardableResult
     static func load(url: URL,
                      completion: @escaping (BnImageLoadOutcome) -> Void) -> BnImageTask? {
+        _ = configureDownloader // once, lazily — the 5s timeout. See [configureDownloader].
         let task = KingfisherManager.shared.retrieveImage(
             with: url,
             options: [
-                // THE UNIT (see the header). No `.scaleFactor`, no processor — the
-                // options list is short on purpose, and every item in it is a decision.
-                .downloadTimeout(downloadTimeout),
-                // Stated, not inherited: the SYNCHRONOUS memory-cache completion the
-                // shell is written against is a property of THIS value.
+                // THE UNIT (see the header). No `.scaleFactor`, no processor — the options
+                // list is ONE item long on purpose, and that item is a decision.
+                //
+                // Stated, not inherited: the SYNCHRONOUS memory-cache completion the shell
+                // is written against is a property of THIS value. `.mainCurrentOrAsync`
+                // executes the completion IMMEDIATELY when it is already on the main thread
+                // — which is where `UpdateProp("src")` runs, inside the patch batch.
                 .callbackQueue(.mainCurrentOrAsync),
             ]
         ) { result in

@@ -280,8 +280,10 @@ final class BnImageFixtureServer {
             condition.unlock()
         }
 
+        /// Deliberately NOT named `await` — that is a contextual keyword in Swift 5.5+ and
+        /// `gate.await(30)` is exactly the shape the concurrency parser wants to claim.
         @discardableResult
-        func await(_ timeout: TimeInterval) -> Bool {
+        func waitUntilOpen(_ timeout: TimeInterval) -> Bool {
             condition.lock()
             defer { condition.unlock() }
             let deadline = Date().addingTimeInterval(timeout)
@@ -397,7 +399,7 @@ final class BnImageFixtureServer {
         // immediately would let the test read the BEFORE table while the failure had already
         // landed, and "the failure reserved nothing" would be asserted against a request that
         // had not happened.
-        if path == "/slow.png" { slowGate.await(30) } else { gate.await(30) }
+        if path == "/slow.png" { slowGate.waitUntilOpen(30) } else { gate.waitUntilOpen(30) }
 
         let status: Int
         let reason: String
