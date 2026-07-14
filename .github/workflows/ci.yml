@@ -981,23 +981,56 @@ jobs:
           fi
 
       # ── Prove it LINKED, rather than trusting a zero exit code ──────────────
-      - name: Assert the app AND the XCTest bundle were produced
+      # `xcodebuild` exiting 0 is not the assertion. A scheme change that quietly
+      # stopped building the TEST target would leave this job green over an
+      # uncompiled test suite — and the test target is the half that matters here,
+      # because BnHostTests/*.swift is where the 72 assertions (and the frame-table
+      # declaration the required .NET drift test parses) actually live.
+      #
+      # The three artefacts, and what each one rules out:
+      #   · BnHostTests.xctest — the test bundle LINKED. It is a PlugIn INSIDE the
+      #     app (BnHost.app/PlugIns/), not a sibling of it, so it is found by name
+      #     rather than by depth.
+      #   · the .xctestrun — the run plan. This is precisely what `build-for-testing`
+      #     exists to emit, i.e. "a device could now run this without building it".
+      #   · blazornative_init, defined in the app's Mach-O. Scanned across BOTH
+      #     BnHost and BnHost.debug.dylib: Xcode's debug builds SPLIT the app into a
+      #     stub executable plus a debug dylib that carries the code (and therefore
+      #     the force_loaded NativeAOT archive), so pinning the symbol to the
+      #     executable alone would assert nothing about where it really landed.
+      - name: Assert the app, the XCTest bundle and the run plan were all produced
         run: |
-          set -euo pipefail
+          set -uo pipefail
           dd="$RUNNER_TEMP/DerivedData/Build/Products"
-          app=$(find "$dd" -maxdepth 2 -name 'BnHost.app' -type d | head -1)
-          bundle=$(find "$dd" -maxdepth 2 -name 'BnHostTests.xctest' -type d | head -1)
-          echo "app    : ${app:-<none>}"
-          echo "xctest : ${bundle:-<none>}"
-          if [ -z "$app" ] || [ -z "$bundle" ]; then
-            find "$dd" -maxdepth 3 2>/dev/null | head -50 >&2 || true
-            echo "build-for-testing exited 0 but did not produce BOTH products. The XCTest bundle is the half that matters: it is the only thing that compiles BnHostTests/*.swift — the 72 assertions that ios.yml runs — so a scheme change that quietly stopped building it would leave this gate green over an uncompiled test suite." >&2
+          app=$(find "$dd" -name 'BnHost.app' -type d | head -1)
+          bundle=$(find "$dd" -name 'BnHostTests.xctest' -type d | head -1)
+          xctestrun=$(find "$dd" -maxdepth 1 -name '*.xctestrun' | head -1)
+          echo "app       : ${app:-<none>}"
+          echo "xctest    : ${bundle:-<none>}"
+          echo "xctestrun : ${xctestrun:-<none>}"
+          if [ -z "$app" ] || [ -z "$bundle" ] || [ -z "$xctestrun" ]; then
+            find "$dd" -maxdepth 4 2>/dev/null | head -60 >&2 || true
+            echo "build-for-testing exited 0 but did not produce all three artefacts. The XCTest bundle and its run plan are the half that matters: BnHostTests/*.swift is the ONLY place the 72 assertions live, so a scheme change that quietly stopped building the test target would leave this gate green over an uncompiled test suite." >&2
             exit 1
           fi
-          # The linked binaries must actually carry the shell's symbols.
-          nm -gU "$app/BnHost" 2>/dev/null | grep -q 'blazornative_init' \
-            || { echo "BnHost linked without blazornative_init — the NativeAOT archive was not force_loaded" >&2; exit 1; }
-          echo "LINKED: BnHost.app + BnHostTests.xctest, with the runtime archive force-loaded."
+
+          # blazornative_init must be DEFINED in the app's own Mach-O — the proof the
+          # NativeAOT archive was force_loaded and not merely referenced.
+          found=""
+          for bin in "$app/BnHost" "$app/BnHost.debug.dylib"; do
+            [ -f "$bin" ] || continue
+            if nm -gU "$bin" 2>/dev/null | grep -q 'blazornative_init'; then
+              found="$bin"
+              break
+            fi
+          done
+          if [ -z "$found" ]; then
+            echo "=== Mach-O binaries in the app bundle ===" >&2
+            ls -la "$app" >&2 || true
+            echo "No binary in BnHost.app DEFINES blazornative_init. The NativeAOT static archive was not force_loaded — the app would launch and SIGSEGV rather than fail to build, which is why it is asserted here." >&2
+            exit 1
+          fi
+          echo "LINKED: BnHost.app + BnHostTests.xctest + the run plan; blazornative_init is defined in $(basename "$found")."
 
       - name: Upload — ios-build logs
         if: always()
