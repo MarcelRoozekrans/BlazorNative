@@ -55,7 +55,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.AspNetCore.Components" Version="10.0.*" />
+    <PackageReference Include="Microsoft.AspNetCore.Components" Version="10.0.1*" />
     <!-- MouseEventArgs (BnButton.OnClick) lives in Components.Web — same
          pinned pair as BlazorNative.Renderer. -->
     <PackageReference Include="Microsoft.AspNetCore.Components.Web" Version="10.0.*" />
