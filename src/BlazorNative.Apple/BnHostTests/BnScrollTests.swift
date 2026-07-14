@@ -46,6 +46,34 @@
 // `contentOffset` when `contentSize` SHRINKS, so a page scrolled to 600 whose content
 // later drops to 300 is left scrolled past its own end. Android's per-layout re-clamp
 // handles that for free; iOS must handle it itself.
+//
+// ── MUTATION EVIDENCE (measured on CI, not asserted from an armchair) ────────
+//
+// **`flexShrink: 1` on the content node** (the CSS instinct — the `.mm`'s one absent
+// line): 8 tests red, 41 green, and **THE ROW FRAMES ARE NOT AMONG THEM.** The content
+// node collapses 800 → 200, and every row keeps its 80 and its y = 80i — in this file
+// AND in `BnScrollDemoTests`, whose entire frame table (rows, nested flex row, the
+// Grow=1 box's 200, the back button, the root column hugging its sections) **stays
+// green**. The ONLY corrupted numbers are `contentSize` (200, not 800), the scroll
+// range it implies (0, not 600), and — the visible symptom — the rows no longer move
+// when the offset is driven. Exactly what Android's mutation run found: a screenshot of
+// the first 200pt looks perfect and 600pt of content can never be reached. (It also
+// makes the definite-height diagnostic cry wolf on a healthy flex-sized viewport, which
+// is a nice second signal and not one anybody predicted.)
+//
+// **Dropping the container-style ignore rule** (`handleSetStyle`): exactly
+// [testContainerStylesOnAScrollNodeAreIgnoredAndLogged] goes red — the six diagnostics
+// are gone, and `padding: 16` alone moves the content node to x = 16 and squeezes it to
+// 268 wide, taking every row with it.
+//
+// **Dropping the synthetic content node's purge** (`handleRemove`): exactly the two
+// `BnYogaLifecycleTests` scroll tests go red (47 green / 2 red), on the counts —
+// `yogaContentNodeCount` and `scrollContentCount` stay at 1 after the node that owned
+// them is freed. It does NOT crash, and the reason is worth writing down: the stale
+// entry IS a handle into memory `YGNodeFreeRecursive` has already released, and the only
+// thing standing between it and a dereference is `applyScrollFrames`' `guard let scroll
+// = views[scrollId]` — the view is gone, so the loop skips it. The guard is load-bearing
+// for memory safety and reads like bookkeeping. THAT is why the counts are pinned.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import XCTest

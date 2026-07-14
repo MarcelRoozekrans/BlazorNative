@@ -53,7 +53,6 @@
 //    or React Native stylesheet collapses it to 200 — and leaves EVERY ROW FRAME
 //    CORRECT, so only `contentSize` is wrong and the page simply stops scrolling.
 //
-
 // The style GRAMMAR has exactly one normative statement —
 // docs/plans/2026-07-13-phase-6.1-design.md §"Style value grammar (normative)" —
 // and it is deliberately not restated here: three copies of a grammar is how two

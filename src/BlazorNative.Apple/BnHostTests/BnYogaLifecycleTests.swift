@@ -40,7 +40,16 @@
 // what gets disposed. On iOS the stakes are a step higher than a leak: the content node
 // is freed by `YGNodeFreeRecursive` along with its scroll node, so a handle the shell
 // keeps afterwards is a **DANGLING `YGNodeRef`**, and the next `calculateAndApply` reads
-// through it.
+// through it — unless something stops it.
+//
+// **MUTATION EVIDENCE (6.2, measured on CI):** drop the content node's purge from
+// `handleRemove` and exactly these two tests go red (47 passed / 2 failed) — on the
+// COUNTS: `yogaContentNodeCount` and `scrollContentCount` stay at 1 after the node that
+// owned them was freed. It does **not** crash, and the reason is the interesting part:
+// the one thing between that stale handle and a dereference is `applyScrollFrames`'
+// `guard let scroll = views[scrollId]` — the view is gone, so the loop skips the entry.
+// A guard that reads like bookkeeping is holding up memory safety, and no frame
+// assertion anywhere can see it. That is why the counts are pinned.
 //
 // ── MUTATION EVIDENCE (measured on CI, not asserted from an armchair) ────────
 //
