@@ -501,7 +501,12 @@ jobs:
       #       Asserted as a NUMBER because no frame can see it and no device test can stage
       #       the race (the main looper is FIFO: a posted callback runs BEFORE any batch a
       #       test posts after it, so a device test can only stage the clear WINNING).
-      #       MUTATION: move the bump back below the early return ⇒ reddens by name.
+      #       MUTATION (RUN, throwaway branch): move the bump back below the early return ⇒
+      #       1 RED, this test, NOTHING ELSE — "A CLEAR BUMPS IT TOO … expected:<2> but was:<1>".
+      #       Not a frame table, not the clear-in-flight test above it. The iOS twin reddens
+      #       identically. And the I1 mutation (drop the identity half from the ONE guard
+      #       function) ⇒ JVM lane 82/1, on ImageRequestGuardTest's RESET COLLISION — which is
+      #       exactly what routing clearIfMine through that function bought.
       #
       # Also fixed, WITHOUT new tests:
       #   · I1 — WidgetMapper.clearIfMine re-implemented the generation-AND-identity

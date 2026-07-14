@@ -33,12 +33,13 @@
 // places*. **A mutation that must be applied in two places to redden one test is a mutation
 // whose second site is unpinned.** Both sites now route through `bnIsLiveImageRequest`.
 //
-// **MUTATION EVIDENCE (measured on CI):** remove the identity half from
-// `bnIsLiveImageRequest` — ONE line, ONE place, and the shell's only copy of the decision —
-// and `testTheRESETCollisionIsNotLiveEvenThoughTheGenerationsMatch` is **the only test in
-// the whole suite that goes red for it.** Not one device test, not the double mount, not
-// the lifecycle tests. That is not an argument for the unit test's convenience; it is the
-// argument for its EXISTENCE.
+// **MUTATION EVIDENCE (RUN on CI, throwaway branch, against the 72/0 bar):** remove the
+// identity half from `bnIsLiveImageRequest` — ONE line, ONE place, and the shell's only copy
+// of the decision — ⇒ **70 passed / 2 failed**, and
+// `testTheRESETCollisionIsNotLiveEvenThoughTheGenerationsMatch` is the only test in the suite
+// that could catch it. Not one device test, not the double mount, not the lifecycle tests.
+// That is not an argument for the unit test's convenience; it is the argument for its
+// EXISTENCE. (Kotlin's twin, same mutation, same shape: JVM lane 82/1.)
 // ─────────────────────────────────────────────────────────────────────────────
 
 import XCTest

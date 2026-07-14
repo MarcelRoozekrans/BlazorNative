@@ -33,6 +33,12 @@ package io.blazornative.shell
  * including the reset collision, which no single-mount instrumented test can stage. Deleting
  * the identity half used to leave the whole suite green; it does not any more.
  *
+ * **MUTATION EVIDENCE (RUN):** drop `&& currentView === requestView` — ONE line, and since the
+ * Gate 3 review the shell's ONLY copy of the decision — and the JVM lane goes **82 passed / 1
+ * failed**, on `THE RESET COLLISION: same id, same generation 1, DIFFERENT view — NOT live`.
+ * Before the review, `WidgetMapper.clearIfMine` held a second copy that this mutation did not
+ * touch, so the eviction path was defended by nothing.
+ *
  * Gate 3 owes the same conjunction in Swift, and owes it for the same reason.
  *
  * @param currentGeneration the node's LIVE generation (`null` = the node has none — it was

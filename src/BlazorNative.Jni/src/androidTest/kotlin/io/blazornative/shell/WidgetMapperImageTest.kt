@@ -289,8 +289,14 @@ class WidgetMapperImageTest {
      * it is, and `ImageRequestGuardTest.a_superseded_generation_is_not_live` (JVM lane) is what
      * that fact then BUYS. Two pinned facts, one contract row.
      *
-     * **MUTATION:** move the bump back below `if (url.isNullOrEmpty()) return` ⇒ this reddens by
-     * name, on the clear and on the empty string.
+     * **MUTATION EVIDENCE (RUN on a throwaway branch, against the 111/0 bar):** move the bump back
+     * below `if (url.isNullOrEmpty()) return` ⇒ **1 red, here, and NOTHING ELSE** —
+     * `A CLEAR BUMPS IT TOO … expected:<2> but was:<1>`. Not a frame table, not
+     * [a_clear_while_the_request_is_IN_FLIGHT_cancels_it_and_nothing_re_inflates] one test above:
+     * the dispose WINS that race in every ordering a device test can produce, so this number is
+     * the only witness there can be. That is the finding, not a weakness of the pin. (The iOS
+     * twin was run too, and reddens identically: `("Optional(1)") is not equal to
+     * ("Optional(2)")`.)
      */
     @Test fun every_src_write_bumps_the_generation_INCLUDING_a_clear() {
         val host = section(src = ImageFixtureServer.SLOW_URL)
