@@ -34,6 +34,35 @@ func bnText(_ nodeId: Int32, _ text: String) -> BnPatch {
     .replaceText(nodeId: nodeId, text: text)
 }
 
+// ── The scroll view and its SYNTHETIC content view (Phase 6.2) ───────────────
+
+/// A `scroll` node's view, unwrapped — the VIEWPORT.
+func bnScrollView(_ view: UIView,
+                  file: StaticString = #filePath, line: UInt = #line) throws -> UIScrollView {
+    try XCTUnwrap(view as? UIScrollView,
+                  "a `scroll` node's view must be a UIScrollView (got \(type(of: view)))",
+                  file: file, line: line)
+}
+
+/// The SYNTHETIC content view inside a viewport — the single meaningful child of a
+/// `UIScrollView`, holding every one of the scroll node's wire children.
+///
+/// Found by TYPE, never by index, and that is not fussiness: **`UIScrollView` keeps its
+/// own scroll-indicator subviews**, so `scroll.subviews[0]` is a coin flip and
+/// `subviews.count == 1` is simply false. Android can say "the ScrollView's ONLY child
+/// is the content view" because a `ScrollView` throws on a second; iOS cannot, and a
+/// test that assumed it would be pinning UIKit's private view hierarchy instead of this
+/// shell's contract.
+func bnContentView(of scroll: UIScrollView,
+                   file: StaticString = #filePath, line: UInt = #line) throws -> UIView {
+    let content = scroll.subviews.compactMap { $0 as? BnScrollContentView }
+    XCTAssertEqual(content.count, 1,
+                   "a viewport has exactly ONE synthetic content view — the shell creates it with "
+                   + "the UIScrollView and purges it with it (got \(content.count))",
+                   file: file, line: line)
+    return try XCTUnwrap(content.first, "no content view under the viewport", file: file, line: line)
+}
+
 // ── Frame assertions ─────────────────────────────────────────────────────────
 
 /// Asserts a UIView's computed frame, in points, RELATIVE TO ITS PARENT.

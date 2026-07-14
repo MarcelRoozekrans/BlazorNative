@@ -31,6 +31,17 @@
 //
 // The iOS twin of `YogaNodeLifecycleAndroidTest`, assertion for assertion.
 //
+// ── PHASE 6.2: AND THE SUBTREE NOW CONTAINS A NODE NO PATCH CAN NAME ─────────
+//
+// A `scroll` node's SYNTHETIC content node is the shell's, not the renderer's — it is on
+// neither wire. Two more tests below (the twins of Android's two) prove the purge reaches
+// it: once by a `RemoveNode` naming the scroll node, and once by one naming an ANCESTOR
+// of it — **which is what navigation actually emits**, since the page's root column is
+// what gets disposed. On iOS the stakes are a step higher than a leak: the content node
+// is freed by `YGNodeFreeRecursive` along with its scroll node, so a handle the shell
+// keeps afterwards is a **DANGLING `YGNodeRef`**, and the next `calculateAndApply` reads
+// through it.
+//
 // ── MUTATION EVIDENCE (measured on CI, not asserted from an armchair) ────────
 //
 // Delete `handleRemove`'s purge loop and drop only the NAMED node, and this test
@@ -117,6 +128,111 @@ final class BnYogaLifecycleTests: XCTestCase {
             after.yogaViews, baseline.yogaViews,
             "…and the view→node mappings, which are the last edge from a native node to a UIView "
             + "(a stale one keeps a measure func pointing at a released view)")
+    }
+
+    // ── Phase 6.2: …AND THE SUBTREE INCLUDES THE NODE NO PATCH EVER NAMES ────
+
+    /// A `scroll` node's SYNTHETIC content node is created by the shell, lives in both
+    /// trees, and is on **neither wire**: the renderer emits one `RemoveNodePatch` for the
+    /// scroll node and knows nothing about the node underneath it. So the purge has to
+    /// reach it — and the reason it does is structural rather than special-cased: the
+    /// content node is a Yoga CHILD of its scroll node, so `bn_yoga_node_free_subtree`
+    /// frees it for nothing.
+    ///
+    /// **Which is exactly why the shell's own handle to it must go in the same breath.**
+    /// On Android a content node left in the map is a leak (it pins the content View, the
+    /// rows under it, and the Activity Context). **Here it is a `YGNodeRef` into memory
+    /// `YGNodeFreeRecursive` has already freed** — and the next `calculateAndApply` reads
+    /// its computed frame. The 6.1 mutation run proved that shape of mistake CRASHES the
+    /// test host rather than merely leaking; nothing about it is hypothetical.
+    ///
+    /// Synthetic (not the real renderer, unlike the test above) because a `RemoveNode` for
+    /// a scroll node is exactly the patch under test, and there is no demo that mounts and
+    /// unmounts one. The twin of `YogaNodeLifecycleAndroidTest
+    /// .removing_a_scroll_node_frees_the_SYNTHETIC_content_node_too`.
+    func testRemovingAScrollNodeFreesTheSyntheticContentNodeToo() {
+        let host = BnSyntheticHost()
+
+        host.render([
+            bnCreate(1, "scroll", nil),
+            bnStyle(1, "width", "300"), bnStyle(1, "height", "200"),
+            bnCreate(10, "view", 1), bnStyle(10, "height", "80"),
+            bnCreate(11, "view", 1), bnStyle(11, "height", "80"),
+            bnCreate(12, "view", 11),   // a grandchild, INSIDE the content subtree
+        ])
+
+        XCTAssertEqual(host.mapper.nodeCount, 4, "four WIRE nodes: the scroll and its three descendants")
+        XCTAssertEqual(host.mapper.yogaContentNodeCount, 1,
+                       "ONE synthetic content node — the shell's, never the renderer's")
+        XCTAssertEqual(host.mapper.scrollContentCount, 1,
+                       "…and it is in the VIEW tree too, or it is in neither")
+        XCTAssertEqual(host.mapper.yogaViewCount, 5,
+                       "the Yoga tree holds the four wire nodes AND the synthetic one — five view "
+                       + "mappings, four of which any patch can name")
+
+        // ONE patch. It stands for the scroll node, its content node, and everything under
+        // them.
+        host.render([.removeNode(nodeId: 1)])
+
+        XCTAssertEqual(host.mapper.nodeCount, 0, "the wire nodes are gone")
+        XCTAssertEqual(host.mapper.yogaNodeCount, 0, "…and their Yoga nodes")
+        XCTAssertEqual(host.mapper.yogaContentNodeCount, 0,
+                       "THE PIN: the SYNTHETIC content node is gone with them. No patch named it; "
+                       + "the free reached it because it is a Yoga CHILD of the scroll node. A "
+                       + "handle left behind here is a DANGLING YGNodeRef — the memory is already "
+                       + "freed — and the next calculateAndApply dereferences it. (Android's twin "
+                       + "merely leaks.)")
+        XCTAssertEqual(host.mapper.scrollContentCount, 0, "…and the view-tree half of the pair")
+        XCTAssertEqual(host.mapper.yogaViewCount, 0, "…and its view mapping")
+        XCTAssertTrue(host.root.subviews.isEmpty, "the UIScrollView itself is detached from the host")
+    }
+
+    /// **…AND THE PATCH THE APP ACTUALLY EMITS DOES NOT NAME THE SCROLL NODE AT ALL.**
+    ///
+    /// The test above removes the scroll node itself. **Navigation never does that.**
+    /// `BnScrollDemo`'s scroll lives inside a root `BnColumn`, and navigating away disposes
+    /// the **page** — so the real `RemoveNodePatch` names the **column**, and the scroll
+    /// node (and, two levels down, the synthetic content node that no patch could name even
+    /// in principle) has to be reached **transitively**.
+    ///
+    /// It works today: both subtree walks — the view hierarchy's and Yoga's — are structural
+    /// and find it for free. But the one path the app actually takes was the one nothing
+    /// asserted, and "it works transitively" is an assumption until a test says so. Same
+    /// counts as above; the only difference is the patch, and the patch is the whole point.
+    func testRemovingAWrapperFreesTheScrollNodeAndItsSyntheticContentNode() {
+        let host = BnSyntheticHost()
+
+        // The demo's shape: a root column, a scroll inside it, rows inside that.
+        host.render([
+            bnCreate(1, "view", nil),                                   // ← the root BnColumn
+            bnCreate(2, "scroll", 1),
+            bnStyle(2, "width", "300"), bnStyle(2, "height", "200"),
+            bnCreate(10, "view", 2), bnStyle(10, "height", "80"),
+            bnCreate(11, "view", 2), bnStyle(11, "height", "80"),
+            bnCreate(12, "view", 11),   // a grandchild, INSIDE the content subtree
+        ])
+
+        XCTAssertEqual(host.mapper.nodeCount, 5,
+                       "five WIRE nodes: the wrapper, the scroll and its three descendants")
+        XCTAssertEqual(host.mapper.yogaContentNodeCount, 1,
+                       "ONE synthetic content node, two levels below the node the patch will name")
+        XCTAssertEqual(host.mapper.scrollContentCount, 1, "…and its view-tree half")
+        XCTAssertEqual(host.mapper.yogaViewCount, 6,
+                       "six Yoga view mappings — the five wire nodes plus the synthetic one")
+
+        // THE PATCH NAVIGATION ACTUALLY EMITS: it names the WRAPPER. Nothing in it mentions
+        // the scroll node, and nothing could ever mention the content node.
+        host.render([.removeNode(nodeId: 1)])
+
+        XCTAssertEqual(host.mapper.nodeCount, 0, "the wrapper and everything under it are gone")
+        XCTAssertEqual(host.mapper.yogaNodeCount, 0, "…and their Yoga nodes")
+        XCTAssertEqual(host.mapper.yogaContentNodeCount, 0,
+                       "THE PIN: the SYNTHETIC content node is freed by a patch that names its "
+                       + "GRANDPARENT. This is the path the app takes on EVERY navigation away from "
+                       + "a page with a scroll on it — the other test's patch (RemoveNode on the "
+                       + "scroll itself) is the one the app never emits.")
+        XCTAssertEqual(host.mapper.scrollContentCount, 0, "…and the view-tree half")
+        XCTAssertEqual(host.mapper.yogaViewCount, 0, "…and its Yoga view mapping — the last edge")
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────

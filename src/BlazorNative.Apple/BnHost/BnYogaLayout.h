@@ -109,6 +109,67 @@ void bn_yoga_node_remove_child(bn_yoga_node _Nonnull parent, bn_yoga_node _Nonnu
 /// `RemoveNode` needs, since the patch carries only the node's own id.
 bn_yoga_node _Nullable bn_yoga_node_get_owner(bn_yoga_node _Nonnull node);
 
+// ── `scroll`: the SYNTHETIC CONTENT NODE (Phase 6.2) ─────────────────────────
+//
+// A `scroll` node is a VIEWPORT, and its wire children live one level deeper than
+// the wire says: under a SYNTHETIC content node the shell creates and the renderer
+// never hears about. That node's COMPUTED HEIGHT *is* the content size — Yoga's
+// number, read straight out (`bn_yoga_node_get_frame`), never a shell-side union of
+// child frames. **A scroll node's wire child at index *i* is the CONTENT node's child
+// at index *i***, in this tree AND in `BnWidgetMapper`'s view tree: the second
+// index-mapping rule after 6.1's text collapse, and it fails the same way — silently,
+// as a skew. (Worse here than on Android: Android THROWS on an out-of-range insert
+// index, iOS CLAMPS — the recorded 6.1 decision — so a skew that fails loudly there
+// is silent here.)
+
+/// Turns [scroll] into a VIEWPORT and creates its synthetic CONTENT node, returning
+/// it. The two facts are one call because they are one decision, and splitting them
+/// is how a scroll node ends up with an overflow flag and no content node (or the
+/// reverse) in one of the two shells. The twin of `YogaLayout.attachContentNode`.
+///
+/// The content node's styles are the whole of it, and **the one it must NOT have is
+/// the load-bearing one**:
+///
+///   - `height: auto`      — its computed height IS the content size.
+///   - `width: 100%`       — it spans the viewport, so a row with no width stretches.
+///   - `flexDirection: column` — Yoga's default, set anyway: this node's layout is the
+///     SHELL's, and an explicit column is one less thing for two shells to disagree on.
+///   - **`flexShrink`: NEVER SET.** Yoga's default is **0** where CSS's is 1, and that
+///     default is the ENTIRE mechanism by which the content node keeps its 800 against
+///     a 200-high viewport: free space is `200 − 800 = −600`, negative free space is
+///     distributed by the SHRINK pass in proportion to `flexShrink`, and 0 means "none
+///     of it". It is **not** `overflow: scroll` that does this (Gate 2's Yoga-only test
+///     computes the same 800 with `overflow: visible`, and computes 200 the moment
+///     `flexShrink: 1` is set). Write that one line and the page stops scrolling with
+///     no error anywhere — and, as Android proved, every ROW frame stays correct; the
+///     only corrupted number is the one the shell reads as `contentSize`.
+///
+/// `overflow: scroll` is set on the SCROLL node because that is what a scrolling
+/// viewport MEANS and what React Native sets — not because it computes anything. The
+/// contract does not claim it does.
+///
+/// The content node is a Yoga CHILD of [scroll], so [bn_yoga_node_free_subtree] frees
+/// it for nothing — which is exactly why the purge must not be short-circuited: on iOS
+/// a descendant the shell keeps a handle to after the free is a **dangling
+/// `YGNodeRef`**, not a leak.
+bn_yoga_node _Nonnull bn_yoga_node_attach_scroll_content(bn_yoga_node _Nonnull scroll);
+
+/// True when [node]'s **DECLARED** height is a POINT or a PERCENT — i.e. the author
+/// gave the node a definite height of its own. The first half of the definite-height
+/// diagnostic (`BnWidgetMapper.warnIfIndefiniteHeight`); the second half is a
+/// comparison of COMPUTED heights, which the shell reads off
+/// [bn_yoga_node_get_frame]. Yoga's declared style is not otherwise reachable from
+/// Swift, and it must not be tracked shell-side in parallel — a second copy of "what
+/// did the author declare?" is a second thing to keep in step.
+///
+/// **Known false negative, ledgered:** `height: 100%` against a parent with no
+/// definite height resolves to `auto` in Yoga — the node hugs its content and dies
+/// exactly as silently — but its DECLARED unit is `PERCENT`, so this answers 1 and the
+/// diagnostic exits at its first condition. Closing it means asking Yoga whether the
+/// percent actually RESOLVED, which it does not expose. Same false negative on Android,
+/// deliberately: one rule, two shells.
+int32_t bn_yoga_node_has_declared_height(bn_yoga_node _Nonnull node);
+
 /// FREES [node] AND EVERY DESCENDANT, clearing each one's measure function first.
 ///
 /// The renderer emits **one** `RemoveNodePatch` for a whole subtree (its
@@ -126,6 +187,31 @@ void bn_yoga_node_free_subtree(bn_yoga_node _Nonnull node);
 /// Kotlin's `YogaLayout.YOGA_STYLES`); matching is ORDINAL/case-sensitive on
 /// every shell. Pinned against .NET's set by `ShellStyleTableDriftTests`.
 int32_t bn_yoga_is_layout_style(const char* _Nonnull name);
+
+/// True when [name] is one of the six CONTAINER-layout styles that are **IGNORED AND
+/// LOGGED on a `scroll` node** (design decision 6 — NORMATIVE for both shells;
+/// `kScrollIgnoredContainerStyles` in the .mm is the list, and Kotlin's
+/// `SCROLL_IGNORED_CONTAINER_STYLES` is its twin).
+///
+/// Every one of them styles the *scroll* node, whose only Yoga child is the synthetic
+/// content node — so every one of them fails silently and bafflingly:
+/// `flexDirection: row` lays the content node out across the cross axis and stretches
+/// it to the viewport height (**the page just stops scrolling**); `justifyContent` /
+/// `alignItems` distribute free space that on a scrolling viewport is **NEGATIVE**
+/// (200 − 800 = −600), so `center` offsets the content to y = −300 and the top of the
+/// page becomes **permanently unreachable**; `gap` spaces the scroll node's ONE child
+/// against nothing; `padding` insets the content node and moves every frame in the
+/// parity table.
+///
+/// ITEM styles (`flexGrow`, `flexShrink`, `flexBasis`, `alignSelf`, the box, `margin`,
+/// `position`, the offsets) and `backgroundColor` apply NORMALLY: a `BnScroll` *is* a
+/// flex item, and how the viewport is placed in its parent is the author's business.
+/// Over-broad filtering here would be as wrong as none.
+///
+/// The two shells' lists are pinned EQUAL by `ShellStyleTableDriftTests
+/// .TheTwoShellsScrollIgnoreLists_AreIdenticalToEachOther`, which parses the `.mm`'s
+/// declaration with the same source-format-agnostic parser it uses for `kYogaStyles`.
+int32_t bn_yoga_is_scroll_ignored_container_style(const char* _Nonnull name);
 
 /// Applies ONE layout style. A **NULL [value] resets** the property to Yoga's
 /// default (the wire's "reset" — the null-reset fix's other half); anything the

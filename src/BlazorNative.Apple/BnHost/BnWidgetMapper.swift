@@ -41,6 +41,21 @@
 //      a container's children out inside its padding box, and a surviving view-level
 //      inset would apply it a second time.
 //
+// ── PHASE 6.2: `scroll` — THE SYNTHETIC CONTENT NODE ─────────────────────────
+// A `scroll` node is a VIEWPORT (a `UIScrollView`), and its wire children live one
+// level deeper than the wire says: under a synthetic content view/node the shell
+// creates and the renderer never hears about ([scrollContents] / [contentNodes]).
+// The content node's COMPUTED HEIGHT *is* `contentSize` — Yoga's number, read
+// straight out, never a shell-side union of child frames.
+//
+// **A scroll node's wire child at index *i* is the CONTENT node's child at index
+// *i***, in the view tree AND the Yoga tree ([containerFor]): the SECOND
+// index-mapping rule after the text collapse above, and it fails the same way —
+// silently, as a skew. It is worse here than on Android, which is why the index tests
+// are mirrored one for one: Android THROWS on an out-of-range insert index, iOS
+// CLAMPS (the recorded 6.1 decision), so a skew that fails loudly there is silent
+// here.
+//
 // And the Yoga node is a RAW native allocation: nothing will ever free it for you.
 // [handleRemove] purges whole subtrees (one RemoveNodePatch stands for one) and
 // [destroy] drops the tree — every navigation replaces it. `BnYogaLifecycleTests`
@@ -60,6 +75,20 @@ final class BnControlTarget: NSObject {
     init(_ handler: @escaping () -> Void) { self.handler = handler }
     @objc func fire() { handler() }
 }
+
+/// Phase 6.2 — **THE SYNTHETIC CONTENT VIEW**: the single child of a `scroll` node's
+/// `UIScrollView`, holding every one of that node's wire children. Behaviourally it is
+/// the plain `UIView` the design calls for — it places nothing (Yoga assigns its
+/// subviews' frames) and it clips nothing (Yoga's `overflow` default is `visible`; the
+/// VIEWPORT is the one thing in this shell that clips).
+///
+/// It is a NAMED type only so it can be FOUND. `UIScrollView` keeps its own scroll
+/// indicators in `subviews`, so "the content view is `scroll.subviews[0]`" is a lie the
+/// shell must not tell and the tests must not believe — `scroll.subviews.compactMap { $0
+/// as? BnScrollContentView }.first` is the honest question. (Android's content view is
+/// a `BnYogaFrameLayout` for a DIFFERENT reason — there the subclass carries the
+/// `onMeasure` fallback and the layout suppression. Here it carries nothing at all.)
+final class BnScrollContentView: UIView {}
 
 // ── The native measurement callback (DoD #3) ─────────────────────────────────
 
@@ -110,6 +139,14 @@ final class BnWidgetMapper {
     /// childless `view` is a container (non-negotiable #6).
     private static let measuredNodeTypes: Set<String> = ["text", "button", "input", "image"]
 
+    /// The one nodeType that is a VIEWPORT and owns a synthetic content node — and it
+    /// is deliberately NOT in [measuredNodeTypes]: the measure func attaches BY
+    /// NODETYPE, and a `scroll` node is a container Yoga sizes itself (a measure func on
+    /// it would let `UIScrollView`'s intrinsic size speak over the author's `Height`).
+    /// The same constant the `.mm` keys the content node's styles on — one contract, one
+    /// spelling.
+    private static let scroll = "scroll"
+
     /// The host container the top-level (parentless) node is added into — the twin
     /// of Android's widget_root. A plain UIView does not re-place its subviews (no
     /// autoresizing mask is set, and `layoutSubviews` places nothing), so unlike
@@ -132,6 +169,47 @@ final class BnWidgetMapper {
     /// removing it must drop only the map entry — detaching the parent UIButton (or
     /// removing "its" Yoga node, which is the button's) would be catastrophic.
     private var collapsedAliases: Set<Int32> = []
+
+    /// Phase 6.2 — **the SYNTHETIC content VIEWS**: a `scroll` node's id → the
+    /// [BnScrollContentView] inside its `UIScrollView` that holds its wire children.
+    ///
+    /// A scroll node's wire children go **into the content view**, at the index the
+    /// patch names — and the Yoga tree does the same, into [contentNodes] — or the two
+    /// trees' child indices skew and every frame after the first row is wrong. **The
+    /// synthetic node is in BOTH trees or NEITHER**: these two maps' entries are made
+    /// in the same breath ([handleCreate]) and purged in the same breath
+    /// ([handleRemove]).
+    ///
+    /// It is also the answer to "what view does a child of node N parent into?" — see
+    /// [containerFor]. Never on the wire; the renderer knows nothing about it.
+    private var scrollContents: [Int32: UIView] = [:]
+
+    /// …and the Yoga half: a `scroll` node's id → its synthetic content NODE. Keyed by
+    /// the SCROLL node's id because that is the only id there is.
+    ///
+    /// Membership here is also what makes a node "a scroll node" to [handleSetStyle]
+    /// (the container-style ignore rule) and to [calculateAndApply] (the definite-height
+    /// warning) — there is no separate nodeType table, and adding one would be a second
+    /// thing to keep in step with this one.
+    ///
+    /// NOT in [yogaNodes]: that map is the WIRE nodes, and a synthetic node in it would
+    /// make [calculateAndApply]'s frame loop try to place a view it does not own. The
+    /// content node IS a Yoga child of its scroll node, which is what makes 6.1's
+    /// subtree free reach it — **and is exactly why a stale entry here is a DANGLING
+    /// `YGNodeRef`, not a leak.**
+    private var contentNodes: [Int32: UnsafeMutableRawPointer] = [:]
+
+    /// The scroll-node diagnostics already emitted — `(nodeId, message)` in order — and
+    /// the warn-once keys that got them there. See [diagnose].
+    ///
+    /// Both of the scroll node's diagnostics (the container-style drop and the
+    /// definite-height warning) name a failure whose symptom is a page that does not
+    /// move: no exception, no wrong frame, nothing to see. So they are RECORDED as well
+    /// as logged — `NSLog` is not an assertion surface, and a diagnostic no test can see
+    /// is a diagnostic that can quietly stop firing.
+    private struct BnDiagnosticKey: Hashable { let nodeId: Int32; let kind: String }
+    private var diagnosed: [(nodeId: Int32, message: String)] = []
+    private var diagnosedKeys: Set<BnDiagnosticKey> = []
 
     /// The synthetic Yoga root: not a patch node, it IS the host view. Its children
     /// mirror `root.subviews` (the top-level nodes).
@@ -180,6 +258,13 @@ final class BnWidgetMapper {
         bn_yoga_node_free_subtree(hostRoot)
 
         yogaNodes.removeAll()
+        // The synthetic content nodes were Yoga CHILDREN of their scroll nodes, so the
+        // free above already reclaimed them — these handles are now DANGLING and must go
+        // with the rest. (Android's twin merely leaks; here it is memory safety.)
+        contentNodes.removeAll()
+        scrollContents.removeAll()
+        diagnosed.removeAll()
+        diagnosedKeys.removeAll()
         viewToNode.removeAll()
         for (_, entry) in eventTargets {
             entry.control.removeTarget(entry.target, action: nil, for: .allEvents)
@@ -212,11 +297,29 @@ final class BnWidgetMapper {
     /// and nothing else).
     var nodeCount: Int { views.count }
 
-    /// The Yoga tree's live nodes. Collapsed aliases are absent BY DESIGN.
+    /// The Yoga tree's live WIRE nodes. Collapsed aliases are absent BY DESIGN; so are
+    /// the synthetic content nodes ([yogaContentNodeCount] counts those).
     var yogaNodeCount: Int { yogaNodes.count }
 
-    /// The Yoga tree's view mappings — must track [yogaNodeCount] one-for-one.
+    /// The Yoga tree's view mappings — [yogaNodeCount] plus [yogaContentNodeCount] (a
+    /// synthetic content node places the content view, so it holds a mapping too).
     var yogaViewCount: Int { viewToNode.count }
+
+    /// Phase 6.2 — the live SYNTHETIC content NODES. **No patch ever names one**, so
+    /// only this can witness that removing a scroll node (or an ancestor of one) freed
+    /// it. Its return to zero is the pin: a stale entry here is a `YGNodeRef` into freed
+    /// native memory, and the next `calculateAndApply` dereferences it.
+    var yogaContentNodeCount: Int { contentNodes.count }
+
+    /// …and the view-tree half of the same pair.
+    var scrollContentCount: Int { scrollContents.count }
+
+    /// The scroll node's two runtime diagnostics (Phase 6.2): the container-style
+    /// ignore-and-log rule, and the definite-height warning. Exposed because `NSLog` is
+    /// not an assertion surface and both failures are SILENT on the device — a page that
+    /// simply does not move. `BnScrollTests` asserts them. The twin of Kotlin's
+    /// `WidgetMapper.scrollDiagnostics`.
+    var scrollDiagnostics: [String] { diagnosed.map { $0.message } }
 
     // ── Buffer on the callback thread; flush atomically on the main queue ─────
 
@@ -292,7 +395,135 @@ final class BnWidgetMapper {
             view.frame = CGRect(x: CGFloat(frame.x), y: CGFloat(frame.y),
                                 width: CGFloat(frame.width), height: CGFloat(frame.height))
         }
+        // The scroll pass runs AFTER the loop above, and the order is load-bearing: the
+        // offset clamp is against the VIEWPORT's bounds, which the loop above is what
+        // assigns. (A dictionary's iteration order is arbitrary — this cannot be folded
+        // into it.)
+        applyScrollFrames()
     }
+
+    /// Phase 6.2 — **THE CONTENT SIZE COMES FROM YOGA** (non-negotiable #3): the
+    /// synthetic content node's COMPUTED frame, read straight out, never a shell-side
+    /// union of child frames (two shells deriving it independently is precisely where
+    /// Android and iOS drift apart, and the whole reason the content node exists).
+    ///
+    /// Three things happen here, and the third is **iOS's alone**:
+    ///
+    ///  1. the content VIEW gets the content NODE's frame (it is not in [yogaNodes], so
+    ///     the loop above never sees it);
+    ///  2. `contentSize` becomes that frame's size — which is what makes the viewport
+    ///     scrollable at all;
+    ///  3. **`contentOffset` is CLAMPED when the content SHRINKS.** `UIScrollView` does
+    ///     not move `contentOffset` when `contentSize` gets smaller, so a page scrolled
+    ///     to 600 whose content later drops to 300 is left scrolled 300pt past its own
+    ///     end — a blank viewport the user cannot scroll back into except by flinging.
+    ///     **Android gets this for free** (`ScrollView.onLayout` ends with
+    ///     `scrollTo(mScrollX, mScrollY)`, which re-clamps against the content child's
+    ///     just-laid-out height on every layout it takes part in) — and the mechanism
+    ///     that feeds that clamp, `BnYogaFrameLayout.onMeasure`'s UNSPECIFIED fallback,
+    ///     is **ANDROID-SPECIFIC and has no `UIScrollView` equivalent to mirror.** What
+    ///     iOS owes instead is this clamp, done itself. (Design §"Why this works on
+    ///     Android"; `BnScrollTests.testShrinkingTheContentClampsAScrolledOffset` is the
+    ///     pin.)
+    ///
+    /// A clamp, not a reset: an offset still INSIDE the new range is the user's and is
+    /// left alone. Only the part that is now past the end is taken back.
+    private func applyScrollFrames() {
+        for (scrollId, contentNode) in contentNodes {
+            guard let scroll = views[scrollId] as? UIScrollView,
+                  let contentView = scrollContents[scrollId] else { continue }
+
+            warnIfIndefiniteHeight(scrollId: scrollId, contentNode: contentNode)
+
+            let frame = bn_yoga_node_get_frame(contentNode)
+            let size = CGSize(width: CGFloat(frame.width), height: CGFloat(frame.height))
+            contentView.frame = CGRect(origin: CGPoint(x: CGFloat(frame.x), y: CGFloat(frame.y)),
+                                       size: size)
+            scroll.contentSize = size
+
+            // The reachable range, in the viewport's own terms. `contentInsetAdjustment`
+            // is OFF (see [makeView]), so there is no inset to fold in and this is the
+            // same arithmetic Android's ScrollView does: content − viewport, floored at 0
+            // (content SHORTER than the viewport has no range at all, and a negative
+            // maximum would drag the offset above the top of the content).
+            let maxX = max(0, size.width - scroll.bounds.width)
+            let maxY = max(0, size.height - scroll.bounds.height)
+            let offset = scroll.contentOffset
+            let clamped = CGPoint(x: min(max(0, offset.x), maxX), y: min(max(0, offset.y), maxY))
+            if clamped != offset {
+                scroll.contentOffset = clamped
+            }
+        }
+    }
+
+    /// **THE DEFINITE-HEIGHT WARNING** (design §"The constraint this introduces") — the
+    /// twin of `YogaLayout.warnIfIndefiniteHeight`, condition for condition.
+    ///
+    /// An `auto`-height scroll node takes its height **from** its content: the viewport
+    /// IS the content, the scrollable range is zero, and the page silently never moves.
+    /// No exception, no dropped patch, no wrong frame — which makes it one of the most
+    /// baffling symptoms this engine can produce.
+    ///
+    /// Two conditions, and BOTH are needed:
+    ///
+    ///  - the DECLARED height is neither a point nor a percent
+    ///    (`bn_yoga_node_has_declared_height`) — the author gave it no definite height.
+    ///    Not sufficient alone: `Grow="1" Basis="0"` in a bounded parent declares no
+    ///    height either and is the *recommended* flex-sized shape.
+    ///  - and it COMPUTED OUT **exactly** as tall as its content — the symptom itself,
+    ///    read off the frames after the layout pass, so it cannot be fooled by the route
+    ///    the height took.
+    ///
+    /// **EXACTLY, not "at least"** — and the difference is the whole worth of the
+    /// diagnostic. A viewport TALLER than its content is **not a mistake**: it is a
+    /// viewport with nothing to scroll YET (a list still loading; M7's virtualized list
+    /// on its first under-full frame), and it scrolls the moment the content grows past
+    /// it. Warning there would fire on the shape the docs prescribe. (Gate 2 shipped `>=`
+    /// and its review caught it; the two negative tests are what keep this an equality.)
+    ///
+    /// **`Grow="1"` ALONE IS WARNED ABOUT, AND CORRECTLY**: it leaves `flexBasis: auto`,
+    /// so the viewport's basis is its CONTENT's height (800), the free space against a
+    /// shorter parent is NEGATIVE, `flexGrow` only distributes POSITIVE free space, and
+    /// the negative goes to the shrink pass — where Yoga's `flexShrink` default is 0.
+    /// The viewport keeps its content's height and never scrolls. (The phase's own
+    /// mechanism, one level up. It is why CSS's `flex: 1` sets basis to 0.)
+    ///
+    /// Warn-once per node ([diagnose]): a layout pass runs per committed frame, and a
+    /// warning per frame is a flood — and a flood is a thing people mute.
+    private func warnIfIndefiniteHeight(scrollId: Int32, contentNode: UnsafeMutableRawPointer) {
+        guard let scrollNode = yogaNodes[scrollId] else { return }
+        guard bn_yoga_node_has_declared_height(scrollNode) == 0 else { return }
+        let content = bn_yoga_node_get_frame(contentNode)
+        guard content.height > 0 else { return }
+        let scroll = bn_yoga_node_get_frame(scrollNode)
+        guard abs(scroll.height - content.height) <= Self.epsilon else { return }
+        diagnose(
+            nodeId: scrollId, kind: "auto-height",
+            message: "scroll node \(scrollId) has no definite height: it computed to "
+            + "\(scroll.height)pt, which is exactly its content's height — so there is NOTHING TO "
+            + "SCROLL. A viewport takes its height from somewhere definite: an explicit Height, or "
+            + "Grow=\"1\" WITH Basis=\"0\" inside a bounded parent (CSS's `flex: 1`). Grow=\"1\" "
+            + "ALONE is not enough: flexBasis stays `auto`, so the basis is the CONTENT's height, "
+            + "the free space is negative, and flexGrow only distributes POSITIVE free space — the "
+            + "negative goes to the shrink pass, and Yoga's flexShrink default is 0.")
+    }
+
+    /// A scroll node's runtime diagnostic — **warn-once**, keyed by `(nodeId, kind)`.
+    /// ONE key convention for both diagnostics: the node id is a FIELD, not a fragment of
+    /// a string, because [handleRemove] EVICTS by it — **node ids are REUSED** (.NET's
+    /// restart at 1 after a reset), and a warn-once key that outlives its node silences
+    /// the node that inherits its id. The diagnostic is worth most on a freshly-written
+    /// page, which is exactly when a ghost key would eat it.
+    private func diagnose(nodeId: Int32, kind: String, message: String) {
+        guard diagnosedKeys.insert(BnDiagnosticKey(nodeId: nodeId, kind: kind)).inserted else { return }
+        diagnosed.append((nodeId, message))
+        NSLog("[BnWidgetMapper] \(message)")
+    }
+
+    /// Half a point — below the 0.5 tolerance every frame assertion in this engine
+    /// already uses; a float comparison of two computed heights needs one. Kotlin's
+    /// `YogaLayout.EPSILON` is the same number.
+    private static let epsilon: Float = 0.5
 
     // ── AttachEvent/DetachEvent → UIControl targets (Phase 5.3) ───────────────
 
@@ -387,11 +618,26 @@ final class BnWidgetMapper {
         let view: UIView = makeView(nodeType: nodeType)
         views[nodeId] = view
 
+        // Phase 6.2 — THE SYNTHETIC CONTENT VIEW. Keyed on the NODETYPE, not on
+        // `view is UIScrollView`: the nodeType is the CONTRACT ("a `scroll` node is a
+        // viewport"), and the widget class is a row in a table that could change (a
+        // horizontal `scroll` would be a different configuration and would still owe a
+        // content node). Two ways of asking one question is how the two trees end up
+        // disagreeing about which nodes are scroll nodes.
+        if nodeType == Self.scroll, let scroll = view as? UIScrollView {
+            let content = BnScrollContentView()
+            scroll.addSubview(content)
+            scrollContents[nodeId] = content
+        }
+
+        // The view a child of this node parents INTO: for a child of a scroll node that
+        // is the CONTENT view, never the UIScrollView (non-negotiable #2).
+        //
         // insertIndex counts HOST views in the target container 1:1 (collapsed text
         // nodes never materialize a view, and they alias onto non-container parents,
         // so they cannot skew a container's indices — the same invariant as Android).
         // -1 = append (explicit; 0 is a valid front index).
-        let parentView: UIView = parentId.flatMap { views[$0] } ?? root
+        let parentView: UIView = containerFor(parentId) ?? root
         if insertIndex >= 0 && Int(insertIndex) <= parentView.subviews.count {
             parentView.insertSubview(view, at: Int(insertIndex))
         } else {
@@ -401,7 +647,8 @@ final class BnWidgetMapper {
         // The Yoga twin, inserted at the SAME index in the SAME parent. The parent is
         // re-derived from the view we ACTUALLY parented to (not from the patch), so an
         // unknown parentId that fell back to the host root falls back to the Yoga host
-        // root too — or the two trees diverge.
+        // root too — and a child of a scroll node lands under the CONTENT node, because
+        // `viewToNode[contentView]` IS the content node. One rule, both trees.
         let node = bn_yoga_node_new()
         yogaNodes[nodeId] = node
         viewToNode[ObjectIdentifier(view)] = node
@@ -409,10 +656,38 @@ final class BnWidgetMapper {
             bn_yoga_node_set_measure(node, bnYogaMeasureTrampoline,
                                      Unmanaged.passUnretained(view).toOpaque())
         }
+        // …and the Yoga tree gets its synthetic node in the same breath as the view tree
+        // got its synthetic view. BOTH TREES OR NEITHER. (The `.mm` sets the viewport's
+        // `overflow: scroll` and the content node's three styles — and, load-bearingly,
+        // NOT its flexShrink.)
+        if let contentView = scrollContents[nodeId] {
+            let contentNode = bn_yoga_node_attach_scroll_content(node)
+            contentNodes[nodeId] = contentNode
+            viewToNode[ObjectIdentifier(contentView)] = contentNode
+        }
         let parentNode: UnsafeMutableRawPointer = (parentView === root)
             ? hostRoot
             : (viewToNode[ObjectIdentifier(parentView)] ?? hostRoot)
         bn_yoga_node_insert_child(parentNode, node, insertIndex)
+    }
+
+    /// The view a child of [parentId] parents into — **the second index-mapping rule**
+    /// (non-negotiable #2), stated once.
+    ///
+    /// A `scroll` node's children go into its CONTENT view, not into the `UIScrollView`
+    /// itself (whose subviews also include UIKit's own scroll indicators, so indexing
+    /// them would be wrong twice over). `insertIndex` then counts the content view's
+    /// children, and `-1` (append) appends to them — exactly mirroring the Yoga tree,
+    /// which redirects to the synthetic content NODE by the same rule. The two trees
+    /// mirror each other; neither mirrors the patch tree.
+    ///
+    /// Nil when [parentId] is nil or names an unknown node — the caller falls back to
+    /// the host root, and re-derives the Yoga parent from the view it actually parented
+    /// to.
+    private func containerFor(_ parentId: Int32?) -> UIView? {
+        guard let parentId = parentId else { return nil }
+        if let content = scrollContents[parentId] { return content }
+        return views[parentId]
     }
 
     private func makeView(nodeType: String) -> UIView {
@@ -445,12 +720,39 @@ final class BnWidgetMapper {
             // construction, on the only case that exists today. (Gate 4 ledger,
             // entry 1.)
             return UIImageView()
-        case "scroll", "picker":
-            // Stubbed (design §1c): keep a placeholder so container indices stay
-            // consistent. Scroll/picker are 6.2's — the honest boundary is that a
-            // framework container runs its OWN layout over its children, so Yoga does
-            // not get the final word inside one.
-            NSLog("[BnWidgetMapper] nodeType '\(nodeType)' stubbed as a placeholder UIView (Phase 6.2+)")
+        case Self.scroll:
+            // Phase 6.2 — a VIEWPORT. Vertical, like Android's ScrollView (design
+            // decision 2 — horizontal is ledgered); its single meaningful child, the
+            // synthetic content view, is created by [handleCreate].
+            let scroll = UIScrollView()
+            // ── clipsToBounds: the VIEWPORT CLIPS, and it is the ONE container in this
+            // shell that does ────────────────────────────────────────────────────────
+            // Every other container here is a plain UIView, which does NOT clip — that
+            // is Yoga's `overflow: visible` default, and it is what Android's
+            // BnYogaFrameLayout sets `clipChildren = false` to MATCH. **Do not mirror
+            // "our containers don't clip" onto the viewport**: a viewport that does not
+            // clip draws all 800pt of its content over the whole screen. `true` is
+            // UIScrollView's own default; it is written out because the rule it breaks
+            // is written down elsewhere, and a reader has to be able to see that the
+            // break is deliberate.
+            scroll.clipsToBounds = true
+            // ── contentInsetAdjustmentBehavior: OFF, and it is a PARITY knob ─────────
+            // The default (.automatic) lets UIKit fold the safe-area inset into
+            // `adjustedContentInset`, which shifts the resting `contentOffset` to
+            // −inset and moves the maximum offset by the same amount. Android's
+            // ScrollView has no such notion, so the two shells' scroll ranges — 600 here,
+            // and the number BnScrollDemoAndroidTest asserts — would differ by a device
+            // constant, on the device only (it is zero in a detached test host, which is
+            // the worst possible place for a divergence to hide). Yoga owns placement;
+            // the safe area is the app's business, not the viewport's.
+            scroll.contentInsetAdjustmentBehavior = .never
+            return scroll
+        case "picker":
+            // Still stubbed (6.1's honest boundary, minus `scroll`): a framework
+            // container that runs its OWN layout over its children, so Yoga does not get
+            // the final word inside one. Keep a placeholder so container indices stay
+            // consistent.
+            NSLog("[BnWidgetMapper] nodeType 'picker' stubbed as a placeholder UIView (Phase 6.3+)")
             return UIView()
         default:
             NSLog("[BnWidgetMapper] Unknown nodeType '\(nodeType)' — falling back to UILabel")
@@ -520,6 +822,15 @@ final class BnWidgetMapper {
         // Yoga FIRST: free_subtree clears every measure function in the subtree,
         // breaking the last edge from a native node to a UIView that is about to be
         // released.
+        //
+        // Phase 6.2: a doomed subtree may contain SCROLL nodes — this one, or (what
+        // navigation actually emits) any number of them under a named ancestor — and each
+        // one's SYNTHETIC CONTENT NODE is a Yoga CHILD of it, so `free_subtree` reclaims
+        // it here whether or not this shell remembers it exists. **A `contentNodes` entry
+        // that survives this call is a DANGLING `YGNodeRef`**, and the next
+        // `calculateAndApply` dereferences it — on Android the same miss is merely a
+        // leak. ONE RemoveNodePatch stands for a whole subtree, and the synthetic node
+        // that no patch could ever name is part of it.
         if let node = yogaNodes[nodeId] {
             if let owner = bn_yoga_node_get_owner(node) {
                 bn_yoga_node_remove_child(owner, node)
@@ -531,6 +842,17 @@ final class BnWidgetMapper {
             views.removeValue(forKey: id)
             yogaNodes.removeValue(forKey: id)
             collapsedAliases.remove(id) // an aliased text child of a doomed UIButton
+            // The scroll node's two synthetic halves, dropped together (the content VIEW
+            // is in `doomed` — it is a subview of the UIScrollView — so this entry is the
+            // only thing that would survive to pin it).
+            contentNodes.removeValue(forKey: id)
+            scrollContents.removeValue(forKey: id)
+            // …and the DIAGNOSTICS BOOKKEEPING, for the reason [diagnose] gives: node ids
+            // are REUSED. A warn-once key that outlives its node silences the warning the
+            // node inheriting its id would have earned — and the message list would
+            // otherwise grow by one per navigation, forever.
+            diagnosed.removeAll { $0.nodeId == id }
+            diagnosedKeys = diagnosedKeys.filter { $0.nodeId != id }
         }
         for identity in doomed {
             viewToNode.removeValue(forKey: identity)
@@ -619,6 +941,27 @@ final class BnWidgetMapper {
     private func handleSetStyle(nodeId: Int32, property: String, value: String?) {
         guard let view = views[nodeId] else {
             NSLog("[BnWidgetMapper] SetStyle for unknown nodeId \(nodeId): ignored")
+            return
+        }
+        // Phase 6.2 — **CONTAINER STYLES ON A `scroll` NODE ARE IGNORED AND LOGGED**
+        // (design decision 6; the six names live in the `.mm`'s
+        // `kScrollIgnoredContainerStyles`, pinned EQUAL to Kotlin's list by
+        // `ShellStyleTableDriftTests`). A scroll node's container layout belongs to the
+        // shell: its only Yoga child is the synthetic content node, whose styles are
+        // fixed. `BnScroll`'s component surface cannot produce these — it forwards
+        // BnView's ITEM parameters and none of its CONTAINER ones — but the raw-element
+        // hatch can (`OpenElement("scroll") + AddAttribute("gap", …)` reaches the wire,
+        // and a .NET test pins that it does, precisely so this rule is known to be LIVE
+        // code rather than silently becoming dead).
+        //
+        // Membership in [contentNodes] is what makes a node "a scroll node" here.
+        if contentNodes[nodeId] != nil, bn_yoga_is_scroll_ignored_container_style(property) != 0 {
+            diagnose(
+                nodeId: nodeId, kind: "container-style/\(property)",
+                message: "SetStyle \(property) ignored: node \(nodeId) is a `scroll` node, and a "
+                + "scroll node's CONTAINER layout belongs to the shell — its only Yoga child is the "
+                + "synthetic content node, whose styles are fixed. Put the layout on a column INSIDE "
+                + "the scroll. (Item styles and backgroundColor apply normally.)")
             return
         }
         if bn_yoga_is_layout_style(property) != 0 {

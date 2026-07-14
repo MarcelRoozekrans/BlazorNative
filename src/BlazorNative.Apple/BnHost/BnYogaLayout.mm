@@ -13,7 +13,7 @@
 // these two files could disagree is a place the parity assertion goes red for a
 // reason that has nothing to do with the engine.
 //
-// ── THE FOUR THINGS THAT WOULD SILENTLY CORRUPT THE FRAME TABLE ──────────────
+// ── THE FIVE THINGS THAT WOULD SILENTLY CORRUPT THE FRAME TABLE ──────────────
 //
 // 1. **pointScaleFactor = 0.** Yoga defaults it to 1 and then rounds computed
 //    frames by TWO different rules — a node with a measure function is CEILED
@@ -46,6 +46,14 @@
 //    the allow-list, so no patch would catch a shell that "corrected" Yoga here.
 //    Do not.
 //
+// 5. **Nothing sets `flexShrink` on a scroll node's SYNTHETIC CONTENT NODE**
+//    (Phase 6.2 — [bn_yoga_node_attach_scroll_content]). Yoga's default is 0 where
+//    CSS's is 1, and that default is the ENTIRE mechanism that lets 800 of content
+//    keep its 800 inside a 200-high viewport. A `flexShrink: 1` copied out of a CSS
+//    or React Native stylesheet collapses it to 200 — and leaves EVERY ROW FRAME
+//    CORRECT, so only `contentSize` is wrong and the page simply stops scrolling.
+//
+
 // The style GRAMMAR has exactly one normative statement —
 // docs/plans/2026-07-13-phase-6.1-design.md §"Style value grammar (normative)" —
 // and it is deliberately not restated here: three copies of a grammar is how two
@@ -116,6 +124,42 @@ int32_t bn_yoga_is_layout_style(const char* name) {
     const size_t count = sizeof(kYogaStyles) / sizeof(kYogaStyles[0]);
     for (size_t i = 0; i < count; i++) {
         if (strcmp(name, kYogaStyles[i]) == 0) return 1; // ORDINAL / case-sensitive
+    }
+    return 0;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The SCROLL-NODE IGNORE LIST — the SECOND two-shell name table (Phase 6.2)
+//
+// On a node of NodeType `scroll` these six CONTAINER-layout names are IGNORED AND
+// LOGGED (design decision 6, NORMATIVE for both shells; see BnYogaLayout.h's
+// [bn_yoga_is_scroll_ignored_container_style] for what each one breaks). The twin of
+// Kotlin's `YogaLayout.SCROLL_IGNORED_CONTAINER_STYLES`, and PINNED AGAINST IT by
+// `ShellStyleTableDriftTests.TheTwoShellsScrollIgnoreLists_AreIdenticalToEachOther`:
+// a shell that misses `justifyContent` offsets the content node to y = −300 (free
+// space on a scrolling viewport is NEGATIVE) and permanently hides the top of the
+// page — silently, on ONE platform, with every frame in the parity table still
+// correct. Six names in a comment are exactly what two hand-written shells drift on.
+//
+// Every name here is ALSO on kYogaStyles, and that is not ceremony: this rule is only
+// reached when `BnWidgetMapper`'s router has already decided the name belongs to Yoga
+// (`bn_yoga_is_layout_style`). A name here but not there would never reach the rule at
+// all — it would fall into the VISUAL branch, be logged "not yet supported" and be
+// SILENTLY DROPPED. (Kotlin's half of that pin is
+// `AndroidScrollIgnoredStyles_AreAllRoutedToYoga`.)
+//
+// Keep the declaration a plain brace-initialised array of quoted names, declared at
+// the start of its line — same parser, same reason, as kYogaStyles above.
+// ─────────────────────────────────────────────────────────────────────────────
+static const char* const kScrollIgnoredContainerStyles[] = {
+    "flexDirection", "justifyContent", "alignItems", "flexWrap", "gap", "padding",
+};
+
+int32_t bn_yoga_is_scroll_ignored_container_style(const char* name) {
+    if (name == NULL) return 0;
+    const size_t count = sizeof(kScrollIgnoredContainerStyles) / sizeof(kScrollIgnoredContainerStyles[0]);
+    for (size_t i = 0; i < count; i++) {
+        if (strcmp(name, kScrollIgnoredContainerStyles[i]) == 0) return 1; // ORDINAL
     }
     return 0;
 }
@@ -218,6 +262,47 @@ void bn_yoga_node_remove_child(bn_yoga_node parent, bn_yoga_node child) {
 
 bn_yoga_node bn_yoga_node_get_owner(bn_yoga_node node) {
     return (bn_yoga_node)YGNodeGetOwner((YGNodeRef)node);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// `scroll` — the SYNTHETIC CONTENT NODE (Phase 6.2)
+//
+// The full argument is in BnYogaLayout.h; the one line that must not be "improved"
+// out of the function below is the one that ISN'T THERE:
+//
+//     ** THERE IS NO YGNodeStyleSetFlexShrink ON THE CONTENT NODE, AND ITS ABSENCE
+//        IS THE MECHANISM. **
+//
+// Yoga's flexShrink default is 0 (CSS's is 1). The content node is a 200-high
+// viewport's only child carrying 800 of children: the free space is −600, negative
+// free space is distributed by the SHRINK pass, and 0 refuses all of it. Set
+// flexShrink to 1 — the instinct anyone arriving from CSS or React Native has — and
+// the content node collapses 800 → 200, every row keeps its correct frame, every
+// screenshot looks perfect, and the ONLY corrupted number is the one this shell reads
+// back as `contentSize`. The symptom is 600pt of content that can never be reached.
+// ─────────────────────────────────────────────────────────────────────────────
+
+bn_yoga_node bn_yoga_node_attach_scroll_content(bn_yoga_node scroll) {
+    YGNodeRef viewport = (YGNodeRef)scroll;
+
+    // The VIEWPORT is what scrolls. Set for the SEMANTIC reason only (it is what a
+    // scrolling viewport means, and what RN sets) — it is NOT what makes the content
+    // node keep its 800, and the contract does not claim it is.
+    YGNodeStyleSetOverflow(viewport, YGOverflowScroll);
+
+    YGNodeRef content = YGNodeNewWithConfig(bn_yoga_config());
+    YGNodeStyleSetHeightAuto(content);          // its computed height IS the content size
+    YGNodeStyleSetWidthPercent(content, 100.0f); // it spans the viewport
+    YGNodeStyleSetFlexDirection(content, YGFlexDirectionColumn);
+    // NO YGNodeStyleSetFlexShrink. See above. This absence is the mechanism.
+
+    YGNodeInsertChild(viewport, content, 0);
+    return (bn_yoga_node)content;
+}
+
+int32_t bn_yoga_node_has_declared_height(bn_yoga_node node) {
+    const YGValue height = YGNodeStyleGetHeight((YGNodeRef)node);
+    return (height.unit == YGUnitPoint || height.unit == YGUnitPercent) ? 1 : 0;
 }
 
 /// Clears one node's measure function (breaking the last edge to its UIView) and
