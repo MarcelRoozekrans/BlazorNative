@@ -11,7 +11,7 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.1*" />
     <PackageReference Include="xunit" Version="2.*" />
-    <PackageReference Include="xunit.runner.visualstudio" Version="2.*" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.*" />
     <!-- Microsoft.CodeAnalysis.Testing harness — XUnit variant matches our test runner.
          Pin to 1.1.2 (not 1.*) — 1.* matches old 1.0.x with stale Microsoft.CodeAnalysis.Common 1.0.1 floor. -->
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Analyzer.Testing.XUnit" Version="1.1.2" />
