@@ -240,10 +240,10 @@ All four counts are asserted in CI — a drift from the baseline fails the build
 
 | Surface | Command | Count |
 |---|---|---|
-| .NET | `dotnet test` | 304 passed / 0 skipped |
-| JVM (JNA + win-x64 .dll) | `gradlew testDebugUnitTest` | 79 |
-| Android (instrumented, AVD) | `gradlew connectedAndroidTest` | 96 |
-| iOS (XCTest, simulator) | `xcodebuild test` | 50 |
+| .NET | `dotnet test` | 319 passed / 0 skipped |
+| JVM (JNA + win-x64 .dll) | `gradlew testDebugUnitTest` | 83 |
+| Android (instrumented, AVD) | `gradlew connectedAndroidTest` | 111 |
+| iOS (XCTest, simulator) | `xcodebuild test` | 72 |
 
 ## Status
 
