@@ -1,0 +1,218 @@
+using Microsoft.AspNetCore.Components;
+using Microsoft.AspNetCore.Components.Rendering;
+using Microsoft.AspNetCore.Components.Web;
+using Microsoft.Extensions.DependencyInjection;
+using Xunit;
+
+namespace BlazorNative.Renderer.Tests;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MarkupFrameTests — Phase 7.0 (the Razor-compilation spike).
+//
+// The Razor compiler preserves whitespace-only text BETWEEN sibling elements as
+// Markup frames (`__builder.AddMarkupContent(n, "\n    ")`) — .NET 5+ whitespace
+// trimming only removes it leading/trailing within an element and around C#
+// blocks. Hand-written BuildRenderTree never emitted Markup frames, so until
+// 7.0 the walk's fall-through silently dropped them WITHOUT a sibling slot —
+// and Blazor's diff SiblingIndex counts markup frames as siblings. Any edit
+// addressing a sibling AFTER a markup frame (the echo span in every .razor
+// page) would resolve to the wrong slot: a poisoned cursor at best, the wrong
+// node's text replaced at worst. Armed the moment the first .razor compiles.
+//
+// The contract pinned here:
+//   • a whitespace-only Markup frame occupies a sibling SLOT (diff indices
+//     stay aligned) but contributes NO patch and NO host view (insert-index
+//     translation skips it) — native widget trees have no whitespace nodes;
+//   • a NON-whitespace Markup frame is a contract violation (native has no
+//     innerHTML): strict throws, non-strict logs-and-drops — but it still
+//     occupies its slot either way, so later indices don't shift.
+//
+// Harness: same patterns as RegionWalkTests (strict mode, Frames capture,
+// dispatch-driven re-renders).
+// ─────────────────────────────────────────────────────────────────────────────
+
+public sealed class MarkupFrameTests
+{
+    private static (NativeRenderer Renderer, List<RenderFrame> Frames) BuildRenderer(bool strict = true)
+    {
+        var services = new ServiceCollection().AddBlazorNativeRenderer();
+        var renderer = services.BuildServiceProvider().GetRequiredService<NativeRenderer>();
+        renderer.StrictErrors = strict;
+        var frames = new List<RenderFrame>();
+        renderer.Frames += (f, _) =>
+        {
+            frames.Add(f);
+            return ValueTask.CompletedTask;
+        };
+        return (renderer, frames);
+    }
+
+    /// <summary>The exact shape the Razor compiler emits for
+    /// <c>&lt;div&gt;&lt;input …/&gt; &lt;span&gt;@_text&lt;/span&gt;&lt;/div&gt;</c>:
+    /// whitespace Markup frames between the element siblings. The span (and
+    /// its text) sit AFTER markup siblings — the diff-index alignment case.</summary>
+    private sealed class MarkupBetweenSiblings : ComponentBase
+    {
+        private string _text = "start";
+
+        protected override void BuildRenderTree(RenderTreeBuilder b)
+        {
+            b.OpenElement(0, "div");
+            b.OpenElement(1, "input");
+            b.AddAttribute(2, "onchange",
+                EventCallback.Factory.Create<ChangeEventArgs>(this, e => _text = e.Value?.ToString() ?? ""));
+            b.CloseElement();
+            b.AddMarkupContent(3, "\n    ");
+            b.OpenElement(4, "span");
+            b.AddContent(5, _text);
+            b.CloseElement();
+            b.AddMarkupContent(6, "\n");
+            b.CloseElement();
+        }
+    }
+
+    [Fact]
+    public async Task WhitespaceMarkup_EmitsNoPatch_AndNoNode()
+    {
+        var (renderer, frames) = BuildRenderer();
+        using var _ = renderer;
+
+        await renderer.MountAsync<MarkupBetweenSiblings>(ParameterView.Empty);
+        Assert.NotEmpty(frames);
+        var mount = frames[0];
+
+        // Exactly div + input + span + the span's text node — no whitespace
+        // "text" node ever reaches the wire.
+        Assert.Equal(4, mount.Patches.OfType<CreateNodePatch>().Count());
+        Assert.DoesNotContain(mount.Patches.OfType<ReplaceTextPatch>(),
+            p => string.IsNullOrWhiteSpace(p.Text));
+
+        // The span still parents under the div, unmoved by the markup sibling.
+        var text = Assert.Single(mount.Patches.OfType<ReplaceTextPatch>(), p => p.Text == "start");
+        var span = Assert.Single(mount.Patches.OfType<CreateNodePatch>(),
+            p => p.NodeId == Assert.IsType<int>(
+                Assert.Single(mount.Patches.OfType<CreateNodePatch>(), c => c.NodeId == text.NodeId).ParentId));
+        var div = Assert.Single(mount.Patches.OfType<CreateNodePatch>(), p => p.ParentId is null);
+        Assert.Equal(div.NodeId, span.ParentId);
+    }
+
+    /// <summary>THE regression this file exists for: an UpdateText edit
+    /// addressing the span AFTER a markup sibling. Blazor's StepIn counts the
+    /// markup frame (input 0, markup 1, span 2); if the walk dropped markup
+    /// without a slot, GetSlotAt(2) misses and the cursor poisons — strict
+    /// mode fails this test loudly.</summary>
+    [Fact]
+    public async Task UpdateText_AfterMarkupSibling_ResolvesTheRightNode()
+    {
+        var (renderer, frames) = BuildRenderer();
+        using var _ = renderer;
+
+        await renderer.MountAsync<MarkupBetweenSiblings>(ParameterView.Empty);
+        var mount = frames[0];
+        var textNode = Assert.Single(mount.Patches.OfType<ReplaceTextPatch>(), p => p.Text == "start").NodeId;
+        var attach = Assert.Single(mount.Patches.OfType<AttachEventPatch>(), p => p.EventName == "change");
+
+        await renderer.DispatchUiEventAsync(
+            new NativeUiEvent(0, attach.HandlerId, "change", "typed"));
+
+        Assert.True(frames.Count >= 2, "expected a synchronous re-render frame");
+        var replaced = Assert.Single(frames[^1].Patches.OfType<ReplaceTextPatch>());
+        Assert.Equal(textNode, replaced.NodeId);
+        Assert.Equal("typed", replaced.Text);
+    }
+
+    /// <summary>Mid-list INSERT after a markup sibling: the markup slot must
+    /// contribute ZERO host views to the insert-index translation — the new
+    /// element lands between its real-view neighbours, not one off.</summary>
+    private sealed class ConditionalAfterMarkup : ComponentBase
+    {
+        private bool _show;
+
+        protected override void BuildRenderTree(RenderTreeBuilder b)
+        {
+            b.OpenElement(0, "div");
+            b.OpenElement(1, "button");
+            b.AddAttribute(2, "onclick",
+                EventCallback.Factory.Create<MouseEventArgs>(this, () => _show = true));
+            b.CloseElement();
+            b.AddMarkupContent(3, "\n    ");
+            if (_show)
+            {
+                b.OpenElement(4, "span");
+                b.AddContent(5, "inserted");
+                b.CloseElement();
+            }
+            b.OpenElement(6, "input");
+            b.CloseElement();
+            b.CloseElement();
+        }
+    }
+
+    [Fact]
+    public async Task Insert_AfterMarkupSibling_HostIndexSkipsTheMarkup()
+    {
+        var (renderer, frames) = BuildRenderer();
+        using var _ = renderer;
+
+        await renderer.MountAsync<ConditionalAfterMarkup>(ParameterView.Empty);
+        var attach = Assert.Single(frames[0].Patches.OfType<AttachEventPatch>(), p => p.EventName == "click");
+
+        await renderer.DispatchUiEventAsync(new NativeUiEvent(0, attach.HandlerId, "click", null));
+        Assert.True(frames.Count >= 2, "expected a synchronous re-render frame");
+
+        // The span arrives at Blazor sibling 2 (button 0, markup 1) — but the
+        // HOST insert index is 1: button(0) · span(1) · input(2). A markup
+        // slot counted as a view would push it to 2 (after the input).
+        var div = Assert.Single(frames[0].Patches.OfType<CreateNodePatch>(), p => p.ParentId is null);
+        var inserted = Assert.Single(frames[^1].Patches.OfType<CreateNodePatch>(),
+            p => p.NodeType == "text" && p.ParentId == div.NodeId);
+        Assert.Equal(1, inserted.InsertIndex);
+    }
+
+    // ── Non-whitespace markup: unrepresentable natively ───────────────────────
+
+    private sealed class RawHtmlMarkup : ComponentBase
+    {
+        protected override void BuildRenderTree(RenderTreeBuilder b)
+        {
+            b.OpenElement(0, "div");
+            b.AddMarkupContent(1, "<b>native has no innerHTML</b>");
+            b.CloseElement();
+        }
+    }
+
+    [Fact]
+    public async Task NonWhitespaceMarkup_Strict_Throws()
+    {
+        var (renderer, _) = BuildRenderer(strict: true);
+        using var __ = renderer;
+
+        var ex = await Assert.ThrowsAnyAsync<Exception>(
+            () => renderer.MountAsync<RawHtmlMarkup>(ParameterView.Empty));
+        Assert.Contains("markup", Flatten(ex), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task NonWhitespaceMarkup_NonStrict_DropsButKeepsTheSlot()
+    {
+        var (renderer, frames) = BuildRenderer(strict: false);
+        using var _ = renderer;
+
+        await renderer.MountAsync<RawHtmlMarkup>(ParameterView.Empty);
+        Assert.NotEmpty(frames);
+
+        // Nothing but the div reaches the wire — the markup is dropped, not
+        // half-rendered.
+        var div = Assert.Single(frames[0].Patches.OfType<CreateNodePatch>());
+        Assert.Equal("view", div.NodeType);
+        Assert.Empty(frames[0].Patches.OfType<ReplaceTextPatch>());
+    }
+
+    private static string Flatten(Exception ex)
+    {
+        var sb = new System.Text.StringBuilder();
+        for (Exception? e = ex; e is not null; e = e.InnerException)
+            sb.Append(e.Message).Append(" | ");
+        return sb.ToString();
+    }
+}

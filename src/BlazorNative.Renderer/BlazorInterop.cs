@@ -247,6 +247,10 @@ internal ref struct BnRenderTreeFrame
     public object?             AttributeValue           => _frame.AttributeValue;
     public ulong               AttributeEventHandlerId  => _frame.AttributeEventHandlerId;
     public string?             TextContent              => _frame.TextContent;
+    // Phase 7.0: the Razor compiler emits Markup frames (inter-element
+    // whitespace at minimum) — the walk's Markup arm reads the content to
+    // split whitespace (slot, no patch) from raw HTML (contract violation).
+    public string?             MarkupContent            => _frame.MarkupContent;
 }
 
 internal static class RefAccessors

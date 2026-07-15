@@ -778,6 +778,33 @@ public sealed class NativeRenderer : BlazorRenderer
                 return 1;
             }
 
+            case RenderTreeFrameType.Markup:
+            {
+                // Phase 7.0 (the Razor-compilation spike). The Razor compiler
+                // preserves whitespace-only text BETWEEN sibling elements as
+                // Markup frames (its .NET 5+ trimming only removes whitespace
+                // leading/trailing within an element and around C# blocks), so
+                // the FIRST .razor-compiled component armed this arm. A markup
+                // frame IS a sibling in Blazor's diff numbering — it must
+                // occupy a slot or every later sibling index in this container
+                // desyncs (the echo-span-after-whitespace case) — but it owns
+                // no host view: whitespace renders nothing on a native widget
+                // tree, and the Markup slot kind translates to zero host
+                // views. NON-whitespace markup is raw HTML — native shells
+                // have no innerHTML, so it is a contract violation: strict
+                // throws, non-strict logs and renders nothing. Either way the
+                // slot is taken FIRST, so indices stay aligned even on the
+                // tolerated path.
+                AddSlot(componentId, slotContainer, insertAtSlot, Slot.ForMarkup());
+                if (frame.MarkupContent is { } markup && !string.IsNullOrWhiteSpace(markup))
+                {
+                    ReportContractViolation(
+                        $"non-whitespace markup content is not representable on a native widget tree " +
+                        $"(component {componentId}): \"{markup}\" — rendered as nothing");
+                }
+                return 1;
+            }
+
             case RenderTreeFrameType.Region:
             {
                 // Phase 3.4 Task 1 (the 3.3 MUST-FIX carryover). Blazor emits

@@ -21,6 +21,11 @@ internal enum SlotKind : byte
     /// <summary>A child component occupying a sibling position but owning
     /// no view of its own, identified by ComponentId.</summary>
     Component,
+    /// <summary>A Markup frame (Phase 7.0 — the Razor compiler emits these
+    /// for inter-element whitespace): occupies a sibling position so Blazor's
+    /// diff SiblingIndex stays aligned, owns no view and contributes nothing
+    /// to host insert-index translation. No id.</summary>
+    Markup,
 }
 
 /// <summary>One entry in a slot list: a node slot XOR a component slot
@@ -36,6 +41,7 @@ internal readonly record struct Slot
 
     public static Slot ForNode(int nodeId) => new(SlotKind.Node, nodeId);
     public static Slot ForComponent(int componentId) => new(SlotKind.Component, componentId);
+    public static Slot ForMarkup() => new(SlotKind.Markup, 0);
 
     public bool IsNode => Kind == SlotKind.Node;
     public bool IsComponent => Kind == SlotKind.Component;
@@ -53,6 +59,7 @@ internal readonly record struct Slot
     {
         SlotKind.Node => $"Node({_id})",
         SlotKind.Component => $"Component({_id})",
+        SlotKind.Markup => "Markup",
         _ => "None",
     };
 }
@@ -184,7 +191,14 @@ internal sealed class NativeWidgetTree
         for (var i = 0; i < upTo; i++)
         {
             var slot = slots[i];
-            viewIndex += slot.IsComponent ? RootViewCount(slot.ComponentId) : 1;
+            viewIndex += slot.Kind switch
+            {
+                SlotKind.Component => RootViewCount(slot.ComponentId),
+                // Markup slots keep Blazor's sibling numbering aligned but
+                // own no host view (Phase 7.0) — they translate to nothing.
+                SlotKind.Markup => 0,
+                _ => 1,
+            };
         }
         return viewIndex;
     }
