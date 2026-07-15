@@ -4,8 +4,10 @@ namespace BlazorNative.Core;
 // BnScrollEventArgs — Phase 7.2 Task 1.3 (design §"The wire contract").
 //
 // The typed args a `scroll` dispatch carries into an OnScroll handler. It
-// lives in CORE deliberately: the renderer CONSTRUCTS it (BuildEventArgs's
-// "scroll" arm parses the flat-JSON payload) and the component library
+// lives in CORE deliberately: the renderer CONSTRUCTS it (the flat-JSON
+// envelope is parsed at the export ingress; BuildEventArgs's "scroll" arm
+// parses the envelope's payload STRING — an invariant-culture number — into
+// the offset) and the component library
 // CONSUMES it (BnScroll.OnScroll is an EventCallback<BnScrollEventArgs>) —
 // and Components does not reference Renderer, so the shared contract sits in
 // the assembly both already depend on, next to INavigationManager.

@@ -47,9 +47,9 @@
 
       rows 0–5 leave   → 12 RemoveNode: the 6 row views + 6 REDUNDANT input
                          removes (each input already left with its row's
-                         subtree — the documented ProcessDisposedComponent
-                         contract: a nested child component disposed in the
-                         same batch still emits RemoveNode for its root
+                         subtree — the documented EmitDisposedComponentRemoves
+                         host contract: a nested child component disposed in
+                         the same batch still emits RemoveNode for its root
                          views, and hosts treat unknown ids as a no-op)
       rows 11–20 enter → 20 creates (10 row views + 10 inputs), placeholders
                          "Row 11".."Row 20", inserted BEFORE the trail spacer

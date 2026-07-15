@@ -310,7 +310,7 @@ public sealed class BnListDemoTests
             //    PLUS their 6 inputs. The input removes are REDUNDANT on the
             //    host (each input left with its row's subtree) and the shells
             //    treat unknown ids in RemoveNode as a no-op — the documented
-            //    ProcessDisposedComponent contract since 3.3: a nested child
+            //    EmitDisposedComponentRemoves contract since 3.3: a nested child
             //    COMPONENT (BnInput) disposed in the same batch as its removed
             //    ancestor still emits RemoveNode for its root views. Pinned
             //    exactly so Gates 2/3 count 12 remove patches and 6 actual
