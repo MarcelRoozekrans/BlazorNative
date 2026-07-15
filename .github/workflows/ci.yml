@@ -804,8 +804,8 @@ jobs:
   # `src/androidMain/kotlin` — MainActivity, WidgetMapper, YogaLayout, the ENTIRE
   # Android shell — was not being compiled at all, because that lane is
   # nightly/dispatch and does not gate PRs. It landed on `main` green and sat
-  # there. PR #81 closed it by compiling the instrumented sources in build-test
-  # (see "Compile the instrumented sources" above).
+  # there. PR #81 closed it by compiling the instrumented sources in build-test;
+  # that gate now has its own required job, `android-build` (above).
   #
   # **The iOS shell was in the same hole, and structurally deeper** (M6 final
   # audit, finding F1):
