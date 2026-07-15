@@ -1,5 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
+using BlazorNative.Core;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.RenderTree;
 using Microsoft.AspNetCore.Components.Web;
@@ -1098,8 +1099,26 @@ public sealed class NativeRenderer : BlazorRenderer
         "change" => new ChangeEventArgs { Value = e.Payload },
         "focus"  => new FocusEventArgs(),
         "blur"   => new FocusEventArgs(),
+        // Phase 7.2 (the onScroll wire): the payload is the shell-conflated
+        // vertical content offset in dp/pt, as an invariant-culture number
+        // (the same wire grammar the style values use — a Dutch shell must
+        // never send "1,5"). The typed args live in Core (BnScrollEventArgs):
+        // Components consumes them and does not reference this assembly.
+        "scroll" => new BnScrollEventArgs { OffsetY = ParseScrollOffset(e.Payload) },
         _        => EventArgs.Empty
     };
+
+    /// <summary>Parses a <c>scroll</c> dispatch's payload — the offset in
+    /// dp/pt, invariant-culture. A missing or unparseable payload is a SHELL
+    /// contract violation, not user input: throw (FormatException), which the
+    /// dispatch window surfaces as a loud rc-2 fault instead of dispatching a
+    /// silently-wrong offset 0 that would snap every list to the top.</summary>
+    private static float ParseScrollOffset(string? payload)
+        => payload is null
+            ? throw new FormatException(
+                "scroll dispatch carried no payload — the wire contract requires the content offset in dp/pt")
+            : float.Parse(payload, System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture);
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
