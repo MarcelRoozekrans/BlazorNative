@@ -133,6 +133,13 @@ internal static unsafe class FrameEncoder
         "image"  => BlazorNativeNodeType.Image,
         "scroll" => BlazorNativeNodeType.Scroll,
         "picker" => BlazorNativeNodeType.Picker,
+        // Phase 7.3: the form-control trio (design decision 1). New wire ids
+        // 8/9/10 on the EXISTING int32 field — the Kotlin/Swift nodeTypes
+        // arrays gain the same three entries in Gates 2/3 (until then their
+        // getOrElse/index-guard fallback maps them to "?" and logs).
+        "checkbox" => BlazorNativeNodeType.Checkbox,
+        "switch"   => BlazorNativeNodeType.Switch,
+        "slider"   => BlazorNativeNodeType.Slider,
         _ => throw new ArgumentOutOfRangeException(
             nameof(nodeType), nodeType,
             $"Unknown node type '{nodeType}' — not representable in BlazorNativeNodeType."),

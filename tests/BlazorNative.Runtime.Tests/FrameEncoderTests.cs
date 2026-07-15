@@ -171,7 +171,13 @@ public sealed class FrameEncoderTests
     [InlineData("image",  BlazorNativeNodeType.Image)]
     [InlineData("scroll", BlazorNativeNodeType.Scroll)]
     [InlineData("picker", BlazorNativeNodeType.Picker)]
-    public void Encode_AllSevenNodeTypes_MapCorrectly(string nodeType, BlazorNativeNodeType expected)
+    // Phase 7.3: the form-control trio — wire ids 8/9/10. The Kotlin/Swift
+    // nodeTypes arrays MIRROR this table and extend in Gates 2/3; the Swift
+    // side's exact-content pin (BnDriftTests) moves in lockstep there.
+    [InlineData("checkbox", BlazorNativeNodeType.Checkbox)]
+    [InlineData("switch",   BlazorNativeNodeType.Switch)]
+    [InlineData("slider",   BlazorNativeNodeType.Slider)]
+    public void Encode_AllTenNodeTypes_MapCorrectly(string nodeType, BlazorNativeNodeType expected)
     {
         var frame = new RenderFrame(1, 0L, [new CreateNodePatch(1, nodeType, null)]);
 
@@ -179,6 +185,26 @@ public sealed class FrameEncoderTests
         BlazorNativeFrame native = FrameEncoder.Encode(frame, arena);
 
         Assert.Equal(expected, Decode(native, 0).NodeType);
+    }
+
+    /// <summary>Phase 7.3: the wire ids are load-bearing integers the shells
+    /// index their nodeTypes arrays with — pin them AS integers so an enum
+    /// reorder (which the string theory above cannot see) reddens here and
+    /// not on a device.</summary>
+    [Fact]
+    public void NodeTypeWireIds_ArePinned()
+    {
+        Assert.Equal(8,  (int)BlazorNativeNodeType.Checkbox);
+        Assert.Equal(9,  (int)BlazorNativeNodeType.Switch);
+        Assert.Equal(10, (int)BlazorNativeNodeType.Slider);
+        // The pre-7.3 seven stay where the shells' arrays put them.
+        Assert.Equal(1, (int)BlazorNativeNodeType.View);
+        Assert.Equal(2, (int)BlazorNativeNodeType.Text);
+        Assert.Equal(3, (int)BlazorNativeNodeType.Button);
+        Assert.Equal(4, (int)BlazorNativeNodeType.Input);
+        Assert.Equal(5, (int)BlazorNativeNodeType.Image);
+        Assert.Equal(6, (int)BlazorNativeNodeType.Scroll);
+        Assert.Equal(7, (int)BlazorNativeNodeType.Picker);
     }
 
     [Fact]
