@@ -93,8 +93,9 @@ A pragma without a justification comment does not pass review.
 
 - **What it flags:** registering an `async` lambda or an `async` method against
   `IMobileBridge.NativeEvents` (`bridge.NativeEvents += async e => ...`).
-- **Why:** handlers run synchronously inside a native callback window (DevHost multicast is
-  sync; the production lane is the single-threaded dispatch lane). `Action<NativeEvent>`
+- **Why:** handlers run synchronously inside a native callback window (`DevHostBridge`'s
+  mock multicast is sync; the production lane is the single-threaded dispatch lane).
+  `Action<NativeEvent>`
   forces an async lambda to compile as `async void` — fire-and-forget: the continuation
   escapes the callback window and exceptions vanish.
 - **Compliant shape:**
