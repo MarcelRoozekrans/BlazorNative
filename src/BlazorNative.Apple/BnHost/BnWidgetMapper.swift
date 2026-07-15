@@ -137,6 +137,38 @@
 // [handleRemove] delete the wire and its pending offset dies with it, never
 // dispatched; a late completion resets a flag on an unreachable object and
 // re-consults the LIVE map, so it is a no-op by construction.
+//
+// ── PHASE 7.3: FORM CONTROLS — checkbox/switch/slider, AND `picker` GOES REAL ─
+// Three new NodeTypes (`checkbox` → UISwitch — decision 2: iOS HAS no native
+// checkbox; `switch` → UISwitch; `slider` → UISlider) and the LAST stubbed
+// widget becomes a real `UIPickerView` whose dataSource/delegate is the node's
+// own [BnPickerState]. All four ride the EXISTING wires: `value` (and
+// `min`/`max`/`step`, `items`/`selectedIndex`) on UpdateProp, selection changes
+// back on `change`.
+//
+// THE PER-CONTROL LOOP GUARD — verified per control, never assumed (the
+// design's own words), and the findings are the OPPOSITE of Android's:
+//  - `UISwitch.setOn`, `UISlider.setValue` and `UIPickerView.selectRow` all
+//    fire NOTHING (the 5.3 finding, re-verified per control by the
+//    fires-nothing tests) — so iOS has NO `applyingBatch` dispatch guard on any
+//    of the four, deliberately: an unneeded guard would swallow the very
+//    verification that pins the platform behaviour. Android's CompoundButton/
+//    ProgressBar fire SYNCHRONOUSLY (its guard is the batch flag) and its
+//    Spinner fires on a LATER layout pass (its guard is the expected-selection
+//    compare); none of that machinery exists here because none of the
+//    mechanisms it guards exist here.
+//  - What iOS DOES need: the slider's step-quantization DEDUP (a float-native
+//    drag delivers a distinct `.valueChanged` per sample where Android's int
+//    progress dedups structurally — the attach arm's slider case), and the
+//    picker's SAME-ROW compare ([handlePickerUserSelect] — a wheel spun away
+//    and back is not a change, matching AdapterView's own behaviour).
+//
+// THE STEP CONTRACT lives on [BnSliderState] (the wire payload is an exact
+// `min + n×step` multiple — quantized at the dispatch site, because the widget
+// is float-native); the picker's NORMATIVE CLAMP RULE (BnPicker.razor's
+// header, mirrored) on [handleItems] — including notify-on-move with the
+// CLAMPED index dispatched on the change wire, the items-before-selectedIndex
+// + re-clamp-on-items order, and the empty→non-empty no-notify asymmetry.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import UIKit
@@ -279,7 +311,14 @@ final class BnWidgetMapper {
     /// NODETYPES whose size is the native widget's business (DoD #3) — and the ONLY
     /// nodes that get a measure function. NOT "the nodes with no children": a
     /// childless `view` is a container (non-negotiable #6).
-    private static let measuredNodeTypes: Set<String> = ["text", "button", "input", "image"]
+    ///
+    /// Phase 7.3: the four form controls join. Their intrinsic sizes are the
+    /// PLATFORM's own (a fresh `UISwitch` answers `sizeThatFits` with 51×31pt —
+    /// nothing like Android's Material numbers) — frame parity applies to LAYOUT
+    /// (declared sizes and placement), never to intrinsic control sizes, which
+    /// are asserted per-platform by ORACLE (the 6.3 method).
+    private static let measuredNodeTypes: Set<String> =
+        ["text", "button", "input", "image", "checkbox", "switch", "slider", "picker"]
 
     /// The one nodeType that is a VIEWPORT and owns a synthetic content node — and it
     /// is deliberately NOT in [measuredNodeTypes]: the measure func attaches BY
@@ -294,6 +333,14 @@ final class BnWidgetMapper {
     /// the generic `sizeThatFits` one. Keyed on the NODETYPE (the contract) and not on
     /// `view is UIImageView` (a row in a table), for the reason [Self.scroll] is.
     private static let image = "image"
+
+    /// Phase 7.3 — the state-owner nodeType: a `picker` owns [BnPickerState]
+    /// (its items, its selection AND its dataSource/delegate). Keyed on the
+    /// NODETYPE for the reason [Self.scroll] is. The other stateful control:
+    private static let picker = "picker"
+
+    /// …and `slider`, which owns [BnSliderState] (the step contract's home).
+    private static let slider = "slider"
 
     /// The host container the top-level (parentless) node is added into — the twin
     /// of Android's widget_root. A plain UIView does not re-place its subviews (no
@@ -413,6 +460,120 @@ final class BnWidgetMapper {
         }
     }
     private var scrollWires: [Int32: BnScrollWire] = [:]
+
+    /// Phase 7.3 — a `slider` node's WIRE state, and **THE STEP CONTRACT'S iOS
+    /// HALF**. `UISlider` is float-native (min/max/value are Floats), so none of
+    /// Android's int-progress geometry ([SliderState]'s float↔int precision
+    /// contract) exists here — what survives the port is the OBSERVABLE: **the
+    /// wire payload must be an exact step multiple `min + n×step`** (the demo
+    /// slider 0/100/5 puts only multiples of 5 on the wire). Android gets that
+    /// for free (one progress unit IS one step, so the int widget can only land
+    /// on multiples); iOS must QUANTIZE the user's drag itself ([quantized]) —
+    /// one multiply and one add per payload, no accumulated error, exactly
+    /// Android's `min + progress×step` arithmetic.
+    ///
+    /// The state holds the RAW wire floats and the widget is RE-DERIVED from
+    /// the whole state on every prop write ([applySlider]) — so patch order
+    /// inside a batch cannot matter (a `value` landing before its `max` clamps
+    /// nothing; the last recompute wins). Defaults 0/100 mirror Kotlin's — they
+    /// only ever serve a hand-rolled wire: `BnSlider` ALWAYS declares min/max.
+    ///
+    /// Continuous (`step` absent): the payload is the raw float — the widget's
+    /// native unit, undivided. (Android quantizes continuous into 1000 progress
+    /// units because its widget is an int; that mechanic is Android's own and
+    /// is deliberately NOT copied — the design's DO-NOT-COPY list names it.)
+    private final class BnSliderState {
+        var value: Float = 0
+        var min: Float = 0
+        var max: Float = 100
+        var step: Float?
+
+        /// The STEP contract: [raw] snapped onto `min + n×step`, n clamped into
+        /// the declared range. Identity for a continuous slider (UISlider has
+        /// already clamped raw into [min, max]).
+        func quantized(_ raw: Float) -> Float {
+            guard let step = step, step > 0 else { return raw }
+            let range = max - min
+            guard range > 0 else { return min }
+            let n = Swift.min(Swift.max(0, ((raw - min) / step).rounded()),
+                              (range / step).rounded())
+            return min + n * step
+        }
+    }
+
+    /// nodeId → its slider wire state. Created with the node ([handleCreate],
+    /// keyed on the NODETYPE — the 6.2 lesson), purged with it ([handleRemove]).
+    private var sliderStates: [Int32: BnSliderState] = [:]
+
+    /// Phase 7.3 — a `picker` node's state (the state-owner precedent: the
+    /// native widget owns its items AND its selection UI) — **and its
+    /// dataSource/delegate**: `UIPickerView` has no adapter object, so the
+    /// state IS the design's "the component as its own dataSource/delegate".
+    /// Both `UIPickerView` slots are weak; this map is what retains the state
+    /// (the [eventTargets]/[BnScrollWire] ownership shape).
+    ///
+    ///  - [appliedSelection] — what the shell last applied to (or last heard
+    ///    from) the picker. −1 = nothing selected (empty items — the clamp
+    ///    rule's only −1). Unlike Android's Spinner there is NO asynchronous
+    ///    selection echo to guard against (`selectRow` applies immediately and
+    ///    never calls the delegate — VERIFIED, the fires-nothing tests), so on
+    ///    iOS this field's guard duty is the SAME-ROW compare in
+    ///    [handlePickerUserSelect]: a wheel spun away and back to the current
+    ///    row is not a change (Android's AdapterView drops those the same way).
+    ///  - [requestedIndex] — the wire's last `selectedIndex`, kept RAW so an
+    ///    `items` write can honor it regardless of patch order (a selection
+    ///    that arrived before its items would otherwise be clamped against an
+    ///    empty list and lost). The normative items-before-selectedIndex +
+    ///    re-clamp-on-items order (design decision 3) both route through it.
+    ///  - [handlerId] — the live `change` wire, last-wins (the 4.2 watcher
+    ///    discipline): a re-attach swaps the handler, keeping the node's state.
+    ///    Nil when unattached — the clamp's notify-on-move then has no wire.
+    ///  - [onUserSelect] — the delegate's ONLY dispatch path, routed back into
+    ///    the mapper's LIVE map lookup ([handlePickerUserSelect]) so a purged
+    ///    node's late delegate call no-ops (the 6.3 stale-callback discipline).
+    private final class BnPickerState: NSObject, UIPickerViewDataSource, UIPickerViewDelegate {
+        var items: [String] = []
+        var handlerId: Int32?
+        var requestedIndex: Int?
+        var appliedSelection = -1
+        var onUserSelect: ((Int) -> Void)?
+
+        func numberOfComponents(in pickerView: UIPickerView) -> Int { 1 }
+
+        func pickerView(_ pickerView: UIPickerView, numberOfRowsInComponent component: Int) -> Int {
+            items.count
+        }
+
+        func pickerView(_ pickerView: UIPickerView, titleForRow row: Int,
+                        forComponent component: Int) -> String? {
+            row >= 0 && row < items.count ? items[row] : nil
+        }
+
+        /// A USER pick — `UIPickerView` calls this for wheel gestures only,
+        /// never for `selectRow` (verified; the whole reason iOS needs no
+        /// Spinner-style expected-selection guard).
+        func pickerView(_ pickerView: UIPickerView, didSelectRow row: Int, inComponent component: Int) {
+            onUserSelect?(row)
+        }
+    }
+
+    /// nodeId → its picker state. Same lifecycle as [sliderStates].
+    private var pickerStates: [Int32: BnPickerState] = [:]
+
+    /// Test-only (Phase 7.3): `change` dispatches actually sent, ALL controls
+    /// (UITextField/checkbox/switch/slider/picker — every dispatch site routes
+    /// through [dispatchChange]). The disabled-controls device assertion reads
+    /// it: "disabled controls dispatch NOTHING" is only assertable as a
+    /// counter, because the demo's disabled handlers are deliberately unbound
+    /// .NET-side — a dispatch that DID leak would move no echo and no frame.
+    private(set) var changeDispatchesSent: Int = 0
+
+    /// Every `change` dispatch goes through here — the counter above is the
+    /// device tests' only honest observation point.
+    private func dispatchChange(_ handlerId: Int32, _ payload: String) {
+        changeDispatchesSent += 1
+        onUiEvent(handlerId, "change", payload)
+    }
 
     /// Set by [destroy]. The tree is gone; a late batch (one already hopped to main
     /// when the host tore down) must not resurrect it into freed native memory.
@@ -539,6 +700,9 @@ final class BnWidgetMapper {
         // Phase 7.2: pending scroll offsets die with the host — a dispatch after
         // teardown would enter a retired lane for a dead view hierarchy.
         scrollWires.removeAll()
+        // Phase 7.3: the form controls' wire state too, same reason.
+        sliderStates.removeAll()
+        pickerStates.removeAll()
         diagnosed.removeAll()
         diagnosedKeys.removeAll()
         viewToNode.removeAll()
@@ -1002,6 +1166,20 @@ final class BnWidgetMapper {
             handleAttachScroll(nodeId: nodeId, handlerId: handlerId)
             return
         }
+        // Phase 7.3 — the picker next, ALSO before the UIControl guard: a
+        // UIPickerView is a UIView, not a UIControl, and its wire is the state's
+        // handlerId (the delegate dispatches through [handlePickerUserSelect]),
+        // not a control-event target. Last-wins re-attach, the 4.2 watcher
+        // discipline: swap the handler on the LIVE state, keep the node's
+        // selection.
+        if eventName == "change", views[nodeId] is UIPickerView {
+            guard let state = pickerStates[nodeId] else {
+                NSLog("[BnWidgetMapper] AttachEvent 'change' for picker \(nodeId) has no state: ignored")
+                return
+            }
+            state.handlerId = handlerId
+            return
+        }
         guard let control = views[nodeId] as? UIControl else {
             NSLog("[BnWidgetMapper] AttachEvent '\(eventName)' for node \(nodeId): not a UIControl — ignored")
             return
@@ -1016,11 +1194,65 @@ final class BnWidgetMapper {
             controlEvent = .touchUpInside
             payload = { nil }
         case "change":
-            guard let field = control as? UITextField else {
-                NSLog("[BnWidgetMapper] AttachEvent 'change' ignored: node \(nodeId) is not a UITextField"); return
+            switch control {
+            case let field as UITextField:
+                controlEvent = .editingChanged
+                payload = { [weak field] in field?.text ?? "" }
+            // Phase 7.3 — checkbox AND switch: both are UISwitch (decision 2)
+            // and share one wire grammar (payload exactly "true"/"false" — what
+            // BnCheckbox/BnSwitch parse ordinally).
+            //
+            // ── THE PER-CONTROL LOOP-GUARD FINDING (verified, never assumed —
+            // the design's own words), and it is the OPPOSITE of Android's:
+            // `UISwitch.setOn` does NOT fire `.valueChanged` (the 5.3 finding,
+            // re-verified per control by the fires-nothing tests), so the
+            // patch-applied value echo CANNOT re-enter the change lane and
+            // there is deliberately NO `applyingBatch` dispatch guard here —
+            // adding one would swallow the very verification that pins the
+            // platform behaviour (the test reddens if UIKit ever starts
+            // firing). Android's CompoundButton fires SYNCHRONOUSLY and needs
+            // the guard; same wire, different platform, different (absent)
+            // mechanism.
+            case let toggle as UISwitch:
+                controlEvent = .valueChanged
+                payload = { [weak toggle] in (toggle?.isOn ?? false) ? "true" : "false" }
+            // Phase 7.3 — slider: the payload is the wire VALUE quantized onto
+            // the step grid (an invariant float — Float.description never
+            // localizes; exactly what BnSlider's strict parse expects). See
+            // [BnSliderState]: iOS is float-native, so the STEP contract is
+            // enforced HERE, at the dispatch site, where Android's int widget
+            // enforces it structurally.
+            //
+            // `UISlider.setValue` fires nothing (verified — no applyingBatch
+            // guard, same reasoning as the UISwitch arm above). The guard iOS
+            // DOES need is the DEDUP: a float-native drag delivers a distinct
+            // `.valueChanged` per sample, and with a step declared, runs of
+            // samples quantize onto the SAME multiple — Android's int progress
+            // dedups those structurally (onProgressChanged fires per progress
+            // CHANGE); here `nil` (= "not a change") is what keeps one step
+            // from dispatching twice.
+            case let slider as UISlider:
+                controlEvent = .valueChanged
+                payload = { [weak self, weak slider] in
+                    guard let self = self, let slider = slider,
+                          let state = self.sliderStates[nodeId] else {
+                        return nil // purged: stale sample, no-op (the 6.3 discipline)
+                    }
+                    let quantized = state.quantized(slider.value)
+                    if quantized == state.value { return nil } // the dedup — see above
+                    state.value = quantized
+                    // Snap the thumb onto the multiple the wire carries (setValue
+                    // fires nothing, so this cannot re-enter) — the native state
+                    // and the payload agree, as Android's int progress does
+                    // structurally.
+                    slider.setValue(quantized, animated: false)
+                    return quantized.description
+                }
+            default:
+                NSLog("[BnWidgetMapper] AttachEvent 'change' ignored: node \(nodeId) is a "
+                      + "\(type(of: control)) — not a change-bearing widget")
+                return
             }
-            controlEvent = .editingChanged
-            payload = { [weak field] in field?.text ?? "" }
         case "focus":
             guard control is UITextField else {
                 NSLog("[BnWidgetMapper] AttachEvent 'focus' ignored: node \(nodeId) is not a UITextField"); return
@@ -1040,7 +1272,19 @@ final class BnWidgetMapper {
         let key = EventKey(nodeId: nodeId, event: eventName)
         removeTarget(for: key) // last-wins
         let target = BnControlTarget { [weak self] in
-            self?.onUiEvent(handlerId, eventName, payload())
+            guard let self = self else { return }
+            if eventName == "change" {
+                // Every change dispatch rides [dispatchChange] (the counter is
+                // the disabled-controls assertion's only honest witness). A nil
+                // payload here is the slider's dedup / a purged node's stale
+                // sample — NOT a change, nothing to dispatch. (click/focus/blur
+                // legitimately dispatch nil payloads; change never does — the
+                // UITextField arm answers "" for an empty field.)
+                guard let value = payload() else { return }
+                self.dispatchChange(handlerId, value)
+            } else {
+                self.onUiEvent(handlerId, eventName, payload())
+            }
         }
         control.addTarget(target, action: #selector(BnControlTarget.fire), for: controlEvent)
         eventTargets[key] = (control, target)
@@ -1062,6 +1306,20 @@ final class BnWidgetMapper {
             // but nil it out explicitly — a dangling-but-unfired delegate is a
             // thing a reader should never have to reason about.
             (views[nodeId] as? UIScrollView)?.delegate = nil
+            return
+        }
+        // Phase 7.3 — the picker detaches by state, mirroring its attach arm (the
+        // 3.3 symmetric-arms rule): the handlerId goes, and the clamp's
+        // notify-on-move loses its wire with it — a detached picker clamps
+        // silently, like every other dead wire (the 7.2 detach discipline). The
+        // delegate stays: it resolves the LIVE state's handlerId at fire time,
+        // and nil dispatches nothing.
+        if eventName == "change", views[nodeId] is UIPickerView {
+            guard let state = pickerStates[nodeId] else {
+                NSLog("[BnWidgetMapper] DetachEvent 'change' for picker \(nodeId) has no state: ignored")
+                return
+            }
+            state.handlerId = nil
             return
         }
         let key = EventKey(nodeId: nodeId, event: eventName)
@@ -1267,6 +1525,39 @@ final class BnWidgetMapper {
 
         views[nodeId] = view
 
+        // Phase 7.3 — the stateful controls' wire state, created with the node and
+        // keyed on the NODETYPE (never the widget class — the 6.2 lesson: the
+        // nodeType is the contract, the class is a table row that could change).
+        if nodeType == Self.slider {
+            sliderStates[nodeId] = BnSliderState()
+        }
+        if nodeType == Self.picker {
+            // The guard-cast is posture, exactly like the scroll arm above: a
+            // `picker` whose view failed it would silently stop being a picker
+            // (no dataSource → an empty wheel, no delegate → no dispatches).
+            guard let pickerView = view as? UIPickerView else {
+                NSLog("[BnWidgetMapper] node \(nodeId) is a `picker` node but its view is a "
+                      + "\(type(of: view)), not a UIPickerView — the node is DROPPED (it would "
+                      + "otherwise be a picker with no dataSource — an empty wheel — and no "
+                      + "delegate — no dispatches).")
+                assertionFailure("`picker` node \(nodeId) did not get a UIPickerView from makeView")
+                views.removeValue(forKey: nodeId) // registered five lines up; a dropped node owns nothing
+                return
+            }
+            let state = BnPickerState()
+            // The delegate resolves the LIVE map at fire time ([handlePickerUserSelect]
+            // starts with a lookup), so a purged node's late delegate call no-ops —
+            // the 6.3 stale-callback discipline.
+            state.onUserSelect = { [weak self] row in
+                self?.handlePickerUserSelect(nodeId, row: row)
+            }
+            pickerStates[nodeId] = state
+            // Both UIPickerView slots are WEAK — the map above is the retainer
+            // (the [eventTargets] ownership shape).
+            pickerView.dataSource = state
+            pickerView.delegate = state
+        }
+
         // The view a child of this node parents INTO: for a child of a scroll node that
         // is the CONTENT view, never the UIScrollView (non-negotiable #2).
         //
@@ -1402,13 +1693,30 @@ final class BnWidgetMapper {
             // the safe area is the app's business, not the viewport's.
             scroll.contentInsetAdjustmentBehavior = .never
             return scroll
-        case "picker":
-            // Still stubbed (6.1's honest boundary, minus `scroll`): a framework
-            // container that runs its OWN layout over its children, so Yoga does not get
-            // the final word inside one. Keep a placeholder so container indices stay
-            // consistent.
-            NSLog("[BnWidgetMapper] nodeType 'picker' stubbed as a placeholder UIView (Phase 6.3+)")
-            return UIView()
+        case "checkbox", "switch":
+            // Phase 7.3, decision 2 — **iOS HAS NO NATIVE CHECKBOX**: UIKit's toggle
+            // is UISwitch (React Native ships only `Switch` for the same reason), so
+            // `checkbox` and `switch` are semantically identical here and visually
+            // distinct only on Android (CheckBox vs Switch). A RECORDED
+            // "renders natively, not identically" divergence — same wire, same
+            // events, same declared frames, different pixels. A custom-drawn
+            // checkbox would buy pixel parity at the cost of not being native —
+            // against the project's thesis.
+            return UISwitch()
+        case Self.slider:
+            // Phase 7.3 — float-native (no int-progress geometry to derive; see
+            // [BnSliderState] for the one thing that DID survive the port: the
+            // step contract on the wire payload).
+            return UISlider()
+        case Self.picker:
+            // Phase 7.3 — REAL since this phase: a UIPickerView whose
+            // dataSource/delegate is the node's [BnPickerState] (wired in
+            // [handleCreate], where the nodeId is known). NodeType 7 was a
+            // do-nothing placeholder from 2.5 until now. No BnSpinner-style
+            // self-layout subclass — `selectRow` applies immediately on iOS;
+            // that class exists purely because of Android's layout-coupled
+            // selection delivery (its KDoc says so by name).
+            return UIPickerView()
         default:
             NSLog("[BnWidgetMapper] Unknown nodeType '\(nodeType)' — falling back to UILabel")
             return UILabel()
@@ -1539,6 +1847,12 @@ final class BnWidgetMapper {
             // the SUBTREE purge for the 6.3 reason: navigation names the page,
             // never the scroll inside it.
             scrollWires.removeValue(forKey: id)
+            // Phase 7.3 — the form controls' wire state dies with the node, for
+            // the same two reasons every other map purges here: ids restart, and
+            // an entry outliving its node answers for the next node to inherit
+            // the id (a late delegate call would compare against a ghost).
+            sliderStates.removeValue(forKey: id)
+            pickerStates.removeValue(forKey: id)
         }
         // …and the DIAGNOSTICS BOOKKEEPING, for the reason [diagnose] gives: node ids are
         // REUSED. A warn-once key that outlives its node silences the warning the node
@@ -1584,7 +1898,8 @@ final class BnWidgetMapper {
                 NSLog("[BnWidgetMapper] UpdateProp placeholder ignored: node \(nodeId) is not a UITextField")
             }
         case "value":
-            if let field = view as? UITextField {
+            switch view {
+            case let field as UITextField:
                 let newValue = value ?? ""
                 // The @bind write-back — the iOS SIMPLIFICATION (design §3): NO
                 // applyingBatch re-entrancy guard. UIKit does NOT fire
@@ -1600,12 +1915,93 @@ final class BnWidgetMapper {
                     field.selectedTextRange = field.textRange(from: end, to: end)
                     markDirty(field) // new content = new intrinsic size
                 }
+            // Phase 7.3 — checkbox/switch. The wire grammar is EXACTLY
+            // "true"/"false" (ordinal — BnCheckbox's header; "True" is garbage
+            // there and is garbage here). null = the attribute was removed →
+            // the component default (false). `setOn` fires nothing (the
+            // verified per-control finding — the attach arm's comment has it),
+            // so this write-back needs no guard on this platform.
+            case let toggle as UISwitch:
+                switch value {
+                case "true": toggle.setOn(true, animated: false)
+                case "false", nil: toggle.setOn(false, animated: false)
+                default:
+                    NSLog("[BnWidgetMapper] UpdateProp value ignored on node \(nodeId): "
+                          + "'\(value ?? "nil")' is not the checkbox wire grammar "
+                          + "(exactly \"true\"/\"false\")")
+                }
+            // Phase 7.3 — slider: store the RAW wire float, re-apply the whole
+            // state ([applySlider] — order-independent within a batch).
+            case let slider as UISlider:
+                guard let state = sliderStates[nodeId] else {
+                    NSLog("[BnWidgetMapper] UpdateProp value for slider \(nodeId) has no state: ignored")
+                    return
+                }
+                guard let v = value.flatMap(Self.parseWireFloat) else {
+                    NSLog("[BnWidgetMapper] UpdateProp value ignored on slider \(nodeId): "
+                          + "'\(value ?? "nil")' is not an invariant float")
+                    return
+                }
+                state.value = v
+                applySlider(slider, state)
+            default:
+                NSLog("[BnWidgetMapper] UpdateProp value ignored: node \(nodeId) is a "
+                      + "\(type(of: view)), not a value-bearing widget")
+            }
+        // Phase 7.3 — the slider's declared range/step (BnSlider always declares
+        // min/max; step only when set — null resets to continuous).
+        case "min", "max", "step":
+            guard let slider = view as? UISlider else {
+                NSLog("[BnWidgetMapper] UpdateProp \(name) ignored: node \(nodeId) is a "
+                      + "\(type(of: view)), not a UISlider")
+                return
+            }
+            guard let state = sliderStates[nodeId] else {
+                NSLog("[BnWidgetMapper] UpdateProp \(name) for slider \(nodeId) has no state: ignored")
+                return
+            }
+            var parsed: Float?
+            if let value = value {
+                guard let v = Self.parseWireFloat(value) else {
+                    NSLog("[BnWidgetMapper] UpdateProp \(name) ignored on slider \(nodeId): "
+                          + "'\(value)' is not an invariant float")
+                    return
+                }
+                parsed = v
+            }
+            switch name {
+            case "min": state.min = parsed ?? 0
+            case "max": state.max = parsed ?? 100
+            default: state.step = parsed // null = continuous (the un-styled invariant)
+            }
+            applySlider(slider, state)
+        // Phase 7.3 — the picker's two props (the state-owner precedent).
+        case "items":
+            if let picker = view as? UIPickerView {
+                handleItems(nodeId: nodeId, picker: picker, json: value)
             } else {
-                NSLog("[BnWidgetMapper] UpdateProp value ignored: node \(nodeId) is not a UITextField")
+                NSLog("[BnWidgetMapper] UpdateProp items ignored: node \(nodeId) is a "
+                      + "\(type(of: view)), not a UIPickerView")
+            }
+        case "selectedIndex":
+            if let picker = view as? UIPickerView {
+                handleSelectedIndex(nodeId: nodeId, picker: picker, value: value)
+            } else {
+                NSLog("[BnWidgetMapper] UpdateProp selectedIndex ignored: node \(nodeId) is a "
+                      + "\(type(of: view)), not a UIPickerView")
             }
         case "enabled":
             if let control = view as? UIControl {
                 control.isEnabled = (value as NSString?)?.boolValue ?? true
+            } else if let picker = view as? UIPickerView {
+                // Phase 7.3 — UIPickerView is not a UIControl and has no
+                // `isEnabled`; the gate UIKit gives a plain view is touch
+                // delivery. A disabled picker's wheel cannot be moved, so its
+                // delegate never fires — the "disabled dispatches nothing"
+                // enforcement, by the platform's own mechanism. (Android's
+                // Spinner greys itself via isEnabled; the missing grey here is
+                // pixels no assertion reads — the decision-2 posture.)
+                picker.isUserInteractionEnabled = (value as NSString?)?.boolValue ?? true
             }
         // Phase 6.3 (M6 DoD #5): the LAST stubbed leaf stops being one. `src` is a PROP,
         // not a style — a URL is neither layout nor paint, so it rides this wire and not
@@ -1892,6 +2288,151 @@ final class BnWidgetMapper {
     private func resolveLayout() {
         guard !applyingBatch else { return }
         calculateAndApply()
+    }
+
+    // ── Phase 7.3: THE FORM CONTROLS' PROP MACHINERY ─────────────────────────
+
+    /// Re-applies the WHOLE slider state to the widget — float-native, so this
+    /// is three assignments, not Android's int-geometry derivation. Ordering
+    /// (min, max, THEN value) matters only within this call: `UISlider` clamps
+    /// `value` against the range it has at assignment time, and re-applying all
+    /// three on every prop write is what makes the patch order inside a batch
+    /// immaterial (the last recompute wins — [BnSliderState]'s contract).
+    ///
+    /// None of these setters fires `.valueChanged` (the verified per-control
+    /// finding), so unlike Android's `applySlider` this needs no batch guard.
+    private func applySlider(_ slider: UISlider, _ state: BnSliderState) {
+        slider.minimumValue = state.min
+        slider.maximumValue = state.max
+        slider.setValue(state.value, animated: false)
+    }
+
+    /// `items` arrived — the flat-JSON string array (the NORMATIVE grammar in
+    /// `BnItemsJson.cs`'s header, parsed by the STRICT [BnItemsJson] — the same
+    /// escaping matrix as the dispatch-args wire, none of its reader leniency).
+    /// MALFORMED IS LOUD AND EMPTY: log + render an empty picker, never a wrong
+    /// one (the grammar's own posture).
+    ///
+    /// ── THE CLAMP RULE (NORMATIVE — BnPicker.razor's header, mirrored verbatim
+    /// by both shells; Android's twin is `WidgetMapper.handleItems`) ──────────
+    ///
+    ///   items empty      → selection −1 (the only state an empty picker has)
+    ///   items non-empty  → clamp into [0, Count−1]
+    ///
+    /// Re-bind the wheel and CLAMP/PRESERVE the selection — always, on every
+    /// items write, regardless of patch order (the normative
+    /// items-before-selectedIndex + RE-CLAMP-on-items order, design decision 3).
+    /// And NOTIFY-ON-MOVE: when the clamp MOVED a LIVE selection (an item
+    /// shrink below it → the LAST item; the items emptied → −1), the shell
+    /// dispatches the CLAMPED index on the change wire — the bound .NET state
+    /// re-syncs to what the native widget actually shows, instead of the echo
+    /// and the screen disagreeing. An in-range preserved selection dispatches
+    /// nothing (the notify happens only when the clamp moved the value). The
+    /// dispatch is asserted ON THE WIRE deliberately: .NET's benign inbound
+    /// clamp makes a non-clamping shell invisible from the .NET side.
+    ///
+    /// THE ONE DELIBERATE ASYMMETRY: the empty→non-empty transition is NOT a
+    /// move. A picker with no items has no selection to displace, and the same
+    /// batch always carries the authoritative `selectedIndex` (BnPicker emits
+    /// it unconditionally, AFTER `items` in attribute order). Notifying "0"
+    /// there would race — and on the disabled picker (mounts at 1) could
+    /// overwrite — that very prop. The base for the clamp in that case is the
+    /// wire's OWN last request ([BnPickerState.requestedIndex]), which also
+    /// makes the items/selectedIndex patch order immaterial.
+    private func handleItems(nodeId: Int32, picker: UIPickerView, json: String?) {
+        guard let state = pickerStates[nodeId] else {
+            NSLog("[BnWidgetMapper] UpdateProp items for picker \(nodeId) has no state: ignored")
+            return
+        }
+        // null = the attribute was removed; BnPicker never does (it writes "[]"),
+        // so it is the raw wire's empty list, same code path as "[]".
+        var items: [String] = []
+        if let json = json {
+            do {
+                items = try BnItemsJson.parse(json)
+            } catch {
+                NSLog("[BnWidgetMapper] UpdateProp items for picker \(nodeId) is MALFORMED — "
+                      + "rendering an EMPTY picker rather than a wrong one: \(error)")
+                items = []
+            }
+        }
+        let hadLiveSelection = state.appliedSelection >= 0
+        let base = hadLiveSelection ? state.appliedSelection : (state.requestedIndex ?? -1)
+        let clamped = Self.clampSelection(base, count: items.count)
+        state.items = items
+        state.appliedSelection = clamped
+        picker.reloadAllComponents()
+        // selectRow applies IMMEDIATELY and calls no delegate (verified — the
+        // reason there is no BnSpinner here and no expected-selection guard).
+        if clamped >= 0 { picker.selectRow(clamped, inComponent: 0, animated: false) }
+        markDirty(picker) // new items = a new intrinsic size (the widest item)
+        if hadLiveSelection && clamped != base, let handlerId = state.handlerId {
+            dispatchChange(handlerId, String(clamped))
+        }
+    }
+
+    /// `selectedIndex` arrived — an invariant int, clamped INBOUND by the same
+    /// normative rule (an out-of-range but well-formed index is a hand-rolled
+    /// wire, not garbage — BnPicker clamps before emitting, so the wire always
+    /// carries a clamped index already). Unparseable is logged and ignored.
+    private func handleSelectedIndex(nodeId: Int32, picker: UIPickerView, value: String?) {
+        guard let state = pickerStates[nodeId] else {
+            NSLog("[BnWidgetMapper] UpdateProp selectedIndex for picker \(nodeId) has no state: ignored")
+            return
+        }
+        var requested: Int?
+        if let value = value {
+            guard let parsed = Int(value) else {
+                NSLog("[BnWidgetMapper] UpdateProp selectedIndex ignored on picker \(nodeId): "
+                      + "'\(value)' is not an invariant int")
+                return
+            }
+            requested = parsed
+        }
+        state.requestedIndex = requested
+        let clamped = Self.clampSelection(requested ?? 0, count: state.items.count)
+        state.appliedSelection = clamped
+        if clamped >= 0 { picker.selectRow(clamped, inComponent: 0, animated: false) }
+    }
+
+    /// A USER pick landed (the delegate's `didSelectRow` — wheel gestures only;
+    /// `selectRow` never calls it, verified). Resolves the LIVE map first (the
+    /// 6.3 stale-callback discipline), then the SAME-ROW guard: a wheel spun
+    /// away and back to the current row is not a change — Android's
+    /// AdapterView drops those the same way, so re-selecting the same position
+    /// dispatches nothing on either shell.
+    private func handlePickerUserSelect(_ nodeId: Int32, row: Int) {
+        guard let state = pickerStates[nodeId] else { return } // purged: stale, no-op
+        if row == state.appliedSelection { return } // the same-row guard
+        state.appliedSelection = row
+        if let handlerId = state.handlerId {
+            // The payload is the new index as an invariant int (BnPicker's
+            // strict parse).
+            dispatchChange(handlerId, String(row))
+        }
+    }
+
+    /// THE NORMATIVE CLAMP (BnPicker.razor's header): empty → −1; otherwise
+    /// into [0, count−1] — a shrink below the selection lands on the LAST item,
+    /// a negative on 0. One function, both call sites ([handleItems] /
+    /// [handleSelectedIndex]) — the 6.3 one-decision-one-function lesson.
+    internal static func clampSelection(_ index: Int, count: Int) -> Int {
+        count <= 0 ? -1 : Swift.min(Swift.max(index, 0), count - 1)
+    }
+
+    /// The form-control props' STRICT float parse — the 6.1 number production
+    /// (anchored: the WHOLE string must be consumed), the twin of Kotlin's
+    /// `parseWireFloat` and mirrored for the same reason: `Float(String)`
+    /// accepts spellings the other shell rejects (`"inf"`, `"nan"`, hex floats
+    /// like `"0x1p3"`), and a value one shell honours and the other ignores
+    /// makes the two shells' widgets disagree for a reason that has nothing to
+    /// do with the engine. NOT [parseCGFloat] (the legacy visual-prop parser),
+    /// which strips unit suffixes these props never carry.
+    internal static func parseWireFloat(_ s: String) -> Float? {
+        guard let _ = s.range(of: #"^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$"#,
+                              options: .regularExpression) else { return nil }
+        guard let v = Float(s), v.isFinite else { return nil }
+        return v
     }
 
     // ── SetStyle: THE ROUTER (Phase 6.1) ─────────────────────────────────────
