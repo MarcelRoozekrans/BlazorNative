@@ -169,6 +169,20 @@
 // header, mirrored) on [handleItems] — including notify-on-move with the
 // CLAMPED index dispatched on the change wire, the items-before-selectedIndex
 // + re-clamp-on-items order, and the empty→non-empty no-notify asymmetry.
+//
+// TWO iOS-26 PLATFORM FINDINGS (Gate 3, verified on the simulator — both are
+// widgets refusing to hold what the shell hands them, in ways no earlier
+// widget in this shell did):
+//  - `UISlider` reconstructs `value` from a Float32 track FRACTION, so a
+//    programmatic set of an exact step multiple reads back one ulp off
+//    (60 → 60.000004 on 0…100). [BnSliderView] holds the exact programmatic
+//    value; a real drag reads the platform's live value.
+//  - `UISwitch` enforces its own intrinsic size on every frame write, so the
+//    stretched layout box Yoga computes for the un-styled checkbox/switch
+//    quartet is only observable on the Yoga node ([bnYogaFrame(of:)]) — the
+//    view snaps back to the platform's own size. The measure path is NOT
+//    involved: the shared trampoline already returns the imposed dimension
+//    for an Exactly axis, and Yoga imposes the stretched width regardless.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import UIKit
@@ -217,6 +231,53 @@ final class BnScrollDelegateProxy: NSObject, UIScrollViewDelegate {
 /// a `BnYogaFrameLayout` for a DIFFERENT reason — there the subclass carries the
 /// `onMeasure` fallback and the layout suppression. Here it carries nothing at all.)
 final class BnScrollContentView: UIView {}
+
+/// Phase 7.3 — the `slider` widget, and **THE EXACT-VALUE SHIM** the iOS 26
+/// runtime made necessary.
+///
+/// `UISlider` on the iOS 26 SDK does not store `value` verbatim: it round-trips
+/// it through the normalized track fraction `(value − min) / (max − min)` in
+/// Float32 and reconstructs `min + fraction × range` on read. For most step
+/// multiples the fraction is not representable — `setValue(60)` on the demo's
+/// 0…100 slider stores 0.6f (= 0.60000002…) and reads back **60.000004**, one
+/// ulp above the exact multiple the shell just computed. The step contract
+/// says the widget and the payload agree on the EXACT multiple (Android's int
+/// progress gives that structurally — reading progress back cannot drift), so
+/// the last PROGRAMMATIC value is held here, clamped exactly as UISlider
+/// clamps, and reported verbatim.
+///
+/// **A real drag is the platform's own** ([beginTracking] clears the shim, and
+/// a set that lands mid-tracking refuses to record): during tracking `value`
+/// must report the live thumb, or the dispatch-site dedup would compare every
+/// sample against a frozen number and the drag would go silent after its
+/// first step. The wire is unaffected either way — the payload is quantized
+/// at the dispatch site from whatever the widget reports.
+final class BnSliderView: UISlider {
+    /// The last programmatic value, exact — nil while the user is dragging
+    /// (the platform's live value is the honest answer then).
+    private var bnExactValue: Float?
+
+    override var value: Float {
+        get { bnExactValue ?? super.value }
+        set { setValue(newValue, animated: false) } // one recording site below
+    }
+
+    override func setValue(_ value: Float, animated: Bool) {
+        super.setValue(value, animated: animated)
+        bnRecordExact(value)
+    }
+
+    override func beginTracking(_ touch: UITouch, with event: UIEvent?) -> Bool {
+        bnExactValue = nil // the drag's live values are the platform's
+        return super.beginTracking(touch, with: event)
+    }
+
+    private func bnRecordExact(_ requested: Float) {
+        guard !isTracking else { bnExactValue = nil; return }
+        // The same clamp UISlider applies internally, done in exact arithmetic.
+        bnExactValue = Swift.min(Swift.max(requested, minimumValue), maximumValue)
+    }
+}
 
 // ── The native measurement callback (DoD #3) ─────────────────────────────────
 
@@ -862,6 +923,27 @@ final class BnWidgetMapper {
     /// assertable about a wire that has finished arriving.
     var scrollBusyWireCount: Int {
         scrollWires.values.filter { $0.inFlight || $0.pendingOffsetPt != nil }.count
+    }
+
+    // ── Phase 7.3 test-only bookkeeping ──────────────────────────────────────
+
+    /// Test-only: the Yoga-computed (parent-relative) frame of the node that
+    /// places [view] — nil for a view the mapper does not place.
+    ///
+    /// It exists because **one widget cannot witness its own stretch**: UIKit's
+    /// `UISwitch` enforces its own size on every frame write (documented
+    /// behaviour — "the size components of the frame rectangle are ignored";
+    /// on the iOS 26 simulator a 390-wide assignment reads back the intrinsic
+    /// 63), so `alignItems: stretch` on the un-styled checkbox/switch quartet
+    /// is only observable on the YOGA node. The layout law is asserted here;
+    /// what the view then shows is the platform's own answer, asserted by
+    /// ORACLE (the 6.3 method). Every other widget in this shell accepts the
+    /// frame it is given, which is why no test needed this before 7.3.
+    func bnYogaFrame(of view: UIView) -> CGRect? {
+        guard let node = viewToNode[ObjectIdentifier(view)] else { return nil }
+        let frame = bn_yoga_node_get_frame(node)
+        return CGRect(x: CGFloat(frame.x), y: CGFloat(frame.y),
+                      width: CGFloat(frame.width), height: CGFloat(frame.height))
     }
 
     // ── Buffer on the callback thread; flush atomically on the main queue ─────
@@ -1706,8 +1788,11 @@ final class BnWidgetMapper {
         case Self.slider:
             // Phase 7.3 — float-native (no int-progress geometry to derive; see
             // [BnSliderState] for the one thing that DID survive the port: the
-            // step contract on the wire payload).
-            return UISlider()
+            // step contract on the wire payload). [BnSliderView], not a bare
+            // UISlider: the iOS 26 widget reconstructs `value` from a Float32
+            // track fraction, so a bare one reads back 60.000004 for the exact
+            // 60 the shell just set — see the subclass header.
+            return BnSliderView()
         case Self.picker:
             // Phase 7.3 — REAL since this phase: a UIPickerView whose
             // dataSource/delegate is the node's [BnPickerState] (wired in

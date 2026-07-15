@@ -199,12 +199,16 @@ final class BnFormDemoTests: BnHostTestCase {
     /// zero), so their sizes are the PLATFORM's own — asserted against the
     /// platform's own measurement, never a transcribed constant: a fresh
     /// widget of the same class, asked the SAME question the measure
-    /// trampoline asks the live one (`sizeThatFits` at the stretched width —
-    /// a column's default alignItems is stretch, so the cross-axis WIDTH is
-    /// layout, not intrinsic — and unconstrained height). Android mirrors this
-    /// with a fresh CheckBox/Switch and measure() — DIFFERENT numbers, same
-    /// method: frame parity applies to layout, never to intrinsic control
-    /// sizes. The sliders get the same oracle at their DECLARED width.
+    /// trampoline asks the live one (`sizeThatFits` at the view's own width
+    /// and unconstrained height). Android mirrors this with a fresh
+    /// CheckBox/Switch and measure() — DIFFERENT numbers, same method: frame
+    /// parity applies to layout, never to intrinsic control sizes. The
+    /// sliders get the same oracle at their DECLARED width.
+    ///
+    /// The cross-axis stretch (a column's default alignItems) is asserted on
+    /// the YOGA frame, not the view: UISwitch enforces its own size on every
+    /// frame write, so the view cannot show the stretched layout box — see
+    /// the width loop below and `BnWidgetMapper.bnYogaFrame(of:)`.
     func testControlsTakeThePlatformsOwnIntrinsicHeightByOracle() throws {
         XCTAssertTrue(pollForForm())
         let root = try rootView()
@@ -228,12 +232,32 @@ final class BnFormDemoTests: BnHostTestCase {
         assertOracleHeight("disabled slider", root.subviews[5], UISlider())
 
         // The cross-axis width is the STRETCH (Yoga's default alignItems),
-        // not an intrinsic: the un-styled quartet fills the column. Pinned so
-        // nobody "fixes" a full-width switch into a declared width silently.
+        // not an intrinsic: the un-styled quartet's LAYOUT BOX fills the
+        // column. Asserted on the YOGA frame, because the widget CANNOT
+        // witness its own stretch on this platform: UISwitch enforces its own
+        // size on every frame write (documented — "the size components of the
+        // frame rectangle are ignored"; verified on the iOS 26 simulator,
+        // where the 390-wide write reads back the intrinsic 63). The pin's
+        // job survives the move — a declared width smuggled onto the quartet
+        // would change the YOGA number below, and Android's twin still
+        // asserts the same stretch on the view (its Switch/CheckBox accept
+        // imposed sizes).
         let colW = root.frame.width
         for i in 0...3 {
-            XCTAssertEqual(root.subviews[i].frame.width, colW, accuracy: 0.5,
-                           "child \(i) stretches to the column width (alignItems: stretch)")
+            let live = root.subviews[i]
+            let layout = try XCTUnwrap(mapper.bnYogaFrame(of: live),
+                                       "child \(i) must have a Yoga node")
+            XCTAssertEqual(layout.width, colW, accuracy: 0.5,
+                           "child \(i)'s LAYOUT box stretches to the column width "
+                           + "(alignItems: stretch)")
+            // …and the VIEW shows the platform's own answer to that imposed
+            // frame — by ORACLE (the 6.3 method), never a transcribed
+            // constant: a fresh UISwitch given the same stretched frame.
+            let oracle = UISwitch()
+            oracle.frame = CGRect(x: 0, y: 0, width: colW, height: oracle.frame.height)
+            XCTAssertEqual(live.frame.width, oracle.frame.width, accuracy: 0.5,
+                           "child \(i) shows what the platform's OWN widget does with "
+                           + "an imposed \(colW)-wide frame (UISwitch enforces its size)")
         }
         // …and the pickers hold their declared width with a real (platform's
         // own) height — UIPickerView's wheel height is nobody's frame table.
