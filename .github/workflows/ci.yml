@@ -715,39 +715,107 @@ jobs:
   # ADVISORY, on purpose: emulator-on-CI has real flake modes (boot timeouts, adb
   # drops) that a required check must not import. Compiling has none of them.
   #
-  # ── WHY IT NEEDS build-test ────────────────────────────────────────────────
+  # ── WHY IT IS SELF-CONTAINED (no `needs`), MIRRORING ios-build ─────────────
+  # This job produces its OWN runtime — it does not depend on `build-test`. That
+  # is not a style choice; a `needs`-gated job cannot be a trustworthy REQUIRED
+  # check:
+  #   · GitHub does not surface a `needs`-gated job as a check until its dependency
+  #     finishes, so it is INVISIBLE on the PR checks list while `build-test` runs
+  #     and only appears afterward — you cannot see at a glance that the Android
+  #     shell is being gated at all.
+  #   · Worse, as a required check it is a TRAP: if `build-test` ever fails or is
+  #     skipped, this job never runs, never reports, and the PR wedges permanently
+  #     on "Expected — waiting for android-build".
+  # `ios-build` (below) is the template: no `needs`, it does its own
+  # `dotnet publish -r iossimulator-arm64` and then links. This job mirrors that —
+  # it self-publishes the bionic `.so` and then compiles.
+  #
   # `compileDebugAndroidTestKotlin`'s task graph runs `... → copyRuntimeSo →
-  # verifyNativeAssets`, which insists `BlazorNative.Runtime.so` is present. This job
-  # has no NativeAOT publish tree of its own, so it CONSUMES the bionic `.so`
-  # `build-test` already uploads (the same artifact the emulator lane downloads) and
-  # points the chain at it with `-PciSoDir` — which also narrows `abiFilters` to the
-  # x86_64 slice the artifact carries. Hence `needs: build-test`.
+  # verifyNativeAssets`, which only insists `BlazorNative.Runtime.so` EXISTS at the
+  # expected path — the compile neither links nor loads it. So the job needs the
+  # `.so` present, not downloaded. It self-publishes linux-bionic-x64 the PROVEN
+  # way this repo publishes it — windows-latest with the pinned NDK, exactly as
+  # `build-test` and android-instrumented.yml's `publish-so` do — and points the
+  # verify/copy chain at that publish tree with `-PciSoDir` (which also narrows
+  # `abiFilters` to the x86_64 slice, so no arm64 publish is needed for a compile).
+  # No export/IL2072 assertions here: `build-test` already gates those on every PR;
+  # this job's one job is to prove the Android shell COMPILES. (`build-test` still
+  # uploads its `.so` artifacts for the android-instrumented emulator lane — those
+  # are untouched.)
   # ═══════════════════════════════════════════════════════════════════════════
   android-build:
-    runs-on: ubuntu-latest
-    needs: build-test
+    runs-on: windows-latest
     timeout-minutes: 30
     defaults:
       run:
-        shell: bash
+        shell: pwsh
 
     steps:
       - uses: actions/checkout@v7
 
-      - name: Setup JDK 21 (Temurin — Gradle daemon)
+      - name: Setup .NET SDK (global.json — 10.0.3xx band)
+        uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+
+      - name: Setup JDK 21 (Temurin — Gradle daemon + sdkmanager)
         uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '21'
 
-      # The bionic .so `build-test` published (uploaded as `BlazorNative.Runtime-linux-bionic-x64`).
-      # `-PciSoDir` below points verifyNativeAssets/copyRuntimeSo at it, exactly as the
-      # advisory emulator job in android-instrumented.yml does.
-      - name: Download artifact — linux-bionic-x64 binary
-        uses: actions/download-artifact@v8
+      # ── NDK (the bionic publish links with the pinned NDK's clang) ─────────
+      # Mirrors build-test / publish-so verbatim: resolve the root, use the
+      # preinstalled NDK if it is the pin, else restore-from-cache or sdkmanager.
+      - name: Resolve toolchain paths (NDK root)
+        run: |
+          if (-not $env:ANDROID_HOME) { throw "ANDROID_HOME is not set on the runner image" }
+          "ANDROID_NDK_ROOT=$env:ANDROID_HOME\ndk\$env:NDK_PIN" | Out-File $env:GITHUB_ENV -Append
+
+      - name: Check for pinned NDK on the runner image
+        id: check-ndk
+        run: |
+          $props = Join-Path $env:ANDROID_NDK_ROOT "source.properties"
+          $present = (Test-Path $props) -and
+            ((Get-Content $props -Raw) -match ('(?m)^\s*Pkg\.Revision\s*=\s*' + [regex]::Escape($env:NDK_PIN) + '\s*$'))
+          "present=$present" | Out-File $env:GITHUB_OUTPUT -Append
+          Write-Host "NDK $env:NDK_PIN preinstalled: $present"
+
+      - name: Cache NDK ${{ env.NDK_PIN }}
+        if: steps.check-ndk.outputs.present != 'True'
+        uses: actions/cache@v6
         with:
-          name: BlazorNative.Runtime-linux-bionic-x64
-          path: ${{ runner.temp }}/ci-so
+          path: ${{ env.ANDROID_NDK_ROOT }}
+          key: ndk-${{ runner.os }}-${{ env.NDK_PIN }}
+
+      - name: Install NDK ${{ env.NDK_PIN }} (sdkmanager, on cache miss)
+        if: steps.check-ndk.outputs.present != 'True'
+        run: |
+          $props = Join-Path $env:ANDROID_NDK_ROOT "source.properties"
+          if (Test-Path $props) { Write-Host "NDK restored from cache — skipping sdkmanager"; exit 0 }
+          $sdkmanager = Join-Path $env:ANDROID_HOME "cmdline-tools\latest\bin\sdkmanager.bat"
+          if (-not (Test-Path $sdkmanager)) { throw "sdkmanager not found at $sdkmanager" }
+          "y" | & $sdkmanager --install "ndk;$env:NDK_PIN"
+          if ($LASTEXITCODE -ne 0) { throw "sdkmanager failed to install ndk;$env:NDK_PIN (exit $LASTEXITCODE)" }
+
+      - name: Verify NDK revision pin
+        run: |
+          $props = Join-Path $env:ANDROID_NDK_ROOT "source.properties"
+          if (-not (Test-Path $props)) { throw "NDK $env:NDK_PIN missing at $env:ANDROID_NDK_ROOT" }
+          $pattern = '(?m)^\s*Pkg\.Revision\s*=\s*' + [regex]::Escape($env:NDK_PIN) + '\s*$'
+          if ((Get-Content $props -Raw) -notmatch $pattern) {
+            throw "NDK at $env:ANDROID_NDK_ROOT is not revision $env:NDK_PIN (source.properties mismatch)"
+          }
+          Write-Host "NDK revision $env:NDK_PIN verified at $env:ANDROID_NDK_ROOT"
+
+      # ── Caches ────────────────────────────────────────────────────────────
+      - name: Cache NuGet packages
+        uses: actions/cache@v6
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', '**/*.props', '**/*.targets', 'global.json') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-
 
       - name: Cache Gradle
         uses: actions/cache@v6
@@ -759,41 +827,48 @@ jobs:
           restore-keys: |
             gradle-${{ runner.os }}-
 
-      # gradlew is committed 100644 (Windows-first repo) — make it executable.
-      - name: Make gradlew executable
-        run: chmod +x src/BlazorNative.Jni/gradlew
+      # ── Self-publish the bionic .so the compile needs present ───────────────
+      # The x86_64 slice only — `-PciSoDir` below narrows abiFilters to it, so no
+      # arm64 publish is needed. Lands at
+      # src/BlazorNative.Runtime/bin/Release/net10.0/linux-bionic-x64/publish/,
+      # which is exactly where verifyNativeAssets/copyRuntimeSo look. No
+      # IL2072/export assertions: build-test owns those on every PR.
+      - name: Publish linux-bionic-x64 (the .so compileDebugAndroidTestKotlin needs present)
+        run: |
+          dotnet publish src/BlazorNative.Runtime -c Release -r linux-bionic-x64 -tl:off -nologo
+          if ($LASTEXITCODE -ne 0) { throw "linux-bionic-x64 publish failed (exit $LASTEXITCODE)" }
 
       # ── THE GATE ────────────────────────────────────────────────────────────
       # `compileDebugAndroidTestKotlin` compiles the Android shell (src/androidMain/kotlin)
       # AND the instrumented androidTest source set. No emulator is booted and no test
-      # is run — the source sets simply have to resolve.
+      # is run — the source sets simply have to resolve. `-PciSoDir` points the
+      # verify/copy chain at the self-published bionic .so above.
       - name: Compile the Android shell + instrumented sources (no device)
         working-directory: src/BlazorNative.Jni
         run: |
-          set -o pipefail
-          if ! ./gradlew --no-daemon compileDebugAndroidTestKotlin "-PciSoDir=$RUNNER_TEMP/ci-so"; then
-            cat <<'WHY' >&2
-
-          ══════════════════════════════════════════════════════════════════════
-          THE ANDROID SHELL DOES NOT COMPILE, AND THIS IS A REQUIRED CHECK.
-
-          A device is needed to RUN the instrumented tests, not to COMPILE them —
-          which is the whole reason this job exists. `compileDebugAndroidTestKotlin`
-          type-checks src/androidMain/kotlin (MainActivity, WidgetMapper, YogaLayout)
-          and the instrumented androidTest source set without booting an emulator.
-
-          That a whole source set can silently vanish is not hypothetical. The AGP 9
-          migration stopped feeding java.srcDirs to the Kotlin compiler, so the ENTIRE
-          Android shell went uncompiled — the app still "built", the JVM tests still
-          passed, and the ONLY lane that could see it (android-instrumented) is
-          nightly/dispatch and does not gate PRs. It merged to `main` green and sat
-          there. PR #81 is the precedent this gate carries forward.
-
-          Fix the compile error above. Do not weaken this gate.
-          ══════════════════════════════════════════════════════════════════════
-          WHY
-            exit 1
-          fi
+          $soDir = Resolve-Path "..\..\src\BlazorNative.Runtime\bin\Release\net10.0\linux-bionic-x64\publish"
+          .\gradlew.bat --no-daemon compileDebugAndroidTestKotlin "-PciSoDir=$soDir"
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host ""
+            Write-Host "══════════════════════════════════════════════════════════════════════"
+            Write-Host "THE ANDROID SHELL DOES NOT COMPILE, AND THIS IS A REQUIRED CHECK."
+            Write-Host ""
+            Write-Host "A device is needed to RUN the instrumented tests, not to COMPILE them —"
+            Write-Host "which is the whole reason this job exists. compileDebugAndroidTestKotlin"
+            Write-Host "type-checks src/androidMain/kotlin (MainActivity, WidgetMapper, YogaLayout)"
+            Write-Host "and the instrumented androidTest source set without booting an emulator."
+            Write-Host ""
+            Write-Host "That a whole source set can silently vanish is not hypothetical. The AGP 9"
+            Write-Host "migration stopped feeding java.srcDirs to the Kotlin compiler, so the ENTIRE"
+            Write-Host "Android shell went uncompiled — the app still ""built"", the JVM tests still"
+            Write-Host "passed, and the ONLY lane that could see it (android-instrumented) is"
+            Write-Host "nightly/dispatch and does not gate PRs. It merged to main green and sat"
+            Write-Host "there. PR #81 is the precedent this gate carries forward."
+            Write-Host ""
+            Write-Host "Fix the compile error above. Do not weaken this gate."
+            Write-Host "══════════════════════════════════════════════════════════════════════"
+            throw "compileDebugAndroidTestKotlin failed (exit $LASTEXITCODE)"
+          }
 
   # ═══════════════════════════════════════════════════════════════════════════
   # ios-build — THE iOS SHELL MUST COMPILE, AND A REQUIRED CHECK MUST SAY SO.
