@@ -74,6 +74,14 @@ internal static unsafe class HostSession
         // the AVD (Gate 2, Coil) and the iOS simulator (Gate 3, Kingfisher). See
         // BnImageDemo.razor's TWO frame tables: before the bytes land, and after.
         ["BnImageDemo"] = r => r.Mount<BlazorNative.Components.BnImageDemo>(),
+        // Phase 7.2: the virtualized-list proof page (route "/list" — M7
+        // DoD #3). A SIXTH page, same rationale a fifth time: BnScrollDemo's
+        // frame table IS the 6.2 parity contract and the phase that introduces
+        // virtualization does not get to rewrite it. Its liveness counts
+        // (2 spacers + 11/15/11 window rows), spacer heights and content size
+        // (32,000) are asserted identically on the AVD (Gate 2) and the iOS
+        // simulator (Gate 3) — see BnListDemo.razor's header.
+        ["BnListDemo"] = r => r.Mount<BlazorNative.Components.BnListDemo>(),
         // Phase 4.2: the focus/blur proof app (BnInput OnFocus/OnBlur →
         // echo BnText — M4 DoD #4). Scaffolding, like CompositionProbe.
         ["FocusProbe"] = r => r.Mount<FocusProbe>(),
