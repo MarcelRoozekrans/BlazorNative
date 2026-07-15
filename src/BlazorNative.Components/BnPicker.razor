@@ -46,6 +46,16 @@
     programmatic set re-fires nothing (the loop guard is untouched: the
     notify happens only when the clamp MOVED the value).
 
+    THE NOTIFY FIRES ONCE PER DISTINCT (clamped, raw) PAIR (Gate 1 review
+    I2). Termination must not depend on the parent writing the clamp back: a
+    receiver that does not store it (or any bound component — its
+    HandleEventAsync auto-StateHasChanges) re-renders the picker with the
+    SAME out-of-range SelectedIndex, and re-notifying on every render is an
+    INFINITE loop (clamp → notify → parent StateHasChanged → re-render →
+    clamp → …). So the picker tracks the last-notified pair and stays silent
+    while it repeats; a NEW raw value or a NEW clamp result (items changed)
+    notifies again, and an in-range set clears the tracker.
+
     The same rule applies INBOUND: a change dispatch whose index is out of
     range against the current items (a benign shell/.NET race — the user
     picked just before an item-shrink frame applied) CLAMPS by the same rule
@@ -161,19 +171,34 @@
     private string EffectiveIndexWire
         => Clamp(SelectedIndex).ToString(System.Globalization.CultureInfo.InvariantCulture);
 
+    /// <summary>The last (clamped, raw) pair the state-owner notify fired
+    /// for — the once-per-pair guard (file header). Null whenever the
+    /// current SelectedIndex is in range.</summary>
+    private (int Clamped, int Raw)? _lastNotifiedClamp;
+
     /// <summary>The state-owner notify: when the clamp MOVED the selection
     /// (items shrank below it, went empty, or a caller passed an
     /// out-of-range index), re-sync the bound state via
     /// SelectedIndexChanged. An in-range set clamps to itself — nothing
-    /// fires (the programmatic-set-no-refire guard). Terminates: the
-    /// parent's write-back re-renders with the clamped value, which clamps
-    /// to itself.</summary>
+    /// fires (the programmatic-set-no-refire guard). Terminates BY
+    /// CONSTRUCTION, not by trusting the parent: the notify fires once per
+    /// DISTINCT (clamped, raw) pair, so a parent that writes the clamp back
+    /// converges (the re-render is in range and clears the tracker), and a
+    /// parent that does NOT write back re-renders into silence instead of
+    /// the clamp → notify → StateHasChanged → re-render loop (Gate 1 review
+    /// I2 — the pre-fix shape hung Mount itself).</summary>
     protected override Task OnParametersSetAsync()
     {
         var clamped = Clamp(SelectedIndex);
-        return clamped != SelectedIndex
-            ? SelectedIndexChanged.InvokeAsync(clamped)
-            : Task.CompletedTask;
+        if (clamped == SelectedIndex)
+        {
+            _lastNotifiedClamp = null;
+            return Task.CompletedTask;
+        }
+        if (_lastNotifiedClamp == (clamped, SelectedIndex))
+            return Task.CompletedTask;
+        _lastNotifiedClamp = (clamped, SelectedIndex);
+        return SelectedIndexChanged.InvokeAsync(clamped);
     }
 
     private Task HandleChange(ChangeEventArgs e)
