@@ -92,6 +92,21 @@ import io.blazornative.jni.RenderPatch
  *      callback it failed to prevent harmless. A `Src` → null whose dispose lost the race
  *      would otherwise RE-INFLATE the node the author just cleared.
  *
+ * ── PHASE 7.2: THE onScroll WIRE — THE FIRST 60Hz PRODUCER ───────────────────
+ * A scroll node with the `scroll` event attached reports its content offset to
+ * .NET over the EXISTING dispatch wire — CONFLATED. The shell keeps ONE pending
+ * offset per scroll node ([ScrollWire]); a new native sample REPLACES it (never
+ * queue — scroll position is idempotent state, not an event log) and at most one
+ * dispatch is in flight per node at a time: submit when the lane is free, conflate
+ * while it is not, dispatch the freshest value on the completion signal
+ * ([maybeDispatchScroll]). Offsets cross in dp (px ÷ density at the source — the
+ * 6.1 one-conversion-site rule), as an invariant float payload, exactly what
+ * `NativeRenderer.ParseScrollOffset` parses. The contract is NORMATIVE
+ * (docs/plans/2026-07-15-phase-7.2-design.md §"The wire contract") and iOS
+ * mirrors the CONFLATION in Gate 3 — not the Android mechanics (the listener
+ * API, the px÷density, and the mid-batch re-clamp echo are this shell's own;
+ * see the section comment above [onScrollSample]).
+ *
  * [handleSetStyle] is now a ROUTER over the partitioned allow-list
  * (`NativeRenderer.YogaStyleAttributes` / `VisualStyleAttributes`): a LAYOUT name
  * goes to the Yoga node and NOWHERE else — in particular `padding` no longer
@@ -103,6 +118,20 @@ class WidgetMapper(
     private val context: Context,
     private val root: ViewGroup,
     private val onUiEvent: (handlerId: Int, eventName: String, payload: String?) -> Unit = { _, _, _ -> },
+    /**
+     * Phase 7.2 — the scroll wire's dispatch, WITH a completion signal: the
+     * conflation ([ScrollWire]) may not submit the next scroll dispatch until
+     * the previous one has LEFT the lane, and fire-and-forget [onUiEvent]
+     * cannot say when that is. Production wires it to
+     * `BlazorNativeRuntime.dispatchEvent(h, "scroll", payload, onComplete)`
+     * (MainActivity); `onComplete` may arrive on ANY thread — the mapper
+     * marshals to the main handler itself. The default completes synchronously
+     * through [onUiEvent], which keeps every event-agnostic test compiling
+     * unchanged (the 3.2 posture) — and is still a correct conflation, just
+     * one whose lane is never busy longer than a looper turn.
+     */
+    private val onScrollEvent: (handlerId: Int, offsetPayload: String, onComplete: () -> Unit) -> Unit =
+        { handlerId, offsetPayload, onComplete -> onUiEvent(handlerId, "scroll", offsetPayload); onComplete() },
 ) {
     private val nodes = mutableMapOf<Int, View>()
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -277,6 +306,73 @@ class WidgetMapper(
     }
     private val focusEntries = mutableMapOf<Int, FocusEntry>()
 
+    /**
+     * Phase 7.2 — **THE CONFLATION SLOT** (the wire contract, design
+     * §"The wire contract" — NORMATIVE, mirrored by iOS in Gate 3): one per
+     * scroll node with the `scroll` event attached, keyed by nodeId like
+     * [watchers].
+     *
+     *  - [pendingOffsetDp] is the ONE pending offset. A new native sample
+     *    **REPLACES** it — never a queue: scroll position is idempotent STATE,
+     *    not an event log, so only the freshest value is worth a dispatch and
+     *    a slow consumer sees FEWER, FRESHER events, never a backlog.
+     *  - [inFlight] is true from the moment a dispatch is SUBMITTED to the
+     *    lane until its completion signal comes back ([maybeDispatchScroll]).
+     *    While it is true — or while [applyingBatch] is — new samples conflate
+     *    into the slot; the freshest value goes out when the lane frees.
+     *  - [handlerId] is MUTABLE for the [watchers] reason (Phase 4.2): a
+     *    last-wins re-attach (same node, new handlerId, no preceding detach)
+     *    swaps the handler on the LIVE wire instead of stacking a second one —
+     *    and deliberately KEEPS the pending offset and the in-flight flag,
+     *    because they describe the NODE's scroll state, which a handler swap
+     *    does not reset.
+     *
+     * Detach/purge is the 6.3 stale-callback discipline: DetachEvent and
+     * [handleRemove] delete the wire, and the pending offset **dies with it,
+     * never dispatched**. A completion that lands afterwards resets a flag on
+     * an unreachable object and re-consults the LIVE map ([maybeDispatchScroll]
+     * starts with a map lookup), so it is a no-op by construction.
+     */
+    private class ScrollWire(var handlerId: Int) {
+        var pendingOffsetDp: Float? = null
+        var inFlight = false
+    }
+    private val scrollWires = mutableMapOf<Int, ScrollWire>()
+
+    /** Test-only (Phase 7.2): native scroll samples the listener delivered to a live
+     * wire — the numerator of the throughput evidence (samples-seen vs
+     * events-dispatched, the contract's "Throughput evidence" row). Main-thread only. */
+    internal var scrollSamplesSeen: Int = 0
+        private set
+
+    /** Test-only (Phase 7.2): scroll dispatches actually SUBMITTED to the lane — the
+     * denominator of the conflation ratio. By construction ≤ [scrollSamplesSeen], and
+     * ≤ (completions + live wires): at most one in flight per node, ever. */
+    internal var scrollDispatchesSent: Int = 0
+        private set
+
+    /** Test-only (Phase 7.2): the offset (dp) the LAST submitted dispatch carried —
+     * how a test asserts "the FINAL offset always arrives" without parsing logcat. */
+    internal var lastScrollDispatchDp: Float? = null
+        private set
+
+    /** Test-only (Phase 7.2): live conflation slots — must return to 0 after
+     * detach/purge, or a detached node's pending offset is one looper turn from
+     * being dispatched into a stale handler. */
+    internal val scrollWireCount: Int get() = scrollWires.size
+
+    /** Test-only (Phase 7.2): a node's pending (conflated, not yet dispatched)
+     * offset in dp — null when the slot is empty or the node has no wire. */
+    internal fun scrollPendingOffsetDp(nodeId: Int): Float? = scrollWires[nodeId]?.pendingOffsetDp
+
+    /** Test-only (Phase 7.2): wires with work outstanding — a dispatch in flight or
+     * a conflated offset waiting for the lane. 0 = the scroll wire is QUIESCENT
+     * (the freshest sample has been dispatched AND completed) — the device tests'
+     * settle gate, because "the FINAL offset always arrives" is only assertable
+     * about a wire that has finished arriving. */
+    internal val scrollBusyWireCount: Int
+        get() = scrollWires.values.count { it.inFlight || it.pendingOffsetDp != null }
+
     fun apply(frame: RenderFrame) {
         for (patch in frame.patches) {
             pending.add(patch)
@@ -309,6 +405,14 @@ class WidgetMapper(
         } finally {
             applyingBatch = false
         }
+        // Phase 7.2: scroll samples that arrived DURING the batch (ScrollView's
+        // per-layout offset re-clamp inside calculateAndApply fires the scroll
+        // listener SYNCHRONOUSLY — the 6.2 Android-specific mechanism) were
+        // CONFLATED into their slots, per the wire contract's backpressure row.
+        // The batch end is a lane-availability: flush the freshest values now,
+        // AFTER the guard dropped — a dispatch from inside the guard would be
+        // swallowed, and the re-clamped offset would never reach .NET.
+        flushScrollWires()
     }
 
     /**
@@ -398,6 +502,31 @@ class WidgetMapper(
                     }
                 }
             }
+            "scroll" -> {
+                // Phase 7.2 — the onScroll wire's Android half (the wire
+                // contract is NORMATIVE; iOS mirrors the CONFLATION, not this
+                // listener). Only a viewport can scroll:
+                if (view !is ScrollView) {
+                    Log.w(TAG, "AttachEvent 'scroll' ignored: node ${p.nodeId} is " +
+                        "${view::class.simpleName}, not ScrollView")
+                    return
+                }
+                // Last-wins re-attach, the 4.2 watcher discipline: swap the
+                // handler on the LIVE wire (keeping its pending offset and
+                // in-flight flag — they describe the NODE, not the handler)
+                // instead of stacking a second slot.
+                scrollWires.getOrPut(p.nodeId) { ScrollWire(p.handlerId) }.handlerId = p.handlerId
+                // View.setOnScrollChangeListener is a SINGLE slot (last-wins,
+                // like setOnClickListener) and fires on the main thread — for
+                // finger drags, flings, AND programmatic scrollTo/re-clamps
+                // (px, converted below at the ONE source site). The listener
+                // resolves the wire from the LIVE map at fire time, so a
+                // detached node's late sample no-ops (the 6.3 stale-callback
+                // discipline).
+                view.setOnScrollChangeListener { _, _, scrollY, _, _ ->
+                    onScrollSample(p.nodeId, scrollY)
+                }
+            }
             else -> Log.w(TAG, "AttachEvent '${p.eventName}' not supported (forward compat): skipped")
         }
     }
@@ -446,8 +575,110 @@ class WidgetMapper(
                     focusEntries.remove(p.nodeId)
                 }
             }
+            "scroll" -> {
+                // Phase 7.2 — the 6.3 stale-callback discipline, for scroll: the
+                // wire dies HERE, and its pending offset dies WITH it, never
+                // dispatched (the contract's detach row). An in-flight dispatch
+                // already on the lane is beyond recall — its completion resets a
+                // flag on this now-unreachable wire and finds no map entry to
+                // dispatch from; a stale handlerId is absorbed downstream (the
+                // rc-0 at-most-once contract, same as click).
+                val removed = scrollWires.remove(p.nodeId)
+                if (removed == null) {
+                    Log.w(TAG, "DetachEvent 'scroll' for node ${p.nodeId} has no live wire: ignored")
+                    return
+                }
+                (nodes[p.nodeId] as? ScrollView)?.setOnScrollChangeListener(null)
+            }
             else -> Log.w(TAG, "DetachEvent '${p.eventName}' not supported (forward compat): skipped")
         }
+    }
+
+    // ── Phase 7.2: THE onScroll WIRE (the conflation — NORMATIVE, iOS mirrors it) ──
+    //
+    // The contract (docs/plans/2026-07-15-phase-7.2-design.md §"The wire contract"):
+    //
+    //   sample (px, main thread)                    ← ScrollView.setOnScrollChangeListener
+    //     → dp = px / density                       ← the ONE conversion site (6.1 rule)
+    //     → REPLACES the node's pending offset      ← never queue: scroll position is
+    //                                                 idempotent STATE, not an event log
+    //     → dispatch IF the lane is free            ← at most ONE in flight per node;
+    //       (not in flight, not mid-batch)            payload = the offset as an
+    //                                                 invariant float string, exactly what
+    //                                                 NativeRenderer.ParseScrollOffset parses
+    //     → completion → flush the freshest         ← a slow consumer sees FEWER, FRESHER
+    //                                                 events — the backlog is impossible
+    //                                                 by construction
+    //
+    // ORDERING IS FREE: the dispatch rides BlazorNativeRuntime's single FIFO lane —
+    // the same queue tail as every tap and change event — so a conflated scroll
+    // dispatch can never overtake a user-input event that was queued before it.
+    // (iOS note: this property must be PRESERVED, not assumed — whatever path Gate 3
+    // dispatches on must keep scroll behind already-queued input for the same node.)
+    //
+    // ANDROID-SPECIFIC, iOS MUST NOT COPY: the listener API (UIScrollView observes
+    // contentOffset via its delegate), the px→dp division (points ARE pt), and the
+    // mid-batch re-clamp echo (ScrollView.onLayout's scrollTo — the 6.2 mechanism;
+    // UIScrollView does no such re-clamp, iOS has its own explicit shrink clamp).
+
+    /**
+     * A native scroll sample landed (main thread — the listener fires there).
+     * Converts AT THE SOURCE (px → dp, the 6.1 one-conversion-site rule: Yoga
+     * dp times density is what [YogaLayout.applyFrame] painted, so px divided
+     * by the same density is the exact inverse) and conflates: the slot holds
+     * ONE offset, and this sample REPLACES whatever was there.
+     */
+    private fun onScrollSample(nodeId: Int, scrollYpx: Int) {
+        val wire = scrollWires[nodeId] ?: return // detached/purged: stale sample, no-op
+        scrollSamplesSeen++
+        wire.pendingOffsetDp = scrollYpx / context.resources.displayMetrics.density
+        maybeDispatchScroll(nodeId)
+    }
+
+    /**
+     * Dispatches the node's pending offset IF the lane is available — not
+     * mid-batch, and no dispatch of this node's already in flight. Called from
+     * three places, which are exactly the three lane-availability edges: a new
+     * sample ([onScrollSample]), a completion (below), and the end of a patch
+     * batch ([flushScrollWires]).
+     *
+     * The completion marshals to the main handler (all conflation state is
+     * main-thread-only, like every other map in this class) and re-consults
+     * the LIVE map: the wire it captured may have been detached/purged, or the
+     * nodeId may already belong to a NEW node (ids restart — the 6.2/6.3
+     * lesson). Resetting the captured wire's flag and then looking the nodeId
+     * up fresh is what makes both cases harmless without a generation counter:
+     * a dead wire is unreachable from the map, and a new node's wire has its
+     * own independent flag.
+     */
+    private fun maybeDispatchScroll(nodeId: Int) {
+        if (applyingBatch) return // conflate; applyBatch's tail flushes
+        val wire = scrollWires[nodeId] ?: return
+        if (wire.inFlight) return // conflate; the completion flushes
+        val offsetDp = wire.pendingOffsetDp ?: return
+        wire.pendingOffsetDp = null
+        wire.inFlight = true
+        scrollDispatchesSent++
+        lastScrollDispatchDp = offsetDp
+        // The payload is the offset as an INVARIANT float string — mirroring
+        // NativeRenderer.ParseScrollOffset (NumberStyles.Float, invariant
+        // culture) exactly: Float.toString never localizes ("1,5" from a Dutch
+        // device would be a loud rc-2 fault, by design).
+        onScrollEvent(wire.handlerId, offsetDp.toString()) {
+            mainHandler.post {
+                wire.inFlight = false
+                maybeDispatchScroll(nodeId)
+            }
+        }
+    }
+
+    /** The batch-end / layout-pass lane-availability: give every wire that
+     * conflated during the guard its dispatch chance. Snapshot the keys — a
+     * dispatcher completing synchronously (the default test dispatcher) can
+     * re-enter the map. */
+    private fun flushScrollWires() {
+        if (scrollWires.isEmpty()) return
+        for (nodeId in scrollWires.keys.toList()) maybeDispatchScroll(nodeId)
     }
 
     private fun handleCreate(p: RenderPatch.CreateNode) {
@@ -657,6 +888,12 @@ class WidgetMapper(
             // /image or /scroll names the PAGE, never the image inside it.
             cancelImageRequest(id)
             imageGenerations.remove(id)
+            // Phase 7.2 — the purge half of the stale-callback discipline: a
+            // removed scroll node's conflation slot dies here, pending offset
+            // and all, NEVER dispatched (the wire contract's detach/purge row).
+            // Rides the SUBTREE purge for the 6.3 reason: navigation names the
+            // page, never the scroll inside it.
+            scrollWires.remove(id)
         }
         // The detached EditText would otherwise pin itself (and its watcher/focus
         // pair) in these maps forever.
@@ -699,6 +936,9 @@ class WidgetMapper(
         scrollContents.clear()
         watchers.clear()
         focusEntries.clear()
+        // Phase 7.2: pending scroll offsets die with the Activity — a dispatch
+        // after teardown would enter a retired lane for a dead view hierarchy.
+        scrollWires.clear()
         // Phase 6.3: every in-flight fetch dies with the Activity. A completion landing on
         // a destroyed mapper would paint into a dead view hierarchy and re-solve a torn-down
         // Yoga tree.
@@ -1108,6 +1348,10 @@ class WidgetMapper(
         } finally {
             applyingBatch = false
         }
+        // Phase 7.2: this pass can re-clamp a scrolled ScrollView (a completed
+        // image grew/shrank the content) — the sample it fires mid-guard
+        // conflated, and this is its lane-availability, same as applyBatch's tail.
+        flushScrollWires()
     }
 
     /**
