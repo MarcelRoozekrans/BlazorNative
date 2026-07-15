@@ -16,6 +16,32 @@ it was **mutation-tested** (see DoD #7).
 **Verdict: PASS WITH ONE PARTIAL.** Seven of eight criteria PASS. **DoD #7 is PARTIAL** — the
 counts are honest, the wiring is only half-fixed.
 
+> **2026-07-15 amendment — DoD #7 is now CLOSED: PASS on all eight.** The PARTIAL below was true
+> when written and stays as written (this repo amends findings; it does not rewrite them). What
+> closed it, each verified live rather than assumed:
+> - **PR #83** — a compile-only **`ios-build`** job in the required workflow (`xcodebuild
+>   build-for-testing`: Swift + Objective-C++ + both link products, no simulator), plus
+>   **`ShellFrameTableDriftTests`** closing finding F2 (the shells now *declare* their frame
+>   tables; the device tests consume the declarations; the required lane asserts Kotlin ≡ Swift,
+>   symbolically for `wi`/`hi` — mutation-proven in four directions with one deliberate
+>   non-false-positive).
+> - **PR #84 + PR #87** — the Android compile gate moved out of `build-test` into its own
+>   **`android-build`** job, then made **self-contained** (windows-latest, publishes its own
+>   bionic `.so`, **no `needs:`**) after the first shape proved unsuitable for a required check:
+>   a `needs`-gated job is invisible on the PR check list until its dependency finishes, and
+>   wedges the PR "Expected — waiting" forever if the dependency fails. On PR #87's run all three
+>   compile jobs started in parallel (`android-build` at 06:18:48, *before* `build-test` at
+>   06:18:49) and all went green.
+> - **Branch protection now requires all three**, read back live after the PATCH:
+>   `required_status_checks.contexts == ["build-test","ios-build","android-build"]`.
+>
+> Every surface is CI-asserted **and every shell's compile is behind a required check that names
+> it**: a red `android-build` is the Android shell, a red `ios-build` is the iOS shell. The AGP 9
+> class of failure — a source set silently vanishing behind a green tick — now has no path onto
+> `main` for either shell. One nuance recorded for honesty: an `androidMain` break also reddens
+> `build-test` (its JVM-test compile includes the shell since the `kotlin.srcDirs` fix), while an
+> `androidTest` break — the exact shape of the AGP incident — reddens **only** `android-build`.
+
 ---
 
 ## Verdict table
@@ -28,7 +54,7 @@ counts are honest, the wiring is only half-fixed.
 | 4 | Real scrolling | **PASS** | Same numbers, and **derived rather than transcribed**: both compute `CONTENT_H = ROWS * ROW_H` = **800** over a **200** viewport, `SCROLL_RANGE = 600`, rows at `y = 80*i`. **It actually scrolls, on both.** Android drives `scrollTo(0, 10_000dp)` and observes the framework clamp it to exactly **600** *and* row 9 travel `-600` (via `getLocationOnScreen` — the framework's own accounting, not test arithmetic). iOS drives `setContentOffset(y: maxOffset)` and asserts `row9After - row9Before == -scrollRange` (via `view.convert`, which folds in `contentOffset`). Both then pin the visible window (row 7 half-clipped at ∓40, rows 0–6 off-screen). The **synthetic content node is asserted never to reach the wire** (`BnScrollDemoTests.cs:275` — the scroll node's wire children are *exactly* the ten rows), while both device tests see `scroll.childCount == 1`. |
 | 5 | URL images | **PASS** | `BnImageDemo` on both shells. **The reflow is proven by a sibling band, before and after**: band I asserted at `y = 0` while the fixture server *holds* every response (and `imageResults == emptyList` / `imageTerminalCount == 0` proves nothing has landed), then at `y = Hi` once the bytes arrive, with the section grown by exactly `Hi`. The band is a 20dp `BnView` with both axes explicit, so it cannot move for its own reasons. **The unit rule (one file pixel = one dp/pt) is enforced**: Android reads `bitmap.width` with **no `intrinsicWidth` fallback** (`WidgetMapper.kt:1065`, Coil `.size(Size.ORIGINAL)`); iOS reads `cgImage.width` (`BnImageLoader.swift:212`) and — load-bearing — **asserts `scale == 1` on the image Kingfisher handed the shell** (`BnImageTests.swift:178`), not merely on the fixture the test decoded. The three fixture-constant transcriptions (.NET / Kotlin / Swift) are pinned to one number by two regex drift tests **in the required lane** (`BnImageDemoTests.cs:233`, `:258`). |
 | 6 | Flex container components | **PASS** | `BnView` carries the typed flex surface (24 `[Parameter]`s — `FlexDirection? Direction`, `FlexJustify? Justify`, `FlexAlign? Align`/`AlignSelf`, `FlexWrap? Wrap`, `FlexPosition? Position`, `Gap`, …). `BnRow.cs` / `BnColumn.cs` ship as thin presets, pinned by **both** a reflective *declaration* test and a *forwarding* test (the latter is the one that bites — 6.1's Gate 1 review proved a reflective test alone stayed green through two deleted forwarding lines). **`BnStack` is absent** and the **deviation is consciously recorded** in [MILESTONE.md](../planning/MILESTONE.md) DoD #6, [6.1 design](2026-07-13-phase-6.1-design.md):30 and [6.1 conclusion](2026-07-13-phase-6.1-conclusion.md):161. |
-| 7 | **Every new surface is CI-asserted** | **PARTIAL** | **The four counts are real, asserted, and green** (run IDs below). **But only 2 of the 4 are behind a required check.** Live API: `required_status_checks.contexts == ["build-test"]` — *that is the entire list*. See Findings F1. |
+| 7 | **Every new surface is CI-asserted** | **PASS** *(closed 2026-07-15 — see the amendment above; PARTIAL as originally audited)* | **The four counts are real, asserted, and green** (run IDs below). **But only 2 of the 4 are behind a required check.** Live API: `required_status_checks.contexts == ["build-test"]` — *that is the entire list*. See Findings F1. |
 | 8 | Decision log committed | **PASS** | 6.0 [design](2026-07-13-phase-6.0-design.md) + [spike conclusion](2026-07-13-phase-6.0-spike-conclusion.md); 6.1/6.2/6.3 each with design + implementation-plan + conclusion (11 docs in `docs/plans/`); `ROADMAP.md` phase table current; **plus this audit**. |
 
 ---
@@ -135,7 +161,7 @@ happened to be safe: it touched `src/BlazorNative.Apple/**`, so `ios` ran and wa
 merge. But **nothing required that.** The same bump, arriving via a path the filter does not
 match, merges on `build-test` alone — and `build-test` cannot see Kingfisher at all.
 
-**Verdict on #7: PARTIAL.** *The counts were honest; the wiring wasn't.* #81 closed the **Android
+**Verdict on #7 as of the original audit: PARTIAL — since CLOSED (see the 2026-07-15 amendment at the top).** *The counts were honest; the wiring wasn't.* #81 closed the **Android
 half** (mutation-verified). The **iOS half is still open**: the Swift/ObjC++ shell can stop
 compiling, or regress behaviourally, without any required check noticing.
 
@@ -242,8 +268,8 @@ Plus the two this audit adds (see Recommendation):
 PASS on real evidence, the ABI is provably unmoved, and the decision log (#8) is complete. Seven
 of eight PASS.
 
-**DoD #7 is PARTIAL, and I do not think that blocks the tag — but it must be recorded, not
-papered over.** The criterion says *"every new surface is CI-asserted."* Read literally, it is
+**DoD #7 was PARTIAL at audit time and is now CLOSED (2026-07-15 amendment) — the tag proceeds
+with all eight criteria PASS.** The original reasoning stands recorded below. The criterion says *"every new surface is CI-asserted."* Read literally, it is
 **met**: all four surfaces have asserted baselines and all four are green. What the AGP 9 incident
 proved is that the criterion, *as worded*, was never sufficient — an assertion can be green and
 structurally unreachable. M6 is the milestone that **discovered** that, and #81 fixed half of it.

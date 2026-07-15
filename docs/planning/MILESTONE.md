@@ -1,6 +1,6 @@
 # Milestone 6 — Real-UI Foundation: Layout + Scroll + Image
 
-**Status:** in progress — opened 2026-07-13
+**Status:** ✅ complete — opened 2026-07-13, closed 2026-07-15, tagged `v6.0`
 **Source:** the 2026-07-13 roadmap re-plan (capability before ecosystem) — the layout
 engine the original P0–P7 list never had; the #1 gap between "proven POC" and "usable
 framework" per the React-Native comparison.
@@ -75,11 +75,18 @@ verdict.
    thin presets; `BnLayoutDemo` at `/layout` is the cross-platform proof surface.
    **Deviation, consciously taken:** **no `BnStack`** — it would be a synonym for `BnColumn`,
    and two names for one thing is a library smell on day one.
-7. **Every new surface is CI-asserted.** Test counts recorded/asserted at each phase
-   close (the M4-onward discipline); the layout/scroll/image demos asserted on all
-   surfaces (.NET frames, JVM, Android instrumented, iOS XCTest).
-8. **Decision log committed.** Design + plan + conclusion per phase, plus the M6 final
-   audit at close → tag `v6.0`.
+7. ✅ **Every new surface is CI-asserted.** — *closed by Phase 6.4 (2026-07-15), and it earned
+   more than it asked.* All four baselines asserted and green (.NET **324** · JVM **83** ·
+   Android instrumented **111** · iOS XCTest **72**) — and the audit found the criterion as
+   worded was never *sufficient*: the AGP 9 incident proved an assertion can be green while the
+   thing it asserts silently stops being built. So the close went further: **every shell's
+   compile is now behind a required check that names it** (`build-test` + `android-build` +
+   `ios-build`, verified live in branch protection), and the shells' frame tables are pinned by
+   a drift test instead of transcription (`ShellFrameTableDriftTests`). See the
+   [final audit](../plans/2026-07-14-milestone-6-final-audit.md) and its 2026-07-15 amendment.
+8. ✅ **Decision log committed.** — *closed by Phase 6.4.* Eleven phase documents (design +
+   plan + conclusion per phase) plus the
+   [M6 final audit](../plans/2026-07-14-milestone-6-final-audit.md) → tag `v6.0`.
 
 ## Out of scope for this milestone
 
