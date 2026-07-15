@@ -12,18 +12,26 @@ import android.util.Log
 import android.util.TypedValue
 import android.view.View
 import android.view.ViewGroup
+import android.widget.AdapterView
+import android.widget.ArrayAdapter
 import android.widget.Button
+import android.widget.CheckBox
+import android.widget.CompoundButton
 import android.widget.EditText
 import android.widget.ImageView
 import android.widget.ScrollView
+import android.widget.SeekBar
 import android.widget.Spinner
+import android.widget.Switch
 import android.widget.TextView
 import coil.imageLoader
 import coil.request.Disposable
 import coil.request.ImageRequest
 import coil.size.Size
+import io.blazornative.jni.ItemsJson
 import io.blazornative.jni.RenderFrame
 import io.blazornative.jni.RenderPatch
+import kotlin.math.roundToInt
 
 /**
  * Phase 2.5: maps parsed [RenderFrame] patches to real Android [View] mutations.
@@ -32,7 +40,7 @@ import io.blazornative.jni.RenderPatch
  * mapper collects patches until [RenderPatch.CommitFrame], then posts the batch
  * to the main looper for atomic application. Caller-thread-agnostic.
  *
- * Patch coverage: CreateNode (all 7 NodeTypes wired, placement via
+ * Patch coverage: CreateNode (all 10 NodeTypes wired, placement via
  * insertIndex — see [handleCreate]), ReplaceText, RemoveNode, UpdateProp,
  * SetStyle, CommitFrame, and — live since Phase 3.2 — AttachEvent /
  * DetachEvent (click listener + re-entrancy-guarded change TextWatcher +
@@ -106,6 +114,27 @@ import io.blazornative.jni.RenderPatch
  * mirrors the CONFLATION in Gate 3 — not the Android mechanics (the listener
  * API, the px÷density, and the mid-batch re-clamp echo are this shell's own;
  * see the section comment above [onScrollSample]).
+ *
+ * ── PHASE 7.3: FORM CONTROLS — checkbox/switch/slider, AND `picker` GOES REAL ─
+ * Three new NodeTypes (`checkbox` → [CheckBox], `switch` → [Switch], `slider` →
+ * [SeekBar]) and the LAST stubbed widget ([Spinner]) gets its adapter. All four
+ * ride the EXISTING wires: `value` (and `min`/`max`/`step`, `items`/
+ * `selectedIndex`) on UpdateProp, selection changes back on `change`.
+ *
+ * THE PER-CONTROL LOOP GUARD — verified per control, never assumed (the design's
+ * own words), and the findings differ:
+ *  - `CompoundButton.setChecked` and `ProgressBar.setProgress` fire their
+ *    listeners SYNCHRONOUSLY on the main thread — the [applyingBatch] guard
+ *    (the 4.2 TextWatcher pattern) catches a patch-applied value echo.
+ *  - `Spinner.setSelection` does NOT fire synchronously: AdapterView coalesces
+ *    selection changes and delivers `onItemSelected` on a LATER layout pass,
+ *    when [applyingBatch] is long false — so the picker's guard is the
+ *    EXPECTED-SELECTION comparison ([PickerState.appliedSelection], recorded
+ *    BEFORE `setSelection`), not the batch flag. See [handleAttachEvent]'s
+ *    Spinner arm.
+ *
+ * THE SEEKBAR FLOAT↔INT PRECISION CONTRACT lives on [SliderState]; the picker's
+ * NORMATIVE CLAMP RULE (BnPicker.razor's header, mirrored) on [handleItems].
  *
  * [handleSetStyle] is now a ROUTER over the partitioned allow-list
  * (`NativeRenderer.YogaStyleAttributes` / `VisualStyleAttributes`): a LAYOUT name
@@ -339,6 +368,106 @@ class WidgetMapper(
     }
     private val scrollWires = mutableMapOf<Int, ScrollWire>()
 
+    /**
+     * Phase 7.3 — a `slider` node's WIRE state, and **THE FLOAT↔INT PRECISION
+     * CONTRACT** (recorded here; iOS's `UISlider` is float-native and needs
+     * none of this):
+     *
+     * The wire is FLOAT (`value`/`min`/`max`/`step` as invariant floats — the
+     * scroll-offset parse discipline); a [SeekBar] is INT-progress. The mapping:
+     *
+     *  - **Stepped** (`step` > 0): ONE PROGRESS UNIT IS ONE STEP.
+     *    `max = round((max−min)/step)`, `progress = round((value−min)/step)`,
+     *    and the payload back is `min + progress×step` — so every value this
+     *    shell ever puts on the wire is an EXACT step multiple in float32
+     *    (60f = 0 + 12×5f, no accumulated error: one multiply, one add).
+     *  - **Continuous** (`step` absent): the range is quantized into
+     *    [CONTINUOUS_STEPS] (1000) progress units — precision `(max−min)/1000`
+     *    (0.1 on the demo's 0..100). A native int widget cannot do better than
+     *    a fixed subdivision; 1000 is finer than any px-wide track can express.
+     *
+     * The state holds the RAW wire floats and the SeekBar geometry is
+     * RE-DERIVED from the whole state on every prop write ([applySlider]) — so
+     * patch order inside a batch cannot matter (a `value` landing before its
+     * `max` clamps nothing; the last recompute wins).
+     *
+     * Defaults 0/100 are [SeekBar]'s own — they only ever serve a hand-rolled
+     * wire: `BnSlider` ALWAYS declares `min`/`max` (its header: never a
+     * shell-side default two platforms would have to keep equal).
+     */
+    private class SliderState {
+        var value = 0f
+        var min = 0f
+        var max = 100f
+        var step: Float? = null
+
+        /** One progress unit, in VALUE terms. 0 when the range is empty. */
+        val unit: Float
+            get() {
+                val range = max - min
+                if (range <= 0f) return 0f
+                val s = step
+                return if (s != null && s > 0f) s else range / CONTINUOUS_STEPS
+            }
+
+        val progressMax: Int
+            get() = if (unit <= 0f) 0 else ((max - min) / unit).roundToInt()
+
+        fun progressOf(v: Float): Int =
+            if (unit <= 0f) 0 else ((v - min) / unit).roundToInt().coerceIn(0, progressMax)
+
+        /** The wire payload for [progress] — an exact step multiple when stepped. */
+        fun valueOf(progress: Int): Float = min + progress * unit
+    }
+
+    /** nodeId → its slider wire state. Created with the node ([handleCreate],
+     * keyed on the NODETYPE — the 6.2 lesson), purged with it ([handleRemove]). */
+    private val sliderStates = mutableMapOf<Int, SliderState>()
+
+    /**
+     * Phase 7.3 — a `picker` node's state (the state-owner precedent: the
+     * native widget owns its items AND its selection UI).
+     *
+     *  - [appliedSelection] — what the SHELL last applied to (or last heard
+     *    from) the Spinner. It is the picker's LOOP GUARD: recorded BEFORE
+     *    every `setSelection`, because `onItemSelected` fires ASYNCHRONOUSLY
+     *    (a later layout pass — the [applyingBatch] flag is useless there) and
+     *    a fire reporting this exact position is the echo of the shell's own
+     *    set. −1 = nothing selected (empty items — the clamp rule's only −1).
+     *  - [requestedIndex] — the wire's last `selectedIndex`, kept RAW so an
+     *    `items` write can honor it regardless of patch order (a selection
+     *    that arrived before its items would otherwise be clamped against an
+     *    empty list and lost).
+     *  - [handlerId] — the live `change` wire, [watchers]-style last-wins
+     *    (Phase 4.2): a re-attach swaps the handler, keeping the node's state.
+     *    Null when unattached — the clamp's notify-on-move then has no wire.
+     */
+    private class PickerState {
+        var items: List<String> = emptyList()
+        var handlerId: Int? = null
+        var requestedIndex: Int? = null
+        var appliedSelection = -1
+    }
+
+    /** nodeId → its picker state. Same lifecycle as [sliderStates]. */
+    private val pickerStates = mutableMapOf<Int, PickerState>()
+
+    /** Test-only (Phase 7.3): `change` dispatches actually sent, ALL controls
+     * (EditText/checkbox/switch/slider/picker — every dispatch site routes
+     * through [dispatchChange]). The disabled-controls device assertion reads
+     * it: "disabled controls dispatch NOTHING" is only assertable as a counter,
+     * because the demo's disabled handlers are deliberately unbound .NET-side —
+     * a dispatch that DID leak would move no echo and no frame. */
+    internal var changeDispatchesSent: Int = 0
+        private set
+
+    /** Every `change` dispatch goes through here — the counter above is the
+     * device tests' only honest observation point. */
+    private fun dispatchChange(handlerId: Int, payload: String) {
+        changeDispatchesSent++
+        onUiEvent(handlerId, "change", payload)
+    }
+
     /** Test-only (Phase 7.2): native scroll samples the listener delivered to a live
      * wire — the numerator of the throughput evidence (samples-seen vs
      * events-dispatched, the contract's "Throughput evidence" row). Main-thread only. */
@@ -454,32 +583,106 @@ class WidgetMapper(
         }
         when (p.eventName) {
             "click" -> view.setOnClickListener { onUiEvent(p.handlerId, "click", null) }
-            "change" -> {
-                if (view !is EditText) {
-                    Log.w(TAG, "AttachEvent 'change' ignored: node ${p.nodeId} is ${view::class.simpleName}, not EditText")
-                    return
+            "change" -> when (view) {
+                is EditText -> {
+                    // Phase 4.2 stale-watcher fix: a re-attach (same node, new
+                    // handlerId, no preceding detach) must REPLACE the watcher,
+                    // not stack a second one — remove the node's prior watcher
+                    // from the EditText before adding the new one.
+                    watchers.remove(p.nodeId)?.let { (priorView, priorWatcher) ->
+                        priorView.removeTextChangedListener(priorWatcher)
+                    }
+                    val watcher = object : TextWatcher {
+                        override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+                        override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+                        override fun afterTextChanged(s: Editable?) {
+                            // Re-entrancy guard: programmatic setText during patch
+                            // application must not dispatch (see [applyingBatch]).
+                            if (applyingBatch) return
+                            // s is nullable — a null Editable must not stringify
+                            // into the literal "null" payload.
+                            dispatchChange(p.handlerId, s?.toString() ?: "")
+                        }
+                    }
+                    view.addTextChangedListener(watcher)
+                    watchers[p.nodeId] = view to watcher
                 }
-                // Phase 4.2 stale-watcher fix: a re-attach (same node, new
-                // handlerId, no preceding detach) must REPLACE the watcher,
-                // not stack a second one — remove the node's prior watcher
-                // from the EditText before adding the new one.
-                watchers.remove(p.nodeId)?.let { (priorView, priorWatcher) ->
-                    priorView.removeTextChangedListener(priorWatcher)
+                // Phase 7.3 — checkbox AND switch: both are CompoundButtons and
+                // share one wire grammar (payload exactly "true"/"false" — what
+                // BnCheckbox/BnSwitch parse ordinally). setOnCheckedChangeListener
+                // is a SINGLE slot, so a re-attach is last-wins like click.
+                is CompoundButton -> view.setOnCheckedChangeListener { _, isChecked ->
+                    // VERIFIED (the design says never assume): CompoundButton.setChecked
+                    // fires this listener SYNCHRONOUSLY on a state change — so a bound
+                    // value echo applied by a patch WOULD dispatch straight back and
+                    // spin the change → re-render → setChecked loop. The [applyingBatch]
+                    // guard (the 4.2 TextWatcher lesson) is what swallows it; the
+                    // per-control fires-nothing test reddens if this line goes.
+                    if (applyingBatch) return@setOnCheckedChangeListener
+                    dispatchChange(p.handlerId, if (isChecked) "true" else "false")
                 }
-                val watcher = object : TextWatcher {
-                    override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-                    override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
-                    override fun afterTextChanged(s: Editable?) {
-                        // Re-entrancy guard: programmatic setText during patch
-                        // application must not dispatch (see [applyingBatch]).
+                // Phase 7.3 — slider: the payload is the wire VALUE (an invariant
+                // float — Float.toString never localizes; exactly what BnSlider's
+                // strict parse expects), derived from the int progress by the
+                // precision contract ([SliderState]).
+                is SeekBar -> view.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                    override fun onProgressChanged(bar: SeekBar, progress: Int, fromUser: Boolean) {
+                        // VERIFIED: ProgressBar.setProgress on the main thread refreshes
+                        // SYNCHRONOUSLY and fires this (fromUser=false) — the
+                        // [applyingBatch] guard catches the patch-applied value echo.
+                        // Deliberately NOT `fromUser` as the guard: all four controls
+                        // share the ONE 4.2 pattern, and a programmatic set outside a
+                        // batch (nothing in production does it; tests drive it as the
+                        // user-input stand-in) then behaves like input instead of
+                        // being silently swallowed.
                         if (applyingBatch) return
-                        // s is nullable — a null Editable must not stringify
-                        // into the literal "null" payload.
-                        onUiEvent(p.handlerId, "change", s?.toString() ?: "")
+                        val state = sliderStates[p.nodeId] ?: return // purged: stale, no-op (6.3)
+                        val v = state.valueOf(progress)
+                        state.value = v
+                        dispatchChange(p.handlerId, v.toString())
+                    }
+                    override fun onStartTrackingTouch(bar: SeekBar) = Unit
+                    override fun onStopTrackingTouch(bar: SeekBar) = Unit
+                })
+                // Phase 7.3 — picker: the payload is the new index as an invariant
+                // int (BnPicker's strict parse), and THE GUARD IS DIFFERENT — the
+                // verified finding this arm is built on:
+                is Spinner -> {
+                    val state = pickerStates[p.nodeId] ?: run {
+                        Log.w(TAG, "AttachEvent 'change' for picker ${p.nodeId} has no state: ignored")
+                        return
+                    }
+                    // Last-wins re-attach, the 4.2 watcher discipline: swap the
+                    // handler on the LIVE state, keep the node's selection.
+                    state.handlerId = p.handlerId
+                    view.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+                        override fun onItemSelected(parent: AdapterView<*>?, v: View?, position: Int, id: Long) {
+                            // VERIFIED: Spinner.setSelection does NOT fire this
+                            // synchronously — AdapterView coalesces selection changes
+                            // and delivers them on a LATER layout pass, when
+                            // [applyingBatch] is long false. The 4.2 flag CANNOT guard
+                            // this control. The loop guard is the EXPECTED-SELECTION
+                            // comparison instead: [handleSelectedIndex]/[handleItems]
+                            // record what the shell applied ([PickerState.appliedSelection])
+                            // BEFORE calling setSelection, so a fire reporting that
+                            // exact position is the echo of the shell's own set —
+                            // dropped. Anything else is the USER's pick (a dropdown
+                            // tap lands here through the same setSelection path).
+                            val live = pickerStates[p.nodeId] ?: return // purged: stale, no-op
+                            if (position == live.appliedSelection) return
+                            live.appliedSelection = position
+                            live.handlerId?.let { dispatchChange(it, position.toString()) }
+                        }
+                        override fun onNothingSelected(parent: AdapterView<*>?) {
+                            // Fires when the adapter EMPTIES. [handleItems] has already
+                            // recorded −1 and dispatched the notify (the clamp rule's
+                            // empty arm), so this async echo finds appliedSelection
+                            // already −1 and has nothing to add.
+                        }
                     }
                 }
-                view.addTextChangedListener(watcher)
-                watchers[p.nodeId] = view to watcher
+                else -> Log.w(TAG, "AttachEvent 'change' ignored: node ${p.nodeId} is " +
+                    "${view::class.simpleName} — not a change-bearing widget")
             }
             "focus", "blur" -> {
                 // Single-listener semantics (see the method KDoc): both event
@@ -557,7 +760,21 @@ class WidgetMapper(
                     editText.removeTextChangedListener(watcher)
                 }
                 if (removed == null) {
-                    Log.w(TAG, "DetachEvent 'change' for node ${p.nodeId} has no live watcher: ignored")
+                    // Phase 7.3 — the form controls' single-slot listeners detach
+                    // by class, mirroring the attach arm's switch (the 3.3 rule:
+                    // a new event type extends both arms symmetrically).
+                    when (val view = nodes[p.nodeId]) {
+                        is CompoundButton -> view.setOnCheckedChangeListener(null)
+                        is SeekBar -> view.setOnSeekBarChangeListener(null)
+                        is Spinner -> {
+                            view.onItemSelectedListener = null
+                            // The clamp's notify-on-move loses its wire too — a
+                            // detached picker clamps silently, like every other
+                            // dead wire (the 7.2 detach discipline).
+                            pickerStates[p.nodeId]?.handlerId = null
+                        }
+                        else -> Log.w(TAG, "DetachEvent 'change' for node ${p.nodeId} has no live watcher: ignored")
+                    }
                 }
             }
             "focus", "blur" -> {
@@ -739,13 +956,36 @@ class WidgetMapper(
             // horizontal is a different widget class and is ledgered). Its single
             // child, the synthetic content view, is created just below.
             SCROLL   -> ScrollView(context)
-            "picker" -> Spinner(context)
+            // Phase 7.3 — REAL since this phase: its ArrayAdapter arrives via
+            // UpdateProp("items") ([handleItems]); NodeType 7 was a do-nothing
+            // stub from 2.5 until now. A [BnSpinner], NOT a stock Spinner: a
+            // user pick applies its selection in a LAYOUT PASS the framework
+            // never runs in this shell — BnSpinner answers its own layout
+            // request (its KDoc has the finding; the RN precedent by name).
+            PICKER   -> BnSpinner(context)
+            // Phase 7.3 — the three new NodeTypes (wire ids 8/9/10; the
+            // vocabulary lives in NativeFrameAdapter.nodeTypes, pinned there).
+            // FRAMEWORK widgets, deliberately: this shell has NO appcompat or
+            // Material dependency (a plain android.app.Activity + android.widget.*
+            // everywhere — Button, EditText, ScrollView…), so CheckBox/Switch/
+            // SeekBar are the classes the app theme actually themes. SwitchCompat/
+            // SwitchMaterial would be the first androidx widget in the tree and
+            // would drag in a dependency for pixels no assertion reads.
+            "checkbox" -> CheckBox(context)
+            "switch"   -> Switch(context)
+            "slider"   -> SeekBar(context)
             else     -> {
                 Log.w(TAG, "Unknown nodeType ${p.nodeType} — falling back to TextView")
                 TextView(context)
             }
         }
         nodes[p.nodeId] = view
+
+        // Phase 7.3 — the stateful controls' wire state, created with the node and
+        // keyed on the NODETYPE (never the widget class — the 6.2 lesson: the
+        // nodeType is the contract, the class is a table row that could change).
+        if (p.nodeType == "slider") sliderStates[p.nodeId] = SliderState()
+        if (p.nodeType == PICKER) pickerStates[p.nodeId] = PickerState()
 
         // Phase 6.2 — THE SYNTHETIC CONTENT VIEW. A BnYogaFrameLayout, not a stock
         // one, for the 6.1 reason (a stock FrameLayout's onLayout would re-place every
@@ -905,6 +1145,12 @@ class WidgetMapper(
             // Rides the SUBTREE purge for the 6.3 reason: navigation names the
             // page, never the scroll inside it.
             scrollWires.remove(id)
+            // Phase 7.3 — the form controls' wire state dies with the node, for
+            // the same two reasons every other map purges here: ids restart, and
+            // an entry outliving its node answers for the next node to inherit
+            // the id (a late Spinner callback would compare against a ghost).
+            sliderStates.remove(id)
+            pickerStates.remove(id)
         }
         // The detached EditText would otherwise pin itself (and its watcher/focus
         // pair) in these maps forever.
@@ -950,6 +1196,9 @@ class WidgetMapper(
         // Phase 7.2: pending scroll offsets die with the Activity — a dispatch
         // after teardown would enter a retired lane for a dead view hierarchy.
         scrollWires.clear()
+        // Phase 7.3: the form controls' wire state too, same reason.
+        sliderStates.clear()
+        pickerStates.clear()
         // Phase 6.3: every in-flight fetch dies with the Activity. A completion landing on
         // a destroyed mapper would paint into a dead view hierarchy and re-solve a torn-down
         // Yoga tree.
@@ -1046,14 +1295,79 @@ class WidgetMapper(
             // the source of truth) and the cursor moves to the end —
             // setText resets the selection to 0, so setSelection(length) is
             // the least-surprising placement for a programmatic overwrite.
-            "value" -> {
-                if (view is EditText) {
+            "value" -> when (view) {
+                is EditText -> {
                     if (view.text.toString() != (p.value ?: "")) {
                         view.setText(p.value ?: "")
                         view.setSelection(view.text.length)
                         yoga.markDirty(view) // new content = new intrinsic size
                     }
-                } else Log.w(TAG, "UpdateProp value ignored: $view is not EditText")
+                }
+                // Phase 7.3 — checkbox/switch. The wire grammar is EXACTLY
+                // "true"/"false" (ordinal — BnCheckbox's header; "True" is
+                // garbage there and is garbage here). null = the attribute was
+                // removed → the component default (false). setChecked fires the
+                // change listener SYNCHRONOUSLY — inside this batch, so the
+                // applyingBatch guard is what keeps the echo off the wire.
+                is CompoundButton -> when (p.value) {
+                    "true" -> view.isChecked = true
+                    "false", null -> view.isChecked = false
+                    else -> Log.w(TAG, "UpdateProp value ignored on node ${p.nodeId}: " +
+                        "'${p.value}' is not the checkbox wire grammar (exactly \"true\"/\"false\")")
+                }
+                // Phase 7.3 — slider: store the RAW wire float, re-derive the int
+                // geometry (the precision contract, [SliderState]).
+                is SeekBar -> {
+                    val state = sliderStates[p.nodeId] ?: run {
+                        Log.w(TAG, "UpdateProp value for slider ${p.nodeId} has no state: ignored")
+                        return
+                    }
+                    val v = p.value?.let { parseWireFloat(it) } ?: run {
+                        Log.w(TAG, "UpdateProp value ignored on slider ${p.nodeId}: " +
+                            "'${p.value}' is not an invariant float")
+                        return
+                    }
+                    state.value = v
+                    applySlider(view, state)
+                }
+                else -> Log.w(TAG, "UpdateProp value ignored: $view is not a value-bearing widget")
+            }
+            // Phase 7.3 — the slider's declared range/step (BnSlider always
+            // declares min/max; step only when set — null resets to continuous).
+            "min", "max", "step" -> {
+                if (view !is SeekBar) {
+                    Log.w(TAG, "UpdateProp ${p.name} ignored: node ${p.nodeId} is " +
+                        "${view::class.simpleName}, not SeekBar")
+                    return
+                }
+                val state = sliderStates[p.nodeId] ?: run {
+                    Log.w(TAG, "UpdateProp ${p.name} for slider ${p.nodeId} has no state: ignored")
+                    return
+                }
+                val parsed = p.value?.let {
+                    parseWireFloat(it) ?: run {
+                        Log.w(TAG, "UpdateProp ${p.name} ignored on slider ${p.nodeId}: " +
+                            "'${p.value}' is not an invariant float")
+                        return
+                    }
+                }
+                when (p.name) {
+                    "min" -> state.min = parsed ?: 0f
+                    "max" -> state.max = parsed ?: 100f
+                    "step" -> state.step = parsed // null = continuous (the un-styled invariant)
+                }
+                applySlider(view, state)
+            }
+            // Phase 7.3 — the picker's two props (the state-owner precedent).
+            "items" -> {
+                if (view is Spinner) handleItems(p.nodeId, view, p.value)
+                else Log.w(TAG, "UpdateProp items ignored: node ${p.nodeId} is " +
+                    "${view::class.simpleName}, not Spinner")
+            }
+            "selectedIndex" -> {
+                if (view is Spinner) handleSelectedIndex(p.nodeId, view, p.value)
+                else Log.w(TAG, "UpdateProp selectedIndex ignored: node ${p.nodeId} is " +
+                    "${view::class.simpleName}, not Spinner")
             }
             "enabled" -> {
                 view.isEnabled = p.value?.toBoolean() ?: true
@@ -1365,6 +1679,128 @@ class WidgetMapper(
         flushScrollWires()
     }
 
+    // ── Phase 7.3: THE FORM CONTROLS' PROP MACHINERY ─────────────────────────────
+
+    /**
+     * Re-derives the SeekBar's INT geometry from the wire's FLOAT state — the
+     * precision contract ([SliderState]'s KDoc is the single statement).
+     *
+     * `max` is set before `progress`: both setters fire the change listener
+     * SYNCHRONOUSLY when they move the progress (setMax re-clamps), and both
+     * fires land inside [applyBatch]'s guard — which is the loop guard's whole
+     * job, per control, tested per control.
+     */
+    private fun applySlider(bar: SeekBar, state: SliderState) {
+        bar.max = state.progressMax
+        bar.progress = state.progressOf(state.value)
+    }
+
+    /**
+     * `items` arrived — the flat-JSON string array (the NORMATIVE grammar in
+     * `BnItemsJson.cs`'s header, parsed by the STRICT [ItemsJson] — the same
+     * escaping matrix as the dispatch-args wire, none of its reader leniency).
+     * MALFORMED IS LOUD AND EMPTY: log + render an empty picker, never a wrong
+     * one (the grammar's own posture).
+     *
+     * ── THE CLAMP RULE (NORMATIVE — BnPicker.razor's header, mirrored verbatim
+     * by both shells; iOS owes the same arithmetic in Gate 3) ────────────────
+     *
+     *   items empty      → selection −1 (the only state an empty picker has)
+     *   items non-empty  → clamp into [0, Count−1]
+     *
+     * Re-bind the adapter and CLAMP/PRESERVE the selection — always, on every
+     * items write, regardless of patch order. And NOTIFY-ON-MOVE: when the
+     * clamp MOVED a LIVE selection (an item shrink below it → the LAST item;
+     * the items emptied → −1), the shell dispatches the CLAMPED index on the
+     * change wire — the bound .NET state re-syncs to what the native widget
+     * actually shows, instead of the echo and the screen disagreeing. An
+     * in-range preserved selection dispatches nothing (the loop guard is
+     * untouched — the notify happens only when the clamp moved the value).
+     *
+     * THE ONE DELIBERATE ASYMMETRY: the empty→non-empty transition is NOT a
+     * move. A picker with no items has no selection to displace, and the same
+     * batch always carries the authoritative `selectedIndex` (BnPicker emits
+     * it unconditionally, AFTER `items` in attribute order). Notifying "0"
+     * there would race — and on the disabled picker (mounts at 1) could
+     * overwrite — that very prop. The base for the clamp in that case is the
+     * wire's OWN last request ([PickerState.requestedIndex]), which also makes
+     * the items/selectedIndex patch order immaterial.
+     */
+    private fun handleItems(nodeId: Int, spinner: Spinner, json: String?) {
+        val state = pickerStates[nodeId] ?: run {
+            Log.w(TAG, "UpdateProp items for picker $nodeId has no state: ignored")
+            return
+        }
+        // null = the attribute was removed; BnPicker never does (it writes "[]"),
+        // so it is the raw wire's empty list, same code path as "[]".
+        val items = if (json == null) emptyList() else try {
+            ItemsJson.parse(json)
+        } catch (e: IllegalArgumentException) {
+            Log.w(TAG, "UpdateProp items for picker $nodeId is MALFORMED — rendering an " +
+                "EMPTY picker rather than a wrong one: ${e.message}")
+            emptyList()
+        }
+        val hadLiveSelection = state.appliedSelection >= 0
+        val base = if (hadLiveSelection) state.appliedSelection else state.requestedIndex ?: -1
+        val clamped = clampSelection(base, items.size)
+        state.items = items
+        // Recorded BEFORE setSelection — the async onItemSelected echo compares
+        // against this and drops itself (the picker's loop guard).
+        state.appliedSelection = clamped
+        spinner.adapter = ArrayAdapter(context, android.R.layout.simple_spinner_item, items)
+            .apply { setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
+        if (clamped >= 0) spinner.setSelection(clamped)
+        yoga.markDirty(spinner) // new items = a new intrinsic size (the widest item)
+        if (hadLiveSelection && clamped != base) {
+            state.handlerId?.let { dispatchChange(it, clamped.toString()) }
+        }
+    }
+
+    /**
+     * `selectedIndex` arrived — an invariant int, clamped INBOUND by the same
+     * normative rule (an out-of-range but well-formed index is a hand-rolled
+     * wire, not garbage — BnPicker clamps before emitting, so the wire always
+     * carries a clamped index already). Recorded before `setSelection` for the
+     * loop-guard reason above; unparseable is logged and ignored.
+     */
+    private fun handleSelectedIndex(nodeId: Int, spinner: Spinner, value: String?) {
+        val state = pickerStates[nodeId] ?: run {
+            Log.w(TAG, "UpdateProp selectedIndex for picker $nodeId has no state: ignored")
+            return
+        }
+        val requested = value?.toIntOrNull()
+        if (value != null && requested == null) {
+            Log.w(TAG, "UpdateProp selectedIndex ignored on picker $nodeId: " +
+                "'$value' is not an invariant int")
+            return
+        }
+        state.requestedIndex = requested
+        val clamped = clampSelection(requested ?: 0, state.items.size)
+        state.appliedSelection = clamped
+        if (clamped >= 0) spinner.setSelection(clamped)
+    }
+
+    /** THE NORMATIVE CLAMP (BnPicker.razor's header): empty → −1; otherwise
+     * into [0, count−1] — a shrink below the selection lands on the LAST item,
+     * a negative on 0. One function, both call sites ([handleItems] /
+     * [handleSelectedIndex]) — the 6.3 one-decision-one-function lesson. */
+    private fun clampSelection(index: Int, count: Int): Int =
+        if (count <= 0) -1 else index.coerceIn(0, count - 1)
+
+    /**
+     * The form-control props' STRICT float parse — the 6.1 number production
+     * (anchored: the WHOLE string must be consumed), mirroring [YogaLayout]'s
+     * grammar screen for the same reason: Java's float grammar accepts a
+     * trailing `f` iOS's `strtof` rejects, and a value one shell honours and
+     * the other ignores makes the two shells' widgets disagree for a reason
+     * that has nothing to do with the engine. NOT [parseFloatOrNull] (the
+     * legacy visual-prop parser), which strips unit suffixes these props
+     * never carry.
+     */
+    private fun parseWireFloat(s: String): Float? =
+        if (WIRE_NUMBER.matches(s)) s.toFloatOrNull()?.takeIf { !it.isNaN() && !it.isInfinite() }
+        else null
+
     /**
      * Phase 6.1 — THE ROUTER. The SetStyle allow-list is PARTITIONED
      * (`NativeRenderer.YogaStyleAttributes` / `VisualStyleAttributes`, design
@@ -1434,6 +1870,17 @@ class WidgetMapper(
          * The same constant [YogaLayout] keys its half of the pair on — one contract,
          * one spelling. */
         const val SCROLL = "scroll"
+
+        /** The state-owner nodeType (Phase 7.3): a `picker` owns [PickerState]. */
+        const val PICKER = "picker"
+
+        /** Phase 7.3 — the continuous slider's quantization (see [SliderState]:
+         * the precision contract's continuous arm — precision = range/1000). */
+        const val CONTINUOUS_STEPS = 1000
+
+        /** The 6.1 number production, anchored — the twin of [YogaLayout]'s
+         * NUMBER (kept private there; the grammar is the shared statement). */
+        private val WIRE_NUMBER = Regex("""[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?""")
 
         /** Phase 6.3 (Gate 2 review, I3) — the bound on [imageResultLog]. It is a DIAGNOSTIC
          * ring, not a ledger: the tests read the last handful of entries and an app that runs

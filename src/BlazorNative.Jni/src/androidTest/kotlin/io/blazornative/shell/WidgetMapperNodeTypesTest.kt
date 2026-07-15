@@ -2,11 +2,14 @@ package io.blazornative.shell
 
 import android.view.View
 import android.widget.Button
+import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.ScrollView
+import android.widget.SeekBar
 import android.widget.Spinner
+import android.widget.Switch
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import io.blazornative.jni.RenderFrame
@@ -59,6 +62,25 @@ class WidgetMapperNodeTypesTest {
     @Test fun creates_Spinner_from_picker_nodetype() {
         val view = renderSingleNode("picker")
         assertTrue("expected Spinner, got ${view::class.simpleName}", view is Spinner)
+    }
+
+    // ── Phase 7.3: the three new NodeTypes (wire ids 8/9/10) ───────────────
+    // FRAMEWORK widgets, deliberately — this shell has no appcompat/Material
+    // dependency (WidgetMapper.handleCreate records the decision).
+
+    @Test fun creates_CheckBox_from_checkbox_nodetype() {
+        val view = renderSingleNode("checkbox")
+        assertTrue("expected CheckBox, got ${view::class.simpleName}", view is CheckBox)
+    }
+
+    @Test fun creates_Switch_from_switch_nodetype() {
+        val view = renderSingleNode("switch")
+        assertTrue("expected Switch, got ${view::class.simpleName}", view is Switch)
+    }
+
+    @Test fun creates_SeekBar_from_slider_nodetype() {
+        val view = renderSingleNode("slider")
+        assertTrue("expected SeekBar, got ${view::class.simpleName}", view is SeekBar)
     }
 
     // ── Helpers ────────────────────────────────────────────────────────────

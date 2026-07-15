@@ -161,7 +161,8 @@ open class BnYogaFrameLayout @JvmOverloads constructor(
  * [createNode] for a collapsed node.
  *
  * **The measure function attaches BY NODETYPE** ([MEASURED_NODE_TYPES]:
- * text/button/input/image) — never by "this node has no children". They are
+ * text/button/input/image, plus the Phase 7.3 form-control leaves
+ * checkbox/switch/slider/picker) — never by "this node has no children". They are
  * different sets: BnLayoutDemo's row is three CHILDLESS `view`s, and a measure
  * func on them would let a FrameLayout's intrinsic size (0×0) speak over Yoga,
  * destroying the `flexGrow:1` box's computed width. A childless container is a
@@ -210,8 +211,10 @@ open class BnYogaFrameLayout @JvmOverloads constructor(
  * — so Yoga's frames survive. `picker` (Spinner) is a FRAMEWORK ViewGroup that runs
  * its own layout and will overwrite the frames Yoga computed for its children. Its
  * node still takes part in the Yoga tree (so the Spinner is itself placed correctly
- * by its parent); it is only what is INSIDE it that Yoga does not get the final word
- * on. `scroll` used to be in this paragraph; 6.2 took it out.
+ * by its parent — and, since Phase 7.3, MEASURED as a leaf: its items are wire DATA,
+ * never wire children, so nothing inside it ever has a Yoga node to fight over); it
+ * is only what is INSIDE it that Yoga does not get the final word on. `scroll` used
+ * to be in this paragraph; 6.2 took it out.
  *
  * Threading: main-thread only. Every entry point is called from inside
  * [WidgetMapper.applyBatch] (already posted to the main looper) or from the host
@@ -1107,8 +1110,19 @@ class YogaLayout(private val context: Context, private val root: ViewGroup) {
          * ONLY nodes that get a measure function. NOT "the nodes with no
          * children": a childless `view` is a container, and measuring it would let
          * its intrinsic size override Yoga (non-negotiable #6).
+         *
+         * Phase 7.3 adds the four form controls — leaves with FIXED intrinsic
+         * sizes via the measure func, BY NODETYPE (the 6.1 law). Their intrinsic
+         * sizes are the PLATFORM's own (a CheckBox is whatever the theme says):
+         * frame parity applies to LAYOUT (declared sizes and placement), never to
+         * intrinsic control sizes — the demo declares Width where a number is
+         * asserted cross-platform (sliders/pickers, 240) and the checkbox/switch
+         * quartet is asserted per-platform by ORACLE (the 6.3 method).
          */
-        private val MEASURED_NODE_TYPES = setOf("text", "button", "input", "image")
+        private val MEASURED_NODE_TYPES = setOf(
+            "text", "button", "input", "image",
+            "checkbox", "switch", "slider", "picker",
+        )
 
         /**
          * The LAYOUT half of the SetStyle partition — the mirror of
