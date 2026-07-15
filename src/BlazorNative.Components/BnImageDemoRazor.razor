@@ -1,0 +1,78 @@
+@*
+    ─────────────────────────────────────────────────────────────────────────
+    BnImageDemoRazor — Phase 7.1 Gate 3: BnImageDemo's TRANSITIONAL .razor
+    twin (design §"The method"). Mounted side by side with the hand-written
+    BnImageDemo through the real host path (RazorPageTwinTests, via the
+    registry override); its patch stream must be record-identical across
+    mount + the "← Back" navigation swap. At the swap this file takes the
+    canonical name and the canonical file header — the TWO frame tables, the
+    fixture contract, the synchronization gate and the cleartext notes, the
+    spec two shells were held to — moves in character-for-character.
+
+    The .cs shared the three cases' shape through BuildCaseSection(seq,
+    content) with cached static method-group fragments; markup states each
+    section in place instead — the shape is now visibly identical rather
+    than shared, and the twin proves the wire cannot tell the difference.
+    ─────────────────────────────────────────────────────────────────────────
+*@
+<BnColumn>
+    <BnColumn Width="@SectionWidth" Align="FlexAlign.FlexStart">
+        <BnImage Src="@FixedSrc" Width="@FixedWidth" Height="@FixedHeight" />
+        <BnView Width="@SectionWidth" Height="@BandHeight" BackgroundColor="@BandUnderFixed" />
+    </BnColumn>
+
+    <BnColumn Width="@SectionWidth" Align="FlexAlign.FlexStart">
+        <BnImage Src="@IntrinsicSrc" />
+        <BnView Width="@SectionWidth" Height="@BandHeight" BackgroundColor="@BandUnderIntrinsic" />
+    </BnColumn>
+
+    <BnColumn Width="@SectionWidth" Align="FlexAlign.FlexStart">
+        <BnImage Src="@FailingSrc" />
+        <BnView Width="@SectionWidth" Height="@BandHeight" BackgroundColor="@BandUnderFailing" />
+    </BnColumn>
+
+    <BnRow Width="@SectionWidth">
+        <BnButton Label="← Back" OnClick="GoBack" />
+    </BnRow>
+</BnColumn>
+
+@code {
+    internal const string FixtureOrigin = "http://127.0.0.1:8099";
+    internal const string FixedSrc = FixtureOrigin + "/fixed.png";
+    internal const string IntrinsicSrc = FixtureOrigin + "/intrinsic.png";
+    internal const string FailingSrc = FixtureOrigin + "/missing.png";
+
+    internal const int IntrinsicNaturalWidthPx = 160;
+    internal const int IntrinsicNaturalHeightPx = 90;
+    internal const int FixedNaturalWidthPx = 64;
+    internal const int FixedNaturalHeightPx = 48;
+
+    internal const int FixedWidthDp = 200;
+    internal const int FixedHeightDp = 120;
+    internal const int SectionWidthDp = 300;
+    internal const int SiblingHeightDp = 20;
+    internal const int FixedSectionHeightDp = FixedHeightDp + SiblingHeightDp;
+    internal const int IntrinsicSectionYDp = FixedSectionHeightDp;
+    internal const int FailingSectionYDp = IntrinsicSectionYDp + SiblingHeightDp;
+    internal const int BackSectionYDp = FailingSectionYDp + SiblingHeightDp;
+
+    private const string BandUnderFixed = "#42A5F5";     // blue
+    private const string BandUnderIntrinsic = "#66BB6A"; // green
+    private const string BandUnderFailing = "#EF5350";   // red
+
+    private static readonly string SectionWidth =
+        SectionWidthDp.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    private static readonly string BandHeight =
+        SiblingHeightDp.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    private static readonly string FixedWidth =
+        FixedWidthDp.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    private static readonly string FixedHeight =
+        FixedHeightDp.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    [Inject] public INavigationManager Navigation { get; set; } = default!;
+
+    private Task GoBack() => Navigation.NavigateToAsync("/").AsTask();
+}
