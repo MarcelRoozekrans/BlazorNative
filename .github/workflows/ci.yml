@@ -4,12 +4,12 @@
 #
 #   build-test (windows-latest) — the local verification procedure verbatim
 #   (setup.ps1 §1–7 documents the toolchain pins):
-#     build (analyzers ride it) → .NET tests (454 passed / 0 skipped) →
+#     build (analyzers ride it) → .NET tests (492 passed / 0 skipped) →
 #     three NativeAOT publishes (win-x64, linux-bionic-x64, linux-bionic-arm64;
 #     each publish must show exactly the 4 accepted IL2072 trim warnings) →
 #     nine-export verification (dumpbin via vswhere / llvm-readelf from the
 #     pinned NDK) → Gradle testDebugUnitTest against the fresh win-x64 dll
-#     (83 passed / 0 failed) → the instrumented sources COMPILE →
+#     (90 passed / 0 failed) → the instrumented sources COMPILE →
 #     consumer smoke (five packages from the local feed mount a Bn* component
 #     + analyzer trip; Phase 4.5, M4 DoD #7) → artifacts for the instrumented
 #     (Gate 3) job.
@@ -580,7 +580,34 @@ jobs:
       # ride the existing int32 field; exports stay 9, the bridge 72 bytes), NO shell
       # edits (the Kotlin/Swift nodeTypes arrays are OWED to Gates 2/3), NO existing
       # golden moved: the gates below stay 4 IL2072 / 9 exports / 83 JVM.
-      - name: .NET tests (assert 454 passed / 0 skipped)
+      #
+      # 454 -> 492 (PHASE 7.3 GATE 1 REVIEW, +38 — all Runtime.Tests, 302 -> 340): the
+      # four Important findings, closed with tests. +29 the items grammar's acceptance
+      # set, DECIDED STRICT (I1): BnItemsStrictParser (test project) is the REFERENCE
+      # parser — the executable form of BnItemsJson.cs's normative comment, written
+      # because neither shell has an array parser to reuse (Kotlin's FlatJson.parse is
+      # object-only AND lenient) — plus the 15-row normative malformed-vector theory
+      # ([ "a"], ["a",], ["a"]x, ['a'], the \b \f \/ escapes, \ u for a non-control,
+      # uppercase hex, the long \ u spelling of \n, unterminated string/array, bare string,
+      # {}, empty) + a raw-control fact, the 9-row accept/round-trip theory + empty/
+      # multi/control facts, and the U+001F-escapes/U+007F-rides-raw boundary pin on
+      # the cross-writer matrix. Gates 2/3 transcribe parser AND vectors. +1 the
+      # picker's once-per-(clamped,raw)-pair notify guard (I2), red-first: the
+      # pre-guard shape hung Mount ITSELF (EventCallback.Factory.Create infers the
+      # receiver from the delegate's TARGET, so any bound component auto-re-renders on
+      # the notify -> clamp -> notify -> re-render forever; observed as a 90s
+      # blame-hang dump spinning in ProcessRenderQueue), bounded in-test via an inert
+      # sink + three forced re-renders — red [2,2,2,2], green [2]; mutation: guard
+      # reverted -> the same red. +8 the item-surface test PAIR on all four controls
+      # (I3 — the declaration-vs-forwarding lesson's third telling): the reflective
+      # Name:PropertyType theory (4 rows; own bind surface exact, no container param,
+      # no ChildContent) + the whole-wire-table forwarding facts (4); mutation:
+      # minWidth deleted from BnCheckbox.razor reddens the forwarding fact while the
+      # reflective theory stays green. I4 is prose (BnSlider.razor: out-of-range Value
+      # is the author's bug — raw on the wire, natively-clamped display, no notify).
+      # NO ABI change, NO wire change, NO existing golden moved; the JVM count moves
+      # in the SAME PR but belongs to Gate 2's lane (see the 83 -> 90 block below).
+      - name: .NET tests (assert 492 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -598,8 +625,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 454 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 454 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 492 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 492 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # ── NativeAOT publishes + nine-export verification ────────────────────
@@ -727,7 +754,32 @@ jobs:
       # Disposable, leaving a request nothing can cancel, whose completion on iOS runs
       # against a FREED YGNodeRef. MUTATION: revert the guard to a generation-only check
       # and exactly the reset-collision test reddens.
-      - name: JVM tests (Gradle testDebugUnitTest — assert 83 passed / 0 failed)
+      #
+      # ── Phase 7.3 Gate 2: 83 → 90, +7 — both counts are the gate's OWN findings.
+      #
+      #  +1 NativeFrameAdapterTest.nodeTypes_vocabulary_is_pinned_content_and_length —
+      #     THE GAP GATE 1 RECORDED BY NAME: Swift's BnDriftTests pins its nodeTypes
+      #     array's exact content, Kotlin pinned byte offsets and ONE synthetic decode
+      #     (3 → "button") — nothing pinned length or content, so a shell that missed a
+      #     vocabulary extension decoded every new create to the "?" fallback and only a
+      #     device golden could see it. Now the JVM lane reddens instead: checkbox=8,
+      #     switch=9, slider=10, exact content, exact order (index IS the wire id).
+      #     MUTATION: drop the three new entries → this test, on this lane, nothing else
+      #     on the JVM side.
+      #  +6 ItemsJsonTest — the STRICT items-array parser (the picker's item list). The
+      #     Gate 1 review's correction is the reason this parser EXISTS as its own file:
+      #     FlatJson.parse is object-only AND LENIENT (skips whitespace, accepts \b, \/,
+      #     uppercase hex — escapes the items grammar does not define), so "reuse the
+      #     existing parser" would have made the two shells' acceptance sets drift on
+      #     inputs the .NET writer never emits. The acceptance set is EXACTLY what
+      #     BnItemsJson.Write produces; the rejection matrix transcribes BnItemsJsonTests'
+      #     normative malformed vectors ([ "a"], ["a",], ["a"]x, ['a'], ["\b"], the long
+      #     \u spelling of a short escape, unterminated, bare-string/object roots) plus
+      #     the boundary rows (U+001F escapes, U+007F rides raw; uppercase hex,
+      #     non-control \u, raw controls, whole-string consumption all reject). Pure
+      #     Kotlin in the shared source set — testable HERE, off the device, like
+      #     isLiveImageRequest before it.
+      - name: JVM tests (Gradle testDebugUnitTest — assert 90 passed / 0 failed)
         working-directory: src/BlazorNative.Jni
         run: |
           .\gradlew.bat --no-daemon testDebugUnitTest
@@ -741,8 +793,8 @@ jobs:
             $errors += [int]$suite.errors; $skipped += [int]$suite.skipped
           }
           Write-Host "JVM test totals across $($xmls.Count) suites: tests=$tests failures=$failures errors=$errors skipped=$skipped"
-          if ($tests -ne 83 -or $failures -ne 0 -or $errors -ne 0 -or $skipped -ne 0) {
-            throw "JVM test baseline drift: expected 83 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped"
+          if ($tests -ne 90 -or $failures -ne 0 -or $errors -ne 0 -or $skipped -ne 0) {
+            throw "JVM test baseline drift: expected 90 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped"
           }
 
       # the instrumented-sources compile gate moved to its own required job
