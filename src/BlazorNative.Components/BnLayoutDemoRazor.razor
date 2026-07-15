@@ -1,0 +1,82 @@
+@*
+    ─────────────────────────────────────────────────────────────────────────
+    BnLayoutDemoRazor — Phase 7.1 Gate 2 TRANSITIONAL TWIN of BnLayoutDemo
+    (mostly declarative — the .razor form this page always wanted to be).
+    Mountable SIDE BY SIDE with the hand-written page while
+    RazorPageTwinTests proves the patch streams record-identical across
+    mount + the Back navigation. At swap time this file is `git mv`ed to
+    BnLayoutDemo.razor, the .cs retires, the twin test retires with it —
+    the page's header FRAME TABLE (the cross-platform contract three
+    surfaces assert) moves to the canonical file unchanged.
+    ─────────────────────────────────────────────────────────────────────────
+*@
+<BnColumn>
+    @* [0] fixed 50 · Grow=1 · fixed 50, inside a 300×100 row. The grow box
+       absorbs exactly the remainder (200); the boxes have no height, so the
+       row's default cross-axis stretch gives them its full 100. *@
+    <BnRow Width="300" Height="100">
+        <BnView Width="50" BackgroundColor="@BoxA" />
+        <BnView Grow="1" BackgroundColor="@BoxB" />
+        <BnView Width="50" BackgroundColor="@BoxC" />
+    </BnRow>
+
+    @* [1] space-between over a 200-high column: three 40-high items → 80dp
+       of free space split into two 40dp gaps (y = 0 / 80 / 160). The middle
+       item overrides the cross axis with AlignSelf=Center → x = (300-100)/2. *@
+    <BnColumn Width="300" Height="200" Justify="FlexJustify.SpaceBetween">
+        <BnView Width="100" Height="40" BackgroundColor="@Item0" />
+        <BnView Width="100" Height="40" AlignSelf="FlexAlign.Center" BackgroundColor="@Item1" />
+        <BnView Width="100" Height="40" BackgroundColor="@Item2" />
+    </BnColumn>
+
+    @* [2] four 90-wide boxes in a 300-wide wrapping row: three fit on line 1
+       (270 of 300), the fourth overflows onto line 2 at y = 40 (the line-1
+       cross size — Yoga's alignContent defaults to flex-start).
+       90, not 100, ON PURPOSE: four 100s would leave the row sitting exactly
+       on Yoga's break boundary (consumed + item > available; 300 > 300 is
+       false), where a half-dp of rounding on either shell flips box 3 onto
+       line 2. 30dp of slack makes the break a fact, not a coin toss. *@
+    <BnRow Width="300" Height="100" Wrap="FlexWrap.Wrap">
+        @for (var i = 0; i < 4; i++)
+        {
+            <BnView Width="90" Height="40" BackgroundColor="@WrapBox" />
+        }
+    </BnRow>
+
+    @* [3] the DoD #3 proof: a 150-wide row with NO height. The label cannot
+       fit on one line, so the shell's Yoga measure function reports its
+       WRAPPED height — and the row hugs it. Nothing above this section
+       depends on that height (it is the second-to-last child), so the fixed
+       frames stay fixed on both platforms. *@
+    <BnRow Width="150">
+        <BnText Text="@MeasuredText" />
+    </BnRow>
+
+    @* [4] nav parity with BnDemo/BnSettingsPage — and a second measured leaf
+       (a button sizes itself). *@
+    <BnRow Width="300">
+        <BnButton Label="← Back" OnClick="GoBack" />
+    </BnRow>
+</BnColumn>
+
+@code {
+    // Distinct per-box colours: the AVD/simulator screenshots are read by
+    // humans too, and a wrong frame is easier to SEE than to diff.
+    private const string BoxA = "#E57373"; // red
+    private const string BoxB = "#64B5F6"; // blue  — the Grow=1 box
+    private const string BoxC = "#81C784"; // green
+    private const string Item0 = "#FFB74D"; // orange
+    private const string Item1 = "#BA68C8"; // purple — the AlignSelf=Center child
+    private const string Item2 = "#4DB6AC"; // teal
+    private const string WrapBox = "#90A4AE"; // grey
+
+    /// <summary>The long label whose NATIVELY MEASURED size drives its frame
+    /// (DoD #3): 150dp of row is far too narrow for it, so it must wrap and
+    /// report a multi-line height — and its row must grow to that height.</summary>
+    private const string MeasuredText =
+        "This label is measured natively: it wraps inside 150dp and its measured height drives the row.";
+
+    [Inject] public INavigationManager Navigation { get; set; } = default!;
+
+    private Task GoBack() => Navigation.NavigateToAsync("/").AsTask();
+}
