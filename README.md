@@ -2,7 +2,7 @@
 
 [![ci](https://github.com/MarcelRoozekrans/BlazorNative/actions/workflows/ci.yml/badge.svg)](https://github.com/MarcelRoozekrans/BlazorNative/actions/workflows/ci.yml)
 
-> **Status: pre-release proof of concept.** Milestones 1–5 are complete (tagged `v1.0`–`v5.0`); Milestone 6 (Real-UI Foundation: layout + scroll + image) is in progress — Yoga flexbox owns all placement on both shells and real scrolling landed; images (6.3) and the milestone audit (6.4) remain. Not production-ready — the API surface is unstable and changes without notice.
+> **Status: pre-release proof of concept.** Milestones 1–6 are complete (tagged `v1.0`–`v6.0`). Milestone 6 (Real-UI Foundation) shipped Yoga flexbox owning all placement on both shells, real scrolling, and URL images — identical frame tables asserted on the Android emulator and the iOS simulator, pinned by a cross-shell drift test. Milestone 7 (Components + Razor) is next. Not production-ready — the API surface is unstable and changes without notice.
 
 > .NET → NativeAOT → native mobile widgets. Blazor components rendered as real Android and iOS views, no WebView, no JavaScript, no wasm.
 
@@ -140,13 +140,13 @@ The style routing table is hand-written in three places (`NativeRenderer.cs`, `Y
 
 Give a `BnScroll` a **definite height** (`Height`, or `Grow="1" Basis="0"` in a bounded parent). `Grow="1"` alone leaves `flexBasis: auto` — the basis becomes the *content's* height, the free space is negative, and `flexGrow` distributes only positive free space, so the viewport hugs its content and never scrolls. That is exactly why CSS's `flex: 1` shorthand sets basis to `0`; the shells emit a diagnostic when a viewport is indefinite.
 
-Two demo pages are mountable in the app: **`/layout`** (`BnLayoutDemo` — row/column/wrap/`Grow`/`AlignSelf` with a natively measured text leaf) and **`/scroll`** (`BnScrollDemo` — a 300×200 viewport over 800dp of content that actually scrolls).
+Three demo pages are mountable in the app: **`/layout`** (`BnLayoutDemo` — row/column/wrap/`Grow`/`AlignSelf` with a natively measured text leaf), **`/scroll`** (`BnScrollDemo` — a 300×200 viewport over 800dp of content that actually scrolls) and **`/image`** (`BnImageDemo` — a fixed-size image that never reflows, an intrinsic-size image whose loaded bytes reflow the sibling below it, and a failing URL that reserves nothing).
 
 ### Not yet
 
 Honest boundaries, all ledgered:
 
-- **`image` has no source-loading path** on either shell. It creates a widget and measures to zero. Phase 6.3 owns it.
+- **Images load from URLs but the surface is minimal**: `BnImage` is `Src` + the flex *item* params. No `Placeholder`, `OnError` or `ContentMode` yet — each changes *measurement*, so each gets its own design in M7. The unit rule is one file pixel = one dp/pt, so a `@2x` asset renders at 2× its intended physical size on both platforms (density-aware sources are M7). The demo app has no fixture server, so `/image` shows three failed loads outside the test targets — by design.
 - **`picker` does not flex its children** — `Spinner`/`UIPickerView` are framework containers that run their own layout inside themselves. The picker node itself is placed correctly by its parent.
 - **No horizontal scroll.** Android's `ScrollView` is vertical-only; horizontal is a different widget class that would have to be chosen at `CreateNode` from a `flexDirection` that arrives in a *later* `SetStyle` patch.
 - **No `onScroll` / `scrollTo`**, and no scroll-offset restore across navigation. `onScroll` fires at 60 Hz and would be the first high-frequency producer on a wire designed for taps; it needs its own design.
@@ -224,7 +224,7 @@ All four counts are asserted in CI — a drift from the baseline fails the build
 
 | Surface | Command | Count |
 |---|---|---|
-| .NET | `dotnet test` | 319 passed / 0 skipped |
+| .NET | `dotnet test` | 324 passed / 0 skipped |
 | JVM (JNA + win-x64 .dll) | `gradlew testDebugUnitTest` | 83 |
 | Android (instrumented, AVD) | `gradlew connectedAndroidTest` | 111 |
 | iOS (XCTest, simulator) | `xcodebuild test` | 72 |
@@ -238,14 +238,15 @@ All four counts are asserted in CI — a drift from the baseline fails the build
 - [x] `Bn*` component library, `@bind` mechanics, cascading values, navigation — a demo app on the AVD (~1.6 s cold boot) — Milestone 3
 - [x] Public repo + CI, analyzer rescope, hardening triage, dev inner loop, NuGet packages — Milestone 4
 - [x] Full platform coverage — the **iOS Swift/UIKit shell** (simulator, on CI macOS runners) + host-initiated events (lifecycle, predictive back, deep links) on Android — Milestone 5
-- [ ] **Real-UI foundation — Milestone 6 (in progress)**
+- [x] **Real-UI foundation — Milestone 6** (tagged `v6.0`)
   - [x] Yoga 3.2.1 linked into both shells — Phase 6.0
   - [x] Yoga owns all placement; native text measurement; `BnView`'s flex surface + `BnRow`/`BnColumn` — Phase 6.1
   - [x] Real scrolling — `BnScroll` as a viewport over a synthesised content node — Phase 6.2
-  - [ ] Images (a source-loading path on both shells) — Phase 6.3
-  - [ ] Milestone audit → `v6.0` — Phase 6.4
+  - [x] URL images — `BnImage` via Coil/Kingfisher behind one parity contract — Phase 6.3
+  - [x] Milestone audit (all 8 DoD PASS) + a required compile gate per shell (`build-test`/`android-build`/`ios-build`) → `v6.0` — Phase 6.4
+- [ ] Components + Razor — Milestone 7 (next)
 
-Four pages are mountable in the demo app: `BnDemo`, `BnSettingsPage`, `BnLayoutDemo` (`/layout`) and `BnScrollDemo` (`/scroll`).
+Five pages are mountable in the demo app: `BnDemo`, `BnSettingsPage`, `BnLayoutDemo` (`/layout`), `BnScrollDemo` (`/scroll`) and `BnImageDemo` (`/image`).
 
 ## Compatibility
 
