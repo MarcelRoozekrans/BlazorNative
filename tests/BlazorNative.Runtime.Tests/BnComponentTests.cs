@@ -634,7 +634,12 @@ public sealed class BnComponentTests : IDisposable
 
     /// <summary>DECLARATION: the presets expose the WHOLE BnView surface minus
     /// Direction. A param that exists on BnView but not on the preset is a hole
-    /// an author falls into — pinned, not eyeballed.</summary>
+    /// an author falls into — pinned, not eyeballed. The comparison includes the
+    /// PropertyType (7.1 Gate 4): when a BnView param changes type (as FontSize/
+    /// Padding did, string? → float?), a preset that keeps the old type still
+    /// declares the right NAME, and name-only comparison would defer the failure
+    /// to value-assignment inside BuildRenderTree — this pins the divergence at
+    /// the declaration instead.</summary>
     [Theory]
     [InlineData(typeof(BnRow))]
     [InlineData(typeof(BnColumn))]
@@ -642,11 +647,12 @@ public sealed class BnComponentTests : IDisposable
     {
         static IEnumerable<string> Parameters(Type t) => t.GetProperties()
             .Where(p => p.IsDefined(typeof(ParameterAttribute), inherit: true))
-            .Select(p => p.Name)
+            .Select(p => $"{p.Name}: {p.PropertyType}")
             .OrderBy(n => n, StringComparer.Ordinal);
 
         Assert.Equal(
-            Parameters(typeof(BnView)).Where(n => n != nameof(BnView.Direction)),
+            Parameters(typeof(BnView))
+                .Where(n => !n.StartsWith($"{nameof(BnView.Direction)}:", StringComparison.Ordinal)),
             Parameters(preset));
     }
 
