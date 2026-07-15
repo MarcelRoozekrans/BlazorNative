@@ -59,6 +59,12 @@ the two points where scope may consciously shrink; anything cut is ledgered, not
 4. **Form controls:** `BnCheckbox`, `BnSwitch`, `BnSlider`, and **`picker` made real** (the last
    stubbed widget — native `Spinner`/`UIPickerView` with items + selection round-trip on the
    existing change wire). Two-way bind on all four.
+   ✅ **Closed by Phase 7.3** ([conclusion](../plans/2026-07-15-phase-7.3-conclusion.md)):
+   three new NodeTypes (8/9/10 — vocabulary, not ABI; pinned on all three mirrors), the picker
+   as the **state-owner precedent** (strict flat-JSON items, normative clamp rule, the CLAMPED
+   index dispatched — asserted on both device lanes), per-control loop guards verified and
+   **asymmetric by platform**, two iOS 26 platform findings fixed on CI. Counts .NET **492/0** ·
+   JVM **90/0** · Android instrumented **147/0** · iOS XCTest **111/0** (run 29451417339).
 5. **`BnModal`** — the first overlay surface (show/hide + `ChildContent`; native dialog primitives
    or a second Yoga root — the design decides and records why). No animation system.
 6. **`BnImage` polish:** `Placeholder`, `OnError`, `ContentMode` — each is a **measurement**

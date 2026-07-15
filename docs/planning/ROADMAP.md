@@ -547,7 +547,30 @@ Phases (approved at milestone-open 2026-07-15; subject to the 7.0 verdict):
      **124/0** · iOS XCTest **85/0** (run 29435524820). See
      [design](../plans/2026-07-15-phase-7.2-design.md) +
      [conclusion](../plans/2026-07-15-phase-7.2-conclusion.md).
-- ⏳ **Phase 7.3** — form controls + a real `picker` (DoD #4)
+- ✅ **Phase 7.3** — form controls + a real `picker` (DoD #4) — *complete (2026-07-15)*
+   - **The form is real on both shells** (DoD #4 closed): `BnCheckbox`/`BnSwitch`/`BnSlider`
+     (three new NodeTypes 8/9/10 — a wire-VOCABULARY extension on the existing int32 field, no
+     ABI change, pinned on all three mirrors incl. the Kotlin content pin Gate 1 found missing)
+     + **`picker` made real** (`Spinner`/`UIPickerView`, ending the last 2.5-era stub). All four
+     `.razor`, `@bind-` pairs on the existing change wire; `/form` is the seventh page.
+   - **The state-owner precedent:** the picker owns items + selection natively — `items` as
+     strict flat-JSON on `UpdateProp` (one acceptance set, three parsers, 15 normative malformed
+     categories + the casing-discriminating rejection vector), selection back on the change
+     wire, the normative clamp rule (`items`-before-`selectedIndex`, every items application
+     re-clamps, the **CLAMPED index is dispatched** — asserted on both device lanes).
+   - **The guard asymmetry, verified per control:** Android `applyingBatch` for the synchronous
+     three + the Spinner's expected-selection compare (its notifier is POSTED) + the `BnSpinner`
+     self-layout fix; iOS **no batch guard anywhere** — instead the slider step-dedup and the
+     picker same-row compare, with record-before-apply recognized (Gate 3 review) as structurally
+     the same expected-selection guard, made falsifiable by a raw-`selectRow` test.
+   - **Two iOS 26 platform findings, fixed on CI:** `UISlider` stores value as a Float32 track
+     fraction (one-ulp read-back → the exact-value shim); `UISwitch` refuses imposed frames —
+     the first widget in either shell to do so (stretch law asserted on the Yoga box + oracle).
+   - **Final counts (all CI-asserted):** .NET **492/0** · JVM **90/0** · Android instrumented
+     **147/0** · iOS XCTest **111/0** (run 29451417339 on `e9a7376`). iOS mutations run ON CI:
+     29449282815 (108/1), 29449284412 (108/1), 29449281293 (104/5). See
+     [design](../plans/2026-07-15-phase-7.3-design.md) +
+     [conclusion](../plans/2026-07-15-phase-7.3-conclusion.md).
 - ⏳ **Phase 7.4** — `BnModal` + the RN survey's cheap wins (DoD #5, #7)
 - ⏳ **Phase 7.5** — `BnImage` polish: Placeholder/OnError/ContentMode (DoD #6)
 - ⏳ **Phase 7.6** — route-registry unification + M7 final audit + close (rest of #8) → `v7.0`
