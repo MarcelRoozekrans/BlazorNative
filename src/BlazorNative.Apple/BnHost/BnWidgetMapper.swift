@@ -575,12 +575,16 @@ final class BnWidgetMapper {
     ///
     ///  - [appliedSelection] — what the shell last applied to (or last heard
     ///    from) the picker. −1 = nothing selected (empty items — the clamp
-    ///    rule's only −1). Unlike Android's Spinner there is NO asynchronous
-    ///    selection echo to guard against (`selectRow` applies immediately and
-    ///    never calls the delegate — VERIFIED, the fires-nothing tests), so on
-    ///    iOS this field's guard duty is the SAME-ROW compare in
-    ///    [handlePickerUserSelect]: a wheel spun away and back to the current
-    ///    row is not a change (Android's AdapterView drops those the same way).
+    ///    rule's only −1). `selectRow` applies immediately and never calls the
+    ///    delegate (VERIFIED by the RAW-selectRow test, which calls the view
+    ///    directly — the Gate 3 review's S1-1: both apply sites record THIS
+    ///    field BEFORE calling selectRow, and record-before-apply is,
+    ///    structurally, the expected-selection guard Android's Spinner
+    ///    carries, so a fire through the apply path would be swallowed by the
+    ///    same-row compare and could never redden a test). Its everyday guard
+    ///    duty is that SAME-ROW compare in [handlePickerUserSelect]: a wheel
+    ///    spun away and back to the current row is not a change (Android's
+    ///    AdapterView drops those the same way).
     ///  - [requestedIndex] — the wire's last `selectedIndex`, kept RAW so an
     ///    `items` write can honor it regardless of patch order (a selection
     ///    that arrived before its items would otherwise be clamped against an
@@ -611,8 +615,9 @@ final class BnWidgetMapper {
         }
 
         /// A USER pick — `UIPickerView` calls this for wheel gestures only,
-        /// never for `selectRow` (verified; the whole reason iOS needs no
-        /// Spinner-style expected-selection guard).
+        /// never for `selectRow` (verified by the RAW-selectRow test; through
+        /// the apply path the record-before-apply ordering would swallow a
+        /// fire, so only the raw call is discriminating).
         func pickerView(_ pickerView: UIPickerView, didSelectRow row: Int, inComponent component: Int) {
             onUserSelect?(row)
         }
@@ -2447,8 +2452,11 @@ final class BnWidgetMapper {
         state.items = items
         state.appliedSelection = clamped
         picker.reloadAllComponents()
-        // selectRow applies IMMEDIATELY and calls no delegate (verified — the
-        // reason there is no BnSpinner here and no expected-selection guard).
+        // selectRow applies IMMEDIATELY and calls no delegate (verified by the
+        // RAW-selectRow test — appliedSelection is already recorded above, so
+        // a fire HERE would be swallowed by the same-row compare; that
+        // record-before-apply ordering is itself the Spinner-style
+        // expected-selection guard, which is why no BnSpinner is needed).
         if clamped >= 0 { picker.selectRow(clamped, inComponent: 0, animated: false) }
         markDirty(picker) // new items = a new intrinsic size (the widest item)
         if hadLiveSelection && clamped != base, let handlerId = state.handlerId {
@@ -2481,7 +2489,9 @@ final class BnWidgetMapper {
     }
 
     /// A USER pick landed (the delegate's `didSelectRow` — wheel gestures only;
-    /// `selectRow` never calls it, verified). Resolves the LIVE map first (the
+    /// `selectRow` never calls it, verified by the RAW-selectRow test — a fire
+    /// through the apply path would be swallowed by the same-row guard below,
+    /// which is exactly why the raw test exists). Resolves the LIVE map first (the
     /// 6.3 stale-callback discipline), then the SAME-ROW guard: a wheel spun
     /// away and back to the current row is not a change — Android's
     /// AdapterView drops those the same way, so re-selecting the same position

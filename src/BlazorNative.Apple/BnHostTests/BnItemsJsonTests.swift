@@ -85,6 +85,10 @@ final class BnItemsJsonTests: XCTestCase {
             "[\"\(bs)/\"]",      // \/: lenient-JSON escape, not in the matrix
             "[\"\(bs)f\"]",      // \f: same
             "[\"\(bs)u00AB\"]",  // uppercase hex — the writer emits lowercase
+            "[\"\(bs)u001F\"]",  // uppercase hex of a CONTROL (.NET's verbatim vector — S1-2): lowercase
+                                 // u001f is ACCEPTED above, so casing is the ONLY reason this rejects;
+                                 // the u00AB row also trips the non-control rule and cannot catch a
+                                 // parser mutated to take uppercase hex
             "[\"\(bs)u0041\"]",  // well-formed \u of a NON-control — the writer never u-escapes those
             "[\"\(bs)u000a\"]",  // the LONG spelling of the newline short escape — one canonical spelling per input
             "[\"\(bs)u00\"]",    // truncated \u escape

@@ -339,7 +339,7 @@ jobs:
             > ios-out/xcresult.json 2>/dev/null || true
           ls -la ios-out/crash || true
 
-      - name: Assert XCTest baseline (109 passed / 0 failed)
+      - name: Assert XCTest baseline (111 passed / 0 failed)
         if: always()
         run: |
           log=ios-out/xcodebuild-test.log
@@ -676,10 +676,33 @@ jobs:
           #       MotionEvents instead), so the assertion is UIKit's own touch gate
           #       present on all four + the counter staying exactly at the bound
           #       drives' count.
+          # 109 -> 111 (Phase 7.3 Gate 3 REVIEW, +2) — the review's findings, applied.
+          #   +1  BnFormControlTests.testARawSelectRowBypassingTheApplyPathFiresNoDelegateTheGuardDisarmed
+          #       S1-1 (Important): the picker's "programmatic set fires nothing" verification was
+          #       UNFALSIFIABLE — every prior test moved the selection through the shell's apply
+          #       path, which records appliedSelection BEFORE calling selectRow, so if UIKit DID
+          #       fire didSelectRow on a programmatic selectRow, the same-row compare would have
+          #       swallowed it and every one of those tests stayed green in the counterfactual.
+          #       This one calls selectRow(2) RAW on the view while appliedSelection is 0: the
+          #       guard is disarmed and a delegate fire would dispatch "2" -> red. The
+          #       record-before-apply ordering IS, structurally, the expected-selection guard
+          #       Android's Spinner carries; the three comment sites that claimed "no guard could
+          #       swallow the evidence" are corrected in the same commit.
+          #   +1  BnFormControlTests.testSelectedIndexBeforeItemsInOneBatchLandsIdenticallyToTheNormativeOrder
+          #       S1-3: one batch applying selectedIndex BEFORE items lands on the same selection
+          #       with zero dispatches — requestedIndex keeps the RAW wire value, so patch order
+          #       is immaterial; pinned. Android's mechanism is code-identical and is NOT
+          #       re-tested on the instrumented lane (noted for the Gate 4 conclusion instead).
+          #   And S1-2, NO count change: BnItemsJsonTests' rejection list gains .NET's verbatim
+          #   ["backslash-u001F"] vector (uppercase hex of a CONTROL — lowercase u001f is in the acceptance
+          #   set, so casing is the ONLY reason it rejects; the substituted « row also trips
+          #   the non-control rule, so it cannot catch a parser mutated to accept uppercase hex).
+          #   A vector inside the existing method: 19 -> 20 vectors, same test count. Kotlin's
+          #   ItemsJsonTest gains the same vector the same way (ci.yml's JVM 90 unchanged).
           # Count drift fails loudly.
-          if [ "$failed" -ne 0 ] || [ "$passed" -ne 109 ]; then
+          if [ "$failed" -ne 0 ] || [ "$passed" -ne 111 ]; then
             grep -E "Test Case '.*' (passed|failed)" "$log" || true
-            echo "iOS XCTest baseline drift: expected 109 passed / 0 failed, got passed=$passed failed=$failed" >&2
+            echo "iOS XCTest baseline drift: expected 111 passed / 0 failed, got passed=$passed failed=$failed" >&2
             exit 1
           fi
 

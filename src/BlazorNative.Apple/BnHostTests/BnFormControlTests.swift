@@ -10,10 +10,16 @@
 //    the expected-selection compare). **On iOS `UISwitch.setOn`,
 //    `UISlider.setValue` and `UIPickerView.selectRow` fire NOTHING** — inside a
 //    batch AND outside one — so the shell carries NO applyingBatch dispatch
-//    guard on any of the four, and these tests are what make that a VERIFIED
-//    fact instead of a 5.3 assumption: if UIKit ever starts firing, the
-//    fires-nothing halves redden (there is deliberately no guard to swallow
-//    the evidence).
+//    guard on any of the four. For the SWITCH and the SLIDER that claim is
+//    falsifiable as written: no guard exists that could swallow a fire, so if
+//    UIKit ever starts firing, their fires-nothing halves redden. The PICKER
+//    is NOT like them (the Gate 3 review's S1-1): its apply path records
+//    appliedSelection BEFORE calling selectRow — record-before-apply IS,
+//    structurally, the expected-selection guard Android's Spinner carries —
+//    so a delegate fire through that path WOULD be swallowed by the same-row
+//    compare. Only the RAW-selectRow test (calling the view directly, apply
+//    path bypassed, guard disarmed) makes the picker's fires-nothing claim
+//    falsifiable.
 //  - What iOS DOES need, and what the REQUIRED MUTATIONS redden: the slider's
 //    step-quantization DEDUP (a float-native drag delivers a distinct
 //    `.valueChanged` per sample; Android's int progress dedups structurally),
@@ -257,14 +263,60 @@ final class BnFormControlTests: BnHostTestCase {
         let picker = try child(as: UIPickerView.self)
 
         // A later batch moves the selection programmatically (the bound-state
-        // echo shape). UIPickerView.selectRow applies immediately and calls NO
-        // delegate — VERIFIED: there is no guard in this shell that could
-        // swallow a fire, so a dispatch here would mean the platform behaviour
-        // changed.
+        // echo shape). NOTE (the Gate 3 review's S1-1): this apply path records
+        // appliedSelection BEFORE calling selectRow — record-before-apply is,
+        // structurally, the expected-selection guard Android's Spinner carries
+        // — so a delegate fire here WOULD be swallowed by the same-row compare.
+        // This test pins the wire's silence through the shell's OWN path; the
+        // raw-selectRow test below is what makes "selectRow calls no delegate"
+        // falsifiable.
         host.render([prop("selectedIndex", "2")])
         XCTAssertEqual(picker.selectedRow(inComponent: 0), 2)
         XCTAssertEqual(recorder.payloads.count, 0,
                        "a programmatic selection set must re-fire NOTHING")
+    }
+
+    func testARawSelectRowBypassingTheApplyPathFiresNoDelegateTheGuardDisarmed() throws {
+        host.render(mountPatches("picker",
+            [("items", Self.items), ("selectedIndex", "0")]))
+        let picker = try child(as: UIPickerView.self)
+
+        // THE DISCRIMINATOR (the Gate 3 review's S1-1): every other picker
+        // fires-nothing test moves the selection through the shell's apply
+        // path, which records appliedSelection BEFORE calling selectRow — if
+        // UIKit DID fire didSelectRow on a programmatic selectRow, the
+        // same-row compare would swallow it and those tests would stay green
+        // in the counterfactual. Here selectRow is called RAW on the view:
+        // appliedSelection stays 0 ≠ 2, the guard is disarmed, and a delegate
+        // fire would dispatch "2" → red. THIS assertion is the falsifiable
+        // form of "UIPickerView.selectRow fires nothing".
+        picker.selectRow(2, inComponent: 0, animated: false)
+        XCTAssertEqual(picker.selectedRow(inComponent: 0), 2, "the raw move landed")
+        XCTAssertEqual(recorder.payloads.count, 0,
+                       "selectRow called no delegate — with the same-row guard disarmed, "
+                       + "nothing in this shell could swallow the evidence")
+    }
+
+    func testSelectedIndexBeforeItemsInOneBatchLandsIdenticallyToTheNormativeOrder() throws {
+        // Hand-rolled REVERSED order (the Gate 3 review's S1-3): selectedIndex
+        // arrives while items is still empty — clamped to −1 on the spot —
+        // then items lands. [requestedIndex] keeps the RAW wire value, so the
+        // items write clamps against the wire's own last request: the
+        // items/selectedIndex patch order is immaterial, pinned here. (Android
+        // is code-identical on this mechanism — noted for Gate 4, not
+        // re-tested on the instrumented lane.)
+        host.render([
+            bnCreate(Self.node, "picker", nil),
+            .attachEvent(nodeId: Self.node, eventName: "change", handlerId: Self.handler),
+            prop("selectedIndex", "2"),
+            prop("items", Self.items),
+        ])
+        let picker = try child(as: UIPickerView.self)
+        XCTAssertEqual(rows(of: picker), ["Alpha", "Bravo", "Charlie"])
+        XCTAssertEqual(picker.selectedRow(inComponent: 0), 2,
+                       "the reversed order lands on the SAME selection the normative order does")
+        XCTAssertEqual(recorder.payloads.count, 0,
+                       "…and dispatches nothing, exactly like the normative mount")
     }
 
     func testAUserSelectionDispatchesTheNewIndexExactlyOnceAndASameRowRepickAddsNothing() throws {
