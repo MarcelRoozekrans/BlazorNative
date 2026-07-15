@@ -52,8 +52,13 @@ public sealed class SpikeRazorTwin : ComponentBase
         b.OpenElement(6, "input");
         b.AddAttribute(7, "placeholder", "Type here...");
         b.AddAttribute(8, "value", BindConverter.FormatValue(_text));
+        // `?? ""` — CS8601 otherwise (the binder's setter delivers string?; _text
+        // is non-nullable). The generated .razor lambda assigns __value directly,
+        // but generated code suppresses nullable warnings; the coalesce is
+        // wire-invisible for the pinned lifecycle (no null payload is ever
+        // dispatched) and golden-vs-twin is the standing proof.
         b.AddAttribute(9, "onchange",
-            EventCallback.Factory.CreateBinder(this, __value => _text = __value, _text));
+            EventCallback.Factory.CreateBinder(this, __value => _text = __value ?? "", _text));
         b.SetUpdatesAttributeName("value");
         b.CloseElement();
 
