@@ -38,6 +38,11 @@ the two points where scope may consciously shrink; anything cut is ledgered, not
    `BnLayoutDemo`, `BnScrollDemo`, `BnImageDemo`) rewritten as `.razor` files with **parity proven
    against the existing goldens and frame tables** (the old `BuildRenderTree` versions are the
    regression baseline until parity, then retire). `@bind-Value` as *syntax*, not just mechanics.
+   ✅ **Closed by Phase 7.1** ([conclusion](../plans/2026-07-15-phase-7.1-conclusion.md)): zero
+   golden edits, zero shell edits; device lanes re-ran green on the converted app —
+   android-instrumented run 29420994993 (111/0), ios run 29420996916 (72/0). Two pre-1.0 breaking
+   changes recorded, no shim: `BnThemedPanel` `internal`→`public` (compiler-forced),
+   `FontSize`/`Padding` `string?`→`float?` (wire-identical).
 3. **A virtualized list (`BnList`).** Windowed rendering over the M6 scroll engine: a 500-row page
    where only ~viewport+overscan rows are live (asserted — a row count, not a feeling), scrolling
    stays interactive, and the frames match on both shells. Includes the **`onScroll` wire design**
@@ -55,7 +60,8 @@ the two points where scope may consciously shrink; anything cut is ledgered, not
    *have it / ships in M7 / ledgered with a reason*. Cheap high-value wins identified by the
    survey (candidates: `ActivityIndicator`, `SafeAreaView`) ship; heavy ones
    (`RefreshControl`, `KeyboardAvoidingView`, `StatusBar`, gestures) are ledgered explicitly.
-8. **Hygiene + close:** typed `FontSize`/`Padding` (the last stringly M4-ledger stragglers); the
+8. **Hygiene + close:** typed `FontSize`/`Padding` (the last stringly M4-ledger stragglers —
+   ✅ closed by Phase 7.1: `string?`→`float?`, wire-identical, goldens untouched); the
    **route-registry unification** (routes duplicated in .NET + Kotlin since 5.1 — one source,
    drift-tested like the style tables); every new surface CI-asserted (counts + the three required
    compile gates); decision log per phase + final audit → tag **`v7.0`**.
