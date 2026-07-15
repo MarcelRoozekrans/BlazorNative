@@ -636,21 +636,8 @@ jobs:
             throw "JVM test baseline drift: expected 83 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped"
           }
 
-      # ── The instrumented sources must COMPILE in the required lane ─────────
-      # They need a device to RUN, but not to COMPILE — and the compile is where
-      # a whole source set can silently vanish. The AGP 9 migration stopped feeding
-      # `java.srcDirs` to the Kotlin compiler, so `src/androidMain/kotlin` (the ENTIRE
-      # Android shell: MainActivity, WidgetMapper, YogaLayout) went uncompiled. The app
-      # still "built" (nothing references MainActivity at compile time — only the
-      # manifest names it) and the JVM tests still passed (they touch src/main/kotlin
-      # only), so the ONLY lane that could see it was android-instrumented — which is
-      # dispatch/nightly and does NOT gate PRs. It landed on main green and sat there.
-      # Compiling androidTest here costs ~40s and closes that hole permanently.
-      - name: Compile the instrumented sources (no device — the source sets must resolve)
-        working-directory: src/BlazorNative.Jni
-        run: |
-          .\gradlew.bat --no-daemon compileDebugAndroidTestKotlin
-          if ($LASTEXITCODE -ne 0) { throw "compileDebugAndroidTestKotlin failed (exit $LASTEXITCODE) — the instrumented sources do not compile. A device is needed to RUN them, not to COMPILE them; this gate exists because android-instrumented does not gate PRs." }
+      # the instrumented-sources compile gate moved to its own required job
+      # `android-build` (see below) — a red check now names the Android shell directly.
 
       # ── Consumer smoke (Phase 4.5 Gate 2 — the M4 DoD #7 proof) ────────────
       # Packs the five packages, restores samples/ConsumerSmoke from the local
@@ -696,6 +683,117 @@ jobs:
           name: jniLibs-staging
           path: ${{ runner.temp }}/jniLibs-staging
           if-no-files-found: error
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # android-build — THE ANDROID SHELL MUST COMPILE, AND A REQUIRED CHECK MUST
+  # NAME IT.
+  #
+  # ── WHY THIS JOB EXISTS ────────────────────────────────────────────────────
+  # The AGP 9 migration stopped feeding `java.srcDirs` to the Kotlin compiler, so
+  # `src/androidMain/kotlin` (the ENTIRE Android shell: MainActivity, WidgetMapper,
+  # YogaLayout) went uncompiled. The app still "built" (nothing references
+  # MainActivity at compile time — only the manifest names it) and the JVM tests
+  # still passed (they touch src/main/kotlin only), so the ONLY lane that could see
+  # it was `android-instrumented` — dispatch/nightly, which does NOT gate PRs. It
+  # landed on `main` green and sat there. PR #81 closed the hole by compiling the
+  # instrumented sources inside `build-test`.
+  #
+  # That gate now lives HERE, in its own job, mirroring `ios-build`. The reason is
+  # LEGIBILITY, not behaviour: when the compile lived inside `build-test`, an Android
+  # shell that stopped compiling reddened a check named `build-test` — the same check
+  # that fails for a .NET build error, a broken .NET test, or a JVM unit-test failure.
+  # You could not tell from the check list WHICH shell broke. A red `android-build`
+  # names the Android shell directly, exactly as a red `ios-build` names the iOS one.
+  #
+  # ── WHY IT STOPS AT COMPILE, AND WHY THAT IS NOT TIMIDITY ──────────────────
+  # A device is needed to RUN the instrumented tests, not to COMPILE them — the same
+  # sentence `ios-build`'s `build-for-testing` is justified by. `compileDebugAndroidTestKotlin`
+  # is a pure compile: it resolves and type-checks `src/androidMain/kotlin` AND the
+  # instrumented `androidTest` source set (so a whole source set silently vanishing,
+  # the AGP 9 incident, fails HERE) without booting an emulator and without running a
+  # single test. Device EXECUTION stays in `android-instrumented.yml` and stays
+  # ADVISORY, on purpose: emulator-on-CI has real flake modes (boot timeouts, adb
+  # drops) that a required check must not import. Compiling has none of them.
+  #
+  # ── WHY IT NEEDS build-test ────────────────────────────────────────────────
+  # `compileDebugAndroidTestKotlin`'s task graph runs `... → copyRuntimeSo →
+  # verifyNativeAssets`, which insists `BlazorNative.Runtime.so` is present. This job
+  # has no NativeAOT publish tree of its own, so it CONSUMES the bionic `.so`
+  # `build-test` already uploads (the same artifact the emulator lane downloads) and
+  # points the chain at it with `-PciSoDir` — which also narrows `abiFilters` to the
+  # x86_64 slice the artifact carries. Hence `needs: build-test`.
+  # ═══════════════════════════════════════════════════════════════════════════
+  android-build:
+    runs-on: ubuntu-latest
+    needs: build-test
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup JDK 21 (Temurin — Gradle daemon)
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      # The bionic .so `build-test` published (uploaded as `BlazorNative.Runtime-linux-bionic-x64`).
+      # `-PciSoDir` below points verifyNativeAssets/copyRuntimeSo at it, exactly as the
+      # advisory emulator job in android-instrumented.yml does.
+      - name: Download artifact — linux-bionic-x64 binary
+        uses: actions/download-artifact@v8
+        with:
+          name: BlazorNative.Runtime-linux-bionic-x64
+          path: ${{ runner.temp }}/ci-so
+
+      - name: Cache Gradle
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('src/BlazorNative.Jni/**/*.gradle.kts', 'src/BlazorNative.Jni/gradle/wrapper/gradle-wrapper.properties', 'src/BlazorNative.Jni/gradle.properties') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
+
+      # gradlew is committed 100644 (Windows-first repo) — make it executable.
+      - name: Make gradlew executable
+        run: chmod +x src/BlazorNative.Jni/gradlew
+
+      # ── THE GATE ────────────────────────────────────────────────────────────
+      # `compileDebugAndroidTestKotlin` compiles the Android shell (src/androidMain/kotlin)
+      # AND the instrumented androidTest source set. No emulator is booted and no test
+      # is run — the source sets simply have to resolve.
+      - name: Compile the Android shell + instrumented sources (no device)
+        working-directory: src/BlazorNative.Jni
+        run: |
+          set -o pipefail
+          if ! ./gradlew --no-daemon compileDebugAndroidTestKotlin "-PciSoDir=$RUNNER_TEMP/ci-so"; then
+            cat <<'WHY' >&2
+
+          ══════════════════════════════════════════════════════════════════════
+          THE ANDROID SHELL DOES NOT COMPILE, AND THIS IS A REQUIRED CHECK.
+
+          A device is needed to RUN the instrumented tests, not to COMPILE them —
+          which is the whole reason this job exists. `compileDebugAndroidTestKotlin`
+          type-checks src/androidMain/kotlin (MainActivity, WidgetMapper, YogaLayout)
+          and the instrumented androidTest source set without booting an emulator.
+
+          That a whole source set can silently vanish is not hypothetical. The AGP 9
+          migration stopped feeding java.srcDirs to the Kotlin compiler, so the ENTIRE
+          Android shell went uncompiled — the app still "built", the JVM tests still
+          passed, and the ONLY lane that could see it (android-instrumented) is
+          nightly/dispatch and does not gate PRs. It merged to `main` green and sat
+          there. PR #81 is the precedent this gate carries forward.
+
+          Fix the compile error above. Do not weaken this gate.
+          ══════════════════════════════════════════════════════════════════════
+          WHY
+            exit 1
+          fi
 
   # ═══════════════════════════════════════════════════════════════════════════
   # ios-build — THE iOS SHELL MUST COMPILE, AND A REQUIRED CHECK MUST SAY SO.

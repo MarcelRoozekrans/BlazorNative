@@ -154,10 +154,16 @@ only for public repos. Protection therefore lands right after the repo goes
 public, before the phase closes.)
 
 - Require PR before merging (no direct pushes to `main`, admins included)
-- Required status checks — **both jobs of `.github/workflows/ci.yml`**:
+- Required status checks — **all three jobs of `.github/workflows/ci.yml`**:
   - **`build-test`** (windows-latest) — build + analyzers, the .NET test suite,
     the three NativeAOT publishes with nine-export verification, JVM
-    `testDebugUnitTest`, the **instrumented sources' compile**, consumer smoke.
+    `testDebugUnitTest`, consumer smoke, and the `.so` artifact uploads the two
+    native-shell jobs below consume.
+  - **`android-build`** (ubuntu-latest, `needs: build-test`) — the **Android
+    shell's compile**: `gradlew compileDebugAndroidTestKotlin` against the
+    bionic `.so` `build-test` uploads, type-checking `src/androidMain/kotlin`
+    (MainActivity, WidgetMapper, YogaLayout) **and** the instrumented
+    `androidTest` source set. No emulator is booted; no test is run.
   - **`ios-build`** (macos-latest) — the **iOS shell's compile**: publish
     `iossimulator-arm64`, build the pinned Yoga from source, then `xcodebuild
     build-for-testing` (Swift + Objective-C++ compiled, app **and** XCTest bundle
@@ -165,8 +171,18 @@ public, before the phase closes.)
 - Require conversation resolution before merging
 - No force pushes
 
-> **Both check names are exactly the job ids** — `build-test` and `ios-build` —
-> because neither job declares a `name:` and neither is a matrix.
+> **All three check names are exactly the job ids** — `build-test`,
+> `android-build` and `ios-build` — because no job declares a `name:` and none is
+> a matrix.
+
+Each native shell now has a distinctly-named required compile gate: a red
+`android-build` names the Android shell, a red `ios-build` names the iOS shell.
+The Android compile used to ride inside `build-test` (PR #81), where an Android
+shell that stopped compiling reddened the same check as a .NET build error, a
+.NET test failure or a JVM unit-test failure — you could not tell which shell
+broke. It was split into `android-build` for that legibility (symmetric with
+`ios-build`), and the gate is otherwise identical: *a device is needed to RUN the
+instrumented tests, not to COMPILE them*.
 
 #### Why `ios-build` is required and `ios` is not
 
@@ -174,7 +190,9 @@ The AGP 9 migration proved that **an assertion can be green and structurally
 unreachable**: `android-instrumented` asserted 111 passing tests while
 `src/androidMain/kotlin` — the entire Android shell — was not being compiled at
 all, because that lane does not gate PRs. It landed on `main` green. PR #81 closed
-it by compiling the instrumented sources inside `build-test`.
+it by compiling the instrumented sources inside `build-test`; the M6 audit then
+split that gate into its own required job, **`android-build`**, so a red check
+names the Android shell directly (see the required-checks list above).
 
 The M6 final audit (finding F1) found the iOS shell in the same hole and deeper:
 `build-test` runs on Windows and contains no Apple toolchain, so **no required
@@ -190,7 +208,10 @@ The instrumented-emulator workflow (`android-instrumented.yml`, nightly
 03:00 UTC + manual dispatch) is **informational, not a required check** —
 emulator-on-CI has known flake modes; it stays advisory until a stability
 baseline exists (several consecutive green nightly runs), at which point it
-can be promoted to a required check. Shape: a `publish-so` job on
+can be promoted to a required check. Only the device **execution** is advisory:
+the Android shell's **compile** is required, in `android-build` (above), exactly
+as the iOS shell's compile is required in `ios-build` while its simulator
+execution stays advisory in `ios.yml`. Shape: a `publish-so` job on
 windows-latest publishes the linux-bionic-x64 `.so` (same pinned-NDK,
 IL2072 and nine-export assertions as `ci.yml`) and hands it as an artifact
 to an `emulator` job on ubuntu-latest (KVM), which runs
