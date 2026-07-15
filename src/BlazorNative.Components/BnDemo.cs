@@ -44,7 +44,8 @@ internal sealed class BnThemedPanel : ComponentBase
 {
     [CascadingParameter] public BnTheme? Theme { get; set; }
 
-    [Parameter] public string? Padding { get; set; }
+    /// <inheritdoc cref="BnView.Padding"/>
+    [Parameter] public float? Padding { get; set; }
 
     [Parameter] public RenderFragment? ChildContent { get; set; }
 
@@ -92,7 +93,7 @@ public sealed class BnDemo : ComponentBase
     private void BuildForm(RenderTreeBuilder b)
     {
         b.OpenComponent<BnThemedPanel>(0);
-        b.AddComponentParameter(1, nameof(BnThemedPanel.Padding), "16");
+        b.AddComponentParameter(1, nameof(BnThemedPanel.Padding), 16f);
         b.AddComponentParameter(2, nameof(BnThemedPanel.ChildContent), (RenderFragment)BuildFormChildren);
         b.CloseComponent();
     }
@@ -101,7 +102,7 @@ public sealed class BnDemo : ComponentBase
     {
         b.OpenComponent<BnText>(0);                              // title
         b.AddComponentParameter(1, nameof(BnText.Text), "BnDemo");
-        b.AddComponentParameter(2, nameof(BnText.FontSize), "24");
+        b.AddComponentParameter(2, nameof(BnText.FontSize), 24f);
         b.CloseComponent();
 
         b.OpenComponent<BnInput>(10);                            // the bound input
@@ -112,7 +113,7 @@ public sealed class BnDemo : ComponentBase
         b.CloseComponent();
 
         b.OpenComponent<BnThemedPanel>(20);                      // echo panel (themed #2)
-        b.AddComponentParameter(21, nameof(BnThemedPanel.Padding), "8");
+        b.AddComponentParameter(21, nameof(BnThemedPanel.Padding), 8f);
         b.AddComponentParameter(22, nameof(BnThemedPanel.ChildContent), (RenderFragment)(eb =>
         {
             eb.OpenComponent<BnText>(0);                         // the live echo

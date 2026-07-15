@@ -74,7 +74,7 @@ public sealed class BnComponentTests : IDisposable
         renderer.Mount<BnView>(ParameterView.FromDictionary(new Dictionary<string, object?>
         {
             [nameof(BnView.BackgroundColor)] = "#112233",
-            [nameof(BnView.Padding)] = "12",
+            [nameof(BnView.Padding)] = 12f, // typed (7.1) — the wire stays "12"
             [nameof(BnView.ChildContent)] = (RenderFragment)(b =>
             {
                 b.OpenElement(0, "span");
@@ -108,7 +108,7 @@ public sealed class BnComponentTests : IDisposable
         renderer.Mount<BnText>(ParameterView.FromDictionary(new Dictionary<string, object?>
         {
             [nameof(BnText.Text)] = "hello-text",
-            [nameof(BnText.FontSize)] = "18",
+            [nameof(BnText.FontSize)] = 18f, // typed (7.1) — the wire stays "18"
         }));
         Assert.NotEmpty(frames);
         var mount = frames[0];
@@ -324,7 +324,7 @@ public sealed class BnComponentTests : IDisposable
     private static Dictionary<string, object?> FullFlexParams() => new()
     {
         [nameof(BnView.BackgroundColor)] = "#112233",
-        [nameof(BnView.Padding)] = "16",
+        [nameof(BnView.Padding)] = 16f, // typed (7.1) — the wire stays "16"
         [nameof(BnView.Margin)] = "4",
         [nameof(BnView.Justify)] = FlexJustify.SpaceBetween,
         [nameof(BnView.Align)] = FlexAlign.Center,
@@ -456,9 +456,12 @@ public sealed class BnComponentTests : IDisposable
     }
 
     /// <summary>Numeric params stringify INVARIANTLY: a Dutch locale must not
-    /// put "1,5" on the wire (the shells parse with a C/Java float parser).</summary>
+    /// put "1,5" on the wire (the shells parse with a C/Java float parser).
+    /// Covers EVERY float-typed style param — Grow/Shrink (6.1) and the 7.1
+    /// typed stragglers Padding (BnView) + FontSize (BnText), which ride the
+    /// same ToStyleValue(float?) lift and must stay pinned with it.</summary>
     [Fact]
-    public void BnView_FloatParams_StringifyInvariantlyUnderADutchLocale()
+    public void FloatParams_StringifyInvariantlyUnderADutchLocale()
     {
         var original = System.Globalization.CultureInfo.CurrentCulture;
         try
@@ -471,6 +474,7 @@ public sealed class BnComponentTests : IDisposable
             {
                 [nameof(BnView.Grow)] = 1.5f,
                 [nameof(BnView.Shrink)] = 0.25f,
+                [nameof(BnView.Padding)] = 1.5f,
             }));
             Assert.NotEmpty(frames);
             var mount = frames[0];
@@ -478,6 +482,20 @@ public sealed class BnComponentTests : IDisposable
 
             Assert.Equal("1.5", StyleOn(mount, root.NodeId, "flexGrow").Value);
             Assert.Equal("0.25", StyleOn(mount, root.NodeId, "flexShrink").Value);
+            Assert.Equal("1.5", StyleOn(mount, root.NodeId, "padding").Value);
+
+            // BnText's FontSize — the other 7.1 typed param — in the SAME
+            // pinned-culture window (a fresh session; the culture is the test).
+            var (textRenderer, textFrames) = CreateCapturingSession();
+            textRenderer.Mount<BnText>(ParameterView.FromDictionary(new Dictionary<string, object?>
+            {
+                [nameof(BnText.FontSize)] = 13.5f,
+            }));
+            Assert.NotEmpty(textFrames);
+            var textMount = textFrames[0];
+            var span = Assert.Single(textMount.Patches.OfType<CreateNodePatch>(),
+                p => p.ParentId is null);
+            Assert.Equal("13.5", StyleOn(textMount, span.NodeId, "fontSize").Value);
         }
         finally
         {
