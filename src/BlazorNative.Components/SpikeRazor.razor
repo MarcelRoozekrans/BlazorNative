@@ -1,4 +1,15 @@
 @using Microsoft.AspNetCore.Components.Web
+@attribute [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
+
+@*
+    SPIKE SCAFFOLDING in a PACKABLE assembly (review F5): this type must live
+    here — the Razor-SDK compile of a real .razor file IS the spike — but it
+    is not consumer surface, so it is EditorBrowsable-hidden (the class stays
+    public: the Razor generator emits `public partial`, and the golden harness
+    mounts it cross-assembly). Its hand-written twin moved to
+    BlazorNative.Runtime.Tests, where the comparison lives. 7.1 decides
+    whether the pair survives as the standing generator-parity canary.
+*@
 
 @*
     ─────────────────────────────────────────────────────────────────────────

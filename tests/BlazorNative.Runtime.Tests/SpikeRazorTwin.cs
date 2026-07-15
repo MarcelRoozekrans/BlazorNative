@@ -2,10 +2,18 @@ using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Rendering;
 using Microsoft.AspNetCore.Components.Web;
 
-namespace BlazorNative.Components;
+namespace BlazorNative.Runtime.Tests;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SpikeRazorTwin — Phase 7.0 SPIKE SCAFFOLDING (7.1 decides what survives).
+//
+// LIVES IN THE TEST ASSEMBLY (review F5): the twin exists solely as
+// SpikeRazorTests' comparison baseline, and the golden harness mounts it
+// through the generic Mount<T> — nothing resolves components by name — so a
+// public spike type has no business shipping in the packable
+// BlazorNative.Components. SpikeRazor itself MUST stay there (it needs the
+// Razor SDK compile that is the spike's whole point); it is
+// EditorBrowsable-hidden instead.
 //
 // SpikeRazor.razor, hand-written the pre-7.0 way: the SAME component authored
 // as manual BuildRenderTree — the authoring style every component in this
@@ -29,7 +37,7 @@ namespace BlazorNative.Components;
 
 /// <summary>The hand-written twin of <c>SpikeRazor.razor</c> — see the file
 /// header. Golden-vs-twin is the spike's GREEN bar.</summary>
-public sealed class SpikeRazorTwin : ComponentBase
+internal sealed class SpikeRazorTwin : ComponentBase
 {
     /// <summary>The title text — mirrors SpikeRazor's parameter.</summary>
     [Parameter] public string? Title { get; set; }
