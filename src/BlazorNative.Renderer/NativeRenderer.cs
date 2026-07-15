@@ -211,7 +211,8 @@ public sealed class NativeRenderer : BlazorRenderer
     /// disposal and processes the render queue; on the InlineDispatcher the
     /// disposal batch reaches UpdateDisplayAsync SYNCHRONOUSLY, so the
     /// RemoveNode patches that clear the screen (the Phase 3.3 disposal
-    /// machinery, ProcessDisposedComponent) have already been delivered to
+    /// machinery — today EmitDisposedComponentRemoves + its pass-2 delta and
+    /// CleanupDisposedComponent) have already been delivered to
     /// Frames/FrameSink when this returns. Blazor throws for an id that is
     /// not a live root component — surfaced to the caller unchanged.
     /// MUST NOT be called from inside a UI-event dispatch window: Blazor
@@ -320,11 +321,25 @@ public sealed class NativeRenderer : BlazorRenderer
             // disposes keyed child COMPONENTS and inserts new ones at later
             // positions in the same container — BnList's window slide, the
             // first real customer (KeyedWindowSlideTests pins the order;
-            // BnListDemoTests' shell-mirror golden reddened first). Reading
-            // the root buckets here is safe: only a component's own diff
-            // mutates them, and disposed components get no diff.
+            // BnListDemoTests' shell-mirror golden reddened first).
+            //
+            // Pass 1 reads the PRE-diff root buckets — usually the whole
+            // story, because a disposed component normally gets no diff. The
+            // exception (Gate 1 review, Important 1): a component can appear
+            // in BOTH UpdatedComponents and DisposedComponentIDs when its
+            // re-render was queued before the parent render that disposes it
+            // (child diffed first, THEN disposed — constructible through a
+            // child handler that calls StateHasChanged() before the parent's
+            // remove callback; SameBatchRerenderDisposalTests). If that dying
+            // diff ADDS a root-level view, pass 1 cannot have covered it —
+            // the delta emission in pass 2 does. The set records what pass 1
+            // emitted so pass 2 emits exactly the difference.
+            HashSet<int>? pass1RemovedRoots = null;
             foreach (ref var disposedId in batch.DisposedComponentIDs)
-                EmitDisposedComponentRemoves(disposedId, ref patches);
+            {
+                pass1RemovedRoots ??= new HashSet<int>();
+                EmitDisposedComponentRemoves(disposedId, ref patches, pass1RemovedRoots);
+            }
 
             // Updated components — pass the batch's ReferenceFrames in (in Blazor 10
             // ReferenceFrames lives on RenderBatch, not on RenderTreeDiff).
@@ -335,10 +350,26 @@ public sealed class NativeRenderer : BlazorRenderer
                 ProcessRenderTreeDiff(ref bnDiff, ref referenceFrames, ref patches);
             }
 
-            // Disposed components, pass 2 of 2 (Phase 3.3 Task 3): trim their
-            // sibling slot and purge their bookkeeping — AFTER the diffs, so
-            // a parent's RemoveFrame edits (whose sibling indices assume the
-            // slots still present until that edit) stay correct.
+            // Disposed components, pass 2 of 2, in two steps. Step ONE (the
+            // Gate 1 review's delta emission): remove any root view a dying
+            // same-batch diff created AFTER pass 1 read the buckets — without
+            // this, that view is a zombie on the host no patch ever removes.
+            // Emitting at the frame's TAIL is safe: the only InsertIndex
+            // translation sites (ProcessFrame's Element/Text arms) run inside
+            // the UpdatedComponents loop above, so nothing after the diffs
+            // translates against any bucket — a tail remove can perturb no
+            // already-emitted index, and RemoveNode is by-id, position-
+            // independent. ALL deltas are emitted before ANY cleanup so every
+            // delta reads buckets untouched since the diffs (cleanup of one
+            // disposed component trims its Component slot from another's
+            // bucket when they nest).
+            foreach (ref var disposedId in batch.DisposedComponentIDs)
+                EmitDisposedComponentRemovesDelta(disposedId, pass1RemovedRoots!, ref patches);
+
+            // Step TWO (Phase 3.3 Task 3): trim their sibling slot and purge
+            // their bookkeeping — AFTER the diffs, so a parent's RemoveFrame
+            // edits (whose sibling indices assume the slots still present
+            // until that edit) stay correct.
             foreach (ref var disposedId in batch.DisposedComponentIDs)
                 CleanupDisposedComponent(disposedId);
 
@@ -973,13 +1004,36 @@ public sealed class NativeRenderer : BlazorRenderer
     /// removing a child view before its ancestor is a legal detach order.
     /// Suppressing the redundant patches renderer-side would require
     /// host-subtree tracking the slot model deliberately doesn't keep.</remarks>
-    private void EmitDisposedComponentRemoves(int componentId, ref PooledList<RenderPatch> patches)
+    private void EmitDisposedComponentRemoves(
+        int componentId, ref PooledList<RenderPatch> patches, HashSet<int> removedRoots)
     {
         var rootSlots = _tree.GetSlotCount(componentId, parentNodeId: null);
         for (var i = 0; i < rootSlots; i++)
         {
             var slot = _tree.GetSlotAt(componentId, parentNodeId: null, i);
-            if (slot.IsNode)
+            if (slot.IsNode && removedRoots.Add(slot.NodeId))
+                patches.Add(new RemoveNodePatch(slot.NodeId));
+        }
+    }
+
+    /// <summary>Pass 2 step 1 of disposal handling (Phase 7.2 Gate 1 review,
+    /// Important 1): after the diffs, emits RemoveNodePatch for any root view
+    /// of the disposed component that pass 1 did NOT cover. Non-empty only in
+    /// the same-batch re-render + disposal shape — the component's re-render
+    /// was queued before the parent render that disposed it, so its FINAL
+    /// diff ran in this batch and may have ADDED root-level views after
+    /// pass 1 read the bucket; without this delta those views are zombies on
+    /// the host (SameBatchRerenderDisposalTests pins it). Runs at the frame's
+    /// tail — safe because no InsertIndex translation happens after the
+    /// UpdatedComponents loop, and RemoveNode is by-id.</summary>
+    private void EmitDisposedComponentRemovesDelta(
+        int componentId, HashSet<int> pass1RemovedRoots, ref PooledList<RenderPatch> patches)
+    {
+        var rootSlots = _tree.GetSlotCount(componentId, parentNodeId: null);
+        for (var i = 0; i < rootSlots; i++)
+        {
+            var slot = _tree.GetSlotAt(componentId, parentNodeId: null, i);
+            if (slot.IsNode && !pass1RemovedRoots.Contains(slot.NodeId))
                 patches.Add(new RemoveNodePatch(slot.NodeId));
         }
     }
