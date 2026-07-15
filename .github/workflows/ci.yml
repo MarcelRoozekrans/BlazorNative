@@ -501,6 +501,17 @@ jobs:
       # the changing-markup-count arms 7.1's @if blocks hit on page one, mutation-verified in
       # both directions). F4 hardened an existing test in place (no count change): the
       # non-strict drop now PROVES the violating markup's slot is kept.
+      #
+      # 339 -> 339 (PHASE 7.1 GATES 1+2 — a deliberate NON-move, recorded so nobody "fixes" it):
+      # three pages (BnSettingsPage, BnDemo + BnThemedPanel, BnLayoutDemo) converted from
+      # hand-written BuildRenderTree to .razor via golden-vs-twin-then-swap. Each conversion
+      # briefly added ONE transitional twin test (RazorPageTwinTests — suite at 340 mid-flight,
+      # every twin mutation-verified red-then-green) and RETIRED it at the swap: the
+      # pre-existing goldens ARE the standing parity proof, so the count lands back on 339.
+      # Typed FontSize/Padding (string? -> float?, the M4-ledger stragglers) changed ZERO wire
+      # bytes — the culture pin extended IN PLACE (the nl-NL test now covers Padding/FontSize
+      # alongside Grow/Shrink; no count change). NO golden edited, NO shell touched, NO ABI
+      # change: the gates below stay 4 IL2072 / 9 exports / 83 JVM.
       - name: .NET tests (assert 339 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
