@@ -24,10 +24,11 @@
       2. [Parameter] — Title, supplied by the mount;
       3. @onclick — Clear, mutating state and re-rendering;
       4. @bind    — on the input, expanding (via Components.Web's built-in
-                    BindAttributes — see the csproj note: own attributes are
-                    IMPOSSIBLE without Components.Web because the compiler's
-                    bind provider requires its BindInputElementAttribute type
-                    to exist before reading ANY bind metadata) into
+                    BindAttributes — see the csproj note: own-namespace
+                    attributes cannot work without Components.Web because the
+                    compiler's bind provider requires its
+                    BindInputElementAttribute type — resolved by metadata
+                    name — to exist before reading ANY bind metadata) into
                     value + onchange — exactly BnInput's hand-written wire.
 
     The @using Microsoft.AspNetCore.Components.Web line is LOAD-BEARING twice:

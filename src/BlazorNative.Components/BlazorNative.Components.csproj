@@ -4,8 +4,9 @@
        BlazorNative.Components — Phase 3.4 Gate 2 (design §2)
 
        The public Bn* component library — the shape app authors consume
-       (M6 names this package). Public, sealed, hand-written BuildRenderTree
-       components (Razor syntax awaits .razor compilation, M6):
+       (M6 names this package). Public, sealed components, hand-written
+       BuildRenderTree until Phase 7.0 wired .razor compilation (the SDK swap
+       below; 7.1 rewrites the demo pages in .razor):
          BnView / BnText / BnButton / BnInput + BnDemo + BnTheme.
        Phase 6.1 adds the flex surface: FlexStyles (the enums + their wire
        words), BnRow / BnColumn (direction presets over BnView, sharing

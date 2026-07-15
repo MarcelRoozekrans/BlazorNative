@@ -837,7 +837,10 @@ public sealed class NativeRenderer : BlazorRenderer
                 // have no innerHTML, so it is a contract violation: strict
                 // throws, non-strict logs and renders nothing. Either way the
                 // slot is taken FIRST, so indices stay aligned even on the
-                // tolerated path.
+                // tolerated path. HTML comments never arrive here — the Razor
+                // compiler strips them at compile time; if one ever does (a
+                // future compiler change, or a hand-built MarkupString), it is
+                // non-whitespace and violates — deliberately.
                 AddSlot(componentId, slotContainer, insertAtSlot, Slot.ForMarkup());
                 if (frame.MarkupContent is { } markup && !string.IsNullOrWhiteSpace(markup))
                 {

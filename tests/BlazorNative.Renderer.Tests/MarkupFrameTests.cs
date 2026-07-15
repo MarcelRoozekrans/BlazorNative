@@ -99,8 +99,11 @@ public sealed class MarkupFrameTests
     /// <summary>THE regression this file exists for: an UpdateText edit
     /// addressing the span AFTER a markup sibling. Blazor's StepIn counts the
     /// markup frame (input 0, markup 1, span 2); if the walk dropped markup
-    /// without a slot, GetSlotAt(2) misses and the cursor poisons — strict
-    /// mode fails this test loudly.</summary>
+    /// without a slot, GetSlotAt(2) misses and the cursor poisons. Note HOW
+    /// the test bites: a poisoned cursor makes the UpdateText miss silently
+    /// (no patch, no strict throw — a failed StepIn is not a violation), so
+    /// it is the Assert.Single below finding NO ReplaceText that reddens,
+    /// not an exception.</summary>
     [Fact]
     public async Task UpdateText_AfterMarkupSibling_ResolvesTheRightNode()
     {
