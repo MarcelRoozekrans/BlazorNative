@@ -1,0 +1,21 @@
+@*
+    ─────────────────────────────────────────────────────────────────────────
+    _Imports.razor — Phase 7.1 (design decision 3): the project-wide Razor
+    imports for every .razor page in BlazorNative.Components.
+
+    The Components.Web line is LOAD-BEARING, twice over, and its absence is
+    the spike's recorded footgun (7.0 conclusion §"The footgun"): bind and
+    event tag helpers are namespace-scoped like components, so WITHOUT this
+    @using in scope the compiler emits `@bind`/`@onclick` as LITERAL MARKUP —
+    AddMarkupContent("<input @bind=\"_text\">") — with ZERO diagnostics and a
+    green build. The binding is silently dead; on a native shell the markup
+    renders as nothing at all (the renderer's Markup rule). Putting the line
+    HERE makes that failure mode structurally impossible per page instead of
+    a per-file discipline. It also scopes MouseEventArgs for @onclick and
+    Components.Web's built-in BindAttributes, which declare exactly our wire
+    (input → value + onchange — the pair BnInput hand-wires).
+    ─────────────────────────────────────────────────────────────────────────
+*@
+@using Microsoft.AspNetCore.Components.Web
+@using BlazorNative.Components
+@using BlazorNative.Core

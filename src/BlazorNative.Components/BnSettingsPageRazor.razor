@@ -1,0 +1,36 @@
+@*
+    ─────────────────────────────────────────────────────────────────────────
+    BnSettingsPageRazor — Phase 7.1 Gate 1 TRANSITIONAL TWIN (design §"The
+    method"): BnSettingsPage authored in .razor, mountable SIDE BY SIDE with
+    the hand-written BnSettingsPage while RazorPageTwinTests proves their
+    patch streams record-identical (mount + the Back navigation). At swap
+    time this file is `git mv`ed to BnSettingsPage.razor (a .razor class is
+    named by its FILE name), the .cs retires, and the twin test retires with
+    it — the pre-existing goldens (NavigationTests, the shell suites) take
+    over as the parity proof.
+
+    Shape (the pinned mount contract — NavigationTests + the shells):
+      BnView settings div                 backgroundColor+padding 16
+       ├─ BnText title "Settings"        span, fontSize 24
+       └─ BnButton "← Back"              button + click → NavigateToAsync("/")
+    ─────────────────────────────────────────────────────────────────────────
+*@
+<BnView BackgroundColor="@DefaultBackground" Padding="16">
+    <BnText Text="Settings" FontSize="24" />
+    <BnButton Label="← Back" OnClick="GoBack" />
+</BnView>
+
+@code {
+    // BnDemo's DefaultBackground — the CascadingValue<BnTheme>-consistent look.
+    private const string DefaultBackground = "#FFEEAA";
+
+    /// <summary>The navigation service (Core contract) — same explicit
+    /// [Inject] public property as the hand-written page (NOT @inject, which
+    /// generates a private property: the public surface must not shrink in a
+    /// conversion whose whole claim is "nothing changed").</summary>
+    [Inject] public INavigationManager Navigation { get; set; } = default!;
+
+    // Sync-completing (inline dispatcher): the swap has fully happened —
+    // removes + creates delivered — when this Task is observed.
+    private Task GoBack() => Navigation.NavigateToAsync("/").AsTask();
+}
