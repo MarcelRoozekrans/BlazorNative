@@ -476,7 +476,29 @@ whose cheap wins ship. Hygiene: typed `FontSize`/`Padding`, the route-registry u
 `onScroll` producer on a wire designed for taps (7.2). Full 8-point DoD: [MILESTONE.md](MILESTONE.md).
 
 Phases (approved at milestone-open 2026-07-15; subject to the 7.0 verdict):
-- ⏳ **Phase 7.0** — the Razor-compilation spike (DoD #1) — *the named risk, verified first*
+- ✅ **Phase 7.0** — the Razor-compilation spike (DoD #1) — *complete (2026-07-15), verdict **GREEN***
+   - A `.razor` file compiled by the Razor source generator (`Microsoft.NET.Sdk.Razor` on
+     `BlazorNative.Components`, `StaticWebAssetsEnabled=false` the ONE switch) renders through
+     `NativeRenderer` with a patch stream **byte-identical** to its hand-written twin across
+     mount + `@bind` change + `@onclick` dispatches (`SpikeRazorTests.GoldenVsTwin`,
+     mutation-verified: a `[Parameter]` removal and a one-digit style drift both redden by name).
+   - **The `@bind` answer** (design risk #1): own `[BindElement]` attributes are **impossible**
+     without Components.Web — the compiler's bind provider requires its
+     `BindInputElementAttribute` type before reading ANY bind metadata (verified empirically and
+     in the dotnet/roslyn source) — and Components.Web (already our pinned reference since 3.4)
+     declares exactly our wire, so we declare nothing. Footgun recorded: an out-of-scope `@bind`
+     compiles **silently** to literal markup — 7.1's `_Imports.razor` makes it structural.
+   - **Renderer finding, fixed red-first** (`MarkupFrameTests`, 3/5 red before the fix): the
+     compiler preserves inter-element whitespace as Markup frames, which the walk dropped
+     WITHOUT a sibling slot while Blazor's diff counts them — every edit after a markup sibling
+     resolved one slot short. Whitespace markup now takes a slot (`SlotKind.Markup`), emits no
+     patch, contributes zero host views; non-whitespace markup (no native innerHTML) is a
+     strict-mode contract violation. No ABI change, no shell change.
+   - **Fallback ladder closed** (own generator / stay hand-written — not taken). Counts:
+     .NET **324 → 333/0** (+5 renderer, +4 spike; ci.yml provenance) · JVM **83/0** · publish
+     **4 IL2072 + 9 exports on all three RIDs**, zero web-asset traces in the publish log.
+     See [design](../plans/2026-07-15-phase-7.0-design.md) +
+     [conclusion](../plans/2026-07-15-phase-7.0-spike-conclusion.md) (the pinned recipe).
 - ⏳ **Phase 7.1** — `.razor` authoring end-to-end: the five pages + parity + typed-props cleanup (DoD #2, part #8)
 - ⏳ **Phase 7.2** — the `onScroll` wire design + `BnList` (DoD #3)
 - ⏳ **Phase 7.3** — form controls + a real `picker` (DoD #4)
