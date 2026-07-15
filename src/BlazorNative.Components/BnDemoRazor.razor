@@ -1,0 +1,54 @@
+@*
+    ─────────────────────────────────────────────────────────────────────────
+    BnDemoRazor — Phase 7.1 Gate 2 TRANSITIONAL TWIN (the HARD conversion:
+    @bind-Value on a component, cascading BnTheme, four event handlers,
+    BnThemedPanel → BnView chaining, the live echo — if .razor can express
+    BnDemo, it can express anything we have). Mountable SIDE BY SIDE with
+    the hand-written BnDemo while RazorPageTwinTests proves the patch
+    streams record-identical across mount + ALL interactions the existing
+    goldens exercise: bind/echo, Clear, Theme flip (both ways), Settings →
+    navigation. At swap time this file is `git mv`ed to BnDemo.razor, the
+    .cs retires, the twin test retires with it.
+
+    @bind-Value="_text" on BnInput is the compiler's component-pair
+    inference (spike conclusion, implication 3): Value/ValueChanged are
+    inferred from the component's parameters — no element bind metadata,
+    nothing new shipped. It expands to exactly the pair the hand-written
+    page wires: Value=_text + ValueChanged=(__value => _text = __value).
+    ─────────────────────────────────────────────────────────────────────────
+*@
+<CascadingValue Value="_theme">
+    <BnThemedPanelRazor Padding="16">
+        <BnText Text="BnDemo" FontSize="24" />
+        <BnInput @bind-Value="_text" Placeholder="Type here..." />
+        <BnThemedPanelRazor Padding="8">
+            <BnText Text="@_text" />
+        </BnThemedPanelRazor>
+        <BnButton Label="Clear" OnClick="Clear" />
+        <BnButton Label="Theme" OnClick="ToggleTheme" />
+        <BnButton Label="Settings →" OnClick="GoToSettings" />
+    </BnThemedPanelRazor>
+</CascadingValue>
+
+@code {
+    private const string DefaultBackground = "#FFEEAA";
+    private const string AltBackground = "#334455";
+
+    private string _text = "";
+    private BnTheme _theme = new(DefaultBackground, AltBackground);
+
+    /// <summary>Phase 3.5: the navigation service (Core contract) — same
+    /// explicit [Inject] public property as the hand-written page (NOT
+    /// @inject, which generates a private property).</summary>
+    [Inject] public INavigationManager Navigation { get; set; } = default!;
+
+    private void Clear() => _text = "";
+
+    // Swap: a NEW record instance each toggle (see BnTheme doc).
+    private void ToggleTheme()
+        => _theme = new BnTheme(_theme.AltBackground, _theme.Background);
+
+    // Sync-completing (inline dispatcher): the swap has fully happened —
+    // removes + creates delivered — when this Task is observed.
+    private Task GoToSettings() => Navigation.NavigateToAsync("/settings").AsTask();
+}
