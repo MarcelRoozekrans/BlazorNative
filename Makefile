@@ -1,13 +1,11 @@
 # BlazorNative — Developer Makefile
 # ──────────────────────────────────────────────────────────────────────────────
-# make dev             → start dev host with hot reload (normal .NET)
 # make devloop         → native fast lane: watch .NET src → publish → PreviewHost
 # make devloop-android → device lane: publish → installDebug → launch → logcat
 # make inspect         → DevTools inspector: native session + localhost page
 # make runtime-publish → NativeAOT publish BlazorNative.Runtime for all 3 RIDs
 # make android         → build the Android APK (BlazorNative.Jni via Gradle)
 # make android-test    → boot AVD if needed + run connectedAndroidTest
-# make ios             → build MAUI iOS package (requires Mac + Xcode)
 # make test            → run all tests
 # make clean           → clean all build artifacts
 # ──────────────────────────────────────────────────────────────────────────────
@@ -15,20 +13,10 @@
 DOTNET            := dotnet
 RUNTIME_PROJECT   := src/BlazorNative.Runtime
 ANALYZER_PROJECT  := src/BlazorNative.Analyzers/BlazorNative.Analyzers.csproj
-DEV_PROJECT       := src/BlazorNative.Host.Android/BlazorNative.DevHost.csproj
 
-.PHONY: dev dev-no-reload devloop devloop-android inspect runtime-publish android android-build android-test android-test-visible ios test test-watch clean setup analyzers help
+.PHONY: devloop devloop-android inspect runtime-publish android android-build android-test android-test-visible test test-watch clean setup analyzers help
 
 ## ── Development ──────────────────────────────────────────────────────────────
-
-dev:                          ## Start dev host with hot reload
-	@echo "🚀 Starting BlazorNative DevHost..."
-	@echo "   App:      https://localhost:5273"
-	@echo "   DevTools: https://localhost:5273/dev/storage"
-	$(DOTNET) watch run --project $(DEV_PROJECT)
-
-dev-no-reload:                ## Start dev host without hot reload
-	$(DOTNET) run --project $(DEV_PROJECT)
 
 devloop:                      ## Native fast lane: watch .NET src → publish win-x64 → PreviewHost tree (fast-restart)
 	powershell -ExecutionPolicy Bypass -File scripts/devloop.ps1
@@ -62,12 +50,6 @@ android-test-visible:         ## Same as android-test but with visible emulator 
 
 android:                      ## Legacy alias — same as android-build
 	@$(MAKE) android-build
-
-ios:                          ## Build iOS IPA (requires Mac + Xcode)
-	$(DOTNET) publish src/BlazorNative.Host.Android/BlazorNative.DevHost.csproj \
-		-f net10.0-ios \
-		-c Release \
-		-o artifacts/ios
 
 ## ── Testing ──────────────────────────────────────────────────────────────────
 
