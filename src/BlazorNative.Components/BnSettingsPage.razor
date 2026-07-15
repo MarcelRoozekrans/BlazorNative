@@ -1,18 +1,30 @@
 @*
     ─────────────────────────────────────────────────────────────────────────
-    BnSettingsPageRazor — Phase 7.1 Gate 1 TRANSITIONAL TWIN (design §"The
-    method"): BnSettingsPage authored in .razor, mountable SIDE BY SIDE with
-    the hand-written BnSettingsPage while RazorPageTwinTests proves their
-    patch streams record-identical (mount + the Back navigation). At swap
-    time this file is `git mv`ed to BnSettingsPage.razor (a .razor class is
-    named by its FILE name), the .cs retires, and the twin test retires with
-    it — the pre-existing goldens (NavigationTests, the shell suites) take
-    over as the parity proof.
+    BnSettingsPage — Phase 3.5 (design §2): the demo's SECOND page, closing
+    M3 DoD #7's on-device proof (tap "Settings →" → whole screen swaps → tap
+    "← Back"). Registered as "BnSettingsPage" in HostSession's mount
+    registry; route "/settings" in NativeNavigationManager's table.
 
-    Shape (the pinned mount contract — NavigationTests + the shells):
+    Phase 7.1 Gate 1: authored in .razor (the FIRST converted page — the
+    pipeline warm-up; a .razor class is named by its FILE name, so this file
+    IS the registry's BnSettingsPage). Parity with the retired hand-written
+    BuildRenderTree version was proven byte-for-byte by the transitional
+    golden-vs-twin test — record-identical patch streams across mount + the
+    Back navigation, mutation-verified — before the swap; the pre-existing
+    goldens (NavigationTests + both shells' suites) hold it from here.
+
+    Shape (the pinned mount contract — NavigationTests + Gate 2's
+    NavigationTest.kt):
       BnView settings div                 backgroundColor+padding 16
        ├─ BnText title "Settings"        span, fontSize 24
        └─ BnButton "← Back"              button + click → NavigateToAsync("/")
+
+    The first real DI consumer in Components (together with BnDemo's
+    Settings button): [Inject] INavigationManager — the Core contract,
+    resolved from the session's service provider through Blazor's property
+    injection. A fresh ROOT component (no cascaded theme crosses a root
+    swap): it carries BnDemo's default palette itself, keeping the two pages
+    visually consistent.
     ─────────────────────────────────────────────────────────────────────────
 *@
 <BnView BackgroundColor="@DefaultBackground" Padding="16">
@@ -25,7 +37,7 @@
     private const string DefaultBackground = "#FFEEAA";
 
     /// <summary>The navigation service (Core contract) — same explicit
-    /// [Inject] public property as the hand-written page (NOT @inject, which
+    /// [Inject] public property as the retired hand-written page (NOT @inject, which
     /// generates a private property: the public surface must not shrink in a
     /// conversion whose whole claim is "nothing changed").</summary>
     [Inject] public INavigationManager Navigation { get; set; } = default!;
