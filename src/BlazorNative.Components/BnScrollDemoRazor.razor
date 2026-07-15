@@ -1,0 +1,95 @@
+@*
+    ─────────────────────────────────────────────────────────────────────────
+    BnScrollDemoRazor — Phase 7.1 Gate 3: BnScrollDemo's TRANSITIONAL .razor
+    twin (design §"The method"). Mounted side by side with the hand-written
+    BnScrollDemo through the real host path (RazorPageTwinTests, via the
+    registry override); its patch stream must be record-identical across
+    mount + the "← Back" navigation swap. At the swap this file takes the
+    canonical name and the canonical file header — the 6.2 frame table three
+    surfaces assert — moves in character-for-character.
+
+    The @for loop's CHILD CONTENT captures the loop variable, so each
+    iteration copies it into a local first: a RenderFragment runs LATER, and
+    ten fragments all closing over `i` would all see RowCount. The attribute
+    values are evaluated inline (no copy needed for those), but one rule for
+    the body keeps the trap unsteppable.
+    ─────────────────────────────────────────────────────────────────────────
+*@
+<BnColumn>
+    <BnScroll Width="@ViewportWidth" Height="@ViewportHeight">
+        @for (var i = 0; i < RowCount; i++)
+        {
+            var row = i;
+            <BnView Height="@RowHeight" BackgroundColor="@RowColors[row]">
+                @if (row == ImageRowIndex)
+                {
+                    <BnImage Src="@RowImageSrc" Width="@RowImageWidth" Height="@RowImageHeight" />
+                }
+                else if (row == FlexRowIndex)
+                {
+                    <BnRow Grow="1">
+                        <BnView Width="50" BackgroundColor="@BoxA" />
+                        <BnView Grow="1" BackgroundColor="@BoxB" />
+                        <BnView Width="50" BackgroundColor="@BoxC" />
+                    </BnRow>
+                }
+            </BnView>
+        }
+    </BnScroll>
+
+    <BnRow Width="300">
+        <BnButton Label="← Back" OnClick="GoBack" />
+    </BnRow>
+</BnColumn>
+
+@code {
+    private static readonly string[] RowColors =
+    [
+        "#E57373", // 0 red
+        "#90A4AE", // 1 blue-grey — HOSTS THE NESTED FLEX ROW
+        "#81C784", // 2 green
+        "#FFB74D", // 3 orange
+        "#BA68C8", // 4 purple
+        "#4DB6AC", // 5 teal
+        "#F06292", // 6 pink
+        "#7986CB", // 7 indigo
+        "#A1887F", // 8 brown
+        "#DCE775", // 9 lime
+    ];
+
+    private const string BoxA = "#E53935"; // red
+    private const string BoxB = "#1E88E5"; // blue  — the Grow=1 box
+    private const string BoxC = "#43A047"; // green
+
+    private const int FlexRowIndex = 1;
+
+    internal const int RowCount = 10;
+    internal const int RowHeightDp = 80;
+    internal const int ViewportWidthDp = 300;
+    internal const int ViewportHeightDp = 200;
+    internal const int ContentHeightDp = RowCount * RowHeightDp;
+    internal const int ScrollRangeDp = ContentHeightDp - ViewportHeightDp;
+    internal const int ImageRowIndex = 0;
+    internal const int RowImageWidthDp = 40;
+    internal const int RowImageHeightDp = 40;
+    internal const string RowImageSrc = BnImageDemo.FixedSrc;
+
+    private static readonly string RowImageWidth =
+        RowImageWidthDp.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    private static readonly string RowImageHeight =
+        RowImageHeightDp.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    private static readonly string RowHeight =
+        RowHeightDp.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    private static readonly string ViewportWidth =
+        ViewportWidthDp.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    private static readonly string ViewportHeight =
+        ViewportHeightDp.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    [Inject] public INavigationManager Navigation { get; set; } = default!;
+
+    private Task GoBack() => Navigation.NavigateToAsync("/").AsTask();
+}
