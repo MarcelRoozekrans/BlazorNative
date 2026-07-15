@@ -1,0 +1,177 @@
+@*
+    ─────────────────────────────────────────────────────────────────────────
+    BnFormDemo — Phase 7.3 Task 1.3 (design §"The proof surface"), route
+    "/form", mount-registry key "BnFormDemo". Authored in .razor.
+
+    A SEVENTH page, same rationale as the fourth through sixth: the existing
+    pages' frame tables and goldens ARE the parity contracts, and the phase
+    that makes the form controls real does not get to rewrite them. This
+    page's numbers are ITS OWN contract — asserted by BnFormDemoTests (the
+    .NET golden) and by Gates 2/3 on the AVD and the iOS simulator.
+
+    ── THE PAGE ─────────────────────────────────────────────────────────────
+
+    Each control TWICE — a BOUND instance (the live @bind- pair) and a
+    DISABLED one (fixed state, Enabled=false) — inside one BnColumn, then a
+    summary BnText echoing the whole bound state (the multi-control bind
+    proof: ANY control's round-trip re-renders the echo), then the back row.
+
+      [0] BnCheckbox  bound     @bind-Checked  (initially false)
+      [1] BnCheckbox  disabled  Checked=true
+      [2] BnSwitch    bound     @bind-Checked  (initially true)
+      [3] BnSwitch    disabled  Checked=true
+      [4] BnSlider    bound     @bind-Value    (25; 0..100 step 5; W=240)
+      [5] BnSlider    disabled  Value=50       (0..100, continuous; W=240)
+      [6] BnPicker    bound     @bind-SelectedIndex (0 of Alpha/Bravo/Charlie; W=240)
+      [7] BnPicker    disabled  SelectedIndex=1                            (W=240)
+      [8] the echo    BnText — EchoText below, invariant, wire-cased bools
+      [9] back row    BnRow W=300 → BnButton "← Back"
+
+    ── DECLARED vs INTRINSIC (design §Measurement — the 6.1 law) ────────────
+    Sizes are DECLARED wherever a number is asserted CROSS-platform: the
+    sliders and pickers carry Width=240 (a slider's intrinsic width is an
+    arbitrary platform constant no two platforms share — declaring it is what
+    makes "the slider is 240dp wide" one assertion on both shells). The
+    checkboxes and switches deliberately declare NOTHING: their sizes are the
+    platforms' own intrinsics (a UISwitch is 51×31pt, a MaterialCheckBox is
+    whatever Material says), asserted PER-platform against the platform's own
+    measurement (the 6.3 oracle method) — frame parity applies to LAYOUT,
+    never to intrinsic control sizes.
+
+    ── WHAT THE THREE SURFACES ASSERT ───────────────────────────────────────
+    .NET golden: the creates (2 each of NodeTypes 8/9/10 + 2 pickers), the
+    full prop tables (values, min/max/step, the items JSON, the clamped
+    selectedIndex, enabled on the disabled four), the attach count (NINE —
+    all eight controls attach change, disabled included [BnFormControlTests'
+    recorded decision], + the back click), and the four bind round-trips
+    through the production dispatch ingress re-rendering the echo.
+    On-device (Gates 2/3): toggle/slide/pick each BOUND control → the echo
+    re-renders; programmatic set re-fires nothing (the loop guard, VERIFIED
+    per control); the picker clamp; DISABLED CONTROLS DISPATCH NOTHING (the
+    on-device half of the disabled-attach decision); the declared 240/300
+    widths in the frames.
+
+    Nav parity with every other page: "← Back" → INavigationManager → "/".
+    Reachable by mount-name ("BnFormDemo") and by route ("/form"); no button
+    on BnDemo points here (adding one would churn BnDemo's goldens for no
+    engine reason). A fresh ROOT component: no cascaded theme crosses a root
+    swap. Android's DEEP_LINK_COMPONENTS line is Gate 2's.
+    ─────────────────────────────────────────────────────────────────────────
+*@
+<BnColumn>
+    @* [0]/[1] the checkbox pair — INTRINSIC size on purpose (see header). *@
+    <BnCheckbox @bind-Checked="_checked" />
+    <BnCheckbox Checked="@DisabledCheckboxChecked" Enabled="false" />
+
+    @* [2]/[3] the switch pair — same wire as the checkbox, NodeType 9 vs 8
+       (and on iOS the same UISwitch: the recorded decision-2 divergence). *@
+    <BnSwitch @bind-Checked="_switched" />
+    <BnSwitch Checked="@DisabledSwitchChecked" Enabled="false" />
+
+    @* [4]/[5] the slider pair — Width DECLARED (240): the one axis a number
+       is asserted cross-platform. The bound one is stepped (5), the disabled
+       one continuous — both prop shapes on one page. *@
+    <BnSlider @bind-Value="_slider" Min="@SliderMin" Max="@SliderMax" Step="@SliderStep"
+              Width="@ControlWidth" />
+    <BnSlider Value="@DisabledSliderValue" Min="@SliderMin" Max="@SliderMax"
+              Enabled="false" Width="@ControlWidth" />
+
+    @* [6]/[7] the picker pair — the SAME three items on both (one items JSON
+       literal for every surface to pin), selection 0 bound / 1 disabled. *@
+    <BnPicker Items="@PickerItems" @bind-SelectedIndex="_selected" Width="@ControlWidth" />
+    <BnPicker Items="@PickerItems" SelectedIndex="@DisabledPickerIndex" Enabled="false"
+              Width="@ControlWidth" />
+
+    @* [8] the echo — the multi-control bind proof. Its text is the page's
+       bound state, formatted by ONE function all surfaces read. *@
+    <BnText Text="@EchoText" />
+
+    @* [9] nav parity — the page's only measured leaf, LAST (a font-dependent
+       height must not sit above anything a frame assertion depends on). *@
+    <BnRow Width="@BackRowWidth">
+        <BnButton Label="← Back" OnClick="GoBack" />
+    </BnRow>
+</BnColumn>
+
+@code {
+    // ── THE PAGE'S NUMBERS, AS CONSTANTS (the BnScrollDemo discipline) ────────
+    //
+    // BnFormDemoTests asserts these off the WIRE (never transcribed), and
+    // Gates 2/3 read them for the device assertions — one source of truth.
+
+    /// <summary>The declared control width — sliders and pickers (see the
+    /// header: declared where asserted cross-platform; a slider's intrinsic
+    /// width is an arbitrary platform constant).</summary>
+    internal const int ControlWidthDp = 240;
+
+    /// <summary>The back row's declared width — every page's nav row shape.</summary>
+    internal const int BackRowWidthDp = 300;
+
+    /// <summary>The bound slider's range and step — DECLARED on the wire.</summary>
+    internal const float SliderMin = 0f;
+
+    /// <inheritdoc cref="SliderMin"/>
+    internal const float SliderMax = 100f;
+
+    /// <inheritdoc cref="SliderMin"/>
+    internal const float SliderStep = 5f;
+
+    /// <summary>The bound controls' INITIAL state — what the mount golden and
+    /// the first device screenshot show, and what <see cref="EchoText"/>
+    /// starts from.</summary>
+    internal const bool InitialChecked = false;
+
+    /// <inheritdoc cref="InitialChecked"/>
+    internal const bool InitialSwitched = true;
+
+    /// <inheritdoc cref="InitialChecked"/>
+    internal const float InitialSliderValue = 25f;
+
+    /// <inheritdoc cref="InitialChecked"/>
+    internal const int InitialSelectedIndex = 0;
+
+    /// <summary>The disabled instances' fixed state — visibly ON/mid-range/
+    /// second item, so a disabled control is distinguishable from a default
+    /// one in every screenshot.</summary>
+    internal const bool DisabledCheckboxChecked = true;
+
+    /// <inheritdoc cref="DisabledCheckboxChecked"/>
+    internal const bool DisabledSwitchChecked = true;
+
+    /// <inheritdoc cref="DisabledCheckboxChecked"/>
+    internal const float DisabledSliderValue = 50f;
+
+    /// <inheritdoc cref="DisabledCheckboxChecked"/>
+    internal const int DisabledPickerIndex = 1;
+
+    /// <summary>Both pickers' items. THE wire literal every surface pins is
+    /// <c>["Alpha","Bravo","Charlie"]</c> (the BnItemsJson grammar). Plain
+    /// ASCII on purpose — the grammar's torture cases live in
+    /// BnItemsJsonTests, not in a page humans read in screenshots.</summary>
+    internal static readonly IReadOnlyList<string> PickerItems = ["Alpha", "Bravo", "Charlie"];
+
+    /// <summary>The echo line, formatted ONCE for every surface: invariant
+    /// numbers (a Dutch device must echo "sl:62.5", never "62,5") and
+    /// wire-cased bools ("true"/"false" — the same casing the change payloads
+    /// carry, so a device assertion reads one vocabulary).</summary>
+    internal static string Echo(bool check, bool sw, float slider, int picker)
+        => string.Create(System.Globalization.CultureInfo.InvariantCulture,
+            $"cb:{(check ? "true" : "false")} sw:{(sw ? "true" : "false")} sl:{slider} pk:{picker}");
+
+    private bool _checked = InitialChecked;
+    private bool _switched = InitialSwitched;
+    private float _slider = InitialSliderValue;
+    private int _selected = InitialSelectedIndex;
+
+    private string EchoText => Echo(_checked, _switched, _slider, _selected);
+
+    private static readonly string ControlWidth =
+        ControlWidthDp.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    private static readonly string BackRowWidth =
+        BackRowWidthDp.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    [Inject] public INavigationManager Navigation { get; set; } = default!;
+
+    private Task GoBack() => Navigation.NavigateToAsync("/").AsTask();
+}

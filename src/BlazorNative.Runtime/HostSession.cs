@@ -82,6 +82,15 @@ internal static unsafe class HostSession
         // (32,000) are asserted identically on the AVD (Gate 2) and the iOS
         // simulator (Gate 3) — see BnListDemo.razor's header.
         ["BnListDemo"] = r => r.Mount<BlazorNative.Components.BnListDemo>(),
+        // Phase 7.3: the form-controls proof page (route "/form" — M7 DoD #4).
+        // A SEVENTH page, same rationale a sixth time: the existing pages'
+        // frame tables and goldens ARE the parity contracts, and the phase
+        // that makes checkbox/switch/slider/picker real does not get to
+        // rewrite them. Each control appears TWICE (bound + disabled) with a
+        // live echo; the bind round-trips, the loop guards, the picker clamp
+        // rule and the declared widths are asserted identically on the AVD
+        // (Gate 2) and the iOS simulator (Gate 3) — see BnFormDemo.razor.
+        ["BnFormDemo"] = r => r.Mount<BlazorNative.Components.BnFormDemo>(),
         // Phase 4.2: the focus/blur proof app (BnInput OnFocus/OnBlur →
         // echo BnText — M4 DoD #4). Scaffolding, like CompositionProbe.
         ["FocusProbe"] = r => r.Mount<FocusProbe>(),
