@@ -462,14 +462,29 @@ Phases (approved at milestone-open 2026-07-13):
 
 ---
 
-### ⏳ Milestone 7 — Components + Razor  *(pending)*
+### 🚧 Milestone 7 — Components + Razor  *(in progress — opened 2026-07-15)*
 
-The things you build UIs *with*: wire real **`.razor` compilation** (author components in
-Razor syntax — `@bind-Value` as syntax, not just the mechanics — instead of hand-written
-`BuildRenderTree`; the standing M3/M6-ledger item), and grow the `Bn*` component library
-on top of M6's layout engine — a **virtualized list** (the FlatList-equivalent: RecyclerView
-/ UITableView), modal/dialog, form controls, and the M4-ledger cleanups (stringly
-`FontSize`/`Padding` → typed). Maps to BACKLOG "P5 — components".
+The things you build UIs *with*: **`.razor` authoring** (the standing M3-era ledger item —
+author components in Razor syntax instead of hand-written `BuildRenderTree`, with the five demo
+pages rewritten as the parity proof) and the `Bn*` components a real app opens with, on top of
+M6's engine: a **virtualized list** (`BnList` — which forces the `onScroll` wire design M6
+deferred to exactly this customer), form controls + a real `picker`, `BnModal` (the first
+overlay surface), `BnImage` polish (Placeholder/OnError/ContentMode — each a *measurement*
+design), and a **React Native core-component parity survey** (have / ships-in-M7 / ledgered)
+whose cheap wins ship. Hygiene: typed `FontSize`/`Padding`, the route-registry unification.
+**Two named risks, spike-first:** Razor compilation under NativeAOT (7.0) and the 60Hz
+`onScroll` producer on a wire designed for taps (7.2). Full 8-point DoD: [MILESTONE.md](MILESTONE.md).
+
+Phases (approved at milestone-open 2026-07-15; subject to the 7.0 verdict):
+- ⏳ **Phase 7.0** — the Razor-compilation spike (DoD #1) — *the named risk, verified first*
+- ⏳ **Phase 7.1** — `.razor` authoring end-to-end: the five pages + parity + typed-props cleanup (DoD #2, part #8)
+- ⏳ **Phase 7.2** — the `onScroll` wire design + `BnList` (DoD #3)
+- ⏳ **Phase 7.3** — form controls + a real `picker` (DoD #4)
+- ⏳ **Phase 7.4** — `BnModal` + the RN survey's cheap wins (DoD #5, #7)
+- ⏳ **Phase 7.5** — `BnImage` polish: Placeholder/OnError/ContentMode (DoD #6)
+- ⏳ **Phase 7.6** — route-registry unification + M7 final audit + close (rest of #8) → `v7.0`
+
+Maps to BACKLOG "P5 — components".
 
 ---
 
