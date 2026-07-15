@@ -329,7 +329,7 @@ Phases (approved at milestone-open):
 > `.razor` compilation is promoted to its own milestone concern (M7), and the old
 > Ecosystem/Hardening/Enterprise milestones shift down.
 
-### 🚧 Milestone 6 — Real-UI Foundation: Layout + Scroll + Image  *(in progress — opened 2026-07-13)*
+### ✅ Milestone 6 — Real-UI Foundation: Layout + Scroll + Image  *(complete 2026-07-15, tagged `v6.0`)*
 
 The capability that unblocks real screens. **Yoga (C++, Facebook's flexbox engine) linked
 into both shells** — Android via JNI/JNA, iOS via its C-API (the same interop the shells
@@ -443,7 +443,22 @@ Phases (approved at milestone-open 2026-07-13):
      **111/111** · iOS XCTest **72/72**. See [design](../plans/2026-07-14-phase-6.3-design.md) +
      [plan](../plans/2026-07-14-phase-6.3-implementation-plan.md) +
      [conclusion](../plans/2026-07-14-phase-6.3-conclusion.md).
-- ⏳ **Phase 6.4** — M6 final audit + close (DoD #7, #8) → `v6.0` — *next; DoD #1–#6 all closed*
+- ✅ **Phase 6.4** — M6 final audit + close (DoD #7, #8) → `v6.0` — *complete (2026-07-15)*
+   - **All eight DoD criteria PASS** — [final audit](../plans/2026-07-14-milestone-6-final-audit.md),
+     evidence-based per the house rule (no criterion accepted because a conclusion doc says so;
+     guards mutation-tested). DoD #7 was PARTIAL at first audit and was **closed rather than
+     papered over**: the AGP 9 incident (a Renovate toolchain bump silently un-compiled the whole
+     Android shell, PR #81) proved a green assertion can sit on a source set nobody builds — so
+     the close added a **required compile gate per shell** (`android-build` #84/#87, `ios-build`
+     #83; branch protection now requires all three checks) and a **frame-table drift test**
+     (Kotlin ≡ Swift, symbolic for measured sizes), retiring the last cross-shell contract held
+     by transcription.
+   - The audit also caught a required-check design trap live: a `needs`-gated job is invisible on
+     the PR check list and wedges "Expected — waiting" if its dependency fails — `android-build`
+     was rebuilt self-contained (its own bionic publish, no `needs`), proven by all three compile
+     jobs starting in parallel on PR #87.
+   - **Final counts (all CI-asserted, all behind required or named lanes):** .NET **324/0** ·
+     JVM **83/0** · Android instrumented **111/111** · iOS XCTest **72/72**.
 
 ---
 
