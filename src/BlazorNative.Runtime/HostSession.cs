@@ -56,14 +56,14 @@ internal static unsafe class HostSession
         // A THIRD page on purpose: BnDemo/BnSettingsPage keep their goldens, so
         // layout bugs never arrive mixed with golden-rewrite noise. Its computed
         // frames are asserted identically on the AVD (Gate 2) and the iOS
-        // simulator (Gate 3) — see BnLayoutDemo.cs's frame table.
+        // simulator (Gate 3) — see BnLayoutDemo.razor's frame table.
         ["BnLayoutDemo"] = r => r.Mount<BlazorNative.Components.BnLayoutDemo>(),
         // Phase 6.2: the scrolling proof page (route "/scroll" — M6 DoD #4). A
         // FOURTH page, same rationale: BnLayoutDemo's 22-number frame table IS
         // the parity contract, and wrapping it in a scroll view would rewrite it
         // in the same phase that introduces the scroll engine. Its content size
         // (800) and row frames are asserted identically on the AVD (Gate 2) and
-        // the iOS simulator (Gate 3) — see BnScrollDemo.cs's frame table.
+        // the iOS simulator (Gate 3) — see BnScrollDemo.razor's frame table.
         ["BnScrollDemo"] = r => r.Mount<BlazorNative.Components.BnScrollDemo>(),
         // Phase 6.3: the image proof page (route "/image" — M6 DoD #5). A FIFTH
         // page, same rationale a fourth time: BnLayoutDemo's and BnScrollDemo's
@@ -72,7 +72,7 @@ internal static unsafe class HostSession
         // intrinsic (0×0 → the natural size, and the sibling below it MOVES) and
         // failure (0×0 forever, reserving nothing) — are asserted identically on
         // the AVD (Gate 2, Coil) and the iOS simulator (Gate 3, Kingfisher). See
-        // BnImageDemo.cs's TWO frame tables: before the bytes land, and after.
+        // BnImageDemo.razor's TWO frame tables: before the bytes land, and after.
         ["BnImageDemo"] = r => r.Mount<BlazorNative.Components.BnImageDemo>(),
         // Phase 4.2: the focus/blur proof app (BnInput OnFocus/OnBlur →
         // echo BnText — M4 DoD #4). Scaffolding, like CompositionProbe.

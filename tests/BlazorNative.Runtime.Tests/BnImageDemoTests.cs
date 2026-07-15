@@ -18,7 +18,7 @@ namespace BlazorNative.Runtime.Tests;
 // expectations change with it, and that is a deliberate act.
 //
 // The expected COMPUTED FRAMES (dp, relative to the parent) live in
-// BnImageDemo.cs's file header — the canonical table, in TWO states (before the
+// BnImageDemo.razor's file header — the canonical table, in TWO states (before the
 // bytes land and after), because THAT DIFFERENCE IS THE PHASE. Keep that one
 // updated.
 //
@@ -44,7 +44,7 @@ namespace BlazorNative.Runtime.Tests;
 // style appearing on either of them fails here first.
 //
 // ── AND THE THREE THINGS THIS GOLDEN CANNOT PIN, WHICH GATES 2/3 MUST ───────
-// Stated here as well as in BnImageDemo.cs's header, because this is the file a
+// Stated here as well as in BnImageDemo.razor's header, because this is the file a
 // Gate 2/3 implementer reads to learn what to assert — and all three are ways a
 // device suite goes GREEN having loaded nothing:
 //
@@ -247,7 +247,7 @@ public sealed class BnImageDemoTests
     /// simulator <b>WITH THE SAME FRAMES</b>", and <b>nothing else in the repo enforces
     /// it</b>: each shell's suite asserts its OWN fixture's decoded size, so each stays
     /// internally consistent while the two measure different images. Only the pairing of
-    /// these two tests makes the three transcriptions — <c>BnImageDemo.cs</c>,
+    /// these two tests makes the three transcriptions — <c>BnImageDemo.razor</c>,
     /// <c>ImageFixtureServer.kt</c>, <c>BnImageFixtureServer.swift</c> — one number.</para>
     ///
     /// <para>It also catches the trap Gate 3 could not otherwise see: a Swift fixture emitted

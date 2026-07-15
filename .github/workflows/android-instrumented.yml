@@ -346,7 +346,7 @@ jobs:
       #                                   ignored-and-logged; the definite-height
       #                                   warning) plus the negative that the WORKING
       #                                   case warns about nothing.
-      #    +2 BnScrollDemoAndroidTest    — the canonical frame table (BnScrollDemo.cs's
+      #    +2 BnScrollDemoAndroidTest    — the canonical frame table (BnScrollDemo.razor's
       #                                   header) on the device, AND the load-bearing
       #                                   half: drive the scroll position and assert the
       #                                   rows MOVE. At offset 600 row 7 is PARTIALLY

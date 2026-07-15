@@ -5,7 +5,7 @@
 // Mounts BnLayoutDemo (the `/layout` page) through the real NativeAOT boot and
 // asserts EVERY frame of the canonical table against the real UIViews, after the real
 // layout pass. The table is not invented here: it is the one in
-// **`src/BlazorNative.Components/BnLayoutDemo.cs`'s file header**, derived from the
+// **`src/BlazorNative.Components/BnLayoutDemo.razor`'s file header**, derived from the
 // .NET patch golden (`BnLayoutDemoTests.cs`).
 //
 // **`BnLayoutDemoAndroidTest` asserts THE SAME NUMBERS on the AVD** — line for line,

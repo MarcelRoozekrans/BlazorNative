@@ -484,7 +484,7 @@ jobs:
           #       completion runs against a freed YGNodeRef. NO SINGLE-MOUNT DEVICE TEST CAN
           #       STAGE THAT COLLISION, which is why the decision is a pure function.
           #   +4  BnImageDemoTests — THE DEMO, on the simulator: both canonical frame tables
-          #       from BnImageDemo.cs's header (BEFORE the bytes and AFTER — the difference IS
+          #       from BnImageDemo's header (.razor since 7.1; BEFORE the bytes and AFTER — the difference IS
           #       the phase), the fixture preconditions asserted on the DECODED UIImage before
           #       any frame, the three OUTCOMES (2 SUCCESS + 1 ERROR, none CANCELLED) against
           #       the URLs THE WIRE carried, the root's asymmetric frame (fills the host's

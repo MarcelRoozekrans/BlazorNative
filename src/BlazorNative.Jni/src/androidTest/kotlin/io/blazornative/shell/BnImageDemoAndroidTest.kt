@@ -23,7 +23,7 @@ import java.util.concurrent.atomic.AtomicReference
  * Phase 6.3 Gate 2 Task 2.4 — **THE IMAGE DEMO, ON THE DEVICE** (M6 DoD #5).
  *
  * Mounts `BnImageDemo` (the `/image` page) through the real NativeAOT boot and asserts
- * **both** canonical tables from `src/BlazorNative.Components/BnImageDemo.cs`'s file
+ * **both** canonical tables from `src/BlazorNative.Components/BnImageDemo.razor`'s file
  * header — *before* the bytes land and *after* — because the difference between them **is
  * the phase**. Same discipline and same pairing as [BnLayoutDemoAndroidTest] and
  * [BnScrollDemoAndroidTest]: **the iOS XCTest (Gate 3) asserts THE SAME NUMBERS.** Yoga
@@ -75,7 +75,7 @@ class BnImageDemoAndroidTest {
     private lateinit var server: ImageFixtureServer
 
     private companion object {
-        /** BnImageDemo.cs's `SectionWidthDp`. Every OTHER number this page's frames are
+        /** BnImageDemo.razor's `SectionWidthDp`. Every OTHER number this page's frames are
          * made of now lives in the canonical tables ([bnImageDemoBeforeFrames] /
          * [bnImageDemoAfterFrames], BnDemoFrameTables.kt), which the iOS shell declares
          * too and `ShellFrameTableDriftTests` pins the two against each other in the
@@ -151,7 +151,7 @@ class BnImageDemoAndroidTest {
     /**
      * **THE TWO FRAME TABLES**, and the difference between them is the phase.
      *
-     * BEFORE (`BnImageDemo.cs` §"THE FRAME TABLE, BEFORE THE BYTES LAND"):
+     * BEFORE (`BnImageDemo.razor` §"THE FRAME TABLE, BEFORE THE BYTES LAND"):
      * ```
      * root BnColumn        (0, 0, Whost, 180+Hb)   width FILLS the host; height HUGS
      *  ├─ [0] fixed sect.  (0,   0, 300, 140)
@@ -263,8 +263,8 @@ class BnImageDemoAndroidTest {
 
             scenario.onActivity { act ->
                 // THE OUTCOMES, against the URLs the WIRE carried — which is also the drift
-                // pin on BnImageDemo.cs's three `internal const` sources (a device-side test
-                // cannot read a .cs file; it can read what the renderer put on the wire).
+                // pin on BnImageDemo.razor's three `internal const` sources (a device-side test
+                // cannot read a .razor file; it can read what the renderer put on the wire).
                 // A blocked-cleartext device produces three ERRORs and reddens HERE, by name,
                 // instead of quietly passing two of three frame assertions.
                 assertEquals("[0] and [1] SUCCEEDED and [2] genuinely 404'd — all three from " +

@@ -1,0 +1,34 @@
+@*
+    ─────────────────────────────────────────────────────────────────────────
+    BnThemedPanel — BnDemo's cascading consumer (Phase 3.4): reads the
+    cascaded BnTheme and renders a BnView with the theme's current
+    background — the "themed child" whose re-render on theme change is
+    DoD #6's proof surface. Phase 7.1 Gate 2: authored in .razor, parity
+    proven inside BnDemo's golden-vs-twin (the panel renders twice in the
+    demo tree — the form div and the echo panel — so every one of its
+    patches was under the byte-identical comparison).
+
+    VISIBILITY CHANGE, FORCED AND RECORDED (7.1 Gate 2): the hand-written
+    panel was `internal`, declared inside BnDemo.cs. The Razor compiler's
+    component discovery only considers PUBLIC types — an internal component
+    in markup silently parses as a plain HTML element (an unknown-element
+    wire violation the twin test would catch loudly) — and the generated
+    class is `public partial` with no way to narrow it. So converting
+    BnDemo to .razor REQUIRED the panel to go public; given that, authoring
+    the panel itself in .razor is the cleaner half of the same decision.
+    Pre-1.0 surface addition, recorded for the phase conclusion.
+    ─────────────────────────────────────────────────────────────────────────
+*@
+<BnView BackgroundColor="@(Theme?.Background)" Padding="@Padding" ChildContent="@ChildContent" />
+
+@code {
+    /// <summary>The cascaded theme (see BnTheme: a NEW record instance per
+    /// toggle is what makes CascadingValue notify its consumers).</summary>
+    [CascadingParameter] public BnTheme? Theme { get; set; }
+
+    /// <inheritdoc cref="BnView.Padding"/>
+    [Parameter] public float? Padding { get; set; }
+
+    /// <summary>Nested content rendered inside the themed view.</summary>
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

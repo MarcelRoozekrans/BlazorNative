@@ -47,7 +47,7 @@ import UIKit
 
 final class BnScrollDemoImageTests: BnHostTestCase {
 
-    // BnScrollDemo.cs's constants and the two products it COMPUTES from them.
+    // BnScrollDemo.razor's constants and the two products it COMPUTES from them.
     private let rows = 10
     private let rowH: CGFloat = 80
     private let viewH: CGFloat = 200

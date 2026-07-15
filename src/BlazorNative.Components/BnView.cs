@@ -38,9 +38,16 @@ public sealed class BnView : ComponentBase
     /// <summary>Background color, e.g. <c>"#FFEEAA"</c>. Null = unset.</summary>
     [Parameter] public string? BackgroundColor { get; set; }
 
-    /// <summary>Padding, e.g. <c>"16"</c> — a LAYOUT length (Yoga owns it: children
-    /// are placed inside the padding box). Null = unset.</summary>
-    [Parameter] public string? Padding { get; set; }
+    /// <summary>Padding in density-independent units, e.g. <c>16</c> — a LAYOUT
+    /// length (Yoga owns it: children are placed inside the padding box).
+    /// Null = unset. Typed (Phase 7.1, design decision 1 — the M4-ledger
+    /// straggler): stringified invariantly onto the wire exactly like
+    /// <see cref="Grow"/> (the 6.1 <see cref="FlexStyleValues"/> pattern) —
+    /// <c>16f</c> reaches the shells as <c>"16"</c>, the same bytes the string
+    /// parameter produced. Percent/auto paddings are deliberately no longer
+    /// expressible here (nothing in the repo ever wrote one); pre-1.0 breaking
+    /// API change, recorded in the phase conclusion, no compat shim.</summary>
+    [Parameter] public float? Padding { get; set; }
 
     /// <summary>Margin, e.g. <c>"8"</c> — a LAYOUT length. Null = unset.</summary>
     [Parameter] public string? Margin { get; set; }
@@ -134,7 +141,7 @@ public sealed class BnView : ComponentBase
         // ELEMENT attribute with a null value is not appended to the frame
         // array at all) — that is how "unset" reaches the wire as "absent".
         b.AddAttribute(1, "backgroundColor", BackgroundColor);
-        b.AddAttribute(2, "padding", Padding);
+        b.AddAttribute(2, "padding", Padding.ToStyleValue());
         b.AddAttribute(3, "margin", Margin);
 
         b.AddAttribute(4, "flexDirection", Direction.ToStyleValue());

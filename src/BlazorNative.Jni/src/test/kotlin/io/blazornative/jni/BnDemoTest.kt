@@ -10,7 +10,7 @@ import org.junit.jupiter.api.Test
  * bind loop (DoD #5) and the cascading theme toggle (DoD #6) at the patch
  * level every host decodes — through the C ABI instead of in-process.
  *
- * Shape: see src/BlazorNative.Components/BnDemo.cs's file header — this
+ * Shape: see src/BlazorNative.Components/BnDemo.razor's file header — this
  * header restates only the pins this file asserts; the full tree lives
  * there. Final child order under the form div: title span, input, echo
  * panel div, Clear button, Theme button, "Settings →" button (Phase 3.5 —

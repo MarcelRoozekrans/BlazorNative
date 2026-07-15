@@ -4,9 +4,12 @@
        BlazorNative.Components — Phase 3.4 Gate 2 (design §2)
 
        The public Bn* component library — the shape app authors consume
-       (M6 names this package). Public, sealed components, hand-written
+       (M6 names this package). Public, sealed components: hand-written
        BuildRenderTree until Phase 7.0 wired .razor compilation (the SDK swap
-       below; 7.1 rewrites the demo pages in .razor):
+       below), and since Phase 7.1 the five demo pages ARE .razor files —
+       everything new is authored in .razor (the leaf primitives BnView /
+       BnText / BnButton / BnInput / BnRow / BnColumn / BnScroll / BnImage
+       stay hand-written C#; nothing forces a rewrite):
          BnView / BnText / BnButton / BnInput + BnDemo + BnTheme.
        Phase 6.1 adds the flex surface: FlexStyles (the enums + their wire
        words), BnRow / BnColumn (direction presets over BnView, sharing
@@ -66,7 +69,7 @@
     <PackageId>BlazorNative.Components</PackageId>
     <Version>1.2.0-phase-4.5</Version>
     <Authors>Marcel Roozekrans</Authors>
-    <Description>The public Bn* component library for BlazorNative apps: BnView, BnText, BnButton, BnInput, BnTheme and friends — sealed, hand-written, AOT/trim-compatible Blazor components targeting native widgets.</Description>
+    <Description>The public Bn* component library for BlazorNative apps: BnView, BnText, BnButton, BnInput, BnTheme and friends — sealed, AOT/trim-compatible Blazor components (authorable in .razor since Phase 7.1) targeting native widgets.</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <RepositoryUrl>https://github.com/MarcelRoozekrans/BlazorNative</RepositoryUrl>
     <PackageTags>blazor;native;components;nativeaot;android;mobile;ui</PackageTags>

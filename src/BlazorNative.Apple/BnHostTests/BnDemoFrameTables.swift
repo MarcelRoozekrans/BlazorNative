@@ -126,7 +126,7 @@ func assertFrame(_ table: [String: BnRect], _ key: String, _ view: UIView, _ why
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// BnLayoutDemo — `/layout` (M6 DoD #2). The table in BnLayoutDemo.cs's file header.
+// BnLayoutDemo — `/layout` (M6 DoD #2). The table in BnLayoutDemo.razor's file header.
 //
 // The two numbers that are load-bearing and easy to undo:
 //   · **wrap 3 sits at y = 40** — the line-1 cross size. Yoga's `alignContent` default is
@@ -162,7 +162,7 @@ let bnLayoutDemoFrames: [String: BnRect] = bnFrameTable([
 // BN-FRAME-TABLE-END
 
 // ─────────────────────────────────────────────────────────────────────────────
-// BnScrollDemo — `/scroll` (M6 DoD #4). The table in BnScrollDemo.cs's file header.
+// BnScrollDemo — `/scroll` (M6 DoD #4). The table in BnScrollDemo.razor's file header.
 //
 // `content` is the SYNTHETIC content node — never on the wire — and its 800 is the COMPUTED
 // HEIGHT OF A YOGA NODE (ten 80-high rows in a height:auto column), not a shell-side union of

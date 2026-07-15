@@ -84,7 +84,7 @@ class MainActivity : Activity() {
          * NativeNavigationManager route table. Its images fetch from a LOOPBACK
          * fixture server, so in a RELEASE build (whose network-security-config
          * permits no cleartext) all three show as failed. That is correct and
-         * expected — see BnImageDemo.cs's header; the fix is never to weaken the
+         * expected — see BnImageDemo.razor's header; the fix is never to weaken the
          * release config.
          */
         private val DEEP_LINK_COMPONENTS = mapOf(

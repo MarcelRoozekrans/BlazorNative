@@ -20,7 +20,7 @@ public sealed class SmokeRoot : ComponentBase
     protected override void BuildRenderTree(RenderTreeBuilder b)
     {
         b.OpenComponent<BnView>(0);
-        b.AddComponentParameter(1, nameof(BnView.Padding), "16");
+        b.AddComponentParameter(1, nameof(BnView.Padding), 16f);
         b.AddComponentParameter(2, nameof(BnView.ChildContent), (RenderFragment)(cb =>
         {
             cb.OpenComponent<BnText>(0);

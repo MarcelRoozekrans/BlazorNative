@@ -54,7 +54,7 @@ public abstract class BnFlexPreset : ComponentBase
     [Parameter] public string? BackgroundColor { get; set; }
 
     /// <inheritdoc cref="BnView.Padding"/>
-    [Parameter] public string? Padding { get; set; }
+    [Parameter] public float? Padding { get; set; }
 
     /// <inheritdoc cref="BnView.Margin"/>
     [Parameter] public string? Margin { get; set; }

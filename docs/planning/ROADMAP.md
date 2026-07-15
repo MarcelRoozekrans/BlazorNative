@@ -499,7 +499,25 @@ Phases (approved at milestone-open 2026-07-15; subject to the 7.0 verdict):
      **4 IL2072 + 9 exports on all three RIDs**, zero web-asset traces in the publish log.
      See [design](../plans/2026-07-15-phase-7.0-design.md) +
      [conclusion](../plans/2026-07-15-phase-7.0-spike-conclusion.md) (the pinned recipe).
-- ⏳ **Phase 7.1** — `.razor` authoring end-to-end: the five pages + parity + typed-props cleanup (DoD #2, part #8)
+- ✅ **Phase 7.1** — `.razor` authoring end-to-end: the five pages + parity + typed-props cleanup (DoD #2, part #8) — *complete (2026-07-15)*
+   - **The app is authored in `.razor`** (DoD #2 closed): all five pages + `BnThemedPanel`
+     converted via **twin → swap → retire** (per page: a transitional `.razor` twin proven
+     patch-stream **record-identical** across every interaction, mutation-verified, then the
+     `.cs` deleted and the twin retired). **Zero golden edits, zero shell edits** — and the
+     device lanes re-ran green on the converted app: **android-instrumented run 29420994993
+     (111/0)** · **ios run 29420996916 (XCTest 72/0)**.
+   - **Two pre-1.0 breaking changes, recorded, no shim:** `BnThemedPanel` `internal` → `public`
+     (forced — Razor component discovery is public-only; an internal component in markup silently
+     parses as a plain HTML element) and `FontSize`/`Padding` `string?` → `float?` (the M4-ledger
+     stragglers — wire-identical via the 6.1 invariant-culture lift; the goldens were the tripwire
+     and none moved). The typed-props half of DoD #8 is closed.
+   - The **supported `.razor` subset** is normative and ledgered for a future analyzer (no
+     `@page`/`.razor.css`/raw HTML/JS interop; `@key` insert/remove only — reorders stay a loud
+     violation with 7.2's `BnList` as the named customer; `_Imports.razor` load-bearing;
+     `[Inject] public` not `@inject`; public-only component discovery).
+   - Counts: .NET **339/0** (the pre-conversion baseline — conversions are wire-neutral by
+     construction) · JVM **83/0** · publish **4 IL2072 + 9 exports** · consumer smoke **PASS**.
+     See [conclusion](../plans/2026-07-15-phase-7.1-conclusion.md) (subset + recipe + ledger).
 - ⏳ **Phase 7.2** — the `onScroll` wire design + `BnList` (DoD #3)
 - ⏳ **Phase 7.3** — form controls + a real `picker` (DoD #4)
 - ⏳ **Phase 7.4** — `BnModal` + the RN survey's cheap wins (DoD #5, #7)

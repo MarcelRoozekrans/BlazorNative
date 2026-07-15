@@ -1,0 +1,82 @@
+@*
+    ─────────────────────────────────────────────────────────────────────────
+    BnDemo — Phase 3.4 Task 4 (design §4): the Bn*-built demo form closing
+    M3 DoD #5 (two-way bound input + live echo) and DoD #6 (cascading theme
+    toggle → themed children re-render). Phase 3.5 (design §2) makes it a
+    TWO-PAGE app: the "Settings →" button navigates to BnSettingsPage
+    (route "/settings") through [Inject] INavigationManager — DoD #7.
+    Registered as "BnDemo" in HostSession's mount registry; MainActivity's
+    default since 3.4 Gate 4.
+
+    Phase 7.1 Gate 2: authored in .razor (the HARD conversion — @bind-Value
+    on a component, cascading BnTheme, four event handlers, BnThemedPanel →
+    BnView chaining, the live echo). Parity with the retired hand-written
+    BuildRenderTree version was proven byte-for-byte by the transitional
+    golden-vs-twin test — record-identical patch streams across mount +
+    bind/echo + Clear + the theme flip both ways + the Settings navigation,
+    mutation-verified — before the swap; BnDemoTests + NavigationTests +
+    both shells' suites hold it from here.
+
+    @bind-Value="_text" on BnInput is the compiler's component-pair
+    inference (spike conclusion, implication 3): Value/ValueChanged are
+    inferred from the component's parameters — no element bind metadata,
+    nothing new shipped. It expands to exactly the pair the retired page
+    wired by hand: Value=_text + ValueChanged=(__value => _text = __value).
+
+    Shape (the pinned mount contract — BnDemoTests + Gate 3's BnDemoTest.kt):
+      CascadingValue<BnTheme>                       (region — no node)
+      └─ BnThemedPanel #1 → BnView form div          backgroundColor+padding 16
+          ├─ BnText  title "BnDemo"                  span, fontSize 24
+          ├─ BnInput bound (@bind-Value)             input: value+placeholder+change
+          ├─ BnThemedPanel #2 → BnView echo panel    div, backgroundColor+padding 8
+          │   └─ BnText echo (= the bound text)      span
+          ├─ BnButton "Clear"                        button + click
+          ├─ BnButton "Theme"                        button + click
+          └─ BnButton "Settings →"                   button + click → NavigateToAsync("/settings")
+      (4 event attaches: change + Clear + Theme + Settings →)
+
+    The bind loop (DoD #5): change dispatch → BnInput.ValueChanged → _text
+    mutates → re-render → echo ReplaceText + input value UpdateProp.
+    The theme toggle (DoD #6): _theme swaps to a NEW BnTheme record →
+    CascadingValue notifies → BOTH BnThemedPanels re-render → SetStyle
+    backgroundColor on both divs.
+    The navigation (DoD #7): Settings click → INavigationManager swaps the
+    root (this page's RemoveNodes, then BnSettingsPage's creates) inside the
+    same dispatch.
+    ─────────────────────────────────────────────────────────────────────────
+*@
+<CascadingValue Value="_theme">
+    <BnThemedPanel Padding="16">
+        <BnText Text="BnDemo" FontSize="24" />
+        <BnInput @bind-Value="_text" Placeholder="Type here..." />
+        <BnThemedPanel Padding="8">
+            <BnText Text="@_text" />
+        </BnThemedPanel>
+        <BnButton Label="Clear" OnClick="Clear" />
+        <BnButton Label="Theme" OnClick="ToggleTheme" />
+        <BnButton Label="Settings →" OnClick="GoToSettings" />
+    </BnThemedPanel>
+</CascadingValue>
+
+@code {
+    private const string DefaultBackground = "#FFEEAA";
+    private const string AltBackground = "#334455";
+
+    private string _text = "";
+    private BnTheme _theme = new(DefaultBackground, AltBackground);
+
+    /// <summary>Phase 3.5: the navigation service (Core contract) — same
+    /// explicit [Inject] public property as the hand-written page (NOT
+    /// @inject, which generates a private property).</summary>
+    [Inject] public INavigationManager Navigation { get; set; } = default!;
+
+    private void Clear() => _text = "";
+
+    // Swap: a NEW record instance each toggle (see BnTheme doc).
+    private void ToggleTheme()
+        => _theme = new BnTheme(_theme.AltBackground, _theme.Background);
+
+    // Sync-completing (inline dispatcher): the swap has fully happened —
+    // removes + creates delivered — when this Task is observed.
+    private Task GoToSettings() => Navigation.NavigateToAsync("/settings").AsTask();
+}

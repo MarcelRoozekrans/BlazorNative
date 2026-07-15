@@ -87,7 +87,7 @@ func bnClearImageCaches(file: StaticString = #filePath, line: UInt = #line) {
                   + "suite depends on the fixtures going to the WIRE", file: file, line: line)
 }
 
-/// **THE FIXTURE'S CONTRACT** (`BnImageDemo.cs` §"THE FIXTURE'S CONTRACT"), asserted on the
+/// **THE FIXTURE'S CONTRACT** (`BnImageDemo.razor` §"THE FIXTURE'S CONTRACT"), asserted on the
 /// **DECODED** fixtures **before any frame is looked at**. An unasserted fixture constraint
 /// is a coincidence waiting to happen — and these double as the probe that the bytes came
 /// from **our** server (port 8099 is HOST-GLOBAL on the macOS runner: a foreign listener
@@ -99,8 +99,8 @@ func bnClearImageCaches(file: StaticString = #filePath, line: UInt = #line) {
 ///    with (`BnImageLoader.naturalPixelSize`), and the exact twin of Android's `bitmap.width`;
 ///  - the same numbers in POINTS, which agree ONLY because `UIImage(data:)` has `scale == 1`
 ///    — asserting both is what catches a *fixture* that did not survive its PNG encode;
-///  - …and both against **`BnImageDemo.cs`'s declared constants**, transcribed into
-///    `BnImageFixtureServer` and pinned against the `.cs` by a .NET drift test. Three copies
+///  - …and both against **`BnImageDemo.razor`'s declared constants**, transcribed into
+///    `BnImageFixtureServer` and pinned against the `.razor` by a .NET drift test. Three copies
 ///    of four numbers, pinned rather than trusted — because **no single-device test in either
 ///    suite can catch a breach of the unit rule**: each shell stays internally consistent, and
 ///    nothing compares the two frame tables automatically.
