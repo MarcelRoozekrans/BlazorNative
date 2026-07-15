@@ -518,7 +518,35 @@ Phases (approved at milestone-open 2026-07-15; subject to the 7.0 verdict):
    - Counts: .NET **339/0** (the pre-conversion baseline — conversions are wire-neutral by
      construction) · JVM **83/0** · publish **4 IL2072 + 9 exports** · consumer smoke **PASS**.
      See [conclusion](../plans/2026-07-15-phase-7.1-conclusion.md) (subset + recipe + ledger).
-- ⏳ **Phase 7.2** — the `onScroll` wire design + `BnList` (DoD #3)
+- ✅ **Phase 7.2** — the `onScroll` wire design + `BnList` (DoD #3) — *complete (2026-07-15)*
+   - **The first 60Hz producer runs on the existing event wire** (DoD #3 closed): shell-side
+     conflation — ONE pending offset per scroll node, replace-not-queue, dispatched on the three
+     lane-availability edges, ordering free via the single FIFO lane, dp at the source. **No ABI
+     change** (9 exports, all three RIDs). Throughput evidence, both platforms: **Android burst
+     100 samples → 2 dispatches (50:1), fling 78 → 35 (2.23:1), final offset always delivered;
+     iOS mirrors on the same `/list` numbers.** Conflation mutation-proven at the mechanism on
+     BOTH shells — iOS mutations run ON CI (dispatch-per-sample → run 29436079300, 81/4 red;
+     queue-not-replace → run 29436083505, 83/2 red — the same failure shapes as Android).
+   - **`BnList<TItem>`** (generic, `.razor` via `@typeparam`) over `BnListWindow.Compute` (pure,
+     35 cases): keyed spacers + keyed window rows; `/list` = 500 × 64dp with **counted liveness**
+     (11/15/11 rows, asserted .NET-side and on both shells' child counts). Row state travels by
+     view IDENTITY (`EditText`/`UITextField` text + focus survive the slide); eviction destroys.
+   - **The empirical `@key` answer:** a keyed window slide diffs as **insert/remove ONLY** —
+     permutations fire only when surviving keys CROSS. Detector ran strict with the 7.0 `default:`
+     arm live (`KeyedWindowSlideTests`); the loud arm stays, **no wire move-concept needed**. The
+     true-move ABI conversation is deferred with its trigger (first component whose UX crosses
+     surviving keys).
+   - **Two 3.3-era renderer bugs, red-first:** disposal removes now PRECEDE the batch's creates
+     (InsertIndex was translated against trimmed state); the same-batch re-render + disposal
+     zombie — review-called "narrow future case", then **constructed through a public path**
+     (child handler `StateHasChanged()` + parent remove callback) — fixed with a pass-2 delta
+     emission, mutation-proven (`SameBatchRerenderDisposalTests`).
+   - Hardening #9 re-examined with real numbers (the milestone's promise): scroll cannot flood
+     the lane by construction; the slow-HANDLER half of #9 stays open for M10.
+   - **Final counts (all CI-asserted):** .NET **388/0** · JVM **83/0** · Android instrumented
+     **124/0** · iOS XCTest **85/0** (run 29435524820). See
+     [design](../plans/2026-07-15-phase-7.2-design.md) +
+     [conclusion](../plans/2026-07-15-phase-7.2-conclusion.md).
 - ⏳ **Phase 7.3** — form controls + a real `picker` (DoD #4)
 - ⏳ **Phase 7.4** — `BnModal` + the RN survey's cheap wins (DoD #5, #7)
 - ⏳ **Phase 7.5** — `BnImage` polish: Placeholder/OnError/ContentMode (DoD #6)

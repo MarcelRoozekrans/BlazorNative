@@ -48,6 +48,14 @@ the two points where scope may consciously shrink; anything cut is ledgered, not
    stays interactive, and the frames match on both shells. Includes the **`onScroll` wire design**
    (coalesced; throughput evidence committed) — scroll offset reaches .NET without flooding the
    dispatch lane.
+   ✅ **Closed by Phase 7.2** ([conclusion](../plans/2026-07-15-phase-7.2-conclusion.md)):
+   shell-side conflation on the existing wire (no ABI change), throughput evidence on both
+   platforms — Android burst 100 samples → 2 dispatches (50:1), fling 78 → 35 (2.23:1), final
+   offset always delivered; iOS mirrors on the same `/list` numbers. Counted liveness (11/15/11
+   of 500 rows) asserted on both shells — Android instrumented **124/0**, iOS XCTest **85/0**
+   (run 29435524820); conflation mutation-proven at the mechanism on both (iOS mutations run ON
+   CI). The `@key` answer is empirical: a window slide is insert/remove ONLY — the loud
+   permutation arm stays, no wire move-concept needed.
 4. **Form controls:** `BnCheckbox`, `BnSwitch`, `BnSlider`, and **`picker` made real** (the last
    stubbed widget — native `Spinner`/`UIPickerView` with items + selection round-trip on the
    existing change wire). Two-way bind on all four.
