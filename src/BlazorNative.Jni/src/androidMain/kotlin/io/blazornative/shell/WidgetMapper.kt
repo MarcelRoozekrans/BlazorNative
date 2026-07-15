@@ -854,12 +854,23 @@ class WidgetMapper(
     /**
      * ONE RemoveNodePatch arrives for a WHOLE SUBTREE — the renderer does not emit
      * one per node (`NativeRenderer.PurgeNodeSubtree` is .NET-side bookkeeping; the
-     * host contract on `ProcessDisposedComponent` spells it out). So the host must
+     * host contract on `EmitDisposedComponentRemoves` — 7.2's split of the 3.3-era
+     * `ProcessDisposedComponent` — spells it out). So the host must
      * purge the subtree itself, in BOTH trees: here (views/watchers/focus entries/
      * aliases) and in [YogaLayout.removeNode] (Yoga nodes + their measure funcs).
      * Purging only the named node leaks every descendant — each entry pinning a
      * View, hence the Activity Context, hence a native Yoga peer that can never be
      * reclaimed — once per navigation, forever.
+     *
+     * A nested child COMPONENT disposed in the same batch as a removed ancestor
+     * still emits RemoveNode for its own root views — and since 7.2 (disposal
+     * removes are emitted BEFORE the batch's diffs) those child removes PRECEDE
+     * the ancestor's rather than trailing it: they arrive for ids still LIVE and
+     * detach the child view before its ancestor, a legal detach order (the
+     * ancestor's subtree purge simply finds one view fewer). Under the old
+     * trailing order they no-opped on already-purged ids; both orders land on
+     * the same guard below (`nodes[p.nodeId] ?: return` — unknown ids are a
+     * no-op, the documented host contract).
      *
      * The subtree is read off the VIEW hierarchy (the mapper's own tree) and matched
      * by IDENTITY, never by key: the text collapse aliases nodeIds onto a view they
