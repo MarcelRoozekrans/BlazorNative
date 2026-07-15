@@ -2,5 +2,13 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
     "local>MarcelRoozekrans/renovate-config"
+  ],
+  "packageRules": [
+    {
+      "description": "Kotlin is governed by AGP 9's built-in Kotlin (KGP 2.2.10), not Renovate. The `kotlinVersion` pin in src/BlazorNative.Jni/build.gradle.kts must equal AGP's bundled KGP — a stdlib ahead of the compiler fails the android-build check (see #77). Bump Kotlin only in lockstep with an AGP upgrade whose built-in KGP moves.",
+      "matchManagers": ["gradle"],
+      "matchPackageNames": ["/^org\.jetbrains\.kotlin:/"],
+      "enabled": false
+    }
   ]
 }
