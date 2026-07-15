@@ -642,6 +642,49 @@ public sealed class NativeRenderer : BlazorRenderer
                 case RenderTreeEditType.StepOut:
                     cursor = cursorStack.Count > 0 ? cursorStack.Pop() : rootCursor;
                     break;
+
+                case RenderTreeEditType.UpdateMarkup:
+                {
+                    // Phase 7.0 review (F2): dynamic markup — @((MarkupString)x)
+                    // whose CONTENT changes in place — diffs as UpdateMarkup
+                    // (same-sequence Markup frames compare by content). The
+                    // Markup slot stays exactly where it is (Markup slots own
+                    // no host view, so there is nothing to patch), which keeps
+                    // later sibling indices aligned. The mount-time contract
+                    // (ProcessFrame's Markup arm) holds on the update path too:
+                    // whitespace → whitespace is a wire no-op; NEW
+                    // non-whitespace content is raw HTML — unrepresentable on
+                    // a native widget tree — so it is the same contract
+                    // violation: strict throws, non-strict logs and the frame
+                    // keeps rendering as nothing. Before this arm existed the
+                    // update path silently bypassed the strict contract.
+                    var slot = _tree.GetSlotAt(cursor.ComponentId, cursor.Container, bnEdit.SiblingIndex);
+                    var newMarkup = new BnRenderTreeFrame(ref referenceFrames[bnEdit.ReferenceFrameIndex]).MarkupContent;
+                    if (!string.IsNullOrWhiteSpace(newMarkup))
+                    {
+                        ReportContractViolation(
+                            $"UpdateMarkup to non-whitespace content is not representable on a native " +
+                            $"widget tree (component {cursor.ComponentId}, sibling {bnEdit.SiblingIndex}, " +
+                            $"slot kind {slot.Kind}): \"{newMarkup}\" — rendered as nothing");
+                    }
+                    break;
+                }
+
+                default:
+                    // Phase 7.0 review (F2): an edit type this switch does not
+                    // handle is a silent structural desync waiting to happen —
+                    // the UpdateMarkup gap above was exactly this class. Route
+                    // every unknown type through the contract-violation switch
+                    // NAMING the type, so the whole class is unreintroducible.
+                    // Known residents today: PermutationListEntry /
+                    // PermutationListEnd (@key reorders) — pre-existing debt,
+                    // reachable the moment 7.1 makes @key natural syntax; they
+                    // now fail LOUDLY (strict throws; non-strict logs) instead
+                    // of desyncing host child order silently.
+                    ReportContractViolation(
+                        $"unhandled render-tree edit type {(RenderTreeEditType)bnEdit.Type} " +
+                        $"(component {cursor.ComponentId}, sibling {bnEdit.SiblingIndex}) — edit dropped");
+                    break;
             }
         }
     }

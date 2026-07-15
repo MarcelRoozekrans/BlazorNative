@@ -208,6 +208,115 @@ public sealed class MarkupFrameTests
         Assert.Empty(frames[0].Patches.OfType<ReplaceTextPatch>());
     }
 
+    // ── UpdateMarkup: dynamic markup changing IN PLACE (review F2) ────────────
+    //
+    // Blazor diffs same-sequence Markup frames by CONTENT and emits an
+    // UpdateMarkup edit when it changes (@((MarkupString)x) with mutating x).
+    // Until the F2 fix the diff switch had no UpdateMarkup arm and no default:
+    // the strict contract was silently bypassable on the update path.
+
+    /// <summary>Whitespace markup whose content turns into raw HTML on click;
+    /// the tail span (text changed in the SAME diff) sits AFTER the markup
+    /// sibling, so the test also proves the slot stays aligned on the
+    /// tolerated path.</summary>
+    private sealed class MarkupTurnsRaw : ComponentBase
+    {
+        private string _markup = "\n    ";
+        private string _tail = "tail";
+
+        protected override void BuildRenderTree(RenderTreeBuilder b)
+        {
+            b.OpenElement(0, "div");
+            b.OpenElement(1, "button");
+            b.AddAttribute(2, "onclick",
+                EventCallback.Factory.Create<MouseEventArgs>(this, () =>
+                {
+                    _markup = "<b>now raw</b>";
+                    _tail = "after";
+                }));
+            b.CloseElement();
+            b.AddMarkupContent(3, _markup);
+            b.OpenElement(4, "span");
+            b.AddContent(5, _tail);
+            b.CloseElement();
+            b.CloseElement();
+        }
+    }
+
+    [Fact]
+    public async Task UpdateMarkup_ToNonWhitespace_Strict_Throws()
+    {
+        var (renderer, frames) = BuildRenderer(strict: true);
+        using var _ = renderer;
+
+        await renderer.MountAsync<MarkupTurnsRaw>(ParameterView.Empty);
+        var attach = Assert.Single(frames[0].Patches.OfType<AttachEventPatch>());
+
+        var ex = await Assert.ThrowsAnyAsync<Exception>(
+            () => renderer.DispatchUiEventAsync(new NativeUiEvent(0, attach.HandlerId, "click", null)));
+        Assert.Contains("UpdateMarkup", Flatten(ex));
+        Assert.Contains("now raw", Flatten(ex));
+    }
+
+    [Fact]
+    public async Task UpdateMarkup_ToNonWhitespace_NonStrict_LogsAndContinues_SlotStaysAligned()
+    {
+        var (renderer, frames) = BuildRenderer(strict: false);
+        using var _ = renderer;
+
+        await renderer.MountAsync<MarkupTurnsRaw>(ParameterView.Empty);
+        var mount = frames[0];
+        var tailNode = Assert.Single(mount.Patches.OfType<ReplaceTextPatch>(), p => p.Text == "tail").NodeId;
+        var attach = Assert.Single(mount.Patches.OfType<AttachEventPatch>());
+
+        // Tolerated: the dispatch completes (no throw) …
+        await renderer.DispatchUiEventAsync(new NativeUiEvent(0, attach.HandlerId, "click", null));
+        Assert.True(frames.Count >= 2, "expected a synchronous re-render frame");
+
+        // … the markup still renders as nothing, and the SAME diff's tail
+        // UpdateText — a sibling AFTER the markup slot — resolves the right
+        // node: the slot survived the tolerated violation.
+        var replaced = Assert.Single(frames[^1].Patches.OfType<ReplaceTextPatch>());
+        Assert.Equal(tailNode, replaced.NodeId);
+        Assert.Equal("after", replaced.Text);
+    }
+
+    /// <summary>Whitespace to DIFFERENT whitespace: an UpdateMarkup edit
+    /// arrives, but the wire never sees whitespace — the frame must carry
+    /// nothing but its commit.</summary>
+    private sealed class WhitespaceMarkupReflows : ComponentBase
+    {
+        private string _markup = "\n";
+
+        protected override void BuildRenderTree(RenderTreeBuilder b)
+        {
+            b.OpenElement(0, "div");
+            b.OpenElement(1, "button");
+            b.AddAttribute(2, "onclick",
+                EventCallback.Factory.Create<MouseEventArgs>(this, () => _markup = "\n    "));
+            b.CloseElement();
+            b.AddMarkupContent(3, _markup);
+            b.CloseElement();
+        }
+    }
+
+    [Fact]
+    public async Task UpdateMarkup_WhitespaceToWhitespace_IsAWireNoOp()
+    {
+        var (renderer, frames) = BuildRenderer(strict: true);
+        using var _ = renderer;
+
+        await renderer.MountAsync<WhitespaceMarkupReflows>(ParameterView.Empty);
+        var attach = Assert.Single(frames[0].Patches.OfType<AttachEventPatch>());
+
+        // Strict mode — a violation would throw; and the re-render frame is
+        // commit-only: whitespace stays wire-invisible on the update path.
+        await renderer.DispatchUiEventAsync(new NativeUiEvent(0, attach.HandlerId, "click", null));
+        Assert.True(frames.Count >= 2, "expected a synchronous re-render frame");
+        var patch = Assert.Single(frames[^1].Patches);
+        Assert.IsType<CommitFramePatch>(patch);
+    }
+
     private static string Flatten(Exception ex)
     {
         var sb = new System.Text.StringBuilder();
