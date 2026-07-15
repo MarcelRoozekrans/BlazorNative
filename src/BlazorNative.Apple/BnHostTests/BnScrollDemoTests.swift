@@ -3,7 +3,7 @@
 // (M6 DoD #4).
 //
 // Mounts `BnScrollDemo` through the real NativeAOT boot and asserts the canonical table
-// from **`src/BlazorNative.Components/BnScrollDemo.cs`'s file header** — the same
+// from **`src/BlazorNative.Components/BnScrollDemo.razor`'s file header** — the same
 // discipline, and the same pairing, as `BnLayoutDemoTests`: **`BnScrollDemoAndroidTest`
 // asserts THE SAME NUMBERS on the AVD**, line for line, with the same tolerance. That
 // PAIRING — not either test alone — is what DoD #4 means by "on both platforms". It
@@ -77,7 +77,7 @@ import UIKit
 
 final class BnScrollDemoTests: BnHostTestCase {
 
-    /// BnScrollDemo's four inputs (BnScrollDemo.cs: RowCount, RowHeightDp,
+    /// BnScrollDemo's four inputs (BnScrollDemo.razor: RowCount, RowHeightDp,
     /// ViewportWidthDp, ViewportHeightDp) and the two products the contract COMPUTES
     /// from them — ContentHeightDp and ScrollRangeDp. Derived here too, not transcribed:
     /// a changed row height must move both sides at once.

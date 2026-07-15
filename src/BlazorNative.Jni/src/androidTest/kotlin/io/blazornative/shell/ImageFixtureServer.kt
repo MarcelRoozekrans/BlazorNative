@@ -27,7 +27,7 @@ import kotlin.concurrent.thread
  *
  * Instrumented tests run **in the app's own process**, so a `ServerSocket` bound here is
  * bound in the process Coil fetches from. On the AVD `127.0.0.1` is the emulated device's
- * own loopback (it is the HOST MAC's in the iOS simulator — see `BnImageDemo.cs`'s header;
+ * own loopback (it is the HOST MAC's in the iOS simulator — see `BnImageDemo.razor`'s header;
  * that difference is Gate 3's problem, not this one's).
  *
  * ── CLEARTEXT: COVERED BY INHERITANCE, AND VERIFIED RATHER THAN ASSUMED ─────────────
@@ -74,14 +74,14 @@ internal class ImageFixtureServer {
 
     companion object {
         /**
-         * The origin and the three paths **`BnImageDemo.cs` declares** (`FixtureOrigin`,
+         * The origin and the three paths **`BnImageDemo.razor` declares** (`FixtureOrigin`,
          * `FixedSrc`, `IntrinsicSrc`, `FailingSrc`) and `BnScrollDemo.RowImageSrc` reuses.
          *
-         * They are Kotlin constants because a device-side test cannot read a `.cs` file —
+         * They are Kotlin constants because a device-side test cannot read a `.razor` file —
          * so the drift pin is asserted on the **WIRE** instead, which is stronger than a
          * transcription check anyway: `BnImageDemoAndroidTest` asserts the outcomes against
          * the URLs the renderer actually put on the `UpdateProp` wire, and they must be
-         * exactly the three this server routes. Change a URL in `BnImageDemo.cs` and that
+         * exactly the three this server routes. Change a URL in `BnImageDemo.razor` and that
          * assertion reddens by name, rather than the page quietly 404ing three times.
          */
         const val ORIGIN = "http://127.0.0.1:8099"
@@ -97,7 +97,7 @@ internal class ImageFixtureServer {
         private const val PORT = 8099
 
         /**
-         * **THE FIXTURE CONTRACT** (`BnImageDemo.cs` §"THE FIXTURE'S CONTRACT"). Every one
+         * **THE FIXTURE CONTRACT** (`BnImageDemo.razor` §"THE FIXTURE'S CONTRACT"). Every one
          * of these is an ASSERTION in the tests, evaluated on the **decoded** fixture
          * before any frame is looked at — never a comment, and never a property of a file
          * someone once checked in. The fixtures are generated here rather than committed
@@ -114,16 +114,16 @@ internal class ImageFixtureServer {
          *    image, which buys the same proof inside the scroll.
          *
          * ── THESE FOUR NUMBERS ARE NOT THIS FILE'S TO CHOOSE (Gate 2 review, the BLOCKER) ──
-         * **`BnImageDemo.cs` owns them** — `IntrinsicNaturalWidthPx` / `…HeightPx` /
+         * **`BnImageDemo.razor` owns them** — `IntrinsicNaturalWidthPx` / `…HeightPx` /
          * `FixedNaturalWidthPx` / `…HeightPx` — because **both shells must assert the SAME
-         * numbers** and the `.cs` is the one file both gates read. They were "symbolic and
+         * numbers** and the `.razor` is the one file both gates read. They were "symbolic and
          * Gate-supplied", which meant Gate 3 could legitimately pick a different fixture,
          * apply a different unit rule, and be fully green: nothing enforced the phase's own
          * verification bar #1 ("the same frames on both devices").
          *
          * The transcription is **pinned by a drift test** — `BnImageDemoTests
          * .TheAndroidFixtureServer_ServesExactlyBnImageDemosNaturalPixelSizes` parses these
-         * four `const val`s out of THIS file and asserts equality with the `.cs`. Keep them
+         * four `const val`s out of THIS file and asserts equality with the `.razor`. Keep them
          * as plain `const val NAME = <int>` declarations at the start of their line: that is
          * what the parser looks for, and a declaration it cannot find fails it LOUDLY.
          */

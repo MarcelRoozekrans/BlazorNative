@@ -10,7 +10,7 @@ namespace BlazorNative.Runtime.Tests;
 // patch level every host decodes. The Kotlin twin (BnDemoTest.kt, Gate 3)
 // mirrors these shapes through the published dll.
 //
-// Shape: see BnDemo.cs's file header — the CANONICAL pinned tree lives
+// Shape: see BnDemo.razor's file header — the CANONICAL pinned tree lives
 // there; keep THAT one updated (this header and Gate 3's Kotlin twin
 // deliberately don't duplicate it — same instruction applies to
 // BnDemoTest.kt).

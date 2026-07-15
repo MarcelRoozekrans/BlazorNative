@@ -102,14 +102,14 @@ enum BnFixtureServerError: Error, CustomStringConvertible {
 
 final class BnImageFixtureServer {
 
-    // ── The origin and the three paths BnImageDemo.cs DECLARES ───────────────
+    // ── The origin and the three paths BnImageDemo.razor DECLARES ────────────
     //
     // (`FixtureOrigin`, `FixedSrc`, `IntrinsicSrc`, `FailingSrc`; `BnScrollDemo.RowImageSrc`
     // reuses `FixedSrc`.) They are Swift constants because a device-side test cannot read a
-    // `.cs` file — so the drift pin is asserted on the **WIRE** instead, which is stronger
+    // `.razor` file — so the drift pin is asserted on the **WIRE** instead, which is stronger
     // than a transcription check anyway: `BnImageDemoTests` asserts the outcomes against the
     // URLs the RENDERER actually put on the `UpdateProp` wire, and they must be exactly the
-    // three this server routes. Change a URL in `BnImageDemo.cs` and that assertion reddens
+    // three this server routes. Change a URL in `BnImageDemo.razor` and that assertion reddens
     // by name, rather than the page quietly 404ing three times.
     static let ORIGIN = "http://127.0.0.1:8099"
     static let FIXED_URL = ORIGIN + "/fixed.png"
@@ -125,16 +125,16 @@ final class BnImageFixtureServer {
 
     // ── THE FIXTURE CONTRACT — and these four numbers are NOT this file's to choose ──
     //
-    // **`BnImageDemo.cs` owns them** — `IntrinsicNaturalWidthPx` / `…HeightPx` /
+    // **`BnImageDemo.razor` owns them** — `IntrinsicNaturalWidthPx` / `…HeightPx` /
     // `FixedNaturalWidthPx` / `…HeightPx` — because **both shells must assert the SAME
-    // numbers**, and the `.cs` is the one file both gates read. Nothing else enforces the
+    // numbers**, and the `.razor` is the one file both gates read. Nothing else enforces the
     // phase's own verification bar #1 ("the same frames on both devices"): each shell is
     // internally consistent, and no test compares the two tables.
     //
     // The transcription is **pinned by a drift test** — `BnImageDemoTests
     // .TheIosFixtureServer_ServesExactlyBnImageDemosNaturalPixelSizes` (the .NET
     // `build-test` lane, next to its Android twin) parses these four `static let`s out of
-    // THIS file and asserts equality with the `.cs`. Keep them as plain
+    // THIS file and asserts equality with the `.razor`. Keep them as plain
     // `static let NAME = <int>` declarations at the start of their line: that is what the
     // parser looks for, and a declaration it cannot find fails it LOUDLY.
     //

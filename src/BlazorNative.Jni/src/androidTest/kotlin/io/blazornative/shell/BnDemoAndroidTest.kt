@@ -23,7 +23,7 @@ import java.util.concurrent.atomic.AtomicReference
  * this gate — and proves M3 DoD #5 (two-way bound input + live echo) and
  * DoD #6 (cascading theme toggle) on real widgets.
  *
- * Shape: see src/BlazorNative.Components/BnDemo.cs's file header — the
+ * Shape: see src/BlazorNative.Components/BnDemo.razor's file header — the
  * canonical pinned tree lives there. On-screen (WidgetMapper's NodeType
  * table + the Phase 2.8 text collapse):
  *   widget_root: FrameLayout

@@ -92,8 +92,8 @@ enum BnImageOutcome: Hashable {
 }
 
 /// One terminated image request. The `url` is the one **the wire carried**, which is
-/// what makes the demo's outcome assertions a drift pin on `BnImageDemo.cs`'s three
-/// `internal const` sources as well (a device-side test cannot read a `.cs` file; it
+/// what makes the demo's outcome assertions a drift pin on `BnImageDemo.razor`'s three
+/// `internal const` sources as well (a device-side test cannot read a `.razor` file; it
 /// can read what the renderer put on the `UpdateProp` wire).
 struct BnImageResult: Equatable {
     let nodeId: Int32

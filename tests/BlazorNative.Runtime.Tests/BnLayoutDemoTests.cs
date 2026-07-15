@@ -16,7 +16,7 @@ namespace BlazorNative.Runtime.Tests;
 // expectations change with it, and that is a deliberate act.
 //
 // The expected COMPUTED FRAMES (dp, relative to the parent) live in
-// BnLayoutDemo.cs's file header — the canonical table; keep THAT one updated.
+// BnLayoutDemo.razor's file header — the canonical table; keep THAT one updated.
 // In short: a 300×100 row of 50 · grow · 50; a 300×200 space-between column
 // with an AlignSelf=Center child; a 300-wide wrap row that spills a 4th box
 // onto line 2; a 150-wide row whose height is the natively MEASURED height of

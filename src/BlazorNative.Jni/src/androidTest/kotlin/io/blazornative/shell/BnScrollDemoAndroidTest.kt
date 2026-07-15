@@ -22,7 +22,7 @@ import java.util.concurrent.atomic.AtomicReference
  * Phase 6.2 Gate 2 Task 2.3 — **THE SCROLL DEMO, ON THE DEVICE** (M6 DoD #4).
  *
  * Mounts `BnScrollDemo` (the `/scroll` page) through the real NativeAOT boot and
- * asserts the canonical table from **`src/BlazorNative.Components/BnScrollDemo.cs`'s
+ * asserts the canonical table from **`src/BlazorNative.Components/BnScrollDemo.razor`'s
  * file header** — the same discipline, and the same pairing, as
  * [BnLayoutDemoAndroidTest]: **the iOS XCTest (Gate 3) asserts THE SAME NUMBERS on
  * the simulator.** Yoga computes in density-independent units on both platforms, so
@@ -91,7 +91,7 @@ class BnScrollDemoAndroidTest {
     }
 
     private companion object {
-        /** BnScrollDemo's four inputs (BnScrollDemo.cs: RowCount, RowHeightDp,
+        /** BnScrollDemo's four inputs (BnScrollDemo.razor: RowCount, RowHeightDp,
          * ViewportWidthDp, ViewportHeightDp) and the two products the contract
          * COMPUTES from them — ContentHeightDp and ScrollRangeDp. Derived here too,
          * not transcribed: a changed row height must move both sides at once. */

@@ -53,7 +53,7 @@ class BnScrollDemoImageAndroidTest {
     private lateinit var server: ImageFixtureServer
 
     private companion object {
-        // BnScrollDemo.cs's constants and the two products it COMPUTES from them.
+        // BnScrollDemo.razor's constants and the two products it COMPUTES from them.
         const val ROWS = 10
         const val ROW_H = 80f
         const val VIEW_H = 200f

@@ -27,9 +27,9 @@ import java.util.concurrent.atomic.AtomicReference
  * the swap; BnDemo has no taps counter, this is the twins' honest
  * freshness pin).
  *
- * Shapes: BnDemo per src/BlazorNative.Components/BnDemo.cs's canonical
+ * Shapes: BnDemo per src/BlazorNative.Components/BnDemo.razor's canonical
  * header (form ViewGroup, 6 children — see BnDemoAndroidTest's tree).
- * BnSettingsPage per BnSettingsPage.cs's, on-screen:
+ * BnSettingsPage per BnSettingsPage.razor's, on-screen:
  *   widget_root: FrameLayout
  *     └── settings ViewGroup (#FFEEAA), 2 children IN THIS ORDER:
  *           [0] TextView "Settings"        (title span, text-collapsed)

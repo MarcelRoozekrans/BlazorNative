@@ -17,7 +17,7 @@ namespace BlazorNative.Runtime.Tests;
 // two shells' expectations change with it, and that is a deliberate act.
 //
 // The expected COMPUTED FRAMES (dp, relative to the parent) live in
-// BnScrollDemo.cs's file header — the canonical table; keep THAT one updated.
+// BnScrollDemo.razor's file header — the canonical table; keep THAT one updated.
 // In short: a 300×200 viewport over ten 80-high rows → the content node computes
 // to 800, so contentSize 300×800, viewport 200, scrollable range 600.
 //

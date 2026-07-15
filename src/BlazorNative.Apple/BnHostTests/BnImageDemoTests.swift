@@ -3,7 +3,7 @@
 // SIMULATOR** (M6 DoD #5).
 //
 // Mounts `BnImageDemo` (the `/image` page) through the real NativeAOT boot and
-// asserts **both** canonical tables from `src/BlazorNative.Components/BnImageDemo.cs`'s
+// asserts **both** canonical tables from `src/BlazorNative.Components/BnImageDemo.razor`'s
 // file header — *before* the bytes land and *after* — because the difference between
 // them **is the phase**. Same discipline and same pairing as `BnLayoutDemoTests` and
 // `BnScrollDemoTests`: **`BnImageDemoAndroidTest` asserts THE SAME NUMBERS on the
@@ -60,7 +60,7 @@ import UIKit
 
 final class BnImageDemoTests: BnHostTestCase {
 
-    /// BnImageDemo.cs's `SectionWidthDp`. Every OTHER number this page's frames are made of
+    /// BnImageDemo.razor's `SectionWidthDp`. Every OTHER number this page's frames are made of
     /// now lives in the canonical tables (`bnImageDemoBeforeFrames` / `bnImageDemoAfterFrames`,
     /// BnDemoFrameTables.swift), which the Android shell declares too and
     /// `ShellFrameTableDriftTests` pins the two against each other in the REQUIRED lane (M6
@@ -162,7 +162,7 @@ final class BnImageDemoTests: BnHostTestCase {
 
     // ── [2] THE TWO FRAME TABLES, and the difference between them is the phase ──
 
-    /// BEFORE (`BnImageDemo.cs` §"THE FRAME TABLE, BEFORE THE BYTES LAND"):
+    /// BEFORE (`BnImageDemo.razor` §"THE FRAME TABLE, BEFORE THE BYTES LAND"):
     /// ```
     /// root BnColumn        (0, 0, Whost, 180+Hb)   width FILLS the host; height HUGS
     ///  ├─ [0] fixed sect.  (0,   0, 300, 140)
@@ -247,8 +247,8 @@ final class BnImageDemoTests: BnHostTestCase {
         bnAwaitImageResults(mapper, 3)
 
         // THE OUTCOMES, against the URLs the WIRE carried — which is also the drift pin on
-        // BnImageDemo.cs's three `internal const` sources (a device-side test cannot read a .cs
-        // file; it CAN read what the renderer put on the wire). A blocked-ATS simulator produces
+        // BnImageDemo.razor's three `internal const` sources (a device-side test cannot read a
+        // .razor file; it CAN read what the renderer put on the wire). A blocked-ATS simulator produces
         // three ERRORs and reddens HERE, by name, instead of quietly passing two of three frame
         // assertions.
         XCTAssertEqual(Set(mapper.imageResults.map { BnUrlOutcome($0) }),

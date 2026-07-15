@@ -21,7 +21,7 @@ import java.util.concurrent.atomic.AtomicReference
  * Mounts BnLayoutDemo (the `/layout` page) through the real NativeAOT boot and
  * asserts EVERY frame of the canonical table against the real Views, after the
  * real layout pass. The table is not invented here: it is the one in
- * **`src/BlazorNative.Components/BnLayoutDemo.cs`'s file header**, derived from
+ * **`src/BlazorNative.Components/BnLayoutDemo.razor`'s file header**, derived from
  * the .NET patch golden (`BnLayoutDemoTests.cs`).
  *
  * **The iOS XCTest (Gate 3) asserts THE SAME NUMBERS on the simulator.** That

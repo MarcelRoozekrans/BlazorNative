@@ -19,8 +19,8 @@ import org.junit.jupiter.api.Test
  * empty echo — state does not survive the swap), mirroring the .NET twin's
  * NavigateBack_RemountsFresh pins.
  *
- * Shapes: BnDemo per src/BlazorNative.Components/BnDemo.cs's canonical
- * header; BnSettingsPage per BnSettingsPage.cs's (themed view root, title
+ * Shapes: BnDemo per src/BlazorNative.Components/BnDemo.razor's canonical
+ * header; BnSettingsPage per BnSettingsPage.razor's (themed view root, title
  * span "Settings", "← Back" button + click — and NO input, the shape pin
  * BnSettingsPage lacks by design).
  *
