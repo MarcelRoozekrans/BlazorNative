@@ -27,6 +27,12 @@
     GARBAGE IS LOUD: a change payload that does not parse as an invariant
     float is a SHELL contract violation — FormatException → dispatch rc 2
     (the 7.2 scroll-offset pattern, same parse discipline).
+
+    OUT-OF-RANGE Value IS THE AUTHOR'S BUG (Gate 1 review I4, recorded): it
+    rides the wire RAW, the native widget displays it natively clamped
+    (SeekBar/UISlider clamp on their own), and there is NO notify and NO wire
+    correction — the state-owner clamp-and-notify rule is the PICKER's,
+    deliberately, not this control's.
     ─────────────────────────────────────────────────────────────────────────
 *@
 <slider value="@Invariant(Value)"
