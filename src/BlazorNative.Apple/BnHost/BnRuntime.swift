@@ -101,6 +101,17 @@ final class BnRuntime {
         mapper.onUiEvent = { [weak self] handlerId, eventName, payload in
             self?.dispatchEvent(handlerId: handlerId, eventName: eventName, payload: payload)
         }
+        // Phase 7.2: the scroll wire needs the COMPLETION signal — the conflation
+        // submits at most one scroll dispatch per lane-availability, and only the
+        // onComplete overload can say when the lane freed. Same lane, same FIFO:
+        // scroll can never overtake a queued tap (the wire contract's ordering
+        // row). A dead runtime still completes — a lost completion would WEDGE
+        // the mapper's conflation slot (see the overload's doc).
+        mapper.onScrollEvent = { [weak self] handlerId, offsetPayload, onComplete in
+            guard let self = self else { onComplete(); return }
+            self.dispatchEvent(handlerId: handlerId, eventName: "scroll",
+                               payload: offsetPayload, onComplete: onComplete)
+        }
     }
 
     // ── Dispatch (Phase 5.3) ─────────────────────────────────────────────────
@@ -111,7 +122,38 @@ final class BnRuntime {
     /// arrives synchronously on the lane thread inside the export and the mapper
     /// hops the tree mutation to main.
     func dispatchEvent(handlerId: Int32, eventName: String, payload: String?) {
+        dispatchEvent(handlerId: handlerId, eventName: eventName, payload: payload, onComplete: {})
+    }
+
+    /// Phase 7.2 (the onScroll wire) — [dispatchEvent] WITH A COMPLETION SIGNAL,
+    /// the Swift twin of Kotlin's `BlazorNativeRuntime.dispatchEvent(h, n, p,
+    /// onComplete)`: `onComplete` runs after the dispatch has LEFT the lane (the
+    /// ABI call returned — successfully or with a non-zero rc), which is the
+    /// moment the lane is available again.
+    ///
+    /// It exists for the shell-side scroll CONFLATION (the wire contract,
+    /// docs/plans/2026-07-15-phase-7.2-design.md): the mapper keeps ONE pending
+    /// offset per scroll node and submits at most one scroll dispatch per
+    /// lane-availability — a new dispatch may not be submitted until the previous
+    /// one has completed. Fire-and-forget [dispatchEvent] cannot say when that
+    /// is; this overload can. **Swift-side sugar over the same
+    /// `blazornative_dispatch_event` — NO ABI change**, and no new threading
+    /// surface: the SAME single serial [dispatchLane], the same FIFO — which is
+    /// also what keeps the ordering rule free ("a conflated scroll dispatch must
+    /// not overtake an already-queued user-input event"): scroll dispatches enter
+    /// the same queue tail as every tap and change, and a serial queue never
+    /// reorders. `BnScrollWireTests` pins that FIFO rather than assuming it.
+    ///
+    /// `onComplete` is invoked on the LANE thread — callers marshal to their own
+    /// thread before touching their state (the mapper hops to the main queue). It
+    /// ALWAYS runs, including when the runtime was deallocated before the work
+    /// item ran: a lost completion would WEDGE the caller's conflation slot — the
+    /// pending offset would wait forever for a lane that already freed, and the
+    /// list would stop following the finger.
+    func dispatchEvent(handlerId: Int32, eventName: String, payload: String?,
+                       onComplete: @escaping () -> Void) {
         dispatchLane.async { [weak self] in
+            defer { onComplete() }
             guard let self = self else { return }
             let rc = self.dispatchCore(handlerId: handlerId, eventName: eventName, payload: payload)
             if rc != 0 {

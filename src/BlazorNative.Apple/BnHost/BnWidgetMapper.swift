@@ -96,6 +96,47 @@
 //   4. **CONTENT MODE: aspect-fit, EXPLICITLY** ([makeView]) — `UIImageView`'s default
 //      is `.scaleToFill` (a STRETCH) and Android's `ImageView` is `FIT_CENTER`. The
 //      divergence is FRAME-NEUTRAL, so no frame table on either platform can see it.
+//
+// ── PHASE 7.2: THE onScroll WIRE — THE FIRST 60Hz PRODUCER ───────────────────
+// A scroll node with the `scroll` event attached reports its content offset to
+// .NET over the EXISTING dispatch wire — CONFLATED. The shell keeps ONE pending
+// offset per scroll node ([BnScrollWire]); a new native sample REPLACES it (never
+// queue — scroll position is idempotent STATE, not an event log) and at most one
+// dispatch is in flight per node at a time: submit when the lane is free, conflate
+// while it is not, dispatch the freshest value on the completion signal
+// ([maybeDispatchScroll]). Offsets cross in POINTS — which ARE the density-
+// independent unit Yoga computes in, so unlike Android (px ÷ density at the
+// source) iOS has NO conversion site at all — as an invariant float payload,
+// exactly what `NativeRenderer.ParseScrollOffset` parses. The contract is
+// NORMATIVE (docs/plans/2026-07-15-phase-7.2-design.md §"The wire contract");
+// this shell mirrors Android's CONFLATION and its OBSERVABLES, not its
+// mechanics:
+//
+//  - the sample source is the `UIScrollView` DELEGATE ([BnScrollDelegateProxy] →
+//    `scrollViewDidScroll`), not a `setOnScrollChangeListener` — same shape
+//    though: a single slot per view, last-wins, firing on the main thread for
+//    finger drags, deceleration ticks AND programmatic offset writes alike;
+//  - **self-inflicted offset writes DISPATCH, deliberately.** Android's
+//    mid-batch re-clamp echo (ScrollView.onLayout's trailing scrollTo) reaches
+//    .NET, and its tests pin that OBSERVABLE — a shell-corrected offset must
+//    reach .NET or the window desyncs from the glass. iOS has no framework
+//    re-clamp; what it has is 6.2's OWN explicit shrink clamp
+//    ([applyScrollFrames]), whose `contentOffset` write fires the delegate
+//    SYNCHRONOUSLY, inside `calculateAndApply`, inside the batch. That sample
+//    conflates under the [applyingBatch] guard and the batch end flushes it
+//    ([flushScrollWires]) — same conflate-during-a-batch, flush-after RULE,
+//    different echo mechanism;
+//  - ORDERING IS PRESERVED, NOT ASSUMED: the dispatch rides [BnRuntime]'s single
+//    SERIAL `dispatchLane` — a serial DispatchQueue is FIFO, and scroll
+//    dispatches enter the same queue tail as every tap and change event, so a
+//    conflated scroll dispatch can never overtake a user-input event queued
+//    before it. Pinned by `BnScrollWireTests`' lane-order test, not taken on
+//    faith.
+//
+// Detach/purge is the 6.3 stale-callback discipline: DetachEvent and
+// [handleRemove] delete the wire and its pending offset dies with it, never
+// dispatched; a late completion resets a flag on an unreachable object and
+// re-consults the LIVE map, so it is a no-op by construction.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import UIKit
@@ -107,6 +148,28 @@ final class BnControlTarget: NSObject {
     private let handler: () -> Void
     init(_ handler: @escaping () -> Void) { self.handler = handler }
     @objc func fire() { handler() }
+}
+
+/// Phase 7.2 — the scroll node's sample source: a `UIScrollViewDelegate` whose ONLY
+/// job is to forward `scrollViewDidScroll` into the mapper's conflation
+/// (`onScrollSample`). The iOS shape of Android's `setOnScrollChangeListener` slot:
+/// one per wired scroll node, last-wins, main-thread, firing for finger drags,
+/// deceleration ticks and programmatic `contentOffset` writes alike — including the
+/// shell's OWN 6.2 shrink clamp, whose write fires this synchronously inside the
+/// batch (the iOS echo path; see the file header's Phase 7.2 section).
+///
+/// `UIScrollView.delegate` is WEAK, so the wire entry retains this proxy — the
+/// same ownership shape as `BnControlTarget` in `eventTargets`. The closure holds
+/// the mapper weakly and captures the nodeId; the sample resolves the wire from
+/// the LIVE map at fire time, so a detached node's late sample no-ops (the 6.3
+/// stale-callback discipline).
+final class BnScrollDelegateProxy: NSObject, UIScrollViewDelegate {
+    private let onSample: (UIScrollView) -> Void
+    init(onSample: @escaping (UIScrollView) -> Void) {
+        self.onSample = onSample
+        super.init()
+    }
+    func scrollViewDidScroll(_ scrollView: UIScrollView) { onSample(scrollView) }
 }
 
 /// Phase 6.2 — **THE SYNTHETIC CONTENT VIEW**: the single child of a `scroll` node's
@@ -198,6 +261,20 @@ final class BnWidgetMapper {
     /// BnRuntime to the dispatch lane. Default no-op keeps the render-only path
     /// (5.2 tests) working. Called on the main thread from control targets.
     var onUiEvent: (_ handlerId: Int32, _ eventName: String, _ payload: String?) -> Void = { _, _, _ in }
+
+    /// Phase 7.2 — the scroll wire's dispatch, WITH a completion signal: the
+    /// conflation ([BnScrollWire]) may not submit the next scroll dispatch until
+    /// the previous one has LEFT the lane, and fire-and-forget [onUiEvent] cannot
+    /// say when that is. Production wires it to `BnRuntime.dispatchEvent(handlerId:
+    /// eventName: "scroll", payload:onComplete:)` (the Swift twin of Kotlin's
+    /// overload — no ABI change); `onComplete` may arrive on ANY thread (the lane's)
+    /// — the mapper marshals to the main queue itself ([maybeDispatchScroll]).
+    ///
+    /// `nil` (the default) routes through [onUiEvent] and completes synchronously
+    /// ([submitScrollDispatch]) — which keeps every event-agnostic test compiling
+    /// unchanged and is still a correct conflation, just one whose lane is never
+    /// busy longer than a runloop turn. The twin of Kotlin's constructor default.
+    var onScrollEvent: ((_ handlerId: Int32, _ offsetPayload: String, _ onComplete: @escaping () -> Void) -> Void)?
 
     /// NODETYPES whose size is the native widget's business (DoD #3) — and the ONLY
     /// nodes that get a measure function. NOT "the nodes with no children": a
@@ -296,6 +373,46 @@ final class BnWidgetMapper {
     /// Main-thread only (mutated inside applyBatch).
     private struct EventKey: Hashable { let nodeId: Int32; let event: String }
     private var eventTargets: [EventKey: (control: UIControl, target: BnControlTarget)] = [:]
+
+    /// Phase 7.2 — **THE CONFLATION SLOT** (the wire contract, design §"The wire
+    /// contract" — NORMATIVE; the twin of Kotlin's `WidgetMapper.ScrollWire`): one
+    /// per scroll node with the `scroll` event attached, keyed by nodeId like
+    /// [eventTargets].
+    ///
+    ///  - [pendingOffsetPt] is the ONE pending offset. A new native sample
+    ///    **REPLACES** it — never a queue: scroll position is idempotent STATE,
+    ///    not an event log, so only the freshest value is worth a dispatch and a
+    ///    slow consumer sees FEWER, FRESHER events, never a backlog.
+    ///  - [inFlight] is true from the moment a dispatch is SUBMITTED to the lane
+    ///    until its completion signal comes back ([maybeDispatchScroll]). While it
+    ///    is true — or while [applyingBatch] is — new samples conflate into the
+    ///    slot; the freshest value goes out when the lane frees.
+    ///  - [handlerId] is MUTABLE for the 4.2 stale-watcher reason: a last-wins
+    ///    re-attach (same node, new handlerId, no preceding detach) swaps the
+    ///    handler on the LIVE wire instead of stacking a second one — and
+    ///    deliberately KEEPS the pending offset and the in-flight flag, because
+    ///    they describe the NODE's scroll state, which a handler swap does not
+    ///    reset.
+    ///  - [proxy] is retained HERE because `UIScrollView.delegate` is weak — the
+    ///    wire owns its sample source the way [eventTargets] owns its
+    ///    `BnControlTarget`s.
+    ///
+    /// Detach/purge is the 6.3 stale-callback discipline: DetachEvent and
+    /// [handleRemove] delete the wire, and the pending offset **dies with it,
+    /// never dispatched**. A completion that lands afterwards resets a flag on an
+    /// unreachable object and re-consults the LIVE map ([maybeDispatchScroll]
+    /// starts with a map lookup), so it is a no-op by construction.
+    private final class BnScrollWire {
+        var handlerId: Int32
+        var pendingOffsetPt: Float?
+        var inFlight = false
+        let proxy: BnScrollDelegateProxy
+        init(handlerId: Int32, proxy: BnScrollDelegateProxy) {
+            self.handlerId = handlerId
+            self.proxy = proxy
+        }
+    }
+    private var scrollWires: [Int32: BnScrollWire] = [:]
 
     /// Set by [destroy]. The tree is gone; a late batch (one already hopped to main
     /// when the host tore down) must not resurrect it into freed native memory.
@@ -419,6 +536,9 @@ final class BnWidgetMapper {
         // with the rest. (Android's twin merely leaks; here it is memory safety.)
         contentNodes.removeAll()
         scrollContents.removeAll()
+        // Phase 7.2: pending scroll offsets die with the host — a dispatch after
+        // teardown would enter a retired lane for a dead view hierarchy.
+        scrollWires.removeAll()
         diagnosed.removeAll()
         diagnosedKeys.removeAll()
         viewToNode.removeAll()
@@ -545,6 +665,41 @@ final class BnWidgetMapper {
     /// only the pass count can.
     var layoutPassCount: Int = 0
 
+    // ── Phase 7.2 test-only bookkeeping (the twins of Kotlin's) ──────────────
+
+    /// Test-only: native scroll samples the delegate delivered to a live wire —
+    /// the numerator of the throughput evidence (samples-seen vs
+    /// events-dispatched, the contract's "Throughput evidence" row). Main-thread
+    /// only — every `scrollViewDidScroll` is.
+    private(set) var scrollSamplesSeen: Int = 0
+
+    /// Test-only: scroll dispatches actually SUBMITTED to the lane — the
+    /// denominator of the conflation ratio. By construction ≤ [scrollSamplesSeen]:
+    /// at most one in flight per node, ever.
+    private(set) var scrollDispatchesSent: Int = 0
+
+    /// Test-only: the offset (pt) the LAST submitted dispatch carried — how a
+    /// test asserts "the FINAL offset always arrives" without parsing a log.
+    private(set) var lastScrollDispatchPt: Float?
+
+    /// Test-only: live conflation slots — must return to 0 after detach/purge, or
+    /// a detached node's pending offset is one runloop turn from being dispatched
+    /// into a stale handler.
+    var scrollWireCount: Int { scrollWires.count }
+
+    /// Test-only: a node's pending (conflated, not yet dispatched) offset in pt —
+    /// nil when the slot is empty or the node has no wire.
+    func scrollPendingOffsetPt(of nodeId: Int32) -> Float? { scrollWires[nodeId]?.pendingOffsetPt }
+
+    /// Test-only: wires with work outstanding — a dispatch in flight or a
+    /// conflated offset waiting for the lane. 0 = the scroll wire is QUIESCENT
+    /// (the freshest sample has been dispatched AND completed) — the device
+    /// tests' settle gate, because "the FINAL offset always arrives" is only
+    /// assertable about a wire that has finished arriving.
+    var scrollBusyWireCount: Int {
+        scrollWires.values.filter { $0.inFlight || $0.pendingOffsetPt != nil }.count
+    }
+
     // ── Buffer on the callback thread; flush atomically on the main queue ─────
 
     func apply(_ frame: BnFrame) {
@@ -571,7 +726,17 @@ final class BnWidgetMapper {
         // (a memory-cache hit completes synchronously, from `UpdateProp("src")`) must not
         // re-solve. The batch's own CommitFrame does that, once.
         applyingBatch = true
-        defer { applyingBatch = false }
+        defer {
+            applyingBatch = false
+            // Phase 7.2: scroll samples that arrived DURING the batch (the 6.2
+            // shrink clamp's contentOffset write inside calculateAndApply fires
+            // the delegate SYNCHRONOUSLY — the iOS echo path) were CONFLATED into
+            // their slots, per the wire contract's backpressure row. The batch
+            // end is a lane-availability: flush the freshest values now, AFTER
+            // the guard dropped — a dispatch from inside the guard would be
+            // swallowed, and the clamped offset would never reach .NET.
+            flushScrollWires()
+        }
         for patch in patches {
             switch patch {
             case .createNode(let nodeId, let nodeType, let parentId, let insertIndex):
@@ -830,6 +995,13 @@ final class BnWidgetMapper {
     ///   change → UITextField .editingChanged (payload = current text)
     ///   focus/blur → UITextField .editingDidBegin/.editingDidEnd (payload nil)
     private func handleAttachEvent(nodeId: Int32, eventName: String, handlerId: Int32) {
+        // Phase 7.2 — `scroll` first, BEFORE the UIControl guard below: a
+        // UIScrollView is a UIView, not a UIControl, and its wire is the
+        // conflation slot, not a control-event target.
+        if eventName == "scroll" {
+            handleAttachScroll(nodeId: nodeId, handlerId: handlerId)
+            return
+        }
         guard let control = views[nodeId] as? UIControl else {
             NSLog("[BnWidgetMapper] AttachEvent '\(eventName)' for node \(nodeId): not a UIControl — ignored")
             return
@@ -875,6 +1047,23 @@ final class BnWidgetMapper {
     }
 
     private func handleDetachEvent(nodeId: Int32, eventName: String) {
+        // Phase 7.2 — the 6.3 stale-callback discipline, for scroll: the wire
+        // dies HERE, and its pending offset dies WITH it, never dispatched (the
+        // contract's detach row). An in-flight dispatch already on the lane is
+        // beyond recall — its completion resets a flag on this now-unreachable
+        // wire and finds no map entry to dispatch from; a stale handlerId is
+        // absorbed downstream (the rc-0 at-most-once contract, same as click).
+        if eventName == "scroll" {
+            guard scrollWires.removeValue(forKey: nodeId) != nil else {
+                NSLog("[BnWidgetMapper] DetachEvent 'scroll' for node \(nodeId) has no live wire: ignored")
+                return
+            }
+            // The proxy died with the wire (the delegate slot is weak and zeroes),
+            // but nil it out explicitly — a dangling-but-unfired delegate is a
+            // thing a reader should never have to reason about.
+            (views[nodeId] as? UIScrollView)?.delegate = nil
+            return
+        }
         let key = EventKey(nodeId: nodeId, event: eventName)
         if eventTargets[key] == nil {
             NSLog("[BnWidgetMapper] DetachEvent '\(eventName)' for node \(nodeId): no live target — ignored")
@@ -888,6 +1077,138 @@ final class BnWidgetMapper {
         if let (control, target) = eventTargets.removeValue(forKey: key) {
             control.removeTarget(target, action: nil, for: .allEvents)
         }
+    }
+
+    // ── Phase 7.2: THE onScroll WIRE (the conflation — NORMATIVE, mirrored from
+    //    Android's WidgetMapper) ─────────────────────────────────────────────────
+    //
+    // The contract (docs/plans/2026-07-15-phase-7.2-design.md §"The wire contract"):
+    //
+    //   sample (pt, main thread)                 ← UIScrollView delegate
+    //                                              (scrollViewDidScroll)
+    //     → REPLACES the node's pending offset   ← never queue: scroll position is
+    //                                              idempotent STATE, not an event log
+    //     → dispatch IF the lane is free         ← at most ONE in flight per node;
+    //       (not in flight, not mid-batch)         payload = the offset as an
+    //                                              invariant float string, exactly
+    //                                              what NativeRenderer.
+    //                                              ParseScrollOffset parses
+    //     → completion → flush the freshest      ← a slow consumer sees FEWER,
+    //                                              FRESHER events — the backlog is
+    //                                              impossible by construction
+    //
+    // NO UNIT CONVERSION, and that is iOS's half of the 6.1 one-conversion-site
+    // rule: points ARE the density-independent unit Yoga computes in, so the number
+    // read off `contentOffset.y` is already the number Android sends as dp.
+    //
+    // ORDERING IS PRESERVED, NOT ASSUMED: the dispatch rides BnRuntime's single
+    // SERIAL dispatchLane — FIFO by DispatchQueue's own contract — and enters the
+    // same queue tail as every tap and change event, so a conflated scroll dispatch
+    // can never overtake a user-input event queued before it. BnScrollWireTests
+    // pins the FIFO on the lane itself.
+    //
+    // iOS-SPECIFIC, ANDROID DOES NOT COPY: the delegate proxy (Android has
+    // setOnScrollChangeListener), the ABSENT px÷density division, and the echo
+    // path — Android's is ScrollView.onLayout's framework re-clamp; iOS's is the
+    // shell's OWN 6.2 shrink clamp in [applyScrollFrames], whose contentOffset
+    // write fires the delegate synchronously inside the batch. The RULE both obey
+    // is the contract's: conflate during a batch, flush after.
+
+    /// AttachEvent("scroll") — only a viewport can scroll. Last-wins re-attach,
+    /// the 4.2 watcher discipline: swap the handler on the LIVE wire (keeping its
+    /// pending offset and in-flight flag — they describe the NODE, not the
+    /// handler) instead of stacking a second slot.
+    private func handleAttachScroll(nodeId: Int32, handlerId: Int32) {
+        guard let scroll = views[nodeId] as? UIScrollView else {
+            NSLog("[BnWidgetMapper] AttachEvent 'scroll' ignored: node \(nodeId) is a "
+                  + "\(views[nodeId].map { String(describing: type(of: $0)) } ?? "unknown node"), "
+                  + "not a UIScrollView")
+            return
+        }
+        if let wire = scrollWires[nodeId] {
+            wire.handlerId = handlerId
+            scroll.delegate = wire.proxy // idempotent; the slot is single anyway
+            return
+        }
+        // The proxy resolves the wire from the LIVE map at fire time (the sample
+        // goes through [onScrollSample]'s lookup), so a detached node's late
+        // sample no-ops — the 6.3 stale-callback discipline.
+        let proxy = BnScrollDelegateProxy { [weak self] scrollView in
+            self?.onScrollSample(nodeId: nodeId, offsetPt: scrollView.contentOffset.y)
+        }
+        scrollWires[nodeId] = BnScrollWire(handlerId: handlerId, proxy: proxy)
+        scroll.delegate = proxy
+    }
+
+    /// A native scroll sample landed (main thread — the delegate fires there).
+    /// No conversion (points ARE pt — see the section comment) and conflation:
+    /// the slot holds ONE offset, and this sample REPLACES whatever was there.
+    private func onScrollSample(nodeId: Int32, offsetPt: CGFloat) {
+        guard let wire = scrollWires[nodeId] else { return } // detached/purged: stale sample, no-op
+        scrollSamplesSeen += 1
+        // Bounce/rubber-band can make contentOffset legitimately NEGATIVE
+        // mid-gesture (Android's overscroll is a glow, so its offsets never
+        // are). The raw sample is dispatched honestly — .NET's window math
+        // clamps (BnListWindow.Compute), which is the one clamp the contract
+        // has — and the freshest post-gesture sample supersedes it anyway.
+        wire.pendingOffsetPt = Float(offsetPt)
+        maybeDispatchScroll(nodeId)
+    }
+
+    /// Dispatches the node's pending offset IF the lane is available — not
+    /// mid-batch, and no dispatch of this node's already in flight. Called from
+    /// three places, which are exactly the three lane-availability edges: a new
+    /// sample ([onScrollSample]), a completion (below), and the end of a patch
+    /// batch ([flushScrollWires]).
+    ///
+    /// The completion marshals to the main queue (all conflation state is
+    /// main-thread-only, like every other map in this class) and re-consults the
+    /// LIVE map: the wire it captured may have been detached/purged, or the
+    /// nodeId may already belong to a NEW node (ids restart — the 6.2/6.3
+    /// lesson). Resetting the captured wire's flag and then looking the nodeId up
+    /// fresh is what makes both cases harmless without a generation counter: a
+    /// dead wire is unreachable from the map, and a new node's wire has its own
+    /// independent flag.
+    private func maybeDispatchScroll(_ nodeId: Int32) {
+        if applyingBatch { return } // conflate; applyBatch's tail flushes
+        guard let wire = scrollWires[nodeId] else { return }
+        if wire.inFlight { return } // conflate; the completion flushes
+        guard let offsetPt = wire.pendingOffsetPt else { return }
+        wire.pendingOffsetPt = nil
+        wire.inFlight = true
+        scrollDispatchesSent += 1
+        lastScrollDispatchPt = offsetPt
+        // The payload is the offset as an INVARIANT float string — mirroring
+        // NativeRenderer.ParseScrollOffset (NumberStyles.Float, invariant
+        // culture) exactly: Swift's Float.description never localizes (a "1,5"
+        // from a Dutch device would be a loud rc-2 fault, by design).
+        submitScrollDispatch(handlerId: wire.handlerId, payload: offsetPt.description) { [weak self] in
+            DispatchQueue.main.async {
+                wire.inFlight = false
+                self?.maybeDispatchScroll(nodeId)
+            }
+        }
+    }
+
+    /// The seam's default: [onScrollEvent] when the host wired one (BnRuntime
+    /// does), else [onUiEvent] with a synchronous completion — the twin of
+    /// Kotlin's constructor default, keeping every event-agnostic test unchanged.
+    private func submitScrollDispatch(handlerId: Int32, payload: String,
+                                      onComplete: @escaping () -> Void) {
+        if let onScrollEvent = onScrollEvent {
+            onScrollEvent(handlerId, payload, onComplete)
+        } else {
+            onUiEvent(handlerId, "scroll", payload)
+            onComplete()
+        }
+    }
+
+    /// The batch-end lane-availability: give every wire that conflated during the
+    /// guard its dispatch chance. Snapshot the keys — a dispatcher completing
+    /// synchronously (the seam's default) can re-enter the map.
+    private func flushScrollWires() {
+        guard !scrollWires.isEmpty else { return }
+        for nodeId in Array(scrollWires.keys) { maybeDispatchScroll(nodeId) }
     }
 
     // ── CreateNode: build the view + its Yoga twin, honour the collapse ───────
@@ -1201,6 +1522,12 @@ final class BnWidgetMapper {
             // only thing that would survive to pin it).
             contentNodes.removeValue(forKey: id)
             scrollContents.removeValue(forKey: id)
+            // Phase 7.2 — the purge half of the stale-callback discipline: a
+            // removed scroll node's conflation slot dies here, pending offset and
+            // all, NEVER dispatched (the wire contract's detach/purge row). Rides
+            // the SUBTREE purge for the 6.3 reason: navigation names the page,
+            // never the scroll inside it.
+            scrollWires.removeValue(forKey: id)
         }
         // …and the DIAGNOSTICS BOOKKEEPING, for the reason [diagnose] gives: node ids are
         // REUSED. A warn-once key that outlives its node silences the warning the node
