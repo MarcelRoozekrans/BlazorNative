@@ -101,15 +101,51 @@ class BlazorNativeRuntime(
      * malformed args (writer bug — should be impossible from this API).
      */
     fun dispatchEvent(handlerId: Int, eventName: String, payload: String? = null) {
-        dispatchLane.execute {
-            try {
-                val rc = dispatchCore(handlerId, eventName, payload)
-                if (rc != 0) {
-                    onError(describeDispatchFailure(rc, handlerId, eventName), IllegalStateException("dispatch_event rc=$rc"))
+        dispatchEvent(handlerId, eventName, payload, onComplete = {})
+    }
+
+    /**
+     * Phase 7.2 (the onScroll wire) — [dispatchEvent] WITH A COMPLETION SIGNAL:
+     * [onComplete] runs after the dispatch has LEFT the lane (the ABI call
+     * returned — successfully, with a non-zero rc, or by throwing), which is
+     * the moment the lane is available again.
+     *
+     * It exists for the shell-side scroll CONFLATION (the wire contract,
+     * docs/plans/2026-07-15-phase-7.2-design.md): the mapper keeps ONE pending
+     * offset per scroll node and submits at most one scroll dispatch per
+     * lane-availability — a new dispatch may not be submitted until the
+     * previous one has completed. Fire-and-forget [dispatchEvent] cannot say
+     * when that is; this overload can. No new threading surface: the SAME
+     * single [dispatchLane], the same FIFO — which is also what keeps the
+     * ordering rule free ("a conflated scroll dispatch must not overtake an
+     * already-queued user-input event"): scroll dispatches enter the same
+     * queue tail as every tap and change, and a FIFO lane never reorders.
+     *
+     * [onComplete] is invoked on the LANE thread — callers marshal to their
+     * own thread before touching their state (WidgetMapper posts to the main
+     * handler). It ALWAYS runs, including when a retired lane rejects the
+     * submit (Activity recreation): a lost completion would WEDGE the caller's
+     * conflation slot — the pending offset would wait forever for a lane that
+     * already freed, and the list would stop following the finger.
+     */
+    fun dispatchEvent(handlerId: Int, eventName: String, payload: String?, onComplete: () -> Unit) {
+        try {
+            dispatchLane.execute {
+                try {
+                    val rc = dispatchCore(handlerId, eventName, payload)
+                    if (rc != 0) {
+                        onError(describeDispatchFailure(rc, handlerId, eventName), IllegalStateException("dispatch_event rc=$rc"))
+                    }
+                } catch (t: Throwable) {
+                    onError("dispatch_event(handlerId=$handlerId, '$eventName') threw on the dispatch lane", t)
+                } finally {
+                    onComplete()
                 }
-            } catch (t: Throwable) {
-                onError("dispatch_event(handlerId=$handlerId, '$eventName') threw on the dispatch lane", t)
             }
+        } catch (e: java.util.concurrent.RejectedExecutionException) {
+            // Retired lane (recreation): the event is dropped like any other
+            // post-retire dispatch, but the completion still fires — see above.
+            onComplete()
         }
     }
 

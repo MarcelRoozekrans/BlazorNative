@@ -956,16 +956,18 @@ public sealed class BnComponentTests : IDisposable
 
     /// <summary>DECLARATION (the BnRow/BnColumn pair, applied to BnScroll): the
     /// BnView surface MINUS the container-layout family — Direction, Justify,
-    /// Align, Wrap, Gap, Padding. A BnView ITEM param missing from BnScroll is a
-    /// hole an author falls into; a CONTAINER param present on BnScroll is a
-    /// silent, baffling layout bug an author can write (see the block comment
-    /// above). The exclusion set is the DESIGN, pinned in both directions: this
-    /// fails if a container param appears AND if an item param disappears.
+    /// Align, Wrap, Gap, Padding — PLUS <c>OnScroll</c> (Phase 7.2: the one
+    /// thing a viewport has that a plain view does not — a scroll position to
+    /// report). A BnView ITEM param missing from BnScroll is a hole an author
+    /// falls into; a CONTAINER param present on BnScroll is a silent, baffling
+    /// layout bug an author can write (see the block comment above). The
+    /// exclusion set is the DESIGN, pinned in both directions: this fails if a
+    /// container param appears AND if an item param disappears.
     /// <para>This test is a green light over a forwarding bug — it cannot see
     /// BuildRenderTree at all. The behavioural one below is what bites (6.1's Gate
     /// 1 mutation lesson: two deleted forwarding lines, suite still green).</para></summary>
     [Fact]
-    public void BnScroll_ExposesEveryBnViewItemParameter_AndNoContainerLayoutParameter()
+    public void BnScroll_ExposesEveryBnViewItemParameter_PlusOnScroll_AndNoContainerLayoutParameter()
     {
         static IEnumerable<string> Parameters(Type t) => t.GetProperties()
             .Where(p => p.IsDefined(typeof(ParameterAttribute), inherit: true))
@@ -973,7 +975,10 @@ public sealed class BnComponentTests : IDisposable
             .OrderBy(n => n, StringComparer.Ordinal);
 
         Assert.Equal(
-            Parameters(typeof(BnView)).Where(n => !ContainerLayoutParams.Contains(n)),
+            Parameters(typeof(BnView))
+                .Where(n => !ContainerLayoutParams.Contains(n))
+                .Append(nameof(BnScroll.OnScroll))
+                .OrderBy(n => n, StringComparer.Ordinal),
             Parameters(typeof(BnScroll)));
 
         // Said again, bluntly, because the set-difference above reads as arithmetic
@@ -1009,6 +1014,102 @@ public sealed class BnComponentTests : IDisposable
             StylesOf(mount, root.NodeId));
         // Every flex prop rides SetStyle — none leaked onto the prop wire.
         Assert.Empty(mount.Patches.OfType<UpdatePropPatch>());
+    }
+
+    // ── BnScroll.OnScroll (Phase 7.2 Task 1.3 — the onScroll wire's .NET end) ──
+    //
+    // The `scroll` EVENT rides the EXISTING AttachEvent/dispatch_event wire,
+    // exactly like click/change/focus/blur — no new export, no new patch kind.
+    // The payload is the shell-conflated vertical content offset in dp/pt as an
+    // invariant-culture number; the renderer's BuildEventArgs "scroll" arm
+    // parses it into BnScrollEventArgs (Core). Attach-only-when-subscribed is
+    // the BnInput.OnFocus pattern from 4.2: an unwired BnScroll's patch shape
+    // is byte-identical to the pre-7.2 one — BnScrollDemo's golden (exactly ONE
+    // attach on the whole page, the back click) is the standing page-level
+    // proof and did not churn.
+
+    /// <summary>Subscribed → exactly ONE attach, named <c>scroll</c>, on the
+    /// scroll node — and a dispatch through the production ingress
+    /// (DispatchEventCore, the same flat-JSON the shells send) delivers the
+    /// payload as a typed, invariant-parsed offset. The dispatch runs under a
+    /// Dutch locale: "640.5" must arrive as 640.5, never 6405 — the same
+    /// culture pin the style wire carries, pointing the other way.</summary>
+    [Fact]
+    public void BnScroll_OnScrollSubscribed_AttachesScroll_AndDispatchDeliversTheOffset()
+    {
+        var (renderer, frames) = CreateCapturingSession();
+        float? received = null;
+
+        renderer.Mount<BnScroll>(ParameterView.FromDictionary(new Dictionary<string, object?>
+        {
+            [nameof(BnScroll.Height)] = "200",
+            [nameof(BnScroll.OnScroll)] = EventCallback.Factory.Create<BlazorNative.Core.BnScrollEventArgs>(
+                new object(), e => received = e.OffsetY),
+        }));
+        Assert.NotEmpty(frames);
+        var mount = frames[0];
+        var root = Assert.Single(mount.Patches.OfType<CreateNodePatch>(), p => p.ParentId is null);
+        Assert.Equal("scroll", root.NodeType);
+
+        // ONE attach on the whole mount, and it is `scroll` on the scroll node.
+        var attach = Assert.Single(mount.Patches.OfType<AttachEventPatch>());
+        Assert.Equal(root.NodeId, attach.NodeId);
+        Assert.Equal("scroll", attach.EventName);
+
+        var original = System.Globalization.CultureInfo.CurrentCulture;
+        try
+        {
+            System.Globalization.CultureInfo.CurrentCulture =
+                new System.Globalization.CultureInfo("nl-NL");
+            Assert.Equal(0, Exports.DispatchEventCore(
+                (ulong)attach.HandlerId, /*lang=json*/ """{"name":"scroll","payload":"640.5"}"""));
+        }
+        finally
+        {
+            System.Globalization.CultureInfo.CurrentCulture = original;
+        }
+        Assert.Equal(640.5f, received);
+    }
+
+    /// <summary>Unsubscribed → NO attach at all: the un-styled invariant,
+    /// applied to events. An author who does not handle scroll pays nothing on
+    /// the wire — and the shells never see a handler to conflate for.</summary>
+    [Fact]
+    public void BnScroll_OnScrollUnsubscribed_EmitsNoAttachAtAll()
+    {
+        var (renderer, frames) = CreateCapturingSession();
+
+        renderer.Mount<BnScroll>(ParameterView.FromDictionary(new Dictionary<string, object?>
+        {
+            [nameof(BnScroll.Height)] = "200",
+        }));
+        Assert.NotEmpty(frames);
+
+        Assert.Empty(frames[0].Patches.OfType<AttachEventPatch>());
+    }
+
+    /// <summary>A scroll dispatch whose payload is missing or unparseable is a
+    /// SHELL contract violation, not user input: it must fault LOUDLY (rc 2 —
+    /// the dispatch window surfaces the FormatException) rather than dispatch
+    /// a silently-wrong offset 0 that would snap every list to the top.</summary>
+    [Theory]
+    [InlineData(/*lang=json*/ """{"name":"scroll"}""")]
+    [InlineData(/*lang=json*/ """{"name":"scroll","payload":"not-a-number"}""")]
+    [InlineData(/*lang=json*/ """{"name":"scroll","payload":""}""")]
+    public void ScrollDispatch_MissingOrMalformedPayload_IsALoudRc2Fault(string argsJson)
+    {
+        var (renderer, frames) = CreateCapturingSession();
+
+        renderer.Mount<BnScroll>(ParameterView.FromDictionary(new Dictionary<string, object?>
+        {
+            [nameof(BnScroll.Height)] = "200",
+            [nameof(BnScroll.OnScroll)] = EventCallback.Factory.Create<BlazorNative.Core.BnScrollEventArgs>(
+                new object(), _ => { }),
+        }));
+        Assert.NotEmpty(frames);
+        var attach = Assert.Single(frames[0].Patches.OfType<AttachEventPatch>());
+
+        Assert.Equal(2, Exports.DispatchEventCore((ulong)attach.HandlerId, argsJson));
     }
 
     // ── BnImage (Phase 6.3 Task 1.1) ──────────────────────────────────────────

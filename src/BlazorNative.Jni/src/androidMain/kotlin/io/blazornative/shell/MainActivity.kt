@@ -86,12 +86,20 @@ class MainActivity : Activity() {
          * permits no cleartext) all three show as failed. That is correct and
          * expected — see BnImageDemo.razor's header; the fix is never to weaken the
          * release config.
+         *
+         * Phase 7.2 adds "/list" → BnListDemo, the virtualized-list proof page
+         * (M7 DoD #3) — a SIXTH root page, same reason again (BnScrollDemo's
+         * frame table is the 6.2 parity contract and the phase that introduces
+         * virtualization does not get to rewrite it), and the same mirror of
+         * .NET's NativeNavigationManager route table. Same two doors:
+         * BnListDemoAndroidTest mounts it by NAME.
          */
         private val DEEP_LINK_COMPONENTS = mapOf(
             "/settings" to "BnSettingsPage",
             "/layout" to "BnLayoutDemo",
             "/scroll" to "BnScrollDemo",
             "/image" to "BnImageDemo",
+            "/list" to "BnListDemo",
         )
     }
 
@@ -147,9 +155,18 @@ class MainActivity : Activity() {
         // safe: onUiEvent only fires from listeners that AttachEvent installs,
         // i.e. after runtime.start() has mounted, long after assignment.
         // dispatchEvent is a non-blocking submit — UI-thread safe.
-        mapper = WidgetMapper(this, widgetRoot, onUiEvent = { h, n, p ->
-            runtime.dispatchEvent(h, n, p)
-        })
+        mapper = WidgetMapper(this, widgetRoot,
+            onUiEvent = { h, n, p ->
+                runtime.dispatchEvent(h, n, p)
+            },
+            // Phase 7.2: the scroll wire needs the COMPLETION signal — the
+            // conflation submits at most one scroll dispatch per
+            // lane-availability, and only this overload can say when the lane
+            // freed. Same lane, same FIFO: scroll can never overtake a queued
+            // tap (the wire contract's ordering row).
+            onScrollEvent = { h, payload, done ->
+                runtime.dispatchEvent(h, "scroll", payload, done)
+            })
 
         val onError: (String, Throwable) -> Unit = { msg, t -> Log.e(tag, msg, t) }
         runtime = BlazorNativeRuntime(

@@ -200,7 +200,14 @@ internal fun text(nodeId: Int, text: String) =
  * tree may be READ between frames — which is what the dirty-on-content-change tests
  * need (frame 1's height, then frame 2's).
  */
-internal class SyntheticHost(widthDp: Float = 400f, heightDp: Float = 800f) {
+internal class SyntheticHost(
+    widthDp: Float = 400f,
+    heightDp: Float = 800f,
+    /** Phase 7.2: the scroll wire's dispatcher, for the conflation tests — null keeps
+     * the mapper's own default (synchronous completion through onUiEvent), so every
+     * pre-7.2 test is byte-identical. */
+    onScrollEvent: ((handlerId: Int, offsetPayload: String, onComplete: () -> Unit) -> Unit)? = null,
+) {
 
     private val instr = InstrumentationRegistry.getInstrumentation()
     private val ctx: Context = instr.targetContext
@@ -216,7 +223,8 @@ internal class SyntheticHost(widthDp: Float = 400f, heightDp: Float = 800f) {
             val d = ctx.resources.displayMetrics.density
             root = BnYogaFrameLayout(ctx)
             root.layout(0, 0, (widthDp * d).toInt(), (heightDp * d).toInt())
-            mapper = WidgetMapper(ctx, root)
+            mapper = if (onScrollEvent == null) WidgetMapper(ctx, root)
+                     else WidgetMapper(ctx, root, onScrollEvent = onScrollEvent)
         }
     }
 

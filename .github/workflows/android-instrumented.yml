@@ -14,7 +14,7 @@
 #   emulator (ubuntu-latest, KVM) — downloads the .so, boots the API 34
 #     google_apis x86_64 Pixel 6 image (mirrors the local AVD
 #     blazornative-pixel6-x86_64), runs connectedAndroidTest with
-#     -PciSoDir pointing at the artifact → asserts 111 passed / 0 failed.
+#     -PciSoDir pointing at the artifact → asserts 124 passed / 0 failed.
 #
 # Baselines are asserted, not observed: count drift fails the job loudly.
 # ─────────────────────────────────────────────────────────────────────────────
@@ -515,7 +515,73 @@ jobs:
       #     clearIfMine ALONE left the whole suite green. A mutation that must be applied in
       #     two places to redden one test is a mutation whose second site is unpinned. Both
       #     call sites now route through the one pure function — one decision, one unit test.
-      - name: Assert instrumented baseline (111 passed / 0 failed)
+      # ── Phase 7.2 Gate 2 — THE onScroll WIRE + /list (111 → 124, +13) ───────
+      # The milestone's second named risk: THE FIRST 60Hz PRODUCER on an event wire
+      # designed for taps. A scroll node with the `scroll` event attached reports its
+      # content offset over the EXISTING dispatch wire, CONFLATED per the normative
+      # contract (design §"The wire contract" — iOS mirrors the conflation in Gate 3):
+      # ONE pending offset per scroll node, a new sample REPLACES it (never queue —
+      # scroll position is idempotent STATE, not an event log), at most one dispatch
+      # in flight per node, the freshest value goes out on the lane's completion
+      # signal. Offsets in dp (px ÷ density at the source — the 6.1 one-conversion-site
+      # rule), as the invariant float payload NativeRenderer.ParseScrollOffset parses.
+      # No ABI change: the completion signal is a Kotlin-side overload over the same
+      # blazornative_dispatch_event. Each count mutation-verified (break the thing,
+      # watch the RIGHT test go red — the Gate 2 report has the transcript):
+      #    +7 WidgetMapperOnScrollTest — the contract AT THE MECHANISM, against a
+      #                                  scripted lane that can WITHHOLD the completion
+      #                                  (a deterministic "busy lane"). The dp unit and
+      #                                  the invariant payload; LATEST-WINS conflation —
+      #                                  3 samples on a busy lane → 2 dispatches and the
+      #                                  superseded MIDDLE value NEVER on the wire (the
+      #                                  test the required mutations redden: queue-
+      #                                  instead-of-replace, dispatch-per-sample); a
+      #                                  MID-BATCH sample (ScrollView.onLayout's
+      #                                  re-clamp fires INSIDE calculateAndApply when a
+      #                                  batch grows the viewport past the offset —
+      #                                  ANDROID-SPECIFIC, the 6.2 mechanism; iOS must
+      #                                  not go looking for it) conflating and flushing
+      #                                  ONCE at batch end; detach DROPS the pending
+      #                                  offset, never dispatched (the 6.3 stale-
+      #                                  callback discipline); the SUBTREE purge takes
+      #                                  the wire with it (navigation names the page,
+      #                                  never the scroll — the 6.2 lesson); last-wins
+      #                                  re-attach swaps the handler on the LIVE wire,
+      #                                  keeping its pending state (the 4.2 watcher
+      #                                  discipline — no stacking); and `scroll` on a
+      #                                  non-viewport is ignored loudly.
+      #    +6 BnListDemoAndroidTest    — the /list page (BnListDemo.razor's header —
+      #                                  every number DERIVED there, never transcribed)
+      #                                  with scroll riding the REAL wire end to end:
+      #                                  listener → conflation → dispatch_event →
+      #                                  NativeAOT → BnListWindow.Compute → keyed
+      #                                  re-render → patches back. Mount window [0,11)
+      #                                  (13 content children incl. 2 spacers — LIVENESS
+      #                                  IS A COUNTED ASSERTION: 500 rows exist, 11 are
+      #                                  live; rows at 64dp pitch; content 32,000dp);
+      #                                  the 0→640 slide over the wire ([6,21), liveness
+      #                                  17, spacers 384|30,656, row 10 landing exactly
+      #                                  on the viewport's top edge); the bottom window
+      #                                  at the clamped max ([489,500) at 31,600 — the
+      #                                  framework agreeing with Yoga about the 32,000
+      #                                  by an independent path); ROW STATE TRAVELS —
+      #                                  text typed into row 6's deliberately UNBOUND
+      #                                  input survives 0→640→0 as the SAME EditText
+      #                                  instance (@key = the item) while evicted row 0
+      #                                  returns as a DIFFERENT, EMPTY one (eviction
+      #                                  really evicts — and losing unbound state is
+      #                                  the documented re-entry rule, not a bug); THE
+      #                                  THROUGHPUT EVIDENCE (the contract's own row):
+      #                                  a 100-sample same-message burst → at most 4
+      #                                  dispatches (deterministically 2), conflation
+      #                                  ratio asserted ≥ 25:1 and logged, the FINAL
+      #                                  offset always arriving (counter AND .NET's
+      #                                  window at [2,17)); and a scripted FLING that
+      #                                  settles wherever the physics stop, with the
+      #                                  expected window DERIVED from the settled
+      #                                  offset and the measured ratio logged (grep
+      #                                  logcat for [7.2-throughput]).
+      - name: Assert instrumented baseline (124 passed / 0 failed)
         run: |
           shopt -s globstar nullglob
           xmls=(src/BlazorNative.Jni/build/outputs/androidTest-results/connected/**/*.xml)
@@ -532,8 +598,8 @@ jobs:
             s=$(attr skipped "$x");  skipped=$((skipped + ${s:-0}))
           done
           echo "Instrumented totals across ${#xmls[@]} suite(s): tests=$tests failures=$failures errors=$errors skipped=$skipped"
-          if [ "$tests" -ne 111 ] || [ "$failures" -ne 0 ] || [ "$errors" -ne 0 ] || [ "$skipped" -ne 0 ]; then
-            echo "Instrumented test baseline drift: expected 111 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped" >&2
+          if [ "$tests" -ne 124 ] || [ "$failures" -ne 0 ] || [ "$errors" -ne 0 ] || [ "$skipped" -ne 0 ]; then
+            echo "Instrumented test baseline drift: expected 124 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped" >&2
             exit 1
           fi
 

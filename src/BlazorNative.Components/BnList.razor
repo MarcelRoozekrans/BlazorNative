@@ -1,0 +1,136 @@
+@*
+    ─────────────────────────────────────────────────────────────────────────
+    BnList — Phase 7.2 Task 1.4 (design §"BnList (the component)"): the
+    virtualized list. GENERIC, and authored in .razor — @typeparam carries
+    TItem through the Razor source generator into `public partial class
+    BnList<TItem> : ComponentBase`, so "everything new is .razor" (7.1's
+    recipe) holds for a generic component too; no .cs fallback was needed.
+
+    THE SHAPE (design, verbatim): a BnScroll whose content is a LEADING
+    SPACER (WindowStart × ItemHeight tall), the window's rows (each
+    Height = ItemHeight, keyed by ITEM), and a TRAILING SPACER
+    ((Count − WindowEnd) × ItemHeight). Spacers over absolute positioning:
+    two extra views, no per-row position:absolute, and the synthetic content
+    node's height is Count × ItemHeight BY CONSTRUCTION — the same
+    arithmetic 6.2 pinned (lead + window·ItemHeight + trail always sums to
+    Count × ItemHeight; BnListWindowTests pins the tiling identity).
+
+    RECYCLING IS KEYED DIFFING — AND THE DIFF IS INSERT/REMOVE ONLY. The
+    Task 1.1 empirical answer (KeyedWindowSlideTests): a sliding keyed
+    window NEVER emits PermutationListEntry, because the surviving keys
+    never cross — the row that leaves is one RemoveFrame (RemoveNode on the
+    wire, the whole subtree with it), the row that enters is one
+    PrependFrame at its sibling index, and the survivors are structurally
+    untouched. That untouchedness is the point: a surviving row keeps its
+    NODE, so its native view — an EditText's text, its focus — survives the
+    slide. @key = THE ITEM, so row state travels with the item, not the
+    position. (Consequence: items must be DISTINCT — Blazor throws on a
+    duplicate key, by design. Two equal items in one window is a data bug,
+    not a layout choice.)
+
+    THE WINDOW IS PURE ARITHMETIC (BnListWindow.Compute — exhaustively
+    unit-tested; this component only CONSUMES the tuple). Fixed ItemHeight
+    is design decision 3: exact numbers, every frame predictable on both
+    shells. The offset arrives RAW from the shell (rubber-band negatives,
+    past-the-end after a shrink) and Compute clamps it; a scroll event on
+    an unchanged window re-renders into an EMPTY diff — no patches, no
+    churn (Blazor re-renders the EventCallback receiver unconditionally;
+    the diff is the filter).
+
+    A NOTE ON RE-ENTRY: a row that leaves the window is DESTROYED (its
+    native view with it). If it scrolls back in, it is created FRESH —
+    uncontrolled native state (text typed into an unbound input) does NOT
+    survive leaving the window, only sliding within it. An app that wants
+    text to survive eviction binds it (@bind-Value into app state), exactly
+    as on the web. The demo deliberately leaves its inputs unbound: the
+    state-travels proof is about VIEW IDENTITY.
+
+    NOT here in 7.2 (ledgered in the design): variable row heights
+    (estimate→measure→correct — its own named design problem), scrollTo /
+    offset restore, horizontal lists.
+    ─────────────────────────────────────────────────────────────────────────
+*@
+@typeparam TItem
+
+<BnScroll Width="@Width" Height="@HeightStr" OnScroll="HandleScroll">
+    <BnView @key="LeadSpacerKey" Height="@LeadSpacerHeightStr" />
+    @for (var i = _windowStart; i < _windowEnd; i++)
+    {
+        @* The 7.1 rule: copy the loop variable per iteration — the row
+           fragment runs later, and fragments closing over `i` would all see
+           _windowEnd. `item` is the @key: state travels with the ITEM. *@
+        var item = Items[i];
+        <BnView @key="item" Height="@ItemHeightStr">
+            @RowTemplate?.Invoke(item)
+        </BnView>
+    }
+    <BnView @key="TrailSpacerKey" Height="@TrailSpacerHeightStr" />
+</BnScroll>
+
+@code {
+    // Spacer keys: static object identities, distinct from ANY item value by
+    // construction (a string sentinel could collide with a TItem=string item).
+    private static readonly object LeadSpacerKey = new();
+    private static readonly object TrailSpacerKey = new();
+
+    private float _offset;
+    private int _windowStart;
+    private int _windowEnd;
+
+    /// <summary>The items. @key'd BY ITEM, so they must be distinct (Blazor
+    /// throws on duplicate keys). Never null — defaults to empty.</summary>
+    [Parameter, EditorRequired] public IReadOnlyList<TItem> Items { get; set; } = [];
+
+    /// <summary>Fixed row height in dp/pt — REQUIRED and positive (design
+    /// decision 3: exact window arithmetic; variable heights are ledgered
+    /// with their own design problem). Every window row is emitted with
+    /// exactly this height.</summary>
+    [Parameter, EditorRequired] public float ItemHeight { get; set; }
+
+    /// <summary>Viewport height in dp/pt — REQUIRED and positive. One number,
+    /// two consumers: forwarded to the BnScroll viewport (stringified
+    /// invariantly) AND fed to the window arithmetic. A flex-sized viewport
+    /// (Grow/Basis) is deliberately NOT supported in 7.2: the window math
+    /// needs the number .NET-side, and a viewport whose height .NET does not
+    /// know cannot be windowed exactly.</summary>
+    [Parameter, EditorRequired] public float Height { get; set; }
+
+    /// <summary>Rows rendered BEYOND the visible span on each side, clamped
+    /// at the list ends. Overscan absorbs the dispatch latency of a fling —
+    /// the window only moves every ItemHeight dp of travel.</summary>
+    [Parameter] public int Overscan { get; set; } = 4;
+
+    /// <summary>Viewport width, forwarded to <see cref="BnScroll"/> (same
+    /// string grammar). Null = unset (the un-styled invariant).</summary>
+    [Parameter] public string? Width { get; set; }
+
+    /// <summary>The row's CONTENT. BnList owns the row wrapper (a BnView of
+    /// exactly <see cref="ItemHeight"/>, keyed by the item); this fragment
+    /// fills it.</summary>
+    [Parameter, EditorRequired] public RenderFragment<TItem>? RowTemplate { get; set; }
+
+    private string HeightStr => ((float?)Height).ToStyleValue()!;
+    private string ItemHeightStr => ((float?)ItemHeight).ToStyleValue()!;
+    private string LeadSpacerHeightStr
+        => ((float?)(_windowStart * ItemHeight)).ToStyleValue()!;
+    private string TrailSpacerHeightStr
+        => ((float?)((Items.Count - _windowEnd) * ItemHeight)).ToStyleValue()!;
+
+    protected override void OnParametersSet()
+        // Re-clamp against the CURRENT items: the 6.2 shrink case — content
+        // shrinking under a scrolled viewport — resolves to the bottom window
+        // instead of indexing past the end.
+        => RecomputeWindow();
+
+    private void HandleScroll(BnScrollEventArgs e)
+    {
+        _offset = e.OffsetY; // raw; Compute clamps (rubber-band, shrink)
+        RecomputeWindow();
+        // No StateHasChanged: Blazor re-renders the EventCallback receiver
+        // after the handler. An unchanged window diffs to an empty frame.
+    }
+
+    private void RecomputeWindow()
+        => (_windowStart, _windowEnd) =
+            BnListWindow.Compute(_offset, Height, ItemHeight, Items.Count, Overscan);
+}

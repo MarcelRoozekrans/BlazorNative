@@ -362,7 +362,8 @@ internal sealed class NativeWidgetTree
 
     /// <summary>Purges a disposed component's bookkeeping: all its slot lists
     /// and its component-parent map entry. Callers emit the RemoveNodePatches
-    /// and trim its sibling slot first (see NativeRenderer.ProcessDisposedComponent).
+    /// and trim its sibling slot first (see NativeRenderer's
+    /// EmitDisposedComponentRemoves / CleanupDisposedComponent passes).
     /// <paramref name="onNodePurged"/> fires for every node slot in the
     /// dropped buckets — every node the component ever created still holds
     /// exactly one slot in a bucket keyed by its componentId (nodes trimmed

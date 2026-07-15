@@ -59,6 +59,12 @@ public sealed class NativeNavigationManager : INavigationManager
         // (BnRuntime.start), so Gate 3 touches no registry, only its test's mount
         // name.
         ["/image"] = "BnImageDemo",
+        // Phase 7.2: the virtualized-list proof page — same shape as the three
+        // above. Its "← Back" (outside the viewport) navigates to "/"; nothing
+        // on BnDemo links here. Android's MainActivity.DEEP_LINK_COMPONENTS
+        // gains "/list" → "BnListDemo" in Gate 2 (this table's mirror); iOS has
+        // no route mirror — it mounts by NAME (BnRuntime.start).
+        ["/list"] = "BnListDemo",
     };
 
     /// <summary>The default route's component — the name a host mounts to get

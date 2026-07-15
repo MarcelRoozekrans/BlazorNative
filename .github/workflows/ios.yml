@@ -339,7 +339,7 @@ jobs:
             > ios-out/xcresult.json 2>/dev/null || true
           ls -la ios-out/crash || true
 
-      - name: Assert XCTest baseline (72 passed / 0 failed)
+      - name: Assert XCTest baseline (85 passed / 0 failed)
         if: always()
         run: |
           log=ios-out/xcodebuild-test.log
@@ -575,10 +575,52 @@ jobs:
           #     re-grew imageResultLog and bumped imageTerminalCount on a torn-down mapper); the
           #     fixture server RECORDS a gate that never opened and captures errno INSIDE
           #     writeAll; setUpWithError overrides call super.
+          # 72 -> 85 (Phase 7.2 Gate 3, +13) — the onScroll wire's iOS half: the shell-side
+          # CONFLATION over UIScrollView's delegate, and /list (BnListDemo) on the simulator.
+          # Every number below is one WidgetMapperOnScrollTest / BnListDemoAndroidTest already
+          # assert on the AVD (Gate 2, android-instrumented 111 -> 124 with the same +13) —
+          # that PAIRING is the wire contract's "mirrored in both shells", M7 DoD #3.
+          #   +8  BnScrollWireTests — the wire contract at the MECHANISM, against a scripted
+          #       lane that can WITHHOLD the completion (a deterministic "busy"): the offset
+          #       crosses in POINTS (no conversion site — iOS's half of the 6.1 rule) as the
+          #       invariant float string ParseScrollOffset parses; LATEST-WINS conflation
+          #       (3 samples on a busy lane → 2 dispatches, the superseded MIDDLE value never
+          #       on the wire — the test the required mutations redden: dispatch-per-sample,
+          #       queue-instead-of-replace); the mid-batch sample conflating and flushing ONCE
+          #       at batch end, staged on iOS's OWN echo path (the 6.2 shrink clamp's
+          #       contentOffset write fires the delegate synchronously inside
+          #       calculateAndApply — Android's echo is ScrollView.onLayout's framework
+          #       re-clamp; different mechanism, same pinned observable); detach dropping the
+          #       pending offset unsent + a late completion no-oping; the SUBTREE purge taking
+          #       the wire (navigation names the page, never the scroll — the 6.2 lesson);
+          #       last-wins re-attach swapping the handler on the LIVE wire (the 4.2 watcher
+          #       discipline); scroll on a non-viewport ignored loudly; and the ORDERING row
+          #       pinned rather than assumed — BnRuntime's dispatchLane is ONE serial FIFO
+          #       queue, both dispatchEvent overloads enqueue on it (fire-and-forget IS the
+          #       onComplete overload with an empty completion — Swift-side sugar, NO ABI
+          #       change), so a conflated scroll dispatch cannot overtake input queued before
+          #       it, and the completion ALWAYS fires (a lost one wedges the slot forever).
+          #   +5  BnListDemoTests — /list on the simulator, the scroll events riding the REAL
+          #       wire end to end (delegate → conflation → dispatch_event → NativeAOT →
+          #       BnListWindow.Compute → keyed re-render): mount [0,11) — 13 content children
+          #       incl. 2 spacers, 64pt pitch, content 32,000pt from Yoga; the 0→640 slide
+          #       ([6,21), liveness 17, spacers 384|30,656, row 10 exactly on the viewport's
+          #       top edge); the bottom window at max offset — UIScrollView does NOT clamp a
+          #       programmatic overscroll, so the 31,600 is the SHELL's own 6.2 clamp taking
+          #       the runaway offset back to contentSize − viewport, whose write is itself a
+          #       delegate sample (the clamp echo, live on the device: the wire's LAST
+          #       dispatch carries exactly 31,600); ROW STATE TRAVELS (text in row 6's
+          #       unbound input survives 0→640→0 as the SAME UITextField — @key = the item —
+          #       while evicted row 0 returns DIFFERENT and EMPTY: eviction really evicts);
+          #       and the THROUGHPUT EVIDENCE — a 100-sample burst in one main-thread pass
+          #       (no completion can interleave: the reset is a main-queue hop) conflates to
+          #       ≤ 4 dispatches (deterministically 2), ratio ≥ 25:1 printed as
+          #       [7.2-throughput], the FINAL offset always arriving (window [2,17),
+          #       lastScrollDispatchPt == 400).
           # Count drift fails loudly.
-          if [ "$failed" -ne 0 ] || [ "$passed" -ne 72 ]; then
+          if [ "$failed" -ne 0 ] || [ "$passed" -ne 85 ]; then
             grep -E "Test Case '.*' (passed|failed)" "$log" || true
-            echo "iOS XCTest baseline drift: expected 72 passed / 0 failed, got passed=$passed failed=$failed" >&2
+            echo "iOS XCTest baseline drift: expected 85 passed / 0 failed, got passed=$passed failed=$failed" >&2
             exit 1
           fi
 

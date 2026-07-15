@@ -458,7 +458,8 @@ class YogaLayout(private val context: Context, private val root: ViewGroup) {
      * The subtree part is not defensive tidiness — it is the contract. The renderer
      * emits **one** `RemoveNodePatch` for a whole subtree (`NativeRenderer`'s
      * `PurgeNodeSubtree` is .NET-side bookkeeping; the host contract at its
-     * `ProcessDisposedComponent` says hosts must tolerate — and here, must handle —
+     * `EmitDisposedComponentRemoves` — 7.2's split of the 3.3-era
+     * `ProcessDisposedComponent` — says hosts must tolerate — and here, must handle —
      * the descendants themselves). Dropping only this node's entry would leave every
      * descendant in [nodes]/[views]/[measured] forever, and [views] holds a STRONG
      * ref to the View → to the Activity Context; the Java `YogaNode`'s native peer is

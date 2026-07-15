@@ -565,9 +565,9 @@ public sealed class DiffCursorTests
         Assert.Contains(wrapperId, removes);
         // …and the disposed child's root-view remove is ALSO emitted, although
         // the host already detached that view with the wrapper's subtree. This
-        // is the documented host contract (ProcessDisposedComponent remarks):
-        // hosts must tolerate RemoveNode for nodes inside already-removed
-        // subtrees (treat unknown ids as a no-op).
+        // is the documented host contract (EmitDisposedComponentRemoves
+        // remarks): hosts must tolerate RemoveNode for nodes inside already-
+        // removed subtrees (treat unknown ids as a no-op).
         Assert.Contains(badgeSpanId, removes);
 
         // Bookkeeping fully cleaned regardless of emission order.

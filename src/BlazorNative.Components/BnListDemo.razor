@@ -1,0 +1,160 @@
+@*
+    ─────────────────────────────────────────────────────────────────────────
+    BnListDemo — Phase 7.2 Task 1.4 (design §"The proof surface"), route
+    "/list", mount-registry key "BnListDemo". Authored in .razor (7.1: this
+    is how everything new is written).
+
+    A SIXTH page, same rationale as the fourth and fifth: BnScrollDemo's
+    frame table IS the 6.2 cross-platform parity contract, and the phase
+    that introduces virtualization does not get to rewrite it. This page's
+    numbers are ITS OWN contract — asserted by BnListDemoTests (the .NET
+    golden) and by Gates 2/3 on the AVD and the iOS simulator, THE SAME
+    NUMBERS, because Yoga computes in dp/pt on both.
+
+    ── THE PAGE ─────────────────────────────────────────────────────────────
+
+    500 rows × 64dp in a 300×400 viewport, overscan 4 (the design's
+    numbers). Each row: a BnInput whose PLACEHOLDER is "Row i" — the row's
+    identity in goldens and screenshots — and which is deliberately UNBOUND:
+    text typed into it lives ONLY in the native EditText/UITextField, so a
+    recycled (destroyed/recreated) row would visibly LOSE it. That is the
+    row-state-travels proof: @key = the item, a surviving row keeps its
+    node, its native view, its text and focus, while the window slides
+    around it.
+
+    ── THE NUMBERS GATES 2/3 ASSERT (derived, not invented) ─────────────────
+
+      content height   500 × 64 = 32,000 dp   (the synthetic content node's
+                                               Yoga-computed height: spacers
+                                               + window rows, by construction)
+      scroll range     32,000 − 400 = 31,600 dp
+      window @ 0       [0, 11)  — ceil(400/64)=7 visible rows + 4 trailing
+                                  overscan; leading overscan clamped at 0
+      window @ 640     [6, 21)  — 15 live rows: ceil(400/64) + 2×4, the
+                                  design's liveness count (640 = 10 rows —
+                                  a mid-scroll offset on a row boundary)
+      window @ 31,600  [489, 500) — 11 rows; trailing overscan clamped
+      spacers @ 0      lead 0,      trail 489 × 64 = 31,296
+      spacers @ 640    lead 384,    trail 479 × 64 = 30,656
+      spacers @ 31,600 lead 31,296, trail 0
+
+      LIVENESS IS A COUNTED ASSERTION: the scroll node's children (= the
+      shells' content-node children) are ALWAYS 2 spacers + the window rows:
+        13 at offset 0 · 17 at offset 640 · 13 at offset 31,600.
+      Any other child count means virtualization is not virtualizing.
+
+    ── WHAT SLIDING 0 → 640 LOOKS LIKE ON THE WIRE (the .NET golden pins) ───
+
+      rows 0–5 leave   → 12 RemoveNode: the 6 row views + 6 REDUNDANT input
+                         removes (each input already left with its row's
+                         subtree — the documented EmitDisposedComponentRemoves
+                         host contract: a nested child component disposed in
+                         the same batch still emits RemoveNode for its root
+                         views, and hosts treat unknown ids as a no-op)
+      rows 11–20 enter → 20 creates (10 row views + 10 inputs), placeholders
+                         "Row 11".."Row 20", inserted BEFORE the trail spacer
+      rows 6–10 SURVIVE→ their node ids appear in NO create/remove — and no
+                         value/placeholder prop is rewritten on them; their
+                         native text/focus is untouched (state travelled)
+      spacers resize   → exactly two spacer SetStyles: lead 0→384,
+                         trail 31,296→30,656
+
+    The scroll event arrives via the wire contract: name `scroll`, payload
+    the offset in dp/pt, conflated by the shell to at most one dispatch per
+    committed frame (Gates 2/3 implement the conflation; this page and its
+    golden drive the dispatch synthetically through dispatch_event).
+
+    Nav parity with every other page: "← Back" OUTSIDE the viewport →
+    INavigationManager → "/". Reachable by mount-name ("BnListDemo") and by
+    route ("/list"); no button on BnDemo points here (adding one would churn
+    BnDemo's goldens for no engine reason). A fresh ROOT component: no
+    cascaded theme crosses a root swap.
+    ─────────────────────────────────────────────────────────────────────────
+*@
+<BnColumn>
+    @* [0] the virtualized list. TItem=int: the item IS the row index — ints
+       are distinct, and @key-by-item boxes them into stable value-equal
+       keys. All five numbers come from the internal consts below so the
+       golden asserts the PRODUCTS, never a transcription. *@
+    <BnList TItem="int"
+            Items="@RowItems"
+            ItemHeight="@ItemHeightF"
+            Height="@ViewportHeightF"
+            Width="@ViewportWidth"
+            Overscan="@OverscanRows">
+        <RowTemplate Context="row">
+            @* UNBOUND on purpose — see the header: typed text lives only in
+               the native widget, so view identity IS the state proof. The
+               placeholder is the row's identity ("Row 17") in goldens,
+               device assertions and human screenshots alike. *@
+            <BnInput Placeholder="@RowPlaceholder(row)" />
+        </RowTemplate>
+    </BnList>
+
+    @* [1] nav parity — OUTSIDE the viewport, so no amount of scrolling can
+       take the exit off the screen. The page's only measured leaf, LAST. *@
+    <BnRow Width="@ViewportWidth">
+        <BnButton Label="← Back" OnClick="GoBack" />
+    </BnRow>
+</BnColumn>
+
+@code {
+    // ── THE PAGE'S ARITHMETIC, AS CONSTANTS (the BnScrollDemo discipline) ─────
+    //
+    // BnListDemoTests asserts the products (RowCount × ItemHeightDp == 32,000;
+    // − ViewportHeightDp == 31,600) AND that BnListWindow.Compute reproduces
+    // the windows in the header, so a changed number reddens the golden before
+    // it desynchronises three file headers. Gates 2/3 read these consts.
+
+    /// <summary>500 rows — big enough that non-virtualized rendering would be
+    /// unmissable (500 native EditTexts), small enough to assert exactly.</summary>
+    internal const int RowCount = 500;
+
+    /// <summary>Every row is 64dp tall (design decision 3: FIXED — the window
+    /// is exact arithmetic). RowCount × this is the content size.</summary>
+    internal const int ItemHeightDp = 64;
+
+    /// <summary>The viewport: 300 × 400 (the design's numbers).</summary>
+    internal const int ViewportWidthDp = 300;
+
+    /// <inheritdoc cref="ViewportWidthDp"/>
+    internal const int ViewportHeightDp = 400;
+
+    /// <summary>Overscan 4: rows rendered beyond the visible span, each side,
+    /// clamped at the ends. The liveness count is ceil(400/64) + 2×4 = 15
+    /// mid-scroll, 11 at either end.</summary>
+    internal const int OverscanRows = 4;
+
+    /// <summary>What the synthetic content node must compute to in Yoga —
+    /// 32,000dp. By CONSTRUCTION (spacers + window rows always tile it); the
+    /// shells READ it (contentSize), never derive it.</summary>
+    internal const int ContentHeightDp = RowCount * ItemHeightDp;
+
+    /// <summary>The scrollable range Gates 2/3 drive: 32,000 − 400 = 31,600.</summary>
+    internal const int ScrollRangeDp = ContentHeightDp - ViewportHeightDp;
+
+    /// <summary>The golden's mid-scroll offset: exactly 10 rows down. On a row
+    /// boundary on purpose — the window numbers in the header stay clean —
+    /// and NOT a multiple of the viewport, so the slide is asymmetric enough
+    /// to catch a rows-for-spacers mixup.</summary>
+    internal const int MidScrollOffsetDp = 640;
+
+    // Typed mirrors for the markup (razor passes these to BnList's float
+    // params; one source of truth, zero transcription).
+    private const float ItemHeightF = ItemHeightDp;
+    private const float ViewportHeightF = ViewportHeightDp;
+
+    private static readonly string ViewportWidth =
+        ViewportWidthDp.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    private static readonly int[] RowItems = Enumerable.Range(0, RowCount).ToArray();
+
+    /// <summary>The row's identity string, everywhere: goldens, device
+    /// assertions, screenshots. Invariant — "Row 17" on every locale.</summary>
+    internal static string RowPlaceholder(int row)
+        => string.Create(System.Globalization.CultureInfo.InvariantCulture, $"Row {row}");
+
+    [Inject] public INavigationManager Navigation { get; set; } = default!;
+
+    private Task GoBack() => Navigation.NavigateToAsync("/").AsTask();
+}

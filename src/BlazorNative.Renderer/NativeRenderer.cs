@@ -1,5 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
+using BlazorNative.Core;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.RenderTree;
 using Microsoft.AspNetCore.Components.Web;
@@ -210,7 +211,8 @@ public sealed class NativeRenderer : BlazorRenderer
     /// disposal and processes the render queue; on the InlineDispatcher the
     /// disposal batch reaches UpdateDisplayAsync SYNCHRONOUSLY, so the
     /// RemoveNode patches that clear the screen (the Phase 3.3 disposal
-    /// machinery, ProcessDisposedComponent) have already been delivered to
+    /// machinery — today EmitDisposedComponentRemoves + its pass-2 delta and
+    /// CleanupDisposedComponent) have already been delivered to
     /// Frames/FrameSink when this returns. Blazor throws for an id that is
     /// not a live root component — surfaced to the caller unchanged.
     /// MUST NOT be called from inside a UI-event dispatch window: Blazor
@@ -307,6 +309,38 @@ public sealed class NativeRenderer : BlazorRenderer
 
         try
         {
+            // Disposed components, pass 1 of 2 (Phase 7.2 — the ORDER is the
+            // fix): emit their root-view RemoveNodePatches FIRST, before any
+            // diff's patches. The diffs below trim the disposed children's
+            // sibling slots as their RemoveFrame edits arrive, and every
+            // later create's InsertIndex is translated against that TRIMMED
+            // slot state — so a host applying the frame in patch order must
+            // have detached the disposed views BEFORE it applies those
+            // inserts. Pre-7.2 the removes were emitted at the END of the
+            // frame, which was invisible until the first batch that both
+            // disposes keyed child COMPONENTS and inserts new ones at later
+            // positions in the same container — BnList's window slide, the
+            // first real customer (KeyedWindowSlideTests pins the order;
+            // BnListDemoTests' shell-mirror golden reddened first).
+            //
+            // Pass 1 reads the PRE-diff root buckets — usually the whole
+            // story, because a disposed component normally gets no diff. The
+            // exception (Gate 1 review, Important 1): a component can appear
+            // in BOTH UpdatedComponents and DisposedComponentIDs when its
+            // re-render was queued before the parent render that disposes it
+            // (child diffed first, THEN disposed — constructible through a
+            // child handler that calls StateHasChanged() before the parent's
+            // remove callback; SameBatchRerenderDisposalTests). If that dying
+            // diff ADDS a root-level view, pass 1 cannot have covered it —
+            // the delta emission in pass 2 does. The set records what pass 1
+            // emitted so pass 2 emits exactly the difference.
+            HashSet<int>? pass1RemovedRoots = null;
+            foreach (ref var disposedId in batch.DisposedComponentIDs)
+            {
+                pass1RemovedRoots ??= new HashSet<int>();
+                EmitDisposedComponentRemoves(disposedId, ref patches, pass1RemovedRoots);
+            }
+
             // Updated components — pass the batch's ReferenceFrames in (in Blazor 10
             // ReferenceFrames lives on RenderBatch, not on RenderTreeDiff).
             var referenceFrames = batch.ReferenceFrames;
@@ -316,10 +350,28 @@ public sealed class NativeRenderer : BlazorRenderer
                 ProcessRenderTreeDiff(ref bnDiff, ref referenceFrames, ref patches);
             }
 
-            // Disposed components (Phase 3.3 Task 3): remove their views,
-            // their sibling slot, and their bookkeeping.
+            // Disposed components, pass 2 of 2, in two steps. Step ONE (the
+            // Gate 1 review's delta emission): remove any root view a dying
+            // same-batch diff created AFTER pass 1 read the buckets — without
+            // this, that view is a zombie on the host no patch ever removes.
+            // Emitting at the frame's TAIL is safe: the only InsertIndex
+            // translation sites (ProcessFrame's Element/Text arms) run inside
+            // the UpdatedComponents loop above, so nothing after the diffs
+            // translates against any bucket — a tail remove can perturb no
+            // already-emitted index, and RemoveNode is by-id, position-
+            // independent. ALL deltas are emitted before ANY cleanup so every
+            // delta reads buckets untouched since the diffs (cleanup of one
+            // disposed component trims its Component slot from another's
+            // bucket when they nest).
             foreach (ref var disposedId in batch.DisposedComponentIDs)
-                ProcessDisposedComponent(disposedId, ref patches);
+                EmitDisposedComponentRemovesDelta(disposedId, pass1RemovedRoots!, ref patches);
+
+            // Step TWO (Phase 3.3 Task 3): trim their sibling slot and purge
+            // their bookkeeping — AFTER the diffs, so a parent's RemoveFrame
+            // edits (whose sibling indices assume the slots still present
+            // until that edit) stay correct.
+            foreach (ref var disposedId in batch.DisposedComponentIDs)
+                CleanupDisposedComponent(disposedId);
 
             patches.Add(new CommitFramePatch(frameId, timestamp));
 
@@ -929,32 +981,71 @@ public sealed class NativeRenderer : BlazorRenderer
         }
     }
 
-    /// <summary>Handles one entry of RenderBatch.DisposedComponentIDs (Phase
-    /// 3.3 Task 3): emits RemoveNodePatch for the component's ROOT-level views
-    /// (their subtrees ride along on the host), trims its sibling slot from
-    /// the recorded parent container (no-op when the parent's RemoveFrame edit
-    /// already trimmed it), and purges its slot lists + component-parent map
-    /// entry. Components disposed together each appear in the array and clean
-    /// themselves — nested markers need no recursion here.</summary>
+    /// <summary>Pass 1 of disposal handling (split from the 3.3-era
+    /// ProcessDisposedComponent in Phase 7.2): emits RemoveNodePatch for the
+    /// component's ROOT-level views (their subtrees ride along on the host).
+    /// Runs BEFORE the batch's diffs are processed, so the emitted removes
+    /// PRECEDE every create in the frame — the diffs trim the disposed
+    /// children's sibling slots and translate later insert indices against
+    /// the trimmed state, and a host applying patches in order must have
+    /// detached these views by then (BnList's window slide is the shape:
+    /// keyed component rows leave at the front while new ones insert before
+    /// the trail spacer, in one batch). Components disposed together each
+    /// appear in the array and clean themselves — nested markers need no
+    /// recursion here.</summary>
     /// <remarks>HOST CONTRACT: hosts must tolerate RemoveNodePatch for nodes
-    /// inside already-removed subtrees. When an ANCESTOR element containing a
+    /// inside already-removed subtrees AND for subtrees whose ancestor is
+    /// removed later in the same frame. When an ANCESTOR element containing a
     /// child component is removed (RemoveFrame → RemoveNodePatch for the
-    /// ancestor), the child's disposal in the same batch still emits
-    /// RemoveNodePatch for its root views — views the host already detached
-    /// with the ancestor's subtree. Treat unknown node ids in RemoveNode as a
-    /// no-op (WidgetMapper does). Suppressing the redundant patches renderer-
-    /// side would require host-subtree tracking the slot model deliberately
-    /// doesn't keep.</remarks>
-    private void ProcessDisposedComponent(int componentId, ref PooledList<RenderPatch> patches)
+    /// ancestor), the child's disposal still emits RemoveNodePatch for its
+    /// root views — since 7.2 those redundant removes arrive BEFORE the
+    /// ancestor's own remove (they used to trail it). Either way: treat
+    /// unknown node ids in RemoveNode as a no-op (WidgetMapper does), and
+    /// removing a child view before its ancestor is a legal detach order.
+    /// Suppressing the redundant patches renderer-side would require
+    /// host-subtree tracking the slot model deliberately doesn't keep.</remarks>
+    private void EmitDisposedComponentRemoves(
+        int componentId, ref PooledList<RenderPatch> patches, HashSet<int> removedRoots)
     {
         var rootSlots = _tree.GetSlotCount(componentId, parentNodeId: null);
         for (var i = 0; i < rootSlots; i++)
         {
             var slot = _tree.GetSlotAt(componentId, parentNodeId: null, i);
-            if (slot.IsNode)
+            if (slot.IsNode && removedRoots.Add(slot.NodeId))
                 patches.Add(new RemoveNodePatch(slot.NodeId));
         }
+    }
 
+    /// <summary>Pass 2 step 1 of disposal handling (Phase 7.2 Gate 1 review,
+    /// Important 1): after the diffs, emits RemoveNodePatch for any root view
+    /// of the disposed component that pass 1 did NOT cover. Non-empty only in
+    /// the same-batch re-render + disposal shape — the component's re-render
+    /// was queued before the parent render that disposed it, so its FINAL
+    /// diff ran in this batch and may have ADDED root-level views after
+    /// pass 1 read the bucket; without this delta those views are zombies on
+    /// the host (SameBatchRerenderDisposalTests pins it). Runs at the frame's
+    /// tail — safe because no InsertIndex translation happens after the
+    /// UpdatedComponents loop, and RemoveNode is by-id.</summary>
+    private void EmitDisposedComponentRemovesDelta(
+        int componentId, HashSet<int> pass1RemovedRoots, ref PooledList<RenderPatch> patches)
+    {
+        var rootSlots = _tree.GetSlotCount(componentId, parentNodeId: null);
+        for (var i = 0; i < rootSlots; i++)
+        {
+            var slot = _tree.GetSlotAt(componentId, parentNodeId: null, i);
+            if (slot.IsNode && !pass1RemovedRoots.Contains(slot.NodeId))
+                patches.Add(new RemoveNodePatch(slot.NodeId));
+        }
+    }
+
+    /// <summary>Pass 2 of disposal handling (Phase 3.3 Task 3 bookkeeping):
+    /// trims the component's sibling slot from the recorded parent container
+    /// (no-op when the parent's RemoveFrame edit already trimmed it) and
+    /// purges its slot lists + component-parent map entry. Runs AFTER the
+    /// batch's diffs — a parent's RemoveFrame sibling indices assume the
+    /// slots are present until that edit consumes them.</summary>
+    private void CleanupDisposedComponent(int componentId)
+    {
         if (_tree.TryGetComponentParent(componentId, out var parent))
             _tree.RemoveComponentSlot(parent.ParentComponentId, parent.ParentNodeId, componentId);
 
@@ -1098,8 +1189,26 @@ public sealed class NativeRenderer : BlazorRenderer
         "change" => new ChangeEventArgs { Value = e.Payload },
         "focus"  => new FocusEventArgs(),
         "blur"   => new FocusEventArgs(),
+        // Phase 7.2 (the onScroll wire): the payload is the shell-conflated
+        // vertical content offset in dp/pt, as an invariant-culture number
+        // (the same wire grammar the style values use — a Dutch shell must
+        // never send "1,5"). The typed args live in Core (BnScrollEventArgs):
+        // Components consumes them and does not reference this assembly.
+        "scroll" => new BnScrollEventArgs { OffsetY = ParseScrollOffset(e.Payload) },
         _        => EventArgs.Empty
     };
+
+    /// <summary>Parses a <c>scroll</c> dispatch's payload — the offset in
+    /// dp/pt, invariant-culture. A missing or unparseable payload is a SHELL
+    /// contract violation, not user input: throw (FormatException), which the
+    /// dispatch window surfaces as a loud rc-2 fault instead of dispatching a
+    /// silently-wrong offset 0 that would snap every list to the top.</summary>
+    private static float ParseScrollOffset(string? payload)
+        => payload is null
+            ? throw new FormatException(
+                "scroll dispatch carried no payload — the wire contract requires the content offset in dp/pt")
+            : float.Parse(payload, System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture);
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 

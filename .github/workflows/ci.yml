@@ -4,7 +4,7 @@
 #
 #   build-test (windows-latest) — the local verification procedure verbatim
 #   (setup.ps1 §1–7 documents the toolchain pins):
-#     build (analyzers ride it) → .NET tests (339 passed / 0 skipped) →
+#     build (analyzers ride it) → .NET tests (388 passed / 0 skipped) →
 #     three NativeAOT publishes (win-x64, linux-bionic-x64, linux-bionic-arm64;
 #     each publish must show exactly the 4 accepted IL2072 trim warnings) →
 #     nine-export verification (dumpbin via vswhere / llvm-readelf from the
@@ -513,7 +513,47 @@ jobs:
       # bytes — the culture pin extended IN PLACE (the nl-NL test now covers Padding/FontSize
       # alongside Grow/Shrink; no count change). NO golden edited, NO shell touched, NO ABI
       # change: the gates below stay 4 IL2072 / 9 exports / 83 JVM.
-      - name: .NET tests (assert 339 passed / 0 skipped)
+      #
+      # 339 -> 387 (PHASE 7.2 GATE 1, +48): the onScroll wire's .NET end + BnList.
+      # Renderer.Tests 126 -> 128 (+2, KeyedWindowSlideTests): the EMPIRICAL @key answer
+      # (design decision 4) — a keyed window slide ([A,B,C,D] -> [B,C,D,E], and back) diffs
+      # as INSERT/REMOVE ONLY, never PermutationListEntry (strict mode is the detector: the
+      # 7.0 default: arm throws on any permutation), for keyed ELEMENTS and keyed CHILD
+      # COMPONENTS both — so the loud default: arm STAYS and no wire move-concept exists.
+      # The component-shaped test also pins the 7.2 renderer fix: disposal RemoveNodes are
+      # emitted BEFORE the batch's creates (two-pass ProcessDisposedComponent split), because
+      # create InsertIndexes are translated against the trimmed slot state — found red-first
+      # by the BnList golden's shell-mirror, mutation-verified in both suites.
+      # Runtime.Tests 190 -> 236 (+46): +35 BnListWindowTests (the pure window function,
+      # exhausted: both ends, both overscan clamps, empty/single, viewport taller than
+      # content, fractional + exact-boundary offsets, rubber-band negatives and past-the-end
+      # offsets CLAMP, misuse throws; ceil->floor mutation reddens 5); +5 BnComponentTests
+      # (OnScroll: subscribed -> ONE `scroll` attach + a Dutch-locale dispatch delivers
+      # 640.5 invariantly, unsubscribed -> NO attach, missing/garbage/empty payload -> rc 2);
+      # +6 BnListDemoTests ("/list": 500x64dp in 300x400, overscan 4 — mount tree COUNTED at
+      # 29 creates / 13 scroll children, the window slide via the production dispatch
+      # ingress: 12 removes, 20 creates, two spacer resizes, survivors untouched (row state
+      # travels — @key-removal mutation reddens it), liveness 17 through a stateful shell
+      # mirror, rubber-band diffs to an EMPTY frame, past-the-end clamps to the bottom
+      # window, nav parity). NO ABI change (the `scroll` event rides dispatch_event; the
+      # renderer fix is patch ORDERING within a frame), NO shell edits, NO existing golden
+      # moved: the gates below stay 4 IL2072 / 9 exports / 83 JVM.
+      #
+      # 387 -> 388 (PHASE 7.2 GATE 1 REVIEW, +1): Renderer.Tests 128 -> 129,
+      # +1 SameBatchRerenderDisposalTests — the review's Important 1. The removes-first
+      # reorder read a disposed component's root bucket BEFORE the diffs, which regressed
+      # the same-batch re-render + disposal shape (a child whose StateHasChanged is queued
+      # before the parent render that disposes it gets a FINAL diff; if that diff ADDS a
+      # root-level view, pass 1's removes missed it -> a zombie view no patch ever removes).
+      # The shape IS constructible through a public path (the test's child handler calls
+      # StateHasChanged() before the parent's remove callback — red-first, zombie observed);
+      # fixed by pass 2's DELTA emission (EmitDisposedComponentRemovesDelta, tail-safe: no
+      # InsertIndex translation happens after the diffs loop), mutation-verified (delta
+      # reverted -> the test reddens). Important 2 rides the EXISTING component-window test
+      # (no count move): the mirror back-slide [B,C,D,E] -> [A,B,C,D] is now pinned too —
+      # removes-first order, survivors untouched, exact child order. NO ABI change, NO
+      # shell edits, NO existing golden moved: the gates below stay 4 IL2072 / 9 exports.
+      - name: .NET tests (assert 388 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -531,8 +571,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 339 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 339 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 388 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 388 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # ── NativeAOT publishes + nine-export verification ────────────────────
