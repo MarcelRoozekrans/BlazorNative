@@ -59,10 +59,10 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Components" Version="10.0.1*" />
     <PackageReference Include="Microsoft.AspNetCore.Components.Web" Version="10.0.1*" />
-    <PackageReference Include="ZeroAlloc.AsyncEvents" Version="*" />
-    <PackageReference Include="ZeroAlloc.Collections" Version="*" />
-    <PackageReference Include="ZeroAlloc.Inject" Version="*" />
-    <PackageReference Include="ZeroAlloc.Inject.Generator" Version="*">
+    <PackageReference Include="ZeroAlloc.AsyncEvents" Version="1.1.2" />
+    <PackageReference Include="ZeroAlloc.Collections" Version="1.1.2" />
+    <PackageReference Include="ZeroAlloc.Inject" Version="1.7.1" />
+    <PackageReference Include="ZeroAlloc.Inject.Generator" Version="1.7.1">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>analyzers;build</IncludeAssets>
     </PackageReference>

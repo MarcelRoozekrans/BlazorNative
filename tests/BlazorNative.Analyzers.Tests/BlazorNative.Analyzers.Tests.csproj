@@ -10,16 +10,16 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.8.1" />
-    <PackageReference Include="xunit" Version="2.*" />
-    <PackageReference Include="xunit.runner.visualstudio" Version="3.*" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5" />
     <!-- Microsoft.CodeAnalysis.Testing harness — XUnit variant matches our test runner.
          Pin to 1.1.2 (not 1.*) — 1.* matches old 1.0.x with stale Microsoft.CodeAnalysis.Common 1.0.1 floor. -->
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Analyzer.Testing.XUnit" Version="1.1.2" />
     <!-- Override the stale transitive Microsoft.CodeAnalysis.* 1.0.x brought in by the
          testing harness; the analyzer DLL was built against 4.14.x so we need a matching
          API surface available at test-runtime. -->
-    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="5.*" />
-    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="5.*" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="5.6.0" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="5.6.0" />
   </ItemGroup>
 
   <ItemGroup>
