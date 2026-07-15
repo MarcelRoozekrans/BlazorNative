@@ -7,7 +7,7 @@ plugins {
 // AGP 9 ships built-in Kotlin (KGP 2.2.10) and the org.jetbrains.kotlin.android plugin is
 // gone, so the `kotlin("…")` helper no longer has a version injected for custom
 // configurations — pin it explicitly to the KGP that AGP 9.2.1 bundles.
-val kotlinVersion = "2.2.10"
+val kotlinVersion = "2.4.10"
 
 group = "io.blazornative"
 version = "0.1.0-SNAPSHOT"
