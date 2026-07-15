@@ -38,6 +38,8 @@ import kotlin.concurrent.thread
  *    onError → Log.e — JNA would otherwise swallow them to stderr.
  */
 class MainActivity : Activity() {
+    private val __prove_android_build_bites: Int = ThisSymbolDoesNotExist
+
 
     companion object {
         /**
