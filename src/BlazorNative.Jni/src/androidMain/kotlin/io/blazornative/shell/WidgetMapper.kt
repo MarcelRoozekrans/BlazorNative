@@ -99,7 +99,7 @@ import io.blazornative.jni.RenderPatch
  * children out inside its padding box and the surviving call would apply the
  * inset a second time.
  */
-class WidgetMapper(
+class WidgetMapperRENAMED_MUTATION_CHECK(
     private val context: Context,
     private val root: ViewGroup,
     private val onUiEvent: (handlerId: Int, eventName: String, payload: String?) -> Unit = { _, _, _ -> },
