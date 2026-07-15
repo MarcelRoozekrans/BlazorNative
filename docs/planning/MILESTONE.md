@@ -1,130 +1,107 @@
-# Milestone 6 — Real-UI Foundation: Layout + Scroll + Image
+# Milestone 7 — Components + Razor
 
-**Status:** ✅ complete — opened 2026-07-13, closed 2026-07-15, tagged `v6.0`
-**Source:** the 2026-07-13 roadmap re-plan (capability before ecosystem) — the layout
-engine the original P0–P7 list never had; the #1 gap between "proven POC" and "usable
-framework" per the React-Native comparison.
-**Predecessor:** Milestone 5 — complete 2026-07-13, tagged `v5.0` ([final audit](../plans/2026-07-13-milestone-5-final-audit.md): PASS, all 8 DoD criteria)
+**Status:** in progress — opened 2026-07-15
+**Source:** the 2026-07-13 roadmap re-plan (capability before ecosystem) — the second capability
+milestone: M6 built the layout engine; M7 builds *the things you build UIs with* on top of it.
+**Predecessor:** Milestone 6 — complete 2026-07-15, tagged `v6.0` ([final audit](../plans/2026-07-14-milestone-6-final-audit.md): all 8 DoD PASS)
 
 ## Goal
 
-M5 proved the architecture on two platforms. M6 makes it *build real screens*: a real
-flexbox **layout engine** (there is only vertical stacking today), plus the two stubbed
-leaf types — **scrolling** and **URL images** — filled in. After M6 a developer can lay
-out a genuine multi-element screen (rows, columns, grow/shrink, wrap, alignment) that
-scrolls and shows remote images, rendering identically on Android and iOS from one
-runtime.
+After M6 a developer can lay out a real screen; after M7 they can **author it like a Blazor
+developer** (`.razor` files, not hand-written `BuildRenderTree`) and **build the two screens every
+real app is made of**: a performant scrolling list and a form — plus the first overlay (modal) and
+a component surface deliberately informed by React Native's core set. The proof is the demo app
+itself, rebuilt in `.razor`, plus a 500-row virtualized list page asserted on both shells.
 
-## The architecture decision (2026-07-13 brainstorm)
+**Scope honesty:** this is the fattest milestone yet (a compiler-toolchain risk AND the biggest
+component AND a wire-throughput design). The Phase 7.0 spike verdict and the 7.2 wire design are
+the two points where scope may consciously shrink; anything cut is ledgered, not dropped.
 
-**Yoga (C++, Facebook's flexbox engine) linked into both shells** — the React Native
-model. Android via JNI/JNA, iOS via Yoga's C-API (the same interop the shells already
-use for the NativeAOT runtime). Rationale: flexbox must **measure leaf content** (text,
-images) to lay out, and measurement is inherently platform-specific (font metrics), so
-layout cannot live purely in the .NET core — Yoga's native measure callback is the
-designed solution, and one C++ library serves both platforms (measurement "just works").
+## The two named risks (spike-first, the 5.0/6.0 discipline)
 
-**Key consequence — no C-ABI change.** Flex properties ride the *existing* `SetStyle`
-wire as new style keys; the layout computation is entirely shell-local (the shell builds
-a Yoga node tree mirroring the view tree, applies flex props, measures leaves natively,
-computes, and places views at computed frames). The renderer stays thin. The ABI stays
-at **9 exports + the 72-byte 9-callback bridge** — this is a shell + component-params
-change, not an ABI evolution. The shell's placement model changes from
-"stack in a `LinearLayout`/`UIStackView`" to "Yoga computes frames, apply to a plain
-container."
+1. **`.razor` compilation (Phase 7.0).** The Razor SDK's compile targets assume a web host, and
+   the generated code must render through `NativeRenderer` under NativeAOT, trim-clean (the 4
+   accepted IL2072s must not grow). GREEN unlocks the authoring story; RED re-scopes M7 to
+   hand-written components with better helpers, with the fallback documented. **Either verdict
+   passes DoD #1 — what it demands is committed evidence.**
+2. **`onScroll` — the first 60Hz producer on a wire designed for taps (Phase 7.2).** The
+   virtualized list needs scroll position in .NET. The wire design (coalescing/throttling — e.g.
+   at most one scroll event per frame commit, shell-side conflation) gets its own design section
+   and its own throughput evidence before `BnList` is built on it.
 
 ## Definition of Done
 
-Initial M6 contract drafted at milestone-open. Subject to refinement during the
-Phase 6.0 brainstorm — and explicitly subject to the Phase 6.0 Yoga-integration spike
-verdict.
-
-1. ✅ **Yoga-integration spike verdict committed.** — *closed by Phase 6.0 (2026-07-13,
-   PR #54).* **GREEN on both rungs:** Yoga 3.2.1 links alongside the NativeAOT runtime on
-   both shells, the native measure-callback round-trip works in both channels (measured
-   width AND height reach the frame), and both shells compute *identical frames from an
-   identical tree* (twelve numbers asserted per rung). The architecture holds — Yoga in the
-   shells, no C-ABI change — and the fallback ladder (managed flexbox / native-layout
-   mapping) is closed. Verdict + the pinned per-platform integration recipes:
-   [spike conclusion](../plans/2026-07-13-phase-6.0-spike-conclusion.md).
-2. ✅ **Flexbox layout on both platforms.** — *closed by Phase 6.1 (2026-07-13).* Flex props
-   ride `SetStyle` (no ABI change); both shells run Yoga and place every child at a computed
-   frame. `BnLayoutDemo` (row + column + grow + wrap + alignment) lays out **identically** on
-   the AVD and the iOS simulator — the same frame table asserted number-for-number on both
-   (`BnLayoutDemoAndroidTest` / `BnLayoutDemoTests`), derived from the .NET patch golden.
-3. ✅ **Native measurement.** — *closed by Phase 6.1.* Text/button/input leaves are measured
-   through Yoga's measure callback using real platform metrics (a long label wraps and its
-   measured height drives its row). Attached **by NodeType**, never by childlessness. Pinned
-   by an independent oracle on both platforms — a constant-size measure func passes every
-   relational assertion and fails the oracle.
-4. ✅ **Real scrolling.** — *closed by Phase 6.2 (2026-07-14).* The `scroll` NodeType →
-   `ScrollView` / `UIScrollView`, each over a **synthetic content node** (`height: auto`, not on
-   the wire) whose Yoga-computed height *is* the content size. `BnScrollDemo` (`/scroll`) computes
-   the same frames and the same 800dp content over a 200dp viewport on the AVD and the iOS
-   simulator, and **actually scrolls** on both (asserted by driving the scroll position and
-   observing the rows move). `BnScroll` is a flex *item*, not a flex *container*.
-5. ✅ **URL images.** — *closed by Phase 6.3 (2026-07-14).* The `image` NodeType → async URL load
-   (Coil / Kingfisher) into `ImageView` / `UIImageView`, measured by Yoga. An image with no declared
-   size measures 0×0 until its bytes land, then marks the node dirty and **reflows its siblings**; a
-   declared `Width`/`Height` short-circuits measurement entirely. `BnImageDemo` (`/image`) asserts
-   the same frames on the AVD and the iOS simulator. **The unit rule — one file pixel is one dp/pt —
-   is the divergence no frame table could have caught** (an `ImageView`'s intrinsic size is in
-   *pixels*, so the generic measure path would have reported 61dp where iOS reports 160).
-6. ✅ **Flex container components.** — *closed by Phase 6.1.* `BnView` gains the typed flex
-   parameter surface (enums/numerics that stringify onto the wire); `BnRow`/`BnColumn` ship as
-   thin presets; `BnLayoutDemo` at `/layout` is the cross-platform proof surface.
-   **Deviation, consciously taken:** **no `BnStack`** — it would be a synonym for `BnColumn`,
-   and two names for one thing is a library smell on day one.
-7. ✅ **Every new surface is CI-asserted.** — *closed by Phase 6.4 (2026-07-15), and it earned
-   more than it asked.* All four baselines asserted and green (.NET **324** · JVM **83** ·
-   Android instrumented **111** · iOS XCTest **72**) — and the audit found the criterion as
-   worded was never *sufficient*: the AGP 9 incident proved an assertion can be green while the
-   thing it asserts silently stops being built. So the close went further: **every shell's
-   compile is now behind a required check that names it** (`build-test` + `android-build` +
-   `ios-build`, verified live in branch protection), and the shells' frame tables are pinned by
-   a drift test instead of transcription (`ShellFrameTableDriftTests`). See the
-   [final audit](../plans/2026-07-14-milestone-6-final-audit.md) and its 2026-07-15 amendment.
-8. ✅ **Decision log committed.** — *closed by Phase 6.4.* Eleven phase documents (design +
-   plan + conclusion per phase) plus the
-   [M6 final audit](../plans/2026-07-14-milestone-6-final-audit.md) → tag `v6.0`.
+1. **Razor-compilation spike verdict committed** — can a `.razor` file compile into a component
+   that renders through `NativeRenderer` under NativeAOT, no web dependencies, trim-clean?
+   Evidence either way; RED comes with the documented fallback and a re-scope.
+2. **The demo app is authored in `.razor`.** The five existing pages (`BnDemo`, `BnSettingsPage`,
+   `BnLayoutDemo`, `BnScrollDemo`, `BnImageDemo`) rewritten as `.razor` files with **parity proven
+   against the existing goldens and frame tables** (the old `BuildRenderTree` versions are the
+   regression baseline until parity, then retire). `@bind-Value` as *syntax*, not just mechanics.
+3. **A virtualized list (`BnList`).** Windowed rendering over the M6 scroll engine: a 500-row page
+   where only ~viewport+overscan rows are live (asserted — a row count, not a feeling), scrolling
+   stays interactive, and the frames match on both shells. Includes the **`onScroll` wire design**
+   (coalesced; throughput evidence committed) — scroll offset reaches .NET without flooding the
+   dispatch lane.
+4. **Form controls:** `BnCheckbox`, `BnSwitch`, `BnSlider`, and **`picker` made real** (the last
+   stubbed widget — native `Spinner`/`UIPickerView` with items + selection round-trip on the
+   existing change wire). Two-way bind on all four.
+5. **`BnModal`** — the first overlay surface (show/hide + `ChildContent`; native dialog primitives
+   or a second Yoga root — the design decides and records why). No animation system.
+6. **`BnImage` polish:** `Placeholder`, `OnError`, `ContentMode` — each is a **measurement**
+   design (what does a placeholder measure as? does a failure keep reserved space?), specified in
+   the parity contract and asserted on both shells like everything else.
+7. **The React Native parity survey.** RN's core-component set mapped to BlazorNative:
+   *have it / ships in M7 / ledgered with a reason*. Cheap high-value wins identified by the
+   survey (candidates: `ActivityIndicator`, `SafeAreaView`) ship; heavy ones
+   (`RefreshControl`, `KeyboardAvoidingView`, `StatusBar`, gestures) are ledgered explicitly.
+8. **Hygiene + close:** typed `FontSize`/`Padding` (the last stringly M4-ledger stragglers); the
+   **route-registry unification** (routes duplicated in .NET + Kotlin since 5.1 — one source,
+   drift-tested like the style tables); every new surface CI-asserted (counts + the three required
+   compile gates); decision log per phase + final audit → tag **`v7.0`**.
 
 ## Out of scope for this milestone
 
-- `.razor` compilation + the broader component library (virtualized list, modal, form
-  controls) — Milestone 7
-- nuget.org publication, CLI, docs site — Milestone 8
-- Camera/geolocation/biometrics/notifications, real-device iOS — Milestone 9
-- Accessibility, i18n, perf/security hardening — Milestone 10
-- CSS/stylesheet parsing, animations, gestures beyond tap/change/focus — later (M7/M10)
-- Grid layout (`display:grid`) — flexbox only this milestone
+- nuget.org publication, CLI, docs site — **Milestone 8**
+- Camera/geolocation/biometrics/notifications, real-device iOS — **Milestone 9**
+- Accessibility, i18n, perf/security hardening — **Milestone 10**
+- Animations, gesture system beyond tap/change/focus/scroll, navigation transitions — M8+
+- CSS/stylesheet parsing; `display: grid` — still out
+- Density-aware image assets (`@2x`/`srcset`) — ledgered from M6, revisit with `ContentMode`
 
-## Inherited from prior milestones
+## Inherited from prior milestones (the ledger M7 consumes)
 
-- **The `image`/`scroll` NodeTypes** — wired in the mapper switch since Phase 2.5 but
-  unexercised (survey-noted); M6 makes them real (DoD #4/#5).
-- **Stringly `FontSize`/`Padding`** (M4 ledger) — flex props join them as style keys;
-  the typed-props cleanup stays M7 (component library) unless cheap here.
-- **Open hardening issues #8/#9/#12/#13** — unchanged; the TranslateToViewIndex/
-  RemoveComponent perf items (#12/#13) may be *touched* by the placement-model change
-  (Yoga owns placement now) — reassess at the relevant phase, re-ledger if not closed.
+- **From 6.2/6.3:** `onScroll`/`scrollTo` + offset restore (DoD #3's wire design);
+  `Placeholder`/`OnError`/`ContentMode` (DoD #6); `picker` un-flexed and stubbed (DoD #4);
+  horizontal scroll (revisit with `BnList` — a `Horizontal` list variant may force it, else ledger).
+- **From 5.1:** the route→component table duplicated in .NET + Kotlin (DoD #8).
+- **From M4:** stringly `FontSize`/`Padding` (DoD #8); open hardening issues #8/#9/#12/#13 —
+  the dispatch-lane items (#9) get **re-examined by the onScroll design**, which is the first
+  real load on that lane.
+- **CI posture:** the three required compile gates + advisory device lanes stay as-is; the iOS
+  lanes' ~3min duplicated publish is a ledgered annoyance, not M7 work.
 
 ## Initial phase plan
 
-Tracked in `ROADMAP.md`. Approved at milestone-open:
+Tracked in `ROADMAP.md`. Approved at milestone-open; **subject to the 7.0 verdict**:
 
-- ✅ **Phase 6.0** — Yoga-integration spike (DoD #1) — *the named risk, verified first (both shells)* — **GREEN, complete 2026-07-13**
-- **Phase 6.1** — Flexbox layout core: flex props + the shell Yoga pass + the flex demo (DoD #2, #3, #6) — *next*
-- **Phase 6.2** — Real scrolling on both platforms (DoD #4)
-- **Phase 6.3** — URL images on both platforms (DoD #5)
-- **Phase 6.4** — M6 final audit + close (DoD #7, #8) → `v6.0`
+- **Phase 7.0** — the Razor-compilation spike (DoD #1) — *the named risk, verified first*
+- **Phase 7.1** — `.razor` authoring end-to-end: the five pages rewritten + parity + typed-props
+  cleanup riding along (DoD #2, part of #8)
+- **Phase 7.2** — the `onScroll` wire design + `BnList` (DoD #3)
+- **Phase 7.3** — form controls + a real `picker` (DoD #4)
+- **Phase 7.4** — `BnModal` + the RN survey's cheap wins (DoD #5, #7)
+- **Phase 7.5** — `BnImage` polish: Placeholder/OnError/ContentMode (DoD #6)
+- **Phase 7.6** — route-registry unification + M7 final audit + close (rest of #8) → `v7.0`
 
-Sequencing: the spike gates the whole approach; 6.1 is the engine (the big phase); 6.2/6.3
-fill the two leaf types on top of the working engine; 6.4 audits and tags.
+Sequencing: the spike gates the authoring story; 7.1 converts the app (everything after is
+authored in `.razor` from day one); 7.2 is the big engine phase; 7.3–7.5 are component phases on
+a working list; 7.6 audits and tags. **If 7.0 goes RED, 7.1 becomes the fallback-authoring phase
+and the rest of the plan stands.**
 
 ## Why this milestone exists
 
-The architecture is proven, but you cannot build a real UI with vertical stacking and
-three style props. A flexbox layout engine is the foundation every component and every
-real screen sits on — it is the single thing most separating BlazorNative from a usable
-framework. Doing it now, before the ecosystem/packaging work (M8), means what eventually
-ships is a framework you can actually build with, not a toy that packages cleanly.
+M6 proved the same real screen lays out identically on both platforms — but authoring it still
+means hand-writing `BuildRenderTree`, and the library still lacks the two screens every real app
+opens with: a fast list and a form. M7 closes the authoring gap (the standing M3-era ledger item)
+and builds the components that make the M6 engine worth having — before M8 packages any of it.

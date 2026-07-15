@@ -110,6 +110,84 @@ public sealed class StrictModeTests
         }
     }
 
+    // ── The diff switch's default arm (Phase 7.0 review F2) ───────────────────
+    //
+    // Any edit type without an arm routes through ReportContractViolation
+    // NAMING the type — the whole unhandled-edit-type class is unreintroducible.
+    // The cheapest reachable resident: a @key REORDER of existing siblings,
+    // which Blazor diffs as PermutationListEntry(+End) — pre-existing debt
+    // (no existing test or probe reorders keyed items; they only insert/remove,
+    // which diff as PrependFrame/RemoveFrame), about to become reachable when
+    // 7.1 makes @key natural syntax.
+
+    /// <summary>Two keyed spans swap places on click — Blazor emits
+    /// PermutationListEntry edits for the move (verified: this test reddens
+    /// with "unhandled render-tree edit type PermutationListEntry" when the
+    /// default arm is present and NO PermutationListEntry arm exists).</summary>
+    private sealed class KeyedSwap : ComponentBase
+    {
+        private bool _swapped;
+
+        protected override void BuildRenderTree(RenderTreeBuilder b)
+        {
+            b.OpenElement(0, "div");
+            b.OpenElement(1, "button");
+            b.AddAttribute(2, "onclick",
+                EventCallback.Factory.Create<MouseEventArgs>(this, () => _swapped = !_swapped));
+            b.CloseElement();
+            foreach (var key in _swapped ? new[] { "b", "a" } : new[] { "a", "b" })
+            {
+                b.OpenElement(3, "span");
+                b.SetKey(key);
+                b.AddContent(4, key);
+                b.CloseElement();
+            }
+            b.CloseElement();
+        }
+    }
+
+    private static (NativeRenderer Renderer, List<RenderFrame> Frames) BuildCapturingRenderer(bool strict)
+    {
+        var renderer = BuildRenderer(strict);
+        var frames = new List<RenderFrame>();
+        renderer.Frames += (f, _) =>
+        {
+            frames.Add(f);
+            return ValueTask.CompletedTask;
+        };
+        return (renderer, frames);
+    }
+
+    [Fact]
+    public async Task Strict_UnhandledEditType_KeyedPermutation_FiresTheDefaultArm()
+    {
+        var (renderer, frames) = BuildCapturingRenderer(strict: true);
+        using var _ = renderer;
+
+        await renderer.MountAsync<KeyedSwap>(ParameterView.Empty);
+        var attach = Assert.Single(frames[0].Patches.OfType<AttachEventPatch>());
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => renderer.DispatchUiEventAsync(new NativeUiEvent(0, attach.HandlerId, "click", null)));
+        Assert.Contains("unhandled render-tree edit type PermutationListEntry", ex.Message);
+    }
+
+    [Fact]
+    public async Task NonStrict_UnhandledEditType_LogsAndContinues()
+    {
+        var (renderer, frames) = BuildCapturingRenderer(strict: false);
+        using var _ = renderer;
+
+        await renderer.MountAsync<KeyedSwap>(ParameterView.Empty);
+        var attach = Assert.Single(frames[0].Patches.OfType<AttachEventPatch>());
+
+        // The POC posture: stderr + drop — the dispatch must complete. (The
+        // host child order is now desynced, which is exactly why the default
+        // arm logs loudly instead of staying silent.)
+        await renderer.DispatchUiEventAsync(new NativeUiEvent(0, attach.HandlerId, "click", null));
+        Assert.True(frames.Count >= 2, "expected a synchronous re-render frame");
+    }
+
     [Fact]
     public async Task Strict_InsideDispatchWindow_The32CaptureStillWins()
     {

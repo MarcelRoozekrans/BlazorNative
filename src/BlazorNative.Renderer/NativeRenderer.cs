@@ -642,6 +642,49 @@ public sealed class NativeRenderer : BlazorRenderer
                 case RenderTreeEditType.StepOut:
                     cursor = cursorStack.Count > 0 ? cursorStack.Pop() : rootCursor;
                     break;
+
+                case RenderTreeEditType.UpdateMarkup:
+                {
+                    // Phase 7.0 review (F2): dynamic markup — @((MarkupString)x)
+                    // whose CONTENT changes in place — diffs as UpdateMarkup
+                    // (same-sequence Markup frames compare by content). The
+                    // Markup slot stays exactly where it is (Markup slots own
+                    // no host view, so there is nothing to patch), which keeps
+                    // later sibling indices aligned. The mount-time contract
+                    // (ProcessFrame's Markup arm) holds on the update path too:
+                    // whitespace → whitespace is a wire no-op; NEW
+                    // non-whitespace content is raw HTML — unrepresentable on
+                    // a native widget tree — so it is the same contract
+                    // violation: strict throws, non-strict logs and the frame
+                    // keeps rendering as nothing. Before this arm existed the
+                    // update path silently bypassed the strict contract.
+                    var slot = _tree.GetSlotAt(cursor.ComponentId, cursor.Container, bnEdit.SiblingIndex);
+                    var newMarkup = new BnRenderTreeFrame(ref referenceFrames[bnEdit.ReferenceFrameIndex]).MarkupContent;
+                    if (!string.IsNullOrWhiteSpace(newMarkup))
+                    {
+                        ReportContractViolation(
+                            $"UpdateMarkup to non-whitespace content is not representable on a native " +
+                            $"widget tree (component {cursor.ComponentId}, sibling {bnEdit.SiblingIndex}, " +
+                            $"slot kind {slot.Kind}): \"{newMarkup}\" — rendered as nothing");
+                    }
+                    break;
+                }
+
+                default:
+                    // Phase 7.0 review (F2): an edit type this switch does not
+                    // handle is a silent structural desync waiting to happen —
+                    // the UpdateMarkup gap above was exactly this class. Route
+                    // every unknown type through the contract-violation switch
+                    // NAMING the type, so the whole class is unreintroducible.
+                    // Known residents today: PermutationListEntry /
+                    // PermutationListEnd (@key reorders) — pre-existing debt,
+                    // reachable the moment 7.1 makes @key natural syntax; they
+                    // now fail LOUDLY (strict throws; non-strict logs) instead
+                    // of desyncing host child order silently.
+                    ReportContractViolation(
+                        $"unhandled render-tree edit type {(RenderTreeEditType)bnEdit.Type} " +
+                        $"(component {cursor.ComponentId}, sibling {bnEdit.SiblingIndex}) — edit dropped");
+                    break;
             }
         }
     }
@@ -775,6 +818,36 @@ public sealed class NativeRenderer : BlazorRenderer
                 // (ResolveComponentEmitParent).
                 AddSlot(componentId, slotContainer, insertAtSlot, Slot.ForComponent(frame.ComponentId));
                 _tree.RegisterComponentParent(frame.ComponentId, componentId, slotContainer);
+                return 1;
+            }
+
+            case RenderTreeFrameType.Markup:
+            {
+                // Phase 7.0 (the Razor-compilation spike). The Razor compiler
+                // preserves whitespace-only text BETWEEN sibling elements as
+                // Markup frames (its .NET 5+ trimming only removes whitespace
+                // leading/trailing within an element and around C# blocks), so
+                // the FIRST .razor-compiled component armed this arm. A markup
+                // frame IS a sibling in Blazor's diff numbering — it must
+                // occupy a slot or every later sibling index in this container
+                // desyncs (the echo-span-after-whitespace case) — but it owns
+                // no host view: whitespace renders nothing on a native widget
+                // tree, and the Markup slot kind translates to zero host
+                // views. NON-whitespace markup is raw HTML — native shells
+                // have no innerHTML, so it is a contract violation: strict
+                // throws, non-strict logs and renders nothing. Either way the
+                // slot is taken FIRST, so indices stay aligned even on the
+                // tolerated path. HTML comments never arrive here — the Razor
+                // compiler strips them at compile time; if one ever does (a
+                // future compiler change, or a hand-built MarkupString), it is
+                // non-whitespace and violates — deliberately.
+                AddSlot(componentId, slotContainer, insertAtSlot, Slot.ForMarkup());
+                if (frame.MarkupContent is { } markup && !string.IsNullOrWhiteSpace(markup))
+                {
+                    ReportContractViolation(
+                        $"non-whitespace markup content is not representable on a native widget tree " +
+                        $"(component {componentId}): \"{markup}\" — rendered as nothing");
+                }
                 return 1;
             }
 

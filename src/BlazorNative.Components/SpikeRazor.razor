@@ -1,0 +1,64 @@
+@using Microsoft.AspNetCore.Components.Web
+@attribute [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
+
+@*
+    SPIKE SCAFFOLDING in a PACKABLE assembly (review F5): this type must live
+    here — the Razor-SDK compile of a real .razor file IS the spike — but it
+    is not consumer surface, so it is EditorBrowsable-hidden (the class stays
+    public: the Razor generator emits `public partial`, and the golden harness
+    mounts it cross-assembly). Its hand-written twin moved to
+    BlazorNative.Runtime.Tests, where the comparison lives. 7.1 decides
+    whether the pair survives as the standing generator-parity canary.
+*@
+
+@*
+    ─────────────────────────────────────────────────────────────────────────
+    SpikeRazor — Phase 7.0 SPIKE SCAFFOLDING (like CompositionProbe: 7.1
+    decides what survives; the csproj/SDK recipe it proves is the keeper).
+
+    THE first .razor file in the repo: compiled by the Razor source generator
+    (Microsoft.NET.Sdk.Razor), NOT hand-translated. It exercises exactly the
+    four things Phase 7.1's page rewrites need, in one component:
+      1. markup   — a native element tree (div/span/input/button → the
+                    view/text/input/button NodeTypes, same mapping as ever);
+      2. [Parameter] — Title, supplied by the mount;
+      3. @onclick — Clear, mutating state and re-rendering;
+      4. @bind    — on the input, expanding (via Components.Web's built-in
+                    BindAttributes — see the csproj note: own-namespace
+                    attributes cannot work without Components.Web because the
+                    compiler's bind provider requires its
+                    BindInputElementAttribute type — resolved by metadata
+                    name — to exist before reading ANY bind metadata) into
+                    value + onchange — exactly BnInput's hand-written wire.
+
+    The @using Microsoft.AspNetCore.Components.Web line is LOAD-BEARING twice:
+    it scopes MouseEventArgs for @onclick AND puts Components.Web's
+    BindAttributes tag helpers in scope — bind/event tag helpers are
+    namespace-scoped like components, and without the @using the compiler
+    SILENTLY emits the literal markup "<input @bind=...>" (zero diagnostics;
+    verified empirically). 7.1 hoists this into _Imports.razor.
+
+    The proof is SpikeRazorTwin.cs: the same component hand-written the
+    pre-7.0 way. SpikeRazorTests mounts both through the real host session and
+    asserts the patch streams are IDENTICAL — mount and after every dispatch.
+    The inter-element whitespace this file compiles into Markup frames is
+    handled by the renderer's Phase 7.0 Markup arm (slot, no patch, no view) —
+    MarkupFrameTests pins that contract.
+    ─────────────────────────────────────────────────────────────────────────
+*@
+
+<div backgroundColor="#FFEEAA" padding="16">
+    <span fontSize="24">@Title</span>
+    <input placeholder="Type here..." @bind="_text" />
+    <span>@_text</span>
+    <button @onclick="Clear">Clear</button>
+</div>
+
+@code {
+    /// <summary>The title text — the spike's [Parameter] proof.</summary>
+    [Parameter] public string? Title { get; set; }
+
+    private string _text = "";
+
+    private void Clear() => _text = "";
+}

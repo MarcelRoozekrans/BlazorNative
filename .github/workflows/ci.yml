@@ -4,7 +4,7 @@
 #
 #   build-test (windows-latest) — the local verification procedure verbatim
 #   (setup.ps1 §1–7 documents the toolchain pins):
-#     build (analyzers ride it) → .NET tests (324 passed / 0 skipped) →
+#     build (analyzers ride it) → .NET tests (339 passed / 0 skipped) →
 #     three NativeAOT publishes (win-x64, linux-bionic-x64, linux-bionic-arm64;
 #     each publish must show exactly the 4 accepted IL2072 trim warnings) →
 #     nine-export verification (dumpbin via vswhere / llvm-readelf from the
@@ -471,7 +471,37 @@ jobs:
       #      device test READS is a contract nothing asserts, and it passes all four tests above.
       #      The AGP 9 incident in miniature: an assertion can be green and STRUCTURALLY
       #      UNREACHABLE, which is the lesson this whole audit-fix is built around.
-      - name: .NET tests (assert 324 passed / 0 skipped)
+      #
+      # 324 -> 333 (PHASE 7.0, the Razor-compilation spike, +9): THE FIRST .razor FILE COMPILES,
+      # AND ITS PATCH STREAM IS PINNED BYTE-FOR-BYTE AGAINST A HAND-WRITTEN TWIN (M7 DoD #1 —
+      # verdict GREEN; recipe + evidence in docs/plans/2026-07-15-phase-7.0-spike-conclusion.md).
+      # Renderer.Tests 115 -> 120 (+5, MarkupFrameTests): the Razor compiler preserves
+      # inter-element whitespace as Markup frames, which the walk used to DROP WITHOUT A SLOT
+      # while Blazor's diff SiblingIndex counts them — every edit addressing a sibling after a
+      # markup frame resolved one slot short (found red-first: 3/5 failed before the Markup arm).
+      # Whitespace markup now takes a slot but emits NO patch and ZERO host views; non-whitespace
+      # markup (native has no innerHTML) is a strict-mode contract violation.
+      # Runtime.Tests 186 -> 190 (+4, SpikeRazorTests): golden-vs-twin — SpikeRazor.razor
+      # (compiled by Microsoft.NET.Sdk.Razor) and SpikeRazorTwin.cs (hand-written) produce
+      # IDENTICAL patch streams across mount + change dispatch + click dispatch (record equality,
+      # only the timestamped CommitFramePatch excluded) — plus the @bind write-back and @onclick
+      # round trips on the .razor component itself, through the same Exports.DispatchEventCore
+      # harness as BnDemoTests. Analyzers.Tests (23) do not move; NO demo page changes, NO ABI
+      # change, and the publish gates below stay 4 IL2072 / 9 exports on all RIDs — the SDK
+      # switch (StaticWebAssetsEnabled=false) added NOTHING to the NativeAOT lane.
+      #
+      # 333 -> 339 (PHASE 7.0 REVIEW, +6 — all Renderer.Tests, 120 -> 126): the review's two
+      # renderer findings closed WITH teeth (docs/plans/2026-07-15-phase-7.0-spike-conclusion.md,
+      # review F2/F3/F4). +3 MarkupFrameTests (UpdateMarkup — dynamic markup changing IN PLACE
+      # had NO arm and silently bypassed the strict contract: strict throws / non-strict
+      # logs-and-keeps-the-slot / whitespace-to-whitespace is a commit-only no-op);
+      # +2 StrictModeTests (the diff switch's NEW default: arm — any unhandled edit type is a
+      # NAMED contract violation, proven reachable via a @key swap's PermutationListEntry, the
+      # 7.1-bound debt); +1 MarkupFrameTests (markup INSIDE a conditional toggled both ways —
+      # the changing-markup-count arms 7.1's @if blocks hit on page one, mutation-verified in
+      # both directions). F4 hardened an existing test in place (no count change): the
+      # non-strict drop now PROVES the violating markup's slot is kept.
+      - name: .NET tests (assert 339 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -489,8 +519,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 324 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 324 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 339 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 339 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # ── NativeAOT publishes + nine-export verification ────────────────────

@@ -1,11 +1,12 @@
-<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk.Razor">
 
   <!-- ─────────────────────────────────────────────────────────────────────
        BlazorNative.Components — Phase 3.4 Gate 2 (design §2)
 
        The public Bn* component library — the shape app authors consume
-       (M6 names this package). Public, sealed, hand-written BuildRenderTree
-       components (Razor syntax awaits .razor compilation, M6):
+       (M6 names this package). Public, sealed components, hand-written
+       BuildRenderTree until Phase 7.0 wired .razor compilation (the SDK swap
+       below; 7.1 rewrites the demo pages in .razor):
          BnView / BnText / BnButton / BnInput + BnDemo + BnTheme.
        Phase 6.1 adds the flex surface: FlexStyles (the enums + their wire
        words), BnRow / BnColumn (direction presets over BnView, sharing
@@ -37,6 +38,26 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>BlazorNative.Components</RootNamespace>
     <IsAotCompatible>true</IsAotCompatible>
+    <!-- Phase 7.0 (the Razor-compilation spike): the SDK is
+         Microsoft.NET.Sdk.Razor so .razor files compile through the Razor
+         source generator into the same ComponentBase/BuildRenderTree shape we
+         hand-write (SpikeRazor.razor ⇄ SpikeRazorTwin.cs is the byte-identical
+         proof, SpikeRazorTests). The SDK's WEB machinery is switched OFF and
+         the publish log is the evidence it stays out of the NativeAOT lane:
+           - StaticWebAssetsEnabled=false — no wwwroot/scoped-css/manifest
+             targets (the SDK's only build-time web wiring for a class lib);
+             ScopedCss needs no extra switch: it rides static web assets and
+             there are no .razor.css files.
+         @bind expansion: BindElementAttribute lives in the CORE Components
+         assembly but the compiler's bind provider hard-requires
+         BindInputElementAttribute — a Components.Web type — before it looks at
+         ANY bind metadata (BindTagHelperProducer.SupportsTypes), so "own bind
+         attributes, no Components.Web" is impossible with the stock compiler.
+         Components.Web is ALREADY our pinned reference (MouseEventArgs since
+         3.4) and its built-in BindAttributes declare exactly our wire
+         (input → value + onchange) — we declare nothing. See
+         docs/plans/2026-07-15-phase-7.0-spike-conclusion.md. -->
+    <StaticWebAssetsEnabled>false</StaticWebAssetsEnabled>
   </PropertyGroup>
 
   <PropertyGroup>
