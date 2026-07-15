@@ -21,13 +21,13 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="ZeroAlloc.AsyncEvents" Version="*" />
-    <PackageReference Include="ZeroAlloc.Inject" Version="*" />
-    <PackageReference Include="ZeroAlloc.Inject.Generator" Version="*">
+    <PackageReference Include="ZeroAlloc.AsyncEvents" Version="1.1.2" />
+    <PackageReference Include="ZeroAlloc.Inject" Version="1.7.1" />
+    <PackageReference Include="ZeroAlloc.Inject.Generator" Version="1.7.1">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>analyzers;build</IncludeAssets>
     </PackageReference>
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.*" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.10" />
   </ItemGroup>
 
   <ItemGroup>
