@@ -184,4 +184,163 @@ public sealed class KeyedWindowSlideTests
             Assert.DoesNotContain(back.Patches.OfType<CreateNodePatch>(), p => p.NodeId == survivor);
         }
     }
+
+    // ── The COMPONENT-shaped window (BnList's actual rows) ────────────────────
+    //
+    // BnList's rows are keyed CHILD COMPONENTS (BnView), not keyed elements —
+    // and that difference is load-bearing: a departing element's RemoveNode is
+    // emitted IN the diff, in edit order, but a departing COMPONENT's views are
+    // removed by its DISPOSAL, which the renderer processes separately from
+    // UpdatedComponents. Pre-7.2 those disposal removes were appended at the
+    // END of the frame — AFTER the new rows' creates, whose InsertIndex was
+    // translated against the already-trimmed slot state. A host applying the
+    // frame in patch order therefore inserted against a tree that still held
+    // the departed rows: every new row landed shifted left by the number of
+    // pending removals before it. Found RED-FIRST by BnListDemoTests' shell-
+    // mirror golden; fixed by splitting disposal into emit-removes-FIRST +
+    // cleanup-after (NativeRenderer.UpdateDisplayAsync's two passes). This
+    // test is the renderer-level pin.
+
+    /// <summary>A Row child component — one div carrying its label.</summary>
+    private sealed class Row : ComponentBase
+    {
+        [Parameter] public string Label { get; set; } = "";
+
+        protected override void BuildRenderTree(RenderTreeBuilder b)
+        {
+            b.OpenElement(0, "div");
+            b.AddContent(1, Label);
+            b.CloseElement();
+        }
+    }
+
+    /// <summary>The SlidingWindow fixture with COMPONENT rows: keyed lead
+    /// spacer, a keyed 4-wide slice of Row components, keyed trail spacer.</summary>
+    private sealed class SlidingComponentWindow : ComponentBase
+    {
+        private static readonly string[] Items = ["A", "B", "C", "D", "E"];
+        private int _start;
+
+        private void OnClick() => _start = _start == 0 ? 1 : 0;
+
+        protected override void BuildRenderTree(RenderTreeBuilder b)
+        {
+            b.OpenElement(0, "div");
+            b.AddAttribute(1, "onclick",
+                EventCallback.Factory.Create<MouseEventArgs>(this, OnClick));
+
+            b.OpenElement(2, "div");
+            b.SetKey("__lead");
+            b.CloseElement();
+
+            for (var i = _start; i < _start + 4; i++)
+            {
+                b.OpenComponent<Row>(3);
+                b.SetKey(Items[i]);
+                b.AddComponentParameter(4, nameof(Row.Label), Items[i]);
+                b.CloseComponent();
+            }
+
+            b.OpenElement(5, "div");
+            b.SetKey("__trail");
+            b.CloseElement();
+
+            b.CloseElement();
+        }
+    }
+
+    /// <summary>Minimal shell: applies CreateNode (append on −1, insert at
+    /// InsertIndex otherwise) and RemoveNode in PATCH ORDER — what both real
+    /// shells do with a frame.</summary>
+    private sealed class ChildOrderMirror
+    {
+        private readonly Dictionary<int, List<int>> _children = new();
+        private readonly Dictionary<int, int> _parentOf = new();
+
+        public void Apply(RenderFrame frame)
+        {
+            foreach (var patch in frame.Patches)
+            {
+                switch (patch)
+                {
+                    case CreateNodePatch c:
+                    {
+                        var siblings = Of(c.ParentId ?? -1);
+                        if (c.InsertIndex < 0) siblings.Add(c.NodeId);
+                        else siblings.Insert(c.InsertIndex, c.NodeId);
+                        _parentOf[c.NodeId] = c.ParentId ?? -1;
+                        break;
+                    }
+                    case RemoveNodePatch r when _parentOf.TryGetValue(r.NodeId, out var parent):
+                        Of(parent).Remove(r.NodeId);
+                        _parentOf.Remove(r.NodeId);
+                        break;
+                }
+            }
+        }
+
+        public List<int> Of(int parentId)
+            => _children.TryGetValue(parentId, out var list)
+                ? list
+                : _children[parentId] = new List<int>();
+    }
+
+    /// <summary>The ordering pin: sliding a window of keyed COMPONENT rows,
+    /// the departing rows' disposal RemoveNodes arrive BEFORE the entering
+    /// rows' creates, and a shell applying the frame in patch order lands on
+    /// exactly [lead, B, C, D, E, trail]. Revert the two-pass disposal split
+    /// (emit removes at the end again) and this reddens — the new row lands
+    /// one position left of where it belongs.</summary>
+    [Fact]
+    public async Task KeyedComponentWindowSlide_RemovesPrecedeCreates_AndTheChildOrderLandsExactly()
+    {
+        var (renderer, frames) = BuildRenderer();
+        using var _ = renderer;
+
+        await renderer.MountAsync<SlidingComponentWindow>(ParameterView.Empty);
+        Assert.NotEmpty(frames);
+
+        var container = Assert.Single(
+            frames[0].Patches.OfType<CreateNodePatch>(), p => p.ParentId is null);
+        var attach = Assert.Single(frames[0].Patches.OfType<AttachEventPatch>());
+        var mirror = new ChildOrderMirror();
+        mirror.Apply(frames[0]);
+
+        // Row divs by label (each Row's div is the parent of its text node).
+        int RowDiv(RenderFrame frame, string label)
+        {
+            var textNode = frame.Patches.OfType<ReplaceTextPatch>()
+                .Single(p => p.Text == label).NodeId;
+            return frame.Patches.OfType<CreateNodePatch>()
+                .Single(p => p.NodeId == textNode).ParentId!.Value;
+        }
+        var children0 = mirror.Of(container.NodeId);
+        Assert.Equal(6, children0.Count); // lead + A,B,C,D + trail
+        var (lead, trail) = (children0[0], children0[^1]);
+        int[] survivors = [RowDiv(frames[0], "B"), RowDiv(frames[0], "C"), RowDiv(frames[0], "D")];
+
+        // Slide forward: [A,B,C,D] → [B,C,D,E], strict (no permutations for
+        // component rows either — the empirical answer holds for both shapes).
+        await Click(renderer, attach);
+        var slide = frames[^1];
+        mirror.Apply(slide);
+
+        // THE ORDER CONTRACT: every RemoveNode precedes every CreateNode in
+        // this frame — the disposal removes are pass 1, the diff's creates
+        // follow. (InsertIndex was translated against the trimmed tree, so a
+        // host must be looking at the trimmed tree when it applies it.)
+        var patchKinds = slide.Patches
+            .Select(p => p switch { RemoveNodePatch => 'R', CreateNodePatch => 'C', _ => '\0' })
+            .Where(k => k != '\0')
+            .ToList();
+        Assert.True(patchKinds.LastIndexOf('R') < patchKinds.IndexOf('C'),
+            $"disposal removes must precede the batch's creates, got [{string.Join(",", patchKinds)}]");
+
+        // And the end state, through the shells' own algorithm: E landed
+        // between D and the trail spacer, nowhere else.
+        var eDiv = RowDiv(slide, "E");
+        Assert.Equal(
+            new[] { lead, survivors[0], survivors[1], survivors[2], eDiv, trail },
+            mirror.Of(container.NodeId));
+    }
 }

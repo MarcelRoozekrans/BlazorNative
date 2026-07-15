@@ -308,6 +308,24 @@ public sealed class NativeRenderer : BlazorRenderer
 
         try
         {
+            // Disposed components, pass 1 of 2 (Phase 7.2 — the ORDER is the
+            // fix): emit their root-view RemoveNodePatches FIRST, before any
+            // diff's patches. The diffs below trim the disposed children's
+            // sibling slots as their RemoveFrame edits arrive, and every
+            // later create's InsertIndex is translated against that TRIMMED
+            // slot state — so a host applying the frame in patch order must
+            // have detached the disposed views BEFORE it applies those
+            // inserts. Pre-7.2 the removes were emitted at the END of the
+            // frame, which was invisible until the first batch that both
+            // disposes keyed child COMPONENTS and inserts new ones at later
+            // positions in the same container — BnList's window slide, the
+            // first real customer (KeyedWindowSlideTests pins the order;
+            // BnListDemoTests' shell-mirror golden reddened first). Reading
+            // the root buckets here is safe: only a component's own diff
+            // mutates them, and disposed components get no diff.
+            foreach (ref var disposedId in batch.DisposedComponentIDs)
+                EmitDisposedComponentRemoves(disposedId, ref patches);
+
             // Updated components — pass the batch's ReferenceFrames in (in Blazor 10
             // ReferenceFrames lives on RenderBatch, not on RenderTreeDiff).
             var referenceFrames = batch.ReferenceFrames;
@@ -317,10 +335,12 @@ public sealed class NativeRenderer : BlazorRenderer
                 ProcessRenderTreeDiff(ref bnDiff, ref referenceFrames, ref patches);
             }
 
-            // Disposed components (Phase 3.3 Task 3): remove their views,
-            // their sibling slot, and their bookkeeping.
+            // Disposed components, pass 2 of 2 (Phase 3.3 Task 3): trim their
+            // sibling slot and purge their bookkeeping — AFTER the diffs, so
+            // a parent's RemoveFrame edits (whose sibling indices assume the
+            // slots still present until that edit) stay correct.
             foreach (ref var disposedId in batch.DisposedComponentIDs)
-                ProcessDisposedComponent(disposedId, ref patches);
+                CleanupDisposedComponent(disposedId);
 
             patches.Add(new CommitFramePatch(frameId, timestamp));
 
@@ -930,23 +950,30 @@ public sealed class NativeRenderer : BlazorRenderer
         }
     }
 
-    /// <summary>Handles one entry of RenderBatch.DisposedComponentIDs (Phase
-    /// 3.3 Task 3): emits RemoveNodePatch for the component's ROOT-level views
-    /// (their subtrees ride along on the host), trims its sibling slot from
-    /// the recorded parent container (no-op when the parent's RemoveFrame edit
-    /// already trimmed it), and purges its slot lists + component-parent map
-    /// entry. Components disposed together each appear in the array and clean
-    /// themselves — nested markers need no recursion here.</summary>
+    /// <summary>Pass 1 of disposal handling (split from the 3.3-era
+    /// ProcessDisposedComponent in Phase 7.2): emits RemoveNodePatch for the
+    /// component's ROOT-level views (their subtrees ride along on the host).
+    /// Runs BEFORE the batch's diffs are processed, so the emitted removes
+    /// PRECEDE every create in the frame — the diffs trim the disposed
+    /// children's sibling slots and translate later insert indices against
+    /// the trimmed state, and a host applying patches in order must have
+    /// detached these views by then (BnList's window slide is the shape:
+    /// keyed component rows leave at the front while new ones insert before
+    /// the trail spacer, in one batch). Components disposed together each
+    /// appear in the array and clean themselves — nested markers need no
+    /// recursion here.</summary>
     /// <remarks>HOST CONTRACT: hosts must tolerate RemoveNodePatch for nodes
-    /// inside already-removed subtrees. When an ANCESTOR element containing a
+    /// inside already-removed subtrees AND for subtrees whose ancestor is
+    /// removed later in the same frame. When an ANCESTOR element containing a
     /// child component is removed (RemoveFrame → RemoveNodePatch for the
-    /// ancestor), the child's disposal in the same batch still emits
-    /// RemoveNodePatch for its root views — views the host already detached
-    /// with the ancestor's subtree. Treat unknown node ids in RemoveNode as a
-    /// no-op (WidgetMapper does). Suppressing the redundant patches renderer-
-    /// side would require host-subtree tracking the slot model deliberately
-    /// doesn't keep.</remarks>
-    private void ProcessDisposedComponent(int componentId, ref PooledList<RenderPatch> patches)
+    /// ancestor), the child's disposal still emits RemoveNodePatch for its
+    /// root views — since 7.2 those redundant removes arrive BEFORE the
+    /// ancestor's own remove (they used to trail it). Either way: treat
+    /// unknown node ids in RemoveNode as a no-op (WidgetMapper does), and
+    /// removing a child view before its ancestor is a legal detach order.
+    /// Suppressing the redundant patches renderer-side would require
+    /// host-subtree tracking the slot model deliberately doesn't keep.</remarks>
+    private void EmitDisposedComponentRemoves(int componentId, ref PooledList<RenderPatch> patches)
     {
         var rootSlots = _tree.GetSlotCount(componentId, parentNodeId: null);
         for (var i = 0; i < rootSlots; i++)
@@ -955,7 +982,16 @@ public sealed class NativeRenderer : BlazorRenderer
             if (slot.IsNode)
                 patches.Add(new RemoveNodePatch(slot.NodeId));
         }
+    }
 
+    /// <summary>Pass 2 of disposal handling (Phase 3.3 Task 3 bookkeeping):
+    /// trims the component's sibling slot from the recorded parent container
+    /// (no-op when the parent's RemoveFrame edit already trimmed it) and
+    /// purges its slot lists + component-parent map entry. Runs AFTER the
+    /// batch's diffs — a parent's RemoveFrame sibling indices assume the
+    /// slots are present until that edit consumes them.</summary>
+    private void CleanupDisposedComponent(int componentId)
+    {
         if (_tree.TryGetComponentParent(componentId, out var parent))
             _tree.RemoveComponentSlot(parent.ParentComponentId, parent.ParentNodeId, componentId);
 
