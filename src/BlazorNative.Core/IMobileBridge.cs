@@ -2,9 +2,12 @@ namespace BlazorNative.Core;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // IMobileBridge
-// The typed C# representation of mobile-bridge.wit.
-// Implementations are provided by each native shell (Android/iOS).
-// In dev-host mode a mock implementation is used.
+// The .NET-side bridge contract between app code and the native host.
+// (Began as the typed C# form of the WASM era's mobile-bridge.wit IDL; since
+// Phase 3.1 the wire contract is the hand-declared C ABI — host-registered
+// callbacks consumed by NativeShellBridge.)
+// On-device, NativeShellBridge implements it over the host callbacks;
+// DevHostBridge is the in-process mock for tests and dev harnesses.
 // ─────────────────────────────────────────────────────────────────────────────
 
 public interface IMobileBridge
@@ -28,12 +31,14 @@ public interface IMobileBridge
     ValueTask ClipboardWriteAsync(string text, CancellationToken ct = default);
     ValueTask ShareAsync(string text, CancellationToken ct = default);
 
-    // Platform info — sync raw-JSON form (read from BLAZOR_PLATFORM_INFO env
-    // var on Mono-WASI; Phase 2.3 env-var bridge) + async typed form.
+    // Platform info — sync raw-JSON form + async typed form. (The sync form is
+    // a Phase 2.3 WASM-era shape — it read the BLAZOR_PLATFORM_INFO env var on
+    // Mono-WASI; today NativeShellBridge builds the JSON from the
+    // host-registered PlatformOptions.)
     string PlatformInfo { get; }
     ValueTask<PlatformInfo> GetPlatformInfoAsync(CancellationToken ct = default);
 
-    // Events from native → WASM
+    // Events from the native host → .NET handlers
     event Action<NativeEvent> NativeEvents;
 }
 

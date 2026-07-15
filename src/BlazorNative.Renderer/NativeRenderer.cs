@@ -103,11 +103,13 @@ public sealed class NativeRenderer : BlazorRenderer
         };
     }
 
-    // Mono-WASI is single-threaded with no real scheduler — Dispatcher.CreateDefault()
-    // returns a dispatcher whose async-state-machine continuations don't unwind
-    // synchronously even when the wrapped work completes inline. Phase 2.4 Task 4
-    // needs sync-mount to succeed in Main, so we route all work through an inline
-    // dispatcher that simply runs the work item on the calling thread.
+    // Born on the retired Mono-WASI runtime (single-threaded, no real scheduler):
+    // Dispatcher.CreateDefault() returns a dispatcher whose async-state-machine
+    // continuations don't unwind synchronously even when the wrapped work completes
+    // inline (Phase 2.4 Task 4). The inline dispatcher outlived that era because the
+    // sync-mount contract survives it — HostSession's C-ABI mount path still requires
+    // the first render to complete synchronously inside the native callback window —
+    // so all work runs directly on the calling thread (pinned by MountSyncTests).
     public override Dispatcher Dispatcher { get; } = new InlineDispatcher();
 
     private sealed class InlineDispatcher : Dispatcher
@@ -158,15 +160,17 @@ public sealed class NativeRenderer : BlazorRenderer
 
     /// <summary>Convenience overload that explicitly passes <see cref="ParameterView.Empty"/>.
     /// Do NOT collapse this into a single overload with <c>ParameterView parameters = default</c>:
-    /// on Mono-WASI AOT, <c>default(ParameterView)</c> throws NullReferenceException inside
+    /// on Blazor's ParameterView (any runtime — found on the retired Mono-WASI AOT),
+    /// <c>default(ParameterView)</c> throws NullReferenceException inside
     /// ComponentState.SupplyCombinedParameters, which the renderer's HandleException swallows
     /// silently — mount appears to "succeed" (returns a componentId) but no render fires and
     /// no frame reaches the FrameSink / Frames event. Phase 2.4 Task 4 investigation, defect #3.</summary>
     public int Mount<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.All)] TComponent>() where TComponent : IComponent
         => Mount<TComponent>(ParameterView.Empty);
 
-    /// <summary>Synchronous mount entry point for hosts without a multi-threaded
-    /// scheduler (Mono-WASI Main). Asserts the first render completes synchronously;
+    /// <summary>Synchronous mount entry point for hosts that need the first render
+    /// completed before the call returns (originally Mono-WASI Main; today HostSession's
+    /// C-ABI mount path). Asserts the first render completes synchronously;
     /// throws with a clear diagnostic if the component has async lifecycle work
     /// that requires real scheduler threads.</summary>
     /// <remarks>

@@ -15,7 +15,7 @@ public static class ServiceCollectionExtensions
     /// so the native shell performs the actual HTTP request.
     ///
     /// <code>
-    /// // In your DI setup (DevHost Program.cs or the runtime composition root):
+    /// // In your DI setup (the runtime composition root — HostSession — or a test harness):
     /// services.AddBlazorNativeHttp();
     ///
     /// // In your services — no changes needed:

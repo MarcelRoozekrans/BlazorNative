@@ -11,8 +11,8 @@ namespace BlazorNative.Analyzers;
 //
 // Fires BN0014 when an async lambda / async method is registered against
 // IMobileBridge.NativeEvents. Handlers run synchronously inside a native
-// callback window (DevHost multicast is sync; the production lane is the
-// single-threaded dispatch lane) — an async handler compiles to `async void`,
+// callback window (DevHostBridge's mock multicast is sync; the production lane
+// is the single-threaded dispatch lane) — an async handler compiles to `async void`,
 // becoming fire-and-forget: its continuation escapes the callback window and
 // its exceptions vanish. This analyzer is the compile-time gate.
 //

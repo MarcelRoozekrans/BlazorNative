@@ -9,8 +9,9 @@ namespace BlazorNative.Core;
 //   • In-memory key/value store (hot-reload safe)
 //   • Route history tracking
 //   • HTTP passthrough via HttpClient (real network)
-//   • Console-logged native event injection
-//   • DevTools endpoint: POST http://localhost:5273/dev/event  { name, payload }
+//   • Console-logged native event injection via InjectEvent (in the WASM era
+//     the browser DevHost exposed this over a /dev/event REST endpoint; that
+//     host is gone — tests and harnesses call InjectEvent directly)
 // ─────────────────────────────────────────────────────────────────────────────
 
 public sealed class DevHostBridge : IMobileBridge, IDisposable
