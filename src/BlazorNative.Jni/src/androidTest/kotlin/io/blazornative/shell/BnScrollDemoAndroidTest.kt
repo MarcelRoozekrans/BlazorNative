@@ -97,7 +97,6 @@ class BnScrollDemoAndroidTest {
          * not transcribed: a changed row height must move both sides at once. */
         const val ROWS = 10
         const val ROW_H = 80f
-        const val VIEW_W = 300f
         const val VIEW_H = 200f
         const val CONTENT_H = ROWS * ROW_H          // 800
         const val SCROLL_RANGE = CONTENT_H - VIEW_H // 600
@@ -132,20 +131,30 @@ class BnScrollDemoAndroidTest {
 
         assertEquals("the demo has two sections: the viewport and the back row", 2, root.childCount)
 
+        // THE CANONICAL TABLE — declared in BnDemoFrameTables.kt and pinned against the iOS
+        // shell's own declaration by ShellFrameTableDriftTests in the REQUIRED lane (M6 audit,
+        // F2). BnScrollDemoImageAndroidTest consumes the SAME table with the row image LOADED;
+        // this class asserts it with the image FAILED. Two halves of one proof, one table.
+        val f = bnScrollDemoFrames
+
         // ── [0] the VIEWPORT, and the SYNTHETIC content node inside it ───────
         val scroll = root.getChildAt(0) as ScrollView
-        assertFrame("the viewport", scroll, 0f, 0f, VIEW_W, VIEW_H)
+        assertFrame(f, "viewport", scroll)
 
         assertEquals("the ScrollView's ONLY child is the synthetic content view — the ten rows " +
             "are NOT its view children", 1, scroll.childCount)
         val content = scroll.getChildAt(0) as ViewGroup
-        assertFrame("THE CONTENT SIZE: the synthetic content node's Yoga frame. 800 = ten 80-high " +
-            "rows in a height:auto column, computed by Yoga and READ by the shell — never a union " +
-            "of child frames", content, 0f, 0f, VIEW_W, CONTENT_H)
+        assertFrame(f, "content", content,
+            "THE CONTENT SIZE: the synthetic content node's Yoga frame. 800 = ten 80-high rows " +
+                "in a height:auto column, computed by Yoga and READ by the shell — never a " +
+                "union of child frames")
 
         assertTrue("THE PHASE: contentSize (${content.height / d}dp) must EXCEED the viewport " +
             "(${scroll.height / d}dp) — everything else here is bookkeeping",
             content.height > scroll.height)
+        // …and the range is still DERIVED from the contract's arithmetic, not read off the
+        // table: ROWS × ROW_H − VIEW_H. The table's literals are what the two SHELLS must
+        // agree on; this is what the CONTRACT must agree with.
         assertEquals("…by exactly the scrollable range, 800 − 200",
             SCROLL_RANGE, (content.height - scroll.height) / d, 0.5f)
 
@@ -156,34 +165,34 @@ class BnScrollDemoAndroidTest {
         // ── the ten rows, inside the content node ────────────────────────────
         assertEquals("ten rows, all children of the CONTENT view", ROWS, content.childCount)
         for (i in 0 until ROWS) {
-            assertFrame("row $i (no Width — stretched to the content node's 300 by Yoga's " +
-                "default alignItems:stretch, which is what proves the content node spans the " +
-                "viewport)", content.getChildAt(i), 0f, ROW_H * i, VIEW_W, ROW_H)
+            assertFrame(f, "row $i", content.getChildAt(i),
+                "no Width — stretched to the content node's 300 by Yoga's default " +
+                    "alignItems:stretch, which is what proves the content node spans the viewport")
         }
 
         // ── FLEX NESTED INSIDE THE SCROLL (design §Verification #4) ──────────
         // Row 1 on purpose: at offset 0 it is fully visible (y 80..160 of a
         // 200-high viewport), so the nesting proof is in the FIRST screenshot.
         val flexRow = (content.getChildAt(FLEX_ROW) as ViewGroup).getChildAt(0) as ViewGroup
-        assertFrame("the nested flex row (Grow=1 in row 1's definite 80dp column)",
-            flexRow, 0f, 0f, VIEW_W, ROW_H)
-        assertFrame("box A (W=50, cross-stretched to the row's 80)",
-            flexRow.getChildAt(0), 0f, 0f, 50f, ROW_H)
-        assertFrame("box B (Grow=1 absorbs 300 − 50 − 50) — the SAME 200 BnLayoutDemo's box B " +
-            "computes, now two levels inside a scroll",
-            flexRow.getChildAt(1), 50f, 0f, 200f, ROW_H)
-        assertFrame("box C (W=50)", flexRow.getChildAt(2), 250f, 0f, 50f, ROW_H)
+        assertFrame(f, "nested flex row", flexRow, "Grow=1 in row 1's definite 80dp column")
+        assertFrame(f, "nested box A", flexRow.getChildAt(0), "W=50, cross-stretched to the row's 80")
+        assertFrame(f, "nested box B", flexRow.getChildAt(1),
+            "Grow=1 absorbs 300 − 50 − 50 — the SAME 200 BnLayoutDemo's box B computes, now two " +
+                "levels inside a scroll")
+        assertFrame(f, "nested box C", flexRow.getChildAt(2), "W=50")
 
         // ── [1] the back row — OUTSIDE the viewport ─────────────────────────
         // A page whose only exit can scroll off the screen is not a page with an
-        // exit. It is also the only MEASURED leaf here, so it is asserted
-        // relationally and by oracle — no font constant is anyone's to invent.
+        // exit. It is also the only MEASURED leaf here, so its HEIGHT is MEASURED in
+        // the table and pinned relationally and by oracle — no font constant is
+        // anyone's to invent.
         val backRow = root.getChildAt(1) as ViewGroup
         val back = backRow.getChildAt(0) as Button
-        assertEquals("the back row starts where the VIEWPORT ends (y = 200) — outside it, not " +
-            "at the bottom of the 800dp of content", scroll.bottom, backRow.top)
-        assertEquals("…at the viewport's height, in dp", VIEW_H, backRow.top / d, 0.5f)
-        assertEquals("the back row is 300dp wide", VIEW_W, backRow.width / d, 0.5f)
+        assertFrame(f, "back row", backRow,
+            "it starts where the VIEWPORT ends (y = 200) — outside it, not at the bottom of the " +
+                "800dp of content")
+        assertEquals("…and that y IS the viewport's bottom edge, in the framework's own pixels",
+            scroll.bottom, backRow.top)
         assertEquals("← Back", back.text.toString())
         assertEquals("the back row declares no height and hugs the button's MEASURED height",
             back.height, backRow.height)

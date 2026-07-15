@@ -154,11 +154,37 @@ only for public repos. Protection therefore lands right after the repo goes
 public, before the phase closes.)
 
 - Require PR before merging (no direct pushes to `main`, admins included)
-- Required status check: **`build-test`** (the single Windows job from
-  `.github/workflows/ci.yml` — build + analyzers, .NET test suite, the three
-  NativeAOT publishes with nine-export verification, JVM `testDebugUnitTest`)
+- Required status checks — **both jobs of `.github/workflows/ci.yml`**:
+  - **`build-test`** (windows-latest) — build + analyzers, the .NET test suite,
+    the three NativeAOT publishes with nine-export verification, JVM
+    `testDebugUnitTest`, the **instrumented sources' compile**, consumer smoke.
+  - **`ios-build`** (macos-latest) — the **iOS shell's compile**: publish
+    `iossimulator-arm64`, build the pinned Yoga from source, then `xcodebuild
+    build-for-testing` (Swift + Objective-C++ compiled, app **and** XCTest bundle
+    linked). No simulator is booted; no test is run.
 - Require conversation resolution before merging
 - No force pushes
+
+> **Both check names are exactly the job ids** — `build-test` and `ios-build` —
+> because neither job declares a `name:` and neither is a matrix.
+
+#### Why `ios-build` is required and `ios` is not
+
+The AGP 9 migration proved that **an assertion can be green and structurally
+unreachable**: `android-instrumented` asserted 111 passing tests while
+`src/androidMain/kotlin` — the entire Android shell — was not being compiled at
+all, because that lane does not gate PRs. It landed on `main` green. PR #81 closed
+it by compiling the instrumented sources inside `build-test`.
+
+The M6 final audit (finding F1) found the iOS shell in the same hole and deeper:
+`build-test` runs on Windows and contains no Apple toolchain, so **no required
+check compiled a single line of Swift or Objective-C++**, and `ios.yml` is
+advisory. `ios-build` is the mirror of #81's fix — *a device is needed to RUN the
+tests, not to COMPILE them* — and it is deliberately the **honest intersection**:
+the part with no simulator flake modes, made required. Simulator **execution**
+stays in `ios.yml` and stays advisory.
+
+#### The two advisory lanes, and what promotes them
 
 The instrumented-emulator workflow (`android-instrumented.yml`, nightly
 03:00 UTC + manual dispatch) is **informational, not a required check** —
@@ -170,25 +196,53 @@ IL2072 and nine-export assertions as `ci.yml`) and hands it as an artifact
 to an `emulator` job on ubuntu-latest (KVM), which runs
 `connectedAndroidTest -PciSoDir=<artifact dir>` on an API 34 google_apis
 x86_64 Pixel 6 image — mirroring the local AVD `blazornative-pixel6-x86_64`
-— and asserts 96 passed / 0 failed.
+— and asserts **111 passed / 0 failed**.
 
-The iOS-simulator workflow (`ios.yml`, `macos-latest`, on `pull_request` for
-iOS-relevant paths + manual dispatch) is likewise **informational, not a required
-check** — simulator-on-CI has flake modes (sim boot, test-host launch) and the
-lane is young, so it stays advisory. Promotion mirrors the emulator lane: after a
-stability baseline (≈10 consecutive green runs on `main` with no sim-flake reds)
-it can be promoted to a required check. Shape: a **single** job (iOS both
-publishes and tests on macOS) publishes the `iossimulator-arm64` NativeAOT
-**static** archive (the runtime-pack bypass + `NativeLib=Static`; 4 IL2072 +
-nine-export `nm -gU` assertions), assembles the static-embed link inputs
-(`bootstrapperdll.o` direct-link + the merged support archive), then runs the
-hosted XCTest suite via `xcodebuild test` on a runner-selected simulator —
-asserting **50 passed / 0 failed**. The suite grew through M6 and now covers the
-render pin and the wire-drift guard; the interactive demo (bind/echo, Clear,
-Theme, Settings⇄Back, clipboard); the Yoga layer (style parsing, node lifecycle,
-dirty-on-change, resize); and — the point of M6 — the **computed-frame
-assertions** for `BnLayoutDemo` and `BnScrollDemo`, which pin *the same numbers*
-the Android instrumented lane asserts.
+The iOS-simulator workflow (`ios.yml`, `macos-latest`, on `push` to `main`, on
+**every** `pull_request`, + manual dispatch) is likewise **informational, not a
+required check** — simulator-on-CI has flake modes (sim boot, test-host launch),
+so it stays advisory. Promotion mirrors the emulator lane: after a stability
+baseline (≈10 consecutive green runs on `main` with no sim-flake reds) it can be
+promoted to a required check. Shape: a **single** job (iOS both publishes and
+tests on macOS) publishes the `iossimulator-arm64` NativeAOT **static** archive
+(the runtime-pack bypass + `NativeLib=Static`; 4 IL2072 + nine-export `nm -gU`
+assertions), assembles the static-embed link inputs (`bootstrapperdll.o`
+direct-link + the merged support archive), then runs the hosted XCTest suite via
+`xcodebuild test` on a runner-selected simulator — asserting **72 passed / 0
+failed**. The suite covers the render pin and the wire-drift guard; the
+interactive demo (bind/echo, Clear, Theme, Settings⇄Back, clipboard); the Yoga
+layer (style parsing, node lifecycle, dirty-on-change, resize); and — the point of
+M6 — the **computed-frame assertions** for `BnLayoutDemo`, `BnScrollDemo` and
+`BnImageDemo`, which pin *the same numbers* the Android instrumented lane asserts.
+(That "same numbers" is itself pinned, in the required lane, by
+`ShellFrameTableDriftTests` — see below.)
+
+> **`ios.yml` had no `push` trigger and a `paths:` filter until the M6-audit fix.**
+> It therefore never ran on `main` at all, and a PR that broke the Swift shell from
+> a non-Apple path (`tests/**`, `scripts/**`, `Directory.Build.props`) did not even
+> run the lane. Both are gone. Public-repo macOS minutes are free; the filter bought
+> nothing but a blind spot with a green tick on it.
+
+#### The cross-shell contracts live in the required lane
+
+Neither shell's own lane can see the other's source (the Android lane has no Xcode;
+the iOS lane has no Gradle). `build-test` can see **both, plus .NET** — it is the
+only lane where all three languages are checkout-visible — so every cross-language
+contract in this repo is pinned there, as a test that parses the shells' sources as
+text:
+
+- `ShellStyleTableDriftTests` — the Yoga style routing tables and the scroll
+  ignore-lists (Kotlin ↔ `.mm` ↔ `NativeRenderer`).
+- `ShellFrameTableDriftTests` — **the demo pages' canonical frame tables**. Both
+  shells declare them in one machine-readable file each
+  (`BnDemoFrameTables.kt` / `BnDemoFrameTables.swift`); this demands they be equal,
+  number for number. "Identical frames on both platforms" is M6's entire
+  architectural claim, and until the audit's finding F2 it was held by careful
+  transcription rather than by an invariant.
+- `BnImageDemoTests` — the image fixtures' natural pixel sizes, across .NET, the
+  Kotlin fixture server and the Swift one.
+- The Yoga version pin — asserted equal across `build.gradle.kts`, `ios.yml` and
+  `ci.yml`'s own `YOGA_VERSION` (which is what `ios-build` compiles).
 
 ### PR-merge workflow (from Phase 4.1 onward)
 
@@ -198,7 +252,8 @@ Once branch protection is live, phases merge **via PR** instead of a local
 1. Work happens on a phase branch (`phase-N.N-description`), same as before.
 2. `gh pr create` targeting `main`; the phase's review checkpoints happen
    against the PR.
-3. CI (`ci / build-test`) must be green and conversations resolved.
+3. CI (`ci / build-test` **and** `ci / ios-build`) must be green and
+   conversations resolved.
 4. Merge on GitHub (`gh pr merge --merge` — keep the merge commit; the
    per-phase merge points remain the project's history spine).
 

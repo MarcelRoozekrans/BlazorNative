@@ -134,14 +134,22 @@ final class BnScrollDemoTests: BnHostTestCase {
                        + "a real, immediate connection refusal. That is the half "
                        + "BnScrollDemoImageTests cannot prove")
 
+        // THE CANONICAL TABLE — declared in BnDemoFrameTables.swift and pinned against the
+        // Android shell's own declaration by ShellFrameTableDriftTests in the REQUIRED lane
+        // (M6 audit, F2). BnScrollDemoImageTests consumes the SAME table with the row image
+        // LOADED; this class asserts it with the image FAILED. Two halves of one proof, one
+        // table.
+        let f = bnScrollDemoFrames
+
         // ── [0] the VIEWPORT, and the SYNTHETIC content node inside it ───────
         let scroll = try bnScrollView(root.subviews[0])
-        assertFrame("the viewport", scroll, 0, 0, viewW, viewH)
+        assertFrame(f, "viewport", scroll)
 
         let content = try bnContentView(of: scroll)
-        assertFrame("THE CONTENT SIZE: the synthetic content node's Yoga frame. 800 = ten 80-high "
+        assertFrame(f, "content", content,
+                    "THE CONTENT SIZE: the synthetic content node's Yoga frame. 800 = ten 80-high "
                     + "rows in a height:auto column, computed by Yoga and READ by the shell — never "
-                    + "a union of child frames", content, 0, 0, viewW, contentH)
+                    + "a union of child frames")
         XCTAssertEqual(scroll.contentSize.width, viewW, accuracy: 0.5,
                        "…and contentSize IS that frame — the number the viewport scrolls over")
         XCTAssertEqual(scroll.contentSize.height, contentH, accuracy: 0.5)
@@ -162,36 +170,34 @@ final class BnScrollDemoTests: BnHostTestCase {
         // ── the ten rows, inside the content node ────────────────────────────
         XCTAssertEqual(content.subviews.count, rows, "ten rows, all children of the CONTENT view")
         for i in 0..<rows {
-            assertFrame("row \(i) (no Width — stretched to the content node's 300 by Yoga's default "
+            assertFrame(f, "row \(i)", content.subviews[i],
+                        "no Width — stretched to the content node's 300 by Yoga's default "
                         + "alignItems:stretch, which is what proves the content node spans the "
-                        + "viewport)",
-                        content.subviews[i], 0, rowH * CGFloat(i), viewW, rowH)
+                        + "viewport")
         }
 
         // ── FLEX NESTED INSIDE THE SCROLL (design §Verification #4) ──────────
         // Row 1 on purpose: at offset 0 it is fully visible (y 80..160 of a 200-high
         // viewport), so the nesting proof is in the FIRST screenshot.
         let nested = content.subviews[flexRow].subviews[0]
-        assertFrame("the nested flex row (Grow=1 in row 1's definite 80pt column)",
-                    nested, 0, 0, viewW, rowH)
-        assertFrame("box A (W=50, cross-stretched to the row's 80)",
-                    nested.subviews[0], 0, 0, 50, rowH)
-        assertFrame("box B (Grow=1 absorbs 300 − 50 − 50) — the SAME 200 BnLayoutDemo's box B "
-                    + "computes, now two levels inside a scroll",
-                    nested.subviews[1], 50, 0, 200, rowH)
-        assertFrame("box C (W=50)", nested.subviews[2], 250, 0, 50, rowH)
+        assertFrame(f, "nested flex row", nested, "Grow=1 in row 1's definite 80pt column")
+        assertFrame(f, "nested box A", nested.subviews[0], "W=50, cross-stretched to the row's 80")
+        assertFrame(f, "nested box B", nested.subviews[1],
+                    "Grow=1 absorbs 300 − 50 − 50 — the SAME 200 BnLayoutDemo's box B computes, "
+                    + "now two levels inside a scroll")
+        assertFrame(f, "nested box C", nested.subviews[2], "W=50")
 
         // ── [1] the back row — OUTSIDE the viewport ─────────────────────────
         // A page whose only exit can scroll off the screen is not a page with an exit. It
-        // is also the only MEASURED leaf here, so it is asserted relationally and by
-        // ORACLE — no font constant is anyone's to invent.
+        // is also the only MEASURED leaf here, so its HEIGHT is MEASURED in the table and
+        // pinned relationally and by ORACLE — no font constant is anyone's to invent.
         let backRow = root.subviews[1]
         let back = try XCTUnwrap(backRow.subviews[0] as? UIButton, "the back leaf must be a UIButton")
+        assertFrame(f, "back row", backRow,
+                    "it starts where the VIEWPORT ends (y = 200) — outside it, not at the bottom "
+                    + "of the 800pt of content")
         XCTAssertEqual(backRow.frame.minY, scroll.frame.maxY, accuracy: 0.5,
-                       "the back row starts where the VIEWPORT ends — outside it, not at the bottom "
-                       + "of the 800pt of content")
-        XCTAssertEqual(backRow.frame.minY, viewH, accuracy: 0.5, "…at the viewport's height (200)")
-        XCTAssertEqual(backRow.frame.width, viewW, accuracy: 0.5, "the back row is 300pt wide")
+                       "…and that y IS the viewport's bottom edge")
         XCTAssertEqual(back.title(for: .normal), "← Back")
         XCTAssertEqual(backRow.frame.height, back.frame.height, accuracy: 0.5,
                        "the back row declares no height and hugs the button's MEASURED height")

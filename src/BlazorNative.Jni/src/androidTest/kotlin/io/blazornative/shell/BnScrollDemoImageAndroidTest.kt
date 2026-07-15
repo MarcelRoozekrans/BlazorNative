@@ -56,13 +56,10 @@ class BnScrollDemoImageAndroidTest {
         // BnScrollDemo.cs's constants and the two products it COMPUTES from them.
         const val ROWS = 10
         const val ROW_H = 80f
-        const val VIEW_W = 300f
         const val VIEW_H = 200f
         const val CONTENT_H = ROWS * ROW_H          // 800
         const val SCROLL_RANGE = CONTENT_H - VIEW_H // 600
         const val IMAGE_ROW = 0
-        const val IMAGE_W = 40f
-        const val IMAGE_H = 40f
     }
 
     @Before fun startFixtureServer() {
@@ -125,41 +122,45 @@ class BnScrollDemoImageAndroidTest {
                 val image = row0.getChildAt(0) as ImageView
                 assertNotNull("THE BYTES LANDED, inside a scrolled, re-parented subtree under " +
                     "the SYNTHETIC content node", image.drawable)
-                assertFrame("the row image: (0, 0, 40, 40) in the row's coordinates. Both axes " +
-                    "declared ⇒ Yoga never called its measure func, so the fixture's own " +
-                    "${fixture.width} × ${fixture.height} is nowhere in this frame",
-                    image, 0f, 0f, IMAGE_W, IMAGE_H)
+                assertFrame(bnScrollDemoImageFrames, "row image", image,
+                    "in the row's coordinates. Both axes declared ⇒ Yoga never called its " +
+                        "measure func, so the fixture's own ${fixture.width} × ${fixture.height} " +
+                        "is nowhere in this frame")
                 assertTrue("…and it is strictly SMALLER than its row in both axes, so it cannot " +
                     "overflow and raise a clipping question the two shells would answer " +
                     "differently", image.width < row0.width && image.height < row0.height)
 
                 // ── AND NOW: EVERY NUMBER OF THE 6.2 TABLE, UNCHANGED ────────────
-                // Non-negotiable #2. If one of these moves, the change is wrong.
-                assertFrame("the viewport", scroll, 0f, 0f, VIEW_W, VIEW_H)
+                // Non-negotiable #2. If one of these moves, the change is wrong. It is the
+                // SAME DECLARATION BnScrollDemoAndroidTest consumes (BnDemoFrameTables.kt) —
+                // so "unchanged" is now a fact about one table read twice, not two
+                // transcriptions that happen to agree.
+                val f = bnScrollDemoFrames
+                assertFrame(f, "viewport", scroll)
                 assertEquals("the ScrollView's ONLY child is still the synthetic content view",
                     1, scroll.childCount)
-                assertFrame("THE CONTENT SIZE: still 800 — ten 80-high rows in a height:auto " +
-                    "column, computed by Yoga. A child that measured could have grown row 0 " +
-                    "and every number after it", content, 0f, 0f, VIEW_W, CONTENT_H)
+                assertFrame(f, "content", content,
+                    "THE CONTENT SIZE: still 800 — ten 80-high rows in a height:auto column, " +
+                        "computed by Yoga. A child that measured could have grown row 0 and " +
+                        "every number after it")
                 assertEquals("…and the scrollable range is still 800 − 200",
                     SCROLL_RANGE, (content.height - scroll.height) / d, 0.5f)
 
                 assertEquals("still ten rows", ROWS, content.childCount)
                 for (i in 0 until ROWS) {
-                    assertFrame("row $i is still at y = 80×$i, 300 × 80",
-                        content.getChildAt(i), 0f, ROW_H * i, VIEW_W, ROW_H)
+                    assertFrame(f, "row $i", content.getChildAt(i), "still at y = 80×$i, 300 × 80")
                 }
 
                 val flexRow = (content.getChildAt(1) as ViewGroup).getChildAt(0) as ViewGroup
-                assertFrame("the nested flex row", flexRow, 0f, 0f, VIEW_W, ROW_H)
-                assertFrame("box A", flexRow.getChildAt(0), 0f, 0f, 50f, ROW_H)
-                assertFrame("box B (Grow=1) — still absorbing 300 − 50 − 50",
-                    flexRow.getChildAt(1), 50f, 0f, 200f, ROW_H)
-                assertFrame("box C", flexRow.getChildAt(2), 250f, 0f, 50f, ROW_H)
+                assertFrame(f, "nested flex row", flexRow)
+                assertFrame(f, "nested box A", flexRow.getChildAt(0))
+                assertFrame(f, "nested box B", flexRow.getChildAt(1),
+                    "Grow=1 — still absorbing 300 − 50 − 50")
+                assertFrame(f, "nested box C", flexRow.getChildAt(2))
 
                 val backRow = root.getChildAt(1) as ViewGroup
-                assertEquals("the back row still starts where the viewport ends (y = 200)",
-                    VIEW_H, backRow.top / d, 0.5f)
+                assertFrame(f, "back row", backRow,
+                    "still starts where the viewport ends (y = 200)")
                 assertEquals("the root column still HUGS its two sections",
                     backRow.bottom, root.height)
             }

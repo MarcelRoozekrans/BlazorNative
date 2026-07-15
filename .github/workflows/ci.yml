@@ -1,16 +1,23 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # BlazorNative PR CI (Phase 4.0 Gate 2) — the safety net every later M4 phase
-# rides on. Single windows-latest job mirroring the local verification
-# procedure verbatim (setup.ps1 §1–7 documents the toolchain pins):
+# rides on. TWO jobs, and BOTH are required checks:
 #
-#   build (analyzers ride it) → .NET tests (318 passed / 0 skipped) →
-#   three NativeAOT publishes (win-x64, linux-bionic-x64, linux-bionic-arm64;
-#   each publish must show exactly the 4 accepted IL2072 trim warnings) →
-#   nine-export verification (dumpbin via vswhere / llvm-readelf from the
-#   pinned NDK) → Gradle testDebugUnitTest against the fresh win-x64 dll
-#   (83 passed / 0 failed) → consumer smoke (five packages from the local
-#   feed mount a Bn* component + analyzer trip; Phase 4.5, M4 DoD #7) →
-#   artifacts for the instrumented (Gate 3) job.
+#   build-test (windows-latest) — the local verification procedure verbatim
+#   (setup.ps1 §1–7 documents the toolchain pins):
+#     build (analyzers ride it) → .NET tests (324 passed / 0 skipped) →
+#     three NativeAOT publishes (win-x64, linux-bionic-x64, linux-bionic-arm64;
+#     each publish must show exactly the 4 accepted IL2072 trim warnings) →
+#     nine-export verification (dumpbin via vswhere / llvm-readelf from the
+#     pinned NDK) → Gradle testDebugUnitTest against the fresh win-x64 dll
+#     (83 passed / 0 failed) → the instrumented sources COMPILE →
+#     consumer smoke (five packages from the local feed mount a Bn* component
+#     + analyzer trip; Phase 4.5, M4 DoD #7) → artifacts for the instrumented
+#     (Gate 3) job.
+#
+#   ios-build (macos-latest) — THE iOS SHELL MUST COMPILE. Publish +
+#     `xcodebuild build-for-testing`: Swift + Objective-C++ compiled, the app
+#     and the XCTest bundle LINKED. No simulator is booted and no test is run.
+#     See the job's own header for why this exists and why it stops here.
 #
 # Baselines are asserted, not observed: count drift fails the job loudly.
 # ─────────────────────────────────────────────────────────────────────────────
@@ -32,6 +39,14 @@ env:
   DOTNET_NOLOGO: true
   DOTNET_CLI_TELEMETRY_OPTOUT: true
   NDK_PIN: 26.3.11579264
+  # Yoga is ONE engine used by TWO shells, and now by THREE files: Android's
+  # Gradle pin, ios.yml's YOGA_VERSION, and this one — the version the `ios-build`
+  # job below compiles from source. A third copy is a third thing that can drift,
+  # so it is asserted against the other two in build-test's very first step (see
+  # "Assert Yoga version parity"). It lives here rather than being grepped out of
+  # ios.yml at run time because a `cache:` key must be resolvable BEFORE any step
+  # runs — and an uncacheable Yoga build is ~90s on every PR.
+  YOGA_VERSION: 3.2.1
 
 jobs:
   build-test:
@@ -51,9 +66,17 @@ jobs:
       # reason for choosing Yoga — two different engine versions would erode that
       # silently, and neither shell's own lane can see the other's pin. So the pin
       # is asserted HERE, in the REQUIRED lane, where it can never rot. Bumping
-      # Yoga means bumping BOTH files in one commit. (Baselines are asserted, not
-      # observed — the same house rule as the export/test-count checks below.)
-      - name: Assert Yoga version parity (Android Gradle pin == iOS lane pin)
+      # Yoga means bumping ALL THREE files in one commit. (Baselines are asserted,
+      # not observed — the same house rule as the export/test-count checks below.)
+      #
+      # THREE files, since the `ios-build` job below: this workflow's own
+      # YOGA_VERSION is the version the REQUIRED compile lane builds from source,
+      # and it must be the one the ADVISORY simulator lane runs against — otherwise
+      # "the iOS shell compiles" and "the iOS shell lays out correctly" would be
+      # statements about two different engines. `$env:YOGA_VERSION` IS ci.yml's pin
+      # (it is what ios-build consumes), so it is read straight from the environment
+      # rather than regexed back out of the file it came from.
+      - name: Assert Yoga version parity (Android Gradle pin == iOS lane pin == this lane's pin)
         run: |
           $gradle = Get-Content "src\BlazorNative.Jni\build.gradle.kts" -Raw
           $ios    = Get-Content ".github\workflows\ios.yml" -Raw
@@ -63,9 +86,11 @@ jobs:
           if (-not $im.Success) { throw "Could not find YOGA_VERSION in .github/workflows/ios.yml — did the env pin move?" }
           $android = $gm.Groups[1].Value.Trim()
           $apple   = $im.Groups[1].Value.Trim()
-          Write-Host "Yoga pins: android(build.gradle.kts)=$android  ios(ios.yml)=$apple"
-          if ($android -ne $apple) {
-            throw "Yoga version drift: Android pins $android but the iOS lane builds $apple. One engine, two shells — bump both files together."
+          $here    = "$env:YOGA_VERSION".Trim()
+          if (-not $here) { throw "ci.yml's own YOGA_VERSION is empty — the ios-build job would compile an unpinned Yoga." }
+          Write-Host "Yoga pins: android(build.gradle.kts)=$android  ios(ios.yml)=$apple  ci(ios-build)=$here"
+          if ($android -ne $apple -or $android -ne $here) {
+            throw "Yoga version drift: Android pins $android, the iOS simulator lane builds $apple, the required ios-build lane builds $here. One engine, three files — bump them together."
           }
 
       # ── Toolchain ──────────────────────────────────────────────────────────
@@ -405,7 +430,48 @@ jobs:
       #      own decoded bytes and be entirely green, at three times Android's number.
       # Renderer.Tests (110) and Analyzers.Tests (23) do not move. The iOS XCTest baseline
       # moves 50 -> 70 (ios.yml has its own provenance block); Android is untouched.
-      - name: .NET tests (assert 319 passed / 0 skipped)
+      #
+      # 319 -> 324 (M6 FINAL AUDIT, finding F2, +5): THE LAST HAND-TRANSCRIBED CROSS-SHELL
+      # CONTRACT GETS PINNED. All five are Renderer.Tests/ShellFrameTableDriftTests
+      # (110 -> 115); Runtime.Tests (186) and Analyzers.Tests (23) do not move, and NO DEMO'S
+      # FRAMES CHANGE — the device baselines stay 111 / 72.
+      #
+      # The audit's verdict on DoD #2 was PASS with a gap: the two shells' frame tables agree,
+      # number for number, **by careful transcription and by nothing else**. There was no shared
+      # constant, no generated table, no cross-suite diff — and "identical frames on both
+      # platforms" is M6's whole architectural claim (DoD #2, #4 and #5 are all that one
+      # sentence). One shell's `90` becoming `100` while the other's stayed would have left BOTH
+      # device suites green, BOTH platforms internally consistent, and the claim quietly false.
+      # It was the one contract of this shape the repo had NOT pinned — the style routing tables,
+      # the fixture pixel sizes, the 72-byte bridge struct and the Yoga version all are.
+      #
+      # The literals could not be parsed where they lay (two of the three pages built their
+      # frames from EXPRESSIONS over per-class constants — `ROW_H * i` vs `rowH * CGFloat(i)`,
+      # `hi + BAND_H` vs `hi + bandH` — and there was no key pairing a Kotlin assertion with its
+      # Swift twin but CALL ORDER). A regex over that is a drift test nobody would trust, and a
+      # parse target that is not the assertion can drift away from the assertion — the very bug,
+      # reintroduced by its own fix. So each shell now DECLARES its tables once, machine-readably
+      # (BnDemoFrameTables.kt / BnDemoFrameTables.swift), and THE DEVICE TESTS CONSUME THAT
+      # DECLARATION. There is nowhere left to write a frame number the drift test cannot see.
+      #   +1 TheFrameTables_AreExactlyTheExpectedFive_OnBothShells — a page whose table exists on
+      #      ONE shell is a page whose frames nothing compares.
+      #   +1 EachFrameTable_NamesTheSameNodes_OnBothShells — a node one shell pins and the other
+      #      does not is a frame asserted on one platform.
+      #   +1 EachFrameTable_IsIdenticalNumberForNumber_OnBothShells — THE PIN. `wi`/`hi` (the
+      #      fixture's natural pixel size, which NEITHER shell may write down) are compared as
+      #      SYMBOLS, so it proves both shells say `hi + 20` without learning what `hi` is; sums
+      #      compare by VALUE, so `160 + hi` == `hi + 160` and there is no spurious red to teach
+      #      anyone to ignore it. MUTATION-VERIFIED: Kotlin's wrap-3 width 90 -> 100 with iOS
+      #      untouched reddens by name (`Kotlin: (0, 40, 100, 40) / Swift: (0, 40, 90, 40)`), as
+      #      does replacing the `hi` symbol with a literal on one shell alone.
+      #   +1 EachFrameTable_HasItsPinnedRowCount_OnBothShells — baselines are asserted, not
+      #      observed: this is what stops a red drift test from being "fixed" by deleting the row
+      #      that reddened it FROM BOTH SHELLS.
+      #   +1 EveryFrameTable_IsConsumedByADeviceTest_OnBothShells — a DECLARED table that no
+      #      device test READS is a contract nothing asserts, and it passes all four tests above.
+      #      The AGP 9 incident in miniature: an assertion can be green and STRUCTURALLY
+      #      UNREACHABLE, which is the lesson this whole audit-fix is built around.
+      - name: .NET tests (assert 324 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -423,8 +489,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 319 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 319 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 324 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 324 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # ── NativeAOT publishes + nine-export verification ────────────────────
@@ -630,3 +696,346 @@ jobs:
           name: jniLibs-staging
           path: ${{ runner.temp }}/jniLibs-staging
           if-no-files-found: error
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # ios-build — THE iOS SHELL MUST COMPILE, AND A REQUIRED CHECK MUST SAY SO.
+  #
+  # ── WHY THIS JOB EXISTS ────────────────────────────────────────────────────
+  # The AGP 9 migration proved that an assertion can be green and STRUCTURALLY
+  # UNREACHABLE. `android-instrumented` asserted 111 passing tests while
+  # `src/androidMain/kotlin` — MainActivity, WidgetMapper, YogaLayout, the ENTIRE
+  # Android shell — was not being compiled at all, because that lane is
+  # nightly/dispatch and does not gate PRs. It landed on `main` green and sat
+  # there. PR #81 closed it by compiling the instrumented sources in build-test
+  # (see "Compile the instrumented sources" above).
+  #
+  # **The iOS shell was in the same hole, and structurally deeper** (M6 final
+  # audit, finding F1):
+  #   · `build-test` runs on windows-latest. It contains no Apple toolchain, so
+  #     NO REQUIRED CHECK COMPILED A SINGLE LINE OF SWIFT OR OBJECTIVE-C++.
+  #   · `ios.yml` — the shell's only compilation — is advisory, and (until this
+  #     change) had no `push` trigger and a `paths:` filter, so a PR touching only
+  #     `tests/**` or `scripts/**` did not even RUN it.
+  #   · Demonstrated live during the audit: Renovate merged PR #82 — Kingfisher
+  #     **v8**, a MAJOR bump of the iOS image library Phase 6.3 depends on — and
+  #     nothing REQUIRED the iOS lane to pass. It happened to touch an Apple path,
+  #     so the lane ran and was green. Nothing made that so.
+  #
+  # ── WHY IT STOPS AT `build-for-testing`, AND WHY THAT IS NOT TIMIDITY ──────
+  # A device is needed to RUN the tests, not to COMPILE them — the same sentence
+  # `compileDebugAndroidTestKotlin` is justified by. `xcodebuild build-for-testing`
+  # compiles every Swift and Objective-C++ file in BOTH targets and LINKS the app
+  # AND the XCTest bundle (so a missing `blazornative_*` export, a broken Yoga
+  # C-ABI signature, or a Kingfisher API that vanished in a major bump all fail
+  # HERE) — without booting a simulator and without running a test.
+  #
+  # Simulator EXECUTION stays in `ios.yml` and stays ADVISORY, on purpose: it has
+  # real flake modes (sim boot, test-host launch) that a required check must not
+  # import. Compiling has none of them. This job is the honest intersection: the
+  # part that cannot flake, made required.
+  # ═══════════════════════════════════════════════════════════════════════════
+  ios-build:
+    runs-on: macos-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup .NET SDK (global.json — 10.0.3xx band)
+        uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+
+      # macos-latest drifts (Xcode, SDK, clang). Record it — assert nothing — so a
+      # link failure that is really an image bump is diagnosable from one run.
+      #
+      # The Xcode build number is ALSO an output, because it is half of the Yoga
+      # cache key: a new Xcode is a new clang, and a libyoga.a compiled under the old
+      # one must not be silently reused. (`${{ env.ImageOS }}` cannot do this job —
+      # the `env` context holds only workflow-declared variables, so a runner-set
+      # variable evaluates to the empty string and the key degrades to a constant.)
+      - name: Record toolchain (dotnet + Xcode + clang + sim SDK)
+        id: toolchain
+        run: |
+          set -euo pipefail
+          mkdir -p ios-build-out
+          {
+            echo "=== dotnet ==="; dotnet --version
+            echo "=== runner ==="; uname -a; sw_vers || true
+            echo "=== Xcode ==="; xcode-select -p; xcodebuild -version || true
+            echo "=== sim SDK ==="; xcrun --sdk iphonesimulator --show-sdk-version || true
+            echo "=== clang ==="; xcrun -sdk iphonesimulator clang --version || true
+          } 2>&1 | tee ios-build-out/toolchain.txt
+          xcode=$(xcodebuild -version | tr '\n' '-' | tr -cd '[:alnum:].-')
+          [ -n "$xcode" ] || { echo "could not read the Xcode version" >&2; exit 1; }
+          echo "xcode=$xcode" >> "$GITHUB_OUTPUT"
+          echo "Xcode fingerprint (Yoga cache key): $xcode"
+
+      # ── Caches ──────────────────────────────────────────────────────────────
+      - name: Cache NuGet packages
+        uses: actions/cache@v6
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', '**/*.props', '**/*.targets', 'global.json') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-
+
+      # Yoga is ~60 C++20 translation units compiled one at a time — the single
+      # slowest step in the lane and a pure function of (version, toolchain). Keyed
+      # on the pinned version AND the Xcode build, because a new Xcode is a new clang
+      # and the .a it produced under the old one must not be reused silently. No
+      # `restore-keys`: a partial-match restore is exactly the silent reuse this key
+      # exists to prevent.
+      - name: Cache libyoga.a (v${{ env.YOGA_VERSION }})
+        id: yoga-cache
+        uses: actions/cache@v6
+        with:
+          path: |
+            src/BlazorNative.Apple/vendor/libyoga.a
+            src/BlazorNative.Apple/vendor/yoga-include
+          key: yoga-${{ runner.os }}-${{ steps.toolchain.outputs.xcode }}-${{ env.YOGA_VERSION }}
+
+      - name: Cache SwiftPM (Kingfisher)
+        uses: actions/cache@v6
+        with:
+          path: ${{ runner.temp }}/SPM
+          key: spm-${{ runner.os }}-${{ hashFiles('src/BlazorNative.Apple/project.yml') }}
+          restore-keys: |
+            spm-${{ runner.os }}-
+
+      # ── Publish the static NativeAOT archive ────────────────────────────────
+      - name: Publish iossimulator-arm64 (NativeLib=Static; assert exactly 4 IL2072)
+        run: |
+          set -o pipefail
+          # PublishAot is NOT passed on the CLI (the Phase 5.2 rule): it lives in the
+          # Runtime csproj's own PropertyGroup, local and non-propagating. A CLI
+          # -p:PublishAot becomes a GLOBAL property and propagates to the P2P refs
+          # (Core/Renderer/Http/Components), which lack the runtime-pack bypass →
+          # NETSDK1203. Same invocation as ios.yml's and as ci.yml's three publishes.
+          dotnet publish src/BlazorNative.Runtime -c Release -r iossimulator-arm64 \
+            -tl:off -nologo 2>&1 | tee ios-build-out/publish.log
+          il2072=$(grep -c 'warning IL2072' ios-build-out/publish.log || true)
+          echo "IL2072 count: $il2072"
+          if [ "$il2072" -ne 4 ]; then
+            grep 'warning IL2072' ios-build-out/publish.log || true
+            echo "iossimulator-arm64 publish IL2072 drift: expected exactly 4, got $il2072" >&2
+            exit 1
+          fi
+
+      # ── Assemble the STATIC-EMBED link inputs (the 5.2 recipe) ──────────────
+      # No `nm` export assertion here: ios.yml owns that, and this job LINKS the app,
+      # which is a strictly stronger statement — a missing blazornative_* export is an
+      # undefined symbol at the -force_load below, and the job goes red naming it.
+      - name: Stage the link inputs (runtime .a + bootstrapperdll.o + support archive)
+        run: |
+          set -euo pipefail
+          tree_root="src/BlazorNative.Runtime/bin/Release/net10.0/iossimulator-arm64"
+          archive="$tree_root/publish/BlazorNative.Runtime.a"
+          [ -f "$archive" ] || archive="$tree_root/native/BlazorNative.Runtime.a"
+          if [ ! -f "$archive" ]; then
+            echo "No BlazorNative.Runtime.a under $tree_root (publish/ or native/)" >&2
+            find src/BlazorNative.Runtime/bin -type f -name '*.a' 2>/dev/null | sort >&2 || true
+            exit 1
+          fi
+          mkdir -p src/BlazorNative.Apple/vendor
+          cp "$archive" src/BlazorNative.Apple/vendor/libBlazorNative.Runtime.a
+
+          pack_native=$(find "$HOME/.nuget/packages/microsoft.netcore.app.runtime.nativeaot.iossimulator-arm64" \
+            -type d -path '*runtimes/iossimulator-arm64/native' 2>/dev/null | sort | tail -1)
+          if [ -z "$pack_native" ] || [ ! -d "$pack_native" ]; then
+            echo "NativeAOT iossimulator runtime pack native dir not found" >&2; exit 1
+          fi
+          # libbootstrapperdll.o is DIRECT-linked (not merged): its
+          # __attribute__((constructor)) must land in the app's init_array. As an
+          # archive member it would be on-demand and never pulled → RuntimeInstance
+          # stays NULL. This is the 5.2 load-bearing fix; do not "tidy" it into the
+          # merge below.
+          if [ ! -f "$pack_native/libbootstrapperdll.o" ]; then
+            echo "libbootstrapperdll.o missing under $pack_native" >&2; exit 1
+          fi
+          cp "$pack_native/libbootstrapperdll.o" src/BlazorNative.Apple/vendor/bootstrapperdll.o
+
+          # …and the rest, merged into ONE on-demand support archive, minus the
+          # non-default GC/eventpipe variants (the app is ILC-compiled for
+          # WorkstationGC with eventpipe/standalonegc DISABLED; the -enabled members
+          # define the same symbols and would be ambiguously pulled).
+          support=()
+          for f in "$pack_native"/*.a; do
+            case "$(basename "$f")" in
+              libRuntime.ServerGC.a|libeventpipe-enabled.a|libstandalonegc-enabled.a) continue;;
+            esac
+            support+=("$f")
+          done
+          if [ "${#support[@]}" -eq 0 ]; then echo "No support .a under $pack_native" >&2; exit 1; fi
+          xcrun libtool -static -o src/BlazorNative.Apple/vendor/libBnRuntimeSupport.a "${support[@]}"
+          ls -la src/BlazorNative.Apple/vendor | tee ios-build-out/vendor.txt
+
+      # ── Yoga from source (cache miss only) ──────────────────────────────────
+      # The same recipe as ios.yml's, at the same pinned version — and the pin is
+      # asserted equal to ios.yml's and to build.gradle.kts's in build-test's first
+      # step, so the required compile lane and the advisory behaviour lane can never
+      # be talking about different engines.
+      - name: "Yoga: build libyoga.a (v${{ env.YOGA_VERSION }}) for iossimulator-arm64"
+        if: steps.yoga-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          curl -sSL "https://github.com/facebook/yoga/archive/refs/tags/v${YOGA_VERSION}.tar.gz" -o yoga-src.tgz
+          tar xzf yoga-src.tgz
+          yroot="yoga-${YOGA_VERSION}"
+          [ -f "$yroot/yoga/Yoga.h" ] || { echo "Yoga.h not found under $yroot/yoga" >&2; exit 1; }
+          sdk=$(xcrun --sdk iphonesimulator --show-sdk-path)
+          mkdir -p yoga-obj src/BlazorNative.Apple/vendor
+          count=0
+          while IFS= read -r cpp; do
+            obj="yoga-obj/$(echo "$cpp" | tr '/.' '__').o"
+            xcrun -sdk iphonesimulator clang++ -arch arm64 -isysroot "$sdk" \
+              -mios-simulator-version-min=13.0 -std=c++20 -O2 -fPIC \
+              -I"$yroot" -c "$cpp" -o "$obj"
+            count=$((count+1))
+          done < <(find "$yroot/yoga" -name '*.cpp' | sort)
+          echo "Compiled $count Yoga translation units"
+          [ "$count" -gt 0 ] || { echo "no Yoga .cpp compiled" >&2; exit 1; }
+          xcrun libtool -static -o src/BlazorNative.Apple/vendor/libyoga.a yoga-obj/*.o
+          mkdir -p src/BlazorNative.Apple/vendor/yoga-include
+          cp -R "$yroot/yoga" src/BlazorNative.Apple/vendor/yoga-include/yoga
+          # Drop Yoga's bundled module.modulemap — with it present Clang's
+          # explicit-module scanner tries to build a `yoga` MODULE and cannot resolve
+          # the module's own headers. Removing it forces plain TEXTUAL includes via
+          # HEADER_SEARCH_PATHS (the proven path; project.yml documents it).
+          rm -f src/BlazorNative.Apple/vendor/yoga-include/yoga/module.modulemap
+
+      - name: Verify libyoga.a is present and carries the Yoga C-API (cache or build)
+        run: |
+          set -euo pipefail
+          lib=src/BlazorNative.Apple/vendor/libyoga.a
+          [ -f "$lib" ] || { echo "libyoga.a is missing — the cache restored an empty tree" >&2; exit 1; }
+          [ -f src/BlazorNative.Apple/vendor/yoga-include/yoga/Yoga.h ] \
+            || { echo "vendor/yoga-include/yoga/Yoga.h is missing — BnYogaLayout.mm cannot compile" >&2; exit 1; }
+          # Asserted, not observed — and it matters MORE on a cache hit than on a
+          # build: a truncated/empty cached archive would otherwise only surface at
+          # link time, far from its cause.
+          ysyms=$(nm -gU "$lib" 2>/dev/null | grep -Eo '_?YGNode[A-Za-z]+' | sed 's/^_//' | sort -u || true)
+          missing=()
+          for s in YGNodeNew YGNodeCalculateLayout YGNodeSetMeasureFunc; do
+            echo "$ysyms" | grep -qx "$s" || missing+=("$s")
+          done
+          if [ "${#missing[@]}" -ne 0 ]; then
+            echo "libyoga.a is missing Yoga C-API symbols: ${missing[*]}" >&2; exit 1
+          fi
+          echo "SYMBOLS: the Yoga C-API entry points are present in libyoga.a."
+
+      # ── Generate the Xcode project ──────────────────────────────────────────
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate BnHost.xcodeproj
+        working-directory: src/BlazorNative.Apple
+        run: xcodegen generate --spec project.yml 2>&1 | tee ../../ios-build-out/xcodegen.log
+
+      # ── THE GATE ────────────────────────────────────────────────────────────
+      # `build-for-testing` compiles BnHost (Swift + the two .mm files) AND
+      # BnHostTests, resolves Kingfisher through SwiftPM, and LINKS both products
+      # against the NativeAOT archive, the merged support archive and libyoga.a.
+      #
+      # `generic/platform=iOS Simulator` resolves a destination WITHOUT booting one.
+      # ARCHS=arm64 is explicit because a *generic* simulator destination would
+      # otherwise build every valid slice, and the three vendored archives
+      # (runtime, support, yoga) are simulator-arm64 ONLY — an x86_64 slice would
+      # fail to link for a reason that has nothing to do with the code under test.
+      - name: xcodebuild build-for-testing (Swift + ObjC++ compile AND link — no simulator)
+        working-directory: src/BlazorNative.Apple
+        run: |
+          set -o pipefail
+          if ! xcodebuild build-for-testing \
+                 -project BnHost.xcodeproj \
+                 -scheme BnHost \
+                 -destination 'generic/platform=iOS Simulator' \
+                 -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+                 -clonedSourcePackagesDirPath "$RUNNER_TEMP/SPM" \
+                 ARCHS=arm64 \
+                 CODE_SIGNING_ALLOWED=NO \
+                 2>&1 | tee ../../ios-build-out/xcodebuild-build-for-testing.log; then
+            cat <<'WHY' >&2
+
+          ══════════════════════════════════════════════════════════════════════
+          THE iOS SHELL DOES NOT COMPILE, AND THIS IS A REQUIRED CHECK.
+
+          A device is needed to RUN the iOS tests, not to COMPILE them — which is
+          the whole reason this job exists. `build-test` runs on Windows and has
+          no Apple toolchain; `ios.yml` is ADVISORY and does not gate a merge. So
+          without this gate the Swift/Objective-C++ shell can stop compiling
+          entirely and land on `main` green.
+
+          That is not hypothetical. The AGP 9 migration did exactly this to the
+          ANDROID shell: `android-instrumented` asserted 111 passing tests while
+          `src/androidMain/kotlin` was not being compiled at all, because that
+          lane does not gate PRs either. It merged, and it sat there.
+
+          Fix the compile error above. Do not weaken this gate.
+          ══════════════════════════════════════════════════════════════════════
+          WHY
+            exit 1
+          fi
+
+      # ── Prove it LINKED, rather than trusting a zero exit code ──────────────
+      # `xcodebuild` exiting 0 is not the assertion. A scheme change that quietly
+      # stopped building the TEST target would leave this job green over an
+      # uncompiled test suite — and the test target is the half that matters here,
+      # because BnHostTests/*.swift is where the 72 assertions (and the frame-table
+      # declaration the required .NET drift test parses) actually live.
+      #
+      # The three artefacts, and what each one rules out:
+      #   · BnHostTests.xctest — the test bundle LINKED. It is a PlugIn INSIDE the
+      #     app (BnHost.app/PlugIns/), not a sibling of it, so it is found by name
+      #     rather than by depth.
+      #   · the .xctestrun — the run plan. This is precisely what `build-for-testing`
+      #     exists to emit, i.e. "a device could now run this without building it".
+      #   · blazornative_init, defined in the app's Mach-O. Scanned across BOTH
+      #     BnHost and BnHost.debug.dylib: Xcode's debug builds SPLIT the app into a
+      #     stub executable plus a debug dylib that carries the code (and therefore
+      #     the force_loaded NativeAOT archive), so pinning the symbol to the
+      #     executable alone would assert nothing about where it really landed.
+      - name: Assert the app, the XCTest bundle and the run plan were all produced
+        run: |
+          set -uo pipefail
+          dd="$RUNNER_TEMP/DerivedData/Build/Products"
+          app=$(find "$dd" -name 'BnHost.app' -type d | head -1)
+          bundle=$(find "$dd" -name 'BnHostTests.xctest' -type d | head -1)
+          xctestrun=$(find "$dd" -maxdepth 1 -name '*.xctestrun' | head -1)
+          echo "app       : ${app:-<none>}"
+          echo "xctest    : ${bundle:-<none>}"
+          echo "xctestrun : ${xctestrun:-<none>}"
+          if [ -z "$app" ] || [ -z "$bundle" ] || [ -z "$xctestrun" ]; then
+            find "$dd" -maxdepth 4 2>/dev/null | head -60 >&2 || true
+            echo "build-for-testing exited 0 but did not produce all three artefacts. The XCTest bundle and its run plan are the half that matters: BnHostTests/*.swift is the ONLY place the 72 assertions live, so a scheme change that quietly stopped building the test target would leave this gate green over an uncompiled test suite." >&2
+            exit 1
+          fi
+
+          # blazornative_init must be DEFINED in the app's own Mach-O — the proof the
+          # NativeAOT archive was force_loaded and not merely referenced.
+          found=""
+          for bin in "$app/BnHost" "$app/BnHost.debug.dylib"; do
+            [ -f "$bin" ] || continue
+            if nm -gU "$bin" 2>/dev/null | grep -q 'blazornative_init'; then
+              found="$bin"
+              break
+            fi
+          done
+          if [ -z "$found" ]; then
+            echo "=== Mach-O binaries in the app bundle ===" >&2
+            ls -la "$app" >&2 || true
+            echo "No binary in BnHost.app DEFINES blazornative_init. The NativeAOT static archive was not force_loaded — the app would launch and SIGSEGV rather than fail to build, which is why it is asserted here." >&2
+            exit 1
+          fi
+          echo "LINKED: BnHost.app + BnHostTests.xctest + the run plan; blazornative_init is defined in $(basename "$found")."
+
+      - name: Upload — ios-build logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ios-build-out
+          path: ios-build-out
+          if-no-files-found: warn
