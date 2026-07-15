@@ -159,7 +159,6 @@ Three lanes, honestly labeled:
 
 | Lane | Command | Feedback model | What it exercises |
 |---|---|---|---|
-| Browser DevHost | `make dev` | **True hot-reload** (plain ASP.NET, no AOT) | Component/business logic against a **mock** bridge — fast, but it tests the wrong transport for native work |
 | Native fast lane | `make devloop` | **Fast-restart**, ~10–11 s/save | The real thing: NativeAOT publish → JNA load → C-ABI patch decode → console tree dump (`PreviewHost`) |
 | Device lane | `make devloop-android` | **Fast-restart**, ~14 s/save | The full APK: bionic publish → `installDebug` → launch → logcat boot marker on an emulator/device |
 | Inspector | `make inspect` | **Fast-restart** (long-lived session) | A localhost DevTools page over a **live native session** (`InspectorHost`): collapsible widget tree, live patch stream, event log, and dispatch-from-the-page (fire clicks, send change payloads) — all against the published NativeAOT dll |
@@ -177,19 +176,7 @@ Measured on the dev machine (warm, `devloop.ps1 -Once`, one `BlazorNative.Compon
 
 The NativeAOT publish dominates both lanes; everything downstream of it is seconds or less.
 
-**Two inspectors, two sessions — honestly labeled.** The browser DevHost's dev pages (`/dev/*`) inspect its **mock-bridge** session (fast, but not the native transport). `make inspect` serves http://localhost:5199 over the **native** session — the same NativeAOT dll, C-ABI frames, and dispatch lane the Android app rides. It is fast-restart like everything native: restart the host (rerun `make inspect`) to pick up a rebuilt dll; `PORT=n` / `COMPONENT=Name` override the defaults. The page is one self-contained inline HTML file (no CDN, no build step): widget tree (`<details>`-collapsible, auto-refreshing over SSE), patch tail, event log, and per-node dispatch buttons that call `POST /api/dispatch` on the live session.
-
-The browser-side DevHost additionally exposes a DevTools REST API for simulating native events:
-
-```bash
-# Inject a native event during development
-curl -X POST https://localhost:5273/dev/event \
-  -H 'Content-Type: application/json' \
-  -d '{ "name": "push", "payload": "hello" }'
-
-# Inspect storage state
-curl https://localhost:5273/dev/storage
-```
+**The inspector rides the native session.** `make inspect` serves http://localhost:5199 over the same NativeAOT dll, C-ABI frames, and dispatch lane the Android app rides. It is fast-restart like everything native: restart the host (rerun `make inspect`) to pick up a rebuilt dll; `PORT=n` / `COMPONENT=Name` override the defaults. The page is one self-contained inline HTML file (no CDN, no build step): widget tree (`<details>`-collapsible, auto-refreshing over SSE), patch tail, event log, and per-node dispatch buttons that call `POST /api/dispatch` on the live session.
 
 ## Prerequisites
 
@@ -214,7 +201,6 @@ BlazorNative/
 │   ├── BlazorNative.Renderer/             ← headless NativeRenderer + RenderPatch model (library)
 │   ├── BlazorNative.Http/                 ← BridgeHttpHandler + DI (library)
 │   ├── BlazorNative.Analyzers/            ← Roslyn analyzers
-│   ├── BlazorNative.Blazor/               ← Razor components
 │   ├── BlazorNative.Components/           ← Bn* component library: BnView (flex surface),
 │   │                                         BnRow/BnColumn (presets), BnScroll (viewport),
 │   │                                         BnText/BnButton/BnInput, BnTheme + the demo
@@ -223,15 +209,13 @@ BlazorNative/
 │   ├── BlazorNative.Runtime/              ← NativeAOT composition root + C-ABI exports + FrameEncoder
 │   ├── BlazorNative.Jni/                  ← Kotlin shell: JNA bindings, frame adapter, WidgetMapper,
 │   │                                         YogaLayout, MainActivity (Android + JVM tests)
-│   ├── BlazorNative.Apple/                ← Swift/UIKit shell (iOS simulator): BnBridge, frame
-│   │                                         adapter, BnWidgetMapper, BnYogaLayout.mm (Obj-C++
-│   │                                         over libyoga.a), XCTest suite + vendored Yoga
-│   └── BlazorNative.Host.Android/         ← DevHost (ASP.NET) + DevTools API
-├── tests/
-│   ├── BlazorNative.Renderer.Tests/       ← renderer, bridge, trim-safety, frame-sink tests
-│   ├── BlazorNative.Runtime.Tests/        ← encoder/arena/protocol + typed Hello golden test
-│   └── BlazorNative.Analyzers.Tests/      ← analyzer harness
-└── tools/wit/mobile-bridge.wit            ← historical bridge contract (retired — Phase 3.1 shipped the C-ABI bridge)
+│   └── BlazorNative.Apple/                ← Swift/UIKit shell (iOS simulator): BnBridge, frame
+│                                             adapter, BnWidgetMapper, BnYogaLayout.mm (Obj-C++
+│                                             over libyoga.a), XCTest suite + vendored Yoga
+└── tests/
+    ├── BlazorNative.Renderer.Tests/       ← renderer, bridge, trim-safety, frame-sink tests
+    ├── BlazorNative.Runtime.Tests/        ← encoder/arena/protocol + typed Hello golden test
+    └── BlazorNative.Analyzers.Tests/      ← analyzer harness
 ```
 
 ## Test surface

@@ -12,6 +12,13 @@
 #
 # Run this ONCE after pushing the repo to GitHub (Phase 4.0 Gate 4).
 #
+# ⚠ Already executed 2026-07-11 (Phase 4.0). The label taxonomy below is kept
+#   current with the roadmap (post-2026-07-13 re-plan numbering), but the
+#   MILESTONE and ISSUE sections still describe the Phase 4.0 bootstrap state
+#   (M4–M7 open, pre-re-plan names) — do NOT re-run them against the live
+#   repo without updating them first; labels-only re-runs (--labels-only)
+#   are safe and idempotent (--force updates in place).
+#
 # Prerequisites:
 #   • GitHub CLI installed: https://cli.github.com
 #   • Authenticated: gh auth login
@@ -113,15 +120,19 @@ create_label() {
   fi
 }
 
-# Phase labels (mapped to milestones — see docs/planning/ROADMAP.md)
+# Phase labels (mapped to milestones — see docs/planning/ROADMAP.md;
+# descriptions follow the 2026-07-13 re-plan: M6 repositioned as Real-UI
+# Foundation, the old P5/P6 pushed to M8/M10)
 create_label "phase/p0"      "B60205" "M1 — Runtime boots end-to-end (complete)"
 create_label "phase/p1"      "D93F0B" "M2 — First end-to-end demo on Android (complete)"
 create_label "phase/p2"      "E4810A" "M3 — Real apps can be built (complete)"
-create_label "phase/p3"      "F9D0C4" "M4 — Production-shippable"
-create_label "phase/p4"      "FEF2C0" "M5 — Full platform coverage"
-create_label "phase/p5"      "C2E0C6" "M6 — Developer ecosystem"
-create_label "phase/p6"      "BFD4F2" "M7 — Framework hardening"
-create_label "phase/p7"      "D4C5F9" "M8 — Enterprise readiness"
+create_label "phase/p3"      "F9D0C4" "M4 — Production-shippable (complete)"
+create_label "phase/p4"      "FEF2C0" "M5 — Full platform coverage (complete)"
+create_label "phase/p5"      "C2E0C6" "M6 — Real-UI Foundation: layout + scroll + image (complete)"
+create_label "phase/p6"      "BFD4F2" "M7 — Components + Razor"
+create_label "phase/p7"      "D4C5F9" "M8 — Developer ecosystem"
+create_label "phase/p8"      "C5DEF5" "M9 — Platform breadth + real device"
+create_label "phase/p9"      "F7C6C7" "M10 — Framework hardening"
 create_label "phase/future"  "EEEEEE" "Long-term vision"
 
 # Type labels

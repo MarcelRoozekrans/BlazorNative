@@ -419,8 +419,8 @@ if ($script:envChanged) {
 if ($script:failed -eq 0) {
     Write-Host "  You're ready to go!" -ForegroundColor White
     Write-Host ""
-    Write-Host "  Fast iteration (plain .NET, no AOT):" -ForegroundColor DarkGray
-    Write-Host "    dotnet watch run --project src\BlazorNative.Host.Android\BlazorNative.DevHost.csproj" -ForegroundColor Cyan
+    Write-Host "  Native fast lane (watch .NET src -> publish -> PreviewHost tree):" -ForegroundColor DarkGray
+    Write-Host "    powershell -ExecutionPolicy Bypass -File scripts\devloop.ps1" -ForegroundColor Cyan
     Write-Host ""
     Write-Host "  Run all .NET tests:" -ForegroundColor DarkGray
     Write-Host "    dotnet test BlazorNative.sln" -ForegroundColor Cyan
@@ -429,8 +429,6 @@ if ($script:failed -eq 0) {
     Write-Host "    dotnet publish src\BlazorNative.Runtime -c Release -r win-x64" -ForegroundColor Cyan
     Write-Host "    dotnet publish src\BlazorNative.Runtime -c Release -r linux-bionic-x64" -ForegroundColor Cyan
     Write-Host "    dotnet publish src\BlazorNative.Runtime -c Release -r linux-bionic-arm64" -ForegroundColor Cyan
-    Write-Host ""
-    Write-Host "  DevTools API will be available at https://localhost:5273/dev/storage" -ForegroundColor DarkGray
 } else {
     Write-Host "  Some steps failed. Review the ✗ items above and re-run." -ForegroundColor Yellow
     Write-Host "  You can re-run safely — already-installed items are skipped." -ForegroundColor DarkGray
