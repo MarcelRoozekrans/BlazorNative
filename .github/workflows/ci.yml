@@ -4,7 +4,7 @@
 #
 #   build-test (windows-latest) — the local verification procedure verbatim
 #   (setup.ps1 §1–7 documents the toolchain pins):
-#     build (analyzers ride it) → .NET tests (388 passed / 0 skipped) →
+#     build (analyzers ride it) → .NET tests (454 passed / 0 skipped) →
 #     three NativeAOT publishes (win-x64, linux-bionic-x64, linux-bionic-arm64;
 #     each publish must show exactly the 4 accepted IL2072 trim warnings) →
 #     nine-export verification (dumpbin via vswhere / llvm-readelf from the
@@ -553,7 +553,34 @@ jobs:
       # (no count move): the mirror back-slide [B,C,D,E] -> [A,B,C,D] is now pinned too —
       # removes-first order, survivors untouched, exact child order. NO ABI change, NO
       # shell edits, NO existing golden moved: the gates below stay 4 IL2072 / 9 exports.
-      - name: .NET tests (assert 388 passed / 0 skipped)
+      #
+      # 388 -> 454 (PHASE 7.3 GATE 1, +66 — all Runtime.Tests, 240 baseline 236+4 -> 302):
+      # the form controls' .NET end (checkbox=8 / switch=9 / slider=10 + a REAL picker).
+      # +4 FrameEncoderTests: the all-NodeTypes theory 7 -> 10 rows (a dropped MapNodeType
+      # arm reddens the exact row — mutation-verified on "switch") and an integer wire-id
+      # pin (an enum reorder the string theory cannot see). +23 BnItemsJsonTests: the
+      # normative flat-JSON items grammar (escaping matrix incl. quotes/commas/control
+      # chars/non-ASCII, empty list, null-item throws) held to the 3.1 dispatch-args
+      # writer CHARACTER-FOR-CHARACTER (the cross-writer drift pin; the quote-escape
+      # mutation reddens 3) and round-tripped through the strict parser. +34
+      # BnFormControlTests: per-control mount shapes, bind round-trips through the
+      # production ingress, garbage payloads -> rc 2 ("True", "62,5" and missing payloads
+      # ALL fault — the 7.2 loud-parse pattern per control), disabled-still-attaches (the
+      # recorded BnInput-precedent decision), the nl-NL culture pin over the slider's four
+      # floats BOTH directions, programmatic-set-no-refire per control, and the picker's
+      # NORMATIVE clamp (empty -> -1; shrink-below-selection -> last item + the
+      # state-owner notify; in-range set fires nothing; out-of-range dispatch clamps,
+      # unparseable faults). +5 BnFormDemoTests ("/form", the SEVENTH routed page —
+      # NavigationTests' routed-pages baseline extends with it, an in-place edit): 14
+      # creates with TWO of each new NodeType, 19 props incl. the items literal
+      # ["Alpha","Bravo","Charlie"] on both pickers, NINE attaches (8 change + back
+      # click), the four bind round-trips re-rendering the echo (a dropped bind forward
+      # reddens both suites — mutation-verified), declared 240/300 widths vs zero styles
+      # on the intrinsic checkbox/switch quartet. NO ABI change (three new NodeType ids
+      # ride the existing int32 field; exports stay 9, the bridge 72 bytes), NO shell
+      # edits (the Kotlin/Swift nodeTypes arrays are OWED to Gates 2/3), NO existing
+      # golden moved: the gates below stay 4 IL2072 / 9 exports / 83 JVM.
+      - name: .NET tests (assert 454 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -571,8 +598,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 388 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 388 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 454 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 454 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # ── NativeAOT publishes + nine-export verification ────────────────────
