@@ -169,6 +169,109 @@ public sealed class MarkupFrameTests
         Assert.Equal(1, inserted.InsertIndex);
     }
 
+    // ── Markup count CHANGES across renders (review F3) ───────────────────────
+    //
+    // Real .razor @if blocks carry their own leading/trailing whitespace, so
+    // 7.1 hits BOTH changing-markup-count diff arms on page one: PrependFrame
+    // whose reference frame is a Markup frame (toggle ON) and RemoveFrame of a
+    // Markup slot (toggle OFF). Until these tests, both arms were implemented
+    // but never executed.
+
+    /// <summary>The markup lives INSIDE the conditional — exactly what the
+    /// Razor compiler emits for
+    /// <c>@if (x) {\n    &lt;span&gt;…&lt;/span&gt;\n}</c>. A tail span AFTER
+    /// the conditional gets a new text on every click, so each toggle's diff
+    /// also carries an edit that only resolves if the slot list tracked the
+    /// markup count.</summary>
+    private sealed class MarkupInsideConditional : ComponentBase
+    {
+        private bool _show;
+        private int _clicks;
+        private string _tail = "tail-0";
+
+        protected override void BuildRenderTree(RenderTreeBuilder b)
+        {
+            b.OpenElement(0, "div");
+            b.OpenElement(1, "button");
+            b.AddAttribute(2, "onclick",
+                EventCallback.Factory.Create<MouseEventArgs>(this, () =>
+                {
+                    _clicks++;
+                    _show = !_show;
+                    _tail = $"tail-{_clicks}";
+                }));
+            b.CloseElement();
+            if (_show)
+            {
+                b.AddMarkupContent(3, "\n    ");
+                b.OpenElement(4, "span");
+                b.AddContent(5, "inserted");
+                b.CloseElement();
+                b.AddMarkupContent(6, "\n");
+            }
+            b.OpenElement(7, "span");
+            b.AddContent(8, _tail);
+            b.CloseElement();
+            b.CloseElement();
+        }
+    }
+
+    [Fact]
+    public async Task ConditionalMarkup_ToggleBothWays_SlotsTrackTheMarkupCount()
+    {
+        var (renderer, frames) = BuildRenderer();
+        using var _ = renderer;
+
+        await renderer.MountAsync<MarkupInsideConditional>(ParameterView.Empty);
+        var mount = frames[0];
+        var div = Assert.Single(mount.Patches.OfType<CreateNodePatch>(), p => p.ParentId is null);
+        var tailNode = Assert.Single(mount.Patches.OfType<ReplaceTextPatch>(), p => p.Text == "tail-0").NodeId;
+        var attach = Assert.Single(mount.Patches.OfType<AttachEventPatch>());
+        Task Click() => renderer.DispatchUiEventAsync(new NativeUiEvent(0, attach.HandlerId, "click", null));
+
+        // ── Toggle ON: three PrependFrames arrive — markup, span, markup ──────
+        await Click();
+        Assert.True(frames.Count >= 2, "expected a synchronous re-render frame");
+        var on = frames[^1];
+
+        // (b) The span (Blazor sibling 2 — button 0, markup 1) lands at HOST
+        // index 1: button(0) · span(1) · tail(2). A markup slot counted as a
+        // host view would push it to 2; a DROPPED markup slot would leave the
+        // next assertions unresolvable.
+        var insertedSpan = Assert.Single(on.Patches.OfType<CreateNodePatch>(),
+            p => p.ParentId == div.NodeId);
+        Assert.Equal(1, insertedSpan.InsertIndex);
+        Assert.Single(on.Patches.OfType<ReplaceTextPatch>(), p => p.Text == "inserted");
+
+        // (a→ON) The SAME diff's tail UpdateText arrives at the POST-insert
+        // sibling index (markup slots included) — it must hit the tail node.
+        var onTail = Assert.Single(on.Patches.OfType<ReplaceTextPatch>(), p => p.Text == "tail-1");
+        Assert.Equal(tailNode, onTail.NodeId);
+
+        // ── Toggle OFF: RemoveFrame ×3 — two of them MARKUP slots ─────────────
+        await Click();
+        var off = frames[^1];
+
+        // Only the span owns a host view: exactly ONE RemoveNode; the two
+        // markup-slot removals trim silently.
+        var removed = Assert.Single(off.Patches.OfType<RemoveNodePatch>());
+        Assert.Equal(insertedSpan.NodeId, removed.NodeId);
+
+        // (a→OFF) The tail edit now arrives at the POST-remove sibling index —
+        // stale markup slots would resolve it one (or two) slots late.
+        var offTail = Assert.Single(off.Patches.OfType<ReplaceTextPatch>(), p => p.Text == "tail-2");
+        Assert.Equal(tailNode, offTail.NodeId);
+
+        // ── Toggle ON again: the trimmed list must translate a fresh insert ───
+        await Click();
+        var on2 = frames[^1];
+        var reinserted = Assert.Single(on2.Patches.OfType<CreateNodePatch>(),
+            p => p.ParentId == div.NodeId);
+        Assert.Equal(1, reinserted.InsertIndex);
+        var on2Tail = Assert.Single(on2.Patches.OfType<ReplaceTextPatch>(), p => p.Text == "tail-3");
+        Assert.Equal(tailNode, on2Tail.NodeId);
+    }
+
     // ── Non-whitespace markup: unrepresentable natively ───────────────────────
 
     private sealed class RawHtmlMarkup : ComponentBase
