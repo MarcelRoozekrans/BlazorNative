@@ -274,12 +274,26 @@ public sealed class MarkupFrameTests
 
     // ── Non-whitespace markup: unrepresentable natively ───────────────────────
 
+    /// <summary>Raw HTML markup with a change-driven span AFTER it — the span
+    /// is what proves the violating markup's slot is KEPT on the tolerated
+    /// path (review F4): Blazor numbers the span at sibling 2 (input 0,
+    /// markup 1), so its edits only resolve if the dropped markup still
+    /// occupies slot 1.</summary>
     private sealed class RawHtmlMarkup : ComponentBase
     {
+        private string _text = "start";
+
         protected override void BuildRenderTree(RenderTreeBuilder b)
         {
             b.OpenElement(0, "div");
-            b.AddMarkupContent(1, "<b>native has no innerHTML</b>");
+            b.OpenElement(1, "input");
+            b.AddAttribute(2, "onchange",
+                EventCallback.Factory.Create<ChangeEventArgs>(this, e => _text = e.Value?.ToString() ?? ""));
+            b.CloseElement();
+            b.AddMarkupContent(3, "<b>native has no innerHTML</b>");
+            b.OpenElement(4, "span");
+            b.AddContent(5, _text);
+            b.CloseElement();
             b.CloseElement();
         }
     }
@@ -303,12 +317,24 @@ public sealed class MarkupFrameTests
 
         await renderer.MountAsync<RawHtmlMarkup>(ParameterView.Empty);
         Assert.NotEmpty(frames);
+        var mount = frames[0];
 
-        // Nothing but the div reaches the wire — the markup is dropped, not
-        // half-rendered.
-        var div = Assert.Single(frames[0].Patches.OfType<CreateNodePatch>());
-        Assert.Equal("view", div.NodeType);
-        Assert.Empty(frames[0].Patches.OfType<ReplaceTextPatch>());
+        // DROPS: exactly div + input + span + the span's text — no node, no
+        // text, nothing half-rendered for the raw markup.
+        Assert.Equal(4, mount.Patches.OfType<CreateNodePatch>().Count());
+        var textNode = Assert.Single(mount.Patches.OfType<ReplaceTextPatch>(), p => p.Text == "start").NodeId;
+
+        // KEEPS THE SLOT (the test's name, made true — review F4): the span's
+        // change-driven UpdateText arrives at sibling 2, PAST the violating
+        // markup's slot. Report-then-forget-the-slot would resolve it into
+        // nothing (poisoned StepIn) and this Assert.Single finds no patch.
+        var attach = Assert.Single(mount.Patches.OfType<AttachEventPatch>(), p => p.EventName == "change");
+        await renderer.DispatchUiEventAsync(new NativeUiEvent(0, attach.HandlerId, "change", "typed"));
+        Assert.True(frames.Count >= 2, "expected a synchronous re-render frame");
+
+        var replaced = Assert.Single(frames[^1].Patches.OfType<ReplaceTextPatch>());
+        Assert.Equal(textNode, replaced.NodeId);
+        Assert.Equal("typed", replaced.Text);
     }
 
     // ── UpdateMarkup: dynamic markup changing IN PLACE (review F2) ────────────
