@@ -22,6 +22,15 @@ namespace BlazorNative.Components;
 //     parsers are STRICT whole-string parsers (trailing garbage, single
 //     quotes, unquoted items, a trailing comma: all malformed → the shell
 //     logs loudly and renders an EMPTY picker rather than a wrong one).
+//   • ACCEPTANCE IS STRICT (Gate 1 review, DECIDED): a parser accepts EXACTLY
+//     what this writer emits; every escape not in the char production is
+//     malformed (no \b, \f or \/; no \u for a non-control; no uppercase hex;
+//     no long \u spelling of a control the writer spells short); no
+//     whitespace, no trailing comma, and the WHOLE string must be consumed.
+//     Every string has ONE canonical encoding. The executable form of this
+//     bullet is BnItemsStrictParser + the normative malformed-vector theory
+//     in BnItemsJsonTests (Runtime.Tests) — the shells' parsers (Gates 2/3)
+//     transcribe BOTH, not a JSON library's behaviour.
 //   • The empty list is exactly `[]` (two characters).
 //   • The escaping matrix is EXACTLY the flat-JSON dispatch-args matrix every
 //     shell already implements (Kotlin FlatJson.appendJsonString / Swift
