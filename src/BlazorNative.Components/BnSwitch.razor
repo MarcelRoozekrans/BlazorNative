@@ -1,0 +1,111 @@
+@*
+    ─────────────────────────────────────────────────────────────────────────
+    BnSwitch — Phase 7.3 Task 1.2 (design decision 1 + 2), authored in
+    .razor.
+
+    Emits the `switch` element → NodeType 9. Android: SwitchMaterial/Switch.
+    iOS: UISwitch — the SAME widget BnCheckbox maps to there (design
+    decision 2: iOS has no native checkbox, so the two controls are
+    semantically identical on iOS and visually distinct only on Android; the
+    recorded "renders natively, not identically" divergence lives in
+    BnCheckbox's header and is not restated here).
+
+    The wire, the events, the enabled semantics, the bind-loop guard, the
+    fixed-intrinsic-size measurement and the loud-garbage posture are
+    BnCheckbox's, verbatim — one prose home (BnCheckbox.razor), two NodeTypes.
+    The only difference IS the NodeType: 8 vs 9 is what lets each shell pick
+    its widget class at CreateNode (decision 1 — the class must be chosen
+    before any prop arrives).
+    ─────────────────────────────────────────────────────────────────────────
+*@
+<switch value="@(Checked ? "true" : "false")"
+        enabled="@(Enabled ? null : "false")"
+        backgroundColor="@BackgroundColor"
+        margin="@Margin"
+        alignSelf="@AlignSelf.ToStyleValue()"
+        flexGrow="@Grow.ToStyleValue()"
+        flexShrink="@Shrink.ToStyleValue()"
+        flexBasis="@Basis"
+        width="@Width"
+        height="@Height"
+        minWidth="@MinWidth"
+        maxWidth="@MaxWidth"
+        minHeight="@MinHeight"
+        maxHeight="@MaxHeight"
+        position="@Position.ToStyleValue()"
+        top="@Top"
+        right="@Right"
+        bottom="@Bottom"
+        left="@Left"
+        @onchange="HandleChange" />
+
+@code {
+    /// <summary>The on/off state. Always emitted (as <c>"true"</c>/<c>"false"</c>)
+    /// so the host prop exists from mount.</summary>
+    [Parameter] public bool Checked { get; set; }
+
+    /// <summary>Raised with the new state on a host change event — the
+    /// write-back half of the <c>@bind-Checked</c> pair.</summary>
+    [Parameter] public EventCallback<bool> CheckedChanged { get; set; }
+
+    /// <summary>False disables the host widget (it renders disabled and
+    /// dispatches nothing). Default true.</summary>
+    [Parameter] public bool Enabled { get; set; } = true;
+
+    // ── The flex ITEM surface (BnScroll's — how this leaf sits in its parent) ─
+
+    /// <inheritdoc cref="BnView.BackgroundColor"/>
+    [Parameter] public string? BackgroundColor { get; set; }
+
+    /// <inheritdoc cref="BnView.Margin"/>
+    [Parameter] public string? Margin { get; set; }
+
+    /// <inheritdoc cref="BnView.AlignSelf"/>
+    [Parameter] public FlexAlign? AlignSelf { get; set; }
+
+    /// <inheritdoc cref="BnView.Grow"/>
+    [Parameter] public float? Grow { get; set; }
+
+    /// <inheritdoc cref="BnView.Shrink"/>
+    [Parameter] public float? Shrink { get; set; }
+
+    /// <inheritdoc cref="BnView.Basis"/>
+    [Parameter] public string? Basis { get; set; }
+
+    /// <inheritdoc cref="BnView.Width"/>
+    [Parameter] public string? Width { get; set; }
+
+    /// <inheritdoc cref="BnView.Height"/>
+    [Parameter] public string? Height { get; set; }
+
+    /// <inheritdoc cref="BnView.MinWidth"/>
+    [Parameter] public string? MinWidth { get; set; }
+
+    /// <inheritdoc cref="BnView.MaxWidth"/>
+    [Parameter] public string? MaxWidth { get; set; }
+
+    /// <inheritdoc cref="BnView.MinHeight"/>
+    [Parameter] public string? MinHeight { get; set; }
+
+    /// <inheritdoc cref="BnView.MaxHeight"/>
+    [Parameter] public string? MaxHeight { get; set; }
+
+    /// <inheritdoc cref="BnView.Position"/>
+    [Parameter] public FlexPosition? Position { get; set; }
+
+    /// <inheritdoc cref="BnView.Top"/>
+    [Parameter] public string? Top { get; set; }
+
+    /// <inheritdoc cref="BnView.Right"/>
+    [Parameter] public string? Right { get; set; }
+
+    /// <inheritdoc cref="BnView.Bottom"/>
+    [Parameter] public string? Bottom { get; set; }
+
+    /// <inheritdoc cref="BnView.Left"/>
+    [Parameter] public string? Left { get; set; }
+
+    private Task HandleChange(ChangeEventArgs e)
+        => CheckedChanged.InvokeAsync(
+            BnCheckbox.ParseBoolPayload(e.Value?.ToString(), "switch"));
+}

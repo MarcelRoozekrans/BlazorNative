@@ -1,0 +1,152 @@
+@*
+    ─────────────────────────────────────────────────────────────────────────
+    BnSlider — Phase 7.3 Task 1.2 (design decision 1), authored in .razor.
+
+    Emits the `slider` element → NodeType 10. Android: SeekBar. iOS:
+    UISlider. A leaf with a fixed intrinsic size via the measure func (the
+    6.1 law; the intrinsic size is the platform's own — declare a Width where
+    a number is asserted cross-platform, exactly what BnFormDemo does).
+
+    THE WIRE — every number INVARIANT (the 6.1 stringification pattern: a
+    Dutch locale must never put "1,5" on any wire; the culture pin covers
+    Value/Min/Max/Step alongside the flex floats):
+      • `value` prop — the current value, always emitted.
+      • `min` / `max` props — always emitted: the range is DECLARED on the
+        wire (defaults 0/100 here, where the author can see them), never a
+        shell-side default two platforms would have to keep equal.
+      • `step` prop — only when set (null = continuous; the un-styled
+        invariant: unset reaches the wire as absent).
+      • `change` event — the EXISTING wire, payload the new value as an
+        invariant float. UNCONDITIONAL attach and disabled semantics:
+        BnCheckbox's (one prose home).
+      • The bind-loop guard: a programmatic Value set re-renders to an
+        UpdateProp and must NOT re-fire change — structural here
+        (ValueChanged is only invoked from the change handler), the
+        applyingBatch guard / setValue-fires-nothing on the shells.
+
+    GARBAGE IS LOUD: a change payload that does not parse as an invariant
+    float is a SHELL contract violation — FormatException → dispatch rc 2
+    (the 7.2 scroll-offset pattern, same parse discipline).
+    ─────────────────────────────────────────────────────────────────────────
+*@
+<slider value="@Invariant(Value)"
+        min="@Invariant(Min)"
+        max="@Invariant(Max)"
+        step="@Step.ToStyleValue()"
+        enabled="@(Enabled ? null : "false")"
+        backgroundColor="@BackgroundColor"
+        margin="@Margin"
+        alignSelf="@AlignSelf.ToStyleValue()"
+        flexGrow="@Grow.ToStyleValue()"
+        flexShrink="@Shrink.ToStyleValue()"
+        flexBasis="@Basis"
+        width="@Width"
+        height="@Height"
+        minWidth="@MinWidth"
+        maxWidth="@MaxWidth"
+        minHeight="@MinHeight"
+        maxHeight="@MaxHeight"
+        position="@Position.ToStyleValue()"
+        top="@Top"
+        right="@Right"
+        bottom="@Bottom"
+        left="@Left"
+        @onchange="HandleChange" />
+
+@code {
+    /// <summary>The current value. Always emitted (invariant) so the host
+    /// prop exists from mount.</summary>
+    [Parameter] public float Value { get; set; }
+
+    /// <summary>Raised with the new value on a host change event — the
+    /// write-back half of the <c>@bind-Value</c> pair.</summary>
+    [Parameter] public EventCallback<float> ValueChanged { get; set; }
+
+    /// <summary>Lower bound of the range — DECLARED on the wire (default 0),
+    /// never a shell-side default.</summary>
+    [Parameter] public float Min { get; set; }
+
+    /// <summary>Upper bound of the range — DECLARED on the wire (default
+    /// 100), never a shell-side default.</summary>
+    [Parameter] public float Max { get; set; } = 100f;
+
+    /// <summary>Snap increment. Null = continuous (the prop is absent from
+    /// the wire — the un-styled invariant).</summary>
+    [Parameter] public float? Step { get; set; }
+
+    /// <summary>False disables the host widget (it renders disabled and
+    /// dispatches nothing). Default true.</summary>
+    [Parameter] public bool Enabled { get; set; } = true;
+
+    // ── The flex ITEM surface (BnScroll's — how this leaf sits in its parent) ─
+
+    /// <inheritdoc cref="BnView.BackgroundColor"/>
+    [Parameter] public string? BackgroundColor { get; set; }
+
+    /// <inheritdoc cref="BnView.Margin"/>
+    [Parameter] public string? Margin { get; set; }
+
+    /// <inheritdoc cref="BnView.AlignSelf"/>
+    [Parameter] public FlexAlign? AlignSelf { get; set; }
+
+    /// <inheritdoc cref="BnView.Grow"/>
+    [Parameter] public float? Grow { get; set; }
+
+    /// <inheritdoc cref="BnView.Shrink"/>
+    [Parameter] public float? Shrink { get; set; }
+
+    /// <inheritdoc cref="BnView.Basis"/>
+    [Parameter] public string? Basis { get; set; }
+
+    /// <inheritdoc cref="BnView.Width"/>
+    [Parameter] public string? Width { get; set; }
+
+    /// <inheritdoc cref="BnView.Height"/>
+    [Parameter] public string? Height { get; set; }
+
+    /// <inheritdoc cref="BnView.MinWidth"/>
+    [Parameter] public string? MinWidth { get; set; }
+
+    /// <inheritdoc cref="BnView.MaxWidth"/>
+    [Parameter] public string? MaxWidth { get; set; }
+
+    /// <inheritdoc cref="BnView.MinHeight"/>
+    [Parameter] public string? MinHeight { get; set; }
+
+    /// <inheritdoc cref="BnView.MaxHeight"/>
+    [Parameter] public string? MaxHeight { get; set; }
+
+    /// <inheritdoc cref="BnView.Position"/>
+    [Parameter] public FlexPosition? Position { get; set; }
+
+    /// <inheritdoc cref="BnView.Top"/>
+    [Parameter] public string? Top { get; set; }
+
+    /// <inheritdoc cref="BnView.Right"/>
+    [Parameter] public string? Right { get; set; }
+
+    /// <inheritdoc cref="BnView.Bottom"/>
+    [Parameter] public string? Bottom { get; set; }
+
+    /// <inheritdoc cref="BnView.Left"/>
+    [Parameter] public string? Left { get; set; }
+
+    private static string Invariant(float value)
+        => value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    private Task HandleChange(ChangeEventArgs e)
+        => ValueChanged.InvokeAsync(ParseFloatPayload(e.Value?.ToString()));
+
+    /// <summary>Strict wire parse — an invariant-culture float (the same
+    /// grammar the scroll offset and every style value use). Missing or
+    /// unparseable is a SHELL contract violation: throw (FormatException),
+    /// surfaced by the dispatch window as a loud rc-2 fault, never a
+    /// silently-wrong 0.</summary>
+    private static float ParseFloatPayload(string? payload)
+        => payload is null
+            ? throw new FormatException(
+                "slider change dispatch carried no payload — the wire contract requires " +
+                "the new value as an invariant-culture number")
+            : float.Parse(payload, System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture);
+}

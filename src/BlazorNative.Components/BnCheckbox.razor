@@ -1,0 +1,153 @@
+@*
+    ─────────────────────────────────────────────────────────────────────────
+    BnCheckbox — Phase 7.3 Task 1.2 (design decision 1 + 2), authored in
+    .razor (the 7.1 recipe: everything new is .razor).
+
+    Emits the `checkbox` element → NodeType 8 (new in 7.3 — a wire-vocabulary
+    extension, not an ABI change). Android: MaterialCheckBox. iOS: UISwitch —
+    design decision 2, the RECORDED "renders natively, not identically"
+    divergence: iOS has no native checkbox (UIKit's toggle is UISwitch; React
+    Native ships only Switch for the same reason), so BnCheckbox and BnSwitch
+    are semantically identical on iOS and visually distinct only on Android.
+    Same wire, same events, same frames — different pixels. A custom-drawn
+    iOS checkbox would buy pixel parity at the cost of not being native,
+    against the project's thesis.
+
+    THE WIRE:
+      • `value` prop — "true"/"false", ALWAYS emitted (the BnInput posture:
+        the host prop exists from mount, no shell-side default to mirror).
+      • `change` event — the EXISTING wire, payload exactly "true"/"false".
+        The attach is UNCONDITIONAL, like BnInput's (the bind pair is the
+        component's whole point; contrast BnScroll.OnScroll, which attaches
+        on-subscribe because it is optional telemetry). A DISABLED checkbox
+        still attaches — the host widget is disabled, so it never dispatches
+        (Gates 2/3 assert "disabled controls dispatch nothing" on-device);
+        keeping the attach unconditional keeps the wire shape independent of
+        Enabled, exactly as BnInput's is.
+      • `enabled` prop — only when false (BnButton's boolean-attribute
+        semantics; leaving re-emits null → host restores its default).
+      • The bind-loop guard: a PROGRAMMATIC Checked set re-renders to an
+        UpdateProp and must NOT re-fire change — .NET-side that is structural
+        (CheckedChanged is only invoked from the change handler); host-side
+        it is the applyingBatch listener guard (Android, the 4.2 TextWatcher
+        lesson) / setOn-fires-nothing VERIFIED per control (iOS, Gate 3).
+
+    A leaf with a FIXED INTRINSIC SIZE via the measure func (by NodeType —
+    the 6.1 law). The intrinsic size is the platform's own (a UISwitch is
+    51×31pt, a MaterialCheckBox is whatever Material says): frame parity
+    applies to LAYOUT — declared sizes and placement — never to intrinsic
+    control sizes (design §Measurement). The flex ITEM surface below is
+    BnScroll's (how this control is placed IN ITS PARENT); it is not a
+    container and has no children.
+
+    GARBAGE IS LOUD (the 7.2 scroll-payload pattern): a change payload that
+    is not exactly "true"/"false" is a SHELL contract violation, not user
+    input — the handler throws FormatException, the dispatch window surfaces
+    it as export rc 2, and no silently-wrong bool reaches the app.
+    ─────────────────────────────────────────────────────────────────────────
+*@
+<checkbox value="@(Checked ? "true" : "false")"
+          enabled="@(Enabled ? null : "false")"
+          backgroundColor="@BackgroundColor"
+          margin="@Margin"
+          alignSelf="@AlignSelf.ToStyleValue()"
+          flexGrow="@Grow.ToStyleValue()"
+          flexShrink="@Shrink.ToStyleValue()"
+          flexBasis="@Basis"
+          width="@Width"
+          height="@Height"
+          minWidth="@MinWidth"
+          maxWidth="@MaxWidth"
+          minHeight="@MinHeight"
+          maxHeight="@MaxHeight"
+          position="@Position.ToStyleValue()"
+          top="@Top"
+          right="@Right"
+          bottom="@Bottom"
+          left="@Left"
+          @onchange="HandleChange" />
+
+@code {
+    /// <summary>The checked state. Always emitted (as <c>"true"</c>/<c>"false"</c>)
+    /// so the host prop exists from mount.</summary>
+    [Parameter] public bool Checked { get; set; }
+
+    /// <summary>Raised with the new state on a host change event — the
+    /// write-back half of the <c>@bind-Checked</c> pair.</summary>
+    [Parameter] public EventCallback<bool> CheckedChanged { get; set; }
+
+    /// <summary>False disables the host widget (it renders disabled and
+    /// dispatches nothing). Default true.</summary>
+    [Parameter] public bool Enabled { get; set; } = true;
+
+    // ── The flex ITEM surface (BnScroll's — how this leaf sits in its parent) ─
+
+    /// <inheritdoc cref="BnView.BackgroundColor"/>
+    [Parameter] public string? BackgroundColor { get; set; }
+
+    /// <inheritdoc cref="BnView.Margin"/>
+    [Parameter] public string? Margin { get; set; }
+
+    /// <inheritdoc cref="BnView.AlignSelf"/>
+    [Parameter] public FlexAlign? AlignSelf { get; set; }
+
+    /// <inheritdoc cref="BnView.Grow"/>
+    [Parameter] public float? Grow { get; set; }
+
+    /// <inheritdoc cref="BnView.Shrink"/>
+    [Parameter] public float? Shrink { get; set; }
+
+    /// <inheritdoc cref="BnView.Basis"/>
+    [Parameter] public string? Basis { get; set; }
+
+    /// <inheritdoc cref="BnView.Width"/>
+    [Parameter] public string? Width { get; set; }
+
+    /// <inheritdoc cref="BnView.Height"/>
+    [Parameter] public string? Height { get; set; }
+
+    /// <inheritdoc cref="BnView.MinWidth"/>
+    [Parameter] public string? MinWidth { get; set; }
+
+    /// <inheritdoc cref="BnView.MaxWidth"/>
+    [Parameter] public string? MaxWidth { get; set; }
+
+    /// <inheritdoc cref="BnView.MinHeight"/>
+    [Parameter] public string? MinHeight { get; set; }
+
+    /// <inheritdoc cref="BnView.MaxHeight"/>
+    [Parameter] public string? MaxHeight { get; set; }
+
+    /// <inheritdoc cref="BnView.Position"/>
+    [Parameter] public FlexPosition? Position { get; set; }
+
+    /// <inheritdoc cref="BnView.Top"/>
+    [Parameter] public string? Top { get; set; }
+
+    /// <inheritdoc cref="BnView.Right"/>
+    [Parameter] public string? Right { get; set; }
+
+    /// <inheritdoc cref="BnView.Bottom"/>
+    [Parameter] public string? Bottom { get; set; }
+
+    /// <inheritdoc cref="BnView.Left"/>
+    [Parameter] public string? Left { get; set; }
+
+    private Task HandleChange(ChangeEventArgs e)
+        => CheckedChanged.InvokeAsync(ParseBoolPayload(e.Value?.ToString(), "checkbox"));
+
+    /// <summary>Strict wire parse — exactly <c>"true"</c>/<c>"false"</c>
+    /// (ordinal; the shells emit these two literals and nothing else). A
+    /// missing or different payload is a SHELL contract violation: throw, and
+    /// the dispatch window surfaces it as a loud rc-2 fault (the 7.2
+    /// scroll-offset pattern) instead of dispatching a silently-wrong
+    /// bool.</summary>
+    internal static bool ParseBoolPayload(string? payload, string control) => payload switch
+    {
+        "true" => true,
+        "false" => false,
+        _ => throw new FormatException(
+            $"{control} change dispatch carried '{payload ?? "<null>"}' — the wire contract " +
+            "requires exactly \"true\" or \"false\""),
+    };
+}
