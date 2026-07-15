@@ -342,5 +342,37 @@ public sealed class KeyedWindowSlideTests
         Assert.Equal(
             new[] { lead, survivors[0], survivors[1], survivors[2], eDiv, trail },
             mirror.Of(container.NodeId));
+
+        // ── The MIRROR slide back: [B,C,D,E] → [A,B,C,D] (Gate 1 review,
+        //    Important 2). A FRONT insert instead of a back insert — the
+        //    other direction every real scroll takes — under the same
+        //    contracts: removes-first order, survivors untouched, exact
+        //    child order through the shells' algorithm.
+        await Click(renderer, attach);
+        var slideBack = frames[^1];
+        mirror.Apply(slideBack);
+
+        var backKinds = slideBack.Patches
+            .Select(p => p switch { RemoveNodePatch => 'R', CreateNodePatch => 'C', _ => '\0' })
+            .Where(k => k != '\0')
+            .ToList();
+        Assert.True(backKinds.LastIndexOf('R') < backKinds.IndexOf('C'),
+            $"disposal removes must precede the batch's creates, got [{string.Join(",", backKinds)}]");
+
+        // E's disposal removed exactly its view; B, C, D survived BOTH slides
+        // (no structural patch touched them in either direction).
+        Assert.Equal(eDiv, Assert.Single(slideBack.Patches.OfType<RemoveNodePatch>()).NodeId);
+        foreach (var survivor in survivors)
+        {
+            Assert.DoesNotContain(slideBack.Patches.OfType<RemoveNodePatch>(), p => p.NodeId == survivor);
+            Assert.DoesNotContain(slideBack.Patches.OfType<CreateNodePatch>(), p => p.NodeId == survivor);
+        }
+
+        // A re-entered AT THE FRONT of the slice, and the mirror lands on
+        // exactly [lead, A, B, C, D, trail].
+        var aDiv = RowDiv(slideBack, "A");
+        Assert.Equal(
+            new[] { lead, aDiv, survivors[0], survivors[1], survivors[2], trail },
+            mirror.Of(container.NodeId));
     }
 }
