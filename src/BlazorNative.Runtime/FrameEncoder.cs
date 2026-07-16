@@ -140,6 +140,13 @@ internal static unsafe class FrameEncoder
         "checkbox" => BlazorNativeNodeType.Checkbox,
         "switch"   => BlazorNativeNodeType.Switch,
         "slider"   => BlazorNativeNodeType.Slider,
+        // Phase 7.4: the overlay + the measured leaf (design decisions 1 and
+        // 5). New wire ids 11/12 on the EXISTING int32 field — same shape as
+        // 7.3: the Kotlin/Swift nodeTypes arrays gain the same two entries in
+        // Gates 2/3 (until then their getOrElse/index-guard fallback maps
+        // them to "?" and logs).
+        "modal"             => BlazorNativeNodeType.Modal,
+        "activityindicator" => BlazorNativeNodeType.ActivityIndicator,
         _ => throw new ArgumentOutOfRangeException(
             nameof(nodeType), nodeType,
             $"Unknown node type '{nodeType}' — not representable in BlazorNativeNodeType."),
