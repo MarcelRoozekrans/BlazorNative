@@ -1,6 +1,7 @@
 using System.Reflection.Metadata;
 using System.Reflection.PortableExecutable;
 using System.Text.RegularExpressions;
+using System.Xml.Linq;
 
 namespace BlazorNative.Runtime.Tests;
 
@@ -146,9 +147,12 @@ public sealed class PackagePurityTests
     }
 
     /// <summary>Referenced assemblies (the five runtime-shaped shipped ones +
-    /// the sample app) sit in the test output directory; the netstandard2.0
-    /// analyzer is not a runtime reference, so it is read from its own build
-    /// output in the checkout, same configuration as this test build.</summary>
+    /// the sample app) sit in the test output directory; the analyzer is not
+    /// a runtime reference, so it is read from its own build output in the
+    /// checkout, same configuration as this test build. Phase 8.1 (the 8.0
+    /// review's M-3): the TFM segment is READ FROM THE CSPROJ it already
+    /// knows how to find — the old hardcoded "netstandard2.0" meant an
+    /// Analyzers TFM move would red as a path miss, not as the right test.</summary>
     private static string ResolveAssemblyPath(string assemblyName)
     {
         string local = Path.Combine(AppContext.BaseDirectory, assemblyName + ".dll");
@@ -158,8 +162,16 @@ public sealed class PackagePurityTests
         string configuration = AppContext.BaseDirectory.Contains(
             Path.DirectorySeparatorChar + "Debug" + Path.DirectorySeparatorChar,
             StringComparison.OrdinalIgnoreCase) ? "Debug" : "Release";
+        string csproj = Path.Combine(RepoRoot(), "src", assemblyName, assemblyName + ".csproj");
+        string? tfm = XDocument.Load(csproj).Root!
+            .Elements("PropertyGroup").Elements("TargetFramework")
+            .Select(e => e.Value)
+            .SingleOrDefault();
+        Assert.False(string.IsNullOrEmpty(tfm),
+            $"could not read a single <TargetFramework> from {csproj} — the purity pin "
+            + "resolves checkout build output by the csproj's OWN TFM (8.0 review M-3).");
         string built = Path.Combine(
-            RepoRoot(), "src", assemblyName, "bin", configuration, "netstandard2.0",
+            RepoRoot(), "src", assemblyName, "bin", configuration, tfm!,
             assemblyName + ".dll");
         Assert.True(File.Exists(built),
             $"could not resolve {assemblyName}.dll — looked in the test output "
