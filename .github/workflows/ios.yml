@@ -30,31 +30,31 @@
 # Artifact-upload heavy: every publish log, nm dump, xcodebuild log, crash report,
 # and the .xcresult bundle is uploaded each run (CI-only iteration — upload all).
 #
-# ── TRIGGERS: push(main) + pull_request (EVERY PR) + workflow_dispatch ────────
-# Both of these changed in the M6-audit fix, and both changes are the same finding
-# (audit F1):
+# ── TRIGGERS: push(main) + workflow_dispatch (Phase 7.6 — the PR trigger removed) ──
+# The M6-audit fix (F1) made two changes that STAND:
 #
 #   1. **`push: branches: [main]` was ADDED.** The lane had NO push trigger, so it
 #      NEVER RAN ON `main` — an iOS regression that landed could sit undetected for
 #      exactly as long as the AGP 9 bug did. A lane that cannot see the branch it is
-#      defending is not defending it.
+#      defending is not defending it. Every merge still gets a full simulator run.
 #
-#   2. **The `paths:` filter was DELETED.** It listed the Apple/Runtime/Components/
-#      Renderer/Core trees — so a PR touching only `src/BlazorNative.Jni/**`,
-#      `tests/**`, `scripts/**`, `Directory.Build.props` or `global.json` could break
-#      the Swift shell and NOT EVEN RUN THIS LANE. That is not a saving, it is a blind
-#      spot with a green tick on it: the filter's only job was to save macOS minutes,
-#      and public-repo macOS minutes are FREE. It also made the ADVISORY behaviour lane
-#      NARROWER than the REQUIRED compile lane (`ci.yml`'s `ios-build`, which is
-#      unfiltered) — the wrong way round.
+#   2. **The `paths:` filter was DELETED** (a blind spot with a green tick on it) —
+#      and it is NOT reintroduced here. There is no filter; there is no PR trigger.
 #
-# Renovate's Kingfisher v8 PR (#82) ran this lane only because it happened to touch an
-# Apple path. Nothing made that so. Now nothing has to.
+# **Phase 7.6 removed `pull_request:`** (owner cost request). What that trigger bought
+# was a full simulator run on EVERY push to EVERY open PR — the single largest macOS
+# consumer — duplicating coverage this project already has three ways: the REQUIRED
+# `ios-build` compile gate runs unfiltered on every PR event; the phase-gate process
+# dispatches THIS lane (workflow_dispatch) at every iOS gate, fix pass, and mutation
+# run; and every merge runs it on main via the push trigger. A PR that skips the
+# process (e.g. Renovate) is compile-gated on the PR and execution-covered at merge.
+# If the repo ever loses the per-gate dispatch discipline, restore `pull_request:`
+# BEFORE relaxing anything else — main-only execution coverage plus a broken process
+# is exactly the AGP-9 shape again.
 #
-# The lane's POSTURE is unchanged and deliberately so: it remains INFORMATIONAL. What
-# it adds over `ios-build` is EXECUTION on a simulator, and that is where the flake
-# lives. Compilation — which cannot flake that way — is now behind a required check;
-# see `ci.yml`'s `ios-build` job.
+# The lane's POSTURE is unchanged: INFORMATIONAL. What it adds over `ios-build` is
+# EXECUTION on a simulator, and that is where the flake lives. Compilation — which
+# cannot flake that way — is behind the required `ios-build` check in `ci.yml`.
 # ─────────────────────────────────────────────────────────────────────────────
 name: ios
 
@@ -62,7 +62,6 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-  pull_request:
 
 permissions:
   contents: read
