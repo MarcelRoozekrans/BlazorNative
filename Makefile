@@ -3,7 +3,7 @@
 # make devloop         → native fast lane: watch .NET src → publish → PreviewHost
 # make devloop-android → device lane: publish → installDebug → launch → logcat
 # make inspect         → DevTools inspector: native session + localhost page
-# make runtime-publish → NativeAOT publish BlazorNative.Runtime for all 3 RIDs
+# make runtime-publish → NativeAOT publish the SampleApp head for all 3 RIDs
 # make android         → build the Android APK (BlazorNative.Jni via Gradle)
 # make android-test    → boot AVD if needed + run connectedAndroidTest
 # make test            → run all tests
@@ -11,7 +11,9 @@
 # ──────────────────────────────────────────────────────────────────────────────
 
 DOTNET            := dotnet
-RUNTIME_PROJECT   := src/BlazorNative.Runtime
+# The shells' publish head (Phase 8.0 decision 3): the SampleApp publishes,
+# its csproj canonicalizes the artifact to the frozen BlazorNative.Runtime.*.
+PUBLISH_HEAD      := samples/BlazorNative.SampleApp
 ANALYZER_PROJECT  := src/BlazorNative.Analyzers/BlazorNative.Analyzers.csproj
 
 .PHONY: devloop devloop-android inspect runtime-publish android android-build android-test android-test-visible test test-watch clean setup analyzers help
@@ -31,10 +33,10 @@ inspect:                      ## DevTools inspector: native session + page on ht
 analyzers:                    ## Build Roslyn analyzers
 	$(DOTNET) build $(ANALYZER_PROJECT) -c Release
 
-runtime-publish:              ## NativeAOT publish BlazorNative.Runtime (win-x64 + both bionic ABIs)
-	$(DOTNET) publish $(RUNTIME_PROJECT) -c Release -r win-x64
-	$(DOTNET) publish $(RUNTIME_PROJECT) -c Release -r linux-bionic-x64
-	$(DOTNET) publish $(RUNTIME_PROJECT) -c Release -r linux-bionic-arm64
+runtime-publish:              ## NativeAOT publish the SampleApp head (win-x64 + both bionic ABIs)
+	$(DOTNET) publish $(PUBLISH_HEAD) -c Release -r win-x64
+	$(DOTNET) publish $(PUBLISH_HEAD) -c Release -r linux-bionic-x64
+	$(DOTNET) publish $(PUBLISH_HEAD) -c Release -r linux-bionic-arm64
 
 ## ── Mobile targets ───────────────────────────────────────────────────────────
 

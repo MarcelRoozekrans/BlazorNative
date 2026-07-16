@@ -17,10 +17,11 @@
 #
 # Unlike Android (which splits publish-on-Windows from test-on-Linux), iOS both
 # PUBLISHES and TESTS on macOS, so this is one job:
-#   1. publish src/BlazorNative.Runtime -r iossimulator-arm64 (PublishAot lives in
-#      the csproj — NOT on the CLI, which would propagate globally → NETSDK1203 on
-#      the P2P refs; the runtime-pack bypass + NativeLib=Static → the static
-#      libBlazorNative.Runtime.a; assert exactly the 4 accepted IL2072s)
+#   1. publish samples/BlazorNative.SampleApp -r iossimulator-arm64 (the Phase 8.0
+#      publish head; PublishAot lives in the csproj — NOT on the CLI, which would
+#      propagate globally → NETSDK1203 on the P2P refs; the runtime-pack bypass +
+#      NativeLib=Static → the static archive, canonicalized to the frozen
+#      libBlazorNative.Runtime.a name; assert exactly the 4 accepted IL2072s)
 #   2. nm -gU asserts the NINE blazornative_* exports in the .a; then assemble the
 #      STATIC-EMBED link inputs: libbootstrapperdll.o (direct-linked so its
 #      constructor initialises the runtime) + a merged libBnRuntimeSupport.a (the
@@ -110,13 +111,14 @@ jobs:
       - name: Publish iossimulator-arm64 (NativeLib=Static; assert exactly 4 IL2072)
         run: |
           set -o pipefail
-          # NOTE: PublishAot is NOT passed on the CLI. It lives in the Runtime
-          # csproj's own PropertyGroup (local, non-propagating); a CLI -p:PublishAot
-          # would become a GLOBAL property and propagate to the P2P refs (Core/
-          # Renderer/Http/Components), which lack the runtime-pack bypass → NETSDK1203.
+          # NOTE: PublishAot is NOT passed on the CLI. It lives in the SampleApp
+          # csproj's own PropertyGroup (local, non-propagating — the publish head
+          # moved there in Phase 8.0, decision 3); a CLI -p:PublishAot would become
+          # a GLOBAL property and propagate to the P2P refs (Core/Renderer/Http/
+          # Components), which lack the runtime-pack bypass → NETSDK1203.
           # This mirrors the proven 5.0 spike rung-3 invocation and the win-x64/
           # bionic ci.yml publishes (which also never pass -p:PublishAot).
-          dotnet publish src/BlazorNative.Runtime -c Release -r "$RID" \
+          dotnet publish samples/BlazorNative.SampleApp -c Release -r "$RID" \
             -tl:off -nologo 2>&1 | tee ios-out/publish.log
           il2072=$(grep -c 'warning IL2072' ios-out/publish.log || true)
           echo "IL2072 count: $il2072"
@@ -132,12 +134,12 @@ jobs:
           set -uo pipefail
           # Evidence first: dump the whole iossimulator native output tree so a
           # missing/renamed/shared artifact is diagnosable from one run.
-          tree_root="src/BlazorNative.Runtime/bin/Release/net10.0/$RID"
+          tree_root="samples/BlazorNative.SampleApp/bin/Release/net10.0/$RID"
           echo "=== native output tree ($tree_root) ===" | tee ios-out/native-tree.txt
           find "$tree_root" -type f \( -name '*.a' -o -name '*.dylib' -o -name '*.o' \) 2>/dev/null \
             | sort | tee -a ios-out/native-tree.txt || true
           echo "=== any .a anywhere under bin ===" | tee -a ios-out/native-tree.txt
-          find src/BlazorNative.Runtime/bin -type f -name '*.a' 2>/dev/null | sort | tee -a ios-out/native-tree.txt || true
+          find samples/BlazorNative.SampleApp/bin -type f -name '*.a' 2>/dev/null | sort | tee -a ios-out/native-tree.txt || true
 
           set -e
           # The canonical static archive is the publish/ output (native/ mirrors it).
