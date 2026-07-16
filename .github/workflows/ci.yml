@@ -901,7 +901,21 @@ jobs:
       #     lane because Android cannot stage it (Coil's memory cache proves only the
       #     synchronous SUCCESS; a 404 is never cached) — iOS stages it live
       #     (URL(string:) → nil), same table, two shells.
-      - name: JVM tests (Gradle testDebugUnitTest — assert 104 passed / 0 failed)
+      # ── Phase 7.5 Gate 2 REVIEW I-1 (applied after Gate 3): 104 → 105, +1 — the
+      #    DEFER arm re-decides at FIRE time.
+      #
+      #  +1 ImageErrorDispatchTest.the_deferred_turn_re_asks_the_decision_with_fire_
+      #     time_facts — decision-time DEFER (mid-batch, live, attached), generation
+      #     bumped BEHIND the failure in the same batch, fire-time re-ask → DROP.
+      #     The row exists because the old Android DEFER arm posted a decision-time
+      #     capture (`mainHandler.post { dispatchError(handlerId!!, url) }`): a
+      #     remove-later frame would dispatch for a PURGED node, a supersede-later
+      #     frame would deliver the OLD src's error into live user code. LATENT here
+      #     (Coil cannot fail synchronously mid-batch), PROVEN LIVE on iOS
+      #     (URL(string:) → nil; BnImagePolishMapperTests pins both frames
+      #     end-to-end) — so the fix (WidgetMapper.decideAndDispatchError posts
+      #     ITSELF, the Swift shape) is pinned on this lane, not a faked device test.
+      - name: JVM tests (Gradle testDebugUnitTest — assert 105 passed / 0 failed)
         working-directory: src/BlazorNative.Jni
         run: |
           .\gradlew.bat --no-daemon testDebugUnitTest
@@ -915,8 +929,8 @@ jobs:
             $errors += [int]$suite.errors; $skipped += [int]$suite.skipped
           }
           Write-Host "JVM test totals across $($xmls.Count) suites: tests=$tests failures=$failures errors=$errors skipped=$skipped"
-          if ($tests -ne 104 -or $failures -ne 0 -or $errors -ne 0 -or $skipped -ne 0) {
-            throw "JVM test baseline drift: expected 104 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped"
+          if ($tests -ne 105 -or $failures -ne 0 -or $errors -ne 0 -or $skipped -ne 0) {
+            throw "JVM test baseline drift: expected 105 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped"
           }
 
       # the instrumented-sources compile gate moved to its own required job

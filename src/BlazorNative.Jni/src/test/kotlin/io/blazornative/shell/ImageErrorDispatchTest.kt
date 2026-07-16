@@ -114,6 +114,40 @@ class ImageErrorDispatchTest {
     }
 
     @Test
+    @DisplayName("THE DEFERRED TURN RE-ASKS THE DECISION: decision-time DEFER, generation bumped behind it, fire-time DROP")
+    fun the_deferred_turn_re_asks_the_decision_with_fire_time_facts() {
+        // Decision time — the failure terminates INSIDE the batch, live and attached: DEFER.
+        assertEquals(
+            ImageErrorDispatchAction.DEFER,
+            imageErrorDispatchAction(
+                currentGeneration = 1, requestGeneration = 1,
+                currentView = liveView, requestView = liveView,
+                handlerAttached = true, applyingBatch = true,
+            ),
+            "mid-batch, live, attached: the decision is DEFER — but a verdict is not a " +
+                "dispatch ticket. What the posted turn may carry is the REQUEST's facts " +
+                "(nodeId, generation, view, url), never the verdict itself.",
+        )
+        // Fire time — a later patch in the SAME batch wrote src again (generation 1 → 2);
+        // the posted turn runs after the batch closed and re-asks with LIVE facts: DROP.
+        assertEquals(
+            ImageErrorDispatchAction.DROP,
+            imageErrorDispatchAction(
+                currentGeneration = 2, requestGeneration = 1,
+                currentView = liveView, requestView = liveView,
+                handlerAttached = true, applyingBatch = false,
+            ),
+            "GATE 2 REVIEW I-1, the row: a DEFER arm that replays a decision-time capture " +
+                "would deliver the OLD src's error into live user code here (and a " +
+                "RemoveNode behind the failure would dispatch for a PURGED node). The " +
+                "deferred turn must RE-ENTER imageErrorDispatchAction with fire-time state " +
+                "(WidgetMapper.decideAndDispatchError posts ITSELF — the iOS shape, where " +
+                "URL(string:) → nil proves this frame live). Latent on Android only " +
+                "because Coil cannot fail synchronously mid-batch; normative regardless.",
+        )
+    }
+
+    @Test
     @DisplayName("an UNBOUND handler never dispatches — attach-iff-HasDelegate, the shell half")
     fun an_unbound_handler_never_dispatches() {
         val why = "no attach means no wire: an unbound OnError is ZERO wire presence (the " +

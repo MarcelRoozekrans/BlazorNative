@@ -1966,10 +1966,12 @@ class WidgetMapper(
      * composes [isLiveImageRequest] by name (one guard, two consumers: a superseded /
      * purged / recycled request's error dispatches nothing, exactly as it paints nothing)
      * and encodes the batch rule: **a dispatch never runs inside a patch batch — deferred
-     * to a fresh main-queue turn, NEVER dropped**. Coil cannot stage the synchronous
-     * failure on this shell (a 404 is never cached; the memory cache proves only the
-     * synchronous SUCCESS), so the defer arm is decision-table-tested on the JVM — the
-     * design's own mitigation — and iOS stages it live (`URL(string:) → nil`).
+     * to a fresh main-queue turn, NEVER dropped**. The dispatch site is
+     * [decideAndDispatchError], which RE-ENTERS the decision at every fire time — its KDoc
+     * carries the argument. Coil cannot stage the synchronous failure on this shell (a 404
+     * is never cached; the memory cache proves only the synchronous SUCCESS), so the defer
+     * arm is decision-table-tested on the JVM — the design's own mitigation — and iOS
+     * stages it live (`URL(string:) → nil`).
      * At-most-once per terminated request is Coil's own listener contract (one terminal
      * verdict per request) times the liveness gate; the counted [errorDispatchesSent] is
      * what the device asserts it by. CANCELLED never gets here at all
@@ -1986,7 +1988,43 @@ class WidgetMapper(
         clearIfMine(nodeId, generation, view)
         Log.w(TAG, "image load failed for node $nodeId ($url): ${error.javaClass.simpleName}: " +
             "${error.message} — the node stays 0 × 0 and reserves nothing")
+        decideAndDispatchError(nodeId, generation, view, url)
+    }
 
+    /**
+     * **THE DISPATCH DECISION, RE-ENTERED AT EVERY FIRE TIME** (Gate 2 review, I-1 — the
+     * Android mirror of iOS's `BnWidgetMapper.decideAndDispatchError`, which landed first
+     * because only that shell can stage the failure live).
+     *
+     * The DEFER arm posts THIS FUNCTION to a fresh main-queue turn — it does NOT post a
+     * captured `dispatchError(handlerId, url)` — and the difference is not style, it is
+     * the stale-callback rule with the batch still open. A failure that terminates
+     * synchronously INSIDE [applyBatch] can have patches BEHIND it in the same batch:
+     *
+     *  - `src = <bad>` … `RemoveNode` later in the batch — a dispatch captured at decision
+     *    time would fire for a PURGED node (moving [errorDispatchesSent] on a node the
+     *    batch removed — "removal never dispatches", broken);
+     *  - `src = <bad>` … `src = <good>` later in the batch — it would deliver the
+     *    SUPERSEDED source's error into live user code, the exact class of stale callback
+     *    the generation exists to kill.
+     *
+     * So the deferred turn re-asks [imageErrorDispatchAction] with FIRE-TIME facts — the
+     * LIVE generation, the LIVE view, the LIVE handler, `applyingBatch` as it stands when
+     * the posted turn actually runs — against the request's own captured
+     * (nodeId, generation, view, url): facts of the REQUEST ride the closure; verdicts
+     * never do. It is this re-decision — not the rc-0 at-most-once stale-handler absorber,
+     * which only covers a handler swap racing the post — that guards supersession and
+     * removal. Coil has no deterministic in-batch synchronous failure (a 404 is never
+     * cached), so the gap this closes is LATENT on Android and PROVEN LIVE on iOS
+     * (`URL(string:) → nil` fails inside `applyBatch` by construction; both adversarial
+     * frames are pinned end-to-end in BnImagePolishMapperTests) — here the re-ask is
+     * pinned on the JVM table (`the_deferred_turn_re_asks_the_decision…`).
+     *
+     * The re-entered decision can, in principle, answer DEFER again (a fresh main-queue
+     * turn cannot run mid-batch — [applyBatch] is synchronous on main — so this is
+     * defensive); it re-posts rather than drops: deferred, never dropped.
+     */
+    private fun decideAndDispatchError(nodeId: Int, generation: Int, view: ImageView, url: String) {
         val handlerId = imageStates[nodeId]?.errorHandlerId
         when (imageErrorDispatchAction(
             currentGeneration = imageGenerations[nodeId],
@@ -1997,10 +2035,8 @@ class WidgetMapper(
             applyingBatch = applyingBatch,
         )) {
             ImageErrorDispatchAction.DISPATCH_NOW -> dispatchError(handlerId!!, url)
-            // A fresh main-queue turn, AFTER the batch's guard has dropped. The handlerId is
-            // captured at decision time (the rc-0 at-most-once stale contract absorbs a
-            // handler swap that races the post, same as click/change).
-            ImageErrorDispatchAction.DEFER -> mainHandler.post { dispatchError(handlerId!!, url) }
+            ImageErrorDispatchAction.DEFER ->
+                mainHandler.post { decideAndDispatchError(nodeId, generation, view, url) }
             ImageErrorDispatchAction.DROP -> Unit
         }
     }
