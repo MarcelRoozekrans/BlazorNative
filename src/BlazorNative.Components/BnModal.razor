@@ -1,0 +1,126 @@
+@*
+    ─────────────────────────────────────────────────────────────────────────
+    BnModal — Phase 7.4 (design decisions 1-4), authored in .razor.
+
+    THE FIRST OVERLAY SURFACE. Emits the `modal` element → NodeType 11 — an
+    overlay in the EXISTING root, NOT a native dialog window (decision 1:
+    a Dialog/presented-VC means a second Yoga root, a second calculate pass,
+    a second frame-application surface — and a window that OWNS its own
+    dismissal, the state-owner violation the 7.3 picker precedent forbids).
+    Shell-side (Gates 2/3) a `modal` node materializes as TWO pieces:
+
+      • the ANCHOR — a 0-sized `position:absolute` view at the modal's WIRE
+        position, so sibling insert indices never skew (the THIRD normative
+        index-mapping rule, after the text collapse and the scroll content
+        node: the modal's wire child at index i is the OVERLAY's child at
+        index i);
+      • the OVERLAY — a full-root container attached LAST at the host root,
+        painted with `scrimColor`; the modal's wire children parent into it
+        (the containerFor/scrollContents redirection pattern). Stacking is
+        creation order; a re-shown modal is a re-created one and lands on
+        top. RemoveNode(modalId) purges BOTH subtrees (NOT the scroll
+        shape — the overlay is not a descendant of the anchor).
+
+    ── THE WIRE (what .NET puts on it — Gate 1's half) ──────────────────────
+      • `scrimColor` prop — ALWAYS emitted (the BnInput posture: the host
+        prop exists from mount, no shell-side default two platforms would
+        have to keep equal). Default #80000000. A PROP, not a style —
+        deliberately: SetStyle on a `modal` node is diagnosed-and-ignored on
+        both shells (every style would land on the anchor or the overlay,
+        neither of which the author owns), and this component's surface
+        cannot emit one.
+      • `click` on the MODAL element — THE DISMISSAL-REQUEST WIRE, always
+        attached. The shells dispatch it for a tap that lands on the SCRIM
+        VIEW ITSELF (never a descendant — decision 4's normative rule) and,
+        on Android, for the hardware back with this modal topmost
+        (decision 3). Same wire, platform-appropriate trigger.
+      • ONE wire child — the CONTENT BOX, a plain view carrying the
+        DECLARED ContentWidth/ContentHeight/Padding/BackgroundColor (the
+        BnScroll forwarding precedent); ChildContent renders inside it. The
+        box swallows its own taps via a real no-op `click` attach (the RN
+        inner-Touchable pattern): on Android a non-clickable child's tap
+        falls THROUGH to the scrim, so the box being clickable is what makes
+        a content tap NOT a dismissal — and that dispatch is real, the
+        device counters account for it.
+
+    ── HIDE UNMOUNTS; .NET OWNS VISIBILITY (decision 2) ─────────────────────
+    Internally `@if (Visible)`: false means ZERO wire presence, and the whole
+    overlay subtree leaves as ONE RemoveNodePatch (the disposal shape 7.2's
+    removes-first fix hardened). Dismissal — scrim tap, Android back, the
+    app's own button — is a REQUEST: this component invokes
+    VisibleChanged(false) and changes nothing itself. A parent that ignores
+    it keeps the modal open — correct; no self-closing state exists anywhere
+    in the shell. A dismissal that races a second one is absorbed by
+    construction: Visible is already false, the handler is stale (at-most-
+    once delivery), nothing moves. Consequence, stated once: state inside
+    ChildContent does NOT survive hide unless bound — the 7.2 eviction rule
+    verbatim (an app that wants it binds it, exactly as on the web).
+    ─────────────────────────────────────────────────────────────────────────
+*@
+@if (Visible)
+{
+    <modal scrimColor="@ScrimColor" @onclick="HandleDismissRequest">
+        <div backgroundColor="@BackgroundColor"
+             padding="@Padding.ToStyleValue()"
+             width="@ContentWidth"
+             height="@ContentHeight"
+             @onclick="SwallowContentBoxTap">
+            @ChildContent
+        </div>
+    </modal>
+}
+
+@code {
+    /// <summary>Whether the modal is mounted. False = ZERO wire presence
+    /// (hide is unmount — one RemoveNodePatch for the whole subtree). .NET
+    /// owns this; the shell only ever REQUESTS a change via
+    /// <see cref="VisibleChanged"/>.</summary>
+    [Parameter] public bool Visible { get; set; }
+
+    /// <summary>Raised with <c>false</c> on every dismissal request (scrim
+    /// tap; Android back with this modal topmost) — the write-back half of
+    /// the <c>@bind-Visible</c> pair. A parent that ignores it keeps the
+    /// modal open.</summary>
+    [Parameter] public EventCallback<bool> VisibleChanged { get; set; }
+
+    /// <summary>The modal's content — rendered inside the content box.
+    /// State in here does NOT survive hide unless bound (hide is unmount;
+    /// the 7.2 eviction rule).</summary>
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    /// <summary>The scrim color, painted on the shell's overlay behind the
+    /// content box. ALWAYS on the wire (as the <c>scrimColor</c> prop) so no
+    /// shell invents a default.</summary>
+    [Parameter] public string ScrimColor { get; set; } = "#80000000";
+
+    // ── The content box's declared surface (the BnScroll forwarding
+    //    precedent — these style the BOX, which the author owns; the modal
+    //    node itself carries NO styles, by design) ──────────────────────────
+
+    /// <summary>The content box's declared width, e.g. <c>"280"</c>.
+    /// Null = auto (the box sizes to its content).</summary>
+    [Parameter] public string? ContentWidth { get; set; }
+
+    /// <summary>The content box's declared height, e.g. <c>"180"</c>.
+    /// Null = auto.</summary>
+    [Parameter] public string? ContentHeight { get; set; }
+
+    /// <inheritdoc cref="BnView.Padding"/>
+    [Parameter] public float? Padding { get; set; }
+
+    /// <inheritdoc cref="BnView.BackgroundColor"/>
+    [Parameter] public string? BackgroundColor { get; set; }
+
+    /// <summary>The dismissal REQUEST (decision 2): re-sync the bound state;
+    /// change nothing here. Visible flips only if the parent writes it
+    /// back.</summary>
+    private Task HandleDismissRequest()
+        => VisibleChanged.InvokeAsync(false);
+
+    /// <summary>The content-box swallow (decision 4): a REAL handler that
+    /// moves nothing, so on Android a content tap stops at the box instead
+    /// of falling through to the scrim. The dispatch is real — the device
+    /// counters account for it.</summary>
+    private static Task SwallowContentBoxTap()
+        => Task.CompletedTask;
+}

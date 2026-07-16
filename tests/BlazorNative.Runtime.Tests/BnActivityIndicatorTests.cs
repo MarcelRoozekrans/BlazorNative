@@ -75,8 +75,8 @@ public sealed class BnActivityIndicatorTests : IDisposable
     [Fact]
     public void DeclaresNoParameters_TheSurfaceIsPresenceItself()
     {
-        Assert.Empty(typeof(BnActivityIndicator).GetProperties()
-            .Where(p => p.IsDefined(typeof(ParameterAttribute), inherit: true)));
+        Assert.DoesNotContain(typeof(BnActivityIndicator).GetProperties(),
+            p => p.IsDefined(typeof(ParameterAttribute), inherit: true));
     }
 
     /// <summary>Host for the presence-is-<c>@if</c> posture: a button whose
