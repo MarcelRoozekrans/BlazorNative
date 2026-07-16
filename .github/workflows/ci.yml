@@ -1448,10 +1448,22 @@ jobs:
 
           # blazornative_init must be DEFINED in the app's own Mach-O — the proof the
           # NativeAOT archive was force_loaded and not merely referenced.
+          #
+          # NOT `grep -q`, under pain of a raced gate (PR #99's failure): this step
+          # runs under pipefail, and `grep -q` exits at the FIRST match, closing the
+          # pipe while nm is still writing its ~280 KB symbol listing. nm then dies
+          # of SIGPIPE (141), pipefail hands the pipeline nm's status, and the `if`
+          # reads a SUCCESSFUL match as failure. Whether nm's tail write lands after
+          # grep's exit is fixed by the symbol table's size and the match's position,
+          # so the race is per-binary DETERMINISTIC: main passed every run while the
+          # 7.4 branch — same link, same toolchain, entrypoints verifiably external
+          # in nlist AND export trie — failed every run, purely because its symbol
+          # table grew. Plain grep with stdout dropped reads to EOF; no early close,
+          # no SIGPIPE, and the pipeline's status is grep's verdict alone.
           found=""
           for bin in "$app/BnHost" "$app/BnHost.debug.dylib"; do
             [ -f "$bin" ] || continue
-            if nm -gU "$bin" 2>/dev/null | grep -q 'blazornative_init'; then
+            if nm -gU "$bin" 2>/dev/null | grep 'blazornative_init' >/dev/null; then
               found="$bin"
               break
             fi
