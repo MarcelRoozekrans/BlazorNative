@@ -89,9 +89,14 @@ internal class ImageFixtureServer {
         const val INTRINSIC_URL = "$ORIGIN/intrinsic.png"
         const val MISSING_URL = "$ORIGIN/missing.png"
 
-        /** Test-only, on no wire: a path whose response is held until [releaseSlow], so a
-         * request can be observed **in flight** — which is the only way to prove a
-         * cancellation cancelled anything. */
+        /** A path whose response is held until [releaseSlow], so a request can be observed
+         * **in flight** — the only way to prove a cancellation cancelled anything, and
+         * (Phase 7.5) the only way "while loading" is an assertable STATE rather than a
+         * race. On the wire since 7.5: `BnImagePolishDemo.SlowSrc` names it (case [0],
+         * placeholder-while-loading). Serves the FIXED fixture's bytes (64 × 48) once
+         * released — `BnImagePolishDemo.razor`'s own words ("Gates 2/3 serve the 64×48
+         * fixed fixture's bytes"; its box is declared, so the natural size is irrelevant
+         * to every frame). */
         const val SLOW_URL = "$ORIGIN/slow.png"
 
         private const val PORT = 8099
@@ -376,8 +381,11 @@ internal class ImageFixtureServer {
 
             val out = it.getOutputStream()
             when (path) {
-                "/fixed.png" -> respond(out, 200, "OK", "image/png", fixedPng)
-                "/intrinsic.png", "/slow.png" -> respond(out, 200, "OK", "image/png", intrinsicPng)
+                // Phase 7.5: /slow.png serves the FIXED bytes (see SLOW_URL's KDoc — the
+                // .razor's stated contract; its consumer's box is declared, so only the
+                // "which bytes painted" pin can see this at all).
+                "/fixed.png", "/slow.png" -> respond(out, 200, "OK", "image/png", fixedPng)
+                "/intrinsic.png" -> respond(out, 200, "OK", "image/png", intrinsicPng)
                 // THE FAILING CASE — a REAL 404 from a REAL server, offline and
                 // deterministic. Not a dropped connection, not a timeout: the failure the
                 // contract's failure row is written about.

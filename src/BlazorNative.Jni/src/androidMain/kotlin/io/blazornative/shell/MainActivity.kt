@@ -104,6 +104,14 @@ class MainActivity : Activity() {
          * of .NET's NativeNavigationManager route table. Same two doors:
          * BnModalDemoAndroidTest mounts it by NAME (and once by this route, so
          * the row itself is asserted).
+         *
+         * Phase 7.5 adds "/imagepolish" → BnImagePolishDemo, the image-polish
+         * proof page (M7 DoD #6: placeholder / OnError / ContentMode) — a NINTH
+         * root page, same reason again, same mirror of .NET's
+         * NativeNavigationManager route table. Same two doors:
+         * BnImagePolishDemoAndroidTest mounts it by NAME (and once by this
+         * route, so the row itself is asserted). Route-registry unification
+         * stays 7.6's job, one page closer.
          */
         private val DEEP_LINK_COMPONENTS = mapOf(
             "/settings" to "BnSettingsPage",
@@ -113,6 +121,7 @@ class MainActivity : Activity() {
             "/list" to "BnListDemo",
             "/form" to "BnFormDemo",
             "/modal" to "BnModalDemo",
+            "/imagepolish" to "BnImagePolishDemo",
         )
     }
 
