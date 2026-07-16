@@ -5,8 +5,9 @@
 //
 // The renderer does NOT emit one `RemoveNode` per node: it emits one for the
 // subtree's ROOT and purges the descendants in its own bookkeeping
-// (`NativeRenderer.PurgeNodeSubtree`; the host contract on
-// `ProcessDisposedComponent` says so in as many words). A host that drops only the
+// (`NativeRenderer.PurgeNodeSubtree`; the host contract in the `<remarks>` on
+// `EmitDisposedComponentRemoves` — 7.2's split of the 3.3-era
+// `ProcessDisposedComponent` — says so in as many words). A host that drops only the
 // named node's map entry therefore leaks EVERY DESCENDANT.
 //
 // And on iOS the leak is worse than on Android, which is why this file exists.
