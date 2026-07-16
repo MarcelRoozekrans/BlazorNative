@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical">
+
+    <!-- Phase 6.1: the host root is a BnYogaFrameLayout, NOT a stock FrameLayout.
+         A stock one is not inert: every addView/setText in a batch calls
+         requestLayout(), and the ensuing traversal re-measures this container and
+         re-places every TOP-LEVEL node at (0, 0, hostW, hostH) — behind Yoga's
+         back, in the real Activity only (never in a detached-root test), and the
+         resize listener's bounds guard sees no change so nothing repairs it. Yoga
+         owns ALL placement, including the top level. See BnYogaFrameLayout's KDoc. -->
+    <io.blazornative.shell.BnYogaFrameLayout
+        android:id="@+id/widget_root"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="3"
+        android:background="#FFFFFF" />
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="2"
+        android:background="#000000"
+        android:padding="16dp">
+
+        <TextView
+            android:id="@+id/markers"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:fontFamily="monospace"
+            android:textColor="#00FF00"
+            android:textSize="14sp"
+            android:text="Booting native runtime..." />
+    </ScrollView>
+</LinearLayout>

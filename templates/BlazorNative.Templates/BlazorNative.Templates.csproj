@@ -1,0 +1,90 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- ─────────────────────────────────────────────────────────────────────
+       BlazorNative.Templates — Phase 8.3 (design decision 1, M8 DoD #4:
+       `dotnet new blazornative`).
+
+       A CONTENT-ONLY template pack: no dll, no lib/, no TFM that means
+       anything at runtime. It is a seventh shipped artifact of a DIFFERENT
+       KIND from the six library packages, and that is why it lives in
+       templates/ rather than src/ (8.3 design decision 1, normative rule 4):
+
+         · PackagePurityTests.TheShippedSet_IsExactlyTheSrcCsprojs proves
+           src/ holds exactly the six shipped csprojs — and THAT proof is
+           what licenses src/Directory.Build.props to be the packaging home
+           at all. A seventh csproj under src/ reds that pin and un-licenses
+           the props.
+         · The six's pins are ASSEMBLY-shaped: type purity off the PE, a
+           sentinel type per package, snupkg pairing, ResolveAssemblyPath.
+           A content-only pack satisfies NONE of them, so joining would mean
+           special-casing it in five pinned places — and a special case is a
+           hole in a pin (the 8.1 four-copies lesson).
+
+       THE FEED IS SEPARATE — artifacts/templates, never artifacts/packages.
+       consumer-smoke.ps1 asserts an EXACT `6 nupkg + 5 snupkg`; a seventh
+       nupkg in that feed would turn an exact count into "6 or 7, depending",
+       which is a count that no longer means anything.
+
+       IT DOES NOT PUBLISH THIS PHASE. release.yml's push enumerates
+       artifacts/packages and this pack is not in it, so no release-machinery
+       edit is required and 8.2's verdict is untouched. DoD #4 requires
+       "creation → build validated on CI", not publication.
+
+       VERSION: NOT declared here. <Version> is inherited from... nothing —
+       templates/ has no Directory.Build.props and this project is outside
+       src/, so the version literal below is the pack's OWN. That is exactly
+       the 8.1 "Seven" trap (a packable project whose version is guarded by
+       nothing, because PackageVersionPinTests.ShippedCsprojs() enumerates
+       src/ ONLY), and it is closed deliberately: TemplateDriftTests reads
+       THIS element and asserts it equals src/Directory.Build.props. The
+       literal is a MIRROR, not a source (8.3 normative rule 2).
+
+       OUT OF THE SOLUTION, deliberately — the ConsumerSmoke posture. Nothing
+       in the required compile path builds a template pack; the lane packs it
+       explicitly (Gate 2's scripts/template-smoke.ps1). Being in the sln
+       would put content files that are NOT meant to compile in front of a
+       compiler that would try.
+       ───────────────────────────────────────────────────────────────────── -->
+
+  <PropertyGroup>
+    <PackageType>Template</PackageType>
+    <PackageId>BlazorNative.Templates</PackageId>
+    <!-- THE MIRROR (8.3 design decision 3). Equal to src/Directory.Build.props'
+         <Version> by TemplateDriftTests, non-vacuously. Bump both in one
+         commit; the pin names this file when you forget. -->
+    <Version>1.0.0-preview.1</Version>
+    <Title>BlazorNative App Template</Title>
+    <Authors>Marcel Roozekrans</Authors>
+    <Description>`dotnet new blazornative` — a Blazor app compiled with NativeAOT into a native Android shell. Creates the .NET app (pages, manifest, the NativeAOT publish head) and a runnable Android/Gradle shell tree.</Description>
+    <PackageTags>dotnet-new;templates;blazor;android;nativeaot;mobile</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <RepositoryUrl>https://github.com/MarcelRoozekrans/BlazorNative</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/MarcelRoozekrans/BlazorNative</PackageProjectUrl>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <ContentTargetFolders>content</ContentTargetFolders>
+    <!-- Template content legitimately includes dotfiles and names the default
+         pack excludes would drop (the gradle wrapper's directory shape). -->
+    <NoDefaultExcludes>true</NoDefaultExcludes>
+    <!-- NU5128: no lib/ and no dependency groups — correct for a content-only
+         pack, and the exact shape PackagePurityTests would red if this ever
+         drifted into src/. -->
+    <NoWarn>$(NoWarn);NU5128</NoWarn>
+    <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
+
+    <!-- The content under content/ is TEMPLATE MATERIAL, not source: a .cs
+         and a .razor in there must never reach this project's compiler.
+         EnableDefaultItems=false is the switch that makes that true by
+         construction rather than by an Exclude that a new file could miss. -->
+    <EnableDefaultItems>false</EnableDefaultItems>
+    <IsPackable>true</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Content Include="content\**\*" Exclude="content\**\bin\**;content\**\obj\**" />
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+</Project>

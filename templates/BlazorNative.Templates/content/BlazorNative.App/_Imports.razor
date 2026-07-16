@@ -1,0 +1,21 @@
+@*
+    ─────────────────────────────────────────────────────────────────────────
+    _Imports.razor — the project-wide Razor imports for every .razor page in
+    this app.
+
+    The Components.Web line is LOAD-BEARING (a recorded footgun, not a
+    formality): bind and event tag helpers are namespace-scoped like
+    components, so WITHOUT this @using in scope the compiler emits
+    `@bind`/`@onclick` as LITERAL MARKUP — with ZERO diagnostics and a green
+    build — silently dead on a native shell. Do not remove it because "nothing
+    uses Web here".
+
+    BlazorNative.Components is the LIBRARY namespace (the Bn* widgets your
+    pages compose); BlazorNative.Core carries the contracts you inject
+    (INavigationManager, IMobileBridge). Your own pages live in this project's
+    namespace, which is in scope implicitly.
+    ─────────────────────────────────────────────────────────────────────────
+*@
+@using Microsoft.AspNetCore.Components.Web
+@using BlazorNative.Components
+@using BlazorNative.Core
