@@ -915,7 +915,26 @@ jobs:
       #     (URL(string:) → nil; BnImagePolishMapperTests pins both frames
       #     end-to-end) — so the fix (WidgetMapper.decideAndDispatchError posts
       #     ITSELF, the Swift shape) is pinned on this lane, not a faked device test.
-      - name: JVM tests (Gradle testDebugUnitTest — assert 105 passed / 0 failed)
+      # ── Phase 7.5 Gate 3 REVIEW I-1: 105 → 106, +1 — the ROW ORDER of the
+      #    dispatch table becomes normative: liveness → applyingBatch → handlerAttached.
+      #
+      #  +1 ImageErrorDispatchTest.a_mid_batch_failure_with_no_handler_yet_DEFERS_
+      #     and_fire_time_decides — mid-batch + handler NOT attached → DEFER (the
+      #     old table said DROP); fire-time + attached → DISPATCH_NOW; fire-time +
+      #     still unbound → DROP. The rows exist because the old order consulted
+      #     handlerAttached BEFORE applyingBatch and so reached a PERMANENT verdict
+      #     against MID-BATCH state: at mount the wire order is src (seq 24) →
+      #     attachEvent "error" (seq 27) in ONE batch, so iOS's synchronous nil-URL
+      #     failure decided DROP three patches before the attach it was racing —
+      #     OnError never fired for <BnImage Src="<unparseable>" OnError="..."> at
+      #     mount, while Android (whose failure lands post-batch) dispatched. That
+      #     is the parity break; design decision 2 says an unparseable non-empty
+      #     URL DISPATCHES. The fire-time re-decision (decideAndDispatchError posts
+      #     ITSELF — the Gate 2 I-1 machinery, both shells) reads the SETTLED
+      #     handler state, so the swap costs nothing: never-attached still drops,
+      #     at the one moment the answer is true. Both tables swapped as literal
+      #     twins; iOS pins the mount batch end-to-end (ios.yml, 152 → 153).
+      - name: JVM tests (Gradle testDebugUnitTest — assert 106 passed / 0 failed)
         working-directory: src/BlazorNative.Jni
         run: |
           .\gradlew.bat --no-daemon testDebugUnitTest
@@ -929,8 +948,8 @@ jobs:
             $errors += [int]$suite.errors; $skipped += [int]$suite.skipped
           }
           Write-Host "JVM test totals across $($xmls.Count) suites: tests=$tests failures=$failures errors=$errors skipped=$skipped"
-          if ($tests -ne 105 -or $failures -ne 0 -or $errors -ne 0 -or $skipped -ne 0) {
-            throw "JVM test baseline drift: expected 105 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped"
+          if ($tests -ne 106 -or $failures -ne 0 -or $errors -ne 0 -or $skipped -ne 0) {
+            throw "JVM test baseline drift: expected 106 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped"
           }
 
       # the instrumented-sources compile gate moved to its own required job

@@ -13,16 +13,30 @@ package io.blazornative.shell
  * what guarantees the two shells decided the same thing. Decision-table-tested on the JVM:
  * the design's own risk-table mitigation, by name.
  *
- * The three rows, each normative (design §decision 2, "Dispatch discipline"):
+ * The three rows, each normative (design §decision 2, "Dispatch discipline") — AND THE ROW
+ * ORDER IS NORMATIVE TOO (Gate 3 review, I-1): liveness, THEN applyingBatch, THEN
+ * handlerAttached. The batch question must be asked BEFORE the handler question, because
+ * mid-batch the handler state is not a fact yet — it is a race with the rest of the batch.
+ * At mount the wire order puts `src` (seq 24) BEFORE `attachEvent "error"` (seq 27) in ONE
+ * batch, so iOS's synchronous nil-URL failure asks its question three patches early; a table
+ * that consulted `handlerAttached` first answered DROP — permanently — for a handler the
+ * SAME batch was about to attach, and `OnError` never fired for
+ * `<BnImage Src="<unparseable>" OnError="...">` at mount (this shell's failure lands
+ * post-batch and dispatched: a parity break, not a shared rule). DEFER re-asks at fire time
+ * (`WidgetMapper.decideAndDispatchError` posts ITSELF), when the handler state has SETTLED:
+ * attached-by-batch-end dispatches exactly once; never-attached still drops — at fire time,
+ * where the answer is true.
  *
  *  - **[ImageErrorDispatchAction.DROP] — only a LIVE request's failure dispatches, and only
- *    into an attached handler.** The liveness gate is [isLiveImageRequest] — THE SAME pure
+ *    into a handler that is attached WHEN THE QUESTION CAN BE ANSWERED (outside a batch).**
+ *    The liveness gate is [isLiveImageRequest] — THE SAME pure
  *    function the paint asks, composed by name, not a re-implementation: one guard, two
  *    consumers (paint + dispatch), so the unit test that pins the conjunction defends both.
  *    A superseded request's error is a stale callback and dispatches nothing, exactly as it
  *    paints nothing; an unbound `OnError` never attached, so there is no wire to ride
  *    (attach-iff-HasDelegate — the .NET half already pinned it).
- *  - **[ImageErrorDispatchAction.DEFER] — a dispatch may never run inside a patch batch.**
+ *  - **[ImageErrorDispatchAction.DEFER] — a dispatch may never run inside a patch batch,
+ *    and no PERMANENT verdict but liveness-drop may be reached there either.**
  *    Terminal callbacks CAN complete synchronously inside `UpdateProp("src")` (6.3's most
  *    surprising finding — `Dispatchers.Main.immediate` / Kingfisher's memory hit), and a
  *    dispatch from inside `applyBatch` is re-entrant dispatch under a non-re-entrant guard
@@ -52,7 +66,7 @@ internal fun imageErrorDispatchAction(
 ): ImageErrorDispatchAction = when {
     !isLiveImageRequest(currentGeneration, requestGeneration, currentView, requestView) ->
         ImageErrorDispatchAction.DROP
-    !handlerAttached -> ImageErrorDispatchAction.DROP
     applyingBatch -> ImageErrorDispatchAction.DEFER
+    !handlerAttached -> ImageErrorDispatchAction.DROP
     else -> ImageErrorDispatchAction.DISPATCH_NOW
 }

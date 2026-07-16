@@ -150,9 +150,6 @@ class ImageErrorDispatchTest {
     @Test
     @DisplayName("an UNBOUND handler never dispatches — attach-iff-HasDelegate, the shell half")
     fun an_unbound_handler_never_dispatches() {
-        val why = "no attach means no wire: an unbound OnError is ZERO wire presence (the " +
-            "BnScroll shape, pinned .NET-side), so there is no handlerId to ride and the " +
-            "failure stays what it always was — a logged, painted-nothing 404."
         assertEquals(
             ImageErrorDispatchAction.DROP,
             imageErrorDispatchAction(
@@ -160,17 +157,63 @@ class ImageErrorDispatchTest {
                 currentView = liveView, requestView = liveView,
                 handlerAttached = false, applyingBatch = false,
             ),
-            why,
+            "no attach means no wire: an unbound OnError is ZERO wire presence (the " +
+                "BnScroll shape, pinned .NET-side), so there is no handlerId to ride and the " +
+                "failure stays what it always was — a logged, painted-nothing 404. Asked " +
+                "OUTSIDE a batch, where 'unbound' is a settled fact — the mid-batch shape is " +
+                "the mount-order test's, and it DEFERS.",
         )
+    }
+
+    @Test
+    @DisplayName("GATE 3 REVIEW I-1: mid-batch the handler question is NOT SETTLED — DEFER, and let fire time answer it")
+    fun a_mid_batch_failure_with_no_handler_yet_DEFERS_and_fire_time_decides() {
+        // Decision time — the mount frame's own ordering: `src` (seq 24) precedes
+        // `attachEvent "error"` (seq 27) in ONE batch, so iOS's synchronous nil-URL
+        // failure asks "handler attached?" three patches early. Mid-batch that answer
+        // is a race, not a fact: DEFER. The old table asked handlerAttached FIRST and
+        // answered DROP — permanently — so OnError never fired for
+        // <BnImage Src="<unparseable>" OnError="..."> at mount on iOS, while this
+        // shell (whose failure lands post-batch) dispatched: a parity break the
+        // design's "an unparseable non-empty URL is a failure and DISPATCHES" forbids.
         assertEquals(
-            ImageErrorDispatchAction.DROP,
+            ImageErrorDispatchAction.DEFER,
             imageErrorDispatchAction(
                 currentGeneration = 1, requestGeneration = 1,
                 currentView = liveView, requestView = liveView,
                 handlerAttached = false, applyingBatch = true,
             ),
-            "$why (…and being inside a batch does not turn an unbound failure into a " +
-                "deferred one: DEFER is for dispatches that WILL happen)",
+            "mid-batch + no handler YET is DEFER, not DROP: the attach may be three " +
+                "patches behind the failure in the SAME batch (the mount order), and a " +
+                "verdict reached against mid-batch state is a verdict reached against a " +
+                "race. Only the liveness DROP may be permanent inside a batch — identity " +
+                "and generation never un-supersede.",
+        )
+        // Fire time — the batch closed and the attach landed (the mount case): the
+        // re-entered decision reads the SETTLED handler state and dispatches, once.
+        assertEquals(
+            ImageErrorDispatchAction.DISPATCH_NOW,
+            imageErrorDispatchAction(
+                currentGeneration = 1, requestGeneration = 1,
+                currentView = liveView, requestView = liveView,
+                handlerAttached = true, applyingBatch = false,
+            ),
+            "fire time, attach landed by batch end: DISPATCH_NOW — the deferred turn " +
+                "re-enters imageErrorDispatchAction (decideAndDispatchError posts ITSELF) " +
+                "and the settled state says the wire exists. This is the mount-time " +
+                "bad-URL dispatch, exactly once, post-batch — both shells.",
+        )
+        // Fire time — no attach ever landed: the unbound rule holds where it is true.
+        assertEquals(
+            ImageErrorDispatchAction.DROP,
+            imageErrorDispatchAction(
+                currentGeneration = 1, requestGeneration = 1,
+                currentView = liveView, requestView = liveView,
+                handlerAttached = false, applyingBatch = false,
+            ),
+            "fire time, still unbound: DROP — deferring an unbound mid-batch failure " +
+                "does not manufacture a dispatch; it only moves the handler question to " +
+                "the one moment it can be answered truthfully.",
         )
     }
 }

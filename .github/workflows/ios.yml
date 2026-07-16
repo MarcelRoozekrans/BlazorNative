@@ -339,7 +339,7 @@ jobs:
             > ios-out/xcresult.json 2>/dev/null || true
           ls -la ios-out/crash || true
 
-      - name: Assert XCTest baseline (152 passed / 0 failed)
+      - name: Assert XCTest baseline (153 passed / 0 failed)
         if: always()
         run: |
           log=ios-out/xcodebuild-test.log
@@ -824,10 +824,27 @@ jobs:
           #       ← Back round trip over the real wire (dispatch_event → NativeAOT →
           #       INavigationManager → BnDemo remounts, every image node purged with the
           #       page).
+          # 152 -> 153 (Phase 7.5 Gate 3 REVIEW I-1, +1) — the dispatch table's ROW ORDER
+          # becomes normative: liveness -> applyingBatch -> handlerAttached (both shells,
+          # literal twins — the JVM lane pins the swapped rows, 105 -> 106).
+          #   +1  BnImagePolishMapperTests.testAMountBatchAttachingTheWireAFTERTheBadSrc
+          #       StillDispatchesExactlyOnce — the renderer's own mount frame for
+          #       <BnImage Src="<unparseable>" OnError="...">: ONE batch, src (seq 24)
+          #       BEFORE attachEvent "error" (seq 27), more patches between. The old
+          #       table consulted handlerAttached BEFORE applyingBatch, so the
+          #       synchronous nil-URL failure decided DROP — permanently — three patches
+          #       before the attach the same batch carried: OnError never fired at mount
+          #       on iOS while Android (whose failure lands post-batch) dispatched. The
+          #       parity break design decision 2 forbids ("an unparseable non-empty URL
+          #       is a failure and DISPATCHES"). Now the mid-batch decision DEFERS and
+          #       the fire-time re-ask (decideAndDispatchError posts ITSELF) reads the
+          #       SETTLED handler state: exactly one dispatch, delivered with
+          #       insideBatch: false. The three defer pins and both adversarial
+          #       orderings above stay green — never-attached still drops, at fire time.
           # Count drift fails loudly.
-          if [ "$failed" -ne 0 ] || [ "$passed" -ne 152 ]; then
+          if [ "$failed" -ne 0 ] || [ "$passed" -ne 153 ]; then
             grep -E "Test Case '.*' (passed|failed)" "$log" || true
-            echo "iOS XCTest baseline drift: expected 152 passed / 0 failed, got passed=$passed failed=$failed" >&2
+            echo "iOS XCTest baseline drift: expected 153 passed / 0 failed, got passed=$passed failed=$failed" >&2
             exit 1
           fi
 

@@ -426,12 +426,16 @@ final class BnImagePolishMapperTests: BnHostTestCase {
                      + "here — not by quietly proving nothing.")
 
         var deliveries: [Delivery] = []
-        // The wire is attached in an EARLIER batch, deliberately: at mount, `src`
-        // (seq 24) precedes the attach (seq 27) in one batch, so a MOUNT-time
-        // synchronous failure decides against an unattached handler and DROPs —
-        // matching Android, whose mount-time failure lands after the whole batch. The
-        // defer row is about a failure while a wire is LIVE and a batch is OPEN, and
-        // this is the frame shape that stages exactly that.
+        // The wire is attached in an EARLIER batch, deliberately: this test stages the
+        // PURE defer row — a failure while a wire is LIVE and a batch is OPEN, nothing
+        // else in question. The mount-order shape (src seq 24 BEFORE the attach seq 27
+        // in ONE batch) has its own end-to-end pin below
+        // (testAMountBatchAttachingTheWireAFTERTheBadSrc…): mid-batch the handler
+        // question is unsettled, so the decision DEFERS and the fire-time re-ask finds
+        // the attach landed — dispatching post-batch, matching Android, whose
+        // mount-time failure lands after the whole batch and always dispatched.
+        // (Gate 3 review I-1: the old table DROPped there — a parity break this
+        // comment used to mis-record as "matching Android".)
         let host = makeSection(src: BnImageFixtureServer.SLOW_URL, declared: true,
                                attachError: errorHandler)
         host.mapper.onUiEvent = { [weak mapper = host.mapper] handlerId, name, payload in
@@ -547,6 +551,64 @@ final class BnImagePolishMapperTests: BnHostTestCase {
                     0, 0, fixture.size.width, fixture.size.height)
         XCTAssertNil(try imageView(host).bnPlaceholderColor)
         XCTAssertEqual(host.mapper.inFlightImageCount, 0, "nothing left in flight")
+    }
+
+    /// **THE MOUNT-ORDER PIN (Gate 3 review, I-1) — the attach lands AFTER the bad
+    /// src, in the SAME batch, and the dispatch still happens.** This is the frame the
+    /// renderer actually emits for `<BnImage Src="<unparseable>" OnError="...">`: at
+    /// mount, `src` (seq 24) precedes `attachEvent "error"` (seq 27) in one batch, so
+    /// the synchronous nil-URL failure asks "handler attached?" three patches early.
+    /// The old table consulted `handlerAttached` BEFORE `applyingBatch` and answered
+    /// DROP — permanently, against mid-batch state — so `OnError` never fired here
+    /// while Android (whose failure lands post-batch) dispatched: a parity break, and
+    /// design decision 2's "an unparseable non-empty URL is a failure and DISPATCHES"
+    /// broken on this shell. Now the mid-batch decision DEFERS and the fire-time
+    /// re-ask (`decideAndDispatchError` posts ITSELF) reads the SETTLED handler state:
+    /// exactly one dispatch, on a fresh main-queue turn, never inside the batch.
+    func testAMountBatchAttachingTheWireAFTERTheBadSrcStillDispatchesExactlyOnce() throws {
+        XCTAssertNil(URL(string: unparseableSrc), "PRECONDITION — see the defer test")
+
+        var deliveries: [Delivery] = []
+        let host = BnSyntheticHost()
+        host.mapper.onUiEvent = { [weak mapper = host.mapper] handlerId, name, payload in
+            deliveries.append(Delivery(handlerId: handlerId, eventName: name, payload: payload,
+                                       insideBatch: mapper?.isApplyingBatch ?? false))
+        }
+
+        // ONE batch, the renderer's own mount ordering: the failure terminates at
+        // `src` with the attach still THREE patches away — more patches land behind
+        // it (the placeholder prop, a whole sibling subtree), and the attach rides
+        // LAST (the renderer's event-attribute position, makeSection's own order).
+        host.render([
+            bnCreate(section, "view", nil),
+            bnStyle(section, "width", "300"),
+            bnStyle(section, "alignItems", "flex-start"),
+            bnCreate(image, "image", section),
+            bnStyle(image, "width", "200"),
+            bnStyle(image, "height", "120"),
+            .updateProp(nodeId: image, name: "src", value: unparseableSrc),
+            .updateProp(nodeId: image, name: "placeholderColor", value: placeholderHex),
+            bnCreate(band, "view", section),
+            bnStyle(band, "width", "300"),
+            bnStyle(band, "height", "20"),
+            .attachEvent(nodeId: image, eventName: "error", handlerId: errorHandler),
+        ])
+        bnSettle()
+
+        XCTAssertEqual(deliveries,
+                       [Delivery(handlerId: errorHandler, eventName: "error",
+                                 payload: unparseableSrc, insideBatch: false)],
+                       "EXACTLY ONE dispatch for the mount-time bad URL, delivered on a fresh "
+                       + "main-queue turn (insideBatch: false): mid-batch the handler question "
+                       + "is a RACE with the rest of the batch, so the decision DEFERS and the "
+                       + "fire-time re-ask finds the attach the same batch carried. DROP here "
+                       + "is the I-1 parity break: Android dispatches for this exact markup")
+        XCTAssertEqual(host.mapper.errorDispatchesSent, 1,
+                       "…exactly once — the defer is not a double, and the mount batch's other "
+                       + "patches moved nothing")
+        XCTAssertEqual(host.mapper.imageResults.map { BnUrlOutcome($0) },
+                       [BnUrlOutcome(url: unparseableSrc, outcome: .error)],
+                       "the synchronous failure is this mount's ONLY terminal result")
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
