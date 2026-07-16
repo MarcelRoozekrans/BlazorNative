@@ -157,8 +157,9 @@ public, before the phase closes.)
 - Required status checks — **all three jobs of `.github/workflows/ci.yml`**:
   - **`build-test`** (windows-latest) — build + analyzers, the .NET test suite,
     the three NativeAOT publishes with nine-export verification, JVM
-    `testDebugUnitTest`, consumer smoke, and the `.so` artifact uploads the two
-    native-shell jobs below consume.
+    `testDebugUnitTest`, consumer smoke, and the `.so` artifact uploads (kept so
+    a **human** can download and inspect a build's binaries — **no job consumes
+    them**; see the note under the three bullets).
 
     > **Local IL2072 counts: publish from clean.** The publish gates assert
     > **exactly 4** IL2072 trim warnings — but an *incremental* local
@@ -167,9 +168,11 @@ public, before the phase closes.)
     > not a fix; delete the publish `obj/bin` (or `git clean`) and re-publish
     > to see the real count. CI is unaffected — every run is a clean
     > checkout. (Phase 8.0 review M-2, recorded here.)
-  - **`android-build`** (ubuntu-latest, `needs: build-test`) — the **Android
-    shell's compile**: `gradlew compileDebugAndroidTestKotlin` against the
-    bionic `.so` `build-test` uploads, type-checking `src/androidMain/kotlin`
+  - **`android-build`** (windows-latest, **no `needs:`**) — the **Android
+    shell's compile**. It **self-publishes** `linux-bionic-x64` the proven way
+    (windows-latest with the pinned NDK) and points the verify/copy chain at its
+    own publish tree via `-PciSoDir` — it downloads nothing. Then `gradlew
+    compileDebugAndroidTestKotlin`, type-checking `src/androidMain/kotlin`
     (MainActivity, WidgetMapper, YogaLayout) **and** the instrumented
     `androidTest` source set. No emulator is booted; no test is run.
   - **`ios-build`** (macos-latest) — the **iOS shell's compile**: publish
@@ -178,6 +181,17 @@ public, before the phase closes.)
     linked). No simulator is booted; no test is run.
 - Require conversation resolution before merging
 - No force pushes
+
+> **The three required jobs are INDEPENDENT — `ci.yml` declares no `needs:` edges
+> at all.** They run in parallel, and each does its own checkout and its own
+> publish. Nothing in `ci.yml` downloads an artifact: `build-test`'s `.so`
+> uploads are there to be downloaded by a *person*, not by a job. The repo's one
+> long-standing cross-job artifact hand-off is in `android-instrumented.yml`
+> (`publish-so` → `emulator`, the **advisory nightly** lane); `release.yml`'s
+> `validate` → `push` is the second. *(Phase 8.2 Gate 1 review M-7: this section
+> previously described `android-build` as "ubuntu-latest, `needs: build-test`",
+> compiling against a `.so` `build-test` uploads. It has never been any of those
+> things, and the same false belief is what produced review finding I-3.)*
 
 > **All three check names are exactly the job ids** — `build-test`,
 > `android-build` and `ios-build` — because no job declares a `name:` and none is
@@ -405,10 +419,20 @@ standing there having just clicked Publish.**
 | U4 | The adjacent `.snupkg` reaches the symbol server | Packages publish, symbols silently do not. **Recoverable** — symbols can be pushed later |
 | U5 | `--skip-duplicate` no-ops a real 409 | A re-run reds instead of skipping. Recoverable by hand |
 | U6 | Six pushes across a minutes-wide async indexing window behave | A consumer restoring inside the window sees an unindexed dependency. **Self-healing** |
+| U7 | The **artifact hand-off** from `validate` to `push` carries the packed feed | The upload is `release`-gated, so **no PR can exercise it** — only a real Release does. A loud RED: *"ZERO .nupkg found — the artifact hand-off from validate is broken"*. That guard exists so this fails **loudly** instead of pushing nothing and going green. Safe: nothing publishes. (Same actions and versions as `publish-so → emulator` in the nightly `android-instrumented.yml`, which runs this shape every night.) |
+| U8 | `needs.validate.outputs.verdict` **reaches the `push` job** | This is the repo's **first** `needs.<job>.outputs` consumer — no other lane uses one. If it is wrong, the value is empty, the `if:` is false, and **`push` skips silently** — safe (nothing publishes) but **quiet**: you would see a *skipped* job, not a red one. So check that `push` actually ran. `actionlint` statically rules out every **typo** shape *in this chain* (job-output names, step ids, `needs.<job>.outputs.<name>`, and `needs:` itself — all mutant-tested), so "is it spelled right" is settled; what a Release proves is that the runtime does what the syntax says |
 
 **The blast radius of the first firing is one unlistable preview of a package
-nobody depends on yet** — which is the cheapest possible way to learn all six of
+nobody depends on yet** — which is the cheapest possible way to learn all eight of
 these at once, and it is cheap *on purpose*.
+
+> **All eight fail in the safe direction — nothing publishes — and seven of them
+> say so loudly. U8 is the one quiet failure**: an empty verdict skips `push`
+> rather than reddening it. So when you publish the first Release, the check is
+> **"did `push` actually run?"**, not just "was there a red?". *(U7 and U8 were
+> added by the Phase 8.2 Gate 1 review, finding I-2: both are arrows no PR can
+> exercise, and a table that omitted them was claiming more coverage than the
+> lane has.)*
 
 ---
 

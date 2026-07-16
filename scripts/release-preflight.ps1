@@ -212,6 +212,25 @@ function Get-ReleaseVerdict {
         }
     }
 
+    # CASE — and the asymmetry with the package arm below. Deliberate, kept, and
+    # written down because it is NOT predictable from the code (Gate 1 review
+    # M-1/M-2). `-match` is PowerShell's CASE-INSENSITIVE operator, so `V8.0`
+    # matches HERE and SKIPs. The package arm below uses [regex]::Match, which is
+    # CASE-SENSITIVE, so `PKG/1.0.0-preview.1` does NOT match, falls through, and
+    # lands on unrecognized -> RED.
+    #
+    # So a wrong-case tag PUBLISHES NOTHING either way — the arms differ only in
+    # what they SAY about it. That is why this is a comment and not a
+    # normalization: both candidate fixes cost something real.
+    #   · Make this arm case-SENSITIVE -> `V8.0` becomes a RED on a tag of
+    #     obvious intent. That is decision 1's named hazard exactly: reddening a
+    #     legitimate action trains the owner to ignore reds on release runs.
+    #   · Make the package arm case-INSENSITIVE -> the DOOR opens to a tag shape
+    #     the docs never define. Toward publishing is the one direction this
+    #     phase's law does not bend.
+    # And neither shape has a self-test row (the table is 8, and the gate pins
+    # it at 8), so either change would be untested behaviour change on the one
+    # script that decides whether a push happens. Comment, not code.
     if ($Tag -match $MilestoneTagPattern) {
         return [pscustomobject]@{
             Class   = "milestone"
@@ -220,6 +239,10 @@ function Get-ReleaseVerdict {
         }
     }
 
+    # [regex]::Match is CASE-SENSITIVE (unlike `-match` above — see the note on
+    # the milestone arm). `pkg/` is the only spelling that opens this door;
+    # `PKG/` falls through to unrecognized -> RED. That strictness is the right
+    # default for the publishing arm and is left as-is.
     $pkgMatch = [regex]::Match($Tag, $PackageTagPattern)
     if ($pkgMatch.Success) {
         $claimed = $pkgMatch.Groups[1].Value
@@ -235,6 +258,17 @@ function Get-ReleaseVerdict {
         # Mutation vehicle (8.2 mutation 2): neuter this comparison to
         # always-true -> the `pkg/9.9.9` row returns PUBLISH -> its row expects
         # RED -> the self-test reds. A positive control ON the positive control.
+        #
+        # CASE, and this is the ONE non-obvious PUBLISH in the script (Gate 1
+        # review M-2), so it is stated rather than left to be discovered: `-ne`
+        # is CASE-INSENSITIVE, so `pkg/1.0.0-PREVIEW.1` compares EQUAL to the
+        # props' `1.0.0-preview.1` and the verdict is PUBLISH. That is benign,
+        # for two independent reasons: NuGet versions ARE case-insensitive by
+        # spec, and — decisively — THE TAG NEVER FEEDS THE PACK. What ships is
+        # whatever src/Directory.Build.props spells, and the release path never
+        # overrides it (pinned by ReleaseWorkflowPinTests
+        # .TheReleaseWorkflow_NeverOverridesTheVersion). So an odd-cased tag
+        # still publishes correctly-cased packages; the mis-spelling dies here.
         if ($claimed -ne $PropsVersion) {
             return [pscustomobject]@{
                 Class   = "package"
