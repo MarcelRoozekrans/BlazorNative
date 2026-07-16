@@ -1195,6 +1195,15 @@ public sealed class NativeRenderer : BlazorRenderer
         // never send "1,5"). The typed args live in Core (BnScrollEventArgs):
         // Components consumes them and does not reference this assembly.
         "scroll" => new BnScrollEventArgs { OffsetY = ParseScrollOffset(e.Payload) },
+        // Phase 7.5 (the onError wire): the payload is the failed image's
+        // wire `src`, VERBATIM — the URL is the only fact two loaders (Coil,
+        // Kingfisher) share about the same failure, so it is the only payload
+        // both shells can dispatch identically (a platform error message is
+        // the one thing they will never agree on). The typed args live in
+        // Core (BnImageErrorEventArgs) — BnScrollEventArgs's reason: the
+        // renderer constructs, Components consumes, and Components does not
+        // reference this assembly.
+        "error"  => new BnImageErrorEventArgs { Src = ParseErrorSrc(e.Payload) },
         _        => EventArgs.Empty
     };
 
@@ -1209,6 +1218,19 @@ public sealed class NativeRenderer : BlazorRenderer
                 "scroll dispatch carried no payload — the wire contract requires the content offset in dp/pt")
             : float.Parse(payload, System.Globalization.NumberStyles.Float,
                 System.Globalization.CultureInfo.InvariantCulture);
+
+    /// <summary>Parses an <c>error</c> dispatch's payload — the failed
+    /// image's wire <c>src</c>, verbatim. ParseScrollOffset's strict posture:
+    /// a missing payload is a SHELL contract violation, and so is an EMPTY
+    /// one — <c>""</c> never names a source (an empty <c>src</c> takes the
+    /// 6.3 null path: never fetched, so it can never fail), so no honest
+    /// shell can send it. Throw (FormatException) → the loud rc-2 fault,
+    /// never an event about no image at all.</summary>
+    private static string ParseErrorSrc(string? payload)
+        => string.IsNullOrEmpty(payload)
+            ? throw new FormatException(
+                "error dispatch carried no payload — the wire contract requires the failed image's src URL, verbatim")
+            : payload;
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 

@@ -1326,6 +1326,79 @@ public sealed class BnComponentTests : IDisposable
         Assert.Equal(ImageSrc, src.Value);
     }
 
+    // ── The `error` dispatch arm (Phase 7.5 — the onError wire's renderer end) ──
+    //
+    // The `error` EVENT rides the EXISTING AttachEvent/dispatch_event wire,
+    // exactly like scroll did in 7.2 — a new word on the wire, not a new wire.
+    // The payload is the failed image's wire `src`, verbatim: the URL is the
+    // only fact two loaders (Coil, Kingfisher) share about the same failure,
+    // and parity demands identical payloads. BuildEventArgs's "error" arm
+    // parses it into BnImageErrorEventArgs (Core) with ParseScrollOffset's
+    // strict posture: a missing or empty payload is a SHELL contract
+    // violation → FormatException → the loud rc-2 fault, never a
+    // silently-empty event. The raw-element host below proves the RENDERER
+    // half without BnImage in the frame — the component half (attach iff
+    // HasDelegate) has its own tests in the BnImage section above.
+
+    private sealed class RawImageErrorHost : ComponentBase
+    {
+        /// <summary>What the handler received (static: Mount&lt;T&gt; creates
+        /// its own instance). Reset by each test before mounting.</summary>
+        internal static string? Received;
+
+        protected override void BuildRenderTree(Microsoft.AspNetCore.Components.Rendering.RenderTreeBuilder b)
+        {
+            b.OpenElement(0, "img");
+            b.AddAttribute(1, "onerror", EventCallback.Factory.Create<BlazorNative.Core.BnImageErrorEventArgs>(
+                this, e => Received = e.Src));
+            b.CloseElement();
+        }
+    }
+
+    /// <summary>An `error` dispatch through the production ingress
+    /// (DispatchEventCore, the same flat-JSON the shells send) delivers the
+    /// payload as the TYPED failed src — BuildEventArgs's "error" arm
+    /// constructing BnImageErrorEventArgs, not EventArgs.Empty falling out of
+    /// the default arm into an InvalidCastException.</summary>
+    [Fact]
+    public void ErrorDispatch_DeliversTheFailedSrcTyped()
+    {
+        var (renderer, frames) = CreateCapturingSession();
+        RawImageErrorHost.Received = null;
+
+        renderer.Mount<RawImageErrorHost>();
+        Assert.NotEmpty(frames);
+        AttachEventPatch attach = Assert.Single(frames[0].Patches.OfType<AttachEventPatch>());
+        Assert.Equal("error", attach.EventName);
+
+        Assert.Equal(0, Exports.DispatchEventCore((ulong)attach.HandlerId,
+            /*lang=json*/ """{"name":"error","payload":"http://127.0.0.1:8099/missing.png"}"""));
+
+        Assert.Equal("http://127.0.0.1:8099/missing.png", RawImageErrorHost.Received);
+    }
+
+    /// <summary>An `error` dispatch whose payload is missing or EMPTY is a
+    /// SHELL contract violation, not user input: `""` never names a source
+    /// (an empty `src` takes the 6.3 null path — never fetched, so it can
+    /// never fail), so no honest shell can dispatch it. Fault LOUDLY (rc 2 —
+    /// the dispatch window surfaces the FormatException) rather than hand the
+    /// handler an event about no image at all.</summary>
+    [Theory]
+    [InlineData(/*lang=json*/ """{"name":"error"}""")]
+    [InlineData(/*lang=json*/ """{"name":"error","payload":""}""")]
+    public void ErrorDispatch_MissingOrEmptyPayload_IsALoudRc2Fault(string argsJson)
+    {
+        var (renderer, frames) = CreateCapturingSession();
+        RawImageErrorHost.Received = null;
+
+        renderer.Mount<RawImageErrorHost>();
+        Assert.NotEmpty(frames);
+        AttachEventPatch attach = Assert.Single(frames[0].Patches.OfType<AttachEventPatch>());
+
+        Assert.Equal(2, Exports.DispatchEventCore((ulong)attach.HandlerId, argsJson));
+        Assert.Null(RawImageErrorHost.Received); // the handler never ran
+    }
+
     /// <summary>Host for the `src` → null transition: an image with a source, and a
     /// button whose click takes the source away. (An image has no events of its own —
     /// it is a leaf — so the re-render has to be driven from a sibling.)</summary>
