@@ -339,7 +339,7 @@ jobs:
             > ios-out/xcresult.json 2>/dev/null || true
           ls -la ios-out/crash || true
 
-      - name: Assert XCTest baseline (111 passed / 0 failed)
+      - name: Assert XCTest baseline (131 passed / 0 failed)
         if: always()
         run: |
           log=ios-out/xcodebuild-test.log
@@ -699,10 +699,71 @@ jobs:
           #   the non-control rule, so it cannot catch a parser mutated to accept uppercase hex).
           #   A vector inside the existing method: 19 -> 20 vectors, same test count. Kotlin's
           #   ItemsJsonTest gains the same vector the same way (ci.yml's JVM 90 unchanged).
+          # 111 -> 131 (Phase 7.4 Gate 3, +20) — `modal` (11) + `activityindicator` (12): the
+          # anchor+overlay model's iOS half (design decision 1 — the 6.2 synthetic-node
+          # machinery pointed at the ROOT), the `click`-on-a-plain-view tap-recognizer arm
+          # with the touch-view filter (decision 4), and the measured-leaf spinner
+          # (decision 5). Every LAYOUT number below is one WidgetMapperModalTest /
+          # BnModalDemoAndroidTest already assert on the AVD (Gate 2, instrumented
+          # 147 -> 166) — intrinsics stay per-platform by ORACLE (the 6.3 method, 7.3's
+          # lesson). No back tests: iOS ships nothing there (decision 3's last line — the
+          # Gate 3 row is "same round trips minus back"; nothing replaces it).
+          #   +14 BnModalMapperTests — the model at the mechanism, detached-root (structure
+          #       and creation shape; full-root numbers are the demo class's): the
+          #       zero-footprint ANCHOR at the wire slot with the siblings' EXACT frames
+          #       (the third index-mapping rule as a frame pin); children REDIRECTING into
+          #       the full-root OVERLAY with the shell's justify/align-center arithmetic
+          #       ((W-280)/2, (H-180)/2 against the 400x800 host); a top-level wire APPEND
+          #       slotting in AHEAD of live overlays (overlay-is-LAST, always); re-show =
+          #       re-create = lands on top; scrimColor as a PROP painting the overlay
+          #       (garbage ignored, paint kept); the dismissal click listening on the SCRIM
+          #       never the anchor, every dispatch COUNTED (clickDispatchesSent — the
+          #       changeDispatchesSent precedent); THE TOUCH-VIEW FILTER pinned as the pure
+          #       decision it is (bnClickTouchIsOwn's truth table — a hosted XCTest cannot
+          #       construct a UITouch, so the delegate is one line that asks a unit-tested
+          #       function, the bnIsLiveImageRequest shape) plus the wiring (the recognizer
+          #       IS its own filtering delegate on the live scrim); the generic plain-view
+          #       click arm (attach/fire/last-wins-re-attach/detach; UIButton stays
+          #       target-action, now counted); SetStyle on a modal node diagnosed-and-
+          #       ignored for a LAYOUT and a VISUAL name at ONE site (the recorded
+          #       diagnostics, not NSLog); the TWO-SUBTREE purge as RemoveNode(modal) AND
+          #       as the WRAPPER removal navigation actually emits (overlay counts to 0 in
+          #       BOTH trees — on iOS a missed overlay entry is a dangling YGNodeRef, not
+          #       Android's leak); the NESTED modal EXPLICIT (the Gate 2 review's finding:
+          #       modal B's wire parent inside modal A's overlay, RemoveNode(A) purges BOTH
+          #       overlays through the fixpoint, every Yoga node freed exactly once, and a
+          #       follow-up layout pass proves no dangling handle survived); and the two
+          #       node-type twins (the spinner: UIActivityIndicatorView.medium, SPINNING —
+          #       animating-while-mounted is the contract — a measured leaf whose height is
+          #       the platform's own by oracle and whose LAYOUT box stretches, asserted on
+          #       the Yoga frame per the 7.3 UISwitch discipline; the anchor+overlay pair
+          #       found by TYPE in both trees).
+          #   +6  BnModalDemoTests — /modal on the simulator through the real NativeAOT
+          #       boot (mounted by NAME — iOS's route mirror is .NET's table), asserting
+          #       BnModalDemoTests.cs's numbers plus the HOST-DERIVED half only a device
+          #       can see: the closed mount golden (5 children, zero modal presence, box B
+          #       directly below box A, the page indicator by oracle, the 300 back row);
+          #       the SHOW frame table (scrim = the host view's OWN bounds read at assert
+          #       time painting the pinned #80000000, the DECLARED 280x180 box centered at
+          #       ((W-280)/2, (H-180)/2), the anchor 0x0 at page index 2 with the siblings'
+          #       frames EXACTLY as captured closed, the in-modal indicator by oracle, the
+          #       overlay the root's LAST subview, both overlay counts at 1); the switch
+          #       INSIDE the overlay round-tripping into the echo over the REAL wire
+          #       (sendActions -> dispatch_event -> NativeAOT -> @bind -> re-render);
+          #       hide-by-dismiss under the COMPOSITE FIVE-remove frame (the Gate 1
+          #       finding — node counts back to the closed baseline, overlay counts to 0,
+          #       which the synthetic one-remove tests cannot prove); scrim-tap dismissing
+          #       as a COUNTED dispatch and content-box tap NOT dismissing while its
+          #       swallow dispatch is real (only the counter can see it). The taps are
+          #       HAND-ROLLED (BnClickTapRecognizer.bnFire — a hosted XCTest cannot
+          #       synthesize a UITouch, the recorded 7.3 limitation; Android drives real
+          #       MotionEvents instead); what the fire bypasses — the filter — is the
+          #       mapper suite's truth-table pin, and the delegate wiring is asserted on
+          #       the live scrim before every fire.
           # Count drift fails loudly.
-          if [ "$failed" -ne 0 ] || [ "$passed" -ne 111 ]; then
+          if [ "$failed" -ne 0 ] || [ "$passed" -ne 131 ]; then
             grep -E "Test Case '.*' (passed|failed)" "$log" || true
-            echo "iOS XCTest baseline drift: expected 111 passed / 0 failed, got passed=$passed failed=$failed" >&2
+            echo "iOS XCTest baseline drift: expected 131 passed / 0 failed, got passed=$passed failed=$failed" >&2
             exit 1
           fi
 
