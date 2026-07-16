@@ -14,7 +14,7 @@
 #   emulator (ubuntu-latest, KVM) — downloads the .so, boots the API 34
 #     google_apis x86_64 Pixel 6 image (mirrors the local AVD
 #     blazornative-pixel6-x86_64), runs connectedAndroidTest with
-#     -PciSoDir pointing at the artifact → asserts 182 passed / 0 failed.
+#     -PciSoDir pointing at the artifact → asserts 184 passed / 0 failed.
 #
 # Baselines are asserted, not observed: count drift fails the job loudly.
 # ─────────────────────────────────────────────────────────────────────────────
@@ -782,7 +782,23 @@ jobs:
       #                                  joins the fixture server's routed paths,
       #                                  serving the 64×48 fixed bytes per the
       #                                  razor's stated contract.
-      - name: Assert instrumented baseline (182 passed / 0 failed)
+      # ── Phase 7.6 Gate 2 — the hygiene ledger (182 → 184, +2) ──────────────────
+      # H4 (the 7.4 G2 review ledger): WidgetMapperModalTest
+      #   .a_top_level_INDEXED_insert_lands_at_its_index_and_the_overlay_stays_last —
+      #   the append arm was pinned in 7.4; the INDEXED insert at root while an
+      #   overlay is live was correct by construction (one resolved index feeds
+      #   both trees) but unpinned. An indexed CreateNode between existing root
+      #   anchors lands at its WIRE index (the overlay is not a wire child and
+      #   must not shift the arithmetic); the overlay stays LAST, full-root.
+      # H5 (the 7.5 G3 review ledger): WidgetMapperImagePolishTest
+      #   .placeholderColor_recolors_the_inflight_paint_and_null_CLEARS_it —
+      #   /slow.png held open: a RECOLOR repaints the on-screen placeholder, then
+      #   placeholderColor -> null CLEARS it — both while the request is STILL
+      #   open (zero terminal results at the clear; the bytes still land after).
+      #   The iOS twin lands in the same gate (BnImagePolishMapperTests,
+      #   153 -> 154). Count-neutral in this gate: H1's header repoint and H2's
+      #   scrollDiagnostics -> diagnostics rename.
+      - name: Assert instrumented baseline (184 passed / 0 failed)
         run: |
           shopt -s globstar nullglob
           xmls=(src/BlazorNative.Jni/build/outputs/androidTest-results/connected/**/*.xml)
@@ -799,8 +815,8 @@ jobs:
             s=$(attr skipped "$x");  skipped=$((skipped + ${s:-0}))
           done
           echo "Instrumented totals across ${#xmls[@]} suite(s): tests=$tests failures=$failures errors=$errors skipped=$skipped"
-          if [ "$tests" -ne 182 ] || [ "$failures" -ne 0 ] || [ "$errors" -ne 0 ] || [ "$skipped" -ne 0 ]; then
-            echo "Instrumented test baseline drift: expected 182 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped" >&2
+          if [ "$tests" -ne 184 ] || [ "$failures" -ne 0 ] || [ "$errors" -ne 0 ] || [ "$skipped" -ne 0 ]; then
+            echo "Instrumented test baseline drift: expected 184 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped" >&2
             exit 1
           fi
 

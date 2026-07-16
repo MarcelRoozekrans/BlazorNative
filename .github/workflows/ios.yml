@@ -339,7 +339,7 @@ jobs:
             > ios-out/xcresult.json 2>/dev/null || true
           ls -la ios-out/crash || true
 
-      - name: Assert XCTest baseline (153 passed / 0 failed)
+      - name: Assert XCTest baseline (154 passed / 0 failed)
         if: always()
         run: |
           log=ios-out/xcodebuild-test.log
@@ -841,10 +841,23 @@ jobs:
           #       SETTLED handler state: exactly one dispatch, delivered with
           #       insideBatch: false. The three defer pins and both adversarial
           #       orderings above stay green — never-attached still drops, at fire time.
+          # 153 -> 154 (Phase 7.6 Gate 2, +1) — the hygiene ledger's H5: the matched
+          # placeholder pair (7.5 G3 review), iOS half.
+          #   +1  BnImagePolishMapperTests.testPlaceholderColorRecolorsTheInFlightPaint
+          #       AndNullCLEARSIt — /slow.png held open: a placeholderColor RECOLOR
+          #       repaints the on-screen placeholder (the prop arm repaints iff the
+          #       node still awaits bytes), then placeholderColor -> null CLEARS it —
+          #       both while the request is STILL open (zero terminal results at the
+          #       clear; the bytes still land after). The Android twin lands in the
+          #       same gate (WidgetMapperImagePolishTest, 182 -> 184 with H4).
+          #       Also in this gate, count-neutral: H3's bounded tapAndAwait retry in
+          #       BnClipboardTests (3 attempts against the REAL UIPasteboard — 7.5's
+          #       one flake, run 29504511994), and H2's scrollDiagnostics ->
+          #       diagnostics rename across the suite.
           # Count drift fails loudly.
-          if [ "$failed" -ne 0 ] || [ "$passed" -ne 153 ]; then
+          if [ "$failed" -ne 0 ] || [ "$passed" -ne 154 ]; then
             grep -E "Test Case '.*' (passed|failed)" "$log" || true
-            echo "iOS XCTest baseline drift: expected 153 passed / 0 failed, got passed=$passed failed=$failed" >&2
+            echo "iOS XCTest baseline drift: expected 154 passed / 0 failed, got passed=$passed failed=$failed" >&2
             exit 1
           fi
 
