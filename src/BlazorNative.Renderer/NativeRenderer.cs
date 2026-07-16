@@ -1229,6 +1229,11 @@ public sealed class NativeRenderer : BlazorRenderer
         "checkbox" => "checkbox",
         "switch"   => "switch",
         "slider"   => "slider",
+        // Phase 7.4 (design decisions 1 + 5): the overlay and the measured
+        // leaf. `modal` materializes SHELL-side as anchor + overlay (the
+        // third index-mapping rule); `activityindicator` is a measured leaf.
+        "modal"             => "modal",
+        "activityindicator" => "activityindicator",
         _          => "view"
     };
 
