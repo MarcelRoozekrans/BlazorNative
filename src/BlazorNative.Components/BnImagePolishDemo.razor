@@ -79,8 +79,10 @@
 
     ── THE SYNCHRONIZATION GATE — 6.3's, VERBATIM ───────────────────────────
     The AFTER assertions run only once EVERY request on the page has
-    terminated (SIX: slow, error, 4× fixed — plus the two intrinsic ones =
-    seven; count them ALL), counted via the loaders' terminal callbacks,
+    terminated (EIGHT: slow, error, 4× fixed, plus the two intrinsic ones —
+    1+1+4+2 = 8; count them ALL — the Gate 1 review caught this header saying
+    "seven", and a device gate awaiting 7 would race the 8th request), counted
+    via the loaders' terminal callbacks,
     never by polling a band, with the positive fixture-contract assertions
     up front. OnError JOINS the evidence (the counted dispatch is part of
     case [1]); it does not replace the gate — success still has no wire
