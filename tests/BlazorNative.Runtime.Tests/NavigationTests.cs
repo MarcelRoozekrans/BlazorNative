@@ -286,12 +286,13 @@ public sealed class NavigationTests
                 + $"mount registry ({string.Join(", ", registry)}) — navigating to it would "
                 + "throw on a device. The two registries are mirrors; they move together."));
 
-        // The eight ROUTED pages, by name — so that deleting a route (rather
+        // The nine ROUTED pages, by name — so that deleting a route (rather
         // than mistyping one) is also a red test rather than a silent shrink.
         // (+BnListDemo, Phase 7.2 — "/list"; +BnFormDemo, Phase 7.3 — "/form";
-        // +BnModalDemo, Phase 7.4 — "/modal".)
+        // +BnModalDemo, Phase 7.4 — "/modal"; +BnImagePolishDemo, Phase 7.5 —
+        // "/imagepolish".)
         Assert.Equal(
-            ["BnDemo", "BnFormDemo", "BnImageDemo", "BnLayoutDemo", "BnListDemo", "BnModalDemo", "BnScrollDemo", "BnSettingsPage"],
+            ["BnDemo", "BnFormDemo", "BnImageDemo", "BnImagePolishDemo", "BnLayoutDemo", "BnListDemo", "BnModalDemo", "BnScrollDemo", "BnSettingsPage"],
             NativeNavigationManager.RoutesForTests.Values.OrderBy(v => v, StringComparer.Ordinal));
     }
 

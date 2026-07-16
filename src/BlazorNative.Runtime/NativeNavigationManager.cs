@@ -77,6 +77,12 @@ public sealed class NativeNavigationManager : INavigationManager
         // "BnModalDemo" in Gate 2 (this table's mirror); iOS has no route
         // mirror — it mounts by NAME (BnRuntime.start).
         ["/modal"] = "BnModalDemo",
+        // Phase 7.5: the image-polish proof page — same shape as the six
+        // above. Its "← Back" navigates to "/"; nothing on BnDemo links here.
+        // Android's MainActivity.DEEP_LINK_COMPONENTS gains "/imagepolish" →
+        // "BnImagePolishDemo" in Gate 2 (this table's mirror); iOS has no
+        // route mirror — it mounts by NAME (BnRuntime.start).
+        ["/imagepolish"] = "BnImagePolishDemo",
     };
 
     /// <summary>The default route's component — the name a host mounts to get
