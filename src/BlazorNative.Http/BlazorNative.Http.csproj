@@ -15,14 +15,9 @@
   </PropertyGroup>
 
   <PropertyGroup>
-    <!-- Phase 4.5 Gate 1: NuGet pack metadata (M4 DoD #7). Per-csproj by design —
-         see BlazorNative.Core.csproj. -->
-    <PackageId>BlazorNative.Http</PackageId>
-    <Version>1.2.0-phase-4.5</Version>
-    <Authors>Marcel Roozekrans</Authors>
+    <!-- Phase 8.1: shared pack metadata lives in src/Directory.Build.props —
+         only the per-package voice stays here. -->
     <Description>BlazorNative HTTP bridge: BridgeHttpHandler routes HttpClient traffic through the hosting native shell, so Blazor components use plain HttpClient/IHttpClientFactory on NativeAOT.</Description>
-    <PackageLicenseExpression>MIT</PackageLicenseExpression>
-    <RepositoryUrl>https://github.com/MarcelRoozekrans/BlazorNative</RepositoryUrl>
     <PackageTags>blazor;native;http;httpclient;nativeaot;android;mobile</PackageTags>
   </PropertyGroup>
 

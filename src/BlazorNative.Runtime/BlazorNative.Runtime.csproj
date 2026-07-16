@@ -33,6 +33,15 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
+  <PropertyGroup>
+    <!-- Phase 8.1: Runtime becomes the SIXTH package (the 8.0 header's "8.1
+         ships it", honored). Shared pack metadata lives in
+         src/Directory.Build.props — only the per-package voice is added
+         here; the build surface above is byte-identical to 8.0. -->
+    <Description>The BlazorNative runtime: the 9 blazornative_* native exports, the host session, the binary frame/bridge wire protocol, and the BlazorNativeApp.RegisterPages registration API through which an app names its pages. NativeAOT/trim-compatible — the app owns the publish head.</Description>
+    <PackageTags>blazor;native;runtime;nativeaot;android;ios;mobile</PackageTags>
+  </PropertyGroup>
+
   <ItemGroup>
     <!-- Phase 3.0d Gate 1: FrameArena/FrameEncoder are internal; host-CLR tests
          exercise them directly. -->

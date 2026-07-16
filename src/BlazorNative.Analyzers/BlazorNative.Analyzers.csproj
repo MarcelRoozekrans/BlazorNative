@@ -16,18 +16,15 @@
   </PropertyGroup>
 
   <PropertyGroup>
-    <!-- Phase 4.5 Gate 1: NuGet pack metadata (M4 DoD #7). Per-csproj by design —
-         see BlazorNative.Core.csproj. Analyzer package shape: no lib/, the dll
-         packed into analyzers/dotnet/cs (see the None Include below),
-         DevelopmentDependency so consumers get PrivateAssets=all by default.
-         No props/targets: plain DiagnosticAnalyzers need none (verified — NuGet
-         loads analyzers/dotnet/cs automatically; nothing here configures builds). -->
-    <PackageId>BlazorNative.Analyzers</PackageId>
-    <Version>1.2.0-phase-4.5</Version>
-    <Authors>Marcel Roozekrans</Authors>
+    <!-- Phase 8.1: shared pack metadata lives in src/Directory.Build.props —
+         only the per-package voice + the analyzer package's SPECIAL SHAPE
+         stay here. The 4.5 shape stands verified (8.1 design decision 3):
+         no lib/, the dll packed into analyzers/dotnet/cs (see the None
+         Include below), DevelopmentDependency so consumers get
+         PrivateAssets=all by default. No props/targets: plain
+         DiagnosticAnalyzers need none (verified — NuGet loads
+         analyzers/dotnet/cs automatically; nothing here configures builds). -->
     <Description>Roslyn analyzers enforcing BlazorNative usage rules (BN0xxx): interop-boundary, bridge-async-handler, and mobile-policy diagnostics for BlazorNative app and library code.</Description>
-    <PackageLicenseExpression>MIT</PackageLicenseExpression>
-    <RepositoryUrl>https://github.com/MarcelRoozekrans/BlazorNative</RepositoryUrl>
     <PackageTags>analyzers;roslyn;blazor;native;blazornative</PackageTags>
     <DevelopmentDependency>true</DevelopmentDependency>
     <!-- Both Roslyn refs are PrivateAssets=all, so the dependency group would
@@ -35,6 +32,14 @@
          lib/). Suppressing the empty group is the metadata fix, not a warning
          suppression; the library packages keep their dependency groups. -->
     <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
+    <!-- Phase 8.1 (design decision 3): the shared props' snupkg story does
+         not fit a package with no lib/ — an empty symbols package is NU5017
+         territory. Override: the pdb travels INSIDE the analyzer dll (the
+         established analyzer-package pattern; SourceLink still applies to
+         the embedded pdb). The feed therefore carries 6 nupkgs + 5 snupkgs,
+         asserted by consumer-smoke.ps1. -->
+    <IncludeSymbols>false</IncludeSymbols>
+    <DebugType>embedded</DebugType>
   </PropertyGroup>
 
   <ItemGroup>
