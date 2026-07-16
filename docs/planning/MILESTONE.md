@@ -80,6 +80,20 @@ the two points where scope may consciously shrink; anything cut is ledgered, not
 6. **`BnImage` polish:** `Placeholder`, `OnError`, `ContentMode` — each is a **measurement**
    design (what does a placeholder measure as? does a failure keep reserved space?), specified in
    the parity contract and asserted on both shells like everything else.
+   ✅ **Closed by Phase 7.5** ([conclusion](../plans/2026-07-16-phase-7.5-conclusion.md)):
+   **zero new measurement states** — the 6.3 contract survives verbatim, re-proven with the
+   features present on the ninth page (`/imagepolish`). `PlaceholderColor` (paint-only, the
+   4-row state table normative on both shells; iOS's bounds-tracking subview a recorded
+   improvement over the design's Kingfisher suggestion), `OnError` (`error` on the existing
+   wire, payload = the src string verbatim, at-most-once per (src, generation),
+   attach-iff-HasDelegate; failure never changes measurement), `ContentMode`
+   (contain/cover/stretch/center, paint-only — four identical frames under four modes;
+   default Contain diverging from RN's cover, recorded; `clipsToBounds` pinned on iOS). No
+   ABI change, no new NodeTypes. The headline finding: the defer mechanism's two
+   review-caught construction errors (the decision-time DEFER capture, latent on Android and
+   live on iOS; the dispatch table's wrong row order dropping the mount-time sync failure) —
+   both fixed on both shells, adversarial orderings pinned. Counts .NET **537/0** · JVM
+   **106/0** · Android instrumented **182/0** · iOS XCTest **153/0** (run 29510920883).
 7. **The React Native parity survey.** RN's core-component set mapped to BlazorNative:
    *have it / ships in M7 / ledgered with a reason*. Cheap high-value wins identified by the
    survey (candidates: `ActivityIndicator`, `SafeAreaView`) ship; heavy ones
