@@ -4,7 +4,7 @@
 #
 #   build-test (windows-latest) — the local verification procedure verbatim
 #   (setup.ps1 §1–7 documents the toolchain pins):
-#     build (analyzers ride it) → .NET tests (557 passed / 0 skipped) →
+#     build (analyzers ride it) → .NET tests (559 passed / 0 skipped) →
 #     three NativeAOT publishes of samples/BlazorNative.SampleApp — the
 #     publish head since Phase 8.0: the app owns PublishAot, the exports stay
 #     in Runtime via UnmanagedEntryPointsAssembly, and the artifact is
@@ -778,6 +778,52 @@ jobs:
       # the publish head (samples/BlazorNative.SampleApp) is byte-identical
       # and the gates below stay 4 IL2072 / 9 exports / 106 JVM.
       #
+      # 557 -> 559 (PHASE 8.2 GATE 1, +2 — Runtime.Tests 402 -> 404): the
+      # RELEASE DOOR lands (M8 DoD #3). `.github/workflows/release.yml` — two
+      # jobs: `validate` (no key, ever; triggers on `release: published` plus
+      # PRs/main-pushes paths-filtered to the release machinery) and `push`
+      # (needs: validate, if: event_name == 'release', the sole NUGET_API_KEY
+      # reference, artifact download, `dotnet nuget push --skip-duplicate` over
+      # the ENUMERATED feed — it re-packs nothing, and has no checkout at all,
+      # so "pushes only validated bytes" is structural). Every DECISION lives in
+      # `scripts/release-preflight.ps1` (classifier + tag<->props assertion +
+      # the nuget.org preflight with both positive-control arms + an 8-row
+      # `-SelfTest`), because YAML that fires once per Release is the least
+      # testable code in the repo. Both new facts are ReleaseWorkflowPinTests —
+      # the two rules that fail SILENTLY and EXPENSIVELY:
+      #   +1  TheNugetApiKey_IsReferencedExactlyOnce_AndOnlyInReleaseYml —
+      #       the key's expression appears exactly once across
+      #       .github/workflows/*.yml (ENUMERATED, not rostered — a new
+      #       workflow is inside the pin the day it appears), in release.yml.
+      #       A second reference (a push step in ci.yml) would publish from a
+      #       MERGE — verbatim what DoD #3 forbids. Mutation: the reference
+      #       added to THIS file -> red, "found: 2 reference(s) across 2
+      #       file(s): .github/workflows/ci.yml x1,
+      #       .github/workflows/release.yml x1". It also reddened RED-FIRST on
+      #       its own first run, catching release.yml's env: comment quoting
+      #       the expression it described (the pin counts comments BY DESIGN —
+      #       it keeps `grep -r` a complete answer; see its docstring).
+      #   +1  TheReleaseWorkflow_NeverOverridesTheVersion — no `-p:Version=` /
+      #       `-p:PackageVersion=` (either slash, any casing) in release.yml.
+      #       That is decision 2's exact drift: the shape a contributor imports
+      #       by copying the owner's AdoNet.Async release.yml, which can afford
+      #       it because GitVersion computes its version — this repo has a
+      #       LITERAL, on purpose, and an override would make it lie (packages
+      #       not reproducible from the commit they name; the nuspec's own
+      #       repository@commit pointing at a tree that disagrees with it).
+      #       POSITIVE-CONTROL asserted: the pin proves it can still see
+      #       `dotnet nuget push` before claiming an absence. Mutations:
+      #       `-p:Version=1.2.3` added -> red naming the line; the file
+      #       emptied -> red; the file deleted -> red.
+      # Also this commit (no count move): consumer-smoke.ps1 gains the SNUPKG
+      # PAIRING tooth (the 6/5 counts are blind to WHICH package owns the
+      # symbols — mutation: Analyzers IncludeSymbols=true + Core false keeps
+      # both counts green while Core ships unsymbolicated). NO library code
+      # change, NO wire/ABI change, NO csproj/props change: the publish head is
+      # byte-identical and the gates below stay 4 IL2072 / 9 exports / 106 JVM.
+      # NOTHING PUBLISHED, no tag created, no secret added — the door is built,
+      # the owner holds the key.
+      #
       # 555 -> 557 (PHASE 8.1 GATE 1 REVIEW, +2 — Runtime.Tests 400 -> 402):
       # the review's I-2 — THE SHIPPED SET HAD FOUR COPIES AND ONE PIN. Only
       # PackagePurityTests' third tooth enumerated src/; the other three
@@ -810,7 +856,7 @@ jobs:
       # ancestor Import in src/Directory.Build.props. NO library code change,
       # NO wire/ABI change, NO golden moved: the gates below stay 4 IL2072 /
       # 9 exports / 106 JVM (win-x64 re-verified clean this commit).
-      - name: .NET tests (assert 557 passed / 0 skipped)
+      - name: .NET tests (assert 559 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -828,8 +874,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 557 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 557 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 559 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 559 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # ── NativeAOT publishes + nine-export verification ────────────────────
