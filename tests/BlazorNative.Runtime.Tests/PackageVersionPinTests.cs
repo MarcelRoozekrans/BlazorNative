@@ -16,10 +16,13 @@ namespace BlazorNative.Runtime.Tests;
 //      version it packs and restores at, would fail loudly for its own
 //      reasons); two means ambiguity nobody should ever have to resolve.
 //   2. NO SHIPPED CSPROJ OVERRIDES IT — a <Version> in any PropertyGroup of
-//      the six shipped csprojs would silently win over the shared props
-//      (csproj evaluates after Directory.Build.props). The smoke's
-//      filename-vs-props drift check reds on the same sin at the packaging
-//      layer; this pin reds it earlier, in the required build-test lane.
+//      any shipped csproj would silently win over the shared props (csproj
+//      evaluates after Directory.Build.props). The smoke's filename-vs-props
+//      drift check reds on the same sin at the packaging layer; this pin reds
+//      it earlier, in the required build-test lane. The set it walks is
+//      ENUMERATED from src/, not rostered (8.1 Gate 1 review, I-2): a seventh
+//      shipped project is version-guarded the day it appears, without anyone
+//      remembering to tell this file about it.
 //
 // Enumerated from the checkout (build-test is the one required lane where
 // every file is checkout-visible — the drift-test house rule; RepoRoot is
@@ -28,15 +31,37 @@ namespace BlazorNative.Runtime.Tests;
 
 public sealed class PackageVersionPinTests
 {
-    /// <summary>The shipped set — PackagePurityTests.ShippedAssemblies' pin,
-    /// restated here because the two tests guard different files (assemblies
-    /// there, csprojs here). Purity tooth 3 keeps this equal to the src/
-    /// enumeration.</summary>
-    private static readonly string[] ShippedProjects =
-    [
-        "BlazorNative.Core", "BlazorNative.Renderer", "BlazorNative.Http",
-        "BlazorNative.Components", "BlazorNative.Runtime", "BlazorNative.Analyzers",
-    ];
+    /// <summary>The shipped set, ENUMERATED from the checkout's src/ csprojs —
+    /// deliberately not a roster. Until Phase 8.1's Gate 1 review (I-2) this was
+    /// a second literal copy of PackagePurityTests.ShippedAssemblies whose
+    /// docstring CLAIMED "purity tooth 3 keeps this equal to the src/
+    /// enumeration" — it did not, and could not: tooth 3 pins ITS OWN literal
+    /// against src/ and has never read this file. The two copies could drift
+    /// silently, and the drift had a live shape: add src/BlazorNative.Seven,
+    /// tooth 3 reds, a dev adds "BlazorNative.Seven" to ShippedAssemblies to
+    /// green it — and Seven's version is now guarded by nothing, because this
+    /// roster never learned the name. Enumerating removes the copy rather than
+    /// pinning it: there is nothing left to drift.
+    ///
+    /// Full PATHS, not names: a name list would have to be re-joined back into
+    /// src/{name}/{name}.csproj, which both assumes the flat layout and makes
+    /// the File.Exists check below a tautology. Non-vacuity is asserted here —
+    /// an enumeration that finds nothing would green every caller (the house
+    /// rule at PackagePurityTests.TypeNamesOf; the 8.1 Gate 1 review's I-3 is
+    /// what that rule looks like when it is violated).</summary>
+    private static List<string> ShippedCsprojs()
+    {
+        var csprojs = Directory.EnumerateFiles(
+                Path.Combine(RepoRoot(), "src"), "*.csproj", SearchOption.AllDirectories)
+            .OrderBy(p => p, StringComparer.Ordinal)
+            .ToList();
+
+        Assert.True(csprojs.Count > 0,
+            $"enumerated ZERO csprojs under {Path.Combine(RepoRoot(), "src")} — the version pin "
+            + "would pass over an empty set, which is a pin that cannot see its subject. Fix the "
+            + "enumeration; do not let it green vacuously.");
+        return csprojs;
+    }
 
     [Fact]
     public void TheSharedProps_CarriesExactlyOneVersionLiteral()
@@ -62,16 +87,12 @@ public sealed class PackageVersionPinTests
     [Fact]
     public void NoShippedCsproj_OverridesTheSharedVersion()
     {
-        string src = Path.Combine(RepoRoot(), "src");
         var offenders = new List<string>();
-        foreach (string project in ShippedProjects)
+        foreach (string csproj in ShippedCsprojs())
         {
-            string csproj = Path.Combine(src, project, project + ".csproj");
-            Assert.True(File.Exists(csproj), $"missing shipped csproj: {csproj}");
-
             var overrides = XDocument.Load(csproj).Root!
                 .Elements("PropertyGroup").Elements("Version")
-                .Select(v => $"{project}: <Version>{v.Value}</Version>")
+                .Select(v => $"{Path.GetFileNameWithoutExtension(csproj)}: <Version>{v.Value}</Version>")
                 .ToList();
             offenders.AddRange(overrides);
         }
