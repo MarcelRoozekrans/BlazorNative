@@ -1,0 +1,102 @@
+<Project>
+
+  <!-- THE ANCESTOR CHAIN (8.1 Gate 1 review, M-1). MSBuild imports only the
+       NEAREST Directory.Build.props, so the day a ROOT one appears (8.2/8.3 are
+       the likely authors), tests/ and samples/ would inherit it while the six
+       shipped projects — the ones that actually ship — silently stopped seeing
+       it. That failure is invisible: no error, no warning, just metadata that
+       quietly does not apply to the packages. This import is the standard
+       opt-back-in, added NOW while it is a no-op (no root props exists today,
+       so the condition is false and nothing is imported) rather than left as a
+       trap for whoever adds the root file. It sits FIRST so a root file's
+       properties can be overridden by this one, not the other way round.
+
+       The path goes through a property rather than inline in the Condition:
+       the quoted arguments inside the property function are re-parsed by the
+       condition grammar and blow up (MSB4092, "unexpected token Directory" —
+       observed, not feared). GetPathOfFileAbove returns '' when there is no
+       ancestor file, and an Import with an empty Project is MSB4020, so the
+       Condition is load-bearing today, not decoration. -->
+  <PropertyGroup>
+    <_AncestorDirectoryBuildProps>$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))</_AncestorDirectoryBuildProps>
+  </PropertyGroup>
+  <Import Project="$(_AncestorDirectoryBuildProps)" Condition="'$(_AncestorDirectoryBuildProps)' != ''" />
+
+  <!-- ─────────────────────────────────────────────────────────────────────
+       src/Directory.Build.props — Phase 8.1 (M8 DoD #2: publish-ready
+       packages). The ONE metadata home for the six shipped packages:
+       Core, Renderer, Http, Components, Runtime, Analyzers.
+
+       SCOPE, by construction: PackagePurityTests' third tooth pins src/ to
+       exactly the six shipped csprojs, so this file rides precisely the
+       packed set and leaks onto nothing — tests/, samples/ (the publish
+       head AND the ConsumerSmoke blank consumer) and the shells are
+       siblings and inherit NOTHING from here. That construction is what
+       retired the 4.5 "per-csproj by design" rule (its stated reason — a
+       scoped props would leak onto the then-non-packed Runtime/Blazor —
+       died with 8.0's samples/library separation).
+       See docs/plans/2026-07-16-phase-8.1-design.md, decision 2.
+
+       ONE VERSION TRUTH (decision 4): the <Version> below is the single
+       source — no shipped csproj may override it (PackageVersionPinTests
+       reds the drift; consumer-smoke.ps1 PARSES this element and reds any
+       nupkg whose filename disagrees). Bumps are a one-line edit here;
+       `preview.N` is manual until 8.2's release flow owns the cadence.
+
+       What stays per-csproj: Description + PackageTags (each package
+       speaks for itself), the Analyzers' special shape (no lib/, embedded
+       pdb instead of snupkg), and every non-packaging property.
+       ───────────────────────────────────────────────────────────────────── -->
+
+  <PropertyGroup>
+    <Version>1.0.0-preview.1</Version>
+
+    <!-- PackageId defaults to the assembly name for all six — no explicit
+         PackageId lines anywhere. -->
+    <Authors>Marcel Roozekrans</Authors>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <RepositoryUrl>https://github.com/MarcelRoozekrans/BlazorNative</RepositoryUrl>
+    <!-- 8.4 re-points this at the docs site (a named 8.4 input). -->
+    <PackageProjectUrl>https://github.com/MarcelRoozekrans/BlazorNative</PackageProjectUrl>
+
+    <!-- Symbols + SourceLink + determinism (every claim is a CI assertion,
+         not a property setting — the smoke's interrogate step checks the
+         packed nuspec for repository@commit, the feed for 5 snupkgs):
+         - PublishRepositoryUrl feeds the nuspec <repository> element;
+         - the .NET SDK includes Microsoft.SourceLink.GitHub implicitly for
+           git checkouts (verified at Gate 1 via the nuspec commit
+           attribute; the named fallback is an explicit PackageReference
+           here, applied only on evidence);
+         - EmbedUntrackedSources embeds generator output in the pdb;
+         - ContinuousIntegrationBuild normalizes paths on CI only (local
+           builds stay debuggable); determinism itself is the SDK default.
+         The Analyzers csproj overrides IncludeSymbols to false (a snupkg
+         for a no-lib/ package is empty — NU5017 territory) and embeds its
+         pdb instead. -->
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
+
+    <!-- Each project supplies its own README.md (decision 7); the Exists
+         guard below makes a MISSING readme fail pack loudly as NU5039 (the
+         readme entry declared here but absent from the package) — a tooth,
+         not a hazard. -->
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+
+    <!-- XML docs ride into the packages (8.4's xmldoc2md raw material).
+         CS1591 (missing doc comment) is suppressed BY DECISION (8.1 design
+         decision 2): doc coverage is 8.4's editorial work; holding the
+         zero-warning bar hostage to it would force doc-stub spam. The gap
+         stays visible in the shipped XML, not hidden. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="$(MSBuildProjectDirectory)\README.md" Pack="true" PackagePath="\"
+          Condition="Exists('$(MSBuildProjectDirectory)\README.md')" />
+  </ItemGroup>
+
+</Project>

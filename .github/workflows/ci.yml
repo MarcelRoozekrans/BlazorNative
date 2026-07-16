@@ -4,7 +4,7 @@
 #
 #   build-test (windows-latest) — the local verification procedure verbatim
 #   (setup.ps1 §1–7 documents the toolchain pins):
-#     build (analyzers ride it) → .NET tests (553 passed / 0 skipped) →
+#     build (analyzers ride it) → .NET tests (557 passed / 0 skipped) →
 #     three NativeAOT publishes of samples/BlazorNative.SampleApp — the
 #     publish head since Phase 8.0: the app owns PublishAot, the exports stay
 #     in Runtime via UnmanagedEntryPointsAssembly, and the artifact is
@@ -14,8 +14,10 @@
 #     nine-export verification (dumpbin via vswhere / llvm-readelf from the
 #     pinned NDK) → Gradle testDebugUnitTest against the fresh win-x64 dll
 #     (92 passed / 0 failed) → the instrumented sources COMPILE →
-#     consumer smoke (five packages from the local feed mount a Bn* component
-#     + analyzer trip; Phase 4.5, M4 DoD #7) → artifacts for the instrumented
+#     consumer smoke (SIX packages packed at the one props version, nupkg
+#     purity interrogated, then a blank consumer mounts a Bn* component,
+#     exercises RegisterPages, and trips the analyzers; Phase 4.5 extended by
+#     Phase 8.1, M4 DoD #7 / M8 DoD #2) → artifacts for the instrumented
 #     (Gate 3) job.
 #
 #   ios-build (macos-latest) — THE iOS SHELL MUST COMPILE. Publish +
@@ -759,7 +761,56 @@ jobs:
       # NO wire change (9 exports emitted from Runtime via
       # UnmanagedEntryPointsAssembly, the 72-byte bridge, thirteen NodeTypes,
       # rc set unchanged), NO shell code edits, NO golden value edits.
-      - name: .NET tests (assert 553 passed / 0 skipped)
+      #
+      # 553 -> 555 (PHASE 8.1 GATE 1, +2 — Runtime.Tests 398 -> 400):
+      # publish-ready packages (M8 DoD #2). ONE version truth lands:
+      # src/Directory.Build.props carries the single <Version> literal
+      # (1.0.0-preview.1 — the reset off the 4.5 phase-stamped noise) plus
+      # the shared pack metadata (readme/license/symbols/SourceLink/CIB) for
+      # exactly the six shipped csprojs — the purity pin's third tooth is
+      # what makes that scoping airtight (src/ contains nothing else).
+      #   +2  PackageVersionPinTests — the props carries EXACTLY ONE
+      #       <Version>; no shipped csproj overrides it (a csproj <Version>
+      #       silently wins over the props — that drift reds here AND in the
+      #       smoke's nupkg-filename check). Red-first: both facts written
+      #       before the migration, red naming all five 4.5 literals.
+      # ZERO library code change (csproj metadata + a props file + READMEs);
+      # the publish head (samples/BlazorNative.SampleApp) is byte-identical
+      # and the gates below stay 4 IL2072 / 9 exports / 106 JVM.
+      #
+      # 555 -> 557 (PHASE 8.1 GATE 1 REVIEW, +2 — Runtime.Tests 400 -> 402):
+      # the review's I-2 — THE SHIPPED SET HAD FOUR COPIES AND ONE PIN. Only
+      # PackagePurityTests' third tooth enumerated src/; the other three
+      # appearances were unpinned literals, and PackageVersionPinTests' roster
+      # carried a docstring CLAIMING a cross-pin that did not exist. The drift
+      # was reachable, not theoretical: add src/BlazorNative.Seven -> tooth 3
+      # reds -> a dev adds the name to ShippedAssemblies to green it -> Seven
+      # is now packed by nothing, smoked by nothing, and its version guarded by
+      # nothing. Both new facts are PackagePurityTests (tooth 3 widens from
+      # "the literal is pinned" to "the set is pinned everywhere it appears"):
+      #   +1  TheConsumerSmokeScript_PacksExactlyTheShippedSet — consumer-
+      #       smoke.ps1's $packages parsed out of the checkout as text (the
+      #       RouteTableDriftTests rule: build-test is the one required lane
+      #       where every file is visible; the declaration is anchored at line
+      #       start so the comment above it cannot match). Mutation: "Runtime"
+      #       dropped from $packages -> red, Expected/Actual naming it.
+      #   +1  TheConsumerSmokeProject_ReferencesExactlyTheShippedSet —
+      #       ConsumerSmoke.csproj's PackageReferences (XDocument: it is
+      #       structured, and the drift-test rule is about the LANE, not about
+      #       refusing a real parser). Mutation: the Runtime reference deleted
+      #       -> red.
+      # NO count move for the rest of I-2: PackageVersionPinTests' roster is
+      # DELETED rather than pinned (it now enumerates src/ itself — nothing
+      # left to drift), so its two facts stay two. The full drift story was run:
+      # with Seven rostered, tooth 3 goes green and FIVE pins red, including
+      # "Offenders: BlazorNative.Seven: <Version>9.9.9-unguarded</Version>" —
+      # the version pin seeing a seventh project for the first time.
+      # Also this commit (no count move): I-3, the smoke's blind-scanner hole
+      # (a positive control per package — script-level, not xunit); M-1, the
+      # ancestor Import in src/Directory.Build.props. NO library code change,
+      # NO wire/ABI change, NO golden moved: the gates below stay 4 IL2072 /
+      # 9 exports / 106 JVM (win-x64 re-verified clean this commit).
+      - name: .NET tests (assert 557 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -777,8 +828,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 553 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 553 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 557 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 557 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # ── NativeAOT publishes + nine-export verification ────────────────────
@@ -1037,12 +1088,21 @@ jobs:
       # the instrumented-sources compile gate moved to its own required job
       # `android-build` (see below) — a red check now names the Android shell directly.
 
-      # ── Consumer smoke (Phase 4.5 Gate 2 — the M4 DoD #7 proof) ────────────
-      # Packs the five packages, restores samples/ConsumerSmoke from the local
-      # feed only (+nuget.org transitives) into a clean temp cache, asserts
-      # the analyzers package is live (BN0011 trip build + zero-BN clean
-      # build), then mounts a Bn* component and asserts the patch set.
-      - name: Consumer smoke (packages-only mount + analyzer trip)
+      # ── Consumer smoke (Phase 4.5 Gate 2, extended by Phase 8.1 Gate 1 —
+      #    M4 DoD #7 / M8 DoD #2) ────────────────────────────────────────────
+      # Packs the SIX packages at the one version parsed from
+      # src/Directory.Build.props (6 nupkg + 5 snupkg, zero warnings,
+      # filenames == props version), INTERROGATES every nupkg (type purity
+      # off the PE, nuspec truth incl. the SourceLink repository@commit and
+      # the dependency allow-list, inventory shape — this step is where
+      # nupkg-level purity lives, because the xunit suite above runs before
+      # any nupkg exists), restores samples/ConsumerSmoke from the local
+      # feed only (+nuget.org transitives) into a clean temp cache with
+      # provenance asserted ×6, asserts the analyzers package is live
+      # (BN0011 trip build + zero-BN clean build), then mounts a Bn*
+      # component, asserts the patch set, and exercises the RegisterPages
+      # laws from packages alone (the API's first out-of-repo consumer).
+      - name: Consumer smoke (six packages — nupkg purity + mount + RegisterPages + analyzer trip)
         run: |
           .\scripts\consumer-smoke.ps1
           if ($LASTEXITCODE -ne 0) { throw "consumer-smoke.ps1 failed (exit $LASTEXITCODE)" }

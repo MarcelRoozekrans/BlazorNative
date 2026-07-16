@@ -729,7 +729,58 @@ Developer experience and ecosystem".
      row — redlines quoted in `028d47d`). Review: Gate 1 PASS (C-1 + I-1/I-2 applied,
      M-1..M-3 carried). See [design](../plans/2026-07-16-phase-8.0-design.md) +
      [conclusion](../plans/2026-07-16-phase-8.0-conclusion.md).
-- **Phase 8.1** — publish-ready packages + consumer smoke on the real set (DoD #2) — ⏳
+- ✅ **Phase 8.1** — publish-ready packages + consumer smoke on the real set (DoD #2) —
+  *complete (2026-07-16)*
+   - **ZERO library code, the wire not at all, the publish head zero-diff — the packages
+     became the truth.** The 4.5-era packaging (five packages at a phase-stamped version,
+     metadata copied per-csproj, a smoke predating the registration API) becomes the M8
+     shape: **six** packages (Core, Renderer, **Http**, Components, **Runtime**,
+     Analyzers) sharing ONE metadata home (`src/Directory.Build.props`) and ONE version
+     literal, each with a README + license + symbols + SourceLink, packed
+     deterministically and proven every PR.
+   - **Two set corrections, both findings:** DoD #2's five-name list was **shorthand
+     drift** — Http has shipped through the smoke since 4.5 and the purity pin says six
+     (MILESTONE.md corrected); and the 4.5 "per-csproj by design" rule was obsolete **by
+     construction** — the purity pin proves src/ holds exactly the six, so a src-scoped
+     props rides precisely the packed set. Runtime is the new package, packable only
+     because 8.0 evicted `PublishAot`. **The M4 `PackageReadmeFile` prerequisite is
+     CLOSED** (six READMEs; the Http one written against `AndroidShellBridge.kt` reality).
+   - **Versioning verdict:** `1.0.0-preview.1`, hand-bumped, reset off the never-public
+     `1.2.0-phase-4.5` (no observer of the downgrade); the churn surface collapses 7 → 1.
+     GitVersion/release-please **rejected for now** — height-based version-per-merge
+     contradicts DoD #3's "nothing public until the owner's Release", the payoff starts
+     once 8.2's workflow exists (a named 8.2 input), conventional-commit inference
+     mis-bumps phase-structured history, and `tag-prefix: v` collides with the `v4.0`–
+     `v7.0` milestone tags.
+   - **THE HEADLINE — the review demonstrated a vacuous pass:** the nupkg type scanner
+     passed GREEN while **blind** ("0 types clean" ×6, exit 0), violating the house rule
+     this repo states in its own code — *a pin that cannot see its subject must never pass
+     vacuously* — the same failure mode an in-code comment records EYE catching once
+     before. Fixed with a two-arm positive control (non-empty + a real sentinel type per
+     package), proven **non-redundant** by re-running the historical `return ,$names` bug:
+     count=1 sails past the count arm; only the sentinel catches it.
+   - **Mutation 4 corrected:** the design's SampleApp vehicle is structurally impossible
+     (MSB4006 circular, quoted — a genuine finding), but the assertion is **provable** —
+     Gate 1's Newtonsoft substitute had exercised the wrong branch (the allowlist, not the
+     no-app-dependency tooth), now proven with an equivalent non-cyclic `BlazorNative.*`
+     stub. Recorded as proven-with-an-equivalent-vehicle, NOT unprovable-by-construction.
+   - **The four-copies finding (I-2):** only 1 of 4 shipped-set copies was pinned, and the
+     roster's docstring claimed a pin that did not exist (false *and* unfalsifiable). The
+     roster is **deleted** (the version pin enumerates src/ itself); the two irremovable
+     copies (the .ps1, the out-of-solution ConsumerSmoke csproj) are pinned against the
+     same enumeration. A fake seventh package now reds **five** pins instead of one
+     greenable literal.
+   - **Final counts:** .NET **557/0** (553 → 555 → 557; 23 + 132 + 402) · JVM **106/0**
+     (untouched) · publish gates **unmoved** (win-x64: 4 IL2072 + 9 exports + the page
+     probe; both bionic RIDs 4) · smoke green end to end (6 nupkg + 5 snupkg at
+     `1.0.0-preview.1`, zero pack warnings, SourceLink `repository@commit` stamped,
+     provenance ×6, BN0011 trip, ConsumerSmoke PASS — **the 8.0 API's first out-of-repo
+     consumer**, RegisterPages laws proven from the packages alone). Device lanes
+     untouched: **184**/**154** stand on 8.0's provenance. Review: Gate 1 PASS — 3 Important
+     + 4 Minor (I-1/I-2/I-3 + M-1 fixed, M-4 accepted as-placed, the review's own M-2/M-3
+     ledgered as accepted limitations; separately, 8.0's M-2/M-3 riders both closed here). See
+     [design](../plans/2026-07-16-phase-8.1-design.md) +
+     [conclusion](../plans/2026-07-16-phase-8.1-conclusion.md).
 - **Phase 8.2** — the release pipeline, manual go (DoD #3) — ⏳
 - **Phase 8.3** — the `dotnet new` template: app + Android shell (DoD #4) — ⏳
 - **Phase 8.4** — the docs site: Docusaurus + GitHub Pages (DoD #5) — ⏳

@@ -1,6 +1,7 @@
 using System.Reflection.Metadata;
 using System.Reflection.PortableExecutable;
 using System.Text.RegularExpressions;
+using System.Xml.Linq;
 
 namespace BlazorNative.Runtime.Tests;
 
@@ -18,11 +19,23 @@ namespace BlazorNative.Runtime.Tests;
 //   2. THE PATTERN NET — zero types matching `.*Demo$ | .*Probe$ |
 //      ^SpikeRazor` in any shipped assembly: catches the NEXT demo page
 //      someone parks in the library, which the frozen roster cannot.
-//   3. THE SHIPPED SET IS ITSELF A PINNED LITERAL — Core, Renderer, Http,
-//      Components, Runtime, Analyzers — so a new shipped assembly must join
-//      the pin deliberately, not drift in unexamined. Enumerated from the
-//      checkout's src/ csprojs (build-test is the one required lane where
-//      every file is checkout-visible — the drift-test house rule).
+//   3. THE SHIPPED SET IS PINNED EVERYWHERE IT APPEARS — ShippedAssemblies
+//      below (Core, Renderer, Http, Components, Runtime, Analyzers) is the ONE
+//      deliberate declaration: a new shipped assembly must join it on purpose,
+//      not drift in unexamined. Every other appearance of the set is measured
+//      against the checkout's src/ csproj enumeration, so no two copies can
+//      disagree:
+//        · this literal                          — TheShippedSet_IsExactlyTheSrcCsprojs
+//        · consumer-smoke.ps1's $packages        — TheConsumerSmokeScript_...
+//        · ConsumerSmoke.csproj's references     — TheConsumerSmokeProject_...
+//        · PackageVersionPinTests' walk          — enumerates src/ itself (no copy)
+//      Phase 8.1's Gate 1 review (I-2) is why: the set had FOUR copies and only
+//      this one was pinned. The failure was concrete — add src/BlazorNative.Seven,
+//      tooth 3 reds, a dev adds the name here to green it, and Seven now packs
+//      into nothing, smokes in nothing, and has an unguarded version. Three of
+//      the four copies are foreign files, parsed out of the checkout: build-test
+//      is the one required lane where every file is visible (the drift-test
+//      house rule, RouteTableDriftTests' precedent).
 //
 // Types are enumerated with System.Reflection.Metadata (names off the PE,
 // no loading): the Analyzers assembly targets netstandard2.0 and references
@@ -108,20 +121,103 @@ public sealed class PackagePurityTests
             + "samples/BlazorNative.SampleApp — the library ships no app types.");
     }
 
-    // ── 3. The shipped set is itself pinned ──────────────────────────────────
+    // ── 3. The shipped set is pinned EVERYWHERE it appears ───────────────────
 
     [Fact]
     public void TheShippedSet_IsExactlyTheSrcCsprojs()
     {
+        Assert.Equal(
+            ShippedAssemblies.OrderBy(n => n, StringComparer.Ordinal),
+            SrcCsprojNames());
+    }
+
+    /// <summary>THE SCRIPT'S COPY. consumer-smoke.ps1's `$packages` is the list
+    /// the smoke PACKS, interrogates, and asserts provenance for — a seventh
+    /// shipped project missing from it is simply never packed and never smoked,
+    /// and nothing else notices. Parsed out of the checkout as text (the
+    /// RouteTableDriftTests rule: build-test is the one required lane where
+    /// every file is checkout-visible; the script is not a build input of any
+    /// project, so text is the only handle). The declaration is anchored at line
+    /// start so the comment ABOVE it — which discusses `$packages` by name —
+    /// cannot be mistaken for the list itself.</summary>
+    [Fact]
+    public void TheConsumerSmokeScript_PacksExactlyTheShippedSet()
+    {
+        const string script = "scripts/consumer-smoke.ps1";
+        string source = ReadCheckoutFile(script);
+
+        Match match = Regex.Match(source, @"(?m)^\$packages\s*=\s*@\((?<body>[^)]*)\)");
+        Assert.True(match.Success,
+            $"could not find the `$packages = @(...)` declaration in {script}. It moved or was "
+            + "rewritten — this pin IS the contract that the smoke packs the shipped set, so "
+            + "re-point it deliberately rather than deleting it.");
+
+        var packages = Regex.Matches(match.Groups["body"].Value, @"""(?<name>[^""]+)""")
+            .Select(m => "BlazorNative." + m.Groups["name"].Value)
+            .OrderBy(n => n, StringComparer.Ordinal)
+            .ToList();
+        Assert.True(packages.Count > 0,
+            $"parsed ZERO package names out of {script}'s `$packages` declaration — a pin that "
+            + "cannot see its subject must never pass vacuously.");
+
+        Assert.Equal(ShippedAssemblies.OrderBy(n => n, StringComparer.Ordinal), packages);
+    }
+
+    /// <summary>THE CONSUMER'S COPY. ConsumerSmoke.csproj's PackageReferences
+    /// are what the blank out-of-repo consumer actually restores from the six
+    /// packages — a shipped package missing from it is packed but never proven
+    /// consumable, which is the whole point of the smoke. Read from the checkout
+    /// (the project is deliberately outside the solution, so it is a FILE here,
+    /// never a reference) and parsed as XML rather than by regex: it is
+    /// structured, and XDocument is what PackageVersionPinTests already uses on
+    /// csprojs — the "as text" of the drift-test rule is about the LANE, not
+    /// about refusing a real parser.</summary>
+    [Fact]
+    public void TheConsumerSmokeProject_ReferencesExactlyTheShippedSet()
+    {
+        const string project = "samples/ConsumerSmoke/ConsumerSmoke.csproj";
+        string file = CheckoutPath(project);
+        Assert.True(File.Exists(file), $"consumer smoke project not found: {file}");
+
+        var references = XDocument.Load(file).Root!
+            .Elements("ItemGroup").Elements("PackageReference")
+            .Select(e => e.Attribute("Include")?.Value)
+            .Where(id => id is not null && id.StartsWith("BlazorNative.", StringComparison.Ordinal))
+            .OrderBy(id => id, StringComparer.Ordinal)
+            .ToList();
+        Assert.True(references.Count > 0,
+            $"parsed ZERO BlazorNative.* PackageReferences out of {project} — a pin that cannot "
+            + "see its subject must never pass vacuously.");
+
+        Assert.Equal(ShippedAssemblies.OrderBy(n => n, StringComparer.Ordinal), references!);
+    }
+
+    /// <summary>The shipped set as the CHECKOUT declares it — src/'s csproj
+    /// names, the one enumeration all four copies are measured against.
+    /// Non-vacuity asserted: an enumeration that finds nothing would green every
+    /// caller above, which is TypeNamesOf's rule applied to the filesystem.</summary>
+    private static List<string> SrcCsprojNames()
+    {
         string src = Path.Combine(RepoRoot(), "src");
-        var actual = Directory.EnumerateFiles(src, "*.csproj", SearchOption.AllDirectories)
+        var names = Directory.EnumerateFiles(src, "*.csproj", SearchOption.AllDirectories)
             .Select(Path.GetFileNameWithoutExtension)
             .OrderBy(n => n, StringComparer.Ordinal)
             .ToList();
 
-        Assert.Equal(
-            ShippedAssemblies.OrderBy(n => n, StringComparer.Ordinal),
-            actual!);
+        Assert.True(names.Count > 0,
+            $"enumerated ZERO csprojs under {src} — the shipped-set pins would all pass over an "
+            + "empty set. Fix the enumeration; do not let it green vacuously.");
+        return names!;
+    }
+
+    private static string CheckoutPath(string relativePath)
+        => Path.Combine(RepoRoot(), relativePath.Replace('/', Path.DirectorySeparatorChar));
+
+    private static string ReadCheckoutFile(string relativePath)
+    {
+        string file = CheckoutPath(relativePath);
+        Assert.True(File.Exists(file), $"checkout file not found: {file}");
+        return File.ReadAllText(file);
     }
 
     // ── PE type enumeration (names off the metadata, no loading) ─────────────
@@ -146,9 +242,12 @@ public sealed class PackagePurityTests
     }
 
     /// <summary>Referenced assemblies (the five runtime-shaped shipped ones +
-    /// the sample app) sit in the test output directory; the netstandard2.0
-    /// analyzer is not a runtime reference, so it is read from its own build
-    /// output in the checkout, same configuration as this test build.</summary>
+    /// the sample app) sit in the test output directory; the analyzer is not
+    /// a runtime reference, so it is read from its own build output in the
+    /// checkout, same configuration as this test build. Phase 8.1 (the 8.0
+    /// review's M-3): the TFM segment is READ FROM THE CSPROJ it already
+    /// knows how to find — the old hardcoded "netstandard2.0" meant an
+    /// Analyzers TFM move would red as a path miss, not as the right test.</summary>
     private static string ResolveAssemblyPath(string assemblyName)
     {
         string local = Path.Combine(AppContext.BaseDirectory, assemblyName + ".dll");
@@ -158,8 +257,16 @@ public sealed class PackagePurityTests
         string configuration = AppContext.BaseDirectory.Contains(
             Path.DirectorySeparatorChar + "Debug" + Path.DirectorySeparatorChar,
             StringComparison.OrdinalIgnoreCase) ? "Debug" : "Release";
+        string csproj = Path.Combine(RepoRoot(), "src", assemblyName, assemblyName + ".csproj");
+        string? tfm = XDocument.Load(csproj).Root!
+            .Elements("PropertyGroup").Elements("TargetFramework")
+            .Select(e => e.Value)
+            .SingleOrDefault();
+        Assert.False(string.IsNullOrEmpty(tfm),
+            $"could not read a single <TargetFramework> from {csproj} — the purity pin "
+            + "resolves checkout build output by the csproj's OWN TFM (8.0 review M-3).");
         string built = Path.Combine(
-            RepoRoot(), "src", assemblyName, "bin", configuration, "netstandard2.0",
+            RepoRoot(), "src", assemblyName, "bin", configuration, tfm!,
             assemblyName + ".dll");
         Assert.True(File.Exists(built),
             $"could not resolve {assemblyName}.dll — looked in the test output "

@@ -159,6 +159,14 @@ public, before the phase closes.)
     the three NativeAOT publishes with nine-export verification, JVM
     `testDebugUnitTest`, consumer smoke, and the `.so` artifact uploads the two
     native-shell jobs below consume.
+
+    > **Local IL2072 counts: publish from clean.** The publish gates assert
+    > **exactly 4** IL2072 trim warnings — but an *incremental* local
+    > re-publish can show **0**, because ILC skips trim analysis when its
+    > inputs are unchanged since the last publish. That 0 is not drift and
+    > not a fix; delete the publish `obj/bin` (or `git clean`) and re-publish
+    > to see the real count. CI is unaffected — every run is a clean
+    > checkout. (Phase 8.0 review M-2, recorded here.)
   - **`android-build`** (ubuntu-latest, `needs: build-test`) — the **Android
     shell's compile**: `gradlew compileDebugAndroidTestKotlin` against the
     bionic `.so` `build-test` uploads, type-checking `src/androidMain/kotlin`

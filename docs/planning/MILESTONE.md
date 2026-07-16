@@ -60,11 +60,31 @@ the 4-IL2072 shape), 8.0 finds out before anything is packaged.
    mount, the page-name presence probe). Evidence: .NET **553/0** · JVM **106/0** ·
    Android instrumented **184/0** · iOS **154/0** (run 29527121729); 4 IL2072 + 9 exports
    on all four RIDs.
-2. **Publish-ready packages.** The shipped set (Core, Runtime, Renderer, Components,
-   Analyzers) packs clean with `PackageReadmeFile`, license, symbols + SourceLink,
-   deterministic build; pack + local-feed consumer smoke asserted on CI every PR (the
-   `samples/ConsumerSmoke` precedent, extended to the real package set); the versioning
-   scheme decided and recorded.
+2. ✅ **Publish-ready packages.** The shipped set (Core, Runtime, Renderer, Components,
+   **Http**, Analyzers — **six**; this list said five until Phase 8.1 found the omission
+   was shorthand drift, not a scoping decision: Http has packed and shipped through the
+   consumer smoke since 4.5, Runtime `ProjectReference`s it, and the purity pin's
+   mutation-guarded shipped-set literal says six) packs clean with `PackageReadmeFile`,
+   license, symbols + SourceLink, deterministic build; pack + local-feed consumer smoke
+   asserted on CI every PR (the `samples/ConsumerSmoke` precedent, extended to the real
+   package set); the versioning scheme decided and recorded.
+   **Closed by Phase 8.1** ([conclusion](../plans/2026-07-16-phase-8.1-conclusion.md)):
+   `src/Directory.Build.props` is the ONE metadata home and the ONE version literal —
+   licensed by the purity pin proving src/ holds exactly the six, which made the 4.5
+   "per-csproj by design" rule obsolete BY CONSTRUCTION. Runtime becomes the sixth
+   package (packable only because 8.0 evicted `PublishAot`); six READMEs written — **the
+   M4-recorded `PackageReadmeFile` prerequisite is CLOSED**. Versioning:
+   `1.0.0-preview.1`, hand-bumped, reset off the never-public `1.2.0-phase-4.5`;
+   GitVersion/release-please rejected for now and re-addressed to 8.2 at the workflow
+   layer (with the `v*` milestone-tag collision named). The Gate 1 review demonstrated a
+   **vacuous pass** — the nupkg type scanner passed GREEN while blind — fixed with a
+   two-arm positive control (non-empty + a real sentinel per package), the arms proven
+   non-redundant by re-running the historical `return ,$names` bug. Evidence: .NET
+   **557/0** (23 + 132 + 402) · JVM **106/0** · publish gates unmoved (4 IL2072 +
+   9 exports + the page probe) · smoke green end to end (6 nupkg + 5 snupkg at
+   `1.0.0-preview.1`, zero pack warnings, SourceLink `repository@commit` stamped,
+   provenance ×6, BN0011 trip, ConsumerSmoke PASS — the 8.0 API's first out-of-repo
+   consumer). Device lanes untouched (184/154 stand on 8.0's provenance).
 3. **The release pipeline, manual go.** A release workflow that packs, validates, and
    pushes to nuget.org **triggered by a GitHub Release being published** (the
    AdoNet.Async `release.yml` pattern — publishing the Release IS the owner's go);
@@ -109,7 +129,9 @@ the 4-IL2072 shape), 8.0 finds out before anything is packaged.
   iOS out-of-range insert, the touch.view seam, android-build→ubuntu (pending billing
   evidence), horizontal scroll, the iOS lanes' duplicated publish, device-lanes→required
   (stability baseline), the true-move `@key` conversation.
-- **From M4:** `PackageReadmeFile` as the recorded nuget prerequisite — DoD #2 closes it.
+- **From M4:** `PackageReadmeFile` as the recorded nuget prerequisite — ✅ **CLOSED by
+  Phase 8.1** (DoD #2): the mechanism lives in `src/Directory.Build.props` and six
+  per-package READMEs supply the content; a missing one fails pack as NU5039.
 - **CI posture:** three required compile gates + advisory device lanes (ios lane:
   dispatch + push-main since 7.6; the restore condition lives in the workflow header).
 
