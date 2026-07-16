@@ -21,7 +21,10 @@ namespace BlazorNative.Runtime;
 //
 // Component registry: mount-by-name keeps reflection out of the C ABI —
 // each entry is a statically-rooted generic Mount<T> instantiation, so
-// NativeAOT trims nothing it needs.
+// NativeAOT trims nothing it needs. Phase 7.6: the entries themselves live in
+// PageManifest (one row per page — the single declaration); s_components is a
+// DERIVED VIEW of that manifest and cannot drift from the route table by
+// construction.
 // ─────────────────────────────────────────────────────────────────────────────
 
 internal static unsafe class HostSession
@@ -37,91 +40,15 @@ internal static unsafe class HostSession
     /// fields) — mounts and navigations both run on the host's dispatch lane.</summary>
     private static int s_currentRootComponentId = -1;
 
-    // Sync Mount<T> (inline dispatcher, Phase 2.4) — the first render completes
-    // before TryMount returns, so the frame callback has already fired.
-    // Values return the root componentId (Phase 3.5: the navigation swap needs
-    // it — see s_currentRootComponentId).
-    private static readonly Dictionary<string, Func<NativeRenderer, int>> s_components = new()
-    {
-        ["HelloComponent"] = r => r.Mount<HelloComponent>(),
-        // Phase 3.3: the composition proof app (nested components, keyed
-        // list mutation, detach — design §6).
-        ["CompositionProbe"] = r => r.Mount<CompositionProbe>(),
-        // Phase 3.4: the Bn* demo form (bind loop + cascading theme —
-        // DoD #5/#6); MainActivity's default since Gate 4.
-        ["BnDemo"] = r => r.Mount<BlazorNative.Components.BnDemo>(),
-        // Phase 3.5: the demo's second page (route "/settings" — DoD #7).
-        ["BnSettingsPage"] = r => r.Mount<BlazorNative.Components.BnSettingsPage>(),
-        // Phase 6.1: the flexbox proof page (route "/layout" — M6 DoD #2/#3).
-        // A THIRD page on purpose: BnDemo/BnSettingsPage keep their goldens, so
-        // layout bugs never arrive mixed with golden-rewrite noise. Its computed
-        // frames are asserted identically on the AVD (Gate 2) and the iOS
-        // simulator (Gate 3) — see BnLayoutDemo.razor's frame table.
-        ["BnLayoutDemo"] = r => r.Mount<BlazorNative.Components.BnLayoutDemo>(),
-        // Phase 6.2: the scrolling proof page (route "/scroll" — M6 DoD #4). A
-        // FOURTH page, same rationale: BnLayoutDemo's 22-number frame table IS
-        // the parity contract, and wrapping it in a scroll view would rewrite it
-        // in the same phase that introduces the scroll engine. Its content size
-        // (800) and row frames are asserted identically on the AVD (Gate 2) and
-        // the iOS simulator (Gate 3) — see BnScrollDemo.razor's frame table.
-        ["BnScrollDemo"] = r => r.Mount<BlazorNative.Components.BnScrollDemo>(),
-        // Phase 6.3: the image proof page (route "/image" — M6 DoD #5). A FIFTH
-        // page, same rationale a fourth time: BnLayoutDemo's and BnScrollDemo's
-        // frame tables ARE the parity contract, and a new capability does not get
-        // to rewrite them. Its THREE measurement paths — fixed (never measured),
-        // intrinsic (0×0 → the natural size, and the sibling below it MOVES) and
-        // failure (0×0 forever, reserving nothing) — are asserted identically on
-        // the AVD (Gate 2, Coil) and the iOS simulator (Gate 3, Kingfisher). See
-        // BnImageDemo.razor's TWO frame tables: before the bytes land, and after.
-        ["BnImageDemo"] = r => r.Mount<BlazorNative.Components.BnImageDemo>(),
-        // Phase 7.2: the virtualized-list proof page (route "/list" — M7
-        // DoD #3). A SIXTH page, same rationale a fifth time: BnScrollDemo's
-        // frame table IS the 6.2 parity contract and the phase that introduces
-        // virtualization does not get to rewrite it. Its liveness counts
-        // (2 spacers + 11/15/11 window rows), spacer heights and content size
-        // (32,000) are asserted identically on the AVD (Gate 2) and the iOS
-        // simulator (Gate 3) — see BnListDemo.razor's header.
-        ["BnListDemo"] = r => r.Mount<BlazorNative.Components.BnListDemo>(),
-        // Phase 7.3: the form-controls proof page (route "/form" — M7 DoD #4).
-        // A SEVENTH page, same rationale a sixth time: the existing pages'
-        // frame tables and goldens ARE the parity contracts, and the phase
-        // that makes checkbox/switch/slider/picker real does not get to
-        // rewrite them. Each control appears TWICE (bound + disabled) with a
-        // live echo; the bind round-trips, the loop guards, the picker clamp
-        // rule and the declared widths are asserted identically on the AVD
-        // (Gate 2) and the iOS simulator (Gate 3) — see BnFormDemo.razor.
-        ["BnFormDemo"] = r => r.Mount<BlazorNative.Components.BnFormDemo>(),
-        // Phase 7.4: the overlay proof page (route "/modal" — M7 DoD #5).
-        // An EIGHTH page, same rationale a seventh time: the existing pages'
-        // goldens ARE the parity contracts, and the phase that introduces
-        // the overlay does not get to rewrite them. The modal sits BETWEEN
-        // two declared-size siblings (the anchor's zero-footprint rule as a
-        // frame assertion), the switch + echo prove the wire INSIDE the
-        // overlay, and the indicator appears in both hosting contexts — see
-        // BnModalDemo.razor's header.
-        ["BnModalDemo"] = r => r.Mount<BlazorNative.Components.BnModalDemo>(),
-        // Phase 7.5: the image-polish proof page (route "/imagepolish" — M7
-        // DoD #6). A NINTH page, same rationale an eighth time — and here at
-        // its sharpest: BnImageDemo's two frame tables ARE the 6.3 parity
-        // contract and its section arithmetic is golden-pinned, so the phase
-        // that adds placeholder/error/mode does NOT extend "/image" (Gate 1's
-        // bar includes /image's goldens byte-identical). The new page re-runs
-        // 6.3's measurement proofs WITH the new features present — placeholder
-        // never measures (both sides), failure keeps a declared box, the mode
-        // quartet's four identical frames — plus the counted OnError round
-        // trip. See BnImagePolishDemo.razor's header.
-        ["BnImagePolishDemo"] = r => r.Mount<BlazorNative.Components.BnImagePolishDemo>(),
-        // Phase 4.2: the focus/blur proof app (BnInput OnFocus/OnBlur →
-        // echo BnText — M4 DoD #4). Scaffolding, like CompositionProbe.
-        ["FocusProbe"] = r => r.Mount<FocusProbe>(),
-        // Phase 5.1: the host-event proof app (IMobileBridge.NativeEvents →
-        // echo BnText — M5 DoD #5). Scaffolding, like FocusProbe.
-        ["HostEventProbe"] = r => r.Mount<HostEventProbe>(),
-        // Phase 5.4: the clipboard/share proof app (IMobileBridge clipboard
-        // read/write + share → echo BnText — M5 DoD #6). Scaffolding, like
-        // HostEventProbe.
-        ["ClipboardProbe"] = r => r.Mount<ClipboardProbe>(),
-    };
+    // Phase 7.6 (design decision 1): a DERIVED VIEW of PageManifest.Pages —
+    // ALL rows (routed pages AND the unrouted probes), name → mount thunk.
+    // The per-page provenance comments live on the manifest rows now; the
+    // trim-law shape (statically-rooted Mount<T> lambdas) is unchanged, the
+    // lambdas just moved. A mutable Dictionary on purpose:
+    // ReplaceRegistryEntryForTests swaps entries in THIS copy — the manifest
+    // itself is never touched.
+    private static readonly Dictionary<string, Func<NativeRenderer, int>> s_components =
+        PageManifest.Pages.ToDictionary(p => p.Name, p => p.Mount, StringComparer.Ordinal);
 
     /// <summary>Stores the host's frame callback. IntPtr.Zero disables
     /// delivery; re-registration is allowed (last wins).</summary>
@@ -190,12 +117,12 @@ internal static unsafe class HostSession
     }
 
     /// <summary>Test-only: the mount registry's KEYS — every name
-    /// <see cref="TryMount"/> and <see cref="SwapRoot"/> accept. Paired with
-    /// <see cref="NativeNavigationManager.RoutesForTests"/> so the two
-    /// hand-maintained registries can be checked against each other: every route's
-    /// component must be mountable, or navigating to it throws on a device (Phase
-    /// 6.3 Gate 1 review — five demo pages, two mirrors, nothing asserting
-    /// they agree).</summary>
+    /// <see cref="TryMount"/> and <see cref="SwapRoot"/> accept. Born in Phase
+    /// 6.3 so the then-hand-maintained route table could be checked against
+    /// this registry; since Phase 7.6 both are derived views of
+    /// <see cref="PageManifest.Pages"/> (routes ⊆ registry holds by
+    /// construction) and this surface remains for tests that enumerate the
+    /// mountable names.</summary>
     internal static IReadOnlyCollection<string> RegisteredComponentsForTests
         => s_components.Keys;
 
