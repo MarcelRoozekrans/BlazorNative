@@ -679,13 +679,24 @@ Maps to BACKLOG "P5 — components".
 
 ---
 
-### ⏳ Milestone 8 — Developer Ecosystem  *(pending — the old P5, repositioned after capability)*
+### 🔄 Milestone 8 — Developer Ecosystem  *(active — opened 2026-07-16; the old P5, repositioned after capability)*
 
-Now there's a real layout engine + component library worth shipping: **nuget.org
-publication** (the M4-deferred item — `PackageReadmeFile` is the recorded prerequisite),
-`BlazorNative.Cli` + `dotnet new` project templates, a documentation site, the CI/CD
-release pipeline, and full test infrastructure. Maps to BACKLOG.md "P5 — Developer
-experience and ecosystem".
+Now there's a real layout engine + component library worth shipping. Scoped at
+milestone-open (owner decisions recorded in [MILESTONE.md](MILESTONE.md)): publish-READY
+packages with the real push on a GitHub Release (manual go); the `dotnet new` template =
+.NET app + Android shell; the docs site = **Docusaurus** (the owner's AdoNet.Async
+pattern); the `BlazorNative.Cli` **ledgered**, not built. Maps to BACKLOG.md "P5 —
+Developer experience and ecosystem".
+
+- **Phase 8.0** — the samples/library separation + registration inversion (DoD #1):
+  the demo pages leave `BlazorNative.Components` for a `samples/` app; a public
+  registration API replaces the library-owned `PageManifest` — *the named risk,
+  verified first; every other M8 deliverable consumes its API* — ⏳ next
+- **Phase 8.1** — publish-ready packages + consumer smoke on the real set (DoD #2) — ⏳
+- **Phase 8.2** — the release pipeline, manual go (DoD #3) — ⏳
+- **Phase 8.3** — the `dotnet new` template: app + Android shell (DoD #4) — ⏳
+- **Phase 8.4** — the docs site: Docusaurus + GitHub Pages (DoD #5) — ⏳
+- **Phase 8.5** — hygiene + M8 final audit + close (DoD #6) → `v8.0` — ⏳
 
 ---
 
