@@ -58,15 +58,25 @@ class MainActivity : Activity() {
         const val DEEP_LINK_SCHEME = "blazornative"
 
         /**
-         * The shell's deep-link route → mount-component map (Phase 5.1). Mirrors
-         * the tiny .NET NativeNavigationManager route table. The shell resolves
-         * the deep-link target component HERE (and still mounts by NAME) rather
-         * than leaning on .NET's first-mount startup-route-honor, because that
-         * honor only fires on a session's FIRST mount — which never holds under
-         * Activity recreation OR the shared-process instrumented session. Direct
-         * resolution is robust in all three; the route slot is still seeded so
-         * .NET's CurrentRoute agrees. Unknown route → default (BnDemo). A shared
-         * route registry is M6 work (nav lifts into a package).
+         * The shell's deep-link route → mount-component map (Phase 5.1; source
+         * unified in 7.6). **A page is declared ONCE, in .NET's PageManifest**
+         * (src/BlazorNative.Runtime/PageManifest.cs); this map is the one
+         * surviving PINNED MIRROR of its routed rows — it cannot be a derived
+         * view because it is consulted at Intent-parse time in onCreate, BEFORE
+         * the .so loads. The pin: RouteTableDriftTests (Runtime.Tests, the
+         * required lane) regex-parses THIS map from checkout text pair-for-pair
+         * against the manifest, fallback literal included — a route added,
+         * dropped, re-pointed, or a changed fallback reddens the build. Edit
+         * this map only together with PageManifest; the drift test will insist.
+         *
+         * The shell resolves the deep-link target component HERE (and still
+         * mounts by NAME) rather than leaning on .NET's first-mount
+         * startup-route-honor, because that honor only fires on a session's
+         * FIRST mount — which never holds under Activity recreation OR the
+         * shared-process instrumented session. Direct resolution is robust in
+         * all three; the route slot is still seeded so .NET's CurrentRoute
+         * agrees. Unknown route → default (BnDemo — the manifest's "/" row,
+         * pinned by the same drift test).
          *
          * Phase 6.1 adds "/layout" → BnLayoutDemo, the flexbox proof page (a
          * THIRD root page, deliberately: BnDemo and BnSettingsPage keep their
@@ -107,11 +117,14 @@ class MainActivity : Activity() {
          *
          * Phase 7.5 adds "/imagepolish" → BnImagePolishDemo, the image-polish
          * proof page (M7 DoD #6: placeholder / OnError / ContentMode) — a NINTH
-         * root page, same reason again, same mirror of .NET's
-         * NativeNavigationManager route table. Same two doors:
+         * root page, same reason again. Same two doors:
          * BnImagePolishDemoAndroidTest mounts it by NAME (and once by this
-         * route, so the row itself is asserted). Route-registry unification
-         * stays 7.6's job, one page closer.
+         * route, so the row itself is asserted).
+         *
+         * (The per-phase notes above say "mirrors NativeNavigationManager" —
+         * true when written; since 7.6 that table is itself a derived view of
+         * PageManifest, which is the one source. The pin described at the top
+         * is what keeps this map honest now.)
          */
         private val DEEP_LINK_COMPONENTS = mapOf(
             "/settings" to "BnSettingsPage",

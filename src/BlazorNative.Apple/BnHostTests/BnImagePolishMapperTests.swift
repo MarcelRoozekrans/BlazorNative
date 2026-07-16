@@ -60,6 +60,9 @@ final class BnImagePolishMapperTests: BnHostTestCase {
     /// the page the wire actually built, which is the drift pin).
     private let placeholderHex = "#FFCA28"
 
+    /// The recolor target (7.6 H5) — any parseable color that is not `placeholderHex`.
+    private let recolorHex = "#3F51B5"
+
     /// A `src` that `URL(string:)` REJECTS — the synchronous-failure path's key, and
     /// it has to be a STRUCTURAL violation: Foundation's lenient parser percent-encodes
     /// mere garbage ("not a url at all" parses — the recorded 6.3 finding), but a
@@ -173,6 +176,46 @@ final class BnImagePolishMapperTests: BnHostTestCase {
                        + "not a failure to report back")
     }
 
+    func testPlaceholderColorRecolorsTheInFlightPaintAndNullCLEARSIt() throws {
+        // Phase 7.6 (H5, the 7.5 G3 review ledger): the matched pair neither device
+        // suite pinned — a RECOLOR repaints an on-screen placeholder, and
+        // `placeholderColor → null` CLEARS one — both while the request is STILL
+        // open. Same observable on both shells (WidgetMapperImagePolishTest holds
+        // the Android half, assertion for assertion).
+        let host = makeSection(src: BnImageFixtureServer.SLOW_URL, declared: true)
+        XCTAssertTrue(server.awaitPath("/slow.png"),
+                      "the request must be genuinely IN FLIGHT — both rows below are about "
+                      + "a placeholder that is ON SCREEN over an OPEN request")
+        try assertPlaceholderPainted("in flight, before the recolor", imageView(host))
+
+        // THE RECOLOR: a placeholderColor update while the paint is on screen
+        // REPAINTS it — the prop arm repaints iff the node still awaits bytes.
+        host.render([.updateProp(nodeId: image, name: "placeholderColor", value: recolorHex)])
+        XCTAssertEqual(try imageView(host).bnPlaceholderColor, BnColor.parse(recolorHex),
+                       "the recolor must still be a PAINTED placeholder, in exactly the NEW "
+                       + "color — a recolor that kept the old paint is the prop arm silently "
+                       + "dead after the mount")
+        assertFrame("…and the box never moved: paint, never size",
+                    try imageView(host), 0, 0, 200, 120)
+
+        // THE NULL-CLEAR: the author took the parameter away with the placeholder ON
+        // SCREEN — it goes with the setting that painted it, and the request's own
+        // lifecycle is untouched (nothing terminated, nothing cancelled).
+        host.render([.updateProp(nodeId: image, name: "placeholderColor", value: nil)])
+        XCTAssertNil(try imageView(host).bnPlaceholderColor,
+                     "the on-screen placeholder goes with the setting that painted it")
+        XCTAssertEqual(host.mapper.imageTerminalCount, 0,
+                       "…and the clear touched PAINT only: the request is still open")
+
+        // The still-open request then terminates normally: the bytes land anyway.
+        server.releaseSlow()
+        bnAwaitImageResults(host.mapper, 1)
+        XCTAssertEqual(host.mapper.imageResults.map { $0.outcome }, [.success],
+                       "the bytes still landed after the clear — the placeholder was paint, "
+                       + "never the request")
+        XCTAssertNotNil(try imageView(host).image)
+    }
+
     func testAnIntrinsicPlaceholderNeverMeasuresTheFailingSide() throws {
         let host = makeSection(src: BnImageFixtureServer.MISSING_URL, declared: false)
 
@@ -279,11 +322,11 @@ final class BnImagePolishMapperTests: BnHostTestCase {
         host.render([.updateProp(nodeId: image, name: "contentMode", value: "fill")])
         XCTAssertEqual(try imageView(host).contentMode, .scaleAspectFill,
                        "the unknown word applied NOTHING — the node keeps cover")
-        XCTAssertTrue(host.mapper.scrollDiagnostics.contains { $0.contains("contentMode 'fill'") },
+        XCTAssertTrue(host.mapper.diagnostics.contains { $0.contains("contentMode 'fill'") },
                       "…and the ignore is DIAGNOSED where a test can read it (the modal "
                       + "style-ignore precedent): NSLog is not an assertion surface, and this "
                       + "failure is invisible on every frame table by the mode-invariance rule "
-                      + "itself. Got: \(host.mapper.scrollDiagnostics)")
+                      + "itself. Got: \(host.mapper.diagnostics)")
 
         server.release()
         bnAwaitImageResults(host.mapper, 1) // hygiene: let the fixture request terminate

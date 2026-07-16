@@ -260,41 +260,18 @@ public sealed class NavigationTests
         }
     }
 
-    // ── The two hand-maintained registries agree (Phase 6.3 Gate 1 review) ───
-
-    /// <summary>THE ROUTE TABLE AND THE MOUNT REGISTRY ARE TWO HAND-MAINTAINED
-    /// MIRRORS, and nothing asserted they agree until there were five demo pages.
-    /// <para>Every value in <c>NativeNavigationManager.s_routes</c> must be a key in
-    /// <c>HostSession.s_components</c>. It is not decorative: a route whose component
-    /// name is a typo is accepted by <c>NavigateToAsync</c> (the route EXISTS), reaches
-    /// <c>SwapRoot</c>, and throws there — "not in the mount registry" — as a runtime
-    /// failure on a device, in a click handler, for a mistake a set test catches at
-    /// build time. Every page added since 3.5 has had to touch both files; this is the
-    /// line that notices when one of them was missed.</para>
-    /// <para>Deliberately NOT the reverse: the mount registry legitimately holds
-    /// UNROUTED entries (the probes — CompositionProbe, FocusProbe, HostEventProbe,
-    /// ClipboardProbe, HelloComponent — which the shells mount by NAME, never by
-    /// route). Routes ⊆ registry, not equality.</para></summary>
-    [Fact]
-    public void EveryRoute_ResolvesToAComponentTheMountRegistryKnows()
-    {
-        IReadOnlyCollection<string> registry = HostSession.RegisteredComponentsForTests;
-
-        Assert.All(NativeNavigationManager.RoutesForTests, entry =>
-            Assert.True(registry.Contains(entry.Value),
-                $"""route "{entry.Key}" mounts "{entry.Value}", which is NOT in HostSession's """
-                + $"mount registry ({string.Join(", ", registry)}) — navigating to it would "
-                + "throw on a device. The two registries are mirrors; they move together."));
-
-        // The nine ROUTED pages, by name — so that deleting a route (rather
-        // than mistyping one) is also a red test rather than a silent shrink.
-        // (+BnListDemo, Phase 7.2 — "/list"; +BnFormDemo, Phase 7.3 — "/form";
-        // +BnModalDemo, Phase 7.4 — "/modal"; +BnImagePolishDemo, Phase 7.5 —
-        // "/imagepolish".)
-        Assert.Equal(
-            ["BnDemo", "BnFormDemo", "BnImageDemo", "BnImagePolishDemo", "BnLayoutDemo", "BnListDemo", "BnModalDemo", "BnScrollDemo", "BnSettingsPage"],
-            NativeNavigationManager.RoutesForTests.Values.OrderBy(v => v, StringComparer.Ordinal));
-    }
+    // ── RETIRED (Phase 7.6): EveryRoute_ResolvesToAComponentTheMountRegistryKnows ─
+    //
+    // Phase 6.3's routes ⊆ registry set test guarded two HAND-MAINTAINED
+    // mirrors. Since Phase 7.6 both are derived views of `PageManifest.Pages`
+    // (one array, two projections), so every route's value is a mount-registry
+    // key BY CONSTRUCTION — the assertion could no longer fail, and the house
+    // rule is that a green tautology is retired, not kept. Its second half —
+    // the nine-page ordered baseline that catches a routed page silently
+    // vanishing from the source — is NOT a tautology and lives on, retargeted
+    // to the manifest: RouteTableDriftTests.ManifestRoutedRows_MatchTheNinePageBaseline.
+    // The Kotlin mirror those tests pin (MainActivity.DEEP_LINK_COMPONENTS)
+    // is drift-tested pair-for-pair there too.
 
     // ── Unknown route: surfaced per the strict conventions ───────────────────
 

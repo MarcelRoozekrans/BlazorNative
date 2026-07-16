@@ -396,7 +396,7 @@ final class BnModalMapperTests: BnHostTestCase {
         XCTAssertEqual(overlay.backgroundColor, BnColor.parse("#80000000"),
                        "backgroundColor did NOT repaint the scrim (the scrim's paint is the "
                        + "scrimColor PROP)")
-        let diags = host.mapper.scrollDiagnostics.filter { $0.contains("`modal` node") }
+        let diags = host.mapper.diagnostics.filter { $0.contains("`modal` node") }
         XCTAssertEqual(diags.count, 2,
                        "both drops are RECORDED — NSLog is not an assertion surface, and the "
                        + "failure this rule prevents is silent on every frame table")

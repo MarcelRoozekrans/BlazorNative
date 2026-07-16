@@ -132,6 +132,38 @@ class WidgetMapperModalTest {
         }
     }
 
+    @Test fun a_top_level_INDEXED_insert_lands_at_its_index_and_the_overlay_stays_last() {
+        val host = SyntheticHost()
+        host.render(listOf(
+            create(1, "view", null), style(1, "height", "40"),
+            create(2, "view", null), style(2, "height", "60"),
+            create(3, "modal", null), // a TOP-LEVEL modal: anchor at root, overlay after it
+        ))
+        // Phase 7.6 (H4, the 7.4 G2 review ledger): the APPEND arm above is
+        // pinned; the INDEXED insert at root while an overlay is live was
+        // correct by construction (ONE resolved index feeds both trees) but
+        // unpinned — 7.4 called the asymmetry "a decision, not an oversight".
+        // Now it is neither: an indexed CreateNode between existing root
+        // anchors must land at its WIRE index — the overlay is not a wire
+        // child, so it must not shift the arithmetic — and the overlay stays
+        // LAST in both trees.
+        host.render(listOf(
+            create(4, "view", null, insertIndex = 1), style(4, "height", "80"),
+        ))
+        host.read {
+            assertEquals(5, host.root.childCount)
+            // [0] view 1, [1] view 4 — the indexed insert, at its wire index —
+            // [2] view 2 (pushed down), [3] anchor 3, [4] the overlay, still last.
+            assertFrame("the indexed insert lands between the anchors in BOTH trees " +
+                "(flows after view 1)", host.root.getChildAt(1), 0f, 40f, 400f, 80f)
+            assertFrame("view 2 flows AFTER the insert — the index resolved against " +
+                "the wire order, not the overlay-padded view order",
+                host.root.getChildAt(2), 0f, 120f, 400f, 60f)
+            assertFrame("the overlay is STILL the last child, still full-root",
+                host.root.getChildAt(4), 0f, 0f, 400f, 800f)
+        }
+    }
+
     @Test fun a_reshown_modal_is_a_recreate_and_lands_on_top() {
         val host = SyntheticHost()
         host.render(listOf(
@@ -291,7 +323,7 @@ class WidgetMapperModalTest {
             assertEquals("backgroundColor did NOT repaint the scrim (the scrim's paint " +
                 "is the scrimColor PROP)", Color.parseColor("#80000000"),
                 (overlay.background as ColorDrawable).color)
-            val diags = host.mapper.scrollDiagnostics.filter { it.contains("`modal` node") }
+            val diags = host.mapper.diagnostics.filter { it.contains("`modal` node") }
             assertEquals("both drops are RECORDED — logcat is not an assertion surface, " +
                 "and the failure this rule prevents is silent on every frame table",
                 2, diags.size)

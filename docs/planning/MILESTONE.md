@@ -1,6 +1,8 @@
 # Milestone 7 — Components + Razor
 
-**Status:** in progress — opened 2026-07-15
+**Status:** ✅ complete — opened 2026-07-15, closed 2026-07-16, **pending `v7.0` tag**
+(applied after the Phase 7.6 close PR merges, on the owner's go — the M6 pattern;
+[final audit](../plans/2026-07-16-milestone-7-final-audit.md): all 8 DoD PASS)
 **Source:** the 2026-07-13 roadmap re-plan (capability before ecosystem) — the second capability
 milestone: M6 built the layout engine; M7 builds *the things you build UIs with* on top of it.
 **Predecessor:** Milestone 6 — complete 2026-07-15, tagged `v6.0` ([final audit](../plans/2026-07-14-milestone-6-final-audit.md): all 8 DoD PASS)
@@ -110,6 +112,21 @@ the two points where scope may consciously shrink; anything cut is ledgered, not
    **route-registry unification** (routes duplicated in .NET + Kotlin since 5.1 — one source,
    drift-tested like the style tables); every new surface CI-asserted (counts + the three required
    compile gates); decision log per phase + final audit → tag **`v7.0`**.
+   ✅ **Closed by Phase 7.6** ([conclusion](../plans/2026-07-16-phase-7.6-conclusion.md)):
+   a page is declared ONCE in `PageManifest.cs` (14 rows: 9 routed + 5 probes, the `Mount<T>`
+   lambdas verbatim — publish gate unchanged at 4 IL2072 / 9 exports); `HostSession` and
+   `NativeNavigationManager` are **derived views** (cannot drift); Android's
+   `DEEP_LINK_COMPONENTS` is the one surviving **pinned mirror** (Intent-parse time, before
+   the `.so` loads), held pair-for-pair by `RouteTableDriftTests` in the **required lane**
+   (five mutations run red-first; the green tautology retired). Plus the 7.4/7.5 hygiene
+   ledger paid (H1–H5; H6/H7 deferred by name) and the ios.yml `pull_request` trigger dropped
+   on an owner cost request (coverage moved to per-gate dispatch + push-main, restore
+   condition in the workflow header). Every surface CI-asserted: .NET **539/0** · JVM
+   **106/0** · Android instrumented **184/0** · iOS XCTest **154/0** (run 29515968994);
+   branch protection == exactly `["build-test","ios-build","android-build"]` (read back
+   live). Decision log complete: 7.0–7.6 design/conclusion pairs + the
+   [final audit](../plans/2026-07-16-milestone-7-final-audit.md) (**PASS on all eight**,
+   every row live re-verified). `v7.0` is tagged after merge, on the owner's go.
 
 ## Out of scope for this milestone
 

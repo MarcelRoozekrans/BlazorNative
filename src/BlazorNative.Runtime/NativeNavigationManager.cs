@@ -18,9 +18,13 @@ namespace BlazorNative.Runtime;
 // Navigating from inside a click handler therefore delivers removes+creates
 // before blazornative_dispatch_event returns (the dispatch-window pin).
 //
-// Route table: values are HostSession mount-registry keys — the registry
-// stays the single component-name authority; this table only owns
-// route → name.
+// Route table: a DERIVED VIEW of PageManifest's routed rows (Phase 7.6,
+// design decision 1) — the manifest is the single page authority; this table
+// and HostSession's mount registry are projections of the same object graph,
+// so a route's value is a mount-registry key BY CONSTRUCTION. Android's
+// MainActivity.DEEP_LINK_COMPONENTS remains a hand-written PINNED MIRROR
+// (Intent-parse time — before the .so loads), drift-tested pair-for-pair by
+// RouteTableDriftTests in the required build-test lane.
 //
 // CurrentRoute: tracked .NET-side; lazily initialized by querying the host's
 // CurrentRoute buffer callback — a host-restored route that maps to a known
@@ -31,72 +35,30 @@ namespace BlazorNative.Runtime;
 
 public sealed class NativeNavigationManager : INavigationManager
 {
-    internal const string DefaultRoute = "/";
+    internal const string DefaultRoute = PageManifest.DefaultRoute;
 
-    /// <summary>route → mount-registry key. Static data, no per-session state.</summary>
-    private static readonly Dictionary<string, string> s_routes = new(StringComparer.Ordinal)
-    {
-        [DefaultRoute] = "BnDemo",
-        ["/settings"] = "BnSettingsPage",
-        // Phase 6.1: the flexbox proof page. Its "← Back" navigates to "/", so
-        // it rides the same nav path the other pages do. Nothing on BnDemo links
-        // HERE — a "Layout →" button would churn BnDemo's four goldens for no
-        // engine reason; the shells reach it by mount name (Intent extra) or by
-        // deep link. The shells' own route mirrors (MainActivity's
-        // DEEP_LINK_COMPONENTS) gain "/layout" in Gate 2.
-        ["/layout"] = "BnLayoutDemo",
-        // Phase 6.2: the scrolling proof page — same shape as "/layout". Its
-        // "← Back" (outside the viewport, so scrolling cannot hide the exit)
-        // navigates to "/"; nothing on BnDemo links here. The shells' route
-        // mirrors (MainActivity's DEEP_LINK_COMPONENTS) gain "/scroll" in Gate 2;
-        // iOS has no route mirror — it mounts by NAME (BnRuntime.start).
-        ["/scroll"] = "BnScrollDemo",
-        // Phase 6.3: the image proof page — same shape as "/layout" and "/scroll".
-        // Its "← Back" navigates to "/"; nothing on BnDemo links here. THE SHELL
-        // MIRRORS THIS TABLE OWES: Android's MainActivity.DEEP_LINK_COMPONENTS
-        // gains "/image" → "BnImageDemo" in Gate 2 (a map that must not drift from
-        // this one); iOS has no route mirror at all — it mounts by NAME
-        // (BnRuntime.start), so Gate 3 touches no registry, only its test's mount
-        // name.
-        ["/image"] = "BnImageDemo",
-        // Phase 7.2: the virtualized-list proof page — same shape as the three
-        // above. Its "← Back" (outside the viewport) navigates to "/"; nothing
-        // on BnDemo links here. Android's MainActivity.DEEP_LINK_COMPONENTS
-        // gains "/list" → "BnListDemo" in Gate 2 (this table's mirror); iOS has
-        // no route mirror — it mounts by NAME (BnRuntime.start).
-        ["/list"] = "BnListDemo",
-        // Phase 7.3: the form-controls proof page — same shape as the four
-        // above. Its "← Back" navigates to "/"; nothing on BnDemo links here.
-        // Android's MainActivity.DEEP_LINK_COMPONENTS gains "/form" →
-        // "BnFormDemo" in Gate 2 (this table's mirror); iOS has no route
-        // mirror — it mounts by NAME (BnRuntime.start).
-        ["/form"] = "BnFormDemo",
-        // Phase 7.4: the overlay proof page — same shape as the five above.
-        // Its "← Back" navigates to "/"; nothing on BnDemo links here.
-        // Android's MainActivity.DEEP_LINK_COMPONENTS gains "/modal" →
-        // "BnModalDemo" in Gate 2 (this table's mirror); iOS has no route
-        // mirror — it mounts by NAME (BnRuntime.start).
-        ["/modal"] = "BnModalDemo",
-        // Phase 7.5: the image-polish proof page — same shape as the six
-        // above. Its "← Back" navigates to "/"; nothing on BnDemo links here.
-        // Android's MainActivity.DEEP_LINK_COMPONENTS gains "/imagepolish" →
-        // "BnImagePolishDemo" in Gate 2 (this table's mirror); iOS has no
-        // route mirror — it mounts by NAME (BnRuntime.start).
-        ["/imagepolish"] = "BnImagePolishDemo",
-    };
+    /// <summary>route → mount-registry key. Static data, no per-session state.
+    /// Phase 7.6: derived from <see cref="PageManifest.Pages"/>' routed rows —
+    /// the per-page provenance comments live on the manifest rows now, and a
+    /// value here is a <c>HostSession.s_components</c> key by construction
+    /// (both are views of the one array).</summary>
+    private static readonly Dictionary<string, string> s_routes =
+        PageManifest.Pages
+            .Where(p => p.Route is not null)
+            .ToDictionary(p => p.Route!, p => p.Name, StringComparer.Ordinal);
 
     /// <summary>The default route's component — the name a host mounts to get
     /// "the routed app" (MainActivity's no-extra default). HostSession's
-    /// route-aware initial mount only ever overrides THIS name.</summary>
-    internal static string DefaultComponent => s_routes[DefaultRoute];
+    /// route-aware initial mount only ever overrides THIS name. Phase 7.6:
+    /// forwards to the manifest, where the row itself lives.</summary>
+    internal static string DefaultComponent => PageManifest.DefaultComponent;
 
-    /// <summary>Test-only: the whole route table. There are TWO hand-maintained
-    /// registries — this one and <c>HostSession</c>'s mount registry — and until
-    /// Phase 6.3 nothing asserted that every route's VALUE is a name the mount
-    /// registry actually knows. A route whose component is missing throws only when
-    /// a user navigates to it (<c>SwapRoot</c>: "not in the mount registry"), which
-    /// is a runtime crash on a device for a typo a set-equality test catches at
-    /// build time. Five demo pages in, that is worth one line.</summary>
+    /// <summary>Test-only: the whole route table. Born in Phase 6.3, when this
+    /// table and <c>HostSession</c>'s mount registry were two hand-maintained
+    /// mirrors and a set test had to assert routes ⊆ registry; since Phase 7.6
+    /// both derive from <see cref="PageManifest.Pages"/> (that test retired as
+    /// a by-construction tautology) and this surface remains for the tests
+    /// that drive navigation by route.</summary>
     internal static IReadOnlyDictionary<string, string> RoutesForTests => s_routes;
 
     /// <summary>Reverse lookup for HostSession's mount tracking: true when

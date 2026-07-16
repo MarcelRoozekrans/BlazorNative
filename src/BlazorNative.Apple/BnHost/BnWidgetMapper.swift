@@ -1141,12 +1141,15 @@ final class BnWidgetMapper {
     /// …and the view-tree half of the same pair.
     var scrollContentCount: Int { scrollContents.count }
 
-    /// The scroll node's two runtime diagnostics (Phase 6.2): the container-style
-    /// ignore-and-log rule, and the definite-height warning. Exposed because `NSLog` is
-    /// not an assertion surface and both failures are SILENT on the device — a page that
-    /// simply does not move. `BnScrollTests` asserts them. The twin of Kotlin's
-    /// `WidgetMapper.scrollDiagnostics`.
-    var scrollDiagnostics: [String] { diagnosed.map { $0.message } }
+    /// The mapper's runtime diagnostics, in emission order: the scroll pair (6.2's
+    /// container-style ignore-and-log rule and the definite-height warning), the
+    /// modal-style drops (7.4), and the image contentMode rejections (7.5). Exposed
+    /// because `NSLog` is not an assertion surface and every one of these failures is
+    /// SILENT on the device. `BnScrollTests` / `BnModalMapperTests` /
+    /// `BnImagePolishMapperTests` assert them. The twin of Kotlin's
+    /// `WidgetMapper.diagnostics`. (Renamed from `scrollDiagnostics` in 7.6 — the
+    /// name predated the 7.4/7.5 additions and lied about the scope.)
+    var diagnostics: [String] { diagnosed.map { $0.message } }
 
     // ── Phase 6.3 test-only bookkeeping (the twins of Kotlin's) ──────────────
 
@@ -3377,7 +3380,7 @@ final class BnWidgetMapper {
         // into the flex flow, a visual `backgroundColor` would paint it.
         // BnModal's surface cannot emit one, but the hand-rolled-wire hatch is
         // open (the .NET test pins that), so this is live code, not dead —
-        // recorded in the diagnostics ([scrollDiagnostics]) because the failure
+        // recorded in [diagnostics] because the failure
         // it prevents is silent on every frame table. Membership in
         // [modalOverlays] is what makes a node "a modal node" here (the
         // [contentNodes] discipline).
