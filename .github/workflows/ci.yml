@@ -884,7 +884,24 @@ jobs:
       #     ("expected: <modal> but was: <?>"), which on a device is a TextView
       #     where an overlay should be — the exact silent decode the 7.3 pin was
       #     added to catch, reddening on this lane instead.
-      - name: JVM tests (Gradle testDebugUnitTest — assert 92 passed / 0 failed)
+      # ── Phase 7.5 Gate 2: 92 → 104, +12 — the polish features' pure decisions,
+      #    pinned before any emulator boots (the isLiveImageRequest shared-source-set
+      #    precedent, twice).
+      #
+      #  +6 ImageContentModeTableTest — contentModeFor's strict acceptance set: the
+      #     four lowercase wire words one row per test (a swapped cover/contain pair
+      #     reddens BY NAME — the design's own JVM mutation, run), null-restores-
+      #     CONTAIN (the Enabled-null precedent), and the diagnose-don't-apply row
+      #     ('Contain'/'COVER'/' contain'/''/'fit'/'repeat' all map to nothing).
+      #  +6 ImageErrorDispatchTest — imageErrorDispatchAction, the error-dispatch
+      #     decision COMPOSING isLiveImageRequest by name (one guard, two consumers:
+      #     superseded / purged / reset-collision each never dispatch), unbound never
+      #     dispatches, and THE DEFER ROW: a failure terminating inside applyBatch
+      #     DEFERS to a fresh main-queue turn — deferred, never dropped. On the JVM
+      #     lane because Android cannot stage it (Coil's memory cache proves only the
+      #     synchronous SUCCESS; a 404 is never cached) — iOS stages it live
+      #     (URL(string:) → nil), same table, two shells.
+      - name: JVM tests (Gradle testDebugUnitTest — assert 104 passed / 0 failed)
         working-directory: src/BlazorNative.Jni
         run: |
           .\gradlew.bat --no-daemon testDebugUnitTest
@@ -898,8 +915,8 @@ jobs:
             $errors += [int]$suite.errors; $skipped += [int]$suite.skipped
           }
           Write-Host "JVM test totals across $($xmls.Count) suites: tests=$tests failures=$failures errors=$errors skipped=$skipped"
-          if ($tests -ne 92 -or $failures -ne 0 -or $errors -ne 0 -or $skipped -ne 0) {
-            throw "JVM test baseline drift: expected 92 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped"
+          if ($tests -ne 104 -or $failures -ne 0 -or $errors -ne 0 -or $skipped -ne 0) {
+            throw "JVM test baseline drift: expected 104 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped"
           }
 
       # the instrumented-sources compile gate moved to its own required job

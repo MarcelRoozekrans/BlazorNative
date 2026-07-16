@@ -14,7 +14,7 @@
 #   emulator (ubuntu-latest, KVM) — downloads the .so, boots the API 34
 #     google_apis x86_64 Pixel 6 image (mirrors the local AVD
 #     blazornative-pixel6-x86_64), runs connectedAndroidTest with
-#     -PciSoDir pointing at the artifact → asserts 166 passed / 0 failed.
+#     -PciSoDir pointing at the artifact → asserts 182 passed / 0 failed.
 #
 # Baselines are asserted, not observed: count drift fails the job loudly.
 # ─────────────────────────────────────────────────────────────────────────────
@@ -736,7 +736,53 @@ jobs:
       #                                  the root). (The vocabulary's content/length pin
       #                                  and the 11/12 offset-level decodes live on the
       #                                  JVM lane — NativeFrameAdapterTest, 90 → 92.)
-      - name: Assert instrumented baseline (166 passed / 0 failed)
+      # ── Phase 7.5 Gate 2 — image polish: placeholderColor / contentMode / `error` (166 → 182, +16) ──
+      # The three 6.3 ledger items land shell-side with ZERO new measurement states:
+      # the placeholder is PAINT (a ColorDrawable as the ImageView's drawable — the
+      # state table in WidgetMapper.ImageState; measurement reads the natural-size
+      # map, never the drawable, so it cannot measure by construction); failure keeps
+      # the placeholder AND now dispatches `error` (payload = the wire's src,
+      # verbatim) behind imageErrorDispatchAction — the JVM-pinned decision composing
+      # isLiveImageRequest (one guard, two consumers) with the defer-out-of-batch
+      # rule (deferred, never dropped; Coil has no deterministic synchronous-failure
+      # path, so the defer arm is decision-table-tested on the JVM lane, 92 → 104);
+      # contentMode is the strict four-word table → ScaleType, paint-only. Counts
+      # verified by MUTATION (run, quoted in the Gate 2 commits):
+      #   +13 WidgetMapperImagePolishTest — the state table row by row (paints in
+      #                                  flight; SUCCESS clears — the bytes replace
+      #                                  the drawable; ERROR keeps it + the declared
+      #                                  box holds; src→null clears it with the
+      #                                  image); placeholder-never-measures from both
+      #                                  sides (intrinsic + 404 stays 0×0; intrinsic
+      #                                  + bytes reflows ONCE with a placeholder
+      #                                  present); the four mode words → the four
+      #                                  ScaleTypes under four IDENTICAL frames;
+      #                                  unknown word diagnosed-not-applied (keeps
+      #                                  cover); null restores FIT_CENTER; the error
+      #                                  dispatch exactly-once with the WIRE src as
+      #                                  payload, counted; unbound/detached dispatch
+      #                                  nothing; CANCELLED never dispatches (staged
+      #                                  as src-change, src→null AND node removal).
+      #   +3  BnImagePolishDemoAndroidTest — /imagepolish through the real NativeAOT
+      #                                  boot, THREE states on one mount (held /
+      #                                  released-but-slow / all released), the gate
+      #                                  counted to EIGHT terminal callbacks (derived
+      #                                  from the page's 8 src-bearing nodes; the
+      #                                  razor header's "seven" is a miscount,
+      #                                  recorded in the test KDoc): the full frame
+      #                                  table (140/164/304/80-step/624/644/664, +Hi
+      #                                  = 90 → 754 — the page's ONLY moving number),
+      #                                  the counted error round-trip re-rendering
+      #                                  ONLY the fixed-height echo (err:0 → err:1 +
+      #                                  the failed src), the mode quartet's four
+      #                                  identical 120×60 frames + per-node scaleType
+      #                                  pins, placeholder view-state pins per state;
+      #                                  the /imagepolish deep-link row; the back-row
+      #                                  oracle. /slow.png (held-until-releaseSlow)
+      #                                  joins the fixture server's routed paths,
+      #                                  serving the 64×48 fixed bytes per the
+      #                                  razor's stated contract.
+      - name: Assert instrumented baseline (182 passed / 0 failed)
         run: |
           shopt -s globstar nullglob
           xmls=(src/BlazorNative.Jni/build/outputs/androidTest-results/connected/**/*.xml)
@@ -753,8 +799,8 @@ jobs:
             s=$(attr skipped "$x");  skipped=$((skipped + ${s:-0}))
           done
           echo "Instrumented totals across ${#xmls[@]} suite(s): tests=$tests failures=$failures errors=$errors skipped=$skipped"
-          if [ "$tests" -ne 166 ] || [ "$failures" -ne 0 ] || [ "$errors" -ne 0 ] || [ "$skipped" -ne 0 ]; then
-            echo "Instrumented test baseline drift: expected 166 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped" >&2
+          if [ "$tests" -ne 182 ] || [ "$failures" -ne 0 ] || [ "$errors" -ne 0 ] || [ "$skipped" -ne 0 ]; then
+            echo "Instrumented test baseline drift: expected 182 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped" >&2
             exit 1
           fi
 
