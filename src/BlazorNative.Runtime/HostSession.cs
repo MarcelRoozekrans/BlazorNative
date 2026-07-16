@@ -100,6 +100,17 @@ internal static unsafe class HostSession
         // overlay, and the indicator appears in both hosting contexts — see
         // BnModalDemo.razor's header.
         ["BnModalDemo"] = r => r.Mount<BlazorNative.Components.BnModalDemo>(),
+        // Phase 7.5: the image-polish proof page (route "/imagepolish" — M7
+        // DoD #6). A NINTH page, same rationale an eighth time — and here at
+        // its sharpest: BnImageDemo's two frame tables ARE the 6.3 parity
+        // contract and its section arithmetic is golden-pinned, so the phase
+        // that adds placeholder/error/mode does NOT extend "/image" (Gate 1's
+        // bar includes /image's goldens byte-identical). The new page re-runs
+        // 6.3's measurement proofs WITH the new features present — placeholder
+        // never measures (both sides), failure keeps a declared box, the mode
+        // quartet's four identical frames — plus the counted OnError round
+        // trip. See BnImagePolishDemo.razor's header.
+        ["BnImagePolishDemo"] = r => r.Mount<BlazorNative.Components.BnImagePolishDemo>(),
         // Phase 4.2: the focus/blur proof app (BnInput OnFocus/OnBlur →
         // echo BnText — M4 DoD #4). Scaffolding, like CompositionProbe.
         ["FocusProbe"] = r => r.Mount<FocusProbe>(),

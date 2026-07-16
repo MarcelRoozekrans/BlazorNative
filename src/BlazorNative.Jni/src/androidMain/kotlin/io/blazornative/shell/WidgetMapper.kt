@@ -3,6 +3,7 @@ package io.blazornative.shell
 import android.content.Context
 import android.graphics.Color
 import android.graphics.drawable.BitmapDrawable
+import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.Drawable
 import android.os.Handler
 import android.os.Looper
@@ -136,6 +137,19 @@ import kotlin.math.roundToInt
  *
  * THE SEEKBAR FLOAT↔INT PRECISION CONTRACT lives on [SliderState]; the picker's
  * NORMATIVE CLAMP RULE (BnPicker.razor's header, mirrored) on [handleItems].
+ *
+ * ── PHASE 7.5: IMAGE POLISH — placeholderColor / contentMode / the `error` WIRE ─
+ * The three features 6.3 ledgered, each answered as a MEASUREMENT design whose
+ * answer is "zero new measurement states": the placeholder is PAINT (a
+ * [ColorDrawable] as the ImageView's drawable — [ImageState]'s state table; it
+ * cannot measure by construction, because measurement reads the natural-size
+ * map, not the drawable); failure never changes measurement and now also
+ * DISPATCHES (`error`, payload = the wire's src, behind [imageErrorDispatchAction]
+ * — the JVM-pinned decision that composes [isLiveImageRequest] and defers out of
+ * a batch, deferred never dropped); the content mode is paint-only
+ * ([contentModeFor], the JVM-pinned strict four-word table → ScaleType — the
+ * Yoga box never changes with mode). No new NodeTypes, no new wires: two props
+ * and one event name on the wires that exist.
  *
  * [handleSetStyle] is now a ROUTER over the partitioned allow-list
  * (`NativeRenderer.YogaStyleAttributes` / `VisualStyleAttributes`): a LAYOUT name
@@ -281,6 +295,68 @@ class WidgetMapper(
      * Purged with the node ([handleRemove]) for 6.2's reason: ids are reused.
      */
     private val imageGenerations = mutableMapOf<Int, Int>()
+
+    /**
+     * Phase 7.5 — an `image` node's 7.5 wire state, and **THE PLACEHOLDER STATE TABLE'S
+     * BOOKKEEPING** (design decision 1 — the table is NORMATIVE and loader-free; this is
+     * Android's mechanism for it, verified per shell, never assumed — the 7.3 guard lesson).
+     *
+     * The placeholder is **paint inside whatever box Yoga already gave the node**: a
+     * [ColorDrawable] set as the `ImageView`'s drawable — never a Yoga write, never a
+     * `markDirty`, never a natural size (the measure func reads [YogaLayout]'s natural-size
+     * map, not the drawable, so a placeholder CANNOT measure **by construction**). An
+     * intrinsic node's placeholder is a 0 × 0 paint — invisible, correct, not diagnosed.
+     *
+     *  - [placeholderColor] — the parsed `placeholderColor` prop (null = none/cleared).
+     *    Held as STATE because the props arrive in seq order: `src` (24) lands BEFORE
+     *    `placeholderColor` (25) in the same mount batch, so [handleSrc] must be able to
+     *    paint a color that arrives one patch later — the prop arm repaints iff the node is
+     *    still waiting for bytes ([awaitingBytes]).
+     *  - [srcPresent] / [bytesPainted] — which row of the state table the node is on.
+     *    `src` set + not painted = IN FLIGHT or ERROR (both paint the placeholder — the
+     *    ERROR row keeps it, deliberately: it is the error state's visual, and the declared
+     *    box it fills is held because it was DECLARED, not because it failed). SUCCESS sets
+     *    [bytesPainted] and the real drawable replaces the placeholder (letterbox bars then
+     *    show `BackgroundColor` — the view's background — never the placeholder, which was
+     *    the DRAWABLE and is gone). `src` → null clears both, and the drawable with them.
+     *  - [errorHandlerId] — the live `error` wire (decision 2), [watchers]-style last-wins
+     *    on re-attach, null when unattached. The dispatch decision itself is
+     *    [imageErrorDispatchAction] — a pure function on the JVM lane, composing
+     *    [isLiveImageRequest] by name (one guard, two consumers).
+     *
+     * Created with the node, keyed on the NODETYPE ([handleCreate] — the 6.2 lesson), purged
+     * with it ([handleRemove], [destroy]) for the reason every map here purges: ids restart.
+     */
+    private class ImageState {
+        var placeholderColor: Int? = null
+        var srcPresent = false
+        var bytesPainted = false
+        var errorHandlerId: Int? = null
+
+        /** The rows of the state table on which the placeholder paints: a source is named
+         * and the real bytes are not on screen — IN FLIGHT, or terminal ERROR. */
+        val awaitingBytes: Boolean get() = srcPresent && !bytesPainted
+    }
+
+    /** nodeId → its image wire state. Same lifecycle as [sliderStates]. */
+    private val imageStates = mutableMapOf<Int, ImageState>()
+
+    /** Test-only (Phase 7.5): `error` dispatches actually sent — every dispatch routes
+     * through [dispatchError] (the changeDispatchesSent precedent). The device assertion
+     * "dispatched EXACTLY ONCE, and only for the BOUND failure" is only honest as a counted
+     * wire dispatch: /imagepolish has TWO failing images and one attach, and the unbound
+     * failure's non-dispatch moves no frame and no echo. */
+    internal var errorDispatchesSent: Int = 0
+        private set
+
+    /** Every `error` dispatch goes through here — see [errorDispatchesSent]. The payload is
+     * the WIRE's `src`, verbatim (decision 2: the URL is the only fact two loaders share
+     * about the same failure, so it is the only payload two shells can dispatch
+     * identically). */
+    private fun dispatchError(handlerId: Int, src: String) {
+        errorDispatchesSent++
+        onUiEvent(handlerId, "error", src)
+    }
 
     /**
      * Test-only: every image request that has TERMINATED, in order — Coil's own per-node
@@ -837,6 +913,19 @@ class WidgetMapper(
                     onScrollSample(p.nodeId, scrollY)
                 }
             }
+            // Phase 7.5 (design decision 2) — the `error` wire: a new WORD on the existing
+            // dispatch wire (the scroll precedent), attached .NET-side iff OnError has a
+            // delegate. No native listener to install — the "listener" is Coil's own
+            // terminal callback ([onImageFailed]'s dispatch site); this arm only records
+            // WHERE the failure flows. Last-wins re-attach, the 4.2 watcher discipline.
+            "error" -> {
+                val state = imageStates[p.nodeId] ?: run {
+                    Log.w(TAG, "AttachEvent 'error' ignored: node ${p.nodeId} is " +
+                        "${view::class.simpleName}, not an image node")
+                    return
+                }
+                state.errorHandlerId = p.handlerId
+            }
             else -> Log.w(TAG, "AttachEvent '${p.eventName}' not supported (forward compat): skipped")
         }
     }
@@ -924,6 +1013,16 @@ class WidgetMapper(
                     return
                 }
                 (nodes[p.nodeId] as? ScrollView)?.setOnScrollChangeListener(null)
+            }
+            // Phase 7.5 — the attach arm's mirror (the 3.3 rule: a new event type extends
+            // both arms symmetrically). The wire dies here; a failure that terminates later
+            // finds no handler and DROPs at the decision ([imageErrorDispatchAction]).
+            "error" -> {
+                val state = imageStates[p.nodeId] ?: run {
+                    Log.w(TAG, "DetachEvent 'error' for node ${p.nodeId} has no image state: ignored")
+                    return
+                }
+                state.errorHandlerId = null
             }
             else -> Log.w(TAG, "DetachEvent '${p.eventName}' not supported (forward compat): skipped")
         }
@@ -1124,6 +1223,9 @@ class WidgetMapper(
         // nodeType is the contract, the class is a table row that could change).
         if (p.nodeType == "slider") sliderStates[p.nodeId] = SliderState()
         if (p.nodeType == PICKER) pickerStates[p.nodeId] = PickerState()
+        // Phase 7.5 — the image node's wire state (placeholder color, state-table row,
+        // error wire), created with the node like the two above and purged with it.
+        if (p.nodeType == "image") imageStates[p.nodeId] = ImageState()
 
         // Phase 6.2 — THE SYNTHETIC CONTENT VIEW. A BnYogaFrameLayout, not a stock
         // one, for the 6.1 reason (a stock FrameLayout's onLayout would re-place every
@@ -1331,6 +1433,10 @@ class WidgetMapper(
             // /image or /scroll names the PAGE, never the image inside it.
             cancelImageRequest(id)
             imageGenerations.remove(id)
+            // Phase 7.5 — the image wire state dies with the node (ids restart; a state
+            // outliving its node would hand its error wire and placeholder color to the
+            // next node to inherit the id).
+            imageStates.remove(id)
             // Phase 7.2 — the purge half of the stale-callback discipline: a
             // removed scroll node's conflation slot dies here, pending offset
             // and all, NEVER dispatched (the wire contract's detach/purge row).
@@ -1409,6 +1515,7 @@ class WidgetMapper(
         for (request in imageRequests.values) request.disposable.dispose()
         imageRequests.clear()
         imageGenerations.clear()
+        imageStates.clear()
         imageResultLog.clear()
         yoga.destroy()
     }
@@ -1603,6 +1710,71 @@ class WidgetMapper(
                 else Log.w(TAG, "UpdateProp src ignored: node ${p.nodeId} is " +
                     "${view::class.simpleName}, not ImageView")
             }
+            // Phase 7.5 (design decision 1) — the image's placeholder COLOR. A PROP, not a
+            // style (`StyleAttributePartitionTests` pins both 7.5 names as props), and NOT
+            // the name `placeholder` — that has been the input hint since M2 (the arm at the
+            // top of this switch), and reusing it would fork one prop's meaning by NodeType.
+            // PAINT-ONLY by construction: it writes the drawable, never Yoga.
+            "placeholderColor" -> {
+                if (view !is ImageView) {
+                    Log.w(TAG, "UpdateProp placeholderColor ignored: node ${p.nodeId} is " +
+                        "${view::class.simpleName}, not ImageView")
+                    return
+                }
+                val state = imageStates[p.nodeId] ?: run {
+                    Log.w(TAG, "UpdateProp placeholderColor for image ${p.nodeId} has no " +
+                        "state: ignored")
+                    return
+                }
+                if (p.value == null) {
+                    // The author took the parameter away (the Enabled-null precedent): no
+                    // placeholder — and if one is on screen right now (in flight / error),
+                    // it goes with the setting that painted it.
+                    state.placeholderColor = null
+                    if (state.awaitingBytes) view.setImageDrawable(null)
+                    return
+                }
+                val color = parseColorOrNull(p.value) ?: run {
+                    Log.w(TAG, "UpdateProp placeholderColor ignored on image ${p.nodeId}: " +
+                        "'${p.value}' is not a parseable color") // the backgroundColor posture
+                    return
+                }
+                state.placeholderColor = color
+                // The props ride the wire in seq order — `src` (24) BEFORE `placeholderColor`
+                // (25) — so on the ordinary mount the request is already in flight when this
+                // arrives: paint the IN-FLIGHT (or ERROR) row now. A node showing real bytes
+                // keeps them (the SUCCESS row: the placeholder never paints over bytes).
+                if (state.awaitingBytes) view.setImageDrawable(ColorDrawable(color))
+            }
+            // Phase 7.5 (design decision 3) — the content mode. THE TABLE IS THE SHARED
+            // DECISION ([contentModeFor], JVM-pinned: strict four-word set, null restores
+            // the default, unknown → diagnose-don't-apply); this arm is the lookup plus the
+            // Android spelling of each row. PAINT-ONLY, normatively: the layout box is
+            // Yoga's and never changes with mode — no markDirty, no Yoga write, and the
+            // measure func never consults the ScaleType (it reads the natural-size map).
+            // The paint never escapes the box: ImageView clips its drawable to its bounds
+            // by construction (iOS does not — Gate 3 owes `clipsToBounds = true`).
+            "contentMode" -> {
+                if (view !is ImageView) {
+                    Log.w(TAG, "UpdateProp contentMode ignored: node ${p.nodeId} is " +
+                        "${view::class.simpleName}, not ImageView")
+                    return
+                }
+                val mode = contentModeFor(p.value) ?: run {
+                    // Diagnose loudly, apply NOTHING — the node keeps its current mode (the
+                    // modal style-ignore precedent; reachable by hand-rolled wire only, and
+                    // recorded where a test can read it, because the failure is silent on
+                    // every frame table by the mode-invariance rule itself).
+                    yoga.diagnoseImageContentMode(p.nodeId, p.value)
+                    return
+                }
+                view.scaleType = when (mode) {
+                    ImageContentMode.CONTAIN -> ImageView.ScaleType.FIT_CENTER
+                    ImageContentMode.COVER -> ImageView.ScaleType.CENTER_CROP
+                    ImageContentMode.STRETCH -> ImageView.ScaleType.FIT_XY
+                    ImageContentMode.CENTER -> ImageView.ScaleType.CENTER
+                }
+            }
             else -> Log.w(TAG, "UpdateProp '${p.name}' not yet supported (Phase 3+ extends)")
         }
     }
@@ -1670,12 +1842,34 @@ class WidgetMapper(
         yoga.setImageNaturalSize(view, null)
         yoga.markDirty(view)
 
+        // Phase 7.5 — the state-table row change rides the same one path as the clear
+        // itself ("two rows of the parity contract, one path; a shell that split them is a
+        // shell where one of them rots"): whatever src writes, the node is no longer showing
+        // real bytes.
+        val imageState = imageStates[nodeId]
+        imageState?.bytesPainted = false
+
         // An EMPTY string is the null/clear contract, not a fetch of "" (which would be an
         // immediate, pointless ERROR on Android and — on iOS — a `URL(string:)` that returns
         // nil, i.e. an NPE-shaped crash if the shell force-unwraps it). It is a SHELL
         // decision, so it is written into the shared contract rather than left for the two
         // shells to make differently (design §"The parity contract", the `Src` → `null` row).
-        if (url.isNullOrEmpty()) return
+        //
+        // Phase 7.5: NO source names NO pending image — the placeholder was cleared with the
+        // drawable above (the state table's `src → null` row) and must NOT be repainted.
+        if (url.isNullOrEmpty()) {
+            imageState?.srcPresent = false
+            return
+        }
+
+        // Phase 7.5 (design decision 1) — the state table's IN-FLIGHT row: the placeholder
+        // color fills the box while the request is out. It is the DRAWABLE (paint inside the
+        // box Yoga already gave the node — no markDirty, no natural size, so it cannot
+        // measure by construction), and it is set BEFORE the enqueue below, deliberately: a
+        // warm memory-cache hit completes SYNCHRONOUSLY INSIDE `enqueue` (landmine #2), and
+        // the real bytes must be the LAST write, not the placeholder.
+        imageState?.srcPresent = true
+        imageState?.placeholderColor?.let { view.setImageDrawable(ColorDrawable(it)) }
 
         // …and the generation the enqueue below is issued under is the one taken above — which
         // is also load-bearing in the OTHER direction: a Coil memory-cache hit completes
@@ -1737,6 +1931,10 @@ class WidgetMapper(
         clearIfMine(nodeId, generation, view)
 
         view.setImageDrawable(drawable)
+        // Phase 7.5 — the state table's SUCCESS row: the placeholder is CLEARED by the very
+        // write above (it was the drawable; the bytes replace it). Letterbox bars under
+        // Contain now show the view's BACKGROUND (`BackgroundColor`), never the placeholder.
+        imageStates[nodeId]?.bytesPainted = true
         // The NATURAL size (pixels, read as dp — YogaLayout.setImageNaturalSize states the
         // rule and why it is the only reading that agrees with iOS). Taken from the decoded
         // BITMAP where there is one: `Bitmap.width` is the raw pixel count and is immune to
@@ -1751,10 +1949,33 @@ class WidgetMapper(
     }
 
     /**
-     * The load failed — a 404, a refused connection, a blocked cleartext fetch. The node
-     * **keeps measuring 0 × 0** (it was cleared when the request was issued), it **reserves
-     * nothing**, and it **does not retry**. There is nothing to markDirty and nothing to
-     * re-solve: no frame changed, which is the whole content of the contract's failure row.
+     * The load failed — a 404, a refused connection, a blocked cleartext fetch, an
+     * unparseable URL. The node **keeps measuring 0 × 0 if intrinsic** (it was cleared when
+     * the request was issued) or **holds its declared box** (Yoga never measured it, so the
+     * failure *cannot* move the frame — the space stays reserved because it was DECLARED,
+     * not because it failed); it **reserves nothing it did not have**, and it **does not
+     * retry**. There is nothing to markDirty and nothing to re-solve: no frame changed,
+     * which is the whole content of the contract's failure row. **The placeholder STAYS**
+     * (Phase 7.5, the state table's ERROR row): it is the drawable, and nothing here
+     * touches the drawable — the error state's visual, deliberately.
+     *
+     * ── PHASE 7.5: THE `error` DISPATCH (design decision 2) ──────────────────────────
+     * The one thing 6.3 could not say now rides the wire: the failure flows .NET-ward as
+     * the event name `error`, payload = **the wire's `src`, verbatim** ([dispatchError]).
+     * The DECISION is [imageErrorDispatchAction] — a pure function on the JVM lane that
+     * composes [isLiveImageRequest] by name (one guard, two consumers: a superseded /
+     * purged / recycled request's error dispatches nothing, exactly as it paints nothing)
+     * and encodes the batch rule: **a dispatch never runs inside a patch batch — deferred
+     * to a fresh main-queue turn, NEVER dropped**. The dispatch site is
+     * [decideAndDispatchError], which RE-ENTERS the decision at every fire time — its KDoc
+     * carries the argument. Coil cannot stage the synchronous failure on this shell (a 404
+     * is never cached; the memory cache proves only the synchronous SUCCESS), so the defer
+     * arm is decision-table-tested on the JVM — the design's own mitigation — and iOS
+     * stages it live (`URL(string:) → nil`).
+     * At-most-once per terminated request is Coil's own listener contract (one terminal
+     * verdict per request) times the liveness gate; the counted [errorDispatchesSent] is
+     * what the device asserts it by. CANCELLED never gets here at all
+     * ([onImageCancelled] has no dispatch site — structural, on purpose).
      */
     private fun onImageFailed(
         nodeId: Int,
@@ -1767,6 +1988,57 @@ class WidgetMapper(
         clearIfMine(nodeId, generation, view)
         Log.w(TAG, "image load failed for node $nodeId ($url): ${error.javaClass.simpleName}: " +
             "${error.message} — the node stays 0 × 0 and reserves nothing")
+        decideAndDispatchError(nodeId, generation, view, url)
+    }
+
+    /**
+     * **THE DISPATCH DECISION, RE-ENTERED AT EVERY FIRE TIME** (Gate 2 review, I-1 — the
+     * Android mirror of iOS's `BnWidgetMapper.decideAndDispatchError`, which landed first
+     * because only that shell can stage the failure live).
+     *
+     * The DEFER arm posts THIS FUNCTION to a fresh main-queue turn — it does NOT post a
+     * captured `dispatchError(handlerId, url)` — and the difference is not style, it is
+     * the stale-callback rule with the batch still open. A failure that terminates
+     * synchronously INSIDE [applyBatch] can have patches BEHIND it in the same batch:
+     *
+     *  - `src = <bad>` … `RemoveNode` later in the batch — a dispatch captured at decision
+     *    time would fire for a PURGED node (moving [errorDispatchesSent] on a node the
+     *    batch removed — "removal never dispatches", broken);
+     *  - `src = <bad>` … `src = <good>` later in the batch — it would deliver the
+     *    SUPERSEDED source's error into live user code, the exact class of stale callback
+     *    the generation exists to kill.
+     *
+     * So the deferred turn re-asks [imageErrorDispatchAction] with FIRE-TIME facts — the
+     * LIVE generation, the LIVE view, the LIVE handler, `applyingBatch` as it stands when
+     * the posted turn actually runs — against the request's own captured
+     * (nodeId, generation, view, url): facts of the REQUEST ride the closure; verdicts
+     * never do. It is this re-decision — not the rc-0 at-most-once stale-handler absorber,
+     * which only covers a handler swap racing the post — that guards supersession and
+     * removal. Coil has no deterministic in-batch synchronous failure (a 404 is never
+     * cached), so the gap this closes is LATENT on Android and PROVEN LIVE on iOS
+     * (`URL(string:) → nil` fails inside `applyBatch` by construction; both adversarial
+     * frames are pinned end-to-end in BnImagePolishMapperTests) — here the re-ask is
+     * pinned on the JVM table (`the_deferred_turn_re_asks_the_decision…`).
+     *
+     * The re-entered decision can, in principle, answer DEFER again (a fresh main-queue
+     * turn cannot run mid-batch — [applyBatch] is synchronous on main — so this is
+     * defensive); it re-posts rather than drops: deferred, never dropped.
+     */
+    private fun decideAndDispatchError(nodeId: Int, generation: Int, view: ImageView, url: String) {
+        val handlerId = imageStates[nodeId]?.errorHandlerId
+        when (imageErrorDispatchAction(
+            currentGeneration = imageGenerations[nodeId],
+            requestGeneration = generation,
+            currentView = nodes[nodeId],
+            requestView = view,
+            handlerAttached = handlerId != null,
+            applyingBatch = applyingBatch,
+        )) {
+            ImageErrorDispatchAction.DISPATCH_NOW -> dispatchError(handlerId!!, url)
+            ImageErrorDispatchAction.DEFER ->
+                mainHandler.post { decideAndDispatchError(nodeId, generation, view, url) }
+            ImageErrorDispatchAction.DROP -> Unit
+        }
     }
 
     /** We cancelled it: a `Src` change, a node removal, or teardown. Nothing is painted and

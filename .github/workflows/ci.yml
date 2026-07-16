@@ -4,7 +4,7 @@
 #
 #   build-test (windows-latest) — the local verification procedure verbatim
 #   (setup.ps1 §1–7 documents the toolchain pins):
-#     build (analyzers ride it) → .NET tests (518 passed / 0 skipped) →
+#     build (analyzers ride it) → .NET tests (537 passed / 0 skipped) →
 #     three NativeAOT publishes (win-x64, linux-bionic-x64, linux-bionic-arm64;
 #     each publish must show exactly the 4 accepted IL2072 trim warnings) →
 #     nine-export verification (dumpbin via vswhere / llvm-readelf from the
@@ -660,7 +660,44 @@ jobs:
       # count cannot be padded by a double-remove of one id. Component change is
       # Q-1's coalesce ONLY; NO wire change on any green path, NO existing golden
       # moved, Renderer.Tests (129) / Analyzers.Tests (23) untouched.
-      - name: .NET tests (assert 518 passed / 0 skipped)
+      #
+      # 518 -> 537 (PHASE 7.5 GATE 1, +19 — Runtime.Tests 366 -> 382,
+      # Renderer.Tests 129 -> 132): BnImage polish — PlaceholderColor / OnError /
+      # ContentMode, the 6.3 ledger resolved with ZERO new measurement states.
+      # +3 the `error` dispatch arm (red-first: rc 2 before the BuildEventArgs
+      # arm existed): typed BnImageErrorEventArgs delivery through the
+      # production ingress + the strict-payload rc-2 theory (missing AND empty
+      # payload — "" never names a source, so no honest shell can send it).
+      # +8 the BnImage surface: the strict lowercase wire-word theory (4 rows;
+      # mutation: cover<->contain swapped -> 4 red), the ToWireValue table
+      # (nullable lift + undefined-cast throw + Contain-is-default), unbound
+      # OnError = zero attaches (the HasDelegate drop is an EQUIVALENT MUTANT
+      # in .NET — RenderTreeBuilder omits delegate-less element EventCallbacks;
+      # a wrong-name mutation reddens 2), bound OnError end-to-end dispatch,
+      # and placeholderColor/contentMode -> null = UpdateProp nulls (the
+      # src-null/enabled precedent). +3 Renderer.Tests partition pins:
+      # placeholderColor/contentMode are PROPS (mutation: placeholderColor
+      # routed into VisualStyleAttributes -> 2 red) and `placeholder` (the M2
+      # input hint) stays a DISTINCT prop beside placeholderColor on one node.
+      # +5 BnImagePolishDemoTests ("/imagepolish", the NINTH routed page —
+      # NavigationTests' baseline extends in place, red-first): the static
+      # frame table (28 creates / 60 styles / 16 props counted by name / ONE
+      # error attach — case [3] fails unbound and dispatches nothing), the
+      # counted error round-trip (ONLY the echo text re-renders; err:1 ->
+      # err:2 proves a counter, not a latch), the mode quartet (4 identical
+      # style tables under 4 different mode words; mutation: quartet order
+      # swapped in the razor -> 2 red), the computed section arithmetic
+      # (140/164/304/80-step/624/644/664, +Hi=90 -> 754) with the fixture
+      # ALIASES (this page's sources ARE BnImageDemo's; /slow.png is the one
+      # new path, loopback), and back-nav parity. NO ABI change (two props on
+      # the UpdateProp wire, one event name on dispatch_event; exports stay 9,
+      # the bridge 72 bytes, NodeTypes stay thirteen), NO shell edits (the
+      # prop arms, the dispatch site behind the liveness guard, and /slow.png
+      # itself are OWED to Gates 2/3), and /image's goldens BYTE-IDENTICAL
+      # (BnImageDemo.razor / BnImageDemoTests.cs untouched on the branch —
+      # the design's own bar): the gates below stay 4 IL2072 / 9 exports /
+      # 92 JVM.
+      - name: .NET tests (assert 537 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -678,8 +715,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 518 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 518 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 537 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 537 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # ── NativeAOT publishes + nine-export verification ────────────────────
@@ -847,7 +884,57 @@ jobs:
       #     ("expected: <modal> but was: <?>"), which on a device is a TextView
       #     where an overlay should be — the exact silent decode the 7.3 pin was
       #     added to catch, reddening on this lane instead.
-      - name: JVM tests (Gradle testDebugUnitTest — assert 92 passed / 0 failed)
+      # ── Phase 7.5 Gate 2: 92 → 104, +12 — the polish features' pure decisions,
+      #    pinned before any emulator boots (the isLiveImageRequest shared-source-set
+      #    precedent, twice).
+      #
+      #  +6 ImageContentModeTableTest — contentModeFor's strict acceptance set: the
+      #     four lowercase wire words one row per test (a swapped cover/contain pair
+      #     reddens BY NAME — the design's own JVM mutation, run), null-restores-
+      #     CONTAIN (the Enabled-null precedent), and the diagnose-don't-apply row
+      #     ('Contain'/'COVER'/' contain'/''/'fit'/'repeat' all map to nothing).
+      #  +6 ImageErrorDispatchTest — imageErrorDispatchAction, the error-dispatch
+      #     decision COMPOSING isLiveImageRequest by name (one guard, two consumers:
+      #     superseded / purged / reset-collision each never dispatch), unbound never
+      #     dispatches, and THE DEFER ROW: a failure terminating inside applyBatch
+      #     DEFERS to a fresh main-queue turn — deferred, never dropped. On the JVM
+      #     lane because Android cannot stage it (Coil's memory cache proves only the
+      #     synchronous SUCCESS; a 404 is never cached) — iOS stages it live
+      #     (URL(string:) → nil), same table, two shells.
+      # ── Phase 7.5 Gate 2 REVIEW I-1 (applied after Gate 3): 104 → 105, +1 — the
+      #    DEFER arm re-decides at FIRE time.
+      #
+      #  +1 ImageErrorDispatchTest.the_deferred_turn_re_asks_the_decision_with_fire_
+      #     time_facts — decision-time DEFER (mid-batch, live, attached), generation
+      #     bumped BEHIND the failure in the same batch, fire-time re-ask → DROP.
+      #     The row exists because the old Android DEFER arm posted a decision-time
+      #     capture (`mainHandler.post { dispatchError(handlerId!!, url) }`): a
+      #     remove-later frame would dispatch for a PURGED node, a supersede-later
+      #     frame would deliver the OLD src's error into live user code. LATENT here
+      #     (Coil cannot fail synchronously mid-batch), PROVEN LIVE on iOS
+      #     (URL(string:) → nil; BnImagePolishMapperTests pins both frames
+      #     end-to-end) — so the fix (WidgetMapper.decideAndDispatchError posts
+      #     ITSELF, the Swift shape) is pinned on this lane, not a faked device test.
+      # ── Phase 7.5 Gate 3 REVIEW I-1: 105 → 106, +1 — the ROW ORDER of the
+      #    dispatch table becomes normative: liveness → applyingBatch → handlerAttached.
+      #
+      #  +1 ImageErrorDispatchTest.a_mid_batch_failure_with_no_handler_yet_DEFERS_
+      #     and_fire_time_decides — mid-batch + handler NOT attached → DEFER (the
+      #     old table said DROP); fire-time + attached → DISPATCH_NOW; fire-time +
+      #     still unbound → DROP. The rows exist because the old order consulted
+      #     handlerAttached BEFORE applyingBatch and so reached a PERMANENT verdict
+      #     against MID-BATCH state: at mount the wire order is src (seq 24) →
+      #     attachEvent "error" (seq 27) in ONE batch, so iOS's synchronous nil-URL
+      #     failure decided DROP three patches before the attach it was racing —
+      #     OnError never fired for <BnImage Src="<unparseable>" OnError="..."> at
+      #     mount, while Android (whose failure lands post-batch) dispatched. That
+      #     is the parity break; design decision 2 says an unparseable non-empty
+      #     URL DISPATCHES. The fire-time re-decision (decideAndDispatchError posts
+      #     ITSELF — the Gate 2 I-1 machinery, both shells) reads the SETTLED
+      #     handler state, so the swap costs nothing: never-attached still drops,
+      #     at the one moment the answer is true. Both tables swapped as literal
+      #     twins; iOS pins the mount batch end-to-end (ios.yml, 152 → 153).
+      - name: JVM tests (Gradle testDebugUnitTest — assert 106 passed / 0 failed)
         working-directory: src/BlazorNative.Jni
         run: |
           .\gradlew.bat --no-daemon testDebugUnitTest
@@ -861,8 +948,8 @@ jobs:
             $errors += [int]$suite.errors; $skipped += [int]$suite.skipped
           }
           Write-Host "JVM test totals across $($xmls.Count) suites: tests=$tests failures=$failures errors=$errors skipped=$skipped"
-          if ($tests -ne 92 -or $failures -ne 0 -or $errors -ne 0 -or $skipped -ne 0) {
-            throw "JVM test baseline drift: expected 92 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped"
+          if ($tests -ne 106 -or $failures -ne 0 -or $errors -ne 0 -or $skipped -ne 0) {
+            throw "JVM test baseline drift: expected 106 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped"
           }
 
       # the instrumented-sources compile gate moved to its own required job

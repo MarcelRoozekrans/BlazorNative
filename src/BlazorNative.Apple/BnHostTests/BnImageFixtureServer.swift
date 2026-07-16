@@ -116,9 +116,14 @@ final class BnImageFixtureServer {
     static let INTRINSIC_URL = ORIGIN + "/intrinsic.png"
     static let MISSING_URL = ORIGIN + "/missing.png"
 
-    /// Test-only, on no wire: a path whose response is held until [releaseSlow], so a request
-    /// can be observed **in flight** — which is the only way to prove a cancellation cancelled
-    /// anything.
+    /// A path whose response is held until [releaseSlow], so a request can be observed
+    /// **in flight** — which is the only way to prove a cancellation cancelled anything.
+    ///
+    /// Phase 7.5: **on the wire now** — `BnImagePolishDemo.SlowSrc` names it (case [0],
+    /// placeholder-while-loading), so it stopped being test-only. It serves the 64 × 48
+    /// FIXED fixture's bytes — the razor's own stated contract ("Gates 2/3 serve the
+    /// 64 × 48 fixed fixture's bytes"; its consumer's box is DECLARED, so only a
+    /// which-bytes pin can see them), and what Android's `ImageFixtureServer` serves.
     static let SLOW_URL = ORIGIN + "/slow.png"
 
     private static let PORT: UInt16 = 8099
@@ -445,9 +450,13 @@ final class BnImageFixtureServer {
         let contentType: String
         let body: Data
         switch path {
-        case "/fixed.png":
+        // Phase 7.5: `/slow.png` serves the FIXED bytes (see [SLOW_URL] — the razor's
+        // stated Gates 2/3 contract, and Android's twin routing). No earlier test reads
+        // the held path's pixel size; the /imagepolish demo pins the 64 × 48 as the
+        // proof the held response was OURS.
+        case "/fixed.png", "/slow.png":
             (status, reason, contentType, body) = (200, "OK", "image/png", fixedPng)
-        case "/intrinsic.png", "/slow.png":
+        case "/intrinsic.png":
             (status, reason, contentType, body) = (200, "OK", "image/png", intrinsicPng)
         default:
             // THE FAILING CASE — a REAL 404 from a REAL server, offline and deterministic.

@@ -602,7 +602,38 @@ Phases (approved at milestone-open 2026-07-15; subject to the 7.0 verdict):
      (findings applied in b4b8b02), Gate 2 PASS clean, Gate 3 PASS (M1 applied in 2e24d7d).
      See [design](../plans/2026-07-16-phase-7.4-design.md) +
      [conclusion](../plans/2026-07-16-phase-7.4-conclusion.md).
-- ⏳ **Phase 7.5** — `BnImage` polish: Placeholder/OnError/ContentMode (DoD #6)
+- ✅ **Phase 7.5** — `BnImage` polish: Placeholder/OnError/ContentMode (DoD #6) — *complete (2026-07-16)*
+   - **The 6.3 image ledger resolved with ZERO new measurement states** (DoD #6 closed): two
+     props on the existing prop wire (`placeholderColor`, `contentMode` — seq 25/26, no
+     renumbering) + one event name (`error`) on the existing dispatch wire; no new NodeTypes,
+     exports stay 9, no ABI change. The 6.3 measurement contract survives verbatim, re-proven
+     on the ninth page (`/imagepolish` — `/image`'s parity goldens stayed byte-identical).
+   - **The three features as proven:** placeholder = paint that never measures (4-row state
+     table normative on both shells; kept on ERROR, cleared on SUCCESS/null; iOS's
+     bounds-tracking subview a recorded improvement over the design's Kingfisher suggestion);
+     `OnError` = the wire src verbatim, at-most-once per (src, generation) behind the shared
+     liveness guard, attach-iff-HasDelegate, CANCELLED never dispatches, failure never
+     changes measurement in either direction; `ContentMode` = the strict four-word table,
+     paint-only (four identical frames under four modes), default Contain diverging from
+     RN's cover with the recorded 6.3 reason, `clipsToBounds` always on iOS (pinned).
+   - **The headline — the defer mechanism twice corrected by review:** Gate 2 I-1 (the DEFER
+     arm fired a decision-time capture — latent on Android, proven LIVE on iOS via the
+     nil-URL sync failure; fixed by fire-time re-decision on both shells, both adversarial
+     same-batch orderings pinned end-to-end) and Gate 3 I-1 (the dispatch table's ROW ORDER
+     was normative and wrong — handlerAttached before applyingBatch dropped the mount-time
+     sync failure on iOS while Android dispatched, a divergence a test comment had recorded
+     as parity; row swap in BOTH tables). Plus the .NET equivalent mutant (the HasDelegate
+     drop is unobservable — RenderTreeBuilder omits delegate-less callbacks; honestly
+     recorded, behavior pinned by the zero-wire-presence golden).
+   - **Final counts:** .NET **537/0** · JVM **106/0** · Android instrumented **182/0** (local
+     AVD, asserted in android-instrumented.yml) · iOS XCTest **153/0** (run 29510920883 — a
+     re-run after a `BnClipboardTests` environmental flake, 5.4-era, zero image-adjacent
+     diff; prior green 29501402766 at 152/0). iOS mutations ON CI: 29502212508 (149/3),
+     29502258241 (149/3), 29502299416 (149/3), 29502355939 (149/3); seven Android mutations
+     run locally, redlines in the commit bodies. Reviews: Gate 1 PASS (miscount fixed
+     1dee252), Gate 2 PASS (I-1 fixed 8ef64be), Gate 3 PASS (I-1 fixed 20afbcb).
+     See [design](../plans/2026-07-16-phase-7.5-design.md) +
+     [conclusion](../plans/2026-07-16-phase-7.5-conclusion.md).
 - ⏳ **Phase 7.6** — route-registry unification + M7 final audit + close (rest of #8) → `v7.0`
 
 Maps to BACKLOG "P5 — components".

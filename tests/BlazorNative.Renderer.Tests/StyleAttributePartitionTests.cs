@@ -155,6 +155,74 @@ public sealed class StyleAttributePartitionTests
         Assert.Equal("http://127.0.0.1:8099/a.png", src.Value);
     }
 
+    /// <summary>PHASE 7.5 (design decisions 1 and 3): <c>placeholderColor</c> and
+    /// <c>contentMode</c> are PROPS, not styles — <c>src</c>'s rule, for <c>src</c>'s
+    /// reason, applied to the two names most likely to be added to the partition by
+    /// reflex ("a color, so paint?"; "a mode, so… paint?"). Neither is a name ANY
+    /// node can carry (the partition's admission bar): both are image-only
+    /// vocabulary, and <c>contentMode</c> in particular must never be layout — the
+    /// mode is PAINT-ONLY, normatively (the measure func never consults it), so a
+    /// shell routing it to a Yoga node would be wrong twice. They ride the
+    /// UpdateProp wire where <c>value</c>/<c>placeholder</c>/<c>enabled</c>/<c>src</c>
+    /// ride. If this goes red, the design's mutation table's third row happened:
+    /// a 7.5 prop became a style and both shells' two-arm SetStyle dispatch
+    /// quietly acquired a case that routes nowhere.</summary>
+    [Theory]
+    [InlineData("placeholderColor", "#FFCA28")]
+    [InlineData("contentMode", "cover")]
+    public async Task PlaceholderColorAndContentMode_AreProps_NotStyles(string name, string value)
+    {
+        Assert.DoesNotContain(name, NativeRenderer.StyleAttributes);
+        Assert.DoesNotContain(name, NativeRenderer.YogaStyleAttributes);
+        Assert.DoesNotContain(name, NativeRenderer.VisualStyleAttributes);
+
+        var (renderer, frames) = BuildRenderer();
+        await renderer.MountAsync<OneAttribute>(ParameterView.FromDictionary(
+            new Dictionary<string, object?>
+            {
+                [nameof(OneAttribute.Name)] = name,
+                [nameof(OneAttribute.Value)] = value,
+            }));
+
+        Assert.Empty(frames[0].Patches.OfType<SetStylePatch>());
+        UpdatePropPatch prop = Assert.Single(frames[0].Patches.OfType<UpdatePropPatch>());
+        Assert.Equal(name, prop.Name);
+        Assert.Equal(value, prop.Value);
+    }
+
+    /// <summary>THE NAME-COLLISION PIN (Phase 7.5 design decision 1):
+    /// <c>placeholder</c> has been the INPUT prop (the EditText hint /
+    /// <c>UITextField.placeholder</c>) since M2 — Android's UpdateProp arm routes it
+    /// to EditText and warn-drops everything else — so BnImage's wire name is
+    /// <c>placeholderColor</c>, a DISTINCT prop. This pins the two names as two
+    /// separate props on the prop wire, byte-for-byte as authored: a "helpful"
+    /// alias or normalization anywhere in the renderer (either direction) would
+    /// fork one prop's meaning by NodeType inside both hand-written shells.</summary>
+    [Fact]
+    public async Task Placeholder_And_PlaceholderColor_StayDistinctPropsOnThePropWire()
+    {
+        // Neither name is a style…
+        Assert.DoesNotContain("placeholder", NativeRenderer.StyleAttributes);
+        Assert.DoesNotContain("placeholderColor", NativeRenderer.StyleAttributes);
+
+        var (renderer, frames) = BuildRenderer();
+        await renderer.MountAsync<TwoAttributes>(ParameterView.FromDictionary(
+            new Dictionary<string, object?>
+            {
+                [nameof(TwoAttributes.NameA)] = "placeholder",
+                [nameof(TwoAttributes.ValueA)] = "type here…",
+                [nameof(TwoAttributes.NameB)] = "placeholderColor",
+                [nameof(TwoAttributes.ValueB)] = "#FFCA28",
+            }));
+
+        // …and each reaches the prop wire under its OWN name, values intact.
+        Assert.Empty(frames[0].Patches.OfType<SetStylePatch>());
+        List<UpdatePropPatch> props = frames[0].Patches.OfType<UpdatePropPatch>().ToList();
+        Assert.Equal(2, props.Count);
+        Assert.Equal("type here…", Assert.Single(props, p => p.Name == "placeholder").Value);
+        Assert.Equal("#FFCA28", Assert.Single(props, p => p.Name == "placeholderColor").Value);
+    }
+
     /// <summary>THE CASE RULE (N1). Both shells match style names
     /// case-SENSITIVELY, so .NET must too: an OrdinalIgnoreCase allow-list would
     /// classify "FlexGrow" as a style that the shells then silently DROP — .NET
@@ -208,6 +276,25 @@ public sealed class StyleAttributePartitionTests
         {
             b.OpenElement(0, "div");
             b.AddAttribute(1, Name, Value);
+            b.CloseElement();
+        }
+    }
+
+    /// <summary>A div carrying TWO attributes — the distinct-names pin's
+    /// harness (both on ONE node, so a renderer-side alias/normalization of
+    /// either name would collapse them into one patch).</summary>
+    private sealed class TwoAttributes : ComponentBase
+    {
+        [Parameter] public string NameA { get; set; } = "";
+        [Parameter] public string ValueA { get; set; } = "";
+        [Parameter] public string NameB { get; set; } = "";
+        [Parameter] public string ValueB { get; set; } = "";
+
+        protected override void BuildRenderTree(RenderTreeBuilder b)
+        {
+            b.OpenElement(0, "div");
+            b.AddAttribute(1, NameA, ValueA);
+            b.AddAttribute(2, NameB, ValueB);
             b.CloseElement();
         }
     }

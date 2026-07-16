@@ -1,3 +1,4 @@
+using BlazorNative.Core;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Rendering;
 
@@ -115,27 +116,52 @@ namespace BlazorNative.Components;
 // .NET, the shell behaviour is pinned by the mapper tests, and the demo pages stay
 // as they are. That is the whole of the 6.3 decision on `src → null`.
 //
-// ── WHAT IS DELIBERATELY ABSENT (6.3 design decision 3) ──────────────────────
-// No `Placeholder`. No `OnError`. No `ContentMode`. Not an oversight and not
-// laziness: EACH OF THEM CHANGES MEASUREMENT, which is the one thing this phase
-// exists to make identical on two platforms.
+// ── THE 6.3 LEDGER, RESOLVED (Phase 7.5 — each shipped AS a measurement rule) ─
+// 6.3 deliberately refused `Placeholder`, `OnError` and `ContentMode` as
+// footnotes because each was a MEASUREMENT question. Phase 7.5 ships all three
+// with the same one-sentence answer: ZERO new measurement states. The 6.3
+// contract above — definite never measured; intrinsic 0×0 until the bytes,
+// natural size after, ONE reflow; failure stays 0×0; `src → null` collapses —
+// survives VERBATIM. Each trap 6.3 named is closed by construction:
 //
-//   • Placeholder — does the placeholder measure like the image, or like itself?
-//     If it measures, an intrinsic image reflows TWICE (0×0 → placeholder →
-//     natural) and the "one reflow, never two" rule is gone.
-//   • OnError     — an error callback invites "reserve the space anyway", which is
-//     the opposite of the contract's failure row (stays 0×0, reserves nothing).
-//   • ContentMode — `cover`/`contain` change what the measure func REPORTS versus
-//     what the view PAINTS, and two libraries will not agree about it for free.
+//   • PlaceholderColor — a COLOR, not content and not a second source (both
+//     rejected: a child would un-leaf the leaf and MEASURE — the two-reflow
+//     trap verbatim; a second source doubles every piece of async
+//     bookkeeping). A placeholder NEVER measures and never reflows: it is
+//     paint inside whatever box Yoga already gave the node. The consequence,
+//     said out loud: an INTRINSIC image's placeholder is invisible — a 0×0
+//     box paints nothing, which is correct, not diagnosed (a feature of the
+//     declared or flex-grown box, exactly as in RN). Wire name
+//     `placeholderColor`, NOT `placeholder` — that has been the input hint
+//     since M2, and reusing it would fork one prop's meaning by NodeType
+//     inside both hand-written shells (partition-pinned).
+//   • OnError — the `scroll` precedent end-to-end: EventName `error` on the
+//     existing dispatch_event, attached ONLY when HasDelegate, payload = the
+//     wire `src` verbatim (the only fact two loaders share). Failure never
+//     changes measurement IN EITHER DIRECTION: a declared box holds (Yoga
+//     never called its measure func — the space stays reserved because it was
+//     DECLARED, not because it failed), an intrinsic node stays 0×0 (the 6.3
+//     failure row, unchanged). Fallback UI is the app's re-render on the
+//     event; the shell changes nothing it does not own.
+//   • ContentMode — four modes (Contain default / Cover / Stretch / Center),
+//     PAINT-ONLY: the measure func never consults the mode, so every frame in
+//     every table is mode-invariant (see ImageContentMode.cs for the mode
+//     table, the strict wire strings and the recorded Contain-not-cover
+//     default). The paint never escapes the layout box — both shells clip.
 //
-// Each deserves its own design rather than a footnote in the fetch phase. Ledgered
-// for M7.
+// The three ride the EXISTING wire: two props (`placeholderColor`,
+// `contentMode`) on UpdateProp where `src` rides, one event name (`error`) on
+// dispatch_event where `scroll` rides. No new NodeType, no ABI change — still
+// 9 exports + the 72-byte bridge. The /imagepolish page (BnImagePolishDemo)
+// re-runs 6.3's reflow proof WITH the new features present, pinning "one
+// reflow, never two" against the exact feature 6.3 refused for fear of it.
 //
 // Sequence numbers mirror BnView's and BnScroll's exactly, with the same gaps
 // (2 `padding`, 4-8 the container family) left EMPTY, so the three
 // BuildRenderTrees read side by side and the gaps are the decision, visible.
 // `src` is APPENDED at 24, after the style block — the way BnView appended its
-// flex block rather than renumbering what was already there.
+// flex block rather than renumbering what was already there — and the 7.5
+// additions append after `src` (25-27), same rule, no renumbering.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// <summary>
@@ -175,12 +201,11 @@ namespace BlazorNative.Components;
 /// compose (a <see cref="BnView"/> parent with an absolutely positioned child).
 /// </para>
 /// <para>
-/// <b>No <c>Placeholder</c>, no <c>OnError</c>, no <c>ContentMode</c></b> (Phase 6.3
-/// design decision 3). Each of the three changes <em>measurement</em> — a measuring
-/// placeholder would mean two reflows instead of one; an error hook invites
-/// reserving space a failure must not reserve; a content mode divorces what is
-/// measured from what is painted — so each gets its own design rather than a
-/// footnote in the fetch phase. Ledgered for M7.
+/// <b>The 6.3 ledger, resolved (Phase 7.5)</b> — <see cref="PlaceholderColor"/>,
+/// <see cref="OnError"/> and <see cref="ContentMode"/>, each designed as a
+/// measurement rule and each adding <em>zero</em> measurement states: a
+/// placeholder never measures, a failure never changes measurement, a mode is
+/// paint-only. The contract in the paragraphs above survives verbatim.
 /// </para>
 /// </remarks>
 public sealed class BnImage : ComponentBase
@@ -200,6 +225,56 @@ public sealed class BnImage : ComponentBase
     /// reflow in the other direction; see the file header.</para>
     /// </summary>
     [Parameter] public string? Src { get; set; }
+
+    /// <summary>The placeholder — a COLOR (Phase 7.5 design decision 1; not
+    /// content, not a second source), painted while a request is in flight and
+    /// kept as the error state's visual after a terminal failure; cleared when
+    /// the bytes paint (letterbox bars show <see cref="BackgroundColor"/>,
+    /// never the placeholder) and cleared with the image on
+    /// <see cref="Src"/> → null.
+    /// <para><b>It never measures and never reflows</b> — paint inside
+    /// whatever box Yoga already gave the node, so an <em>intrinsic</em>
+    /// image's placeholder is invisible (a 0 × 0 box paints nothing; correct,
+    /// not diagnosed). Rides the <c>UpdateProp</c> wire as
+    /// <c>placeholderColor</c> — a distinct prop from the input hint
+    /// <c>placeholder</c>, whose name has been taken since M2. Null = no
+    /// placeholder (and <c>placeholderColor → null</c> on a re-render clears
+    /// it — the prop-wire null precedent).</para></summary>
+    [Parameter] public string? PlaceholderColor { get; set; }
+
+    /// <summary>How the bytes paint INSIDE the box Yoga computed (Phase 7.5
+    /// design decision 3). <b>Paint-only, normatively</b>: the mode never
+    /// consults or changes measurement, so every layout frame is
+    /// mode-invariant — and the paint never escapes the layout box (both
+    /// shells clip). Rides the <c>UpdateProp</c> wire as <c>contentMode</c>
+    /// with the strict lowercase wire words (<c>contain</c> / <c>cover</c> /
+    /// <c>stretch</c> / <c>center</c>).
+    /// <para>Null = unset: nothing on the wire, and the shells default to
+    /// <see cref="ImageContentMode.Contain"/> — the 6.3 contract row both
+    /// already render (deliberately NOT React Native's <c>cover</c>; the
+    /// recorded decision lives in ImageContentMode.cs). Removing the
+    /// parameter emits <c>contentMode → null</c>, which restores that default
+    /// (the <see cref="BnButton.Enabled"/>-null precedent).</para></summary>
+    [Parameter] public ImageContentMode? ContentMode { get; set; }
+
+    /// <summary>Raised when the shell's image load for this node terminates in
+    /// FAILURE (Phase 7.5 design decision 2 — the <c>error</c> event, the
+    /// <c>scroll</c> precedent). The args carry the failed <c>src</c>,
+    /// verbatim, and nothing else. OPTIONAL: the attach is emitted only when a
+    /// delegate is set (<c>HasDelegate</c> — the <see cref="BnScroll.OnScroll"/>
+    /// pattern), so an unwired BnImage's patch shape is byte-identical to the
+    /// pre-7.5 one and no existing golden churns.
+    /// <para><b>Failure never changes measurement</b>: a declared box holds
+    /// (it was declared, not failed, into its space), an intrinsic node stays
+    /// 0 × 0 — fallback UI is this handler's re-render (swap the
+    /// <see cref="Src"/>, unmount, show a message), never the shell's
+    /// self-mutation. Dispatched at most once per terminated request, only for
+    /// a live one (a superseded request's error is a stale callback and
+    /// dispatches nothing); CANCELLED — a <see cref="Src"/> change,
+    /// <see cref="Src"/> → null, node removal — is not an error and never
+    /// dispatches. Success has no wire signal (no <c>OnLoad</c> — out of
+    /// scope, named).</para></summary>
+    [Parameter] public EventCallback<BnImageErrorEventArgs> OnError { get; set; }
 
     /// <inheritdoc cref="BnView.BackgroundColor"/>
     [Parameter] public string? BackgroundColor { get; set; }
@@ -313,6 +388,19 @@ public sealed class BnImage : ComponentBase
         // `placeholder` ride. Appended at 24, after the style block, so the
         // style sequence numbers stay identical to BnView's and BnScroll's.
         b.AddAttribute(24, "src", Src);
+
+        // THE 7.5 PROPS — appended after `src` (no renumbering), same wire,
+        // same null-is-absent rule. Image-only vocabulary: neither joins the
+        // style partition (the partition is the routing table for names ANY
+        // node can carry; StyleAttributePartitionTests pins both as props).
+        b.AddAttribute(25, "placeholderColor", PlaceholderColor);
+        b.AddAttribute(26, "contentMode", ContentMode.ToWireValue());
+
+        // Attach-only-when-subscribed (the BnScroll.OnScroll pattern): an
+        // unwired BnImage emits no `error` attach, so its wire shape is
+        // byte-identical to pre-7.5 — the un-styled invariant, for events.
+        if (OnError.HasDelegate)
+            b.AddAttribute(27, "onerror", OnError);
 
         // No AddContent: a leaf has no ChildContent (BnView/BnScroll use 100).
 

@@ -1,0 +1,334 @@
+@*
+    ─────────────────────────────────────────────────────────────────────────
+    BnImagePolishDemo — Phase 7.5 (design §"The proof surface"), route
+    "/imagepolish", mount-registry key "BnImagePolishDemo". Authored in
+    .razor.
+
+    A NINTH page, same rationale as the fourth through eighth — and here the
+    argument is at its sharpest, because the obvious alternative is
+    extending "/image": BnImageDemo's two frame tables ARE the 6.3
+    cross-platform parity contract, its section-offset arithmetic is
+    golden-pinned, and its header says a new capability does not get to
+    rewrite it. Appending sections would move BackSectionYDp and churn three
+    surfaces of goldens for zero engine reason. So the new features get
+    their own page, and Gate 1's bar includes "/image"'s goldens
+    byte-identical — if a 6.3 number moves, the change is wrong.
+
+    ── WHAT THIS PAGE PROVES ────────────────────────────────────────────────
+    Phase 7.5's one sentence: the three new features add ZERO new
+    measurement states. Every case below is a 6.3 measurement path re-run
+    WITH a new feature present, plus the one thing 6.3 could not have: an
+    error the wire can talk about. The 6.3 discipline throughout — every
+    case has a 20dp colored band under it, and THE BAND's y IS THE PROOF;
+    declared-size sections first, so nothing above a no-move assertion can
+    move it; the one reflowing section last-but-one; the back row last (the
+    only font-measured leaf).
+
+      [0] PLACEHOLDER-WHILE-LOADING — declared 200×120, PlaceholderColor,
+          Src=/slow.png (held-until-released). While held: band L at
+          y = 120, the placeholder paints (view-state pin: the drawable /
+          image IS the placeholder). After releaseSlow: bytes paint,
+          placeholder GONE (the state table's SUCCESS row), band L still at
+          120 — the placeholder never bought or cost a single dp.
+      [1] ERROR, SPACE KEPT — declared 200×120, PlaceholderColor,
+          Src=/missing.png (404), OnError bound. After termination: band E
+          IDENTICAL at y = 120 (the declared box held — because it was
+          DECLARED, not because it failed), placeholder still painted (the
+          ERROR row), OnError dispatched EXACTLY ONCE with payload
+          …/missing.png (a counted wire dispatch, both shells), and the
+          echo row below the band re-renders — a BnText inside a
+          FIXED-HEIGHT row (the modal-switch-echo precedent), so the
+          round-trip is a text assertion and the frame table stays static.
+      [2] THE FOUR MODES — four images, one per ContentMode (wire order:
+          contain / cover / stretch / center), same fixture (/fixed.png,
+          64×48, 4:3), same declared 120×60 box (2:1 — an aspect the
+          fixture disagrees with, so all four paint visibly differently
+          against the shared backdrop color). THE assertion: FOUR IDENTICAL
+          LAYOUT FRAMES — same x/w/h, y's in fixed 60+20 steps — under four
+          different modes, bands pinned; per-node view-state pins
+          (scaleType / contentMode property per mode, clipsToBounds true)
+          carry the paint half (the 7.4 finding-4 lesson: assert the wiring
+          where the paint cannot be synthesized).
+      [3] PLACEHOLDER NEVER MEASURES, failing side — INTRINSIC (no size),
+          PlaceholderColor, Src=/missing.png. Stays 0×0; band X at y = 0 IN
+          ITS PARENT, forever. If a placeholder measured as ANYTHING, this
+          band moves — decision 1's red line. (No OnError here — which is
+          itself the attach-iff-HasDelegate pin on a device: this failure
+          dispatches NOTHING.)
+      [4] PLACEHOLDER NEVER MEASURES, loading side — INTRINSIC,
+          PlaceholderColor, Src=/intrinsic.png. 0×0 before; natural 160×90
+          after; band I moves 0 → Hi, ONCE — 6.3's reflow proof re-run with
+          a placeholder present, pinning "one reflow, never two" against
+          the exact feature 6.3 refused to ship for fear of it. LAST-BUT-ONE
+          on purpose: its reflow propagates only into the back row.
+      [5] the back row — nav parity, "← Back" → "/". LAST: a font-measured
+          height never sits above a frame assertion.
+
+    ── FIXTURES ─────────────────────────────────────────────────────────────
+    The existing in-process loopback servers (Android ImageFixtureServer.kt,
+    iOS BnImageFixtureServer.swift): same origin :8099, same paths, same
+    bind-exclusively / prove-the-bytes-are-ours rules. This page's sources
+    REFERENCE BnImageDemo's constants — one origin, declared once. NEW to
+    the servers (Gates 2/3): "/slow.png" — held until the suite calls the
+    release hook, so the "while loading" rows are assertable states, not
+    races. The demo app itself still reaches no server and shows failed
+    images — correct, expected, documented (6.3's "TEST TARGETS, NOT THE
+    APP" rule): what the APP shows on this page is the placeholder color in
+    the three declared boxes (the ERROR row of the state table) — the first
+    time a human can SEE a 7.5 feature without a test harness.
+
+    ── THE SYNCHRONIZATION GATE — 6.3's, VERBATIM ───────────────────────────
+    The AFTER assertions run only once EVERY request on the page has
+    terminated (EIGHT: slow, error, 4× fixed, plus the two intrinsic ones —
+    1+1+4+2 = 8; count them ALL — the Gate 1 review caught this header saying
+    "seven", and a device gate awaiting 7 would race the 8th request), counted
+    via the loaders' terminal callbacks,
+    never by polling a band, with the positive fixture-contract assertions
+    up front. OnError JOINS the evidence (the counted dispatch is part of
+    case [1]); it does not replace the gate — success still has no wire
+    signal (no OnLoad — out of scope, named).
+
+    Nav parity with every other page: "← Back" → INavigationManager → "/".
+    Reachable by mount-name ("BnImagePolishDemo") and by route
+    ("/imagepolish"); no button on BnDemo points here. Android's
+    DEEP_LINK_COMPONENTS line is Gate 2's.
+    ─────────────────────────────────────────────────────────────────────────
+*@
+<BnColumn>
+    @* [0] PLACEHOLDER-WHILE-LOADING — declared box, held source. Band L's
+       y = 120 in BOTH states; the placeholder is paint, never size. *@
+    <BnColumn Width="@SectionWidth" Align="FlexAlign.FlexStart">
+        <BnImage Src="@SlowSrc" Width="@DeclaredWidth" Height="@DeclaredHeight"
+                 PlaceholderColor="@PlaceholderHex" />
+        <BnView Width="@SectionWidth" Height="@BandHeight" BackgroundColor="@BandUnderLoading" />
+    </BnColumn>
+
+    @* [1] ERROR, SPACE KEPT — declared box, 404 source, OnError bound. Band
+       E's y = 120 forever (the box was DECLARED into its space); the echo
+       row is FIXED-height so the dispatch round-trip re-renders text and
+       moves nothing. *@
+    <BnColumn Width="@SectionWidth" Align="FlexAlign.FlexStart">
+        <BnImage Src="@ErrorSrc" Width="@DeclaredWidth" Height="@DeclaredHeight"
+                 PlaceholderColor="@PlaceholderHex" OnError="OnImageError" />
+        <BnView Width="@SectionWidth" Height="@BandHeight" BackgroundColor="@BandUnderError" />
+        <BnView Width="@SectionWidth" Height="@EchoRowHeight">
+            <BnText Text="@EchoText" />
+        </BnView>
+    </BnColumn>
+
+    @* [2] THE FOUR MODES — one 64×48 fixture, four 120×60 boxes, four modes
+       in wire order. Four IDENTICAL frames (mode is paint-only); the shared
+       backdrop makes contain's bars / cover's crop / stretch's distortion /
+       center's clipped natural size visible on a screenshot. *@
+    <BnColumn Width="@SectionWidth" Align="FlexAlign.FlexStart">
+        <BnImage Src="@ModeSrc" Width="@ModeBoxWidth" Height="@ModeBoxHeight"
+                 ContentMode="ImageContentMode.Contain" BackgroundColor="@ModeBackdrop" />
+        <BnView Width="@SectionWidth" Height="@BandHeight" BackgroundColor="@BandUnderModes" />
+        <BnImage Src="@ModeSrc" Width="@ModeBoxWidth" Height="@ModeBoxHeight"
+                 ContentMode="ImageContentMode.Cover" BackgroundColor="@ModeBackdrop" />
+        <BnView Width="@SectionWidth" Height="@BandHeight" BackgroundColor="@BandUnderModes" />
+        <BnImage Src="@ModeSrc" Width="@ModeBoxWidth" Height="@ModeBoxHeight"
+                 ContentMode="ImageContentMode.Stretch" BackgroundColor="@ModeBackdrop" />
+        <BnView Width="@SectionWidth" Height="@BandHeight" BackgroundColor="@BandUnderModes" />
+        <BnImage Src="@ModeSrc" Width="@ModeBoxWidth" Height="@ModeBoxHeight"
+                 ContentMode="ImageContentMode.Center" BackgroundColor="@ModeBackdrop" />
+        <BnView Width="@SectionWidth" Height="@BandHeight" BackgroundColor="@BandUnderModes" />
+    </BnColumn>
+
+    @* [3] PLACEHOLDER NEVER MEASURES, failing side — intrinsic + placeholder
+       + 404. Band X at y = 0 in its parent, forever: the decision-1 red
+       line. No OnError — this failure dispatches nothing (attach iff
+       HasDelegate, on a device). *@
+    <BnColumn Width="@SectionWidth" Align="FlexAlign.FlexStart">
+        <BnImage Src="@ErrorSrc" PlaceholderColor="@PlaceholderHex" />
+        <BnView Width="@SectionWidth" Height="@BandHeight" BackgroundColor="@BandUnderIntrinsicFailing" />
+    </BnColumn>
+
+    @* [4] PLACEHOLDER NEVER MEASURES, loading side — THE REFLOW, re-run with
+       a placeholder present. Band I: y 0 → Hi (90), exactly ONCE. *@
+    <BnColumn Width="@SectionWidth" Align="FlexAlign.FlexStart">
+        <BnImage Src="@IntrinsicSrc" PlaceholderColor="@PlaceholderHex" />
+        <BnView Width="@SectionWidth" Height="@BandHeight" BackgroundColor="@BandUnderIntrinsicLoading" />
+    </BnColumn>
+
+    @* [5] nav parity — the page's only font-measured leaf, LAST. *@
+    <BnRow Width="@SectionWidth">
+        <BnButton Label="← Back" OnClick="GoBack" />
+    </BnRow>
+</BnColumn>
+
+@code {
+    // ── THE FIXTURES — BnImageDemo's, BY REFERENCE ────────────────────────────
+    //
+    // One origin, declared once (6.3's "a URL retyped in three places is a URL
+    // that drifts in two", applied across pages): this page's sources alias the
+    // /image constants wherever the path already exists, and declare only what
+    // is new (the held source). The natural sizes both shells' fixture servers
+    // are drift-pinned against live in BnImageDemo too — Hi
+    // (IntrinsicNaturalHeightPx = 90) is exactly how far band I moves here.
+
+    /// <summary>The in-process fixture origin — <see cref="BnImageDemo.FixtureOrigin"/>,
+    /// verbatim (same server, same port, same bind-exclusively rules).</summary>
+    internal const string FixtureOrigin = BnImageDemo.FixtureOrigin;
+
+    /// <summary><b>[0]</b>'s source — NEW in 7.5: the fixture servers hold this
+    /// response until the suite's release hook, so "while loading" is an
+    /// assertable state, not a race. Natural size irrelevant (the box is
+    /// declared); Gates 2/3 serve the 64×48 fixed fixture's bytes.</summary>
+    internal const string SlowSrc = FixtureOrigin + "/slow.png";
+
+    /// <summary><b>[1]</b>'s and <b>[3]</b>'s source — the 404 path, aliased from
+    /// <see cref="BnImageDemo.FailingSrc"/>: a REAL failure, deterministic and
+    /// offline, and ALSO the exact payload the <b>[1]</b> dispatch carries (the
+    /// wire `src`, verbatim — decision 2).</summary>
+    internal const string ErrorSrc = BnImageDemo.FailingSrc;
+
+    /// <summary><b>[4]</b>'s source — <see cref="BnImageDemo.IntrinsicSrc"/>: the
+    /// 160 × 90 fixture whose Hi IS the reflow.</summary>
+    internal const string IntrinsicSrc = BnImageDemo.IntrinsicSrc;
+
+    /// <summary><b>[2]</b>'s source, all four boxes — <see cref="BnImageDemo.FixedSrc"/>:
+    /// the 64 × 48 fixture (4:3), deliberately disagreeing with the 2:1 mode box
+    /// so all four modes paint visibly differently.</summary>
+    internal const string ModeSrc = BnImageDemo.FixedSrc;
+
+    // ── THE PAGE'S NUMBERS, AS CONSTANTS (the BnScrollDemo discipline) ────────
+    //
+    // BnImagePolishDemoTests asserts these off the WIRE (never transcribed), and
+    // Gates 2/3 read them for the device assertions — one source of truth. The
+    // section offsets are COMPUTED, so a changed band height reddens the golden
+    // instead of desynchronising prose from wire.
+
+    /// <summary>Every section is 300 wide (the /image discipline — and the
+    /// AT_MOST constraint the intrinsic measure sees).</summary>
+    internal const int SectionWidthDp = 300;
+
+    /// <summary>Each case's band: 300 × 20. Its <b>y</b> is the whole proof
+    /// surface of this page.</summary>
+    internal const int BandHeightDp = 20;
+
+    /// <summary>The declared box of cases <b>[0]</b> and <b>[1]</b> — /image case
+    /// [0]'s numbers, on purpose: the box the 6.3 contract already proves is
+    /// never measured.</summary>
+    internal const int DeclaredWidthDp = 200;
+
+    /// <inheritdoc cref="DeclaredWidthDp"/>
+    internal const int DeclaredHeightDp = 120;
+
+    /// <summary><b>[1]</b>'s echo row: FIXED height, so the error round-trip
+    /// re-renders TEXT inside a box that cannot move (the modal-switch-echo
+    /// precedent) and the frame table stays static.</summary>
+    internal const int EchoRowHeightDp = 24;
+
+    /// <summary><b>[2]</b>'s box, all four modes: 120 × 60 — 2:1 against the
+    /// fixture's 4:3, so fit/fill/stretch/center are four different paints in
+    /// FOUR IDENTICAL FRAMES.</summary>
+    internal const int ModeBoxWidthDp = 120;
+
+    /// <inheritdoc cref="ModeBoxWidthDp"/>
+    internal const int ModeBoxHeightDp = 60;
+
+    /// <summary>The placeholder color every placeholder case carries — one
+    /// value, so the view-state pin ("the drawable IS the placeholder") is the
+    /// same assertion on every node.</summary>
+    internal const string PlaceholderHex = "#FFCA28";
+
+    // ── THE ARITHMETIC (asserted by the golden, read by Gates 2/3) ────────────
+
+    /// <summary><b>[0]</b> hugs 120 + 20 = 140. Nothing measured inside.</summary>
+    internal const int LoadingSectionHeightDp = DeclaredHeightDp + BandHeightDp;
+
+    /// <summary><b>[1]</b> starts where <b>[0]</b> ends — fixed in BOTH states
+    /// (everything above is declared).</summary>
+    internal const int ErrorSectionYDp = LoadingSectionHeightDp;
+
+    /// <summary><b>[1]</b> hugs 120 + 20 + 24 = 164 — and holds it through the
+    /// error AND the echo re-render.</summary>
+    internal const int ErrorSectionHeightDp = DeclaredHeightDp + BandHeightDp + EchoRowHeightDp;
+
+    /// <summary><b>[2]</b>'s y: 140 + 164 = 304.</summary>
+    internal const int QuartetSectionYDp = ErrorSectionYDp + ErrorSectionHeightDp;
+
+    /// <summary>The quartet's rhythm: each mode row is box + band = 60 + 20 =
+    /// 80 — "y's in fixed 60+20 steps" (the design's words).</summary>
+    internal const int ModeStepDp = ModeBoxHeightDp + BandHeightDp;
+
+    /// <summary><b>[2]</b> hugs 4 × 80 = 320.</summary>
+    internal const int QuartetSectionHeightDp = 4 * ModeStepDp;
+
+    /// <summary><b>[3]</b>'s y: 304 + 320 = 624 — and its image is 0 × 0 in both
+    /// states, so the section is band-only: 20 high, forever.</summary>
+    internal const int IntrinsicFailingSectionYDp = QuartetSectionYDp + QuartetSectionHeightDp;
+
+    /// <summary><b>[4]</b>'s y: 624 + 20 = 644. Fixed in both states — the
+    /// reflow is INSIDE this section, and propagates only downward.</summary>
+    internal const int IntrinsicLoadingSectionYDp = IntrinsicFailingSectionYDp + BandHeightDp;
+
+    /// <summary>The back row's y BEFORE the bytes: 644 + 20 = 664; AFTER, this
+    /// + Hi (<see cref="BnImageDemo.IntrinsicNaturalHeightPx"/> = 90) = 754 —
+    /// <b>[4]</b>'s reflow, the page's ONLY moving number.</summary>
+    internal const int BackSectionYDp = IntrinsicLoadingSectionYDp + BandHeightDp;
+
+    /// <summary>The echo line, formatted ONCE for every surface (the
+    /// BnFormDemo/BnModalDemo pattern), invariant: the dispatch count and the
+    /// failed src the handler received. Mount state: <c>"err:0"</c>. After
+    /// case [1] terminates: <c>"err:1 " + ErrorSrc</c> — "exactly once" is a
+    /// TEXT assertion, on every surface.</summary>
+    internal static string Echo(int count, string? src) => src is null
+        ? string.Create(System.Globalization.CultureInfo.InvariantCulture, $"err:{count}")
+        : string.Create(System.Globalization.CultureInfo.InvariantCulture, $"err:{count} {src}");
+
+    // The band colours: distinct per case (Gates 2/3 read a reflow off a
+    // SCREENSHOT as well as off a number). The quartet shares ONE band colour —
+    // its four bands are distinguished by the 80dp rhythm, and what differs
+    // per row is the PAINT above, against the shared backdrop.
+    private const string BandUnderLoading = "#42A5F5";          // blue
+    private const string BandUnderError = "#EF5350";            // red
+    private const string BandUnderModes = "#AB47BC";            // purple ×4
+    private const string BandUnderIntrinsicFailing = "#FF7043"; // deep orange
+    private const string BandUnderIntrinsicLoading = "#66BB6A"; // green
+
+    /// <summary>The mode boxes' backdrop — opaque, so contain's letterbox bars
+    /// (which show BACKGROUND, never the placeholder — the state table's
+    /// SUCCESS row) and center's surround are visible paint on a screenshot.</summary>
+    private const string ModeBackdrop = "#263238";
+
+    private int _errorCount;
+    private string? _lastErrorSrc;
+
+    private string EchoText => Echo(_errorCount, _lastErrorSrc);
+
+    /// <summary>Case [1]'s handler — counts and records, so BOTH halves of the
+    /// dispatch contract ("exactly once", "the payload is the wire src,
+    /// verbatim") are one re-rendered string.</summary>
+    private void OnImageError(BnImageErrorEventArgs e)
+    {
+        _errorCount++;
+        _lastErrorSrc = e.Src;
+    }
+
+    private static readonly string SectionWidth =
+        SectionWidthDp.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    private static readonly string BandHeight =
+        BandHeightDp.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    private static readonly string DeclaredWidth =
+        DeclaredWidthDp.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    private static readonly string DeclaredHeight =
+        DeclaredHeightDp.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    private static readonly string EchoRowHeight =
+        EchoRowHeightDp.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    private static readonly string ModeBoxWidth =
+        ModeBoxWidthDp.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    private static readonly string ModeBoxHeight =
+        ModeBoxHeightDp.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    [Inject] public INavigationManager Navigation { get; set; } = default!;
+
+    private Task GoBack() => Navigation.NavigateToAsync("/").AsTask();
+}

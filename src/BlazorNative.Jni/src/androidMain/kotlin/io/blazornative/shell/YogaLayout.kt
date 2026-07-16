@@ -521,6 +521,26 @@ class YogaLayout(private val context: Context, private val root: ViewGroup) {
     }
 
     /**
+     * Phase 7.5 — **the contentMode strict-parse diagnostic** (design decision 3, the
+     * modal style-ignore precedent's shape). The DECISION lives in [contentModeFor]
+     * (the shared, JVM-pinned four-word table) and the ignore in
+     * [WidgetMapper.handleUpdateProp]'s `contentMode` arm — the node keeps its CURRENT
+     * mode, because a guessed fallback is how two shells guess differently. This method
+     * is the recording: warn-once per (node, value), evicted with the node, read by
+     * tests through [diagnostics] — the failure it names is invisible on every frame
+     * table *by the mode-invariance rule itself* (mode is paint-only), so logcat-only
+     * would mean no test could pin it live.
+     */
+    internal fun diagnoseImageContentMode(nodeId: Int, value: String?) {
+        diagnose(nodeId, "image-content-mode/$value",
+            "UpdateProp contentMode '$value' ignored on image node $nodeId: not one of the " +
+                "four strict wire words (contain/cover/stretch/center — exact, lowercase, " +
+                "whole-token). The node keeps its current mode; a hand-rolled wire wrote " +
+                "this, because ImageContentMode cannot (an invalid value is " +
+                "unrepresentable from the component).")
+    }
+
+    /**
      * **THE SYNTHETIC CONTENT NODE** (design §"The model") — the scroll node's only
      * Yoga child, and the parent of every one of its wire children.
      *

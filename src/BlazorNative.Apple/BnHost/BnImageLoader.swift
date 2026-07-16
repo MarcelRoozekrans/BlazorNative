@@ -108,6 +108,16 @@ enum BnImageLoadOutcome {
     case cancelled
 }
 
+/// Phase 7.5 — the SYNCHRONOUS failure's error: a non-empty `src` that `URL(string:)`
+/// rejects never becomes a request at all, and Kingfisher never sees it — but it IS a
+/// terminal failure (design decision 2: "an unparseable non-empty URL is a failure and
+/// dispatches"), so the mapper hands its own error to the one failure path
+/// (`BnWidgetMapper.onImageFailed`) instead of logging and shrugging.
+struct BnImageUnparseableUrlError: Error, CustomStringConvertible {
+    let raw: String
+    var description: String { "'\(raw)' is not a parseable URL — the request was never issued" }
+}
+
 /// A cancellation handle — Kingfisher's `DownloadTask`, behind the seam. Held in the
 /// mapper's in-flight map; **cancelling is memory safety, not hygiene** (a completion
 /// into a purged node touches a freed `YGNodeRef`).
@@ -140,6 +150,61 @@ final class BnImageView: UIImageView {
     /// POINTS this node measures to. `nil` = no bytes (never fetched, failed,
     /// cancelled, or cleared): the node measures **0 × 0**.
     var bnNaturalSize: CGSize?
+
+    // ── Phase 7.5 (design decision 1): THE PLACEHOLDER PAINT ─────────────────
+    //
+    // **Paint inside whatever box Yoga already gave the node** — never a Yoga
+    // write, never a `markDirty`, never a natural size (the measure func reads
+    // [bnNaturalSize], which nothing here touches, so a placeholder CANNOT
+    // measure **by construction**). An intrinsic node's placeholder is a 0 × 0
+    // paint — invisible, correct, not diagnosed.
+    //
+    // The MECHANISM is iOS's own (the state table is normative and loader-free;
+    // mechanism per shell — the 7.3 guard lesson), and the two obvious twins of
+    // Android's `ColorDrawable` were both rejected for observable reasons:
+    //
+    //  - **NOT `backgroundColor`** — that slot belongs to the `backgroundColor`
+    //    STYLE (the partitioned SetStyle table writes it), and the state table's
+    //    SUCCESS row says letterbox bars show `BackgroundColor`, NEVER the
+    //    placeholder. One UIKit property cannot hold two wire values.
+    //  - **NOT a color `UIImage`** — a UIImage has an intrinsic size and the
+    //    node's `contentMode` would letterbox/crop it (a 1 × 1 color image under
+    //    `.scaleAspectFit` in a 200 × 120 box paints a 120 × 120 square, not the
+    //    box). Android's `ColorDrawable` has NO intrinsic size (−1 × −1), so it
+    //    fills the view's bounds under every ScaleType; UIKit has no
+    //    intrinsic-less image, so the honest twin is a bounds-tracking subview.
+    //
+    // So: one color subview, bounds-sized by autoresizing (the frame is Yoga's;
+    // the subview only follows it), above the (nil) image, below nothing. The
+    // state machine in `BnWidgetMapper` guarantees the image is nil on every row
+    // that shows it (IN FLIGHT / ERROR) and hides it on SUCCESS — the bytes are
+    // the last write, letterbox bars show the view's backgroundColor.
+    private var bnPlaceholderView: UIView?
+
+    /// The placeholder color currently PAINTED, or nil when none is — the
+    /// view-state pin the tests read (the twin of Android's "the drawable IS a
+    /// ColorDrawable of exactly the prop's color").
+    var bnPlaceholderColor: UIColor? { bnPlaceholderView?.backgroundColor }
+
+    /// The IN-FLIGHT / ERROR rows' paint. Idempotent; a second call recolors.
+    func bnShowPlaceholder(_ color: UIColor) {
+        if let existing = bnPlaceholderView {
+            existing.backgroundColor = color
+            return
+        }
+        let paint = UIView(frame: bounds)
+        paint.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        paint.isUserInteractionEnabled = false
+        paint.backgroundColor = color
+        addSubview(paint)
+        bnPlaceholderView = paint
+    }
+
+    /// The SUCCESS / `src → null` rows' clear. Idempotent.
+    func bnClearPlaceholder() {
+        bnPlaceholderView?.removeFromSuperview()
+        bnPlaceholderView = nil
+    }
 }
 
 /// The shell's image-loading surface. Everything Kingfisher is on the far side of it.
