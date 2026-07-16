@@ -4,7 +4,7 @@
 #
 #   build-test (windows-latest) — the local verification procedure verbatim
 #   (setup.ps1 §1–7 documents the toolchain pins):
-#     build (analyzers ride it) → .NET tests (518 passed / 0 skipped) →
+#     build (analyzers ride it) → .NET tests (537 passed / 0 skipped) →
 #     three NativeAOT publishes (win-x64, linux-bionic-x64, linux-bionic-arm64;
 #     each publish must show exactly the 4 accepted IL2072 trim warnings) →
 #     nine-export verification (dumpbin via vswhere / llvm-readelf from the
@@ -660,7 +660,44 @@ jobs:
       # count cannot be padded by a double-remove of one id. Component change is
       # Q-1's coalesce ONLY; NO wire change on any green path, NO existing golden
       # moved, Renderer.Tests (129) / Analyzers.Tests (23) untouched.
-      - name: .NET tests (assert 518 passed / 0 skipped)
+      #
+      # 518 -> 537 (PHASE 7.5 GATE 1, +19 — Runtime.Tests 366 -> 382,
+      # Renderer.Tests 129 -> 132): BnImage polish — PlaceholderColor / OnError /
+      # ContentMode, the 6.3 ledger resolved with ZERO new measurement states.
+      # +3 the `error` dispatch arm (red-first: rc 2 before the BuildEventArgs
+      # arm existed): typed BnImageErrorEventArgs delivery through the
+      # production ingress + the strict-payload rc-2 theory (missing AND empty
+      # payload — "" never names a source, so no honest shell can send it).
+      # +8 the BnImage surface: the strict lowercase wire-word theory (4 rows;
+      # mutation: cover<->contain swapped -> 4 red), the ToWireValue table
+      # (nullable lift + undefined-cast throw + Contain-is-default), unbound
+      # OnError = zero attaches (the HasDelegate drop is an EQUIVALENT MUTANT
+      # in .NET — RenderTreeBuilder omits delegate-less element EventCallbacks;
+      # a wrong-name mutation reddens 2), bound OnError end-to-end dispatch,
+      # and placeholderColor/contentMode -> null = UpdateProp nulls (the
+      # src-null/enabled precedent). +3 Renderer.Tests partition pins:
+      # placeholderColor/contentMode are PROPS (mutation: placeholderColor
+      # routed into VisualStyleAttributes -> 2 red) and `placeholder` (the M2
+      # input hint) stays a DISTINCT prop beside placeholderColor on one node.
+      # +5 BnImagePolishDemoTests ("/imagepolish", the NINTH routed page —
+      # NavigationTests' baseline extends in place, red-first): the static
+      # frame table (28 creates / 60 styles / 16 props counted by name / ONE
+      # error attach — case [3] fails unbound and dispatches nothing), the
+      # counted error round-trip (ONLY the echo text re-renders; err:1 ->
+      # err:2 proves a counter, not a latch), the mode quartet (4 identical
+      # style tables under 4 different mode words; mutation: quartet order
+      # swapped in the razor -> 2 red), the computed section arithmetic
+      # (140/164/304/80-step/624/644/664, +Hi=90 -> 754) with the fixture
+      # ALIASES (this page's sources ARE BnImageDemo's; /slow.png is the one
+      # new path, loopback), and back-nav parity. NO ABI change (two props on
+      # the UpdateProp wire, one event name on dispatch_event; exports stay 9,
+      # the bridge 72 bytes, NodeTypes stay thirteen), NO shell edits (the
+      # prop arms, the dispatch site behind the liveness guard, and /slow.png
+      # itself are OWED to Gates 2/3), and /image's goldens BYTE-IDENTICAL
+      # (BnImageDemo.razor / BnImageDemoTests.cs untouched on the branch —
+      # the design's own bar): the gates below stay 4 IL2072 / 9 exports /
+      # 92 JVM.
+      - name: .NET tests (assert 537 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -678,8 +715,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 518 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 518 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 537 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 537 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # ── NativeAOT publishes + nine-export verification ────────────────────
