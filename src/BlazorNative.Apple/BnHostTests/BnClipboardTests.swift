@@ -17,6 +17,18 @@
 // and is now a plain UIView (Yoga owns placement), so `probeForm` walks `subviews`.
 // The clipboard/share assertions themselves are untouched: this lane never went
 // through the stack view, and that is exactly why it is a regression signal.
+//
+// Phase 7.6 (H3) — flake-hardening after 7.5's one flake (run 29504511994): on a
+// shared CI simulator a UIPasteboard write can be transiently dropped by the
+// pasteboard daemon — environmental (zero clipboard-adjacent diff on that branch,
+// green on identical content re-run). The Copy/Paste taps now go through
+// `tapAndAwait`: up to 3 attempts, each a NEW tap with its own poll window. A
+// re-tap is a fresh dispatch through the same REAL chain (button → dispatch →
+// .NET → bridge → UIPasteboard) and the assertion stays on pasteboard/echo
+// CONTENT, so the proof is not weakened — and a persistent failure still fails,
+// loudly, with its retry history in the message. The test stays REAL: no mock
+// pasteboard, no longer poll (10s already dwarfs the operation; if the write was
+// dropped, waiting proves nothing).
 // ─────────────────────────────────────────────────────────────────────────────
 
 import XCTest
@@ -41,14 +53,14 @@ final class BnClipboardTests: BnHostTestCase {
         let form = try bootClipboardProbe()
 
         // Tap Copy → dispatch → ClipboardWriteAsync → the system UIPasteboard holds it.
-        try tapButton("Copy", in: form)
-        XCTAssertTrue(pollUntil { UIPasteboard.general.string == Self.copyPayload },
-                      "Copy never reached the real UIPasteboard")
+        try tapAndAwait("Copy", in: form, orFail: "Copy never reached the real UIPasteboard") {
+            UIPasteboard.general.string == Self.copyPayload
+        }
 
         // Tap Paste → dispatch → ClipboardReadAsync → the echo label shows the payload.
-        try tapButton("Paste", in: form)
-        XCTAssertTrue(pollUntil { self.echoLabel()?.text == Self.copyPayload },
-                      "echo never showed the pasted clipboard value")
+        try tapAndAwait("Paste", in: form, orFail: "echo never showed the pasted clipboard value") {
+            self.echoLabel()?.text == Self.copyPayload
+        }
     }
 
     // ── Direct bridge round-trip (isolates UIPasteboard + the -needed protocol) ─
@@ -81,10 +93,12 @@ final class BnClipboardTests: BnHostTestCase {
 
         let form = try bootClipboardProbe()
         // Seed the echo with the payload (Copy → Paste), then Share it.
-        try tapButton("Copy", in: form)
-        XCTAssertTrue(pollUntil { UIPasteboard.general.string == Self.copyPayload })
-        try tapButton("Paste", in: form)
-        XCTAssertTrue(pollUntil { self.echoLabel()?.text == Self.copyPayload })
+        try tapAndAwait("Copy", in: form, orFail: "Copy never reached the real UIPasteboard") {
+            UIPasteboard.general.string == Self.copyPayload
+        }
+        try tapAndAwait("Paste", in: form, orFail: "echo never showed the pasted clipboard value") {
+            self.echoLabel()?.text == Self.copyPayload
+        }
 
         try tapButton("Share", in: form)
         XCTAssertTrue(pollUntil { captured != nil }, "the share hook never fired")
@@ -130,6 +144,29 @@ final class BnClipboardTests: BnHostTestCase {
         let button = try XCTUnwrap(findButton(in: view, title: title),
                                    "button '\(title)' not on screen", file: file, line: line)
         button.sendActions(for: .touchUpInside)
+    }
+
+    /// Phase 7.6 (H3) — the bounded-retry tap: taps `title` and polls for its
+    /// observable effect; if the poll window closes empty, taps AGAIN, up to
+    /// `attempts` times. Each re-tap is a new dispatch through the same real chain
+    /// (button → dispatch → .NET → bridge → UIPasteboard), so the retry does not
+    /// weaken the proof — the condition is on content, and a deterministic break
+    /// fails all attempts identically, with the attempt count in the message.
+    private func tapAndAwait(_ title: String, in view: UIView, attempts: Int = 3,
+                             orFail failure: String,
+                             file: StaticString = #filePath, line: UInt = #line,
+                             until cond: () -> Bool) throws {
+        for attempt in 1...attempts {
+            try tapButton(title, in: view, file: file, line: line)
+            if pollUntil(cond) {
+                if attempt > 1 {
+                    NSLog("[BnClipboardTests] '\(title)' needed \(attempt) attempts (H3 retry)")
+                }
+                return
+            }
+        }
+        XCTFail("\(failure) — after \(attempts) '\(title)' taps, each with its own poll window",
+                file: file, line: line)
     }
 
     private func findButton(in view: UIView, title: String) -> UIButton? {
