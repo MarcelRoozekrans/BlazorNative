@@ -85,11 +85,47 @@ the 4-IL2072 shape), 8.0 finds out before anything is packaged.
    `1.0.0-preview.1`, zero pack warnings, SourceLink `repository@commit` stamped,
    provenance ×6, BN0011 trip, ConsumerSmoke PASS — the 8.0 API's first out-of-repo
    consumer). Device lanes untouched (184/154 stand on 8.0's provenance).
-3. **The release pipeline, manual go.** A release workflow that packs, validates, and
+3. ✅ **The release pipeline, manual go.** A release workflow that packs, validates, and
    pushes to nuget.org **triggered by a GitHub Release being published** (the
    AdoNet.Async `release.yml` pattern — publishing the Release IS the owner's go);
    a dry-run validation lane runs on CI without the key; `NUGET_API_KEY` documented as
    the one secret the owner adds; nothing publishes automatically from merges or tags.
+   **Closed by Phase 8.2** ([conclusion](../plans/2026-07-16-phase-8.2-conclusion.md)):
+   `release.yml` is THE ONE DOOR — `validate` (no key, ever) → artifact → `push`
+   (`needs: validate`, `if: event_name == 'release'`, the sole `NUGET_API_KEY`
+   reference, **no checkout at all** — "pushes only validated bytes" is structural).
+   Every DECISION lives in `scripts/release-preflight.ps1` (an 8-row `-SelfTest` on
+   every PR), because YAML firing once per Release is the least testable code in the
+   repo. **THE HEADLINE — the `v8.0` hazard: this milestone creates the pipeline's own
+   worst input.** DoD #6 tags `v8.0`; the `release` event has **no tag filter**, so an
+   AdoNet.Async-shaped `${TAG#v}` would have pushed six packages at version "8.0"
+   **permanently** (no hard delete on nuget.org). **Double-guarded** — the classifier
+   reads the tag's *shape* (milestone → announce + skip, exit 0: reddening a legitimate
+   announcement would train the owner to ignore reds on release runs), the assertion
+   compares its *content* to the props — and **either alone stops it** (verified: with
+   the milestone regex neutered, `v8.0` → unrecognized → RED). **`v8.0` publishes
+   nothing, and the classifier says so in the required lane.**
+   **DoD-wording honesty — `dotnet nuget push` has NO `--dry-run`** (verified against
+   the live CLI; the full option set has no simulation flag). **A push dry-run does not
+   exist, so the lane could not be one.** What shipped instead is a **nuget.org-state
+   preflight** — the only thing a real push can reject that no local step can know
+   (everything else is a local fact the smoke already owns on every PR) — key-free, on
+   every PR touching the release machinery or the props. Its own **vacuity trap** (all
+   six ids 404 today: every current answer to "is it free?" is "absent") is closed by a
+   **two-arm positive control**, mutation-proven (already-published → RED; typo'd
+   endpoint → RED "not evidence the id is free"; the offline arm proved itself when the
+   sandbox's DNS failed mid-gate). **release-please: OUT** — the re-evaluation reversed
+   8.1's *reason*, not its verdict: its payoff mechanism (merge release PR → cut
+   Release) is verbatim what this DoD forbids. **DoD #3 closes as publish-READY with its
+   arrows NAMED** — the phase ships a **PROVEN/UNPROVEN table** (U1–U8): eight fail
+   safe, **seven fail loud, U8 (verdict propagation) is the quiet one**, so the owner's
+   first-Release check is **"did `push` RUN?"**, not "was there a red?". Evidence: .NET
+   **559/0** (23 + 132 + 404) · JVM **106/0** · publish head **byte-identical** (no
+   `src/`/`samples/` change — the gates could not have moved) · smoke green with the new
+   snupkg-**pairing** tooth · actionlint 1.7.7 clean ×4 with five mutants caught · **run
+   29540566554** (`release / validate`, `pull_request`) **green — the self-proving lane
+   proved itself on its own PR**. Device lanes untouched (184/154 stand on prior
+   provenance). **Nothing published; no tag created; no secret added.**
 4. **`dotnet new blazornative`.** The template produces the .NET app (using the DoD #1
    registration API) + the Android shell, runnable end-to-end on a machine with an
    Android SDK; template creation → build validated on CI; iOS shell setup documented

@@ -781,7 +781,77 @@ Developer experience and ecosystem".
      ledgered as accepted limitations; separately, 8.0's M-2/M-3 riders both closed here). See
      [design](../plans/2026-07-16-phase-8.1-design.md) +
      [conclusion](../plans/2026-07-16-phase-8.1-conclusion.md).
-- **Phase 8.2** — the release pipeline, manual go (DoD #3) — ⏳
+- ✅ **Phase 8.2** — the release pipeline, manual go (DoD #3) — *complete (2026-07-16)*
+   - **One door, and every check in front of it.** `release.yml` — `validate` (**no key,
+     ever**) → artifact → `push` (`needs: validate`, `if: event_name == 'release'`, the
+     **sole** `NUGET_API_KEY` reference, **no checkout at all**, so *"it pushes only
+     validated bytes"* is **structural**, not promised). The split exists for one fact:
+     **the six-package push is not atomic, cannot be made atomic, and has no undo** —
+     nuget.org has no hard delete, only unlist. Every **decision** lives in
+     `scripts/release-preflight.ps1` (classifier + tag↔props assertion + the nuget.org
+     preflight + an 8-row `-SelfTest` that runs on every PR), because YAML firing once
+     per Release is the least testable code in the repo. **Zero library code, zero shell,
+     zero wire.**
+   - **THE HEADLINE — the `v8.0` hazard: the phase that builds the pipeline creates its
+     own worst input.** DoD #6 tags `v8.0` to close M8, and the `release` event carries
+     **no tag filter** — so an AdoNet.Async-shaped `${TAG#v}` would have turned that
+     milestone announcement into **six packages pushed at version "8.0", permanently**.
+     **Double-guarded and independently verified:** the classifier reads the tag's
+     **shape** (milestone → announce + **skip**, exit 0 — reddening a legitimate
+     announcement would train the owner to ignore reds on release runs), the assertion
+     compares its **content** to the props; **the hazard survives removal of either**
+     (milestone regex neutered → `v8.0` falls through to unrecognized → **RED**). The
+     review built the adversarial set (`v8.0`, `v8.0.1`, `pkg/8.0`, `pkg/8.0.0`,
+     `pkg/…+build`, `refs/tags/…`, whitespace, `pkg/`) — **no path from a milestone
+     Release to a push**.
+   - **`dotnet nuget push` has NO `--dry-run`** (verified against the live CLI) — so the
+     DoD's "dry-run lane" became a **nuget.org-state preflight**: the only thing a real
+     push can reject that no local step can know. Its own **vacuity trap** — all six ids
+     404 today, so *every* current answer to "is it free?" is "absent" — is closed by a
+     **two-arm positive control** (`newtonsoft.json` @ `13.0.3` = published, @
+     `0.0.0-does-not-exist` = free), itself mutation-proven: already-published → RED;
+     typo'd endpoint → RED *"HTTP 400 … not evidence the id is free"*; and **the offline
+     arm proved itself for real** when the sandbox's DNS failed mid-gate.
+   - **release-please: OUT — the re-evaluation reversed 8.1's REASON, not its verdict.**
+     Not "too early": its payoff mechanism (**merge release PR → cut Release**) is
+     verbatim what DoD #3 forbids, and its unit is the **commit** while this repo's is
+     the **phase**. Reversal conditions named (component scopes **and** release cadence
+     **and** draft-mode confirmed). **No CHANGELOG** — the Release body *is* the
+     changelog; trigger = the **second** public release.
+   - **The honesty deliverable — the PROVEN/UNPROVEN table (U1–U8), carried verbatim into
+     the conclusion.** The real push cannot be tested (no key, nothing public, by
+     decision), so the phase ships the arrows rather than a claim: **eight fail safe,
+     SEVEN fail LOUD, and U8 (verdict propagation) is the quiet one** — an empty verdict
+     **skips** `push` rather than redding it, **so the owner's first-Release check is
+     "did `push` RUN?", not "was there a red?"**. **P1 is PROVEN** — run **29540566554**
+     (`release / validate`, `pull_request`) **green**: the workflow runs on a real
+     runner, **the paths filter SELECTS** (the one thing actionlint provably cannot
+     check — a typo'd path passes green and silently narrows the lane to nothing), the
+     self-test runs on GitHub's runner, and the preflight reaches nuget.org from GitHub's
+     network. **The self-proving lane proved itself on its own PR.**
+   - **Review: Gate 1 PASS — 3 Important, all applied.** **I-1** the P1 **ordering flaw**
+     (a Gate 1 bar behind a Gate 2 deliverable — *the gates were wrong, not the
+     mechanism*; fixed by opening the PR early) + the "no actionlint, no faith" wording
+     that **disparaged the very evidence Gate 1 leaned on**; **I-2** U7/U8 missing from
+     the table — the cross-job artifact hand-off and `needs.<job>.outputs` propagation,
+     **both NOVEL to this repo**; **I-3** the hand-off's **precedent DID NOT EXIST**
+     (`ci.yml` has **zero `needs:` edges**; the real precedent is `publish-so → emulator`
+     in the advisory **nightly** lane). **The reviewer judged the honesty split directly
+     and found it INCOMPLETE, NOT INFLATED — omissions of unproven arrows, never
+     overclaims of proven ones.** The **false-belief sweep**: *"build-test uploads .so
+     artifacts the shell lanes consume"* was never true — found and corrected in **four**
+     places (root cause: `download-artifact` cannot read another **workflow's** run;
+     **nothing consumes build-test's uploads** — they are diagnostics).
+   - **Final counts:** .NET **559/0** (557 → 559; 23 + 132 + 404) · JVM **106/0**
+     (untouched) · publish head **byte-identical** (no `src/`/`samples/` change, so the
+     gates **could not have moved** — the review confirmed leaving them unrun is sound,
+     not a shortcut) · smoke green with the new **pairing** tooth (**the counts stayed
+     6/5 GREEN while Core shipped symbol-less** — pairing, not counts) · actionlint 1.7.7
+     clean on all four workflows, five mutants caught (incl. `releases:`-for-`release:` =
+     U1's exact shape). Device lanes untouched: **184**/**154** on prior provenance.
+     **Nothing published; no tag created; no secret added.** See
+     [design](../plans/2026-07-16-phase-8.2-design.md) +
+     [conclusion](../plans/2026-07-16-phase-8.2-conclusion.md).
 - **Phase 8.3** — the `dotnet new` template: app + Android shell (DoD #4) — ⏳
 - **Phase 8.4** — the docs site: Docusaurus + GitHub Pages (DoD #5) — ⏳
 - **Phase 8.5** — hygiene + M8 final audit + close (DoD #6) → `v8.0` — ⏳
