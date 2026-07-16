@@ -4,7 +4,7 @@
 #
 #   build-test (windows-latest) — the local verification procedure verbatim
 #   (setup.ps1 §1–7 documents the toolchain pins):
-#     build (analyzers ride it) → .NET tests (492 passed / 0 skipped) →
+#     build (analyzers ride it) → .NET tests (517 passed / 0 skipped) →
 #     three NativeAOT publishes (win-x64, linux-bionic-x64, linux-bionic-arm64;
 #     each publish must show exactly the 4 accepted IL2072 trim warnings) →
 #     nine-export verification (dumpbin via vswhere / llvm-readelf from the
@@ -607,7 +607,42 @@ jobs:
       # is the author's bug — raw on the wire, natively-clamped display, no notify).
       # NO ABI change, NO wire change, NO existing golden moved; the JVM count moves
       # in the SAME PR but belongs to Gate 2's lane (see the 83 -> 90 block below).
-      - name: .NET tests (assert 492 passed / 0 skipped)
+      #
+      # 492 -> 517 (PHASE 7.4 GATE 1, +25 — all Runtime.Tests, 340 -> 365): BnModal
+      # (the overlay — modal=11) + BnActivityIndicator (the measured leaf — 12).
+      # +2 FrameEncoderTests: the all-NodeTypes theory 10 -> 12 rows (red-first:
+      # "Unknown node type 'modal'") + the integer pin gains 11/12 (mutation: ids
+      # swapped -> the pin reddens, Expected 11 / Actual 12). +11 BnModalTests: zero
+      # wire presence closed; the mount shape (scrimColor ALWAYS a PROP — SetStyle on
+      # a modal is shell-ignored and the surface CANNOT emit one, pinned as zero
+      # styles; the always-attached dismissal click; ONE wire child = the content box
+      # with the declared W/H/padding/bg + the no-op click SWALLOW); dismissal is a
+      # REQUEST (VisibleChanged(false); unbound parent -> the modal STAYS; raced
+      # second dismiss absorbed as a stale handler); hide = ONE RemoveNodePatch
+      # (inline content — a nested COMPONENT adds its own disposal remove, the 7.2
+      # removes-first shape, recorded); the reflective surface pin (8 params, NO flex
+      # item surface — the anchor is 0-sized/absolute). Mutations run: dismiss-invoke
+      # dropped -> 5 red; swallow dropped -> 4 red; @if(Visible) -> @if(true) -> 11
+      # red. +3 BnActivityIndicatorTests: ONE create and NOTHING else (the
+      # measured-leaf wire shape), the reflective NO-parameters pin, presence-is-@if
+      # unmount — plus the recorded .razor finding (a zero-attribute element collapses
+      # to AddMarkupContent, which the renderer rejects -> the leaf is hand-written
+      # C#). +9 BnModalDemoTests ("/modal", the EIGHTH routed page — NavigationTests'
+      # baseline extends in place): closed mount 9 creates / 2 attaches / 0 props /
+      # 9 styles; SHOW = the modal create AT INSERT INDEX 2 between the declared
+      # 220x48 siblings (the anchor rule's .NET half) with 8 creates / 4 attaches /
+      # 2 props / 4 styles and NOT ONE patch naming a pre-existing node; HIDE = FIVE
+      # removes (the modal's own + 4 nested disposal removes), all inside the show
+      # frame's create set, zero creates; scrim-tap dismisses vs content-tap does
+      # not; the switch round-trips into the echo INSIDE the overlay; re-show =
+      # re-create with bound state intact; back-nav parity. The click-on-plain-view
+      # .NET end needed NO renderer change (attach emission is name-generic;
+      # BuildEventArgs("click") is element-agnostic) — the shells' halves are Gates
+      # 2/3's. NO ABI change (ids 11/12 ride the existing int32 field; exports stay
+      # 9, the bridge 72 bytes), NO shell edits (the Kotlin/Swift nodeTypes arrays +
+      # pins are OWED to Gates 2/3), NO existing golden moved: the gates below stay
+      # 4 IL2072 / 9 exports / 90 JVM.
+      - name: .NET tests (assert 517 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -625,8 +660,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 492 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 492 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 517 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 517 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # ── NativeAOT publishes + nine-export verification ────────────────────
