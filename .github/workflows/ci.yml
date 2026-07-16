@@ -9,7 +9,7 @@
 #     each publish must show exactly the 4 accepted IL2072 trim warnings) →
 #     nine-export verification (dumpbin via vswhere / llvm-readelf from the
 #     pinned NDK) → Gradle testDebugUnitTest against the fresh win-x64 dll
-#     (90 passed / 0 failed) → the instrumented sources COMPILE →
+#     (92 passed / 0 failed) → the instrumented sources COMPILE →
 #     consumer smoke (five packages from the local feed mount a Bn* component
 #     + analyzer trip; Phase 4.5, M4 DoD #7) → artifacts for the instrumented
 #     (Gate 3) job.
@@ -814,7 +814,22 @@ jobs:
       #     non-control \u, raw controls, whole-string consumption all reject). Pure
       #     Kotlin in the shared source set — testable HERE, off the device, like
       #     isLiveImageRequest before it.
-      - name: JVM tests (Gradle testDebugUnitTest — assert 90 passed / 0 failed)
+      #
+      # ── Phase 7.4 Gate 2: 90 → 92, +2 — the new wire vocabulary's DECODE, at
+      #    the offset level.
+      #
+      #  +2 NativeFrameAdapterTest.read_decodes_modal_wire_id_11 /
+      #     read_decodes_activityindicator_wire_id_12 — the "3 → button" synthetic
+      #     decode's twin, per new id. The content/length pin (extended IN PLACE to
+      #     thirteen entries: modal = 11, activityindicator = 12) answers "is the
+      #     array right?"; these answer "does a CreateNode carrying 11 actually
+      #     decode as a `modal` create?" — the question WidgetMapper's
+      #     `when (p.nodeType)` hangs off. Written red-first: with the entries
+      #     absent, both ids fell onto the index-guard "?" fallback
+      #     ("expected: <modal> but was: <?>"), which on a device is a TextView
+      #     where an overlay should be — the exact silent decode the 7.3 pin was
+      #     added to catch, reddening on this lane instead.
+      - name: JVM tests (Gradle testDebugUnitTest — assert 92 passed / 0 failed)
         working-directory: src/BlazorNative.Jni
         run: |
           .\gradlew.bat --no-daemon testDebugUnitTest
@@ -828,8 +843,8 @@ jobs:
             $errors += [int]$suite.errors; $skipped += [int]$suite.skipped
           }
           Write-Host "JVM test totals across $($xmls.Count) suites: tests=$tests failures=$failures errors=$errors skipped=$skipped"
-          if ($tests -ne 90 -or $failures -ne 0 -or $errors -ne 0 -or $skipped -ne 0) {
-            throw "JVM test baseline drift: expected 90 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped"
+          if ($tests -ne 92 -or $failures -ne 0 -or $errors -ne 0 -or $skipped -ne 0) {
+            throw "JVM test baseline drift: expected 92 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped"
           }
 
       # the instrumented-sources compile gate moved to its own required job

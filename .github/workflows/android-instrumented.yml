@@ -14,7 +14,7 @@
 #   emulator (ubuntu-latest, KVM) — downloads the .so, boots the API 34
 #     google_apis x86_64 Pixel 6 image (mirrors the local AVD
 #     blazornative-pixel6-x86_64), runs connectedAndroidTest with
-#     -PciSoDir pointing at the artifact → asserts 147 passed / 0 failed.
+#     -PciSoDir pointing at the artifact → asserts 166 passed / 0 failed.
 #
 # Baselines are asserted, not observed: count drift fails the job loudly.
 # ─────────────────────────────────────────────────────────────────────────────
@@ -660,7 +660,83 @@ jobs:
       #                                  expected window DERIVED from the settled
       #                                  offset and the measured ratio logged (grep
       #                                  logcat for [7.2-throughput]).
-      - name: Assert instrumented baseline (147 passed / 0 failed)
+      # ── Phase 7.4 Gate 2 — BnModal: the OVERLAY, anchor + overlay (147 → 166, +19) ──
+      # `modal` (wire id 11) and `activityindicator` (12) go real: a modal node
+      # materializes as TWO shell-side pieces — a 0-sized absolute ANCHOR at its wire
+      # slot (the THIRD index-mapping rule: sibling insert indices never skew) and a
+      # full-root OVERLAY attached LAST at widget_root (stacking = creation order;
+      # children redirect into it; the scrim paints on it; the dismissal-request
+      # `click` listens on it). RemoveNode purges BOTH subtrees — the overlay is NOT a
+      # descendant of the anchor (NOT the scroll shape; the design names the
+      # difference) — and Android's back consults the modal stack BEFORE
+      # navigation-back (design decision 3). Each count verified by MUTATION (break
+      # the thing, watch the RIGHT test go red — the Gate 2 report has the transcript):
+      #   +10 WidgetMapperModalTest      — the model at the mechanism (detached-root:
+      #                                  structure and creation shape; full-root numbers
+      #                                  are the device class's). The anchor's
+      #                                  zero-footprint rule as a frame assertion (the
+      #                                  siblings hold their EXACT frames); children
+      #                                  redirecting into the overlay + the content box
+      #                                  centered by the shell's fixed styles (the
+      #                                  design's (W−w)/2 arithmetic IS the overlay's
+      #                                  justify/align CENTER pair); a top-level wire
+      #                                  APPEND slotting in AHEAD of live overlays (the
+      #                                  root's 1:1 index arithmetic, kept); re-show =
+      #                                  re-create = lands on top; scrimColor as a PROP
+      #                                  painting the overlay (garbage ignored);
+      #                                  the dismissal click listening on the SCRIM,
+      #                                  never the anchor, with the content-box swallow
+      #                                  a real counted dispatch; the back consult
+      #                                  (topmost = last-created; declines when no
+      #                                  overlay is live); SetStyle on a modal node
+      #                                  diagnosed-and-ignored for EVERY name (layout
+      #                                  AND visual — the hatch the .NET side pins
+      #                                  open); and the TWO-SUBTREE purge, both as
+      #                                  RemoveNode(modal) and as the WRAPPER removal
+      #                                  navigation actually emits (a fixpoint: a modal
+      #                                  can sit inside another modal's overlay) — the
+      #                                  overlay-count lifecycle pin returning to 0.
+      #                                  These RemoveNode shapes are the PURE one-remove
+      #                                  shape (inline-only content); the composite is
+      #                                  the device class's.
+      #    +7 BnModalDemoAndroidTest    — /modal through the real NativeAOT boot. The
+      #                                  closed mount (5 children, declared 220×48
+      #                                  siblings, indicator by ORACLE — a fresh
+      #                                  ProgressBar measured with the same specs, the
+      #                                  6.3 method — launched by DEEP LINK so the
+      #                                  route-table row is itself asserted); the SHOW
+      #                                  frame table (scrim = widget_root's OWN bounds
+      #                                  read at assert time; content box DECLARED
+      #                                  280×180 centered at ((W−280)/2,(H−180)/2); the
+      #                                  overlay the root's LAST subview; the siblings'
+      #                                  EXACT pixel frames unchanged; the anchor 0×0 at
+      #                                  page index 2; the scrim painting BnModal's
+      #                                  pinned #80000000); the switch INSIDE the
+      #                                  overlay round-tripping into the echo over the
+      #                                  real wire; hide-by-dismiss under the COMPOSITE
+      #                                  FIVE-remove frame (the Gate 1 finding: the four
+      #                                  nested components' disposal removes ride ahead
+      #                                  of the modal's own — node counts back to the
+      #                                  closed baseline, overlay count to 0); scrim-tap
+      #                                  dismissing as a COUNTED wire dispatch (the
+      #                                  shell closes nothing itself); content-box tap
+      #                                  NOT dismissing while its swallow dispatch is
+      #                                  real (only the counter can see it); and back
+      #                                  routing BOTH ways — open: dismiss-request, no
+      #                                  navigation, not finishing; closed: the
+      #                                  navigation-back path as before (rc 0 navigates /
+      #                                  rc 1 at-root finishes — the nav stack is
+      #                                  process-global across the shared session, so
+      #                                  either terminal proves the consult declined).
+      #    +2 WidgetMapperNodeTypesTest — the two new NodeType rows: activityindicator →
+      #                                  ProgressBar, asserted INDETERMINATE (animating
+      #                                  while mounted is the contract), and modal → the
+      #                                  anchor + overlay PAIR (a plain-View anchor that
+      #                                  can host nothing + the overlay container last at
+      #                                  the root). (The vocabulary's content/length pin
+      #                                  and the 11/12 offset-level decodes live on the
+      #                                  JVM lane — NativeFrameAdapterTest, 90 → 92.)
+      - name: Assert instrumented baseline (166 passed / 0 failed)
         run: |
           shopt -s globstar nullglob
           xmls=(src/BlazorNative.Jni/build/outputs/androidTest-results/connected/**/*.xml)
@@ -677,8 +753,8 @@ jobs:
             s=$(attr skipped "$x");  skipped=$((skipped + ${s:-0}))
           done
           echo "Instrumented totals across ${#xmls[@]} suite(s): tests=$tests failures=$failures errors=$errors skipped=$skipped"
-          if [ "$tests" -ne 147 ] || [ "$failures" -ne 0 ] || [ "$errors" -ne 0 ] || [ "$skipped" -ne 0 ]; then
-            echo "Instrumented test baseline drift: expected 147 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped" >&2
+          if [ "$tests" -ne 166 ] || [ "$failures" -ne 0 ] || [ "$errors" -ne 0 ] || [ "$skipped" -ne 0 ]; then
+            echo "Instrumented test baseline drift: expected 166 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped" >&2
             exit 1
           fi
 
