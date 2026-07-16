@@ -49,6 +49,9 @@ class WidgetMapperImagePolishTest {
          * (a device test cannot read a .razor; the DEMO test asserts the same value off the
          * page the wire actually built, which is the drift pin). */
         const val PLACEHOLDER_HEX = "#FFCA28"
+
+        /** The recolor target (7.6 H5) — any parseable color that is not [PLACEHOLDER_HEX]. */
+        const val RECOLOR_HEX = "#3F51B5"
     }
 
     private val placeholderColor: Int get() = Color.parseColor(PLACEHOLDER_HEX)
@@ -144,6 +147,56 @@ class WidgetMapperImagePolishTest {
             host.read { host.mapper.imageResults.map { it.outcome } })
         assertEquals("a clear NEVER dispatches `error` — a cancel is the author's own act, " +
             "not a failure to report back", 0, host.read { host.mapper.errorDispatchesSent })
+    }
+
+    @Test fun placeholderColor_recolors_the_inflight_paint_and_null_CLEARS_it() {
+        // Phase 7.6 (H5, the 7.5 G3 review ledger): the matched pair neither device
+        // suite pinned — a RECOLOR repaints an on-screen placeholder, and
+        // `placeholderColor → null` CLEARS one — both while the request is STILL
+        // open. Same observable on both shells (BnImagePolishMapperTests holds the
+        // iOS half, assertion for assertion).
+        val host = section(src = ImageFixtureServer.SLOW_URL, declared = true)
+        assertTrue("the request must be genuinely IN FLIGHT — both rows below are about " +
+            "a placeholder that is ON SCREEN over an OPEN request",
+            server.awaitPath("/slow.png"))
+        host.read { assertPlaceholderPainted("in flight, before the recolor", image(host)) }
+
+        // THE RECOLOR: a placeholderColor update while the paint is on screen
+        // REPAINTS it — the prop arm repaints iff the node still awaits bytes.
+        host.render(listOf(RenderPatch.UpdateProp(nodeId = IMAGE, name = "placeholderColor",
+            value = RECOLOR_HEX)))
+        host.read {
+            val d = image(host).drawable
+            assertTrue("the recolor must still be a PAINTED placeholder, got " +
+                "${d?.javaClass?.simpleName}", d is ColorDrawable)
+            assertEquals("…in exactly the NEW color — a recolor that kept the old paint " +
+                "is the prop arm silently dead after the mount",
+                Color.parseColor(RECOLOR_HEX), (d as ColorDrawable).color)
+            assertFrame("…and the box never moved: paint, never size",
+                image(host), 0f, 0f, 200f, 120f)
+        }
+
+        // THE NULL-CLEAR: the author took the parameter away with the placeholder ON
+        // SCREEN — it goes with the setting that painted it, and the request's own
+        // lifecycle is untouched (nothing terminated, nothing cancelled).
+        host.render(listOf(RenderPatch.UpdateProp(nodeId = IMAGE, name = "placeholderColor",
+            value = null)))
+        host.read {
+            assertNull("the on-screen placeholder goes with the setting that painted it",
+                image(host).drawable)
+        }
+        assertEquals("…and the clear touched PAINT only: the request is still open",
+            0, host.read { host.mapper.imageResults.size })
+
+        // The still-open request then terminates normally: the bytes land anyway.
+        server.releaseSlow()
+        awaitResults(host, 1)
+        assertEquals(WidgetMapper.ImageOutcome.SUCCESS,
+            host.read { host.mapper.imageResults.single().outcome })
+        host.read {
+            assertTrue("the bytes still landed after the clear — the placeholder was " +
+                "paint, never the request", image(host).drawable is BitmapDrawable)
+        }
     }
 
     @Test fun an_intrinsic_placeholder_never_measures_the_failing_side() {
