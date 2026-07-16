@@ -226,12 +226,20 @@ public sealed class BnModalDemoTests
             Assert.Equal(2, show.Patches.OfType<UpdatePropPatch>().Count());
             // Styles: the content box's four, and NOTHING else.
             Assert.Equal(4, show.Patches.OfType<SetStylePatch>().Count());
+            // Removes/detaches: ZERO — pinned so a spurious remove cannot
+            // hide in a channel the counts above never mention (review S1-1).
+            Assert.Empty(show.Patches.OfType<RemoveNodePatch>());
+            Assert.Empty(show.Patches.OfType<DetachEventPatch>());
 
-            // The siblings are UNTOUCHED by the show (the zero-footprint
-            // rule's wire half: their frames cannot move if no patch names
-            // them; the geometric half is Gates 2/3's frame table).
-            List<int> children = ChildrenOf(mount, Root(mount).NodeId);
-            int[] preexisting = [children[1], children[2]];
+            // The pre-existing tree is UNTOUCHED by the show — "NOT ONE patch
+            // naming a pre-existing node" (the zero-footprint rule's wire
+            // half: their frames cannot move if no patch names them; the
+            // geometric half is Gates 2/3's frame table). The set is the
+            // mount frame's FULL create set — all nine ids, not just the two
+            // siblings (review S1-1) — so the claim is as wide as the words.
+            HashSet<int> preexisting = mount.Patches.OfType<CreateNodePatch>()
+                .Select(p => p.NodeId).ToHashSet();
+            Assert.Equal(9, preexisting.Count); // the mount golden's own count
             Assert.All(show.Patches, p => Assert.DoesNotContain(NodeIdOf(p), preexisting));
         }
         finally
@@ -240,6 +248,9 @@ public sealed class BnModalDemoTests
         }
     }
 
+    /// <summary>Every patch kind's node id, LOUDLY (review S1-2): the frame
+    /// boundary names no node (-1 — never a real id), and any FUTURE kind
+    /// throws instead of silently sailing past the untouched-set pin.</summary>
     private static int NodeIdOf(RenderPatch p) => p switch
     {
         CreateNodePatch c => c.NodeId,
@@ -249,7 +260,9 @@ public sealed class BnModalDemoTests
         SetStylePatch s => s.NodeId,
         AttachEventPatch a => a.NodeId,
         DetachEventPatch d => d.NodeId,
-        _ => -1,
+        CommitFramePatch => -1, // the frame boundary — no node to name
+        _ => throw new InvalidOperationException(
+            $"NodeIdOf has no arm for {p.GetType().Name} — extend it so the golden stays loud."),
     };
 
     // ── The hide golden ───────────────────────────────────────────────────────
@@ -278,6 +291,9 @@ public sealed class BnModalDemoTests
             List<RemoveNodePatch> removes = hide.Patches.OfType<RemoveNodePatch>().ToList();
 
             Assert.Equal(5, removes.Count);
+            // …and five DISTINCT nodes (review Q-2): the count cannot be
+            // padded by a double-remove of one id.
+            Assert.Equal(5, removes.Select(r => r.NodeId).Distinct().Count());
             Assert.Contains(removes, r => r.NodeId == modal.NodeId);
             // Nothing outside the modal's own subtree leaves.
             HashSet<int> created = show.Patches.OfType<CreateNodePatch>()

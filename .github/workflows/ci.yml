@@ -4,7 +4,7 @@
 #
 #   build-test (windows-latest) — the local verification procedure verbatim
 #   (setup.ps1 §1–7 documents the toolchain pins):
-#     build (analyzers ride it) → .NET tests (517 passed / 0 skipped) →
+#     build (analyzers ride it) → .NET tests (518 passed / 0 skipped) →
 #     three NativeAOT publishes (win-x64, linux-bionic-x64, linux-bionic-arm64;
 #     each publish must show exactly the 4 accepted IL2072 trim warnings) →
 #     nine-export verification (dumpbin via vswhere / llvm-readelf from the
@@ -642,7 +642,25 @@ jobs:
       # 9, the bridge 72 bytes), NO shell edits (the Kotlin/Swift nodeTypes arrays +
       # pins are OWED to Gates 2/3), NO existing golden moved: the gates below stay
       # 4 IL2072 / 9 exports / 90 JVM.
-      - name: .NET tests (assert 517 passed / 0 skipped)
+      #
+      # 517 -> 518 (PHASE 7.4 GATE 1 REVIEW, +1 — Runtime.Tests 365 -> 366): the
+      # four findings, closed. S1-1 (Important, no count move): the show golden's
+      # "NOT ONE patch naming a pre-existing node" was enforced against only the
+      # two siblings — the untouched set is now the mount frame's FULL create set
+      # (all 9 ids, count-pinned), and the show frame gains zero-removes /
+      # zero-detaches pins so a spurious remove cannot hide in an unpinned channel.
+      # S1-2 (no count move): NodeIdOf's silent `_ => -1` default now THROWS for
+      # any future patch kind (CommitFramePatch gets its own explicit no-node arm)
+      # — the golden stays loud instead of silently passing new wire vocabulary.
+      # Q-1 (+1, the new theory row): an EXPLICITLY-NULL ScrimColor binding used
+      # to defeat "always emitted" (Blazor omits null attributes); BnModal.razor
+      # now coalesces to DefaultScrimColor at emission, and the explicit-null row
+      # of ScrimColor_AlwaysEmitted proves the default still rides the prop wire.
+      # Q-2 (no count move): the hide golden's 5 removes are pinned DISTINCT — the
+      # count cannot be padded by a double-remove of one id. Component change is
+      # Q-1's coalesce ONLY; NO wire change on any green path, NO existing golden
+      # moved, Renderer.Tests (129) / Analyzers.Tests (23) untouched.
+      - name: .NET tests (assert 518 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -660,8 +678,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 517 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 517 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 518 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 518 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # ── NativeAOT publishes + nine-export verification ────────────────────

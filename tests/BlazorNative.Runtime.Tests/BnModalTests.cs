@@ -164,14 +164,17 @@ public sealed class BnModalTests : IDisposable
 
     /// <summary>scrimColor is ALWAYS on the wire (the BnInput posture — no
     /// shell-side default two platforms would have to keep equal): the
-    /// default and a custom value both ride the prop wire.</summary>
+    /// default, a custom value, and an EXPLICITLY-NULL binding (which Blazor
+    /// would otherwise drop from the markup — review Q-1: the emission
+    /// coalesces it back to the default) all ride the prop wire.</summary>
     [Theory]
-    [InlineData(null, "#80000000")] // the default — nothing passed
-    [InlineData("#CC112233", "#CC112233")]
-    public void ScrimColor_AlwaysEmitted(string? passed, string expected)
+    [InlineData(false, null, "#80000000")] // the default — nothing passed
+    [InlineData(true, null, "#80000000")]  // EXPLICIT null — normalized, still emitted
+    [InlineData(true, "#CC112233", "#CC112233")]
+    public void ScrimColor_AlwaysEmitted(bool pass, string? passed, string expected)
     {
         var extra = new Dictionary<string, object?>();
-        if (passed is not null)
+        if (pass)
             extra[nameof(BnModal.ScrimColor)] = passed;
         var (mount, _, modal, _) = MountVisibleModal(extra);
 

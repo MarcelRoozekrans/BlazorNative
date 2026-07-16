@@ -59,7 +59,7 @@
 *@
 @if (Visible)
 {
-    <modal scrimColor="@ScrimColor" @onclick="HandleDismissRequest">
+    <modal scrimColor="@(ScrimColor ?? DefaultScrimColor)" @onclick="HandleDismissRequest">
         <div backgroundColor="@BackgroundColor"
              padding="@Padding.ToStyleValue()"
              width="@ContentWidth"
@@ -88,10 +88,16 @@
     /// the 7.2 eviction rule).</summary>
     [Parameter] public RenderFragment? ChildContent { get; set; }
 
+    /// <summary>The default scrim — and what an EXPLICITLY-NULL binding
+    /// normalizes to in the markup, because Blazor omits null attributes and
+    /// an omitted scrimColor would defeat "always emitted" (review Q-1).</summary>
+    public const string DefaultScrimColor = "#80000000";
+
     /// <summary>The scrim color, painted on the shell's overlay behind the
     /// content box. ALWAYS on the wire (as the <c>scrimColor</c> prop) so no
-    /// shell invents a default.</summary>
-    [Parameter] public string ScrimColor { get; set; } = "#80000000";
+    /// shell invents a default — a null binding is coalesced to
+    /// <see cref="DefaultScrimColor"/> at emission for the same reason.</summary>
+    [Parameter] public string? ScrimColor { get; set; } = DefaultScrimColor;
 
     // ── The content box's declared surface (the BnScroll forwarding
     //    precedent — these style the BOX, which the author owns; the modal
