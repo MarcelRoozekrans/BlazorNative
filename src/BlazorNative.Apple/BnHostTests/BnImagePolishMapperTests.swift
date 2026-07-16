@@ -279,11 +279,11 @@ final class BnImagePolishMapperTests: BnHostTestCase {
         host.render([.updateProp(nodeId: image, name: "contentMode", value: "fill")])
         XCTAssertEqual(try imageView(host).contentMode, .scaleAspectFill,
                        "the unknown word applied NOTHING — the node keeps cover")
-        XCTAssertTrue(host.mapper.scrollDiagnostics.contains { $0.contains("contentMode 'fill'") },
+        XCTAssertTrue(host.mapper.diagnostics.contains { $0.contains("contentMode 'fill'") },
                       "…and the ignore is DIAGNOSED where a test can read it (the modal "
                       + "style-ignore precedent): NSLog is not an assertion surface, and this "
                       + "failure is invisible on every frame table by the mode-invariance rule "
-                      + "itself. Got: \(host.mapper.scrollDiagnostics)")
+                      + "itself. Got: \(host.mapper.diagnostics)")
 
         server.release()
         bnAwaitImageResults(host.mapper, 1) // hygiene: let the fixture request terminate

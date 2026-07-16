@@ -570,7 +570,7 @@ final class BnScrollTests: BnHostTestCase {
             assertFrame("row \(i)", content.subviews[i], 0, rowH * CGFloat(i), viewW, rowH)
         }
 
-        let diags = host.mapper.scrollDiagnostics
+        let diags = host.mapper.diagnostics
         for (property, _) in ignored {
             XCTAssertTrue(diags.contains { $0.contains("node 1") && $0.contains(property) },
                           "'\(property)' on a scroll node must be DROPPED WITH A WARNING naming the "
@@ -597,9 +597,9 @@ final class BnScrollTests: BnHostTestCase {
                        "…and so is backgroundColor (it paints the viewport)")
         assertFrame("…while the content node is unmoved by either — margin insets the VIEWPORT, not "
                     + "the content", content, 0, 0, viewW, contentH)
-        XCTAssertTrue(host.mapper.scrollDiagnostics.isEmpty,
+        XCTAssertTrue(host.mapper.diagnostics.isEmpty,
                       "no diagnostic: an item style on a scroll node is not a mistake "
-                      + "(got: \(host.mapper.scrollDiagnostics))")
+                      + "(got: \(host.mapper.diagnostics))")
     }
 
     /// **THE DEFINITE-HEIGHT WARNING.** An `auto`-height scroll node takes its height
@@ -619,10 +619,10 @@ final class BnScrollTests: BnHostTestCase {
                        "the auto-height viewport HUGS its content — 800 over 800, scroll range zero. "
                        + "Nothing errors; the page just never moves.")
 
-        let warnings = host.mapper.scrollDiagnostics.filter { $0.contains("definite height") }
+        let warnings = host.mapper.diagnostics.filter { $0.contains("definite height") }
         XCTAssertEqual(warnings.count, 1,
                        "exactly ONE warning, across TWO layout passes "
-                       + "(got: \(host.mapper.scrollDiagnostics))")
+                       + "(got: \(host.mapper.diagnostics))")
         XCTAssertTrue(warnings.first?.contains("node 1") == true,
                       "…and it must name the node (got: \(warnings))")
     }
@@ -635,9 +635,9 @@ final class BnScrollTests: BnHostTestCase {
     /// the second — that is what the three tests below are for.
     func testADefiniteHeightScrollNodeWarnsAboutNothing() {
         let host = bnRender(scrollTree())
-        XCTAssertTrue(host.mapper.scrollDiagnostics.isEmpty,
+        XCTAssertTrue(host.mapper.diagnostics.isEmpty,
                       "a 300×200 viewport over 800pt of content is the WORKING case — it must "
-                      + "produce no diagnostic (got: \(host.mapper.scrollDiagnostics))")
+                      + "produce no diagnostic (got: \(host.mapper.diagnostics))")
     }
 
     /// **A FLEX-SIZED VIEWPORT THAT SCROLLS MUST NOT BE WARNED ABOUT** — the shape a
@@ -653,9 +653,9 @@ final class BnScrollTests: BnHostTestCase {
                        "the viewport took its 200 from its bounded parent (Grow + Basis=0)")
         XCTAssertEqual(scroll.contentSize.height, contentH, accuracy: 0.5,
                        "…over 800 of content: it SCROLLS")
-        XCTAssertTrue(host.mapper.scrollDiagnostics.isEmpty,
+        XCTAssertTrue(host.mapper.diagnostics.isEmpty,
                       "a flex-sized viewport that scrolls declares no height and is entirely correct "
-                      + "— it must produce no diagnostic (got: \(host.mapper.scrollDiagnostics))")
+                      + "— it must produce no diagnostic (got: \(host.mapper.diagnostics))")
     }
 
     /// **A VIEWPORT TALLER THAN ITS CONTENT MUST NOT BE WARNED ABOUT** — the test that
@@ -677,12 +677,12 @@ final class BnScrollTests: BnHostTestCase {
         XCTAssertEqual(scroll.frame.height, viewH, accuracy: 0.5, "the viewport is 200 tall")
         XCTAssertEqual(scroll.contentSize.height, 100, accuracy: 0.5,
                        "…and its content is only 100 — there is nothing to scroll YET")
-        XCTAssertTrue(host.mapper.scrollDiagnostics.isEmpty,
+        XCTAssertTrue(host.mapper.diagnostics.isEmpty,
                       "A VIEWPORT TALLER THAN ITS CONTENT IS NOT A MISTAKE. It is a viewport with "
                       + "nothing to scroll YET — the ordinary case for any list still loading, and "
                       + "for M7's virtualized list on its first under-full frame. A diagnostic that "
                       + "cries wolf on the shape the docs prescribe is worse than no diagnostic "
-                      + "(got: \(host.mapper.scrollDiagnostics))")
+                      + "(got: \(host.mapper.diagnostics))")
     }
 
     /// **`Grow="1"` ALONE IS NOT A DEFINITE HEIGHT — AND EVERY DOC IN THIS PHASE SAID IT
@@ -713,11 +713,11 @@ final class BnScrollTests: BnHostTestCase {
         XCTAssertEqual(scroll.contentSize.height, scroll.frame.height, accuracy: 0.5,
                        "…and it is exactly as tall as its content, so THERE IS NOTHING TO SCROLL")
 
-        let warnings = host.mapper.scrollDiagnostics.filter { $0.contains("definite height") }
+        let warnings = host.mapper.diagnostics.filter { $0.contains("definite height") }
         XCTAssertEqual(warnings.count, 1,
                        "THE DIAGNOSTIC IS RIGHT TO FIRE HERE. `Grow=\"1\"` alone does not bound a "
                        + "viewport — use an explicit Height, or Grow + Basis=\"0\" (CSS's `flex: 1`), "
-                       + "or Grow + Shrink=\"1\". (got: \(host.mapper.scrollDiagnostics))")
+                       + "or Grow + Shrink=\"1\". (got: \(host.mapper.diagnostics))")
     }
 
     /// **AND THE FIRST CONDITION EARNS ITS KEEP TOO.** A scroll node with an EXPLICIT
@@ -733,10 +733,10 @@ final class BnScrollTests: BnHostTestCase {
 
         XCTAssertEqual(scroll.frame.height, scroll.contentSize.height, accuracy: 0.5,
                        "the viewport and its content are the same height, to the point")
-        XCTAssertTrue(host.mapper.scrollDiagnostics.isEmpty,
+        XCTAssertTrue(host.mapper.diagnostics.isEmpty,
                       "…and the author DECLARED that height, which is exactly what the warning would "
                       + "have told them to do. Both conditions are needed, and this is the one that "
-                      + "pins the first (got: \(host.mapper.scrollDiagnostics))")
+                      + "pins the first (got: \(host.mapper.diagnostics))")
     }
 
     /// **THE DIAGNOSTICS BOOKKEEPING DIES WITH ITS NODE.** Node ids are **REUSED** —
@@ -751,19 +751,19 @@ final class BnScrollTests: BnHostTestCase {
     func testAScrollNodeThatReusesARetiredIdGetsItsOwnWarning() {
         let host = BnSyntheticHost()
         host.render(scrollTree(viewportHeight: nil))
-        XCTAssertEqual(host.mapper.scrollDiagnostics.count, 1,
+        XCTAssertEqual(host.mapper.diagnostics.count, 1,
                        "the first auto-height scroll node is warned about")
 
         host.render([.removeNode(nodeId: 1)])   // navigate away: ONE RemoveNodePatch
-        XCTAssertTrue(host.mapper.scrollDiagnostics.isEmpty,
+        XCTAssertTrue(host.mapper.diagnostics.isEmpty,
                       "the diagnostics go with the node they belong to — otherwise the list grows by "
                       + "one message per navigation, forever")
 
         host.render(scrollTree(viewportHeight: nil))   // …and the next page inherits id 1
 
-        let warnings = host.mapper.scrollDiagnostics.filter { $0.contains("definite height") }
+        let warnings = host.mapper.diagnostics.filter { $0.contains("definite height") }
         XCTAssertEqual(warnings.count, 1,
                        "THE PIN: a scroll node that REUSES a retired id must get its OWN warning "
-                       + "(got: \(host.mapper.scrollDiagnostics))")
+                       + "(got: \(host.mapper.diagnostics))")
     }
 }

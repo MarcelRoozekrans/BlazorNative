@@ -475,7 +475,7 @@ class WidgetMapperScrollTest {
                 assertFrame("row $i", content.getChildAt(i), 0f, ROW_H * i, VIEW_W, ROW_H)
             }
 
-            val diags = host.mapper.scrollDiagnostics
+            val diags = host.mapper.diagnostics
             for ((property, _) in ignored) {
                 assertTrue("'$property' on a scroll node must be DROPPED WITH A WARNING naming " +
                     "the node and the style (got: $diags)",
@@ -507,7 +507,7 @@ class WidgetMapperScrollTest {
             assertFrame("…while the content node is unmoved by either — margin insets the " +
                 "viewport, not the content", contentViewOf(host.root), 0f, 0f, VIEW_W, CONTENT_H)
             assertTrue("no diagnostic: an item style on a scroll node is not a mistake " +
-                "(got: ${host.mapper.scrollDiagnostics})", host.mapper.scrollDiagnostics.isEmpty())
+                "(got: ${host.mapper.diagnostics})", host.mapper.diagnostics.isEmpty())
         }
     }
 
@@ -536,9 +536,9 @@ class WidgetMapperScrollTest {
                 "range zero. Nothing errors; the page just never moves.",
                 content.height, scroll.height)
 
-            val warnings = host.mapper.scrollDiagnostics.filter { it.contains("definite height") }
+            val warnings = host.mapper.diagnostics.filter { it.contains("definite height") }
             assertEquals("exactly ONE warning, across TWO layout passes (got: " +
-                "${host.mapper.scrollDiagnostics})", 1, warnings.size)
+                "${host.mapper.diagnostics})", 1, warnings.size)
             assertTrue("…and it must name the node (got: ${warnings.first()})",
                 warnings.first().contains("node 1"))
         }
@@ -555,8 +555,8 @@ class WidgetMapperScrollTest {
         host.render(scrollTree())
         host.read {
             assertTrue("a 300×200 viewport over 800dp of content is the WORKING case — it must " +
-                "produce no diagnostic (got: ${host.mapper.scrollDiagnostics})",
-                host.mapper.scrollDiagnostics.isEmpty())
+                "produce no diagnostic (got: ${host.mapper.diagnostics})",
+                host.mapper.diagnostics.isEmpty())
         }
     }
 
@@ -579,8 +579,8 @@ class WidgetMapperScrollTest {
             assertEquals("…over 800 of content: it SCROLLS", CONTENT_H,
                 content.height / density(), 0.5f)
             assertTrue("a flex-sized viewport that scrolls declares no height and is entirely " +
-                "correct — it must produce no diagnostic (got: ${host.mapper.scrollDiagnostics})",
-                host.mapper.scrollDiagnostics.isEmpty())
+                "correct — it must produce no diagnostic (got: ${host.mapper.diagnostics})",
+                host.mapper.diagnostics.isEmpty())
         }
     }
 
@@ -614,8 +614,8 @@ class WidgetMapperScrollTest {
                 "with nothing to scroll YET — the ordinary case for any list that is still " +
                 "loading, and for M7's virtualized list on its first under-full frame. A " +
                 "diagnostic that cries wolf on the shape the docs prescribe is worse than no " +
-                "diagnostic (got: ${host.mapper.scrollDiagnostics})",
-                host.mapper.scrollDiagnostics.isEmpty())
+                "diagnostic (got: ${host.mapper.diagnostics})",
+                host.mapper.diagnostics.isEmpty())
         }
     }
 
@@ -658,12 +658,12 @@ class WidgetMapperScrollTest {
             assertEquals("…and it is exactly as tall as its content, so THERE IS NOTHING TO " +
                 "SCROLL", content.height, scroll.height)
 
-            val warnings = host.mapper.scrollDiagnostics.filter { it.contains("definite height") }
+            val warnings = host.mapper.diagnostics.filter { it.contains("definite height") }
             assertEquals("THE DIAGNOSTIC IS RIGHT TO FIRE HERE, and this is the shape the design, " +
                 "BnScroll's XML doc, BnScrollDemo's header and the warning's OWN MESSAGE all " +
                 "recommended until the Gate 2 review. `Grow=\"1\"` alone does not bound a " +
                 "viewport. Use an explicit Height, or Grow + Basis=\"0\" (CSS's `flex: 1`), or " +
-                "Grow + Shrink=\"1\". (got: ${host.mapper.scrollDiagnostics})",
+                "Grow + Shrink=\"1\". (got: ${host.mapper.diagnostics})",
                 1, warnings.size)
         }
     }
@@ -688,8 +688,8 @@ class WidgetMapperScrollTest {
                 content.height, scroll.height)
             assertTrue("…and the author DECLARED that height, which is exactly what the warning " +
                 "would have told them to do. Both conditions are needed, and this is the one " +
-                "that pins the first (got: ${host.mapper.scrollDiagnostics})",
-                host.mapper.scrollDiagnostics.isEmpty())
+                "that pins the first (got: ${host.mapper.diagnostics})",
+                host.mapper.diagnostics.isEmpty())
         }
     }
 
@@ -710,24 +710,24 @@ class WidgetMapperScrollTest {
         val host = SyntheticHost()
         host.render(scrollTree(viewportHeight = null))
         assertEquals("the first auto-height scroll node is warned about", 1,
-            host.read { host.mapper.scrollDiagnostics.size })
+            host.read { host.mapper.diagnostics.size })
 
         // Navigate away: ONE RemoveNodePatch for the page.
         host.render(listOf(RenderPatch.RemoveNode(nodeId = 1)))
         assertTrue("the diagnostics go with the node they belong to — otherwise the list grows " +
             "by one message per navigation, forever",
-            host.read { host.mapper.scrollDiagnostics.isEmpty() })
+            host.read { host.mapper.diagnostics.isEmpty() })
 
         // …and the next page's scroll node inherits the retired id 1.
         host.render(scrollTree(viewportHeight = null))
 
         host.read {
-            val warnings = host.mapper.scrollDiagnostics.filter { it.contains("definite height") }
+            val warnings = host.mapper.diagnostics.filter { it.contains("definite height") }
             assertEquals("THE PIN: a scroll node that REUSES a retired id must get its OWN " +
                 "warning. Keep the warn-once key past its node's death and this genuinely broken " +
                 "node is warned about NOTHING — and the diagnostic is worth most on a " +
                 "freshly-written page, which is exactly when a ghost key eats it " +
-                "(got: ${host.mapper.scrollDiagnostics})",
+                "(got: ${host.mapper.diagnostics})",
                 1, warnings.size)
         }
     }

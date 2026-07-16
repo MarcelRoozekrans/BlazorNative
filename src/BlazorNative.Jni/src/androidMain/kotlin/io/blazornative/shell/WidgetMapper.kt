@@ -1538,11 +1538,14 @@ class WidgetMapper(
     /** Test-only: the live SYNTHETIC content VIEWS — the view-tree half of the same. */
     internal val scrollContentCount: Int get() = scrollContents.size
 
-    /** The scroll node's two runtime diagnostics (Phase 6.2): the container-style
-     * ignore-and-log rule, and the definite-height warning. Exposed because logcat
-     * is not an assertion surface and both failures are SILENT on the device — a
-     * page that simply does not move. `WidgetMapperScrollTest` asserts them. */
-    internal val scrollDiagnostics: List<String> get() = yoga.diagnostics
+    /** The mapper's runtime diagnostics, in emission order: the scroll pair (6.2's
+     * container-style ignore-and-log rule and the definite-height warning), the
+     * modal-style drops (7.4), and the image contentMode rejections (7.5). Exposed
+     * because logcat is not an assertion surface and every one of these failures is
+     * SILENT on the device. `WidgetMapperScrollTest` / `WidgetMapperModalTest` /
+     * `WidgetMapperImagePolishTest` assert them. (Renamed from `scrollDiagnostics`
+     * in 7.6 — the name predated the 7.4/7.5 additions and lied about the scope.) */
+    internal val diagnostics: List<String> get() = yoga.diagnostics
 
     /** Test-only (Phase 6.3) — **the synchronization gate's observation surface**: the last
      * [MAX_IMAGE_RESULTS] image requests that TERMINATED, with Coil's own verdict. See
@@ -2328,7 +2331,7 @@ class WidgetMapper(
         // into the flex flow, a visual `backgroundColor` would paint it.
         // BnModal's surface cannot emit one, but the hand-rolled-wire hatch is
         // open (the .NET test pins that), so this is live code, not dead —
-        // recorded in the diagnostics ([scrollDiagnostics]) because the failure
+        // recorded in [diagnostics] because the failure
         // it prevents is silent on every frame table.
         if (p.nodeId in modalOverlays) {
             yoga.diagnoseModalStyle(p.nodeId, p.property)

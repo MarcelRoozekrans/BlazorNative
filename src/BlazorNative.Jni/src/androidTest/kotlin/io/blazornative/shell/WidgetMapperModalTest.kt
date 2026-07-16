@@ -291,7 +291,7 @@ class WidgetMapperModalTest {
             assertEquals("backgroundColor did NOT repaint the scrim (the scrim's paint " +
                 "is the scrimColor PROP)", Color.parseColor("#80000000"),
                 (overlay.background as ColorDrawable).color)
-            val diags = host.mapper.scrollDiagnostics.filter { it.contains("`modal` node") }
+            val diags = host.mapper.diagnostics.filter { it.contains("`modal` node") }
             assertEquals("both drops are RECORDED — logcat is not an assertion surface, " +
                 "and the failure this rule prevents is silent on every frame table",
                 2, diags.size)

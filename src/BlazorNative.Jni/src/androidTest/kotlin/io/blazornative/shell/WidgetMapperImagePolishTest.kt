@@ -259,8 +259,8 @@ class WidgetMapperImagePolishTest {
             assertTrue("…and the ignore is DIAGNOSED where a test can read it (the modal " +
                 "style-ignore precedent): logcat is not an assertion surface, and this " +
                 "failure is invisible on every frame table by the mode-invariance rule " +
-                "itself. Got: ${host.mapper.scrollDiagnostics}",
-                host.mapper.scrollDiagnostics.any { it.contains("contentMode 'fill'") })
+                "itself. Got: ${host.mapper.diagnostics}",
+                host.mapper.diagnostics.any { it.contains("contentMode 'fill'") })
         }
         server.release()
         awaitResults(host, 1) // hygiene: let the fixture request terminate before teardown
