@@ -1,0 +1,152 @@
+@*
+    ─────────────────────────────────────────────────────────────────────────
+    BnModalDemo — Phase 7.4 (design §"The proof surface"), route "/modal",
+    mount-registry key "BnModalDemo". Authored in .razor.
+
+    An EIGHTH page, same rationale as the fourth through seventh: the
+    existing pages' frame tables and goldens ARE the parity contracts, and
+    the phase that introduces the overlay does not get to rewrite them. This
+    page's numbers are ITS OWN contract — asserted by BnModalDemoTests (the
+    .NET golden) and by Gates 2/3 on the AVD and the iOS simulator.
+
+    ── THE PAGE ─────────────────────────────────────────────────────────────
+
+      [0] trigger  BnButton "Show modal" — flips _visible true
+      [1] box A    BnView 220×48 (DECLARED — the anchor's sibling ABOVE)
+      [2] BnModal  @bind-Visible; content box DECLARED 280×180, padding 12,
+                   white; ChildContent:
+                     [0] the echo BnText  (Echo(_switched) — the multi-hop
+                                           bind proof INSIDE the overlay)
+                     [1] BnSwitch bound   @bind-Checked (initially false)
+                     [2] BnActivityIndicator   (inside the modal)
+                     [3] dismiss BnButton "Dismiss" — sets _visible false
+      [3] box B    BnView 220×48 (DECLARED — the anchor's sibling BELOW)
+      [4] BnActivityIndicator             (on the page)
+      [5] back row BnRow W=300 → BnButton "← Back" (nav parity, LAST — a
+                   font-dependent height never sits above a frame assertion)
+
+    THE MODAL SITS BETWEEN TWO DECLARED-SIZE SIBLINGS on purpose: the
+    anchor's zero-footprint rule (the THIRD index-mapping rule) is a frame
+    assertion on this page, not a comment — boxes A and B hold the EXACT
+    frames they hold with Visible=false, or the anchor leaked size into the
+    flex flow. The indicator appears in BOTH hosting contexts (page and
+    overlay — decision 5's cheap win, proven in both).
+
+    ── WHAT THE THREE SURFACES ASSERT ───────────────────────────────────────
+    .NET golden (BnModalDemoTests): the closed mount (no modal wire presence,
+    5 root children), the SHOW frame (the modal create AT INSERT INDEX 2 —
+    the anchor's slot — with scrimColor, the content box's declared 280×180,
+    the four attaches), the HIDE frame (the modal's remove + the four nested
+    components' disposal removes, nothing outside the subtree), the
+    switch-inside round-trip re-rendering the echo, scrim-tap dismisses vs
+    content-tap does not, and re-show = re-create with BOUND state intact.
+    On-device (Gates 2/3): the scrim = the root's own bounds, content
+    centered at (W−280)/2 × (H−180)/2, the overlay LAST at the root, the
+    sibling frames unchanged, the indicator's intrinsic size by oracle, the
+    overlay count back to 0 after hide, Android back dismiss-requests.
+
+    Nav parity with every other page: "← Back" → INavigationManager → "/".
+    Reachable by mount-name ("BnModalDemo") and by route ("/modal"); no
+    button on BnDemo points here. Android's DEEP_LINK_COMPONENTS line is
+    Gate 2's.
+    ─────────────────────────────────────────────────────────────────────────
+*@
+<BnColumn>
+    @* [0] the trigger — the only way this page SHOWS the modal. *@
+    <BnButton Label="Show modal" OnClick="Show" />
+
+    @* [1]/[3] the declared-size siblings AROUND the modal — the anchor's
+       zero-footprint rule as a frame assertion (file header). *@
+    <BnView Width="@SiblingWidth" Height="@SiblingHeight" BackgroundColor="#336699" />
+
+    @* [2] the modal — between the siblings, content box DECLARED 280×180. *@
+    <BnModal @bind-Visible="_visible"
+             ContentWidth="@ContentWidth" ContentHeight="@ContentHeight"
+             Padding="@ContentPaddingDp" BackgroundColor="@ContentBackground">
+        <BnText Text="@EchoText" />
+        <BnSwitch @bind-Checked="_switched" />
+        <BnActivityIndicator />
+        <BnButton Label="Dismiss" OnClick="Dismiss" />
+    </BnModal>
+
+    <BnView Width="@SiblingWidth" Height="@SiblingHeight" BackgroundColor="#66AA33" />
+
+    @* [4] the indicator in its SECOND hosting context (the page itself). *@
+    <BnActivityIndicator />
+
+    @* [5] nav parity — measured leaf LAST (the BnFormDemo discipline). *@
+    <BnRow Width="@BackRowWidth">
+        <BnButton Label="← Back" OnClick="GoBack" />
+    </BnRow>
+</BnColumn>
+
+@code {
+    // ── THE PAGE'S NUMBERS, AS CONSTANTS (the BnScrollDemo discipline) ────────
+    //
+    // BnModalDemoTests asserts these off the WIRE (never transcribed), and
+    // Gates 2/3 read them for the device assertions — one source of truth.
+
+    /// <summary>The content box's DECLARED size — the design's 280 × 180,
+    /// asserted cross-platform; centering against the root is host-derived
+    /// and asserted per-platform (the 6.3 oracle discipline).</summary>
+    internal const int ContentWidthDp = 280;
+
+    /// <inheritdoc cref="ContentWidthDp"/>
+    internal const int ContentHeightDp = 180;
+
+    /// <summary>The content box's declared padding.</summary>
+    internal const float ContentPaddingDp = 12f;
+
+    /// <summary>The content box's background — opaque, so the scrim behind it
+    /// is visibly the SCRIM in every screenshot.</summary>
+    internal const string ContentBackground = "#FFFFFF";
+
+    /// <summary>The declared-size siblings around the modal (file header:
+    /// the anchor's zero-footprint rule as a frame assertion).</summary>
+    internal const int SiblingWidthDp = 220;
+
+    /// <inheritdoc cref="SiblingWidthDp"/>
+    internal const int SiblingHeightDp = 48;
+
+    /// <summary>The back row's declared width — every page's nav row shape.</summary>
+    internal const int BackRowWidthDp = 300;
+
+    /// <summary>The bound switch's INITIAL state — what the first show frame
+    /// carries and what <see cref="Echo"/> starts from.</summary>
+    internal const bool InitialSwitched = false;
+
+    /// <summary>The echo line, formatted ONCE for every surface — wire-cased
+    /// bools (the change payloads' own vocabulary), the BnFormDemo pattern.</summary>
+    internal static string Echo(bool sw) => sw ? "sw:true" : "sw:false";
+
+    private bool _visible;
+    private bool _switched = InitialSwitched;
+
+    private string EchoText => Echo(_switched);
+
+    private static readonly string ContentWidth =
+        ContentWidthDp.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    private static readonly string ContentHeight =
+        ContentHeightDp.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    private static readonly string SiblingWidth =
+        SiblingWidthDp.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    private static readonly string SiblingHeight =
+        SiblingHeightDp.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    private static readonly string BackRowWidth =
+        BackRowWidthDp.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    private void Show() => _visible = true;
+
+    /// <summary>The app's OWN dismiss (design decision 2's third trigger):
+    /// ordinary state, the same unmount path the scrim tap's request takes
+    /// once the bound parent writes it back.</summary>
+    private void Dismiss() => _visible = false;
+
+    [Inject] public INavigationManager Navigation { get; set; } = default!;
+
+    private Task GoBack() => Navigation.NavigateToAsync("/").AsTask();
+}

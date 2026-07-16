@@ -91,6 +91,15 @@ internal static unsafe class HostSession
         // rule and the declared widths are asserted identically on the AVD
         // (Gate 2) and the iOS simulator (Gate 3) — see BnFormDemo.razor.
         ["BnFormDemo"] = r => r.Mount<BlazorNative.Components.BnFormDemo>(),
+        // Phase 7.4: the overlay proof page (route "/modal" — M7 DoD #5).
+        // An EIGHTH page, same rationale a seventh time: the existing pages'
+        // goldens ARE the parity contracts, and the phase that introduces
+        // the overlay does not get to rewrite them. The modal sits BETWEEN
+        // two declared-size siblings (the anchor's zero-footprint rule as a
+        // frame assertion), the switch + echo prove the wire INSIDE the
+        // overlay, and the indicator appears in both hosting contexts — see
+        // BnModalDemo.razor's header.
+        ["BnModalDemo"] = r => r.Mount<BlazorNative.Components.BnModalDemo>(),
         // Phase 4.2: the focus/blur proof app (BnInput OnFocus/OnBlur →
         // echo BnText — M4 DoD #4). Scaffolding, like CompositionProbe.
         ["FocusProbe"] = r => r.Mount<FocusProbe>(),
