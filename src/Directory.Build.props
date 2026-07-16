@@ -1,5 +1,27 @@
 <Project>
 
+  <!-- THE ANCESTOR CHAIN (8.1 Gate 1 review, M-1). MSBuild imports only the
+       NEAREST Directory.Build.props, so the day a ROOT one appears (8.2/8.3 are
+       the likely authors), tests/ and samples/ would inherit it while the six
+       shipped projects — the ones that actually ship — silently stopped seeing
+       it. That failure is invisible: no error, no warning, just metadata that
+       quietly does not apply to the packages. This import is the standard
+       opt-back-in, added NOW while it is a no-op (no root props exists today,
+       so the condition is false and nothing is imported) rather than left as a
+       trap for whoever adds the root file. It sits FIRST so a root file's
+       properties can be overridden by this one, not the other way round.
+
+       The path goes through a property rather than inline in the Condition:
+       the quoted arguments inside the property function are re-parsed by the
+       condition grammar and blow up (MSB4092, "unexpected token Directory" —
+       observed, not feared). GetPathOfFileAbove returns '' when there is no
+       ancestor file, and an Import with an empty Project is MSB4020, so the
+       Condition is load-bearing today, not decoration. -->
+  <PropertyGroup>
+    <_AncestorDirectoryBuildProps>$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))</_AncestorDirectoryBuildProps>
+  </PropertyGroup>
+  <Import Project="$(_AncestorDirectoryBuildProps)" Condition="'$(_AncestorDirectoryBuildProps)' != ''" />
+
   <!-- ─────────────────────────────────────────────────────────────────────
        src/Directory.Build.props — Phase 8.1 (M8 DoD #2: publish-ready
        packages). The ONE metadata home for the six shipped packages:

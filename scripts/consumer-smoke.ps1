@@ -20,8 +20,11 @@
       2.  interrogate — nupkg-level purity (8.1 design decision 6; the xunit
                         purity pin runs BEFORE pack in CI, so only this script
                         ever owns the packed artifacts). Per nupkg, unzipped:
-                        type-level purity off the PE (zero app-shaped names,
-                        zero moved-roster types), nuspec truth (id+version,
+                        type-level purity off the PE — a POSITIVE CONTROL first
+                        (non-empty read + the package's sentinel type; Gate 1
+                        review I-3: absence assertions over a blind scanner are
+                        green for the wrong reason), then zero app-shaped names,
+                        zero moved-roster types — nuspec truth (id+version,
                         dependency allow-list — no SampleApp, nothing outside
                         the six + known third parties; MIT expression; readme
                         entry + file; repository@commit = the SourceLink
@@ -68,6 +71,26 @@ $movedRoster = @(
     "HelloComponent", "CompositionProbe", "FocusProbe", "HostEventProbe", "ClipboardProbe"
 )
 $appShapedPattern = '(Demo$)|(Probe$)|(^SpikeRazor)'
+
+# THE POSITIVE CONTROL (Gate 1 review, I-3). The type scan below is an ABSENCE
+# assertion — "no app-shaped names in the packed dll" — and an absence assertion
+# over a blind scanner is green for the wrong reason. That is not hypothetical
+# here: Get-TypeNames' own comment records a wrapping bug that already made the
+# whole scan report "1 type", and the reviewer proved the hole live by neutering
+# the return to @() — all six packages reported "0 types clean" and the smoke
+# exited 0. So each package names ONE type it MUST contain: a load-bearing type,
+# read off the real packed surface, whose disappearance is either a scanner that
+# stopped seeing or a package that stopped being itself. Both must be loud.
+# (PackagePurityTests.TypeNamesOf states the house rule this enforces: "a pin
+# that cannot see its subject must never pass vacuously.")
+$sentinels = @{
+    "Core"       = "IMobileBridge"          # the bridge abstraction Core exists for
+    "Renderer"   = "NativeRenderer"         # the renderer itself
+    "Http"       = "BridgeHttpHandler"      # the handler Http exists for
+    "Components" = "BnView"                 # the component surface's base view
+    "Runtime"    = "BlazorNativeApp"        # the 8.0 registration API the smoke consumes
+    "Analyzers"  = "MobilePolicyAnalyzer"   # the analyzer that owns BN0011 (the trip tooth)
+}
 
 function Write-Step([string]$text) { Write-Host "  ⟶  $text" -ForegroundColor Gray }
 function Write-OK([string]$text)   { Write-Host "  ✓  $text" -ForegroundColor Green }
@@ -249,6 +272,19 @@ try {
 
         # ── type-level purity, off the PE (no loading) ───────────────────────
         $typeNames = @(Get-TypeNames $dll)
+
+        # The positive control FIRST — the absence assertions below are only
+        # worth their exit code if the scanner can see the surface at all.
+        if ($typeNames.Count -eq 0) {
+            Write-Fail "$id`: the type scan read ZERO types out of $([System.IO.Path]::GetFileName($dll)) — every purity assertion below would pass VACUOUSLY over a blind scanner. This is Get-TypeNames failing to see its subject, not a clean package (Gate 1 review, I-3)."
+            exit 1
+        }
+        $sentinel = $sentinels[$proj]
+        if ($typeNames -cnotcontains $sentinel) {
+            Write-Fail "$id`: the sentinel type '$sentinel' is NOT among the $($typeNames.Count) types the scan read from $([System.IO.Path]::GetFileName($dll)) — either the scanner is misreading the surface (the purity assertions below are then vacuous) or the package genuinely lost a load-bearing type. Both are stop-and-analyze; do not 'fix' this by changing the sentinel without reading the dll (Gate 1 review, I-3)."
+            exit 1
+        }
+
         $offenders = @($typeNames | Where-Object { $_ -match $appShapedPattern })
         $offenders += @($typeNames | Where-Object { $movedRoster -ccontains $_ })
         if ($offenders.Count -ne 0) {
@@ -256,7 +292,7 @@ try {
             exit 1
         }
 
-        Write-Host "     $id $version — nuspec ✓ (MIT, readme, repository@commit $($repository.GetAttribute('commit').Substring(0,8))…), inventory ✓, $($typeNames.Count) types clean" -ForegroundColor DarkGray
+        Write-Host "     $id $version — nuspec ✓ (MIT, readme, repository@commit $($repository.GetAttribute('commit').Substring(0,8))…), inventory ✓, $($typeNames.Count) types clean (sentinel $sentinel ✓)" -ForegroundColor DarkGray
     }
     Write-OK "nupkg interrogation clean: purity, nuspec truth, and inventory shape on all six"
 }
