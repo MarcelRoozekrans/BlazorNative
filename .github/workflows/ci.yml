@@ -4,8 +4,12 @@
 #
 #   build-test (windows-latest) — the local verification procedure verbatim
 #   (setup.ps1 §1–7 documents the toolchain pins):
-#     build (analyzers ride it) → .NET tests (539 passed / 0 skipped) →
-#     three NativeAOT publishes (win-x64, linux-bionic-x64, linux-bionic-arm64;
+#     build (analyzers ride it) → .NET tests (553 passed / 0 skipped) →
+#     three NativeAOT publishes of samples/BlazorNative.SampleApp — the
+#     publish head since Phase 8.0: the app owns PublishAot, the exports stay
+#     in Runtime via UnmanagedEntryPointsAssembly, and the artifact is
+#     canonicalized to the frozen BlazorNative.Runtime.* names inside the
+#     publish folder — (win-x64, linux-bionic-x64, linux-bionic-arm64;
 #     each publish must show exactly the 4 accepted IL2072 trim warnings) →
 #     nine-export verification (dumpbin via vswhere / llvm-readelf from the
 #     pinned NDK) → Gradle testDebugUnitTest against the fresh win-x64 dll
@@ -719,7 +723,43 @@ jobs:
       # ⊆ registry is true BY CONSTRUCTION now (two views of one array), and a
       # green tautology is retired, not kept. Internal wiring only: ZERO wire
       # change, ZERO shell edits, every golden byte-identical; JVM stays 106.
-      - name: .NET tests (assert 539 passed / 0 skipped)
+      #
+      # 539 -> 553 (PHASE 8.0 GATE 1, +14 — all Runtime.Tests, 384 -> 398):
+      # the REGISTRATION INVERSION (M8 DoD #1: the demo app is a consumer, not
+      # a tenant). The library stops naming the app: PageManifest's 14 rows
+      # moved to samples/BlazorNative.SampleApp's SampleAppPages.All, pushed
+      # through the new public BlazorNativeApp.RegisterPages at startup (a
+      # [ModuleInitializer] — eager under NativeAOT, inside blazornative_init);
+      # Runtime's ProjectReference to Components is DELETED; the publish head
+      # moved to the sample csproj (the three publishes below re-point, the
+      # artifact name canonicalizes to the frozen BlazorNative.Runtime.*).
+      # Every existing test passes byte-identical (11 golden files changed by
+      # EXACTLY one +using line; RouteTableDriftTests retargeted its manifest
+      # expressions to SampleAppPages.All, still against the UNTOUCHED Kotlin
+      # map — mutation: "/form" -> BnModalDemo in MainActivity.kt reddens the
+      # pair pin naming the pair).
+      #   +10 RegistrationTests — the API's contract: loud validation naming
+      #       the row (empty array, dup name, dup route, missing "/",
+      #       non-factory row), unrouted-only is LEGAL (the "/" rule cannot
+      #       quietly become "always"), register-once, never-after-freeze
+      #       (the lazy-after-freeze views close ILC's static-ctor preinit
+      #       hazard), the empty-registry mount = the EXISTING rc 1 with a
+      #       distinguished stderr diagnostic naming the fix (asserted as a
+      #       literal), and plain unknown-name rc 1 stays QUIET. Mutation:
+      #       dup-route validation lobotomized -> red ("No exception was
+      #       thrown").
+      #   +4  PackagePurityTests — shipped assemblies carry no app types: the
+      #       16-type roster BOTH directions (presence in SampleApp.dll —
+      #       absence-only is gameable by deletion — and absence by full
+      #       enumeration from every shipped assembly), the pattern net
+      #       (*Demo/*Probe/SpikeRazor* catches the NEXT demo page the roster
+      #       cannot), and the shipped set itself pinned to exactly the six
+      #       src csprojs. Mutations: BnScratchProbe + a re-declared BnDemo
+      #       parked in Components -> both pins red naming type and assembly.
+      # NO wire change (9 exports emitted from Runtime via
+      # UnmanagedEntryPointsAssembly, the 72-byte bridge, thirteen NodeTypes,
+      # rc set unchanged), NO shell code edits, NO golden value edits.
+      - name: .NET tests (assert 553 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -742,10 +782,16 @@ jobs:
           }
 
       # ── NativeAOT publishes + nine-export verification ────────────────────
+      # Phase 8.0: the publish head is samples/BlazorNative.SampleApp (the app
+      # owns PublishAot; Runtime is a plain packable library). The exports are
+      # emitted from Runtime via UnmanagedEntryPointsAssembly and the native
+      # output is canonicalized to the frozen BlazorNative.Runtime.* names by
+      # the sample csproj's AfterTargets=Publish target — every path below
+      # re-points a DIRECTORY, never a file name.
       - name: Publish win-x64 (assert exactly 4 IL2072 warnings)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "publish-win-x64.log"
-          dotnet publish src/BlazorNative.Runtime -c Release -r win-x64 -tl:off -nologo 2>&1 | Tee-Object -FilePath $log
+          dotnet publish samples/BlazorNative.SampleApp -c Release -r win-x64 -tl:off -nologo 2>&1 | Tee-Object -FilePath $log
           if ($LASTEXITCODE -ne 0) { throw "win-x64 publish failed (exit $LASTEXITCODE)" }
           $il2072 = @(Select-String -Path $log -Pattern 'warning IL2072')
           Write-Host "IL2072 count: $($il2072.Count)"
@@ -760,7 +806,7 @@ jobs:
           if (-not (Test-Path $vswhere)) { throw "vswhere.exe not found at $vswhere" }
           $dumpbin = & $vswhere -latest -products * -find "**\Hostx64\x64\dumpbin.exe" | Select-Object -First 1
           if (-not $dumpbin) { throw "dumpbin.exe not found via vswhere" }
-          $dll = "src\BlazorNative.Runtime\bin\Release\net10.0\win-x64\publish\BlazorNative.Runtime.dll"
+          $dll = "samples\BlazorNative.SampleApp\bin\Release\net10.0\win-x64\publish\BlazorNative.Runtime.dll"
           $out = & $dumpbin /exports $dll
           $expected = @(
             'blazornative_dispatch_event', 'blazornative_fetch_complete',
@@ -779,7 +825,7 @@ jobs:
       - name: Publish linux-bionic-x64 (assert exactly 4 IL2072 warnings)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "publish-bionic-x64.log"
-          dotnet publish src/BlazorNative.Runtime -c Release -r linux-bionic-x64 -tl:off -nologo 2>&1 | Tee-Object -FilePath $log
+          dotnet publish samples/BlazorNative.SampleApp -c Release -r linux-bionic-x64 -tl:off -nologo 2>&1 | Tee-Object -FilePath $log
           if ($LASTEXITCODE -ne 0) { throw "linux-bionic-x64 publish failed (exit $LASTEXITCODE)" }
           $il2072 = @(Select-String -Path $log -Pattern 'warning IL2072')
           Write-Host "IL2072 count: $($il2072.Count)"
@@ -792,7 +838,7 @@ jobs:
         run: |
           $readelf = "$env:ANDROID_NDK_ROOT\toolchains\llvm\prebuilt\windows-x86_64\bin\llvm-readelf.exe"
           if (-not (Test-Path $readelf)) { throw "llvm-readelf.exe not found at $readelf" }
-          $so = "src\BlazorNative.Runtime\bin\Release\net10.0\linux-bionic-x64\publish\BlazorNative.Runtime.so"
+          $so = "samples\BlazorNative.SampleApp\bin\Release\net10.0\linux-bionic-x64\publish\BlazorNative.Runtime.so"
           $out = & $readelf --dyn-syms $so
           $expected = @(
             'blazornative_dispatch_event', 'blazornative_fetch_complete',
@@ -811,7 +857,7 @@ jobs:
       - name: Publish linux-bionic-arm64 (assert exactly 4 IL2072 warnings)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "publish-bionic-arm64.log"
-          dotnet publish src/BlazorNative.Runtime -c Release -r linux-bionic-arm64 -tl:off -nologo 2>&1 | Tee-Object -FilePath $log
+          dotnet publish samples/BlazorNative.SampleApp -c Release -r linux-bionic-arm64 -tl:off -nologo 2>&1 | Tee-Object -FilePath $log
           if ($LASTEXITCODE -ne 0) { throw "linux-bionic-arm64 publish failed (exit $LASTEXITCODE)" }
           $il2072 = @(Select-String -Path $log -Pattern 'warning IL2072')
           Write-Host "IL2072 count: $($il2072.Count)"
@@ -824,7 +870,7 @@ jobs:
         run: |
           $readelf = "$env:ANDROID_NDK_ROOT\toolchains\llvm\prebuilt\windows-x86_64\bin\llvm-readelf.exe"
           if (-not (Test-Path $readelf)) { throw "llvm-readelf.exe not found at $readelf" }
-          $so = "src\BlazorNative.Runtime\bin\Release\net10.0\linux-bionic-arm64\publish\BlazorNative.Runtime.so"
+          $so = "samples\BlazorNative.SampleApp\bin\Release\net10.0\linux-bionic-arm64\publish\BlazorNative.Runtime.so"
           $out = & $readelf --dyn-syms $so
           $expected = @(
             'blazornative_dispatch_event', 'blazornative_fetch_complete',
@@ -992,27 +1038,27 @@ jobs:
         run: |
           $dest = Join-Path $env:RUNNER_TEMP "jniLibs-staging\x86_64"
           New-Item -ItemType Directory -Force $dest | Out-Null
-          Copy-Item "src\BlazorNative.Runtime\bin\Release\net10.0\linux-bionic-x64\publish\BlazorNative.Runtime.so" (Join-Path $dest "libBlazorNative.Runtime.so")
+          Copy-Item "samples\BlazorNative.SampleApp\bin\Release\net10.0\linux-bionic-x64\publish\BlazorNative.Runtime.so" (Join-Path $dest "libBlazorNative.Runtime.so")
 
       - name: Upload artifact — win-x64 binary
         uses: actions/upload-artifact@v7
         with:
           name: BlazorNative.Runtime-win-x64
-          path: src/BlazorNative.Runtime/bin/Release/net10.0/win-x64/publish/BlazorNative.Runtime.dll
+          path: samples/BlazorNative.SampleApp/bin/Release/net10.0/win-x64/publish/BlazorNative.Runtime.dll
           if-no-files-found: error
 
       - name: Upload artifact — linux-bionic-x64 binary
         uses: actions/upload-artifact@v7
         with:
           name: BlazorNative.Runtime-linux-bionic-x64
-          path: src/BlazorNative.Runtime/bin/Release/net10.0/linux-bionic-x64/publish/BlazorNative.Runtime.so
+          path: samples/BlazorNative.SampleApp/bin/Release/net10.0/linux-bionic-x64/publish/BlazorNative.Runtime.so
           if-no-files-found: error
 
       - name: Upload artifact — linux-bionic-arm64 binary
         uses: actions/upload-artifact@v7
         with:
           name: BlazorNative.Runtime-linux-bionic-arm64
-          path: src/BlazorNative.Runtime/bin/Release/net10.0/linux-bionic-arm64/publish/BlazorNative.Runtime.so
+          path: samples/BlazorNative.SampleApp/bin/Release/net10.0/linux-bionic-arm64/publish/BlazorNative.Runtime.so
           if-no-files-found: error
 
       - name: Upload artifact — jniLibs staging layout
@@ -1168,12 +1214,14 @@ jobs:
       # ── Self-publish the bionic .so the compile needs present ───────────────
       # The x86_64 slice only — `-PciSoDir` below narrows abiFilters to it, so no
       # arm64 publish is needed. Lands at
-      # src/BlazorNative.Runtime/bin/Release/net10.0/linux-bionic-x64/publish/,
-      # which is exactly where verifyNativeAssets/copyRuntimeSo look. No
-      # IL2072/export assertions: build-test owns those on every PR.
+      # samples/BlazorNative.SampleApp/bin/Release/net10.0/linux-bionic-x64/publish/
+      # (the Phase 8.0 publish head; the canonicalization target names the .so
+      # BlazorNative.Runtime.so), which is exactly where
+      # verifyNativeAssets/copyRuntimeSo look. No IL2072/export assertions:
+      # build-test owns those on every PR.
       - name: Publish linux-bionic-x64 (the .so compileDebugAndroidTestKotlin needs present)
         run: |
-          dotnet publish src/BlazorNative.Runtime -c Release -r linux-bionic-x64 -tl:off -nologo
+          dotnet publish samples/BlazorNative.SampleApp -c Release -r linux-bionic-x64 -tl:off -nologo
           if ($LASTEXITCODE -ne 0) { throw "linux-bionic-x64 publish failed (exit $LASTEXITCODE)" }
 
       # ── THE GATE ────────────────────────────────────────────────────────────
@@ -1184,7 +1232,7 @@ jobs:
       - name: Compile the Android shell + instrumented sources (no device)
         working-directory: src/BlazorNative.Jni
         run: |
-          $soDir = Resolve-Path "..\..\src\BlazorNative.Runtime\bin\Release\net10.0\linux-bionic-x64\publish"
+          $soDir = Resolve-Path "..\..\samples\BlazorNative.SampleApp\bin\Release\net10.0\linux-bionic-x64\publish"
           .\gradlew.bat --no-daemon compileDebugAndroidTestKotlin "-PciSoDir=$soDir"
           if ($LASTEXITCODE -ne 0) {
             Write-Host ""
@@ -1322,11 +1370,13 @@ jobs:
         run: |
           set -o pipefail
           # PublishAot is NOT passed on the CLI (the Phase 5.2 rule): it lives in the
-          # Runtime csproj's own PropertyGroup, local and non-propagating. A CLI
-          # -p:PublishAot becomes a GLOBAL property and propagates to the P2P refs
-          # (Core/Renderer/Http/Components), which lack the runtime-pack bypass →
-          # NETSDK1203. Same invocation as ios.yml's and as ci.yml's three publishes.
-          dotnet publish src/BlazorNative.Runtime -c Release -r iossimulator-arm64 \
+          # publish head's own PropertyGroup (samples/BlazorNative.SampleApp since
+          # Phase 8.0), local and non-propagating. A CLI -p:PublishAot becomes a
+          # GLOBAL property and propagates to the P2P refs
+          # (Runtime/Core/Renderer/Http/Components), which lack the runtime-pack
+          # bypass → NETSDK1203. Same invocation as ios.yml's and as ci.yml's three
+          # publishes.
+          dotnet publish samples/BlazorNative.SampleApp -c Release -r iossimulator-arm64 \
             -tl:off -nologo 2>&1 | tee ios-build-out/publish.log
           il2072=$(grep -c 'warning IL2072' ios-build-out/publish.log || true)
           echo "IL2072 count: $il2072"
@@ -1343,12 +1393,12 @@ jobs:
       - name: Stage the link inputs (runtime .a + bootstrapperdll.o + support archive)
         run: |
           set -euo pipefail
-          tree_root="src/BlazorNative.Runtime/bin/Release/net10.0/iossimulator-arm64"
+          tree_root="samples/BlazorNative.SampleApp/bin/Release/net10.0/iossimulator-arm64"
           archive="$tree_root/publish/BlazorNative.Runtime.a"
           [ -f "$archive" ] || archive="$tree_root/native/BlazorNative.Runtime.a"
           if [ ! -f "$archive" ]; then
             echo "No BlazorNative.Runtime.a under $tree_root (publish/ or native/)" >&2
-            find src/BlazorNative.Runtime/bin -type f -name '*.a' 2>/dev/null | sort >&2 || true
+            find samples/BlazorNative.SampleApp/bin -type f -name '*.a' 2>/dev/null | sort >&2 || true
             exit 1
           fi
           mkdir -p src/BlazorNative.Apple/vendor

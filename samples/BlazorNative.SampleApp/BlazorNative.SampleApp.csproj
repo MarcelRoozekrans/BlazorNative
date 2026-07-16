@@ -153,20 +153,27 @@
   <Target Name="CanonicalizeNativeArtifactName" AfterTargets="Publish"
           Condition="'$(PublishAot)' == 'true' and '$(RuntimeIdentifier)' != ''">
     <ItemGroup>
+      <!-- The publish folder — where win-x64's .dll and bionic's .so land. -->
       <_BnNativeArtifact Include="$(PublishDir)$(AssemblyName).dll"
-                         Canonical="BlazorNative.Runtime.dll"
+                         Canonical="$(PublishDir)BlazorNative.Runtime.dll"
                          Condition="Exists('$(PublishDir)$(AssemblyName).dll')" />
       <_BnNativeArtifact Include="$(PublishDir)$(AssemblyName).so"
-                         Canonical="BlazorNative.Runtime.so"
+                         Canonical="$(PublishDir)BlazorNative.Runtime.so"
                          Condition="Exists('$(PublishDir)$(AssemblyName).so')" />
       <_BnNativeArtifact Include="$(PublishDir)$(AssemblyName).a"
-                         Canonical="BlazorNative.Runtime.a"
+                         Canonical="$(PublishDir)BlazorNative.Runtime.a"
                          Condition="Exists('$(PublishDir)$(AssemblyName).a')" />
+      <!-- The native intermediate — NativeLib=Static's .a can land here
+           instead of publish/ (ci.yml's .a search has always accepted both
+           locations); canonicalize wherever the artifact actually is. -->
+      <_BnNativeArtifact Include="$(NativeOutputPath)$(AssemblyName).a"
+                         Canonical="$(NativeOutputPath)BlazorNative.Runtime.a"
+                         Condition="Exists('$(NativeOutputPath)$(AssemblyName).a')" />
     </ItemGroup>
     <Error Condition="'@(_BnNativeArtifact)' == ''"
-           Text="CanonicalizeNativeArtifactName: no native artifact ($(AssemblyName).dll/.so/.a) found in $(PublishDir) — the AOT publish shape changed; the shells' frozen BlazorNative.Runtime.* artifact name cannot be produced." />
+           Text="CanonicalizeNativeArtifactName: no native artifact ($(AssemblyName).dll/.so/.a) found in $(PublishDir) or $(NativeOutputPath) — the AOT publish shape changed; the shells' frozen BlazorNative.Runtime.* artifact name cannot be produced." />
     <Copy SourceFiles="@(_BnNativeArtifact)"
-          DestinationFiles="@(_BnNativeArtifact->'$(PublishDir)%(Canonical)')" />
+          DestinationFiles="@(_BnNativeArtifact->'%(Canonical)')" />
     <Message Importance="high"
              Text="Canonicalized native artifact: @(_BnNativeArtifact->'%(Filename)%(Extension) -> %(Canonical)', '; ')" />
   </Target>
