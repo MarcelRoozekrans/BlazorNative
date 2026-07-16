@@ -71,6 +71,12 @@ public sealed class NativeNavigationManager : INavigationManager
         // "BnFormDemo" in Gate 2 (this table's mirror); iOS has no route
         // mirror — it mounts by NAME (BnRuntime.start).
         ["/form"] = "BnFormDemo",
+        // Phase 7.4: the overlay proof page — same shape as the five above.
+        // Its "← Back" navigates to "/"; nothing on BnDemo links here.
+        // Android's MainActivity.DEEP_LINK_COMPONENTS gains "/modal" →
+        // "BnModalDemo" in Gate 2 (this table's mirror); iOS has no route
+        // mirror — it mounts by NAME (BnRuntime.start).
+        ["/modal"] = "BnModalDemo",
     };
 
     /// <summary>The default route's component — the name a host mounts to get

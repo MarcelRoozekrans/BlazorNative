@@ -243,6 +243,29 @@ class YogaLayout(private val context: Context, private val root: ViewGroup) {
      */
     private val contentNodes = mutableMapOf<Int, YogaNode>()
 
+    /**
+     * Phase 7.4 — **the modal OVERLAY nodes**: a `modal` node's id → the Yoga node
+     * of its full-root overlay (the 6.2 synthetic-node machinery, pointed at the
+     * root). The modal's WIRE node ([nodes]) is the 0-sized absolute ANCHOR at its
+     * wire slot; the overlay is a SECOND shell-side node, attached as the LAST
+     * child of [hostRoot], that its wire children actually parent into (see
+     * [createNode]'s redirection — the modal's wire child at index i is the
+     * overlay's child at index i, the THIRD index-mapping rule).
+     *
+     * INSERTION-ORDERED (a LinkedHashMap by construction): stacking is creation
+     * order — the overlay attaches last at creation and is never re-ordered, so a
+     * re-shown (re-created) modal lands on top, and iteration order IS the stack.
+     *
+     * **The overlay is NOT a Yoga descendant of the anchor** — the one purge
+     * difference from `scroll`, stated in the design so it cannot be an
+     * assumption: `RemoveNode(modalId)` must purge BOTH subtrees, and this map's
+     * entry is what names the second one ([removeNode]'s fixpoint). Same
+     * [contentNodes] discipline otherwise: in [views] (it places the overlay
+     * view), never in [nodes] (no patch can name it), evicted in the same breath
+     * as the anchor.
+     */
+    private val overlayNodes = LinkedHashMap<Int, YogaNode>()
+
     /** Yoga node → the View it places. Populated for every node in [nodes]. */
     private val views = mutableMapOf<YogaNode, View>()
 
@@ -355,6 +378,12 @@ class YogaLayout(private val context: Context, private val root: ViewGroup) {
      * the content `View` it created inside the `ScrollView`, and this method creates
      * the matching SYNTHETIC content NODE (see [contentNodes]) — the two trees get
      * their synthetic node together or not at all. Null for every other nodeType.
+     *
+     * **[overlayView] is the Phase 7.4 half**: for a `modal` node the mapper passes
+     * the overlay view it attached last at the host root, and this method fixes the
+     * ANCHOR's styles (absolute, 0 × 0 — out of the flex flow entirely, so the
+     * anchor's siblings never move) and attaches the matching overlay NODE last at
+     * [hostRoot] (see [overlayNodes]). Null for every other nodeType.
      */
     fun createNode(
         nodeId: Int,
@@ -363,6 +392,7 @@ class YogaLayout(private val context: Context, private val root: ViewGroup) {
         parentId: Int?,
         insertIndex: Int,
         contentView: View? = null,
+        overlayView: View? = null,
     ) {
         val node = YogaNodeFactory.create(config)
         nodes[nodeId] = node
@@ -393,9 +423,11 @@ class YogaLayout(private val context: Context, private val root: ViewGroup) {
             attachContentNode(nodeId, node, contentView)
         }
         // A child of a SCROLL node is a child of its CONTENT node — in this tree and
-        // in the view tree, at the same index (non-negotiable #2). The scroll node's
-        // only Yoga child IS the content node; nothing else is ever inserted into it.
-        val parent = parentId?.let { contentNodes[it] ?: nodes[it] } ?: hostRoot
+        // in the view tree, at the same index (non-negotiable #2). A child of a
+        // MODAL node is a child of its OVERLAY node — same rule, third mapping
+        // (Phase 7.4): the modal's wire child at index i is the overlay's child at
+        // index i, never the anchor's (the anchor hosts nothing, ever).
+        val parent = parentId?.let { overlayNodes[it] ?: contentNodes[it] ?: nodes[it] } ?: hostRoot
         // −1 = append; anything else is the exact index the VIEW went to.
         //
         // **An out-of-range insertIndex is a RENDERER BUG, and the two shells answer
@@ -409,8 +441,83 @@ class YogaLayout(private val context: Context, private val root: ViewGroup) {
         // the renderer. iOS clamps instead — it clamps BOTH trees identically, so they
         // cannot skew against each other, and trapping inside a render callback there
         // aborts the app with no diagnostic at all.
-        val index = if (insertIndex >= 0) insertIndex else parent.childCount
+        //
+        // Phase 7.4 — the hostRoot APPEND lands BEFORE the live overlays: the
+        // overlays are shell-side extras at the END of hostRoot's child list (the
+        // "overlay is LAST, always" invariant), so a top-level wire append must slot
+        // in ahead of them or the new page would draw OVER an open modal's scrim —
+        // and the wire's 1:1 index arithmetic at the root would silently skew.
+        val index = if (insertIndex >= 0) insertIndex
+            else if (parent === hostRoot) parent.childCount - overlayNodes.size
+            else parent.childCount
         parent.addChildAt(node, index)
+
+        if (nodeType == MODAL) {
+            requireNotNull(overlayView) { "a modal node must be created with its overlay view" }
+            // THE ANCHOR's shell-fixed styles: absolutely positioned and 0-sized —
+            // out of the flex flow entirely, contributing nothing to any sibling's
+            // frame. It exists for exactly one reason (the third index-mapping
+            // rule): it occupies the modal's slot in its wire parent, in BOTH
+            // trees, so sibling insert indices never skew.
+            node.setPositionType(YogaPositionType.ABSOLUTE)
+            node.setWidth(0f)
+            node.setHeight(0f)
+            // …and the overlay, attached LAST at the host root — AFTER the anchor's
+            // own insertion above, so a top-level modal's overlay still lands on top.
+            attachOverlayNode(nodeId, overlayView)
+        }
+    }
+
+    /**
+     * **THE MODAL OVERLAY NODE** (Phase 7.4, design decision 1) — the second
+     * shell-side piece of a `modal`, attached as the LAST child of [hostRoot]
+     * (stacking is creation order; the shell never re-orders it — a re-shown
+     * modal is a re-created one and lands on top).
+     *
+     * Its styles are SHELL-FIXED, and they are the whole of the modal's geometry:
+     *
+     *  - `position: absolute; top: 0; left: 0; width: 100%; height: 100%` — the
+     *    scrim IS the root's own bounds, re-solved for free on every host resize
+     *    (the overlay lives in the ONE tree the existing resize hook re-solves).
+     *  - `justifyContent: center; alignItems: center` — the design's frame
+     *    arithmetic, as styles: the content box (the modal's one wire child,
+     *    declared w × h) computes to ((W − w)/2, (H − h)/2) against the root.
+     *    The CENTERING is the shell's, deliberately — the wire carries no
+     *    layout for it (the modal node's zero-styles rule), so both shells fix
+     *    the same pair and the frame tables agree by construction.
+     */
+    private fun attachOverlayNode(modalId: Int, overlayView: View) {
+        val overlay = YogaNodeFactory.create(config).apply {
+            setPositionType(YogaPositionType.ABSOLUTE)
+            setPosition(YogaEdge.TOP, 0f)
+            setPosition(YogaEdge.LEFT, 0f)
+            setWidthPercent(100f)
+            setHeightPercent(100f)
+            setJustifyContent(YogaJustify.CENTER)
+            setAlignItems(YogaAlign.CENTER)
+        }
+        hostRoot.addChildAt(overlay, hostRoot.childCount)
+        overlayNodes[modalId] = overlay
+        views[overlay] = overlayView
+        viewToNode[overlayView] = overlay
+    }
+
+    /**
+     * Phase 7.4 — **the modal STYLE-IGNORE rule's diagnostic** (design decision 1,
+     * the scroll container-style rule's shape). The DECISION lives in
+     * [WidgetMapper.handleSetStyle] — one site, BEFORE the layout/visual routing,
+     * because every style name must land here (a visual `backgroundColor` would
+     * otherwise paint the anchor; a layout `width` would size it). This method is
+     * the recording: warn-once per (node, property), evicted with the node, read
+     * by tests through [diagnostics] — logcat is not an assertion surface.
+     */
+    internal fun diagnoseModalStyle(nodeId: Int, property: String) {
+        diagnose(nodeId, "modal-style/$property",
+            "SetStyle $property ignored: node $nodeId is a `modal` node, and a modal's two " +
+                "shell-side pieces (the 0-sized anchor at its wire slot; the full-root " +
+                "overlay) both carry SHELL-FIXED styles — every style would land on a node " +
+                "the author does not own. Style the CONTENT BOX (the modal's wire child) " +
+                "instead; the scrim's paint is the scrimColor PROP.")
     }
 
     /**
@@ -475,18 +582,38 @@ class YogaLayout(private val context: Context, private val root: ViewGroup) {
      */
     fun removeNode(nodeId: Int) {
         val node = nodes[nodeId] ?: return
-        node.owner?.let { owner ->
-            for (i in 0 until owner.childCount) {
-                if (owner.getChildAt(i) === node) {
-                    owner.removeChildAt(i)
-                    break
+        detachFromOwner(node)
+        val doomed = mutableSetOf<YogaNode>()
+        collectSubtree(node, doomed)
+        // Phase 7.4 — **THE TWO-SUBTREE PURGE** (design decision 1; NOT the scroll
+        // shape, and the design names the difference so it cannot be an
+        // assumption): a modal's overlay is NOT a Yoga descendant of its anchor —
+        // it hangs off [hostRoot] — so the subtree walk above can never find it.
+        // Any modal whose ANCHOR is doomed takes its OVERLAY subtree with it, and
+        // the [overlayNodes] entry is what names it. A FIXPOINT, not one pass:
+        // a modal can sit INSIDE another modal's overlay (BnModal in
+        // ChildContent), so purging one overlay can doom another modal's anchor.
+        // Miss this and Android leaks the overlay, the content box and every row
+        // under it once per dismissal — and iOS is left with a dangling YGNodeRef.
+        var grew = true
+        while (grew) {
+            grew = false
+            for ((modalId, overlay) in overlayNodes) {
+                if (overlay in doomed) continue
+                val anchor = nodes[modalId] ?: continue
+                if (anchor in doomed) {
+                    detachFromOwner(overlay)
+                    collectSubtree(overlay, doomed)
+                    grew = true
                 }
             }
         }
-        val doomed = mutableSetOf<YogaNode>()
-        collectSubtree(node, doomed)
         val doomedIds = nodes.entries.filter { it.value in doomed }.map { it.key }.toSet()
         nodes.entries.removeAll { it.value in doomed }
+        // Phase 7.4: the overlay entries die with their anchors (the contentNodes
+        // discipline — ids are reused, and an entry outliving its node answers
+        // "is N a modal?" for the next node to inherit the id).
+        overlayNodes.entries.removeAll { it.value in doomed }
         // Phase 6.2: the SYNTHETIC content node is a Yoga child of its scroll node, so
         // [collectSubtree] already found it and [purge] already dropped its view
         // mapping — but THIS map would keep the YogaNode itself (and with it the native
@@ -503,6 +630,18 @@ class YogaLayout(private val context: Context, private val root: ViewGroup) {
         diagnosed.removeAll { it.first in doomedIds }
         diagnosedKeys.removeAll { it.first in doomedIds }
         for (dead in doomed) purge(dead)
+    }
+
+    /** Detaches [node] from its Yoga owner, if it has one. */
+    private fun detachFromOwner(node: YogaNode) {
+        node.owner?.let { owner ->
+            for (i in 0 until owner.childCount) {
+                if (owner.getChildAt(i) === node) {
+                    owner.removeChildAt(i)
+                    break
+                }
+            }
+        }
     }
 
     /** [node] and every descendant — the set ONE RemoveNodePatch stands for. */
@@ -598,8 +737,11 @@ class YogaLayout(private val context: Context, private val root: ViewGroup) {
         for (node in nodes.values.toList()) purge(node)
         // The synthetic content nodes are not in [nodes] — teardown must name them.
         for (node in contentNodes.values.toList()) purge(node)
+        // Phase 7.4: the modal overlay nodes likewise — no patch ever names one.
+        for (node in overlayNodes.values.toList()) purge(node)
         nodes.clear()
         contentNodes.clear()
+        overlayNodes.clear()
         views.clear()
         viewToNode.clear()
         measured.clear()
@@ -626,6 +768,11 @@ class YogaLayout(private val context: Context, private val root: ViewGroup) {
      * after a scroll node is removed is what proves the subtree purge reaches the one
      * node no patch ever names — on Android a leak, on iOS a dangling YGNodeRef. */
     internal val contentNodeCount: Int get() = contentNodes.size
+
+    /** Test-only (Phase 7.4): the live modal OVERLAY nodes — the Yoga half of the
+     * overlay-count lifecycle pin. Must return to 0 after mount → remove, or the
+     * two-subtree purge missed the subtree no walk from the anchor can reach. */
+    internal val overlayNodeCount: Int get() = overlayNodes.size
 
     // ── The layout pass ──────────────────────────────────────────────────────
 
@@ -1043,6 +1190,11 @@ class YogaLayout(private val context: Context, private val root: ViewGroup) {
         /** The one nodeType that carries a synthetic content node. */
         private const val SCROLL = "scroll"
 
+        /** The one nodeType that carries an anchor + overlay pair (Phase 7.4).
+         * The same constant [WidgetMapper] keys its half on — one contract,
+         * one spelling, the SCROLL precedent. */
+        private const val MODAL = "modal"
+
         /** Phase 6.3 — the one nodeType whose measured size is its BYTES' rather than its
          * widget's. See [setImageNaturalSize]. */
         private const val IMAGE = "image"
@@ -1118,10 +1270,17 @@ class YogaLayout(private val context: Context, private val root: ViewGroup) {
          * intrinsic control sizes — the demo declares Width where a number is
          * asserted cross-platform (sliders/pickers, 240) and the checkbox/switch
          * quartet is asserted per-platform by ORACLE (the 6.3 method).
+         *
+         * Phase 7.4 adds `activityindicator` (the ProgressBar leaf, same oracle
+         * discipline). **`modal` is deliberately NOT here** (design decision 1's
+         * measure story): a modal materializes as an anchor and an overlay, both
+         * CONTAINERS with shell-fixed styles — a measure func on a container is
+         * the 6.1 law's named violation, and there is no widget to ask anyway.
          */
         private val MEASURED_NODE_TYPES = setOf(
             "text", "button", "input", "image",
             "checkbox", "switch", "slider", "picker",
+            "activityindicator",
         )
 
         /**

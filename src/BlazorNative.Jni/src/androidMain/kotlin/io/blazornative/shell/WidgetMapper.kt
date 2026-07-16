@@ -19,6 +19,7 @@ import android.widget.CheckBox
 import android.widget.CompoundButton
 import android.widget.EditText
 import android.widget.ImageView
+import android.widget.ProgressBar
 import android.widget.ScrollView
 import android.widget.SeekBar
 import android.widget.Spinner
@@ -196,6 +197,38 @@ class WidgetMapper(
      * see [containerFor]. Never on the wire; the renderer knows nothing about it.
      */
     private val scrollContents = mutableMapOf<Int, ViewGroup>()
+
+    /**
+     * Phase 7.4 — **the modal OVERLAYS** (design decision 1: the 6.2
+     * synthetic-node machinery, pointed at the root). A `modal` node's id → its
+     * overlay state. The modal's [nodes] entry is the ANCHOR — a 0-sized plain
+     * `View` at the modal's WIRE slot (so sibling insert indices never skew, the
+     * THIRD index-mapping rule); the overlay is a full-root [BnYogaFrameLayout]
+     * attached as the LAST child of the host [root], which is what the modal's
+     * wire children parent into ([containerFor]) and what the scrim paints on
+     * ([handleUpdateProp]'s `scrimColor` arm) and what the dismissal-request
+     * `click` listens on ([handleAttachEvent] — a tap that a child consumed never
+     * reaches it, which is the Android half of decision 4's scrim-tap rule; the
+     * content box swallows its own taps via its real no-op click attach).
+     *
+     * INSERTION-ORDERED (LinkedHashMap): stacking is creation order, the shell
+     * never re-orders, a re-shown modal is a re-created one — so the LAST entry
+     * is the topmost modal, which is exactly what the back button consults
+     * ([requestTopmostModalDismissal], decision 3).
+     *
+     * **The overlay is NOT a view descendant of the anchor** — `RemoveNode` on
+     * the modal (or any ancestor of its anchor) must purge BOTH subtrees, and
+     * this map's entry is what names the second one ([handleRemove]'s fixpoint).
+     * Entry and overlay evicted in the same breath as the anchor (the
+     * [scrollContents] discipline: both trees or neither, ids are reused).
+     */
+    private class ModalOverlay(val overlay: BnYogaFrameLayout) {
+        /** The modal element's `click` wire — the dismissal REQUEST. BnModal
+         * always attaches it (decision 3 needs it live for back); null only on
+         * a hand-rolled wire that never attached. Last-wins on re-attach. */
+        var clickHandlerId: Int? = null
+    }
+    private val modalOverlays = LinkedHashMap<Int, ModalOverlay>()
 
     /**
      * Phase 6.3 — **one in-flight image request per `image` node**, and everything a callback
@@ -468,6 +501,64 @@ class WidgetMapper(
         onUiEvent(handlerId, "change", payload)
     }
 
+    /** Test-only (Phase 7.4): `click` dispatches actually sent — ALL clicks
+     * (buttons, the scrim, the content-box swallow) route through
+     * [dispatchClick]. The device counter assertions read it, because two of
+     * the modal's dispatches are invisible in every frame: the content-box
+     * SWALLOW is a real dispatch that .NET deliberately moves nothing for, and
+     * a dismissal REQUEST a page chose to ignore would likewise move nothing —
+     * "the shell never closes anything itself" is only assertable as a counted
+     * wire dispatch (the changeDispatchesSent precedent). */
+    internal var clickDispatchesSent: Int = 0
+        private set
+
+    /** Every `click` dispatch goes through here — see [clickDispatchesSent]. */
+    private fun dispatchClick(handlerId: Int) {
+        clickDispatchesSent++
+        onUiEvent(handlerId, "click", null)
+    }
+
+    /**
+     * Phase 7.4 (design decision 3) — **the back button's modal consult**. THE
+     * RULE, stated once: on back-invoked, if the mapper has ≥ 1 live overlay,
+     * the shell dispatches on the TOPMOST modal's `click` wire — the dismissal
+     * REQUEST, the very wire a scrim tap rides — and CONSUMES the back event;
+     * navigation-back runs only when no overlay is live. The dispatch is a
+     * request: .NET flips Visible, the re-render removes the overlay, and the
+     * shell closed nothing itself. A back that races an in-flight dismissal is
+     * absorbed by construction (Visible already false; the stale handler's rc-0
+     * at-most-once contract moves nothing).
+     *
+     * Topmost = the LAST [modalOverlays] entry: stacking is creation order and
+     * a re-shown modal is a re-created (re-appended) one. Returns true = the
+     * back event is consumed (even with no click wire attached — a hand-rolled
+     * modal without the attach still must not let back NAVIGATE out from under
+     * an open overlay; the gap is logged loudly). Main-thread only, like every
+     * map in this class — [MainActivity.onBackPressed] runs there.
+     */
+    internal fun requestTopmostModalDismissal(): Boolean {
+        val topmost = modalOverlays.entries.lastOrNull() ?: return false
+        val handlerId = topmost.value.clickHandlerId
+        if (handlerId != null) {
+            dispatchClick(handlerId)
+        } else {
+            Log.w(TAG, "back consumed by modal ${topmost.key}, but it has no click wire " +
+                "attached — the dismissal request has nowhere to go (a hand-rolled modal " +
+                "wire; BnModal always attaches it)")
+        }
+        return true
+    }
+
+    /** Test-only (Phase 7.4): live modal overlays — the view-tree half of the
+     * overlay-count lifecycle pin ([yogaOverlayNodeCount] is the Yoga half).
+     * Must return to 0 after mount → remove, or the two-subtree purge missed
+     * the subtree no walk from the anchor can reach. */
+    internal val modalOverlayCount: Int get() = modalOverlays.size
+
+    /** Test-only (Phase 7.4): the Yoga tree's live overlay nodes — must track
+     * [modalOverlayCount] (both trees or neither, the 6.2 law). */
+    internal val yogaOverlayNodeCount: Int get() = yoga.overlayNodeCount
+
     /** Test-only (Phase 7.2): native scroll samples the listener delivered to a live
      * wire — the numerator of the throughput evidence (samples-seen vs
      * events-dispatched, the contract's "Throughput evidence" row). Main-thread only. */
@@ -582,7 +673,23 @@ class WidgetMapper(
             return
         }
         when (p.eventName) {
-            "click" -> view.setOnClickListener { onUiEvent(p.handlerId, "click", null) }
+            // Phase 7.4: a `modal` node's click — THE DISMISSAL-REQUEST WIRE — listens
+            // on the SCRIM (the overlay), never the 0-sized anchor `nodes` names. The
+            // scrim-tap rule (decision 4, normative): a tap dismiss-requests ONLY when
+            // it lands on the scrim view itself — on Android that is the click
+            // listener's own semantics (a tap a child consumed never reaches the
+            // overlay; the content box swallows its own taps via its real no-op click
+            // attach, the generic arm below). The handlerId is recorded last-wins for
+            // the back button's consult (decision 3, [requestTopmostModalDismissal]).
+            "click" -> {
+                val modal = modalOverlays[p.nodeId]
+                if (modal != null) {
+                    modal.clickHandlerId = p.handlerId
+                    modal.overlay.setOnClickListener { dispatchClick(p.handlerId) }
+                } else {
+                    view.setOnClickListener { dispatchClick(p.handlerId) }
+                }
+            }
             "change" -> when (view) {
                 is EditText -> {
                     // Phase 4.2 stale-watcher fix: a re-attach (same node, new
@@ -743,6 +850,17 @@ class WidgetMapper(
     private fun handleDetachEvent(p: RenderPatch.DetachEvent) {
         when (p.eventName) {
             "click" -> {
+                // Phase 7.4: the modal's click lives on the SCRIM (the attach arm's
+                // mirror — the 3.3 rule: a new event type, or a new attach TARGET,
+                // extends both arms symmetrically). The back consult loses its wire
+                // too: a detached modal consumes back but can request nothing.
+                val modal = modalOverlays[p.nodeId]
+                if (modal != null) {
+                    modal.clickHandlerId = null
+                    modal.overlay.setOnClickListener(null)
+                    modal.overlay.isClickable = false
+                    return
+                }
                 val view = nodes[p.nodeId] ?: run {
                     Log.w(TAG, "DetachEvent 'click' for unknown nodeId ${p.nodeId}: ignored")
                     return
@@ -974,6 +1092,26 @@ class WidgetMapper(
             "checkbox" -> CheckBox(context)
             "switch"   -> Switch(context)
             "slider"   -> SeekBar(context)
+            // Phase 7.4 (design decision 1): the modal's WIRE view is the ANCHOR —
+            // a 0-sized plain View at the modal's wire slot, kept out of the flex
+            // flow by shell-fixed Yoga styles (absolute, 0 × 0 — YogaLayout's
+            // half). A plain View and not a ViewGroup ON PURPOSE: the anchor
+            // hosts nothing, ever — the modal's wire children redirect into the
+            // OVERLAY ([containerFor]), and a container here would let a
+            // redirection bug parent a child into the flex flow silently instead
+            // of failing loudly. The overlay itself is created below, AFTER the
+            // anchor takes its slot.
+            MODAL    -> View(context)
+            // Phase 7.4 (design decision 5, the parity survey's cheap win): the
+            // measured leaf. A FRAMEWORK ProgressBar (the 7.3 no-appcompat rule),
+            // default style = the circular spinner; indeterminate is set
+            // EXPLICITLY rather than inherited from the theme, because "animating
+            // while mounted" is the contract and a themed determinate default
+            // would be a frozen arc no assertion reads. No props, no events, no
+            // children — presence is @if, stop == RemoveNode (the decision-2
+            // posture); its intrinsic size is the PLATFORM's own, asserted by
+            // oracle (the 6.3 method), never a transcribed constant.
+            "activityindicator" -> ProgressBar(context).apply { isIndeterminate = true }
             else     -> {
                 Log.w(TAG, "Unknown nodeType ${p.nodeType} — falling back to TextView")
                 TextView(context)
@@ -1030,7 +1168,9 @@ class WidgetMapper(
         }
 
         // The container this node's view parents INTO: for a child of a scroll node
-        // that is the CONTENT view, never the ScrollView (non-negotiable #2).
+        // that is the CONTENT view, never the ScrollView (non-negotiable #2); for a
+        // child of a modal node the OVERLAY, never the anchor (Phase 7.4, the third
+        // index-mapping rule).
         val parent = containerFor(p.parentId) ?: root
         // Phase 3.3 Task 9 (DoD #10): honor the renderer-computed placement.
         // insertIndex counts HOST views in the target container — and a
@@ -1043,8 +1183,31 @@ class WidgetMapper(
         // EXCLUSIVELY the keyed ItemComponent views"). −1 = append,
         // explicitly encoded (0 is a valid front index). An out-of-range
         // index throws on the main thread — inherently strict placement.
+        //
+        // Phase 7.4 — the ONE exception to the root's 1:1: live modal OVERLAYS
+        // are shell-side extras at the END of the host root's child list, so a
+        // top-level wire APPEND slots in ahead of them ("the overlay is LAST,
+        // always" — a new page must never draw over an open modal's scrim, and
+        // the root's index arithmetic must not skew). Indexed inserts pass
+        // through unchanged: wire indices count wire children, which all sit
+        // before the overlays by this very rule. YogaLayout mirrors it.
         if (p.insertIndex >= 0) parent.addView(view, p.insertIndex)
+        else if (parent === root) parent.addView(view, parent.childCount - modalOverlays.size)
         else parent.addView(view)
+
+        // Phase 7.4 — THE OVERLAY: the modal's second shell-side piece, attached
+        // as the LAST child of the host root, AFTER the anchor took its wire slot
+        // (so a TOP-LEVEL modal's overlay still lands above its own anchor).
+        // Stacking is creation order — the shell attaches last and never
+        // re-orders; a re-shown modal is a re-created one and lands on top. Its
+        // Yoga twin (fixed styles: full-root, centered content) is created in the
+        // same breath by yoga.createNode below. BOTH TREES OR NEITHER.
+        var overlayView: BnYogaFrameLayout? = null
+        if (p.nodeType == MODAL) {
+            overlayView = BnYogaFrameLayout(context)
+            root.addView(overlayView)
+            modalOverlays[p.nodeId] = ModalOverlay(overlayView)
+        }
 
         // Phase 6.1: the Yoga twin, inserted at the SAME index in the SAME
         // parent. `parent === root` (an unknown / non-ViewGroup parentId fell
@@ -1057,6 +1220,7 @@ class WidgetMapper(
             // …and the Yoga tree gets its synthetic node in the same breath as the view
             // tree got its synthetic view. BOTH TREES OR NEITHER.
             contentView = scrollContents[p.nodeId],
+            overlayView = overlayView,
         )
     }
 
@@ -1076,6 +1240,11 @@ class WidgetMapper(
      */
     private fun containerFor(parentId: Int?): ViewGroup? {
         if (parentId == null) return null
+        // Phase 7.4 — the THIRD index-mapping rule: a `modal` node's children go
+        // into its OVERLAY, never the anchor (which is a plain View precisely so
+        // it CANNOT host them; `as? ViewGroup` below would fall back to the host
+        // root — this line is what makes the redirection, not the fallback).
+        modalOverlays[parentId]?.let { return it.overlay }
         scrollContents[parentId]?.let { return it }
         return nodes[parentId] as? ViewGroup
     }
@@ -1126,7 +1295,30 @@ class WidgetMapper(
             return
         }
         val v = nodes[p.nodeId] ?: return
-        val doomed = subtreeOf(v)
+        val doomed = subtreeOf(v).toMutableSet()
+        // Phase 7.4 — **THE TWO-SUBTREE PURGE** (design decision 1; NOT the
+        // scroll shape, and the design names the difference): a modal's overlay
+        // is not a view descendant of its anchor — it hangs off the host root —
+        // so the walk above can never find it. Any modal whose ANCHOR is doomed
+        // takes its OVERLAY subtree with it; the [modalOverlays] entry is what
+        // names the second subtree. A FIXPOINT, because a modal can sit INSIDE
+        // another modal's overlay (BnModal in ChildContent), so purging one
+        // overlay can doom another modal's anchor. It rides the SUBTREE purge
+        // for the 6.2/6.3 reason: navigating away from /modal with the modal
+        // open names the PAGE, never the modal inside it. [YogaLayout.removeNode]
+        // runs the same fixpoint over its trees — both trees or neither.
+        var grew = true
+        while (grew) {
+            grew = false
+            for ((modalId, modal) in modalOverlays) {
+                if (modal.overlay in doomed) continue
+                val anchor = nodes[modalId] ?: continue
+                if (anchor in doomed) {
+                    doomed += subtreeOf(modal.overlay)
+                    grew = true
+                }
+            }
+        }
         val removedIds = nodes.entries.filter { it.value in doomed }.map { it.key }
         for (id in removedIds) {
             nodes.remove(id)
@@ -1162,6 +1354,15 @@ class WidgetMapper(
         // it would pin the content view, the rows under it and the Activity Context.
         // The synthetic node is part of the subtree ONE RemoveNodePatch stands for.
         scrollContents.entries.removeAll { it.value in doomed }
+        // Phase 7.4: a doomed modal's OVERLAY leaves the host root's child list
+        // (the anchor leaves via the generic removeView below or its ancestor's
+        // detach), and the map entry — which is what answers "is N a modal?" and
+        // holds the back consult's handler — dies in the same breath (ids are
+        // reused; the [scrollContents] discipline).
+        for ((_, modal) in modalOverlays.entries.filter { it.value.overlay in doomed }) {
+            (modal.overlay.parent as? ViewGroup)?.removeView(modal.overlay)
+        }
+        modalOverlays.entries.removeAll { it.value.overlay in doomed }
         (v.parent as? ViewGroup)?.removeView(v)
         // Phase 6.1: and the Yoga twin, or the detached view keeps consuming space
         // in its parent's layout. Purges ITS subtree too, for the same reason.
@@ -1191,6 +1392,9 @@ class WidgetMapper(
         nodes.clear()
         collapsedAliases.clear()
         scrollContents.clear()
+        // Phase 7.4: the modal overlays die with the Activity — a back consult
+        // after teardown must find nothing to consume.
+        modalOverlays.clear()
         watchers.clear()
         focusEntries.clear()
         // Phase 7.2: pending scroll offsets die with the Activity — a dispatch
@@ -1368,6 +1572,25 @@ class WidgetMapper(
                 if (view is Spinner) handleSelectedIndex(p.nodeId, view, p.value)
                 else Log.w(TAG, "UpdateProp selectedIndex ignored: node ${p.nodeId} is " +
                     "${view::class.simpleName}, not Spinner")
+            }
+            // Phase 7.4 — the scrim's paint. A PROP, not a style, by design: SetStyle
+            // on a `modal` node is diagnosed-and-ignored (every style would land on
+            // the anchor or the overlay, neither of which the author owns), so the
+            // one paintable thing the author DOES own arrives on the prop wire.
+            // ALWAYS emitted by BnModal (the BnInput posture — no shell-side default
+            // two platforms would have to keep equal). Unparseable is logged and
+            // ignored, the backgroundColor arm's posture.
+            "scrimColor" -> {
+                val modal = modalOverlays[p.nodeId] ?: run {
+                    Log.w(TAG, "UpdateProp scrimColor ignored: node ${p.nodeId} is not a modal")
+                    return
+                }
+                val color = p.value?.let { parseColorOrNull(it) } ?: run {
+                    Log.w(TAG, "UpdateProp scrimColor ignored on modal ${p.nodeId}: " +
+                        "'${p.value}' is not a parseable color")
+                    return
+                }
+                modal.overlay.setBackgroundColor(color)
             }
             "enabled" -> {
                 view.isEnabled = p.value?.toBoolean() ?: true
@@ -1825,6 +2048,20 @@ class WidgetMapper(
             Log.w(TAG, "SetStyle for unknown nodeId ${p.nodeId}: ignored")
             return
         }
+        // Phase 7.4 — **SetStyle on a `modal` node is diagnosed-and-ignored**
+        // (design decision 1, the scroll container-style rule's shape): every
+        // style would land on the anchor or the overlay, neither of which the
+        // author owns. ONE site, BEFORE the layout/visual routing, because the
+        // rule covers EVERY name — a layout `width` would size the anchor back
+        // into the flex flow, a visual `backgroundColor` would paint it.
+        // BnModal's surface cannot emit one, but the hand-rolled-wire hatch is
+        // open (the .NET test pins that), so this is live code, not dead —
+        // recorded in the diagnostics ([scrollDiagnostics]) because the failure
+        // it prevents is silent on every frame table.
+        if (p.nodeId in modalOverlays) {
+            yoga.diagnoseModalStyle(p.nodeId, p.property)
+            return
+        }
         if (yoga.owns(p.property)) {
             yoga.setStyle(p.nodeId, p.property, p.value)
             return
@@ -1873,6 +2110,11 @@ class WidgetMapper(
 
         /** The state-owner nodeType (Phase 7.3): a `picker` owns [PickerState]. */
         const val PICKER = "picker"
+
+        /** The one nodeType that is an ANCHOR + OVERLAY pair (Phase 7.4). The
+         * same constant [YogaLayout] keys its half of the pair on — one
+         * contract, one spelling, the SCROLL precedent. */
+        const val MODAL = "modal"
 
         /** Phase 7.3 — the continuous slider's quantization (see [SliderState]:
          * the precision contract's continuous arm — precision = range/1000). */

@@ -571,7 +571,37 @@ Phases (approved at milestone-open 2026-07-15; subject to the 7.0 verdict):
      29449282815 (108/1), 29449284412 (108/1), 29449281293 (104/5). See
      [design](../plans/2026-07-15-phase-7.3-design.md) +
      [conclusion](../plans/2026-07-15-phase-7.3-conclusion.md).
-- ⏳ **Phase 7.4** — `BnModal` + the RN survey's cheap wins (DoD #5, #7)
+- ✅ **Phase 7.4** — `BnModal` + the RN survey's cheap wins (DoD #5, #7) — *complete (2026-07-16)*
+   - **The first overlay surface is real on both shells** (DoD #5 closed): `BnModal` as an
+     **overlay in the existing root** — NodeType `modal = 11`, a wire-VOCABULARY extension, no
+     ABI change; the native-dialog option rejected and recorded (a second Yoga root + a second
+     frame-application surface + a window that OWNS its dismissal — the state-owner violation).
+     The **anchor+overlay model**: a 0-sized absolute anchor at the modal's wire slot (the
+     THIRD index-mapping rule — sibling insert indices never skew), a full-root overlay
+     attached LAST (stacking = creation order; re-show = re-create = on top), children
+     redirected, ONE resolved index feeding both trees; the two-subtree `RemoveNode` purge as
+     a **fixpoint**, exactly-once by ownership-disjointness (nested-modal explicit test).
+   - **Dismissal is a REQUEST** — scrim tap / dismiss button / Android back all ride the wire
+     as `click`; the shell never self-closes; `@if (Visible)` unmount is the only close path.
+     Android back consults the modal stack BEFORE navigation-back (consume-on-presence); iOS
+     ships nothing there — the second "same wire, platform-appropriate trigger" divergence.
+   - **The survey's cheap win** (DoD #7 closed): `BnActivityIndicator` (NodeType 12, measured
+     leaf, `ProgressBar`/`UIActivityIndicatorView`, intrinsics by oracle) + the committed
+     19-row RN parity table (11 have-it; Image polish → 7.5; SafeAreaView ledgered with the
+     named edge-to-edge problem; the rest ledgered with reasons).
+   - **Empirical findings:** a modal hide frame is FIVE removes (the 7.2 disposal shape
+     composing — pinned at both altitudes); a zero-attribute `.razor` element collapses to
+     `AddMarkupContent` (renderer rejects by contract → the indicator is hand-written C#); the
+     design's literal tap-filter mutation expectation was unsatisfiable (no hosted XCTest can
+     synthesize a `UITouch`) — restated as truth-table + wiring + live-recognizer pins, the
+     untested seam shrunk to the `touch.view` property read.
+   - **Final counts:** .NET **518/0** · JVM **92/0** · Android instrumented **166/0** (local
+     AVD, asserted in android-instrumented.yml) · iOS XCTest **132/0** (run 29487073302).
+     iOS mutations ON CI: 29485603676 (118/13), 29485649558 (125/6), 29485693301 (129/2);
+     4 Android mutations run locally, redlines in the commit bodies. Reviews: Gate 1 PASS
+     (findings applied in b4b8b02), Gate 2 PASS clean, Gate 3 PASS (M1 applied in 2e24d7d).
+     See [design](../plans/2026-07-16-phase-7.4-design.md) +
+     [conclusion](../plans/2026-07-16-phase-7.4-conclusion.md).
 - ⏳ **Phase 7.5** — `BnImage` polish: Placeholder/OnError/ContentMode (DoD #6)
 - ⏳ **Phase 7.6** — route-registry unification + M7 final audit + close (rest of #8) → `v7.0`
 

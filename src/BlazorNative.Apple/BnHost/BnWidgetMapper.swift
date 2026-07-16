@@ -183,6 +183,41 @@
 //    view snaps back to the platform's own size. The measure path is NOT
 //    involved: the shared trampoline already returns the imposed dimension
 //    for an Exactly axis, and Yoga imposes the stretched width regardless.
+//
+// ── PHASE 7.4: `modal` — THE ANCHOR + OVERLAY PAIR, AND `activityindicator` ──
+// A `modal` node materializes as TWO shell-side pieces, in both trees, in the
+// same breath (the 6.2 synthetic-node machinery, pointed at the ROOT):
+//
+//  - the ANCHOR ([BnModalAnchorView]) at the modal's WIRE slot — shell-fixed
+//    absolute/0×0, out of the flex flow entirely. THE THIRD INDEX-MAPPING RULE
+//    (normative): it occupies the modal's slot in its wire parent, in the view
+//    tree AND the Yoga tree, so sibling insert indices never skew; the modal's
+//    wire child at index i is the OVERLAY's child at index i.
+//  - the OVERLAY ([BnModalOverlayView]) attached LAST at the host root —
+//    shell-fixed absolute/0/0/100%/100% + justify/align CENTER (the design's
+//    ((W−w)/2, (H−h)/2) arithmetic IS that pair; the wire carries no layout for
+//    it). Children redirect into it ([containerFor]); `scrimColor` is a PROP
+//    painting it; the dismissal-request `click` recognizer listens on IT, never
+//    the anchor. A top-level wire APPEND slots in AHEAD of live overlays
+//    ("the overlay is LAST, always"). SetStyle on a modal node is
+//    diagnosed-and-ignored for EVERY name at ONE site, before the routing.
+//
+// RemoveNode purges BOTH subtrees as a FIXPOINT ([handleRemove] — the overlay
+// is NOT a descendant of the anchor, and a modal can sit inside another
+// modal's overlay), with symmetric map eviction. THE iOS MEMORY-SAFETY LAW:
+// a dangling YGNodeRef is a crash, not a leak — the two-subtree purge must
+// free each Yoga node EXACTLY ONCE (overlays hang directly off hostRoot, so
+// per-overlay frees can never overlap; a nested modal's anchor node is freed
+// by the OUTER overlay's subtree free and only evicted thereafter).
+//
+// `click` grows past UIButton (design decision 4): plain views get a
+// UITapGestureRecognizer whose delegate filter ([bnClickTouchIsOwn]) declines
+// every touch not on the attached view ITSELF — a tap on the modal's content
+// box must not dispatch the scrim's click, and the in-modal UISwitch keeps its
+// own touches. Every click rides [dispatchClick] (counted — the dismissal
+// REQUEST and the content-box swallow are invisible in every frame).
+// `activityindicator` is a measured leaf (UIActivityIndicatorView.medium,
+// spinning — animating-while-mounted is the contract), sized by ORACLE.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import UIKit
@@ -231,6 +266,99 @@ final class BnScrollDelegateProxy: NSObject, UIScrollViewDelegate {
 /// a `BnYogaFrameLayout` for a DIFFERENT reason — there the subclass carries the
 /// `onMeasure` fallback and the layout suppression. Here it carries nothing at all.)
 final class BnScrollContentView: UIView {}
+
+/// Phase 7.4 — **THE ANCHOR** (design decision 1): a `modal` node's WIRE view — a
+/// 0-sized view at the modal's wire slot, shell-fixed `position: absolute; width: 0;
+/// height: 0`, out of the flex flow entirely. It exists for exactly one reason, and
+/// the rule is NORMATIVE (the THIRD index-mapping rule, after the text collapse and
+/// the scroll content node): *the anchor occupies the modal's slot in its wire
+/// parent, in the view tree AND the Yoga tree, so sibling insert indices never skew;
+/// the modal's wire child at index i is the OVERLAY's child at index i.*
+///
+/// Android's anchor is a plain `View` (not a ViewGroup) so a redirection bug FAILS
+/// LOUDLY — UIKit has no non-container view, so this shell cannot borrow that
+/// posture; what it has instead is the named type (found by TYPE, the
+/// [BnScrollContentView] discipline) and the zero-footprint frame pin, which a child
+/// parented in here would break (the anchor is 0 × 0 absolute; anything inside it is
+/// invisible and unplaced, and the demo's sibling frame table reddens).
+final class BnModalAnchorView: UIView {}
+
+/// Phase 7.4 — **THE OVERLAY** (design decision 1): the modal's SECOND shell-side
+/// piece — a full-root container attached as the LAST child of the host root, with
+/// shell-fixed Yoga styles `position: absolute; top: 0; left: 0; width: 100%;
+/// height: 100%; justifyContent: center; alignItems: center`. The modal's wire
+/// children parent into it ([BnWidgetMapper.containerFor]); the scrim paints it
+/// (the `scrimColor` PROP); the dismissal-request `click` listens on it. Stacking
+/// is creation order — the shell attaches last and never re-orders; a re-shown
+/// modal is a re-created one and lands on top. A named type for the
+/// [BnScrollContentView] reason: it is never on the wire, so tests can only find
+/// it by TYPE and by "the root's LAST subview".
+final class BnModalOverlayView: UIView {}
+
+/// Phase 7.4 — **THE TOUCH-VIEW FILTER, as a pure decision** (design decision 4 —
+/// NORMATIVE: *a tap dismiss-requests ONLY when the touch lands on the scrim view
+/// itself, never on a descendant*). iOS enforces the rule with this filter on the
+/// tap-recognizer arm; Android — where a non-clickable child's tap falls THROUGH to
+/// the scrim — enforces it by the content box swallowing its own taps. Same
+/// observable wire behavior, two named mechanisms.
+///
+/// A pure function for the `bnIsLiveImageRequest` reason: the delegate callback it
+/// decides (`gestureRecognizer(_:shouldReceive:)`) takes a `UITouch`, which no
+/// hosted XCTest can construct — so the DECISION lives here, unit-tested as a truth
+/// table, and the delegate is one line that asks it.
+func bnClickTouchIsOwn(touchView: UIView?, attachedView: UIView?) -> Bool {
+    guard let touchView = touchView, let attachedView = attachedView else { return false }
+    return touchView === attachedView
+}
+
+/// Phase 7.4 — **the `click`-on-a-plain-view arm** (design decision 4): iOS's
+/// `click` was UIButton-only (target-action); non-control views get THIS — a
+/// `UITapGestureRecognizer` that is its own target and its own delegate, filtered
+/// by [bnClickTouchIsOwn] so it NEVER fires for a descendant's touch: a tap on the
+/// modal's content box must not dispatch the scrim's click, and a control inside
+/// the modal (the demo's UISwitch) must still receive its own touches — the filter
+/// declines those touches outright, so the recognizer cannot delay or cancel them.
+///
+/// Retained by the attached view (`addGestureRecognizer`) AND by the mapper's
+/// [BnWidgetMapper.clickRecognizers] map (the [eventTargets] ownership shape);
+/// detached by DetachEvent and by the subtree purge.
+final class BnClickTapRecognizer: UITapGestureRecognizer, UIGestureRecognizerDelegate {
+    private let handler: () -> Void
+
+    init(on view: UIView, handler: @escaping () -> Void) {
+        self.handler = handler
+        super.init(target: nil, action: nil)
+        addTarget(self, action: #selector(bnHandleTap))
+        delegate = self
+        view.addGestureRecognizer(self)
+    }
+
+    @objc private func bnHandleTap() { handler() }
+
+    /// The recognized tap's EFFECT, callable without a `UITouch` — the hand-rolled
+    /// dispatch the device tests use where the simulator cannot synthesize touches
+    /// (the 7.3 finding, recorded in BnFormDemoTests' header: a hosted XCTest
+    /// cannot construct a UITouch, and `sendActions` has no recognizer analog).
+    /// Production never calls it; the recognizer's own action does the same thing.
+    func bnFire() { handler() }
+
+    /// THE FILTER (see [bnClickTouchIsOwn]): `self.view` is the attached view —
+    /// UIKit sets it at `addGestureRecognizer` and clears it at removal, so a
+    /// detached recognizer declines everything. The DECISION lives on the
+    /// instance (Gate 3 review M1: the delegate callback takes a `UITouch` no
+    /// hosted XCTest can construct, so THIS is what the live-recognizer test
+    /// calls — the untested seam is the `touch.view` property read alone).
+    func bnShouldReceive(touchView: UIView?) -> Bool {
+        bnClickTouchIsOwn(touchView: touchView, attachedView: view)
+    }
+
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
+                           shouldReceive touch: UITouch) -> Bool {
+        bnShouldReceive(touchView: touch.view)
+    }
+
+    func bnDetach() { view?.removeGestureRecognizer(self) }
+}
 
 /// Phase 7.3 — the `slider` widget, and **THE EXACT-VALUE SHIM** the iOS 26
 /// runtime made necessary.
@@ -378,8 +506,14 @@ final class BnWidgetMapper {
     /// nothing like Android's Material numbers) — frame parity applies to LAYOUT
     /// (declared sizes and placement), never to intrinsic control sizes, which
     /// are asserted per-platform by ORACLE (the 6.3 method).
+    ///
+    /// Phase 7.4: `activityindicator` joins — the measured leaf (design decision
+    /// 5), same oracle discipline. `modal` is deliberately NOT here: its anchor
+    /// and overlay are CONTAINERS with shell-fixed styles, and a measure func on
+    /// a container is the 6.1 law's named violation.
     private static let measuredNodeTypes: Set<String> =
-        ["text", "button", "input", "image", "checkbox", "switch", "slider", "picker"]
+        ["text", "button", "input", "image", "checkbox", "switch", "slider", "picker",
+         "activityindicator"]
 
     /// The one nodeType that is a VIEWPORT and owns a synthetic content node — and it
     /// is deliberately NOT in [measuredNodeTypes]: the measure func attaches BY
@@ -402,6 +536,12 @@ final class BnWidgetMapper {
 
     /// …and `slider`, which owns [BnSliderState] (the step contract's home).
     private static let slider = "slider"
+
+    /// Phase 7.4 — the one nodeType that is an ANCHOR + OVERLAY pair (design
+    /// decision 1: the 6.2 synthetic-node machinery, pointed at the root).
+    /// Keyed on the NODETYPE for the reason [Self.scroll] is — one contract,
+    /// one spelling, the same constant Kotlin's `WidgetMapper.MODAL` twins.
+    private static let modal = "modal"
 
     /// The host container the top-level (parentless) node is added into — the twin
     /// of Android's widget_root. A plain UIView does not re-place its subviews (no
@@ -454,6 +594,42 @@ final class BnWidgetMapper {
     /// subtree free reach it — **and is exactly why a stale entry here is a DANGLING
     /// `YGNodeRef`, not a leak.**
     private var contentNodes: [Int32: UnsafeMutableRawPointer] = [:]
+
+    /// Phase 7.4 — **the modal OVERLAYS, view half**: a `modal` node's id → its
+    /// [BnModalOverlayView], attached LAST at [root]. The modal's [views] entry is
+    /// the ANCHOR; this map is what redirects its wire children ([containerFor]),
+    /// what the `scrimColor` prop paints, what the dismissal-request `click`
+    /// attaches to, and what makes a node "a modal node" to [handleSetStyle]'s
+    /// style-ignore rule (the [contentNodes] membership discipline).
+    ///
+    /// **The overlay is NOT a view descendant of the anchor** — `RemoveNode` on the
+    /// modal (or any ancestor of its anchor) must purge BOTH subtrees, and this
+    /// map's entry is what names the second one ([handleRemove]'s FIXPOINT). Entry
+    /// and overlay evicted in the same breath as the anchor (ids are reused — the
+    /// [scrollContents] discipline). Both halves of the pair are made in the same
+    /// breath ([handleCreate]) and purged in the same breath, or the two counts
+    /// below disagree and the lifecycle pin reds.
+    private var modalOverlays: [Int32: BnModalOverlayView] = [:]
+
+    /// …and the Yoga half: a `modal` node's id → its overlay NODE, a child of
+    /// [hostRoot] attached last. NOT in [yogaNodes] (that map is the WIRE nodes —
+    /// the [contentNodes] reasoning), so [calculateAndApply] applies overlay
+    /// frames from HERE. The overlay node is NOT a Yoga descendant of the anchor
+    /// node, so — unlike the scroll content node — no subtree free ever reaches it
+    /// for free: [handleRemove] frees it EXPLICITLY, exactly once (overlays all
+    /// hang directly off [hostRoot], never inside another overlay's Yoga subtree
+    /// even for a NESTED modal, whose ANCHOR is in the outer overlay's subtree
+    /// but whose overlay is not) — **a stale entry here is a dangling `YGNodeRef`,
+    /// and on iOS that is a crash, not a leak.**
+    private var overlayNodes: [Int32: UnsafeMutableRawPointer] = [:]
+
+    /// Phase 7.4 — the live `click` tap recognizers, keyed by nodeId (one click
+    /// wire per node; the [eventTargets] shape for the non-control arm). The
+    /// recognizer's attached view is `recognizer.view` — for a modal node that is
+    /// the OVERLAY, never the anchor. Last-wins re-attach; detached by
+    /// DetachEvent, the subtree purge (by view identity — the recognizer may sit
+    /// on a view whose nodeId is not the one removed) and [destroy].
+    private var clickRecognizers: [Int32: BnClickTapRecognizer] = [:]
 
     /// The scroll-node diagnostics already emitted — `(nodeId, message)` in order — and
     /// the warn-once keys that got them there. See [diagnose].
@@ -641,6 +817,35 @@ final class BnWidgetMapper {
         onUiEvent(handlerId, "change", payload)
     }
 
+    /// Test-only (Phase 7.4): `click` dispatches actually sent — ALL clicks
+    /// (buttons, the scrim, the content-box swallow) route through
+    /// [dispatchClick]. The device counter assertions read it, because two of
+    /// the modal's dispatches are invisible in every frame: the content-box
+    /// SWALLOW is a real dispatch that .NET deliberately moves nothing for, and
+    /// a dismissal REQUEST a page chose to ignore would likewise move nothing —
+    /// "the shell never closes anything itself" is only assertable as a counted
+    /// wire dispatch (the [changeDispatchesSent] precedent; the twin of
+    /// Kotlin's `clickDispatchesSent`).
+    private(set) var clickDispatchesSent: Int = 0
+
+    /// Every `click` dispatch goes through here — see [clickDispatchesSent].
+    private func dispatchClick(_ handlerId: Int32) {
+        clickDispatchesSent += 1
+        onUiEvent(handlerId, "click", nil)
+    }
+
+    /// Test-only (Phase 7.4): live modal overlays — the view-tree half of the
+    /// overlay-count lifecycle pin ([yogaOverlayNodeCount] is the Yoga half).
+    /// Must return to 0 after mount → remove, or the two-subtree purge missed
+    /// the subtree no walk from the anchor can reach — which HERE is a dangling
+    /// `YGNodeRef` waiting in [overlayNodes], not Android's mere leak.
+    var modalOverlayCount: Int { modalOverlays.count }
+
+    /// Test-only (Phase 7.4): the Yoga tree's live overlay nodes — must track
+    /// [modalOverlayCount] (both trees or neither, the 6.2 law). The twin of
+    /// Kotlin's `yogaOverlayNodeCount`.
+    var yogaOverlayNodeCount: Int { overlayNodes.count }
+
     /// Set by [destroy]. The tree is gone; a late batch (one already hopped to main
     /// when the host tore down) must not resurrect it into freed native memory.
     private var destroyed = false
@@ -763,6 +968,14 @@ final class BnWidgetMapper {
         // with the rest. (Android's twin merely leaks; here it is memory safety.)
         contentNodes.removeAll()
         scrollContents.removeAll()
+        // Phase 7.4: the overlay nodes were Yoga CHILDREN of the host root, so the
+        // free above reclaimed them too — same dangling-handle rule; and the view
+        // half and the recognizers die with the host (a click after teardown would
+        // dispatch into a retired lane).
+        overlayNodes.removeAll()
+        modalOverlays.removeAll()
+        for (_, recognizer) in clickRecognizers { recognizer.bnDetach() }
+        clickRecognizers.removeAll()
         // Phase 7.2: pending scroll offsets die with the host — a dispatch after
         // teardown would enter a retired lane for a dead view hierarchy.
         scrollWires.removeAll()
@@ -1041,6 +1254,23 @@ final class BnWidgetMapper {
             view.frame = CGRect(x: CGFloat(frame.x), y: CGFloat(frame.y),
                                 width: CGFloat(frame.width), height: CGFloat(frame.height))
         }
+        // Phase 7.4 — the modal OVERLAYS: not in [yogaNodes] (they are shell-side,
+        // no patch ever names one), so their computed full-root frames are applied
+        // from their own map — the [applyScrollFrames] shape. The guard is the same
+        // memory-safety guard that pass carries: both halves of the pair are made
+        // and purged in the same breath, so a node with no view means the purge
+        // desynced and this handle is (or is about to be) a dangling YGNodeRef.
+        for (modalId, node) in overlayNodes {
+            guard let overlay = modalOverlays[modalId] else {
+                assertionFailure(
+                    "modal \(modalId) has an overlay node but no overlay view — the purge "
+                    + "desynced, and this handle is a DANGLING YGNodeRef")
+                continue
+            }
+            let frame = bn_yoga_node_get_frame(node)
+            overlay.frame = CGRect(x: CGFloat(frame.x), y: CGFloat(frame.y),
+                                   width: CGFloat(frame.width), height: CGFloat(frame.height))
+        }
         // The scroll pass runs AFTER the loop above, and the order is load-bearing: the
         // offset clamp is against the VIEWPORT's bounds, which the loop above is what
         // assigns. (A dictionary's iteration order is arbitrary — this cannot be folded
@@ -1253,6 +1483,14 @@ final class BnWidgetMapper {
             handleAttachScroll(nodeId: nodeId, handlerId: handlerId)
             return
         }
+        // Phase 7.4 — `click` grows past UIButton (design decision 4): the modal's
+        // dismissal-request wire listens on the SCRIM (the overlay), and plain
+        // views get the tap-recognizer arm with the touch-view filter. One entry
+        // point, three arms — see [handleAttachClick].
+        if eventName == "click" {
+            handleAttachClick(nodeId: nodeId, handlerId: handlerId)
+            return
+        }
         // Phase 7.3 — the picker next, ALSO before the UIControl guard: a
         // UIPickerView is a UIView, not a UIControl, and its wire is the state's
         // handlerId (the delegate dispatches through [handlePickerUserSelect]),
@@ -1274,12 +1512,6 @@ final class BnWidgetMapper {
         let controlEvent: UIControl.Event
         let payload: () -> String?
         switch eventName {
-        case "click":
-            guard control is UIButton else {
-                NSLog("[BnWidgetMapper] AttachEvent 'click' ignored: node \(nodeId) is not a UIButton"); return
-            }
-            controlEvent = .touchUpInside
-            payload = { nil }
         case "change":
             switch control {
             case let field as UITextField:
@@ -1377,7 +1609,67 @@ final class BnWidgetMapper {
         eventTargets[key] = (control, target)
     }
 
+    /// Phase 7.4 — **AttachEvent("click"), three arms** (design decision 4):
+    ///
+    ///  1. **A `modal` node** — the dismissal-request wire listens on the SCRIM
+    ///     (the overlay), never the 0-sized anchor `views` names. The scrim-tap
+    ///     rule (NORMATIVE): a tap dismiss-requests ONLY when the touch lands on
+    ///     the scrim view itself — iOS enforces it with the recognizer's
+    ///     touch-view filter ([BnClickTapRecognizer]), so a tap on the content
+    ///     box (a descendant) never fires it. Android's mechanism is different
+    ///     (the clickable content box consumes its own taps before they fall
+    ///     through) — same observable wire behavior, verified per shell.
+    ///  2. **A UIButton** — the 5.3 target-action arm, unchanged except that the
+    ///     dispatch now rides [dispatchClick] (the counter).
+    ///  3. **Any other non-control view** — the tap-recognizer arm: this is what
+    ///     the modal's content box (a plain `view` carrying the no-op SWALLOW
+    ///     click) attaches through, and it is the survey's down payment on
+    ///     `Pressable`. A non-UIButton CONTROL keeps the 5.3 ignore: controls
+    ///     own their touches, and a recognizer on one would race them.
+    ///
+    /// Last-wins across BOTH mechanisms: a re-attach replaces whichever of the
+    /// two the node held (the 4.2 watcher discipline — no stacked dispatches).
+    private func handleAttachClick(nodeId: Int32, handlerId: Int32) {
+        let key = EventKey(nodeId: nodeId, event: "click")
+        removeTarget(for: key) // last-wins, the target half
+        clickRecognizers.removeValue(forKey: nodeId)?.bnDetach() // …and the recognizer half
+
+        if let overlay = modalOverlays[nodeId] {
+            clickRecognizers[nodeId] = BnClickTapRecognizer(on: overlay) { [weak self] in
+                self?.dispatchClick(handlerId)
+            }
+            return
+        }
+        guard let view = views[nodeId] else {
+            NSLog("[BnWidgetMapper] AttachEvent 'click' for unknown nodeId \(nodeId): ignored")
+            return
+        }
+        if let button = view as? UIButton {
+            let target = BnControlTarget { [weak self] in self?.dispatchClick(handlerId) }
+            button.addTarget(target, action: #selector(BnControlTarget.fire), for: .touchUpInside)
+            eventTargets[key] = (button, target)
+            return
+        }
+        if view is UIControl {
+            NSLog("[BnWidgetMapper] AttachEvent 'click' ignored: node \(nodeId) is a "
+                  + "\(type(of: view)) — a control owns its touches; the tap-recognizer "
+                  + "arm is for PLAIN views (design decision 4)")
+            return
+        }
+        clickRecognizers[nodeId] = BnClickTapRecognizer(on: view) { [weak self] in
+            self?.dispatchClick(handlerId)
+        }
+    }
+
     private func handleDetachEvent(nodeId: Int32, eventName: String) {
+        // Phase 7.4 — the recognizer half of the click wire detaches first (the
+        // 3.3 symmetric-arms rule: whichever mechanism the attach picked, the
+        // detach finds). A UIButton's click falls through to the target path
+        // below, exactly as before.
+        if eventName == "click", let recognizer = clickRecognizers.removeValue(forKey: nodeId) {
+            recognizer.bnDetach()
+            return
+        }
         // Phase 7.2 — the 6.3 stale-callback discipline, for scroll: the wire
         // dies HERE, and its pending offset dies WITH it, never dispatched (the
         // contract's detach row). An in-flight dispatch already on the lane is
@@ -1646,15 +1938,31 @@ final class BnWidgetMapper {
         }
 
         // The view a child of this node parents INTO: for a child of a scroll node that
-        // is the CONTENT view, never the UIScrollView (non-negotiable #2).
+        // is the CONTENT view, never the UIScrollView (non-negotiable #2); for a child
+        // of a modal node the OVERLAY, never the anchor (Phase 7.4, the third
+        // index-mapping rule).
         //
         // insertIndex counts HOST views in the target container 1:1 (collapsed text
         // nodes never materialize a view, and they alias onto non-container parents,
         // so they cannot skew a container's indices — the same invariant as Android).
         // -1 = append (explicit; 0 is a valid front index).
+        //
+        // Phase 7.4 — the ONE exception to the root's 1:1: live modal OVERLAYS are
+        // shell-side extras at the END of the host root's child list, so a top-level
+        // wire APPEND slots in AHEAD of them ("the overlay is LAST, always" — a new
+        // page must never draw over an open modal's scrim, and the root's index
+        // arithmetic must not skew). Indexed inserts pass through unchanged: wire
+        // indices count wire children, which all sit before the overlays by this very
+        // rule. The SAME resolved index feeds both trees below — the view tree and the
+        // Yoga host root mirror each other 1:1, so one arithmetic serves both (and the
+        // .mm clamps an out-of-range index exactly as the view insert does — the
+        // recorded 6.1 decision).
         let parentView: UIView = containerFor(parentId) ?? root
-        if insertIndex >= 0 && Int(insertIndex) <= parentView.subviews.count {
-            parentView.insertSubview(view, at: Int(insertIndex))
+        let resolvedIndex: Int32 = (insertIndex >= 0)
+            ? insertIndex
+            : (parentView === root ? Int32(parentView.subviews.count - modalOverlays.count) : -1)
+        if resolvedIndex >= 0 && Int(resolvedIndex) <= parentView.subviews.count {
+            parentView.insertSubview(view, at: Int(resolvedIndex))
         } else {
             parentView.addSubview(view)
         }
@@ -1663,7 +1971,8 @@ final class BnWidgetMapper {
         // re-derived from the view we ACTUALLY parented to (not from the patch), so an
         // unknown parentId that fell back to the host root falls back to the Yoga host
         // root too — and a child of a scroll node lands under the CONTENT node, because
-        // `viewToNode[contentView]` IS the content node. One rule, both trees.
+        // `viewToNode[contentView]` IS the content node; a child of a modal node lands
+        // under the OVERLAY node the same way. One rule, both trees.
         let node = bn_yoga_node_new()
         yogaNodes[nodeId] = node
         viewToNode[ObjectIdentifier(view)] = node
@@ -1688,7 +1997,63 @@ final class BnWidgetMapper {
         let parentNode: UnsafeMutableRawPointer = (parentView === root)
             ? hostRoot
             : (viewToNode[ObjectIdentifier(parentView)] ?? hostRoot)
-        bn_yoga_node_insert_child(parentNode, node, insertIndex)
+        bn_yoga_node_insert_child(parentNode, node, resolvedIndex)
+
+        // Phase 7.4 — the modal's TWO shell-side pieces, in both trees, in the same
+        // breath (design decision 1). AFTER the anchor took its wire slot above, so a
+        // TOP-LEVEL modal's overlay still lands above its own anchor.
+        if nodeType == Self.modal {
+            // THE ANCHOR's shell-fixed styles: absolutely positioned and 0-sized —
+            // out of the flex flow entirely, contributing nothing to any sibling's
+            // frame (the third index-mapping rule's Yoga half; the demo's sibling
+            // frame table is the pin). Applied through the same grammar the wire
+            // uses — the .mm's parser accepts all of these by construction, and
+            // [applyShellStyle] asserts it stays true.
+            applyShellStyle(node, "position", "absolute")
+            applyShellStyle(node, "width", "0")
+            applyShellStyle(node, "height", "0")
+
+            // THE OVERLAY — attached LAST at the host root in BOTH trees (stacking
+            // is creation order; the shell never re-orders; a re-shown modal is a
+            // re-created one and lands on top). Its styles are SHELL-FIXED and they
+            // are the whole of the modal's geometry: full-root (the scrim IS the
+            // root's own bounds, re-solved for free on every host resize — the
+            // overlay lives in the ONE tree the existing resize hook re-solves) and
+            // justify/align CENTER — the design's ((W − w)/2, (H − h)/2) arithmetic
+            // IS that pair; the wire carries no layout for it (the modal node's
+            // zero-styles rule), so both shells fix the same pair and the frame
+            // tables agree by construction.
+            let overlayView = BnModalOverlayView()
+            root.addSubview(overlayView)
+            let overlayNode = bn_yoga_node_new()
+            applyShellStyle(overlayNode, "position", "absolute")
+            applyShellStyle(overlayNode, "top", "0")
+            applyShellStyle(overlayNode, "left", "0")
+            applyShellStyle(overlayNode, "width", "100%")
+            applyShellStyle(overlayNode, "height", "100%")
+            applyShellStyle(overlayNode, "justifyContent", "center")
+            applyShellStyle(overlayNode, "alignItems", "center")
+            bn_yoga_node_insert_child(hostRoot, overlayNode, -1)
+            modalOverlays[nodeId] = overlayView
+            overlayNodes[nodeId] = overlayNode
+            viewToNode[ObjectIdentifier(overlayView)] = overlayNode
+        }
+    }
+
+    /// A SHELL-FIXED style (the modal's anchor/overlay geometry), applied through
+    /// the one grammar the wire uses — no second style surface to keep in step with
+    /// the `.mm`'s. Every name/value here is in the routing table by construction;
+    /// the assertion turns "the grammar moved under the shell" from a silent
+    /// geometry bug (an anchor back in the flex flow) into a loud test failure.
+    private func applyShellStyle(_ node: UnsafeMutableRawPointer, _ name: String, _ value: String) {
+        let rc = name.withCString { n in
+            value.withCString { v in bn_yoga_node_set_style(node, n, v) }
+        }
+        if rc != 1 {
+            NSLog("[BnWidgetMapper] shell-fixed style \(name)=\(value) was REJECTED by the "
+                  + "style grammar — the modal's fixed geometry is broken")
+            assertionFailure("shell-fixed style \(name)=\(value) rejected")
+        }
     }
 
     /// The view a child of [parentId] parents into — **the second index-mapping rule**
@@ -1706,6 +2071,12 @@ final class BnWidgetMapper {
     /// to.
     private func containerFor(_ parentId: Int32?) -> UIView? {
         guard let parentId = parentId else { return nil }
+        // Phase 7.4 — the THIRD index-mapping rule: a `modal` node's children go
+        // into its OVERLAY, never the anchor. On Android the anchor is a
+        // non-ViewGroup, so a missed redirection fails loudly; here every UIView
+        // can host, so THIS line is the redirection AND the only one — the anchor's
+        // zero-footprint frame pin is what catches a miss.
+        if let overlay = modalOverlays[parentId] { return overlay }
         if let content = scrollContents[parentId] { return content }
         return views[parentId]
     }
@@ -1807,6 +2178,26 @@ final class BnWidgetMapper {
             // that class exists purely because of Android's layout-coupled
             // selection delivery (its KDoc says so by name).
             return UIPickerView()
+        case Self.modal:
+            // Phase 7.4 (design decision 1): the modal's WIRE view is the ANCHOR —
+            // see [BnModalAnchorView]'s header for the third index-mapping rule.
+            // The overlay is created by [handleCreate] AFTER the anchor takes its
+            // wire slot.
+            return BnModalAnchorView()
+        case "activityindicator":
+            // Phase 7.4 (design decision 5, the parity survey's cheap win): the
+            // measured leaf. `UIActivityIndicatorView.medium` — the design's named
+            // widget; SPINNING is set explicitly because "animating while mounted"
+            // is the contract (a stopped indicator hides itself — UIKit's
+            // hidesWhenStopped default — and an invisible leaf is not the cheap
+            // win the survey shipped). No props, no events, no children —
+            // presence is @if, stop == RemoveNode (the decision-2 posture); its
+            // intrinsic size is the PLATFORM's own, asserted by ORACLE (the 6.3
+            // method — 7.3's lesson: per-platform intrinsics, never
+            // cross-platform pixel claims), never a transcribed constant.
+            let spinner = UIActivityIndicatorView(style: .medium)
+            spinner.startAnimating()
+            return spinner
         default:
             NSLog("[BnWidgetMapper] Unknown nodeType '\(nodeType)' — falling back to UILabel")
             return UILabel()
@@ -1881,7 +2272,33 @@ final class BnWidgetMapper {
             return
         }
         guard let view = views[nodeId] else { return }
-        let doomed = subtree(of: view)
+        var doomed = subtree(of: view)
+
+        // Phase 7.4 — **THE TWO-SUBTREE PURGE** (design decision 1; NOT the scroll
+        // shape, and the design names the difference so it cannot be an
+        // assumption): a modal's overlay is not a view descendant of its anchor —
+        // it hangs off the host root — so the walk above can never find it. Any
+        // modal whose ANCHOR is doomed takes its OVERLAY subtree with it; the
+        // [modalOverlays] entry is what names the second subtree. A FIXPOINT,
+        // because a modal can sit INSIDE another modal's overlay (BnModal in
+        // ChildContent), so dooming one overlay can doom another modal's anchor.
+        // It rides the SUBTREE purge for the 6.2/6.3 reason: navigating away from
+        // /modal with the modal open names the PAGE, never the modal inside it.
+        // Miss this and Android leaks the overlay, the content box and every row
+        // under it once per dismissal — HERE the same miss leaves [overlayNodes]
+        // holding a YGNodeRef the next calculateAndApply dereferences.
+        var grew = true
+        while grew {
+            grew = false
+            for (modalId, overlay) in modalOverlays {
+                if doomed.contains(ObjectIdentifier(overlay)) { continue }
+                guard let anchor = views[modalId] else { continue }
+                if doomed.contains(ObjectIdentifier(anchor)) {
+                    doomed.formUnion(subtree(of: overlay))
+                    grew = true
+                }
+            }
+        }
 
         // Yoga FIRST: free_subtree clears every measure function in the subtree,
         // breaking the last edge from a native node to a UIView that is about to be
@@ -1900,6 +2317,36 @@ final class BnWidgetMapper {
                 bn_yoga_node_remove_child(owner, node)
             }
             bn_yoga_node_free_subtree(node)
+        }
+
+        // Phase 7.4 — each doomed overlay's Yoga subtree, freed EXACTLY ONCE (the
+        // iOS memory-safety law: a double free is as fatal as a dangling ref).
+        // The arithmetic that makes "once" true: overlay nodes all hang DIRECTLY
+        // off [hostRoot] — never inside another overlay's Yoga subtree, even for a
+        // NESTED modal, whose ANCHOR node sits in the outer overlay's subtree but
+        // whose overlay node does not — so none of these frees can overlap the
+        // named node's free above or each other's. (A nested modal's anchor node
+        // was ALREADY freed by the outer overlay's free_subtree; its [yogaNodes]
+        // entry is evicted by the id sweep below, never freed a second time.)
+        // The wire nodes INSIDE an overlay (the content box and everything under
+        // it) are freed here too — their ids are in the sweep below because the
+        // fixpoint put their views in `doomed`.
+        let doomedOverlayIds = modalOverlays
+            .filter { doomed.contains(ObjectIdentifier($0.value)) }
+            .map(\.key)
+        for id in doomedOverlayIds {
+            if let overlayNode = overlayNodes.removeValue(forKey: id) {
+                if let owner = bn_yoga_node_get_owner(overlayNode) {
+                    bn_yoga_node_remove_child(owner, overlayNode)
+                }
+                bn_yoga_node_free_subtree(overlayNode)
+            }
+            // The view half leaves the host root's child list in the same breath
+            // (the anchor leaves via the generic removeFromSuperview below or its
+            // ancestor's detach); the map entry — which is what answers "is N a
+            // modal?" and holds the redirection — dies with it (ids are reused;
+            // the [scrollContents] discipline).
+            modalOverlays.removeValue(forKey: id)?.removeFromSuperview()
         }
 
         // The doomed IDS first, then ONE sweep per map — the shape Kotlin's
@@ -1959,6 +2406,14 @@ final class BnWidgetMapper {
         for (key, entry) in eventTargets where doomed.contains(ObjectIdentifier(entry.control)) {
             entry.control.removeTarget(entry.target, action: nil, for: .allEvents)
             eventTargets.removeValue(forKey: key)
+        }
+        // Phase 7.4 — …and the click recognizers, ALSO by identity: a modal's
+        // recognizer sits on its OVERLAY, whose nodeId is the modal's — the view
+        // it is attached to, not the key, is what says whether it is doomed.
+        for (id, recognizer) in clickRecognizers {
+            guard let attached = recognizer.view, doomed.contains(ObjectIdentifier(attached)) else { continue }
+            recognizer.bnDetach()
+            clickRecognizers.removeValue(forKey: id)
         }
         view.removeFromSuperview()
     }
@@ -2093,6 +2548,24 @@ final class BnWidgetMapper {
                 // pixels no assertion reads — the decision-2 posture.)
                 picker.isUserInteractionEnabled = (value as NSString?)?.boolValue ?? true
             }
+        // Phase 7.4 — the scrim's paint. A PROP, not a style, by design: SetStyle
+        // on a `modal` node is diagnosed-and-ignored (every style would land on
+        // the anchor or the overlay, neither of which the author owns), so the
+        // one paintable thing the author DOES own arrives on the prop wire.
+        // ALWAYS emitted by BnModal (the BnInput posture — no shell-side default
+        // two platforms would have to keep equal). Unparseable is logged and
+        // ignored, the backgroundColor arm's posture.
+        case "scrimColor":
+            guard let overlay = modalOverlays[nodeId] else {
+                NSLog("[BnWidgetMapper] UpdateProp scrimColor ignored: node \(nodeId) is not a modal")
+                return
+            }
+            guard let color = value.flatMap(BnColor.parse) else {
+                NSLog("[BnWidgetMapper] UpdateProp scrimColor ignored on modal \(nodeId): "
+                      + "'\(value ?? "nil")' is not a parseable color")
+                return
+            }
+            overlay.backgroundColor = color
         // Phase 6.3 (M6 DoD #5): the LAST stubbed leaf stops being one. `src` is a PROP,
         // not a style — a URL is neither layout nor paint, so it rides this wire and not
         // the partitioned SetStyle routing table (BnImage.cs's header).
@@ -2551,6 +3024,28 @@ final class BnWidgetMapper {
     private func handleSetStyle(nodeId: Int32, property: String, value: String?) {
         guard let view = views[nodeId] else {
             NSLog("[BnWidgetMapper] SetStyle for unknown nodeId \(nodeId): ignored")
+            return
+        }
+        // Phase 7.4 — **SetStyle on a `modal` node is diagnosed-and-ignored**
+        // (design decision 1, the scroll container-style rule's shape): every
+        // style would land on the anchor or the overlay, neither of which the
+        // author owns. ONE site, BEFORE the layout/visual routing, because the
+        // rule covers EVERY name — a layout `width` would size the anchor back
+        // into the flex flow, a visual `backgroundColor` would paint it.
+        // BnModal's surface cannot emit one, but the hand-rolled-wire hatch is
+        // open (the .NET test pins that), so this is live code, not dead —
+        // recorded in the diagnostics ([scrollDiagnostics]) because the failure
+        // it prevents is silent on every frame table. Membership in
+        // [modalOverlays] is what makes a node "a modal node" here (the
+        // [contentNodes] discipline).
+        if modalOverlays[nodeId] != nil {
+            diagnose(
+                nodeId: nodeId, kind: "modal-style/\(property)",
+                message: "SetStyle \(property) ignored: node \(nodeId) is a `modal` node, and a "
+                + "modal's two shell-side pieces (the 0-sized anchor at its wire slot; the "
+                + "full-root overlay) both carry SHELL-FIXED styles — every style would land on "
+                + "a node the author does not own. Style the CONTENT BOX (the modal's wire "
+                + "child) instead; the scrim's paint is the scrimColor PROP.")
             return
         }
         // Phase 6.2 — **CONTAINER STYLES ON A `scroll` NODE ARE IGNORED AND LOGGED**

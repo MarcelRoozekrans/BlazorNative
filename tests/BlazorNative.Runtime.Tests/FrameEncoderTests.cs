@@ -177,7 +177,12 @@ public sealed class FrameEncoderTests
     [InlineData("checkbox", BlazorNativeNodeType.Checkbox)]
     [InlineData("switch",   BlazorNativeNodeType.Switch)]
     [InlineData("slider",   BlazorNativeNodeType.Slider)]
-    public void Encode_AllTenNodeTypes_MapCorrectly(string nodeType, BlazorNativeNodeType expected)
+    // Phase 7.4: the overlay + the measured leaf — wire ids 11/12 (design
+    // decisions 1 and 5). Same three-mirror rule: the shells' arrays and
+    // their pins extend in Gates 2/3.
+    [InlineData("modal",             BlazorNativeNodeType.Modal)]
+    [InlineData("activityindicator", BlazorNativeNodeType.ActivityIndicator)]
+    public void Encode_AllTwelveNodeTypes_MapCorrectly(string nodeType, BlazorNativeNodeType expected)
     {
         var frame = new RenderFrame(1, 0L, [new CreateNodePatch(1, nodeType, null)]);
 
@@ -197,6 +202,9 @@ public sealed class FrameEncoderTests
         Assert.Equal(8,  (int)BlazorNativeNodeType.Checkbox);
         Assert.Equal(9,  (int)BlazorNativeNodeType.Switch);
         Assert.Equal(10, (int)BlazorNativeNodeType.Slider);
+        // Phase 7.4: the overlay + the measured leaf.
+        Assert.Equal(11, (int)BlazorNativeNodeType.Modal);
+        Assert.Equal(12, (int)BlazorNativeNodeType.ActivityIndicator);
         // The pre-7.3 seven stay where the shells' arrays put them.
         Assert.Equal(1, (int)BlazorNativeNodeType.View);
         Assert.Equal(2, (int)BlazorNativeNodeType.Text);

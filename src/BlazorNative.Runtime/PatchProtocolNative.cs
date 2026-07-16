@@ -40,11 +40,17 @@ public enum BlazorNativePatchKind : int
 /// unknown), Kotlin NativeFrameAdapter.nodeTypes and Swift
 /// BnFrameAdapter.nodeTypes (both log-and-fallback to "?" on an index past
 /// their array — which is exactly what a shell that missed the extension does
-/// with 8/9/10 until its Gate lands).</summary>
+/// with 8/9/10 until its Gate lands).
+///
+/// Phase 7.4 extends it again with Modal/ActivityIndicator (11/12) — the same
+/// shape: new ids on the existing int32 field, both shells' nodeTypes arrays
+/// (+ their content/length pins) gain the entries in Gates 2/3. `modal` is the
+/// overlay NodeType (anchor + overlay shell-side — design decision 1);
+/// `activityindicator` is a measured leaf (decision 5).</summary>
 public enum BlazorNativeNodeType : int
 {
     None = 0, View = 1, Text = 2, Button = 3, Input = 4, Image = 5, Scroll = 6, Picker = 7,
-    Checkbox = 8, Switch = 9, Slider = 10,
+    Checkbox = 8, Switch = 9, Slider = 10, Modal = 11, ActivityIndicator = 12,
 }
 
 [StructLayout(LayoutKind.Sequential)]

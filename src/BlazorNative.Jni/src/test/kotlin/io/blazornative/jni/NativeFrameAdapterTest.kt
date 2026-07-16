@@ -58,6 +58,8 @@ class NativeFrameAdapterTest {
      * so a shell that missed a vocabulary extension decoded every new create to
      * the "?" fallback, and only a device golden could see it. EXACT content,
      * EXACT order: index IS the wire id (checkbox = 8, switch = 9, slider = 10;
+     * Phase 7.4 adds modal = 11 and activityindicator = 12 — the overlay and
+     * the measured leaf, a wire-VOCABULARY extension, not an ABI change;
      * FrameEncoder.MapNodeType is the .NET mirror, BnFrameAdapter.swift the
      * Swift one — the three move together or this reddens).
      */
@@ -66,12 +68,49 @@ class NativeFrameAdapterTest {
         assertEquals(
             listOf(
                 "?", "view", "text", "button", "input", "image", "scroll", "picker",
-                "checkbox", "switch", "slider",
+                "checkbox", "switch", "slider", "modal", "activityindicator",
             ),
             NativeFrameAdapter.nodeTypes.toList(),
             "the nodeTypes vocabulary drifted — FrameEncoder.MapNodeType (.NET), this array " +
                 "and BnFrameAdapter.swift are THREE MIRRORS that move together"
         )
+    }
+
+    /**
+     * Phase 7.4 — the two new wire ids DECODE, at the offset level (the
+     * "3 → button" synthetic decode's twin for the vocabulary this gate adds).
+     * The content pin above answers "is the array right?"; this answers "does
+     * a CreateNode carrying 11 actually come out as a `modal` create?" — the
+     * question the WidgetMapper's `when (p.nodeType)` depends on. Written
+     * red-first: with the entries absent, 11 falls onto the index-guard "?"
+     * fallback and this test names the exact failure a device would only show
+     * as a TextView where an overlay should be.
+     */
+    @Test
+    fun read_decodes_modal_wire_id_11() {
+        assertEquals("modal", decodeSingleCreateNodeType(11))
+    }
+
+    /** The measured leaf's wire id — see [read_decodes_modal_wire_id_11]. */
+    @Test
+    fun read_decodes_activityindicator_wire_id_12() {
+        assertEquals("activityindicator", decodeSingleCreateNodeType(12))
+    }
+
+    /** Hand-writes ONE CreateNode with [nodeTypeId] at the documented offsets
+     * and returns the decoded nodeType string. */
+    private fun decodeSingleCreateNodeType(nodeTypeId: Int): String {
+        val patches = Memory(NativeFrameAdapter.PATCH_SIZE).apply { clear() }
+        patches.setInt(NativeFrameAdapter.PATCH_KIND, 1)
+        patches.setInt(NativeFrameAdapter.PATCH_NODE_ID, 1)
+        patches.setInt(NativeFrameAdapter.PATCH_PARENT, -1)
+        patches.setInt(NativeFrameAdapter.PATCH_NODE_TYPE, nodeTypeId)
+        patches.setInt(NativeFrameAdapter.PATCH_AUX, -1)
+        val frame = Memory(NativeFrameAdapter.FRAME_SIZE).apply { clear() }
+        frame.setPointer(NativeFrameAdapter.FRAME_PATCHES, patches)
+        frame.setInt(NativeFrameAdapter.FRAME_PATCH_COUNT, 1)
+        val decoded = NativeFrameAdapter.read(frame)
+        return (decoded.patches.single() as RenderPatch.CreateNode).nodeType
     }
 
     // ── 2. Synthetic offset-level decode ─────────────────────────────────────

@@ -6,6 +6,7 @@ import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.ImageView
+import android.widget.ProgressBar
 import android.widget.ScrollView
 import android.widget.SeekBar
 import android.widget.Spinner
@@ -81,6 +82,35 @@ class WidgetMapperNodeTypesTest {
     @Test fun creates_SeekBar_from_slider_nodetype() {
         val view = renderSingleNode("slider")
         assertTrue("expected SeekBar, got ${view::class.simpleName}", view is SeekBar)
+    }
+
+    // ── Phase 7.4: the two new NodeTypes (wire ids 11/12) ──────────────────
+
+    @Test fun creates_indeterminate_ProgressBar_from_activityindicator_nodetype() {
+        val view = renderSingleNode("activityindicator")
+        assertTrue("expected ProgressBar, got ${view::class.simpleName}", view is ProgressBar)
+        assertTrue("the indicator must be INDETERMINATE — animating while mounted IS the " +
+            "contract (no start/stop prop exists for two shells to keep equal)",
+            (view as ProgressBar).isIndeterminate)
+    }
+
+    @Test fun creates_anchor_plus_overlay_from_modal_nodetype() {
+        // A `modal` is TWO shell-side pieces (design decision 1), so the
+        // single-node helper is not enough: the wire slot holds the ANCHOR (a
+        // plain View — it can host nothing; children redirect to the overlay)
+        // and the host root's LAST child is the OVERLAY container.
+        val host = SyntheticHost()
+        host.render(listOf(create(1, "modal", null)))
+        host.read {
+            assertTrue("expected anchor + overlay under the host root",
+                host.root.childCount == 2)
+            val anchor = host.root.getChildAt(0)
+            val overlay = host.root.getChildAt(1)
+            assertTrue("the wire slot holds a plain-View ANCHOR, got " +
+                "${anchor::class.simpleName}", anchor !is android.view.ViewGroup)
+            assertTrue("the last child is the OVERLAY container, got " +
+                "${overlay::class.simpleName}", overlay is BnYogaFrameLayout)
+        }
     }
 
     // ── Helpers ────────────────────────────────────────────────────────────

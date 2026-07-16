@@ -80,6 +80,11 @@ object NativeFrameAdapter {
      * `FrameEncoder.MapNodeType` (.NET — throws on unknown), this array, and
      * Swift's `BnFrameAdapter.nodeTypes` (both shells log-and-fallback to "?").
      *
+     * Phase 7.4: `modal = 11` (the overlay — anchor + overlay shell-side, the
+     * 6.2 synthetic-node machinery pointed at the root) and
+     * `activityindicator = 12` (the measured leaf — ProgressBar /
+     * UIActivityIndicatorView). Same extension shape, same three mirrors.
+     *
      * `internal` and PINNED BY CONTENT — `NativeFrameAdapterTest.
      * nodeTypes_vocabulary_is_pinned_content_and_length`, the Kotlin twin of
      * Swift's `BnDriftTests` literal pin. Gate 1 recorded that NOTHING here
@@ -89,7 +94,7 @@ object NativeFrameAdapter {
      */
     internal val nodeTypes = arrayOf(
         "?", "view", "text", "button", "input", "image", "scroll", "picker",
-        "checkbox", "switch", "slider",
+        "checkbox", "switch", "slider", "modal", "activityindicator",
     )
 
     /** Sanity ceiling on patchCount: real frames are tens of patches; anything

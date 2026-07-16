@@ -4,12 +4,12 @@
 #
 #   build-test (windows-latest) — the local verification procedure verbatim
 #   (setup.ps1 §1–7 documents the toolchain pins):
-#     build (analyzers ride it) → .NET tests (492 passed / 0 skipped) →
+#     build (analyzers ride it) → .NET tests (518 passed / 0 skipped) →
 #     three NativeAOT publishes (win-x64, linux-bionic-x64, linux-bionic-arm64;
 #     each publish must show exactly the 4 accepted IL2072 trim warnings) →
 #     nine-export verification (dumpbin via vswhere / llvm-readelf from the
 #     pinned NDK) → Gradle testDebugUnitTest against the fresh win-x64 dll
-#     (90 passed / 0 failed) → the instrumented sources COMPILE →
+#     (92 passed / 0 failed) → the instrumented sources COMPILE →
 #     consumer smoke (five packages from the local feed mount a Bn* component
 #     + analyzer trip; Phase 4.5, M4 DoD #7) → artifacts for the instrumented
 #     (Gate 3) job.
@@ -607,7 +607,60 @@ jobs:
       # is the author's bug — raw on the wire, natively-clamped display, no notify).
       # NO ABI change, NO wire change, NO existing golden moved; the JVM count moves
       # in the SAME PR but belongs to Gate 2's lane (see the 83 -> 90 block below).
-      - name: .NET tests (assert 492 passed / 0 skipped)
+      #
+      # 492 -> 517 (PHASE 7.4 GATE 1, +25 — all Runtime.Tests, 340 -> 365): BnModal
+      # (the overlay — modal=11) + BnActivityIndicator (the measured leaf — 12).
+      # +2 FrameEncoderTests: the all-NodeTypes theory 10 -> 12 rows (red-first:
+      # "Unknown node type 'modal'") + the integer pin gains 11/12 (mutation: ids
+      # swapped -> the pin reddens, Expected 11 / Actual 12). +11 BnModalTests: zero
+      # wire presence closed; the mount shape (scrimColor ALWAYS a PROP — SetStyle on
+      # a modal is shell-ignored and the surface CANNOT emit one, pinned as zero
+      # styles; the always-attached dismissal click; ONE wire child = the content box
+      # with the declared W/H/padding/bg + the no-op click SWALLOW); dismissal is a
+      # REQUEST (VisibleChanged(false); unbound parent -> the modal STAYS; raced
+      # second dismiss absorbed as a stale handler); hide = ONE RemoveNodePatch
+      # (inline content — a nested COMPONENT adds its own disposal remove, the 7.2
+      # removes-first shape, recorded); the reflective surface pin (8 params, NO flex
+      # item surface — the anchor is 0-sized/absolute). Mutations run: dismiss-invoke
+      # dropped -> 5 red; swallow dropped -> 4 red; @if(Visible) -> @if(true) -> 11
+      # red. +3 BnActivityIndicatorTests: ONE create and NOTHING else (the
+      # measured-leaf wire shape), the reflective NO-parameters pin, presence-is-@if
+      # unmount — plus the recorded .razor finding (a zero-attribute element collapses
+      # to AddMarkupContent, which the renderer rejects -> the leaf is hand-written
+      # C#). +9 BnModalDemoTests ("/modal", the EIGHTH routed page — NavigationTests'
+      # baseline extends in place): closed mount 9 creates / 2 attaches / 0 props /
+      # 9 styles; SHOW = the modal create AT INSERT INDEX 2 between the declared
+      # 220x48 siblings (the anchor rule's .NET half) with 8 creates / 4 attaches /
+      # 2 props / 4 styles and NOT ONE patch naming a pre-existing node; HIDE = FIVE
+      # removes (the modal's own + 4 nested disposal removes), all inside the show
+      # frame's create set, zero creates; scrim-tap dismisses vs content-tap does
+      # not; the switch round-trips into the echo INSIDE the overlay; re-show =
+      # re-create with bound state intact; back-nav parity. The click-on-plain-view
+      # .NET end needed NO renderer change (attach emission is name-generic;
+      # BuildEventArgs("click") is element-agnostic) — the shells' halves are Gates
+      # 2/3's. NO ABI change (ids 11/12 ride the existing int32 field; exports stay
+      # 9, the bridge 72 bytes), NO shell edits (the Kotlin/Swift nodeTypes arrays +
+      # pins are OWED to Gates 2/3), NO existing golden moved: the gates below stay
+      # 4 IL2072 / 9 exports / 90 JVM.
+      #
+      # 517 -> 518 (PHASE 7.4 GATE 1 REVIEW, +1 — Runtime.Tests 365 -> 366): the
+      # four findings, closed. S1-1 (Important, no count move): the show golden's
+      # "NOT ONE patch naming a pre-existing node" was enforced against only the
+      # two siblings — the untouched set is now the mount frame's FULL create set
+      # (all 9 ids, count-pinned), and the show frame gains zero-removes /
+      # zero-detaches pins so a spurious remove cannot hide in an unpinned channel.
+      # S1-2 (no count move): NodeIdOf's silent `_ => -1` default now THROWS for
+      # any future patch kind (CommitFramePatch gets its own explicit no-node arm)
+      # — the golden stays loud instead of silently passing new wire vocabulary.
+      # Q-1 (+1, the new theory row): an EXPLICITLY-NULL ScrimColor binding used
+      # to defeat "always emitted" (Blazor omits null attributes); BnModal.razor
+      # now coalesces to DefaultScrimColor at emission, and the explicit-null row
+      # of ScrimColor_AlwaysEmitted proves the default still rides the prop wire.
+      # Q-2 (no count move): the hide golden's 5 removes are pinned DISTINCT — the
+      # count cannot be padded by a double-remove of one id. Component change is
+      # Q-1's coalesce ONLY; NO wire change on any green path, NO existing golden
+      # moved, Renderer.Tests (129) / Analyzers.Tests (23) untouched.
+      - name: .NET tests (assert 518 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -625,8 +678,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 492 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 492 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 518 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 518 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # ── NativeAOT publishes + nine-export verification ────────────────────
@@ -779,7 +832,22 @@ jobs:
       #     non-control \u, raw controls, whole-string consumption all reject). Pure
       #     Kotlin in the shared source set — testable HERE, off the device, like
       #     isLiveImageRequest before it.
-      - name: JVM tests (Gradle testDebugUnitTest — assert 90 passed / 0 failed)
+      #
+      # ── Phase 7.4 Gate 2: 90 → 92, +2 — the new wire vocabulary's DECODE, at
+      #    the offset level.
+      #
+      #  +2 NativeFrameAdapterTest.read_decodes_modal_wire_id_11 /
+      #     read_decodes_activityindicator_wire_id_12 — the "3 → button" synthetic
+      #     decode's twin, per new id. The content/length pin (extended IN PLACE to
+      #     thirteen entries: modal = 11, activityindicator = 12) answers "is the
+      #     array right?"; these answer "does a CreateNode carrying 11 actually
+      #     decode as a `modal` create?" — the question WidgetMapper's
+      #     `when (p.nodeType)` hangs off. Written red-first: with the entries
+      #     absent, both ids fell onto the index-guard "?" fallback
+      #     ("expected: <modal> but was: <?>"), which on a device is a TextView
+      #     where an overlay should be — the exact silent decode the 7.3 pin was
+      #     added to catch, reddening on this lane instead.
+      - name: JVM tests (Gradle testDebugUnitTest — assert 92 passed / 0 failed)
         working-directory: src/BlazorNative.Jni
         run: |
           .\gradlew.bat --no-daemon testDebugUnitTest
@@ -793,8 +861,8 @@ jobs:
             $errors += [int]$suite.errors; $skipped += [int]$suite.skipped
           }
           Write-Host "JVM test totals across $($xmls.Count) suites: tests=$tests failures=$failures errors=$errors skipped=$skipped"
-          if ($tests -ne 90 -or $failures -ne 0 -or $errors -ne 0 -or $skipped -ne 0) {
-            throw "JVM test baseline drift: expected 90 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped"
+          if ($tests -ne 92 -or $failures -ne 0 -or $errors -ne 0 -or $skipped -ne 0) {
+            throw "JVM test baseline drift: expected 92 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped"
           }
 
       # the instrumented-sources compile gate moved to its own required job
@@ -1177,6 +1245,36 @@ jobs:
           mkdir -p src/BlazorNative.Apple/vendor
           cp "$archive" src/BlazorNative.Apple/vendor/libBlazorNative.Runtime.a
 
+          # Phase 7.4: assert the export surface ON THE ARCHIVE, with VISIBILITY.
+          # The post-link gate below proved blazornative_init can vanish from the
+          # linked dylib's global table while `nm -gU` on the .a still lists all
+          # nine exports — because nm -gU also lists private-external (N_PEXT)
+          # globals, which ld64 LOCALIZES in the output (no -exported_symbols_list
+          # is passed; a default-visibility global in a force_loaded member MUST
+          # surface as a dylib export, a private-external one MUST NOT). So "the
+          # nine symbols are in the .a" (ios.yml's check) does not prove the app
+          # will export them. `nm -m` names the verdict per symbol ("external"
+          # vs "private external"); assert it HERE so an ILC visibility flip
+          # fails at its source with the discriminating evidence, not two
+          # minutes later at the far end of an xcodebuild.
+          vendored=src/BlazorNative.Apple/vendor/libBlazorNative.Runtime.a
+          echo "=== nm -m: blazornative_* in the staged archive ===" | tee ios-build-out/archive-visibility.txt
+          nm -m "$vendored" 2>&1 | grep -E ' _?blazornative_[a-z_]+$' | tee -a ios-build-out/archive-visibility.txt || true
+          expected="blazornative_dispatch_event blazornative_fetch_complete blazornative_host_event blazornative_init blazornative_mount blazornative_register_bridge blazornative_register_frame_callback blazornative_shutdown blazornative_version"
+          actual=$(nm -gU "$vendored" 2>/dev/null | grep -Eo '_?blazornative_[a-z_]+' | sed 's/^_//' | sort -u)
+          missing=""
+          for s in $expected; do echo "$actual" | grep -qx "$s" || missing="$missing $s"; done
+          if [ -n "$missing" ]; then
+            echo "Export surface drift in BlazorNative.Runtime.a: missing$missing" >&2
+            exit 1
+          fi
+          hidden=$(nm -m "$vendored" 2>/dev/null | grep -E ' _?blazornative_[a-z_]+$' | grep -c 'private external' || true)
+          if [ "$hidden" -ne 0 ]; then
+            echo "$hidden of the 9 blazornative_* exports are PRIVATE EXTERNAL in the archive — ld64 will localize them and the linked app will not export them. This is an ILC emission change (toolchain or publish-property drift), not a link problem; see archive-visibility.txt in the artifact." >&2
+            exit 1
+          fi
+          echo "SYMBOLS: all 9 blazornative_* present and externally visible in the staged archive."
+
           pack_native=$(find "$HOME/.nuget/packages/microsoft.netcore.app.runtime.nativeaot.iossimulator-arm64" \
             -type d -path '*runtimes/iossimulator-arm64/native' 2>/dev/null | sort | tail -1)
           if [ -z "$pack_native" ] || [ ! -d "$pack_native" ]; then
@@ -1350,10 +1448,22 @@ jobs:
 
           # blazornative_init must be DEFINED in the app's own Mach-O — the proof the
           # NativeAOT archive was force_loaded and not merely referenced.
+          #
+          # NOT `grep -q`, under pain of a raced gate (PR #99's failure): this step
+          # runs under pipefail, and `grep -q` exits at the FIRST match, closing the
+          # pipe while nm is still writing its ~280 KB symbol listing. nm then dies
+          # of SIGPIPE (141), pipefail hands the pipeline nm's status, and the `if`
+          # reads a SUCCESSFUL match as failure. Whether nm's tail write lands after
+          # grep's exit is fixed by the symbol table's size and the match's position,
+          # so the race is per-binary DETERMINISTIC: main passed every run while the
+          # 7.4 branch — same link, same toolchain, entrypoints verifiably external
+          # in nlist AND export trie — failed every run, purely because its symbol
+          # table grew. Plain grep with stdout dropped reads to EOF; no early close,
+          # no SIGPIPE, and the pipeline's status is grep's verdict alone.
           found=""
           for bin in "$app/BnHost" "$app/BnHost.debug.dylib"; do
             [ -f "$bin" ] || continue
-            if nm -gU "$bin" 2>/dev/null | grep -q 'blazornative_init'; then
+            if nm -gU "$bin" 2>/dev/null | grep 'blazornative_init' >/dev/null; then
               found="$bin"
               break
             fi
@@ -1361,7 +1471,27 @@ jobs:
           if [ -z "$found" ]; then
             echo "=== Mach-O binaries in the app bundle ===" >&2
             ls -la "$app" >&2 || true
-            echo "No binary in BnHost.app DEFINES blazornative_init. The NativeAOT static archive was not force_loaded — the app would launch and SIGSEGV rather than fail to build, which is why it is asserted here." >&2
+            # Phase 7.4: discriminating evidence, captured in the artifact. The
+            # symbol being ABSENT (archive not force_loaded) and the symbol being
+            # PRESENT BUT LOCAL (localized by ld64) fail this same grep but have
+            # opposite fixes — nm -m names which one happened per entrypoint, and
+            # dyld_info -exports gives the EXPORT TRIE (what dyld/dlsym actually
+            # see), which is authoritative even when the nlist symbol table is not.
+            # (Round 1 established: the staged archive has all 9 external
+            # [no dead strip]; the resp files carry only -add_ast_path, no
+            # -exported_symbols_list.)
+            {
+              for bin in "$app/BnHost" "$app/BnHost.debug.dylib"; do
+                [ -f "$bin" ] || continue
+                b=$(basename "$bin")
+                echo "=== $b: nm -m, the 9 entrypoints exactly ==="
+                nm -m "$bin" 2>&1 | grep -E ' _?blazornative_[a-z_]+$' || echo "(none of the 9 entrypoints in the nlist)"
+                echo "=== $b: export trie (dyld_info -exports) ==="
+                xcrun dyld_info -exports "$bin" 2>&1 | grep -iE 'blazornative' || echo "(no blazornative in the export trie)"
+                echo "=== $b: nlist totals: all=$(nm "$bin" 2>/dev/null | wc -l | tr -d ' ') global-defined=$(nm -gU "$bin" 2>/dev/null | wc -l | tr -d ' ') ==="
+              done
+            } 2>&1 | tee ios-build-out/link-failure-evidence.txt >&2 || true
+            echo "No binary in BnHost.app DEFINES blazornative_init (globally). Either the NativeAOT static archive was not force_loaded, or its exports were emitted private-external and ld64 localized them — link-failure-evidence.txt in the artifact says which. Both would SIGSEGV/dlsym-fail at launch rather than fail to build, which is why it is asserted here." >&2
             exit 1
           fi
           echo "LINKED: BnHost.app + BnHostTests.xctest + the run plan; blazornative_init is defined in $(basename "$found")."

@@ -59,12 +59,14 @@ final class BnDriftTests: XCTestCase {
         // CreateNode). Mirror of PatchProtocolNative.cs's enum ordering — and,
         // since Phase 7.3, of the three-mirror vocabulary (FrameEncoder.MapNodeType /
         // NativeFrameAdapter.nodeTypes / this array): checkbox=8, switch=9,
-        // slider=10 ride the SAME int32 field, no ABI change. This literal is the
-        // Swift content pin — the twin of Kotlin's
+        // slider=10 ride the SAME int32 field, no ABI change; Phase 7.4 extends the
+        // same way — modal=11 (the anchor+overlay pair) and activityindicator=12
+        // (the measured leaf), THIRTEEN entries, mirroring Kotlin's pin move in the
+        // same phase. This literal is the Swift content pin — the twin of Kotlin's
         // nodeTypes_vocabulary_is_pinned_content_and_length.
         XCTAssertEqual(BnFrameAdapter.nodeTypes,
                        ["?", "view", "text", "button", "input", "image", "scroll", "picker",
-                        "checkbox", "switch", "slider"])
+                        "checkbox", "switch", "slider", "modal", "activityindicator"])
 
         // The count sanity ceiling must match the Kotlin/.NET guard.
         XCTAssertEqual(BnFrameAdapter.maxPatches, 65_536)

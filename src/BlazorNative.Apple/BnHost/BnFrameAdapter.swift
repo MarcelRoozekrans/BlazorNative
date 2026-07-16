@@ -91,20 +91,22 @@ enum BnFrameAdapter {
     /// Index = BlazorNativeNodeType wire value (0 = None, never emitted for a
     /// CreateNode by the encoder). Twin of the Kotlin `nodeTypes` array.
     ///
-    /// Phase 7.3: `checkbox = 8`, `switch = 9`, `slider = 10` — a wire-VOCABULARY
-    /// extension, not an ABI change (the id rides the existing int32 NodeType
-    /// field of the 48-byte patch). THREE MIRRORS move together:
+    /// Phase 7.3: `checkbox = 8`, `switch = 9`, `slider = 10`; Phase 7.4:
+    /// `modal = 11`, `activityindicator = 12` — wire-VOCABULARY extensions, not
+    /// ABI changes (the id rides the existing int32 NodeType field of the
+    /// 48-byte patch). THREE MIRRORS move together:
     /// `FrameEncoder.MapNodeType` (.NET — throws on unknown), Kotlin's
     /// `NativeFrameAdapter.nodeTypes`, and this array (both shells
     /// log-and-fallback to "?").
     ///
     /// PINNED BY CONTENT — `BnDriftTests.testWireLayoutMatchesContract`'s literal,
-    /// the Swift twin of Kotlin's `nodeTypes_vocabulary_is_pinned_content_and_length`.
-    /// A missed entry decodes every new create to "?" (a UILabel fallback), and only
-    /// a device golden could see it; the pin makes the next vocabulary extension
-    /// redden on the simulator lane instead.
+    /// the Swift twin of Kotlin's `nodeTypes_vocabulary_is_pinned_content_and_length`
+    /// (thirteen entries since 7.4, on both). A missed entry decodes every new
+    /// create to "?" (a UILabel fallback), and only a device golden could see it;
+    /// the pin makes the next vocabulary extension redden on the simulator lane
+    /// instead.
     static let nodeTypes = ["?", "view", "text", "button", "input", "image", "scroll", "picker",
-                            "checkbox", "switch", "slider"]
+                            "checkbox", "switch", "slider", "modal", "activityindicator"]
 
     /// Sanity ceiling on patchCount — a corrupt frame pointer would otherwise
     /// have us chase garbage; take the documented dropped-frame path instead.
