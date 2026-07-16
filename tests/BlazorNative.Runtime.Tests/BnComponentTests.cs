@@ -535,18 +535,26 @@ public sealed class BnComponentTests : IDisposable
         Assert.Equal("absolute", FlexPosition.Absolute.ToStyleValue());
     }
 
-    /// <summary>The public style TYPES are Flex-prefixed. They ship on nuget.org
-    /// (M8) in the library's root namespace, where a bare <c>Align</c>/<c>Wrap</c>/
-    /// <c>Justify</c>/<c>Position</c> collides with app-side types — free to rename
-    /// now, a breaking change later. (The PARAM names on BnView stay short; this
-    /// is only about the type names.)</summary>
+    /// <summary>The public enum TYPES carry a domain prefix. They ship on
+    /// nuget.org (M8) in the library's root namespace, where a bare
+    /// <c>Align</c>/<c>Wrap</c>/<c>Justify</c>/<c>Position</c> collides with
+    /// app-side types — free to rename now, a breaking change later. (The
+    /// PARAM names on BnView stay short; this is only about the type names.)
+    /// Two prefixes since Phase 7.5: <c>Flex*</c> for the 6.1 style surface,
+    /// <c>Image*</c> for BnImage's (the design names <c>ImageContentMode</c> —
+    /// compound and collision-safe for the same reason a bare
+    /// <c>ContentMode</c>, an app-side name AND a UIKit one, would not be).</summary>
     [Fact]
-    public void FlexStyleTypes_AreFlexPrefixed_ToNotCollideWithAppTypes()
+    public void PublicEnumTypes_CarryADomainPrefix_ToNotCollideWithAppTypes()
     {
         System.Reflection.Assembly components = typeof(BnView).Assembly;
         Assert.All(
             components.GetExportedTypes().Where(t => t.IsEnum),
-            t => Assert.StartsWith("Flex", t.Name, StringComparison.Ordinal));
+            t => Assert.True(
+                t.Name.StartsWith("Flex", StringComparison.Ordinal)
+                    || t.Name.StartsWith("Image", StringComparison.Ordinal),
+                $"public enum {t.Name} carries no domain prefix (Flex*/Image*) — a bare name "
+                + "in the library's root namespace collides with app-side types"));
     }
 
     // ── BnRow / BnColumn (Phase 6.1 Task 1.3) ─────────────────────────────────
@@ -1139,11 +1147,13 @@ public sealed class BnComponentTests : IDisposable
     // exclusion, BnImage drops ChildContent too (a leaf has no content), and adds
     // Src.
     //
-    // NOT here, on purpose (6.3 design decision 3): Placeholder, OnError,
-    // ContentMode. Each CHANGES MEASUREMENT — does a placeholder measure like the
-    // image? does a failure keep the reserved space? does `cover` report the
-    // natural size or the box? — so each deserves its own design rather than a
-    // footnote in the fetch phase. Ledgered for M7.
+    // HERE since Phase 7.5, each designed as a measurement rule (the 6.3
+    // ledger, resolved): PlaceholderColor (a color; never measures — paint
+    // inside the box Yoga already gave the node), OnError (the `error` event,
+    // the scroll precedent; failure never changes measurement), ContentMode
+    // (four strict lowercase wire words; paint-only, mode-invariant frames).
+    // Two props on the UpdateProp wire where `src` rides, one event name on
+    // the existing dispatch wire — zero new measurement states, no ABI change.
 
     private const string ImageSrc = "http://127.0.0.1:8099/a.png";
 
@@ -1154,6 +1164,12 @@ public sealed class BnComponentTests : IDisposable
     private static Dictionary<string, object?> ImageParams() => new()
     {
         [nameof(BnImage.Src)] = ImageSrc,
+        // The 7.5 trio — so the forwarding test below holds the WHOLE new
+        // surface too (a deleted AddAttribute is a silent no-op otherwise).
+        [nameof(BnImage.PlaceholderColor)] = "#FFCA28",
+        [nameof(BnImage.ContentMode)] = ImageContentMode.Cover,
+        [nameof(BnImage.OnError)] = EventCallback.Factory.Create<BlazorNative.Core.BnImageErrorEventArgs>(
+            new object(), _ => { }),
         [nameof(BnImage.BackgroundColor)] = "#112233",
         [nameof(BnImage.Margin)] = "4",
         [nameof(BnImage.AlignSelf)] = FlexAlign.FlexEnd,
@@ -1257,9 +1273,13 @@ public sealed class BnComponentTests : IDisposable
     }
 
     /// <summary>DECLARATION (the BnScroll pair, applied to BnImage): BnView's
-    /// surface MINUS the container-layout family MINUS ChildContent, PLUS Src. An
-    /// item param missing from BnImage is a hole an author falls into; a container
-    /// param present on a LEAF is a parameter that can only ever do nothing.
+    /// surface MINUS the container-layout family MINUS ChildContent, PLUS Src —
+    /// and, since Phase 7.5, PLUS the three 6.3 deliberately ledgered features,
+    /// each now designed as a measurement rule: PlaceholderColor (never
+    /// measures), OnError (failure never changes measurement), ContentMode
+    /// (paint-only). An item param missing from BnImage is a hole an author
+    /// falls into; a container param present on a LEAF is a parameter that can
+    /// only ever do nothing.
     /// <para>This test is a green light over a forwarding bug — it cannot see
     /// BuildRenderTree at all. The behavioural one below is what bites (6.1's Gate 1
     /// mutation lesson: two deleted forwarding lines, suite still green).</para></summary>
@@ -1275,6 +1295,9 @@ public sealed class BnComponentTests : IDisposable
             .Where(n => !ContainerLayoutParams.Contains(n))
             .Where(n => n != nameof(BnView.ChildContent))
             .Append(nameof(BnImage.Src))
+            .Append("PlaceholderColor") // Phase 7.5 (design decision 1)
+            .Append("ContentMode")      // Phase 7.5 (design decision 3)
+            .Append("OnError")          // Phase 7.5 (design decision 2)
             .OrderBy(n => n, StringComparer.Ordinal);
 
         Assert.Equal(expected, Parameters(typeof(BnImage)));
@@ -1285,15 +1308,25 @@ public sealed class BnComponentTests : IDisposable
         Assert.All(ContainerLayoutParams, p => Assert.Null(typeof(BnImage).GetProperty(p)));
         Assert.All(ContainerLayoutParams, p => Assert.NotNull(typeof(BnView).GetProperty(p)));
         // (b) …and no ChildContent at all — the one place BnImage's surface is
-        //     narrower than BnScroll's.
+        //     narrower than BnScroll's. Still true in 7.5: a placeholder is a
+        //     COLOR, never content — a placeholder child would un-leaf the
+        //     leaf and MEASURE (design decision 1(a), rejected).
         Assert.Null(typeof(BnImage).GetProperty(nameof(BnView.ChildContent)));
         Assert.NotNull(typeof(BnScroll).GetProperty(nameof(BnView.ChildContent)));
-        // (c) 6.3 design decision 3: NOT Placeholder, NOT OnError, NOT ContentMode.
-        //     Each changes MEASUREMENT and gets its own design (M7). A parameter
-        //     that cannot be set is a bug that cannot be written.
+        // (c) The 6.3 ledger, RESOLVED by Phase 7.5 — present, by their
+        //     designed names…
+        Assert.NotNull(typeof(BnImage).GetProperty("PlaceholderColor"));
+        Assert.NotNull(typeof(BnImage).GetProperty("OnError"));
+        Assert.NotNull(typeof(BnImage).GetProperty("ContentMode"));
+        // (d) …and NOT these names, each a recorded rejection: `Placeholder`
+        //     is the input hint's wire name since M2 (reusing it would fork
+        //     one prop's meaning by NodeType in both shells — decision 1);
+        //     `PlaceholderSrc` is the doubled-async-load problem, ledgered
+        //     (decision 1(b)); `OnLoad` is not in DoD #6 — the sync gate
+        //     stays loader-callback-based (out of scope, named).
         Assert.Null(typeof(BnImage).GetProperty("Placeholder"));
-        Assert.Null(typeof(BnImage).GetProperty("OnError"));
-        Assert.Null(typeof(BnImage).GetProperty("ContentMode"));
+        Assert.Null(typeof(BnImage).GetProperty("PlaceholderSrc"));
+        Assert.Null(typeof(BnImage).GetProperty("OnLoad"));
     }
 
     /// <summary>FORWARDING: fed its whole parameter surface, BnImage must put the
@@ -1318,12 +1351,201 @@ public sealed class BnComponentTests : IDisposable
             ImageItemWireTable().ToDictionary(e => e.Key, e => (string?)e.Value),
             StylesOf(mount, root.NodeId));
 
-        // …and the WHOLE prop table, exactly: one prop, `src`. A flex name falling
-        // out of the renderer's allow-list would land here as a second UpdateProp.
-        UpdatePropPatch src = Assert.Single(mount.Patches.OfType<UpdatePropPatch>());
-        Assert.Equal(root.NodeId, src.NodeId);
-        Assert.Equal("src", src.Name);
-        Assert.Equal(ImageSrc, src.Value);
+        // …and the WHOLE prop table, exactly: `src` plus the 7.5 pair — the
+        // image-only vocabulary, all of it on the UpdateProp wire (a flex name
+        // falling out of the renderer's allow-list would land here as an
+        // unexpected key; a 7.5 prop drifting onto the style wire would land
+        // ABOVE as one).
+        Assert.Equal(
+            new Dictionary<string, string?>
+            {
+                ["src"] = ImageSrc,
+                ["placeholderColor"] = "#FFCA28",
+                ["contentMode"] = "cover", // the strict lowercase wire word
+            },
+            mount.Patches.OfType<UpdatePropPatch>()
+                .ToDictionary(p => p.Name, p => p.Value));
+        Assert.All(mount.Patches.OfType<UpdatePropPatch>(),
+            p => Assert.Equal(root.NodeId, p.NodeId));
+
+        // …and the bound OnError is exactly ONE attach, named `error`.
+        AttachEventPatch attach = Assert.Single(mount.Patches.OfType<AttachEventPatch>());
+        Assert.Equal(root.NodeId, attach.NodeId);
+        Assert.Equal("error", attach.EventName);
+    }
+
+    // ── The 7.5 trio's own behavior (design decisions 1-3, the .NET half) ─────
+
+    /// <summary>THE STRICT WIRE WORDS, live off the wire per mode — the
+    /// prop-value pin the design's mutation table names (swap two
+    /// ImageContentMode wire strings → this goes red). Exact lowercase
+    /// membership in the four-word set; the shells parse by exact match and
+    /// diagnose-don't-apply anything else.</summary>
+    [Theory]
+    [InlineData(ImageContentMode.Contain, "contain")]
+    [InlineData(ImageContentMode.Cover, "cover")]
+    [InlineData(ImageContentMode.Stretch, "stretch")]
+    [InlineData(ImageContentMode.Center, "center")]
+    public void BnImage_ContentMode_EmitsTheStrictLowercaseWireWord(
+        ImageContentMode mode, string wireWord)
+    {
+        var (renderer, frames) = CreateCapturingSession();
+
+        renderer.Mount<BnImage>(ParameterView.FromDictionary(new Dictionary<string, object?>
+        {
+            [nameof(BnImage.ContentMode)] = mode,
+        }));
+        Assert.NotEmpty(frames);
+        RenderFrame mount = frames[0];
+        CreateNodePatch root = Root(mount);
+
+        // THE KIND AND THE WORD: one prop, `contentMode`, the exact string —
+        // and the style wire silent (mode is not layout and not a
+        // partition name; the partition's own pin lives in Renderer.Tests).
+        UpdatePropPatch prop = Assert.Single(mount.Patches.OfType<UpdatePropPatch>());
+        Assert.Equal(root.NodeId, prop.NodeId);
+        Assert.Equal("contentMode", prop.Name);
+        Assert.Equal(wireWord, prop.Value);
+        Assert.Empty(mount.Patches.OfType<SetStylePatch>());
+    }
+
+    /// <summary>The serialization table itself (the FlexStyleValues
+    /// discipline): the four strict words, the nullable lift (null param →
+    /// null value → no attribute → no patch — the un-styled invariant), and
+    /// the undefined-value guard (a cast int is unrepresentable ON THE WIRE:
+    /// it throws at BuildRenderTree instead of emitting a word no shell
+    /// parses).</summary>
+    [Fact]
+    public void ImageContentMode_ToWireValue_IsTheStrictFourWordTable()
+    {
+        Assert.Equal("contain", ImageContentMode.Contain.ToWireValue());
+        Assert.Equal("cover", ImageContentMode.Cover.ToWireValue());
+        Assert.Equal("stretch", ImageContentMode.Stretch.ToWireValue());
+        Assert.Equal("center", ImageContentMode.Center.ToWireValue());
+
+        // The default is Contain — enum member 0, the value `default` gives
+        // (the recorded Contain-not-cover decision's compile-time half).
+        Assert.Equal(ImageContentMode.Contain, default(ImageContentMode));
+
+        Assert.Null(((ImageContentMode?)null).ToWireValue());
+        Assert.Equal("cover", ((ImageContentMode?)ImageContentMode.Cover).ToWireValue());
+
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => ((ImageContentMode)99).ToWireValue());
+    }
+
+    /// <summary>Unbound → NO attach at all: the un-styled invariant, applied
+    /// to events (the BnScroll.OnScroll shape). An unwired BnImage's patch
+    /// stream is byte-identical to the pre-7.5 one — which is exactly why
+    /// BnImageDemo's golden did not churn. THE MUTATION TARGET the design
+    /// names: drop the HasDelegate guard (attach `onerror` always) and this
+    /// goes red.</summary>
+    [Fact]
+    public void BnImage_OnErrorUnbound_EmitsNoAttachAtAll()
+    {
+        var (renderer, frames) = CreateCapturingSession();
+
+        renderer.Mount<BnImage>(ParameterView.FromDictionary(new Dictionary<string, object?>
+        {
+            [nameof(BnImage.Src)] = ImageSrc,
+            [nameof(BnImage.PlaceholderColor)] = "#FFCA28",
+        }));
+        Assert.NotEmpty(frames);
+
+        Assert.Empty(frames[0].Patches.OfType<AttachEventPatch>());
+    }
+
+    /// <summary>Bound → the attach is `error` on the image node, and a
+    /// dispatch through the production ingress delivers the TYPED failed src
+    /// into the component's own handler — the whole .NET half of decision 2,
+    /// end-to-end through BnImage rather than a raw element.</summary>
+    [Fact]
+    public void BnImage_OnErrorBound_DispatchDeliversTheTypedSrc()
+    {
+        var (renderer, frames) = CreateCapturingSession();
+        string? received = null;
+
+        renderer.Mount<BnImage>(ParameterView.FromDictionary(new Dictionary<string, object?>
+        {
+            [nameof(BnImage.Src)] = ImageSrc,
+            [nameof(BnImage.OnError)] = EventCallback.Factory.Create<BlazorNative.Core.BnImageErrorEventArgs>(
+                new object(), e => received = e.Src),
+        }));
+        Assert.NotEmpty(frames);
+        RenderFrame mount = frames[0];
+        CreateNodePatch root = Root(mount);
+
+        AttachEventPatch attach = Assert.Single(mount.Patches.OfType<AttachEventPatch>());
+        Assert.Equal(root.NodeId, attach.NodeId);
+        Assert.Equal("error", attach.EventName);
+
+        Assert.Equal(0, Exports.DispatchEventCore((ulong)attach.HandlerId,
+            "{\"name\":\"error\",\"payload\":\"" + ImageSrc + "\"}"));
+        Assert.Equal(ImageSrc, received);
+    }
+
+    /// <summary>Host for the 7.5 props' → null transitions: an image with a
+    /// placeholder and a mode, and a button whose click takes BOTH away (the
+    /// ClearSrcHost shape — a leaf's re-render is driven from a sibling).</summary>
+    private sealed class ClearPolishHost : ComponentBase
+    {
+        private bool _cleared;
+
+        protected override void BuildRenderTree(Microsoft.AspNetCore.Components.Rendering.RenderTreeBuilder b)
+        {
+            b.OpenComponent<BnColumn>(0);
+            b.AddComponentParameter(1, nameof(BnColumn.ChildContent), (RenderFragment)(cb =>
+            {
+                cb.OpenComponent<BnImage>(0);
+                cb.AddComponentParameter(1, nameof(BnImage.Src), ImageSrc);
+                cb.AddComponentParameter(2, nameof(BnImage.PlaceholderColor),
+                    _cleared ? null : "#FFCA28");
+                cb.AddComponentParameter(3, nameof(BnImage.ContentMode),
+                    _cleared ? null : (ImageContentMode?)ImageContentMode.Stretch);
+                cb.CloseComponent();
+
+                cb.OpenComponent<BnButton>(10);
+                cb.AddComponentParameter(11, nameof(BnButton.Label), "Clear");
+                cb.AddComponentParameter(12, nameof(BnButton.OnClick),
+                    EventCallback.Factory.Create<MouseEventArgs>(this, () => _cleared = true));
+                cb.CloseComponent();
+            }));
+            b.CloseComponent();
+        }
+    }
+
+    /// <summary>The 4-row placeholder state table's .NET-VISIBLE rows, and
+    /// `contentMode → null` beside them: taking either parameter away is a
+    /// REAL wire event — <c>UpdateProp(name, null)</c> on the prop wire, the
+    /// `src → null` / `enabled` precedent — and the shells owe the clear
+    /// (placeholder gone) / the default restored (Contain). Gates 2/3 pin the
+    /// behavior at the mapper level; this pins the emission, kind and all.</summary>
+    [Fact]
+    public void BnImage_PolishPropsGoNull_EmitUpdatePropNullsOnThePropWire()
+    {
+        var (renderer, frames) = CreateCapturingSession();
+
+        renderer.Mount<ClearPolishHost>();
+        Assert.NotEmpty(frames);
+        RenderFrame mount = frames[0];
+        CreateNodePatch image = Assert.Single(
+            mount.Patches.OfType<CreateNodePatch>(), p => p.NodeType == "image");
+        Assert.Equal("#FFCA28", PropOn(mount, image.NodeId, "placeholderColor").Value);
+        Assert.Equal("stretch", PropOn(mount, image.NodeId, "contentMode").Value);
+
+        AttachEventPatch clear = Assert.Single(mount.Patches.OfType<AttachEventPatch>());
+        Assert.Equal(0, Exports.DispatchEventCore(
+            (ulong)clear.HandlerId, /*lang=json*/ """{"name":"click"}"""));
+
+        Assert.True(frames.Count >= 2, "expected a synchronous re-render frame");
+        RenderFrame after = frames[^1];
+
+        // EXACTLY the two null props — `src` did not change and must not
+        // re-emit; nothing lands on the style wire.
+        Assert.Equal(2, after.Patches.OfType<UpdatePropPatch>().Count());
+        Assert.Null(PropOn(after, image.NodeId, "placeholderColor").Value);
+        Assert.Null(PropOn(after, image.NodeId, "contentMode").Value);
+        Assert.Empty(after.Patches.OfType<SetStylePatch>());
     }
 
     // ── The `error` dispatch arm (Phase 7.5 — the onError wire's renderer end) ──
