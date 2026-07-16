@@ -1,12 +1,18 @@
 using System.Text.RegularExpressions;
+using BlazorNative.SampleApp;
 
 namespace BlazorNative.Runtime.Tests;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // RouteTableDriftTests — Phase 7.6 (design decision 1, M7 DoD #8: the
-// route-registry unification's PIN).
+// route-registry unification's PIN). Phase 8.0 retargeted the manifest
+// expressions to the app's `SampleAppPages.All` — the registration inversion
+// moved the ONE declaration to the app, and the drift-test discipline follows
+// the manifest's new owner (DoD #1's own demand). Everything else in this
+// file survives verbatim: same lane, same pair pin, same default-fallback
+// pin, same nine-page content baseline.
 //
-// A page is declared ONCE — one row in `PageManifest.Pages`. `HostSession`'s
+// A page is declared ONCE — one row in the app's manifest. `HostSession`'s
 // mount registry and `NativeNavigationManager`'s route table are DERIVED
 // VIEWS of that array (same object graph — they cannot drift). Android's
 // `MainActivity.DEEP_LINK_COMPONENTS` is the one surviving PINNED MIRROR: it
@@ -58,8 +64,8 @@ public sealed class RouteTableDriftTests
     /// what the Kotlin map is supposed to mirror ("/" rides the separate
     /// `?: "BnDemo"` fallback, pinned below).</summary>
     private static Dictionary<string, string> ExpectedDeepLinkPairs()
-        => PageManifest.Pages
-            .Where(p => p.Route is not null && p.Route != PageManifest.DefaultRoute)
+        => SampleAppPages.All
+            .Where(p => p.Route is not null && p.Route != BlazorNativeApp.DefaultRoute)
             .ToDictionary(p => p.Route!, p => p.Name, StringComparer.Ordinal);
 
     /// <summary>THE PAIR PIN. Android's deep-link map must be exactly the
@@ -83,7 +89,7 @@ public sealed class RouteTableDriftTests
 
         Assert.True(
             onlyInManifest.Count == 0 && onlyInKotlin.Count == 0 && wrongComponent.Count == 0,
-            "MainActivity.kt's DEEP_LINK_COMPONENTS must mirror PageManifest's routed rows "
+            "MainActivity.kt's DEEP_LINK_COMPONENTS must mirror SampleAppPages' routed rows "
             + "(minus \"/\", which rides the ?: fallback) PAIR-FOR-PAIR.\n"
             + $"  only in the manifest (route missing from Kotlin): {JoinPairs(onlyInManifest)}\n"
             + $"  only in Kotlin (route the manifest does not know): {JoinPairs(onlyInKotlin)}\n"
@@ -128,7 +134,7 @@ public sealed class RouteTableDriftTests
         Assert.Equal(
             ["BnDemo", "BnFormDemo", "BnImageDemo", "BnImagePolishDemo", "BnLayoutDemo",
              "BnListDemo", "BnModalDemo", "BnScrollDemo", "BnSettingsPage"],
-            PageManifest.Pages
+            SampleAppPages.All
                 .Where(p => p.Route is not null)
                 .Select(p => p.Name)
                 .OrderBy(n => n, StringComparer.Ordinal));

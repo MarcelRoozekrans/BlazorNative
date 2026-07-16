@@ -3,6 +3,7 @@ using BlazorNative.Runtime;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Rendering;
 using Microsoft.AspNetCore.Components.Web;
+using BlazorNative.SampleApp;
 
 namespace BlazorNative.Runtime.Tests;
 

@@ -206,7 +206,7 @@ kotlin {
 // BlazorNative.Runtime.dll. Shared by the host-JVM unit tests and the
 // Phase 4.3 runPreviewHost JavaExec below.
 val winX64PublishPath: String = rootProject.projectDir
-    .resolve("../../src/BlazorNative.Runtime/bin/Release/net10.0/win-x64/publish")
+    .resolve("../../samples/BlazorNative.SampleApp/bin/Release/net10.0/win-x64/publish")
     .absolutePath
 
 tasks.withType<Test>().configureEach {
@@ -359,7 +359,7 @@ tasks.register<JavaExec>("runInspectorHost") {
 // Expected native build outputs — shared by verifyNativeAssets + the copy task.
 // With -PciSoDir the x86_64 .so comes from the CI artifact dir instead, and no
 // arm64 .so is expected at all (x86_64-only CI shape — see ciSoDir above).
-val runtimePubRoot = rootProject.projectDir.resolve("../../src/BlazorNative.Runtime/bin/Release/net10.0")
+val runtimePubRoot = rootProject.projectDir.resolve("../../samples/BlazorNative.SampleApp/bin/Release/net10.0")
 val runtimeSoX64 = ciSoDir?.resolve("BlazorNative.Runtime.so")
     ?: runtimePubRoot.resolve("linux-bionic-x64/publish/BlazorNative.Runtime.so")
 val runtimeSoArm64: File? =
@@ -378,10 +378,10 @@ val verifyNativeAssets = tasks.register("verifyNativeAssets") {
             put(
                 runtimeSoX64,
                 if (ciSoDir != null) "download the linux-bionic-x64 CI artifact into $ciSoDir"
-                else "dotnet publish src/BlazorNative.Runtime -c Release -r linux-bionic-x64"
+                else "dotnet publish samples/BlazorNative.SampleApp -c Release -r linux-bionic-x64"
             )
             runtimeSoArm64?.let {
-                put(it, "dotnet publish src/BlazorNative.Runtime -c Release -r linux-bionic-arm64")
+                put(it, "dotnet publish samples/BlazorNative.SampleApp -c Release -r linux-bionic-arm64")
             }
         }
         val missing = expected.filterKeys { !it.exists() }

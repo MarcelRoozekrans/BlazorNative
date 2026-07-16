@@ -10,7 +10,10 @@
 #   publish-so (windows-latest) — the only toolchain we build the bionic .so
 #     on (mirrors ci.yml verbatim: pinned NDK 26.3.11579264, 4 accepted
 #     IL2072s, nine blazornative_* exports via llvm-readelf) → uploads the
-#     linux-bionic-x64 BlazorNative.Runtime.so as an artifact.
+#     linux-bionic-x64 BlazorNative.Runtime.so as an artifact. The publish
+#     head is samples/BlazorNative.SampleApp (Phase 8.0 decision 3); the
+#     artifact NAME stays BlazorNative.Runtime.so — the csproj's
+#     CanonicalizeNativeArtifactName target owns the rename.
 #   emulator (ubuntu-latest, KVM) — downloads the .so, boots the API 34
 #     google_apis x86_64 Pixel 6 image (mirrors the local AVD
 #     blazornative-pixel6-x86_64), runs connectedAndroidTest with
@@ -112,7 +115,7 @@ jobs:
       - name: Publish linux-bionic-x64 (assert exactly 4 IL2072 warnings)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "publish-bionic-x64.log"
-          dotnet publish src/BlazorNative.Runtime -c Release -r linux-bionic-x64 -tl:off -nologo 2>&1 | Tee-Object -FilePath $log
+          dotnet publish samples/BlazorNative.SampleApp -c Release -r linux-bionic-x64 -tl:off -nologo 2>&1 | Tee-Object -FilePath $log
           if ($LASTEXITCODE -ne 0) { throw "linux-bionic-x64 publish failed (exit $LASTEXITCODE)" }
           $il2072 = @(Select-String -Path $log -Pattern 'warning IL2072')
           Write-Host "IL2072 count: $($il2072.Count)"
@@ -125,7 +128,7 @@ jobs:
         run: |
           $readelf = "$env:ANDROID_NDK_ROOT\toolchains\llvm\prebuilt\windows-x86_64\bin\llvm-readelf.exe"
           if (-not (Test-Path $readelf)) { throw "llvm-readelf.exe not found at $readelf" }
-          $so = "src\BlazorNative.Runtime\bin\Release\net10.0\linux-bionic-x64\publish\BlazorNative.Runtime.so"
+          $so = "samples\BlazorNative.SampleApp\bin\Release\net10.0\linux-bionic-x64\publish\BlazorNative.Runtime.so"
           $out = & $readelf --dyn-syms $so
           $expected = @(
             'blazornative_dispatch_event', 'blazornative_fetch_complete',
@@ -145,7 +148,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: BlazorNative.Runtime-linux-bionic-x64
-          path: src/BlazorNative.Runtime/bin/Release/net10.0/linux-bionic-x64/publish/BlazorNative.Runtime.so
+          path: samples/BlazorNative.SampleApp/bin/Release/net10.0/linux-bionic-x64/publish/BlazorNative.Runtime.so
           if-no-files-found: error
 
   # ── Job B: emulator suite on ubuntu KVM against the Windows-built .so ──────

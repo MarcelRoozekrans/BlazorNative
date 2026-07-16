@@ -1,0 +1,181 @@
+<Project Sdk="Microsoft.NET.Sdk.Razor">
+
+  <!-- ─────────────────────────────────────────────────────────────────────
+       BlazorNative.SampleApp — Phase 8.0 (M8 DoD #1: "the demo app is a
+       consumer, not a tenant").
+
+       THE app the shells embed: the 9 demo pages + the 5 test probes (+
+       BnThemedPanel and the SpikeRazor canary), declared ONCE in
+       SampleAppPages.All and pushed through BlazorNativeApp.RegisterPages by
+       a [ModuleInitializer]. IN the solution — the rule, stated once: a
+       samples project is in the solution iff it is in the required
+       compile/test path (this project is the shells' publish source and the
+       goldens' subject; ConsumerSmoke proves package-only consumption and
+       stays out).
+
+       THE PUBLISH HEAD lives here now (moved verbatim from
+       BlazorNative.Runtime.csproj — Phase 8.0 decision 3): the shells'
+       artifact is `dotnet publish samples/BlazorNative.SampleApp -c Release
+       -r <rid>`. The 9 exports still live in Runtime's Exports.cs —
+       UnmanagedEntryPointsAssembly below makes ILC emit the unmanaged entry
+       points from the referenced assembly — and the embedded artifact NAME
+       is shell contract (libBlazorNative.Runtime.so / .a /
+       BlazorNative.Runtime.dll: JNA load name, jniLibs, the vendor path), so
+       the CanonicalizeNativeArtifactName target renames the native output
+       inside the publish folder. Every consumer re-points a DIRECTORY only.
+
+       The pages remain subject to the 7.1 supported-.razor-subset laws
+       (components referenced in markup must be public — the BnThemedPanel
+       lesson — the pinned SDK pair, no web-only constructs); the SDK's web
+       machinery is off (StaticWebAssetsEnabled=false, the 7.0 record).
+       See docs/plans/2026-07-16-phase-8.0-design.md.
+       ───────────────────────────────────────────────────────────────────── -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>BlazorNative.SampleApp</RootNamespace>
+    <OutputType>Library</OutputType>
+    <IsPackable>false</IsPackable>
+    <StaticWebAssetsEnabled>false</StaticWebAssetsEnabled>
+
+    <PublishAot>true</PublishAot>
+    <SelfContained>true</SelfContained>
+    <InvariantGlobalization>true</InvariantGlobalization>
+
+    <!-- Phase 3.0a's trim-safety annotations carry over via ProjectReference
+         on Runtime → Renderer + Core + Http. Surface every warning
+         individually so we can spot any new shape that emerges under
+         NativeAOT (the publish gate asserts exactly 4 IL2072). -->
+    <TrimmerSingleWarn>false</TrimmerSingleWarn>
+
+    <RuntimeIdentifiers>win-x64;linux-bionic-arm64;linux-bionic-x64</RuntimeIdentifiers>
+  </PropertyGroup>
+
+  <!-- Phase 3.0c: NativeAOT for Android via runtime-pack bypass. The RID-specific
+       ILCompiler packages don't exist for .NET 10 (3.0b Gate 4 RED); the host ILC
+       compiles against the target runtime pack instead. Unsupported-but-serviced
+       path — RuntimeFrameworkVersion pins the exact runtime pack so a servicing
+       release can't silently change the toolchain under us. The SDK side
+       (host ILCompiler) is pinned via global.json (feature band 10.0.3xx).
+       See docs/plans/2026-07-08-phase-3.0c-redesign.md. -->
+  <PropertyGroup Condition="$(RuntimeIdentifier.StartsWith('linux-bionic'))">
+    <PublishAotUsingRuntimePack>true</PublishAotUsingRuntimePack>
+    <DisableUnsupportedError>true</DisableUnsupportedError>
+    <RuntimeFrameworkVersion>10.0.9</RuntimeFrameworkVersion>
+  </PropertyGroup>
+
+  <!-- Phase 5.0: NativeAOT for the iOS simulator via the SAME runtime-pack
+       bypass. The .NET 10 SDK gates PublishAot on a hardcoded AOT-RID allow-list
+       (error NETSDK1203) even though the packs exist on nuget.org
+       (Microsoft.NETCore.App.Runtime.NativeAOT.iossimulator-arm64 10.0.9 AND the
+       RID-specific runtime.iossimulator-arm64.microsoft.dotnet.ilcompiler 10.0.9
+       — the latter, unlike linux-bionic, actually exists). DisableUnsupportedError
+       lifts the gate; PublishAotUsingRuntimePack restores the packs; the version
+       is pinned to 10.0.9 so a servicing release can't shift the toolchain. These
+       properties live HERE (not on the CLI) so they never propagate to P2P
+       references as global properties — the Phase 3.0c bionic pattern. The Apple
+       toolchain (clang/ld via xcrun) is found natively on the macOS runner, so no
+       vendored linker shim is needed (contrast BionicNativeAot.targets on Windows).
+       Behavior-neutral for win-x64/linux-bionic (RID condition never matches).
+       See docs/plans/2026-07-12-phase-5.0-spike-conclusion.md. -->
+  <PropertyGroup Condition="$(RuntimeIdentifier.StartsWith('iossimulator')) Or $(RuntimeIdentifier.StartsWith('ios-'))">
+    <PublishAotUsingRuntimePack>true</PublishAotUsingRuntimePack>
+    <DisableUnsupportedError>true</DisableUnsupportedError>
+    <RuntimeFrameworkVersion>10.0.9</RuntimeFrameworkVersion>
+    <!-- Phase 5.2 (M5 DoD #2): emit a STATIC archive instead of the default
+         shared library, so the Swift/UIKit shell links the NativeAOT runtime
+         directly into the iOS app binary. RID-gated to iOS ONLY — win-x64
+         stays a .dll and linux-bionic stays a .so. The static-embed link
+         recipe is documented in docs/plans/2026-07-12-phase-5.2-conclusion.md. -->
+    <NativeLib>Static</NativeLib>
+  </PropertyGroup>
+
+  <Import Project="..\..\build\BionicNativeAot.targets" />
+
+  <ItemGroup>
+    <!-- Phase 8.0: the 9 blazornative_* exports live in Runtime's Exports.cs,
+         untouched — this makes ILC emit the unmanaged entry points from the
+         REFERENCED assembly into this publish. The 9-export + visibility
+         checks (all RIDs) verify it same-commit. -->
+    <UnmanagedEntryPointsAssembly Include="BlazorNative.Runtime" />
+    <!-- THE APP ROOTS ITSELF (Gate 1 finding, the phase's named trim risk).
+         In nativelib mode ILC roots ONLY the input module's
+         UnmanagedCallersOnly exports — and this app's exports are emitted
+         from the REFERENCED Runtime assembly (above), so nothing in the
+         image references SampleApp code and ILC trims the ENTIRE app,
+         module initializer included (verified: 0 IL2072 instead of 4, the
+         page names absent from the binary, and the registry would be empty
+         at runtime — the loud rc-1 path). The design's "module initializers
+         are unconditional ILC roots" holds only for modules that survive
+         into the image; an app whose exports live elsewhere must root its
+         own assembly. This roots ONLY the app (its manifest + pages —
+         everything the manifest names is statically reachable anyway); the
+         shipped libraries stay fully trimmable, so the trim law is intact:
+         with this root the publish shows EXACTLY the 4 accepted IL2072s
+         again. 8.3's template must carry this line. -->
+    <TrimmerRootAssembly Include="BlazorNative.SampleApp" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The demo pages' `internal const` frame arithmetic keeps its test
+         visibility (the 6.2 pattern, new grantor — Phase 8.0 decision 4). -->
+    <InternalsVisibleTo Include="BlazorNative.Runtime.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\BlazorNative.Runtime\BlazorNative.Runtime.csproj" />
+    <ProjectReference Include="..\..\src\BlazorNative.Components\BlazorNative.Components.csproj" />
+    <!-- Phase 4.1: BN rules ride every build; the 5.0 RID shield — see
+         BlazorNative.Runtime.csproj's analyzer reference for the rationale. -->
+    <ProjectReference Include="..\..\src\BlazorNative.Analyzers\BlazorNative.Analyzers.csproj"
+                      OutputItemType="Analyzer" ReferenceOutputAssembly="false"
+                      UndefineProperties="RuntimeIdentifier;PublishAot;PublishAotUsingRuntimePack" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Components" Version="10.0.1*" />
+    <PackageReference Include="Microsoft.AspNetCore.Components.Web" Version="10.0.1*" />
+  </ItemGroup>
+
+  <!-- ─────────────────────────────────────────────────────────────────────
+       Phase 8.0 decision 3: the embedded artifact NAME is frozen shell
+       contract, the publish output canonicalizes it. This project's native
+       output (BlazorNative.SampleApp.dll/.so/.a) is COPIED to the canonical
+       BlazorNative.Runtime.* name inside the publish folder, so gradle's
+       runtimePubRoot, ci.yml's copy/upload steps and ios.yml's vendor
+       staging re-point a DIRECTORY and nothing else. One rename, owned by
+       the project, not scattered across CI steps. Errors loudly when an AOT
+       publish produced no recognizable native artifact (a shape change must
+       never ship an un-canonicalized publish silently).
+       ───────────────────────────────────────────────────────────────────── -->
+  <Target Name="CanonicalizeNativeArtifactName" AfterTargets="Publish"
+          Condition="'$(PublishAot)' == 'true' and '$(RuntimeIdentifier)' != ''">
+    <ItemGroup>
+      <!-- The publish folder — where win-x64's .dll and bionic's .so land. -->
+      <_BnNativeArtifact Include="$(PublishDir)$(AssemblyName).dll"
+                         Canonical="$(PublishDir)BlazorNative.Runtime.dll"
+                         Condition="Exists('$(PublishDir)$(AssemblyName).dll')" />
+      <_BnNativeArtifact Include="$(PublishDir)$(AssemblyName).so"
+                         Canonical="$(PublishDir)BlazorNative.Runtime.so"
+                         Condition="Exists('$(PublishDir)$(AssemblyName).so')" />
+      <_BnNativeArtifact Include="$(PublishDir)$(AssemblyName).a"
+                         Canonical="$(PublishDir)BlazorNative.Runtime.a"
+                         Condition="Exists('$(PublishDir)$(AssemblyName).a')" />
+      <!-- The native intermediate — NativeLib=Static's .a can land here
+           instead of publish/ (ci.yml's .a search has always accepted both
+           locations); canonicalize wherever the artifact actually is. -->
+      <_BnNativeArtifact Include="$(NativeOutputPath)$(AssemblyName).a"
+                         Canonical="$(NativeOutputPath)BlazorNative.Runtime.a"
+                         Condition="Exists('$(NativeOutputPath)$(AssemblyName).a')" />
+    </ItemGroup>
+    <Error Condition="'@(_BnNativeArtifact)' == ''"
+           Text="CanonicalizeNativeArtifactName: no native artifact ($(AssemblyName).dll/.so/.a) found in $(PublishDir) or $(NativeOutputPath) — the AOT publish shape changed; the shells' frozen BlazorNative.Runtime.* artifact name cannot be produced." />
+    <Copy SourceFiles="@(_BnNativeArtifact)"
+          DestinationFiles="@(_BnNativeArtifact->'%(Canonical)')" />
+    <Message Importance="high"
+             Text="Canonicalized native artifact: @(_BnNativeArtifact->'%(Filename)%(Extension) -> %(Canonical)', '; ')" />
+  </Target>
+
+</Project>

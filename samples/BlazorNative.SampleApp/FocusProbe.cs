@@ -3,7 +3,7 @@ using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Rendering;
 using Microsoft.AspNetCore.Components.Web;
 
-namespace BlazorNative.Runtime;
+namespace BlazorNative.SampleApp;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // FocusProbe — Phase 4.2 (M4 DoD #4): the focus/blur proof app. SCAFFOLDING,

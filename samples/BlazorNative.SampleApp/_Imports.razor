@@ -1,0 +1,20 @@
+@*
+    ─────────────────────────────────────────────────────────────────────────
+    _Imports.razor — Phase 8.0: the project-wide Razor imports for every
+    .razor page in BlazorNative.SampleApp (the 7.1 pattern, new project).
+
+    The Components.Web line is LOAD-BEARING, twice over (the 7.0 spike's
+    recorded footgun): bind and event tag helpers are namespace-scoped like
+    components, so WITHOUT this @using in scope the compiler emits
+    `@bind`/`@onclick` as LITERAL MARKUP with ZERO diagnostics and a green
+    build — silently dead on a native shell. See
+    src/BlazorNative.Components/_Imports.razor for the long-form note.
+
+    BlazorNative.Components is the LIBRARY namespace — the Bn* components the
+    pages compose; the pages themselves live in this project's own
+    BlazorNative.SampleApp namespace (in scope implicitly).
+    ─────────────────────────────────────────────────────────────────────────
+*@
+@using Microsoft.AspNetCore.Components.Web
+@using BlazorNative.Components
+@using BlazorNative.Core

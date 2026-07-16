@@ -2,6 +2,7 @@ using BlazorNative.Components;
 using BlazorNative.Renderer;
 using BlazorNative.Runtime;
 using Microsoft.AspNetCore.Components;
+using BlazorNative.SampleApp;
 
 namespace BlazorNative.Runtime.Tests;
 

@@ -114,11 +114,14 @@ function Get-ConnectedDevice {
     return $devices | Select-Object -First 1
 }
 
-<# Publishes BlazorNative.Runtime for $Rid; returns the elapsed [TimeSpan] or
-   $null on failure (with the dll-lock hint when the log smells of one). #>
+<# Publishes the SampleApp head (samples/BlazorNative.SampleApp — Phase 8.0
+   decision 3; the output is canonicalized to BlazorNative.Runtime.* by the
+   csproj, so every consumer path below is unchanged) for $Rid; returns the
+   elapsed [TimeSpan] or $null on failure (with the dll-lock hint when the
+   log smells of one). #>
 function Invoke-Publish([string]$Rid) {
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
-    $log = & dotnet publish (Join-Path $repoRoot "src\BlazorNative.Runtime") -c Release -r $Rid -tl:off -nologo 2>&1
+    $log = & dotnet publish (Join-Path $repoRoot "samples\BlazorNative.SampleApp") -c Release -r $Rid -tl:off -nologo 2>&1
     $sw.Stop()
     if ($LASTEXITCODE -ne 0) {
         $log | Select-Object -Last 15 | Out-Host

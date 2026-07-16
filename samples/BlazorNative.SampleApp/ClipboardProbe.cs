@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Rendering;
 using Microsoft.AspNetCore.Components.Web;
 
-namespace BlazorNative.Runtime;
+namespace BlazorNative.SampleApp;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ClipboardProbe — Phase 5.4 (M5 DoD #6): the consumer that proves the

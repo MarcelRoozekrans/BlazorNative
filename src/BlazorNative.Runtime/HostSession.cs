@@ -42,13 +42,45 @@ internal static unsafe class HostSession
 
     // Phase 7.6 (design decision 1): a DERIVED VIEW of PageManifest.Pages —
     // ALL rows (routed pages AND the unrouted probes), name → mount thunk.
-    // The per-page provenance comments live on the manifest rows now; the
-    // trim-law shape (statically-rooted Mount<T> lambdas) is unchanged, the
-    // lambdas just moved. A mutable Dictionary on purpose:
-    // ReplaceRegistryEntryForTests swaps entries in THIS copy — the manifest
-    // itself is never touched.
-    private static readonly Dictionary<string, Func<NativeRenderer, int>> s_components =
-        PageManifest.Pages.ToDictionary(p => p.Name, p => p.Mount, StringComparer.Ordinal);
+    // Phase 8.0: LAZY-AFTER-FREEZE instead of static-readonly. Under NativeAOT,
+    // ILC may pre-initialize static ctors at compile time — a static-readonly
+    // projection would snapshot an EMPTY registry before the app's module
+    // initializer registered anything, the exact silent failure the inversion
+    // cannot afford (PageManifest.cs's header). First materialization IS the
+    // freeze point (reading PageManifest.Pages flips its frozen bit). A
+    // mutable Dictionary on purpose: ReplaceRegistryEntryForTests swaps
+    // entries in THIS copy — the manifest itself is never touched.
+    private static Dictionary<string, Func<NativeRenderer, int>>? s_components;
+
+    private static Dictionary<string, Func<NativeRenderer, int>> Components
+    {
+        get
+        {
+            Dictionary<string, Func<NativeRenderer, int>>? view = Volatile.Read(ref s_components);
+            if (view is not null)
+                return view;
+
+            lock (s_lock)
+            {
+                if (s_components is null)
+                {
+                    Volatile.Write(ref s_components, PageManifest.Pages
+                        .ToDictionary(p => p.Name, p => p.Mount, StringComparer.Ordinal));
+                }
+                return s_components!;
+            }
+        }
+    }
+
+    /// <summary>Test-only (BlazorNativeApp.ResetRegistrationForTests): drops
+    /// the materialized view so a re-registered manifest projects fresh.</summary>
+    internal static void ResetComponentsViewForTests()
+    {
+        lock (s_lock)
+        {
+            Volatile.Write(ref s_components, null);
+        }
+    }
 
     /// <summary>Stores the host's frame callback. IntPtr.Zero disables
     /// delivery; re-registration is allowed (last wins).</summary>
@@ -124,7 +156,7 @@ internal static unsafe class HostSession
     /// construction) and this surface remains for tests that enumerate the
     /// mountable names.</summary>
     internal static IReadOnlyCollection<string> RegisteredComponentsForTests
-        => s_components.Keys;
+        => Components.Keys;
 
     /// <summary>Test-only (same posture as StrictErrorsForTests): swaps a
     /// mount-registry entry so failure paths — a navigation swap whose
@@ -136,8 +168,8 @@ internal static unsafe class HostSession
     internal static Func<NativeRenderer, int> ReplaceRegistryEntryForTests(
         string name, Func<NativeRenderer, int> mount)
     {
-        Func<NativeRenderer, int> original = s_components[name];
-        s_components[name] = mount;
+        Func<NativeRenderer, int> original = Components[name];
+        Components[name] = mount;
         return original;
     }
 
@@ -156,7 +188,20 @@ internal static unsafe class HostSession
     /// root's tracking — host contract: use navigation to change pages.</remarks>
     public static int TryMount(string name)
     {
-        if (!s_components.ContainsKey(name))
+        // Phase 8.0: the distinguished empty-registry diagnostic. Rides the
+        // EXISTING rc 1 (no new return code, no ABI change) but names the fix:
+        // an app that never called RegisterPages cannot mount anything, and
+        // "unknown component" would send the integrator hunting a typo.
+        Dictionary<string, Func<NativeRenderer, int>> components = Components;
+        if (components.Count == 0)
+        {
+            Console.Error.WriteLine(
+                "[HostSession] no pages are registered — the app assembly must call "
+                + "BlazorNativeApp.RegisterPages at startup (a [ModuleInitializer]; "
+                + "see samples/BlazorNative.SampleApp).");
+            return 1;
+        }
+        if (!components.ContainsKey(name))
             return 1;
 
         try
@@ -201,7 +246,7 @@ internal static unsafe class HostSession
     /// neither happens when a (possibly deferred) swap fails.</param>
     internal static void SwapRoot(string name, Action? afterSwap = null)
     {
-        if (!s_components.ContainsKey(name))
+        if (!Components.ContainsKey(name))
         {
             throw new InvalidOperationException(
                 $"navigation swap target '{name}' is not in the mount registry");
@@ -235,7 +280,7 @@ internal static unsafe class HostSession
     /// even for direct named mounts. Throws on mount failure.</summary>
     private static void MountRoot(string name, NativeRenderer renderer)
     {
-        int rootId = s_components[name](renderer);
+        int rootId = Components[name](renderer);
         Volatile.Write(ref s_currentRootComponentId, rootId);
         if (Volatile.Read(ref s_navigation) is { } nav
             && NativeNavigationManager.TryGetRouteForComponent(name, out string route))

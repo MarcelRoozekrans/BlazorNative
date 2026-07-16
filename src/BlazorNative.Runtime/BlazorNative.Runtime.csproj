@@ -3,13 +3,21 @@
   <!-- ─────────────────────────────────────────────────────────────────────
        BlazorNative.Runtime — Phase 3.0b/3.0c (carried its native-host
        working name until the Phase 3.0e rename)
-       NativeAOT-compiled shared library — the permanent BlazorNative
-       runtime. Replaced the wasi-experimental .wasm path, which Phase 3.0e
-       deleted. Multi-RID: win-x64 for JVM dev loop, linux-bionic-arm64
-       + linux-bionic-x64 for Android (Windows-direct via the runtime-pack
-       bypass — see the Phase 3.0c PropertyGroup below; no WSL needed).
-       See docs/plans/2026-05-31-phase-3.0b-design.md and
-       docs/plans/2026-07-08-phase-3.0c-redesign.md.
+       The permanent BlazorNative runtime: the 9 blazornative_* exports
+       (Exports.cs), the host session, the frame/bridge wire protocol, and
+       the Phase 8.0 registration API (BlazorNativeApp.RegisterPages — the
+       app names its pages; the library names no app type).
+
+       Phase 8.0 (M8 DoD #1): the NativeAOT PUBLISH HEAD moved to
+       samples/BlazorNative.SampleApp — PublishAot/RuntimeIdentifiers, the
+       3.0c/5.0 runtime-pack-bypass PropertyGroups, NativeLib=Static and the
+       BionicNativeAot.targets import all live THERE now. This project is a
+       plain packable library (8.1 ships it; PublishAot never belonged in a
+       package): the exports are emitted from the app's publish via
+       <UnmanagedEntryPointsAssembly Include="BlazorNative.Runtime" /> in the
+       sample csproj. IsAotCompatible stays — the trim annotations are this
+       library's contract with every consumer's ILC pass.
+       See docs/plans/2026-07-16-phase-8.0-design.md.
        ───────────────────────────────────────────────────────────────────── -->
 
   <PropertyGroup>
@@ -19,66 +27,11 @@
     <RootNamespace>BlazorNative.Runtime</RootNamespace>
     <OutputType>Library</OutputType>
 
-    <PublishAot>true</PublishAot>
     <IsAotCompatible>true</IsAotCompatible>
-    <SelfContained>true</SelfContained>
-    <InvariantGlobalization>true</InvariantGlobalization>
-
-    <!-- Phase 3.0a's trim-safety annotations carry over via ProjectReference
-         on Renderer + Core + Http. Surface every warning individually so we
-         can spot any new shape that emerges under NativeAOT (vs Mono-AOT). -->
-    <TrimmerSingleWarn>false</TrimmerSingleWarn>
-
-    <RuntimeIdentifiers>win-x64;linux-bionic-arm64;linux-bionic-x64</RuntimeIdentifiers>
 
     <!-- Exports.cs uses unsafe pointer params on [UnmanagedCallersOnly] entry points. -->
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
-
-  <!-- Phase 3.0c: NativeAOT for Android via runtime-pack bypass. The RID-specific
-       ILCompiler packages don't exist for .NET 10 (3.0b Gate 4 RED); the host ILC
-       compiles against the target runtime pack instead. Unsupported-but-serviced
-       path — RuntimeFrameworkVersion pins the exact runtime pack so a servicing
-       release can't silently change the toolchain under us. The SDK side
-       (host ILCompiler) is pinned via global.json (feature band 10.0.3xx).
-       See docs/plans/2026-07-08-phase-3.0c-redesign.md. -->
-  <PropertyGroup Condition="$(RuntimeIdentifier.StartsWith('linux-bionic'))">
-    <PublishAotUsingRuntimePack>true</PublishAotUsingRuntimePack>
-    <DisableUnsupportedError>true</DisableUnsupportedError>
-    <RuntimeFrameworkVersion>10.0.9</RuntimeFrameworkVersion>
-  </PropertyGroup>
-
-  <!-- Phase 5.0: NativeAOT for the iOS simulator via the SAME runtime-pack
-       bypass. The .NET 10 SDK gates PublishAot on a hardcoded AOT-RID allow-list
-       (error NETSDK1203) even though the packs exist on nuget.org
-       (Microsoft.NETCore.App.Runtime.NativeAOT.iossimulator-arm64 10.0.9 AND the
-       RID-specific runtime.iossimulator-arm64.microsoft.dotnet.ilcompiler 10.0.9
-       — the latter, unlike linux-bionic, actually exists). DisableUnsupportedError
-       lifts the gate; PublishAotUsingRuntimePack restores the packs; the version
-       is pinned to 10.0.9 so a servicing release can't shift the toolchain. These
-       properties live HERE (not on the CLI) so they never propagate to P2P
-       references as global properties — the Phase 3.0c bionic pattern. The Apple
-       toolchain (clang/ld via xcrun) is found natively on the macOS runner, so no
-       vendored linker shim is needed (contrast BionicNativeAot.targets on Windows).
-       Behavior-neutral for win-x64/linux-bionic (RID condition never matches).
-       See docs/plans/2026-07-12-phase-5.0-spike-conclusion.md. -->
-  <PropertyGroup Condition="$(RuntimeIdentifier.StartsWith('iossimulator')) Or $(RuntimeIdentifier.StartsWith('ios-'))">
-    <PublishAotUsingRuntimePack>true</PublishAotUsingRuntimePack>
-    <DisableUnsupportedError>true</DisableUnsupportedError>
-    <RuntimeFrameworkVersion>10.0.9</RuntimeFrameworkVersion>
-    <!-- Phase 5.2 (M5 DoD #2): emit a STATIC archive (libBlazorNative.Runtime.a)
-         instead of the default shared library, so the Swift/UIKit shell links the
-         NativeAOT runtime directly into the iOS app binary (the app-embed shape an
-         iOS app wants; the 5.0 spike deferred this packaging decision). RID-gated
-         to iOS ONLY — win-x64 stays a .dll and linux-bionic stays a .so (the RID
-         condition never matches them), so this is behavior-neutral for the three
-         shipping RIDs. The static-embed link recipe (bootstrapperdll.o direct-link
-         + force_load .a + merged support archive + the spike frameworks) is
-         documented in docs/plans/2026-07-12-phase-5.2-conclusion.md. See docs/plans/2026-07-12-phase-5.2-design.md. -->
-    <NativeLib>Static</NativeLib>
-  </PropertyGroup>
-
-  <Import Project="..\..\build\BionicNativeAot.targets" />
 
   <ItemGroup>
     <!-- Phase 3.0d Gate 1: FrameArena/FrameEncoder are internal; host-CLR tests
@@ -90,7 +43,11 @@
     <ProjectReference Include="..\BlazorNative.Core\BlazorNative.Core.csproj" />
     <ProjectReference Include="..\BlazorNative.Renderer\BlazorNative.Renderer.csproj" />
     <ProjectReference Include="..\BlazorNative.Http\BlazorNative.Http.csproj" />
-    <ProjectReference Include="..\BlazorNative.Components\BlazorNative.Components.csproj" />
+    <!-- Phase 8.0: the Components ProjectReference is GONE — the registration
+         inversion deleted the dependency arrow itself. With the manifest rows
+         and the probes moved to samples/BlazorNative.SampleApp, no Runtime
+         source names a Components type; the SampleApp owns the
+         Runtime+Components join the shells embed. -->
     <!-- Phase 4.1: BN rules ride every src build (zero-warning bar, M4 DoD #3).
          Exports.cs is the BN0020/BN0021 reference conformer. -->
     <!-- Phase 5.0: shield the netstandard2.0 analyzer from the target RID. An

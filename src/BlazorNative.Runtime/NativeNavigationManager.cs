@@ -39,19 +39,52 @@ public sealed class NativeNavigationManager : INavigationManager
 
     /// <summary>route → mount-registry key. Static data, no per-session state.
     /// Phase 7.6: derived from <see cref="PageManifest.Pages"/>' routed rows —
-    /// the per-page provenance comments live on the manifest rows now, and a
-    /// value here is a <c>HostSession.s_components</c> key by construction
-    /// (both are views of the one array).</summary>
-    private static readonly Dictionary<string, string> s_routes =
-        PageManifest.Pages
-            .Where(p => p.Route is not null)
-            .ToDictionary(p => p.Route!, p => p.Name, StringComparer.Ordinal);
+    /// a value here is a HostSession mount-registry key by construction (both
+    /// are views of the one array). Phase 8.0: LAZY-AFTER-FREEZE instead of
+    /// static-readonly — ILC may pre-initialize static ctors at compile time,
+    /// and a projection snapshotted before the app's module initializer
+    /// registered anything would be silently EMPTY (PageManifest.cs's header).
+    /// First materialization is the freeze point.</summary>
+    private static Dictionary<string, string>? s_routes;
+    private static readonly object s_routesLock = new();
+
+    private static Dictionary<string, string> Routes
+    {
+        get
+        {
+            Dictionary<string, string>? view = Volatile.Read(ref s_routes);
+            if (view is not null)
+                return view;
+
+            lock (s_routesLock)
+            {
+                if (s_routes is null)
+                {
+                    Volatile.Write(ref s_routes, PageManifest.Pages
+                        .Where(p => p.Route is not null)
+                        .ToDictionary(p => p.Route!, p => p.Name, StringComparer.Ordinal));
+                }
+                return s_routes!;
+            }
+        }
+    }
+
+    /// <summary>Test-only (BlazorNativeApp.ResetRegistrationForTests): drops
+    /// the materialized view so a re-registered manifest projects fresh.</summary>
+    internal static void ResetRoutesViewForTests()
+    {
+        lock (s_routesLock)
+        {
+            Volatile.Write(ref s_routes, null);
+        }
+    }
 
     /// <summary>The default route's component — the name a host mounts to get
     /// "the routed app" (MainActivity's no-extra default). HostSession's
     /// route-aware initial mount only ever overrides THIS name. Phase 7.6:
-    /// forwards to the manifest, where the row itself lives.</summary>
-    internal static string DefaultComponent => PageManifest.DefaultComponent;
+    /// forwards to the manifest, where the row itself lives (null when the
+    /// registered manifest has no routed rows — Phase 8.0).</summary>
+    internal static string? DefaultComponent => PageManifest.DefaultComponent;
 
     /// <summary>Test-only: the whole route table. Born in Phase 6.3, when this
     /// table and <c>HostSession</c>'s mount registry were two hand-maintained
@@ -59,13 +92,13 @@ public sealed class NativeNavigationManager : INavigationManager
     /// both derive from <see cref="PageManifest.Pages"/> (that test retired as
     /// a by-construction tautology) and this surface remains for the tests
     /// that drive navigation by route.</summary>
-    internal static IReadOnlyDictionary<string, string> RoutesForTests => s_routes;
+    internal static IReadOnlyDictionary<string, string> RoutesForTests => Routes;
 
     /// <summary>Reverse lookup for HostSession's mount tracking: true when
     /// <paramref name="component"/> is a routed page, with its route.</summary>
     internal static bool TryGetRouteForComponent(string component, out string route)
     {
-        foreach ((string r, string name) in s_routes)
+        foreach ((string r, string name) in Routes)
         {
             if (name == component)
             {
@@ -95,10 +128,10 @@ public sealed class NativeNavigationManager : INavigationManager
 
     public ValueTask NavigateToAsync(string route)
     {
-        if (!s_routes.TryGetValue(route, out string? component))
+        if (!Routes.TryGetValue(route, out string? component))
         {
             throw new ArgumentException(
-                $"unknown route '{route}' — known routes: {string.Join(", ", s_routes.Keys)}",
+                $"unknown route '{route}' — known routes: {string.Join(", ", Routes.Keys)}",
                 nameof(route));
         }
 
@@ -186,7 +219,7 @@ public sealed class NativeNavigationManager : INavigationManager
 
     /// <summary>Component for a KNOWN route (callers pass table keys:
     /// CurrentRoute is clamped to the table by QueryStartupRoute).</summary>
-    internal string ResolveComponent(string route) => s_routes[route];
+    internal string ResolveComponent(string route) => Routes[route];
 
     /// <summary>HostSession calls this after mounting a ROUTED component so
     /// CurrentRoute agrees with the screen even for direct named mounts
@@ -205,7 +238,7 @@ public sealed class NativeNavigationManager : INavigationManager
         try
         {
             string route = _bridge.GetCurrentRouteAsync().GetAwaiter().GetResult();
-            return s_routes.ContainsKey(route) ? route : DefaultRoute;
+            return Routes.ContainsKey(route) ? route : DefaultRoute;
         }
         catch (InvalidOperationException)
         {

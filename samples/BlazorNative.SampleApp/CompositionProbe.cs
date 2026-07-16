@@ -2,7 +2,7 @@ using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Rendering;
 using Microsoft.AspNetCore.Components.Web;
 
-namespace BlazorNative.Runtime;
+namespace BlazorNative.SampleApp;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CompositionProbe — Phase 3.3 Task 7 (design §6): the composition proof app.

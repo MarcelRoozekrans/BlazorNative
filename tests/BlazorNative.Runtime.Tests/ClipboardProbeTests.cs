@@ -1,6 +1,7 @@
 using BlazorNative.Core;
 using BlazorNative.Renderer;
 using BlazorNative.Runtime;
+using BlazorNative.SampleApp;
 
 namespace BlazorNative.Runtime.Tests;
 
