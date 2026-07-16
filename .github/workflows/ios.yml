@@ -339,7 +339,7 @@ jobs:
             > ios-out/xcresult.json 2>/dev/null || true
           ls -la ios-out/crash || true
 
-      - name: Assert XCTest baseline (132 passed / 0 failed)
+      - name: Assert XCTest baseline (152 passed / 0 failed)
         if: always()
         run: |
           log=ios-out/xcodebuild-test.log
@@ -769,10 +769,65 @@ jobs:
           #       method (bnShouldReceive(touchView:)) — the delegate body minus only the
           #       `touch.view` property read — and this test asks it on the LIVE mounted
           #       scrim recognizer: content box -> false, scrim itself -> true.
+          # 132 -> 152 (Phase 7.5 Gate 3, +20) — the image-polish mirror: the placeholder
+          # STATE TABLE (paint by construction — a bounds-tracking color subview, never
+          # backgroundColor [the style owns that slot] and never a color UIImage [aspect-fit
+          # letterboxes it]; the measure func reads bnNaturalSize, which no placeholder path
+          # touches), the `error` wire (a new WORD on the existing dispatch wire, payload =
+          # the wire's src VERBATIM, counted via errorDispatchesSent), and contentMode →
+          # UIView.ContentMode (bnContentModeFor — the strict four-word table Kotlin's
+          # contentModeFor twins; unknown → diagnose-don't-apply, null → contain) plus its
+          # iOS-only corollary: clipsToBounds = true at creation, pinned as a PROPERTY
+          # (Cover/Center bleed over siblings otherwise, and no frame can see it). Every
+          # LAYOUT number is one WidgetMapperImagePolishTest / BnImagePolishDemoAndroidTest
+          # already assert on the AVD (Gate 2, instrumented 166 -> 182) — that PAIRING is
+          # M7 DoD #6.
+          #   +17 BnImagePolishMapperTests — the three normative tables at the mapper level,
+          #       the Kotlin suite row for row (placeholder paints in flight / SUCCESS clears
+          #       [+ the which-bytes pin: /slow.png serves the 64×48 FIXED bytes now, the
+          #       razor's stated Gates 2/3 contract] / ERROR keeps + the declared box holds /
+          #       src→null clears with the image and dispatches nothing / intrinsic never
+          #       measures from BOTH sides with the reflow-once re-run; the mode quartet's
+          #       per-word spelling under four IDENTICAL 120×60 frames with clipsToBounds
+          #       pinned per node; unknown-word diagnose-don't-apply recorded where a test
+          #       can read it; null restores .scaleAspectFit; the CREATION property pin —
+          #       the design's named iOS mutation; exactly-once into the attached handler,
+          #       unbound/detached dispatch NOTHING, src-change and removal cancellations
+          #       dispatch NOTHING) — and then THE TESTS ONLY iOS CAN STAGE: the nil-URL
+          #       failure is SYNCHRONOUS INSIDE THE BATCH by construction (URL(string:) →
+          #       nil; Android has no deterministic in-batch failure and pins the DEFER row
+          #       on the JVM decision table), so the defer-out-of-batch rule runs LIVE here —
+          #       delivered on a fresh main-queue turn (the event sink reads isApplyingBatch
+          #       at delivery — the main queue's drain makes "not yet, then once" an
+          #       unreliable ordering), exactly once, DEFERRED NEVER DROPPED — plus the two
+          #       adversarial same-batch orderings the fire-time RE-DECISION exists for
+          #       (failure then REMOVE later in the batch → zero dispatches; failure then a
+          #       SRC CHANGE later in the batch → the superseded error drops, the new source's
+          #       lifecycle untouched). A deferred dispatch that replayed a decision-time
+          #       capture passes the first and fails both of those — which is why they exist.
+          #   +3  BnImagePolishDemoTests — /imagepolish on the simulator through the real
+          #       NativeAOT boot (mounted by NAME, the BnModalDemoTests pattern), asserting
+          #       BnImagePolishDemoTests.cs's numbers: the full frame table through the THREE
+          #       states on ONE mount (held: every placeholder painting inside declared
+          #       boxes, intrinsics 0×0, modes already applied, echo "err:0", back row at
+          #       664; seven-of-eight terminated: [0] STILL held with its placeholder — the
+          #       held window is kept short deliberately, the 5s download timeout is a 6.3
+          #       decision this page inherits; all eight: the counted error round-trip over
+          #       the REAL wire — TWO failures, ONE attach, ONE dispatch, echo "err:1 <the
+          #       wire src>" inside a fixed-height row that moved nothing — the mode
+          #       quartet's four identical frames, band I's 0 → Hi=90 reflow-once, the back
+          #       row 664 → 754 as the page's ONLY moving number, and SUCCESS clearing [0]'s
+          #       placeholder with the frame byte-identical to its held state). THE
+          #       SYNCHRONIZATION GATE COUNTS EIGHT (slow 1 + error 1 + fixed 4 + intrinsic
+          #       2 — derived from the page's src-bearing nodes; the Gate 1 review fixed the
+          #       razor header's "seven" miscount). Plus the back row by ORACLE and the
+          #       ← Back round trip over the real wire (dispatch_event → NativeAOT →
+          #       INavigationManager → BnDemo remounts, every image node purged with the
+          #       page).
           # Count drift fails loudly.
-          if [ "$failed" -ne 0 ] || [ "$passed" -ne 132 ]; then
+          if [ "$failed" -ne 0 ] || [ "$passed" -ne 152 ]; then
             grep -E "Test Case '.*' (passed|failed)" "$log" || true
-            echo "iOS XCTest baseline drift: expected 132 passed / 0 failed, got passed=$passed failed=$failed" >&2
+            echo "iOS XCTest baseline drift: expected 152 passed / 0 failed, got passed=$passed failed=$failed" >&2
             exit 1
           fi
 
