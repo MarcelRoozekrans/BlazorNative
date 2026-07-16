@@ -310,10 +310,13 @@ reads that name and nothing else).
 referenced by **exactly one job in exactly one workflow** — `release.yml`'s
 `push` job, guarded on `github.event_name == 'release'`. `ReleaseWorkflowPinTests`
 reds the **required** `build-test` lane if a second reference ever appears
-anywhere under `.github/workflows/`. So this is a complete answer:
+anywhere under `.github/workflows/`. So this is a complete answer — grep for the
+**expression**, not the bare name (`release.yml`'s own comments discuss the
+secret by name; only the `${{ … }}` form can actually read it, and only that form
+is what the pin counts):
 
 ```bash
-grep -r "secrets.NUGET_API_KEY" .github/     # exactly one hit — that hit is the door
+grep -rF '${{ secrets.NUGET_API_KEY }}' .github/   # exactly one hit — that hit is the door
 ```
 
 > **Scoping, and the residual we accept.** A repo-level secret is readable by

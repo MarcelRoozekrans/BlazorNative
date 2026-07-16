@@ -216,13 +216,17 @@ jobs:
     # precisely so the presence check and the push can both read it while the
     # reference stays singular.
     #
-    # That pin counts COMMENTS too — which is why this one spells the expression
-    # without its braces. Deliberate, and it caught its first violation on its
-    # first run (this very comment block, quoting the expression it describes).
-    # The strictness buys a property worth having: `grep -r "secrets.NUGET_API_KEY"
-    # .github/` returns EXACTLY ONE hit, and that hit is the door. A pin with a
-    # comment-stripping parser would be a pin that can be fooled — or worse, one
-    # that eats its own subject and goes green.
+    # That pin counts COMMENTS too — which is why every comment in this file
+    # spells the secret by NAME and never in its `${{ … }}` form. Deliberate,
+    # and it has now caught two violations, both of them here: this comment
+    # block quoting the expression it describes, and then the grep example that
+    # documented the rule. Prose cannot read a secret — only the expression can,
+    # and only the expression is what the pin counts. The strictness buys a
+    # greppable one-line audit ("what can reach my key?"), written out in
+    # docs/GITHUB-SETUP.md, which is not a workflow file and can therefore quote
+    # the expression safely. A pin with a comment-stripping parser would be a
+    # pin that can be fooled — or worse, one that eats its own subject and goes
+    # green.
     #
     # ⚠ RESIDUAL, stated rather than papered over (8.2 decision 7, an owner
     # call): a repo-level secret is readable by any workflow run on a branch by
