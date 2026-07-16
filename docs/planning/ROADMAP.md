@@ -776,8 +776,9 @@ Developer experience and ecosystem".
      `1.0.0-preview.1`, zero pack warnings, SourceLink `repository@commit` stamped,
      provenance ×6, BN0011 trip, ConsumerSmoke PASS — **the 8.0 API's first out-of-repo
      consumer**, RegisterPages laws proven from the packages alone). Device lanes
-     untouched: **184**/**154** stand on 8.0's provenance. Review: Gate 1 PASS (I-1/I-2/I-3
-     + M-1 fixed, M-4 accepted; 8.0's M-2/M-3 both closed here). See
+     untouched: **184**/**154** stand on 8.0's provenance. Review: Gate 1 PASS — 3 Important
+     + 4 Minor (I-1/I-2/I-3 + M-1 fixed, M-4 accepted as-placed, the review's own M-2/M-3
+     ledgered as accepted limitations; separately, 8.0's M-2/M-3 riders both closed here). See
      [design](../plans/2026-07-16-phase-8.1-design.md) +
      [conclusion](../plans/2026-07-16-phase-8.1-conclusion.md).
 - **Phase 8.2** — the release pipeline, manual go (DoD #3) — ⏳
