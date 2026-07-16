@@ -777,8 +777,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 539 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 539 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 553 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 553 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # ── NativeAOT publishes + nine-export verification ────────────────────
@@ -821,6 +821,20 @@ jobs:
             $diff | Format-Table | Out-String | Write-Host
             throw "win-x64 export surface drift: expected exactly the 9 blazornative_* exports"
           }
+
+          # Phase 8.0 (Gate 1 review I-2): the pages must SURVIVE publish. The
+          # failure mode this pins is ILC silently trimming the whole SampleApp
+          # module (0 IL2072, rc-1 only at first mount) — seen live when the
+          # publish head moved and TrimmerRootAssembly was not yet in place.
+          # Name-strings in the native image are the direct evidence.
+          $bytes = [System.IO.File]::ReadAllBytes($dll)
+          $text  = [System.Text.Encoding]::ASCII.GetString($bytes)
+          foreach ($page in @('BnDemo', 'BnImagePolishDemo', 'BnFormDemo')) {
+            if ($text -notmatch [regex]::Escape($page)) {
+              throw "Page name '$page' absent from the published native image — the SampleApp module was trimmed (is TrimmerRootAssembly still in the sample csproj?)"
+            }
+          }
+          Write-Host "Page-presence probe: BnDemo, BnImagePolishDemo, BnFormDemo all present in the native image."
 
       - name: Publish linux-bionic-x64 (assert exactly 4 IL2072 warnings)
         run: |
