@@ -157,8 +157,9 @@ public, before the phase closes.)
 - Required status checks — **all three jobs of `.github/workflows/ci.yml`**:
   - **`build-test`** (windows-latest) — build + analyzers, the .NET test suite,
     the three NativeAOT publishes with nine-export verification, JVM
-    `testDebugUnitTest`, consumer smoke, and the `.so` artifact uploads the two
-    native-shell jobs below consume.
+    `testDebugUnitTest`, consumer smoke, and the `.so` artifact uploads (kept so
+    a **human** can download and inspect a build's binaries — **no job consumes
+    them**; see the note under the three bullets).
 
     > **Local IL2072 counts: publish from clean.** The publish gates assert
     > **exactly 4** IL2072 trim warnings — but an *incremental* local
@@ -167,9 +168,11 @@ public, before the phase closes.)
     > not a fix; delete the publish `obj/bin` (or `git clean`) and re-publish
     > to see the real count. CI is unaffected — every run is a clean
     > checkout. (Phase 8.0 review M-2, recorded here.)
-  - **`android-build`** (ubuntu-latest, `needs: build-test`) — the **Android
-    shell's compile**: `gradlew compileDebugAndroidTestKotlin` against the
-    bionic `.so` `build-test` uploads, type-checking `src/androidMain/kotlin`
+  - **`android-build`** (windows-latest, **no `needs:`**) — the **Android
+    shell's compile**. It **self-publishes** `linux-bionic-x64` the proven way
+    (windows-latest with the pinned NDK) and points the verify/copy chain at its
+    own publish tree via `-PciSoDir` — it downloads nothing. Then `gradlew
+    compileDebugAndroidTestKotlin`, type-checking `src/androidMain/kotlin`
     (MainActivity, WidgetMapper, YogaLayout) **and** the instrumented
     `androidTest` source set. No emulator is booted; no test is run.
   - **`ios-build`** (macos-latest) — the **iOS shell's compile**: publish
@@ -179,9 +182,29 @@ public, before the phase closes.)
 - Require conversation resolution before merging
 - No force pushes
 
+> **The three required jobs are INDEPENDENT — `ci.yml` declares no `needs:` edges
+> at all.** They run in parallel, and each does its own checkout and its own
+> publish. Nothing in `ci.yml` downloads an artifact: `build-test`'s `.so`
+> uploads are there to be downloaded by a *person*, not by a job. The repo's one
+> long-standing cross-job artifact hand-off is in `android-instrumented.yml`
+> (`publish-so` → `emulator`, the **advisory nightly** lane); `release.yml`'s
+> `validate` → `push` is the second. *(Phase 8.2 Gate 1 review M-7: this section
+> previously described `android-build` as "ubuntu-latest, `needs: build-test`",
+> compiling against a `.so` `build-test` uploads. It has never been any of those
+> things, and the same false belief is what produced review finding I-3.)*
+
 > **All three check names are exactly the job ids** — `build-test`,
 > `android-build` and `ios-build` — because no job declares a `name:` and none is
 > a matrix.
+
+> **`release.yml` adds no fourth required check, by design (Phase 8.2).** Its
+> `validate` job runs on PRs that touch the release machinery or bump
+> `src/Directory.Build.props`, and one of the things it does is ask nuget.org
+> whether the version is still free. Making that **required** would put
+> nuget.org's availability on the critical path of every such PR — an outage
+> would red a required gate on a change that has nothing to do with nuget.org.
+> Same posture as the device lanes: the required set stays at three, and their
+> names and contexts are a standing constraint.
 
 Each native shell now has a distinctly-named required compile gate: a red
 `android-build` names the Android shell, a red `ios-build` names the iOS shell.
@@ -277,6 +300,141 @@ text:
   Kotlin fixture server and the Swift one.
 - The Yoga version pin — asserted equal across `build.gradle.kts`, `ios.yml` and
   `ci.yml`'s own `YOGA_VERSION` (which is what `ios-build` compiles).
+
+### Secrets — `NUGET_API_KEY`, the one secret
+
+**This repository needs exactly one secret, and it is the only thing standing
+between the packages and nuget.org.** Everything else the release does is
+computed from the tree.
+
+**Minting it** (nuget.org → your avatar → **API Keys** → **Create**):
+
+| Field | Value | Why |
+|---|---|---|
+| Key name | `BlazorNative CI` | anything; it is for your own audit trail |
+| Scopes | **Push new packages and package versions** only | not *Unlist*; the workflow never unlists |
+| Glob pattern | `BlazorNative.*` | the key cannot touch a package outside this project even if it leaks |
+| Expiration | 365 days (max) | put the renewal in a calendar; an expired key surfaces as a 401 on a Release |
+
+**Where it goes:** repo → **Settings** → **Secrets and variables** → **Actions**
+→ **New repository secret** → name it **exactly** `NUGET_API_KEY` (the workflow
+reads that name and nothing else).
+
+**The standing law, and it is a test rather than a promise:** the key is
+referenced by **exactly one job in exactly one workflow** — `release.yml`'s
+`push` job, guarded on `github.event_name == 'release'`. `ReleaseWorkflowPinTests`
+reds the **required** `build-test` lane if a second reference ever appears
+anywhere under `.github/workflows/`. So this is a complete answer — grep for the
+**expression**, not the bare name (`release.yml`'s own comments discuss the
+secret by name; only the `${{ … }}` form can actually read it, and only that form
+is what the pin counts):
+
+```bash
+grep -rF '${{ secrets.NUGET_API_KEY }}' .github/   # exactly one hit — that hit is the door
+```
+
+> **Scoping, and the residual we accept.** A repo-level secret is readable by
+> any workflow run on a branch by an actor with write access. A GitHub
+> *environment* with a branch restriction would narrow that — it is deliberately
+> **not** used, because the owner's law is *one secret, and the Release is the
+> go*, and an environment gate is a **second** manual approval on an action that
+> is already manual. The mitigations that cost nothing are taken: one reference,
+> one job, `if:`-guarded, pinned by a test.
+
+---
+
+### Publishing a release (the manual go)
+
+**Nothing publishes from a merge. Nothing publishes from a tag. Publishing a
+GitHub Release is the go, and it is the only one.**
+
+**Two disjoint tag namespaces — this is the part to read before you need it:**
+
+| Tag | Means | Publishes? |
+|---|---|---|
+| `v<N>.<M>` — `v1.0` … `v8.0` | **milestone** (seven exist; none has ever carried a Release) | **never** |
+| `pkg/<semver>` — `pkg/1.0.0-preview.1` | **package release** | **the only shape that does** |
+
+A Release published on **`v8.0`** — the M8 close tag, and the most natural first
+Release anyone would publish here — **publishes nothing**, says so in the run
+summary, and exits green. That is by design, not a bug: the `release` event has
+no tag filter, so *every* published Release fires the workflow, and the
+classifier is what decides that a milestone announcement announces.
+
+**The ritual:**
+
+1. **Bump the version** — one line, `<Version>` in `src/Directory.Build.props`.
+   It is the *only* place a version lives (pinned by `PackageVersionPinTests`).
+2. **PR it, and let CI go green.** The release lane (`release.yml`'s `validate`
+   job) runs on this PR automatically — it is paths-filtered to the props and
+   the release machinery, so a version bump is exactly when it fires. It asks
+   nuget.org whether your new version is still free.
+3. **Merge.**
+4. **Tag the merge commit** and push the tag:
+   ```bash
+   git tag pkg/1.0.0-preview.2 <merge sha>
+   git push origin pkg/1.0.0-preview.2
+   ```
+   *Pushing the tag publishes nothing.* It only creates something to point a
+   Release at.
+5. **GitHub → Releases → Draft a new release** → pick the `pkg/<version>` tag →
+   **write the body**. The body **is the changelog** — it is written at the
+   moment of the go, by the person deciding to go, and it is what a consumer
+   following the nuget.org project link lands on. There is no `CHANGELOG.md` by
+   decision.
+6. **Publish.** That click is the go. `validate` runs every check with no key in
+   the run at all; only then does `push` see the secret.
+
+**Three things that will otherwise surprise you:**
+
+- **The tag is a claim; the props wins.** The workflow *asserts* that
+  `pkg/1.0.0-preview.2` matches the props and **never overrides it**. Tag ahead
+  of props, props ahead of tag, tag on the wrong commit — all three are RED,
+  naming both values. (Overriding via `-p:Version=` would make the packages
+  irreproducible from the commit they name; it is banned and pinned.)
+- **Recovery from a partial push is an Actions re-run, NOT a Release edit.**
+  Three packages up and three failed is recoverable: **re-run the `push` job
+  from the Actions UI** — `--skip-duplicate` makes the three that landed
+  no-ops. Editing and re-publishing the Release fires `edited`, **not**
+  `published`, so the workflow will *not* re-fire.
+- **A published version can never be replaced.** nuget.org has **no hard
+  delete** — only *unlist*. If a wrong version publishes, the recovery is
+  unlist → bump → release again. It is never "fix it and re-push the same
+  version". That single fact is why every check runs before the key.
+
+#### What the first Release is actually testing
+
+Honesty about the machinery, because **the release mechanism is the one thing in
+this repo that cannot be tested by using it** — there is no key, no throwaway
+registry, and no publish until you publish. Everything provable is proven on
+every PR; what remains is listed here rather than implied. **Every arrow below
+fails in the safe direction — nothing publishes — and announces itself to you,
+standing there having just clicked Publish.**
+
+| # | Unproven until your first Release | If it is wrong, you see |
+|---|---|---|
+| U1 | `release: types: [published]` actually fires the workflow | **Nothing happens** — no run appears. Safe: it cannot mis-publish. (`actionlint` proves the event *name* is real; that GitHub *fires* it is what a Release proves.) |
+| U2 | `NUGET_API_KEY` resolves — present and correctly named | A named RED: *"NUGET_API_KEY is unset or misnamed — see docs/GITHUB-SETUP.md"*, instead of a bare 401 from a CLI |
+| U3 | nuget.org **accepts** these nupkgs — no reserved-prefix 403 | A 403 or an async validation failure on first push. All six ids are unregistered today, so nothing is reserved — but a reserved-prefix answer cannot be obtained without a key |
+| U4 | The adjacent `.snupkg` reaches the symbol server | Packages publish, symbols silently do not. **Recoverable** — symbols can be pushed later |
+| U5 | `--skip-duplicate` no-ops a real 409 | A re-run reds instead of skipping. Recoverable by hand |
+| U6 | Six pushes across a minutes-wide async indexing window behave | A consumer restoring inside the window sees an unindexed dependency. **Self-healing** |
+| U7 | The **artifact hand-off** from `validate` to `push` carries the packed feed | The upload is `release`-gated, so **no PR can exercise it** — only a real Release does. A loud RED: *"ZERO .nupkg found — the artifact hand-off from validate is broken"*. That guard exists so this fails **loudly** instead of pushing nothing and going green. Safe: nothing publishes. (Same actions and versions as `publish-so → emulator` in the nightly `android-instrumented.yml`, which runs this shape every night.) |
+| U8 | `needs.validate.outputs.verdict` **reaches the `push` job** | This is the repo's **first** `needs.<job>.outputs` consumer — no other lane uses one. If it is wrong, the value is empty, the `if:` is false, and **`push` skips silently** — safe (nothing publishes) but **quiet**: you would see a *skipped* job, not a red one. So check that `push` actually ran. `actionlint` statically rules out every **typo** shape *in this chain* (job-output names, step ids, `needs.<job>.outputs.<name>`, and `needs:` itself — all mutant-tested), so "is it spelled right" is settled; what a Release proves is that the runtime does what the syntax says |
+
+**The blast radius of the first firing is one unlistable preview of a package
+nobody depends on yet** — which is the cheapest possible way to learn all eight of
+these at once, and it is cheap *on purpose*.
+
+> **All eight fail in the safe direction — nothing publishes — and seven of them
+> say so loudly. U8 is the one quiet failure**: an empty verdict skips `push`
+> rather than reddening it. So when you publish the first Release, the check is
+> **"did `push` actually run?"**, not just "was there a red?". *(U7 and U8 were
+> added by the Phase 8.2 Gate 1 review, finding I-2: both are arrows no PR can
+> exercise, and a table that omitted them was claiming more coverage than the
+> lane has.)*
+
+---
 
 ### PR-merge workflow (from Phase 4.1 onward)
 

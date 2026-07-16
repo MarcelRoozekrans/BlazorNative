@@ -16,7 +16,12 @@
                         (Analyzers embeds its pdb — no lib/, no snupkg); every
                         nupkg FILENAME carries the props version (the
                         version-drift tooth — a csproj <Version> override
-                        reds here AND in PackageVersionPinTests).
+                        reds here AND in PackageVersionPinTests); and symbols
+                        are PAIRED, not merely counted (Phase 8.2 decision 4):
+                        each of the five library nupkgs has its .snupkg
+                        SIBLING and Analyzers has none — the counts alone are
+                        blind to WHICH package owns the symbols, and the push
+                        matches them by ADJACENCY.
       2.  interrogate — nupkg-level purity (8.1 design decision 6; the xunit
                         purity pin runs BEFORE pack in CI, so only this script
                         ever owns the packed artifacts). Per nupkg, unzipped:
@@ -157,7 +162,52 @@ foreach ($proj in $packages) {
         exit 1
     }
 }
-Write-OK "six packages packed at $version (5 snupkg), zero warnings, filenames agree with the props"
+
+# ── THE PAIRING TOOTH (Phase 8.2, design decision 4) ─────────────────────────
+# PAIRING, NOT COUNTING — and the difference is not academic. The two counts
+# above (6 nupkg, 5 snupkg) are blind to WHICH package the symbols belong to:
+# a feed holding Core's nupkg with no sibling, while Analyzers wrongly carries
+# one, is 6 and 5 and passes both counts GREEN while BlazorNative.Core ships
+# with no symbols at all. Proven by mutation, quoted in the commit.
+#
+# It matters to the RELEASE, which is why 8.2 found it: `dotnet nuget push`
+# carries symbols BY ADJACENCY (an adjacent .snupkg rides its .nupkg — the
+# CLI's own evidence is that `-n|--no-symbols` is an opt-OUT). The push
+# enumerates *.nupkg and never names a symbol file, so "every library package
+# has its snupkg sibling" is the assumption the whole symbol story rests on.
+# Its home is HERE rather than in the release lane: it is a PACK-TRUTH claim, it
+# belongs beside the counts it strengthens, and here it rides the REQUIRED lane
+# on every PR instead of only on release-machinery PRs.
+#
+# ONE HONEST NOTE ON ITS REACH, so nobody over-claims it (8.2 Gate 1): with the
+# six shaped as they are TODAY, the csproj route into that state is blocked —
+# flipping Analyzers to IncludeSymbols=true trips NU5017 ("Cannot create a
+# package that has no dependencies nor content") and pack FAILS before any
+# count is read, exactly as the Analyzers csproj comment predicts. So today the
+# counts and the shapes conspire to make broken pairing hard to reach, and this
+# tooth is mostly a guard on the FUTURE: the day a seventh library package
+# joins, the counts move to 7/6 and a Core whose symbols quietly stopped
+# packing is invisible to them and visible only here.
+$symbolOffenders = @()
+foreach ($proj in $packages) {
+    $hasSnupkg = Test-Path (Join-Path $feedDir "BlazorNative.$proj.$version.snupkg")
+    # Analyzers is the ONE deliberate exception: no lib/, so a snupkg would be
+    # empty (NU5017 territory) — its pdb travels embedded in the analyzer dll.
+    if ($proj -eq "Analyzers") {
+        if ($hasSnupkg) {
+            $symbolOffenders += "BlazorNative.Analyzers has a .snupkg — it must NOT (no lib/ means an empty symbols package; its pdb is embedded via DebugType=embedded)"
+        }
+    }
+    elseif (-not $hasSnupkg) {
+        $symbolOffenders += "BlazorNative.$proj has NO .snupkg sibling — it would publish to nuget.org with no symbols at all"
+    }
+}
+if ($symbolOffenders.Count -ne 0) {
+    $symbolOffenders | ForEach-Object { Write-Fail "     $_" }
+    Write-Fail "SYMBOL PAIRING broken. The 6/5 counts above are blind to this: symbols are matched to packages by ADJACENCY at push time, so a library package without its .snupkg sibling ships unsymbolicated and nothing else in this repo would notice. Feed: $(($nupkgs.Name + $snupkgs.Name | Sort-Object) -join ', ')"
+    exit 1
+}
+Write-OK "six packages packed at $version, zero warnings, filenames agree with the props; symbols PAIRED (5 libs each with its .snupkg sibling; Analyzers embedded, no snupkg)"
 
 # ── 1.5 Interrogate the nupkgs (8.1 decision 6 — packaging-layer purity) ─────
 Write-Step "interrogating the six nupkgs (types off the PE, nuspec truth, inventory shape) ..."
