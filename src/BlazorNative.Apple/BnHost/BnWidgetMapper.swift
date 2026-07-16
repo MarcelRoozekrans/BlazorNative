@@ -218,6 +218,26 @@
 // REQUEST and the content-box swallow are invisible in every frame).
 // `activityindicator` is a measured leaf (UIActivityIndicatorView.medium,
 // spinning — animating-while-mounted is the contract), sized by ORACLE.
+//
+// ── PHASE 7.5: IMAGE POLISH — placeholderColor / contentMode / the `error` WIRE ─
+// The three features 6.3 ledgered, with ZERO new measurement states. The
+// placeholder is PAINT BY CONSTRUCTION ([BnImageView.bnShowPlaceholder] — a
+// bounds-tracking color subview; [BnImageWireState]'s state table; never a
+// markDirty, never a natural-size write — the measure func reads
+// [BnImageView.bnNaturalSize], which no placeholder path touches). The `error`
+// event is a new WORD on the existing dispatch wire (the scroll precedent):
+// [onImageFailed]'s dispatch site sits behind [decideAndDispatchError] →
+// `bnImageErrorDispatchAction` (a pure decision composing `bnIsLiveImageRequest`
+// by name — one guard, two consumers; RE-ASKED at every fire time, including the
+// deferred one), payload = the WIRE's src, verbatim, deferred out of a batch and
+// never dropped — and on THIS shell the synchronous in-batch failure is REAL:
+// `URL(string:)` → nil terminates inside `UpdateProp("src")` by construction,
+// so the defer row runs live here where Android pins it on the JVM table. The
+// content mode is paint-only (`bnContentModeFor`, the strict four-word table →
+// `UIView.ContentMode`; unknown → diagnose-don't-apply, null → contain), and
+// its corollary is iOS's own: `clipsToBounds = true` at creation ([makeView]),
+// because `.scaleAspectFill`/`.center` paint past the Yoga box and iOS — unlike
+// Android's ImageView — does not clip.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import UIKit
@@ -884,6 +904,69 @@ final class BnWidgetMapper {
     ///    never live).
     private var imageGenerations: [Int32: Int] = [:]
 
+    /// Phase 7.5 — an `image` node's 7.5 wire state, and **THE PLACEHOLDER STATE TABLE'S
+    /// BOOKKEEPING** (design decision 1 — the table is NORMATIVE and loader-free; this is
+    /// iOS's mechanism for it, verified per shell, never assumed — the 7.3 guard lesson).
+    /// The twin of Kotlin's `WidgetMapper.ImageState`, field for field.
+    ///
+    /// The placeholder is **paint inside whatever box Yoga already gave the node**
+    /// ([BnImageView.bnShowPlaceholder] — a bounds-tracking color subview; see that
+    /// property's header for why it is neither `backgroundColor` nor a color `UIImage`):
+    /// never a Yoga write, never a `markDirty`, never a natural size, so it CANNOT
+    /// measure **by construction**. An intrinsic node's placeholder is a 0 × 0 paint —
+    /// invisible, correct, not diagnosed.
+    ///
+    ///  - [placeholderColor] — the parsed `placeholderColor` prop (nil = none/cleared).
+    ///    Held as STATE because the props arrive in seq order: `src` (24) lands BEFORE
+    ///    `placeholderColor` (25) in the same mount batch, so [handleSrc] must be able to
+    ///    paint a color that arrives one patch later — the prop arm repaints iff the node
+    ///    is still waiting for bytes ([awaitingBytes]).
+    ///  - [srcPresent] / [bytesPainted] — which row of the state table the node is on.
+    ///    `src` set + not painted = IN FLIGHT or ERROR (both paint the placeholder — the
+    ///    ERROR row keeps it, deliberately: it is the error state's visual, and the
+    ///    declared box it fills is held because it was DECLARED, not because it failed).
+    ///    SUCCESS sets [bytesPainted], the bytes become the image and the placeholder is
+    ///    cleared (letterbox bars then show `BackgroundColor` — the view's background —
+    ///    never the placeholder). `src` → null clears both, and the paint with them.
+    ///  - [errorHandlerId] — the live `error` wire (decision 2), last-wins on re-attach
+    ///    (the 4.2 watcher discipline), nil when unattached. The dispatch decision itself
+    ///    is `bnImageErrorDispatchAction` — a pure function in its own file, composing
+    ///    `bnIsLiveImageRequest` by name (one guard, two consumers).
+    ///
+    /// Created with the node, keyed on the NODETYPE ([handleCreate] — the 6.2 lesson),
+    /// purged with it ([handleRemove], [destroy]) for the reason every map here purges:
+    /// ids restart.
+    private final class BnImageWireState {
+        var placeholderColor: UIColor?
+        var srcPresent = false
+        var bytesPainted = false
+        var errorHandlerId: Int32?
+
+        /// The rows of the state table on which the placeholder paints: a source is
+        /// named and the real bytes are not on screen — IN FLIGHT, or terminal ERROR.
+        var awaitingBytes: Bool { srcPresent && !bytesPainted }
+    }
+
+    /// nodeId → its image wire state. Same lifecycle as [sliderStates].
+    private var imageStates: [Int32: BnImageWireState] = [:]
+
+    /// Test-only (Phase 7.5): `error` dispatches actually sent — every dispatch routes
+    /// through [dispatchError] (the [changeDispatchesSent] precedent; the twin of
+    /// Kotlin's `errorDispatchesSent`). The device assertion "dispatched EXACTLY ONCE,
+    /// and only for the BOUND failure" is only honest as a counted wire dispatch:
+    /// /imagepolish has TWO failing images and one attach, and the unbound failure's
+    /// non-dispatch moves no frame and no echo.
+    private(set) var errorDispatchesSent: Int = 0
+
+    /// Every `error` dispatch goes through here — see [errorDispatchesSent]. The payload
+    /// is the WIRE's `src`, verbatim (decision 2: the URL is the only fact two loaders
+    /// share about the same failure, so it is the only payload two shells can dispatch
+    /// identically).
+    private func dispatchError(_ handlerId: Int32, _ src: String) {
+        errorDispatchesSent += 1
+        onUiEvent(handlerId, "error", src)
+    }
+
     /// Test-only: every image request that has TERMINATED, in order — Kingfisher's own
     /// per-node completion verdict, which is **the synchronization gate** the tests await
     /// (6.3 non-negotiable #6).
@@ -982,6 +1065,10 @@ final class BnWidgetMapper {
         // Phase 7.3: the form controls' wire state too, same reason.
         sliderStates.removeAll()
         pickerStates.removeAll()
+        // Phase 7.5: …and the image wire state — a deferred error dispatch that
+        // lands after teardown re-asks the decision, finds no generation and no
+        // handler, and DROPs (the [recordImageResult] destroyed-guard's shape).
+        imageStates.removeAll()
         diagnosed.removeAll()
         diagnosedKeys.removeAll()
         viewToNode.removeAll()
@@ -1133,6 +1220,14 @@ final class BnWidgetMapper {
     /// Test-only: a node's pending (conflated, not yet dispatched) offset in pt —
     /// nil when the slot is empty or the node has no wire.
     func scrollPendingOffsetPt(of nodeId: Int32) -> Float? { scrollWires[nodeId]?.pendingOffsetPt }
+
+    /// Test-only (Phase 7.5): whether a patch batch is being applied RIGHT NOW —
+    /// read by the defer end-to-end test's event sink, because "the dispatch never
+    /// runs inside a patch batch" is a statement about WHEN, and the main queue's
+    /// drain can run a deferred block before the test regains control (so "no
+    /// dispatch yet, then one" is not a reliably observable ordering; "the dispatch
+    /// that arrived saw no open batch" is).
+    var isApplyingBatch: Bool { applyingBatch }
 
     /// Test-only: wires with work outstanding — a dispatch in flight or a
     /// conflated offset waiting for the lane. 0 = the scroll wire is QUIESCENT
@@ -1505,6 +1600,24 @@ final class BnWidgetMapper {
             state.handlerId = handlerId
             return
         }
+        // Phase 7.5 (design decision 2) — the `error` wire: a new WORD on the
+        // existing dispatch wire (the scroll precedent), attached .NET-side iff
+        // OnError has a delegate. No native listener to install — the "listener"
+        // is Kingfisher's own terminal callback ([onImageFailed]'s dispatch site,
+        // and the nil-URL synchronous failure that reaches the same site); this
+        // arm only records WHERE the failure flows. Last-wins re-attach, the 4.2
+        // watcher discipline. Before the UIControl guard below: an image is not a
+        // UIControl, and its wire is state, not a control-event target.
+        if eventName == "error" {
+            guard let state = imageStates[nodeId] else {
+                NSLog("[BnWidgetMapper] AttachEvent 'error' ignored: node \(nodeId) is "
+                      + "\(views[nodeId].map { String(describing: type(of: $0)) } ?? "unknown"), "
+                      + "not an image node")
+                return
+            }
+            state.errorHandlerId = handlerId
+            return
+        }
         guard let control = views[nodeId] as? UIControl else {
             NSLog("[BnWidgetMapper] AttachEvent '\(eventName)' for node \(nodeId): not a UIControl — ignored")
             return
@@ -1699,6 +1812,18 @@ final class BnWidgetMapper {
                 return
             }
             state.handlerId = nil
+            return
+        }
+        // Phase 7.5 — the attach arm's mirror (the 3.3 rule: a new event type
+        // extends both arms symmetrically). The wire dies here; a failure that
+        // terminates later finds no handler and DROPs at the decision
+        // (`bnImageErrorDispatchAction`).
+        if eventName == "error" {
+            guard let state = imageStates[nodeId] else {
+                NSLog("[BnWidgetMapper] DetachEvent 'error' for node \(nodeId) has no image state: ignored")
+                return
+            }
+            state.errorHandlerId = nil
             return
         }
         let key = EventKey(nodeId: nodeId, event: eventName)
@@ -1909,6 +2034,13 @@ final class BnWidgetMapper {
         // nodeType is the contract, the class is a table row that could change).
         if nodeType == Self.slider {
             sliderStates[nodeId] = BnSliderState()
+        }
+        // Phase 7.5 — the image's 7.5 wire state (placeholder state table + the
+        // `error` wire), created with the node like the two above. Keyed on the
+        // NODETYPE, and its existence doubles as "is this node an image?" for the
+        // attach arm (the [contentNodes] membership discipline).
+        if nodeType == Self.image {
+            imageStates[nodeId] = BnImageWireState()
         }
         if nodeType == Self.picker {
             // The guard-cast is posture, exactly like the scroll arm above: a
@@ -2122,7 +2254,25 @@ final class BnWidgetMapper {
             // what an M7 `ContentMode` would default to. **Deferring the ContentMode API
             // (design decision 3) does not defer the DEFAULT** — 6.1's `clipChildren =
             // false` precedent: it costs one line to align the two shells.
+            //
+            // Phase 7.5 (decision 3): `ContentMode` now EXISTS ([handleUpdateProp]'s
+            // `contentMode` arm), and `contain` is that default's name. This explicit
+            // set stays: an image whose wire never carries the prop must still paint
+            // aspect-fit, and `bnContentModeFor(nil)`'s CONTAIN row is the same
+            // decision arriving by the other door (the prop-removed reset).
             image.contentMode = .scaleAspectFit
+            // ── Phase 7.5 (decision 3's corollary): THE PAINT NEVER ESCAPES THE
+            //    LAYOUT BOX — `clipsToBounds = true`, ALWAYS, AT CREATION ───────────
+            // `Cover` and `Center` can both paint BIGGER than the box, and iOS does
+            // not clip: `.scaleAspectFill` and `.center` bleed over siblings without
+            // this. Android's ImageView clips its drawable to its bounds BY
+            // CONSTRUCTION, so this one line is what aligns the two shells (the 6.1
+            // `clipChildren` precedent) — and, like that one, it is INVISIBLE to
+            // every frame assertion (the Yoga box never changes with mode), which is
+            // precisely why it is pinned as a PROPERTY
+            // (BnImagePolishMapperTests' creation pin — the design's named iOS
+            // mutation: drop this line ⇒ that pin red, nothing else).
+            image.clipsToBounds = true
             return image
         case Self.scroll:
             // Phase 6.2 — a VIEWPORT. Vertical, like Android's ScrollView (design
@@ -2390,6 +2540,13 @@ final class BnWidgetMapper {
             // the id (a late delegate call would compare against a ghost).
             sliderStates.removeValue(forKey: id)
             pickerStates.removeValue(forKey: id)
+            // Phase 7.5 — the image wire state dies with the node, and the `error`
+            // wire dies INSIDE it: a failure that terminates after this purge finds
+            // no handler and DROPs at the decision (`bnImageErrorDispatchAction` —
+            // whose liveness half already said DROP anyway, the generation having
+            // been evicted two lines up). Ids restart; an entry outliving its node
+            // would answer for the next node to inherit the id.
+            imageStates.removeValue(forKey: id)
         }
         // …and the DIAGNOSTICS BOOKKEEPING, for the reason [diagnose] gives: node ids are
         // REUSED. A warn-once key that outlives its node silences the warning the node
@@ -2576,6 +2733,75 @@ final class BnWidgetMapper {
                 NSLog("[BnWidgetMapper] UpdateProp src ignored: node \(nodeId) is a "
                       + "\(type(of: view)), not an image")
             }
+        // Phase 7.5 (design decision 1) — the image's placeholder COLOR. A PROP, not a
+        // style (`StyleAttributePartitionTests` pins both 7.5 names as props), and NOT
+        // the name `placeholder` — that has been the input hint since M2 (the arm at
+        // the top of this switch), and reusing it would fork one prop's meaning by
+        // NodeType. PAINT-ONLY by construction: it writes [BnImageView]'s placeholder
+        // paint, never Yoga.
+        case "placeholderColor":
+            guard let image = view as? BnImageView else {
+                NSLog("[BnWidgetMapper] UpdateProp placeholderColor ignored: node \(nodeId) is a "
+                      + "\(type(of: view)), not an image")
+                return
+            }
+            guard let state = imageStates[nodeId] else {
+                NSLog("[BnWidgetMapper] UpdateProp placeholderColor for image \(nodeId) has no "
+                      + "state: ignored")
+                return
+            }
+            guard let value = value else {
+                // The author took the parameter away (the Enabled-null precedent): no
+                // placeholder — and if one is on screen right now (in flight / error),
+                // it goes with the setting that painted it.
+                state.placeholderColor = nil
+                if state.awaitingBytes { image.bnClearPlaceholder() }
+                return
+            }
+            guard let color = BnColor.parse(value) else {
+                NSLog("[BnWidgetMapper] UpdateProp placeholderColor ignored on image \(nodeId): "
+                      + "'\(value)' is not a parseable color") // the backgroundColor posture
+                return
+            }
+            state.placeholderColor = color
+            // The props ride the wire in seq order — `src` (24) BEFORE `placeholderColor`
+            // (25) — so on the ordinary mount the request is already in flight when this
+            // arrives: paint the IN-FLIGHT (or ERROR) row now. A node showing real bytes
+            // keeps them (the SUCCESS row: the placeholder never paints over bytes).
+            if state.awaitingBytes { image.bnShowPlaceholder(color) }
+        // Phase 7.5 (design decision 3) — the content mode. THE TABLE IS THE SHARED
+        // DECISION (`bnContentModeFor` — strict four-word set, null restores the
+        // default, unknown → diagnose-don't-apply); this arm is the lookup plus the
+        // iOS spelling of each row. PAINT-ONLY, normatively: the layout box is Yoga's
+        // and never changes with mode — no markDirty, no Yoga write, and the measure
+        // func never consults `contentMode` (it reads [BnImageView.bnNaturalSize]).
+        // The paint never escapes the box: `clipsToBounds = true` at creation
+        // ([makeView]'s image arm — the pinned corollary; Android's ImageView clips
+        // by construction).
+        case "contentMode":
+            guard let image = view as? BnImageView else {
+                NSLog("[BnWidgetMapper] UpdateProp contentMode ignored: node \(nodeId) is a "
+                      + "\(type(of: view)), not an image")
+                return
+            }
+            guard let mode = bnContentModeFor(value) else {
+                // Diagnose loudly, apply NOTHING — the node keeps its current mode (the
+                // modal style-ignore precedent; reachable by hand-rolled wire only, and
+                // recorded where a test can read it, because the failure is silent on
+                // every frame table by the mode-invariance rule itself).
+                diagnose(nodeId: nodeId, kind: "contentMode",
+                         message: "image node \(nodeId): contentMode '\(value ?? "nil")' is not "
+                         + "one of the four strict wire words (contain/cover/stretch/center) — "
+                         + "diagnosed and NOT applied; the node keeps its current mode (a guessed "
+                         + "fallback is how two shells guess differently)")
+                return
+            }
+            switch mode {
+            case .contain: image.contentMode = .scaleAspectFit
+            case .cover: image.contentMode = .scaleAspectFill
+            case .stretch: image.contentMode = .scaleToFill
+            case .center: image.contentMode = .center
+            }
         default:
             NSLog("[BnWidgetMapper] UpdateProp '\(name)' not yet supported (Phase 6.3+ extends)")
         }
@@ -2644,15 +2870,59 @@ final class BnWidgetMapper {
         view.bnNaturalSize = nil
         markDirty(view)
 
+        // Phase 7.5 — the state-table row change rides the same one path as the clear
+        // itself ("two rows of the parity contract, one path; a shell that split them
+        // is a shell where one of them rots"): whatever src writes, the node is no
+        // longer showing real bytes, and whatever placeholder was on screen went out
+        // with them (it is repainted below iff a source is named — the IN-FLIGHT row).
+        let imageState = imageStates[nodeId]
+        imageState?.bytesPainted = false
+        view.bnClearPlaceholder()
+
         // An EMPTY string is the null/clear contract, not a fetch of "". On iOS that is
         // not a nicety: **`URL(string: "")` is `nil`**, so a shell that force-unwrapped it
         // would CRASH — an NPE by another name. It is a SHELL decision, so it is written
         // into the shared contract rather than left for the two shells to make differently
         // (design §"The parity contract", the `Src` → `null` row).
-        guard let raw = url, !raw.isEmpty else { return }
+        //
+        // Phase 7.5: NO source names NO pending image — the placeholder was cleared with
+        // the image above (the state table's `src → null` row) and must NOT be repainted;
+        // and nothing here dispatches (`""` takes the null path: never fetched, so it can
+        // never fail — no honest shell can send an empty src as a failure payload).
+        guard let raw = url, !raw.isEmpty else {
+            imageState?.srcPresent = false
+            return
+        }
+
+        // Phase 7.5 (design decision 1) — the state table's IN-FLIGHT row: the
+        // placeholder color fills the box while the request is out. It is PAINT inside
+        // the box Yoga already gave the node (no markDirty, no natural size, so it
+        // cannot measure by construction), and it is painted BEFORE the load below,
+        // deliberately: a warm memory-cache hit completes SYNCHRONOUSLY INSIDE
+        // `retrieveImage` (the 6.3 finding), and the real bytes must be the LAST
+        // write, not the placeholder — Android's paint-before-enqueue ordering,
+        // mirrored.
+        imageState?.srcPresent = true
+        if let color = imageState?.placeholderColor { view.bnShowPlaceholder(color) }
+
         guard let parsed = URL(string: raw) else {
-            NSLog("[BnWidgetMapper] UpdateProp src ignored: node \(nodeId)'s value is not a URL "
-                  + "(\(raw)). The node stays 0 × 0 and reserves nothing.")
+            // ── Phase 7.5 (design decision 2): AN UNPARSEABLE NON-EMPTY URL IS A
+            //    FAILURE, AND IT REACHES THE SAME DISPATCH SITE — NOT A SILENT LOG ────
+            // This is iOS's own immediate-failure path, and it is SYNCHRONOUS BY
+            // CONSTRUCTION: it terminates right here, inside `UpdateProp("src")`,
+            // inside [applyBatch] — which is exactly what makes it the LIVE staging of
+            // the defer-out-of-batch rule (`bnImageErrorDispatchAction`'s DEFER row;
+            // Android cannot fail synchronously mid-batch, so its shell pins that row
+            // on the JVM table only). The node's frames are the 6.3 failure row's,
+            // unchanged: it was cleared above, it stays 0 × 0 (or holds its DECLARED
+            // box), the placeholder painted above STAYS (the ERROR row).
+            //
+            // (Foundation's lenient parser makes this arm NARROW — `URL(string:)`
+            // percent-encodes most garbage rather than rejecting it (the recorded 6.3
+            // finding), but STRUCTURAL violations still return nil, and `handleSrc`
+            // owes them a terminal verdict, not a shrug.)
+            onImageFailed(nodeId: nodeId, generation: generation, view: view, url: raw,
+                          error: BnImageUnparseableUrlError(raw: raw))
             return
         }
 
@@ -2706,6 +2976,13 @@ final class BnWidgetMapper {
         clearIfMine(nodeId: nodeId, generation: generation, view: view)
 
         view.image = image
+        // Phase 7.5 — the state table's SUCCESS row: the bytes are the LAST write and
+        // the placeholder is CLEARED by them. Letterbox bars under Contain now show
+        // the view's BACKGROUND (`BackgroundColor` — a style), never the placeholder,
+        // and `clipsToBounds` (set at creation) keeps Cover/Center's overdraw inside
+        // the box those bars frame.
+        imageStates[nodeId]?.bytesPainted = true
+        view.bnClearPlaceholder()
         // THE NATURAL SIZE — the decoded PIXEL COUNT, read as points. One file pixel is one
         // dp/pt: the parity contract's UNIT row, and the only reading under which iOS and
         // Android compute the same frame. See [BnImageLoader.naturalPixelSize] (and its
@@ -2728,11 +3005,31 @@ final class BnWidgetMapper {
         resolveLayout()
     }
 
-    /// The load failed — a 404, a refused connection, a blocked cleartext fetch, a timeout.
-    /// The node **keeps measuring 0 × 0** (it was cleared when the request was issued), it
-    /// **reserves nothing**, and it **does not retry**. There is nothing to markDirty and
-    /// nothing to re-solve: no frame changed, which is the whole content of the contract's
-    /// failure row.
+    /// The load failed — a 404, a refused connection, a blocked cleartext fetch, a timeout,
+    /// or (Phase 7.5, iOS's own) an unparseable URL that failed SYNCHRONOUSLY inside
+    /// [handleSrc]. The node **keeps measuring 0 × 0 if intrinsic** (it was cleared when the
+    /// request was issued) or **holds its declared box** (Yoga never measured it, so the
+    /// failure *cannot* move the frame — the space stays reserved because it was DECLARED,
+    /// not because it failed); it **reserves nothing it did not have**, and it **does not
+    /// retry**. There is nothing to markDirty and nothing to re-solve: no frame changed,
+    /// which is the whole content of the contract's failure row. **The placeholder STAYS**
+    /// (Phase 7.5, the state table's ERROR row): nothing here touches the paint — the error
+    /// state's visual, deliberately.
+    ///
+    /// ── PHASE 7.5: THE `error` DISPATCH (design decision 2) ──────────────────────────
+    /// The one thing 6.3 could not say now rides the wire: the failure flows .NET-ward as
+    /// the event name `error`, payload = **the wire's `src`, verbatim** ([dispatchError]).
+    /// The DECISION is [decideAndDispatchError] → `bnImageErrorDispatchAction` — a pure
+    /// function composing `bnIsLiveImageRequest` by name (one guard, two consumers: a
+    /// superseded / purged / recycled request's error dispatches nothing, exactly as it
+    /// paints nothing) plus the batch rule: **a dispatch never runs inside a patch batch —
+    /// deferred to a fresh main-queue turn, NEVER dropped.** On THIS shell the synchronous
+    /// failure is not a table-only case: the nil-URL path above fails inside [applyBatch]
+    /// by construction, so the DEFER row runs live here where Android could only pin it on
+    /// the JVM. At-most-once per terminated request is Kingfisher's own completion contract
+    /// (one terminal verdict per request) times the liveness gate; the counted
+    /// [errorDispatchesSent] is what the device asserts it by. CANCELLED never gets here
+    /// at all ([onImageCancelled] has no dispatch site — structural, on purpose).
     private func onImageFailed(nodeId: Int32, generation: Int, view: BnImageView,
                                url: String, error: Error) {
         guard !destroyed else { return } // see [recordImageResult]
@@ -2740,6 +3037,52 @@ final class BnWidgetMapper {
         clearIfMine(nodeId: nodeId, generation: generation, view: view)
         NSLog("[BnWidgetMapper] image load failed for node \(nodeId) (\(url)): \(error) — the "
               + "node stays 0 × 0 and reserves nothing")
+        decideAndDispatchError(nodeId: nodeId, generation: generation, view: view, url: url)
+    }
+
+    /// **THE DISPATCH DECISION, RE-ENTERED AT EVERY FIRE TIME.**
+    ///
+    /// The DEFER arm posts THIS FUNCTION to a fresh main-queue turn — it does NOT post a
+    /// captured `dispatchError(handler, url)` — and the difference is not style, it is the
+    /// stale-callback rule with the batch still open. The nil-URL failure terminates
+    /// synchronously INSIDE [applyBatch], so ordinary two-patch frames put patches BEHIND
+    /// the failure in the same batch:
+    ///
+    ///  - `src = <bad>` … `RemoveNode` later in the batch — a deferred dispatch captured
+    ///    at decision time would fire for a PURGED node;
+    ///  - `src = <bad>` … `src = <good>` later in the batch — it would deliver the
+    ///    SUPERSEDED source's error into live user code, the exact class of stale callback
+    ///    the generation exists to kill.
+    ///
+    /// So the deferred turn re-asks `bnImageErrorDispatchAction` with FIRE-TIME facts —
+    /// the LIVE generation, the LIVE view, the LIVE handler — against the request's own
+    /// captured (nodeId, generation, view, url). Both adversarial frames are pinned
+    /// end-to-end in BnImagePolishMapperTests, and only this shell can stage them (Android
+    /// has no deterministic in-batch failure; its DEFER arm currently replays a
+    /// decision-time capture — latent there, live here).
+    ///
+    /// The re-entered decision can, in principle, answer DEFER again (a fresh turn cannot
+    /// run mid-batch — [applyBatch] is synchronous on main — so this is defensive); it
+    /// re-posts rather than drops: deferred, never dropped.
+    private func decideAndDispatchError(nodeId: Int32, generation: Int, view: BnImageView,
+                                        url: String) {
+        let handlerId = imageStates[nodeId]?.errorHandlerId
+        switch bnImageErrorDispatchAction(currentGeneration: imageGenerations[nodeId],
+                                          requestGeneration: generation,
+                                          currentView: views[nodeId],
+                                          requestView: view,
+                                          handlerAttached: handlerId != nil,
+                                          applyingBatch: applyingBatch) {
+        case .dispatchNow:
+            dispatchError(handlerId!, url)
+        case .deferToFreshTurn:
+            DispatchQueue.main.async { [weak self] in
+                self?.decideAndDispatchError(nodeId: nodeId, generation: generation,
+                                             view: view, url: url)
+            }
+        case .drop:
+            break
+        }
     }
 
     /// We cancelled it: a `Src` change, a node removal, or teardown. Nothing is painted and
