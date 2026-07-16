@@ -67,6 +67,16 @@ the two points where scope may consciously shrink; anything cut is ledgered, not
    JVM **90/0** · Android instrumented **147/0** · iOS XCTest **111/0** (run 29451417339).
 5. **`BnModal`** — the first overlay surface (show/hide + `ChildContent`; native dialog primitives
    or a second Yoga root — the design decides and records why). No animation system.
+   ✅ **Closed by Phase 7.4** ([conclusion](../plans/2026-07-16-phase-7.4-conclusion.md)):
+   an **overlay in the existing root** (NodeType `modal = 11` — vocabulary, not ABI; native
+   dialog rejected: a second Yoga root/frame surface + a self-dismissing window violating the
+   state-owner law). The anchor+overlay model (the **third index-mapping rule**: 0-sized
+   absolute anchor at the wire slot; full-root overlay attached LAST; one resolved index feeds
+   both trees), dismissal as a **REQUEST** on the `click` wire (scrim tap / dismiss button /
+   Android back — the shell never self-closes; Android back consults the modal stack before
+   navigation-back), the two-subtree fixpoint purge exactly-once by ownership-disjointness.
+   Counts .NET **518/0** · JVM **92/0** · Android instrumented **166/0** · iOS XCTest **132/0**
+   (run 29487073302).
 6. **`BnImage` polish:** `Placeholder`, `OnError`, `ContentMode` — each is a **measurement**
    design (what does a placeholder measure as? does a failure keep reserved space?), specified in
    the parity contract and asserted on both shells like everything else.
@@ -74,6 +84,13 @@ the two points where scope may consciously shrink; anything cut is ledgered, not
    *have it / ships in M7 / ledgered with a reason*. Cheap high-value wins identified by the
    survey (candidates: `ActivityIndicator`, `SafeAreaView`) ship; heavy ones
    (`RefreshControl`, `KeyboardAvoidingView`, `StatusBar`, gestures) are ledgered explicitly.
+   ✅ **Closed by Phase 7.4** ([conclusion](../plans/2026-07-16-phase-7.4-conclusion.md)):
+   the survey table committed in the [design](../plans/2026-07-16-phase-7.4-design.md) —
+   11/19 have-it; `BnModal` + `BnActivityIndicator` (NodeType 12, measured leaf,
+   `ProgressBar`/`UIActivityIndicatorView`, intrinsics by oracle) shipped this phase; Image
+   polish → 7.5; `SafeAreaView` ledgered with the named edge-to-edge problem (M9-adjacent);
+   SectionList / Pressable-state / StatusBar / RefreshControl / KeyboardAvoidingView / Alert
+   ledgered with reasons, not dropped.
 8. **Hygiene + close:** typed `FontSize`/`Padding` (the last stringly M4-ledger stragglers —
    ✅ closed by Phase 7.1: `string?`→`float?`, wire-identical, goldens untouched); the
    **route-registry unification** (routes duplicated in .NET + Kotlin since 5.1 — one source,
