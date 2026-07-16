@@ -4,7 +4,7 @@
 #
 #   build-test (windows-latest) — the local verification procedure verbatim
 #   (setup.ps1 §1–7 documents the toolchain pins):
-#     build (analyzers ride it) → .NET tests (537 passed / 0 skipped) →
+#     build (analyzers ride it) → .NET tests (539 passed / 0 skipped) →
 #     three NativeAOT publishes (win-x64, linux-bionic-x64, linux-bionic-arm64;
 #     each publish must show exactly the 4 accepted IL2072 trim warnings) →
 #     nine-export verification (dumpbin via vswhere / llvm-readelf from the
@@ -697,7 +697,29 @@ jobs:
       # (BnImageDemo.razor / BnImageDemoTests.cs untouched on the branch —
       # the design's own bar): the gates below stay 4 IL2072 / 9 exports /
       # 92 JVM.
-      - name: .NET tests (assert 537 passed / 0 skipped)
+      # 537 -> 539 (PHASE 7.6 GATE 1, +2 net — Runtime.Tests 382 -> 384): the
+      # route-registry unification's pin (M7 DoD #8's last open half). One new
+      # PageManifest.cs (14 rows: 9 routed pages + 5 unrouted probes; the
+      # Mount<T> lambdas moved VERBATIM — the trim-law shape, the gates below
+      # stay 4 IL2072 / 9 exports); HostSession.s_components and
+      # NativeNavigationManager.s_routes are now DERIVED VIEWS of that one
+      # array. +3 RouteTableDriftTests, the ShellStyleTableDriftTests pattern
+      # (build-test is the one required lane where every file is
+      # checkout-visible): the PAIR-FOR-PAIR pin of MainActivity.kt's
+      # DEEP_LINK_COMPONENTS against the manifest's routed rows minus "/"
+      # (pairs, not name sets — a route mapped to the WRONG page is drift
+      # set-equality cannot see; mutations run red-first: deleted row, /form ->
+      # BnModalDemo, extra /ghost row — each red naming the pair), the Kotlin
+      # `?: "BnDemo"` fallback literal pinned to PageManifest.DefaultComponent
+      # (mutation: BnSettingsPage -> red), and the nine-page ordered baseline
+      # retargeted to the manifest (a two-surface drift test is blind to a row
+      # deleted from BOTH; mutation: /scroll row deleted from the manifest ->
+      # baseline AND pair pin red). -1: NavigationTests'
+      # EveryRoute_ResolvesToAComponentTheMountRegistryKnows retired — routes
+      # ⊆ registry is true BY CONSTRUCTION now (two views of one array), and a
+      # green tautology is retired, not kept. Internal wiring only: ZERO wire
+      # change, ZERO shell edits, every golden byte-identical; JVM stays 106.
+      - name: .NET tests (assert 539 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -715,8 +737,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 537 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 537 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 539 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 539 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # ── NativeAOT publishes + nine-export verification ────────────────────
