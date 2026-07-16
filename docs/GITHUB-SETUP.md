@@ -217,20 +217,25 @@ IL2072 and nine-export assertions as `ci.yml`) and hands it as an artifact
 to an `emulator` job on ubuntu-latest (KVM), which runs
 `connectedAndroidTest -PciSoDir=<artifact dir>` on an API 34 google_apis
 x86_64 Pixel 6 image — mirroring the local AVD `blazornative-pixel6-x86_64`
-— and asserts **111 passed / 0 failed**.
+— and asserts the count pinned in the workflow itself (see the provenance
+block in `android-instrumented.yml` for the current bar and its history).
 
-The iOS-simulator workflow (`ios.yml`, `macos-latest`, on `push` to `main`, on
-**every** `pull_request`, + manual dispatch) is likewise **informational, not a
-required check** — simulator-on-CI has flake modes (sim boot, test-host launch),
-so it stays advisory. Promotion mirrors the emulator lane: after a stability
-baseline (≈10 consecutive green runs on `main` with no sim-flake reds) it can be
-promoted to a required check. Shape: a **single** job (iOS both publishes and
-tests on macOS) publishes the `iossimulator-arm64` NativeAOT **static** archive
-(the runtime-pack bypass + `NativeLib=Static`; 4 IL2072 + nine-export `nm -gU`
-assertions), assembles the static-embed link inputs (`bootstrapperdll.o`
-direct-link + the merged support archive), then runs the hosted XCTest suite via
-`xcodebuild test` on a runner-selected simulator — asserting **72 passed / 0
-failed**. The suite covers the render pin and the wire-drift guard; the
+The iOS-simulator workflow (`ios.yml`, `macos-latest`, on `push` to `main` +
+manual dispatch — **the `pull_request` trigger was removed in Phase 7.6** on an
+owner cost request; PRs keep the REQUIRED `ios-build` compile gate, the phase
+process dispatches this lane at every iOS gate, and every merge runs it on
+`main`; the workflow header records the condition for restoring the PR trigger)
+is likewise **informational, not a required check** — simulator-on-CI has flake
+modes (sim boot, test-host launch), so it stays advisory. Promotion mirrors the
+emulator lane: after a stability baseline (≈10 consecutive green runs on `main`
+with no sim-flake reds) it can be promoted to a required check. Shape: a
+**single** job (iOS both publishes and tests on macOS) publishes the
+`iossimulator-arm64` NativeAOT **static** archive (the runtime-pack bypass +
+`NativeLib=Static`; 4 IL2072 + nine-export `nm -gU` assertions), assembles the
+static-embed link inputs (`bootstrapperdll.o` direct-link + the merged support
+archive), then runs the hosted XCTest suite via `xcodebuild test` on a
+runner-selected simulator — asserting the count pinned in `ios.yml`'s own
+provenance block. The suite covers the render pin and the wire-drift guard; the
 interactive demo (bind/echo, Clear, Theme, Settings⇄Back, clipboard); the Yoga
 layer (style parsing, node lifecycle, dirty-on-change, resize); and — the point of
 M6 — the **computed-frame assertions** for `BnLayoutDemo`, `BnScrollDemo` and
