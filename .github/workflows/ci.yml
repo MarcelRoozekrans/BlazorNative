@@ -1245,6 +1245,36 @@ jobs:
           mkdir -p src/BlazorNative.Apple/vendor
           cp "$archive" src/BlazorNative.Apple/vendor/libBlazorNative.Runtime.a
 
+          # Phase 7.4: assert the export surface ON THE ARCHIVE, with VISIBILITY.
+          # The post-link gate below proved blazornative_init can vanish from the
+          # linked dylib's global table while `nm -gU` on the .a still lists all
+          # nine exports — because nm -gU also lists private-external (N_PEXT)
+          # globals, which ld64 LOCALIZES in the output (no -exported_symbols_list
+          # is passed; a default-visibility global in a force_loaded member MUST
+          # surface as a dylib export, a private-external one MUST NOT). So "the
+          # nine symbols are in the .a" (ios.yml's check) does not prove the app
+          # will export them. `nm -m` names the verdict per symbol ("external"
+          # vs "private external"); assert it HERE so an ILC visibility flip
+          # fails at its source with the discriminating evidence, not two
+          # minutes later at the far end of an xcodebuild.
+          vendored=src/BlazorNative.Apple/vendor/libBlazorNative.Runtime.a
+          echo "=== nm -m: blazornative_* in the staged archive ===" | tee ios-build-out/archive-visibility.txt
+          nm -m "$vendored" 2>&1 | grep -E ' _?blazornative_[a-z_]+$' | tee -a ios-build-out/archive-visibility.txt || true
+          expected="blazornative_dispatch_event blazornative_fetch_complete blazornative_host_event blazornative_init blazornative_mount blazornative_register_bridge blazornative_register_frame_callback blazornative_shutdown blazornative_version"
+          actual=$(nm -gU "$vendored" 2>/dev/null | grep -Eo '_?blazornative_[a-z_]+' | sed 's/^_//' | sort -u)
+          missing=""
+          for s in $expected; do echo "$actual" | grep -qx "$s" || missing="$missing $s"; done
+          if [ -n "$missing" ]; then
+            echo "Export surface drift in BlazorNative.Runtime.a: missing$missing" >&2
+            exit 1
+          fi
+          hidden=$(nm -m "$vendored" 2>/dev/null | grep -E ' _?blazornative_[a-z_]+$' | grep -c 'private external' || true)
+          if [ "$hidden" -ne 0 ]; then
+            echo "$hidden of the 9 blazornative_* exports are PRIVATE EXTERNAL in the archive — ld64 will localize them and the linked app will not export them. This is an ILC emission change (toolchain or publish-property drift), not a link problem; see archive-visibility.txt in the artifact." >&2
+            exit 1
+          fi
+          echo "SYMBOLS: all 9 blazornative_* present and externally visible in the staged archive."
+
           pack_native=$(find "$HOME/.nuget/packages/microsoft.netcore.app.runtime.nativeaot.iossimulator-arm64" \
             -type d -path '*runtimes/iossimulator-arm64/native' 2>/dev/null | sort | tail -1)
           if [ -z "$pack_native" ] || [ ! -d "$pack_native" ]; then
@@ -1429,7 +1459,22 @@ jobs:
           if [ -z "$found" ]; then
             echo "=== Mach-O binaries in the app bundle ===" >&2
             ls -la "$app" >&2 || true
-            echo "No binary in BnHost.app DEFINES blazornative_init. The NativeAOT static archive was not force_loaded — the app would launch and SIGSEGV rather than fail to build, which is why it is asserted here." >&2
+            # Phase 7.4: discriminating evidence, captured in the artifact. The
+            # symbol being ABSENT (archive not force_loaded) and the symbol being
+            # PRESENT BUT LOCAL (private-external in the archive, localized by
+            # ld64) fail this same grep but have opposite fixes — nm -m names
+            # which one happened, and the .resp files rule an injected
+            # -exported_symbols_list in or out.
+            {
+              for bin in "$app/BnHost" "$app/BnHost.debug.dylib"; do
+                [ -f "$bin" ] || continue
+                echo "=== nm -m $(basename "$bin") | grep blazornative ==="
+                nm -m "$bin" 2>&1 | grep -i 'blazornative' | head -20 || echo "(no blazornative symbol at ALL — the archive content is not in this binary)"
+              done
+              echo "=== linker response files ==="
+              find "$RUNNER_TEMP/DerivedData" -name 'BnHost-linker-args.resp' -exec sh -c 'echo "--- $1 ---"; cat "$1"' _ {} \; 2>/dev/null
+            } 2>&1 | tee ios-build-out/link-failure-evidence.txt >&2 || true
+            echo "No binary in BnHost.app DEFINES blazornative_init (globally). Either the NativeAOT static archive was not force_loaded, or its exports were emitted private-external and ld64 localized them — link-failure-evidence.txt in the artifact says which. Both would SIGSEGV/dlsym-fail at launch rather than fail to build, which is why it is asserted here." >&2
             exit 1
           fi
           echo "LINKED: BnHost.app + BnHostTests.xctest + the run plan; blazornative_init is defined in $(basename "$found")."
