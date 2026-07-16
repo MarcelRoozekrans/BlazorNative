@@ -303,6 +303,32 @@ final class BnModalMapperTests: BnHostTestCase {
         XCTAssertTrue(recognizer.view === scrim, "…attached to the scrim itself")
     }
 
+    /// **THE FILTER'S DECISION ON THE LIVE RECOGNIZER** (Gate 3 review M1): the
+    /// truth-table test above pins the pure function and the wiring test pins
+    /// delegate IDENTITY, but neither ever ASKED the live scrim recognizer its
+    /// decision — a delegate body mutated to a hardcoded `true` (keeping
+    /// `delegate = self`) survived both. `bnShouldReceive` IS the delegate
+    /// method's whole body minus the `touch.view` property read, so asking it
+    /// here closes that seam: the mounted scrim recognizer must DECLINE its
+    /// content box's touch and ACCEPT its own.
+    func testTheLiveScrimRecognizerDeclinesTheContentBoxTouchAndAcceptsItsOwn() throws {
+        let host = BnSyntheticHost()
+        host.render([
+            bnCreate(1, "view", nil),
+            bnCreate(2, "modal", 1),
+            bnCreate(20, "view", 2), bnStyle(20, "width", "280"), bnStyle(20, "height", "180"),
+            bnAttach(2, "click", 77),
+        ])
+        let scrim = host.root.subviews[1]
+        let box = scrim.subviews[0]
+        let recognizer = try XCTUnwrap(bnClickRecognizer(on: scrim))
+        XCTAssertFalse(recognizer.bnShouldReceive(touchView: box),
+                       "the LIVE scrim recognizer declines the content box's touch — a "
+                       + "hardcoded-true shouldReceive dismisses the modal on every in-modal tap")
+        XCTAssertTrue(recognizer.bnShouldReceive(touchView: scrim),
+                      "…and accepts a touch on the scrim itself — the dismissal request")
+    }
+
     /// The generic plain-view arm (decision 4's `Pressable` down payment):
     /// attach dispatches, re-attach is last-wins (ONE recognizer, the new
     /// handler), detach removes it — and the UIButton arm still rides

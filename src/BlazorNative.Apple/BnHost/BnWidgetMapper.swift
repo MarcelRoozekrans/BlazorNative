@@ -344,10 +344,17 @@ final class BnClickTapRecognizer: UITapGestureRecognizer, UIGestureRecognizerDel
 
     /// THE FILTER (see [bnClickTouchIsOwn]): `self.view` is the attached view —
     /// UIKit sets it at `addGestureRecognizer` and clears it at removal, so a
-    /// detached recognizer declines everything.
+    /// detached recognizer declines everything. The DECISION lives on the
+    /// instance (Gate 3 review M1: the delegate callback takes a `UITouch` no
+    /// hosted XCTest can construct, so THIS is what the live-recognizer test
+    /// calls — the untested seam is the `touch.view` property read alone).
+    func bnShouldReceive(touchView: UIView?) -> Bool {
+        bnClickTouchIsOwn(touchView: touchView, attachedView: view)
+    }
+
     func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
                            shouldReceive touch: UITouch) -> Bool {
-        bnClickTouchIsOwn(touchView: touch.view, attachedView: view)
+        bnShouldReceive(touchView: touch.view)
     }
 
     func bnDetach() { view?.removeGestureRecognizer(self) }

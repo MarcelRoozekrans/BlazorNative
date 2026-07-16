@@ -339,7 +339,7 @@ jobs:
             > ios-out/xcresult.json 2>/dev/null || true
           ls -la ios-out/crash || true
 
-      - name: Assert XCTest baseline (131 passed / 0 failed)
+      - name: Assert XCTest baseline (132 passed / 0 failed)
         if: always()
         run: |
           log=ios-out/xcodebuild-test.log
@@ -760,10 +760,19 @@ jobs:
           #       MotionEvents instead); what the fire bypasses — the filter — is the
           #       mapper suite's truth-table pin, and the delegate wiring is asserted on
           #       the live scrim before every fire.
+          # 131 -> 132 (Phase 7.4 Gate 3 REVIEW M1, +1) — the `shouldReceive` seam:
+          #   +1  BnModalMapperTests.testTheLiveScrimRecognizerDeclinesTheContentBoxTouchAndAcceptsItsOwn
+          #       M1 (Minor): the delegate's one-line body was UNREACHABLE — the truth table
+          #       pins the pure function, the wiring pin asserts delegate IDENTITY, and every
+          #       hand-rolled bnFire bypasses touch delivery, so a body mutated to a hardcoded
+          #       `true` (delegate kept) survived all 131. The decision is now an instance
+          #       method (bnShouldReceive(touchView:)) — the delegate body minus only the
+          #       `touch.view` property read — and this test asks it on the LIVE mounted
+          #       scrim recognizer: content box -> false, scrim itself -> true.
           # Count drift fails loudly.
-          if [ "$failed" -ne 0 ] || [ "$passed" -ne 131 ]; then
+          if [ "$failed" -ne 0 ] || [ "$passed" -ne 132 ]; then
             grep -E "Test Case '.*' (passed|failed)" "$log" || true
-            echo "iOS XCTest baseline drift: expected 131 passed / 0 failed, got passed=$passed failed=$failed" >&2
+            echo "iOS XCTest baseline drift: expected 132 passed / 0 failed, got passed=$passed failed=$failed" >&2
             exit 1
           fi
 
