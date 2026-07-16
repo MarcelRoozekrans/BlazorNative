@@ -1461,18 +1461,23 @@ jobs:
             ls -la "$app" >&2 || true
             # Phase 7.4: discriminating evidence, captured in the artifact. The
             # symbol being ABSENT (archive not force_loaded) and the symbol being
-            # PRESENT BUT LOCAL (private-external in the archive, localized by
-            # ld64) fail this same grep but have opposite fixes — nm -m names
-            # which one happened, and the .resp files rule an injected
-            # -exported_symbols_list in or out.
+            # PRESENT BUT LOCAL (localized by ld64) fail this same grep but have
+            # opposite fixes — nm -m names which one happened per entrypoint, and
+            # dyld_info -exports gives the EXPORT TRIE (what dyld/dlsym actually
+            # see), which is authoritative even when the nlist symbol table is not.
+            # (Round 1 established: the staged archive has all 9 external
+            # [no dead strip]; the resp files carry only -add_ast_path, no
+            # -exported_symbols_list.)
             {
               for bin in "$app/BnHost" "$app/BnHost.debug.dylib"; do
                 [ -f "$bin" ] || continue
-                echo "=== nm -m $(basename "$bin") | grep blazornative ==="
-                nm -m "$bin" 2>&1 | grep -i 'blazornative' | head -20 || echo "(no blazornative symbol at ALL — the archive content is not in this binary)"
+                b=$(basename "$bin")
+                echo "=== $b: nm -m, the 9 entrypoints exactly ==="
+                nm -m "$bin" 2>&1 | grep -E ' _?blazornative_[a-z_]+$' || echo "(none of the 9 entrypoints in the nlist)"
+                echo "=== $b: export trie (dyld_info -exports) ==="
+                xcrun dyld_info -exports "$bin" 2>&1 | grep -iE 'blazornative' || echo "(no blazornative in the export trie)"
+                echo "=== $b: nlist totals: all=$(nm "$bin" 2>/dev/null | wc -l | tr -d ' ') global-defined=$(nm -gU "$bin" 2>/dev/null | wc -l | tr -d ' ') ==="
               done
-              echo "=== linker response files ==="
-              find "$RUNNER_TEMP/DerivedData" -name 'BnHost-linker-args.resp' -exec sh -c 'echo "--- $1 ---"; cat "$1"' _ {} \; 2>/dev/null
             } 2>&1 | tee ios-build-out/link-failure-evidence.txt >&2 || true
             echo "No binary in BnHost.app DEFINES blazornative_init (globally). Either the NativeAOT static archive was not force_loaded, or its exports were emitted private-external and ld64 localized them — link-failure-evidence.txt in the artifact says which. Both would SIGSEGV/dlsym-fail at launch rather than fail to build, which is why it is asserted here." >&2
             exit 1
