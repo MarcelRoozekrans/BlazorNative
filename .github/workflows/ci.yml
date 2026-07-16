@@ -1243,9 +1243,16 @@ jobs:
   # verify/copy chain at that publish tree with `-PciSoDir` (which also narrows
   # `abiFilters` to the x86_64 slice, so no arm64 publish is needed for a compile).
   # No export/IL2072 assertions here: `build-test` already gates those on every PR;
-  # this job's one job is to prove the Android shell COMPILES. (`build-test` still
-  # uploads its `.so` artifacts for the android-instrumented emulator lane — those
-  # are untouched.)
+  # this job's one job is to prove the Android shell COMPILES.
+  #
+  # (Phase 8.2 correction: an earlier comment here claimed `build-test` "uploads its
+  # `.so` artifacts for the android-instrumented emulator lane". It does not, and
+  # never did — download-artifact cannot read another WORKFLOW's run, so that lane
+  # publishes its own `.so` in its own `publish-so` job and hands it to `emulator`
+  # via `needs:`. Nothing consumes build-test's uploads; they are diagnostics. The
+  # same false belief appeared in three other places and was corrected with it —
+  # it is the mental model that nearly underwrote release.yml's artifact hand-off
+  # with a precedent that does not exist.)
   # ═══════════════════════════════════════════════════════════════════════════
   android-build:
     runs-on: windows-latest
