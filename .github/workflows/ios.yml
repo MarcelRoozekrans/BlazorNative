@@ -339,7 +339,7 @@ jobs:
             > ios-out/xcresult.json 2>/dev/null || true
           ls -la ios-out/crash || true
 
-      - name: Assert XCTest baseline (85 passed / 0 failed)
+      - name: Assert XCTest baseline (111 passed / 0 failed)
         if: always()
         run: |
           log=ios-out/xcodebuild-test.log
@@ -617,10 +617,92 @@ jobs:
           #       ≤ 4 dispatches (deterministically 2), ratio ≥ 25:1 printed as
           #       [7.2-throughput], the FINAL offset always arriving (window [2,17),
           #       lastScrollDispatchPt == 400).
+          # 85 -> 109 (Phase 7.3 Gate 3, +24) — the form controls' iOS half: three new
+          # NodeTypes (checkbox=8/switch=9/slider=10 — the vocabulary's THIRD mirror,
+          # pinned by content in BnDriftTests' literal alongside Kotlin's
+          # nodeTypes_vocabulary pin) and the LAST stubbed widget goes real (the 2.5
+          # picker placeholder becomes a UIPickerView whose dataSource/delegate IS the
+          # node's BnPickerState). Every observable below is one
+          # WidgetMapperFormControlsTest / BnFormDemoAndroidTest already assert on the
+          # AVD (Gate 2, instrumented 124 -> 147) — that PAIRING is M7 DoD #4.
+          #   +6  BnItemsJsonTests — the STRICT items grammar (BnItemsJson.swift,
+          #       transcribed from BnItemsStrictParser.cs, NOT BnFlatJson's lenient
+          #       reader): the demo literal, the empty list, the full escaping matrix
+          #       (short escapes, \u00xx controls, raw non-ASCII/emoji/comma), the
+          #       U+001F/U+007F control boundary, all 19 normative MALFORMED vectors
+          #       (whitespace, trailing comma/garbage, single quotes, \b \f \/, \u of a
+          #       non-control, uppercase hex, the long \u spelling of a short escape,
+          #       raw controls, objects/bare strings), and the bounded error prefix.
+          #   +14 BnFormControlTests — the props, the wires, and THE PER-CONTROL
+          #       "PROGRAMMATIC SET FIRES NOTHING" VERIFICATION (the design's
+          #       verify-never-assume), which found iOS is the OPPOSITE of Android:
+          #       UISwitch.setOn / UISlider.setValue / UIPickerView.selectRow all fire
+          #       NOTHING — inside a batch AND outside one — so the shell carries NO
+          #       applyingBatch dispatch guard on any of the four, and no guard exists
+          #       to swallow the evidence if UIKit ever starts firing. What iOS DOES
+          #       need (the required mutations redden here): the slider's
+          #       step-quantization DEDUP (float-native drags deliver a distinct
+          #       .valueChanged per sample; raw 62 -> "60.0" once, raw 61 -> the SAME
+          #       multiple, nothing; raw 63 -> "65.0" — every payload an exact
+          #       min + n×step multiple, the STEP contract Android's int progress
+          #       enforces structurally) and the picker's SAME-ROW compare (a wheel
+          #       spun away and back is not a change). Plus THE NORMATIVE CLAMP RULE
+          #       asserted ON THE WIRE (an item shrink below the selection dispatches
+          #       the CLAMPED index — "1"; emptied items dispatch "-1"; an in-range
+          #       selection is PRESERVED and dispatches nothing; the empty->non-empty
+          #       mount is the deliberate no-notify asymmetry), malformed items
+          #       rendering EMPTY never wrong, detach silencing all four (the picker by
+          #       state, the controls by target), and enabled=false on each. NO
+          #       attached-window host and NO BnSpinner: UIPickerView.selectRow applies
+          #       immediately — Android's layout-coupled Spinner machinery is its own
+          #       (the design's DO-NOT-COPY list, both directions).
+          #   +4  BnFormDemoTests — /form on the simulator through the real NativeAOT
+          #       boot, asserting BnFormDemoTests.cs's numbers (the source of truth):
+          #       the mount golden (10 children — 4 UISwitch [checkbox==switch on iOS,
+          #       the recorded decision-2 divergence] + 2 float-native UISliders
+          #       [25/50, 0..100 verbatim — no int geometry] + 2 UIPickerViews [the
+          #       ["Alpha","Bravo","Charlie"] literal, selections 0/1] + the echo
+          #       "cb:false sw:true sl:25 pk:0" + the back row; declared 240/300
+          #       widths, the disabled quartet's gates); the intrinsic-size ORACLE (a
+          #       fresh UISwitch/UISlider asked sizeThatFits at the live width — the
+          #       6.3 method, DIFFERENT numbers than Android's oracle, same METHOD —
+          #       plus the alignItems:stretch width pin); the FOUR round-trips over the
+          #       REAL wire (drive -> dispatch_event -> NativeAOT -> @bind -> the echo
+          #       repaints; EXACTLY 4 change dispatches — the write-backs re-fired
+          #       none); and disabled-dispatches-nothing in its iOS shape — asserted on
+          #       the PROPERTY (the 6.2 contentInsetAdjustmentBehavior precedent):
+          #       a hosted XCTest cannot synthesize a UITouch and sendActions bypasses
+          #       isEnabled BY DESIGN (the performClick analog — Android drives real
+          #       MotionEvents instead), so the assertion is UIKit's own touch gate
+          #       present on all four + the counter staying exactly at the bound
+          #       drives' count.
+          # 109 -> 111 (Phase 7.3 Gate 3 REVIEW, +2) — the review's findings, applied.
+          #   +1  BnFormControlTests.testARawSelectRowBypassingTheApplyPathFiresNoDelegateTheGuardDisarmed
+          #       S1-1 (Important): the picker's "programmatic set fires nothing" verification was
+          #       UNFALSIFIABLE — every prior test moved the selection through the shell's apply
+          #       path, which records appliedSelection BEFORE calling selectRow, so if UIKit DID
+          #       fire didSelectRow on a programmatic selectRow, the same-row compare would have
+          #       swallowed it and every one of those tests stayed green in the counterfactual.
+          #       This one calls selectRow(2) RAW on the view while appliedSelection is 0: the
+          #       guard is disarmed and a delegate fire would dispatch "2" -> red. The
+          #       record-before-apply ordering IS, structurally, the expected-selection guard
+          #       Android's Spinner carries; the three comment sites that claimed "no guard could
+          #       swallow the evidence" are corrected in the same commit.
+          #   +1  BnFormControlTests.testSelectedIndexBeforeItemsInOneBatchLandsIdenticallyToTheNormativeOrder
+          #       S1-3: one batch applying selectedIndex BEFORE items lands on the same selection
+          #       with zero dispatches — requestedIndex keeps the RAW wire value, so patch order
+          #       is immaterial; pinned. Android's mechanism is code-identical and is NOT
+          #       re-tested on the instrumented lane (noted for the Gate 4 conclusion instead).
+          #   And S1-2, NO count change: BnItemsJsonTests' rejection list gains .NET's verbatim
+          #   ["backslash-u001F"] vector (uppercase hex of a CONTROL — lowercase u001f is in the acceptance
+          #   set, so casing is the ONLY reason it rejects; the substituted « row also trips
+          #   the non-control rule, so it cannot catch a parser mutated to accept uppercase hex).
+          #   A vector inside the existing method: 19 -> 20 vectors, same test count. Kotlin's
+          #   ItemsJsonTest gains the same vector the same way (ci.yml's JVM 90 unchanged).
           # Count drift fails loudly.
-          if [ "$failed" -ne 0 ] || [ "$passed" -ne 85 ]; then
+          if [ "$failed" -ne 0 ] || [ "$passed" -ne 111 ]; then
             grep -E "Test Case '.*' (passed|failed)" "$log" || true
-            echo "iOS XCTest baseline drift: expected 85 passed / 0 failed, got passed=$passed failed=$failed" >&2
+            echo "iOS XCTest baseline drift: expected 111 passed / 0 failed, got passed=$passed failed=$failed" >&2
             exit 1
           fi
 

@@ -187,6 +187,9 @@ internal fun style(nodeId: Int, property: String, value: String?) =
 internal fun text(nodeId: Int, text: String) =
     RenderPatch.ReplaceText(nodeId = nodeId, text = text)
 
+internal fun prop(nodeId: Int, name: String, value: String?) =
+    RenderPatch.UpdateProp(nodeId = nodeId, name = name, value = value)
+
 /**
  * A detached host root + its [WidgetMapper], driven ONE FRAME AT A TIME.
  *
@@ -207,6 +210,9 @@ internal class SyntheticHost(
      * the mapper's own default (synchronous completion through onUiEvent), so every
      * pre-7.2 test is byte-identical. */
     onScrollEvent: ((handlerId: Int, offsetPayload: String, onComplete: () -> Unit) -> Unit)? = null,
+    /** Phase 7.3: the UI-event dispatcher, for the form-control loop-guard tests —
+     * null keeps the mapper's silent default, so every earlier test is byte-identical. */
+    onUiEvent: ((handlerId: Int, eventName: String, payload: String?) -> Unit)? = null,
 ) {
 
     private val instr = InstrumentationRegistry.getInstrumentation()
@@ -223,8 +229,13 @@ internal class SyntheticHost(
             val d = ctx.resources.displayMetrics.density
             root = BnYogaFrameLayout(ctx)
             root.layout(0, 0, (widthDp * d).toInt(), (heightDp * d).toInt())
-            mapper = if (onScrollEvent == null) WidgetMapper(ctx, root)
-                     else WidgetMapper(ctx, root, onScrollEvent = onScrollEvent)
+            mapper = when {
+                onScrollEvent != null && onUiEvent != null ->
+                    WidgetMapper(ctx, root, onUiEvent = onUiEvent, onScrollEvent = onScrollEvent)
+                onScrollEvent != null -> WidgetMapper(ctx, root, onScrollEvent = onScrollEvent)
+                onUiEvent != null -> WidgetMapper(ctx, root, onUiEvent = onUiEvent)
+                else -> WidgetMapper(ctx, root)
+            }
         }
     }
 

@@ -1,0 +1,219 @@
+@*
+    ─────────────────────────────────────────────────────────────────────────
+    BnPicker — Phase 7.3 Task 1.2 (design decision 3: THE STATE-OWNER
+    PRECEDENT), authored in .razor.
+
+    Emits the `select` element → NodeType 7 — "picker", on the wire since
+    Phase 2.5 and a do-nothing stub in both shells until this phase. The
+    LAST stubbed widget becomes real. Android: Spinner + ArrayAdapter. iOS:
+    UIPickerView with the component as its own dataSource/delegate.
+
+    Unlike input (where the TEXT lives in .NET and the widget echoes it), a
+    native picker OWNS its items and its selection UI — that is what
+    "state-owner" means, and why the wire ships the whole item list as data:
+
+      • `items` prop — the item strings as a FLAT-JSON STRING ARRAY (the
+        normative grammar lives in BnItemsJson.cs — the shells' strict
+        parsers are written FROM that comment; malformed → log loudly,
+        render empty). ALWAYS emitted — `[]` for null/empty — so the host
+        prop exists from mount and no shell invents a default.
+      • `selectedIndex` prop — the CLAMPED selection as an invariant int
+        (see the clamp rule below). Always emitted.
+      • `change` event — the EXISTING wire, payload the newly selected index
+        as an invariant int. Unconditional attach + `enabled` semantics:
+        BnCheckbox's (one prose home).
+
+    ── THE CLAMP RULE (NORMATIVE — mirrored by both shells in Gates 2/3) ────
+    A selection must always be valid against the CURRENT items:
+
+      • Items empty            → selectedIndex is -1 (nothing to select; the
+                                 only state an empty picker has).
+      • Items non-empty        → selectedIndex clamps into [0, Count-1]:
+                                 an item shrink below the selection clamps
+                                 TO THE LAST item; a negative clamps to 0.
+                                 (A native Spinner/UIPickerView always shows
+                                 a selection — "unselected" does not exist
+                                 on a non-empty native picker, so -1 is not
+                                 representable there and is not a wire state
+                                 for non-empty items.)
+
+    The picker OWNS selection validity (the state-owner precedent), so when
+    clamping changes the effective index away from the bound SelectedIndex
+    parameter, the picker NOTIFIES SelectedIndexChanged with the clamped
+    value — the bound .NET state re-syncs to what the native widget actually
+    shows, instead of the echo and the screen disagreeing. The wire always
+    carries the CLAMPED index, never the raw parameter. An IN-RANGE
+    programmatic set re-fires nothing (the loop guard is untouched: the
+    notify happens only when the clamp MOVED the value).
+
+    THE NOTIFY FIRES ONCE PER DISTINCT (clamped, raw) PAIR (Gate 1 review
+    I2). Termination must not depend on the parent writing the clamp back: a
+    receiver that does not store it (or any bound component — its
+    HandleEventAsync auto-StateHasChanges) re-renders the picker with the
+    SAME out-of-range SelectedIndex, and re-notifying on every render is an
+    INFINITE loop (clamp → notify → parent StateHasChanged → re-render →
+    clamp → …). So the picker tracks the last-notified pair and stays silent
+    while it repeats; a NEW raw value or a NEW clamp result (items changed)
+    notifies again, and an in-range set clears the tracker.
+
+    The same rule applies INBOUND: a change dispatch whose index is out of
+    range against the current items (a benign shell/.NET race — the user
+    picked just before an item-shrink frame applied) CLAMPS by the same rule
+    rather than faulting; only a payload that does not PARSE as an invariant
+    int is garbage → FormatException → rc 2 (the 7.2 pattern).
+    ─────────────────────────────────────────────────────────────────────────
+*@
+<select items="@ItemsJson"
+        selectedIndex="@EffectiveIndexWire"
+        enabled="@(Enabled ? null : "false")"
+        backgroundColor="@BackgroundColor"
+        margin="@Margin"
+        alignSelf="@AlignSelf.ToStyleValue()"
+        flexGrow="@Grow.ToStyleValue()"
+        flexShrink="@Shrink.ToStyleValue()"
+        flexBasis="@Basis"
+        width="@Width"
+        height="@Height"
+        minWidth="@MinWidth"
+        maxWidth="@MaxWidth"
+        minHeight="@MinHeight"
+        maxHeight="@MaxHeight"
+        position="@Position.ToStyleValue()"
+        top="@Top"
+        right="@Right"
+        bottom="@Bottom"
+        left="@Left"
+        @onchange="HandleChange" />
+
+@code {
+    /// <summary>The item display strings. Serialized to the flat-JSON array
+    /// grammar (BnItemsJson — the normative grammar) on the <c>items</c>
+    /// prop; <c>[]</c> when null/empty. Items are opaque display text —
+    /// commas, quotes, non-ASCII are all legal content.</summary>
+    [Parameter] public IReadOnlyList<string>? Items { get; set; }
+
+    /// <summary>The selection, CLAMPED per the normative rule (file header)
+    /// before it reaches the wire: -1 iff <see cref="Items"/> is empty,
+    /// otherwise into [0, Count-1].</summary>
+    [Parameter] public int SelectedIndex { get; set; }
+
+    /// <summary>Raised with the newly selected index on a host change event
+    /// — the write-back half of the <c>@bind-SelectedIndex</c> pair. ALSO
+    /// raised with the clamped index when an items change forces a clamp
+    /// (the state-owner rule: the bound state re-syncs to what the native
+    /// widget shows).</summary>
+    [Parameter] public EventCallback<int> SelectedIndexChanged { get; set; }
+
+    /// <summary>False disables the host widget (it renders disabled and
+    /// dispatches nothing). Default true.</summary>
+    [Parameter] public bool Enabled { get; set; } = true;
+
+    // ── The flex ITEM surface (BnScroll's — how this leaf sits in its parent) ─
+
+    /// <inheritdoc cref="BnView.BackgroundColor"/>
+    [Parameter] public string? BackgroundColor { get; set; }
+
+    /// <inheritdoc cref="BnView.Margin"/>
+    [Parameter] public string? Margin { get; set; }
+
+    /// <inheritdoc cref="BnView.AlignSelf"/>
+    [Parameter] public FlexAlign? AlignSelf { get; set; }
+
+    /// <inheritdoc cref="BnView.Grow"/>
+    [Parameter] public float? Grow { get; set; }
+
+    /// <inheritdoc cref="BnView.Shrink"/>
+    [Parameter] public float? Shrink { get; set; }
+
+    /// <inheritdoc cref="BnView.Basis"/>
+    [Parameter] public string? Basis { get; set; }
+
+    /// <inheritdoc cref="BnView.Width"/>
+    [Parameter] public string? Width { get; set; }
+
+    /// <inheritdoc cref="BnView.Height"/>
+    [Parameter] public string? Height { get; set; }
+
+    /// <inheritdoc cref="BnView.MinWidth"/>
+    [Parameter] public string? MinWidth { get; set; }
+
+    /// <inheritdoc cref="BnView.MaxWidth"/>
+    [Parameter] public string? MaxWidth { get; set; }
+
+    /// <inheritdoc cref="BnView.MinHeight"/>
+    [Parameter] public string? MinHeight { get; set; }
+
+    /// <inheritdoc cref="BnView.MaxHeight"/>
+    [Parameter] public string? MaxHeight { get; set; }
+
+    /// <inheritdoc cref="BnView.Position"/>
+    [Parameter] public FlexPosition? Position { get; set; }
+
+    /// <inheritdoc cref="BnView.Top"/>
+    [Parameter] public string? Top { get; set; }
+
+    /// <inheritdoc cref="BnView.Right"/>
+    [Parameter] public string? Right { get; set; }
+
+    /// <inheritdoc cref="BnView.Bottom"/>
+    [Parameter] public string? Bottom { get; set; }
+
+    /// <inheritdoc cref="BnView.Left"/>
+    [Parameter] public string? Left { get; set; }
+
+    private string ItemsJson => BnItemsJson.Write(Items ?? []);
+
+    /// <summary>The normative clamp (file header), applied to
+    /// <paramref name="index"/> against the CURRENT items.</summary>
+    private int Clamp(int index)
+        => Items is not { Count: > 0 } ? -1 : Math.Clamp(index, 0, Items.Count - 1);
+
+    private string EffectiveIndexWire
+        => Clamp(SelectedIndex).ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    /// <summary>The last (clamped, raw) pair the state-owner notify fired
+    /// for — the once-per-pair guard (file header). Null whenever the
+    /// current SelectedIndex is in range.</summary>
+    private (int Clamped, int Raw)? _lastNotifiedClamp;
+
+    /// <summary>The state-owner notify: when the clamp MOVED the selection
+    /// (items shrank below it, went empty, or a caller passed an
+    /// out-of-range index), re-sync the bound state via
+    /// SelectedIndexChanged. An in-range set clamps to itself — nothing
+    /// fires (the programmatic-set-no-refire guard). Terminates BY
+    /// CONSTRUCTION, not by trusting the parent: the notify fires once per
+    /// DISTINCT (clamped, raw) pair, so a parent that writes the clamp back
+    /// converges (the re-render is in range and clears the tracker), and a
+    /// parent that does NOT write back re-renders into silence instead of
+    /// the clamp → notify → StateHasChanged → re-render loop (Gate 1 review
+    /// I2 — the pre-fix shape hung Mount itself).</summary>
+    protected override Task OnParametersSetAsync()
+    {
+        var clamped = Clamp(SelectedIndex);
+        if (clamped == SelectedIndex)
+        {
+            _lastNotifiedClamp = null;
+            return Task.CompletedTask;
+        }
+        if (_lastNotifiedClamp == (clamped, SelectedIndex))
+            return Task.CompletedTask;
+        _lastNotifiedClamp = (clamped, SelectedIndex);
+        return SelectedIndexChanged.InvokeAsync(clamped);
+    }
+
+    private Task HandleChange(ChangeEventArgs e)
+        => SelectedIndexChanged.InvokeAsync(Clamp(ParseIndexPayload(e.Value?.ToString())));
+
+    /// <summary>Strict wire parse — an invariant int. Missing or unparseable
+    /// is a SHELL contract violation: throw (FormatException) → dispatch
+    /// rc 2 (the 7.2 pattern). An out-of-range but well-formed index is NOT
+    /// garbage — it is the benign items-shrink race, and the caller clamps
+    /// it by the normative rule.</summary>
+    private static int ParseIndexPayload(string? payload)
+        => payload is null
+            ? throw new FormatException(
+                "picker change dispatch carried no payload — the wire contract requires " +
+                "the selected index as an invariant-culture integer")
+            : int.Parse(payload, System.Globalization.NumberStyles.Integer,
+                System.Globalization.CultureInfo.InvariantCulture);
+}

@@ -1223,6 +1223,12 @@ public sealed class NativeRenderer : BlazorRenderer
         "a"        => "button",
         "select"   => "picker",
         "scroll" or "overflow" => "scroll",
+        // Phase 7.3 (design decision 1): dedicated ELEMENTS, not `input` + a
+        // `type` prop — the widget class must be known at CreateNode (6.2's
+        // ordering trap: props arrive in later patches).
+        "checkbox" => "checkbox",
+        "switch"   => "switch",
+        "slider"   => "slider",
         _          => "view"
     };
 

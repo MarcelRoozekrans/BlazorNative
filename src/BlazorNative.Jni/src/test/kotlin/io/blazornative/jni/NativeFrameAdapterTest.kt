@@ -49,6 +49,31 @@ class NativeFrameAdapterTest {
         assertEquals(16L, NativeFrameAdapter.FRAME_TIMESTAMP_MS)
     }
 
+    // ── 1b. The nodeTypes vocabulary pin (Phase 7.3) ─────────────────────────
+
+    /**
+     * The Kotlin twin of Swift's `BnDriftTests` literal pin. Gate 1 (Phase 7.3)
+     * recorded the gap by name: this suite pinned byte OFFSETS and one synthetic
+     * decode (3 → "button"), but nothing pinned the array's LENGTH or CONTENT —
+     * so a shell that missed a vocabulary extension decoded every new create to
+     * the "?" fallback, and only a device golden could see it. EXACT content,
+     * EXACT order: index IS the wire id (checkbox = 8, switch = 9, slider = 10;
+     * FrameEncoder.MapNodeType is the .NET mirror, BnFrameAdapter.swift the
+     * Swift one — the three move together or this reddens).
+     */
+    @Test
+    fun nodeTypes_vocabulary_is_pinned_content_and_length() {
+        assertEquals(
+            listOf(
+                "?", "view", "text", "button", "input", "image", "scroll", "picker",
+                "checkbox", "switch", "slider",
+            ),
+            NativeFrameAdapter.nodeTypes.toList(),
+            "the nodeTypes vocabulary drifted — FrameEncoder.MapNodeType (.NET), this array " +
+                "and BnFrameAdapter.swift are THREE MIRRORS that move together"
+        )
+    }
+
     // ── 2. Synthetic offset-level decode ─────────────────────────────────────
 
     @Test

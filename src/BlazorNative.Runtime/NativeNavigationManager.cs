@@ -65,6 +65,12 @@ public sealed class NativeNavigationManager : INavigationManager
         // gains "/list" → "BnListDemo" in Gate 2 (this table's mirror); iOS has
         // no route mirror — it mounts by NAME (BnRuntime.start).
         ["/list"] = "BnListDemo",
+        // Phase 7.3: the form-controls proof page — same shape as the four
+        // above. Its "← Back" navigates to "/"; nothing on BnDemo links here.
+        // Android's MainActivity.DEEP_LINK_COMPONENTS gains "/form" →
+        // "BnFormDemo" in Gate 2 (this table's mirror); iOS has no route
+        // mirror — it mounts by NAME (BnRuntime.start).
+        ["/form"] = "BnFormDemo",
     };
 
     /// <summary>The default route's component — the name a host mounts to get

@@ -70,9 +70,27 @@ object NativeFrameAdapter {
     const val FRAME_FRAME_ID = 12L
     const val FRAME_TIMESTAMP_MS = 16L
 
-    /** Index = BlazorNativeNodeType wire value (0 = None, never emitted for
-     * CreateNode by the encoder). */
-    private val nodeTypes = arrayOf("?", "view", "text", "button", "input", "image", "scroll", "picker")
+    /**
+     * Index = BlazorNativeNodeType wire value (0 = None, never emitted for
+     * CreateNode by the encoder).
+     *
+     * Phase 7.3: `checkbox = 8`, `switch = 9`, `slider = 10` — a wire-VOCABULARY
+     * extension, not an ABI change (the id rides the existing int32 NodeType
+     * field of the 48-byte patch). THREE MIRRORS move together:
+     * `FrameEncoder.MapNodeType` (.NET — throws on unknown), this array, and
+     * Swift's `BnFrameAdapter.nodeTypes` (both shells log-and-fallback to "?").
+     *
+     * `internal` and PINNED BY CONTENT — `NativeFrameAdapterTest.
+     * nodeTypes_vocabulary_is_pinned_content_and_length`, the Kotlin twin of
+     * Swift's `BnDriftTests` literal pin. Gate 1 recorded that NOTHING here
+     * pinned length or content: a missed entry decoded every new create to "?"
+     * and only a device golden could see it. The pin is what makes the next
+     * vocabulary extension redden on the JVM lane instead.
+     */
+    internal val nodeTypes = arrayOf(
+        "?", "view", "text", "button", "input", "image", "scroll", "picker",
+        "checkbox", "switch", "slider",
+    )
 
     /** Sanity ceiling on patchCount: real frames are tens of patches; anything
      * beyond this means the frame pointer/layout is corrupted, and we'd rather

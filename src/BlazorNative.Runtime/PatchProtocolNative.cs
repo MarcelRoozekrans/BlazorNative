@@ -32,8 +32,20 @@ public enum BlazorNativePatchKind : int
     ReplaceText = 5, SetStyle = 6, AttachEvent = 7, DetachEvent = 8, CommitFrame = 9,
 }
 
+/// <summary>Wire ids for CreateNode's widget class. Phase 7.3 extends the
+/// vocabulary with Checkbox/Switch/Slider (8-10) — a wire-VOCABULARY extension,
+/// not an ABI change: the id rides the existing int32 field of the 48-byte
+/// patch (exports stay 9, the bridge stays 72 bytes). The vocabulary lives in
+/// THREE mirrors that must move together: FrameEncoder.MapNodeType (throws on
+/// unknown), Kotlin NativeFrameAdapter.nodeTypes and Swift
+/// BnFrameAdapter.nodeTypes (both log-and-fallback to "?" on an index past
+/// their array — which is exactly what a shell that missed the extension does
+/// with 8/9/10 until its Gate lands).</summary>
 public enum BlazorNativeNodeType : int
-{ None = 0, View = 1, Text = 2, Button = 3, Input = 4, Image = 5, Scroll = 6, Picker = 7 }
+{
+    None = 0, View = 1, Text = 2, Button = 3, Input = 4, Image = 5, Scroll = 6, Picker = 7,
+    Checkbox = 8, Switch = 9, Slider = 10,
+}
 
 [StructLayout(LayoutKind.Sequential)]
 public struct BlazorNativePatch

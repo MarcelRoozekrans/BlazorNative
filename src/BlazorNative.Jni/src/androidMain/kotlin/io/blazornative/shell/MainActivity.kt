@@ -93,6 +93,11 @@ class MainActivity : Activity() {
          * virtualization does not get to rewrite it), and the same mirror of
          * .NET's NativeNavigationManager route table. Same two doors:
          * BnListDemoAndroidTest mounts it by NAME.
+         *
+         * Phase 7.3 adds "/form" → BnFormDemo, the form-controls proof page
+         * (M7 DoD #4) — a SEVENTH root page, same reason again, same mirror of
+         * .NET's NativeNavigationManager route table. Same two doors:
+         * BnFormDemoAndroidTest mounts it by NAME.
          */
         private val DEEP_LINK_COMPONENTS = mapOf(
             "/settings" to "BnSettingsPage",
@@ -100,6 +105,7 @@ class MainActivity : Activity() {
             "/scroll" to "BnScrollDemo",
             "/image" to "BnImageDemo",
             "/list" to "BnListDemo",
+            "/form" to "BnFormDemo",
         )
     }
 

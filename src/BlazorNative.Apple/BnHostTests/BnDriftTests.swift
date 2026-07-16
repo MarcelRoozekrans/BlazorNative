@@ -56,9 +56,15 @@ final class BnDriftTests: XCTestCase {
         XCTAssertEqual(BnFrameAdapter.frameTimestampMs % 8, 0)
 
         // Index = BlazorNativeNodeType wire value (0=None never emitted for a
-        // CreateNode). Mirror of PatchProtocolNative.cs's enum ordering.
+        // CreateNode). Mirror of PatchProtocolNative.cs's enum ordering — and,
+        // since Phase 7.3, of the three-mirror vocabulary (FrameEncoder.MapNodeType /
+        // NativeFrameAdapter.nodeTypes / this array): checkbox=8, switch=9,
+        // slider=10 ride the SAME int32 field, no ABI change. This literal is the
+        // Swift content pin — the twin of Kotlin's
+        // nodeTypes_vocabulary_is_pinned_content_and_length.
         XCTAssertEqual(BnFrameAdapter.nodeTypes,
-                       ["?", "view", "text", "button", "input", "image", "scroll", "picker"])
+                       ["?", "view", "text", "button", "input", "image", "scroll", "picker",
+                        "checkbox", "switch", "slider"])
 
         // The count sanity ceiling must match the Kotlin/.NET guard.
         XCTAssertEqual(BnFrameAdapter.maxPatches, 65_536)

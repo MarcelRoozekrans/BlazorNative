@@ -14,7 +14,7 @@
 #   emulator (ubuntu-latest, KVM) — downloads the .so, boots the API 34
 #     google_apis x86_64 Pixel 6 image (mirrors the local AVD
 #     blazornative-pixel6-x86_64), runs connectedAndroidTest with
-#     -PciSoDir pointing at the artifact → asserts 124 passed / 0 failed.
+#     -PciSoDir pointing at the artifact → asserts 147 passed / 0 failed.
 #
 # Baselines are asserted, not observed: count drift fails the job loudly.
 # ─────────────────────────────────────────────────────────────────────────────
@@ -515,6 +515,85 @@ jobs:
       #     clearIfMine ALONE left the whole suite green. A mutation that must be applied in
       #     two places to redden one test is a mutation whose second site is unpinned. Both
       #     call sites now route through the one pure function — one decision, one unit test.
+      # ── Phase 7.3 Gate 2 — FORM CONTROLS + a REAL picker (124 → 147, +23) ───
+      # Three new NodeTypes (checkbox=8 → CheckBox, switch=9 → Switch, slider=10
+      # → SeekBar — FRAMEWORK widgets: this shell has no appcompat/Material
+      # dependency, recorded in WidgetMapper.handleCreate) and the LAST stubbed
+      # widget goes real (picker → BnSpinner + ArrayAdapter — a SUBCLASS that
+      # answers its own requestLayout, the ReactPicker fix: AbsSpinner applies a
+      # user pick's selection in a LAYOUT PASS this shell's empty-onLayout
+      # containers never run, so a stock Spinner's pick sat pending forever —
+      # found by the round-trip test's FIRST device run, three controls echoed,
+      # the picker never did; BnSpinner.kt's KDoc has the whole finding).
+      # Each count verified
+      # by MUTATION (break the thing, watch the RIGHT test go red — the Gate 2
+      # report has the transcript):
+      #    +3 WidgetMapperNodeTypesTest  — the three new NodeType → widget-class
+      #                                  rows. (The vocabulary's content/length
+      #                                  pin lives on the JVM lane —
+      #                                  NativeFrameAdapterTest — the gap Gate 1
+      #                                  recorded by name: nothing pinned the
+      #                                  Kotlin array, so a missed entry decoded
+      #                                  to "?" and only a device golden saw it.)
+      #   +16 WidgetMapperFormControlsTest — THE PER-CONTROL LOOP GUARD, verified
+      #                                  per control because the controls DIFFER:
+      #                                  setChecked/setProgress fire their
+      #                                  listeners SYNCHRONOUSLY (the applyingBatch
+      #                                  guard — each control's test drives the
+      #                                  same set inside a batch [nothing] and
+      #                                  outside one [dispatches, exact payload:
+      #                                  "true"/"false", the invariant "60.0"]);
+      #                                  Spinner.setSelection fires its callback
+      #                                  on a LATER main-loop turn (AdapterView
+      #                                  POSTS its SelectionNotifier), where the
+      #                                  batch flag CANNOT guard — the picker's
+      #                                  guard is the EXPECTED-SELECTION compare,
+      #                                  and its tests run against an ATTACHED
+      #                                  root (a detached view's posted notifier
+      #                                  NEVER runs → a detached-root picker test
+      #                                  passes VACUOUSLY). Plus: the SeekBar
+      #                                  float↔int precision contract (stepped:
+      #                                  one unit IS one step, max 20/progress 5;
+      #                                  continuous: range/1000) incl. re-derive
+      #                                  on range/step rewrites; THE NORMATIVE
+      #                                  CLAMP RULE ON THE WIRE (shrink below the
+      #                                  selection → the LAST item AND the
+      #                                  dispatched payload IS the clamped index
+      #                                  — .NET's benign inbound clamp makes a
+      #                                  non-clamping shell invisible from the
+      #                                  .NET side, so the wire assertion is the
+      #                                  only proof); emptied → −1 + notify;
+      #                                  in-range PRESERVED + no notify; MALFORMED
+      #                                  items (strict ItemsJson — the acceptance
+      #                                  set is exactly what BnItemsJson.Write
+      #                                  emits; the rejection matrix is the JVM
+      #                                  lane's ItemsJsonTest) → LOUD AND EMPTY;
+      #                                  detach silences all four; enabled=false
+      #                                  disables all four.
+      #    +4 BnFormDemoAndroidTest      — /form through the real NativeAOT boot,
+      #                                  asserting BnFormDemoTests.cs's numbers
+      #                                  (10 children, 2×CheckBox/Switch/SeekBar/
+      #                                  Spinner, the items literal, selections
+      #                                  0/1, stepped-vs-continuous geometry, the
+      #                                  declared 240/300 vs the platform's own
+      #                                  intrinsics — the checkbox/switch ORACLE,
+      #                                  a fresh widget measured with the same
+      #                                  specs, the 6.3 method); the FOUR bound
+      #                                  round-trips over the REAL wire into the
+      #                                  echo (tap → listener → dispatch_event →
+      #                                  NativeAOT → @bind → re-render), exactly
+      #                                  4 dispatches — the write-back echoes
+      #                                  re-fired NONE (the loop guards, end to
+      #                                  end); and DISABLED CONTROLS DISPATCH
+      #                                  NOTHING under REAL TOUCH (dispatchTouchEvent,
+      #                                  never performClick — performClick bypasses
+      #                                  enabled BY DESIGN), asserted on the
+      #                                  changeDispatchesSent counter because the
+      #                                  demo's disabled handlers are unbound
+      #                                  .NET-side: a leaked dispatch would move
+      #                                  no echo and no frame — only the counter
+      #                                  can see it. The same gesture is proven
+      #                                  live on the bound checkbox first.
       # ── Phase 7.2 Gate 2 — THE onScroll WIRE + /list (111 → 124, +13) ───────
       # The milestone's second named risk: THE FIRST 60Hz PRODUCER on an event wire
       # designed for taps. A scroll node with the `scroll` event attached reports its
@@ -581,7 +660,7 @@ jobs:
       #                                  expected window DERIVED from the settled
       #                                  offset and the measured ratio logged (grep
       #                                  logcat for [7.2-throughput]).
-      - name: Assert instrumented baseline (124 passed / 0 failed)
+      - name: Assert instrumented baseline (147 passed / 0 failed)
         run: |
           shopt -s globstar nullglob
           xmls=(src/BlazorNative.Jni/build/outputs/androidTest-results/connected/**/*.xml)
@@ -598,8 +677,8 @@ jobs:
             s=$(attr skipped "$x");  skipped=$((skipped + ${s:-0}))
           done
           echo "Instrumented totals across ${#xmls[@]} suite(s): tests=$tests failures=$failures errors=$errors skipped=$skipped"
-          if [ "$tests" -ne 124 ] || [ "$failures" -ne 0 ] || [ "$errors" -ne 0 ] || [ "$skipped" -ne 0 ]; then
-            echo "Instrumented test baseline drift: expected 124 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped" >&2
+          if [ "$tests" -ne 147 ] || [ "$failures" -ne 0 ] || [ "$errors" -ne 0 ] || [ "$skipped" -ne 0 ]; then
+            echo "Instrumented test baseline drift: expected 147 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped" >&2
             exit 1
           fi
 
