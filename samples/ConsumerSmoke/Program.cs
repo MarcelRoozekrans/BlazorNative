@@ -1,17 +1,33 @@
 using BlazorNative.Renderer;
+using BlazorNative.Runtime;
 using Microsoft.AspNetCore.Components;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace ConsumerSmoke;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ConsumerSmoke — Phase 4.5 Gate 2 (M4 DoD #7 proof).
+// ConsumerSmoke — Phase 4.5 Gate 2 (M4 DoD #7 proof), extended by Phase 8.1
+// (M8 DoD #2): the six-package consumer.
 //
-// Mounts SmokeRoot via the Renderer.Tests harness shape — build the renderer's
-// DI surface directly, capture Frames, assert the patch set. Deliberately NO
-// BlazorNative.Runtime/HostSession: the NativeAOT composition root is an
-// app-shape concern (unpackaged by design, see the 2026-07-12 phase-4.5
-// design); a managed consumer mounts with nothing but the five packages.
+// TWO proofs, side by side:
+//
+//   1. THE MOUNT (4.5, retained verbatim): SmokeRoot via the Renderer.Tests
+//      harness shape — build the renderer's DI surface directly, capture
+//      Frames, assert the patch set. This proves the renderer/components
+//      surface from packages alone.
+//   2. THE REGISTRATION (8.1, design decision 5): the FIRST consumer of
+//      BlazorNativeApp.RegisterPages that is not this repo's sample app,
+//      asserting the surface's OBSERVABLE laws from the shipped
+//      BlazorNative.Runtime package (nothing internal is reached for):
+//      the DAM(All) factories compile and run with concrete consumer-owned
+//      types; a duplicate-route registration throws ArgumentException NAMING
+//      the offending row (the validation strings shipped, not just the happy
+//      path — sequenced FIRST, because register-once means only the first
+//      call's argument set is validated); a second call throws (the
+//      register-once law, observable from outside).
+//      What this deliberately does NOT claim: an AOT/ILC pass over a package
+//      consumer — that proof belongs to the repo's own publish gates today
+//      and to 8.3's template end-to-end (recorded boundary).
 //
 // Exit code: 0 = PASS, 1 = FAIL (details on stderr-ish stdout lines).
 // ─────────────────────────────────────────────────────────────────────────────
@@ -35,6 +51,49 @@ internal static class Program
         // (and that the normal build carries zero BN diagnostics).
         using var deliberateTrip = new HttpClient();
 #endif
+
+        // ── Phase 8.1: the RegisterPages block (BlazorNative.Runtime's proof) ─
+        // Order is load-bearing: registration is once-per-process, so the
+        // INVALID call goes first (validation happens before the store — a
+        // rejected set registers nothing), then the valid registration, then
+        // the register-once law.
+
+        // (a) A duplicate route throws ArgumentException NAMING the offending
+        //     row — the shipped validation strings, not just the happy path.
+        try
+        {
+            BlazorNativeApp.RegisterPages(
+                BlazorNativePage.Routed<SmokeRoot>("/", "First"),
+                BlazorNativePage.Routed<SmokeProbePage>("/", "Second"));
+            Check(false, "duplicate-route RegisterPages must throw ArgumentException");
+        }
+        catch (ArgumentException ex)
+        {
+            Check(ex.Message.Contains("duplicate route '/'"),
+                $"the duplicate-route message names the sin, got: '{ex.Message}'");
+            Check(ex.Message.Contains("row 1") && ex.Message.Contains("'Second'"),
+                $"the duplicate-route message names the offending row (row 1 'Second'), got: '{ex.Message}'");
+        }
+
+        // (b) The valid registration succeeds — the DAM(All) factories, the
+        //     params surface, and the trim annotations compile and RUN from
+        //     the shipped package with concrete consumer-owned types.
+        BlazorNativeApp.RegisterPages(
+            BlazorNativePage.Routed<SmokeRoot>("/", nameof(SmokeRoot)),
+            BlazorNativePage.Named<SmokeProbePage>(nameof(SmokeProbePage)));
+
+        // (c) A second call throws — the register-once law, observable from
+        //     outside. (Remove call (b) and THIS reddens: a single Named row
+        //     is a legal first registration, so the Check below fires.)
+        try
+        {
+            BlazorNativeApp.RegisterPages(BlazorNativePage.Named<SmokeProbePage>("Again"));
+            Check(false, "a second RegisterPages call must throw (the register-once law)");
+        }
+        catch (InvalidOperationException)
+        {
+            // expected — registered once, at startup.
+        }
 
         var services = new ServiceCollection().AddBlazorNativeRenderer();
         await using var provider = services.BuildServiceProvider();
@@ -99,7 +158,7 @@ internal static class Program
             return 1;
         }
 
-        Console.WriteLine("[ConsumerSmoke] PASS — Bn* component mounted from packages alone (M4 DoD #7)");
+        Console.WriteLine("[ConsumerSmoke] PASS — Bn* mount + RegisterPages laws from the six packages alone (M4 DoD #7 / M8 DoD #2)");
         return 0;
     }
 }

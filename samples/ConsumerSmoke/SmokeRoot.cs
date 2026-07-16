@@ -11,6 +11,20 @@ namespace ConsumerSmoke;
 /// app author would compose the packaged Bn* components (BnDemo's idiom;
 /// Razor syntax awaits .razor compilation, M6).
 /// </summary>
+/// <summary>A second consumer-owned component (Phase 8.1): the
+/// <c>BlazorNativePage.Named&lt;T&gt;</c> row in Program.cs's registration
+/// block needs a concrete T that is NOT SmokeRoot — proving the params
+/// surface takes heterogeneous rows from consumer code alone.</summary>
+public sealed class SmokeProbePage : ComponentBase
+{
+    protected override void BuildRenderTree(RenderTreeBuilder b)
+    {
+        b.OpenComponent<BnText>(0);
+        b.AddComponentParameter(1, nameof(BnText.Text), "probe");
+        b.CloseComponent();
+    }
+}
+
 public sealed class SmokeRoot : ComponentBase
 {
     /// <summary>Bumped by the BnButton click handler — proves the
