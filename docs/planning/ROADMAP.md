@@ -462,7 +462,7 @@ Phases (approved at milestone-open 2026-07-13):
 
 ---
 
-### 🚧 Milestone 7 — Components + Razor  *(in progress — opened 2026-07-15)*
+### ✅ Milestone 7 — Components + Razor  *(complete 2026-07-16 — `v7.0` tag pending merge)*
 
 The things you build UIs *with*: **`.razor` authoring** (the standing M3-era ledger item —
 author components in Razor syntax instead of hand-written `BuildRenderTree`, with the five demo
@@ -634,7 +634,46 @@ Phases (approved at milestone-open 2026-07-15; subject to the 7.0 verdict):
      1dee252), Gate 2 PASS (I-1 fixed 8ef64be), Gate 3 PASS (I-1 fixed 20afbcb).
      See [design](../plans/2026-07-16-phase-7.5-design.md) +
      [conclusion](../plans/2026-07-16-phase-7.5-conclusion.md).
-- ⏳ **Phase 7.6** — route-registry unification + M7 final audit + close (rest of #8) → `v7.0`
+- ✅ **Phase 7.6** — route-registry unification + M7 final audit + close (rest of #8) — *complete (2026-07-16)*
+   - **The route-registry unification** (DoD #8's last open half, promised since 5.1):
+     `PageManifest.cs` declares every page ONCE (14 rows: 9 routed + 5 probes, the
+     `Mount<T>` lambdas verbatim — the trim-law shape moved, not changed: publish stays
+     **4 IL2072 + 9 exports**, verified live). `HostSession.s_components` and
+     `NativeNavigationManager.s_routes` are **derived views** (one array, a fan-out, no
+     static-init cycle); Android's `DEEP_LINK_COMPONENTS` is the one surviving **pinned
+     mirror** (consulted at Intent-parse time, before the `.so` loads — transmit is
+     structurally impossible, generate rejected as build machinery for an 8-row map),
+     held by `RouteTableDriftTests` in the **required lane**: the PAIR-FOR-PAIR pin
+     (a route on the wrong page is drift set-equality cannot see), the `?: "BnDemo"`
+     fallback pin, the nine-page baseline retargeted to the manifest. Five mutations run
+     red-first (redlines in `90ac62c`); the pin landed green against the untouched Kotlin
+     map; the `EveryRoute_Resolves…` tautology retired, not kept. iOS: zero files —
+     no route surface exists; the drift-test header names what a future deep-link story owes.
+   - **The hygiene ledger paid** (7.4/7.5 deferrals): H1 stale lifecycle headers repointed
+     (both shells), H2 `scrollDiagnostics` → `diagnostics` (both shells), H3
+     `BnClipboardTests` bounded re-tap (3 attempts, real `UIPasteboard`, retry history in
+     the failure), H4 the indexed-insert-at-root synthetic (+1 instrumented), H5 the
+     matched placeholder recolor/null-clear pair (+1 instrumented, +1 XCTest). H6/H7
+     deferred by name into the M8 ledger.
+   - **ios.yml drops `pull_request`** (owner cost request, `eee4551`): the advisory lane's
+     PR coverage moved to per-gate dispatch + push-main; both M6-audit F1 fixes stand
+     (push-main kept, no paths filter); restore condition recorded in the workflow header.
+   - **The M7 final audit** ([2026-07-16-milestone-7-final-audit.md](../plans/2026-07-16-milestone-7-final-audit.md)):
+     **PASS on all eight DoD**, every locally runnable row re-run live at the tip
+     (.NET 539/0 · JVM 106/0 · publish 4 IL2072 + 9 exports via dumpbin), every cited
+     device run verified green via the GitHub API, branch protection read back == exactly
+     the three required contexts, the ABI re-proven independently (72-byte bridge × 3
+     mirrors, thirteen NodeTypes × 3 mirrors, Yoga 3.2.1 × 3 files). Four findings
+     recorded, none blocking.
+   - **Combined review PASS** — I-1 (MainActivity KDoc names its pin) + I-2 (GITHUB-SETUP
+     vs. ios.yml contradiction) applied in `7aaa424`; M-1 (drift-parser comment-line
+     limitation — the house pattern's shared limitation) and M-2 (retry visibility is
+     log-only) recorded.
+   - **Final counts:** .NET **539/0** · JVM **106/0** · Android instrumented **184/0**
+     (local AVD, asserted in android-instrumented.yml) · iOS XCTest **154/0**
+     (run 29515968994). See [design](../plans/2026-07-16-phase-7.6-design.md) +
+     [conclusion](../plans/2026-07-16-phase-7.6-conclusion.md). **`v7.0` is tagged after
+     the close PR merges, on the owner's go.**
 
 Maps to BACKLOG "P5 — components".
 
@@ -656,8 +695,9 @@ More host APIs via the [bridge-extension pattern](../bridge-extension.md) (camer
 geolocation, biometrics, notifications), **real-device iOS** (code signing, provisioning,
 App Store validation — **requires an Apple Developer account**, the M5 simulator-only
 deferral), and the Android completeness deferred from M5 (FCM push, secure storage). The
-route→component registry unify (5.1 carryover) and the on-device inspector channel (4.4
-carryover) land here. Maps to BACKLOG.md "P4 — full platform coverage" (remainder).
+on-device inspector channel (4.4 carryover) lands here (the route→component registry
+unification, once slated here, was closed by Phase 7.6). Maps to BACKLOG.md "P4 — full
+platform coverage" (remainder).
 
 ---
 
