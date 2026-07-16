@@ -37,6 +37,13 @@
          coverage. -->
     <ProjectReference Include="..\..\src\BlazorNative.Runtime\BlazorNative.Runtime.csproj" />
     <ProjectReference Include="..\..\src\BlazorNative.Components\BlazorNative.Components.csproj" />
+    <!-- Phase 8.0 (design decision 4, option B): the tests STAY, their
+         references re-point. The demo pages, probes and SpikeRazor moved to
+         the sample app; referencing it keeps every golden byte-identical
+         (not even a file path changed). SampleApp grants InternalsVisibleTo
+         for the pages' internal-const frame arithmetic (the 6.2 pattern,
+         new grantor). -->
+    <ProjectReference Include="..\..\samples\BlazorNative.SampleApp\BlazorNative.SampleApp.csproj" />
   </ItemGroup>
 
   <ItemGroup>

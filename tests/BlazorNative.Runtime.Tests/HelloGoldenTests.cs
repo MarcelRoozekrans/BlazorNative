@@ -2,6 +2,7 @@ using BlazorNative.Core;
 using BlazorNative.Runtime;
 using BlazorNative.Renderer;
 using Microsoft.Extensions.DependencyInjection;
+using BlazorNative.SampleApp;
 
 namespace BlazorNative.Runtime.Tests;
 

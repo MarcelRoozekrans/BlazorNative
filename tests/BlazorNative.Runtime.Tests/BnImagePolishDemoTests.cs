@@ -3,6 +3,7 @@ using BlazorNative.Core;
 using BlazorNative.Renderer;
 using BlazorNative.Runtime;
 using static BlazorNative.Runtime.Tests.GoldenAssertions;
+using BlazorNative.SampleApp;
 
 namespace BlazorNative.Runtime.Tests;
 

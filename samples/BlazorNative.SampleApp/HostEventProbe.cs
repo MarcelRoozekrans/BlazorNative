@@ -3,7 +3,7 @@ using BlazorNative.Core;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Rendering;
 
-namespace BlazorNative.Runtime;
+namespace BlazorNative.SampleApp;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // HostEventProbe — Phase 5.1 (M5 DoD #5): the consumer that proves a
