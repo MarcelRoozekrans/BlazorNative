@@ -39,7 +39,7 @@ the 4-IL2072 shape), 8.0 finds out before anything is packaged.
 
 ## Definition of Done
 
-1. **The demo app is a consumer, not a tenant.** All nine demo pages + probes move out of
+1. ✅ **The demo app is a consumer, not a tenant.** All nine demo pages + probes move out of
    `BlazorNative.Components` into a `samples/` app project; a public registration API
    replaces the library-owned `PageManifest` (the app declares route → component; the
    drift-test discipline survives — Android's mirror pins against the app's manifest);
@@ -47,6 +47,19 @@ the 4-IL2072 shape), 8.0 finds out before anything is packaged.
    `Bn*Demo`/probe types in any shipped assembly); every existing golden and device suite
    passes retargeted; publish gates hold (IL2072 count re-baselined only with analysis,
    never silently).
+   **Closed by Phase 8.0** ([conclusion](../plans/2026-07-16-phase-8.0-conclusion.md)):
+   `RegisterPages` + the `Routed<T>`/`Named<T>` DAM(All) factories; the app registers via
+   `[ModuleInitializer]`; Runtime's Components `ProjectReference` deleted; the shells
+   embed `samples/BlazorNative.SampleApp`'s publish under the frozen artifact names with
+   **zero shell-code lines** changed; 16 types moved; purity pinned (roster both
+   directions + pattern net + the six-assembly shipped set) in the required lane. The
+   named trim risk MATERIALIZED and was closed: nativelib ILC trimmed the whole app
+   (module initializers are NOT unconditional roots for a non-export assembly) — caught
+   by the stop-and-analyze rule, fixed with `TrimmerRootAssembly` (the app roots itself;
+   libraries stay trimmable), and pinned three ways (the IL2072==4 gate, the JVM real
+   mount, the page-name presence probe). Evidence: .NET **553/0** · JVM **106/0** ·
+   Android instrumented **184/0** · iOS **154/0** (run 29527121729); 4 IL2072 + 9 exports
+   on all four RIDs.
 2. **Publish-ready packages.** The shipped set (Core, Runtime, Renderer, Components,
    Analyzers) packs clean with `PackageReadmeFile`, license, symbols + SourceLink,
    deterministic build; pack + local-feed consumer smoke asserted on CI every PR (the
@@ -61,6 +74,13 @@ the 4-IL2072 shape), 8.0 finds out before anything is packaged.
    registration API) + the Android shell, runnable end-to-end on a machine with an
    Android SDK; template creation → build validated on CI; iOS shell setup documented
    against the repo's reference shell.
+   **Named inputs from Phase 8.0** (the trim finding —
+   [conclusion](../plans/2026-07-16-phase-8.0-conclusion.md)): (a) the template's csproj
+   **must carry `<TrimmerRootAssembly Include="<AppAssembly>" />`** — a fresh app has
+   exactly the shape nativelib ILC trims silently (exports in Runtime, pages in the app);
+   (b) when copying the `EnsureRegistered` pattern, flip or note its guard order (Gate 1
+   review M-1: the once-guard is set before `RegisterPages`, so a throwing registration
+   silently no-ops on retry).
 5. **The docs site.** Docusaurus in `website/`, deployed to GitHub Pages via a `docs.yml`
    mirroring AdoNet.Async; content: getting started (the template path), the architecture
    story (one Blazor app → NativeAOT → two shells; the wire, the ABI freeze, Yoga), the

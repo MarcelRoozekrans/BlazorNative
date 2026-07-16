@@ -688,10 +688,47 @@ packages with the real push on a GitHub Release (manual go); the `dotnet new` te
 pattern); the `BlazorNative.Cli` **ledgered**, not built. Maps to BACKLOG.md "P5 —
 Developer experience and ecosystem".
 
-- **Phase 8.0** — the samples/library separation + registration inversion (DoD #1):
-  the demo pages leave `BlazorNative.Components` for a `samples/` app; a public
-  registration API replaces the library-owned `PageManifest` — *the named risk,
-  verified first; every other M8 deliverable consumes its API* — ⏳ next
+- ✅ **Phase 8.0** — the samples/library separation + registration inversion (DoD #1) —
+  *complete (2026-07-16)*
+   - **The inversion as proven:** `BlazorNativeApp.RegisterPages` +
+     `BlazorNativePage.Routed<T>/Named<T>` (the DAM(All) factories are the ONLY
+     constructors of the mount thunk, the lambda verbatim the 7.6 row shape); the app
+     registers via `[ModuleInitializer]` (eager inside `blazornative_init` under
+     NativeAOT, idempotent `EnsureRegistered()` for CoreCLR test hosts); `PageManifest`
+     = the internal store (loud validation, register-once, never-after-freeze), the
+     derived views lazy-after-freeze; Runtime's `ProjectReference` to Components
+     **deleted** — the library dependency graph no longer knows the app. The publish
+     head = `samples/BlazorNative.SampleApp` with `UnmanagedEntryPointsAssembly`
+     keeping the 9 exports in Runtime and an `AfterTargets=Publish` target freezing
+     the artifact names — every consumer re-pointed a DIRECTORY; **zero shell-code
+     lines** (the filtered Kotlin/Swift/ObjC++/project.yml diff is empty;
+     `build.gradle.kts` moved 4 path strings only).
+   - **THE HEADLINE — the trim finding (the milestone's named risk, materialized):**
+     the design's premise "module initializers are unconditional ILC roots" was FALSE
+     in nativelib mode — ILC roots only the export assembly's entry points and trimmed
+     the ENTIRE SampleApp (0 IL2072, 400KB smaller, pages absent, silent until rc-1 at
+     first mount). Caught by the stop-and-analyze rule; fixed minimally with
+     `TrimmerRootAssembly Include="BlazorNative.SampleApp"` (the app roots ITSELF; the
+     shipped libraries stay fully trimmable — the restored 4-IL2072 shape is the
+     proof). Now pinned three ways: the IL2072 `-ne 4` gate, the JVM lane's real mount
+     of the published binary, the page-name presence probe in the export step. Recorded
+     as a design-doc correction + two NAMED 8.3-template inputs (the csproj line; the
+     M-1 `EnsureRegistered` guard order) in MILESTONE.md DoD #4.
+   - **Purity + file fates:** 16 types moved (11 `.razor` at 100% rename similarity;
+     SpikeRazor relocated — the codegen canary lives; BnThemedPanel out on the
+     demo-only verdict); `PackagePurityTests` pins the roster BOTH directions + the
+     pattern net + the shipped set at exactly six assemblies. 11 golden test files
+     changed by exactly one `using` line each; `RouteTableDriftTests` retargeted one
+     expression, green against the UNTOUCHED Kotlin map.
+   - **Final counts:** .NET **553/0** (539 → 553: +10 RegistrationTests, +4
+     PackagePurityTests; the ci.yml guard literal fixed in `b96a927` after review C-1
+     caught it at 539) · JVM **106/0** (canonicalized win-x64 dll, new directory) ·
+     Android instrumented **184/0** (local AVD; bionic republish 4 IL2072) · iOS XCTest
+     **154/0** (run 29527121729 — iossimulator publish 4 IL2072 + all 9 symbols).
+     Mutations run on both gates (purity ×2, dup-route, Kotlin wrong-page, deleted
+     row — redlines quoted in `028d47d`). Review: Gate 1 PASS (C-1 + I-1/I-2 applied,
+     M-1..M-3 carried). See [design](../plans/2026-07-16-phase-8.0-design.md) +
+     [conclusion](../plans/2026-07-16-phase-8.0-conclusion.md).
 - **Phase 8.1** — publish-ready packages + consumer smoke on the real set (DoD #2) — ⏳
 - **Phase 8.2** — the release pipeline, manual go (DoD #3) — ⏳
 - **Phase 8.3** — the `dotnet new` template: app + Android shell (DoD #4) — ⏳
