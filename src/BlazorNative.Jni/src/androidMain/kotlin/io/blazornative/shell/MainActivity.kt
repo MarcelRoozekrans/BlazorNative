@@ -98,6 +98,12 @@ class MainActivity : Activity() {
          * (M7 DoD #4) — a SEVENTH root page, same reason again, same mirror of
          * .NET's NativeNavigationManager route table. Same two doors:
          * BnFormDemoAndroidTest mounts it by NAME.
+         *
+         * Phase 7.4 adds "/modal" → BnModalDemo, the overlay proof page
+         * (M7 DoD #5/#7) — an EIGHTH root page, same reason again, same mirror
+         * of .NET's NativeNavigationManager route table. Same two doors:
+         * BnModalDemoAndroidTest mounts it by NAME (and once by this route, so
+         * the row itself is asserted).
          */
         private val DEEP_LINK_COMPONENTS = mapOf(
             "/settings" to "BnSettingsPage",
@@ -106,6 +112,7 @@ class MainActivity : Activity() {
             "/image" to "BnImageDemo",
             "/list" to "BnListDemo",
             "/form" to "BnFormDemo",
+            "/modal" to "BnModalDemo",
         )
     }
 
@@ -305,9 +312,22 @@ class MainActivity : Activity() {
      * activity finishes normally. The main-thread block is brief (the swap is
      * synchronous on the lane); WidgetMapper posts its batch to the main handler
      * (non-blocking), so there is no lane↔main deadlock.
+     *
+     * ── PHASE 7.4 (design decision 3): BACK CONSULTS THE MODAL STACK FIRST ──
+     * The rule, stated once: *on back-invoked, if the mapper has ≥ 1 live
+     * overlay, the shell dispatches on the topmost modal's `click` wire — the
+     * dismissal REQUEST, the same wire a scrim tap rides — and CONSUMES the
+     * back event; navigation-back runs only when no overlay is live.* The
+     * dispatch is a request: .NET flips Visible and the re-render removes the
+     * overlay — the shell never self-closes (the 7.3 state-owner lesson). A
+     * back that races an in-flight dismissal is absorbed by construction
+     * (Visible already false, the second VisibleChanged(false) moves nothing;
+     * a stale handler is rc-0 at-most-once). The consult sits AFTER the booted
+     * guard only for symmetry — no overlay can exist before the mount.
      */
     private fun handleBack(): Boolean {
         if (!booted) return false
+        if (mapper.requestTopmostModalDismissal()) return true
         return try {
             runtime.dispatchHostEventAndWait("back") == 0
         } catch (t: Throwable) {
