@@ -100,6 +100,22 @@
          REFERENCED assembly into this publish. The 9-export + visibility
          checks (all RIDs) verify it same-commit. -->
     <UnmanagedEntryPointsAssembly Include="BlazorNative.Runtime" />
+    <!-- THE APP ROOTS ITSELF (Gate 1 finding, the phase's named trim risk).
+         In nativelib mode ILC roots ONLY the input module's
+         UnmanagedCallersOnly exports — and this app's exports are emitted
+         from the REFERENCED Runtime assembly (above), so nothing in the
+         image references SampleApp code and ILC trims the ENTIRE app,
+         module initializer included (verified: 0 IL2072 instead of 4, the
+         page names absent from the binary, and the registry would be empty
+         at runtime — the loud rc-1 path). The design's "module initializers
+         are unconditional ILC roots" holds only for modules that survive
+         into the image; an app whose exports live elsewhere must root its
+         own assembly. This roots ONLY the app (its manifest + pages —
+         everything the manifest names is statically reachable anyway); the
+         shipped libraries stay fully trimmable, so the trim law is intact:
+         with this root the publish shows EXACTLY the 4 accepted IL2072s
+         again. 8.3's template must carry this line. -->
+    <TrimmerRootAssembly Include="BlazorNative.SampleApp" />
   </ItemGroup>
 
   <ItemGroup>
