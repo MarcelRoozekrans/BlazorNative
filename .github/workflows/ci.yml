@@ -4,7 +4,7 @@
 #
 #   build-test (windows-latest) — the local verification procedure verbatim
 #   (setup.ps1 §1–7 documents the toolchain pins):
-#     build (analyzers ride it) → .NET tests (583 passed / 0 skipped) →
+#     build (analyzers ride it) → .NET tests (616 passed / 0 skipped) →
 #     three NativeAOT publishes of samples/BlazorNative.SampleApp — the
 #     publish head since Phase 8.0: the app owns PublishAot, the exports stay
 #     in Runtime via UnmanagedEntryPointsAssembly, and the artifact is
@@ -1329,7 +1329,20 @@ jobs:
       # this time — every nupkg filename carries the props version, so the six
       # packages and the smoke's filename assertions are re-run, not reasoned
       # (consumer-smoke: 6 nupkg + 5 snupkg at 0.0.0, provenance x6).
-      - name: .NET tests (assert 583 passed / 0 skipped)
+      #
+      # 583 -> 616 (PHASE 9.0, +33 — Runtime.Tests 426 -> 459): geolocation + the
+      # permission pattern on the shell bridge (M9 DoD #1/#2). The whole +33 is in
+      # Runtime.Tests (Renderer 132 / Analyzers 25 stand), and it is exactly the
+      # three new geolocation test files — the modified suites (NativeShellBridge,
+      # BridgeProtocolNative, RouteTableDrift) added assertions and the /geolocation
+      # row, not test methods:
+      #   +3   BnGeolocationDemoTests   (3 facts — the demo page's frame shape)
+      #   +20  GeolocationBridgeTests   (8 facts + 12 theory rows — the request/
+      #        permission-result/tri-state protocol on the bridge)
+      #   +10  GeolocationFacadeTests   (4 facts + 6 theory rows — the .NET facade)
+      # Android 184 -> 188 and iOS 154 -> 169 moved in the same phase (Gate 2/3) and
+      # are held by their own workflows' gates; the README table mirrors all four.
+      - name: .NET tests (assert 616 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -1347,8 +1360,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 583 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 583 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 616 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 616 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # ── NativeAOT publishes + nine-export verification ────────────────────

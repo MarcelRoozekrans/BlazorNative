@@ -96,6 +96,52 @@ interface ShellBridgeHandlers {
 
     /** Share [text] via the host share sheet (fire-and-forget). */
     fun share(text: String)
+
+    // ── Phase 9.0 the GENERIC permission-gated async host call ───────────────
+    // The FetchBegin twin, generalized. [op] selects the capability (0 =
+    // Geolocation in 9.0 — [HostCallOp]); [argsJson] is the flat-JSON request
+    // (e.g. {"mode":"request"} vs {"mode":"check"}). This method RETURNS QUICKLY
+    // (like fetchBegin): run the whole permission dance off-lane and answer LATER
+    // by calling [BridgeHostCallCompleter.complete] with the SAME [requestId] and
+    // a tri-state status. DENIAL IS DATA — a denied/restricted/unavailable/errored
+    // outcome is a completion with a status VALUE (1..5), never a thrown exception
+    // and never a dropped completion (which would hang the awaiting .NET call).
+    //
+    // The default is INERT-BUT-TERMINAL: a host with no permission-gated
+    // capability completes immediately with [HostCallStatus.ERROR] + no payload, so
+    // the awaiting .NET ValueTask always resolves (denial-as-data, never a hang)
+    // instead of the id leaking pending forever. The production Android host
+    // (AndroidShellBridge) overrides it with the real geolocation flow.
+    fun hostCallBegin(requestId: Long, op: Int, argsJson: String) {
+        BridgeHostCallCompleter.complete(requestId, HostCallStatus.ERROR, null)
+    }
+}
+
+/**
+ * The generic permission-gated capabilities carried on the ONE HostCallBegin
+ * slot — the wire-mirror of NativeShellBridge.HostCallOp (.NET). 9.0 wires
+ * exactly one op (Geolocation = 0); 9.1/9.2/9.3 append a constant with NO ABI,
+ * NO export-gate, NO drift-test change (the generic-op reuse story). The integer
+ * IS the wire contract — the host switches on it.
+ */
+object HostCallOp {
+    const val GEOLOCATION = 0
+}
+
+/**
+ * The wire-mirrored tri-state completion status — byte-identical to .NET's
+ * GeolocationStatus enum (IMobileBridge.cs) and Swift's mirror. The host maps its
+ * platform's native permission/outcome into one of these and passes the integer
+ * across blazornative_host_call_complete; .NET sees only the integer + the
+ * payload. Do NOT reorder — these ARE the ABI contract.
+ */
+object HostCallStatus {
+    const val GRANTED = 0               // permission held; a fix was obtained (payload = the fix)
+    const val DENIED = 1                // denied THIS time; a later request MAY prompt again
+    const val DENIED_PERMANENTLY = 2    // "don't ask again" — only Settings changes it
+    const val RESTRICTED = 3            // device policy / parental controls — the user CANNOT grant it
+    const val LOCATION_UNAVAILABLE = 4  // permission fine, but services off / no provider / no fix
+    const val ERROR = 5                 // unexpected host error (a caught throw)
 }
 
 /**
@@ -209,6 +255,18 @@ class BridgeRegistrar(
         }
     }
 
+    // ── Phase 9.0 the generic permission-gated async-begin ───────────────────
+
+    private val hostCallBeginCallback = object : NativeBindings.BridgeHostCallBeginCallback {
+        override fun invoke(requestId: Long, op: Int, argsJsonUtf8: Pointer): Int = guarded("hostCallBegin") {
+            // The args string is .NET-owned and valid ONLY during this call —
+            // getString copies. hostCallBegin returns quickly; the result is
+            // pushed later via BridgeHostCallCompleter (the fetchBegin shape).
+            handlers.hostCallBegin(requestId, op, argsJsonUtf8.getString(0, "UTF-8"))
+            0
+        }
+    }
+
     /**
      * Wraps every callback body: a Kotlin throw must surface as -1, never
      * escape into JNA's default callback exception handler (which prints to
@@ -251,9 +309,10 @@ class BridgeRegistrar(
             clipboardRead = clipboardReadCallback
             clipboardWrite = clipboardWriteCallback
             share = shareCallback
+            hostCallBegin = hostCallBeginCallback
         }
-        // Phase 5.4 size negotiation: pass the Kotlin struct's native size (72);
-        // the runtime min-copies + zero-fills against its own known size.
+        // Phase 5.4 / 9.0 size negotiation: pass the Kotlin struct's native size
+        // (80 since 9.0); the runtime min-copies + zero-fills against its own size.
         val rc = NativeBindings.INSTANCE.blazornative_register_bridge(struct.size(), struct)
         check(rc == 0) { "blazornative_register_bridge failed with status $rc" }
         registered = true
@@ -370,6 +429,62 @@ object BridgeFetchCompleter {
             1 -> {} // unknown/already-completed id — benign cancellation race, ignore
             else -> System.err.println(
                 "[BridgeFetchCompleter] blazornative_fetch_complete($requestId) returned $rc — " +
+                    "invalid call or internal bridge failure; check the runtime's stderr for detail"
+            )
+        }
+        return rc
+    }
+
+    /** Caller-owned NUL-terminated UTF-8 cstring. */
+    private fun utf8CString(s: String): Memory {
+        val bytes = s.toByteArray(Charsets.UTF_8) + 0
+        return Memory(bytes.size.toLong()).apply { write(0, bytes, 0, bytes.size) }
+    }
+}
+
+/**
+ * Answers a generic permission-gated async call started by
+ * [ShellBridgeHandlers.hostCallBegin] through `blazornative_host_call_complete`
+ * (Phase 9.0) — the [BridgeFetchCompleter] twin. DENIAL IS DATA: every terminal
+ * outcome (grant / denial / restriction / no-fix / error) is one completion with
+ * a tri-state [status] ([HostCallStatus]); a non-Granted status carries a NULL
+ * payload. The awaiting .NET ValueTask ALWAYS resolves — never a thrown exception
+ * across the boundary, never a dropped completion (a hang).
+ *
+ * LIFETIME: the payload string is host-owned and must stay valid ONLY for the
+ * duration of the export call — the Memory lives in a local here, pinned across
+ * the call with reachabilityFence (.NET copies before returning).
+ */
+object BridgeHostCallCompleter {
+
+    /**
+     * Delivers the tri-state outcome for [requestId].
+     *
+     * @param status one of [HostCallStatus] (0 Granted … 5 Error).
+     * @param payload the fix, only when [HostCallStatus.GRANTED] (flat
+     *   string→string map, numbers string-encoded: {"lat":"…","lng":"…",
+     *   "accuracy":"…"[,"altitude":"…"][,"timestamp":"…"]}) — the fetch-headers
+     *   wire form. NULL for every non-Granted status.
+     * @return the export's return code: 0 = delivered; 1 = unknown /
+     *   already-completed id (benign cancellation race — ignored); 2 = invalid
+     *   call / internal bridge failure (logged LOUDLY here; detail on the
+     *   runtime's stderr).
+     */
+    fun complete(requestId: Long, status: Int, payload: Map<String, String>?): Int {
+        // The local keeps the Memory strongly reachable across the call.
+        val payloadMem = payload?.let { utf8CString(FlatJson.write(it)) }
+
+        val rc = try {
+            NativeBindings.INSTANCE.blazornative_host_call_complete(requestId, status, payloadMem)
+        } finally {
+            if (payloadMem != null) Reference.reachabilityFence(payloadMem)
+        }
+
+        when (rc) {
+            0 -> {} // delivered
+            1 -> {} // unknown/already-completed id — benign cancellation race, ignore
+            else -> System.err.println(
+                "[BridgeHostCallCompleter] blazornative_host_call_complete($requestId) returned $rc — " +
                     "invalid call or internal bridge failure; check the runtime's stderr for detail"
             )
         }

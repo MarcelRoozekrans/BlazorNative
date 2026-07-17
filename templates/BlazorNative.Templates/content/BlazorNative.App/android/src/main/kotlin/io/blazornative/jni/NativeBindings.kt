@@ -138,6 +138,25 @@ interface NativeBindings : Library {
     fun blazornative_fetch_complete(requestId: Long, response: BlazorNativeFetchResponse.ByReference): Int
 
     /**
+     * Phase 9.0 (M9 DoD #1): delivers the tri-state result of a GENERIC
+     * permission-gated async call started by a HostCallBegin slot (the
+     * fetch_complete twin, generalized). [requestId] is the id .NET assigned when
+     * it called HostCallBegin; [status] is the wire-mirrored GeolocationStatus
+     * integer (0 Granted / 1 Denied / 2 DeniedPermanently / 3 Restricted /
+     * 4 LocationUnavailable / 5 Error); [payloadJsonUtf8] is a NUL-terminated
+     * UTF-8 flat-JSON object (the fix, only when Granted) or NULL (every
+     * non-Granted status carries none). The payload memory is host-owned and must
+     * stay valid ONLY for the duration of this call — .NET copies before
+     * returning; keep the backing JNA Memory referenced across the call
+     * ([BridgeHostCallCompleter] does). DENIAL IS DATA: it arrives here as a
+     * status value, NEVER as a thrown exception across this boundary. Return codes:
+     *   0 = delivered
+     *   1 = unknown / already-completed id — benign cancellation race, ignore
+     *   2 = invalid call or internal bridge failure — log LOUDLY; detail on stderr
+     */
+    fun blazornative_host_call_complete(requestId: Long, status: Int, payloadJsonUtf8: Pointer?): Int
+
+    /**
      * Cdecl `void (*)(BlazorNativeFrame*)`. The frame pointer (and every
      * string it references) is valid ONLY during the invocation — decode with
      * [NativeFrameAdapter.read] before returning (it copies everything).
@@ -228,6 +247,23 @@ interface NativeBindings : Library {
         fun invoke(textUtf8: Pointer): Int
     }
 
+    // ── Phase 9.0 the GENERIC permission-gated async-begin (size-negotiated) ──
+    // The FetchBegin twin, generalized: `op` selects the capability (0 = Geolocation
+    // in 9.0), args cross as flat JSON. .NET assigns the requestId + parks a TCS,
+    // then calls this; the host runs the whole permission dance and PUSHES the
+    // tri-state result LATER via blazornative_host_call_complete. A NULL slot (an
+    // old shell predating it) = capability unsupported; the .NET null-slot guard
+    // surfaces NotSupportedException.
+
+    /** Cdecl `int (long requestId, int op, const char* argsJsonUtf8)`. The args
+     * string is .NET-owned and valid ONLY during this call — decode NOW; the
+     * result arrives later via blazornative_host_call_complete. Returns 0 (the
+     * begin was accepted; the outcome is the deferred completion) or -1 (host
+     * error — the guarded wrapper maps a throw to it). */
+    interface BridgeHostCallBeginCallback : Callback {
+        fun invoke(requestId: Long, op: Int, argsJsonUtf8: Pointer): Int
+    }
+
     companion object {
         // JNA library name "BlazorNative.Runtime" → maps to:
         //   Windows: BlazorNative.Runtime.dll
@@ -285,12 +321,13 @@ open class BlazorNativeInitResult : Structure() {
  * `blazornative_register_bridge`. JNA maps Callback-typed Structure fields to
  * native function pointers automatically.
  *
- * x64 layout: 9 × 8-byte fn pointers = 72 bytes since Phase 5.4 (clipboard
- * read/write + share appended at 48/56/64) — asserted on both sides
- * (ShellBridgeTest.kt here, BridgeProtocolNativeTests.cs on .NET). If you
- * change ANY field, update the .NET mirror + the Swift header + both drift
- * tests. A left-null clipboard/share slot = capability unsupported (the
- * size-negotiated register + the .NET null-slot guard).
+ * x64 layout: 10 × 8-byte fn pointers = 80 bytes since Phase 9.0 (hostCallBegin
+ * appended at 72; clipboard read/write + share were appended at 48/56/64 in
+ * Phase 5.4) — asserted on both sides (ShellBridgeTest.kt here,
+ * BridgeProtocolNativeTests.cs on .NET). If you change ANY field, update the
+ * .NET mirror + the Swift header + both drift tests. A left-null clipboard/share/
+ * hostCallBegin slot = capability unsupported (the size-negotiated register + the
+ * .NET null-slot guard).
  *
  * The struct itself is COPIED by register_bridge (free after the call is
  * fine); the callback OBJECTS must stay strongly referenced — see the
@@ -298,7 +335,7 @@ open class BlazorNativeInitResult : Structure() {
  */
 @Structure.FieldOrder(
     "navigate", "currentRoute", "storageRead", "storageWrite", "storageDelete", "fetchBegin",
-    "clipboardRead", "clipboardWrite", "share"
+    "clipboardRead", "clipboardWrite", "share", "hostCallBegin"
 )
 open class BlazorNativeBridgeCallbacks : Structure() {
     @JvmField var navigate: NativeBindings.BridgeNavigateCallback? = null              // offset 0
@@ -310,6 +347,7 @@ open class BlazorNativeBridgeCallbacks : Structure() {
     @JvmField var clipboardRead: NativeBindings.BridgeClipboardReadCallback? = null    // offset 48 — null = unsupported
     @JvmField var clipboardWrite: NativeBindings.BridgeClipboardWriteCallback? = null  // offset 56 — null = unsupported
     @JvmField var share: NativeBindings.BridgeShareCallback? = null                    // offset 64 — null = unsupported
+    @JvmField var hostCallBegin: NativeBindings.BridgeHostCallBeginCallback? = null    // offset 72 — null = unsupported
 }
 
 /**
