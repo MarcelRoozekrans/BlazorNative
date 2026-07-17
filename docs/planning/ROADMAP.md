@@ -1373,15 +1373,27 @@ Developer experience and ecosystem".
 
 ---
 
-### ⏳ Milestone 9 — Platform Breadth + Real Device  *(pending)*
+### 🔄 Milestone 9 — Host APIs (Platform Breadth)  *(active — opened 2026-07-17)*
 
-More host APIs via the [bridge-extension pattern](../bridge-extension.md) (camera,
-geolocation, biometrics, notifications), **real-device iOS** (code signing, provisioning,
-App Store validation — **requires an Apple Developer account**, the M5 simulator-only
-deferral), and the Android completeness deferred from M5 (FCM push, secure storage). The
-on-device inspector channel (4.4 carryover) lands here (the route→component registry
-unification, once slated here, was closed by Phase 7.6). Maps to BACKLOG.md "P4 — full
-platform coverage" (remainder).
+The bridge grows four real capabilities via the
+[bridge-extension pattern](../bridge-extension.md): **geolocation, local notifications,
+biometrics + secure storage (the M5 deferral), and camera photo capture** — each on both
+shells, each with the permission story the bridge has never carried (clipboard, its one
+growth, needed none: that's the milestone's named risk, proven first on geolocation).
+Scoped at milestone-open (owner decisions in [MILESTONE.md](MILESTONE.md)):
+**real-device iOS is DEFERRED** — no Apple Developer account for now; with no local Mac
+the honest path is CI-signed IPA → TestFlight, and that trigger is named. **FCM push
+stays ledgered** (needs a Firebase project). The **owner's physical Android phone** is
+the honesty check for what emulators only simulate (camera, biometrics); CI stays on the
+emulator lanes. The inspector channel is ledgered a third time. Maps to BACKLOG.md
+"P4 — full platform coverage" (remainder).
+
+- **Phase 9.0** — the permission pattern + geolocation (DoD #1, #2) — *the named risk
+  first: denial must reach .NET as data, through an OS prompt that suspends the app* — ⏳ next
+- **Phase 9.1** — local notifications + tap-through via the 5.1 deep-link path (DoD #3) — ⏳
+- **Phase 9.2** — biometrics + secure storage (DoD #4) — ⏳
+- **Phase 9.3** — camera photo capture (DoD #5) — *heaviest last, on mature machinery* — ⏳
+- **Phase 9.4** — hygiene + M9 final audit + close (DoD #6; no tag — the 8.6 rule) — ⏳
 
 ---
 
