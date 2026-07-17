@@ -6,6 +6,13 @@
          for ANY socket. Remove this only if your app truly never fetches. -->
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- Local notifications: POST_NOTIFICATIONS is the Android 13+ runtime
+         permission the shell requests before show/schedule (inert below API 33,
+         where notifications are implicitly permitted). The scheduled path uses an
+         INEXACT AlarmManager alarm, so no SCHEDULE_EXACT_ALARM is needed. Remove
+         this only if your app never posts notifications. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <application
         android:label="MyBlazorNativeApp"
         android:allowBackup="true"
@@ -19,6 +26,7 @@
              is what lets them differ. -->
         <activity
             android:name="io.blazornative.shell.MainActivity"
+            android:launchMode="singleTop"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -36,6 +44,15 @@
                 <data android:scheme="blazornative" />
             </intent-filter>
         </activity>
+
+        <!-- The scheduled-notification publisher. MANIFEST-declared (not a runtime
+             receiver) so a scheduled alarm still fires after the process is killed.
+             The name is the nested binary form Outer$Inner
+             (AndroidShellBridge.NotificationPublisher, library code in
+             io.blazornative.shell). Not exported — only the app's own alarm targets it. -->
+        <receiver
+            android:name="io.blazornative.shell.AndroidShellBridge$NotificationPublisher"
+            android:exported="false" />
     </application>
 
 </manifest>

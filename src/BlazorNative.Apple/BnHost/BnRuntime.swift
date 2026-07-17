@@ -234,6 +234,38 @@ final class BnRuntime {
         let mountRc = component.withCString { blazornative_mount($0) }
         guard mountRc == 0 else { throw BnRuntimeError.mountFailed(rc: mountRc, component: component) }
         NSLog("[BnRuntime] mounted \(component)")
+
+        // Phase 9.1: a live session now exists — wire the WARM notification tap-through so
+        // the delegate's `didReceive` re-routes over host_event on the serial lane (the ABI
+        // is never called from the delegate's main thread directly). The non-nil dispatcher
+        // is also BnNotifications' "session is live" signal (warm re-route vs cold stash).
+        bridge.notifications.navigateDispatcher = { [weak self] route in
+            self?.dispatchHostEvent(name: BnNotifications.navigateEventName, payload: route) ?? 1
+        }
+    }
+
+    /// Phase 9.1: dispatches a host-INITIATED event over the EXISTING
+    /// `blazornative_host_event` export — the iOS shell's FIRST call of it (the 9.0
+    /// host_call_complete precedent). Runs on the serial dispatch lane (the threading
+    /// contract; a warm tap arrives on main, so this hops), synchronous so the re-route
+    /// swap's frames are applied before it returns. Returns the rc (0 = navigated).
+    @discardableResult
+    func dispatchHostEvent(name: String, payload: String?) -> Int32 {
+        dispatchLane.sync {
+            name.withCString { n in
+                if let payload = payload {
+                    return payload.withCString { p in blazornative_host_event(n, p) }
+                }
+                return blazornative_host_event(n, nil)
+            }
+        }
+    }
+
+    /// Phase 9.1: installs the notifications handler as the UNUserNotificationCenter
+    /// delegate so a tap (cold or warm) reaches the shell. Called by the host once the
+    /// bridge is live; the bridge's strong hold on the handler keeps the weak delegate alive.
+    func installNotificationDelegate() {
+        bridge.notifications.installDelegate()
     }
 
     /// Invoked from the @convention(c) trampoline on the callback thread. Decodes

@@ -128,13 +128,15 @@ public sealed class RouteTableDriftTests
     /// vanishing from the SOURCE. (+BnListDemo, Phase 7.2 — "/list";
     /// +BnFormDemo, Phase 7.3 — "/form"; +BnModalDemo, Phase 7.4 — "/modal";
     /// +BnImagePolishDemo, Phase 7.5 — "/imagepolish";
-    /// +BnGeolocationDemo, Phase 9.0 — "/geolocation".)</summary>
+    /// +BnGeolocationDemo, Phase 9.0 — "/geolocation";
+    /// +BnNotificationsDemo, Phase 9.1 — "/notifications".)</summary>
     [Fact]
-    public void ManifestRoutedRows_MatchTheTenPageBaseline()
+    public void ManifestRoutedRows_MatchTheElevenPageBaseline()
     {
         Assert.Equal(
             ["BnDemo", "BnFormDemo", "BnGeolocationDemo", "BnImageDemo", "BnImagePolishDemo",
-             "BnLayoutDemo", "BnListDemo", "BnModalDemo", "BnScrollDemo", "BnSettingsPage"],
+             "BnLayoutDemo", "BnListDemo", "BnModalDemo", "BnNotificationsDemo", "BnScrollDemo",
+             "BnSettingsPage"],
             SampleAppPages.All
                 .Where(p => p.Route is not null)
                 .Select(p => p.Name)

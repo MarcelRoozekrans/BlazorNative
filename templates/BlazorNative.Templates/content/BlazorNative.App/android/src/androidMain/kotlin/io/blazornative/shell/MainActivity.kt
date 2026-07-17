@@ -98,6 +98,22 @@ class MainActivity : Activity() {
          * the fallback.
          */
         private val DEEP_LINK_COMPONENTS = mapOf<String, String>()
+
+        /** Phase 9.1 — the reserved host-event name for WARM notification
+         * tap-through. [onNewIntent] dispatches it with the route as the payload;
+         * .NET's DispatchHostEventCore maps it to NavigateToAsync (the "back"
+         * precedent — the name→verb mapping lives in .NET so every shell gets
+         * identical semantics). Must equal Exports.NavigateEventName. */
+        internal const val NAVIGATE_EVENT = "navigate"
+
+        /** Test seam (instrumented BnNotificationsAndroidTest): the rc of the most
+         * recent warm-tap "navigate" host_event — 0 = the live session re-routed,
+         * 1 = not handled / no session, 2 = faulted. Int.MIN_VALUE before any warm
+         * tap. Static because the test cannot reach the private Activity instance. */
+        @Volatile @JvmStatic var lastNavigateHostEventRcForTest: Int = Int.MIN_VALUE
+
+        /** Test seam: reset the warm-navigate rc probe between tests. */
+        @JvmStatic fun resetNavigateRcForTest() { lastNavigateHostEventRcForTest = Int.MIN_VALUE }
     }
 
     private val tag = "BlazorNative"
@@ -279,6 +295,40 @@ class MainActivity : Activity() {
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         shellBridge?.onPermissionResult(requestCode, permissions, grantResults)
+    }
+
+    // ── Warm notification tap-through → NavigateToAsync (Phase 9.1, M9 DoD #3) ──
+
+    /**
+     * A WARM tap on a notification (the app is alive; the activity is singleTop)
+     * delivers the deep-link Intent HERE rather than re-running onCreate. 5.1 left
+     * this unhandled (launch-time deep links only); 9.1 wires it: parse the same
+     * `blazornative://<route>` and ask the LIVE .NET session to re-route via the
+     * reserved "navigate" host event (payload = the route), which
+     * DispatchHostEventCore maps to NavigateToAsync (the root swap). The COLD case
+     * (a killed app) is unchanged — it relaunches through onCreate's deep-link mount.
+     *
+     * `public` so the instrumented tap-through test can drive it; `setIntent` keeps
+     * getIntent() current. Reuses the "back" shape — a brief BLOCKING dispatch for
+     * the swap (dispatchHostEventAndWait runs on the dispatch lane; WidgetMapper
+     * posts its batch to the main handler, so there is no lane↔main deadlock). The
+     * returned rc is DATA the tap-through test asserts (0 = the live session
+     * re-routed).
+     */
+    public override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        val route = parseDeepLinkRoute(intent) ?: return
+        if (!booted) return // nothing mounted yet — a (rare) pre-boot tap is dropped
+        Log.i(tag, "[deep-link] warm re-route → $route")
+        val rc = try {
+            runtime.dispatchHostEventAndWait(NAVIGATE_EVENT, route)
+        } catch (t: Throwable) {
+            Log.e(tag, "navigate dispatch threw", t)
+            2
+        }
+        lastNavigateHostEventRcForTest = rc
+        if (rc != 0) Log.w(tag, "[deep-link] warm re-route '$route' → rc $rc")
     }
 
     // ── Predictive / system back → NavigateBack (Phase 5.1) ──────────────────

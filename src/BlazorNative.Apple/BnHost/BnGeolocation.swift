@@ -41,9 +41,12 @@ import CoreLocation
 import Foundation
 
 /// The generic host-call op enum (mirror of NativeShellBridge.HostCallOp / Kotlin
-/// HostCallOp). 9.0 wires exactly one op; the shape is capability-agnostic.
+/// HostCallOp). 9.0 wired one op; 9.1 adds a SECOND — and adding an op-enum value is
+/// wire vocabulary carried in the existing `int op` field, NOT a struct grow or a new
+/// export (the bridge stays 80 bytes / 10 slots). The shape is capability-agnostic.
 enum BnHostCallOp {
-    static let geolocation: Int32 = 0
+    static let geolocation: Int32 = 0    // Phase 9.0
+    static let notifications: Int32 = 1  // Phase 9.1 (mirror of .NET HostCallOp.Notifications = 1 / Kotlin NOTIFICATIONS = 1)
 }
 
 /// The wire-mirrored tri-state status (mirror of GeolocationStatus / Kotlin

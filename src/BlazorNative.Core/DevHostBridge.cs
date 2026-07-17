@@ -155,6 +155,73 @@ public sealed class DevHostBridge : IMobileBridge, IDisposable
         return ValueTask.FromResult(GeolocationStatus);
     }
 
+    // ── Notifications (Phase 9.1 — the headless five-status lane) ─────────────
+    //
+    // A configurable status so tests drive ALL FIVE statuses (granted / denied /
+    // permanent / restricted / error) with NO device — the central proof of the
+    // named risk: denial RETURNS a status, never throws, never hangs. Scheduled /
+    // shown notifications are recorded in an in-memory list, and cancel removes by
+    // id (idempotent — cancelling an unknown id is a no-op that still statuses),
+    // so the headless lane mirrors the on-device schedule/show/cancel bookkeeping
+    // without a NotificationManager.
+
+    /// <summary>The status the next notification op returns (default
+    /// <see cref="Core.NotificationStatus.Granted"/>). Set it to drive a denial /
+    /// restriction / error path headless.</summary>
+    public NotificationStatus NotificationStatus { get; set; } = NotificationStatus.Granted;
+
+    /// <summary>The notifications recorded by <see cref="ShowNotificationAsync"/> /
+    /// <see cref="ScheduleNotificationAsync"/> and not yet cancelled — useful in
+    /// tests to assert schedule/show/cancel bookkeeping headless.</summary>
+    public IReadOnlyList<NotificationSpec> Notifications => _notifications;
+    private readonly List<NotificationSpec> _notifications = new();
+
+    public ValueTask<NotificationStatus> ScheduleNotificationAsync(NotificationSpec spec, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        return RecordNotification(spec, scheduled: true);
+    }
+
+    public ValueTask<NotificationStatus> ShowNotificationAsync(NotificationSpec spec, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        return RecordNotification(spec, scheduled: false);
+    }
+
+    private ValueTask<NotificationStatus> RecordNotification(NotificationSpec spec, bool scheduled)
+    {
+        // Only a Granted op actually posts — every non-Granted status is the
+        // status ALONE (denial-as-data), and it records nothing, exactly as the
+        // on-device host would decline to post without permission.
+        if (NotificationStatus == NotificationStatus.Granted)
+        {
+            _notifications.RemoveAll(n => n.Id == spec.Id); // collisions replace (notify semantics)
+            _notifications.Add(spec);
+        }
+        Console.WriteLine($"[DevBridge] Notification.{(scheduled ? "Schedule" : "Show")} id={spec.Id} → {NotificationStatus}");
+        return ValueTask.FromResult(NotificationStatus);
+    }
+
+    public ValueTask<NotificationStatus> CancelNotificationAsync(int id, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        _notifications.RemoveAll(n => n.Id == id); // idempotent — an unknown id is a benign no-op
+        Console.WriteLine($"[DevBridge] Notification.Cancel id={id} → {NotificationStatus}");
+        return ValueTask.FromResult(NotificationStatus);
+    }
+
+    public ValueTask<NotificationStatus> RequestNotificationPermissionAsync(CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        return ValueTask.FromResult(NotificationStatus);
+    }
+
+    public ValueTask<NotificationStatus> CheckNotificationPermissionAsync(CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        return ValueTask.FromResult(NotificationStatus);
+    }
+
     // ── Platform info ─────────────────────────────────────────────────────────
 
     public string PlatformInfo =>

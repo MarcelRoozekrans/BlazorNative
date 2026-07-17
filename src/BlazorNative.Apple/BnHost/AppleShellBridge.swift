@@ -58,6 +58,13 @@ final class AppleShellBridge {
     /// in-flight request; a later capability adds an op case, not a second export.
     let geolocation = BnGeolocation()
 
+    /// Phase 9.1: the notifications half of the SAME generic permission-gated host-call
+    /// op — the FIRST reuse of the 9.0 ABI, riding the same hostCallBegin slot (op=1, no
+    /// new export). Owned here (app-lifetime) so it holds the UNUserNotificationCenter
+    /// DELEGATE across a tap delivery — the weak-delegate retention lesson (see
+    /// BnNotifications). A second op case, not a second export.
+    let notifications = BnNotifications()
+
     init(initialRoute: String = "/") {
         self.route = initialRoute
     }
@@ -189,6 +196,8 @@ final class AppleShellBridge {
         switch op {
         case BnHostCallOp.geolocation:
             geolocation.begin(requestId: requestId, argsJson: argsJson)
+        case BnHostCallOp.notifications:
+            notifications.begin(requestId: requestId, argsJson: argsJson)
         default:
             NSLog("[AppleShellBridge] hostCallBegin: unknown op \(op) (request \(requestId)) — completing Error")
             geolocation.completeUnknownOp(requestId: requestId)

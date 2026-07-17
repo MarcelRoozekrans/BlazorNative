@@ -57,6 +57,16 @@
 	     NOT declared. -->
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>BlazorNative uses your location to show your current position in the geolocation demo.</string>
+	<!-- ── Phase 9.1 Gate 3: no Info.plist key for LOCAL notifications ─────────────
+	     Unlike location (whose requestWhenInUseAuthorization CRASHES without a purpose
+	     string), UNUserNotificationCenter authorization for LOCAL notifications is
+	     purely runtime (requestAuthorization(options:)) and needs NO Info.plist key —
+	     no purpose string, no UIBackgroundModes (a local notification is scheduled by
+	     the app in-process, not delivered by a remote push). Recorded here so the
+	     ABSENCE is a decision (the design §3b), not an omission. Remote push (aps-
+	     environment entitlement + UIBackgroundModes:remote-notification) is out of
+	     scope for the POC. -->
+
 	<key>UILaunchStoryboardName</key>
 	<string></string>
 	<key>UIRequiredDeviceCapabilities</key>

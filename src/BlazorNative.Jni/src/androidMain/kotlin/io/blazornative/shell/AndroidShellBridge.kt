@@ -3,6 +3,12 @@ package io.blazornative.shell
 import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.app.AlarmManager
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.content.BroadcastReceiver
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -12,6 +18,8 @@ import android.content.pm.PackageManager
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
+import android.net.Uri
+import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
 import android.util.Log
@@ -21,6 +29,7 @@ import io.blazornative.jni.BridgeHostCallCompleter
 import io.blazornative.jni.FlatJson
 import io.blazornative.jni.HostCallOp
 import io.blazornative.jni.HostCallStatus
+import io.blazornative.jni.NotificationStatus
 import io.blazornative.jni.ShellBridgeHandlers
 import java.lang.ref.WeakReference
 import java.net.HttpURLConnection
@@ -227,6 +236,7 @@ class AndroidShellBridge(
     override fun hostCallBegin(requestId: Long, op: Int, argsJson: String) {
         when (op) {
             HostCallOp.GEOLOCATION -> handleGeolocation(requestId, argsJson)
+            HostCallOp.NOTIFICATIONS -> handleNotifications(requestId, argsJson)
             // An unknown op is DATA, not a crash: complete with Error so the
             // awaiting .NET ValueTask resolves rather than leaking pending.
             else -> {
@@ -297,6 +307,23 @@ class AndroidShellBridge(
         val requestId = pendingPermissionRequests.remove(requestCode) ?: return false
         val granted = grantResults.isNotEmpty() &&
             grantResults.any { it == PackageManager.PERMISSION_GRANTED }
+
+        // Phase 9.1: the SAME app-scoped requestCode→requestId machinery gates BOTH
+        // capabilities — the parallel notification map says which arm this result
+        // belongs to (absent ⇒ geolocation, the 9.0 path untouched). Notifications
+        // reuse the recreation-survival split verbatim: both static maps survive the
+        // Activity recreation the OS dialog can trigger, so a recreated Activity's
+        // fresh bridge still routes the result to the in-flight .NET continuation.
+        val notif = pendingNotificationRequests.remove(requestCode)
+        if (notif != null) {
+            if (granted) {
+                runNotificationAction(requestId, notif) // posts/schedules then GRANTED
+            } else {
+                completeHostCall(requestId, notificationDenialStatus(permissions), null)
+            }
+            return true
+        }
+
         if (granted) {
             fetchFixAndComplete(requestId)
         } else {
@@ -313,6 +340,16 @@ class AndroidShellBridge(
             )
         }
         return true
+    }
+
+    /** Denied vs DeniedPermanently for a notification permission result — the
+     * geolocation rationale rule, but mapped onto [NotificationStatus] (whose
+     * DENIED/DENIED_PERMANENTLY happen to share geolocation's 1/2 by design). */
+    private fun notificationDenialStatus(permissions: Array<out String>): Int {
+        val activity = activityRef.get()
+        val permanent = activity != null && permissions.isNotEmpty() &&
+            permissions.none { activity.shouldShowRequestPermissionRationale(it) }
+        return if (permanent) NotificationStatus.DENIED_PERMANENTLY else NotificationStatus.DENIED
     }
 
     private fun hasLocationPermission(): Boolean =
@@ -400,7 +437,144 @@ class AndroidShellBridge(
         return fix
     }
 
-    /** Every geolocation completion funnels here so the instrumented tests can
+    // ── Notifications (Phase 9.1 — the FIRST reuse of the 9.0 generic ABI) ────
+    //
+    // op=Notifications rides the SAME hostCallBegin slot geolocation uses; the
+    // action lives INSIDE the flat JSON (geolocation's `mode` precedent). Every
+    // completion is a NotificationStatus INTEGER via BridgeHostCallCompleter —
+    // denial/restriction/error are DATA (a status 1..4 + null payload), never a
+    // thrown exception across the JNA boundary and never a dropped completion (a
+    // hang). show/schedule are permission-gated (POST_NOTIFICATIONS on API 33+;
+    // implicitly granted below 33 — the majority fast path); cancel needs no
+    // permission; check never prompts. The permission dance REUSES the geolocation
+    // machinery verbatim — the same static requestCode→requestId map and
+    // onRequestPermissionsResult forward — pointed at a different permission string.
+    //
+    // TAP-THROUGH (both halves, ZERO ABI): a shown notification carries a content
+    // PendingIntent whose Intent is the 5.1 launch deep link `blazornative://<route>`
+    // to MainActivity — a COLD tap relaunches and onCreate mounts the route by name.
+    // A WARM tap (app alive, singleTop) lands in MainActivity.onNewIntent, which
+    // dispatches the reserved "navigate" host event → .NET NavigateToAsync. Neither
+    // grows the ABI (cold reuses the deep-link path; warm reuses host_event).
+
+    /** The notification op. `action` selects show / schedule / cancel / request /
+     * check (the flat-JSON vocabulary NativeShellBridge builds). show/schedule/
+     * request are permission-gated; cancel and check never prompt. */
+    private fun handleNotifications(requestId: Long, argsJson: String) {
+        val args = FlatJson.parse(argsJson)
+        val req = NotificationRequest.from(args)
+        when (req.action) {
+            "check" ->
+                // Read-only permission peek — never prompts.
+                completeHostCall(
+                    requestId,
+                    if (hasNotificationPermission()) NotificationStatus.GRANTED else NotificationStatus.DENIED,
+                    null,
+                )
+            "cancel" ->
+                // Idempotent and permission-free: drop a shown notification AND any
+                // pending alarm by the same id, then GRANTED (nothing to deny).
+                try {
+                    cancelNotification(req.id)
+                    completeHostCall(requestId, NotificationStatus.GRANTED, null)
+                } catch (t: Throwable) {
+                    onError("notifications cancel failed (request $requestId)", t)
+                    completeHostCall(requestId, NotificationStatus.ERROR, null)
+                }
+            "show", "schedule", "request" ->
+                if (hasNotificationPermission()) {
+                    runNotificationAction(requestId, req)
+                } else {
+                    // API 33+ and not held → prompt (the geolocation machinery).
+                    promptNotificationPermission(requestId, req)
+                }
+            else -> {
+                onError("notifications: unknown action '${req.action}' (request $requestId)",
+                    IllegalArgumentException("unsupported notification action ${req.action}"))
+                completeHostCall(requestId, NotificationStatus.ERROR, null)
+            }
+        }
+    }
+
+    /** Runs the actual post/schedule (permission already held or just granted) and
+     * completes GRANTED; a caught throw is DATA (Error), never a hang. `request` is
+     * permission-only, so it posts nothing and simply confirms the grant. */
+    private fun runNotificationAction(requestId: Long, req: NotificationRequest) {
+        try {
+            when (req.action) {
+                "show" -> postNotification(appContext, req.id, req.title, req.body, req.route)
+                "schedule" -> scheduleNotification(
+                    req.id, req.title, req.body, req.whenMs ?: System.currentTimeMillis(), req.route)
+                // "request" — permission-only; nothing to post.
+            }
+            completeHostCall(requestId, NotificationStatus.GRANTED, null)
+        } catch (t: Throwable) {
+            onError("notifications '${req.action}' failed (request $requestId)", t)
+            completeHostCall(requestId, NotificationStatus.ERROR, null)
+        }
+    }
+
+    /** Raises the POST_NOTIFICATIONS dialog, registering BOTH app-scoped maps first
+     * (requestCode→requestId AND requestCode→the pending action) so a result landing
+     * on a recreated Activity still routes and still knows what to post on grant. */
+    private fun promptNotificationPermission(requestId: Long, req: NotificationRequest) {
+        val activity = activityRef.get()
+        if (activity == null) {
+            onError("notifications request $requestId: no foreground Activity to prompt on",
+                IllegalStateException("no Activity"))
+            completeHostCall(requestId, NotificationStatus.ERROR, null)
+            return
+        }
+        val requestCode = nextRequestCode.getAndIncrement() and 0xFFFF // low 16 bits (framework rule)
+        pendingPermissionRequests[requestCode] = requestId
+        pendingNotificationRequests[requestCode] = req
+
+        val permissions = arrayOf(POST_NOTIFICATIONS_PERMISSION)
+        val hook = permissionRequestHook
+        if (hook != null) {
+            // Test seam (instrumented only) — capture, do NOT pop the real dialog
+            // (owner-phone territory, the geolocation split). The test drives the
+            // result through onRequestPermissionsResult itself.
+            hook(requestCode, permissions)
+            return
+        }
+        activity.runOnUiThread { activity.requestPermissions(permissions, requestCode) }
+    }
+
+    /** POST_NOTIFICATIONS held? Below API 33 the permission did not exist and is
+     * implicitly granted — the majority fast path, no manifest gate, no prompt. */
+    private fun hasNotificationPermission(): Boolean =
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+            appContext.checkSelfPermission(POST_NOTIFICATIONS_PERMISSION) == PackageManager.PERMISSION_GRANTED
+
+    /** schedule → an INEXACT AlarmManager alarm (a notification needs no exact
+     * timing, so no SCHEDULE_EXACT_ALARM permission) that fires [NotificationPublisher],
+     * which reconstructs and posts the notification. The publish PendingIntent is
+     * keyed by [id] so cancel can target it. */
+    private fun scheduleNotification(id: Int, title: String, body: String, whenMs: Long, route: String?) {
+        ensureNotificationChannel(appContext)
+        val am = appContext.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        val pi = PendingIntent.getBroadcast(
+            appContext, id, publishIntent(appContext, id, title, body, route), publishFlags(create = true))
+        am.set(AlarmManager.RTC_WAKEUP, whenMs, pi) // INEXACT — set, not setExact
+    }
+
+    /** cancel → both a shown notification AND a scheduled-but-unfired alarm, by id
+     * (idempotent — a missing one is a no-op). */
+    private fun cancelNotification(id: Int) {
+        val nm = appContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        nm.cancel(id)
+        val am = appContext.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        // FLAG_NO_CREATE: null when no matching alarm is pending — nothing to cancel.
+        val pi = PendingIntent.getBroadcast(
+            appContext, id, publishIntent(appContext, id, "", "", null), publishFlags(create = false))
+        if (pi != null) {
+            am.cancel(pi)
+            pi.cancel()
+        }
+    }
+
+    /** Every host-call completion funnels here so the instrumented tests can
      * observe the host_call_complete return code ([lastHostCallCompleteRcForTest]):
      * 0 = the .NET continuation was found and resolved (proves recreation survival),
      * 1 = unknown/already-completed id (benign). */
@@ -453,6 +627,51 @@ class AndroidShellBridge(
         }
     }
 
+    /** The parsed notification request — the flat-JSON args NativeShellBridge builds
+     * (every field a string; `id` decimal, `when` Unix epoch MILLISECONDS). Held
+     * whole in the app-scoped pending map so a grant that lands on a recreated
+     * Activity still knows exactly what to post. */
+    private data class NotificationRequest(
+        val action: String,
+        val id: Int,
+        val title: String,
+        val body: String,
+        val whenMs: Long?,
+        val route: String?,
+    ) {
+        companion object {
+            fun from(args: Map<String, String>): NotificationRequest = NotificationRequest(
+                action = args["action"] ?: "show",
+                id = args["id"]?.toIntOrNull() ?: 0,
+                title = args["title"].orEmpty(),
+                body = args["body"].orEmpty(),
+                whenMs = args["when"]?.toLongOrNull(),
+                route = args["route"],
+            )
+        }
+    }
+
+    /**
+     * The scheduled-notification publisher (Phase 9.1). A MANIFEST-declared
+     * receiver — not a runtime one — precisely so a `schedule` alarm still fires
+     * after the app process is killed (a runtime receiver dies with the process).
+     * The [AlarmManager] hands it the id/title/body/route as extras; it rebuilds the
+     * notification through the SAME [postNotification] the immediate `show` path
+     * uses (one builder, no drift). Declared in the manifest as the nested binary
+     * name `io.blazornative.shell.AndroidShellBridge$NotificationPublisher`.
+     */
+    class NotificationPublisher : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            postNotification(
+                context.applicationContext,
+                intent.getIntExtra(EXTRA_ID, 0),
+                intent.getStringExtra(EXTRA_TITLE).orEmpty(),
+                intent.getStringExtra(EXTRA_BODY).orEmpty(),
+                intent.getStringExtra(EXTRA_ROUTE),
+            )
+        }
+    }
+
     companion object {
         private const val TAG = "BlazorNative"
         private const val PREFS_NAME = "blazornative"
@@ -483,6 +702,96 @@ class AndroidShellBridge(
          * requestPermissions rule). Static, matching the static map above. */
         private val nextRequestCode = AtomicInteger(1)
 
+        /** Phase 9.1: the notification arm of the app-scoped pending state — the
+         * requestCode→pending-action map that says a permission result belongs to a
+         * notification (and what to post on grant), parallel to
+         * [pendingPermissionRequests]. STATIC for the same recreation-survival reason:
+         * the POST_NOTIFICATIONS dialog can recreate the Activity mid-request, and the
+         * recreated Activity's fresh bridge must still know what to post. */
+        private val pendingNotificationRequests = ConcurrentHashMap<Int, NotificationRequest>()
+
+        // ── Notifications: the channel + the shared builder (Phase 9.1) ──────────
+
+        /** The single notification channel (Android 8+ requires one), created once
+         * and idempotently. One literal, mirrored in the design doc. */
+        const val CHANNEL_ID = "blazornative_default"
+        private const val CHANNEL_NAME = "Notifications"
+
+        /** POST_NOTIFICATIONS as a bare string so it compiles below the API 33 that
+         * added the constant (referenced only on 33+, where it exists). */
+        private const val POST_NOTIFICATIONS_PERMISSION = "android.permission.POST_NOTIFICATIONS"
+
+        /** Publish-alarm extras (schedule → [NotificationPublisher]). */
+        private const val EXTRA_ID = "io.blazornative.shell.NP_ID"
+        private const val EXTRA_TITLE = "io.blazornative.shell.NP_TITLE"
+        private const val EXTRA_BODY = "io.blazornative.shell.NP_BODY"
+        private const val EXTRA_ROUTE = "io.blazornative.shell.NP_ROUTE"
+
+        /** Creates the channel if absent (idempotent). Android 8+ only — below 26 a
+         * notification posts without a channel. */
+        fun ensureNotificationChannel(context: Context) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                if (nm.getNotificationChannel(CHANNEL_ID) == null) {
+                    nm.createNotificationChannel(
+                        NotificationChannel(CHANNEL_ID, CHANNEL_NAME, NotificationManager.IMPORTANCE_DEFAULT))
+                }
+            }
+        }
+
+        /** Builds + posts the notification on [CHANNEL_ID] (the shared builder — the
+         * immediate `show` AND the scheduled [NotificationPublisher] both land here).
+         * A non-null [route] attaches the tap-through content PendingIntent. */
+        fun postNotification(context: Context, id: Int, title: String, body: String, route: String?) {
+            ensureNotificationChannel(context)
+            val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            @Suppress("DEPRECATION")
+            val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
+                Notification.Builder(context, CHANNEL_ID)
+            else
+                Notification.Builder(context)
+            builder.setContentTitle(title)
+                .setContentText(body)
+                .setSmallIcon(android.R.drawable.ic_dialog_info) // a small icon is REQUIRED to post
+                .setAutoCancel(true)
+            if (route != null) {
+                builder.setContentIntent(
+                    PendingIntent.getActivity(
+                        context, id, buildTapIntent(context, route),
+                        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
+            }
+            nm.notify(id, builder.build())
+        }
+
+        /** The tap-through Intent the content PendingIntent wraps — the EXACT 5.1
+         * launch deep link (`blazornative://<route>` VIEW-intent to [MainActivity]),
+         * so a cold tap relaunches into onCreate's deep-link mount and a warm tap
+         * (singleTop) lands in onNewIntent. Test seam: instrumented tap-through
+         * launches THIS intent (drop the data ⇒ the tap lands on the default page). */
+        fun buildTapIntent(context: Context, route: String): Intent =
+            Intent(
+                Intent.ACTION_VIEW,
+                Uri.parse("${MainActivity.DEEP_LINK_SCHEME}://${route.removePrefix("/")}"),
+                context, MainActivity::class.java,
+            ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+
+        /** The publish-alarm Intent targeting [NotificationPublisher], carrying the
+         * notification payload as extras (keyed by id via the PendingIntent). */
+        private fun publishIntent(context: Context, id: Int, title: String, body: String, route: String?): Intent =
+            Intent(context, NotificationPublisher::class.java).apply {
+                putExtra(EXTRA_ID, id)
+                putExtra(EXTRA_TITLE, title)
+                putExtra(EXTRA_BODY, body)
+                if (route != null) putExtra(EXTRA_ROUTE, route)
+            }
+
+        /** PendingIntent flags for the publish alarm: IMMUTABLE (targetSdk 34
+         * requires a mutability flag); FLAG_NO_CREATE on the cancel path returns null
+         * when no alarm is pending. */
+        private fun publishFlags(create: Boolean): Int =
+            (if (create) PendingIntent.FLAG_UPDATE_CURRENT else PendingIntent.FLAG_NO_CREATE) or
+                PendingIntent.FLAG_IMMUTABLE
+
         /** Test seam (instrumented BnGeolocationAndroidTest): when non-null, a
          * permission request CAPTURES (requestCode, permissions) here and SKIPS the
          * real system dialog — the real dialog UX is owner-phone territory (the
@@ -507,10 +816,12 @@ class AndroidShellBridge(
         @JvmStatic fun hasPendingPermissionRequestForTest(requestCode: Int): Boolean =
             pendingPermissionRequests.containsKey(requestCode)
 
-        /** Test seam: drain the app-scoped map + reset the last-rc probe between
-         * tests so a leftover entry never routes a later test's result. */
+        /** Test seam: drain the app-scoped maps + reset the last-rc probe between
+         * tests so a leftover entry never routes a later test's result. Drains the
+         * notification map too — both arms share the requestCode space. */
         @JvmStatic fun resetGeolocationForTest() {
             pendingPermissionRequests.clear()
+            pendingNotificationRequests.clear()
             lastHostCallCompleteRcForTest = Int.MIN_VALUE
         }
 

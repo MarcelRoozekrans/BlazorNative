@@ -126,6 +126,33 @@ interface ShellBridgeHandlers {
  */
 object HostCallOp {
     const val GEOLOCATION = 0
+
+    // Phase 9.1 (M9 DoD #3) — the FIRST reuse of the 9.0 generic ABI, and it
+    // holds the bet: local notifications add ONE op-enum value here and touch the
+    // ABI at nothing else (the bridge stays 80 bytes / 10 slots, host_call_complete
+    // reused for the calls, host_event reused for warm tap-through). The mirror of
+    // NativeShellBridge.HostCallOp.Notifications (.NET) / BnHostCallOp (Swift).
+    const val NOTIFICATIONS = 1
+}
+
+/**
+ * The wire-mirrored notification completion status — byte-identical to .NET's
+ * NotificationStatus enum (BlazorNative.Core/IMobileBridge.cs) and Swift's mirror.
+ * It is geolocation's [HostCallStatus] shape MINUS LocationUnavailable (no
+ * notification analogue), so Error is 4 here (not 5). The host maps its platform's
+ * native permission/outcome into one of these and passes the integer back across
+ * blazornative_host_call_complete — the SAME export geolocation uses, with NO
+ * struct grow and NO new export (the phase headline). Denial (1/2/3) and error (4)
+ * are all VALUES: the awaiting .NET ValueTask always resolves, never a thrown
+ * exception across the boundary and never a dropped completion (a hang). Do NOT
+ * reorder — these ARE the ABI contract.
+ */
+object NotificationStatus {
+    const val GRANTED = 0             // permission held; the op ran (posted / scheduled / cancelled)
+    const val DENIED = 1              // denied THIS time; a later request MAY prompt again
+    const val DENIED_PERMANENTLY = 2  // "don't ask again" — only Settings changes it
+    const val RESTRICTED = 3          // device policy / MDM — the user CANNOT grant it
+    const val ERROR = 4               // unexpected host error (a caught throw)
 }
 
 /**

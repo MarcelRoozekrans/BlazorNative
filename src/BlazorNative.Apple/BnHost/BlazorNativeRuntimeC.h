@@ -17,11 +17,14 @@
 // Swift shell CALLS it (the fetch_complete twin) to push an async permission-gated
 // result — a tri-state status + optional flat-JSON payload — back to .NET.
 //
-// host_event (Phase 5.1 host-initiated lifecycle) and fetch_complete are the only
-// exports still undeclared — the Swift shell does not drive lifecycle/fetch yet
-// (the fetch bridge stub fails synchronously; see AppleShellBridge). All ten
-// blazornative_* exports are present in the linked static archive (ios.yml asserts
-// them via `nm -gU`).
+// fetch_complete is the only export still undeclared — the Swift shell does not
+// drive fetch yet (the fetch bridge stub fails synchronously; see AppleShellBridge).
+// Phase 9.1 declares host_event because the Swift shell starts CALLING it for WARM
+// notification tap-through (the reserved "navigate" name) — the 9.0 precedent, where
+// iOS started calling the pre-existing host_call_complete for the first time. It adds
+// NO export: host_event has been in the archive since Phase 5.1 (ios.yml's nm gate
+// already lists it among the ten). All ten blazornative_* exports are present in the
+// linked static archive (ios.yml asserts them via `nm -gU`).
 //
 // Struct-layout contract — mirror of src/BlazorNative.Runtime/Exports.cs
 // (BlazorNativeInitOptions / BlazorNativeInitResult, [StructLayout(Sequential)],
@@ -160,6 +163,20 @@ int32_t blazornative_register_bridge(int32_t structSize, bn_bridge_callbacks* ca
 // and never a dropped call (a hang). Returns 0 = delivered, 1 = unknown/already-
 // completed id (benign cancellation race, logged, never a throw), 2 = invalid call.
 int32_t blazornative_host_call_complete(int64_t requestId, int32_t status, const char* payloadJsonUtf8);
+
+// ── Phase 5.1 host-INITIATED event ingress — the SHELL CALLS it since Phase 9.1 ──
+//
+// A host→.NET event, keyed by NAME (not a handlerId): a reserved name maps to a
+// navigation verb in .NET (DispatchHostEventCore), anything else fires the
+// NativeShellBridge.NativeEvents multicast. The Swift shell CALLS this for the first
+// time in Phase 9.1 — the WARM half of notification tap-through dispatches the
+// reserved name "navigate" with the tap's route as the payload, and .NET maps it to
+// NavigateToAsync (the "back" precedent, a new reserved name over the SAME export).
+// name is required (NULL/empty → rc 3); payload may be NULL. SYNCHRONOUS: the re-route
+// swap's frames are delivered before this returns. Returns 0 handled (navigated) /
+// 1 not handled (no session / unknown route) / 2 fault / 3 malformed. NO new export —
+// the symbol has been in the archive since Phase 5.1 (ios.yml's nm gate lists it).
+int32_t blazornative_host_event(const char* nameUtf8, const char* payloadUtf8);
 
 #ifdef __cplusplus
 }
