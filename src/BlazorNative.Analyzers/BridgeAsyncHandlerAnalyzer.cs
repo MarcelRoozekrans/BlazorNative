@@ -20,7 +20,8 @@ namespace BlazorNative.Analyzers;
 // currently stubs it no-op) — the rule guards the surviving contract.
 //
 // Originally Phase 2.0 (docs/plans/2026-05-25-phase-2.0-design.md); reworded
-// off the WASI premise in Phase 4.1. Full rule docs: docs/analyzers.md
+// off the WASI premise in Phase 4.1. Full rule docs:
+// https://marcelroozekrans.github.io/BlazorNative/docs/analyzers
 // ─────────────────────────────────────────────────────────────────────────────
 
 [DiagnosticAnalyzer(LanguageNames.CSharp)]
@@ -35,7 +36,7 @@ public sealed class BridgeAsyncHandlerAnalyzer : DiagnosticAnalyzer
         category:           Category,
         defaultSeverity:    DiagnosticSeverity.Error,
         isEnabledByDefault: true,
-        helpLinkUri:        "https://github.com/MarcelRoozekrans/BlazorNative/blob/main/docs/analyzers.md#bn0014");
+        helpLinkUri:        "https://marcelroozekrans.github.io/BlazorNative/docs/analyzers#bn0014");
 
     public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics
         => ImmutableArray.Create(BN0014_AsyncBridgeHandler);

@@ -26,14 +26,20 @@ namespace BlazorNative.Analyzers;
 //   BN0013 — System.Diagnostics.Process → unsupported in Android app
 //                                   sandboxes. Error (correctness).
 //
-// Full rule docs: docs/analyzers.md
+// Full rule docs: https://marcelroozekrans.github.io/BlazorNative/docs/analyzers
 // ─────────────────────────────────────────────────────────────────────────────
 
 [DiagnosticAnalyzer(LanguageNames.CSharp)]
 public sealed class MobilePolicyAnalyzer : DiagnosticAnalyzer
 {
     private const string Category = "BlazorNative.MobilePolicy";
-    private const string HelpBase = "https://github.com/MarcelRoozekrans/BlazorNative/blob/main/docs/analyzers.md";
+    // Phase 8.4: docs/analyzers.md MOVED to the docs site and the repo copy was
+    // DELETED (design decision 2 — one home per fact). This link ships INSIDE the
+    // analyzer package: it is what a consumer's IDE opens from the squiggle, so
+    // leaving it pointing at blob/main/docs/analyzers.md would have shipped a
+    // permanent 404 to every user of every BN rule. It 404s until Pages is
+    // enabled; the old one would have 404'd forever.
+    private const string HelpBase = "https://marcelroozekrans.github.io/BlazorNative/docs/analyzers";
 
     public static readonly DiagnosticDescriptor BN0004_ThreadSleep = new(
         id:                 "BN0004",

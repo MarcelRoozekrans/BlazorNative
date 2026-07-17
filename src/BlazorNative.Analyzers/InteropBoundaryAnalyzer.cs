@@ -28,14 +28,16 @@ namespace BlazorNative.Analyzers;
 //            (Static + blittability are already compiler-enforced — CS8894
 //            family — so they need no analyzer.)
 //
-// Full rule docs: docs/analyzers.md
+// Full rule docs: https://marcelroozekrans.github.io/BlazorNative/docs/analyzers
 // ─────────────────────────────────────────────────────────────────────────────
 
 [DiagnosticAnalyzer(LanguageNames.CSharp)]
 public sealed class InteropBoundaryAnalyzer : DiagnosticAnalyzer
 {
     private const string Category = "BlazorNative.Interop";
-    private const string HelpBase = "https://github.com/MarcelRoozekrans/BlazorNative/blob/main/docs/analyzers.md";
+    // Phase 8.4 — see MobilePolicyAnalyzer.HelpBase: the rule docs moved to the
+    // site and this link ships to consumers' IDEs.
+    private const string HelpBase = "https://marcelroozekrans.github.io/BlazorNative/docs/analyzers";
 
     public static readonly DiagnosticDescriptor BN0020_ExceptionEscape = new(
         id:                 "BN0020",
@@ -130,7 +132,7 @@ public sealed class InteropBoundaryAnalyzer : DiagnosticAnalyzer
     /// ANY of its catch clauses — a rethrow from a specific catch escapes the
     /// boundary; a catch-all sibling does not intercept it. Expression-bodied
     /// exports never conform (deliberately strict heuristic — see
-    /// docs/analyzers.md#bn0020).
+    /// https://marcelroozekrans.github.io/BlazorNative/docs/analyzers#bn0020).
     /// </summary>
     private static bool BodyIsFullyWrapped(
         MethodDeclarationSyntax method, SemanticModel semanticModel, CancellationToken ct)

@@ -79,8 +79,8 @@ it.
 
 **There is no iOS template.** iOS is a manual procedure against the reference shell, and it
 is more work than the Android path — simulator only for now. See
-[`docs/ios-shell-setup.md`](https://github.com/MarcelRoozekrans/BlazorNative/blob/main/docs/ios-shell-setup.md)
-in the BlazorNative repo.
+[Adding an iOS shell](https://marcelroozekrans.github.io/BlazorNative/docs/shells/ios)
+in the BlazorNative docs.
 
 ## Requirements
 

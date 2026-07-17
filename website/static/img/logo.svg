@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" role="img" aria-label="BlazorNative">
+  <title>BlazorNative</title>
+  <desc>A .NET bolt inside a native frame.</desc>
+  <!-- The mark: .NET, inside a native frame.
+       The tile is filled rather than outlined on purpose — a filled tile carries its
+       own contrast, which is what makes the mark legible on a light AND a dark page
+       without a second variant. The bar it is drawn to (8.4 design, decision 6):
+       128x128, legible at 32px in a nuget.org result row, no gradient, no wordmark. -->
+  <rect width="128" height="128" rx="28" fill="#512BD4"/>
+  <rect x="26" y="14" width="76" height="100" rx="13" fill="#FFFFFF"/>
+  <path d="M80 26 L42 76 L62 76 L48 102 L86 52 L66 52 Z" fill="#512BD4"/>
+</svg>
