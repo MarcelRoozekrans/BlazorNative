@@ -46,6 +46,17 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<!-- ── Phase 9.0 Gate 3: the geolocation purpose string ───────────────────────
+	     CLLocationManager.requestWhenInUseAuthorization() reads this string for the
+	     system permission alert, and iOS CRASHES the app at the request call if the
+	     key is absent (SIGABRT: "The app's Info.plist must contain an
+	     NSLocationWhenInUseUsageDescription key"). A real sentence, not a placeholder —
+	     the App Store rejects an empty/boilerplate purpose string, and it is the text a
+	     real user reads. When-in-use only (foreground position); background/always is
+	     M-out-of-scope, so NSLocationAlwaysAndWhenInUseUsageDescription is deliberately
+	     NOT declared. -->
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>BlazorNative uses your location to show your current position in the geolocation demo.</string>
 	<key>UILaunchStoryboardName</key>
 	<string></string>
 	<key>UIRequiredDeviceCapabilities</key>

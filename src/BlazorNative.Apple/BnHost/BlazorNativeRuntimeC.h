@@ -5,15 +5,23 @@
 // boot+render subset (init / register_frame_callback / mount / version / shutdown
 // + the init structs + the frame-callback typedef). Phase 5.3 (M5 DoD #3,
 // interactivity) adds the INPUT direction: dispatch_event (taps→renderer) +
-// register_bridge (the shell bridge, .NET→host; 9 callbacks since Phase 5.4's
-// size-negotiated clipboard/share growth). This is the Swift twin
+// register_bridge (the shell bridge, .NET→host; 10 callbacks since Phase 9.0's
+// size-negotiated permission-pattern growth — 9 since Phase 5.4's clipboard/share).
+// This is the Swift twin
 // of the Kotlin JNA `NativeBindings` interface; Swift's native C interop replaces
 // the JNA layer entirely (no reflection, no Structure classes — direct externs).
 //
+// Phase 9.0 (M9 DoD #1+#2) grows the ABI once, generically: a HostCallBegin slot at
+// offset 72 (the async-begin the shell's op-dispatch resolves) takes the struct to
+// 80 bytes, and blazornative_host_call_complete is now DECLARED here because the
+// Swift shell CALLS it (the fetch_complete twin) to push an async permission-gated
+// result — a tri-state status + optional flat-JSON payload — back to .NET.
+//
 // host_event (Phase 5.1 host-initiated lifecycle) and fetch_complete are the only
 // exports still undeclared — the Swift shell does not drive lifecycle/fetch yet
-// (the fetch bridge stub fails synchronously; see AppleShellBridge). All nine are
-// present in the linked static archive (ios.yml asserts them via `nm -gU`).
+// (the fetch bridge stub fails synchronously; see AppleShellBridge). All ten
+// blazornative_* exports are present in the linked static archive (ios.yml asserts
+// them via `nm -gU`).
 //
 // Struct-layout contract — mirror of src/BlazorNative.Runtime/Exports.cs
 // (BlazorNativeInitOptions / BlazorNativeInitResult, [StructLayout(Sequential)],
@@ -91,17 +99,18 @@ void blazornative_shutdown(void);
 int32_t blazornative_dispatch_event(uint64_t handlerId, const char* argsJsonUtf8);
 
 // The host-implemented shell callbacks (BridgeProtocolNative.cs
-// BlazorNativeBridgeCallbacks — 9 × 8-byte fn pointers = 72 bytes since Phase 5.4).
-// All cdecl, int-returning. Buffer-writing calls (currentRoute, storageRead,
-// clipboardRead) use the -needed protocol: return the byte count written INCLUDING
-// NUL on success, or -(utf8Bytes+1) when the value does not fit the offered cap;
-// -1 = host error; -2 = key absent (storageRead only). Input strings are .NET-owned,
-// valid only during the callback (copy before returning).
+// BlazorNativeBridgeCallbacks — 10 × 8-byte fn pointers = 80 bytes since Phase 9.0;
+// 9 × 8 = 72 from Phase 5.4). All cdecl, int-returning. Buffer-writing calls
+// (currentRoute, storageRead, clipboardRead) use the -needed protocol: return the
+// byte count written INCLUDING NUL on success, or -(utf8Bytes+1) when the value does
+// not fit the offered cap; -1 = host error; -2 = key absent (storageRead only). Input
+// strings are .NET-owned, valid only during the callback (copy before returning).
 //
 // A NULL slot = capability unsupported (the .NET null-slot guard surfaces
-// NotSupportedException). Phase 5.4 appended clipboardRead/Write + share at 48/56/64
-// with the size-negotiated register (structSize below); existing offsets (0…40) are
-// unchanged.
+// NotSupportedException). Phase 5.4 appended clipboardRead/Write + share at 48/56/64;
+// Phase 9.0 appends hostCallBegin at 72 (the generic permission-gated async-begin) —
+// each with the size-negotiated register (structSize below); existing offsets (0…64)
+// are unchanged.
 typedef int32_t (*bn_navigate_cb)(const char* routeUtf8);                    // offset 0
 typedef int32_t (*bn_current_route_cb)(char* buf, int32_t cap);              // offset 8
 typedef int32_t (*bn_storage_read_cb)(const char* keyUtf8, char* buf, int32_t cap); // offset 16
@@ -113,6 +122,11 @@ typedef int32_t (*bn_fetch_begin_cb)(int64_t requestId, const void* request); //
 typedef int32_t (*bn_clipboard_read_cb)(char* buf, int32_t cap);            // offset 48
 typedef int32_t (*bn_clipboard_write_cb)(const char* textUtf8);            // offset 56
 typedef int32_t (*bn_share_cb)(const char* textUtf8);                       // offset 64
+// HostCallBegin (Phase 9.0): the GENERIC permission-gated async-begin — an op enum
+// (0 = Geolocation in 9.0) + a flat-JSON arg string. Returns synchronously (0 ok,
+// <0 host error); the tri-state RESULT arrives LATER via blazornative_host_call_complete.
+// The FetchBegin shape, generalized. A NULL slot surfaces NotSupportedException .NET-side.
+typedef int32_t (*bn_host_call_begin_cb)(int64_t requestId, int32_t op, const char* argsJsonUtf8); // offset 72
 
 typedef struct {
     bn_navigate_cb        navigate;       // offset 0
@@ -124,7 +138,8 @@ typedef struct {
     bn_clipboard_read_cb  clipboardRead;  // offset 48 — NULL = unsupported
     bn_clipboard_write_cb clipboardWrite; // offset 56 — NULL = unsupported
     bn_share_cb           share;          // offset 64 — NULL = unsupported
-} bn_bridge_callbacks;                     // 72 bytes
+    bn_host_call_begin_cb hostCallBegin;  // offset 72 — NULL = unsupported (Phase 9.0)
+} bn_bridge_callbacks;                     // 80 bytes
 
 // COPIES min(structSize, sizeof(runtime's struct)) bytes of the callbacks struct
 // and zero-fills the tail (Phase 5.4 size negotiation — pass sizeof(bn_bridge_callbacks)
@@ -132,6 +147,19 @@ typedef struct {
 // alive). Call BEFORE mount so components resolving the bridge find a live host.
 // Returns 0 on success, 2 on null pointer / bad size / failure.
 int32_t blazornative_register_bridge(int32_t structSize, bn_bridge_callbacks* callbacks);
+
+// ── Phase 9.0: the async permission-gated completion the SHELL CALLS (fetch_complete
+// twin) ───────────────────────────────────────────────────────────────────────────
+//
+// The shell delivers a HostCallBegin's deferred result here, keyed by the same
+// requestId, on whatever thread the host outcome arrived on (a CLLocationManager
+// delegate callback, after a possibly-suspended permission prompt). status is the
+// wire-mirrored tri-state (0 Granted / 1 Denied / 2 DeniedPermanently / 3 Restricted /
+// 4 LocationUnavailable / 5 Error); payloadJsonUtf8 is the flat-JSON fix ONLY when
+// Granted, NULL otherwise. DENIAL IS DATA — never a thrown error across this boundary
+// and never a dropped call (a hang). Returns 0 = delivered, 1 = unknown/already-
+// completed id (benign cancellation race, logged, never a throw), 2 = invalid call.
+int32_t blazornative_host_call_complete(int64_t requestId, int32_t status, const char* payloadJsonUtf8);
 
 #ifdef __cplusplus
 }

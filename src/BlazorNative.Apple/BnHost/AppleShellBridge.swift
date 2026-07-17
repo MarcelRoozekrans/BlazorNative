@@ -7,7 +7,7 @@
 // 48/56/64) — REAL since Gate 3: clipboard → UIPasteboard.general, share →
 // UIActivityViewController.
 //
-// No-capture, singleton-routed (the 5.2 frame-callback pattern): the nine global
+// No-capture, singleton-routed (the 5.2 frame-callback pattern): the ten global
 // `@convention(c)` trampolines forward to `AppleShellBridge.shared`. Nothing can
 // throw across the C ABI BY CONSTRUCTION — `@convention(c)` closures are
 // non-throwing (compiler-enforced) and the bridge methods they call don't throw —
@@ -50,6 +50,13 @@ final class AppleShellBridge {
     private var route: String
     private let routeLock = NSLock()
     private var storage: [String: String] = [:]
+
+    /// Phase 9.0: the geolocation half of the generic permission-gated host-call op.
+    /// Owned here (app-lifetime, like the rest of the bridge) so it holds the
+    /// CLLocationManager + delegate + in-flight requestId across the async permission
+    /// prompt — the delegate-retention lesson (see BnGeolocation). One handler, one
+    /// in-flight request; a later capability adds an op case, not a second export.
+    let geolocation = BnGeolocation()
 
     init(initialRoute: String = "/") {
         self.route = initialRoute
@@ -169,6 +176,26 @@ final class AppleShellBridge {
         return top
     }
 
+    // ── Geolocation (Phase 9.0 — the generic permission-gated async op) ───────
+    //
+    // The GENERIC begin (hostCallBegin, offset 72) wired for op=Geolocation, the
+    // AndroidShellBridge.hostCallBegin twin. Returns FAST (the begin contract); the
+    // tri-state result is pushed LATER via blazornative_host_call_complete. An unknown
+    // op is DATA, not a crash — it completes with Error so the awaiting .NET ValueTask
+    // resolves rather than leaking a pending entry. The real work + the CLLocationManager
+    // retention live in BnGeolocation.
+
+    func hostCallBegin(_ requestId: Int64, _ op: Int32, _ argsJson: String) -> Int32 {
+        switch op {
+        case BnHostCallOp.geolocation:
+            geolocation.begin(requestId: requestId, argsJson: argsJson)
+        default:
+            NSLog("[AppleShellBridge] hostCallBegin: unknown op \(op) (request \(requestId)) — completing Error")
+            geolocation.completeUnknownOp(requestId: requestId)
+        }
+        return 0
+    }
+
     // ── the -needed buffer-write helper (twin of ShellBridge.writeUtf8) ──────
 
     /// UTF-8-encode `value`; when bytes + 1 (NUL) fits in `cap`, write bytes + NUL
@@ -186,9 +213,10 @@ final class AppleShellBridge {
     }
 }
 
-// ── The nine global @convention(c) trampolines (no capture; singleton-routed) ─
+// ── The ten global @convention(c) trampolines (no capture; singleton-routed) ──
 // Held as top-level `let`s for the process lifetime — the fn pointers must outlive
 // register_bridge (the JNA strong-ref rule's Swift form). A nil singleton → -1.
+// (Phase 9.0 appended hostCallBegin at offset 72.)
 
 let bnBridgeNavigate: bn_navigate_cb = { routePtr in
     guard let routePtr = routePtr, let bridge = AppleShellBridge.shared else { return -1 }
@@ -235,4 +263,13 @@ let bnBridgeClipboardWrite: bn_clipboard_write_cb = { textPtr in
 let bnBridgeShare: bn_share_cb = { textPtr in
     guard let textPtr = textPtr, let bridge = AppleShellBridge.shared else { return -1 }
     return bridge.share(String(cString: textPtr))
+}
+
+// Phase 9.0 host-call-begin trampoline (offset 72) — the GENERIC permission-gated
+// async-begin. A NULL args pointer is tolerated as an empty arg string (the op default
+// applies); a nil singleton → -1 (host error, per the ABI's <0 begin-failure rule).
+let bnBridgeHostCallBegin: bn_host_call_begin_cb = { requestId, op, argsPtr in
+    guard let bridge = AppleShellBridge.shared else { return -1 }
+    let args = argsPtr.map { String(cString: $0) } ?? "{}"
+    return bridge.hostCallBegin(requestId, op, args)
 }

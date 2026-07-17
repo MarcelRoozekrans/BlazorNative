@@ -856,10 +856,48 @@ jobs:
           #       BnClipboardTests (3 attempts against the REAL UIPasteboard — 7.5's
           #       one flake, run 29504511994), and H2's scrollDiagnostics ->
           #       diagnostics rename across the suite.
+          # 154 -> 169 (Phase 9.0 Gate 3, +15) — geolocation + the permission pattern's
+          # iOS half: AppleShellBridge.hostCallBegin (offset 72) wired for op=Geolocation
+          # over a CLLocationManager whose delegate the bridge retains, and the tri-state
+          # pushed back through the 10th export blazornative_host_call_complete. The iOS
+          # third of BnGeolocationDemoTests.cs + BnGeolocationAndroidTest.kt (Gate 2). All
+          # in BnGeolocationTests unless noted.
+          #   +4  the Check MATRIX — the read-only permission peek (never prompts) reports
+          #       each CLAuthorizationStatus as a status VALUE: authorized -> Granted,
+          #       notDetermined -> Denied, denied -> DeniedPermanently (iOS one-shot),
+          #       restricted -> Restricted.
+          #   +1  a held request FETCHES A FIX -> Granted, and the fix's flat-JSON KEY NAMES
+          #       are pinned as the EXACT set the .NET ParseGeolocationResult reads and the
+          #       AVD fixPayload writes: lat/lng/accuracy/altitude/timestamp (lng, not lon).
+          #   +3  the request DANCE: notDetermined then the user's outcome as DATA — deny ->
+          #       DeniedPermanently (a value, never a Swift error across the C boundary,
+          #       never a hang), restrict -> Restricted, and grant-then-fix round-tripping
+          #       to the SAME in-flight id (the whole prompt->grant->fix flow).
+          #   +2  a fix FAILURE mapped by CLError code: locationUnknown -> LocationUnavailable,
+          #       denied -> DeniedPermanently. (With the four above, all six wire statuses
+          #       0..5 are asserted; Error comes from the unknown-op net below.)
+          #   +1  an UNKNOWN op completes Error, never a crash — the generic dispatch's net.
+          #   +1  DELEGATE RETENTION pinned as a property (the 5.3/7.3 lesson for CoreLocation:
+          #       CLLocationManager holds its delegate weakly, so the bridge holds the handler
+          #       and the handler holds the manager — no observable sees it, so it is a
+          #       property pin, the 6.2 contentInsetAdjustment precedent).
+          #   +1  a late/duplicate delegate callback after completion NO-OPS — exactly one
+          #       completion per request (the one-shot in-flight slot).
+          #   +2  BOOT (real NativeAOT, /geolocation mounted): the round trip through the REAL
+          #       blazornative_host_call_complete into a LIVE .NET continuation — a grant
+          #       echoes "fix:lat,lng" and a denial echoes "status:DeniedPermanently", both
+          #       within a BOUNDED await, and host_call_complete returns rc 0 (the deferred
+          #       completion routed to the process-scoped id — the iOS analogue of Android's
+          #       recreation-survival concern). NO HANG is the milestone law, asserted on the sim.
+          # SIMULATOR-SCOPED + LABELLED: the real system authorization ALERT is owner-device
+          # territory (Apple Developer account = the trigger; the Android real-dialog twin is
+          # owner-phone), and a simulator location is a set coordinate, not a GPS fix — so the
+          # delegate is driven directly (the 7.3 hand-rolled-fire pattern) behind an auth-status
+          # override + a suppress switch; the production CoreLocation calls are untouched.
           # Count drift fails loudly.
-          if [ "$failed" -ne 0 ] || [ "$passed" -ne 154 ]; then
+          if [ "$failed" -ne 0 ] || [ "$passed" -ne 169 ]; then
             grep -E "Test Case '.*' (passed|failed)" "$log" || true
-            echo "iOS XCTest baseline drift: expected 154 passed / 0 failed, got passed=$passed failed=$failed" >&2
+            echo "iOS XCTest baseline drift: expected 169 passed / 0 failed, got passed=$passed failed=$failed" >&2
             exit 1
           fi
 
