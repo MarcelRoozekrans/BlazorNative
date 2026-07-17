@@ -8,8 +8,9 @@ milestone-tag namespace and gave `v<semver>` to release-please, so DoD #6's
 than pending. **M8 is complete on the audit, which is what the DoD actually wanted.**
 **And its predecessors' tags are gone too** — `v1.0`–`v7.0` were **deleted on 2026-07-17**
 as the last step of 8.6's close, so **this repo has no tags at all** until release-please
-cuts the first `v1.0.0-preview.2`. The [ROADMAP](ROADMAP.md)'s standing note is the place
-that explains why `git checkout v6.0` fails.
+cuts the first `v0.1.0`. The [ROADMAP](ROADMAP.md)'s standing note is the place
+that explains why `git checkout v6.0` fails — and a second standing note there governs the
+`1.0.0-preview.N` version scheme this document records, which Phase 8.7 retired for `0.x`.
 See the [M8 audit addendum](../plans/2026-07-17-milestone-8-audit-addendum.md) — it
 records what 8.6 changed under this milestone, and **this document is not retrofitted
 to match it**: the DoD texts and the closure evidence below were true when written and

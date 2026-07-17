@@ -432,9 +432,9 @@ structural reason to hold.
 
 | Tag | Means | Publishes? |
 |---|---|---|
-| `v<semver>` — `v1.0.0-preview.2` | **package release**, cut by release-please | **the only shape that does** |
+| `v<semver>` — `v0.1.0` | **package release**, cut by release-please | **the only shape that does** |
 | `v<N>.<M>` — `v1.0` … `v8.0` | **legacy milestone** — the namespace was **retired in Phase 8.6** | **never — it is now a RED** |
-| `pkg/<semver>` — `pkg/1.0.0-preview.2` | **legacy package** — 8.2's namespace, **retired in Phase 8.6** | **never — it is now a RED** |
+| `pkg/<semver>` — `pkg/0.1.0` | **legacy package** — 8.2's namespace, **retired in Phase 8.6** | **never — it is now a RED** |
 
 **The two namespaces can never collide, and the reason is arithmetic rather than
 convention:** `v<N>.<M>` has two components and **two components is not valid
@@ -504,16 +504,26 @@ different in kind, and that is the whole point:**
 
 **Four things that will otherwise surprise you:**
 
-- **The version is a COUNTER, not a computation.** While the version sits at
-  `1.0.0-preview.N`, `fix:`, `feat:` and even `feat!:` **all produce
-  `1.0.0-preview.N+1`** — measured against release-please's own strategy, not
-  assumed. **Conventional commits do not compute this repo's version; they
-  compute its changelog.** A contributor who writes `feat!:` expecting a major
-  bump gets `preview.N+1`, and that is correct behaviour. It is also why a
-  mis-typed subject can only ever cost you a changelog line — **never a wrong
-  version**.
+- **The commit type now MOVES the version — that is new in Phase 8.7.** Under the
+  old `1.0.0-preview.N` scheme the version was a *counter*: `fix:`, `feat:` and
+  `feat!:` all produced `preview.N+1` and the type changed nothing. **Dropping the
+  preview suffix for 0.x turned inference back on.** Measured against
+  release-please 17.10.3's own `DefaultVersioningStrategy`, from `0.1.0`:
+
+  | commit | next version |
+  |---|---|
+  | `fix:` | **0.1.1** |
+  | `feat:` | **0.2.0** |
+  | `feat!:` | **0.2.0** — *the same as `feat:`* |
+
+  **`feat!:` and `feat:` agree at 0.x, and that is deliberate.** `bump-minor-pre-major`
+  keeps a breaking change on the minor while `major < 1` — semver's own rule for
+  pre-1.0 — which is what stops a stray `feat!:` from silently shipping `1.0.0`.
+  **A mis-typed subject is still cheap** (a patch where a minor belonged, or the
+  reverse) and it **can never reach 1.0.0**. What *can* set the version outright is
+  a `release-as` footer in a commit **body** — that is `footer-check`'s subject.
 - **The tag is a claim; the props wins.** The workflow *asserts* that
-  `v1.0.0-preview.2` matches the props and **never overrides it**. Tag ahead
+  `v0.1.0` matches the props and **never overrides it**. Tag ahead
   of props, props ahead of tag, tag on the wrong commit — all three are RED,
   naming both values. (Overriding via `-p:Version=` would make the packages
   irreproducible from the commit they name; it is banned and pinned.)
@@ -527,44 +537,53 @@ different in kind, and that is the whole point:**
   unlist → bump → release again. It is never "fix it and re-push the same
   version". That single fact is why every check runs before the key.
 
-#### ⚠ Graduating to `1.0.0` — the trap, and nothing in the tooling will warn you
+#### ⚠ Graduating to `1.0.0` — and the danger now runs the OTHER way
 
-**Read this before you type `Release-As: 1.0.0`. It is the one move in this
-repo's release story that fails silently.**
+**Phase 8.7 deleted the trap that used to live here.** Under the old
+`1.0.0-preview.N` scheme, reaching `1.0.0` took a `Release-As:` commit **and** a
+config change, and stopping at the commit silently re-entered preview. **That
+scheme is gone, and its trap went with it.** Graduating is now one move:
 
-Reaching `1.0.0` takes **two** things, and doing only the first re-enters preview
-on the very next merge:
-
-| # | The move | Without it |
+| # | The move | Why that is all |
 |---|---|---|
-| 1 | A commit whose **body** carries `Release-As: 1.0.0` | you stay on the counter |
-| 2 | **A config change** — delete `versioning`, `prerelease` and `prerelease-type` from `release-please-config.json`, so the package falls back to `versioning: default` | **the next commit computes `1.0.1-preview` / `1.1.0-preview` / `2.0.0-preview`** |
+| 1 | A commit whose **body** carries a release-as footer naming `1.0.0` | `bump-minor-pre-major` / `bump-patch-for-minor-pre-major` are gated on `major < 1`. **At `1.0.0` they deactivate themselves.** There is nothing to remember and nothing to delete. |
 
-**Why step 2 is not optional.** With the prerelease config still in place at
-`1.0.0`, the version has no prerelease part left to bump — so release-please
-takes the *other* branch and **glues `-preview` back on**. Measured against
-release-please 17.10.3's own strategy, from `1.0.0`:
+**What changes at graduation is BEHAVIOUR, not config** — and this is the part to
+know before you do it. Measured against release-please 17.10.3's own strategy:
 
 ```
-1.0.0  + fix:    ->  1.0.1-preview
-1.0.0  + feat:   ->  1.1.0-preview
-1.0.0  + feat!:  ->  2.0.0-preview
+        0.x (today)              1.0.0 and after
+fix:    0.1.0 -> 0.1.1           1.0.0 -> 1.0.1
+feat:   0.1.0 -> 0.2.0           1.0.0 -> 1.1.0
+feat!:  0.1.0 -> 0.2.0    <--    1.0.0 -> 2.0.0    <-- THIS ONE MOVES
 ```
 
-**All three re-enter preview, not just `fix:`.** Step 2 must land in the same PR
-as the `Release-As:` commit, or immediately after it and before any other merge.
+**`feat!:` is a minor at 0.x and a major at 1.x.** The day you graduate, the same
+commit type starts costing a major version. Nothing warns; it is simply true.
 
-> **Nothing catches this.** Not the classifier — the tag and the props would
-> *agree* on `1.0.1-preview`, so the tag↔props assertion is perfectly happy.
-> Not `TheManifest_AgreesWithTheProps` — the manifest and the props would agree
-> too. **Every pin in this repo is green while the version quietly goes
-> backwards. This table is the only guard, which is why it is here rather than
-> in a design doc nobody opens at the moment of the go.**
+> ### ⚠ **THE REAL HAZARD IS AN ACCIDENTAL GRADUATION, AND IT IS PERMANENT**
+>
+> **`bump-minor-pre-major: true` is the only thing keeping a `feat!:` off `1.0.0`.**
+> Set it to `false` — which is exactly what *"mirror AdoNet.Async"* invites, because
+> **the reference really does set it, and this repo mirrors that reference by
+> habit** — and the **very next `feat!:` computes `1.0.0`**. Not a proposal you get
+> to reconsider: a release PR, and then a version.
+>
+> **nuget.org has NO hard delete.** An accidental `1.0.0` is permanent — you cannot
+> go back to `0.x`, only forward. **The recovery is unlist and keep walking.**
+>
+> **Nothing catches it.** The manifest and the props would *agree* on `1.0.0`, so
+> `TheManifest_AgreesWithTheProps` is happy. The tag and the props would agree, so
+> the classifier is happy. **Every pin in this repo stays green while the project
+> graduates itself.** This box is the guard, which is why it is here — where the
+> person editing that config is standing — and not in a design doc nobody opens.
 
-*(A subtler alternative exists and reaches the same place: keep
-`versioning: prerelease` and set `prerelease: false` — the strategy then strips
-the prerelease part itself. Dropping the three keys is simpler and is what to
-do.)*
+**The same is true of the footer that does it on purpose.** A release-as footer at
+the start of a line in the **last paragraph** of a commit body sets the version
+outright — release-please reads it **before** it counts any commit types. It is
+**case-insensitive** (measured: lowercase works), so it is easier to write by
+accident than it looks. `scripts/footer-check.ps1` is the guard: your body may only
+declare that footer if your **PR title names the same version**.
 
 #### What the first Release is actually testing
 

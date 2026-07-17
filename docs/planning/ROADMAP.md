@@ -11,7 +11,7 @@
 > Every milestone below records the tag that closed it — *"tagged `v6.0`"* — and **each of
 > those statements was true when it was written.** **Phase 8.6 (2026-07-17) retired the
 > milestone-tag namespace**: `v<semver>` now belongs to release-please, which cuts
-> `v1.0.0-preview.2`-shaped tags for **package releases**, and **no `vN.0` will ever be cut
+> `v0.1.0`-shaped tags for **package releases**, and **no `vN.0` will ever be cut
 > again.** `v8.0` was **cancelled, not deferred** — M8's DoD #6 named it, M8 is complete
 > without it, and the [M8 audit addendum](../plans/2026-07-17-milestone-8-audit-addendum.md)
 > is where that is said out loud.
@@ -21,7 +21,7 @@
 > **2026-07-17** on the owner's go — `git push origin --delete v1.0 … v7.0`, plus the
 > locals — as the **last step** of Phase 8.6's close. `git ls-remote --tags origin` returns
 > **nothing**, and this repo now has **no tags at all** until release-please cuts the first
-> `v1.0.0-preview.2`. **That is why `git checkout v6.0` fails**, and it is the whole reason
+> `v0.1.0`. **That is why `git checkout v6.0` fails**, and it is the whole reason
 > this note exists.
 >
 > **Two readers will now disagree about whether `v6.0` exists, and both are right:** a
@@ -34,6 +34,23 @@
 > and audit documents in `docs/plans/` say *"tagged `vN.0`"* throughout and **are not
 > rewritten**: they are **dated records**, and a record edited to agree with today is not a
 > record. The tags were how the chapters were marked; the writing is what the chapters were.
+
+> ### ⚠ The version is `0.x` — the `1.0.0-preview.N` scheme is RETIRED, and this note governs every mention of it below
+>
+> **Phase 8.7 (2026-07-17) moved the version from `1.0.0-preview.N` to pre-1.0 semver.**
+> Entries below say *"Versioning verdict: `1.0.0-preview.1`"* and *"at `1.0.0-preview.1`,
+> `fix:`/`feat:`/`feat!:` all produce `1.0.0-preview.2`"*. **Every one of those was true when
+> it was written**, and — exactly as with the tags above — **they are not retrofitted.** This
+> note is the answer instead.
+>
+> **What is true now**, measured against release-please 17.10.3's own strategy rather than
+> reasoned: the first release is **`0.1.0`**, and from there `fix:` → `0.1.1`, `feat:` →
+> `0.2.0`, `feat!:` → `0.2.0`. **The commit type moves the version again** — 8.6's *"the
+> version is a counter"* was a property of the preview suffix, and the suffix is gone.
+>
+> **Nothing had ever been published when this changed** (0 releases, 0 release-triggered runs
+> — verified at the time), which is the only reason it was free to do. **It is permanent at
+> the first publish.** `docs/GITHUB-SETUP.md` carries the ladder and the graduation section.
 
 ### ✅ Milestone 1 — P0: Runtime Boots End-to-End  *(complete 2026-05-24, tagged `v1.0`)*
 

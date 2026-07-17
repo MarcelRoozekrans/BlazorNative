@@ -84,31 +84,15 @@
 #                                 because a version.txt would be an EIGHTH,
 #                                 unpinned version literal.
 #
-#   "versioning": "prerelease"    THE COUNTER (decision 2). The default strategy
-#                                 PRESERVES the prerelease part verbatim and
-#                                 walks the numbers in front of it, so from
-#                                 1.0.0-preview.1 a `feat:` yields
-#                                 1.1.0-preview.1 — a nonsense version whose
-#                                 `-preview.1` is glued on forever and never
-#                                 increments. That is what "mirror the reference"
-#                                 produces, and it is why this key is not
-#                                 default. With `prerelease` it walks the
-#                                 PRERELEASE COUNTER: 1.0.0-preview.1 ->
-#                                 1.0.0-preview.2.
-#
-#   "prerelease": true            ONE KEY, TWO JOBS — the overload, named because
-#                                 it is genuinely confusing. The schema describes
-#                                 it as a GitHub Release flag, but manifest.ts
-#                                 also passes it into the VERSIONING STRATEGY.
-#                                 As the Release flag it is self-correcting: it
-#                                 is ANDed with `release.tag.version.preRelease ||
-#                                 major === 0`, so at 1.0.0 final the Release is
-#                                 not flagged prerelease even with this still
-#                                 set. One less thing to remember at graduation.
-#
-#   "prerelease-type": "preview"  Only consulted when the version has no
-#                                 prerelease part. It is the string that would be
-#                                 glued on — see the graduation trap below.
+#   (no "versioning" key)         DEFAULT, and that IS the decision — Phase 8.7.
+#                                 8.6 set `versioning: prerelease` to walk a
+#                                 counter under `1.0.0-preview.N`. That whole
+#                                 scheme is gone: the version is now pre-1.0
+#                                 semver (0.x), so `versioning`, `prerelease` and
+#                                 `prerelease-type` were DELETED rather than
+#                                 retuned. The default strategy is
+#                                 DefaultVersioningStrategy, and the two flags
+#                                 below are its only knobs.
 #
 #   "draft": true                 ← THE LAW. The owner's click is the go.
 #
@@ -178,35 +162,61 @@
 #                                 find it and would silently walk all of history.
 #                                 a3fe234 is origin/main's tip today.
 #
-# OMITTED DELIBERATELY: `bump-minor-pre-major` and `bump-patch-for-minor-pre-major`.
-# The reference sets both. BOTH ARE DEAD OPTIONS HERE — and for the reference too.
-# They are gated on `version.isPreMajor`, which is `major < 1` (version.ts). Our
-# version is 1.0.0-preview.1 (major 1) and theirs is 1.3.3 (major 1), so neither
-# flag can ever fire in either repo. Mirroring the reference verbatim would import
-# two settings that do nothing, and config that cannot fire is a comment
-# pretending to be a decision.
+#   "bump-minor-pre-major": true  LIVE, AND IT IS THE ONE STOPPING AN ACCIDENTAL
+#                                 1.0.0. At 0.x a `feat!:` bumps the MINOR
+#                                 (0.1.0 -> 0.2.0), which is semver's own rule
+#                                 for pre-1.0. Set it false and the next `feat!:`
+#                                 computes 1.0.0 — a graduation NOBODY DECIDED,
+#                                 and nuget.org has no hard delete, so it is
+#                                 permanent. The reference (AdoNet.Async) sets
+#                                 this true; so do we, for a reason that is ours.
 #
-# ⚠ THE FINDING, AND THE THING TO SET EXPECTATIONS BY. While the version sits at
-# 1.0.0-preview.N with minor === 0 and patch === 0, `fix:`, `feat:` and `feat!:`
-# ALL PRODUCE 1.0.0-preview.N+1. The commit type does not move the version AT ALL.
-# CONVENTIONAL COMMITS DO NOT COMPUTE THIS REPO'S VERSION — THEY COMPUTE ITS
-# CHANGELOG. The version is a counter. Measured against release-please 17.10.3's
-# own PrereleaseVersioningStrategy, not traced.
+#   "bump-patch-for-minor-pre-major": false
+#                                 LIVE, AND IT DIVERGES FROM THE REFERENCE ON
+#                                 PURPOSE — which is why it is written out at its
+#                                 own default value rather than omitted. AdoNet.Async
+#                                 sets it TRUE. True means a `feat:` at 0.x yields a
+#                                 PATCH, so from 0.0.0 the first release would be
+#                                 0.0.1 and never 0.1.0. Measured, not reasoned
+#                                 (Phase 8.7's ladder). A contributor "mirroring the
+#                                 reference" would flip this and quietly re-point the
+#                                 whole scheme; the value is here so the divergence is
+#                                 visible at the site.
 #
-# That is why the commitlint gate is safely ADVISORY (commitlint.yml): the blast
-# radius of a mis-typed subject is a missing changelog section, NEVER a wrong
-# version.
+# ⚠ BOTH FLAGS ARE GATED ON `version.isPreMajor` — `major < 1` (version.ts). They
+# are live ONLY while this repo is 0.x. AT 1.0.0 THEY BOTH BECOME DEAD NO-OPS BY
+# THEMSELVES; nothing has to be remembered. (8.6 omitted both and called them dead,
+# correctly, at 1.0.0-preview.N — major 1. The 0.x move is what woke them up.)
 #
-# ⚠ THE GRADUATION TRAP (decision 2, rung 4) — reaching 1.0.0 takes a
-# `Release-As: 1.0.0` commit AND a change to this config (drop `versioning`,
-# `prerelease`, `prerelease-type`). Stopping at the commit silently re-enters
-# preview on the very next merge: from 1.0.0 with this config still in place,
-# `fix:` -> 1.0.1-preview, `feat:` -> 1.1.0-preview, `feat!:` -> 2.0.0-preview.
-# NOTHING WARNS. Not the classifier (tag and props would agree), not the
-# manifest pin (manifest and props would agree). The guard is prose, and it lives
-# in docs/GITHUB-SETUP.md where the person graduating is standing.
+# ⚠ THE LADDER, MEASURED against release-please 17.10.3's own
+# DefaultVersioningStrategy (executed, not traced). From 0.1.0:
 #
-# See docs/plans/2026-07-17-phase-8.6-design.md for all nine decisions.
+#     fix:    ->  0.1.1        feat:   ->  0.2.0        feat!:  ->  0.2.0
+#
+# `feat:` and `feat!:` AGREE at 0.x — both are a minor bump — and that is not a
+# bug, it is what `bump-minor-pre-major` buys. Note what it means: THE COMMIT TYPE
+# NOW MOVES THE VERSION (8.6's "the version is a counter" is dead — that was a
+# property of the prerelease scheme, not of this repo). A `fix:` and a `feat:` are
+# genuinely different releases now.
+#
+# The commitlint gate stays safely ADVISORY, but the reason CHANGED and the old one
+# no longer holds: it is not that the type cannot move the version — it can. It is
+# that the blast radius of a mis-typed SUBJECT at 0.x is bounded by the minor: the
+# worst a wrong type does is a patch where a minor belonged, or a minor where a
+# patch belonged. It can never reach 1.0.0, because `bump-minor-pre-major` is what
+# decides that and no subject can flip it. (A `release-as` FOOTER in a BODY still
+# sets the version outright — that is footer-check.ps1's subject, not commitlint's.)
+#
+# ⚠ GRADUATING TO 1.0.0 — and it is NO LONGER A TRAP. Under 8.6's prerelease scheme
+# it took a `Release-As:` commit AND a config change, and stopping at the commit
+# silently re-entered preview. Deleting the prerelease scheme deleted that trap: a
+# `Release-As: 1.0.0` commit is now SUFFICIENT, and the two flags above deactivate
+# themselves at major 1. What changes at graduation is BEHAVIOUR, not config:
+# `feat!:` starts producing 2.0.0 instead of a minor. docs/GITHUB-SETUP.md carries
+# the full section where the person graduating is standing.
+#
+# See docs/plans/2026-07-17-phase-8.6-design.md for 8.6's nine decisions; Phase 8.7
+# replaced its decision 2 (the counter) with the 0.x ladder above.
 # ─────────────────────────────────────────────────────────────────────────────
 name: release-please
 

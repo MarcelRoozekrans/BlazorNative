@@ -4,7 +4,7 @@
 #
 #   build-test (windows-latest) — the local verification procedure verbatim
 #   (setup.ps1 §1–7 documents the toolchain pins):
-#     build (analyzers ride it) → .NET tests (582 passed / 0 skipped) →
+#     build (analyzers ride it) → .NET tests (583 passed / 0 skipped) →
 #     three NativeAOT publishes of samples/BlazorNative.SampleApp — the
 #     publish head since Phase 8.0: the app owns PublishAot, the exports stay
 #     in Runtime via UnmanagedEntryPointsAssembly, and the artifact is
@@ -1298,7 +1298,38 @@ jobs:
       # dispatch block. NO packed byte moves — <Version> is untouched (still
       # 1.0.0-preview.1) and no shipped file changes, so the publish gates, the
       # smoke and the six nupkgs are untouched territory.
-      - name: .NET tests (assert 582 passed / 0 skipped)
+      #
+      # 582 -> 583 (PHASE 8.7, +1 — Runtime.Tests 425 -> 426): the version moves
+      # from 1.0.0-preview.N to pre-1.0 semver (0.x), and the +1 is a hazard THIS
+      # PHASE CREATED rather than one it found.
+      #   +1  TemplateDriftTests.TheVersionLiteral_CollidesWithNoOtherStringInTheTemplate
+      #       — `dotnet new` substitutes the BlazorNativeVersion symbol BY EXACT
+      #       STRING MATCH, so template.json's `replaces` value is rewritten
+      #       wherever it appears. That was inert while the literal was
+      #       `1.0.0-preview.1` (nothing else could contain it); a plain `0.x` is
+      #       short and shaped exactly like the third-party pins the template is
+      #       full of. THE COLLISION IS REACHABLE AND REAL: the android gradle
+      #       file pins `com.facebook.soloader:soloader:0.12.1`, so the release
+      #       named 0.12.1 makes `dotnet new blazornative --BlazorNativeVersion
+      #       0.13.0` rewrite SOLOADER'S pin and generate an app that cannot build.
+      #       ⚠ NO OTHER LANE CAN SEE IT, which is why it is a pin and not a note:
+      #       template-smoke generates WITHOUT --BlazorNativeVersion, so the
+      #       substitution replaces the default with itself — a no-op — and the
+      #       collision stays invisible until a user overrides the version.
+      #       MUTATION: the four extra-files + manifest set to 0.12.1 ->
+      #         VERSION-SUBSTITUTION COLLISION. The template's version literal is
+      #         "0.12.1", and that exact string also appears on the line(s) below:
+      #           .../android/build.gradle.kts:64
+      #             implementation("com.facebook.soloader:soloader:0.12.1")
+      #
+      # Also this commit (no count move): the manifest seeds 0.0.0 and the config
+      # gains `initial-version: 0.1.0` + the two `*-pre-major` flags, which 8.6
+      # correctly called dead at major 1 and the 0.x move WAKES UP. The seven
+      # literals go 1.0.0-preview.1 -> 0.0.0 together. THE PACKED BYTES DO MOVE
+      # this time — every nupkg filename carries the props version, so the six
+      # packages and the smoke's filename assertions are re-run, not reasoned
+      # (consumer-smoke: 6 nupkg + 5 snupkg at 0.0.0, provenance x6).
+      - name: .NET tests (assert 583 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -1316,8 +1347,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 582 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 582 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 583 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 583 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # ── NativeAOT publishes + nine-export verification ────────────────────

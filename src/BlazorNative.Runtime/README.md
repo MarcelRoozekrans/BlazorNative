@@ -26,7 +26,7 @@ by name only. Registration is validated loudly and happens exactly once.
 
 ## Status
 
-Preview (`1.0.0-preview.N`): BlazorNative is a proof of concept heading toward a
-stable release. The ABI and component surface may still move between previews.
+Pre-1.0 (`0.x`): BlazorNative is a proof of concept heading toward a
+stable release. The ABI and component surface may still move between minor versions.
 
 License: MIT · Docs: <https://marcelroozekrans.github.io/BlazorNative/>
