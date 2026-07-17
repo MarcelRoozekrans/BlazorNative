@@ -1,6 +1,11 @@
 # Milestone 8 — Developer Ecosystem
 
-**Status:** in progress — opened 2026-07-16
+**Status:** ✅ complete — opened 2026-07-16, closed 2026-07-17, **pending `v8.0` tag**
+(applied after the Phase 8.5 close PR merges, on the owner's go — the M6/M7 pattern;
+[final audit](../plans/2026-07-17-milestone-8-final-audit.md): all 6 DoD PASS. **The tag
+publishes NOTHING** — `release.yml`'s classifier reads `v8.0` as a milestone tag and
+announces + skips, exit 0; a `pkg/<semver>` Release is the only publishing shape.)
+**Opened:** 2026-07-16
 **Source:** the 2026-07-13 roadmap re-plan (capability before ecosystem) — the ecosystem
 milestone, deliberately AFTER the capability that makes packaging worthwhile: M6 built the
 layout engine, M7 built the components and the authoring story; M8 makes it something
@@ -322,8 +327,63 @@ the 4-IL2072 shape), 8.0 finds out before anything is packaged.
    unhelpful — taste is unpinnable** (the review found `BnImage.cs:291`'s maintainer
    parenthetical shipping to a public page; cut). **Nothing published; no tag created; no
    secret added — this phase publishes a website and nothing else.**
-6. **Hygiene + close:** every new surface CI-asserted (counts + gates with provenance);
+6. ✅ **Hygiene + close:** every new surface CI-asserted (counts + gates with provenance);
    decision log per phase; final audit → tag **`v8.0`**.
+   **Closed by Phase 8.5** ([final audit](../plans/2026-07-17-milestone-8-final-audit.md)):
+   **all six DoD PASS on evidence re-verified LIVE, not cited** — .NET **580/0** (132 + 25 +
+   423; 577 → 580, +3, this phase's own hygiene pin) · JVM **106/0** across 19 suites
+   (`--rerun-tasks`, 27 executed — not a cached green) · the publish gate **4 IL2072 + the 9
+   exports via dumpbin + the page probe** on a CLEAN win-x64 ILC pass (DLL 4217 KB, unmoved) ·
+   consumer smoke **6 nupkg + 5 snupkg** at the one version literal with `repository@commit`
+   at the tip · reference **`Generation: 26 succeeded`** with the components present ·
+   `release-preflight -SelfTest` **8/8, `v8.0 → SKIP (milestone)`, exit 0** · the template's
+   **generated output** clearing the bar + a 15590 KB APK (run 29554045138) · Yoga **3.2.1
+   across FOUR pins**, printed equal by the required lane · branch protection read back ==
+   exactly `["build-test","ios-build","android-build"]` · iOS **154/0 at `6afd8af`** — main's
+   exact tip (run **29554540199**), better provenance than M7's audit had.
+   **THE ABI DID NOT MOVE, AND THE SHELLS' SOURCE DID NOT EITHER:** `git diff v7.0..HEAD` over
+   `src/BlazorNative.Jni`/`src/BlazorNative.Apple` touches **zero** `.kt`/`.swift`/`.h`/`.mm` —
+   only two BUILD files (`project.yml`, **comment-only**; `build.gradle.kts`, 8.0's
+   publish-head retarget). **So the device baselines stand on 8.0's provenance, not v7.0's** —
+   which is exactly why 8.0 re-ran both lanes. 9 exports, the 72-byte bridge and thirteen
+   NodeTypes verified on all three mirrors; **M8 added no wire vocabulary at all**.
+   **THE HONESTY ROWS — two DoD texts do not describe what shipped, and the audit is where
+   that is said out loud:** **DoD #2 named five packages; SIX ship** (Http, packed since 4.5;
+   the five-name list was shorthand drift, corrected in 8.1) — plus a **SEVENTH** publishable
+   pack (`templates/BlazorNative.Templates`) that 8.1's "ONE metadata home" rule
+   **structurally cannot reach** (a seventh csproj under `src/` un-licenses the props; the
+   shipped-set pin is what makes that home legal). **The rule's true scope: one home for the
+   six; the seventh agrees by pin-less discipline.** **DoD #3 says "a dry-run validation
+   lane" — `dotnet nuget push` has NO `--dry-run`**; what shipped is a nuget.org-state
+   preflight. ***The DoD's word is wrong; the thing is better than the word.*** **DoD #5's
+   "~20 components" is not a count of anything** — re-measured live: **15** concrete
+   `ComponentBase` types, **26** public types (the reference generates 26), **196**
+   `[Parameter]` properties — and **the blind grep reproduces at exactly 192**, the 50/50
+   split confirmed.
+   **THE HYGIENE LEDGER — four items, each decided.** **DONE:** the README's counts + Yoga
+   literal are **gate-held** (`ReadmeDriftTests`, +3, required lane; both sides DERIVED from
+   the `if` CONDITION that decides, never the step's prose; the roster knows its size; five
+   mutations run and quoted). ⚠ **The mutation that deleted the Yoga literal FAILED TO RED on
+   its first run — because the paragraph written to explain that the literal has ONE home had
+   NAMED THE VERSION.** A third copy, minted inside the sentence about not copying; **8.4's
+   Gate 3 author did the identical thing.** *The pull toward a fresh copy is not theoretical,
+   and only a mutation found it — both times.* **DEFERRED with triggers:** the KDoc sweep +
+   map extraction (**one item** — the clean fix retires the excision and costs a Kotlin change
+   + a 184 device re-run; **trigger: before the first Release that publishes the template
+   pack**, since U5 bounds the exposure — the pack is not on nuget.org, so no stranger can
+   generate that file today); `BionicNativeAot.targets` → the Runtime package's `build/` (it
+   costs the smoke's inventory tooth). **ACCEPTED — because the premise was FALSE:** 8.4's
+   "~15-min local Runtime lane" measures **4 s cold** for the generator and **6 s** for the
+   fixture in-lane — **off by ~150×**; the 15 minutes was the solution BUILD, which the
+   fixture neither causes nor can avoid. Making it skippable would have bought 4 seconds by
+   weakening the one pin that catches 10-vs-26. ***A cost that was never measured, carried
+   into a ledger, about to justify weakening a pin — the sixth arrival of this milestone's own
+   failure mode, this time in a document about the other five.***
+   **U1 IS OBSERVED, NOT PREDICTED:** `gh api …/pages` → **404** and `Deploy Documentation` at
+   main's tip is **`build: success` / `deploy: failure`** with exactly the legible error 8.4
+   promised. **Nothing renders until the owner clicks Settings → Pages → Source: GitHub
+   Actions; U2 stays the quiet arrow — the first check is a LOOK, not a red.**
+   **Nothing published; no tag created; no secret added.**
 
 ## Out of scope for this milestone
 
