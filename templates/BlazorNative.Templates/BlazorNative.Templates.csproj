@@ -58,8 +58,18 @@
     <Description>`dotnet new blazornative` — a Blazor app compiled with NativeAOT into a native Android shell. Creates the .NET app (pages, manifest, the NativeAOT publish head) and a runnable Android/Gradle shell tree.</Description>
     <PackageTags>dotnet-new;templates;blazor;android;nativeaot;mobile</PackageTags>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <!--
+      The SEVENTH publishable package, and the one 8.1's "ONE metadata home" rule
+      does not reach: src/Directory.Build.props is scoped to src/, and 8.3 put this
+      pack OUTSIDE src/ deliberately (a seventh csproj there un-licenses the props —
+      the shipped-set pin is what makes that home legal). So these two facts live
+      here by necessity, not by drift — but they must AGREE with the six.
+      RepositoryUrl = where the source is. PackageProjectUrl = where the docs are.
+      One string once, two facts now (Phase 8.4 Gate 3 split them for the six; this
+      is the seventh, which no ledger had noticed).
+    -->
     <RepositoryUrl>https://github.com/MarcelRoozekrans/BlazorNative</RepositoryUrl>
-    <PackageProjectUrl>https://github.com/MarcelRoozekrans/BlazorNative</PackageProjectUrl>
+    <PackageProjectUrl>https://marcelroozekrans.github.io/BlazorNative/</PackageProjectUrl>
     <PackageReadmeFile>README.md</PackageReadmeFile>
 
     <TargetFramework>netstandard2.0</TargetFramework>

@@ -1,6 +1,6 @@
 # BlazorNative.Templates
 
-`dotnet new` templates for [BlazorNative](https://github.com/MarcelRoozekrans/BlazorNative) —
+`dotnet new` templates for [BlazorNative](https://marcelroozekrans.github.io/BlazorNative/) —
 Blazor components compiled with NativeAOT and rendered as **real native widgets**, with no
 WebView anywhere.
 
@@ -43,7 +43,9 @@ dotnet publish . -c Release -r linux-bionic-x64     # the emulator's ABI
 cd android && ./gradlew assembleDebug
 ```
 
-The generated app's own `README.md` carries the full loop, including the iOS story
+The generated app's own `README.md` carries the full loop. The
+[docs site](https://marcelroozekrans.github.io/BlazorNative/) carries the rest —
+getting started, the component reference, the parity contract, and the iOS story
 (manual, against the reference shell — there is no iOS template).
 
 ## Requirements
