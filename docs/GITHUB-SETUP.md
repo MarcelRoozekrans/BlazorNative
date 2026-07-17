@@ -398,6 +398,12 @@ That is bounded and it is strictly better than the alternative — nothing
 publishes without your Release (so no consumer can reach those URLs first), and
 the old targets are a 404 *forever*.
 
+**The one link that argument does not cover is the root `README.md`'s
+Documentation link**, because this repo is public: it 404s for anyone browsing
+GitHub between the merge and the click. That is the honest cost of shipping the
+site's inbound link with the site, and it is the shortest-lived item on this
+page — but it is the reason to click sooner rather than later.
+
 > ⚠ **The first check after clicking is a LOOK, not a red.** This is the quiet
 > arrow, and it is the one thing on this page that CI cannot catch for you. The
 > site's `baseUrl` (`'/BlazorNative/'` in `website/docusaurus.config.js`) is only
