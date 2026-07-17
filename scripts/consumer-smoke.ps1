@@ -270,6 +270,22 @@ try {
             Write-Fail "$id`: README.md missing from the package ROOT (the readme entry points at nothing)"
             exit 1
         }
+        # THE ICON (8.4 decision 6). Unlike the per-project README this is ONE
+        # file shared by all six — the identity is the framework's, not a
+        # package's — and it packs to the ROOT, which is exactly why it costs
+        # the counts above and the lib/net10.0 inventory tooth below NOTHING.
+        # Pack is already the pin (PackageIcon naming an unpacked file is
+        # NU5046, and step 1's zero-pack-warning bar catches it); these two
+        # lines mirror the readme's pair because the loop is already holding
+        # the unzipped package open and the marginal cost is two lines.
+        if ($meta.icon -ne "icon.png") {
+            Write-Fail "$id`: nuspec icon entry is '$($meta.icon)' — expected 'icon.png'"
+            exit 1
+        }
+        if (-not (Test-Path (Join-Path $dest "icon.png"))) {
+            Write-Fail "$id`: icon.png missing from the package ROOT (the icon entry points at nothing)"
+            exit 1
+        }
         # SourceLink verification (8.1 decision 2): the SDK's implicit
         # Microsoft.SourceLink.GitHub must have stamped repository@commit.
         $repository = $meta.SelectSingleNode("*[local-name()='repository']")
