@@ -7,7 +7,7 @@ namespace BlazorNative.SampleApp;
 // SampleAppPages — Phase 8.0 (design decisions 1+2, M8 DoD #1: the
 // registration inversion).
 //
-// THE APP'S MANIFEST: the 14 rows (9 routed pages + 5 unrouted test probes)
+// THE APP'S MANIFEST: the 15 rows (10 routed pages + 5 unrouted test probes)
 // that lived in Runtime's PageManifest.cs until 8.0, provenance comments and
 // all — now declared by the app that owns them and PUSHED through the public
 // BlazorNativeApp.RegisterPages API. The 7.6 normative rule holds verbatim

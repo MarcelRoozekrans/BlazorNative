@@ -166,9 +166,9 @@ foreach ($proj in $packages) {
 
 # ── THE PAIRING TOOTH (Phase 8.2, design decision 4) ─────────────────────────
 # PAIRING, NOT COUNTING — and the difference is not academic. The two counts
-# above (6 nupkg, 5 snupkg) are blind to WHICH package the symbols belong to:
+# above (7 nupkg, 6 snupkg) are blind to WHICH package the symbols belong to:
 # a feed holding Core's nupkg with no sibling, while Analyzers wrongly carries
-# one, is 6 and 5 and passes both counts GREEN while BlazorNative.Core ships
+# one, is 7 and 6 and passes both counts GREEN while BlazorNative.Core ships
 # with no symbols at all. Proven by mutation, quoted in the commit.
 #
 # It matters to the RELEASE, which is why 8.2 found it: `dotnet nuget push`
@@ -181,14 +181,15 @@ foreach ($proj in $packages) {
 # on every PR instead of only on release-machinery PRs.
 #
 # ONE HONEST NOTE ON ITS REACH, so nobody over-claims it (8.2 Gate 1): with the
-# six shaped as they are TODAY, the csproj route into that state is blocked —
+# seven shaped as they are TODAY, the csproj route into that state is blocked —
 # flipping Analyzers to IncludeSymbols=true trips NU5017 ("Cannot create a
 # package that has no dependencies nor content") and pack FAILS before any
 # count is read, exactly as the Analyzers csproj comment predicts. So today the
 # counts and the shapes conspire to make broken pairing hard to reach, and this
-# tooth is mostly a guard on the FUTURE: the day a seventh library package
-# joins, the counts move to 7/6 and a Core whose symbols quietly stopped
-# packing is invisible to them and visible only here.
+# tooth guards the pairing directly: BlazorNative.Device IS the seventh library
+# package — it joined in Phase 9.0, the counts moved to 7/6 with it, and a Core
+# whose symbols quietly stopped packing is invisible to those counts and visible
+# only here.
 $symbolOffenders = @()
 foreach ($proj in $packages) {
     $hasSnupkg = Test-Path (Join-Path $feedDir "BlazorNative.$proj.$version.snupkg")

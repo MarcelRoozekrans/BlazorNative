@@ -1400,12 +1400,12 @@ jobs:
           # Name-strings in the native image are the direct evidence.
           $bytes = [System.IO.File]::ReadAllBytes($dll)
           $text  = [System.Text.Encoding]::ASCII.GetString($bytes)
-          foreach ($page in @('BnDemo', 'BnImagePolishDemo', 'BnFormDemo')) {
+          foreach ($page in @('BnDemo', 'BnImagePolishDemo', 'BnFormDemo', 'BnGeolocationDemo')) {
             if ($text -notmatch [regex]::Escape($page)) {
               throw "Page name '$page' absent from the published native image — the SampleApp module was trimmed (is TrimmerRootAssembly still in the sample csproj?)"
             }
           }
-          Write-Host "Page-presence probe: BnDemo, BnImagePolishDemo, BnFormDemo all present in the native image."
+          Write-Host "Page-presence probe: BnDemo, BnImagePolishDemo, BnFormDemo, BnGeolocationDemo all present in the native image."
 
       - name: Publish linux-bionic-x64 (assert exactly 4 IL2072 warnings)
         run: |
