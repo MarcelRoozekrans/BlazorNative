@@ -222,9 +222,10 @@ final class BnRuntime {
             fetchBegin: bnBridgeFetchBegin,
             clipboardRead: bnBridgeClipboardRead,
             clipboardWrite: bnBridgeClipboardWrite,
-            share: bnBridgeShare)
-        // Phase 5.4 size negotiation: pass our full struct size (72); the runtime
-        // min-copies + zero-fills.
+            share: bnBridgeShare,
+            hostCallBegin: bnBridgeHostCallBegin) // Phase 9.0 — offset 72
+        // Phase 5.4/9.0 size negotiation: pass our full struct size (80 since 9.0);
+        // the runtime min-copies + zero-fills.
         let bridgeRc = blazornative_register_bridge(Int32(MemoryLayout<bn_bridge_callbacks>.size), &callbacks)
         guard bridgeRc == 0 else { throw BnRuntimeError.bridgeRegisterFailed(rc: bridgeRc) }
         NSLog("[BnRuntime] shell bridge registered")

@@ -45,6 +45,9 @@
     <PackageReference Include="BlazorNative.Renderer" Version="$(BlazorNativeVersion)" />
     <PackageReference Include="BlazorNative.Http" Version="$(BlazorNativeVersion)" />
     <PackageReference Include="BlazorNative.Components" Version="$(BlazorNativeVersion)" />
+    <!-- Phase 9.0: the 7th package (M9 DoD #1) — proven consumable from the feed
+         like the rest; Runtime pulls it transitively, this makes it explicit. -->
+    <PackageReference Include="BlazorNative.Device" Version="$(BlazorNativeVersion)" />
     <!-- Phase 8.1: Runtime is the package under test for the RegisterPages
          block in Program.cs — an EXPLICIT reference, not a transitive. -->
     <PackageReference Include="BlazorNative.Runtime" Version="$(BlazorNativeVersion)" />

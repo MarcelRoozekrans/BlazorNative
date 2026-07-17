@@ -1373,15 +1373,87 @@ Developer experience and ecosystem".
 
 ---
 
-### ⏳ Milestone 9 — Platform Breadth + Real Device  *(pending)*
+### 🔄 Milestone 9 — Host APIs (Platform Breadth)  *(active — opened 2026-07-17)*
 
-More host APIs via the [bridge-extension pattern](../bridge-extension.md) (camera,
-geolocation, biometrics, notifications), **real-device iOS** (code signing, provisioning,
-App Store validation — **requires an Apple Developer account**, the M5 simulator-only
-deferral), and the Android completeness deferred from M5 (FCM push, secure storage). The
-on-device inspector channel (4.4 carryover) lands here (the route→component registry
-unification, once slated here, was closed by Phase 7.6). Maps to BACKLOG.md "P4 — full
-platform coverage" (remainder).
+The bridge grows four real capabilities via the
+[bridge-extension pattern](../bridge-extension.md): **geolocation, local notifications,
+biometrics + secure storage (the M5 deferral), and camera photo capture** — each on both
+shells, each with the permission story the bridge had never carried (clipboard, the 5.4
+growth, needed none: that's the milestone's named risk, proven first on geolocation in
+9.0 — where the ABI grew a second time, generically, so the remaining phases add an op
+constant and no more).
+Scoped at milestone-open (owner decisions in [MILESTONE.md](MILESTONE.md)):
+**real-device iOS is DEFERRED** — no Apple Developer account for now; with no local Mac
+the honest path is CI-signed IPA → TestFlight, and that trigger is named. **FCM push
+stays ledgered** (needs a Firebase project). The **owner's physical Android phone** is
+the honesty check for what emulators only simulate (camera, biometrics); CI stays on the
+emulator lanes. The inspector channel is ledgered a third time. Maps to BACKLOG.md
+"P4 — full platform coverage" (remainder).
+
+- ✅ **Phase 9.0** — the permission pattern + geolocation (DoD #1, #2) — *complete (2026-07-17)*
+   - **THE HEADLINE — the ABI grew for the first time since Phase 3.1, deliberately and
+     argued.** An honest async-permission completion could ride **no** existing export:
+     `fetch_complete` is **fetch-typed**; `host_event` is **contractually synchronous** (it
+     drives `StateHasChanged` inline, a permission result arrives on a background thread after
+     an arbitrary suspension); polling re-invents a push the bridge already has. So the bridge
+     grew **72 → 80 bytes** (+1 `HostCallBegin` slot at **offset 72**, the `FetchBegin` twin —
+     op-enum + flat-JSON args) and **9 → 10 exports** (+`blazornative_host_call_complete`, the
+     `fetch_complete` twin — `requestId` + `int status` + optional flat-JSON payload; contract
+     **0 delivered / 1 unknown-benign / 2 failure**, never throws across the ABI). **Shaped
+     GENERICALLY** so 9.1/9.2/9.3 add an op constant + a host handler with **ZERO** further
+     struct/export/gate/drift change — *pay once, reuse thrice*, and the Gate 1 review verified
+     it holds (no geolocation specifics in the struct or export; even request/check `mode`
+     rides the JSON). **Every hard-coded-9 site moved in lockstep** — `ci.yml` ×4 RID arrays,
+     `ios.yml`, `android-instrumented.yml`, template-smoke, `BootSmokeNativeTest` (9 → 10), the
+     three-mirror drift pin (72 → 80 on .NET/Kotlin/Swift). A 72-byte shell against the 80-byte
+     runtime fails **LOUDLY** for the new capability only (`NotSupportedException` via the
+     `RequireSlot` guard), never a silent misread — tested.
+   - **The permission model, proven (DoD #1).** **Denial is DATA — a status integer, never an
+     exception, never a hang** (the milestone's law, tested on both shells within a bounded
+     await). The status is a **wire-mirrored 6-value enum** (`Granted` / `Denied` /
+     `DeniedPermanently` / `Restricted` / `LocationUnavailable` / `Error`, 0..5) across
+     .NET/Kotlin/Swift; a non-`Granted` status carries a **null payload and never parses**. The
+     pending-call registry (`s_pendingHostCalls`) is the `s_pendingFetches` twin: process-scoped,
+     `Interlocked` id, `RunContinuationsAsynchronously`, CT → `TrySetCanceled`, unknown-id benign.
+     **The named risk — surviving the OS suspending the app — is PROVEN:** Android recreates the
+     Activity mid-prompt (a **static** `requestCode → requestId` map survives + the process-scoped
+     .NET registry) and the result routes to the **same** in-flight continuation (rc 0); iOS's
+     async `CLLocationManager` authorization routes by `requestId` the same way (the delegate is a
+     **weak** ref — the 5.3/7.3 retention lesson restated for CoreLocation, so the shell holds the
+     handler for the app lifetime). `docs/bridge-extension.md` grew **section (f)** as the pattern
+     9.1/9.2/9.3 copy.
+   - **Geolocation (DoD #2).** `IGeolocation` in the new **7th package `BlazorNative.Device`** over
+     `IMobileBridge.GetCurrentPositionAsync` in **Core** (so `DevHostBridge` mocks the tri-state
+     headless); both shells (Android `LocationManager` + `requestPermissions`; iOS
+     `CLLocationManager` when-in-use, `NSLocationWhenInUseUsageDescription`); `/geolocation` demo
+     (`BnGeolocationDemo`, the 10th routed page). Fix key set pinned exactly — `lat / lng /
+     accuracy / altitude / timestamp` (`lng`, not `lon`).
+   - **A milestone-first:** the **first off-lane async TCS completion the iOS shell has ever done**
+     (fetch's stub fails synchronously; `host_event` is undeclared on iOS). The grown ABI exercised
+     a path the shell didn't previously have — a ThreadPool continuation renders, the frame hops to
+     main via the existing off-lane `CommitFrame`. It works (the two BOOT tests).
+   - **Counts (all CI-asserted):** .NET **616/0** (132 + 25 + 459; **583 → 616**, +33) · JVM
+     **106/0** (the moved 80-byte struct pin + `BridgeHostCallCompleter`; `BootSmokeNativeTest`
+     9 → 10) · Android instrumented **188/0** (**184 → 188**, +4 on the local AVD: real fix
+     round-trip + denial-no-hang + `scenario.recreate()` survival) · iOS XCTest **169/0** (**154 →
+     169**, +15, run 29597931873; archive gate `all 10 blazornative_* present`) · publish gate
+     **4 IL2072 + 10 exports** (dumpbin) + `BnGeolocationDemo` page-probe · consumer smoke **7
+     nupkg + 6 snupkg**, Device pure. **Gate 1 review PASS** (4 Minors, folded). Mutations: Gate 1
+     (deny-throws, mis-key, tri-state, export-9-stale), Gate 2 (struct-72, deny-throws, map-mis-key
+     — all on the AVD), Gate 3 (three `ios.yml` runs — struct72 `29598528447`, deny-hang
+     `29598558150`, tristate `29598581044`, each RED on its named assertion).
+   - **PROVEN on CI** = the emulator mocked fix + mocked denial + recreation, the simulator
+     mocked-`CLLocationManager` fix + denial. **UNPROVEN until the owner's physical Android phone**
+     = the real GPS fix, the real system permission-dialog UX, `DeniedPermanently` across real
+     restarts (both shells bypass the real OS dialog gesture in CI — not drivable in
+     instrumentation/hosted XCTest; the design named this split). iOS real-device stays deferred
+     (Apple Developer account trigger). See
+     [design](../plans/2026-07-17-phase-9.0-design.md) +
+     [conclusion](../plans/2026-07-17-phase-9.0-conclusion.md).
+- **Phase 9.1** — local notifications + tap-through via the 5.1 deep-link path (DoD #3) — ⏳ next
+- **Phase 9.2** — biometrics + secure storage (DoD #4) — ⏳
+- **Phase 9.3** — camera photo capture (DoD #5) — *heaviest last, on mature machinery* — ⏳
+- **Phase 9.4** — hygiene + M9 final audit + close (DoD #6; no tag — the 8.6 rule) — ⏳
 
 ---
 

@@ -9,11 +9,12 @@
 //      (PatchProtocolNative.cs; twins: NativeFrameAdapterTest.kt +
 //      PatchProtocolNativeTests.cs).
 //   2. testBridgeCallbacksStructLayout — the `bn_bridge_callbacks` C struct
-//      (BlazorNativeRuntimeC.h) vs the 72-byte, 9-callback BridgeProtocolNative.cs
-//      layout (twins: BridgeProtocolNativeTests.cs's offset pins + ShellBridgeTest's
-//      callbacks_struct_is_72_bytes). This is what docs/bridge-extension.md's
-//      "three mirrors, byte-exact, pinned by drift tests" promises — adding a bridge
-//      slot must bump this test.
+//      (BlazorNativeRuntimeC.h) vs the 80-byte, 10-callback BridgeProtocolNative.cs
+//      layout (72/9 until Phase 9.0's size-negotiated permission-pattern growth
+//      appended hostCallBegin at offset 72; twins: BridgeProtocolNativeTests.cs's
+//      offset pins + ShellBridgeTest's callbacks_struct_is_80_bytes). This is what
+//      docs/bridge-extension.md's "three mirrors, byte-exact, pinned by drift tests"
+//      promises — adding a bridge slot must bump this test.
 //
 // Pure Swift (no runtime boot) — fast and deterministic.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -73,21 +74,22 @@ final class BnDriftTests: XCTestCase {
     }
 
     /// The `bn_bridge_callbacks` C struct (BlazorNativeRuntimeC.h) — the third
-    /// mirror of the 72-byte, 9 × 8-byte-pointer BlazorNativeBridgeCallbacks layout
+    /// mirror of the 80-byte, 10 × 8-byte-pointer BlazorNativeBridgeCallbacks layout
     /// (BridgeProtocolNative.cs). Twins: BridgeProtocolNativeTests.cs's offset pins
-    /// + ShellBridgeTest's callbacks_struct_is_72_bytes. A bridge-slot add/remove or
+    /// + ShellBridgeTest's callbacks_struct_is_80_bytes. A bridge-slot add/remove or
     /// reorder must break this test (and the doc's "bump BnDriftTests" instruction).
     func testBridgeCallbacksStructLayout() {
-        // Total size = 9 fn pointers × 8 bytes (the size negotiation copies
-        // min(structSize, this); BnRuntime passes exactly this as structSize).
-        XCTAssertEqual(MemoryLayout<bn_bridge_callbacks>.size, 72,
-                       "bn_bridge_callbacks must be 72 bytes (9 × 8-byte callbacks)")
-        XCTAssertEqual(MemoryLayout<bn_bridge_callbacks>.stride, 72)
+        // Total size = 10 fn pointers × 8 bytes (the size negotiation copies
+        // min(structSize, this); BnRuntime passes exactly this as structSize). Phase 9.0
+        // moved this 72 → 80 with the hostCallBegin slot at offset 72 (the .NET pin's twin).
+        XCTAssertEqual(MemoryLayout<bn_bridge_callbacks>.size, 80,
+                       "bn_bridge_callbacks must be 80 bytes (10 × 8-byte callbacks)")
+        XCTAssertEqual(MemoryLayout<bn_bridge_callbacks>.stride, 80)
 
-        // Field offsets (0…64), the exact mirror of BridgeProtocolNative.cs. Existing
-        // 6 offsets (0…40) are frozen by the size-negotiation contract; the 5.4
-        // clipboard/share slots append at 48/56/64. MemoryLayout.offset(of:) reads
-        // the C-imported struct's stored-property offsets via KeyPath.
+        // Field offsets (0…72), the exact mirror of BridgeProtocolNative.cs. Existing
+        // offsets (0…40 frozen by the size-negotiation contract; 5.4's clipboard/share
+        // at 48/56/64) are unchanged; Phase 9.0's hostCallBegin appends at 72.
+        // MemoryLayout.offset(of:) reads the C-imported struct's stored-property offsets.
         XCTAssertEqual(MemoryLayout<bn_bridge_callbacks>.offset(of: \.navigate), 0)
         XCTAssertEqual(MemoryLayout<bn_bridge_callbacks>.offset(of: \.currentRoute), 8)
         XCTAssertEqual(MemoryLayout<bn_bridge_callbacks>.offset(of: \.storageRead), 16)
@@ -97,5 +99,6 @@ final class BnDriftTests: XCTestCase {
         XCTAssertEqual(MemoryLayout<bn_bridge_callbacks>.offset(of: \.clipboardRead), 48)
         XCTAssertEqual(MemoryLayout<bn_bridge_callbacks>.offset(of: \.clipboardWrite), 56)
         XCTAssertEqual(MemoryLayout<bn_bridge_callbacks>.offset(of: \.share), 64)
+        XCTAssertEqual(MemoryLayout<bn_bridge_callbacks>.offset(of: \.hostCallBegin), 72)
     }
 }

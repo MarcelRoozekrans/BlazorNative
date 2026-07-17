@@ -16,7 +16,7 @@
        THE PUBLISH HEAD lives here now (moved verbatim from
        BlazorNative.Runtime.csproj — Phase 8.0 decision 3): the shells'
        artifact is `dotnet publish samples/BlazorNative.SampleApp -c Release
-       -r <rid>`. The 9 exports still live in Runtime's Exports.cs —
+       -r <rid>`. The 10 exports still live in Runtime's Exports.cs —
        UnmanagedEntryPointsAssembly below makes ILC emit the unmanaged entry
        points from the referenced assembly — and the embedded artifact NAME
        is shell contract (libBlazorNative.Runtime.so / .a /
@@ -95,9 +95,9 @@
   <Import Project="..\..\build\BionicNativeAot.targets" />
 
   <ItemGroup>
-    <!-- Phase 8.0: the 9 blazornative_* exports live in Runtime's Exports.cs,
+    <!-- Phase 8.0: the 10 blazornative_* exports live in Runtime's Exports.cs,
          untouched — this makes ILC emit the unmanaged entry points from the
-         REFERENCED assembly into this publish. The 9-export + visibility
+         REFERENCED assembly into this publish. The 10-export + visibility
          checks (all RIDs) verify it same-commit. -->
     <UnmanagedEntryPointsAssembly Include="BlazorNative.Runtime" />
     <!-- THE APP ROOTS ITSELF (Gate 1 finding, the phase's named trim risk).
@@ -127,6 +127,9 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\BlazorNative.Runtime\BlazorNative.Runtime.csproj" />
     <ProjectReference Include="..\..\src\BlazorNative.Components\BlazorNative.Components.csproj" />
+    <!-- Phase 9.0 (M9 DoD #2): the geolocation demo injects IGeolocation from the
+         7th package — the worked example of app code using the device facade. -->
+    <ProjectReference Include="..\..\src\BlazorNative.Device\BlazorNative.Device.csproj" />
     <!-- Phase 4.1: BN rules ride every build; the 5.0 RID shield — see
          BlazorNative.Runtime.csproj's analyzer reference for the rationale. -->
     <ProjectReference Include="..\..\src\BlazorNative.Analyzers\BlazorNative.Analyzers.csproj"

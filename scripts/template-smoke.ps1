@@ -23,7 +23,7 @@
 
       · exactly 4 IL2072    — the app is rooted and the libraries are still
                               trimmable. A whole-module trim drives this to 0.
-      · exactly the 9       — the exports still ride out of the REFERENCED
+      · exactly the 10      — the exports still ride out of the REFERENCED
         blazornative_*        Runtime assembly, and CanonicalizeNativeArtifactName
         exports              produced BlazorNative.Runtime.dll from <AppName>.dll
                               (the frozen shell contract, proven for a name that
@@ -44,8 +44,8 @@
 
       1. pack      — templates/BlazorNative.Templates → artifacts/templates. Its
                      OWN feed, never artifacts/packages: consumer-smoke.ps1
-                     asserts an EXACT 6 nupkg + 5 snupkg there, and a seventh
-                     would turn an exact count into "6 or 7, depending".
+                     asserts an EXACT 7 nupkg + 6 snupkg there, and an eighth
+                     would turn an exact count into "7 or 8, depending".
       2. install   — `dotnet new install <nupkg>`. The REAL shipping path (the
                      pack, not the content directory) — uninstalled in the
                      finally, so nothing is left machine-wide.
@@ -133,7 +133,8 @@ $referencedIds = @("Runtime", "Components", "Analyzers")
 # whole point is that a GENERATED app clears the SAME bar the repo's app clears.
 $expectedExports = @(
     'blazornative_dispatch_event', 'blazornative_fetch_complete',
-    'blazornative_host_event', 'blazornative_init', 'blazornative_mount',
+    'blazornative_host_call_complete', 'blazornative_host_event',
+    'blazornative_init', 'blazornative_mount',
     'blazornative_register_bridge', 'blazornative_register_frame_callback',
     'blazornative_shutdown', 'blazornative_version'
 )
@@ -410,7 +411,7 @@ try {
         Write-Host "     [arm 2] Exports found ($($actual.Count)): $($actual -join ', ') $(if (-not $exportDiff) { '✓' } else { '✗' })" -ForegroundColor DarkGray
         if ($exportDiff) {
             $exportDiff | Format-Table | Out-String | Write-Host
-            $tripwires += "ARM 2 — EXPORT DRIFT: expected exactly the 9 blazornative_* exports, found $($actual.Count). They are emitted from the REFERENCED BlazorNative.Runtime assembly via UnmanagedEntryPointsAssembly — is that line still in the template's csproj?"
+            $tripwires += "ARM 2 — EXPORT DRIFT: expected exactly the 10 blazornative_* exports, found $($actual.Count). They are emitted from the REFERENCED BlazorNative.Runtime assembly via UnmanagedEntryPointsAssembly — is that line still in the template's csproj?"
         }
     }
 
@@ -475,7 +476,7 @@ warnings" — it is the app being gone.
 "@
         }
         else {
-            Write-Fail "THE GENERATED APP DOES NOT CLEAR THE PUBLISH BAR ($($tripwires.Count) of the 3 tripwire arms red). The bar is the repo's own: exactly 4 IL2072 + exactly the 9 blazornative_* exports + the starter page present in the native image. A template that produces an app the gates would reject is a broken template."
+            Write-Fail "THE GENERATED APP DOES NOT CLEAR THE PUBLISH BAR ($($tripwires.Count) of the 3 tripwire arms red). The bar is the repo's own: exactly 4 IL2072 + exactly the 10 blazornative_* exports + the starter page present in the native image. A template that produces an app the gates would reject is a broken template."
         }
         exit 1
     }

@@ -4,7 +4,7 @@
 #
 #   build-test (windows-latest) — the local verification procedure verbatim
 #   (setup.ps1 §1–7 documents the toolchain pins):
-#     build (analyzers ride it) → .NET tests (583 passed / 0 skipped) →
+#     build (analyzers ride it) → .NET tests (616 passed / 0 skipped) →
 #     three NativeAOT publishes of samples/BlazorNative.SampleApp — the
 #     publish head since Phase 8.0: the app owns PublishAot, the exports stay
 #     in Runtime via UnmanagedEntryPointsAssembly, and the artifact is
@@ -1329,7 +1329,20 @@ jobs:
       # this time — every nupkg filename carries the props version, so the six
       # packages and the smoke's filename assertions are re-run, not reasoned
       # (consumer-smoke: 6 nupkg + 5 snupkg at 0.0.0, provenance x6).
-      - name: .NET tests (assert 583 passed / 0 skipped)
+      #
+      # 583 -> 616 (PHASE 9.0, +33 — Runtime.Tests 426 -> 459): geolocation + the
+      # permission pattern on the shell bridge (M9 DoD #1/#2). The whole +33 is in
+      # Runtime.Tests (Renderer 132 / Analyzers 25 stand), and it is exactly the
+      # three new geolocation test files — the modified suites (NativeShellBridge,
+      # BridgeProtocolNative, RouteTableDrift) added assertions and the /geolocation
+      # row, not test methods:
+      #   +3   BnGeolocationDemoTests   (3 facts — the demo page's frame shape)
+      #   +20  GeolocationBridgeTests   (8 facts + 12 theory rows — the request/
+      #        permission-result/tri-state protocol on the bridge)
+      #   +10  GeolocationFacadeTests   (4 facts + 6 theory rows — the .NET facade)
+      # Android 184 -> 188 and iOS 154 -> 169 moved in the same phase (Gate 2/3) and
+      # are held by their own workflows' gates; the README table mirrors all four.
+      - name: .NET tests (assert 616 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -1347,8 +1360,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 583 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 583 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 616 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 616 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # ── NativeAOT publishes + nine-export verification ────────────────────
@@ -1380,7 +1393,8 @@ jobs:
           $out = & $dumpbin /exports $dll
           $expected = @(
             'blazornative_dispatch_event', 'blazornative_fetch_complete',
-            'blazornative_host_event', 'blazornative_init', 'blazornative_mount',
+            'blazornative_host_call_complete', 'blazornative_host_event',
+            'blazornative_init', 'blazornative_mount',
             'blazornative_register_bridge', 'blazornative_register_frame_callback',
             'blazornative_shutdown', 'blazornative_version'
           )
@@ -1389,7 +1403,7 @@ jobs:
           $diff = Compare-Object $expected $actual
           if ($diff) {
             $diff | Format-Table | Out-String | Write-Host
-            throw "win-x64 export surface drift: expected exactly the 9 blazornative_* exports"
+            throw "win-x64 export surface drift: expected exactly the 10 blazornative_* exports"
           }
 
           # Phase 8.0 (Gate 1 review I-2): the pages must SURVIVE publish. The
@@ -1399,12 +1413,12 @@ jobs:
           # Name-strings in the native image are the direct evidence.
           $bytes = [System.IO.File]::ReadAllBytes($dll)
           $text  = [System.Text.Encoding]::ASCII.GetString($bytes)
-          foreach ($page in @('BnDemo', 'BnImagePolishDemo', 'BnFormDemo')) {
+          foreach ($page in @('BnDemo', 'BnImagePolishDemo', 'BnFormDemo', 'BnGeolocationDemo')) {
             if ($text -notmatch [regex]::Escape($page)) {
               throw "Page name '$page' absent from the published native image — the SampleApp module was trimmed (is TrimmerRootAssembly still in the sample csproj?)"
             }
           }
-          Write-Host "Page-presence probe: BnDemo, BnImagePolishDemo, BnFormDemo all present in the native image."
+          Write-Host "Page-presence probe: BnDemo, BnImagePolishDemo, BnFormDemo, BnGeolocationDemo all present in the native image."
 
       - name: Publish linux-bionic-x64 (assert exactly 4 IL2072 warnings)
         run: |
@@ -1426,7 +1440,8 @@ jobs:
           $out = & $readelf --dyn-syms $so
           $expected = @(
             'blazornative_dispatch_event', 'blazornative_fetch_complete',
-            'blazornative_host_event', 'blazornative_init', 'blazornative_mount',
+            'blazornative_host_call_complete', 'blazornative_host_event',
+            'blazornative_init', 'blazornative_mount',
             'blazornative_register_bridge', 'blazornative_register_frame_callback',
             'blazornative_shutdown', 'blazornative_version'
           )
@@ -1435,7 +1450,7 @@ jobs:
           $diff = Compare-Object $expected $actual
           if ($diff) {
             $diff | Format-Table | Out-String | Write-Host
-            throw "linux-bionic-x64 export surface drift: expected exactly the 9 blazornative_* exports"
+            throw "linux-bionic-x64 export surface drift: expected exactly the 10 blazornative_* exports"
           }
 
       - name: Publish linux-bionic-arm64 (assert exactly 4 IL2072 warnings)
@@ -1458,7 +1473,8 @@ jobs:
           $out = & $readelf --dyn-syms $so
           $expected = @(
             'blazornative_dispatch_event', 'blazornative_fetch_complete',
-            'blazornative_host_event', 'blazornative_init', 'blazornative_mount',
+            'blazornative_host_call_complete', 'blazornative_host_event',
+            'blazornative_init', 'blazornative_mount',
             'blazornative_register_bridge', 'blazornative_register_frame_callback',
             'blazornative_shutdown', 'blazornative_version'
           )
@@ -1467,7 +1483,7 @@ jobs:
           $diff = Compare-Object $expected $actual
           if ($diff) {
             $diff | Format-Table | Out-String | Write-Host
-            throw "linux-bionic-arm64 export surface drift: expected exactly the 9 blazornative_* exports"
+            throw "linux-bionic-arm64 export surface drift: expected exactly the 10 blazornative_* exports"
           }
 
       # ── JVM tests against the fresh win-x64 publish ────────────────────────
@@ -2061,7 +2077,7 @@ jobs:
           vendored=src/BlazorNative.Apple/vendor/libBlazorNative.Runtime.a
           echo "=== nm -m: blazornative_* in the staged archive ===" | tee ios-build-out/archive-visibility.txt
           nm -m "$vendored" 2>&1 | grep -E ' _?blazornative_[a-z_]+$' | tee -a ios-build-out/archive-visibility.txt || true
-          expected="blazornative_dispatch_event blazornative_fetch_complete blazornative_host_event blazornative_init blazornative_mount blazornative_register_bridge blazornative_register_frame_callback blazornative_shutdown blazornative_version"
+          expected="blazornative_dispatch_event blazornative_fetch_complete blazornative_host_call_complete blazornative_host_event blazornative_init blazornative_mount blazornative_register_bridge blazornative_register_frame_callback blazornative_shutdown blazornative_version"
           actual=$(nm -gU "$vendored" 2>/dev/null | grep -Eo '_?blazornative_[a-z_]+' | sed 's/^_//' | sort -u)
           missing=""
           for s in $expected; do echo "$actual" | grep -qx "$s" || missing="$missing $s"; done
@@ -2071,10 +2087,10 @@ jobs:
           fi
           hidden=$(nm -m "$vendored" 2>/dev/null | grep -E ' _?blazornative_[a-z_]+$' | grep -c 'private external' || true)
           if [ "$hidden" -ne 0 ]; then
-            echo "$hidden of the 9 blazornative_* exports are PRIVATE EXTERNAL in the archive — ld64 will localize them and the linked app will not export them. This is an ILC emission change (toolchain or publish-property drift), not a link problem; see archive-visibility.txt in the artifact." >&2
+            echo "$hidden of the 10 blazornative_* exports are PRIVATE EXTERNAL in the archive — ld64 will localize them and the linked app will not export them. This is an ILC emission change (toolchain or publish-property drift), not a link problem; see archive-visibility.txt in the artifact." >&2
             exit 1
           fi
-          echo "SYMBOLS: all 9 blazornative_* present and externally visible in the staged archive."
+          echo "SYMBOLS: all 10 blazornative_* present and externally visible in the staged archive."
 
           pack_native=$(find "$HOME/.nuget/packages/microsoft.netcore.app.runtime.nativeaot.iossimulator-arm64" \
             -type d -path '*runtimes/iossimulator-arm64/native' 2>/dev/null | sort | tail -1)

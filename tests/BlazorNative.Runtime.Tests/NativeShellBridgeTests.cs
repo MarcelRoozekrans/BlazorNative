@@ -64,6 +64,21 @@ internal static unsafe class FakeShellHost
     /// the -1 host-error path.</summary>
     public static int ClipboardWriteReturnCode;
 
+    // Phase 9.0 — permission-gated host-call state (the fetch mirror). HostCallBegin
+    // records the request, then (when AutoCompleteHostCall) pushes a canned tri-state
+    // completion via host_call_complete — scripting the host's whole permission dance
+    // in-process.
+    public static long LastHostCallRequestId = -1;
+    public static int LastHostCallOp = -1;
+    public static string? LastHostCallArgs;
+    public static int HostCallBeginReturnCode;
+    public static bool AutoCompleteHostCall = true;
+    /// <summary>The wire status the auto-completion returns (0 = Granted).</summary>
+    public static int HostCallStatus;
+    /// <summary>The flat-JSON fix payload the auto-completion returns (Granted only);
+    /// null = no payload, the shape every non-Granted status uses.</summary>
+    public static string? HostCallPayloadJson;
+
     public static void Reset()
     {
         Route = "/";
@@ -82,6 +97,13 @@ internal static unsafe class FakeShellHost
         Clipboard = "";
         LastShared = null;
         ClipboardWriteReturnCode = 0;
+        LastHostCallRequestId = -1;
+        LastHostCallOp = -1;
+        LastHostCallArgs = null;
+        HostCallBeginReturnCode = 0;
+        AutoCompleteHostCall = true;
+        HostCallStatus = 0;
+        HostCallPayloadJson = null;
     }
 
     public static BlazorNativeBridgeCallbacks BuildCallbacks() => new()
@@ -95,6 +117,7 @@ internal static unsafe class FakeShellHost
         ClipboardRead  = (IntPtr)(delegate* unmanaged[Cdecl]<byte*, int, int>)&ClipboardReadFn,
         ClipboardWrite = (IntPtr)(delegate* unmanaged[Cdecl]<byte*, int>)&ClipboardWriteFn,
         Share          = (IntPtr)(delegate* unmanaged[Cdecl]<byte*, int>)&ShareFn,
+        HostCallBegin  = (IntPtr)(delegate* unmanaged[Cdecl]<long, int, byte*, int>)&HostCallBeginFn,
     };
 
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
@@ -208,6 +231,29 @@ internal static unsafe class FakeShellHost
                 if (error != IntPtr.Zero) Marshal.FreeCoTaskMem(error);
                 if (headers != IntPtr.Zero) Marshal.FreeCoTaskMem(headers);
             }
+        }
+        return 0;
+    }
+
+    // ── Phase 9.0 permission-gated host-call callback ─────────────────────────
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    private static int HostCallBeginFn(long requestId, int op, byte* argsUtf8)
+    {
+        // Copy — the args string dies when we return (the ABI lifetime rule).
+        LastHostCallRequestId = requestId;
+        LastHostCallOp = op;
+        LastHostCallArgs = argsUtf8 == null ? null : Marshal.PtrToStringUTF8((IntPtr)argsUtf8);
+        if (HostCallBeginReturnCode != 0)
+            return HostCallBeginReturnCode;
+
+        if (AutoCompleteHostCall)
+        {
+            // Push the tri-state completion via the managed core (the CompleteFetch
+            // pattern — the [UnmanagedCallersOnly] export cannot be called directly
+            // from managed code; the thin Exports.HostCallComplete wrapper only
+            // marshals the payload pointer, exactly like FetchComplete).
+            NativeShellBridge.CompleteHostCall(requestId, HostCallStatus, HostCallPayloadJson);
         }
         return 0;
     }
@@ -481,8 +527,9 @@ public sealed class NativeShellBridgeTests
     public async Task OldShell_48ByteRegistration_ClipboardUnsupported_ButNavigateStillWorks()
     {
         // The forward-compat proof of the size negotiation: build the FULL
-        // 72-byte struct (all 9 slots set, clipboard/share are REAL pointers) but
-        // register with structSize == 48 (an old shell that predates the slots).
+        // 80-byte struct (all 10 slots set, clipboard/share/host-call are REAL
+        // pointers) but register with structSize == 48 (an old shell that predates
+        // the slots).
         // The register min-copy truncates to the first 6 slots and zero-fills the
         // tail, so clipboard/share read back as Zero → NotSupportedException — yet
         // Navigate (a copied slot) still works.

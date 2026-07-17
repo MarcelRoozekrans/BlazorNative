@@ -119,6 +119,42 @@ public sealed class DevHostBridge : IMobileBridge, IDisposable
     /// <summary>Snapshot of the in-memory clipboard — useful in tests.</summary>
     public string ClipboardSnapshot => _clipboard;
 
+    // ── Geolocation (Phase 9.0 — the headless tri-state lane) ─────────────────
+    //
+    // A configurable status + position so tests drive ALL SIX statuses (granted /
+    // denied / permanent / restricted / unavailable / error) with NO device — the
+    // central proof of the named risk: denial RETURNS a status, never throws, never
+    // hangs. Mirrors how the on-device NativeShellBridge resolves the tri-state, but
+    // in-process and instant (no prompt, no suspension).
+
+    /// <summary>The status the next <see cref="GetCurrentPositionAsync"/> returns
+    /// (default <see cref="GeolocationStatus.Granted"/>). Set it to drive a denial /
+    /// restriction / unavailable / error path headless.</summary>
+    public GeolocationStatus GeolocationStatus { get; set; } = GeolocationStatus.Granted;
+
+    /// <summary>The fix returned when <see cref="GeolocationStatus"/> is Granted
+    /// (Amsterdam by default). Ignored for every non-Granted status.</summary>
+    public GeolocationPosition GeolocationPosition { get; set; } =
+        new(Latitude: 52.3702, Longitude: 4.8952, Accuracy: 12.0, Altitude: 3.0, TimestampUnixMs: 0);
+
+    public ValueTask<GeolocationResult> GetCurrentPositionAsync(CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        // Denial-as-data: a non-Granted status resolves the task with a status and a
+        // null position — it does NOT throw and does NOT hang.
+        GeolocationResult result = GeolocationStatus == GeolocationStatus.Granted
+            ? new GeolocationResult(GeolocationStatus.Granted, GeolocationPosition)
+            : new GeolocationResult(GeolocationStatus, null);
+        Console.WriteLine($"[DevBridge] Geolocation → {result.Status}");
+        return ValueTask.FromResult(result);
+    }
+
+    public ValueTask<GeolocationStatus> CheckGeolocationPermissionAsync(CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        return ValueTask.FromResult(GeolocationStatus);
+    }
+
     // ── Platform info ─────────────────────────────────────────────────────────
 
     public string PlatformInfo =>

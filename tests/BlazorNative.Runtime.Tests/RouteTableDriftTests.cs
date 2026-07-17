@@ -121,19 +121,20 @@ public sealed class RouteTableDriftTests
             + "pin above cannot see it drift; this pin can. Change both in the same commit.");
     }
 
-    /// <summary>THE CONTENT PIN — the nine-page ordered baseline, retargeted
+    /// <summary>THE CONTENT PIN — the routed-page ordered baseline, retargeted
     /// from the retired NavigationTests tautology to the manifest itself
     /// (Phase 7.6). A drift test comparing two surfaces is blind to a row
     /// deleted from BOTH: this literal catches a routed page silently
     /// vanishing from the SOURCE. (+BnListDemo, Phase 7.2 — "/list";
     /// +BnFormDemo, Phase 7.3 — "/form"; +BnModalDemo, Phase 7.4 — "/modal";
-    /// +BnImagePolishDemo, Phase 7.5 — "/imagepolish".)</summary>
+    /// +BnImagePolishDemo, Phase 7.5 — "/imagepolish";
+    /// +BnGeolocationDemo, Phase 9.0 — "/geolocation".)</summary>
     [Fact]
-    public void ManifestRoutedRows_MatchTheNinePageBaseline()
+    public void ManifestRoutedRows_MatchTheTenPageBaseline()
     {
         Assert.Equal(
-            ["BnDemo", "BnFormDemo", "BnImageDemo", "BnImagePolishDemo", "BnLayoutDemo",
-             "BnListDemo", "BnModalDemo", "BnScrollDemo", "BnSettingsPage"],
+            ["BnDemo", "BnFormDemo", "BnGeolocationDemo", "BnImageDemo", "BnImagePolishDemo",
+             "BnLayoutDemo", "BnListDemo", "BnModalDemo", "BnScrollDemo", "BnSettingsPage"],
             SampleAppPages.All
                 .Where(p => p.Route is not null)
                 .Select(p => p.Name)

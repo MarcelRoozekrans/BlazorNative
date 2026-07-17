@@ -1,13 +1,21 @@
 # The Bridge-Extension Pattern — adding a host API to the C-ABI
 
 **Status:** the documented, versioned pattern for growing the shell bridge (M5 DoD #6).
-**Worked example:** clipboard + share (Phase 5.4), the first bridge growth with two
-shells (Android + iOS) in lockstep.
+Since **Phase 9.0 (M9 DoD #1)** it also covers **permission-gated async host calls** —
+section (f) — and the ABI is at **10 exports / 80 bytes** (the first export grow since
+Phase 3.1's `fetch_complete`).
+**Worked examples:** clipboard + share (Phase 5.4), the first bridge growth with two
+shells (Android + iOS) in lockstep — section (e); and **geolocation** (Phase 9.0), the
+first *permission-gated* capability — section (f).
 
 This is the doc a future contributor reads to add a new host capability (camera,
 geolocation, biometrics, …). It covers the bridge model, the **size-negotiation** that
 makes growth forward/backward safe, the **step list** to add a callback, the **honest
-test bar**, and clipboard + share as the fully-worked example.
+test bar**, clipboard + share as the fully-worked *synchronous* example, and — since 9.0 —
+the **permission pattern** with geolocation as its worked example. There are two shapes of
+growth now: a **synchronous slot** (clipboard's shape), and a **permission-gated async
+call** that rides the ONE generic `HostCallBegin` slot + the `host_call_complete` export
+**without any further ABI change** (section (f)).
 
 ---
 
@@ -18,7 +26,7 @@ struct of cdecl function pointers the host registers once at boot. It is the rev
 of the frame callback: the host implements the operations; the runtime invokes them.
 
 - **The struct** — `BlazorNativeBridgeCallbacks` (`src/BlazorNative.Runtime/BridgeProtocolNative.cs`).
-  Nine `IntPtr` slots since Phase 5.4 (72 bytes on x64):
+  Ten `IntPtr` slots since Phase 9.0 (80 bytes on x64):
 
   | Offset | Slot | Signature | Kind |
   |---|---|---|---|
@@ -31,6 +39,13 @@ of the frame callback: the host implements the operations; the runtime invokes t
   | 48 | `ClipboardRead`  | `int(char* buf, int cap)`                     | buffer read |
   | 56 | `ClipboardWrite` | `int(const char* textUtf8)`                   | one-string |
   | 64 | `Share`          | `int(const char* textUtf8)`                   | one-string |
+  | 72 | `HostCallBegin`  | `int(long id, int op, const char* argsJsonUtf8)` | async begin (generic, permission-gated) |
+
+  The **exports** (`src/BlazorNative.Runtime/Exports.cs`) grew to **ten** at Phase 9.0:
+  the async-begin slots each have a **push-completion export** twin — `FetchBegin` →
+  `blazornative_fetch_complete`, `HostCallBegin` → `blazornative_host_call_complete`
+  (the first export grow since Phase 3.1). `host_call_complete` is
+  `int(long requestId, int status, const char* payloadJsonUtf8)`.
 
 - **Register before mount.** `blazornative_register_bridge(int structSize, BlazorNativeBridgeCallbacks*)`
   copies the struct into an immutable holder; components resolving `IMobileBridge`
@@ -53,9 +68,18 @@ of the frame callback: the host implements the operations; the runtime invokes t
   - **.NET** — `BridgeProtocolNative.cs` struct + `tests/…/BridgeProtocolNativeTests.cs`
     (size + per-field offsets).
   - **JVM** — `NativeBindings.kt` `@Structure.FieldOrder` mirror + the callback
-    interfaces + `src/…/ShellBridgeTest.kt` (`callbacks_struct_is_72_bytes`).
+    interfaces + `src/…/ShellBridgeTest.kt` (`callbacks_struct_is_…_bytes`).
   - **Swift** — `BlazorNativeRuntimeC.h` (`bn_*_cb` typedefs + the `bn_bridge_callbacks`
     struct) + `BnDriftTests.swift`.
+
+  > **Phase 9.0 landing note.** Gate 1 landed the **.NET** half of the 80-byte struct +
+  > the 10th export + the required-lane export-count gates (`ci.yml` ×RIDs, `ios.yml`,
+  > `android-instrumented.yml`, the JVM export-resolve test). The **shell mirrors** of the
+  > new `HostCallBegin` slot (the Kotlin `@Structure.FieldOrder` + `ShellBridgeTest`
+  > 72→80, the Swift typedef + `BnDriftTests`) and the platform providers land at
+  > **Gates 2 (Android) / 3 (iOS)** — the size negotiation makes the interim (a .NET
+  > runtime that knows 10 slots, a shell that still registers 9) safe: the un-supplied
+  > `HostCallBegin` reads back `IntPtr.Zero` and surfaces `NotSupportedException`.
 
 ---
 
@@ -90,29 +114,51 @@ sites (Phase 5.4):
   call. This is what makes the negotiation *real*: growth is forward- **and**
   backward-compatible.
 
-**Interop table** (runtime knows 9 slots / 72 bytes; two clipboard/share callbacks the
-worked example):
+**Interop table** (runtime knows 10 slots / 80 bytes since Phase 9.0):
 
 | Scenario | structSize passed | Runtime copies | Result |
 |---|---|---|---|
-| old shell (6 slots) → **new** runtime | 48 | 48 (6 slots); clipboard/share zero-filled | clipboard/share → `NotSupportedException`; navigate/storage/fetch work |
-| **new** shell (9 slots) → new runtime | 72 | 72 (all 9) | everything works |
-| new shell (9 slots) → **old** runtime (knew 6) | 72 | 48 (old runtime's `min`) | extra tail ignored; old caps work |
+| old shell (9 slots) → **new** runtime | 72 | 72 (9 slots); `HostCallBegin` zero-filled | geolocation → `NotSupportedException`; navigate/storage/fetch/clipboard work |
+| **new** shell (10 slots) → new runtime | 80 | 80 (all 10) | everything works |
+| new shell (10 slots) → **old** runtime (knew 9) | 80 | 72 (old runtime's `min`) | extra tail ignored; old caps work |
 
-The **export count is unchanged** (still 9 `blazornative_*` symbols) — this is a struct
-grow + a signature change on one symbol, **not** an export grow. The export-count gates
-in `ci.yml` / `ios.yml` / `android-instrumented.yml` are *not* touched when adding a
-slot.
+**On the export count — the one honest exception to "a slot grow does not touch the
+exports".** Adding a **synchronous** slot (clipboard's shape) does *not* grow the exports:
+it is a struct grow only, and the export-count gates in `ci.yml` / `ios.yml` /
+`android-instrumented.yml` are untouched. But an **async-begin** slot needs a
+**push-completion export** twin, and that *is* an export grow. It has happened exactly
+twice: `fetch_complete` (Phase 3.1) and `host_call_complete` (Phase 9.0, 9→10). The 9.0
+grow was paid **once** and made **generic** (section (f)), so the *next* permission-gated
+capability (notifications / biometrics / camera) rides the same `HostCallBegin` +
+`host_call_complete` with **zero** further ABI change and **zero** export-gate churn.
+When you *do* grow the exports, every hard-coded export-count array moves in lockstep
+(the ~6 gate arrays across the three workflows + the template/consumer scripts + the JVM
+export-resolve test) — red-first, in the same commit.
 
 ---
 
 ## (c) How to add a new host API — the step list
 
-To add capability `X` (e.g. `CameraCapture`):
+**First, pick the shape.** There are now two:
+
+- **A permission-gated async capability** (needs a system prompt, a possible app
+  suspension, and a denial that must come back as *data*) — the geolocation shape. **Do
+  NOT grow the ABI.** Ride the generic `HostCallBegin` slot + the `host_call_complete`
+  export: pick an `op` constant (`NativeShellBridge.HostCallOp`), a status mapping, a
+  typed `IMobileBridge` method + a `DevHostBridge` mock, host handlers on both shells, and
+  (optionally) a `BlazorNative.Device` façade. No new export, no struct grow, no drift-test
+  move, no export-gate edit. See section (f) — this is the whole point of paying the 9.0
+  export grow once. Skip steps 1–2 and 6's struct-literal growth; the rest apply.
+- **A synchronous capability** (a near-instant, ungated round-trip — clipboard's shape) —
+  append a struct slot as below.
+
+To add a **synchronous** capability `X` (e.g. a hypothetical `BatteryLevel`):
 
 1. **Append a callback to the struct** at the next 8-byte offset. Pick the shape:
-   *buffer read* (returns data to .NET), *one-string* (a string arg), *two-string*,
-   or an *async-begin* (like fetch). Add the field to **all three mirrors**:
+   *buffer read* (returns data to .NET), *one-string* (a string arg), or *two-string*.
+   (An *async-begin* new slot is only for a request whose args cannot be expressed as the
+   generic `op`+flat-JSON — otherwise reuse `HostCallBegin`.) Add the field to **all three
+   mirrors**:
    - `.NET` `BlazorNativeBridgeCallbacks` (`BridgeProtocolNative.cs`),
    - `NativeBindings.kt` `@Structure.FieldOrder` + a `Bridge…Callback` interface,
    - the Swift header `bn_bridge_callbacks` + a `bn_x_cb` typedef.
@@ -205,3 +251,164 @@ host error, the **48-byte old-shell → unsupported** forward-compat, and the
 **Counts at 5.4 close** *(a historical snapshot — not current; see `README.md`
 for today's numbers)*: .NET 230 / JVM 79 / Android 40 / iOS XCTest 13; version
 `1.4.0-phase-5.4`; exports unchanged at 9.
+
+---
+
+## (f) The Permission Pattern — permission-gated async host calls (Phase 9.0)
+
+Clipboard proved a host capability behind a struct slot. It never had to do the two
+things a *permission-gated* capability must: **suspend the app behind a system prompt**,
+and **carry a denial back to .NET**. Geolocation is the first capability that does both,
+and it is the **worked example** of this pattern — the shape 9.1 (notifications) / 9.2
+(biometrics) / 9.3 (camera) copy.
+
+**The one normative rule: denial is DATA.** "The user said no" — and every other terminal
+outcome (restriction, no-fix, host error) — reaches .NET as a **status value**, **never
+an exception and never a hang**. The awaiting `ValueTask` *always* resolves (or is
+cancelled by the caller's token). This is proven at Gate 1, on the mock, before any device
+work: a test drives all six statuses and asserts each RETURNS within a bounded await.
+
+### 1. The request → prompt → result flow
+
+A permission-gated call is an **async-begin** + a **deferred push-completion**, keyed by
+`requestId`, resolved off-lane — structurally identical to **fetch** (the async
+precedent), with a permission prompt in the middle and a tri-state instead of an HTTP
+response:
+
+1. **Begin.** `.NET` `GetCurrentPositionAsync` assigns an `Interlocked` id, parks a
+   `TaskCompletionSource` (`RunContinuationsAsynchronously` — the completion arrives on a
+   host thread and must not run continuations inline on it) in the pending registry, then
+   calls the **generic** slot `HostCallBegin(id, op:Geolocation, argsJson)`. The pointer
+   marshalling is a non-async helper (`BeginHostCall` — the `BeginFetch` split; pointers
+   cannot live in an async body). `args` is flat JSON — `{"mode":"request"}` for the
+   prompt-then-fetch call, `{"mode":"check"}` for the read-only permission check, on the
+   **same op** (no second slot).
+2. **The host runs the whole permission dance** — check → prompt if undetermined → on
+   grant fetch a fix → on deny/restrict note the status — possibly across an app
+   suspension, then calls `blazornative_host_call_complete(id, status, payloadJson)`.
+3. **Complete.** `CompleteHostCall(id, status, payload)` removes the id and resolves the
+   TCS. The awaiting side maps the wire `status` integer to the typed tri-state and, only
+   when `Granted`, parses the flat-JSON fix into a typed `GeolocationPosition`.
+
+### 2. The pending-registry rule
+
+`s_pendingHostCalls : ConcurrentDictionary<long, TaskCompletionSource<HostCallResult>>`
+on `NativeShellBridge` (the `s_pendingFetches` twin). Keyed by `requestId`; resolved
+**off-lane**. Rules, stated once:
+
+- **Unknown id is benign.** A completion for an id no longer in the table (a
+  cancellation race, a duplicate) takes the unknown-id path: `return 1`, logged, **never a
+  throw**.
+- **Cancellation-safe.** A `CancellationToken` threads through; on cancel the id is
+  removed and the TCS `TrySetCanceled`d (the `FetchAsync` `ct.Register` pattern). A
+  process **killed during the prompt** drops the whole registry with it; a
+  never-completing call is the **caller's token to abandon** — never a leaked pending
+  entry, never a hang.
+- **Process-scoped — it survives Android Activity recreation.** The `.NET` registry is a
+  static in the NativeAOT runtime (process-scoped), untouched by an Activity recreation
+  behind the system dialog. Only the *host-side* `requestCode → requestId` map must be
+  app-scoped — and the retention law already forbids retaining an Activity.
+
+### 3. Denial-as-data — the tri-state (stated once)
+
+The completion's `int status` is a **wire-mirrored enum**, defined byte-identically on all
+three sides (a `.NET` `GeolocationStatus`, a Kotlin enum, a Swift enum — pinned like the
+struct). The host maps each platform's native outcome into it **host-side**; `.NET` only
+ever sees the integer + the payload.
+
+| status | Name | Meaning | Payload |
+|---|---|---|---|
+| 0 | `Granted` | permission held; a fix was obtained | the fix (flat JSON) |
+| 1 | `Denied` | denied **this time**; a later request MAY prompt again | none |
+| 2 | `DeniedPermanently` | "don't ask again" / iOS `.denied` — only Settings changes it | none |
+| 3 | `Restricted` | parental controls / MDM — the **user cannot** grant it | none |
+| 4 | `LocationUnavailable` | permission fine, services OS-disabled / no provider / timeout | none |
+| 5 | `Error` | unexpected host error (a caught Kotlin/Swift throw) | optional message |
+
+An out-of-range integer (a host bug) maps to `Error` — still data, never a throw. The fix
+crosses as a **flat JSON object of string→string** (numbers string-encoded, reusing the
+fetch-headers `WriteFlatJsonObject`/`ParseFlatJsonObject` pair — no new serializer):
+`{"lat":"52.3702","lng":"4.8952","accuracy":"12.0","altitude":"3.0","timestamp":"…"}`.
+
+### 4. The both-shells vocabulary (the mapping table)
+
+The host maps each platform's native permission/outcome into the tri-state:
+
+| enum | Android (`LocationManager` + `PackageManager` / `shouldShowRequestPermissionRationale`) | iOS (`CLAuthorizationStatus` / `CLError`) |
+|---|---|---|
+| `Granted` | `PERMISSION_GRANTED` + a fix from `getLastKnownLocation` / `requestSingleUpdate` | `.authorizedWhenInUse`/`.authorizedAlways` + `didUpdateLocations` |
+| `Denied` | not granted ∧ `shouldShowRequestPermissionRationale` true | (n/a — iOS prompts once; a first `.denied` is permanent) |
+| `DeniedPermanently` | not granted ∧ rationale false (after a request) | `.denied` |
+| `Restricted` | device-policy restriction | `.restricted` |
+| `LocationUnavailable` | permission fine but services off / no provider / fix timed out | `CLError.locationUnknown` / `.denied`-adjacent service-off |
+| `Error` | a caught Kotlin throw | a caught Swift throw / other `CLError` |
+
+*(Android uses the platform `LocationManager`, not `FusedLocationProviderClient`: the
+fused client needs Google Play Services, whereas the platform manager is fed directly by
+`adb emu geo fix`, so CI needs no Play-Services dep. iOS uses `CLLocationManager
+.requestLocation`, when-in-use only.)* The provider wiring lands at Gates 2/3.
+
+### 5. The manifest / Info.plist declarations
+
+Each permission API needs its platform declaration (geolocation's shown; the shape the
+next three follow):
+
+- **Android** — `<uses-permission>` in **both** manifests (sample + template, for parity):
+  `ACCESS_FINE_LOCATION` + `ACCESS_COARSE_LOCATION`, next to the existing `INTERNET`
+  (`src/BlazorNative.Jni/src/androidMain/AndroidManifest.xml` and the template's).
+- **iOS** — a purpose string in `Info.plist`: `NSLocationWhenInUseUsageDescription`
+  (when-in-use authorization only — background/geofencing are out of scope)
+  (`src/BlazorNative.Apple/BnHost/Info.plist`).
+
+These land with the shell providers at Gates 2/3.
+
+### 6. Adding a permission-gated cap — NOT a new export
+
+Per section (c)'s first bullet, restated as the pattern: to add capability `X` (a system
+prompt, a possible suspension, a denial), pick an **`op` constant**
+(`NativeShellBridge.HostCallOp`) + a **status mapping** + a typed **`IMobileBridge`**
+method + a **`DevHostBridge`** mock + **host handlers on both shells** + (optionally) a
+**`BlazorNative.Device`** façade. The generic `HostCallBegin`/`host_call_complete` are
+**shared** — **NOT a new export, NOT a struct grow, NOT an export-gate edit, NOT a
+drift-test move.** The export grew **once** (9→10) in 9.0 and will not again this
+milestone. That is the reuse the 9.0 export event bought.
+
+### 7. Worked example — geolocation (Phase 9.0)
+
+**Slot / export:** `HostCallBegin@72` (generic async-begin) + `blazornative_host_call_complete`
+(the `fetch_complete` twin). Struct 72 → 80; exports 9 → 10.
+
+**.NET surface** (`IMobileBridge` / `NativeShellBridge`, `BlazorNative.Core` types):
+`GetCurrentPositionAsync(ct)` → `GeolocationResult(GeolocationStatus, GeolocationPosition?)`;
+`CheckGeolocationPermissionAsync(ct)` (the no-prompt read). Both go through
+`InvokeHostCallAsync(op:Geolocation, …)` → the pending registry → the parsed result.
+`DevHostBridge` mocks a **configurable status + position** (all six statuses headless).
+
+**The façade** — `IGeolocation` in the new **7th package `BlazorNative.Device`**, a thin
+delegate over `IMobileBridge.GetCurrentPositionAsync`; app code injects `IGeolocation`, not
+the low-level bridge. Registered via `AddBlazorNativeDevice()` from the runtime composition
+root (`HostSession`).
+
+**The demo** — `BnGeolocationDemo` (routed `/geolocation`), the worked example that
+`[Inject]`s `IGeolocation`, with a "Locate" button that echoes the fix on `Granted` and the
+**status** on every denial (denial made visible as data), and a "Check" button (no prompt).
+
+**Android** (Gate 2, `AndroidShellBridge.kt`): the platform `LocationManager` (app-scoped)
++ `ActivityCompat.requestPermissions` / `onRequestPermissionsResult` wiring that **survives
+Activity recreation** (the app-scoped bridge forwards `(requestCode, grantResults)` and
+emits `host_call_complete`). **iOS** (Gate 3, `AppleShellBridge.swift`): a **app-scoped**
+`CLLocationManager` + its delegate carrying the in-flight `requestId`.
+
+**Tests:** `.NET` `GeolocationBridgeTests` (the op+args, the Granted parse, the six-status
+denial-as-data matrix within a bounded await, the wire-integer mapping, the requestId
+keying + unknown-id + cancellation, the old-shell-unsupported forward-compat),
+`GeolocationFacadeTests` (the `DevHostBridge` six-status matrix + the `IGeolocation`
+façade), `BnGeolocationDemoTests` (mount + Locate echoes fix/status). JVM: the
+`host_call_complete` export resolves + a tri-state round-trip through the dll (Gate 1). AVD
+`adb emu geo fix` real fix + `pm revoke` denial (Gate 2). iOS simulator location + the
+denial path (Gate 3).
+
+---
+
+*Version note: the ABI is at **10 exports / 80 bytes** since Phase 9.0. See `README.md`
+for current counts.*

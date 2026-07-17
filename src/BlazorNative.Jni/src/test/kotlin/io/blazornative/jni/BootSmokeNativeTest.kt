@@ -72,17 +72,19 @@ class BootSmokeNativeTest {
     }
 
     /**
-     * Phase 5.1 — the nine-export surface, verified from the JVM side (the .NET
-     * dumpbin / llvm-readelf checks live in ci.yml; this is the JVM twin the
-     * plan's Gate 2 asks for). Every expected blazornative_* symbol must resolve
-     * in the loaded dll; a missing one throws UnsatisfiedLinkError. The ninth is
-     * blazornative_host_event (the M5 DoD #5 ingress).
+     * Phase 5.1 / Phase 9.0 — the ten-export surface, verified from the JVM side
+     * (the .NET dumpbin / llvm-readelf checks live in ci.yml; this is the JVM twin
+     * the plan's Gate 2 asks for). Every expected blazornative_* symbol must
+     * resolve in the loaded dll; a missing one throws UnsatisfiedLinkError. The
+     * tenth is blazornative_host_call_complete (the M9 DoD #1 permission-gated
+     * completion — the first export grow since Phase 3.1's fetch_complete).
      */
     @Test
-    fun nine_blazornative_exports_all_resolve() {
+    fun ten_blazornative_exports_all_resolve() {
         val expected = listOf(
             "blazornative_dispatch_event", "blazornative_fetch_complete",
-            "blazornative_host_event", "blazornative_init", "blazornative_mount",
+            "blazornative_host_call_complete", "blazornative_host_event",
+            "blazornative_init", "blazornative_mount",
             "blazornative_register_bridge", "blazornative_register_frame_callback",
             "blazornative_shutdown", "blazornative_version",
         )
@@ -92,6 +94,6 @@ class BootSmokeNativeTest {
             // a non-null return is proof the export is present in the surface.
             assertNotNull(lib.getFunction(name), "export '$name' must resolve in the dll")
         }
-        assertEquals(9, expected.size, "the C-ABI surface is nine exports (Phase 5.1)")
+        assertEquals(10, expected.size, "the C-ABI surface is ten exports (Phase 9.0)")
     }
 }
