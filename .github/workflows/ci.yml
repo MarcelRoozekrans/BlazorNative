@@ -1239,6 +1239,48 @@ jobs:
           .\scripts\consumer-smoke.ps1
           if ($LASTEXITCODE -ne 0) { throw "consumer-smoke.ps1 failed (exit $LASTEXITCODE)" }
 
+      # ── Template smoke (Phase 8.3 Gate 2 — M8 DoD #4) ─────────────────────
+      # A fresh `dotnet new blazornative` app has EXACTLY the shape nativelib ILC
+      # trims silently — and unlike Phase 8.0, NOBODY WILL BE WATCHING when it
+      # happens. 8.0 met that failure with a human at the console (4 → 0 IL2072,
+      # ~400KB smaller, the page names gone, caught by the stop-and-analyze
+      # rule). A template user gets none of that: a green build, a green APK, an
+      # app that installs, and rc 1 at first mount with nothing naming the cause.
+      #
+      # So this step GENERATES an app and PUBLISHES it, asserting the 8.0
+      # tripwire trio on GENERATED output — 4 IL2072 + the 9 exports + the
+      # page-presence probe. A text pin on the template's csproj was considered
+      # and REFUSED: it proves the LINE IS IN THE FILE, and 8.0's own absence was
+      # found by a PUBLISH, not by a read. The trio is mutation-proven — deleting
+      # TrimmerRootAssembly from the template reds arms 1 and 3 together (both
+      # arms quoted in the Gate 2 commit).
+      #
+      # WHY IT LIVES HERE rather than in its own job: a new required job is a
+      # FOURTH required check and a branch-protection change, and "the required
+      # gates keep their names and contexts" is a standing constraint. build-test
+      # already owns everything this needs — the packed local feed (the consumer
+      # smoke above just built it), the SDK, an Android SDK, a warm Gradle cache,
+      # and BOTH bionic publishes (the gates above), which is what makes the
+      # Android half cost ZERO extra publishes: the generated project's gradle is
+      # pointed at the SAMPLE's already-published .so via -PappPubRoot, since a
+      # .so is a build input staged into jniLibs and its contents are irrelevant
+      # to a Kotlin compile. (The honest residual — the APK carries the sample's
+      # .so, not the generated app's — is U2 in the design, named rather than
+      # papered over; the publish above proves the generated app's OWN native
+      # image roots, exports and canonicalizes.)
+      #
+      # The logic lives in the script, not in this YAML (8.2's rule 6): a step
+      # that exists only in YAML is the least testable code in the repo.
+      #
+      # ORDER IS LOAD-BEARING: it must follow the consumer smoke (which packs the
+      # six into artifacts/packages — the script asserts that feed exists and
+      # restores the generated app from it with provenance) and the bionic
+      # publish gates (whose .so it reuses). Both are above.
+      - name: Template smoke (dotnet new blazornative — the GENERATED app clears the publish bar)
+        run: |
+          .\scripts\template-smoke.ps1
+          if ($LASTEXITCODE -ne 0) { throw "template-smoke.ps1 failed (exit $LASTEXITCODE)" }
+
       # ── Artifacts (consumed by the Gate 3 instrumented workflow) ───────────
       - name: Stage jniLibs layout (x86_64 from bionic-x64)
         run: |
