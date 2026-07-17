@@ -4,7 +4,7 @@
 #
 #   build-test (windows-latest) — the local verification procedure verbatim
 #   (setup.ps1 §1–7 documents the toolchain pins):
-#     build (analyzers ride it) → .NET tests (580 passed / 0 skipped) →
+#     build (analyzers ride it) → .NET tests (582 passed / 0 skipped) →
 #     three NativeAOT publishes of samples/BlazorNative.SampleApp — the
 #     publish head since Phase 8.0: the app owns PublishAot, the exports stay
 #     in Runtime via UnmanagedEntryPointsAssembly, and the artifact is
@@ -1186,7 +1186,119 @@ jobs:
       # components" replaced by the measured 15/26 (S1-3); a PNG social card (S2-4).
       # NO wire/ABI change, NO golden moved, NO shell code touched: 4 IL2072 /
       # 9 exports / 106 JVM stand.
-      - name: .NET tests (assert 580 passed / 0 skipped)
+      # 580 -> 581 (PHASE 8.6 GATE 1, +1 — Runtime.Tests 423 -> 424): the
+      # manifest<->props arrow, which arrived WITH the automation and which NO
+      # existing pin watched.
+      #
+      #   +1  PackageVersionPinTests.TheManifest_AgreesWithTheProps — the version
+      #       now has ONE AUTHOR (.release-please-manifest.json, which
+      #       release-please writes) and SIX PINNED MIRRORS. Every other version
+      #       pin in this repo compares a MIRROR TO THE PROPS: TemplateDrift's six
+      #       literals, the smoke's nupkg filename, the classifier's tag. So if
+      #       release-please's `extra-files` ever stopped naming
+      #       src/Directory.Build.props, the manifest would bump, the props would
+      #       stay behind, and EVERY ONE OF THOSE PINS WOULD STAY GREEN — the
+      #       mirrors would still agree with the props they mirror, which would
+      #       simply be one release behind its own author. The packages would
+      #       publish at the old version forever.
+      #       IT IS SOUND AS AN ALWAYS-TRUE INVARIANT ON MAIN because
+      #       release-please writes the manifest AND the props in the SAME release
+      #       PR: between releases both sit at the last released version, and
+      #       there is no window in which they legitimately differ.
+      #       AND IT AUDITS A MACHINE, which is the point — it runs in THIS
+      #       required lane, so it reds release-please's OWN pull request before
+      #       it can merge. The release PR is branch-protected like any other and
+      #       cannot merge red.
+      #       ⚠ BUT ITS CHECKS ARE HELD UNTIL A HUMAN CLICKS, and that is stated
+      #       here because this comment is the provenance for the +1 and must not
+      #       overclaim it. release-please opens the release PR with
+      #       GITHUB_TOKEN, and a `pull_request` event raised by a workflow using
+      #       GITHUB_TOKEN creates its runs in an APPROVAL-REQUIRED state: a
+      #       banner appears and someone with write access clicks "Approve
+      #       workflows to run". THE PIN DOES NOT RED THE RELEASE PR
+      #       AUTOMATICALLY — the click starts this lane, and the pin then reds a
+      #       bad machine before the merge. Until the click the PR sits with no
+      #       checks, and a required check that never ran cannot be satisfied, so
+      #       it cannot merge either: nothing merges, tags or publishes. SAFE
+      #       (design U8). A PAT would start them automatically and was REJECTED
+      #       — a second repo-scoped secret that expires and rotates, against the
+      #       one-secret law; the click is a human gate of the same shape as the
+      #       draft-publish go.
+      #       MUTATION: manifest -> 1.0.0-preview.2 with the props left at
+      #       preview.1 (i.e. `extra-files` missed the props) ->
+      #         THE MANIFEST AND THE PROPS DISAGREE (8.6 decision 3). ...
+      #           .release-please-manifest.json  "."        is "1.0.0-preview.2"
+      #           src/Directory.Build.props      <Version>  is "1.0.0-preview.1"
+      #
+      # Also this commit (no count move):
+      #   · THE CLASSIFIER'S TABLE 8 ROWS -> 9 and its SKIP arm -> RED (8.6
+      #     decision 4). scripts/release-preflight.ps1 asserts its own row count,
+      #     so the 8 -> 9 move is itself pinned. 1 PUBLISH arm, 8 RED arms, 0 SKIP.
+      #     MUTATIONS, all three run: M1' (delete the legacy-milestone arm) ->
+      #     "'v8.0' ... expected RED/legacy-milestone, got RED/malformed"; M2'
+      #     (neuter the props comparison) -> "'v9.9.9' ... expected RED/package,
+      #     got PUBLISH/package"; M3' (neuter SemVer validation AND delete the
+      #     legacy arm) -> "'v8.0' ... expected RED/legacy-milestone, got
+      #     RED/package" — the one that matters: with guards 1 and 2 both gone,
+      #     v8.0 is STILL RED, from the props assertion alone.
+      #   · P5, re-run against the annotated files: props bumped ALONE -> all six
+      #     mirrors red, each named. The x-release-please-version annotations do
+      #     not blind TemplateDriftTests' parsers — including the two `//`
+      #     comments now in template.json, which its JsonCommentHandling.Skip
+      #     reader was already built for.
+      #   · The AdoNet-shaped paste, run: the reference's auto-publish `publish`
+      #     job pasted into release-please.yml ->
+      #       found: 2 reference(s) across 2 file(s):
+      #       .github/workflows/release-please.yml x1, .github/workflows/release.yml x1
+      #     The pin scanned 6 workflow files — it ENUMERATES the directory, so the
+      #     new workflow was inside the containment pin the day it appeared.
+      #
+      # NO wire/ABI change, NO golden moved, NO shell code touched: 4 IL2072 /
+      # 9 exports / 106 JVM stand. The publish gates and the smoke are not
+      # re-run reasoning but untouched territory: this commit changes no packed
+      # bytes. src/Directory.Build.props gains a comment and an annotation on a
+      # line whose VALUE is unchanged (1.0.0-preview.1 -> 1.0.0-preview.1), so
+      # every nupkg filename, every nuspec, and the smoke's props parse are
+      # bit-identical to what they were.
+      #
+      # 581 -> 582 (PHASE 8.6 GATE 2, +1 — Runtime.Tests 424 -> 425): the +1 above
+      # assumed release-please could WRITE the mirrors. A real --dry-run proved it
+      # could not.
+      #
+      #   +1  PackageVersionPinTests.EveryExtraFile_NamesTheGenericUpdaterOutright
+      #       — every `extra-files` entry must name its updater outright
+      #       ({"type":"generic","path":…}), never a bare path string.
+      #       A BARE STRING PICKS THE UPDATER BY FILE EXTENSION
+      #       (release-please strategies/base.js, an `else if` ladder); only its
+      #       final `else` is the Generic (annotation) updater decision 3 chose.
+      #       `.json` -> CompositeUpdater(GenericJson("$.version"), Generic), and
+      #       GenericJson.updateContent opens with a strict `JSON.parse(content)`.
+      #       template.json carries the two `//` annotations decision 3 added on
+      #       purpose, so that parse THREW:
+      #         SyntaxError: Expected double-quoted property name in JSON at
+      #         position 1699 (line 48 column 42)
+      #       — column 42 being where the `//` starts. release-please would have
+      #       crashed on EVERY run: no release PR, ever. The other three end
+      #       `.props`/`.csproj`, match no arm, and got the right updater BY
+      #       ACCIDENT OF THEIR EXTENSIONS — so decision 3's "one updater kind
+      #       everywhere" was true for three files by luck and false for the
+      #       fourth, and the config looked correct either way.
+      #       FAILURE DIRECTION SAFE (design U1, "no PR appears" — loud, nothing
+      #       publishes) — which is exactly why it needed a pin and not a shrug: a
+      #       machine that never runs is one nobody notices is broken.
+      #       IT CARRIES NO COPY OF THE DISPATCH LADDER, deliberately: that table
+      #       is a third party's and it drifts. One invariant, no extension
+      #       knowledge — never use the form whose updater the extension decides.
+      #       MUTATION: template.json reverted to the bare string Gate 1 shipped ->
+      #         BARE PATH STRINGS (1) — the updater is chosen by FILE EXTENSION:
+      #           templates/.../.template.config/template.json
+      #
+      # Also this commit (no count move): release-please-config.json's four
+      # extra-files become object form; release-please.yml's header gains the
+      # dispatch block. NO packed byte moves — <Version> is untouched (still
+      # 1.0.0-preview.1) and no shipped file changes, so the publish gates, the
+      # smoke and the six nupkgs are untouched territory.
+      - name: .NET tests (assert 582 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -1204,8 +1316,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 580 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 580 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 582 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 582 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # ── NativeAOT publishes + nine-export verification ────────────────────

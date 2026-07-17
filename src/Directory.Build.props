@@ -37,11 +37,69 @@
        died with 8.0's samples/library separation).
        See docs/plans/2026-07-16-phase-8.1-design.md, decision 2.
 
-       ONE VERSION TRUTH (decision 4): the <Version> below is the single
-       source — no shipped csproj may override it (PackageVersionPinTests
-       reds the drift; consumer-smoke.ps1 PARSES this element and reds any
-       nupkg whose filename disagrees). Bumps are a one-line edit here;
-       `preview.N` is manual until 8.2's release flow owns the cadence.
+       THE VERSION'S AUTHORITY (8.6 normative rule 2 — SUPERSEDES 8.1's "ONE
+       literal", which was always shorthand for "one literal in src/").
+       `.release-please-manifest.json` is the version's AUTHOR: the only file
+       into which a version is ever DECIDED. The <Version> below is its FIRST
+       MIRROR and remains the build's single source of truth — nothing in the
+       build, the pack, the smoke or the classifier ever reads the manifest.
+       Every other version literal mirrors THIS one. One author, six mirrors,
+       seven literals across four files.
+
+       NO VERSION LITERAL IS EVER HAND-EDITED AGAIN (8.6 decision 3). The
+       release-please annotation on the Version line below is what makes that
+       true: the Generic updater rewrites the annotated line, and only the
+       annotated line, on every release PR. Bumps stopped being a one-line edit
+       here and became something nobody does at all.
+
+       ⚠ THIS PARAGRAPH DOES NOT SPELL THE ANNOTATION, AND THAT IS LOAD-BEARING
+       TWICE OVER. Both reasons were found by doing it wrong first.
+
+       ONE — an XML comment may not contain a double hyphen, so a comment that
+       writes the annotation in its full delimited form does not parse. Observed
+       as MSB4024 on all six shipped projects at once ("The imported project file
+       could not be loaded. An XML comment cannot contain ..., and '-' cannot be
+       the last character"), and then AGAIN on the paragraph that explained it,
+       because the error message contains the very sequence it complains about.
+       It cannot be quoted here either.
+
+       TWO — AND THIS ONE IS THE SHARP ONE. The Generic updater matches its
+       annotation token ANYWHERE ON A LINE, prose included. A paragraph that
+       spelled the token would BE an annotation: release-please would replace the
+       first semver-looking string on that line with the new version, on every
+       release, forever. It is a no-op only while the sentence happens to contain
+       no version number — i.e. the trap is armed and waiting for whoever adds an
+       example to the docs. So the invariant is kept greppable instead:
+       `grep -rc <the token>` over the four extra-files is SEVEN, and seven is
+       the number of version literals. A count of eight means someone wrote prose
+       that release-please is now editing.
+
+       The house has met this shape one file over: release.yml's comments must
+       name secrets.NUGET_API_KEY without its expression braces, or
+       ReleaseWorkflowPinTests counts the prose as a real reference and reds.
+       Documentation that quotes its own subject breaks its subject. Three times
+       now, the fix is the same: name the thing, do not spell it.
+
+       THE MANIFEST->PROPS ARROW IS THE ONE ARROW NO DRIFT PIN WATCHED, and
+       that gap arrived WITH the automation: the template mirrors are compared
+       to THIS file, so if `extra-files` ever stopped naming it, the props would
+       lag the manifest and every mirror would still agree with the props —
+       green, and wrong. Two independent guards close it:
+         · PackageVersionPinTests.TheManifest_AgreesWithTheProps — in the
+           REQUIRED build-test lane, so it reds release-please's OWN PR before
+           it can merge (the release PR is branch-protected like any other and
+           cannot merge red). ⚠ ITS CHECKS DO NOT START BY THEMSELVES: because
+           release-please opens that PR with GITHUB_TOKEN, the runs are held
+           APPROVAL-REQUIRED until someone with write access clicks "Approve
+           workflows to run". The click starts them; the pin then reds a bad
+           machine before the merge. Until the click the PR sits with no checks
+           and cannot merge, so the failure direction is SAFE. Named in
+           docs/GITHUB-SETUP.md's ritual (step 3) and release-please.yml's
+           header;
+         · the classifier's tag<->props assertion — the Release-time backstop.
+       No shipped csproj may override this element either (PackageVersionPinTests
+       reds that drift; consumer-smoke.ps1 PARSES this element and reds any
+       nupkg whose filename disagrees).
 
        What stays per-csproj: Description + PackageTags (each package
        speaks for itself), the Analyzers' special shape (no lib/, embedded
@@ -49,7 +107,7 @@
        ───────────────────────────────────────────────────────────────────── -->
 
   <PropertyGroup>
-    <Version>1.0.0-preview.1</Version>
+    <Version>1.0.0-preview.1</Version> <!-- x-release-please-version -->
 
     <!-- PackageId defaults to the assembly name for all six — no explicit
          PackageId lines anywhere. -->

@@ -4,6 +4,37 @@
 
 ## Milestones
 
+> ### ⚠ The milestone tags `v1.0`–`v7.0` are RETIRED — and this is the place that says why
+>
+> **If `git checkout v6.0` fails for you, this note is the answer.**
+>
+> Every milestone below records the tag that closed it — *"tagged `v6.0`"* — and **each of
+> those statements was true when it was written.** **Phase 8.6 (2026-07-17) retired the
+> milestone-tag namespace**: `v<semver>` now belongs to release-please, which cuts
+> `v1.0.0-preview.2`-shaped tags for **package releases**, and **no `vN.0` will ever be cut
+> again.** `v8.0` was **cancelled, not deferred** — M8's DoD #6 named it, M8 is complete
+> without it, and the [M8 audit addendum](../plans/2026-07-17-milestone-8-audit-addendum.md)
+> is where that is said out loud.
+>
+> **STATE, as of 2026-07-17 — stated precisely because the rest of this note is about
+> their absence: ALL SEVEN TAGS (`v1.0`…`v7.0`) ARE GONE.** They were deleted on
+> **2026-07-17** on the owner's go — `git push origin --delete v1.0 … v7.0`, plus the
+> locals — as the **last step** of Phase 8.6's close. `git ls-remote --tags origin` returns
+> **nothing**, and this repo now has **no tags at all** until release-please cuts the first
+> `v1.0.0-preview.2`. **That is why `git checkout v6.0` fails**, and it is the whole reason
+> this note exists.
+>
+> **Two readers will now disagree about whether `v6.0` exists, and both are right:** a
+> **fresh clone** does not have them; an **existing clone or fork keeps all seven forever**,
+> because `git fetch --prune` does **not** delete tags without `--prune-tags`. So the
+> failure this note answers is one that only *some* readers can see, which is exactly the
+> kind that needs a written answer.
+>
+> **The chapter record is this file and the milestone audits — it always was.** The phase
+> and audit documents in `docs/plans/` say *"tagged `vN.0`"* throughout and **are not
+> rewritten**: they are **dated records**, and a record edited to agree with today is not a
+> record. The tags were how the chapters were marked; the writing is what the chapters were.
+
 ### ✅ Milestone 1 — P0: Runtime Boots End-to-End  *(complete 2026-05-24, tagged `v1.0`)*
 
 Toolchain produces a `.wasm` that loads under wasmtime with correct exports and a working cooperative scheduler. Renderer internal-API strategy decided. All 8 DoD criteria met — see [final audit](../plans/2026-05-24-milestone-1-final-audit.md).
@@ -462,7 +493,7 @@ Phases (approved at milestone-open 2026-07-13):
 
 ---
 
-### ✅ Milestone 7 — Components + Razor  *(complete 2026-07-16 — `v7.0` tag pending merge)*
+### ✅ Milestone 7 — Components + Razor  *(complete 2026-07-16, tagged `v7.0`)*
 
 The things you build UIs *with*: **`.razor` authoring** (the standing M3-era ledger item —
 author components in Razor syntax instead of hand-written `BuildRenderTree`, with the five demo
@@ -679,7 +710,7 @@ Maps to BACKLOG "P5 — components".
 
 ---
 
-### ✅ Milestone 8 — Developer Ecosystem  *(complete — opened 2026-07-16, closed 2026-07-17; **pending the `v8.0` tag**, applied on the owner's go after the Phase 8.5 close PR merges; the old P5, repositioned after capability)*
+### ✅ Milestone 8 — Developer Ecosystem  *(complete — opened 2026-07-16, closed 2026-07-17; **no `v8.0` tag — cancelled by Phase 8.6**, which retired the milestone-tag namespace: M8 is complete on its [final audit](../plans/2026-07-17-milestone-8-final-audit.md), see the [addendum](../plans/2026-07-17-milestone-8-audit-addendum.md); the old P5, repositioned after capability)*
 
 Now there's a real layout engine + component library worth shipping. Scoped at
 milestone-open (owner decisions recorded in [MILESTONE.md](MILESTONE.md)): publish-READY
@@ -752,6 +783,15 @@ Developer experience and ecosystem".
      once 8.2's workflow exists (a named 8.2 input), conventional-commit inference
      mis-bumps phase-structured history, and `tag-prefix: v` collides with the `v4.0`–
      `v7.0` milestone tags.
+     > *(**All four reasons are now answered, and release-please is IN** — Phase 8.6,
+     > decision 1. Reason 1 (auto-publish contradicts DoD #3) → **`draft: true`**: a draft
+     > Release fires no workflow, so the owner's click is still the go. Reason 2 (the payoff
+     > starts once 8.2's workflow exists) → **it exists.** Reason 3 (mis-bumps
+     > phase-structured history) → **`bootstrap-sha`** draws a line under all 580
+     > pre-8.6 commits, plus the new commit contract. Reason 4 (`tag-prefix: v` collides
+     > with the milestone tags) → **the milestone-tag namespace is retired.** **GitVersion
+     > stays out** for reason 1, undisturbed. This is an append, not a retraction: **the
+     > rejection was right on 2026-07-16** and it named, in advance, what would change it.)*
    - **THE HEADLINE — the review demonstrated a vacuous pass:** the nupkg type scanner
      passed GREEN while **blind** ("0 types clean" ×6, exit 0), violating the house rule
      this repo states in its own code — *a pin that cannot see its subject must never pass
@@ -1139,7 +1179,9 @@ Developer experience and ecosystem".
      does not publish that until one setting is clicked.** See
      [design](../plans/2026-07-17-phase-8.4-design.md) +
      [conclusion](../plans/2026-07-17-phase-8.4-conclusion.md).
-- ✅ **Phase 8.5** — hygiene + M8 final audit + close (DoD #6) → `v8.0` — *complete (2026-07-17)*
+- ✅ **Phase 8.5** — hygiene + M8 final audit + close (DoD #6) — *complete (2026-07-17)* — *(this
+  line planned `→ v8.0`; Phase 8.6 cancelled the tag — see the retirement note at the top of this
+  file and the [M8 audit addendum](../plans/2026-07-17-milestone-8-audit-addendum.md))*
    - **ALL SIX DoD PASS — [final audit](../plans/2026-07-17-milestone-8-final-audit.md)**, every row
      **re-verified LIVE at the tip, not cited** (the M7 audit's method, verbatim): .NET **580/0**
      (132 + 25 + 423) · JVM **106/0** across 19 suites via `--rerun-tasks` (**27 executed — a cached
@@ -1184,6 +1226,133 @@ Developer experience and ecosystem".
      **announces + skips, exit 0**; a `pkg/<semver>` Release is the only publishing shape. **Nothing
      published; no tag created; no secret added.** See
      [final audit](../plans/2026-07-17-milestone-8-final-audit.md).
+     > *(Superseded on the same day, and left standing as the record of what 8.5 measured:
+     > **Phase 8.6 inverted this arm — `v8.0` is now RED, not announce-and-skip**, and the
+     > `pkg/<semver>` namespace it names as "the only publishing shape" was itself retired in
+     > favour of `v<semver>`. The self-test that was **8/8 with `v8.0 → SKIP`** is now **9/9
+     > with `v8.0 → RED`**. **8.5's measurement was correct against the machine it measured**;
+     > 8.6 changed the machine. See the
+     > [M8 audit addendum](../plans/2026-07-17-milestone-8-audit-addendum.md).)*
+- ✅ **Phase 8.6** — the release automation — *complete (2026-07-17, **after** M8's close; closes no
+  DoD — it succeeds the audit rather than re-opening it)*
+   - **release-please authors the version; the seven milestone tags are DELETED.** The
+     **manifest** (`.release-please-manifest.json`) is the only file into which a version is ever
+     *decided*; `src/Directory.Build.props`' `<Version>` is its **first mirror** and stays the
+     build's only truth. **One author, six mirrors, seven literals, four files** — 8.1's "ONE
+     literal" was always "one literal in `src/`". `release-please.yml` has **one job and it opens a
+     PR**: no publish job, no `needs:`, and it never mentions the key (**the reference's own
+     release-please.yml pushes six packages on merge with no click — copying it destroys DoD #3's
+     law in one paste**; `ReleaseWorkflowPinTests`, written in 8.2 for another reason, already reds
+     on it).
+   - **THE HEADLINE — 8.2 wrote this phase's test in advance, and the owner waived it.** 8.2
+     rejected release-please and named **three** conditions that would reverse it, *all three must
+     hold*: (1) commit convention → component scopes — **holds**; (2) releases frequent enough that
+     hand-writing the body is a chore — ❌ **does NOT hold, measured: `gh api …/releases` → 0.
+     Nobody has hand-written one, ever**; (3) draft mode preserves the manual go — **holds, proven
+     here**. **The owner waives #2. That is a VALUATION, not a discovery** — 8.2 named this exact
+     config (`draft: true`) and judged its value insufficient against a measurement still true
+     today. *A reversal that pretends to be a discovery is flattery.*
+   - **What release-please actually buys — NOT the version.** Traced through `prerelease.ts` **and
+     executed**: at `1.0.0-preview.1`, `fix:`/`feat:`/`feat!:` **all** produce `1.0.0-preview.2`.
+     `isPreMajor = major < 1`, so both of the reference's `*-pre-major` flags are **dead no-ops** at
+     major=1 — **and at the reference's own 1.3.3**, so mirroring it faithfully imports two no-ops
+     (omitted: *config that cannot fire is a comment pretending to be a decision*). **The version is
+     a COUNTER; the commits compute the CHANGELOG.** ⚠ **The graduation trap:** `Release-As: 1.0.0`
+     needs a **config change too**, or **all three** commit types silently re-enter preview
+     (`1.0.1-preview`/`1.1.0-preview`/`2.0.0-preview` — the design named only `fix:`; Gate 1
+     corrected it by executing). **Nothing warns; every pin stays green while the version goes
+     backwards.** Sited at `GITHUB-SETUP.md`'s graduation section, **where the person typing
+     `Release-As` is standing**.
+   - **P10 PROVEN — the phase's one belief became an observation.** Draft created (`draft:true`,
+     `published_at:null`) → `release.yml` runs **byte-identical** before/after; **runs ever
+     triggered by `release`: 0**. **Bonus: `--cleanup-tag` → "Reference does not exist" — a draft
+     does not even CREATE the tag**, so it cannot fire a tag-push trigger either. ⚠ **And Gate 2 did
+     this with the key LIVE** (`NUGET_API_KEY` set 06:27:40Z, mid-phase): **the "no key ⇒ no
+     publish" backstop was gone, so it PROVED the guards instead of leaning on the key's absence** —
+     the probe used a deliberately non-publishing shape whose failure mode is **the classifier doing
+     its job** (`class: unrecognized`, exit 1, *"Nothing was published."*).
+   - **The dry-run caught a crash Gate 1 would have shipped.** A **bare path** in `extra-files` lets
+     the **FILE EXTENSION** pick the updater — `.json` → `CompositeUpdater(GenericJson, Generic)` →
+     strict `JSON.parse` → **threw at line 48 col 42 of `template.json`, exactly where the
+     annotation comment starts.** ***release-please would have crashed on EVERY run — no release PR,
+     ever.*** The other three files reached the right updater **by accident of their extensions**.
+     **Decision 3's "one updater kind everywhere" was true for three by luck and false for the
+     fourth**; the object form (`{"type":"generic","path":…}`) makes it true **by construction**,
+     applied at all four (*depending on a third-party tool's ignorance is not a design*). Pinned by
+     a test carrying **no copy of release-please's dispatch ladder** — *a third party's table
+     drifts*.
+   - ⚠ **THE LINE WRAP DECLARED A BREAKING CHANGE.** The dry-run's changelog emitted
+     `### ⚠ BREAKING CHANGES / * release: footers.` — **`004179f`'s body, hard-wrapped at 80 chars,
+     pushed the token to column 0 in front of the word "footers."** **Decision 5's premise is HALF
+     true: subjects are discarded under squash; BODIES ARE NOT** — they concatenate (the setting is
+     `COMMIT_MESSAGES`) and release-please parses them. A **release-as** token at column 0 in the
+     **last paragraph** → `Version.parse` → ***that becomes the released version***. So *"never a
+     wrong version"* is **exact about the subject, not the body**.
+   - **The footer check** (`scripts/footer-check.ps1`): **a PR's commit BODIES may declare a release
+     footer only if the PR's TITLE declares the same thing** — it asserts **subject/body AGREEMENT,
+     not intent**. **No label**, and the reason is the failure itself: ***a label is a human
+     attesting to their own accident, and `004179f`'s author would have applied one without
+     hesitating.*** ⚠ **"Column 0" is measurably the WRONG boundary** — indentation, tabs, `* `
+     bullets, **lowercase** and **a missing colon** all still produce a note; **the naive check
+     passes four real hazards** (the brief and the design both said column-0; Gate 3 measured
+     against the real parser and corrected it). **It catches `004179f` on the real commit** (*"body
+     line 28 … exit=1"*), **reds exactly one of the branch's 12 commits**, and **Gate 2's commit —
+     which discusses these tokens at length — passes**. ***Then it caught its own author***: Gate
+     3's final commit tripped it, **in the commit whose body claimed its bodies were clean**; fixed
+     as the RED prescribes (re-wrap; never touch the title). **Self-test 14/14.**
+   - **The classifier: SKIP → RED.** 8.2's SKIP rested on **one** premise — *a milestone Release is
+     legitimate* — **and this phase deletes that premise.** 8 rows → **9** (1 PUBLISH, **8 RED, 0
+     SKIP**); `skip` leaves the vocabulary, so `release.yml`'s `verdict != 'skip'` guard is **deleted
+     rather than rewritten**. **M3′ proves the guard-count is real, not arithmetic: with SemVer
+     validation neutered AND the legacy arm deleted, `v8.0` is STILL RED** — guard 3 holding alone.
+     **`v8.0`'s defence went from 2 guards to 4.** *Converting arm 1 from SKIP to RED does not remove
+     a guard; it makes the first one louder.*
+   - **The tags are gone, and the machine did not notice.** `git push origin --delete v1.0 … v7.0` +
+     the locals, on the owner's **fresh go** at the moment it would happen. **Both tag lists are now
+     empty**; `git checkout v6.0` fails, and **the standing note at the top of this file is the named
+     place that explains it**. ***Not one line of the classifier changed*** — it reds on a tag's
+     **shape**, never on a tag list, which is the retirement-vs-emptying claim proving itself.
+   - **The sweep's honesty.** The design's `33` was wrong twice **and its pattern was wrong in BOTH
+     directions**: `v[1-7]\.0` counts `v1.0.0-preview.2` — ***the one shape that publishes*** — as a
+     milestone tag; the obvious fix **under-counts** `git diff v7.0..HEAD`, a real reference. Precise:
+     **35 → 29**. ⚠ **"Re-grep to zero" is the WRONG BAR** — unreachable and self-contradictory
+     (**decision 7 MANDATES a note spelling `v1.0`–`v7.0` in the doc its Gate row forbids it**; zero
+     would delete the note whose job is explaining why `git checkout v6.0` fails). **The bar worked
+     to: ZERO EXISTENCE CLAIMS.** History keeps *"tagged `v6.0`"* **governed by the note** rather than
+     rewritten — `docs/plans`' rule applied to a live doc. ⚠ **And the addendum's own deletion
+     checklist was WRONG BY ONE**: it dropped `release-preflight.ps1:537` — **the site Gate 3 called
+     "the sharpest"** — whose text carried a live existence claim **inside the self-test table that is
+     the classifier's proof**. ***A list of what to change is a copy, and it rots the same way***;
+     caught only because the close re-grepped instead of reading the roster. **`docs/plans`: zero
+     pre-existing files touched across the whole branch.**
+   - **The rider (8.3's defect, not 8.6's).** The template pin enumerated **disk** files, not
+     **git-tracked** ones — and its message said *"add it to the manifest"*, ***so a developer
+     following it would have added Gradle caches to the manifest***. **Worse, the pack shipped
+     them**: **45 entries → 8 `.gradle` files rode**; `dotnet new` handed a stranger lock files from
+     the packer's laptop. **After: 37 entries, 32 under `content/` = exactly tracked, zero junk** —
+     **with the caches still on disk: the pin was fixed, not the tree**. The Exclude is **surgical**
+     (`NoDefaultExcludes` respected — the wrapper still ships; `BionicNativeAot.targets` still ships)
+     and **the pin now PARSES the Exclude, so pack and pin cannot disagree**.
+   - **The review trail — PASS with 2 Important, both applied.** **S1-1:** the pin whose stated job
+     is auditing the machine ***would never run on the machine's PR*** — GitHub creates
+     approval-required runs for `GITHUB_TOKEN`-opened PRs, and **three shipped comments said the
+     opposite**. The owner chose **keep `GITHUB_TOKEN` + name the approve-click** over a PAT (a second
+     repo-scoped secret that expires and rotates, **against the one-secret law**); the click is itself
+     a human gate. **New `U8`** records the shape U1 missed — ***the PR appears and its checks never
+     start*** — which **fails by STALLING, so it is safe**. **S1-2:** the classifier's own failure
+     message **instructed the ritual it REDs** (*"bump the props… tag `pkg/…`"*) — **both halves
+     wrong**; the **duplicated** console/summary prose is **why it went stale twice**, now one
+     `$remedy`.
+   - **Evidence:** .NET **582/0** (25 + 132 + 425) · JVM **106** · device lanes **untouched**
+     (184/154) · publish gates **unmoved** · `release-preflight -SelfTest` **9/9** · `footer-check
+     -SelfTest` **14/14** · template-smoke **PASS** (31 files, 4 IL2072, 9 exports, APK 15590 KB) ·
+     `actionlint` clean on **7** workflows · required contexts read back exactly
+     `["build-test","ios-build","android-build"]` (**commitlint's two are OWED — sequenced AFTER this
+     merge: the file must be on main first or it wedges every PR, the 7.x lesson**) · **0 releases, 0
+     release-triggered runs — with the key LIVE**. See
+     [design](../plans/2026-07-17-phase-8.6-design.md) +
+     [conclusion](../plans/2026-07-17-phase-8.6-conclusion.md) +
+     [M8 audit addendum](../plans/2026-07-17-milestone-8-audit-addendum.md).
 
 ---
 
@@ -1226,5 +1395,7 @@ exploratory".
 - **Capability before ecosystem** (2026-07-13 re-plan): M6 (layout) → M7 (components+razor)
   → M8 (ecosystem/publish) → M9 (platform breadth + real device) → M10 (hardening).
 - M9's real-device iOS is gated on an **Apple Developer account** (user dependency).
-- Each milestone closes with `audit-milestone` → `complete-milestone` → tag `vN.0`
-  (M6 → `v6.0`, and so on).
+- Each milestone closes with `audit-milestone` → `complete-milestone`. **The `→ tag vN.0`
+  step this line used to carry is GONE from M9 onward** — Phase 8.6 retired the
+  milestone-tag namespace (see the note at the top of this file). **A milestone closes on
+  its audit**; that is what M8 did, and the tag was never what made a milestone complete.

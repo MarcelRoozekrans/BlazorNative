@@ -1,16 +1,25 @@
 # Milestone 8 — Developer Ecosystem
 
-**Status:** ✅ complete — opened 2026-07-16, closed 2026-07-17, **pending `v8.0` tag**
-(applied after the Phase 8.5 close PR merges, on the owner's go — the M6/M7 pattern;
-[final audit](../plans/2026-07-17-milestone-8-final-audit.md): all 6 DoD PASS. **The tag
-publishes NOTHING** — `release.yml`'s classifier reads `v8.0` as a milestone tag and
-announces + skips, exit 0; a `pkg/<semver>` Release is the only publishing shape.)
+**Status:** ✅ complete — opened 2026-07-16, closed 2026-07-17
+([final audit](../plans/2026-07-17-milestone-8-final-audit.md): all 6 DoD PASS).
+**There is no `v8.0` tag and there will not be one** — Phase 8.6 retired the
+milestone-tag namespace and gave `v<semver>` to release-please, so DoD #6's
+"→ tag `v8.0`" named a **ritual, not a result**, and the ritual is cancelled rather
+than pending. **M8 is complete on the audit, which is what the DoD actually wanted.**
+**And its predecessors' tags are gone too** — `v1.0`–`v7.0` were **deleted on 2026-07-17**
+as the last step of 8.6's close, so **this repo has no tags at all** until release-please
+cuts the first `v1.0.0-preview.2`. The [ROADMAP](ROADMAP.md)'s standing note is the place
+that explains why `git checkout v6.0` fails.
+See the [M8 audit addendum](../plans/2026-07-17-milestone-8-audit-addendum.md) — it
+records what 8.6 changed under this milestone, and **this document is not retrofitted
+to match it**: the DoD texts and the closure evidence below were true when written and
+are left standing.
 **Opened:** 2026-07-16
 **Source:** the 2026-07-13 roadmap re-plan (capability before ecosystem) — the ecosystem
 milestone, deliberately AFTER the capability that makes packaging worthwhile: M6 built the
 layout engine, M7 built the components and the authoring story; M8 makes it something
 another developer can actually consume.
-**Predecessor:** Milestone 7 — complete 2026-07-16, tagged `v7.0`
+**Predecessor:** Milestone 7 — complete 2026-07-16
 ([final audit](../plans/2026-07-16-milestone-7-final-audit.md): all 8 DoD PASS)
 
 ## Goal
@@ -329,6 +338,11 @@ the 4-IL2072 shape), 8.0 finds out before anything is packaged.
    secret added — this phase publishes a website and nothing else.**
 6. ✅ **Hygiene + close:** every new surface CI-asserted (counts + gates with provenance);
    decision log per phase; final audit → tag **`v8.0`**.
+   > **The `v8.0` clause is CANCELLED, and this DoD text is left as written** (Phase 8.6,
+   > decision 8 — [addendum](../plans/2026-07-17-milestone-8-audit-addendum.md)). The tag
+   > named a **ritual**; the **result** DoD #6 asked for — CI-asserted surfaces, the
+   > decision log, the final audit — **shipped in full and the audit verified it**.
+   > **M8's completion rests on the audit, not on a tag**, and no `v8.0` will ever exist.
    **Closed by Phase 8.5** ([final audit](../plans/2026-07-17-milestone-8-final-audit.md)):
    **all six DoD PASS on evidence re-verified LIVE, not cited** — .NET **580/0** (132 + 25 +
    423; 577 → 580, +3, this phase's own hygiene pin) · JVM **106/0** across 19 suites
@@ -421,11 +435,51 @@ Tracked in `ROADMAP.md`. Approved at milestone-open:
 - **Phase 8.2** — the release pipeline, manual go (DoD #3)
 - **Phase 8.3** — the `dotnet new` template: app + Android shell (DoD #4)
 - **Phase 8.4** — the docs site: Docusaurus + GitHub Pages (DoD #5)
-- **Phase 8.5** — hygiene + M8 final audit + close (DoD #6) → `v8.0`
+- **Phase 8.5** — hygiene + M8 final audit + close (DoD #6) *(the `v8.0` tag this line
+  planned was cancelled by Phase 8.6 — see the status line above)*
+- **Phase 8.6** — the release automation ✅ *(2026-07-17, **added after the close** — it closes
+  no DoD and **does not re-open the audit**: it succeeds it. See
+  [design](../plans/2026-07-17-phase-8.6-design.md) ·
+  [conclusion](../plans/2026-07-17-phase-8.6-conclusion.md) ·
+  [addendum](../plans/2026-07-17-milestone-8-audit-addendum.md))*
+   - **release-please authors the version** (`.release-please-manifest.json` decides; the props'
+     `<Version>` is its first mirror and stays the build's only truth — **one author, six mirrors,
+     seven literals, four files**), **the commit contract debuts at the PR title**, and **the seven
+     milestone tags `v1.0`–`v7.0` are DELETED** — both tag lists are now empty, which is why
+     `git checkout v6.0` fails (the ROADMAP's standing note is the place that explains it).
+   - **THE HEADLINE — 8.2 wrote this phase's test in advance and the owner waived it.** Of 8.2's
+     three reversal conditions (*all three must hold*), **two hold**; #2 — *releases frequent enough
+     that hand-writing the body is a chore* — **does NOT: `gh api …/releases` → 0. Nobody has
+     hand-written one, ever.** **The owner waives it. That is a VALUATION, not a discovery** — 8.2
+     named this exact config (`draft: true`) and judged its value insufficient against a measurement
+     still true today.
+   - **What it actually buys is NOT the version:** at `1.0.0-preview.1`, `fix:`/`feat:`/`feat!:`
+     **all** yield `1.0.0-preview.2` (`isPreMajor = major < 1`, so the reference's two `*-pre-major`
+     flags are **dead no-ops** — at our major=1 **and at its own 1.3.3**). **The version is a
+     counter; the commits compute the CHANGELOG.**
+   - **P10 PROVEN — and with the key LIVE.** `NUGET_API_KEY` went live **mid-phase** (06:27:40Z), so
+     the *"no key ⇒ no publish"* backstop vanished and **the guards became the only thing**. Gate 2
+     **proved them** rather than trusting the key's absence: a draft fires **no** workflow
+     (byte-identical runs; **0 release-triggered runs ever**), and **a draft does not even create the
+     tag**. **DoD #3's law — nothing publishes without the owner's click — is now an OBSERVATION.**
+   - **Two defects caught that would have shipped:** a **bare path** in `extra-files` let the file
+     **extension** pick the updater → `.json` → strict `JSON.parse` → ***release-please would have
+     crashed on every run, no release PR ever***; and **a line wrap declared a BREAKING CHANGE** —
+     bodies are **not** discarded under squash (`COMMIT_MESSAGES`), and a release-as token at column
+     0 of the last paragraph **sets the version outright**. Both pinned.
+   - **Evidence:** .NET **582/0** (25 + 132 + 425) · JVM **106** untouched · device lanes
+     **untouched** (184/154) · publish gates **unmoved** · `release-preflight -SelfTest` **9/9** (8
+     RED arms, **0 SKIP** — `v8.0` inverted from announce-and-skip) · `footer-check -SelfTest`
+     **14/14** · template-smoke **PASS** (31 files, APK 15590 KB) · `actionlint` clean on **7**
+     workflows · required contexts read back exactly `["build-test","ios-build","android-build"]`
+     (**commitlint's two are OWED, sequenced AFTER the merge — the file must be on main first or it
+     wedges every PR**) · **0 releases, 0 release-triggered runs.**
 
 Sequencing: 8.0 gates everything (the registration API is what 8.1 packages, 8.3
 templates, and 8.4 documents); 8.1–8.2 make the packages real; 8.3–8.4 are the
-outward-facing halves and can flex in order; 8.5 audits and tags.
+outward-facing halves and can flex in order; 8.5 audits and tags. **8.6 was added after
+the audit** — the owner asked for automation, and it **retired the very tag 8.5's line
+planned.**
 
 ## Why this milestone exists
 

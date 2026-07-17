@@ -50,9 +50,15 @@
     <PackageType>Template</PackageType>
     <PackageId>BlazorNative.Templates</PackageId>
     <!-- THE MIRROR (8.3 design decision 3). Equal to src/Directory.Build.props'
-         <Version> by TemplateDriftTests, non-vacuously. Bump both in one
-         commit; the pin names this file when you forget. -->
-    <Version>1.0.0-preview.1</Version>
+         <Version> by TemplateDriftTests, non-vacuously — the 8.1 "Seven" trap:
+         this pack lives OUTSIDE src/, which PackageVersionPinTests enumerates,
+         so that pin cannot see this literal at all.
+
+         NOBODY BUMPS THIS BY HAND ANY MORE (8.6 decision 3). The annotation is
+         what release-please's `extra-files` targets; it rewrites this line on
+         every release PR. The pin below it did not become redundant — it became
+         the thing that audits a MACHINE rather than a human. -->
+    <Version>1.0.0-preview.1</Version> <!-- x-release-please-version -->
     <Title>BlazorNative App Template</Title>
     <Authors>Marcel Roozekrans</Authors>
     <Description>`dotnet new blazornative` — a Blazor app compiled with NativeAOT into a native Android shell. Creates the .NET app (pages, manifest, the NativeAOT publish head) and a runnable Android/Gradle shell tree.</Description>
@@ -92,8 +98,49 @@
     <IsPackable>true</IsPackable>
   </PropertyGroup>
 
+  <!-- ─────────────────────────────────────────────────────────────────────
+       THE EXCLUDE IS THE PACK'S ONLY FILTER, AND IT SHIPPED GRADLE'S CACHE.
+
+       `Include="content\**\*"` is a DISK glob: it ships what is on disk, not
+       what git tracks. Those sets are equal in a clean checkout (CI) and NOT
+       equal on any machine that has run gradle in the template tree — which is
+       what a maintainer does to test the template. Proven by packing with the
+       cache present (Phase 8.6 Gate 2), before this line was fixed:
+
+         content/content/BlazorNative.App/android/.gradle/9.6.1/checksums/checksums.lock
+         content/content/BlazorNative.App/android/.gradle/9.6.1/fileHashes/fileHashes.bin
+         content/content/BlazorNative.App/android/.gradle/buildOutputCleanup/buildOutputCleanup.lock
+         … 8 entries, 45 total in the nupkg, 40 under content/ where 32 are tracked
+
+       So `dotnet new blazornative` handed a stranger a gradle cache from the
+       packer's laptop — lock files and machine-specific file hashes, seeded
+       into a fresh project as if they described it.
+
+       ⚠ NOT A BLANKET DOTFILE EXCLUDE, AND `NoDefaultExcludes=true` ABOVE IS
+       WHY. 8.3 set that deliberately: the gradle wrapper's own tree is dotted
+       and the default excludes would drop it, which is the app's FIRST command.
+       Anything of the form `content\**\.*` would delete the wrapper from the
+       pack and reproduce 8.3's bug with a bigger blast radius. Each entry below
+       is therefore NAMED, and the pin below names the rest.
+
+       ⚠ `content\**\build\**` WOULD BE A CATASTROPHE AND IS DELIBERATELY NOT
+       HERE. content/BlazorNative.App/build/BionicNativeAot.targets is REAL
+       SHIPPED CONTENT — the NDK cross-compile shim, without which a generated
+       app has no bionic publish, no .so and no APK. .gitignore carries a
+       negation for exactly that file for exactly that reason. Gradle's output
+       dir is excluded by its FULL path (android\build) instead — the gradle
+       module's bin/obj, not every directory named `build`.
+
+       THIS IS AN EXCLUSION LIST, NOT A ROSTER OF SUBJECTS (the 8.1 I-2
+       distinction): nothing is derived from it, it only forgives. The subjects
+       come off git. TemplateDriftTests.TemplateContentTree_IsExactlyTheExpected-
+       Manifest reads THIS attribute and applies it, so the pin and the pack
+       cannot disagree about what ships — and an untracked artifact this list
+       does NOT name reds that pin by name, which is how the next one gets
+       found.
+       ───────────────────────────────────────────────────────────────────── -->
   <ItemGroup>
-    <Content Include="content\**\*" Exclude="content\**\bin\**;content\**\obj\**" />
+    <Content Include="content\**\*" Exclude="content\**\bin\**;content\**\obj\**;content\**\.gradle\**;content\**\.kotlin\**;content\**\.idea\**;content\**\android\build\**;content\**\local.properties" />
     <None Include="README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
 

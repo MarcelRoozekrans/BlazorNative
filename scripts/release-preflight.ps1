@@ -14,27 +14,31 @@
 
     Three jobs, one per switch:
 
-      -SelfTest    The 8-row classifier table (8.2 design decision 4), NEGATIVE
+      -SelfTest    The 9-row classifier table (8.6 design decision 4), NEGATIVE
                    ROWS INCLUDED. This is what makes the tag↔props assertion
                    provable WITHOUT a Release: on a PR there is no tag, so a
                    lane that "tested" the assertion against a synthetic tag
                    derived from the props would compare the props TO ITSELF —
                    green, vacuous, and exactly 8.1's headline sin. The table
-                   supplies real negative inputs instead (`pkg/9.9.9` vs props
-                   `1.0.0-preview.1` is a REAL mismatch, and its row expects
+                   supplies real negative inputs instead (`v9.9.9` vs props
+                   `1.0.0-preview.2` is a REAL mismatch, and its row expects
                    RED).
 
       -Tag <t>     Classify + assert, then emit the verdict for release.yml's
-                   push-job guard. Two disjoint namespaces (8.2 decision 1):
-                     v<N>.<M>       -> milestone   -> SKIP, exit 0, ANNOUNCED
-                     pkg/<semver>   -> package     -> assert tag == props
-                     anything else  -> unrecognized-> RED
-                   THE PROPS WINS AND THE TAG IS A CLAIM (8.2 decision 2): this
-                   script VERIFIES `pkg/X` against src/Directory.Build.props and
-                   NEVER overrides it. No `-p:Version=` exists anywhere in the
-                   release path — pinned by ReleaseWorkflowPinTests, because it
-                   is the exact drift a contributor imports by copying the
-                   reference implementation.
+                   push-job guard. ONE namespace publishes (8.6 decision 4):
+                     v<semver>      -> package         -> assert tag == props
+                     v<N>.<M>       -> legacy-milestone-> RED
+                     pkg/<semver>   -> legacy-package  -> RED
+                     v<not-semver>  -> malformed       -> RED
+                     anything else  -> unrecognized    -> RED
+                   THE PROPS WINS AND THE TAG IS A CLAIM (8.2 decision 2,
+                   unchanged and RE-POINTED): this script VERIFIES `v<X>`
+                   against src/Directory.Build.props and NEVER overrides it. Its
+                   old subject was "the owner forgot to bump the props"; its new
+                   subject is "release-please's config is wrong". No
+                   `-p:Version=` exists anywhere in the release path — pinned by
+                   ReleaseWorkflowPinTests, because it is the exact drift a
+                   contributor imports by copying the reference implementation.
 
       -Preflight   The nuget.org state check — the ONE thing a real push can
                    reject that no local step can know (8.2 decision 4). Two
@@ -42,6 +46,54 @@
                    the vacuity note on Test-NugetState below. It is the reason
                    `--skip-duplicate` is safe in release.yml: this reds on a
                    forgotten props bump BEFORE the push job starts.
+
+    THE VERDICT VOCABULARY IS `publish` AND RED. THERE IS NO `skip` (8.6
+    decision 4). 8.2's milestone arm skipped-and-said-so on ONE premise, stated
+    in its own words: "a milestone Release is a LEGITIMATE thing the owner may
+    do at M8's close — reddening a legitimate action trains the owner to ignore
+    reds on release runs." PHASE 8.6 DELETES THAT PREMISE: the milestone-tag
+    namespace is RETIRED, v1.0…v7.0 WERE DELETED (2026-07-17, on the owner's go
+    — the last step of 8.6's close; `git ls-remote --tags origin` is empty), no
+    v<N>.<M> will ever be cut again, and `v8.0` is
+    CANCELLED (M8 DoD #6's tag was a ritual, not a result — see
+    docs/plans/2026-07-17-milestone-8-audit-addendum.md). A Release on `v8.0` is
+    no longer a legitimate action; it is a MISTAKE. The loudness argument inverts
+    with the premise: a green "milestone Release — nothing published" would tell
+    an owner who just did something meaningless that all is well.
+
+    THE RED NEVER WAITED FOR THE DELETION, and the distinction is why this arm
+    was sound BEFORE the tags went: the namespace was retired by DECISION, and
+    this arm reds on the tag's SHAPE. RETIRING A NAMESPACE AND EMPTYING IT ARE
+    TWO DIFFERENT ACTS and only the first ever had to have happened. `v8.0` red
+    with all seven tags live exactly as it does now that they are gone — so
+    nothing here was ever load-bearing on the deletion, which is why this arm
+    did not change when the tags did.
+
+    AND RED IS NOT THE UNSAFE DIRECTION HERE, which is the part worth checking
+    rather than trusting. 8.2's headline hazard was `v8.0` -> six packages at
+    version "8.0", permanently (nuget.org has no hard delete). Count the guards
+    between `v8.0` and that outcome:
+      1. the legacy-milestone arm (SHAPE)            -> RED
+      2. SemVer validation of the `v` payload        -> "8.0" is not SemVer -> RED
+      3. the tag↔props assertion (CONTENT)           -> "8.0" != props -> RED
+      4. STRUCTURAL — the tag NEVER feeds the pack; what ships is whatever the
+         props spells (pinned by ReleaseWorkflowPinTests
+         .TheReleaseWorkflow_NeverOverridesTheVersion)
+    8.2 had two (shape + content). This has FOUR, and the fourth is structural.
+    Converting arm 1 from SKIP to RED does not remove a guard — it makes the
+    first one louder. The hazard's defence did not weaken.
+
+    ALL THREE OF THAT COUNT'S CLAIMS WERE MUTATION-PROVEN AT 8.6 GATE 1, and the
+    third is the one worth having: M3′ neutered guard 2 AND deleted guard 1, and
+    `v8.0` STILL came back RED — from guard 3, alone, with class `package`. The
+    last line of defence for 8.2's headline hazard holds after the two in front
+    of it are both gone.
+
+    THE NAMESPACES STAY DISJOINT, BY A DIFFERENT MECHANISM THAN 8.2's. 8.2:
+    disjoint by PREFIX (`pkg/` vs `v`). 8.6: disjoint by COMPONENT COUNT —
+    `v<N>.<M>` is not valid SemVer (two components), so `v8.0` can never be a
+    valid `v<semver>` tag, and `v8.0.0` can, and SHOULD publish 8.0.0 if this
+    repo ever gets there. No collision exists, now or ever.
 
     WHY THIS SCRIPT NAMES NO PACKAGES (8.1 normative rule 2, the I-2 finding).
     The shipped set already has four copies and every one of them is pinned. A
@@ -56,7 +108,7 @@
 
 .EXAMPLE
     .\scripts\release-preflight.ps1 -SelfTest
-    .\scripts\release-preflight.ps1 -Tag pkg/1.0.0-preview.1
+    .\scripts\release-preflight.ps1 -Tag v1.0.0-preview.2
     .\scripts\release-preflight.ps1 -Preflight
 #>
 
@@ -68,7 +120,7 @@ param(
     # The nuget.org state preflight — two control arms, then the shipped six.
     [switch]$Preflight,
 
-    # The classifier + assertion table (the 8 rows, negative rows included).
+    # The classifier + assertion table (the 9 rows, negative rows included).
     [switch]$SelfTest
 )
 
@@ -82,33 +134,60 @@ function Write-OK([string]$text)   { Write-Host "  ✓  $text" -ForegroundColor 
 function Write-Fail([string]$text) { Write-Host "  ✗  $text" -ForegroundColor Red }
 
 # ─────────────────────────────────────────────────────────────────────────────
-#  The two namespaces (8.2 design decision 1)
+#  The ONE publishing namespace, and the two retired ones (8.6 design decision 4)
 #
-#  `git tag -l 'v*'` and `git tag -l 'pkg/*'` partition the tag space with an
-#  EMPTY intersection — the disjointness is an assertion you can run, not a
-#  convention you have to remember. Seven milestone tags exist (v1.0…v7.0), all
-#  Release-less; v8.0 is DoD #6's close and does not exist yet.
+#  `v<semver>` is release-please's default tag shape (`include-v-in-tag`
+#  defaults to true) and, after 8.6, the ONLY shape that publishes. The owner
+#  chose it to match the reference and the ecosystem norm; it is also the
+#  default, and fewer knobs turned away from default is fewer ways to be wrong.
 #
-#  THE HAZARD THIS MILESTONE CREATES, stated where the regexes live: the
-#  `release` event carries NO tag filter, so EVERY published Release fires
-#  release.yml — including one published on `v8.0` at M8's close. An
-#  AdoNet.Async-shaped `VERSION="${TAG#v}"` would turn that into six packages
-#  pushed at version "8.0", permanently (nuget.org has no hard delete). Two
-#  INDEPENDENT guards stop it: MilestoneTagPattern below reads the tag's SHAPE,
-#  and the props assertion reads its CONTENT. Neither is load-bearing alone.
+#  THE HAZARD, stated where the regexes live: the `release` event carries NO tag
+#  filter, so EVERY published Release fires release.yml — including one
+#  published on `v8.0`. An AdoNet.Async-shaped `VERSION="${TAG#v}"` would turn
+#  that into six packages pushed at version "8.0", permanently (nuget.org has no
+#  hard delete). FOUR independent guards stop it now; see the file header. The
+#  two that live in this section are the SHAPE (the legacy-milestone arm below)
+#  and the CONTENT (the props assertion). Neither is load-bearing alone, and
+#  neither is the last line — guard 4 is structural.
+#
+#  WHY THE RETIRED NAMESPACES GET NAMED ARMS RATHER THAN FALLING TO THE GENERIC
+#  ONE — the house rule already in this script: different mistakes, different
+#  sentences. A `pkg/1.0.0-preview.2` Release means someone followed
+#  docs/GITHUB-SETUP.md's OLD ritual, and that reader deserves "the `pkg/`
+#  namespace was retired in Phase 8.6; release-please owns `v<semver>` now" —
+#  not "tag is in neither namespace", which reads like a typo report.
 # ─────────────────────────────────────────────────────────────────────────────
 
-# Milestone: v<N>.<M> and nothing else. Mutation vehicle (8.2 mutation 1):
-# narrow this to match nothing -> `v8.0` falls through to UNRECOGNIZED -> RED,
-# which proves the SKIP arm is a decision rather than a default.
-$MilestoneTagPattern = '^v(\d+)\.(\d+)$'
+# LEGACY MILESTONE: v<N>.<M> and nothing else — RETIRED by 8.6 (the seven tags
+# v1.0…v7.0 were deleted on 2026-07-17, the last step of 8.6's close; v8.0 was
+# cancelled, never cut). The RETIREMENT is what this arm rests on, and it is a
+# decision, not a tag state — so the arm was correct while the seven were live
+# and is unchanged now they are gone; it never read a tag list. This arm exists
+# to SAY SO, not to decide: `v8.0` is RED with
+# or without it (`"8.0"` is not SemVer, so the `v<semver>` arm below would reject
+# it as malformed anyway).
+#
+# Mutation vehicle M1′ (8.6): DELETE this arm -> `v8.0` falls through to
+# `^v(.+)$` -> `"8.0"` is not SemVer -> malformed/RED -> row 3 expects
+# `legacy-milestone` -> the CLASS differs -> row 3 REDS. That proves the arm is
+# a DECISION and not a default, *and* that the verdict stays RED without it.
+# Belt and braces, both real; the table can only see the belt.
+#
+# It must be consulted BEFORE the `v<semver>` arm — `^v(.+)$` would otherwise
+# swallow `v8.0` and diagnose it as a typo'd version rather than as the retired
+# ritual it actually is.
+$LegacyMilestoneTagPattern = '^v(\d+)\.(\d+)$'
 
-# Package release: the `pkg/` namespace. The payload is validated as semver
-# SEPARATELY (below), so a `pkg/` tag with a bad payload diagnoses as MALFORMED
+# LEGACY PACKAGE: 8.2's `pkg/` namespace — RETIRED by 8.6. Note that row 5's
+# props MATCHES and the row is still RED: this arm is about the NAMESPACE, not
+# the version. The payload is never even parsed.
+$LegacyPackageTagPattern = '^pkg/(.+)$'
+
+# THE ONE PUBLISHING NAMESPACE: `v<semver>`. The payload is validated as semver
+# SEPARATELY (below), so a `v` tag with a bad payload diagnoses as MALFORMED
 # ("you meant a package release and typo'd the version") rather than as
-# UNRECOGNIZED ("you used neither namespace"). Different mistakes, different
-# sentences.
-$PackageTagPattern = '^pkg/(.+)$'
+# UNRECOGNIZED ("you used no namespace at all").
+$PackageTagPattern = '^v(.+)$'
 
 # SemVer 2.0.0, the official expression from semver.org. `1.0.0-preview.1` and
 # `9.9.9` match; `not-a-version` does not.
@@ -185,20 +264,21 @@ function Get-ReleaseVerdict {
 
     # THIS BRANCH IS A MESSAGE, NOT A DECISION — recorded because the mutation
     # sweep proved it, and a comment claiming otherwise would be a lie the next
-    # reader inherits. An empty tag matches NEITHER regex below, so it already
-    # falls through to the `unrecognized` arm with the SAME class and the SAME
-    # verdict: deleting this branch entirely leaves the self-test 8/8 GREEN
-    # (run, observed). It is kept because "the Release carries an EMPTY tag"
-    # names the actual problem where the generic arm would say "tag '' is in
-    # NEITHER namespace" — a sentence that reads like a typo report for a tag
-    # that does not exist.
+    # reader inherits. An empty tag matches NO regex below, so it already falls
+    # through to the `unrecognized` arm with the SAME class and the SAME
+    # verdict: deleting this branch entirely leaves the self-test 9/9 GREEN
+    # (run, observed — re-run at 8.6 Gate 1 against the new table). It is kept
+    # because "the Release carries an EMPTY tag" names the actual problem where
+    # the generic arm would say "tag '' is not in the publishing namespace" — a
+    # sentence that reads like a typo report for a tag that does not exist.
     #
-    # WHAT ROW 8 OF THE TABLE ACTUALLY PROVES, measured rather than assumed —
+    # WHAT ROW 9 OF THE TABLE ACTUALLY PROVES, measured rather than assumed —
     # an empty tag is DOUBLE-COVERED, and the two mutations disagree in a way
     # worth writing down:
-    #   · break THIS branch's verdict (RED -> SKIP)  -> row 8 REDS. This branch
-    #     is what executes for an empty tag, so row 8 is load-bearing on it.
-    #   · delete this branch outright                -> row 8 stays GREEN, via
+    #   · break THIS branch's verdict (RED -> PUBLISH) -> row 9 REDS. This
+    #     branch is what executes for an empty tag, so row 9 is load-bearing
+    #     on it.
+    #   · delete this branch outright                  -> row 9 stays GREEN, via
     #     the fall-through. That is redundancy, not vacuity: the second arm
     #     gives the same class and verdict, only a worse sentence.
     # So the belt and the braces are both real, and the table can only see the
@@ -208,63 +288,84 @@ function Get-ReleaseVerdict {
         return [pscustomobject]@{
             Class   = "unrecognized"
             Verdict = "RED"
-            Reason  = "the Release carries an EMPTY tag. Package releases use 'pkg/<semver>' (e.g. pkg/$PropsVersion); milestones use 'v<N>.<M>'."
+            Reason  = "the Release carries an EMPTY tag. Package releases use 'v<semver>' (e.g. v$PropsVersion) and are cut by release-please, not by hand."
         }
     }
 
-    # CASE — and the asymmetry with the package arm below. Deliberate, kept, and
-    # written down because it is NOT predictable from the code (Gate 1 review
-    # M-1/M-2). `-match` is PowerShell's CASE-INSENSITIVE operator, so `V8.0`
-    # matches HERE and SKIPs. The package arm below uses [regex]::Match, which is
-    # CASE-SENSITIVE, so `PKG/1.0.0-preview.1` does NOT match, falls through, and
-    # lands on unrecognized -> RED.
+    # ── ARM 1: the retired milestone namespace (SHAPE) ───────────────────────
+    # Consulted FIRST, before `^v(.+)$` below, so `v8.0` is diagnosed as the
+    # retired ritual it is rather than as a typo'd version.
     #
-    # So a wrong-case tag PUBLISHES NOTHING either way — the arms differ only in
-    # what they SAY about it. That is why this is a comment and not a
-    # normalization: both candidate fixes cost something real.
-    #   · Make this arm case-SENSITIVE -> `V8.0` becomes a RED on a tag of
-    #     obvious intent. That is decision 1's named hazard exactly: reddening a
-    #     legitimate action trains the owner to ignore reds on release runs.
-    #   · Make the package arm case-INSENSITIVE -> the DOOR opens to a tag shape
-    #     the docs never define. Toward publishing is the one direction this
-    #     phase's law does not bend.
-    # And neither shape has a self-test row (the table is 8, and the gate pins
-    # it at 8), so either change would be untested behaviour change on the one
-    # script that decides whether a push happens. Comment, not code.
-    if ($Tag -match $MilestoneTagPattern) {
+    # CASE: `-match` is PowerShell's CASE-INSENSITIVE operator, so `V8.0`
+    # matches here too. That is harmless now and was not before — under 8.2 this
+    # arm returned SKIP, so its case-sensitivity decided between "announce" and
+    # "red". After 8.6 both spellings are RED; only the SENTENCE differs, and
+    # the case-insensitive one is the better sentence. The asymmetry with the
+    # publishing arm below is therefore no longer a judgment call the reader has
+    # to be warned about — it is just correct.
+    if ($Tag -match $LegacyMilestoneTagPattern) {
         return [pscustomobject]@{
-            Class   = "milestone"
-            Verdict = "SKIP"
-            Reason  = "milestone Release — nothing was published; package releases use 'pkg/<semver>'."
+            Class   = "legacy-milestone"
+            Verdict = "RED"
+            Reason  = "tag '$Tag' is a MILESTONE tag (v<N>.<M>), and that namespace was RETIRED in Phase 8.6. No v<N>.<M> will ever be cut again: the milestone tags v1.0-v7.0 were deleted on 2026-07-17, and 'v8.0' was cancelled — M8 DoD #6's tag was a ritual, not a result (see docs/plans/2026-07-17-milestone-8-audit-addendum.md). Under 8.2 this was an announce-and-skip; the premise it rested on ('a milestone Release is a legitimate thing the owner may do') no longer holds, so it is now a mistake and says so. Package releases are 'v<semver>' — e.g. 'v$PropsVersion' — and release-please cuts them. Nothing was published."
         }
     }
 
-    # [regex]::Match is CASE-SENSITIVE (unlike `-match` above — see the note on
-    # the milestone arm). `pkg/` is the only spelling that opens this door;
-    # `PKG/` falls through to unrecognized -> RED. That strictness is the right
-    # default for the publishing arm and is left as-is.
+    # ── ARM 2: the retired `pkg/` namespace (NAMESPACE, not version) ─────────
+    # Note that this arm never parses the payload: row 5 of the table feeds it a
+    # tag whose version MATCHES the props, and it is still RED. The namespace is
+    # the whole subject.
+    if ($Tag -match $LegacyPackageTagPattern) {
+        return [pscustomobject]@{
+            Class   = "legacy-package"
+            Verdict = "RED"
+            Reason  = "tag '$Tag' uses the 'pkg/' namespace, which was RETIRED in Phase 8.6 — release-please owns 'v<semver>' now. This Release was cut by hand following docs/GITHUB-SETUP.md's OLD ritual; that ritual is gone. Merge release-please's release PR instead: it cuts the tag and a DRAFT Release, and publishing the draft is the go. Nothing was published."
+        }
+    }
+
+    # ── ARM 3: the ONE publishing namespace ──────────────────────────────────
+    # [regex]::Match is CASE-SENSITIVE (unlike `-match` above). `v` is the only
+    # spelling that opens this door; `V1.0.0-preview.2` falls through to
+    # unrecognized -> RED. That strictness is the right default for the arm that
+    # can publish, and it is deliberate: toward publishing is the one direction
+    # this phase's law does not bend.
     $pkgMatch = [regex]::Match($Tag, $PackageTagPattern)
     if ($pkgMatch.Success) {
         $claimed = $pkgMatch.Groups[1].Value
+
+        # GUARD 2 (see the file header's four-guard count). `v8.0` reaches here
+        # only if arm 1 is gone — and `"8.0"` is not SemVer, so it still cannot
+        # publish. Mutation vehicle M3′ (8.6) neuters THIS check *and* deletes
+        # arm 1, to prove guard 3 below is a real last line of defence.
         if ($claimed -notmatch $SemVerPattern) {
             return [pscustomobject]@{
                 Class   = "malformed"
                 Verdict = "RED"
-                Reason  = "tag '$Tag' is in the package namespace but '$claimed' is not a valid SemVer 2.0.0 version. The props says '$PropsVersion' — the tag must be 'pkg/$PropsVersion'."
+                Reason  = "tag '$Tag' is in the publishing namespace but '$claimed' is not a valid SemVer 2.0.0 version. The props says '$PropsVersion' — the tag must be 'v$PropsVersion'. Nothing was published."
             }
         }
 
-        # THE ASSERTION (8.2 decision 2): the props WINS; the tag is a CLAIM.
-        # Mutation vehicle (8.2 mutation 2): neuter this comparison to
-        # always-true -> the `pkg/9.9.9` row returns PUBLISH -> its row expects
-        # RED -> the self-test reds. A positive control ON the positive control.
+        # GUARD 3 — THE ASSERTION (8.2 decision 2, unchanged and RE-POINTED):
+        # the props WINS; the tag is a CLAIM. Its old subject was "the owner
+        # forgot to bump the props". Its new subject is "release-please's config
+        # is wrong" — the manifest bumped and the props did not, because
+        # `extra-files` missed it. The subject is better, not gone. The
+        # PRE-MERGE half of that guard is
+        # PackageVersionPinTests.TheManifest_AgreesWithTheProps, which reds
+        # release-please's own PR in the required lane before it can merge; this
+        # is the Release-time backstop for when that pin is removed or the PR is
+        # force-merged.
         #
-        # CASE, and this is the ONE non-obvious PUBLISH in the script (Gate 1
-        # review M-2), so it is stated rather than left to be discovered: `-ne`
-        # is CASE-INSENSITIVE, so `pkg/1.0.0-PREVIEW.1` compares EQUAL to the
-        # props' `1.0.0-preview.1` and the verdict is PUBLISH. That is benign,
-        # for two independent reasons: NuGet versions ARE case-insensitive by
-        # spec, and — decisively — THE TAG NEVER FEEDS THE PACK. What ships is
+        # Mutation vehicle M2′ (8.6): neuter this comparison to always-true ->
+        # the `v9.9.9` row returns PUBLISH -> its row expects RED -> the
+        # self-test reds. A positive control ON the positive control.
+        #
+        # CASE, and this is the ONE non-obvious PUBLISH in the script, so it is
+        # stated rather than left to be discovered: `-ne` is CASE-INSENSITIVE,
+        # so `v1.0.0-PREVIEW.2` compares EQUAL to the props' `1.0.0-preview.2`
+        # and the verdict is PUBLISH. That is benign, for two independent
+        # reasons: NuGet versions ARE case-insensitive by spec, and —
+        # decisively — THE TAG NEVER FEEDS THE PACK (guard 4). What ships is
         # whatever src/Directory.Build.props spells, and the release path never
         # overrides it (pinned by ReleaseWorkflowPinTests
         # .TheReleaseWorkflow_NeverOverridesTheVersion). So an odd-cased tag
@@ -273,7 +374,7 @@ function Get-ReleaseVerdict {
             return [pscustomobject]@{
                 Class   = "package"
                 Verdict = "RED"
-                Reason  = "VERSION MISMATCH — the tag claims '$claimed', src/Directory.Build.props says '$PropsVersion'. The props is the version and the tag is a claim about it (8.2 decision 2): this flow NEVER overrides the props. Either the tag is on the wrong commit, or the props bump never merged. Fix the tag (or the props, in a PR) and publish a new Release."
+                Reason  = "VERSION MISMATCH — the tag claims '$claimed', src/Directory.Build.props says '$PropsVersion'. The props is the version and the tag is a claim about it (8.2 decision 2): this flow NEVER overrides the props. release-please writes BOTH the manifest and the props in one release PR, so on main they agree at every commit — a mismatch here means the release PR's `extra-files` did not reach the props, or the tag is on the wrong commit. Nothing was published."
             }
         }
 
@@ -287,7 +388,7 @@ function Get-ReleaseVerdict {
     return [pscustomobject]@{
         Class   = "unrecognized"
         Verdict = "RED"
-        Reason  = "tag '$Tag' is in NEITHER namespace. Package releases are 'pkg/<semver>' (the only shape that publishes); milestones are 'v<N>.<M>' (which publish nothing). See docs/GITHUB-SETUP.md."
+        Reason  = "tag '$Tag' is not in the publishing namespace. Package releases are 'v<semver>' (e.g. 'v$PropsVersion') and are cut by release-please's release PR, never by hand. See docs/GITHUB-SETUP.md. Nothing was published."
     }
 }
 
@@ -405,31 +506,42 @@ function Invoke-ControlArms {
 
 <#
 .SYNOPSIS
-    -SelfTest: the 8-row table (8.2 design decision 4), negative rows included.
+    -SelfTest: the 9-row table (8.6 design decision 4), negative rows included.
 .DESCRIPTION
     THE PROPS VALUES ARE THE TABLE'S, NOT THE LIVE ONES. That is the point: a
     row that derived its tag from the live props would compare the props to
     itself and pass forever, including after someone deleted the comparison.
-    Row 2 (`pkg/9.9.9` vs `1.0.0-preview.1`) is a real mismatch with a real
+    Row 2 (`v9.9.9` vs `1.0.0-preview.2`) is a real mismatch with a real
     expected RED, and it is what makes the assertion provable with no Release
     in existence.
+
+    THE TABLE'S PROPS IS `1.0.0-preview.2` AND THE LIVE PROPS IS SOMETHING ELSE
+    — deliberately, and it is worth one sentence. `1.0.0-preview.2` is the
+    version release-please proposes NEXT, so it is a value the live file does
+    not hold; a row that happened to agree with the live props would be a row
+    that could pass by reading the wrong file.
+
+    8 ROWS BECAME 9 (8.6 decision 4), and the count assertion moves with the
+    decision: rows are the proof. 1 PUBLISH arm, 8 RED arms, 0 SKIP arms —
+    `skip` no longer exists in the vocabulary. Row 3 is the phase in one line.
 #>
 function Invoke-SelfTest {
     Write-Host ""
     Write-Host "  ──────────────────────────────────────────────────────" -ForegroundColor DarkGray
-    Write-Host "  release-preflight — classifier self-test (8 rows, negative rows included)" -ForegroundColor White
+    Write-Host "  release-preflight — classifier self-test (9 rows, negative rows included)" -ForegroundColor White
     Write-Host "  ──────────────────────────────────────────────────────" -ForegroundColor DarkGray
     Write-Host ""
 
     $rows = @(
-        @{ Tag = "pkg/1.0.0-preview.1"; Props = "1.0.0-preview.1"; Class = "package";      Verdict = "PUBLISH"; Why = "the happy path — the tag's claim matches the props" }
-        @{ Tag = "pkg/9.9.9";           Props = "1.0.0-preview.1"; Class = "package";      Verdict = "RED";     Why = "a REAL mismatch (not props-vs-props) — the assertion must BITE" }
-        @{ Tag = "v8.0";                Props = "1.0.0-preview.1"; Class = "milestone";    Verdict = "SKIP";    Why = "M8's own close tag — the hazard this milestone creates; it must publish NOTHING" }
-        @{ Tag = "v1.0";                Props = "1.0.0-preview.1"; Class = "milestone";    Verdict = "SKIP";    Why = "an existing milestone tag — the namespace is seven tags deep already" }
-        @{ Tag = "1.0.0-preview.1";     Props = "1.0.0-preview.1"; Class = "unrecognized"; Verdict = "RED";     Why = "bare semver — rejected namespace (c); note the props MATCHES and it is still RED" }
-        @{ Tag = "release/1.0.0";       Props = "1.0.0-preview.1"; Class = "unrecognized"; Verdict = "RED";     Why = "rejected namespace (b) — 'release/' is spent on BRANCHES by the owner's GitVersion.yml" }
-        @{ Tag = "pkg/not-a-version";   Props = "1.0.0-preview.1"; Class = "malformed";    Verdict = "RED";     Why = "the package namespace with a payload that is not semver" }
-        @{ Tag = "";                    Props = "1.0.0-preview.1"; Class = "unrecognized"; Verdict = "RED";     Why = "no tag at all" }
+        @{ Tag = "v1.0.0-preview.2";    Props = "1.0.0-preview.2"; Class = "package";          Verdict = "PUBLISH"; Why = "the happy path — release-please's own tag shape, matching the props" }
+        @{ Tag = "v9.9.9";              Props = "1.0.0-preview.2"; Class = "package";          Verdict = "RED";     Why = "a REAL mismatch (not props-vs-props) — the assertion must BITE; its new subject is release-please's config" }
+        @{ Tag = "v8.0";                Props = "1.0.0-preview.2"; Class = "legacy-milestone"; Verdict = "RED";     Why = "THE ARM 8.6 INVERTS — was SKIP in 8.2; v8.0 is cancelled, not pending" }
+        @{ Tag = "v1.0";                Props = "1.0.0-preview.2"; Class = "legacy-milestone"; Verdict = "RED";     Why = "a retired tag's shape — the arm reds on the SHAPE, never on a tag list, so this row was true while v1.0 was live and is unchanged now it is gone (deleted 2026-07-17). The row never read a tag; that is the point of it" }
+        @{ Tag = "pkg/1.0.0-preview.2"; Props = "1.0.0-preview.2"; Class = "legacy-package";   Verdict = "RED";     Why = "8.2's namespace, retired — note the props MATCHES and it is still RED" }
+        @{ Tag = "1.0.0-preview.2";     Props = "1.0.0-preview.2"; Class = "unrecognized";     Verdict = "RED";     Why = "bare semver, no 'v' — the props matches, still RED" }
+        @{ Tag = "release/1.0.0";       Props = "1.0.0-preview.2"; Class = "unrecognized";     Verdict = "RED";     Why = "rejected namespace (b) — 'release/' is spent on BRANCHES by the owner's GitVersion.yml" }
+        @{ Tag = "vnot-a-version";      Props = "1.0.0-preview.2"; Class = "malformed";        Verdict = "RED";     Why = "the 'v' namespace with a payload that is not semver" }
+        @{ Tag = "";                    Props = "1.0.0-preview.2"; Class = "unrecognized";     Verdict = "RED";     Why = "no tag at all" }
     )
 
     $failures = @()
@@ -447,8 +559,8 @@ function Invoke-SelfTest {
     }
 
     # Non-vacuity: a table that ran zero rows is a self-test that proved nothing.
-    if ($rows.Count -ne 8) {
-        Write-Fail "the self-test table holds $($rows.Count) rows, expected 8 — rows are the proof; losing one silently shrinks what this lane claims (8.2 design decision 4 enumerates all eight)."
+    if ($rows.Count -ne 9) {
+        Write-Fail "the self-test table holds $($rows.Count) rows, expected 9 — rows are the proof; losing one silently shrinks what this lane claims (8.6 design decision 4 enumerates all nine). The count moved 8 -> 9 with the decision that added row 3's inversion; it is not a number to relax."
         return $false
     }
     if ($failures.Count -ne 0) {
@@ -458,7 +570,7 @@ function Invoke-SelfTest {
         return $false
     }
 
-    Write-OK "classifier self-test: $($rows.Count)/$($rows.Count) rows green (2 PUBLISH/SKIP arms, 5 RED arms, 1 mismatch arm)"
+    Write-OK "classifier self-test: $($rows.Count)/$($rows.Count) rows green (1 PUBLISH arm, 8 RED arms, 0 SKIP arms)"
     return $true
 }
 
@@ -499,31 +611,11 @@ function Invoke-Classify {
             )
             return 0
         }
-        "SKIP" {
-            # SKIP-AND-SAY-SO, NOT RED (8.2 decision 1, the deliberate call). A
-            # milestone announcement Release is a LEGITIMATE thing the owner may
-            # do at M8's close — reddening a legitimate action trains the owner
-            # to ignore reds on release runs, which is the last place that habit
-            # should exist. The loudness that matters lives on the UNRECOGNIZED
-            # arm; that one IS red.
-            Write-Host "  ────────────────────────────────────────────────────────────────" -ForegroundColor Yellow
-            Write-Host "   MILESTONE RELEASE — NOTHING WAS PUBLISHED" -ForegroundColor Yellow
-            Write-Host "   '$ReleaseTag' is a milestone tag (v<N>.<M>). Milestone Releases" -ForegroundColor Yellow
-            Write-Host "   announce; they never publish. Package releases use 'pkg/<semver>'" -ForegroundColor Yellow
-            Write-Host "   — e.g. 'pkg/$propsVersion'. This is by design, not a failure." -ForegroundColor Yellow
-            Write-Host "  ────────────────────────────────────────────────────────────────" -ForegroundColor Yellow
-            Write-Verdict -Verdict "skip"
-            Write-Summary @(
-                "### ⚠ Milestone Release — nothing was published",
-                "",
-                "``$ReleaseTag`` is a **milestone** tag (``v<N>.<M>``). Milestone Releases announce a milestone; they **never publish packages**. This run pushed nothing, by design.",
-                "",
-                "Package releases use the **``pkg/<semver>``** namespace — for the current tree that is ``pkg/$propsVersion``. See ``docs/GITHUB-SETUP.md`` → *Publishing a release (the manual go)*.",
-                "",
-                "Exit 0: this is not a failure."
-            )
-            return 0
-        }
+        # THERE IS NO `SKIP` ARM (8.6 decision 4). 8.2 had one, and it rested on
+        # a single premise — "a milestone Release is a LEGITIMATE thing the
+        # owner may do at M8's close" — which this phase deleted along with the
+        # milestone-tag namespace. Every non-publishing tag now falls to
+        # `default` below and REDS. The verdict vocabulary is `publish` and RED.
         default {
             Write-Fail "RED — $($result.Reason)"
             Write-Summary @(
@@ -589,16 +681,30 @@ function Invoke-Preflight {
     }
 
     if ($taken.Count -ne 0) {
+        # ONE SENTENCE, TWO CONSUMERS — and the reason is this sentence's own
+        # history (8.6 Gate 1 review, S1-2 + Q2-2). The console copy and the
+        # step-summary copy said the same thing in two dialects, so they went
+        # STALE TOGETHER: both survived 8.6's sweep of ~20 other `pkg/` lines in
+        # this very file and kept instructing the reader to "bump <Version> ...
+        # and tag the merge commit 'pkg/<new version>'" — a hand-bump that
+        # normative rule 2 abolished, in a namespace THIS FILE REDS AT ARM 2.
+        # A RED that instructs the ritual it reds is worse than silence.
+        # Two copies of a sentence are two chances to be wrong and one chance in
+        # two of fixing it; it is now ONE string, deliberately dialect-neutral
+        # (no markdown emphasis) so the console and the summary can both read it
+        # verbatim. The next drift here is a one-line fix.
+        $remedy = "nuget.org versions are IMMUTABLE — a published version can only be UNLISTED, never replaced or re-pushed. Nobody bumps a version by hand any more (8.6 normative rule 2), and the 'pkg/' namespace is retired — this script reds it. THE RITUAL: land a conventional commit on main; release-please opens a release PR that writes the next version for you; APPROVE ITS WORKFLOWS so its checks start (they are held approval-required because release-please opens the PR with GITHUB_TOKEN); merge it, which cuts the 'v<semver>' tag and a DRAFT Release; then publish the draft. That click is the go. See docs/GITHUB-SETUP.md."
+
         Write-Host ""
         Write-Fail "ALREADY PUBLISHED on nuget.org at $propsVersion`: $($taken -join ', ')"
-        Write-Fail "nuget.org versions are IMMUTABLE — a published version can only be UNLISTED, never replaced or re-pushed. Bump <Version> in src/Directory.Build.props, merge, and tag the merge commit 'pkg/<new version>'."
+        Write-Fail $remedy
         $takenMarkdown = ($taken | ForEach-Object { '`' + $_ + '`' }) -join ', '
         Write-Summary @(
             "### ❌ Version already published — nothing was pushed",
             "",
             "``$propsVersion`` is **already on nuget.org** for: $takenMarkdown",
             "",
-            "nuget.org versions are **immutable** — a published version can only be *unlisted*, never replaced. Bump ``<Version>`` in ``src/Directory.Build.props``, merge, and tag the merge commit ``pkg/<new version>``.",
+            $remedy,
             "",
             "This is the failure ``--skip-duplicate`` would otherwise mask by pushing nothing and going green (8.2 decision 5 — the two are designed as a pair)."
         )
