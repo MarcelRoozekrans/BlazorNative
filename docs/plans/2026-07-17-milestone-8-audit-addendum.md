@@ -138,56 +138,73 @@ commits are not tags. A reader who needs to re-run it uses the commit, not the t
 
 ## The tag deletion — STATE, stated precisely, because everything above is written around it
 
-> ### ⚠ **AS OF 2026-07-17, ALL SEVEN TAGS (`v1.0`…`v7.0`) STILL EXIST.**
+> ### ✅ **THE SEVEN TAGS (`v1.0`…`v7.0`) WERE DELETED ON 2026-07-17.**
 >
 > ```
+> $ git push origin --delete v1.0 v2.0 v3.0 v4.0 v5.0 v6.0 v7.0   # + the locals
+> $ git ls-remote --tags origin
 > $ git tag -l
-> v1.0  v2.0  v3.0  v4.0  v5.0  v6.0  v7.0
 > ```
 >
-> **The deletion is decided and authorized. It has NOT been taken.** It is the **last,
-> un-taken step** of Phase 8.6's close, and it is the **owner's** to take — deleting seven
-> published tags is destructive, and the authorization is being re-confirmed at the moment it
-> would happen.
+> **Both are empty.** This repo now has **no tags at all** until release-please cuts the
+> first `v1.0.0-preview.2`. The owner gave a fresh go at the moment it would happen —
+> deleting seven published tags is destructive, so the authorization was re-confirmed
+> rather than inherited from the morning's approval-in-principle.
 
 **This matters to how the rest of the machinery is worded, and the distinction is the point:**
 
 > ### **RETIRING A NAMESPACE AND EMPTYING IT ARE TWO DIFFERENT ACTS.**
 >
-> **The retirement is a DECISION, and it has happened.** The classifier reds on a tag's
-> **shape**, so **`v8.0` reds today, with all seven tags live, exactly as it will once they
-> are gone.** **Nothing in the shipped machinery is load-bearing on a step that has not been
-> taken** — which is why Gate 3 could ship the classifier's RED, this addendum, and the
-> live-doc sweep *without* the deletion, and none of them is a promise.
+> **The retirement is a DECISION, and it happened first.** The classifier reds on a tag's
+> **shape**, so **`v8.0` red while all seven tags were live, exactly as it does now they are
+> gone.** **Nothing in the shipped machinery was load-bearing on the deletion** — which is
+> why Gate 3 could ship the classifier's RED, this addendum, and the live-doc sweep *before*
+> it, and why **not one line of the classifier changed when the tags went.** That is the
+> claim's proof: the machine did not notice.
 
 **Gate 1 shipped four sites asserting the deletion in the present tense** (`release-preflight.ps1`
-`:55`, `:152`, `:296`; `docs/GITHUB-SETUP.md:448`) — **plus a fifth its own review did not name**
-(`.github/workflows/release.yml:189`). At the time they were written the tags were live, and they
-still are. **Phase 8.6's design pre-decided this exact case**, and Gate 3 followed it:
+`:55`, `:152`, `:296`; `docs/GITHUB-SETUP.md:448`) — **plus two its own review did not name**
+(`.github/workflows/release.yml:189`, and `release-preflight.ps1`'s **self-test row for `v1.0`**,
+whose note read *"a deleted tag's shape"* — a tense claim **inside the table that is the proof**).
+At the time they were written the tags were live. **Phase 8.6's design pre-decided this exact
+case**, and Gate 3 followed it, returning all six to the subjunctive:
 
 > *"If Gate 3 is descoped, deferred, or split — **the text must come back to the subjunctive in
 > the same change that defers it.** Shipping 'were deleted' over seven live tags is the exact
 > shape of falsehood this phase's Gate 1 review exists to catch."*
 
-**All five sites now say "to be deleted", with the date and the fact that all seven exist.**
-The deletion is deferred, so the text is subjunctive. **When the tags go, the sentences that
-have to move are enumerated below — there are six, and they are the deletion's final step.**
+**The deletion has now been taken, so the same box swings back** — this time truthfully, and in
+the same change that took it.
 
-### The deletion's own checklist — for whoever takes it
+### The deletion's checklist — as taken, and it was WRONG BY ONE
 
-| # | Site | What changes |
+| # | Site | What changed |
 |---|---|---|
-| 1 | `docs/planning/ROADMAP.md` — the retirement note at the top of `## Milestones` | the **STATE** paragraph: "all seven still exist" → they do not |
-| 2 | `docs/GITHUB-SETUP.md` — the `v8.0` REDS NOW box | "to be deleted (… all seven still exist)" → deleted |
+| 1 | `docs/planning/ROADMAP.md` — the retirement note at the top of `## Milestones` | the **STATE** paragraph: "all seven still exist" → **they are gone**, and the note now answers `git checkout v6.0` in the past tense |
+| 2 | `docs/GITHUB-SETUP.md` — the `v8.0` REDS NOW box | "to be deleted (… all seven still exist)" → **deleted 2026-07-17** |
 | 3 | `scripts/release-preflight.ps1:~55` | the header's "TO BE DELETED" parenthetical |
-| 4 | `scripts/release-preflight.ps1:~152` | the arm comment's "authorized, not yet taken" |
-| 5 | `scripts/release-preflight.ps1:~296` | the RED string's "are being deleted" |
-| 6 | `.github/workflows/release.yml:~189` | the classify step's comment |
-| 7 | **this file** — the STATE box above | it becomes the record of a deletion that happened |
+| 4 | `scripts/release-preflight.ps1:~161` | the arm comment's "authorized, not yet taken" |
+| 5 | `scripts/release-preflight.ps1:~308` | the RED string's "are being deleted" |
+| 6 | `.github/workflows/release.yml:~190` | the classify step's comment |
+| **7** | ⚠ **`scripts/release-preflight.ps1:~537` — the self-test row's own note.** **THIS ROW WAS MISSING FROM THE CHECKLIST**, and it is the one site this document called *"the sharpest"* two paragraphs above | Gate 3's fix left *"this row is true whether or not `v1.0` still exists **(it does, as of 2026-07-17)**"* — **an existence claim, and the deletion falsifies it** |
+| 8 | **this file** — the STATE box above | it becomes the record of a deletion that happened |
 
-**Nothing else moves**, and that is by design: the live-doc sweep already removed every claim
-that a milestone tag **exists**, so no document has to be re-swept when they go. **`docs/plans`
-is never touched.**
+> **⚠ THE CHECKLIST DROPPED THE SITE ITS OWN AUTHOR CALLED THE SHARPEST.** Gate 3 swept
+> **six** sites and then enumerated a **different six**: it added `ROADMAP.md` (which it had
+> just written) and **silently dropped `:537`** (which it had just fixed). The prose above it
+> said *"five"*; the checklist said *"six"*; the truth was **seven**. **Following the checklist
+> literally would have left a false existence claim inside the self-test table that is the
+> classifier's proof** — the exact shape Gate 3 named when it found it.
+>
+> **The lesson is this phase's own, arriving one more time:** a list of what to change is a
+> **copy** of the thing it lists, and it rots the same way. **The sweep that found `:537` was
+> a grep for the claim; the checklist that lost it was a hand-written roster** — 8.3's I-1
+> and 8.1's normative rule 2, in a document that cites both. **Caught at the close only
+> because the deletion was swept by re-grepping rather than by reading this table.**
+
+**Nothing else moved**, and that much was by design: the live-doc sweep had already removed every
+claim that a milestone tag **exists**, so no document had to be re-swept when they went. **No
+pre-existing `docs/plans` record was touched** — this file is 8.6's own.
 
 ---
 

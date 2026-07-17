@@ -52,21 +52,22 @@
     in its own words: "a milestone Release is a LEGITIMATE thing the owner may
     do at M8's close — reddening a legitimate action trains the owner to ignore
     reds on release runs." PHASE 8.6 DELETES THAT PREMISE: the milestone-tag
-    namespace is RETIRED, v1.0…v7.0 are TO BE DELETED (decided and authorized;
-    as of 2026-07-17 all seven still exist — the deletion is the owner's step and
-    the last of 8.6's close), no v<N>.<M> will ever be cut again, and `v8.0` is
+    namespace is RETIRED, v1.0…v7.0 WERE DELETED (2026-07-17, on the owner's go
+    — the last step of 8.6's close; `git ls-remote --tags origin` is empty), no
+    v<N>.<M> will ever be cut again, and `v8.0` is
     CANCELLED (M8 DoD #6's tag was a ritual, not a result — see
     docs/plans/2026-07-17-milestone-8-audit-addendum.md). A Release on `v8.0` is
     no longer a legitimate action; it is a MISTAKE. The loudness argument inverts
     with the premise: a green "milestone Release — nothing published" would tell
     an owner who just did something meaningless that all is well.
 
-    THE RED DOES NOT WAIT FOR THE DELETION, and the distinction is why this arm
-    is sound today: the namespace was retired by DECISION, and this arm reds on
-    the tag's SHAPE. RETIRING A NAMESPACE AND EMPTYING IT ARE TWO DIFFERENT ACTS
-    and only the first has to have happened. `v8.0` reds with all seven tags live
-    exactly as it will once they are gone — so nothing here is load-bearing on a
-    step that has not been taken.
+    THE RED NEVER WAITED FOR THE DELETION, and the distinction is why this arm
+    was sound BEFORE the tags went: the namespace was retired by DECISION, and
+    this arm reds on the tag's SHAPE. RETIRING A NAMESPACE AND EMPTYING IT ARE
+    TWO DIFFERENT ACTS and only the first ever had to have happened. `v8.0` red
+    with all seven tags live exactly as it does now that they are gone — so
+    nothing here was ever load-bearing on the deletion, which is why this arm
+    did not change when the tags did.
 
     AND RED IS NOT THE UNSAFE DIRECTION HERE, which is the part worth checking
     rather than trusting. 8.2's headline hazard was `v8.0` -> six packages at
@@ -158,10 +159,11 @@ function Write-Fail([string]$text) { Write-Host "  ✗  $text" -ForegroundColor 
 # ─────────────────────────────────────────────────────────────────────────────
 
 # LEGACY MILESTONE: v<N>.<M> and nothing else — RETIRED by 8.6 (the seven tags
-# v1.0…v7.0 are to be deleted — authorized, not yet taken as of 2026-07-17;
-# v8.0 was cancelled, never cut). The RETIREMENT is what this arm rests on, and
-# it is a decision, not a tag state — so the arm is correct whether or not the
-# seven still exist. This arm exists to SAY SO, not to decide: `v8.0` is RED with
+# v1.0…v7.0 were deleted on 2026-07-17, the last step of 8.6's close; v8.0 was
+# cancelled, never cut). The RETIREMENT is what this arm rests on, and it is a
+# decision, not a tag state — so the arm was correct while the seven were live
+# and is unchanged now they are gone; it never read a tag list. This arm exists
+# to SAY SO, not to decide: `v8.0` is RED with
 # or without it (`"8.0"` is not SemVer, so the `v<semver>` arm below would reject
 # it as malformed anyway).
 #
@@ -305,7 +307,7 @@ function Get-ReleaseVerdict {
         return [pscustomobject]@{
             Class   = "legacy-milestone"
             Verdict = "RED"
-            Reason  = "tag '$Tag' is a MILESTONE tag (v<N>.<M>), and that namespace was RETIRED in Phase 8.6. No v<N>.<M> will ever be cut again: the milestone tags v1.0-v7.0 are being deleted, and 'v8.0' was cancelled — M8 DoD #6's tag was a ritual, not a result (see docs/plans/2026-07-17-milestone-8-audit-addendum.md). Under 8.2 this was an announce-and-skip; the premise it rested on ('a milestone Release is a legitimate thing the owner may do') no longer holds, so it is now a mistake and says so. Package releases are 'v<semver>' — e.g. 'v$PropsVersion' — and release-please cuts them. Nothing was published."
+            Reason  = "tag '$Tag' is a MILESTONE tag (v<N>.<M>), and that namespace was RETIRED in Phase 8.6. No v<N>.<M> will ever be cut again: the milestone tags v1.0-v7.0 were deleted on 2026-07-17, and 'v8.0' was cancelled — M8 DoD #6's tag was a ritual, not a result (see docs/plans/2026-07-17-milestone-8-audit-addendum.md). Under 8.2 this was an announce-and-skip; the premise it rested on ('a milestone Release is a legitimate thing the owner may do') no longer holds, so it is now a mistake and says so. Package releases are 'v<semver>' — e.g. 'v$PropsVersion' — and release-please cuts them. Nothing was published."
         }
     }
 
@@ -534,7 +536,7 @@ function Invoke-SelfTest {
         @{ Tag = "v1.0.0-preview.2";    Props = "1.0.0-preview.2"; Class = "package";          Verdict = "PUBLISH"; Why = "the happy path — release-please's own tag shape, matching the props" }
         @{ Tag = "v9.9.9";              Props = "1.0.0-preview.2"; Class = "package";          Verdict = "RED";     Why = "a REAL mismatch (not props-vs-props) — the assertion must BITE; its new subject is release-please's config" }
         @{ Tag = "v8.0";                Props = "1.0.0-preview.2"; Class = "legacy-milestone"; Verdict = "RED";     Why = "THE ARM 8.6 INVERTS — was SKIP in 8.2; v8.0 is cancelled, not pending" }
-        @{ Tag = "v1.0";                Props = "1.0.0-preview.2"; Class = "legacy-milestone"; Verdict = "RED";     Why = "a retired tag's shape — the arm reds on the SHAPE, so this row is true whether or not v1.0 still exists (it does, as of 2026-07-17)" }
+        @{ Tag = "v1.0";                Props = "1.0.0-preview.2"; Class = "legacy-milestone"; Verdict = "RED";     Why = "a retired tag's shape — the arm reds on the SHAPE, never on a tag list, so this row was true while v1.0 was live and is unchanged now it is gone (deleted 2026-07-17). The row never read a tag; that is the point of it" }
         @{ Tag = "pkg/1.0.0-preview.2"; Props = "1.0.0-preview.2"; Class = "legacy-package";   Verdict = "RED";     Why = "8.2's namespace, retired — note the props MATCHES and it is still RED" }
         @{ Tag = "1.0.0-preview.2";     Props = "1.0.0-preview.2"; Class = "unrecognized";     Verdict = "RED";     Why = "bare semver, no 'v' — the props matches, still RED" }
         @{ Tag = "release/1.0.0";       Props = "1.0.0-preview.2"; Class = "unrecognized";     Verdict = "RED";     Why = "rejected namespace (b) — 'release/' is spent on BRANCHES by the owner's GitVersion.yml" }

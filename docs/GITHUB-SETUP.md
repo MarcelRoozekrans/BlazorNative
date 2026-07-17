@@ -446,20 +446,22 @@ and *should* publish 8.0.0 if this repo ever gets there.
 > Under Phase 8.2 a Release on `v8.0` announced a milestone and exited green, on
 > one stated premise: *"a milestone Release is a legitimate thing the owner may
 > do at M8's close."* **Phase 8.6 deleted that premise** — the milestone-tag
-> namespace is **retired**, `v1.0`–`v7.0` are **to be deleted** (decided and
-> authorized; **as of 2026-07-17 all seven still exist** — the deletion is the
-> last step of 8.6's close and it is the owner's to take), and `v8.0` was
+> namespace is **retired**, `v1.0`–`v7.0` **were deleted** on **2026-07-17**
+> (the last step of 8.6's close; `git ls-remote --tags origin` is now empty, so
+> **`git checkout v6.0` fails in a fresh clone** — `docs/planning/ROADMAP.md`'s
+> standing note is the place that explains why), and `v8.0` was
 > **cancelled** (M8 DoD #6's tag named a ritual, not a result — see
 > `docs/plans/2026-07-17-milestone-8-audit-addendum.md`). **No `v<N>.<M>` will
 > ever be cut again.** A Release on `v8.0` is no longer a legitimate action;
 > **it is a mistake, and a green "nothing was published" would tell you all is
 > well after you did something meaningless.**
 >
-> **The RED does not wait for the deletion.** The namespace was retired by
-> *decision*, and the classifier reds on the tag's **shape** — so `v8.0` reds
-> today, with all seven tags live, exactly as it will once they are gone.
-> **Retiring a namespace and emptying it are two different acts**, and only the
-> first one has to have happened for this box to be true.
+> **The RED never waited for the deletion**, and that is why nothing here
+> changed when the tags went. The namespace was retired by *decision*, and the
+> classifier reds on the tag's **shape** — so `v8.0` red while all seven tags
+> were live, exactly as it does now they are gone. **Retiring a namespace and
+> emptying it are two different acts**, and only the first one ever had to have
+> happened for this box to be true.
 
 **The ritual — release-please's. It is not shorter than the old one; it is
 different in kind, and that is the whole point:**
