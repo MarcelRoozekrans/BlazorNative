@@ -895,9 +895,46 @@ jobs:
           # delegate is driven directly (the 7.3 hand-rolled-fire pattern) behind an auth-status
           # override + a suppress switch; the production CoreLocation calls are untouched.
           # Count drift fails loudly.
-          if [ "$failed" -ne 0 ] || [ "$passed" -ne 169 ]; then
+          #
+          # 169 -> 189 (Phase 9.1 Gate 3, +20) — local notifications + the WARM tap-through's
+          # iOS half: AppleShellBridge.hostCallBegin (offset 72) wired for op=Notifications
+          # (=1, the FIRST reuse of the 9.0 ABI — NO struct grow, NO new export, BnDriftTests'
+          # 80-byte/offset-72 pins UNMOVED) over UNUserNotificationCenter, and the iOS shell's
+          # FIRST call of the pre-existing blazornative_host_event export ("navigate"). All in
+          # BnNotificationsTests unless noted.
+          #   +4  the Check MATRIX (each UNAuthorizationStatus as a status VALUE, never a
+          #       prompt): authorized -> Granted, provisional -> Granted (the design's quiet-
+          #       delivery fold), notDetermined -> Denied, denied -> DeniedPermanently.
+          #   +1  an unknown ACTION completes Error (4), never a crash — the data safety net
+          #       (UNAuthorizationStatus has NO .restricted, so Restricted (3) is a wire-parity
+          #       constant only; the reachable iOS statuses are 0/1/2/4).
+          #   +1  op=1 ROUTES to the notifications handler (not geolocation's op 0).
+          #   +1  the wire status enum pinned 0..4 + the "navigate" reserved-name literal (the
+          #       three-way mirror, byte-identical to .NET/Kotlin).
+          #   +1  show builds an IMMEDIATE request (nil trigger) carrying id/title/body and the
+          #       tap-through route in userInfo -> Granted.
+          #   +1  schedule adds a PENDING time-interval request the REAL centre holds (read
+          #       back via getPendingNotificationRequests) -> Granted.
+          #   +1  cancel removes the pending request from the REAL centre -> Granted (idempotent).
+          #   +3  the denial DANCE: notDetermined then the user's outcome as DATA — deny ->
+          #       DeniedPermanently (a value, never a Swift error across the C boundary, never a
+          #       hang), grant -> Granted, and a late DUPLICATE result no-ops (one-shot context).
+          #   +3  TAP-THROUGH via the delegate seam: a warm tap fires host_event(navigate,route)
+          #       (rc 0), a cold tap stashes the launch route which resolves to the mount
+          #       component BY NAME (the iOS deep-link mirror), and a routeless tap fires nothing.
+          #   +1  DELEGATE RETENTION pinned as a property (UNUserNotificationCenter holds its
+          #       delegate WEAKLY — the CLLocationManager lesson for notifications).
+          #   +3  BOOT (real NativeAOT, /notifications mounted): a Show grant round-trips
+          #       "status:Granted" through the REAL host_call_complete (rc 0); a denial echoes
+          #       "status:DeniedPermanently" within a BOUNDED await (no hang); and a WARM tap
+          #       re-routes a LIVE session (booted on BnDemo) to /notifications over the REAL
+          #       host_event — the page mounts ("arrived:/notifications"), rc 0. NO HANG is the
+          #       milestone law, asserted on the sim.
+          # The real permission ALERT + the real tap UX are owner-device territory; the auth-
+          # status override + the prompt-suppress switch + the hand-rolled tap fire stand in.
+          if [ "$failed" -ne 0 ] || [ "$passed" -ne 189 ]; then
             grep -E "Test Case '.*' (passed|failed)" "$log" || true
-            echo "iOS XCTest baseline drift: expected 169 passed / 0 failed, got passed=$passed failed=$failed" >&2
+            echo "iOS XCTest baseline drift: expected 189 passed / 0 failed, got passed=$passed failed=$failed" >&2
             exit 1
           fi
 
