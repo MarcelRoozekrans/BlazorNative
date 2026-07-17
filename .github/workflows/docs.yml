@@ -73,6 +73,13 @@ on:
       - 'website/**'
       # The reference is generated FROM here — divergence 1 above.
       - 'src/BlazorNative.Components/**'
+      # …and these decide whether the XML docs exist at all
+      # (GenerateDocumentationFile) and whether CS1591 is an error
+      # (BnEnforceDocCoverage). They are inputs to the reference exactly as the
+      # components are, and leaving them out is the same miss divergence 1 is
+      # about, one file further up.
+      - 'src/Directory.Build.props'
+      - 'src/Directory.Build.targets'
       # The generator itself, and the version it is pinned to.
       - 'scripts/generate-reference.ps1'
       - '.config/dotnet-tools.json'
@@ -82,6 +89,8 @@ on:
     paths:
       - 'website/**'
       - 'src/BlazorNative.Components/**'
+      - 'src/Directory.Build.props'
+      - 'src/Directory.Build.targets'
       - 'scripts/generate-reference.ps1'
       - '.config/dotnet-tools.json'
       - '.github/workflows/docs.yml'
