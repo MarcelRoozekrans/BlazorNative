@@ -238,7 +238,7 @@ All four counts are asserted in CI — a drift from the baseline fails the build
 
 | Surface | Command | Count | Asserted by |
 |---|---|---|---|
-| .NET | `dotnet test` | 580 passed / 0 skipped | `ci.yml` → `build-test` |
+| .NET | `dotnet test` | 581 passed / 0 skipped | `ci.yml` → `build-test` |
 | JVM (JNA + win-x64 .dll) | `gradlew testDebugUnitTest` | 106 | `ci.yml` → `build-test` |
 | Android (instrumented, AVD) | `gradlew connectedAndroidTest` | 184 | `android-instrumented.yml` |
 | iOS (XCTest, simulator) | `xcodebuild test` | 154 | `ios.yml` |

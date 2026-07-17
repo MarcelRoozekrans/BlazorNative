@@ -1,0 +1,19 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "bootstrap-sha": "a3fe234d55456669ab81afb7718e04ca698d6ecb",
+  "packages": {
+    ".": {
+      "release-type": "simple",
+      "versioning": "prerelease",
+      "prerelease": true,
+      "prerelease-type": "preview",
+      "draft": true,
+      "extra-files": [
+        "src/Directory.Build.props",
+        "templates/BlazorNative.Templates/BlazorNative.Templates.csproj",
+        "templates/BlazorNative.Templates/content/BlazorNative.App/MyBlazorNativeApp.csproj",
+        "templates/BlazorNative.Templates/content/BlazorNative.App/.template.config/template.json"
+      ]
+    }
+  }
+}

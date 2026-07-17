@@ -1,0 +1,170 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# BlazorNative RELEASE-PLEASE (Phase 8.6 — the release automation).
+#
+# WHAT THIS WORKFLOW DOES: it opens a pull request. That is all it does.
+#
+# On every push to main it recomputes the next version from the conventional
+# commit subjects since the last release, writes CHANGELOG.md, updates all seven
+# version literals, and opens (or updates) a release PR. Merging that PR cuts the
+# tag and opens a GitHub Release — AS A DRAFT.
+#
+# ⚠⚠ THIS WORKFLOW HAS NO `publish` JOB, NO `needs:`, NO SECOND JOB, AND IT NEVER
+#    MENTIONS THE NUGET KEY. THAT IS NOT AN OVERSIGHT. DO NOT ADD ONE.
+#
+#    The owner's reference implementation — AdoNet.Async — has a release-please.yml
+#    that carries its own publish job:
+#
+#        publish:
+#          needs: release-please
+#          if: ${{ needs.release-please.outputs.release_created }}
+#          ...
+#          - name: Push to NuGet
+#            run: dotnet nuget push ./nupkg/*.nupkg --api-key <the key> ...
+#
+#    MERGING THEIR RELEASE PR PUBLISHES SIX PACKAGES. NO CLICK. Copying that file
+#    into this repo — the obvious, natural move, and the one a contributor will
+#    attempt, because "mirror the reference" is how every other decision in this
+#    phase was made — IMPORTS AN AUTOMATIC nuget.org PUSH AND DESTROYS M8 DoD #3's
+#    LAW IN ONE PASTE.
+#
+#    That paste does not merely get reviewed. It REDS:
+#    ReleaseWorkflowPinTests.TheNugetApiKey_IsReferencedExactlyOnce_AndOnlyInReleaseYml
+#    counts the key's expression across every .github/workflows/*.yml — comments
+#    included — and asserts exactly one reference, in release.yml. The pin that
+#    stops this was written in Phase 8.2 for an entirely different reason, and it
+#    was already biting on this shape a milestone before the shape arrived.
+#    (Which is also why the block above spells the push line without the key's
+#    real expression: the pin counts prose too, deliberately.)
+#
+#    Their `-p:Version=` / `-p:PackageVersion=` on every pack is forbidden here
+#    for the same family of reasons, and is likewise already pinned
+#    (TheReleaseWorkflow_NeverOverridesTheVersion). They can afford it because
+#    GitVersion computes their version anyway — there is no literal to
+#    contradict. THIS REPO HAS A LITERAL, ON PURPOSE.
+#
+# THE LAW, AND WHY A DRAFT IS THE WHOLE DESIGN. `release.yml` publishes on
+# `release: types: [published]`. release-please cuts the Release as a DRAFT
+# (`"draft": true` in release-please-config.json). GitHub does not fire
+# `published` for a draft — "Workflows are not triggered for the created,
+# edited, or deleted activity types for draft releases" (Actions docs, verbatim).
+# So EVERYTHING BEFORE THE OWNER'S CLICK IS AUTOMATIC AND THE CLICK ITSELF IS
+# UNTOUCHED. The law holds structurally, not by promise.
+#
+# ─── THE CONFIG, AND WHY EVERY VALUE IS WHAT IT IS ───────────────────────────
+#
+# release-please-config.json cannot explain itself: release-please reads it with
+# `JSON.parse` (github.ts's getFileJson), which is STRICT — a `//` comment throws
+# on load. Measured, not assumed. So the justification lives here.
+#
+#   "release-type": "simple"      There is no `dotnet` release type. `simple`
+#                                 writes CHANGELOG.md + extra-files and nothing
+#                                 else — which is exactly what a .NET repo wants.
+#                                 It does NOT create a version.txt: strategies/
+#                                 simple.ts pushes that update with
+#                                 `createIfMissing: false`, and no version.txt
+#                                 exists here, so it is a no-op. Checked,
+#                                 because a version.txt would be an EIGHTH,
+#                                 unpinned version literal.
+#
+#   "versioning": "prerelease"    THE COUNTER (decision 2). The default strategy
+#                                 PRESERVES the prerelease part verbatim and
+#                                 walks the numbers in front of it, so from
+#                                 1.0.0-preview.1 a `feat:` yields
+#                                 1.1.0-preview.1 — a nonsense version whose
+#                                 `-preview.1` is glued on forever and never
+#                                 increments. That is what "mirror the reference"
+#                                 produces, and it is why this key is not
+#                                 default. With `prerelease` it walks the
+#                                 PRERELEASE COUNTER: 1.0.0-preview.1 ->
+#                                 1.0.0-preview.2.
+#
+#   "prerelease": true            ONE KEY, TWO JOBS — the overload, named because
+#                                 it is genuinely confusing. The schema describes
+#                                 it as a GitHub Release flag, but manifest.ts
+#                                 also passes it into the VERSIONING STRATEGY.
+#                                 As the Release flag it is self-correcting: it
+#                                 is ANDed with `release.tag.version.preRelease ||
+#                                 major === 0`, so at 1.0.0 final the Release is
+#                                 not flagged prerelease even with this still
+#                                 set. One less thing to remember at graduation.
+#
+#   "prerelease-type": "preview"  Only consulted when the version has no
+#                                 prerelease part. It is the string that would be
+#                                 glued on — see the graduation trap below.
+#
+#   "draft": true                 ← THE LAW. The owner's click is the go.
+#
+#   "bootstrap-sha"               a3fe234 — main's tip when this branch was cut
+#                                 (PR #107, the M8 final audit). It answers 8.1's
+#                                 third rejection reason ("conventional-commit
+#                                 inference mis-bumps phase-structured history")
+#                                 by drawing a line: release-please never reads a
+#                                 single pre-8.6 commit. Without it, it finds no
+#                                 last release (zero Releases have ever existed,
+#                                 and no v<semver> tag exists) and walks all 580
+#                                 commits, of which the only conventional ones are
+#                                 Renovate's. Harmless but wrong-shaped; this
+#                                 makes it correct rather than merely survivable.
+#
+#                                 ⚠ IT MUST NAME A COMMIT THAT EXISTS ON MAIN.
+#                                 A SHA from a feature branch is not on main after
+#                                 a squash-merge, so release-please would never
+#                                 find it and would silently walk all of history.
+#                                 a3fe234 is origin/main's tip today.
+#
+# OMITTED DELIBERATELY: `bump-minor-pre-major` and `bump-patch-for-minor-pre-major`.
+# The reference sets both. BOTH ARE DEAD OPTIONS HERE — and for the reference too.
+# They are gated on `version.isPreMajor`, which is `major < 1` (version.ts). Our
+# version is 1.0.0-preview.1 (major 1) and theirs is 1.3.3 (major 1), so neither
+# flag can ever fire in either repo. Mirroring the reference verbatim would import
+# two settings that do nothing, and config that cannot fire is a comment
+# pretending to be a decision.
+#
+# ⚠ THE FINDING, AND THE THING TO SET EXPECTATIONS BY. While the version sits at
+# 1.0.0-preview.N with minor === 0 and patch === 0, `fix:`, `feat:` and `feat!:`
+# ALL PRODUCE 1.0.0-preview.N+1. The commit type does not move the version AT ALL.
+# CONVENTIONAL COMMITS DO NOT COMPUTE THIS REPO'S VERSION — THEY COMPUTE ITS
+# CHANGELOG. The version is a counter. Measured against release-please 17.10.3's
+# own PrereleaseVersioningStrategy, not traced.
+#
+# That is why the commitlint gate is safely ADVISORY (commitlint.yml): the blast
+# radius of a mis-typed subject is a missing changelog section, NEVER a wrong
+# version.
+#
+# ⚠ THE GRADUATION TRAP (decision 2, rung 4) — reaching 1.0.0 takes a
+# `Release-As: 1.0.0` commit AND a change to this config (drop `versioning`,
+# `prerelease`, `prerelease-type`). Stopping at the commit silently re-enters
+# preview on the very next merge: from 1.0.0 with this config still in place,
+# `fix:` -> 1.0.1-preview, `feat:` -> 1.1.0-preview, `feat!:` -> 2.0.0-preview.
+# NOTHING WARNS. Not the classifier (tag and props would agree), not the
+# manifest pin (manifest and props would agree). The guard is prose, and it lives
+# in docs/GITHUB-SETUP.md where the person graduating is standing.
+#
+# See docs/plans/2026-07-17-phase-8.6-design.md for all nine decisions.
+# ─────────────────────────────────────────────────────────────────────────────
+name: release-please
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  # ONE JOB. There is no second one, and the block at the top of this file is
+  # why. What this job produces is a pull request; a human merges it, and a
+  # human clicks Publish on the draft it leads to.
+  release-please:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: googleapis/release-please-action@v4
+        with:
+          # The default GITHUB_TOKEN, deliberately — it can open a PR and cut a
+          # draft Release, and it CANNOT publish to nuget.org, because the one
+          # thing that can is a secret this workflow has never heard of.
+          token: ${{ secrets.GITHUB_TOKEN }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json

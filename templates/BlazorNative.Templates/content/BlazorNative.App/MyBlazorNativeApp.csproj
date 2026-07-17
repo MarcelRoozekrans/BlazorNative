@@ -105,10 +105,27 @@
     <!-- Runtime brings Core + Renderer + Http transitively; Components carries
          the Bn* widgets; Analyzers ships the BN* rules that catch native-shell
          mistakes at compile time (PrivateAssets: an analyzer is a build-time
-         tool, never a dependency of your package). -->
-    <PackageReference Include="BlazorNative.Runtime" Version="1.0.0-preview.1" />
-    <PackageReference Include="BlazorNative.Components" Version="1.0.0-preview.1" />
-    <PackageReference Include="BlazorNative.Analyzers" Version="1.0.0-preview.1" PrivateAssets="all" />
+         tool, never a dependency of your package).
+
+         ONE ANNOTATION PER LINE, and a roster is exactly what it is (8.6
+         decision 3, flagged there). release-please's Generic updater is
+         line-scoped, so a FOURTH BlazorNative.* reference added without its own
+         annotation would silently keep the old version forever.
+
+         THAT DRIFT IS NOT GUARDED BY THIS COMMENT — it is guarded by
+         TemplateDriftTests.EveryTemplateVersionLiteral_EqualsTheSharedProps,
+         which ENUMERATES every BlazorNative.* reference here (never rosters
+         them) and asserts each equals the props. Add a fourth reference and
+         forget the annotation: release-please leaves it behind, the enumeration
+         finds it, and the pin reds in the required lane naming this file. That
+         is the answer to the one real advantage the rejected xml+xpath updater
+         had (`//PackageReference[starts-with(@Include,'BlazorNative.')]/@Version`
+         would cover a fourth reference with no roster at all — but at the cost
+         of a whole-document DOMParser/XMLSerializer round-trip on every
+         release). -->
+    <PackageReference Include="BlazorNative.Runtime" Version="1.0.0-preview.1" /> <!-- x-release-please-version -->
+    <PackageReference Include="BlazorNative.Components" Version="1.0.0-preview.1" /> <!-- x-release-please-version -->
+    <PackageReference Include="BlazorNative.Analyzers" Version="1.0.0-preview.1" PrivateAssets="all" /> <!-- x-release-please-version -->
   </ItemGroup>
 
   <ItemGroup>

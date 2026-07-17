@@ -50,9 +50,15 @@
     <PackageType>Template</PackageType>
     <PackageId>BlazorNative.Templates</PackageId>
     <!-- THE MIRROR (8.3 design decision 3). Equal to src/Directory.Build.props'
-         <Version> by TemplateDriftTests, non-vacuously. Bump both in one
-         commit; the pin names this file when you forget. -->
-    <Version>1.0.0-preview.1</Version>
+         <Version> by TemplateDriftTests, non-vacuously — the 8.1 "Seven" trap:
+         this pack lives OUTSIDE src/, which PackageVersionPinTests enumerates,
+         so that pin cannot see this literal at all.
+
+         NOBODY BUMPS THIS BY HAND ANY MORE (8.6 decision 3). The annotation is
+         what release-please's `extra-files` targets; it rewrites this line on
+         every release PR. The pin below it did not become redundant — it became
+         the thing that audits a MACHINE rather than a human. -->
+    <Version>1.0.0-preview.1</Version> <!-- x-release-please-version -->
     <Title>BlazorNative App Template</Title>
     <Authors>Marcel Roozekrans</Authors>
     <Description>`dotnet new blazornative` — a Blazor app compiled with NativeAOT into a native Android shell. Creates the .NET app (pages, manifest, the NativeAOT publish head) and a runnable Android/Gradle shell tree.</Description>
