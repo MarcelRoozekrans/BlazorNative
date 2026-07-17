@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
@@ -301,13 +303,30 @@ public sealed class TemplateDriftTests
     /// template missing its wrapper jar is a `dotnet new` that produces a tree
     /// whose FIRST command fails, and it would have shipped green.
     ///
-    /// THE DISK IS THE SUBJECT, deliberately (the 8.1 I-2 rule, which the
-    /// original roster broke while citing it four lines above itself). The pack
-    /// ships `content/**` minus bin/obj — BlazorNative.Templates.csproj's
-    /// `&lt;Content Include="content\**\*"
-    /// Exclude="content\**\bin\**;content\**\obj\**" /&gt;` — so this enumeration
-    /// is not a proxy for the nupkg's inventory, it IS the nupkg's inventory,
-    /// read the same way the pack reads it.
+    /// GIT IS THE SUBJECT, deliberately (the 8.1 I-2 rule, which the original
+    /// roster broke while citing it four lines above itself) — and it is git
+    /// rather than the disk since Phase 8.6 Gate 2. THE DISK WAS THE WRONG
+    /// SUBJECT: this pin used to enumerate it and call that "the nupkg's
+    /// inventory, read the same way the pack reads it". Both halves were
+    /// wrong. The disk is the inventory PLUS whatever the last tool to run in
+    /// this tree left behind, and the reading was a COPY — `bin`/`obj`
+    /// hardcoded in C# beside a docstring claiming to read the csproj.
+    ///
+    /// It cost exactly what a wrong subject costs: eight gitignored `.gradle`
+    /// cache files made this pin and the byte-identity pin RED on every
+    /// developer machine that had ever run gradle in the template tree, for a
+    /// drift that had not happened — while CI, a clean checkout, stayed green
+    /// and saw nothing. A pin that reds only where nobody is watching, for a
+    /// reason that is not true, is worse than no pin: it teaches its own
+    /// reader to make it green, and its message told them how — "add it to the
+    /// manifest… the edit IS the review". Following that literally pins
+    /// gradle's lock files as required template content.
+    ///
+    /// So the pin now holds THREE things apart, because they have three
+    /// different fixes: what git TRACKS (the subject — the manifest's
+    /// business), what the pack's own globs would SHIP (read off the csproj's
+    /// Include/Exclude, never copied), and the gap between them (untracked
+    /// artifacts — a PACK bug, never a manifest edit).
     ///
     /// THE MANIFEST IS AN EXPECTED VALUE, NOT A ROSTER OF SUBJECTS. That
     /// distinction is the whole of I-2: enumerate what you MEASURE, declare
@@ -369,32 +388,89 @@ public sealed class TemplateDriftTests
             "android/src/main/kotlin/io/blazornative/shell/ImageRequestGuard.kt",
         ];
 
-        List<string> actual = PackedContentFiles();
+        // THE SUBJECT IS WHAT GIT TRACKS. The pack ships tracked content; the
+        // disk is that plus whatever the last tool to run here left behind.
+        List<string> tracked = TrackedFilesUnder(ContentRoot);
 
-        var missing = expected.Except(actual, StringComparer.Ordinal).OrderBy(f => f, StringComparer.Ordinal).ToList();
-        var unexpected = actual.Except(expected, StringComparer.Ordinal).OrderBy(f => f, StringComparer.Ordinal).ToList();
+        // …AND WHAT THE PACK WOULD ACTUALLY SHIP — the disk tree minus the
+        // csproj's own Exclude, read off that attribute. The gaps between these
+        // lists are the interesting part, and they do not all mean the same
+        // thing, so they are not all reported the same way.
+        List<string> disk = DiskFilesUnder(ContentRoot);
+        List<string> packed = PackedContentFiles();
 
-        Assert.True(missing.Count == 0 && unexpected.Count == 0,
-            "THE TEMPLATE'S FILE SET DRIFTED (Gate 1 review I-1). This pin is the one that knows "
-            + "how many files the template SHOULD ship — every other pin here reads the CONTENT of "
-            + "files it is told the names of, and Gate 1 proved that leaves the set itself "
-            + "unguarded (seven files deleted, nine tests green).\n\n"
-            + $"  MISSING (in the manifest, not on disk — {missing.Count}):\n"
-            + (missing.Count == 0 ? "    (none)\n" : string.Join("\n", missing.Select(f => $"    {f}")) + "\n")
-            + $"  UNEXPECTED (on disk, not in the manifest — {unexpected.Count}):\n"
-            + (unexpected.Count == 0 ? "    (none)\n" : string.Join("\n", unexpected.Select(f => $"    {f}")) + "\n")
-            + $"\n(Manifest: {expected.Length} files. On disk: {actual.Count}.)\n\n"
-            + "MISSING means a generated app is short a file — and the failure lands on a "
-            + "stranger's laptop, not here, unless this pin says so first. UNEXPECTED means the "
-            + "pack grew a file no pin in this file compares to anything: decide whether it needs "
-            + "one, then add it to the manifest above. Do not edit the manifest to make this green "
-            + "without answering that question — the edit IS the review.");
+        var missing = expected.Except(tracked, StringComparer.Ordinal).OrderBy(f => f, StringComparer.Ordinal).ToList();
+        var undeclared = tracked.Except(expected, StringComparer.Ordinal).OrderBy(f => f, StringComparer.Ordinal).ToList();
+        var wouldShipUntracked = packed.Except(tracked, StringComparer.Ordinal).OrderBy(f => f, StringComparer.Ordinal).ToList();
+        var trackedNotOnDisk = tracked.Except(disk, StringComparer.Ordinal).OrderBy(f => f, StringComparer.Ordinal).ToList();
+        var trackedButExcluded = tracked.Intersect(disk, StringComparer.Ordinal)
+            .Except(packed, StringComparer.Ordinal).OrderBy(f => f, StringComparer.Ordinal).ToList();
 
-        // NON-VACUITY: an enumeration that read nothing would green forever if
-        // the manifest were ever emptied alongside it.
-        Assert.True(actual.Count > 0,
-            $"enumerated ZERO files under {ContentRoot} — the completeness pin read an empty tree. "
-            + "A pin that cannot see its subject must never pass vacuously.");
+        Assert.True(
+            missing.Count == 0 && undeclared.Count == 0 && wouldShipUntracked.Count == 0
+                && trackedNotOnDisk.Count == 0 && trackedButExcluded.Count == 0,
+            "THE TEMPLATE'S SHIPPED FILE SET IS NOT THE MANIFEST (Gate 1 review I-1; subject fixed "
+            + "in Phase 8.6 Gate 2). This pin is the one that knows how many files the template "
+            + "SHOULD ship — every other pin here reads the CONTENT of files it is told the names "
+            + "of, and Gate 1 proved that leaves the set itself unguarded (seven files deleted, "
+            + "nine tests green).\n\n"
+            + "FIVE DIFFERENT FAULTS, AND THEY HAVE FIVE DIFFERENT FIXES — read the one that "
+            + "fired, because the wrong fix here is worse than the fault:\n\n"
+
+            + $"  1. MISSING — in the manifest, TRACKED BY NOBODY ({missing.Count}):\n"
+            + (missing.Count == 0 ? "     (none)\n" : string.Join("\n", missing.Select(f => $"     {f}")) + "\n")
+            + "     A file left the template for good (git does not track it). A generated app is "
+            + "short a file, and that failure lands on a stranger's laptop unless this pin says so "
+            + "first. If the removal was deliberate, the manifest above is where you say so.\n\n"
+
+            + $"  2. UNDECLARED — TRACKED, not in the manifest ({undeclared.Count}):\n"
+            + (undeclared.Count == 0 ? "     (none)\n" : string.Join("\n", undeclared.Select(f => $"     {f}")) + "\n")
+            + "     The pack grew a file no pin in this file compares to anything. Decide whether "
+            + "it needs one, then add it to the manifest above. THIS is the arm where the edit IS "
+            + "the review — do not make it green without answering that question.\n\n"
+
+            + $"  3. THE PACK WOULD SHIP AN UNTRACKED FILE ({wouldShipUntracked.Count}):\n"
+            + (wouldShipUntracked.Count == 0 ? "     (none)\n" : string.Join("\n", wouldShipUntracked.Select(f => $"     {f}")) + "\n")
+            + "     ⚠ DO NOT ADD THESE TO THE MANIFEST. They are not template content — they are "
+            + "local artifacts some tool left in your working tree (gradle's .gradle cache is the "
+            + "usual one), and git does not track them. The manifest describes what the template "
+            + "SHIPS; an untracked artifact is not a manifest violation, it is a PACK bug: "
+            + "`<Content Include=\"content\\**\\*\">` is a DISK glob, so anything sitting in the "
+            + "tree at pack time rides into the nupkg and out to a stranger's `dotnet new`.\n"
+            + "     TWO HONEST FIXES: clean it (it is regenerable — that is why it is gitignored), "
+            + "or, if its kind will keep coming back, add its pattern to that item's `Exclude` in "
+            + "BlazorNative.Templates.csproj — which this pin reads, so the two cannot disagree. "
+            + "⚠ NOT a blanket dotfile exclude: the gradle wrapper's tree is dotted and shipping it "
+            + "is why NoDefaultExcludes is set. Name the artifact.\n\n"
+
+            + $"  4. TRACKED, BUT NOT IN YOUR WORKING TREE ({trackedNotOnDisk.Count}):\n"
+            + (trackedNotOnDisk.Count == 0 ? "     (none)\n" : string.Join("\n", trackedNotOnDisk.Select(f => $"     {f}")) + "\n")
+            + "     Git tracks it and it is not on disk, so THE PACK BUILT FROM THIS TREE RIGHT NOW "
+            + "WOULD SHIP WITHOUT IT — the Include is a disk glob and cannot ship what is not there. "
+            + "Usually an unstaged delete: `git checkout -- <path>` restores it. If you meant to "
+            + "remove it, stage the removal and update the manifest above — that is arm 1, and it "
+            + "is the arm that makes the removal a decision.\n\n"
+
+            + $"  5. TRACKED AND ON DISK, BUT THE EXCLUDE DROPS IT ({trackedButExcluded.Count}):\n"
+            + (trackedButExcluded.Count == 0 ? "     (none)\n" : string.Join("\n", trackedButExcluded.Select(f => $"     {f}")) + "\n")
+            + "     Committed template content that no generated app will ever receive, because the "
+            + "pack's own Exclude throws it away. THE EXCLUDE IS TOO BROAD — and the shape to "
+            + "suspect first is the `build/` trap: content/BlazorNative.App/build/"
+            + "BionicNativeAot.targets is REAL shipped content (without it a generated app has no "
+            + "bionic publish, no .so, no APK), .gitignore carries a negation to keep it in the "
+            + "checkout, and an Exclude of `content\\**\\build\\**` would silently delete it from "
+            + "the pack. Exclude gradle's output by its full path, not by the name `build`.\n"
+
+            + $"\n(Manifest: {expected.Length}. Tracked: {tracked.Count}. On disk: {disk.Count}. "
+            + $"The pack would ship: {packed.Count}.)");
+
+        // NON-VACUITY. TrackedFilesUnder already reds on an empty read, but the
+        // pack's side has its own way to see nothing: an Exclude broad enough to
+        // drop everything would leave `packed` empty and arms 1/2 still green.
+        Assert.True(packed.Count > 0,
+            $"the pack's own globs select ZERO files under {ContentRoot} — it would ship an EMPTY "
+            + "template. This pin would have compared an empty inventory and passed over it. A pin "
+            + "that cannot see its subject must never pass vacuously.");
     }
 
     // ── 3. The shell's Kotlin, byte-identical ────────────────────────────────
@@ -539,7 +615,7 @@ public sealed class TemplateDriftTests
 
         foreach (string subtree in mirroredSubtrees)
         {
-            foreach (string file in FilesUnder($"{JniRoot}/{subtree}"))
+            foreach (string file in TrackedFilesUnder($"{JniRoot}/{subtree}"))
             {
                 string relative = $"{subtree}/{file}";
                 inspected++;
@@ -1068,40 +1144,222 @@ public sealed class TemplateDriftTests
 
     // ── The disk enumerations (Gate 1 review I-1) ────────────────────────────
 
-    /// <summary>Every file under a checkout subtree, as forward-slash paths
-    /// relative to it, sorted. THE DISK IS THE SUBJECT — this is the handle
-    /// that lets the set pins above measure what IS rather than iterate what
-    /// someone once wrote down (the 8.1 I-2 rule, which the roster this
-    /// replaced broke while citing it).
+    /// <summary>Every GIT-TRACKED file under a checkout subtree, as
+    /// forward-slash paths relative to it, sorted.
     ///
-    /// bin/ and obj/ are dropped because THE PACK DROPS THEM —
-    /// BlazorNative.Templates.csproj: `&lt;Content Include="content\**\*"
-    /// Exclude="content\**\bin\**;content\**\obj\**" /&gt;`. Matching the pack's
-    /// own glob is what makes this enumeration the nupkg's inventory rather
-    /// than a guess at it. Note what is NOT excluded: `build/`. It holds
-    /// BionicNativeAot.targets and is real shipped content — the .gitignore
-    /// carries a negation for exactly that reason, and that negation's absence
-    /// is the phase's own discovered class (a file that silently never
-    /// exists).</summary>
-    private static List<string> FilesUnder(string relativeRoot)
+    /// GIT IS THE SUBJECT, NOT THE DISK (Phase 8.6 Gate 2). This used to
+    /// enumerate the disk and call that "the nupkg's inventory". It is not:
+    /// the disk is the inventory PLUS whatever the last tool to run in this
+    /// tree left behind. The two are equal in a clean checkout — which is why
+    /// CI never noticed — and unequal on any machine that has run gradle in the
+    /// template tree, which is what a maintainer does to test the template.
+    /// Eight `.gradle` cache files made two pins in this file RED, locally,
+    /// forever, for a drift that had not happened.
+    ///
+    /// THE PACK SHIPS TRACKED CONTENT. An untracked local artifact is not a
+    /// manifest violation and must never be reported as one — the old message
+    /// told the reader to add it to the manifest, and following that
+    /// instruction literally would have pinned gradle's lock files as required
+    /// template content. What an untracked artifact IS, is a PACK bug (the
+    /// glob would ship it), and the pin below says so in those words.
+    ///
+    /// STILL DERIVED, STILL NON-VACUOUS (the 8.1 I-2 rule): `git ls-files`
+    /// enumerates, it does not roster. A git that will not run, or that returns
+    /// nothing, REDS — a pin that cannot see its subject must never pass
+    /// vacuously, and "git is missing" must not silently become "no files
+    /// drifted".
+    ///
+    /// It reads the INDEX, not the disk, so a tracked file DELETED locally is
+    /// still listed — correctly: it is still what a clean checkout ships, and
+    /// the byte pins then red on the missing file rather than quietly comparing
+    /// a shorter set.</summary>
+    private static List<string> TrackedFilesUnder(string relativeRoot)
     {
         string root = CheckoutPath(relativeRoot);
         Assert.True(Directory.Exists(root),
             $"checkout directory not found: {root} — a set pin cannot enumerate a tree that is not "
             + "there, and must not pass over it.");
 
+        string prefix = relativeRoot.TrimEnd('/') + "/";
+        var files = Git($"ls-files --cached -z -- \"{relativeRoot}\"")
+            .Split('\0', StringSplitOptions.RemoveEmptyEntries)
+            .Select(p => p.Replace('\\', '/'))
+            .Where(p => p.StartsWith(prefix, StringComparison.Ordinal))
+            .Select(p => p[prefix.Length..])
+            .OrderBy(f => f, StringComparer.Ordinal)
+            .ToList();
+
+        Assert.True(files.Count > 0,
+            $"`git ls-files` returned ZERO tracked files under {relativeRoot} — the set pins would "
+            + "compare an empty set and pass over it. A pin that cannot see its subject must never "
+            + "pass vacuously.");
+        return files;
+    }
+
+    /// <summary>Runs git from the repo root and REDS on a non-zero exit.
+    ///
+    /// The failure is deliberately loud rather than a fallback to the disk: a
+    /// silent fallback is how "git is not available here" becomes "nothing
+    /// drifted", which is the vacuous pass this whole file exists to
+    /// forbid.</summary>
+    private static string Git(string arguments)
+    {
+        using var process = new Process
+        {
+            StartInfo = new ProcessStartInfo("git", arguments)
+            {
+                WorkingDirectory = RepoRoot(),
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+            },
+        };
+
+        try
+        {
+            process.Start();
+        }
+        catch (Exception ex)
+        {
+            Assert.Fail(
+                $"could not run `git {arguments}`: {ex.Message}\n\nThe template's set pins take "
+                + "their subjects from git, because the pack ships TRACKED content and the disk is "
+                + "that plus whatever the last tool to run here left behind. Without git these pins "
+                + "cannot see their subject, and they must red rather than pass. (build-test runs "
+                + "on an actions/checkout, so git is always present there.)");
+        }
+
+        string stdout = process.StandardOutput.ReadToEnd();
+        string stderr = process.StandardError.ReadToEnd();
+        process.WaitForExit();
+
+        Assert.True(process.ExitCode == 0,
+            $"`git {arguments}` exited {process.ExitCode} — the set pins cannot enumerate their "
+            + $"subject and must not pass over the failure.\n{stderr}");
+        return stdout;
+    }
+
+    /// <summary>Every file on DISK under a checkout subtree — used ONLY to ask
+    /// what the pack's glob would sweep up, never as a pin's subject. The
+    /// difference between this and <see cref="TrackedFilesUnder"/> is exactly
+    /// the set of local artifacts, and naming that difference is the pack pin's
+    /// whole job.</summary>
+    private static List<string> DiskFilesUnder(string relativeRoot)
+    {
+        string root = CheckoutPath(relativeRoot);
+        Assert.True(Directory.Exists(root), $"checkout directory not found: {root}");
+
         return Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)
             .Select(f => Path.GetRelativePath(root, f).Replace(Path.DirectorySeparatorChar, '/'))
-            .Where(f => !f.Split('/').Any(segment =>
-                segment.Equals("bin", StringComparison.Ordinal) || segment.Equals("obj", StringComparison.Ordinal)))
             .OrderBy(f => f, StringComparer.Ordinal)
             .ToList();
     }
 
-    /// <summary>Exactly what the pack will ship: the template's content tree
-    /// off the disk, read the way BlazorNative.Templates.csproj's Content glob
-    /// reads it.</summary>
-    private static List<string> PackedContentFiles() => FilesUnder(ContentRoot);
+    /// <summary>What the pack would actually ship: the disk tree under
+    /// content/, minus everything BlazorNative.Templates.csproj's `Exclude`
+    /// drops — READ FROM THAT ATTRIBUTE, never copied into this file.
+    ///
+    /// The old code hardcoded `bin`/`obj` in C# while its docstring claimed to
+    /// read "the same way the pack reads it". That was a copy, and the copy was
+    /// already stale: the pack excluded two directory names and shipped
+    /// everything else, gradle's cache included. Parsing the real attribute is
+    /// what makes the claim true — change the Exclude and this pin follows in
+    /// the same commit.</summary>
+    private static List<string> PackedContentFiles()
+    {
+        (string include, var excludes) = PackContentGlobs();
+
+        Assert.True(include == @"content\**\*",
+            $"BlazorNative.Templates.csproj's <Content> Include is \"{include}\", not "
+            + @"""content\**\*"". This pin derives the pack's inventory by enumerating the content "
+            + "tree and subtracting the Exclude — an assumption that only holds while the Include "
+            + "is that glob. Re-point it deliberately rather than letting the inventory pin measure "
+            + "a set the pack no longer ships.");
+
+        // The Exclude patterns are relative to the PROJECT directory, so the
+        // paths they are matched against must be too.
+        const string projectPrefix = "content/BlazorNative.App/";
+
+        return DiskFilesUnder(ContentRoot)
+            .Where(f => !excludes.Any(rx => rx.IsMatch(projectPrefix + f)))
+            .ToList();
+    }
+
+    /// <summary>The pack's own Include + Exclude globs, off the csproj.</summary>
+    private static (string Include, List<Regex> Excludes) PackContentGlobs()
+    {
+        var content = XDocument.Load(CheckoutPath(PackCsproj)).Root!
+            .Elements("ItemGroup").Elements("Content")
+            .ToList();
+
+        Assert.True(content.Count == 1,
+            $"{PackCsproj} must carry exactly ONE <Content> item (it is the whole of what the "
+            + $"template pack ships), found {content.Count}. This pin reads that item's Include and "
+            + "Exclude to know the pack's inventory; more than one, and it is reading a fraction of "
+            + "the pack while claiming to read all of it.");
+
+        string include = content[0].Attribute("Include")?.Value ?? "(none)";
+        var excludes = (content[0].Attribute("Exclude")?.Value ?? "")
+            .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(MsBuildGlobToRegex)
+            .ToList();
+
+        Assert.True(excludes.Count > 0,
+            $"{PackCsproj}'s <Content> has no Exclude — bin/, obj/ and every local build artifact "
+            + "in the template tree would ride into the nupkg. This pin would also then be asserting "
+            + "nothing about the Exclude. A pin that cannot see its subject must never pass "
+            + "vacuously.");
+        return (include, excludes);
+    }
+
+    /// <summary>An MSBuild item glob as a regex over forward-slash paths.
+    /// Handles the three constructs the pack's Exclude actually uses — `**` for
+    /// any depth, `*` within a segment, and literal text — and nothing else,
+    /// deliberately: a translator that quietly mis-handles a construct would
+    /// under-exclude (the pin reds — safe, and it names the file) or
+    /// over-exclude (the pin goes blind — NOT safe). So the parser is small
+    /// enough to read, and the Exclude it is pointed at is six named
+    /// patterns.</summary>
+    private static Regex MsBuildGlobToRegex(string glob)
+    {
+        // The two multi-character constructs are punched out to sentinels
+        // BEFORE the per-character pass, so their `*`s cannot be mistaken for
+        // the single-segment wildcard.
+        const char anyDirs = '\u0001';   // "/**/"          -> zero or more dirs
+        const char tail = '\u0002';      // a trailing "/**" -> everything below
+
+        string p = glob.Replace('\\', '/');
+
+        if (p.EndsWith("/**", StringComparison.Ordinal))
+            p = p[..^3] + tail;
+        p = p.Replace("/**/", anyDirs.ToString(), StringComparison.Ordinal);
+
+        // Any `**` still standing is a construct this translator does not
+        // model. It REDS rather than guessing: a mistranslation that
+        // over-excludes would make the inventory pin go quietly blind.
+        Assert.True(!p.Contains("**", StringComparison.Ordinal),
+            $"the pack's Exclude pattern \"{glob}\" uses a `**` shape this translator does not "
+            + "model (it handles a trailing `/**` and an interior `/**/`, plus `*` and `?` within "
+            + "a segment). Teach it the shape deliberately — an Exclude the pin mistranslates is "
+            + "an inventory pin measuring a set the pack does not ship.");
+
+        var sb = new StringBuilder("^");
+        foreach (char c in p)
+        {
+            sb.Append(c switch
+            {
+                anyDirs => "/(?:[^/]+/)*",
+                tail => "(?:/.*)?",
+                '*' => "[^/]*",
+                '?' => "[^/]",
+                _ => Regex.Escape(c.ToString()),
+            });
+        }
+        sb.Append('$');
+
+        // MSBuild matches item globs case-insensitively, as does Windows.
+        return new Regex(sb.ToString(), RegexOptions.IgnoreCase);
+    }
 
     /// <summary>The template's android/ files that must be BYTE-IDENTICAL to
     /// src/BlazorNative.Jni's — the whole tree MINUS the five that genuinely
@@ -1131,7 +1389,7 @@ public sealed class TemplateDriftTests
             "src/androidMain/kotlin/io/blazornative/shell/MainActivity.kt",
         };
 
-        var files = FilesUnder($"{TemplateAndroidRoot}")
+        var files = TrackedFilesUnder($"{TemplateAndroidRoot}")
             .Where(f => !divergent.Contains(f))
             .ToList();
 
