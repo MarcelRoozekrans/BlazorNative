@@ -19,6 +19,14 @@ real native capability behind the same C-ABI discipline, on both shells, permiss
 story included. The proof surface is the sample app plus **the owner's physical Android
 phone** for the capabilities an emulator only pretends to have.
 
+**The ABI, frozen since M1, grew once in Phase 9.0 — deliberately, argued, and
+generically.** An honest async-permission completion could ride no existing export
+(`fetch_complete` is fetch-typed; `host_event` is contractually synchronous), so the
+bridge grew 72→80 bytes (+1 `HostCallBegin` slot, the `FetchBegin` twin) and 9→10
+exports (+`blazornative_host_call_complete`, the `fetch_complete` twin). Shaped generically
+(op-enum + flat-JSON) so 9.1/9.2/9.3 add an op constant with ZERO further struct/export/
+gate/drift change — pay once, reuse thrice. This is the last ABI grow M9 plans.
+
 ## Scoping decisions (owner, 2026-07-17)
 
 1. **Real-device iOS is DEFERRED — no Apple Developer account for now.** With no local
@@ -49,17 +57,26 @@ its dialog, a denial story (.NET must see "denied" as data, not an exception or 
 hang), and a re-request/settings story. If the C-ABI's async callback shape (the 72-byte
 bridge's completion path) can't carry "the user said no" cleanly, every later phase
 inherits the flaw — so Phase 9.0 proves the permission machinery **on the simplest
-permission-gated API (geolocation)** before anything heavier is built.
+permission-gated API (geolocation)** before anything heavier is built. **Proven: the
+72-byte completion path could not carry it cleanly, so it grew to 80 bytes / 10 exports,
+generically — the shape 9.1–9.3 reuse with no further ABI change.**
 
 ## Definition of Done
 
-1. **The permission pattern, proven and documented.** A versioned extension of
-   [bridge-extension.md](../bridge-extension.md): how a permission-gated call flows
+1. **The permission pattern, proven and documented.** ✅ **Closed by Phase 9.0.** A
+   versioned extension of [bridge-extension.md](../bridge-extension.md) —
+   section (f), the reusable pattern 9.1/9.2/9.3 copy: how a permission-gated call flows
    (request → OS prompt → grant/deny → completion callback), how denial reaches .NET as
    data, what re-request looks like, on both shells — written as the pattern the
-   remaining phases copy, with the 5.4 worked-example discipline.
-2. **Geolocation** (`BlazorNative.Device` or per-design naming): current position on
-   both shells, permission story per DoD #1, emulator/simulator-mockable, device tests.
+   remaining phases copy, with the 5.4 worked-example discipline. Proven: denial is a
+   status integer, never an exception or a hang (tested on both shells within a bounded
+   await); the OS-suspends-the-app risk is proven (Android Activity recreation mid-prompt,
+   iOS async CLLocationManager, both routing to the same in-flight continuation).
+2. **Geolocation** (`BlazorNative.Device`): ✅ **Closed by Phase 9.0.** Current
+   position on both shells (Android `LocationManager` + `requestPermissions`, iOS
+   `CLLocationManager` when-in-use), permission story per DoD #1, `IGeolocation` in the
+   new 7th package over `IMobileBridge.GetCurrentPositionAsync` (DevHostBridge mocks the
+   tri-state headless), `/geolocation` demo in SampleApp, device tests on both lanes.
 3. **Local notifications**: schedule / show / cancel + tap-through (the app opens to a
    route — the deep-link machinery from 5.1 is the landing path), permission story
    (POST_NOTIFICATIONS on Android 13+, UNUserNotificationCenter on iOS), device tests.
@@ -90,8 +107,10 @@ permission-gated API (geolocation)** before anything heavier is built.
 
 - **From M5:** secure storage (consumed by DoD #4); FCM push (carried, trigger above).
 - **From M8:** the KDoc sweep + map extraction — **trigger: before the first Release
-  that publishes the template pack** (may fire mid-M9 if the owner publishes; the
-  release PR #115 is open); `BionicNativeAot.targets` → the Runtime package's `build/`;
+  that publishes the template pack** (may fire mid-M9 if the owner publishes; release
+  PRs #115/#116 have merged — 0.1.0 and 0.2.0 tagged — and #117 (0.3.0) is open, but no
+  package publishes until `NUGET_API_KEY` is live and the manual pipeline runs);
+  `BionicNativeAot.targets` → the Runtime package's `build/`;
   SafeAreaView/edge-to-edge (watch: the camera capture UI and notification tap-through
   are the likeliest phases to force it — if one does, it lands there with its named
   problem); density assets (trigger: the first bundled-asset story).
@@ -116,5 +135,6 @@ Tracked in `ROADMAP.md`. Approved at milestone-open:
 M1–M8 built a rendering engine, an authoring story, and an ecosystem — a stranger can
 `dotnet new` an app that draws. It still can't do anything a *mobile* app exists to do:
 no sensors, no camera, no secrets, no notifications. M9 is where the bridge-extension
-pattern earns its name — four real capabilities through the same frozen ABI, with the
-permission model (the thing clipboard never needed) proven once and reused three times.
+pattern earns its name — four real capabilities through an ABI that grew exactly once
+(9.0, generically) and then holds, with the permission model (the thing clipboard never
+needed) proven once and reused three times.
