@@ -29,6 +29,70 @@
 #   prose goes and where release-please reads `Release-As:` and `BREAKING CHANGE:`
 #   footers from.
 #
+# ─── ⚠⚠ THE BODIES ARE PARSED, SO PROSE IN A BODY CAN *BE* A FOOTER ─────────
+#   (Phase 8.6 Gate 2. Found by a real --dry-run on this repo, not by reading.)
+#
+#   The paragraph directly above is the whole hazard and it took a dry-run to
+#   see it. "The branch's commit subjects are DISCARDED" is TRUE OF SUBJECTS AND
+#   FALSE OF BODIES: the bodies concatenate into main's body, release-please
+#   parses that body, and A FOOTER TOKEN AT COLUMN 0 OF ANY LINE IS A FOOTER —
+#   it does not matter that the sentence around it is prose explaining the
+#   mechanism. THIS FILE'S OWN WHY-BODY STYLE IS THE RISK: long bodies that
+#   discuss the release machinery are exactly the bodies that spell its tokens.
+#
+#   IT ALREADY HAPPENED, on this branch, in the commit that installed this
+#   contract. 004179f's body hard-wrapped at 80 columns and pushed the
+#   breaking-change token onto a new line, at column 0, followed by the word
+#   "footers." — SO THE LINE WRAP DECLARED A BREAKING CHANGE. Measured on the
+#   real repo:
+#
+#       npx release-please release-pr --dry-run
+#         -> title: chore(...): release 1.0.0-preview.2
+#            ### ⚠ BREAKING CHANGES
+#            * **release:** footers.
+#
+#   A consumer's changelog and the GitHub Release body would both have carried
+#   it. The prose became the thing it described — the FOURTH time in this one
+#   phase (an XML comment that could not contain the annotation's delimiters, a
+#   paragraph that could not quote the error message about them, prose that
+#   became an annotation the updater would edit, and now a sentence that became
+#   a footer). THE LESSON KEEPS ARRIVING IN A NEW COSTUME: NAME THE THING, DO
+#   NOT SPELL IT — in a commit BODY. Write "the breaking-change footer", never
+#   the token itself at the start of a line.
+#
+#   ⚠ AND THE VERSION ONE IS WORSE, because it is not a changelog blemish.
+#   Measured against release-please 17's own parser:
+#
+#     · `BREAKING CHANGE: <text>` at column 0, ANYWHERE in the body
+#         -> breaking=true + the note. Blast radius: A CHANGELOG SECTION.
+#     · `Release-As: <semver>` at column 0 in the body's LAST PARAGRAPH
+#         -> a RELEASE AS note -> Version.parse(<semver>) -> THAT BECOMES THE
+#            RELEASED VERSION. Blast radius: THE VERSION ITSELF.
+#            (Mid-body, with prose after it, extracts nothing — the footer must
+#            end the message. That is the only reason 004179f, which spells this
+#            token too, did not also propose a hand-picked version.)
+#
+#   So this file's closing claim — "NEVER A WRONG VERSION" — is exact about the
+#   SUBJECT and must not be read as covering the BODY. The subject's TYPE cannot
+#   move the version at 1.0.0-preview.N. A body's release-as footer sets it
+#   outright, at any rung, and it short-circuits everything: the strategy scans
+#   for that note FIRST, before any breaking/feature counting. That is rung 3
+#   working as designed (8.6 decision 2) — and it is why a WHY body that
+#   documents rung 3 BY SPELLING IT, and happens to end near it, releases that
+#   version. Nothing warns.
+#
+#   NOTHING LINTS THIS. commitlint reads the PR TITLE; the bodies reach main
+#   unread by anything. Decision 5 rejected linting the branch's commits on the
+#   ground that they are "thrown away" — true of their subjects, and the reason
+#   this gap has no guard is that the premise was applied to the bodies too.
+#   A body-level check is a real option and is NOT what decision 5 refused; it
+#   is ledgered, not taken here.
+#
+#   ⚠ THE PROSE IN *THIS FILE* IS SAFE AND MUST NOT BE "FIXED". Only commit
+#   MESSAGES are parsed. A `.yml` comment line starts with `#`, so the tokens
+#   above are at column 2, inside a file release-please never reads as a commit.
+#   Spelling them here is how the warning stays legible.
+#
 #   WHAT IT USED TO BE, AND WHY THE SETTING WAS THE FIRST STEP RATHER THAN A
 #   FOOTNOTE: `COMMIT_OR_PR_TITLE`. That means IF THE PR HAS EXACTLY ONE COMMIT,
 #   THAT COMMIT'S SUBJECT BECOMES MAIN'S SUBJECT AND THE PR TITLE IS IGNORED —

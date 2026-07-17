@@ -3,8 +3,34 @@
 # subject, and this is the only thing that reads it before main does.
 #
 # WHAT IT LINTS: the PR TITLE. Not the branch's commits — this repo squash-merges,
-# so those subjects are DISCARDED and never reach main or release-please. Linting
+# so those SUBJECTS are DISCARDED and never reach main or release-please. Linting
 # text that is thrown away would red PRs for honest WIP commits and prove nothing.
+#
+# ⚠ THAT IS TRUE OF THE SUBJECTS AND FALSE OF THE BODIES, and the difference is
+# not academic (Phase 8.6 Gate 2). `squash_merge_commit_message` is
+# COMMIT_MESSAGES, so the branch's WHY BODIES CONCATENATE INTO MAIN'S BODY and
+# release-please parses them. A FOOTER TOKEN AT COLUMN 0 IS A FOOTER even when
+# the sentence around it is prose explaining the mechanism — and this repo's
+# house style is long bodies that discuss exactly that mechanism.
+#
+# IT ALREADY HAPPENED, in the very commit that installed this contract (004179f):
+# its body wrapped at 80 columns, which pushed the breaking-change token to
+# column 0 in front of the word "footers." A real --dry-run caught it proposing
+#
+#     ### ⚠ BREAKING CHANGES
+#     * **release:** footers.
+#
+# into the 1.0.0-preview.2 changelog and Release body. THE LINE WRAP DECLARED A
+# BREAKING CHANGE. Nothing linted it, because this file lints the title.
+#
+# SO THE "NEVER A WRONG VERSION" CLAIM BELOW IS EXACT ABOUT THE SUBJECT AND
+# MUST NOT BE STRETCHED OVER THE BODY: a body's `Release-As:` footer, at column 0
+# in the message's LAST paragraph, sets the released version outright and
+# short-circuits the whole ladder. See .commitlintrc.yml's header for the
+# measured boundary and the rule (name the thing, do not spell it — in a BODY;
+# spelling it in a file like this one is safe, because only commit MESSAGES are
+# parsed). A body-level check is a real option, is NOT what decision 5 refused,
+# and is ledgered rather than taken here.
 #
 # ADVISORY BY DESIGN — THIS IS NOT A FOURTH REQUIRED CHECK. The three required
 # gates keep their names and contexts: `build-test`, `android-build`, `ios-build`.
