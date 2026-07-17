@@ -1450,7 +1450,61 @@ emulator lanes. The inspector channel is ledgered a third time. Maps to BACKLOG.
      (Apple Developer account trigger). See
      [design](../plans/2026-07-17-phase-9.0-design.md) +
      [conclusion](../plans/2026-07-17-phase-9.0-conclusion.md).
-- **Phase 9.1** — local notifications + tap-through via the 5.1 deep-link path (DoD #3) — ⏳ next
+- ✅ **Phase 9.1** — local notifications + tap-through (DoD #3) — *complete (2026-07-17)*
+   - **THE HEADLINE — the 9.0 ABI bet paid off on its FIRST draw: local notifications cost the ABI
+     NOTHING.** 9.0 grew the bridge once, generically, arguing 9.1/9.2/9.3 would reuse it for free.
+     They do: the three ops (`schedule` / `show` / `cancel`) + permission `request` / `check` all
+     ride the **existing** `HostCallBegin` slot (offset 72) and `host_call_complete` export, the
+     action carried in the flat JSON (geolocation's `mode` precedent). **Bridge stayed 80 bytes,
+     exports stayed 10, no drift-pin moved, no gate arithmetic** — proven on all three RIDs
+     (win-x64/bionic `dumpbin`+`readelf` 10; iOS archive `nm` the SAME ten; the 80-byte struct
+     pins unmoved). Notifications added only **WIRE VOCABULARY**: one op value
+     (`HostCallOp.Notifications = 1`), the `NotificationStatus` enum, the reserved host-event name
+     `"navigate"`. The reuse is **falsifiable, not asserted**: `NotificationsAbiUnchangedTests`
+     pins 80 bytes / offset 72 / op == 1, and assert-81-bytes reds it (`Actual: 80`) while the iOS
+     struct-grow mutant **failed to COMPILE** (`missing argument 'mutSlot11'`) — the type system
+     forbids a silent grow. *Pay once, reuse thrice, by construction.*
+   - **Tap-through — an inbound event, solved without a new mechanism** (the design's hardest
+     question). A tapped notification has **no in-flight .NET call to complete**, so it correctly
+     does NOT use `host_call_complete`. Both cases, each on pre-existing machinery: **cold** (app
+     killed) reuses the 5.1 launch deep-link `blazornative://<route>` → mount-by-name verbatim;
+     **warm** (app alive) wires `onNewIntent` (Android, `singleTop`) / `didReceive` (iOS) — both
+     unhandled since 5.1 — to CALL the pre-existing `blazornative_host_event` export with
+     `"navigate"` → `NavigateToAsync` re-routes the live session (rc 0). **The iOS shell CALLS
+     `host_event` for the FIRST TIME here** (the 9.0 `host_call_complete` precedent). The `"back"`
+     shape from 5.1, extended to a route — no ABI, no new export.
+   - **The three ops + permission.** `schedule` (inexact `AlarmManager` / `UNTimeInterval`) / `show`
+     (`NotificationManager.notify` on the `blazornative_default` channel, Android 8+ /
+     `UNMutableNotificationContent`) / `cancel`; `POST_NOTIFICATIONS` with the implicit-grant fast
+     path below API 33; iOS `requestAuthorization` folding `.provisional` → Granted. **Denial is
+     DATA on both shells** (a status, no throw, no hang, bounded — the 9.0 law, mutation-proven).
+     `INotifications` in the existing **7th package** `BlazorNative.Device` (no 8th); `/notifications`
+     demo (`BnNotificationsDemo`, the 11th routed page, sample-only).
+   - **Two doc-vs-reality findings (Gate 3, honesty rows):** (1) an unauthorized simulator (all CI
+     can offer) doesn't register a `getPendingNotificationRequests` entry, so schedule/cancel assert
+     on a construction seam — the posted-in-the-shade proof is physical-device UNPROVEN; (2)
+     `UNAuthorizationStatus` has **no `.restricted` case** — `restricted = 3` is a wire-parity
+     constant only, iOS's reachable statuses are 0/1/2/4 (the design's table copied the row from
+     `CLLocationManager`). **The 9.0 process fix, honored:** Gate 2 changed Android shell files with
+     byte-identical template mirrors, synced the mirror AND ran the .NET drift tests (18/18) BEFORE
+     pushing — the drift did NOT surprise at the merge.
+   - **Counts (all CI-asserted):** .NET **655/0** (498 + 132 + 25; **616 → 655**, +39) · JVM
+     **110/0** (**106 → 110**, +4 — `NotificationsTest.kt`; `BootSmokeNativeTest` still 10 exports)
+     · Android instrumented **193/0** (**188 → 193**, +5 on the AVD: a real notification posts +
+     cancels, both tap-through halves, denial-no-hang) · iOS XCTest **189/0** (**169 → 189**, +20,
+     run 29612118131; archive `nm` gate the SAME ten symbols) · publish gate **4 IL2072 + 10
+     exports** (UNCHANGED — the reuse proof) + `BnNotificationsDemo` page-probe. Mutations: Gate 1
+     (deny-throws, navigate-missing, action-misparse, reuse-proof 81-bytes), Gate 2 (navigate-typo,
+     route-dropped, deny-throws — on the AVD), Gate 3 (four `ios.yml` runs — navigate-typo
+     `29612912372`, deny-drops `29612918098`, action-misparse `29612923977`, struct-grow
+     `29612929731` — the COMPILE-FAIL).
+   - **PROVEN on CI** = the AVD real post + cancel + both tap-through paths + denial-no-hang; the
+     simulator schedule/cancel/denial + tap-through. **UNPROVEN until the owner's physical Android
+     phone** = the real notification in the shade, a real tap from a genuinely killed process, the
+     real `POST_NOTIFICATIONS` dialog gesture, `DeniedPermanently` across restarts. iOS
+     simulator-scoped + labeled (Apple Developer account trigger). See
+     [design](../plans/2026-07-17-phase-9.1-design.md) +
+     [conclusion](../plans/2026-07-17-phase-9.1-conclusion.md).
 - **Phase 9.2** — biometrics + secure storage (DoD #4) — ⏳
 - **Phase 9.3** — camera photo capture (DoD #5) — *heaviest last, on mature machinery* — ⏳
 - **Phase 9.4** — hygiene + M9 final audit + close (DoD #6; no tag — the 8.6 rule) — ⏳

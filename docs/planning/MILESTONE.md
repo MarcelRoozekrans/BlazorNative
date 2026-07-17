@@ -77,9 +77,15 @@ generically — the shape 9.1–9.3 reuse with no further ABI change.**
    `CLLocationManager` when-in-use), permission story per DoD #1, `IGeolocation` in the
    new 7th package over `IMobileBridge.GetCurrentPositionAsync` (DevHostBridge mocks the
    tri-state headless), `/geolocation` demo in SampleApp, device tests on both lanes.
-3. **Local notifications**: schedule / show / cancel + tap-through (the app opens to a
-   route — the deep-link machinery from 5.1 is the landing path), permission story
-   (POST_NOTIFICATIONS on Android 13+, UNUserNotificationCenter on iOS), device tests.
+3. **Local notifications**: ✅ **Closed by Phase 9.1.** schedule / show / cancel + both
+   tap-through halves (cold via the 5.1 launch deep-link, warm via `onNewIntent` /
+   `didReceive` → the reserved `"navigate"` host event → `NavigateToAsync`), the permission
+   story (POST_NOTIFICATIONS on Android 13+ with the implicit-grant fast path below API 33,
+   `UNUserNotificationCenter` on iOS), `INotifications` in the existing 7th package,
+   `/notifications` demo, device tests on both lanes. **The ABI stayed FROZEN — the pay-once
+   payoff:** 9.1 added an op (`Notifications = 1`) and touched the ABI at nothing — bridge
+   still 80 bytes, exports still 10, no drift-pin moved, proven falsifiable
+   (`NotificationsAbiUnchangedTests`; the iOS struct-grow mutant failed to COMPILE).
 4. **Biometrics + secure storage**: BiometricPrompt / LocalAuthentication gating a
    Keystore / Keychain-backed store (set/get/delete secrets); the M5 secure-storage
    deferral closes; the emulator's fake-biometric path is CI's lane and the owner's

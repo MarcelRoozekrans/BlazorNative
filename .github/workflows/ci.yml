@@ -13,7 +13,7 @@
 #     each publish must show exactly the 4 accepted IL2072 trim warnings) →
 #     nine-export verification (dumpbin via vswhere / llvm-readelf from the
 #     pinned NDK) → Gradle testDebugUnitTest against the fresh win-x64 dll
-#     (106 passed / 0 failed — the assertion is the step near the end of this
+#     (110 passed / 0 failed — the assertion is the step near the end of this
 #     job; this header is a copy, and it read 92 for four milestones) →
 #     the instrumented sources COMPILE →
 #     consumer smoke (SIX packages packed at the one props version, nupkg
@@ -1607,6 +1607,14 @@ jobs:
       #     (URL(string:) → nil; BnImagePolishMapperTests pins both frames
       #     end-to-end) — so the fix (WidgetMapper.decideAndDispatchError posts
       #     ITSELF, the Swift shape) is pinned on this lane, not a faked device test.
+      # ── Phase 9.1 Gate 2: 106 → 110, +4 — local notifications' JVM round-trips.
+      #    NotificationsTest.kt asserts the wire the shell speaks to the host over
+      #    HostCallOp.Notifications: the three ops (schedule/show/cancel) marshal
+      #    across JNA intact, the permission query returns a NotificationStatus, and
+      #    the "navigate" host-event round-trips onNewIntent → blazornative_host_event.
+      #    The ABI did NOT move for any of it — bridge stayed 80 bytes, exports stayed
+      #    10 (the reuse proof); notifications added only WIRE VOCABULARY. This gate is
+      #    the only count 9.1 touched — the export gate (10) and struct pins (80) stand.
       # ── Phase 7.5 Gate 3 REVIEW I-1: 105 → 106, +1 — the ROW ORDER of the
       #    dispatch table becomes normative: liveness → applyingBatch → handlerAttached.
       #
@@ -1626,7 +1634,7 @@ jobs:
       #     handler state, so the swap costs nothing: never-attached still drops,
       #     at the one moment the answer is true. Both tables swapped as literal
       #     twins; iOS pins the mount batch end-to-end (ios.yml, 152 → 153).
-      - name: JVM tests (Gradle testDebugUnitTest — assert 106 passed / 0 failed)
+      - name: JVM tests (Gradle testDebugUnitTest — assert 110 passed / 0 failed)
         working-directory: src/BlazorNative.Jni
         run: |
           .\gradlew.bat --no-daemon testDebugUnitTest
@@ -1640,8 +1648,8 @@ jobs:
             $errors += [int]$suite.errors; $skipped += [int]$suite.skipped
           }
           Write-Host "JVM test totals across $($xmls.Count) suites: tests=$tests failures=$failures errors=$errors skipped=$skipped"
-          if ($tests -ne 106 -or $failures -ne 0 -or $errors -ne 0 -or $skipped -ne 0) {
-            throw "JVM test baseline drift: expected 106 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped"
+          if ($tests -ne 110 -or $failures -ne 0 -or $errors -ne 0 -or $skipped -ne 0) {
+            throw "JVM test baseline drift: expected 110 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped"
           }
 
       # the instrumented-sources compile gate moved to its own required job
