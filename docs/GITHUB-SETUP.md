@@ -66,8 +66,8 @@ Phase labels map to milestones (see `docs/planning/ROADMAP.md`):
 | `phase/p0` | 🔴 Red | M1 — Runtime boots end-to-end *(complete)* |
 | `phase/p1` | 🟠 Orange | M2 — First end-to-end demo on Android *(complete)* |
 | `phase/p2` | 🟡 Amber | M3 — Real apps can be built *(complete)* |
-| `phase/p3` | 🩷 Pink | M4 — Production-shippable *(complete, `v4.0`)* |
-| `phase/p4` | 🟨 Cream | M5 — Full platform coverage *(complete, `v5.0`)* |
+| `phase/p3` | 🩷 Pink | M4 — Production-shippable *(complete)* |
+| `phase/p4` | 🟨 Cream | M5 — Full platform coverage *(complete)* |
 | `phase/p5` | 🟢 Light green | M6 — Real-UI foundation: layout + scroll + image *(in progress)* |
 | `phase/p6` | 🔵 Light blue | M7 — Components + Razor |
 | `phase/p7` | 🟣 Lavender | M8 — Developer ecosystem |
@@ -445,12 +445,21 @@ and *should* publish 8.0.0 if this repo ever gets there.
 >
 > Under Phase 8.2 a Release on `v8.0` announced a milestone and exited green, on
 > one stated premise: *"a milestone Release is a legitimate thing the owner may
-> do at M8's close."* **Phase 8.6 deleted that premise** — `v1.0`–`v7.0` are
-> deleted, `v8.0` was **cancelled** (M8 DoD #6's tag named a ritual, not a
-> result — see `docs/plans/2026-07-17-milestone-8-audit-addendum.md`), and no
-> `v<N>.<M>` will ever be cut again. A Release on `v8.0` is no longer a
-> legitimate action; **it is a mistake, and a green "nothing was published"
-> would tell you all is well after you did something meaningless.**
+> do at M8's close."* **Phase 8.6 deleted that premise** — the milestone-tag
+> namespace is **retired**, `v1.0`–`v7.0` are **to be deleted** (decided and
+> authorized; **as of 2026-07-17 all seven still exist** — the deletion is the
+> last step of 8.6's close and it is the owner's to take), and `v8.0` was
+> **cancelled** (M8 DoD #6's tag named a ritual, not a result — see
+> `docs/plans/2026-07-17-milestone-8-audit-addendum.md`). **No `v<N>.<M>` will
+> ever be cut again.** A Release on `v8.0` is no longer a legitimate action;
+> **it is a mistake, and a green "nothing was published" would tell you all is
+> well after you did something meaningless.**
+>
+> **The RED does not wait for the deletion.** The namespace was retired by
+> *decision*, and the classifier reds on the tag's **shape** — so `v8.0` reds
+> today, with all seven tags live, exactly as it will once they are gone.
+> **Retiring a namespace and emptying it are two different acts**, and only the
+> first one has to have happened for this box to be true.
 
 **The ritual — release-please's. It is not shorter than the old one; it is
 different in kind, and that is the whole point:**

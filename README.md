@@ -4,7 +4,7 @@
 
 **[Documentation](https://marcelroozekrans.github.io/BlazorNative/)** — getting started, the architecture story, the component reference (generated from the components' own doc comments), the parity contract, and both shell setup guides.
 
-> **Status: pre-release proof of concept.** Milestones 1–7 are complete (tagged `v1.0`–`v7.0`). Milestone 7 (Components + Razor) shipped `.razor` authoring and the components a real app opens with — a virtualized list, form controls, a modal, and the image surface's polish — on top of Milestone 6's Yoga engine, which owns all placement on both shells and asserts identical frame tables on the Android emulator and the iOS simulator. Milestone 8 (Developer Ecosystem) is in progress. Not production-ready — the API surface is unstable and changes without notice.
+> **Status: pre-release proof of concept.** Milestones 1–7 are complete. Milestone 7 (Components + Razor) shipped `.razor` authoring and the components a real app opens with — a virtualized list, form controls, a modal, and the image surface's polish — on top of Milestone 6's Yoga engine, which owns all placement on both shells and asserts identical frame tables on the Android emulator and the iOS simulator. Milestone 8 (Developer Ecosystem) is in progress. Not production-ready — the API surface is unstable and changes without notice.
 
 > .NET → NativeAOT → native mobile widgets. Blazor components rendered as real Android and iOS views, no WebView, no JavaScript, no wasm.
 
@@ -271,19 +271,19 @@ fresh copy is not theoretical.)*
 - [x] `Bn*` component library, `@bind` mechanics, cascading values, navigation — a demo app on the AVD (~1.6 s cold boot) — Milestone 3
 - [x] Public repo + CI, analyzer rescope, hardening triage, dev inner loop, NuGet packages — Milestone 4
 - [x] Full platform coverage — the **iOS Swift/UIKit shell** (simulator, on CI macOS runners) + host-initiated events (lifecycle, predictive back, deep links) on Android — Milestone 5
-- [x] **Real-UI foundation — Milestone 6** (tagged `v6.0`)
+- [x] **Real-UI foundation — Milestone 6**
   - [x] Yoga linked into both shells — Phase 6.0
   - [x] Yoga owns all placement; native text measurement; `BnView`'s flex surface + `BnRow`/`BnColumn` — Phase 6.1
   - [x] Real scrolling — `BnScroll` as a viewport over a synthesised content node — Phase 6.2
   - [x] URL images — `BnImage` via Coil/Kingfisher behind one parity contract — Phase 6.3
-  - [x] Milestone audit (all 8 DoD PASS) + a required compile gate per shell (`build-test`/`android-build`/`ios-build`) → `v6.0` — Phase 6.4
-- [x] **Components + Razor — Milestone 7** (tagged `v7.0`)
+  - [x] Milestone audit (all 8 DoD PASS) + a required compile gate per shell (`build-test`/`android-build`/`ios-build`) — Phase 6.4
+- [x] **Components + Razor — Milestone 7**
   - [x] `.razor` authoring under NativeAOT — the demo pages rewritten as the parity proof, patch stream byte-identical to their hand-written twins — Phases 7.0/7.1
   - [x] The `onScroll` wire design + `BnList`, the virtualized list that forced it — Phase 7.2
   - [x] Form controls + a real `picker` — Phase 7.3
   - [x] `BnModal`, the first overlay surface + the RN parity survey's cheap wins — Phase 7.4
   - [x] `BnImage` polish — `PlaceholderColor` / `OnError` / `ContentMode`, each its own *measurement* design — Phase 7.5
-  - [x] Route-registry unification + milestone audit (all 8 DoD PASS) → `v7.0` — Phase 7.6
+  - [x] Route-registry unification + milestone audit (all 8 DoD PASS) — Phase 7.6
 - [ ] **Developer Ecosystem — Milestone 8** (in progress): publish-ready packages, `dotnet new blazornative`, and a public docs site
 
 The demo app's pages are declared once, in `samples/BlazorNative.SampleApp/SampleAppPages.cs` — that array is the roster, and the runtime's mount registry and route table are derived views of it.

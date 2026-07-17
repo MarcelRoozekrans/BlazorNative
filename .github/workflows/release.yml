@@ -186,9 +186,12 @@ jobs:
       #   anything else-> unrecognized     -> RED
       # 8.2's milestone arm was skip-and-say-so on ONE premise — "a milestone
       # Release is a legitimate thing the owner may do at M8's close". PHASE 8.6
-      # DELETED THAT PREMISE: the milestone-tag namespace is retired, v1.0-v7.0
-      # are deleted, and v8.0 was cancelled. A Release on v8.0 is now a mistake,
-      # so it reds. `skip` no longer exists in the verdict vocabulary.
+      # DELETED THAT PREMISE: the milestone-tag namespace is RETIRED, v1.0-v7.0
+      # are to be deleted (authorized, not yet taken as of 2026-07-17), and v8.0
+      # was cancelled. A Release on v8.0 is now a mistake, so it reds. `skip` no
+      # longer exists in the verdict vocabulary. The arm rests on the RETIREMENT,
+      # which is a decision — not on the tags being gone, so it is correct today
+      # with all seven live.
       - name: Classify the release tag (and assert it against the props version)
         id: classify
         if: github.event_name == 'release'

@@ -1,16 +1,21 @@
 # Milestone 8 — Developer Ecosystem
 
-**Status:** ✅ complete — opened 2026-07-16, closed 2026-07-17, **pending `v8.0` tag**
-(applied after the Phase 8.5 close PR merges, on the owner's go — the M6/M7 pattern;
-[final audit](../plans/2026-07-17-milestone-8-final-audit.md): all 6 DoD PASS. **The tag
-publishes NOTHING** — `release.yml`'s classifier reads `v8.0` as a milestone tag and
-announces + skips, exit 0; a `pkg/<semver>` Release is the only publishing shape.)
+**Status:** ✅ complete — opened 2026-07-16, closed 2026-07-17
+([final audit](../plans/2026-07-17-milestone-8-final-audit.md): all 6 DoD PASS).
+**There is no `v8.0` tag and there will not be one** — Phase 8.6 retired the
+milestone-tag namespace and gave `v<semver>` to release-please, so DoD #6's
+"→ tag `v8.0`" named a **ritual, not a result**, and the ritual is cancelled rather
+than pending. **M8 is complete on the audit, which is what the DoD actually wanted.**
+See the [M8 audit addendum](../plans/2026-07-17-milestone-8-audit-addendum.md) — it
+records what 8.6 changed under this milestone, and **this document is not retrofitted
+to match it**: the DoD texts and the closure evidence below were true when written and
+are left standing.
 **Opened:** 2026-07-16
 **Source:** the 2026-07-13 roadmap re-plan (capability before ecosystem) — the ecosystem
 milestone, deliberately AFTER the capability that makes packaging worthwhile: M6 built the
 layout engine, M7 built the components and the authoring story; M8 makes it something
 another developer can actually consume.
-**Predecessor:** Milestone 7 — complete 2026-07-16, tagged `v7.0`
+**Predecessor:** Milestone 7 — complete 2026-07-16
 ([final audit](../plans/2026-07-16-milestone-7-final-audit.md): all 8 DoD PASS)
 
 ## Goal
@@ -329,6 +334,11 @@ the 4-IL2072 shape), 8.0 finds out before anything is packaged.
    secret added — this phase publishes a website and nothing else.**
 6. ✅ **Hygiene + close:** every new surface CI-asserted (counts + gates with provenance);
    decision log per phase; final audit → tag **`v8.0`**.
+   > **The `v8.0` clause is CANCELLED, and this DoD text is left as written** (Phase 8.6,
+   > decision 8 — [addendum](../plans/2026-07-17-milestone-8-audit-addendum.md)). The tag
+   > named a **ritual**; the **result** DoD #6 asked for — CI-asserted surfaces, the
+   > decision log, the final audit — **shipped in full and the audit verified it**.
+   > **M8's completion rests on the audit, not on a tag**, and no `v8.0` will ever exist.
    **Closed by Phase 8.5** ([final audit](../plans/2026-07-17-milestone-8-final-audit.md)):
    **all six DoD PASS on evidence re-verified LIVE, not cited** — .NET **580/0** (132 + 25 +
    423; 577 → 580, +3, this phase's own hygiene pin) · JVM **106/0** across 19 suites
@@ -421,7 +431,8 @@ Tracked in `ROADMAP.md`. Approved at milestone-open:
 - **Phase 8.2** — the release pipeline, manual go (DoD #3)
 - **Phase 8.3** — the `dotnet new` template: app + Android shell (DoD #4)
 - **Phase 8.4** — the docs site: Docusaurus + GitHub Pages (DoD #5)
-- **Phase 8.5** — hygiene + M8 final audit + close (DoD #6) → `v8.0`
+- **Phase 8.5** — hygiene + M8 final audit + close (DoD #6) *(the `v8.0` tag this line
+  planned was cancelled by Phase 8.6 — see the status line above)*
 
 Sequencing: 8.0 gates everything (the registration API is what 8.1 packages, 8.3
 templates, and 8.4 documents); 8.1–8.2 make the packages real; 8.3–8.4 are the

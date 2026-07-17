@@ -4,6 +4,34 @@
 
 ## Milestones
 
+> ### ⚠ The milestone tags `v1.0`–`v7.0` are RETIRED — and this is the place that says why
+>
+> **If `git checkout v6.0` fails for you, this note is the answer.**
+>
+> Every milestone below records the tag that closed it — *"tagged `v6.0`"* — and **each of
+> those statements was true when it was written.** **Phase 8.6 (2026-07-17) retired the
+> milestone-tag namespace**: `v<semver>` now belongs to release-please, which cuts
+> `v1.0.0-preview.2`-shaped tags for **package releases**, and **no `vN.0` will ever be cut
+> again.** `v8.0` was **cancelled, not deferred** — M8's DoD #6 named it, M8 is complete
+> without it, and the [M8 audit addendum](../plans/2026-07-17-milestone-8-audit-addendum.md)
+> is where that is said out loud.
+>
+> **STATE, as of 2026-07-17 — stated precisely because the rest of this note is about
+> their absence: ALL SEVEN TAGS (`v1.0`…`v7.0`) STILL EXIST.** The deletion is decided and
+> authorized; it is the **last, un-taken step** of Phase 8.6's close and it is the owner's
+> to take. **Whoever takes it edits this paragraph in the same change** — that is the
+> deletion's final step, not an afterthought, and it is the only paragraph that has to move.
+>
+> **Once they are gone, two readers will disagree about whether `v6.0` exists, and both will
+> be right:** a **fresh clone** will not have them; an **existing clone or fork keeps all
+> seven forever**, because `git fetch --prune` does **not** delete tags without
+> `--prune-tags`.
+>
+> **The chapter record is this file and the milestone audits — it always was.** The phase
+> and audit documents in `docs/plans/` say *"tagged `vN.0`"* throughout and **are not
+> rewritten**: they are **dated records**, and a record edited to agree with today is not a
+> record. The tags were how the chapters were marked; the writing is what the chapters were.
+
 ### ✅ Milestone 1 — P0: Runtime Boots End-to-End  *(complete 2026-05-24, tagged `v1.0`)*
 
 Toolchain produces a `.wasm` that loads under wasmtime with correct exports and a working cooperative scheduler. Renderer internal-API strategy decided. All 8 DoD criteria met — see [final audit](../plans/2026-05-24-milestone-1-final-audit.md).
@@ -462,7 +490,7 @@ Phases (approved at milestone-open 2026-07-13):
 
 ---
 
-### ✅ Milestone 7 — Components + Razor  *(complete 2026-07-16 — `v7.0` tag pending merge)*
+### ✅ Milestone 7 — Components + Razor  *(complete 2026-07-16, tagged `v7.0`)*
 
 The things you build UIs *with*: **`.razor` authoring** (the standing M3-era ledger item —
 author components in Razor syntax instead of hand-written `BuildRenderTree`, with the five demo
@@ -679,7 +707,7 @@ Maps to BACKLOG "P5 — components".
 
 ---
 
-### ✅ Milestone 8 — Developer Ecosystem  *(complete — opened 2026-07-16, closed 2026-07-17; **pending the `v8.0` tag**, applied on the owner's go after the Phase 8.5 close PR merges; the old P5, repositioned after capability)*
+### ✅ Milestone 8 — Developer Ecosystem  *(complete — opened 2026-07-16, closed 2026-07-17; **no `v8.0` tag — cancelled by Phase 8.6**, which retired the milestone-tag namespace: M8 is complete on its [final audit](../plans/2026-07-17-milestone-8-final-audit.md), see the [addendum](../plans/2026-07-17-milestone-8-audit-addendum.md); the old P5, repositioned after capability)*
 
 Now there's a real layout engine + component library worth shipping. Scoped at
 milestone-open (owner decisions recorded in [MILESTONE.md](MILESTONE.md)): publish-READY
@@ -752,6 +780,15 @@ Developer experience and ecosystem".
      once 8.2's workflow exists (a named 8.2 input), conventional-commit inference
      mis-bumps phase-structured history, and `tag-prefix: v` collides with the `v4.0`–
      `v7.0` milestone tags.
+     > *(**All four reasons are now answered, and release-please is IN** — Phase 8.6,
+     > decision 1. Reason 1 (auto-publish contradicts DoD #3) → **`draft: true`**: a draft
+     > Release fires no workflow, so the owner's click is still the go. Reason 2 (the payoff
+     > starts once 8.2's workflow exists) → **it exists.** Reason 3 (mis-bumps
+     > phase-structured history) → **`bootstrap-sha`** draws a line under all 580
+     > pre-8.6 commits, plus the new commit contract. Reason 4 (`tag-prefix: v` collides
+     > with the milestone tags) → **the milestone-tag namespace is retired.** **GitVersion
+     > stays out** for reason 1, undisturbed. This is an append, not a retraction: **the
+     > rejection was right on 2026-07-16** and it named, in advance, what would change it.)*
    - **THE HEADLINE — the review demonstrated a vacuous pass:** the nupkg type scanner
      passed GREEN while **blind** ("0 types clean" ×6, exit 0), violating the house rule
      this repo states in its own code — *a pin that cannot see its subject must never pass
@@ -1139,7 +1176,9 @@ Developer experience and ecosystem".
      does not publish that until one setting is clicked.** See
      [design](../plans/2026-07-17-phase-8.4-design.md) +
      [conclusion](../plans/2026-07-17-phase-8.4-conclusion.md).
-- ✅ **Phase 8.5** — hygiene + M8 final audit + close (DoD #6) → `v8.0` — *complete (2026-07-17)*
+- ✅ **Phase 8.5** — hygiene + M8 final audit + close (DoD #6) — *complete (2026-07-17)* — *(this
+  line planned `→ v8.0`; Phase 8.6 cancelled the tag — see the retirement note at the top of this
+  file and the [M8 audit addendum](../plans/2026-07-17-milestone-8-audit-addendum.md))*
    - **ALL SIX DoD PASS — [final audit](../plans/2026-07-17-milestone-8-final-audit.md)**, every row
      **re-verified LIVE at the tip, not cited** (the M7 audit's method, verbatim): .NET **580/0**
      (132 + 25 + 423) · JVM **106/0** across 19 suites via `--rerun-tasks` (**27 executed — a cached
@@ -1184,6 +1223,13 @@ Developer experience and ecosystem".
      **announces + skips, exit 0**; a `pkg/<semver>` Release is the only publishing shape. **Nothing
      published; no tag created; no secret added.** See
      [final audit](../plans/2026-07-17-milestone-8-final-audit.md).
+     > *(Superseded on the same day, and left standing as the record of what 8.5 measured:
+     > **Phase 8.6 inverted this arm — `v8.0` is now RED, not announce-and-skip**, and the
+     > `pkg/<semver>` namespace it names as "the only publishing shape" was itself retired in
+     > favour of `v<semver>`. The self-test that was **8/8 with `v8.0 → SKIP`** is now **9/9
+     > with `v8.0 → RED`**. **8.5's measurement was correct against the machine it measured**;
+     > 8.6 changed the machine. See the
+     > [M8 audit addendum](../plans/2026-07-17-milestone-8-audit-addendum.md).)*
 
 ---
 
@@ -1226,5 +1272,7 @@ exploratory".
 - **Capability before ecosystem** (2026-07-13 re-plan): M6 (layout) → M7 (components+razor)
   → M8 (ecosystem/publish) → M9 (platform breadth + real device) → M10 (hardening).
 - M9's real-device iOS is gated on an **Apple Developer account** (user dependency).
-- Each milestone closes with `audit-milestone` → `complete-milestone` → tag `vN.0`
-  (M6 → `v6.0`, and so on).
+- Each milestone closes with `audit-milestone` → `complete-milestone`. **The `→ tag vN.0`
+  step this line used to carry is GONE from M9 onward** — Phase 8.6 retired the
+  milestone-tag namespace (see the note at the top of this file). **A milestone closes on
+  its audit**; that is what M8 did, and the tag was never what made a milestone complete.
