@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- The shell bridge's fetch handler (AndroidShellBridge →
+         HttpURLConnection) does real network I/O, and Android requires INTERNET
+         for ANY socket. Remove this only if your app truly never fetches. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <application
+        android:label="MyBlazorNativeApp"
+        android:allowBackup="true"
+        android:enableOnBackInvokedCallback="true"
+        android:networkSecurityConfig="@xml/network_security_config">
+        <!-- FULLY QUALIFIED, deliberately. The relative form (".MainActivity")
+             resolves against AGP's `namespace`, which is YOUR app id — but the
+             shell's Kotlin lives in io.blazornative.shell (it is library code,
+             copied byte-identically from the BlazorNative reference shell). The
+             two identities are separate on purpose; naming the activity in full
+             is what lets them differ. -->
+        <activity
+            android:name="io.blazornative.shell.MainActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- Launch-time deep links: blazornative://<route> opens the page
+                 MainActivity's DEEP_LINK_COMPONENTS maps that route to. A custom
+                 scheme needs no domain verification; https App Links are more
+                 work and are yours to add. The scheme must match MainActivity's
+                 DEEP_LINK_SCHEME constant. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="blazornative" />
+            </intent-filter>
+        </activity>
+    </application>
+
+</manifest>

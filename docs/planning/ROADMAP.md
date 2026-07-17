@@ -852,7 +852,103 @@ Developer experience and ecosystem".
      **Nothing published; no tag created; no secret added.** See
      [design](../plans/2026-07-16-phase-8.2-design.md) +
      [conclusion](../plans/2026-07-16-phase-8.2-conclusion.md).
-- **Phase 8.3** — the `dotnet new` template: app + Android shell (DoD #4) — ⏳
+- ✅ **Phase 8.3** — the `dotnet new` template: app + Android shell (DoD #4) — *complete
+  (2026-07-17)*
+   - **`dotnet new blazornative`** — `templates/BlazorNative.Templates`, a real template pack
+     on its **own feed** (`artifacts/templates`), **outside the shipped six** and outside the
+     release path. `src/` membership is load-bearing: `PackagePurityTests` proves `src/` holds
+     exactly the six, and **that proof is what licenses 8.1's props home** — a seventh csproj
+     there un-licenses it, and the six's pins are **assembly-shaped** (type purity off the PE,
+     a sentinel type per package, snupkg pairing) which a **content-only pack satisfies none
+     of**. Joining would mean a special case in **five pinned places**, and **a special case is
+     a hole in a pin**. The template's own feed is why the smoke's `6 nupkg + 5 snupkg` stays
+     an *exact* count that means something.
+   - **THE HEADLINE — two defects, both invisible to every pin, both found by DOING THE REAL
+     THING.** **(1) The generated Android app did not compile.** `MainActivity` used a bare
+     `R.layout.main` with no `import <namespace>.R`. AGP generates `R` into the `namespace`;
+     Kotlin resolves a bare `R` against the **FILE's** package. **The repo's two match by
+     COINCIDENCE** (`namespace = "io.blazornative.shell"` happens to equal its source package);
+     **the template's differ BY DESIGN** — and that divergence **IS the byte-identity trick**
+     that lets the shell's Kotlin be compared file-for-file while `namespace` is the user's app
+     id. **So the trick had a hole exactly where the design didn't look.** **All nine .NET pins
+     were green; only `assembleDebug` saw it** — precisely why the design chose a **real
+     compile** over `gradlew tasks`. **DoD #4's own sentence ("runnable end-to-end") was unmet
+     until this landed.** *Byte-identity to a reference is not correctness when the reference's
+     correctness depends on a property the copy deliberately changes.* Fixed with an import
+     rewritten by `finalApplicationId`'s **existing** `replaces` (**no new symbol**), chosen
+     over changing the namespace **because that moves the trap into the user's code**.
+     **(2) `.gitignore` was swallowing `templates/.../build/BionicNativeAot.targets`** — every
+     generated app would have shipped with **no NDK shim → no bionic publish → no APK** — and
+     **a byte-identity pin cannot see a file git never committed.** Found by construction; the
+     second trap got right too (`template.json`'s `exclude` narrows to `**/build/**/*.jar`, not
+     `**/build/**`, which would have re-swallowed it at *generation* time).
+   - **THE CENTRAL PROOF — the trim line, proven on GENERATED output.** A text pin proves *the
+     line is in the file*, not that the app survives ILC — and **8.0's own line was found
+     missing by a PUBLISH, not by a READ**. So `scripts/template-smoke.ps1` **packs → installs
+     from the NUPKG** (the real shipping path) **→ generates → restores** (temp cache,
+     provenance ×3) **→ publishes → `assembleDebug`**. Green: **`IL2072: 4` · `Exports (9)` ·
+     `probe 'BnStarterPage': present (3838 KB)` · `TemplateSmokeApp-debug.apk (15590 KB)`**.
+     **The delete-the-line mutation reds arm 1 AND arm 3** (`IL2072: 0`, `probe: ABSENT`, 3592
+     KB) — **and arm 2 STAYS GREEN**, because the 9 exports ride out of the *referenced*
+     Runtime assembly and survive a whole-module trim of the app. **Arms 1–2 are facts about
+     the LIBRARIES; only the probe is a fact about the USER'S CODE — that is why arm 3
+     exists.** The step evaluates **all three arms before failing**: the trio is a *signature*,
+     and a fail-fast at arm 1 could never have quoted arm 3.
+   - **The decisions as proven:** the version is a **pinned MIRROR, not a wildcard** — the CI
+     lane restores from a local feed holding **one** version, so `1.0.0-preview.*` always
+     resolves and **the drift is invisible on CI**: a **vacuous pass**, 8.1's headline, **not
+     twice**. **`$(AssemblyName)`** in the trim root (MSBuild does not validate a root name;
+     verified on hostile names → `"Identity": "Weird.Name.With.Dots"`). The guard order flipped
+     in **both** copies, behaviour-identical **verified at the mechanism**. **The FOURTH Yoga
+     pin** (android=ios=ci=template=**3.2.1**) — without it a generated app lays out
+     differently from **both** shells, silently. The lane lives **inside `build-test`** — **no
+     fourth required check**, ~1.8 min local / ~3–5 min CI against a 45-min timeout, and
+     **zero extra publishes** (`build-test` already publishes both bionic RIDs, so
+     `-PappPubRoot` gets a real APK for free).
+   - **Review: 1 Critical + 1 Important + 3 Minor — all fixed.** **C-1** is the headline.
+     **I-1 — the shell pin was a ROSTER and did not know how many files it SHOULD pin**, proven
+     live with **three mutations ALL GREEN** (roster 15→1; a new `src/` shell file the template
+     never gets; **7 unrostered template files deleted** — `gradlew`, the wrapper JAR,
+     `AndroidManifest.xml`, `BnStarterPage.razor`… **a `dotnet new` app missing its wrapper JAR
+     is a tree whose FIRST command fails, and it would have shipped**) — violating **the file's
+     OWN cited rule** ("never a roster"). **The fix pass then found the reviewer's prescribed
+     fix insufficient for the reviewer's own class** (a manifest pin closes only the *deletion*
+     mutation) and closed it **from three sides**: a **32-name content manifest** enumerated
+     from disk and **matching the pack's own glob** (so **it IS the nupkg's inventory**), the
+     shell set **DERIVED from the tree** (**15 → 19** — revealing `gradlew`/`gradlew.bat`/the
+     wrapper JAR/`gradle-wrapper.properties` were byte-identical copies **nothing compared at
+     all**), and the **repo-side** pin. **And the root cause the review missed: the design's
+     split table filed the gradle wrapper as TEMPLATE-OWNED — that wrong row is WHY the roster
+     never listed those four files. A wrong row in a table became a hole in a pin: the
+     anti-roster argument, restated.** **M-1** the guard-order pin was **comment-blind** (the
+     bug present + a comment naming the call → **PASSED**: *the pin was finding its own
+     documentation and calling it code*); **M-2** a floor of 5 under a real count of 6 → a
+     **named set** (*a count names a number and a set names the file*); **M-3** the prose
+     staleness is **TWO** spots (`MainActivity.kt:33` and **`:58`, which contradicts the code
+     134 lines below it**) — ledgered with the principle: **excisions we already need are free;
+     new excisions are new holes**.
+   - **The iOS doc** (`docs/ios-shell-setup.md`) — **its honesty is that it REFUSES to
+     transcribe.** `project.yml` links against `$(SRCROOT)/vendor/…` and names no publish
+     directory and no app anywhere; **the only thing that populates it today is CI** (~90 lines
+     of bash in two workflow steps). A transcription would be a **fourth copy** that rots the
+     day `ci.yml` moves. It points at what **`ios-build` compiles every PR** — a **required**
+     check, so **the referenced material is kept true BY A GATE, not by prose discipline**.
+     Three claims verified with real line numbers (`HostViewController.swift:60` hardcodes
+     `"BnDemo"`, twin at `BnRuntime.swift:184`; the ATS exemption at `Info.plist:44-48` exists
+     only for the fixture server) **and one correction: the design cited `AppleShellBridge.swift:102`
+     — that is the doc comment; the code is `fetchBegin` at `:106`, `return -1` at `:108`.**
+   - **Final counts:** .NET **570/0** (23 + 415 + 132; **559 → 568 → 570** with provenance) ·
+     JVM **106/0** untouched · publish gates **re-quoted clean** after the head moved
+     (`SampleAppPages.cs`): **4 IL2072, 9 exports, pages present, DLL 4217 KB — no
+     re-baselining** · consumer smoke still exactly **6 nupkg + 5 snupkg** · template smoke
+     **PASS** · actionlint clean · zero-warning bar holds. Device lanes untouched:
+     **184**/**154** on prior provenance. **DoD #4 closes with its arrows NAMED** — **U1
+     CLOSED** (`dotnet new search blazornative` → *"No templates found"*), **U3 mooted** by the
+     generated-output probe; **U2** (the CI APK carries the sample's `.so`) and **U4** (no lane
+     executes the iOS procedure) stand; **U6 stands and matters — proven on the CI runner, not
+     on a stranger's laptop.** **Nothing published; no tag created.** See
+     [design](../plans/2026-07-17-phase-8.3-design.md) +
+     [conclusion](../plans/2026-07-17-phase-8.3-conclusion.md).
 - **Phase 8.4** — the docs site: Docusaurus + GitHub Pages (DoD #5) — ⏳
 - **Phase 8.5** — hygiene + M8 final audit + close (DoD #6) → `v8.0` — ⏳
 

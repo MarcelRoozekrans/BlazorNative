@@ -1,0 +1,87 @@
+{
+  "$schema": "http://json.schemastore.org/template",
+  "author": "Marcel Roozekrans",
+  "classifications": [ "Blazor", "Android", "Mobile", "NativeAOT" ],
+  "identity": "BlazorNative.App",
+  "name": "BlazorNative App",
+  "description": "A Blazor app compiled with NativeAOT into a native Android shell: the .NET app (pages, manifest, the NativeAOT publish head) plus a runnable Android/Gradle shell tree.",
+  "shortName": "blazornative",
+  "sourceName": "MyBlazorNativeApp",
+  "defaultName": "BlazorNativeApp",
+  "preferNameDirectory": true,
+  "tags": {
+    "language": "C#",
+    "type": "project"
+  },
+
+  "sources": [
+    {
+      "modifiers": [
+        {
+          "exclude": [
+            "**/bin/**",
+            "**/obj/**",
+            "**/.gradle/**",
+            "**/build/**/*.jar"
+          ]
+        },
+        {
+          "//": "The wrapper jar is binary — never run it through the substitution engine.",
+          "copyOnly": [ "android/gradle/wrapper/gradle-wrapper.jar" ]
+        }
+      ]
+    }
+  ],
+
+  "symbols": {
+    "//1": "─────────────────────────────────────────────────────────────────",
+    "//2": "THREE symbols, and no more (8.3 design decision 6). The app name",
+    "//3": "(sourceName), the Android applicationId/namespace, and the",
+    "//4": "BlazorNative package version. NO minSdk symbol, deliberately:",
+    "//5": "below 24 breaks the NDK/Coil assumptions and above 24 is the",
+    "//6": "user's one-line edit — a symbol invites a value nothing tests.",
+    "//7": "─────────────────────────────────────────────────────────────────",
+
+    "BlazorNativeVersion": {
+      "type": "parameter",
+      "datatype": "string",
+      "defaultValue": "1.0.0-preview.1",
+      "replaces": "1.0.0-preview.1",
+      "description": "The BlazorNative package version the generated app references. The default MIRRORS src/Directory.Build.props and is pinned equal to it by TemplateDriftTests — it is not a second source of version truth."
+    },
+
+    "applicationId": {
+      "type": "parameter",
+      "datatype": "string",
+      "defaultValue": "",
+      "description": "The Android applicationId AND the AGP namespace (R/BuildConfig package). Defaults to com.example.<appname, lowercased>. NOTE: this is NOT the shell's Kotlin package — that stays io.blazornative.shell by design, so the template's shell sources are byte-identical to the reference's."
+    },
+    "nameLower": {
+      "type": "generated",
+      "generator": "casing",
+      "parameters": {
+        "source": "name",
+        "toLower": true
+      }
+    },
+    "defaultApplicationId": {
+      "type": "generated",
+      "generator": "join",
+      "parameters": {
+        "symbols": [
+          { "type": "const", "value": "com.example." },
+          { "type": "ref", "value": "nameLower" }
+        ]
+      }
+    },
+    "finalApplicationId": {
+      "type": "generated",
+      "generator": "coalesce",
+      "parameters": {
+        "sourceVariableName": "applicationId",
+        "fallbackVariableName": "defaultApplicationId"
+      },
+      "replaces": "com.example.starterapp"
+    }
+  }
+}

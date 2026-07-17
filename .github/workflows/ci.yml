@@ -4,7 +4,7 @@
 #
 #   build-test (windows-latest) — the local verification procedure verbatim
 #   (setup.ps1 §1–7 documents the toolchain pins):
-#     build (analyzers ride it) → .NET tests (559 passed / 0 skipped) →
+#     build (analyzers ride it) → .NET tests (570 passed / 0 skipped) →
 #     three NativeAOT publishes of samples/BlazorNative.SampleApp — the
 #     publish head since Phase 8.0: the app owns PublishAot, the exports stay
 #     in Runtime via UnmanagedEntryPointsAssembly, and the artifact is
@@ -45,13 +45,15 @@ env:
   DOTNET_NOLOGO: true
   DOTNET_CLI_TELEMETRY_OPTOUT: true
   NDK_PIN: 26.3.11579264
-  # Yoga is ONE engine used by TWO shells, and now by THREE files: Android's
-  # Gradle pin, ios.yml's YOGA_VERSION, and this one — the version the `ios-build`
-  # job below compiles from source. A third copy is a third thing that can drift,
-  # so it is asserted against the other two in build-test's very first step (see
-  # "Assert Yoga version parity"). It lives here rather than being grepped out of
-  # ios.yml at run time because a `cache:` key must be resolvable BEFORE any step
-  # runs — and an uncacheable Yoga build is ~90s on every PR.
+  # Yoga is ONE engine used by TWO shells, and now by FOUR files: Android's
+  # Gradle pin, ios.yml's YOGA_VERSION, this one — the version the `ios-build`
+  # job below compiles from source — and, since Phase 8.3, the TEMPLATE's Gradle
+  # pin (the one a `dotnet new blazornative` app actually builds against). Each
+  # copy is a thing that can drift, so all four are asserted against each other in
+  # build-test's very first step (see "Assert Yoga version parity"). It lives here
+  # rather than being grepped out of ios.yml at run time because a `cache:` key
+  # must be resolvable BEFORE any step runs — and an uncacheable Yoga build is
+  # ~90s on every PR.
   YOGA_VERSION: 3.2.1
 
 jobs:
@@ -65,14 +67,14 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # ── Cross-shell pins (Phase 6.0) ───────────────────────────────────────
+      # ── Cross-shell pins (Phase 6.0; a FOURTH file since Phase 8.3) ────────
       # Yoga is ONE engine used by TWO shells: Android pulls the prebuilt Maven
       # artifact (build.gradle.kts), iOS builds the same release from source
       # (ios.yml's YOGA_VERSION). Identical frames on both platforms is the whole
       # reason for choosing Yoga — two different engine versions would erode that
       # silently, and neither shell's own lane can see the other's pin. So the pin
       # is asserted HERE, in the REQUIRED lane, where it can never rot. Bumping
-      # Yoga means bumping ALL THREE files in one commit. (Baselines are asserted,
+      # Yoga means bumping ALL FOUR files in one commit. (Baselines are asserted,
       # not observed — the same house rule as the export/test-count checks below.)
       #
       # THREE files, since the `ios-build` job below: this workflow's own
@@ -82,21 +84,35 @@ jobs:
       # statements about two different engines. `$env:YOGA_VERSION` IS ci.yml's pin
       # (it is what ios-build consumes), so it is read straight from the environment
       # rather than regexed back out of the file it came from.
-      - name: Assert Yoga version parity (Android Gradle pin == iOS lane pin == this lane's pin)
+      #
+      # FOUR files, since Phase 8.3 (M8 DoD #4): the `dotnet new blazornative`
+      # template ships its OWN build.gradle.kts, and that is the one a generated
+      # app actually builds against. A template pinning a different Yoga lays out
+      # differently from BOTH shells — silently, on a stranger's machine, which is
+      # the exact failure this step exists to prevent and the one place nobody
+      # would be watching. TemplateDriftTests pins the template's gradle literals
+      # against the repo's as well (belt and braces, different lanes of the same
+      # required job); this step is what makes the ENGINE's four copies one fact.
+      - name: Assert Yoga version parity (Android Gradle pin == iOS lane pin == this lane's pin == the template's Gradle pin)
         run: |
-          $gradle = Get-Content "src\BlazorNative.Jni\build.gradle.kts" -Raw
-          $ios    = Get-Content ".github\workflows\ios.yml" -Raw
-          $gm = [regex]::Match($gradle, '(?m)^\s*implementation\("com\.facebook\.yoga:yoga:([^"]+)"\)')
+          $gradle   = Get-Content "src\BlazorNative.Jni\build.gradle.kts" -Raw
+          $ios      = Get-Content ".github\workflows\ios.yml" -Raw
+          $template = Get-Content "templates\BlazorNative.Templates\content\BlazorNative.App\android\build.gradle.kts" -Raw
+          $yogaPin = '(?m)^\s*implementation\("com\.facebook\.yoga:yoga:([^"]+)"\)'
+          $gm = [regex]::Match($gradle, $yogaPin)
           $im = [regex]::Match($ios, '(?m)^\s*YOGA_VERSION:\s*([0-9][^\s#]*)')
+          $tm = [regex]::Match($template, $yogaPin)
           if (-not $gm.Success) { throw "Could not find the com.facebook.yoga:yoga pin in build.gradle.kts — did the declaration move?" }
           if (-not $im.Success) { throw "Could not find YOGA_VERSION in .github/workflows/ios.yml — did the env pin move?" }
-          $android = $gm.Groups[1].Value.Trim()
-          $apple   = $im.Groups[1].Value.Trim()
-          $here    = "$env:YOGA_VERSION".Trim()
+          if (-not $tm.Success) { throw "Could not find the com.facebook.yoga:yoga pin in the TEMPLATE's build.gradle.kts — did the declaration move? A template whose Yoga pin this step cannot see is a template that can drift from both shells silently." }
+          $android  = $gm.Groups[1].Value.Trim()
+          $apple    = $im.Groups[1].Value.Trim()
+          $here     = "$env:YOGA_VERSION".Trim()
+          $generated = $tm.Groups[1].Value.Trim()
           if (-not $here) { throw "ci.yml's own YOGA_VERSION is empty — the ios-build job would compile an unpinned Yoga." }
-          Write-Host "Yoga pins: android(build.gradle.kts)=$android  ios(ios.yml)=$apple  ci(ios-build)=$here"
-          if ($android -ne $apple -or $android -ne $here) {
-            throw "Yoga version drift: Android pins $android, the iOS simulator lane builds $apple, the required ios-build lane builds $here. One engine, three files — bump them together."
+          Write-Host "Yoga pins: android(build.gradle.kts)=$android  ios(ios.yml)=$apple  ci(ios-build)=$here  template(blazornative)=$generated"
+          if ($android -ne $apple -or $android -ne $here -or $android -ne $generated) {
+            throw "Yoga version drift: Android pins $android, the iOS simulator lane builds $apple, the required ios-build lane builds $here, a generated app builds $generated. One engine, FOUR files — bump them together."
           }
 
       # ── Toolchain ──────────────────────────────────────────────────────────
@@ -778,6 +794,147 @@ jobs:
       # the publish head (samples/BlazorNative.SampleApp) is byte-identical
       # and the gates below stay 4 IL2072 / 9 exports / 106 JVM.
       #
+      # 559 -> 568 (PHASE 8.3 GATE 1, +9 — Runtime.Tests 404 -> 413): the
+      # TEMPLATE lands (M8 DoD #4) — templates/BlazorNative.Templates, a
+      # content-only `dotnet new blazornative` pack OUTSIDE src/ and on its own
+      # feed (artifacts/templates), so PackagePurityTests' "src/ is exactly the
+      # six" stays true and the smoke's EXACT 6 nupkg + 5 snupkg stays a count
+      # that means something. The template ships COPIES — of the version, of the
+      # shell's Kotlin, of the gradle pins, of the build machinery, of the
+      # registration pattern — and a template's drift is INVISIBLE: it rots
+      # inside a nupkg and surfaces on a stranger's laptop. So every copy is a
+      # PINNED MIRROR, and all nine facts are TemplateDriftTests:
+      #   +1  EveryTemplateVersionLiteral_EqualsTheSharedProps — all 6 literals
+      #       (3 BlazorNative PackageReferences + template.json's defaultValue +
+      #       its `replaces` + the PACK'S OWN <Version>) == src/Directory.Build
+      #       .props. The pack's own version needs this pin SPECIFICALLY: it
+      #       lives outside src/, which PackageVersionPinTests enumerates — the
+      #       8.1 "Seven" trap exactly, named and closed. A WILDCARD was
+      #       refused: CI restores from a local feed holding ONE version, so a
+      #       wildcard always resolves and the drift is invisible — green
+      #       because it cannot see. Mutation: props bumped alone -> red naming
+      #       all 6 files; the literal count floored -> red, not a pass over an
+      #       empty read.
+      #   +1  TemplateCsprojReferences_AreASubsetOfTheShippedSix — ENUMERATED
+      #       from src/, never rostered (the 8.1 I-2 rule).
+      #   +1  TemplateShellSources_AreByteIdenticalToTheRepos — the verbatim
+      #       shell files vs src/BlazorNative.Jni's, BYTE for byte. Exact rather
+      #       than normalized because the template's Kotlin keeps the
+      #       io.blazornative.shell PACKAGE (AGP's namespace/applicationId are
+      #       separate identities), which also makes the eventual .aar migration
+      #       a deletion. Without it the template is a second copy of the shell
+      #       THAT NOTHING COMPILES — the AGP 9 shape.
+      #       Mutation: one line of src/'s WidgetMapper.kt -> red naming it.
+      #       (8.3 GATE 1 REVIEW I-1: this pin used to iterate a HARDCODED
+      #       15-path roster. The set is now DERIVED from the template's android/
+      #       tree — 19 files, the whole tree minus the five that genuinely
+      #       diverge, each named with the pin that owns it instead. The roster
+      #       could be shrunk to ONE and stay green; a roster that does not exist
+      #       cannot be. Deriving also picked up gradlew, gradlew.bat, the
+      #       wrapper JAR and gradle-wrapper.properties — byte-identical copies
+      #       the roster never listed, so NOTHING compared them, and they are the
+      #       generated app's FIRST command.)
+      #   +1  TemplateBuildMachinery_IsByteIdenticalToTheRepos — global.json +
+      #       build/BionicNativeAot.targets. A `dotnet new` app inherits
+      #       NEITHER, and without them there is no bionic publish at all.
+      #   +1  TemplateGradlePins_EqualTheRepos — 12 pinned literals + the
+      #       wrapper distribution.
+      #   +1  TemplateMainActivity_EqualsTheRepos_ModuloTheMapAndTheFallback —
+      #       Pin A. The one genuinely divergent file, and it diverges in
+      #       exactly THREE places: the map block, the fallback literal, and the
+      #       template-only `import <namespace>.R`. (This comment said TWO when
+      #       Gate 1 wrote it, and that was true then — Gate 2's assembleDebug on
+      #       the GENERATED tree found the third: AGP puts R in the `namespace`
+      #       package while Kotlin resolves a bare `R` against the FILE's
+      #       package. The repo's two match by coincidence; the template's differ
+      #       by design, so only the template needs the import. The design had
+      #       assumed byte-identity was free here — a real compile is what
+      #       disproved it.) Brittle by construction (an excision), so ALL THREE
+      #       excisions assert they FIRED — the map and the fallback in BOTH
+      #       files, the R import in the template AND its ABSENCE in the repo (if
+      #       the repo ever grows one, its namespace and package have drifted
+      #       apart and this excision would be hiding it). An excision that stops
+      #       matching would compare the wrong thing and pass. The clean fix
+      #       (extract the map to its own file) is a shell change + a 184-test
+      #       re-run: LEDGERED.
+      #   +2  Pin B — TemplateDeepLinkMap_...PairForPair and
+      #       TemplateDefaultFallbackLiteral_... : the template's own map +
+      #       fallback vs the template's own AppPages.All. The template ships
+      #       the SAME contract the repo has, so the user inherits a pin that
+      #       insists when they add page two.
+      #   +1  EnsureRegistered_SetsTheGuardAfterTheRegisterCall_InBothCopies —
+      #       8.0 review M-1's flip, finally made (its ledger said "when 8.3
+      #       copies the pattern"; this is that moment). Set BEFORE the call, a
+      #       throwing registration leaves the guard SET and every retry
+      #       silently no-ops into an empty registry -> rc 1 at first mount.
+      #       A SOURCE-ORDER pin, and honest about it: it proves the ORDER, not
+      #       the semantics — there is no seam to inject a throwing manifest
+      #       into a static once-guard (the AndroidSetStyleDispatch precedent).
+      #       Here the semantics IS the order. Covers BOTH copies in one test.
+      #       (8.3 GATE 1 REVIEW M-1: it did the IndexOf over the body INCLUDING
+      #       comments, so it measured against prose. The reviewer ran a body
+      #       carrying the ACTUAL bug plus a comment naming RegisterPages( above
+      #       it and the pin PASSED — it found its own documentation and called
+      #       it code. Comments are stripped first now; the same vehicle reds.)
+      #
+      # 568 -> 570 (PHASE 8.3 GATE 1 REVIEW, +2 — Runtime.Tests 413 -> 415):
+      # I-1, the review's headline, and it is THIS PHASE'S OWN DISCOVERED CLASS
+      # MADE LIVE. The pins above all read the CONTENT of files they were TOLD
+      # the names of, and nothing knew how many files the template SHOULD ship.
+      # The reviewer proved it three ways, all GREEN: the byte roster shrunk
+      # 15 -> 1; a new shell file in src/BlazorNative.Jni the template never
+      # gets; and SEVEN template files deleted — gradlew, the wrapper JAR,
+      # settings.gradle.kts, AndroidManifest.xml, BnStarterPage.razor,
+      # _Imports.razor, gradle.properties — every one of them green. A `dotnet
+      # new` app missing its wrapper JAR is a tree whose FIRST command fails, and
+      # it would have shipped. The .gitignore find in this same phase proved a
+      # template file can silently never exist; the pin was blind to 7 of the 32
+      # that do.
+      #   +1  TemplateContentTree_IsExactlyTheExpectedManifest — the template's
+      #       content tree ENUMERATED FROM DISK and held equal to a 32-name
+      #       expected manifest: reds on a REMOVED file and on an ADDED one. The
+      #       enumeration matches the pack's OWN glob (`content/**` minus
+      #       bin/obj), so it is not a proxy for the nupkg's inventory, it IS the
+      #       nupkg's inventory. The manifest is an EXPECTED VALUE, not a roster
+      #       of subjects — that distinction IS 8.1's I-2 (enumerate what you
+      #       MEASURE, declare what you EXPECT); the old code inverted it, which
+      #       is why shrinking the declaration shrank the test.
+      #       Mutation: the reviewer's 7 deletions -> ONE red naming all seven.
+      #   +1  EveryRepoShellSource_IsInTheTemplate_OrIsDeliberatelyRepoOnly —
+      #       the OTHER side of the set. Both pins above walk the TEMPLATE's
+      #       tree, so neither can see src/ growing a shell file the template
+      #       never gets — the exact drift TemplateDriftTests' header has always
+      #       claimed to catch ("a shell change that skips the template REDS
+      #       HERE") and did not. Enumerates the repo's three mirrored subtrees
+      #       (src/main/kotlin, src/androidMain/kotlin, src/androidMain/res); a
+      #       file is in the template or NAMED repo-only with a reason (the
+      #       inspector/preview stack). That list is an EXCLUSION list, not a
+      #       roster — nothing derives from it, it only forgives — the same shape
+      #       as the pack csproj's `Exclude=`. It matters beyond tidiness: the
+      #       template's gradle compiles those subtrees in the GENERATED tree, so
+      #       a missed copy is every generated app failing to compile, and
+      #       build-test — the lane that OWNS this contract — would have said
+      #       nothing (template-smoke's assembleDebug would eventually name an
+      #       unresolved symbol instead of the cause).
+      #       Mutation: a new .kt in src/'s androidMain -> red naming the path.
+      # Also this commit (no count move): M-1's comment-stripping (above), M-2's
+      # version-literal floor (`>= 5` while the pin collects SIX — a floor below
+      # the real count is a floor never reached) replaced by a NAMED SET that
+      # reds on the dropped PackageReference and names it, and Pin A's "exactly
+      # TWO places" corrected to THREE after Gate 2's R-import fix.
+      # Also this commit (no count move): ci.yml's Yoga parity step learns about
+      # the template's build.gradle.kts — ONE ENGINE, now FOUR FILES (a
+      # generated app that lays out differently from both shells, silently, is
+      # exactly what that step exists to prevent). And .gitignore gains a
+      # negation for the template's build/ — the Gradle `build/` rule was
+      # silently swallowing BionicNativeAot.targets on its way into the pack.
+      # THE PUBLISH HEAD MOVED (the guard flip in SampleAppPages.cs), so the
+      # gates below re-arbitrate: re-quoted clean at 4 IL2072 / 9 exports / the
+      # page probe — behaviour-identical on every green path, as designed. The
+      # template pack is OUT of the solution and OUT of the release path: it
+      # does not publish this phase (DoD #4 requires creation -> build validated
+      # on CI, not publication). Gate 2 owns the generated-output publish lane.
+      #
       # 557 -> 559 (PHASE 8.2 GATE 1, +2 — Runtime.Tests 402 -> 404): the
       # RELEASE DOOR lands (M8 DoD #3). `.github/workflows/release.yml` — two
       # jobs: `validate` (no key, ever; triggers on `release: published` plus
@@ -856,7 +1013,7 @@ jobs:
       # ancestor Import in src/Directory.Build.props. NO library code change,
       # NO wire/ABI change, NO golden moved: the gates below stay 4 IL2072 /
       # 9 exports / 106 JVM (win-x64 re-verified clean this commit).
-      - name: .NET tests (assert 559 passed / 0 skipped)
+      - name: .NET tests (assert 570 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -874,8 +1031,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 559 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 559 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 570 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 570 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # ── NativeAOT publishes + nine-export verification ────────────────────
@@ -1152,6 +1309,48 @@ jobs:
         run: |
           .\scripts\consumer-smoke.ps1
           if ($LASTEXITCODE -ne 0) { throw "consumer-smoke.ps1 failed (exit $LASTEXITCODE)" }
+
+      # ── Template smoke (Phase 8.3 Gate 2 — M8 DoD #4) ─────────────────────
+      # A fresh `dotnet new blazornative` app has EXACTLY the shape nativelib ILC
+      # trims silently — and unlike Phase 8.0, NOBODY WILL BE WATCHING when it
+      # happens. 8.0 met that failure with a human at the console (4 → 0 IL2072,
+      # ~400KB smaller, the page names gone, caught by the stop-and-analyze
+      # rule). A template user gets none of that: a green build, a green APK, an
+      # app that installs, and rc 1 at first mount with nothing naming the cause.
+      #
+      # So this step GENERATES an app and PUBLISHES it, asserting the 8.0
+      # tripwire trio on GENERATED output — 4 IL2072 + the 9 exports + the
+      # page-presence probe. A text pin on the template's csproj was considered
+      # and REFUSED: it proves the LINE IS IN THE FILE, and 8.0's own absence was
+      # found by a PUBLISH, not by a read. The trio is mutation-proven — deleting
+      # TrimmerRootAssembly from the template reds arms 1 and 3 together (both
+      # arms quoted in the Gate 2 commit).
+      #
+      # WHY IT LIVES HERE rather than in its own job: a new required job is a
+      # FOURTH required check and a branch-protection change, and "the required
+      # gates keep their names and contexts" is a standing constraint. build-test
+      # already owns everything this needs — the packed local feed (the consumer
+      # smoke above just built it), the SDK, an Android SDK, a warm Gradle cache,
+      # and BOTH bionic publishes (the gates above), which is what makes the
+      # Android half cost ZERO extra publishes: the generated project's gradle is
+      # pointed at the SAMPLE's already-published .so via -PappPubRoot, since a
+      # .so is a build input staged into jniLibs and its contents are irrelevant
+      # to a Kotlin compile. (The honest residual — the APK carries the sample's
+      # .so, not the generated app's — is U2 in the design, named rather than
+      # papered over; the publish above proves the generated app's OWN native
+      # image roots, exports and canonicalizes.)
+      #
+      # The logic lives in the script, not in this YAML (8.2's rule 6): a step
+      # that exists only in YAML is the least testable code in the repo.
+      #
+      # ORDER IS LOAD-BEARING: it must follow the consumer smoke (which packs the
+      # six into artifacts/packages — the script asserts that feed exists and
+      # restores the generated app from it with provenance) and the bionic
+      # publish gates (whose .so it reuses). Both are above.
+      - name: Template smoke (dotnet new blazornative — the GENERATED app clears the publish bar)
+        run: |
+          .\scripts\template-smoke.ps1
+          if ($LASTEXITCODE -ne 0) { throw "template-smoke.ps1 failed (exit $LASTEXITCODE)" }
 
       # ── Artifacts (consumed by the Gate 3 instrumented workflow) ───────────
       - name: Stage jniLibs layout (x86_64 from bionic-x64)

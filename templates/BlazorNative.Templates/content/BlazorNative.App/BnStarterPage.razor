@@ -1,0 +1,46 @@
+@*
+    ─────────────────────────────────────────────────────────────────────────
+    BnStarterPage — your app's first screen, and its "/" route (the page the
+    shell boots into). Registered as "BnStarterPage" in AppPages.All.
+
+    A .razor class is named by its FILE name, so this file IS the
+    BnStarterPage the manifest names. Rename it and you rename the page —
+    in which case AppPages.All and MainActivity's `?: "BnStarterPage"`
+    fallback both need the new name (the BlazorNative repo pins that pair).
+
+    THE SUPPORTED SUBSET (the laws this shell actually enforces):
+      · Bn* components only — there is no DOM here. <div>/<span>/<p> are not
+        widgets and will not render; the BN analyzers flag the common cases.
+      · Components referenced in markup must be PUBLIC.
+      · @bind / @onclick need `@using Microsoft.AspNetCore.Components.Web`
+        in scope — _Imports.razor has it, and it is load-bearing: without it
+        the compiler emits them as LITERAL MARKUP, with zero diagnostics and
+        a green build, silently dead on a native shell.
+
+    Shape:
+      BnView          the root — padding + a background colour
+       ├─ BnText      the title
+       ├─ BnText      the live echo of `name`
+       ├─ BnInput     two-way bound to `name`
+       └─ BnButton    a counter, proving the event wire round-trips
+    ─────────────────────────────────────────────────────────────────────────
+*@
+<BnView BackgroundColor="#FFFFFF" Padding="16">
+    <BnText Text="Hello from BlazorNative" FontSize="24" />
+
+    <BnText Text="@Greeting" FontSize="16" />
+    <BnInput @bind-Value="name" />
+
+    <BnButton Label="@($"Tapped {taps} time(s)")" OnClick="OnTap" />
+</BnView>
+
+@code {
+    private string name = "world";
+    private int taps;
+
+    private string Greeting => $"Hello, {name}!";
+
+    // Sync-completing on the inline dispatcher: by the time this returns the
+    // re-render has been delivered to the shell.
+    private void OnTap() => taps++;
+}

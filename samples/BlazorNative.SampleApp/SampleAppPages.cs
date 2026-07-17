@@ -141,12 +141,31 @@ public static class SampleAppPages
     /// own module initializer (CoreCLR runs module initializers lazily, on
     /// first touch of the assembly, which a mount-by-NAME test never
     /// performs). The once-guard makes the eager NativeAOT path and the
-    /// explicit CoreCLR path meet safely.</summary>
+    /// explicit CoreCLR path meet safely.
+    ///
+    /// GUARD ORDER IS LOAD-BEARING (Phase 8.0 Gate 1 review M-1; flipped in
+    /// 8.3, the phase that copies this pattern into the template). The guard
+    /// is set only AFTER RegisterPages returns, so a throwing registration
+    /// leaves it CLEAR and the next call re-throws — loud and repeatable —
+    /// instead of silently no-op'ing into an empty registry, which surfaces
+    /// as rc 1 at first mount with nothing naming the cause. Safe in both
+    /// directions: RegisterPages validates before it registers (a validation
+    /// throw registers nothing), and if it ever threw AFTER registering, the
+    /// retry meets the register-once law and throws again. Every path is
+    /// loud — that is the whole improvement. Behaviour-identical on every
+    /// green path (this manifest never throws).
+    ///
+    /// The order is PINNED, in both copies — this one and the template's
+    /// AppPages.cs — by TemplateDriftTests.EnsureRegistered_SetsTheGuard_
+    /// AfterTheRegisterCall_InBothCopies. It is a SOURCE-ORDER pin: there is
+    /// no seam to inject a throwing manifest into a static once-guard over a
+    /// static array, so the pin proves the ORDER, not the semantics. Here the
+    /// semantics IS the order.</summary>
     public static void EnsureRegistered()
     {
         if (s_registered)
             return;
-        s_registered = true;
         BlazorNativeApp.RegisterPages(All);
+        s_registered = true; // only after the call SUCCEEDS — see the note above
     }
 }
