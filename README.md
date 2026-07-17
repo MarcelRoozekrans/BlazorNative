@@ -240,7 +240,7 @@ All four counts are asserted in CI — a drift from the baseline fails the build
 |---|---|---|---|
 | .NET | `dotnet test` | 655 passed / 0 skipped | `ci.yml` → `build-test` |
 | JVM (JNA + win-x64 .dll) | `gradlew testDebugUnitTest` | 106 | `ci.yml` → `build-test` |
-| Android (instrumented, AVD) | `gradlew connectedAndroidTest` | 188 | `android-instrumented.yml` |
+| Android (instrumented, AVD) | `gradlew connectedAndroidTest` | 193 | `android-instrumented.yml` |
 | iOS (XCTest, simulator) | `xcodebuild test` | 169 | `ios.yml` |
 
 **The gate is the truth; this table is a copy of it.** When the two disagree, the workflow is
