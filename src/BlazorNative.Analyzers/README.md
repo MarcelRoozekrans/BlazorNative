@@ -1,6 +1,6 @@
 # BlazorNative.Analyzers
 
-Roslyn analyzers enforcing [BlazorNative](https://github.com/MarcelRoozekrans/BlazorNative)
+Roslyn analyzers enforcing [BlazorNative](https://marcelroozekrans.github.io/BlazorNative/)
 usage rules (`BN0xxx`): interop-boundary, bridge-async-handler, and mobile-policy
 diagnostics for BlazorNative app and library code. A development dependency — it
 ships analyzers only, no runtime assembly.
@@ -27,4 +27,4 @@ IDs are never reused.
 Preview (`1.0.0-preview.N`): BlazorNative is a proof of concept heading toward a
 stable release. The rule set may grow between previews.
 
-License: MIT · Source: <https://github.com/MarcelRoozekrans/BlazorNative>
+License: MIT · Docs: <https://marcelroozekrans.github.io/BlazorNative/>

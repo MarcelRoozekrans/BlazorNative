@@ -13,7 +13,9 @@
 #     each publish must show exactly the 4 accepted IL2072 trim warnings) →
 #     nine-export verification (dumpbin via vswhere / llvm-readelf from the
 #     pinned NDK) → Gradle testDebugUnitTest against the fresh win-x64 dll
-#     (92 passed / 0 failed) → the instrumented sources COMPILE →
+#     (106 passed / 0 failed — the assertion is the step near the end of this
+#     job; this header is a copy, and it read 92 for four milestones) →
+#     the instrumented sources COMPILE →
 #     consumer smoke (SIX packages packed at the one props version, nupkg
 #     purity interrogated, then a blank consumer mounts a Bn* component,
 #     exercises RegisterPages, and trips the analyzers; Phase 4.5 extended by

@@ -2,7 +2,9 @@
 
 [![ci](https://github.com/MarcelRoozekrans/BlazorNative/actions/workflows/ci.yml/badge.svg)](https://github.com/MarcelRoozekrans/BlazorNative/actions/workflows/ci.yml)
 
-> **Status: pre-release proof of concept.** Milestones 1–6 are complete (tagged `v1.0`–`v6.0`). Milestone 6 (Real-UI Foundation) shipped Yoga flexbox owning all placement on both shells, real scrolling, and URL images — identical frame tables asserted on the Android emulator and the iOS simulator, pinned by a cross-shell drift test. Milestone 7 (Components + Razor) is next. Not production-ready — the API surface is unstable and changes without notice.
+**[Documentation](https://marcelroozekrans.github.io/BlazorNative/)** — getting started, the architecture story, the component reference (generated from the components' own doc comments), the parity contract, and both shell setup guides.
+
+> **Status: pre-release proof of concept.** Milestones 1–7 are complete (tagged `v1.0`–`v7.0`). Milestone 7 (Components + Razor) shipped `.razor` authoring and the components a real app opens with — a virtualized list, form controls, a modal, and the image surface's polish — on top of Milestone 6's Yoga engine, which owns all placement on both shells and asserts identical frame tables on the Android emulator and the iOS simulator. Milestone 8 (Developer Ecosystem) is in progress. Not production-ready — the API surface is unstable and changes without notice.
 
 > .NET → NativeAOT → native mobile widgets. Blazor components rendered as real Android and iOS views, no WebView, no JavaScript, no wasm.
 
@@ -140,16 +142,16 @@ The style routing table is hand-written in three places (`NativeRenderer.cs`, `Y
 
 Give a `BnScroll` a **definite height** (`Height`, or `Grow="1" Basis="0"` in a bounded parent). `Grow="1"` alone leaves `flexBasis: auto` — the basis becomes the *content's* height, the free space is negative, and `flexGrow` distributes only positive free space, so the viewport hugs its content and never scrolls. That is exactly why CSS's `flex: 1` shorthand sets basis to `0`; the shells emit a diagnostic when a viewport is indefinite.
 
-Three demo pages are mountable in the app: **`/layout`** (`BnLayoutDemo` — row/column/wrap/`Grow`/`AlignSelf` with a natively measured text leaf), **`/scroll`** (`BnScrollDemo` — a 300×200 viewport over 800dp of content that actually scrolls) and **`/image`** (`BnImageDemo` — a fixed-size image that never reflows, an intrinsic-size image whose loaded bytes reflow the sibling below it, and a failing URL that reserves nothing).
+Three of the demo app's pages exist to prove this section: **`/layout`** (`BnLayoutDemo` — row/column/wrap/`Grow`/`AlignSelf` with a natively measured text leaf), **`/scroll`** (`BnScrollDemo` — a 300×200 viewport over 800dp of content that actually scrolls) and **`/image`** (`BnImageDemo` — a fixed-size image that never reflows, an intrinsic-size image whose loaded bytes reflow the sibling below it, and a failing URL that reserves nothing).
 
 ### Not yet
 
 Honest boundaries, all ledgered:
 
-- **Images load from URLs but the surface is minimal**: `BnImage` is `Src` + the flex *item* params. No `Placeholder`, `OnError` or `ContentMode` yet — each changes *measurement*, so each gets its own design in M7. The unit rule is one file pixel = one dp/pt, so a `@2x` asset renders at 2× its intended physical size on both platforms (density-aware sources are M7). The demo app has no fixture server, so `/image` shows three failed loads outside the test targets — by design.
+- **No density-aware image sources.** The unit rule is one file pixel = one dp/pt, so a `@2x` asset renders at 2× its intended physical size on both platforms. (`BnImage`'s surface itself is no longer minimal — `PlaceholderColor`, `OnError` and `ContentMode`'s four modes shipped in M7, each with its own design, because each one had to answer to *measurement*.) The demo app has no fixture server of its own, so `/image` shows three failed loads outside the test targets — by design.
 - **`picker` does not flex its children** — `Spinner`/`UIPickerView` are framework containers that run their own layout inside themselves. The picker node itself is placed correctly by its parent.
 - **No horizontal scroll.** Android's `ScrollView` is vertical-only; horizontal is a different widget class that would have to be chosen at `CreateNode` from a `flexDirection` that arrives in a *later* `SetStyle` patch.
-- **No `onScroll` / `scrollTo`**, and no scroll-offset restore across navigation. `onScroll` fires at 60 Hz and would be the first high-frequency producer on a wire designed for taps; it needs its own design.
+- **No `scrollTo`**, and no scroll-offset restore across navigation. (`onScroll` itself shipped in M7 — it got the design its 60 Hz demanded, and arrives conflated rather than queued, so you cannot count ticks with it.)
 - **`alignContent`, `rowGap`, `columnGap`, `display`, `flex`** are accepted by nothing — no typed parameter, no producer. Every accepted name is a name three parsers must implement.
 - **iOS is simulator-only.** Real-device iOS (code signing, provisioning, App Store validation) needs an Apple Developer account and is Milestone 9.
 
@@ -203,15 +205,27 @@ BlazorNative/
 │   ├── BlazorNative.Analyzers/            ← Roslyn analyzers
 │   ├── BlazorNative.Components/           ← Bn* component library: BnView (flex surface),
 │   │                                         BnRow/BnColumn (presets), BnScroll (viewport),
-│   │                                         BnText/BnButton/BnInput, BnTheme + the demo
-│   │                                         pages (BnDemo, BnSettingsPage, BnLayoutDemo,
-│   │                                         BnScrollDemo)
+│   │                                         BnText/BnButton/BnInput/BnImage, BnList
+│   │                                         (virtualized), BnModal, the form controls
+│   │                                         (BnCheckbox/BnPicker/BnSlider/BnSwitch),
+│   │                                         BnActivityIndicator, BnTheme
 │   ├── BlazorNative.Runtime/              ← NativeAOT composition root + C-ABI exports + FrameEncoder
 │   ├── BlazorNative.Jni/                  ← Kotlin shell: JNA bindings, frame adapter, WidgetMapper,
 │   │                                         YogaLayout, MainActivity (Android + JVM tests)
 │   └── BlazorNative.Apple/                ← Swift/UIKit shell (iOS simulator): BnBridge, frame
 │                                             adapter, BnWidgetMapper, BnYogaLayout.mm (Obj-C++
 │                                             over libyoga.a), XCTest suite + vendored Yoga
+├── samples/
+│   ├── BlazorNative.SampleApp/            ← the demo app: the NativeAOT publish head, and the
+│   │                                         library's first real CONSUMER — its pages live
+│   │                                         here rather than inside Components (Phase 8.0)
+│   └── ConsumerSmoke/                     ← the blank consumer the smoke mounts against the
+│                                             packed nupkgs
+├── templates/BlazorNative.Templates/      ← `dotnet new blazornative`: the .NET app + a runnable
+│                                             Android shell
+├── website/                               ← the Docusaurus docs site (docs.yml deploys it; the
+│                                             component reference is GENERATED at build time and
+│                                             never committed)
 └── tests/
     ├── BlazorNative.Renderer.Tests/       ← renderer, bridge, trim-safety, frame-sink tests
     ├── BlazorNative.Runtime.Tests/        ← encoder/arena/protocol + typed Hello golden test
@@ -222,12 +236,19 @@ BlazorNative/
 
 All four counts are asserted in CI — a drift from the baseline fails the build.
 
-| Surface | Command | Count |
-|---|---|---|
-| .NET | `dotnet test` | 333 passed / 0 skipped |
-| JVM (JNA + win-x64 .dll) | `gradlew testDebugUnitTest` | 83 |
-| Android (instrumented, AVD) | `gradlew connectedAndroidTest` | 111 |
-| iOS (XCTest, simulator) | `xcodebuild test` | 72 |
+| Surface | Command | Count | Asserted by |
+|---|---|---|---|
+| .NET | `dotnet test` | 574 passed / 0 skipped | `ci.yml` → `build-test` |
+| JVM (JNA + win-x64 .dll) | `gradlew testDebugUnitTest` | 106 | `ci.yml` → `build-test` |
+| Android (instrumented, AVD) | `gradlew connectedAndroidTest` | 184 | `android-instrumented.yml` |
+| iOS (XCTest, simulator) | `xcodebuild test` | 154 | `ios.yml` |
+
+**The gate is the truth; this table is a copy of it.** When the two disagree, the workflow is
+right — and they have disagreed before: for four milestones this table read 333 / 83 / 111 / 72
+while the gates asserted otherwise, and not one of the four was within 50% of reality. Nothing
+re-runs a number on a page. Pinning this copy is ledgered as one item with the two unpinned
+copies of the Yoga version literal elsewhere in this file: all of them are a single cheap CI
+read away from being held by a gate instead of by someone remembering.
 
 ## Status
 
@@ -244,9 +265,16 @@ All four counts are asserted in CI — a drift from the baseline fails the build
   - [x] Real scrolling — `BnScroll` as a viewport over a synthesised content node — Phase 6.2
   - [x] URL images — `BnImage` via Coil/Kingfisher behind one parity contract — Phase 6.3
   - [x] Milestone audit (all 8 DoD PASS) + a required compile gate per shell (`build-test`/`android-build`/`ios-build`) → `v6.0` — Phase 6.4
-- [ ] Components + Razor — Milestone 7 (next)
+- [x] **Components + Razor — Milestone 7** (tagged `v7.0`)
+  - [x] `.razor` authoring under NativeAOT — the demo pages rewritten as the parity proof, patch stream byte-identical to their hand-written twins — Phases 7.0/7.1
+  - [x] The `onScroll` wire design + `BnList`, the virtualized list that forced it — Phase 7.2
+  - [x] Form controls + a real `picker` — Phase 7.3
+  - [x] `BnModal`, the first overlay surface + the RN parity survey's cheap wins — Phase 7.4
+  - [x] `BnImage` polish — `PlaceholderColor` / `OnError` / `ContentMode`, each its own *measurement* design — Phase 7.5
+  - [x] Route-registry unification + milestone audit (all 8 DoD PASS) → `v7.0` — Phase 7.6
+- [ ] **Developer Ecosystem — Milestone 8** (in progress): publish-ready packages, `dotnet new blazornative`, and a public docs site
 
-Five pages are mountable in the demo app: `BnDemo`, `BnSettingsPage`, `BnLayoutDemo` (`/layout`), `BnScrollDemo` (`/scroll`) and `BnImageDemo` (`/image`).
+The demo app's pages are declared once, in `samples/BlazorNative.SampleApp/SampleAppPages.cs` — that array is the roster, and the runtime's mount registry and route table are derived views of it.
 
 ## Compatibility
 

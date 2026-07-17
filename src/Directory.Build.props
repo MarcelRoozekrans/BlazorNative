@@ -56,8 +56,27 @@
     <Authors>Marcel Roozekrans</Authors>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <RepositoryUrl>https://github.com/MarcelRoozekrans/BlazorNative</RepositoryUrl>
-    <!-- 8.4 re-points this at the docs site (a named 8.4 input). -->
-    <PackageProjectUrl>https://github.com/MarcelRoozekrans/BlazorNative</PackageProjectUrl>
+
+    <!-- THE TWO URLs ARE DIFFERENT FACTS, and 8.4 is where they stop being the
+         same string. RepositoryUrl is WHERE THE SOURCE IS — it feeds the nuspec
+         <repository> element (with the commit, via PublishRepositoryUrl), which
+         is what nuget.org renders as "Source repository" and what the smoke
+         interrogates as repository@commit. It stays the repo, because the repo
+         is where the source is.
+
+         PackageProjectUrl is WHERE THE PROJECT LIVES for a reader — nuget.org's
+         "Project website" link. Until 8.4 there was nowhere else to send them,
+         so it pointed at the repo too. The docs site exists now, so it points
+         there: a stranger who clicks through from a package page wants the
+         getting-started page, not a source tree.
+
+         ⚠ It 404s until the owner clicks Settings → Pages → Source: GitHub
+         Actions (docs/GITHUB-SETUP.md, "GitHub Pages — enabling the docs
+         site"). That is bounded and it is strictly better than the old target:
+         nothing publishes without the owner's Release (8.2), so no consumer
+         can see this URL before the click, and the interval is one setting
+         long. -->
+    <PackageProjectUrl>https://marcelroozekrans.github.io/BlazorNative/</PackageProjectUrl>
 
     <!-- Symbols + SourceLink + determinism (every claim is a CI assertion,
          not a property setting — the smoke's interrogate step checks the

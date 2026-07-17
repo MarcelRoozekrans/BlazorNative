@@ -1,6 +1,6 @@
 # BlazorNative.Core
 
-Core contracts for [BlazorNative](https://github.com/MarcelRoozekrans/BlazorNative):
+Core contracts for [BlazorNative](https://marcelroozekrans.github.io/BlazorNative/):
 the shell bridge and interop abstractions, the `INavigationManager` contract, and the
 DI-facing primitives shared by every other BlazorNative package.
 
@@ -25,4 +25,4 @@ You rarely reference Core directly — it arrives transitively with the packages
 Preview (`1.0.0-preview.N`): BlazorNative is a proof of concept heading toward a
 stable release. The ABI and component surface may still move between previews.
 
-License: MIT · Source: <https://github.com/MarcelRoozekrans/BlazorNative>
+License: MIT · Docs: <https://marcelroozekrans.github.io/BlazorNative/>

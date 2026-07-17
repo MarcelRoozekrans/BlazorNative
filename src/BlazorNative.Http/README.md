@@ -1,6 +1,6 @@
 # BlazorNative.Http
 
-The [BlazorNative](https://github.com/MarcelRoozekrans/BlazorNative) HTTP bridge:
+The [BlazorNative](https://marcelroozekrans.github.io/BlazorNative/) HTTP bridge:
 `BridgeHttpHandler` routes `HttpClient` traffic through the hosting native shell's
 fetch bridge, so Blazor components use plain `HttpClient`/`IHttpClientFactory` on
 NativeAOT while the shell owns the platform networking stack, permissions, and
@@ -25,4 +25,4 @@ var todos = await Http.GetFromJsonAsync<Todo[]>("https://example.com/api/todos")
 Preview (`1.0.0-preview.N`): BlazorNative is a proof of concept heading toward a
 stable release. The ABI and component surface may still move between previews.
 
-License: MIT · Source: <https://github.com/MarcelRoozekrans/BlazorNative>
+License: MIT · Docs: <https://marcelroozekrans.github.io/BlazorNative/>
