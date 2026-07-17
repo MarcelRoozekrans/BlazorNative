@@ -126,7 +126,7 @@ the 4-IL2072 shape), 8.0 finds out before anything is packaged.
    29540566554** (`release / validate`, `pull_request`) **green — the self-proving lane
    proved itself on its own PR**. Device lanes untouched (184/154 stand on prior
    provenance). **Nothing published; no tag created; no secret added.**
-4. **`dotnet new blazornative`.** The template produces the .NET app (using the DoD #1
+4. ✅ **`dotnet new blazornative`.** The template produces the .NET app (using the DoD #1
    registration API) + the Android shell, runnable end-to-end on a machine with an
    Android SDK; template creation → build validated on CI; iOS shell setup documented
    against the repo's reference shell.
@@ -137,6 +137,60 @@ the 4-IL2072 shape), 8.0 finds out before anything is packaged.
    (b) when copying the `EnsureRegistered` pattern, flip or note its guard order (Gate 1
    review M-1: the once-guard is set before `RegisterPages`, so a throwing registration
    silently no-ops on retry).
+   **Closed by Phase 8.3** ([conclusion](../plans/2026-07-17-phase-8.3-conclusion.md)):
+   `templates/BlazorNative.Templates` — a real template pack on its own feed
+   (`artifacts/templates`), OUTSIDE the shipped six (a seventh csproj under `src/`
+   un-licenses 8.1's props home, and the six's pins are assembly-shaped: a content-only
+   pack satisfies none) and outside the release path. **Both named inputs DISCHARGED:**
+   **(a)** the generated csproj carries `<TrimmerRootAssembly Include="$(AssemblyName)" />`
+   — **`$(AssemblyName)`, not a substituted literal**, because MSBuild does not validate a
+   root name (a bogus one passes with no error and no warning), so the literal form's
+   failure mode IS the 8.0 silent trim from a new direction; verified on hostile names
+   (`-n Weird.Name.With.Dots` → the right Identity). **(b)** the guard order is FLIPPED in
+   **both** copies (the sample's and the template's) — one source-order pin covers both, so
+   reference and template cannot drift apart on the exact line 8.0's review flagged;
+   behaviour-identical claim verified at the mechanism (validation precedes assignment
+   under a lock; no callback into app code; both callers are ModuleInitializers).
+   **THE HEADLINE — two defects, both invisible to every pin, both found by DOING THE REAL
+   THING.** (1) **The generated Android app did not compile**: `MainActivity` used a bare
+   `R.layout.main` with no `import <namespace>.R`. AGP generates `R` into the `namespace`;
+   Kotlin resolves a bare `R` against the FILE's package. The repo's two match **by
+   coincidence**; the template's differ **by design** — and that divergence IS the
+   byte-identity trick. **All nine .NET pins were green; only `assembleDebug` saw it** —
+   which is why the design chose a real compile over `gradlew tasks`. **DoD #4's own
+   "runnable end-to-end" was unmet until it landed.** *Byte-identity to a reference is not
+   correctness when the reference's correctness depends on a property the copy deliberately
+   changes.* (2) **`.gitignore` was swallowing `templates/.../build/BionicNativeAot.targets`**
+   → every generated app would ship with no NDK shim → no bionic publish → no APK — and **a
+   byte-identity pin cannot see a file git never committed**. Found by construction.
+   **THE CENTRAL PROOF — the trim line, on GENERATED output** (a text pin proves the line is
+   in the file; 8.0's own line was found missing by a publish, not by a read):
+   `scripts/template-smoke.ps1` packs → installs **from the nupkg** → generates → restores
+   (provenance ×3) → publishes → `assembleDebug`. Green: **4 IL2072 · 9 exports ·
+   `BnStarterPage` present (3838 KB) · APK 15590 KB**. **The delete-the-line mutation reds
+   arm 1 AND arm 3 (0 IL2072, page ABSENT, 3592 KB) — and arm 2 STAYS GREEN**, because the
+   exports ride out of the *referenced* Runtime assembly and survive a whole-module trim of
+   the app: **arms 1–2 are facts about the LIBRARIES; only the probe is a fact about the
+   USER'S CODE.** **Review: 1 Critical + 1 Important + 3 Minor, all fixed.** **I-1 — the
+   shell pin was a ROSTER and did not know how many files it SHOULD pin** (proven live with
+   three mutations ALL GREEN, incl. **7 unrostered template files deleted** — a `dotnet new`
+   app missing its wrapper JAR would have shipped), violating the file's own cited "never a
+   roster" rule; the fix pass found **the reviewer's prescribed fix insufficient for the
+   reviewer's own class** and closed it from three sides (a 32-name content manifest matching
+   the pack's glob, the shell set DERIVED from the tree — **which widened it 15 → 19**,
+   revealing four byte-identical copies **nothing compared at all** — and the repo-side pin).
+   **The root cause the review missed: the design's split table filed the gradle wrapper as
+   TEMPLATE-OWNED — a wrong row in a table became a hole in a pin.** Evidence: .NET
+   **570/0** (23 + 415 + 132; 559 → 568 → 570) · JVM **106/0** untouched · publish gates
+   **re-quoted** clean after the head moved (4 IL2072, 9 exports, pages present, DLL 4217
+   KB — no re-baselining) · consumer smoke still exactly **6 nupkg + 5 snupkg** (the
+   template rides its own feed) · template smoke **PASS** · actionlint clean · Yoga pinned
+   across **FOUR** files now (android=ios=ci=template=3.2.1). Device lanes untouched
+   (184/154). **DoD #4 closes with its arrows NAMED** (U2, U4, U5, U6 — **U1 CLOSED at
+   Gate 3**: `dotnet new search blazornative` → "No templates found"; **U3 mooted** by the
+   generated-output probe), and **U6 matters: proven on the CI runner, not on a stranger's
+   laptop.** **The template does not publish until the owner's Release — the same gate as
+   the packages.**
 5. **The docs site.** Docusaurus in `website/`, deployed to GitHub Pages via a `docs.yml`
    mirroring AdoNet.Async; content: getting started (the template path), the architecture
    story (one Blazor app → NativeAOT → two shells; the wire, the ABI freeze, Yoga), the
