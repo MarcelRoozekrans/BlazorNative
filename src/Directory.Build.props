@@ -47,28 +47,38 @@
        seven literals across four files.
 
        NO VERSION LITERAL IS EVER HAND-EDITED AGAIN (8.6 decision 3). The
-       x-release-please-version annotation on the Version line below is what
-       makes that true: release-please's Generic updater rewrites the annotated
-       line, and only the annotated line, on every release PR. Bumps stopped
-       being a one-line edit here and became something nobody does at all.
+       release-please annotation on the Version line below is what makes that
+       true: the Generic updater rewrites the annotated line, and only the
+       annotated line, on every release PR. Bumps stopped being a one-line edit
+       here and became something nobody does at all.
 
-       THIS PARAGRAPH NAMES THE ANNOTATION WITHOUT ITS DELIMITERS, DELIBERATELY,
-       and the reason is a build error rather than a style rule: an XML comment
-       may not contain a double hyphen, so a comment that spells the annotation
-       in its full delimited form does not parse. Written the obvious way first,
-       observed as MSB4024 on all six shipped projects at once ("The imported
-       project file could not be loaded. An XML comment cannot contain ..., and
-       '-' cannot be the last character") — and then a SECOND time, because the
-       paragraph explaining the rule had quoted the rule, and the error message
-       contains the very sequence it is complaining about. It cannot be quoted
-       here either. That is not a curiosity; it is the reason this file talks
-       around it.
+       ⚠ THIS PARAGRAPH DOES NOT SPELL THE ANNOTATION, AND THAT IS LOAD-BEARING
+       TWICE OVER. Both reasons were found by doing it wrong first.
 
-       The house has met this exact shape one file over: release.yml's comments
-       must name secrets.NUGET_API_KEY without its expression braces, or
+       ONE — an XML comment may not contain a double hyphen, so a comment that
+       writes the annotation in its full delimited form does not parse. Observed
+       as MSB4024 on all six shipped projects at once ("The imported project file
+       could not be loaded. An XML comment cannot contain ..., and '-' cannot be
+       the last character"), and then AGAIN on the paragraph that explained it,
+       because the error message contains the very sequence it complains about.
+       It cannot be quoted here either.
+
+       TWO — AND THIS ONE IS THE SHARP ONE. The Generic updater matches its
+       annotation token ANYWHERE ON A LINE, prose included. A paragraph that
+       spelled the token would BE an annotation: release-please would replace the
+       first semver-looking string on that line with the new version, on every
+       release, forever. It is a no-op only while the sentence happens to contain
+       no version number — i.e. the trap is armed and waiting for whoever adds an
+       example to the docs. So the invariant is kept greppable instead:
+       `grep -rc <the token>` over the four extra-files is SEVEN, and seven is
+       the number of version literals. A count of eight means someone wrote prose
+       that release-please is now editing.
+
+       The house has met this shape one file over: release.yml's comments must
+       name secrets.NUGET_API_KEY without its expression braces, or
        ReleaseWorkflowPinTests counts the prose as a real reference and reds.
-       Documentation that quotes its own subject breaks its subject. Both times
-       the fix is the same: name the thing, do not spell it.
+       Documentation that quotes its own subject breaks its subject. Three times
+       now, the fix is the same: name the thing, do not spell it.
 
        THE MANIFEST->PROPS ARROW IS THE ONE ARROW NO DRIFT PIN WATCHED, and
        that gap arrived WITH the automation: the template mirrors are compared
