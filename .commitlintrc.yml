@@ -81,17 +81,34 @@
 #   documents rung 3 BY SPELLING IT, and happens to end near it, releases that
 #   version. Nothing warns.
 #
-#   NOTHING LINTS THIS. commitlint reads the PR TITLE; the bodies reach main
-#   unread by anything. Decision 5 rejected linting the branch's commits on the
-#   ground that they are "thrown away" — true of their subjects, and the reason
-#   this gap has no guard is that the premise was applied to the bodies too.
-#   A body-level check is a real option and is NOT what decision 5 refused; it
-#   is ledgered, not taken here.
+#   ✅ SOMETHING LINTS THIS NOW — `footer-check`, in .github/workflows/commitlint.yml
+#   (Phase 8.6, Gate 3). The sentence that used to sit here said "nothing lints
+#   this… a body-level check is ledgered, not taken". IT IS TAKEN. Decision 5
+#   rejected linting the branch's SUBJECTS, which are thrown away; it never
+#   refused reading the BODIES, which are not. The rule:
 #
-#   ⚠ THE PROSE IN *THIS FILE* IS SAFE AND MUST NOT BE "FIXED". Only commit
-#   MESSAGES are parsed. A `.yml` comment line starts with `#`, so the tokens
-#   above are at column 2, inside a file release-please never reads as a commit.
-#   Spelling them here is how the warning stays legible.
+#       A PR's commit BODIES may declare a release footer only if the PR's
+#       TITLE declares the same thing.
+#
+#   It does not claim to know what you meant — it compares the two texts you
+#   wrote and reds when they disagree. See scripts/footer-check.ps1.
+#
+#   ⚠ THE PROSE IN *THIS FILE* IS SAFE AND MUST NOT BE "FIXED" — but the reason
+#   it used to give was WRONG, and the wrong reason is worth more than the right
+#   one here. It said: "a `.yml` comment line starts with `#`, so the tokens
+#   above are at column 2". MEASURED against the real parser
+#   (conventional-commits-parser 6.4.0, release-please's own options):
+#
+#       `  `BREAKING CHANGE: x.   -> A NOTE.   COLUMN 2 SAVES NOTHING.
+#       `\t`BREAKING CHANGE: x.   -> A NOTE.   nor a tab, nor 8 spaces
+#       `* `BREAKING CHANGE: x.   -> A NOTE.   nor a list bullet
+#       `# `BREAKING CHANGE: x.   -> (none)    THE `#` IS WHAT SAVES IT
+#
+#   So this file is safe for TWO reasons, and only one of them was stated: it is
+#   not a commit message at all (the load-bearing one — only commit MESSAGES are
+#   parsed), and its lines begin with `#`, which blocks the note even in text
+#   that IS parsed. The indentation was never doing any work. Spelling the
+#   tokens here is how the warning stays legible; the `#` is why it costs nothing.
 #
 #   WHAT IT USED TO BE, AND WHY THE SETTING WAS THE FIRST STEP RATHER THAN A
 #   FOOTNOTE: `COMMIT_OR_PR_TITLE`. That means IF THE PR HAS EXACTLY ONE COMMIT,

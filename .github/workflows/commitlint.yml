@@ -82,6 +82,22 @@
 # deleted a roster in the first place. So this pipes the title into commitlint
 # itself.
 #
+# ─────────────────────────────────────────────────────────────────────────────
+# ✅ AND THE BODIES ARE NOW READ TOO — by the SECOND job below (Gate 3).
+#
+# Everything above explains why the TITLE is linted and the branch's SUBJECTS
+# are not. That reasoning is untouched and still right. What it did NOT cover is
+# the BODIES, which DO reach main and ARE parsed — the half-truth Gate 2 found
+# the hard way. `footer-check` is the job that closes it. The rule it enforces:
+#
+#     A PR's commit BODIES may declare a release footer only if the PR's TITLE
+#     declares the same thing.
+#
+# It does not ask whether you meant it — it cannot know. It asks whether the two
+# texts you wrote AGREE. See scripts/footer-check.ps1 for the measured boundary
+# (leading spaces, tabs, list bullets and lowercase all fail to save a token —
+# "column 0" is the wrong mental model) and for its 14-row self-test.
+#
 # See docs/plans/2026-07-17-phase-8.6-design.md, decisions 5 and 6.
 # ─────────────────────────────────────────────────────────────────────────────
 name: commitlint
@@ -90,10 +106,15 @@ on:
   pull_request:
     # `edited` is load-bearing and easy to leave out: without it, fixing a bad
     # title would never re-run this check, and the PR would keep the stale red.
+    # It is load-bearing TWICE over now: `footer-check` compares the bodies
+    # against the TITLE, so an edited title changes that job's answer too.
     types: [opened, edited, synchronize, reopened]
 
 permissions:
   contents: read
+  # footer-check reads the PR's commit list. Read-only, and it is the whole
+  # reason this lane is the natural home: it already has the PR in hand.
+  pull-requests: read
 
 jobs:
   pr-title:
@@ -120,3 +141,70 @@ jobs:
         run: |
           echo "Linting PR title: $PR_TITLE"
           printf '%s' "$PR_TITLE" | npx commitlint --config .commitlintrc.yml
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # THE FOOTER CHECK — the job that reads the surface nothing read before it
+  # landed. A SEPARATE job, deliberately: it answers a different question from
+  # the title lint, and when it reds the reader should see WHICH question failed
+  # without opening a log. `pr-title` red = your title is malformed.
+  # `footer-check` red = your body says something your title does not.
+  #
+  # THE DECISION LIVES IN THE SCRIPT, NOT HERE. That is the house rule, stated
+  # in release.yml for the same reason: YAML that fires on one event is the
+  # least testable code in the repo. scripts/footer-check.ps1 carries a 14-row
+  # -SelfTest whose first row is 004179f's REAL body, and it is run below —
+  # BEFORE the check itself, so a broken check reds as a broken check rather
+  # than passing vacuously over a poisoned body.
+  # ───────────────────────────────────────────────────────────────────────────
+  footer-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+
+      # THE POSITIVE CONTROL, and it runs first ON PURPOSE. This repo's standing
+      # rule — a pin that cannot see its subject must never pass vacuously —
+      # applies to the pin's own logic too. If the table cannot prove the check
+      # catches 004179f, the check does not get to render a verdict on anything.
+      - name: The check's own self-test (14 rows, 004179f's real body is row 1)
+        shell: pwsh
+        run: |
+          ./scripts/footer-check.ps1 -SelfTest
+          if ($LASTEXITCODE -ne 0) { throw "footer-check -SelfTest failed (exit $LASTEXITCODE) — the check is broken; it does not get to judge a PR." }
+
+      # The title arrives via env, never via a ${{ }} interpolation into the
+      # shell — same reasoning as the lint step above: a PR title is
+      # attacker-controlled text from anyone who can open a PR.
+      - name: The bodies must agree with the title
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # --paginate is not optional: the endpoint pages at 30, and a PR with
+          # 31 commits would otherwise be judged on the first 30 and pass on the
+          # strength of the commits it happened to read.
+          #
+          # `| @json` then `jq -s` and NOT `--jq '[.[].commit.message]'`, for two
+          # reasons that are each enough on their own — both RUN, not assumed:
+          #   1. WITH --paginate, --jq RUNS PER PAGE — a 2-page PR emits two
+          #      concatenated arrays, `[…][…]`. That is a JSON *stream*, not a
+          #      JSON *document*: jq reads it happily, which is exactly what
+          #      makes it easy to ship. ConvertFrom-Json throws on it —
+          #      "Additional text encountered after finished reading JSON
+          #      content" — so it fails LOUD rather than judging page 1 only.
+          #      Loud is good; not shipping the trip-wire at all is better.
+          #   2. gh prints a jq string result RAW, and commit messages are
+          #      MULTI-LINE — so one-message-per-line is not a parseable shape
+          #      at any page count. This one bites even on a 1-page PR.
+          # `@json` re-encodes each message to a single-line JSON string; `jq -s`
+          # slurps those lines into one array. Both problems, one mechanism.
+          gh api "repos/$REPO/pulls/$PR_NUMBER/commits" --paginate \
+            --jq '.[].commit.message | @json' > /tmp/pr-commits.jsonl
+          jq -s '.' /tmp/pr-commits.jsonl > /tmp/pr-commits.json
+          # A failed fetch lands here as an empty array; footer-check.ps1 throws
+          # on that rather than passing vacuously over zero commits.
+          pwsh ./scripts/footer-check.ps1 -Title "$PR_TITLE" -CommitMessagesJson /tmp/pr-commits.json
