@@ -1380,7 +1380,8 @@ jobs:
           $out = & $dumpbin /exports $dll
           $expected = @(
             'blazornative_dispatch_event', 'blazornative_fetch_complete',
-            'blazornative_host_event', 'blazornative_init', 'blazornative_mount',
+            'blazornative_host_call_complete', 'blazornative_host_event',
+            'blazornative_init', 'blazornative_mount',
             'blazornative_register_bridge', 'blazornative_register_frame_callback',
             'blazornative_shutdown', 'blazornative_version'
           )
@@ -1389,7 +1390,7 @@ jobs:
           $diff = Compare-Object $expected $actual
           if ($diff) {
             $diff | Format-Table | Out-String | Write-Host
-            throw "win-x64 export surface drift: expected exactly the 9 blazornative_* exports"
+            throw "win-x64 export surface drift: expected exactly the 10 blazornative_* exports"
           }
 
           # Phase 8.0 (Gate 1 review I-2): the pages must SURVIVE publish. The
@@ -1426,7 +1427,8 @@ jobs:
           $out = & $readelf --dyn-syms $so
           $expected = @(
             'blazornative_dispatch_event', 'blazornative_fetch_complete',
-            'blazornative_host_event', 'blazornative_init', 'blazornative_mount',
+            'blazornative_host_call_complete', 'blazornative_host_event',
+            'blazornative_init', 'blazornative_mount',
             'blazornative_register_bridge', 'blazornative_register_frame_callback',
             'blazornative_shutdown', 'blazornative_version'
           )
@@ -1435,7 +1437,7 @@ jobs:
           $diff = Compare-Object $expected $actual
           if ($diff) {
             $diff | Format-Table | Out-String | Write-Host
-            throw "linux-bionic-x64 export surface drift: expected exactly the 9 blazornative_* exports"
+            throw "linux-bionic-x64 export surface drift: expected exactly the 10 blazornative_* exports"
           }
 
       - name: Publish linux-bionic-arm64 (assert exactly 4 IL2072 warnings)
@@ -1458,7 +1460,8 @@ jobs:
           $out = & $readelf --dyn-syms $so
           $expected = @(
             'blazornative_dispatch_event', 'blazornative_fetch_complete',
-            'blazornative_host_event', 'blazornative_init', 'blazornative_mount',
+            'blazornative_host_call_complete', 'blazornative_host_event',
+            'blazornative_init', 'blazornative_mount',
             'blazornative_register_bridge', 'blazornative_register_frame_callback',
             'blazornative_shutdown', 'blazornative_version'
           )
@@ -1467,7 +1470,7 @@ jobs:
           $diff = Compare-Object $expected $actual
           if ($diff) {
             $diff | Format-Table | Out-String | Write-Host
-            throw "linux-bionic-arm64 export surface drift: expected exactly the 9 blazornative_* exports"
+            throw "linux-bionic-arm64 export surface drift: expected exactly the 10 blazornative_* exports"
           }
 
       # ── JVM tests against the fresh win-x64 publish ────────────────────────
@@ -2061,7 +2064,7 @@ jobs:
           vendored=src/BlazorNative.Apple/vendor/libBlazorNative.Runtime.a
           echo "=== nm -m: blazornative_* in the staged archive ===" | tee ios-build-out/archive-visibility.txt
           nm -m "$vendored" 2>&1 | grep -E ' _?blazornative_[a-z_]+$' | tee -a ios-build-out/archive-visibility.txt || true
-          expected="blazornative_dispatch_event blazornative_fetch_complete blazornative_host_event blazornative_init blazornative_mount blazornative_register_bridge blazornative_register_frame_callback blazornative_shutdown blazornative_version"
+          expected="blazornative_dispatch_event blazornative_fetch_complete blazornative_host_call_complete blazornative_host_event blazornative_init blazornative_mount blazornative_register_bridge blazornative_register_frame_callback blazornative_shutdown blazornative_version"
           actual=$(nm -gU "$vendored" 2>/dev/null | grep -Eo '_?blazornative_[a-z_]+' | sed 's/^_//' | sort -u)
           missing=""
           for s in $expected; do echo "$actual" | grep -qx "$s" || missing="$missing $s"; done
@@ -2071,10 +2074,10 @@ jobs:
           fi
           hidden=$(nm -m "$vendored" 2>/dev/null | grep -E ' _?blazornative_[a-z_]+$' | grep -c 'private external' || true)
           if [ "$hidden" -ne 0 ]; then
-            echo "$hidden of the 9 blazornative_* exports are PRIVATE EXTERNAL in the archive — ld64 will localize them and the linked app will not export them. This is an ILC emission change (toolchain or publish-property drift), not a link problem; see archive-visibility.txt in the artifact." >&2
+            echo "$hidden of the 10 blazornative_* exports are PRIVATE EXTERNAL in the archive — ld64 will localize them and the linked app will not export them. This is an ILC emission change (toolchain or publish-property drift), not a link problem; see archive-visibility.txt in the artifact." >&2
             exit 1
           fi
-          echo "SYMBOLS: all 9 blazornative_* present and externally visible in the staged archive."
+          echo "SYMBOLS: all 10 blazornative_* present and externally visible in the staged archive."
 
           pack_native=$(find "$HOME/.nuget/packages/microsoft.netcore.app.runtime.nativeaot.iossimulator-arm64" \
             -type d -path '*runtimes/iossimulator-arm64/native' 2>/dev/null | sort | tail -1)

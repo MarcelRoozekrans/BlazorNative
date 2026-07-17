@@ -34,12 +34,12 @@ namespace BlazorNative.SampleApp;
 // instantiation with a CONCRETE T, satisfying Mount<T>'s DAM(All) requirement
 // at compile time. Nothing goes reflective; this initializer is an
 // unconditional ILC root. The publish gates assert the 4 accepted IL2072s
-// (Renderer internals — none from these rows) and 9 exports, as always.
+// (Renderer internals — none from these rows) and 10 exports, as always.
 // ─────────────────────────────────────────────────────────────────────────────
 
 public static class SampleAppPages
 {
-    /// <summary>THE manifest: 9 routed pages + 5 unrouted test probes.
+    /// <summary>THE manifest: 10 routed pages + 5 unrouted test probes.
     /// Sync Mount&lt;T&gt; (inline dispatcher, Phase 2.4) — the first render
     /// completes before TryMount returns, so the frame callback has already
     /// fired. Mount values return the root componentId (Phase 3.5: the
@@ -112,6 +112,14 @@ public static class SampleAppPages
         // box, the mode quartet's four identical frames — plus the counted
         // OnError round trip. See BnImagePolishDemo.razor's header.
         BlazorNativePage.Routed<BnImagePolishDemo>("/imagepolish", "BnImagePolishDemo"),
+        // Phase 9.0: the geolocation proof page (route "/geolocation" — M9 DoD #2).
+        // A TENTH routed page — but a DIFFERENT kind: the worked example of the
+        // PERMISSION PATTERN, not a golden frame table. App code injects the
+        // IGeolocation FACADE (the 7th package) and the whole permission dance runs
+        // host-side; denial arrives as DATA and is echoed, never thrown, never hung.
+        // The .NET/wire half lives here; Gates 2/3 wire the shells (AVD
+        // LocationManager + requestPermissions; iOS CLLocationManager).
+        BlazorNativePage.Routed<BnGeolocationDemo>("/geolocation", "BnGeolocationDemo"),
         // Phase 4.2: the focus/blur proof app (BnInput OnFocus/OnBlur →
         // echo BnText — M4 DoD #4). Scaffolding, like CompositionProbe.
         BlazorNativePage.Named<FocusProbe>("FocusProbe"),

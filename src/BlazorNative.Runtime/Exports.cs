@@ -10,7 +10,8 @@ namespace BlazorNative.Runtime;
 // protocol + Phase 3.1 shell bridge (Phase 3.0e gave the library its final
 // name — the version string below is the JNA-visible one).
 //
-// Nine exports:
+// Ten exports (Phase 9.0 grew the surface 9→10 — the first export event since
+// Phase 3.1's fetch_complete):
 //   init                    — load runtime, verify Blazor accessors, store
 //                             platform-info options for the shell bridge
 //   shutdown                — clears the frame callback (frame flush lands later)
@@ -20,14 +21,20 @@ namespace BlazorNative.Runtime;
 //   dispatch_event          — Phase 3.2: host→renderer event ingress
 //                             (handlerId + flat-JSON args; synchronous
 //                             handler → re-render → frame callback; 0/1/2/3)
-//   register_bridge         — Phase 3.1 / 5.4: size-negotiated copy of the
+//   register_bridge         — Phase 3.1 / 5.4 / 9.0: size-negotiated copy of the
 //                             host's callback struct (leading structSize;
-//                             min-copy + zero-fill — 9 slots since 5.4)
+//                             min-copy + zero-fill — 10 slots since 9.0)
 //   fetch_complete          — Phase 3.1: deliver an async fetch response
 //   host_event              — Phase 5.1 (M5 DoD #5): host-INITIATED lifecycle
 //                             ingress (pause/resume, back, deep links) — fires
 //                             the real NativeShellBridge.NativeEvents to mounted
 //                             components; name + optional payload; 0/2/3
+//   host_call_complete      — Phase 9.0 (M9 DoD #1): deliver the tri-state result
+//                             of a GENERIC permission-gated async call (the
+//                             fetch_complete twin) — requestId + status + optional
+//                             flat-JSON payload; 0/1/2. Denial is DATA, carried in
+//                             the status; wired for geolocation in 9.0, generic so
+//                             9.1/9.2/9.3 add an op with ZERO further ABI churn.
 //
 // Phase 3.5 (M3 close): the two diagnostic probe exports —
 // blazornative_run_trim_probes (3.0c Gate 4) + blazornative_run_bridge_probes
@@ -423,6 +430,36 @@ public static class Exports
         catch (Exception ex)
         {
             Console.Error.WriteLine($"[Exports] host_event failed: {ex}");
+            return 2;
+        }
+    }
+
+    /// <summary>
+    /// Phase 9.0 (M9 DoD #1): delivers the tri-state result of a GENERIC
+    /// permission-gated async call (a HostCallBegin request id). The fetch_complete
+    /// twin, generalized: capability-agnostic (requestId + int status + optional
+    /// flat-JSON payload), so 9.1/9.2/9.3 reuse it with ZERO further ABI change.
+    /// Denial is DATA — it arrives as a status value here, never as a throw. The
+    /// payload string (when present) is host-owned and valid ONLY during this call
+    /// (copied before return). Return codes:
+    ///   0 = delivered
+    ///   1 = unknown/already-completed id — benign cancellation race, ignore it
+    ///   2 = internal bridge failure — the host should log LOUDLY; detail on stderr
+    /// Never throws across the ABI.
+    /// </summary>
+    [UnmanagedCallersOnly(EntryPoint = "blazornative_host_call_complete", CallConvs = new[] { typeof(CallConvCdecl) })]
+    public static int HostCallComplete(long requestId, int status, IntPtr payloadJsonUtf8)
+    {
+        try
+        {
+            string? payloadJson = payloadJsonUtf8 == IntPtr.Zero
+                ? null
+                : Marshal.PtrToStringUTF8(payloadJsonUtf8);
+            return NativeShellBridge.CompleteHostCall(requestId, status, payloadJson);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[Exports] host_call_complete id {requestId} failed: {ex}");
             return 2;
         }
     }

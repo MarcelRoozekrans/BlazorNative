@@ -21,11 +21,13 @@ namespace BlazorNative.Runtime.Tests;
 public sealed class BridgeProtocolNativeTests
 {
     [Fact]
-    public void BlazorNativeBridgeCallbacks_Is72Bytes()
+    public void BlazorNativeBridgeCallbacks_Is80Bytes()
     {
-        // Phase 5.4: 6 → 9 slots (clipboard read/write + share appended). The
-        // Kotlin mirror asserts the same 72 (ShellBridgeTest.kt).
-        Assert.Equal(72, Marshal.SizeOf<BlazorNativeBridgeCallbacks>());
+        // Phase 5.4: 6 → 9 slots (clipboard read/write + share appended).
+        // Phase 9.0: 9 → 10 slots (HostCallBegin appended — the generic
+        // permission-gated async-begin). The Kotlin mirror asserts the same 80
+        // (ShellBridgeTest.kt) once Gate 2 grows the shell half.
+        Assert.Equal(80, Marshal.SizeOf<BlazorNativeBridgeCallbacks>());
     }
 
     [Fact]
@@ -57,6 +59,8 @@ public sealed class BridgeProtocolNativeTests
         Assert.Equal(48, (int)Marshal.OffsetOf<BlazorNativeBridgeCallbacks>(nameof(BlazorNativeBridgeCallbacks.ClipboardRead)));
         Assert.Equal(56, (int)Marshal.OffsetOf<BlazorNativeBridgeCallbacks>(nameof(BlazorNativeBridgeCallbacks.ClipboardWrite)));
         Assert.Equal(64, (int)Marshal.OffsetOf<BlazorNativeBridgeCallbacks>(nameof(BlazorNativeBridgeCallbacks.Share)));
+        // Phase 9.0 appended slot — existing offsets (0…64) unchanged.
+        Assert.Equal(72, (int)Marshal.OffsetOf<BlazorNativeBridgeCallbacks>(nameof(BlazorNativeBridgeCallbacks.HostCallBegin)));
     }
 
     [Fact]

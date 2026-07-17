@@ -1,4 +1,5 @@
 using BlazorNative.Core;
+using BlazorNative.Device;
 using BlazorNative.Http;
 using BlazorNative.Renderer;
 using Microsoft.Extensions.DependencyInjection;
@@ -322,6 +323,10 @@ internal static unsafe class HostSession
             // BridgeHttpHandler therefore resolves against the host callbacks
             // on Android.
             services.AddSingleton<IMobileBridge, NativeShellBridge>();
+            // Phase 9.0: the device facades (IGeolocation) — a thin delegate over
+            // the IMobileBridge above, so a component [Inject]s the ergonomic facade
+            // and the permission-gated host-call bridge stays out of component code.
+            services.AddBlazorNativeDevice();
             // Phase 3.5: the navigation service (DoD #7). Registered as the
             // Core contract so components [Inject] INavigationManager; the
             // session also keeps the concrete instance for the route-aware

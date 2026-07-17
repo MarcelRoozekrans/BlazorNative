@@ -135,6 +135,7 @@ class MainActivity : Activity() {
             "/form" to "BnFormDemo",
             "/modal" to "BnModalDemo",
             "/imagepolish" to "BnImagePolishDemo",
+            "/geolocation" to "BnGeolocationDemo",
         )
     }
 

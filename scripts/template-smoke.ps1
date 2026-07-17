@@ -23,7 +23,7 @@
 
       · exactly 4 IL2072    — the app is rooted and the libraries are still
                               trimmable. A whole-module trim drives this to 0.
-      · exactly the 9       — the exports still ride out of the REFERENCED
+      · exactly the 10      — the exports still ride out of the REFERENCED
         blazornative_*        Runtime assembly, and CanonicalizeNativeArtifactName
         exports              produced BlazorNative.Runtime.dll from <AppName>.dll
                               (the frozen shell contract, proven for a name that
@@ -133,7 +133,8 @@ $referencedIds = @("Runtime", "Components", "Analyzers")
 # whole point is that a GENERATED app clears the SAME bar the repo's app clears.
 $expectedExports = @(
     'blazornative_dispatch_event', 'blazornative_fetch_complete',
-    'blazornative_host_event', 'blazornative_init', 'blazornative_mount',
+    'blazornative_host_call_complete', 'blazornative_host_event',
+    'blazornative_init', 'blazornative_mount',
     'blazornative_register_bridge', 'blazornative_register_frame_callback',
     'blazornative_shutdown', 'blazornative_version'
 )

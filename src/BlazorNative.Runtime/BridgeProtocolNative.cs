@@ -42,6 +42,10 @@ namespace BlazorNative.Runtime;
 //     valid ONLY during FetchBegin; the host copies before returning.
 //   • BlazorNativeFetchResponse + every string it references is host-owned,
 //     valid ONLY during blazornative_fetch_complete; .NET copies.
+//   • The payloadJsonUtf8 string passed to blazornative_host_call_complete
+//     (Phase 9.0) is host-owned, valid ONLY during that call; .NET copies it
+//     (flat JSON → typed result) before returning. NULL = no payload (every
+//     non-Granted status carries none).
 //   • The callbacks struct itself is COPIED by blazornative_register_bridge —
 //     the host may free its struct memory after the call (the function
 //     pointers themselves must stay alive: JNA-side STRONG refs, same GC
@@ -58,11 +62,12 @@ namespace BlazorNative.Runtime;
 /// <c>blazornative_register_bridge</c>. All pointers are cdecl <c>int</c>-returning
 /// functions — see the return-code table above.
 ///
-/// SIZE-NEGOTIATED GROWTH (Phase 5.4, DoD #6): the struct grows by APPENDING new
-/// slots at the end; the existing offsets (0…40) never move. register_bridge takes
-/// a leading <c>structSize</c> and the runtime copies <c>min(structSize, sizeof)</c>
-/// bytes + zero-fills the tail, so an OLD shell (48-byte struct) and a NEW runtime
-/// (72-byte struct) interoperate: the un-supplied slots read back as
+/// SIZE-NEGOTIATED GROWTH (Phase 5.4, DoD #6; Phase 9.0 grew it again 72→80): the
+/// struct grows by APPENDING new slots at the end; the existing offsets (0…64) never
+/// move. register_bridge takes a leading <c>structSize</c> and the runtime copies
+/// <c>min(structSize, sizeof)</c> bytes + zero-fills the tail, so an OLD shell
+/// (72-byte struct) and a NEW runtime (80-byte struct) interoperate: the un-supplied
+/// slots read back as
 /// <c>IntPtr.Zero</c> and the managed side surfaces them as "not supported"
 /// (NotSupportedException) rather than crashing. A null slot is ALWAYS the
 /// capability-unsupported signal — never dereferenced.
@@ -72,7 +77,7 @@ namespace BlazorNative.Runtime;
 /// header, and pin its offset in BOTH drift tests (BridgeProtocolNativeTests.cs /
 /// ShellBridgeTest.kt).</summary>
 [StructLayout(LayoutKind.Sequential)]
-public struct BlazorNativeBridgeCallbacks           // 9 × IntPtr = 72 bytes
+public struct BlazorNativeBridgeCallbacks           // 10 × IntPtr = 80 bytes
 {
     public IntPtr Navigate;        // offset 0  — int (const char* routeUtf8)
     public IntPtr CurrentRoute;    // offset 8  — int (char* buf, int cap)
@@ -83,6 +88,13 @@ public struct BlazorNativeBridgeCallbacks           // 9 × IntPtr = 72 bytes
     public IntPtr ClipboardRead;   // offset 48 — int (char* buf, int cap)   — null = unsupported
     public IntPtr ClipboardWrite;  // offset 56 — int (const char* textUtf8)  — null = unsupported
     public IntPtr Share;           // offset 64 — int (const char* textUtf8)  — null = unsupported
+    // Phase 9.0 (M9 DoD #1): the GENERIC permission-gated async-begin. .NET assigns
+    // an Interlocked requestId, parks a TCS, then calls this; the host runs the whole
+    // permission dance (check → prompt → obtain/deny) and later PUSHES the tri-state
+    // result via blazornative_host_call_complete. `op` selects the capability
+    // (0 = Geolocation in 9.0); args cross as flat JSON. null = unsupported (an old
+    // shell predating the slot — RequireSlot surfaces NotSupportedException).
+    public IntPtr HostCallBegin;   // offset 72 — int (long requestId, int op, const char* argsJsonUtf8) — null = unsupported
 }
 
 /// <summary>Fetch request handed to the host's FetchBegin callback.

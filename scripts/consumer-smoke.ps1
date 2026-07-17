@@ -2,23 +2,23 @@
 <#
 .SYNOPSIS
     BlazorNative — consumer smoke (Phase 4.5 Gate 2, M4 DoD #7; extended by
-    Phase 8.1 Gate 1, M8 DoD #2: six packages, nupkg-level purity, the first
+    Phase 8.1 Gate 1, M8 DoD #2: seven packages, nupkg-level purity, the first
     out-of-repo RegisterPages consumer).
 
 .DESCRIPTION
-    Proves a BLANK consumer project consumes BlazorNative from the SIX NuGet
+    Proves a BLANK consumer project consumes BlazorNative from the SEVEN NuGet
     packages ALONE — no ProjectReferences, no solution membership:
 
-      1.  pack        — the six packages → artifacts/packages (fresh), at the
+      1.  pack        — the seven packages → artifacts/packages (fresh), at the
                         ONE version parsed from src/Directory.Build.props
                         (the single version truth, 8.1 design decision 4).
-                        Zero pack warnings; exactly 6 .nupkg + 5 .snupkg
+                        Zero pack warnings; exactly 7 .nupkg + 6 .snupkg
                         (Analyzers embeds its pdb — no lib/, no snupkg); every
                         nupkg FILENAME carries the props version (the
                         version-drift tooth — a csproj <Version> override
                         reds here AND in PackageVersionPinTests); and symbols
                         are PAIRED, not merely counted (Phase 8.2 decision 4):
-                        each of the five library nupkgs has its .snupkg
+                        each of the six library nupkgs has its .snupkg
                         SIBLING and Analyzers has none — the counts alone are
                         blind to WHICH package owns the symbols, and the push
                         matches them by ADJACENCY.
@@ -31,16 +31,16 @@
                         green for the wrong reason), then zero app-shaped names,
                         zero moved-roster types — nuspec truth (id+version,
                         dependency allow-list — no SampleApp, nothing outside
-                        the six + known third parties; MIT expression; readme
+                        the seven + known third parties; MIT expression; readme
                         entry + file; repository@commit = the SourceLink
-                        assertion), inventory shape (five libs: exactly one
+                        assertion), inventory shape (six libs: exactly one
                         dll + its XML doc under lib/net10.0; Analyzers: NO
                         lib/, dll under analyzers/dotnet/cs).
       3.  restore     — samples/ConsumerSmoke into a TEMP package cache with
                         --no-cache and -p:BlazorNativeVersion=<props version>
                         (the csproj carries NO fallback — this script is the
                         entry point). Provenance ASSERTED from .nupkg.metadata:
-                        the SIX from artifacts/packages, a transitive
+                        the SEVEN from artifacts/packages, a transitive
                         (ZeroAlloc.Inject) from nuget.org.
       4.  trip/clean  — -p:AnalyzerTrip=true MUST surface BN0011 (the packaged
                         analyzers are LIVE); the clean build carries ZERO BN
@@ -65,7 +65,7 @@ $feedDir  = Join-Path $repoRoot "artifacts\packages"
 # The shipped set — must agree with PackagePurityTests.ShippedAssemblies, the
 # src/ csproj enumeration, and ConsumerSmoke.csproj's references (8.1
 # normative rule 2). Order: pack respects the dependency arrows.
-$packages = @("Core", "Renderer", "Http", "Components", "Runtime", "Analyzers")
+$packages = @("Core", "Renderer", "Http", "Components", "Device", "Runtime", "Analyzers")
 
 # The 16-row moved roster (PackagePurityTests.MovedTypeRoster verbatim) + the
 # pattern net — the same sin, asserted at the PACKAGING layer.
@@ -93,6 +93,7 @@ $sentinels = @{
     "Renderer"   = "NativeRenderer"         # the renderer itself
     "Http"       = "BridgeHttpHandler"      # the handler Http exists for
     "Components" = "BnView"                 # the component surface's base view
+    "Device"     = "IGeolocation"           # the geolocation facade Device exists for (9.0)
     "Runtime"    = "BlazorNativeApp"        # the 8.0 registration API the smoke consumes
     "Analyzers"  = "MobilePolicyAnalyzer"   # the analyzer that owns BN0011 (the trip tooth)
 }
@@ -103,7 +104,7 @@ function Write-Fail([string]$text) { Write-Host "  ✗  $text" -ForegroundColor 
 
 Write-Host ""
 Write-Host "  ──────────────────────────────────────────────────────" -ForegroundColor DarkGray
-Write-Host "  BlazorNative consumer smoke — six packages, purity + mount (DoD #7 / M8 DoD #2)" -ForegroundColor White
+Write-Host "  BlazorNative consumer smoke — seven packages, purity + mount (DoD #7 / M8 DoD #2 / M9 DoD #1)" -ForegroundColor White
 Write-Host "  ──────────────────────────────────────────────────────" -ForegroundColor DarkGray
 Write-Host ""
 
@@ -124,8 +125,8 @@ if ($versionNodes.Count -ne 1 -or [string]::IsNullOrWhiteSpace($versionNodes[0])
 $version = $versionNodes[0]
 Write-OK "version source: src/Directory.Build.props → $version"
 
-# ── 1. Pack the six packages (fresh feed) ────────────────────────────────────
-Write-Step "packing the six packages → artifacts/packages ..."
+# ── 1. Pack the seven packages (fresh feed) ────────────────────────────────────
+Write-Step "packing the seven packages → artifacts/packages ..."
 if (Test-Path $feedDir) { Remove-Item -Recurse -Force $feedDir }
 $packLog = @()
 foreach ($proj in $packages) {
@@ -144,12 +145,12 @@ if ($packWarnings.Count -ne 0) {
 }
 $nupkgs  = @(Get-ChildItem $feedDir -Filter "*.nupkg")
 $snupkgs = @(Get-ChildItem $feedDir -Filter "*.snupkg")
-if ($nupkgs.Count -ne 6) {
-    Write-Fail "expected 6 .nupkg in artifacts/packages, found $($nupkgs.Count)"
+if ($nupkgs.Count -ne 7) {
+    Write-Fail "expected 7 .nupkg in artifacts/packages, found $($nupkgs.Count)"
     exit 1
 }
-if ($snupkgs.Count -ne 5) {
-    Write-Fail "expected 5 .snupkg (Analyzers embeds its pdb — no snupkg), found $($snupkgs.Count): $($snupkgs.Name -join ', ')"
+if ($snupkgs.Count -ne 6) {
+    Write-Fail "expected 6 .snupkg (Analyzers embeds its pdb — no snupkg), found $($snupkgs.Count): $($snupkgs.Name -join ', ')"
     exit 1
 }
 # The version-drift tooth: every nupkg filename carries exactly the props
@@ -207,10 +208,10 @@ if ($symbolOffenders.Count -ne 0) {
     Write-Fail "SYMBOL PAIRING broken. The 6/5 counts above are blind to this: symbols are matched to packages by ADJACENCY at push time, so a library package without its .snupkg sibling ships unsymbolicated and nothing else in this repo would notice. Feed: $(($nupkgs.Name + $snupkgs.Name | Sort-Object) -join ', ')"
     exit 1
 }
-Write-OK "six packages packed at $version, zero warnings, filenames agree with the props; symbols PAIRED (5 libs each with its .snupkg sibling; Analyzers embedded, no snupkg)"
+Write-OK "seven packages packed at $version, zero warnings, filenames agree with the props; symbols PAIRED (6 libs each with its .snupkg sibling; Analyzers embedded, no snupkg)"
 
 # ── 1.5 Interrogate the nupkgs (8.1 decision 6 — packaging-layer purity) ─────
-Write-Step "interrogating the six nupkgs (types off the PE, nuspec truth, inventory shape) ..."
+Write-Step "interrogating the seven nupkgs (types off the PE, nuspec truth, inventory shape) ..."
 
 function Get-TypeNames([string]$dllPath) {
     $stream = [System.IO.File]::OpenRead($dllPath)
@@ -365,7 +366,7 @@ try {
 
         Write-Host "     $id $version — nuspec ✓ (MIT, readme, repository@commit $($repository.GetAttribute('commit').Substring(0,8))…), inventory ✓, $($typeNames.Count) types clean (sentinel $sentinel ✓)" -ForegroundColor DarkGray
     }
-    Write-OK "nupkg interrogation clean: purity, nuspec truth, and inventory shape on all six"
+    Write-OK "nupkg interrogation clean: purity, nuspec truth, and inventory shape on all seven"
 }
 finally {
     if (Test-Path $interrogateRoot) { Remove-Item -Recurse -Force $interrogateRoot -ErrorAction SilentlyContinue }
@@ -383,7 +384,7 @@ try {
     }
 
     # Provenance proof: NuGet records the origin of every extracted package in
-    # <cache>/<id>/<version>/.nupkg.metadata ("source"). The six must come
+    # <cache>/<id>/<version>/.nupkg.metadata ("source"). The seven must come
     # from the LOCAL feed; a transitive dep must come from nuget.org.
     foreach ($proj in $packages) {
         $id = "blazornative.$($proj.ToLowerInvariant())"
@@ -402,7 +403,7 @@ try {
         exit 1
     }
     Write-Host "     zeroalloc.inject $transitiveVer ← $($transitiveMeta.source)" -ForegroundColor DarkGray
-    Write-OK "restore clean: BlazorNative.* ×6 from the local feed, transitives from nuget.org"
+    Write-OK "restore clean: BlazorNative.* ×7 from the local feed, transitives from nuget.org"
 
     # ── 3. Analyzer trip build (BN0011 MUST fire) ────────────────────────────
     Write-Step "trip build (-p:AnalyzerTrip=true) — expecting BN0011 ..."
@@ -445,7 +446,7 @@ try {
         Write-Fail "ConsumerSmoke exited $LASTEXITCODE"
         exit 1
     }
-    Write-OK "consumer smoke PASS — six packages: purity interrogated, mount + RegisterPages from packages alone (M4 DoD #7 / M8 DoD #2)"
+    Write-OK "consumer smoke PASS — seven packages: purity interrogated, mount + RegisterPages from packages alone (M4 DoD #7 / M8 DoD #2 / M9 DoD #1)"
     exit 0
 }
 finally {

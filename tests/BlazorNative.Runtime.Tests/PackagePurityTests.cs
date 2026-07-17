@@ -62,6 +62,9 @@ public sealed class PackagePurityTests
     [
         "BlazorNative.Core", "BlazorNative.Renderer", "BlazorNative.Http",
         "BlazorNative.Components", "BlazorNative.Runtime", "BlazorNative.Analyzers",
+        // Phase 9.0 (M9 DoD #1): the 7th shipped package — the device-API facades
+        // (IGeolocation now; notifications/biometrics/camera in 9.1-9.3).
+        "BlazorNative.Device",
     ];
 
     private const string SampleAppAssembly = "BlazorNative.SampleApp";

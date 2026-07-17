@@ -1,5 +1,6 @@
 using System.Buffers;
 using System.Collections.Concurrent;
+using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Text;
 using BlazorNative.Core;
@@ -62,6 +63,33 @@ public sealed class NativeShellBridge : IMobileBridge
     private static long s_nextFetchId;
     private static readonly ConcurrentDictionary<long, TaskCompletionSource<BridgeHttpResponse>>
         s_pendingFetches = new();
+
+    // Phase 9.0 — the permission-gated async pending registry (the s_pendingFetches
+    // twin). Keyed by an Interlocked id; RunContinuationsAsynchronously because the
+    // completion lands on a host/Kotlin thread. Process-scoped (a static field, one
+    // bridge per process) — so it SURVIVES an Android Activity recreation: only the
+    // host-side requestCode→requestId map is app-scoped; this .NET state never noticed.
+    private static long s_nextHostCallId;
+    private static readonly ConcurrentDictionary<long, TaskCompletionSource<HostCallResult>>
+        s_pendingHostCalls = new();
+
+    /// <summary>The generic permission-gated capabilities carried on the ONE
+    /// HostCallBegin slot. 9.0 wires exactly one (Geolocation); 9.1/9.2/9.3 add an
+    /// op constant + a host handler and touch NO ABI, NO export gate, NO drift test.
+    /// The integer is the wire contract — the host switches on it.</summary>
+    internal enum HostCallOp { Geolocation = 0 }
+
+    /// <summary>A completion carried back through blazornative_host_call_complete:
+    /// the wire status integer (mapped to <see cref="GeolocationStatus"/> etc. by the
+    /// caller) + an optional flat-JSON payload (the fix, when Granted).</summary>
+    internal readonly record struct HostCallResult(int Status, string? PayloadJson);
+
+    // The args each geolocation op sends — a flat JSON object, so a later phase can
+    // extend it without an ABI change. `mode` lets the host distinguish the
+    // request-then-fetch call (may prompt) from the read-only permission check (never
+    // prompts) on the SAME op — no second op, no second slot.
+    private const string GeolocationRequestArgs = "{\"mode\":\"request\"}";
+    private const string GeolocationCheckArgs = "{\"mode\":\"check\"}";
 
     /// <summary>Real host→.NET event multicast (Phase 5.1, replacing the 3.2
     /// no-op). Static, like every other bridge field: the C ABI has one bridge
@@ -136,6 +164,13 @@ public sealed class NativeShellBridge : IMobileBridge
         foreach (long id in s_pendingFetches.Keys)
         {
             if (s_pendingFetches.TryRemove(id, out var tcs))
+                tcs.TrySetCanceled();
+        }
+        // Phase 9.0: drain pending host calls too, so a call left in flight by a
+        // test (a killed-process analogue) cannot leak across tests.
+        foreach (long id in s_pendingHostCalls.Keys)
+        {
+            if (s_pendingHostCalls.TryRemove(id, out var tcs))
                 tcs.TrySetCanceled();
         }
         Volatile.Write(ref s_platformOptions, null);
@@ -355,6 +390,151 @@ public sealed class NativeShellBridge : IMobileBridge
         }
         return 0;
     }
+
+    // ── Geolocation (Phase 9.0 — the permission-gated async pattern) ──────────
+    //
+    // A permission-gated call is an async-begin (HostCallBegin) + a deferred
+    // push-completion (host_call_complete), keyed by requestId, resolved off-lane —
+    // structurally identical to fetch, with a permission prompt in the middle and a
+    // tri-state instead of an HTTP response. Denial is DATA: every terminal outcome
+    // (grant / denial / restriction / no-fix / error) is a completion with a status,
+    // and the awaiting ValueTask ALWAYS resolves (or is cancelled by the caller's
+    // token) — never an exception, never a hang.
+
+    public async ValueTask<GeolocationResult> GetCurrentPositionAsync(CancellationToken ct = default)
+    {
+        HostCallResult result = await InvokeHostCallAsync(
+            HostCallOp.Geolocation, GeolocationRequestArgs, ct).ConfigureAwait(false);
+        return ParseGeolocationResult(in result);
+    }
+
+    public async ValueTask<GeolocationStatus> CheckGeolocationPermissionAsync(CancellationToken ct = default)
+    {
+        HostCallResult result = await InvokeHostCallAsync(
+            HostCallOp.Geolocation, GeolocationCheckArgs, ct).ConfigureAwait(false);
+        return ToGeolocationStatus(result.Status);
+    }
+
+    /// <summary>The generic permission-gated call: assign an id, park a TCS, call
+    /// HostCallBegin, await the host's push-completion. The RequireSlot guard makes
+    /// an old shell that predates the slot surface NotSupportedException rather than
+    /// call a null pointer. Cancellation removes the id and cancels the task (a
+    /// process killed during the prompt is the caller's token to abandon, never a
+    /// leaked entry); a late/unknown completion takes the unknown-id path in
+    /// CompleteHostCall (return 1, never a throw). The exact FetchAsync posture.</summary>
+    private async ValueTask<HostCallResult> InvokeHostCallAsync(
+        HostCallOp op, string argsJson, CancellationToken ct)
+    {
+        var cb = GetCallbacks();
+        RequireSlot(cb.HostCallBegin, "host-call-begin");
+        ct.ThrowIfCancellationRequested();
+
+        long id = Interlocked.Increment(ref s_nextHostCallId);
+        var tcs = new TaskCompletionSource<HostCallResult>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        s_pendingHostCalls[id] = tcs;
+
+        try
+        {
+            BeginHostCall(id, (int)op, argsJson);
+        }
+        catch
+        {
+            s_pendingHostCalls.TryRemove(id, out _);
+            throw;
+        }
+
+        // Registered AFTER BeginHostCall (the FetchAsync ordering): a synchronous
+        // completion has already removed the id, so cancel is a no-op; on cancel
+        // whoever removes the id wins, and a completion arriving after finds nothing
+        // and takes the unknown-id path (CompleteHostCall returns 1).
+        using CancellationTokenRegistration ctr = ct.Register(static state =>
+        {
+            var (rid, pending, token) = ((long, TaskCompletionSource<HostCallResult>, CancellationToken))state!;
+            if (s_pendingHostCalls.TryRemove(rid, out _))
+                pending.TrySetCanceled(token);
+        }, (id, tcs, ct));
+
+        return await tcs.Task.ConfigureAwait(false);
+    }
+
+    /// <summary>Marshals the flat-JSON args and calls the host's HostCallBegin. The
+    /// native string is freed when this returns — valid ONLY during the call, per the
+    /// ABI lifetime rules. Separate non-async method because pointers can't live in an
+    /// async body (the BeginFetch split).</summary>
+    private static unsafe void BeginHostCall(long requestId, int op, string argsJson)
+    {
+        var cb = GetCallbacks();
+        IntPtr args = Marshal.StringToCoTaskMemUTF8(argsJson);
+        try
+        {
+            int rc = ((delegate* unmanaged[Cdecl]<long, int, IntPtr, int>)cb.HostCallBegin)(
+                requestId, op, args);
+            if (rc < 0)
+                throw HostError("host-call-begin", rc);
+        }
+        finally
+        {
+            Marshal.FreeCoTaskMem(args);
+        }
+    }
+
+    /// <summary>Managed core of blazornative_host_call_complete (the CompleteFetch
+    /// twin). Removes the id and resolves the TCS with the wire status + payload —
+    /// the status mapping to a typed enum happens on the AWAITING side, so this stays
+    /// capability-agnostic. Returns 0 = delivered, 1 = unknown/already-completed id
+    /// (logged, ignored — cancellation race). Never throws.</summary>
+    internal static int CompleteHostCall(long requestId, int status, string? payloadJson)
+    {
+        if (!s_pendingHostCalls.TryRemove(requestId, out var tcs))
+        {
+            Console.Error.WriteLine(
+                $"[NativeShellBridge] host_call_complete for unknown/completed id {requestId} — ignored (cancellation race)");
+            return 1;
+        }
+
+        // A completion is NEVER a throw and NEVER a hang: even an out-of-range status
+        // is delivered as data (the awaiting side maps it to Error). TrySetResult so a
+        // duplicate completion after a cancellation race cannot fault the host.
+        tcs.TrySetResult(new HostCallResult(status, payloadJson));
+        return 0;
+    }
+
+    /// <summary>Maps the wire status integer to the typed tri-state; an out-of-range
+    /// value (a host bug) becomes <see cref="GeolocationStatus.Error"/> — still data,
+    /// never a throw.</summary>
+    private static GeolocationStatus ToGeolocationStatus(int status)
+        => status is >= (int)GeolocationStatus.Granted and <= (int)GeolocationStatus.Error
+            ? (GeolocationStatus)status
+            : GeolocationStatus.Error;
+
+    /// <summary>Parses a completion into a typed result. Only a Granted status carries
+    /// a fix (the flat-JSON payload, numbers string-encoded — the fetch-headers wire
+    /// form); every other status is the status alone with a null position.</summary>
+    private static GeolocationResult ParseGeolocationResult(in HostCallResult result)
+    {
+        GeolocationStatus status = ToGeolocationStatus(result.Status);
+        if (status != GeolocationStatus.Granted)
+            return new GeolocationResult(status, null);
+
+        Dictionary<string, string> fix = ParseFlatJsonObject(result.PayloadJson);
+        var position = new GeolocationPosition(
+            Latitude: ParseWireDouble(fix, "lat"),
+            Longitude: ParseWireDouble(fix, "lng"),
+            Accuracy: ParseWireDouble(fix, "accuracy"),
+            Altitude: fix.TryGetValue("altitude", out string? alt)
+                && double.TryParse(alt, NumberStyles.Float, CultureInfo.InvariantCulture, out double a)
+                ? a : null,
+            TimestampUnixMs: fix.TryGetValue("timestamp", out string? ts)
+                && long.TryParse(ts, NumberStyles.Integer, CultureInfo.InvariantCulture, out long t)
+                ? t : 0);
+        return new GeolocationResult(status, position);
+    }
+
+    private static double ParseWireDouble(IReadOnlyDictionary<string, string> fix, string key)
+        => fix.TryGetValue(key, out string? v)
+            && double.TryParse(v, NumberStyles.Float, CultureInfo.InvariantCulture, out double d)
+            ? d : 0.0;
 
     // ── Platform info ─────────────────────────────────────────────────────────
     //

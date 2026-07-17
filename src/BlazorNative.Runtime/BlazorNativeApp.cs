@@ -32,7 +32,7 @@ namespace BlazorNative.Runtime;
 // requirement to the app's call site, where a CONCRETE type satisfies it at
 // compile time), and the lambda is `static r => r.Mount<T>()` — verbatim the
 // row shape PageManifest carried since 7.6. Publish gates hold the proof:
-// exactly 4 IL2072 (all in Renderer internals, none here) and 9 exports.
+// exactly 4 IL2072 (all in Renderer internals, none here) and 10 exports.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// <summary>One page declaration: route (null = mount-by-name only), mount-

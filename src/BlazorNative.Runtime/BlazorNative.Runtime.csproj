@@ -3,7 +3,7 @@
   <!-- ─────────────────────────────────────────────────────────────────────
        BlazorNative.Runtime — Phase 3.0b/3.0c (carried its native-host
        working name until the Phase 3.0e rename)
-       The permanent BlazorNative runtime: the 9 blazornative_* exports
+       The permanent BlazorNative runtime: the 10 blazornative_* exports
        (Exports.cs), the host session, the frame/bridge wire protocol, and
        the Phase 8.0 registration API (BlazorNativeApp.RegisterPages — the
        app names its pages; the library names no app type).
@@ -38,7 +38,7 @@
          ships it", honored). Shared pack metadata lives in
          src/Directory.Build.props — only the per-package voice is added
          here; the build surface above is byte-identical to 8.0. -->
-    <Description>The BlazorNative runtime: the 9 blazornative_* native exports, the host session, the binary frame/bridge wire protocol, and the BlazorNativeApp.RegisterPages registration API through which an app names its pages. NativeAOT/trim-compatible — the app owns the publish head.</Description>
+    <Description>The BlazorNative runtime: the 10 blazornative_* native exports, the host session, the binary frame/bridge wire protocol, and the BlazorNativeApp.RegisterPages registration API through which an app names its pages. NativeAOT/trim-compatible — the app owns the publish head.</Description>
     <PackageTags>blazor;native;runtime;nativeaot;android;ios;mobile</PackageTags>
   </PropertyGroup>
 
@@ -52,6 +52,10 @@
     <ProjectReference Include="..\BlazorNative.Core\BlazorNative.Core.csproj" />
     <ProjectReference Include="..\BlazorNative.Renderer\BlazorNative.Renderer.csproj" />
     <ProjectReference Include="..\BlazorNative.Http\BlazorNative.Http.csproj" />
+    <!-- Phase 9.0 (M9 DoD #1): the runtime composition root (HostSession)
+         registers the device facades (IGeolocation), so a component resolves
+         them over the on-device NativeShellBridge. The 7th shipped package. -->
+    <ProjectReference Include="..\BlazorNative.Device\BlazorNative.Device.csproj" />
     <!-- Phase 8.0: the Components ProjectReference is GONE — the registration
          inversion deleted the dependency arrow itself. With the manifest rows
          and the probes moved to samples/BlazorNative.SampleApp, no Runtime

@@ -128,8 +128,8 @@ jobs:
             exit 1
           fi
 
-      # ── Locate the archive + assert the 9 blazornative_* exports (nm -gU) ────
-      - name: Locate libBlazorNative.Runtime.a + verify 9 exports
+      # ── Locate the archive + assert the 10 blazornative_* exports (nm -gU) ────
+      - name: Locate libBlazorNative.Runtime.a + verify 10 exports
         run: |
           set -uo pipefail
           # Evidence first: dump the whole iossimulator native output tree so a
@@ -160,7 +160,8 @@ jobs:
 
           expected=(
             blazornative_dispatch_event blazornative_fetch_complete
-            blazornative_host_event blazornative_init blazornative_mount
+            blazornative_host_call_complete blazornative_host_event
+            blazornative_init blazornative_mount
             blazornative_register_bridge blazornative_register_frame_callback
             blazornative_shutdown blazornative_version
           )
@@ -173,7 +174,7 @@ jobs:
             echo "Export surface drift: missing ${missing[*]}" >&2
             exit 1
           fi
-          echo "SYMBOLS: all 9 blazornative_* present."
+          echo "SYMBOLS: all 10 blazornative_* present."
 
           # Stage the app archive where the Xcode app target force-loads it.
           mkdir -p src/BlazorNative.Apple/vendor
