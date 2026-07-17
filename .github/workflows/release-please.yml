@@ -252,7 +252,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: googleapis/release-please-action@v4
+      - uses: googleapis/release-please-action@v5
         with:
           # The default GITHUB_TOKEN, deliberately — it can open a PR and cut a
           # draft Release, and it CANNOT publish to nuget.org, because the one
