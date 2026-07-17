@@ -1342,7 +1342,31 @@ jobs:
       #   +10  GeolocationFacadeTests   (4 facts + 6 theory rows — the .NET facade)
       # Android 184 -> 188 and iOS 154 -> 169 moved in the same phase (Gate 2/3) and
       # are held by their own workflows' gates; the README table mirrors all four.
-      - name: .NET tests (assert 616 passed / 0 skipped)
+      #
+      # 616 -> 655 (PHASE 9.1, +39 — Runtime.Tests 459 -> 498): local notifications
+      # + tap-through (M9 DoD #3) — the FIRST reuse of the 9.0 generic ABI, and it
+      # added ZERO ABI (bridge still 80 bytes, exports still 10; the pins are green
+      # as-is, NOT edited). The whole +39 is in Runtime.Tests (Renderer 132 /
+      # Analyzers 25 stand), the five new notification test files plus one modified
+      # suite (RouteTableDrift renamed its baseline fact for the 11th route — no
+      # method count change):
+      #   +17  NotificationBridgeTests       (6 facts + 4+7 theory rows — op +
+      #        action-in-JSON, the five-status denial matrix, the wire mapping incl.
+      #        out-of-range -> Error, requestId keying, old-shell-unsupported)
+      #   +10  NotificationFacadeTests       (5 facts + 5 theory rows — the
+      #        DevHostBridge five-status matrix + schedule/show/cancel bookkeeping +
+      #        the INotifications facade)
+      #   +3   BnNotificationsDemoTests      (mount + the arrival marker + status echo)
+      #   +6   HostNavigateTests             (the "navigate" host-event branch:
+      #        handled / unknown-route / no-session / empty / fault / intercepted)
+      #   +3   NotificationsAbiUnchangedTests (the reuse headline made falsifiable:
+      #        80 bytes / HostCallBegin@72 / HostCallOp.Notifications == 1, UNCHANGED)
+      # NO ABI change (Notifications rides the existing HostCallBegin/host_call_complete
+      # as op-enum value 1), NO new export: the publish gates below stay 4 IL2072 / 10
+      # exports, and consumer-smoke stays 7 nupkg + 6 snupkg (INotifications joins the
+      # existing Device package — no 8th). Android/iOS shells wire the real post at
+      # Gates 2/3 (their gates move then).
+      - name: .NET tests (assert 655 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -1360,8 +1384,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 616 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 616 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 655 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 655 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # ── NativeAOT publishes + nine-export verification ────────────────────

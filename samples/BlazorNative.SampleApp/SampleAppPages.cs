@@ -120,6 +120,16 @@ public static class SampleAppPages
         // The .NET/wire half lives here; Gates 2/3 wire the shells (AVD
         // LocationManager + requestPermissions; iOS CLLocationManager).
         BlazorNativePage.Routed<BnGeolocationDemo>("/geolocation", "BnGeolocationDemo"),
+        // Phase 9.1: the notifications proof page (route "/notifications" — M9 DoD #3).
+        // The ELEVENTH routed page and the SECOND worked example of the permission
+        // pattern (the FIRST reuse of the 9.0 generic ABI): app code injects the
+        // INotifications FACADE (the 7th package) and schedule/show/cancel + the
+        // permission ride the SAME HostCallBegin/host_call_complete pair geolocation
+        // opened — no struct grow, no new export. It is ALSO the tap-through landing
+        // page: a notification carries "/notifications", so tapping it opens the app
+        // HERE (cold: deep-link mount; warm: host_event("navigate",…) re-route). The
+        // .NET/wire half lives here; Gates 2/3 wire the shells' real post.
+        BlazorNativePage.Routed<BnNotificationsDemo>("/notifications", "BnNotificationsDemo"),
         // Phase 4.2: the focus/blur proof app (BnInput OnFocus/OnBlur →
         // echo BnText — M4 DoD #4). Scaffolding, like CompositionProbe.
         BlazorNativePage.Named<FocusProbe>("FocusProbe"),
