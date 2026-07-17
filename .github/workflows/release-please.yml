@@ -213,6 +213,22 @@ name: release-please
 on:
   push:
     branches: [main]
+  # RE-RUNNABLE ON DEMAND, and the reason is a real one that already happened.
+  #
+  # On its first live run (2026-07-17, the 8.6 merge) release-please created its
+  # branch with the right manifest and then FAILED at the PR: "GitHub Actions is
+  # not permitted to create or approve pull requests" — a repo setting, since
+  # enabled. The design's U1 predicted exactly this shape ("no PR appears —
+  # loud") and it failed loudly, as recorded. But with `push: main` as the only
+  # trigger there was NO WAY TO RE-RUN IT: the fix could only be proven by
+  # merging something else, which makes an unrelated PR the test harness for the
+  # release machinery.
+  #
+  # A workflow whose only trigger is an event you cannot stage is a workflow you
+  # cannot debug. This costs nothing (it computes and opens a PR; it publishes
+  # nothing — release.yml fires on `release: published` alone) and it buys the
+  # ability to answer "is release-please healthy?" without merging anything.
+  workflow_dispatch:
 
 permissions:
   contents: write
