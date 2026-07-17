@@ -4,7 +4,7 @@
 #
 #   build-test (windows-latest) — the local verification procedure verbatim
 #   (setup.ps1 §1–7 documents the toolchain pins):
-#     build (analyzers ride it) → .NET tests (570 passed / 0 skipped) →
+#     build (analyzers ride it) → .NET tests (574 passed / 0 skipped) →
 #     three NativeAOT publishes of samples/BlazorNative.SampleApp — the
 #     publish head since Phase 8.0: the app owns PublishAot, the exports stay
 #     in Runtime via UnmanagedEntryPointsAssembly, and the artifact is
@@ -1013,7 +1013,67 @@ jobs:
       # ancestor Import in src/Directory.Build.props. NO library code change,
       # NO wire/ABI change, NO golden moved: the gates below stay 4 IL2072 /
       # 9 exports / 106 JVM (win-x64 re-verified clean this commit).
-      - name: .NET tests (assert 570 passed / 0 skipped)
+      #
+      # 570 -> 574 (PHASE 8.4 GATE 2, +4 — Runtime.Tests 415 -> 419): the docs
+      # site's component reference is GENERATED from BlazorNative.Components' XML
+      # docs (M8 DoD #5), and the generator ALREADY LIED ONCE. Run against
+      # bin/Release/net10.0 it prints "Generation: 10 succeeded, 0 failed", exits
+      # 0, and emits TEN types and ZERO components — no BnView, no BnText, no
+      # BnButton. Microsoft.AspNetCore.Components.dll is not beside the assembly
+      # there, so ComponentBase does not resolve and every type deriving from it
+      # is dropped SILENTLY. Against a publish output: 26. Same tool, same exit
+      # code, same green. Nothing that does not COUNT can see the difference.
+      #   +1  GeneratedReference_DocumentsExactlyThePublicTypes — the generated
+      #       page set vs the assembly's public types, BOTH SIDES MEASURED (the
+      #       expectation is reflected, not rostered, so a rename moves it), red
+      #       both ways, non-vacuity asserted on each side first.
+      #       MUTATION (the real one, not a hypothesis — it is what happened
+      #       first): point scripts/generate-reference.ps1 at bin/ ->
+      #         MISSING (— 16): ...bnbutton.md ...bntext.md ...bnview.md
+      #         (Assembly: 26 public types. Generated: 10 pages.)
+      #   +1  GeneratedReference_ContainsTheComponents_NotJustTheEnums — the
+      #       anti-vacuity heart as its own assertion. The blind run produced ten
+      #       VALID pages (six enums, two helpers, BnTheme, _Imports); a page
+      #       count alone calls that a healthy 10. Same mutation ->
+      #         THE REFERENCE IS MISSING 15 OF 15 COMPONENTS: BnActivityIndicator,
+      #         BnButton, ..., BnText, BnView
+      #   +1  EveryPublicComponent_CarriesATypeLevelSummary — PIN 2 IS
+      #       STRUCTURALLY BLIND HERE, which is why this is a test and not the
+      #       compiler. The Razor generator emits `#pragma warning disable 1591`
+      #       into generated files, so a .razor component with no type summary
+      #       compiles clean forever — the measured gap said 8 while the
+      #       reference had SIX headless pages (a `@* ... *@` header is a RAZOR
+      #       comment and never reaches the assembly). Six .razor.cs partials fix
+      #       it; this stops it coming back.
+      #   +1  PublishedDocs_SpeakToConsumers_NotToTheRepo (Pin 3) — a voice regex
+      #       over the shipped XML, filtered to the surface the generator
+      #       publishes (public members of public types — internal maintainer
+      #       docs like BnListWindow's arithmetic are NOT consumer surface and a
+      #       whole-file regex would teach the next author to delete engineering
+      #       truth to go green). That XML is BOTH consumer surfaces: the site's
+      #       reference AND the .xml packed beside the DLL, which is IntelliSense.
+      #       MUTATION: re-add "since Phase 3.4 Gate 1; the BnDemo goldens stay
+      #       byte-identical" to BnText ->
+      #         4 PUBLISHED doc comment(s) speak to this repo rather than to a
+      #         stranger.  matched /\bPhase \d/ ... /\bGate \d/ ...
+      #         /\bBnDemo\b/ ... /\bgolden/
+      #       (That mutation also CORRECTED the pin, which is why one runs
+      #       them: /\bgolden\b/ does NOT match "goldens" - the trailing
+      #       boundary fails against the plural, and "the BnDemo goldens" is
+      #       the exact phrase that WAS in the file. 3 of the 4 patterns
+      #       fired; the trailing \b is gone and all 4 fire now.)
+      #
+      # Also this commit (no count move): Pin 2 — CS1591 as an ERROR for
+      # BlazorNative.Components only, via BnEnforceDocCoverage. It read as ON and
+      # was OFF twice: Directory.Build.props is imported BEFORE the project body
+      # (property true, NoWarn ";CS1591" anyway — src/Directory.Build.targets
+      # fixes the ordering), and then a warning is not a gate, because THIS
+      # WORKFLOW builds without -warnaserror (line 195) and nothing in the repo
+      # sets TreatWarningsAsErrors. MUTATION: delete BnButton.Label's <summary>
+      # -> error CS1591 ... 1 Error(s), exit 1. The price was 8 <inheritdoc />
+      # lines, exactly the measured gap. NO wire/ABI change, NO golden moved, NO
+      # shell code touched: 4 IL2072 / 9 exports / 106 JVM stand.
+      - name: .NET tests (assert 574 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -1031,8 +1091,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 570 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 570 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 574 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 574 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # ── NativeAOT publishes + nine-export verification ────────────────────

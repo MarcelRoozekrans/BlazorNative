@@ -40,16 +40,15 @@
         @onchange="HandleChange" />
 
 @code {
-    /// <summary>The on/off state. Always emitted (as <c>"true"</c>/<c>"false"</c>)
-    /// so the host prop exists from mount.</summary>
+    /// <summary>Whether the switch is on.</summary>
     [Parameter] public bool Checked { get; set; }
 
-    /// <summary>Raised with the new state on a host change event — the
+    /// <summary>Raised with the new state when the user toggles it — the
     /// write-back half of the <c>@bind-Checked</c> pair.</summary>
     [Parameter] public EventCallback<bool> CheckedChanged { get; set; }
 
-    /// <summary>False disables the host widget (it renders disabled and
-    /// dispatches nothing). Default true.</summary>
+    /// <summary>Set false to show the platform's disabled control and stop it
+    /// responding. Default true.</summary>
     [Parameter] public bool Enabled { get; set; } = true;
 
     // ── The flex ITEM surface (BnScroll's — how this leaf sits in its parent) ─

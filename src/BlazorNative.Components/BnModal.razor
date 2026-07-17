@@ -88,15 +88,15 @@
     /// the 7.2 eviction rule).</summary>
     [Parameter] public RenderFragment? ChildContent { get; set; }
 
-    /// <summary>The default scrim — and what an EXPLICITLY-NULL binding
-    /// normalizes to in the markup, because Blazor omits null attributes and
-    /// an omitted scrimColor would defeat "always emitted" (review Q-1).</summary>
+    /// <summary>The scrim colour used when you do not set one: a half-opaque
+    /// black. Binding <see cref="ScrimColor"/> to null falls back to this rather
+    /// than leaving the scrim unpainted.</summary>
     public const string DefaultScrimColor = "#80000000";
 
-    /// <summary>The scrim color, painted on the shell's overlay behind the
-    /// content box. ALWAYS on the wire (as the <c>scrimColor</c> prop) so no
-    /// shell invents a default — a null binding is coalesced to
-    /// <see cref="DefaultScrimColor"/> at emission for the same reason.</summary>
+    /// <summary>The colour painted over the page behind the content box, as a
+    /// hex string with alpha. Null falls back to
+    /// <see cref="DefaultScrimColor"/>, so the scrim is never accidentally
+    /// invisible.</summary>
     [Parameter] public string? ScrimColor { get; set; } = DefaultScrimColor;
 
     // ── The content box's declared surface (the BnScroll forwarding

@@ -31,9 +31,10 @@ namespace BlazorNative.Components;
 // (Align="…", Wrap="…") — that is the ergonomic surface.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// <summary>Main-axis direction of a flex container (<c>flexDirection</c>).
-/// Yoga's default is <see cref="Column"/> — which is why an un-styled tree
-/// still lays out as today's vertical stack.</summary>
+/// <summary>Which way a flex container lays its children out
+/// (<c>flexDirection</c>). The layout engine's default is <c>Column</c>, which
+/// is why a container you have not styled stacks its children
+/// vertically.</summary>
 public enum FlexDirection
 {
     /// <summary><c>"row"</c></summary>
@@ -92,9 +93,10 @@ public enum FlexWrap
     WrapReverse,
 }
 
-/// <summary>Positioning mode (<c>position</c>). <see cref="Absolute"/> takes the
-/// node out of flow; <c>Top/Right/Bottom/Left</c> then place it against the
-/// padding box of its parent.</summary>
+/// <summary>Whether a node takes part in its parent's flex flow
+/// (<c>position</c>). <c>Absolute</c> takes it out of the flow, and the
+/// <c>Top</c>/<c>Right</c>/<c>Bottom</c>/<c>Left</c> insets then place it
+/// against its parent's padding box.</summary>
 public enum FlexPosition
 {
     /// <summary><c>"relative"</c> — Yoga's default (in flow).</summary>
@@ -103,10 +105,12 @@ public enum FlexPosition
     Absolute,
 }
 
-/// <summary>Enum → wire string. The nullable overloads are what
-/// <see cref="BnView"/> calls: a null param yields a null value, which
-/// <c>RenderTreeBuilder.AddAttribute</c> omits entirely — no attribute, no
-/// patch (the un-styled invariant).</summary>
+/// <summary>Converts the flex enums to the CSS-cased strings the Android and
+/// iOS shells read.</summary>
+/// <remarks>The components call these for you — you need them only if you are
+/// building a component that speaks to the shells directly. The nullable
+/// overloads map null to null, which a component emits as no value at all,
+/// leaving the layout engine's own default in place.</remarks>
 public static class FlexStyleValues
 {
     /// <summary>CSS-cased wire value for <paramref name="value"/>.</summary>

@@ -1,0 +1,142 @@
+name: Deploy Documentation
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 8.4 (M8 DoD #5) — the docs site, deployed to GitHub Pages.
+#
+# Mirrors AdoNet.Async's docs.yml, which was read from `origin/main` rather than
+# from a local checkout: that checkout was STALE (3.10.1 / checkout@v6 /
+# setup-node@v6) and would have shipped versions this repo had already moved
+# past. The live reference is checkout@v7 / setup-node@v7 / node 24 /
+# upload-pages-artifact@v5 / deploy-pages@v5, and that is what is below.
+#
+# THIS LANE IS ADVISORY, exactly as release.yml's `validate` is. The three
+# required checks keep their names and contexts — build-test, android-build,
+# ios-build — and a fourth required check is a branch-protection change DoD #5
+# does not ask for. A broken docs build blocks the DEPLOY (deploy needs: build),
+# not the merge.
+#
+# ── TWO DIVERGENCES FROM THE MIRROR, BOTH DELIBERATE ─────────────────────────
+#
+# 1. THE PATHS FILTER IS WIDER THAN 'website/**', AND THIS IS NOT OPTIONAL.
+#    The component reference is GENERATED from src/BlazorNative.Components' XML
+#    docs (design decision 3), so a PR that improves BnView's <summary> changes
+#    the site without touching website/. Under the reference's own filter, main
+#    would take that commit and never redeploy: the site would silently serve
+#    the old reference, and the failure would be invisible for exactly as long as
+#    nobody looked. That is the cost of generate-at-build-time, and it is the
+#    right cost — the alternative is committing the generated markdown, which is
+#    the second copy this whole site exists to refuse.
+#
+# 2. A PR BUILD CHECK. AdoNet.Async builds only on main-push, so a broken docs
+#    build is found AFTER it lands. Ubuntu minutes are free for public repos, so
+#    one node run per docs PR to catch it BEFORE main is an obvious trade. The
+#    `build` job runs on pull_request with the same filter; `deploy` is gated on
+#    `github.event_name != 'pull_request'`, so a PR never touches Pages, never
+#    takes the `pages` concurrency group, and never needs id-token.
+#
+# ── WHY setup-dotnet IS HERE AND npm install IS NOT THE WHOLE STORY ──────────
+# The site GENERATES ITS OWN REFERENCE: website/package.json's `prebuild` runs
+# scripts/generate-reference.ps1, which publishes BlazorNative.Components and
+# runs xmldoc2md against the PUBLISH OUTPUT — never bin/, where
+# Microsoft.AspNetCore.Components.dll is absent, ComponentBase does not resolve,
+# and every component is dropped silently behind "Generation: 10 succeeded, 0
+# failed" and exit 0.
+#
+# Generation is NOT a separate step here on purpose. If this lane generated and
+# a contributor's `npm run build` did not, the two would be different pipelines
+# and the fresh clone would red (the generated dir is gitignored). Hanging it on
+# `prebuild` means the site build generates its own reference everywhere — CI and
+# laptop, one path, no divergence to keep in sync. The count that proves the
+# generation is honest is Pin 1, in build-test.
+#
+# ── WHAT THE OWNER MUST CLICK, ONCE ──────────────────────────────────────────
+# Settings -> Pages -> Build and deployment -> Source: GitHub Actions.
+# Today `gh api repos/MarcelRoozekrans/BlazorNative/pages` 404s and has_pages is
+# false. UNTIL THAT CLICK, `deploy` FAILS — loudly, on main, with a legible Pages
+# error. That is the intended failure: it is visible and one setting long.
+# Verify after clicking:
+#   gh api repos/MarcelRoozekrans/BlazorNative/pages --jq .build_type  -> workflow
+#
+# AND THEN LOOK AT THE PAGE. A wrong baseUrl builds GREEN and deploys a site with
+# dead CSS and 404 links; no red can tell you. The first check is a look.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# The two paths lists below are DUPLICATED rather than shared through a YAML
+# anchor: GitHub Actions' workflow parser does not support anchors/aliases, so
+# `&docs_paths` / `*docs_paths` is a trap that reads as clever and fails at the
+# only moment that matters. Two lists, kept identical by hand, is the shape this
+# file is allowed to have.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'website/**'
+      # The reference is generated FROM here — divergence 1 above.
+      - 'src/BlazorNative.Components/**'
+      # The generator itself, and the version it is pinned to.
+      - 'scripts/generate-reference.ps1'
+      - '.config/dotnet-tools.json'
+      - '.github/workflows/docs.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'website/**'
+      - 'src/BlazorNative.Components/**'
+      - 'scripts/generate-reference.ps1'
+      - '.config/dotnet-tools.json'
+      - '.github/workflows/docs.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # The generator is a .NET tool and the reference comes out of a dotnet
+      # publish, so this lane needs the SDK — a divergence from the mirror's
+      # node-only build, forced by generate-at-build-time. global.json pins the
+      # version; nothing is chosen here.
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: npm install
+        working-directory: website
+        run: npm install
+
+      # `prebuild` runs scripts/generate-reference.ps1 first (pwsh is preinstalled
+      # on ubuntu runners) and THEN docusaurus builds. onBrokenLinks: 'throw'
+      # means a dead internal link fails right here.
+      - name: npm run build (generates the component reference, then the site)
+        working-directory: website
+        run: npm run build
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: website/build
+
+  deploy:
+    # A PR never deploys: no Pages write, no pages concurrency, no id-token.
+    if: github.event_name != 'pull_request'
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5
