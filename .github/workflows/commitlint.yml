@@ -22,23 +22,32 @@
 # Promoting this to required is the owner's call and a branch-protection change.
 # It is not taken here.
 #
-# ⚠⚠ THE THING THAT MAKES THIS LINT SOUND IS NOT IN THIS FILE, AND IT IS NOT DONE.
+# ✅ THE THING THAT MAKES THIS LINT SOUND IS NOT IN THIS FILE — AND IT IS DONE.
 #
-#    squash_merge_commit_title is `COMMIT_OR_PR_TITLE` on this repository TODAY.
-#    That means a SINGLE-COMMIT PR uses the COMMIT's subject and IGNORES the
-#    title — so this workflow can go green on `feat(runtime): …` while `wip`
-#    lands on main. The lint would be sound-looking and not sound.
+#    squash_merge_commit_title is `PR_TITLE` on this repository as of 2026-07-17
+#    (the owner set it; verified in the API response). So the title this workflow
+#    lints IS the subject that lands on main and that release-please parses.
+#    THIS GATE IS LOAD-BEARING.
 #
-#    The owner (or someone with admin) must run:
+#    IT USED TO BE `COMMIT_OR_PR_TITLE`, which meant a SINGLE-COMMIT PR used the
+#    COMMIT's subject and IGNORED the title — this workflow could go green on
+#    `feat(runtime): …` while `wip` landed on main. Sound-looking and not sound,
+#    for most PRs. That is why the setting was step 1 of Phase 8.6's sequence,
+#    ahead of this file existing: the lint was never allowed to be decorative.
+#
+#    ⚠ NOTHING IN THIS REPO PINS IT. It is a repository setting, not a file in
+#    this tree, so no test reds if it is set back. It is named here, in the file
+#    it would undermine, rather than in a design doc, because this is where
+#    someone debugging "why did `wip` reach main?" will be standing. Check it:
+#
+#      gh api repos/MarcelRoozekrans/BlazorNative \
+#        --jq '{t: .squash_merge_commit_title, m: .squash_merge_commit_message}'
+#
+#    Restore it:
 #
 #      gh api -X PATCH repos/MarcelRoozekrans/BlazorNative \
 #        -f squash_merge_commit_title=PR_TITLE \
 #        -f squash_merge_commit_message=COMMIT_MESSAGES
-#
-#    UNTIL THEN THIS GATE IS DECORATIVE FOR SINGLE-COMMIT PRs — which is most of
-#    them. It is named here, in the file it undermines, rather than in a design
-#    doc, because this is where someone debugging "why did `wip` reach main?"
-#    will be standing.
 #
 # NO SECOND COPY OF THE ENUMS. `.commitlintrc.yml` is the ONE authority.
 # `amannn/action-semantic-pull-request` — the obvious action for this job — was

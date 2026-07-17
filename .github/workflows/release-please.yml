@@ -8,6 +8,24 @@
 # version literals, and opens (or updates) a release PR. Merging that PR cuts the
 # tag and opens a GitHub Release — AS A DRAFT.
 #
+# ⚠ THE RELEASE PR ARRIVES WITH ITS CHECKS NOT STARTED, AND THAT IS A STEP IN THE
+#   RITUAL, NOT A BUG. This workflow opens the PR with GITHUB_TOKEN (see the token
+#   comment on the step below, which explains why it is not a PAT). When a workflow
+#   using GITHUB_TOKEN creates or updates a pull request, the resulting
+#   `pull_request` event creates its workflow runs in an APPROVAL-REQUIRED state:
+#   GitHub shows a "Approve workflows to run" banner, and someone with write access
+#   must click it before build-test / android-build / ios-build start at all.
+#
+#   SO THE PIN THAT AUDITS THIS MACHINE — PackageVersionPinTests
+#   .TheManifest_AgreesWithTheProps, which reds if release-please bumps the
+#   manifest without the props — DOES NOT RUN ON THIS WORKFLOW'S PR UNTIL THAT
+#   CLICK. The click starts it; it then reds a bad machine before the merge.
+#
+#   IF YOU DO NOTHING, NOTHING HAPPENS: the PR sits with no checks, and a required
+#   check that never ran cannot be satisfied, so branch protection will not let it
+#   merge. No merge, no tag, no draft, no publish. The failure direction is SAFE
+#   (design UNPROVEN row U8). The ritual is in docs/GITHUB-SETUP.md, step 3.
+#
 # ⚠⚠ THIS WORKFLOW HAS NO `publish` JOB, NO `needs:`, NO SECOND JOB, AND IT NEVER
 #    MENTIONS THE NUGET KEY. THAT IS NOT AN OVERSIGHT. DO NOT ADD ONE.
 #
@@ -165,6 +183,21 @@ jobs:
           # The default GITHUB_TOKEN, deliberately — it can open a PR and cut a
           # draft Release, and it CANNOT publish to nuget.org, because the one
           # thing that can is a secret this workflow has never heard of.
+          #
+          # THE KNOWN COST, AND THE OWNER'S DECISION. This token is exactly why
+          # the release PR's checks arrive APPROVAL-REQUIRED (the block at the
+          # top of this file). release-please-action's own README names the
+          # remedy: "You will want to configure a GitHub Actions secret with a
+          # Personal Access Token if you want GitHub Actions CI checks to run on
+          # Release Please PRs."
+          #
+          # THE PAT IS REJECTED, ON PURPOSE. It would buy automatic CI at the
+          # price of a SECOND repo-scoped secret — one that expires, needs
+          # rotation, and would sit next to NUGET_API_KEY in a repo whose whole
+          # release law is "one secret, and it is only reachable after a human
+          # click". The approve-click costs one click and expires never. It is
+          # the same shape as the draft-publish click this phase already treats
+          # as the go: a human gate, not a hurdle to route around.
           token: ${{ secrets.GITHUB_TOKEN }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json

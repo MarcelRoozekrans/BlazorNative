@@ -88,7 +88,14 @@
          · PackageVersionPinTests.TheManifest_AgreesWithTheProps — in the
            REQUIRED build-test lane, so it reds release-please's OWN PR before
            it can merge (the release PR is branch-protected like any other and
-           cannot merge red);
+           cannot merge red). ⚠ ITS CHECKS DO NOT START BY THEMSELVES: because
+           release-please opens that PR with GITHUB_TOKEN, the runs are held
+           APPROVAL-REQUIRED until someone with write access clicks "Approve
+           workflows to run". The click starts them; the pin then reds a bad
+           machine before the merge. Until the click the PR sits with no checks
+           and cannot merge, so the failure direction is SAFE. Named in
+           docs/GITHUB-SETUP.md's ritual (step 3) and release-please.yml's
+           header;
          · the classifier's tag<->props assertion — the Release-time backstop.
        No shipped csproj may override this element either (PackageVersionPinTests
        reds that drift; consumer-smoke.ps1 PARSES this element and reds any

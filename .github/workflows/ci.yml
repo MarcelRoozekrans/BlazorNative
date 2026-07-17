@@ -1209,6 +1209,21 @@ jobs:
       #       required lane, so it reds release-please's OWN pull request before
       #       it can merge. The release PR is branch-protected like any other and
       #       cannot merge red.
+      #       ⚠ BUT ITS CHECKS ARE HELD UNTIL A HUMAN CLICKS, and that is stated
+      #       here because this comment is the provenance for the +1 and must not
+      #       overclaim it. release-please opens the release PR with
+      #       GITHUB_TOKEN, and a `pull_request` event raised by a workflow using
+      #       GITHUB_TOKEN creates its runs in an APPROVAL-REQUIRED state: a
+      #       banner appears and someone with write access clicks "Approve
+      #       workflows to run". THE PIN DOES NOT RED THE RELEASE PR
+      #       AUTOMATICALLY — the click starts this lane, and the pin then reds a
+      #       bad machine before the merge. Until the click the PR sits with no
+      #       checks, and a required check that never ran cannot be satisfied, so
+      #       it cannot merge either: nothing merges, tags or publishes. SAFE
+      #       (design U8). A PAT would start them automatically and was REJECTED
+      #       — a second repo-scoped secret that expires and rotates, against the
+      #       one-secret law; the click is a human gate of the same shape as the
+      #       draft-publish go.
       #       MUTATION: manifest -> 1.0.0-preview.2 with the props left at
       #       preview.1 (i.e. `extra-files` missed the props) ->
       #         THE MANIFEST AND THE PROPS DISAGREE (8.6 decision 3). ...

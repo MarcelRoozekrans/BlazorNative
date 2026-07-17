@@ -141,6 +141,31 @@ public sealed class PackageVersionPinTests
     /// other and cannot merge red. That is the guard: not a human remembering,
     /// but the machine's own output being refused.
     ///
+    /// ⚠ THE CHECKS DO NOT START BY THEMSELVES — AND THIS PIN'S DELIVERY DEPENDS
+    /// ON A CLICK. release-please opens the release PR with `GITHUB_TOKEN`, and
+    /// when a workflow using `GITHUB_TOKEN` creates or updates a pull request,
+    /// the resulting `pull_request` event creates workflow runs in an
+    /// APPROVAL-REQUIRED state: a banner appears and someone with write access
+    /// must click "Approve workflows to run". release-please-action's own README
+    /// says the same thing from the other side ("configure a PAT if you want
+    /// GitHub Actions CI checks to run on Release Please PRs"). So the honest
+    /// sequence is: the machine opens the PR → a human clicks Approve → THIS PIN
+    /// RUNS → it reds a bad machine BEFORE the merge. The pin is sound; its
+    /// delivery needs the click. It is a step, not a surprise, and it is named in
+    /// docs/GITHUB-SETUP.md's ritual and in release-please.yml's header.
+    ///
+    /// UNTIL THAT CLICK, THE PR SITS WITH NO CHECKS — and a required check that
+    /// never ran cannot be satisfied, so branch protection will not let the PR
+    /// merge. Nothing merges, nothing tags, nothing publishes. The failure
+    /// direction is SAFE (design UNPROVEN row U8).
+    ///
+    /// THE REJECTED ALTERNATIVE, recorded because it is the obvious one: a PAT
+    /// (or a GitHub App token) restores automatic CI on the release PR. The owner
+    /// chose `GITHUB_TOKEN` + the click instead — a PAT is a SECOND repo-scoped
+    /// secret that expires and needs rotation, against the one-secret law, and
+    /// the click is itself a human gate of exactly the shape this phase already
+    /// trusts for the draft-publish go.
+    ///
     /// The classifier's tag↔props assertion (8.2 decision 2) is the second,
     /// independent guard — the Release-time backstop if this pin is ever removed
     /// or the PR is force-merged. 8.2's assertion did not lose its subject when

@@ -452,17 +452,43 @@ and *should* publish 8.0.0 if this repo ever gets there.
 > legitimate action; **it is a mistake, and a green "nothing was published"
 > would tell you all is well after you did something meaningless.**
 
-**The ritual — release-please's, and it is three steps shorter than the old one:**
+**The ritual — release-please's. It is not shorter than the old one; it is
+different in kind, and that is the whole point:**
+
+> The old ritual was **six steps and you authored the release**: you bumped a
+> version literal by hand, you typed a tag, you drafted the Release. This one is
+> **also six steps, and you author nothing** — you *approve*, you *read*, you
+> *merge*, you *publish*. **The machine writes the version and the tag; every one
+> of your six steps is a review or a go.** Counting steps was always the wrong
+> measure. *(The count is stated plainly here because an earlier draft of this
+> section claimed "three steps shorter" while listing four steps against the old
+> six. It was two, and now it is none. This house counts precisely.)*
 
 1. **Merge PRs with conventional titles.** The PR title becomes main's commit
    subject, and it is the only text release-please ever reads. See *The commit
    contract* below.
 2. **release-please opens a release PR** — it bumps the version, writes the
    changelog, and updates **all seven version literals**. Read it; the changelog
-   in it is the changelog your consumers get. Merging it is what cuts the tag.
-3. **A draft Release appears**, carrying that changelog as its body. **Nothing
+   in it is the changelog your consumers get.
+3. **Click "Approve workflows to run" on that PR.** **Its checks do not start by
+   themselves, and this will look like a stuck PR if you are not expecting it.**
+   release-please opens the PR with `GITHUB_TOKEN`, and when a workflow using
+   `GITHUB_TOKEN` opens or updates a PR, GitHub creates the resulting runs in an
+   **approval-required** state — a banner, and a click by someone with write
+   access. **Until you click, `build-test` / `android-build` / `ios-build` have
+   not run**, which also means the pin that audits release-please itself
+   (`TheManifest_AgreesWithTheProps` — it reds if the manifest bumped and the
+   props did not) **has not run either.** The click starts them; they then red a
+   bad release PR *before* you can merge it.
+   > **If you never click, nothing breaks — it stalls.** A required check that
+   > never ran cannot be satisfied, so the PR cannot merge: no tag, no draft, no
+   > publish. **The failure direction is safe.** This is the deliberate price of
+   > keeping *one* secret in this repo; a PAT would start the checks
+   > automatically and was rejected for being a second secret that expires.
+4. **Merge the release PR** once it is green. That is what cuts the tag.
+5. **A draft Release appears**, carrying that changelog as its body. **Nothing
    has fired. Nothing has published.** Edit the body if you want to.
-4. **Publish the draft.** *That click is the go.* `validate` runs every check
+6. **Publish the draft.** *That click is the go.* `validate` runs every check
    with no key in the run at all; only then does `push` see the secret.
 
 **Four things that will otherwise surprise you:**

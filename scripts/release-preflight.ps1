@@ -667,16 +667,30 @@ function Invoke-Preflight {
     }
 
     if ($taken.Count -ne 0) {
+        # ONE SENTENCE, TWO CONSUMERS — and the reason is this sentence's own
+        # history (8.6 Gate 1 review, S1-2 + Q2-2). The console copy and the
+        # step-summary copy said the same thing in two dialects, so they went
+        # STALE TOGETHER: both survived 8.6's sweep of ~20 other `pkg/` lines in
+        # this very file and kept instructing the reader to "bump <Version> ...
+        # and tag the merge commit 'pkg/<new version>'" — a hand-bump that
+        # normative rule 2 abolished, in a namespace THIS FILE REDS AT ARM 2.
+        # A RED that instructs the ritual it reds is worse than silence.
+        # Two copies of a sentence are two chances to be wrong and one chance in
+        # two of fixing it; it is now ONE string, deliberately dialect-neutral
+        # (no markdown emphasis) so the console and the summary can both read it
+        # verbatim. The next drift here is a one-line fix.
+        $remedy = "nuget.org versions are IMMUTABLE — a published version can only be UNLISTED, never replaced or re-pushed. Nobody bumps a version by hand any more (8.6 normative rule 2), and the 'pkg/' namespace is retired — this script reds it. THE RITUAL: land a conventional commit on main; release-please opens a release PR that writes the next version for you; APPROVE ITS WORKFLOWS so its checks start (they are held approval-required because release-please opens the PR with GITHUB_TOKEN); merge it, which cuts the 'v<semver>' tag and a DRAFT Release; then publish the draft. That click is the go. See docs/GITHUB-SETUP.md."
+
         Write-Host ""
         Write-Fail "ALREADY PUBLISHED on nuget.org at $propsVersion`: $($taken -join ', ')"
-        Write-Fail "nuget.org versions are IMMUTABLE — a published version can only be UNLISTED, never replaced or re-pushed. Bump <Version> in src/Directory.Build.props, merge, and tag the merge commit 'pkg/<new version>'."
+        Write-Fail $remedy
         $takenMarkdown = ($taken | ForEach-Object { '`' + $_ + '`' }) -join ', '
         Write-Summary @(
             "### ❌ Version already published — nothing was pushed",
             "",
             "``$propsVersion`` is **already on nuget.org** for: $takenMarkdown",
             "",
-            "nuget.org versions are **immutable** — a published version can only be *unlisted*, never replaced. Bump ``<Version>`` in ``src/Directory.Build.props``, merge, and tag the merge commit ``pkg/<new version>``.",
+            $remedy,
             "",
             "This is the failure ``--skip-duplicate`` would otherwise mask by pushing nothing and going green (8.2 decision 5 — the two are designed as a pair)."
         )

@@ -15,29 +15,41 @@
 # for honest WIP commits. So the PR title is the subject, and it is the only
 # thing linted.
 #
-# ⚠ AND THAT IS ONLY SOUND IF THE PR TITLE ACTUALLY WINS. As this repository is
-#   configured TODAY it does not:
+# ✅ AND THAT IS ONLY SOUND IF THE PR TITLE ACTUALLY WINS — IT NOW DOES. The
+#   repository setting this contract rests on is SET (2026-07-17, by the owner,
+#   the first step of Phase 8.6's implementation sequence). Verified in the API
+#   response, not assumed:
 #
-#       squash_merge_commit_title = COMMIT_OR_PR_TITLE
+#       squash_merge_commit_title   = PR_TITLE          ← the contract is real
+#       squash_merge_commit_message = COMMIT_MESSAGES
 #
-#   GitHub's COMMIT_OR_PR_TITLE means: IF THE PR HAS EXACTLY ONE COMMIT, THAT
-#   COMMIT'S SUBJECT BECOMES MAIN'S SUBJECT AND THE PR TITLE IS IGNORED. Only
-#   multi-commit PRs use the title. So a single-commit PR titled
-#   `feat(runtime): …` whose commit says `wip` lands `wip` on main — PASSING THIS
-#   LINT, and arriving at release-please as an unparseable subject.
+#   SO THIS FILE IS LOAD-BEARING, NOT DECORATIVE. The PR title becomes main's
+#   commit subject — the exact text release-please parses — and the branch's
+#   commit WHY bodies concatenate into main's body, which is where this repo's
+#   prose goes and where release-please reads `Release-As:` and `BREAKING CHANGE:`
+#   footers from.
 #
-#   UNTIL THE OWNER SETS squash_merge_commit_title TO PR_TITLE, THIS CONTRACT IS
-#   DECORATIVE FOR SINGLE-COMMIT PRs. That is a repository setting, not a file in
-#   this tree, and it is the FIRST step of Phase 8.6's implementation sequence:
+#   WHAT IT USED TO BE, AND WHY THE SETTING WAS THE FIRST STEP RATHER THAN A
+#   FOOTNOTE: `COMMIT_OR_PR_TITLE`. That means IF THE PR HAS EXACTLY ONE COMMIT,
+#   THAT COMMIT'S SUBJECT BECOMES MAIN'S SUBJECT AND THE PR TITLE IS IGNORED —
+#   only multi-commit PRs used the title. A single-commit PR titled
+#   `feat(runtime): …` whose commit said `wip` landed `wip` on main, PASSING THIS
+#   LINT, and reached release-please as an unparseable subject. The lint would
+#   have been sound-looking and unsound, for most PRs. It was sequenced first so
+#   this contract was never that.
+#
+#   ⚠ IT IS A REPOSITORY SETTING, NOT A FILE IN THIS TREE — so nothing in this
+#   repo pins it and no test can red if it is changed back. If `wip` ever reaches
+#   main from a single-commit PR, THIS IS THE FIRST THING TO CHECK:
+#
+#       gh api repos/MarcelRoozekrans/BlazorNative \
+#         --jq '{t: .squash_merge_commit_title, m: .squash_merge_commit_message}'
+#
+#   and the restore is:
 #
 #       gh api -X PATCH repos/MarcelRoozekrans/BlazorNative \
 #         -f squash_merge_commit_title=PR_TITLE \
 #         -f squash_merge_commit_message=COMMIT_MESSAGES
-#
-#   squash_merge_commit_message stays COMMIT_MESSAGES: the branch commits' WHY
-#   bodies concatenate into main's body, which is where this repo's prose goes
-#   and where release-please reads `Release-As:` and `BREAKING CHANGE:` footers
-#   from.
 #
 # ─── THE HOUSE STYLE MOVES, IT DOES NOT DIE ─────────────────────────────────
 #
@@ -93,8 +105,15 @@ rules:
   # COMPONENTS, not phases: `fix(phase-7.5): the dispatch table's ROW ORDER is
   # normative` means everything in this repo and nothing on nuget.org.
   #
-  # `phase-N` IS DELIBERATELY ABSENT, AND THAT IS THE POINT. The scope answers
-  # WHAT, never WHEN. docs/plans answers WHEN, and it always did.
+  # `phase-N` IS DELIBERATELY ABSENT — BUT ABSENT IS NOT EXCLUDED, AND THIS LIST
+  # EXCLUDES NOTHING. At severity 1 `feat(phase-8.6):` PASSES (with a warning) —
+  # verified by running it, not assumed, and the ⚠ eight lines up says the same
+  # thing about every unlisted scope. So the absence is a STATEMENT OF WHAT THE
+  # SCOPE IS FOR, not a gate: the scope answers WHAT, never WHEN. docs/plans
+  # answers WHEN, and it always did. A `phase-N` scope would reach a consumer's
+  # changelog meaning nothing to them — so this enum does not offer one. If
+  # somebody writes one anyway it lands, warned. THE ENUM DOCUMENTS THE
+  # CONSUMER-FACING SET; IT DOES NOT DEFEND IT.
   #
   # The six package scopes are lowercase short names, not package ids — a scope
   # is a changelog heading, and `feat(BlazorNative.Components):` reads like a
