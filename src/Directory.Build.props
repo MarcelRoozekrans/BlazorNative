@@ -111,13 +111,34 @@
          that are invisibly wrong (8.4 decision 4). -->
     <PackageIcon>icon.png</PackageIcon>
 
-    <!-- XML docs ride into the packages (8.4's xmldoc2md raw material).
-         CS1591 (missing doc comment) is suppressed BY DECISION (8.1 design
-         decision 2): doc coverage is 8.4's editorial work; holding the
-         zero-warning bar hostage to it would force doc-stub spam. The gap
-         stays visible in the shipped XML, not hidden. -->
+    <!-- XML docs ride into the packages — and for BlazorNative.Components they
+         are the docs site's component reference, generated from this XML at
+         build time (8.4 decision 3). The `///` next to the property is the ONE
+         home for what that property does; the site prints it.
+
+         CS1591 (missing doc comment) stays suppressed by default (8.1 decision
+         2) — 174 undocumented members across Runtime (87), Core (52), Analyzers
+         (16), Renderer (13) and Http (6). Those are the plumbing (exports,
+         bridge callbacks, DevHostBridge), not the component reference, and
+         documenting them is a milestone-sized job that DoD #5 does not ask for.
+         Ledgered with the number named rather than hidden.
+
+         BnEnforceDocCoverage FLIPS IT PER PACKAGE (8.4 Pin 2), and
+         BlazorNative.Components sets it true. There the compiler IS the pin: an
+         undocumented [Parameter] stops compiling, so the reference's raw
+         material cannot silently thin. The condition keeps 8.1's
+         one-metadata-home rule intact — the property lives here, the opt-in
+         lives in the csproj that wants it.
+
+         The mechanism is built for the other five; flipping each is a
+         per-package editorial job, ledgered to M9.
+
+         THE NoWarn ITSELF LIVES IN src/Directory.Build.targets, NOT HERE, and
+         that is not a style choice: this file is imported BEFORE the project
+         body, so a condition here reads BnEnforceDocCoverage before the csproj
+         has set it and suppresses CS1591 no matter what. The pin reads as ON and
+         is OFF. See that file's header — it carries the measurement. -->
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
-    <NoWarn>$(NoWarn);CS1591</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>

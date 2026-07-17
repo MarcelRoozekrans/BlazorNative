@@ -64,6 +64,26 @@
   </PropertyGroup>
 
   <PropertyGroup>
+    <!-- PIN 2 (8.4 decision 3) — THE COMPILER IS THE PIN. This package's XML
+         docs ARE the docs site's component reference, so an undocumented public
+         member is not a style lapse: it is a hole in a published page. Flipping
+         this un-suppresses CS1591 for THIS package only (the switch itself lives
+         in src/Directory.Build.props, the one metadata home), which makes an
+         undocumented [Parameter] a build error rather than a silent gap nobody
+         measures.
+
+         The price was 8 <inheritdoc /> lines — the eight BuildRenderTree
+         overrides, which were the entire measured gap. Every one of the 192
+         [Parameter] properties was already documented; the reference's raw
+         material was never missing. This keeps it that way.
+
+         Per-project NoWarn is established precedent here (Http.csproj,
+         Renderer.csproj). The other five packages stay suppressed, ledgered with
+         their number: 174. -->
+    <BnEnforceDocCoverage>true</BnEnforceDocCoverage>
+  </PropertyGroup>
+
+  <PropertyGroup>
     <!-- Phase 8.1: shared pack metadata lives in src/Directory.Build.props —
          only the per-package voice stays here. -->
     <Description>The public Bn* component library for BlazorNative apps: BnView, BnText, BnButton, BnInput, BnTheme and friends — sealed, AOT/trim-compatible Blazor components (authorable in .razor since Phase 7.1) targeting native widgets.</Description>

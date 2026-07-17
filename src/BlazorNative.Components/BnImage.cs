@@ -347,6 +347,7 @@ public sealed class BnImage : ComponentBase
     /// <inheritdoc cref="BnView.Left"/>
     [Parameter] public string? Left { get; set; }
 
+    /// <inheritdoc />
     protected override void BuildRenderTree(RenderTreeBuilder b)
     {
         b.OpenElement(0, "img");

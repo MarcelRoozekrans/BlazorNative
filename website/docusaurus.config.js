@@ -22,6 +22,25 @@ const config = {
   onBrokenLinks: 'throw',
 
   markdown: {
+    // Divergence 4, and it is FORCED BY THE GENERATED REFERENCE (8.4 decision 3).
+    // Docusaurus 3 parses every .md file as MDX by default, and MDX is JSX: `<br>`
+    // must be `<br/>`, and a bare `{` opens an expression. xmldoc2md emits BOTH —
+    // `<br>` after every type line, and C# XML docs routinely carry braces
+    // (`System.Nullable{T}` is in the tool's own output). Under the default, the
+    // reference does not build:
+    //
+    //   MDX compilation failed ... Expected a closing tag for `<br>` (20:151-20:155)
+    //
+    // 'detect' means .md is CommonMark and .mdx is MDX — which is simply the truth
+    // about these files: not one page on this site uses JSX, an import or an
+    // export. Admonitions, headings and links all run through remark either way,
+    // so the prose is unaffected (verified: the same 12 pages build clean).
+    //
+    // ESCAPING THE `<br>`s IN THE SCRIPT WAS THE ALTERNATIVE AND IS WORSE: it
+    // patches the one construct that happens to break TODAY, and leaves the next
+    // doc comment containing a brace to fail the deploy for a reason no one will
+    // connect to a `<summary>`. This setting removes the whole class.
+    format: 'detect',
     hooks: {
       // Divergence 3 from the mirror, and the only one the mirror would want back:
       // AdoNet.Async still sets the top-level `onBrokenMarkdownLinks`, which 3.10

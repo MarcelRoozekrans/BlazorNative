@@ -260,6 +260,7 @@ public sealed class BnScroll : ComponentBase
     /// <see cref="BnColumn"/> to give it a gap, a padding or an alignment.</summary>
     [Parameter] public RenderFragment? ChildContent { get; set; }
 
+    /// <inheritdoc />
     protected override void BuildRenderTree(RenderTreeBuilder b)
     {
         b.OpenElement(0, "scroll");

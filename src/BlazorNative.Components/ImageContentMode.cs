@@ -43,37 +43,47 @@ namespace BlazorNative.Components;
 // precedent — null on the prop wire means "the author took it away").
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// <summary>How an image's bytes paint INSIDE the box Yoga computed
-/// (<c>contentMode</c> on the prop wire). Paint-only, normatively: the mode
-/// never consults or changes measurement — every layout frame is
-/// mode-invariant.</summary>
+/// <summary>How an image's pixels are painted inside the box the layout gave
+/// it.</summary>
+/// <remarks>
+/// <b>The mode is paint-only, and that is a guarantee rather than an
+/// implementation note.</b> The layout box belongs to Yoga — it comes from the
+/// image's natural size and the flex parameters you set — and it is identical
+/// under all four modes. Changing the mode repaints; it never reflows, and it
+/// can never move anything else on the page. If you want the image to occupy a
+/// different amount of space, set <see cref="BnImage.Width"/> or
+/// <see cref="BnImage.Height"/>; the mode will not do it for you.
+/// </remarks>
 public enum ImageContentMode
 {
-    /// <summary><c>"contain"</c> — aspect-fit, the default (the 6.3 contract
-    /// row both shells already render; deliberately NOT React Native's
-    /// <c>cover</c> — see the file header). Letterbox bars show
-    /// <see cref="BnImage.BackgroundColor"/>, never the placeholder.</summary>
+    /// <summary>Aspect-fit: the whole image is visible, scaled down to fit the
+    /// box with its aspect ratio kept. <b>The default.</b> The leftover bars
+    /// show <see cref="BnImage.BackgroundColor"/>.</summary>
     Contain,
-    /// <summary><c>"cover"</c> — aspect-fill, cropped to the box (the paint
-    /// never escapes it: both shells clip, Gate 3 pins
-    /// <c>clipsToBounds</c>).</summary>
+    /// <summary>Aspect-fill: the image covers the whole box with its aspect
+    /// ratio kept, and the overflow is cropped. The paint never escapes the
+    /// box — both platforms clip it.</summary>
     Cover,
-    /// <summary><c>"stretch"</c> — fill both axes, aspect not preserved.</summary>
+    /// <summary>Fill the box on both axes, ignoring the aspect ratio. The image
+    /// is distorted unless the box happens to match it.</summary>
     Stretch,
-    /// <summary><c>"center"</c> — natural size, centered, no scaling (and
-    /// clipped when bigger than the box).</summary>
+    /// <summary>Natural size, centered, never scaled — and cropped when the
+    /// image is bigger than the box.</summary>
     Center,
 }
 
-/// <summary>Enum → wire string (the <see cref="FlexStyleValues"/> shape). The
-/// nullable overload is what <see cref="BnImage"/> calls: a null param yields
-/// a null value, which <c>RenderTreeBuilder.AddAttribute</c> omits entirely —
-/// no attribute, no patch, shell default (<see cref="ImageContentMode.Contain"/>).</summary>
+/// <summary>Converts <see cref="ImageContentMode"/> to the lowercase string the
+/// Android and iOS shells read.</summary>
+/// <remarks><see cref="BnImage"/> calls this for you — you need it only if you
+/// are building a component that speaks to the shells directly.</remarks>
 public static class ImageContentModes
 {
-    /// <summary>The strict lowercase wire value for <paramref name="value"/> —
-    /// exact membership in the four-string set both shells parse (an unknown
-    /// value on the wire is diagnosed loudly shell-side and NOT applied).</summary>
+    /// <summary>The value for <paramref name="value"/>: one of <c>"contain"</c>,
+    /// <c>"cover"</c>, <c>"stretch"</c> or <c>"center"</c>.</summary>
+    /// <param name="value">The mode to convert.</param>
+    /// <returns>The lowercase string both platforms parse.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">The value is not one of the
+    /// four declared modes — for example an integer cast to the enum.</exception>
     public static string ToWireValue(this ImageContentMode value) => value switch
     {
         ImageContentMode.Contain => "contain",
@@ -83,12 +93,17 @@ public static class ImageContentModes
         _ => throw Undefined(value),
     };
 
-    /// <inheritdoc cref="ToWireValue(ImageContentMode)"/>
+    /// <summary>As <see cref="ToWireValue(ImageContentMode)"/>, but null maps to
+    /// null — which a component emits as no value at all, leaving the platform's
+    /// default in place.</summary>
+    /// <param name="value">The mode to convert, or null.</param>
+    /// <returns>The lowercase string, or null when <paramref name="value"/> is
+    /// null.</returns>
     public static string? ToWireValue(this ImageContentMode? value)
         => value is { } v ? v.ToWireValue() : null;
 
-    /// <summary>The "enum value outside the declared set" guard (a cast int) —
-    /// <see cref="FlexStyleValues"/>'s, verbatim.</summary>
+    /// <summary>The guard for an enum value outside the declared set — typically
+    /// an integer cast to the enum type.</summary>
     private static ArgumentOutOfRangeException Undefined(
         ImageContentMode value,
         [CallerArgumentExpression(nameof(value))] string? paramName = null)

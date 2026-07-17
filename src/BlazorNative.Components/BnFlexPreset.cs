@@ -40,14 +40,20 @@ namespace BlazorNative.Components;
 // the 6.1 design consciously drops it.)
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// <summary>Base for the direction presets (<see cref="BnRow"/> /
-/// <see cref="BnColumn"/>): every <see cref="BnView"/> parameter except
-/// <see cref="BnView.Direction"/>, forwarded to a <see cref="BnView"/> whose
-/// direction is fixed by <see cref="PresetDirection"/>.</summary>
+/// <summary>The shared base of the direction presets <see cref="BnRow"/> and
+/// <see cref="BnColumn"/>.</summary>
+/// <remarks>
+/// It carries every <see cref="BnView"/> parameter except
+/// <see cref="BnView.Direction"/> and forwards them to a <see cref="BnView"/>
+/// whose direction the subclass fixes. That omission is deliberate: a
+/// <see cref="BnRow"/> is a row, so there is no parameter that could contradict
+/// it. Use <see cref="BnView"/> directly when the direction has to be decided at
+/// runtime. You do not derive from this yourself — use the two presets.
+/// </remarks>
 public abstract class BnFlexPreset : ComponentBase
 {
-    /// <summary>The direction this preset nails down. Not a
-    /// <see cref="ParameterAttribute"/> — that is the whole point.</summary>
+    /// <summary>The direction the concrete preset nails down. Deliberately not
+    /// a parameter — that is what makes the preset a preset.</summary>
     protected abstract FlexDirection PresetDirection { get; }
 
     /// <inheritdoc cref="BnView.BackgroundColor"/>
@@ -119,6 +125,7 @@ public abstract class BnFlexPreset : ComponentBase
     /// <inheritdoc cref="BnView.ChildContent"/>
     [Parameter] public RenderFragment? ChildContent { get; set; }
 
+    /// <inheritdoc />
     protected override void BuildRenderTree(RenderTreeBuilder b)
     {
         b.OpenComponent<BnView>(0);

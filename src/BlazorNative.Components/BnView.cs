@@ -4,52 +4,63 @@ using Microsoft.AspNetCore.Components.Rendering;
 namespace BlazorNative.Components;
 
 /// <summary>
-/// Container component — emits a <c>div</c> (host NodeType "view") with an
-/// optional flexbox style surface and nested children.
+/// A container: a box that holds other components and arranges them with
+/// flexbox. Renders as a plain native view — a <c>FrameLayout</c> on Android,
+/// a <c>UIView</c> on iOS — positioned by Yoga.
 /// </summary>
 /// <remarks>
 /// <para>
-/// <see cref="ChildContent"/> renders as a Region frame (Blazor's grouping
-/// marker for RenderFragment content) — walked transparently by the renderer
-/// since Phase 3.4 Gate 1, so children parent under this view and number as
-/// if inline. Hand-written BuildRenderTree with gap-numbered sequences
-/// (HelloComponent's scheme); Razor syntax awaits .razor compilation (M6).
+/// <b>Every parameter is optional, and an unset one is never sent to the
+/// platform.</b> A <c>BnView</c> with no parameters is an unstyled container and
+/// the layout engine's own defaults apply: children stack vertically, packed
+/// toward the top and stretched across the width.
 /// </para>
 /// <para>
-/// Phase 6.1: the flex surface (design decision 4 — typed C# params, strings
-/// on the wire). EVERY flex param is nullable and defaults to null → no
-/// attribute → NO PATCH. That is the un-styled invariant, and it is a design
-/// constraint, not an accident: adding flex must not perturb an un-styled tree
-/// (the BnDemo / BnSettingsPage goldens on all four surfaces stay byte-identical,
-/// and Yoga's default flexDirection is <c>column</c>, so an un-styled tree still
-/// lays out as a vertical stack).
+/// <b>Lengths.</b> Every length-valued parameter takes a bare number in
+/// density-independent units — <c>"16"</c> means 16dp on Android and 16pt on
+/// iOS — or a percentage such as <c>"50%"</c>, or <c>"auto"</c> where the layout
+/// engine allows it. There is no unit suffix: <c>"16dp"</c>, <c>"16px"</c> and
+/// <c>"16sp"</c> are not part of the grammar. <see cref="Grow"/> and
+/// <see cref="Shrink"/> are the exceptions — they are unitless ratios rather
+/// than lengths.
 /// </para>
 /// <para>
-/// Attribute SEQUENCE numbers are load-bearing (Blazor's diff keys on them):
-/// <c>backgroundColor</c>(1) and <c>padding</c>(2) keep the numbers they have
-/// had since 3.4 and the flex block is APPENDED at 3…24. The ChildContent
-/// region moved from 10 to 100 to make room — a content sequence only has to
-/// be stable ACROSS RENDERS of the same component (both trees in a diff come
-/// from this same method), and the gap leaves room for the next style block.
+/// The parameters fall into three groups: how this view arranges its
+/// <b>children</b> (<see cref="Direction"/>, <see cref="Justify"/>,
+/// <see cref="Align"/>, <see cref="Wrap"/>, <see cref="Gap"/>); how this view
+/// behaves as an <b>item</b> inside its own parent (<see cref="AlignSelf"/>,
+/// <see cref="Grow"/>, <see cref="Shrink"/>, <see cref="Basis"/>); and its own
+/// <b>box</b> (<see cref="Width"/>, <see cref="Height"/>, the min/max pair, and
+/// the <see cref="Position"/> insets).
 /// </para>
+/// <example>
+/// A header row pinned to the top of a filling column:
+/// <code>
+/// &lt;BnColumn Grow="1" Padding="16" Gap="8"&gt;
+///     &lt;BnRow Justify="FlexJustify.SpaceBetween"&gt;
+///         &lt;BnText Text="Inbox" /&gt;
+///         &lt;BnText Text="3" /&gt;
+///     &lt;/BnRow&gt;
+///     &lt;BnView Grow="1" BackgroundColor="#EEEEEE" /&gt;
+/// &lt;/BnColumn&gt;
+/// </code>
+/// </example>
 /// </remarks>
 public sealed class BnView : ComponentBase
 {
-    /// <summary>Background color, e.g. <c>"#FFEEAA"</c>. Null = unset.</summary>
+    /// <summary>Background color as a hex string, e.g. <c>"#FFEEAA"</c>. Null
+    /// leaves the view transparent.</summary>
     [Parameter] public string? BackgroundColor { get; set; }
 
-    /// <summary>Padding in density-independent units, e.g. <c>16</c> — a LAYOUT
-    /// length (Yoga owns it: children are placed inside the padding box).
-    /// Null = unset. Typed (Phase 7.1, design decision 1 — the M4-ledger
-    /// straggler): stringified invariantly onto the wire exactly like
-    /// <see cref="Grow"/> (the 6.1 <see cref="FlexStyleValues"/> pattern) —
-    /// <c>16f</c> reaches the shells as <c>"16"</c>, the same bytes the string
-    /// parameter produced. Percent/auto paddings are deliberately no longer
-    /// expressible here (nothing in the repo ever wrote one); pre-1.0 breaking
-    /// API change, recorded in the phase conclusion, no compat shim.</summary>
+    /// <summary>Inside spacing, in density-independent units — <c>16</c> is 16dp
+    /// on Android and 16pt on iOS. Children are placed inside the padding box,
+    /// so padding shrinks the space they get rather than moving this view. Null
+    /// = none. Unlike the other lengths this one is a number, not a string:
+    /// percentage and <c>"auto"</c> paddings are not expressible.</summary>
     [Parameter] public float? Padding { get; set; }
 
-    /// <summary>Margin, e.g. <c>"8"</c> — a LAYOUT length. Null = unset.</summary>
+    /// <summary>Outside spacing, e.g. <c>"8"</c> — space between this view's box
+    /// and its siblings. Null = none.</summary>
     [Parameter] public string? Margin { get; set; }
 
     // ── Container layout (how THIS view arranges its children) ────────────────
@@ -133,6 +144,7 @@ public sealed class BnView : ComponentBase
     /// <summary>Nested content rendered inside this view.</summary>
     [Parameter] public RenderFragment? ChildContent { get; set; }
 
+    /// <inheritdoc />
     protected override void BuildRenderTree(RenderTreeBuilder b)
     {
         b.OpenElement(0, "div");

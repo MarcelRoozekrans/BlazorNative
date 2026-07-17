@@ -55,6 +55,7 @@ public sealed class BnInput : ComponentBase
     /// attach-only-when-set contract as <see cref="OnFocus"/>.</summary>
     [Parameter] public EventCallback<FocusEventArgs> OnBlur { get; set; }
 
+    /// <inheritdoc />
     protected override void BuildRenderTree(RenderTreeBuilder b)
     {
         b.OpenElement(0, "input");

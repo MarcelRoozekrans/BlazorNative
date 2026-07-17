@@ -1,0 +1,68 @@
+<Project>
+
+  <!-- THE ANCESTOR CHAIN — the same opt-back-in src/Directory.Build.props
+       carries, for the same reason and with the same no-op-today status:
+       MSBuild imports only the NEAREST Directory.Build.targets, so the day a
+       root one appears, the six shipped projects would silently stop seeing it
+       while tests/ and samples/ kept theirs. Added now, while it costs nothing,
+       rather than left as a trap. GetPathOfFileAbove returns '' when there is no
+       ancestor, and an Import with an empty Project is MSB4020, so the Condition
+       is load-bearing today. It sits FIRST so this file's properties win. -->
+  <PropertyGroup>
+    <_AncestorDirectoryBuildTargets>$([MSBuild]::GetPathOfFileAbove('Directory.Build.targets', '$(MSBuildThisFileDirectory)../'))</_AncestorDirectoryBuildTargets>
+  </PropertyGroup>
+  <Import Project="$(_AncestorDirectoryBuildTargets)" Condition="'$(_AncestorDirectoryBuildTargets)' != ''" />
+
+  <!-- ─────────────────────────────────────────────────────────────────────
+       src/Directory.Build.targets — Phase 8.4 Gate 2 (Pin 2).
+
+       WHY THIS FILE EXISTS AT ALL, AND WHY THE PIN DOES NOT WORK WITHOUT IT.
+
+       The design put this line in Directory.Build.props:
+
+           <NoWarn Condition="'$(BnEnforceDocCoverage)' != 'true'">$(NoWarn);CS1591</NoWarn>
+
+       …with BlazorNative.Components.csproj setting the property true. That is
+       silently INERT, and the build says so:
+
+           dotnet msbuild ... -getProperty:BnEnforceDocCoverage -getProperty:NoWarn
+           { "BnEnforceDocCoverage": "true",  "NoWarn": ";CS1591" }
+
+       The property is TRUE and CS1591 is suppressed ANYWAY. MSBuild imports
+       Directory.Build.props BEFORE the project body, so the condition is
+       evaluated while BnEnforceDocCoverage is still empty — it adds CS1591 to
+       NoWarn, and the csproj sets the flag afterwards, far too late to matter.
+       `-t:Rebuild` reported `0 Warning(s)`: the pin was OFF while reading as ON.
+
+       That failure has this phase's exact shape. Nothing errors, nothing warns,
+       the property reads back the value you wanted, and the only thing that can
+       tell you the truth is a MEASUREMENT — here, deleting a doc comment and
+       watching the build stay green (the Pin 2 mutation, which is what caught
+       it).
+
+       Directory.Build.targets is imported AFTER the project body, so the csproj's
+       opt-in is visible and the condition means what it says. The policy still
+       has one home; only its evaluation moved to where the input exists.
+       ───────────────────────────────────────────────────────────────────── -->
+
+  <PropertyGroup>
+    <NoWarn Condition="'$(BnEnforceDocCoverage)' != 'true'">$(NoWarn);CS1591</NoWarn>
+
+    <!-- AND CS1591 MUST BE AN ERROR, not a warning, or Pin 2 still does not
+         bite. The design says "an undocumented [Parameter] STOPS COMPILING";
+         un-suppressing alone does not do that. Measured, not assumed:
+
+           ci.yml:195   dotnet build BlazorNative.sln -c Release -tl:off -nologo
+
+         No -warnaserror. No TreatWarningsAsErrors anywhere in the repo. The
+         zero-warning bar is a CULTURE — a human reading a build log — and a
+         warning is exactly what a human stops reading. Un-suppressed CS1591
+         would emit eight lines into a lane that exits 0, which is a pin's
+         costume on a pin's absence.
+
+         WarningsAsErrors rides BnEnforceDocCoverage, so it turns on for the one
+         package that opted in and stays off for the 174 elsewhere. -->
+    <WarningsAsErrors Condition="'$(BnEnforceDocCoverage)' == 'true'">$(WarningsAsErrors);CS1591</WarningsAsErrors>
+  </PropertyGroup>
+
+</Project>

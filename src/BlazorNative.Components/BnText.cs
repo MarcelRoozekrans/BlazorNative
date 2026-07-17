@@ -4,25 +4,28 @@ using Microsoft.AspNetCore.Components.Rendering;
 namespace BlazorNative.Components;
 
 /// <summary>
-/// Text label — emits a <c>span</c> (host NodeType "text": TextView on
-/// Android) with optional <c>fontSize</c> style attribute.
+/// A text label. Renders as a native <c>TextView</c> on Android and a
+/// <c>UILabel</c> on iOS.
 /// </summary>
-/// <remarks>Hand-written BuildRenderTree with gap-numbered sequences;
-/// Razor syntax awaits .razor compilation (M6).</remarks>
+/// <remarks>
+/// The platform measures it, not the layout engine: a label with no explicit
+/// size reports the height its text actually wraps to, and that measured height
+/// is what the surrounding flex layout is given. Constrain the width — with
+/// <see cref="BnView.Width"/> on a wrapper, or by letting a row size it — and
+/// the text wraps inside it.
+/// </remarks>
 public sealed class BnText : ComponentBase
 {
-    /// <summary>The text content. Null renders an empty label.</summary>
+    /// <summary>The text to show. Null renders an empty label rather than
+    /// nothing, so the label keeps its place in the layout.</summary>
     [Parameter] public string? Text { get; set; }
 
-    /// <summary>Font size in density-independent units, e.g. <c>24</c>.
-    /// Null = unset. Typed (Phase 7.1, design decision 1 — the M4-ledger
-    /// straggler): stringified invariantly onto the wire exactly like
-    /// <see cref="BnView.Grow"/> (the 6.1 <see cref="FlexStyleValues"/>
-    /// pattern) — <c>24f</c> reaches the shells as <c>"24"</c>, the same
-    /// bytes the string parameter produced. Pre-1.0 breaking API change,
-    /// recorded in the phase conclusion; no compat shim.</summary>
+    /// <summary>Font size in density-independent units — <c>24</c> is 24dp on
+    /// Android and 24pt on iOS. Null leaves the platform's default label
+    /// size.</summary>
     [Parameter] public float? FontSize { get; set; }
 
+    /// <inheritdoc />
     protected override void BuildRenderTree(RenderTreeBuilder b)
     {
         b.OpenElement(0, "span");
