@@ -679,7 +679,7 @@ Maps to BACKLOG "P5 — components".
 
 ---
 
-### 🔄 Milestone 8 — Developer Ecosystem  *(active — opened 2026-07-16; the old P5, repositioned after capability)*
+### ✅ Milestone 8 — Developer Ecosystem  *(complete — opened 2026-07-16, closed 2026-07-17; **pending the `v8.0` tag**, applied on the owner's go after the Phase 8.5 close PR merges; the old P5, repositioned after capability)*
 
 Now there's a real layout engine + component library worth shipping. Scoped at
 milestone-open (owner decisions recorded in [MILESTONE.md](MILESTONE.md)): publish-READY
@@ -1139,7 +1139,51 @@ Developer experience and ecosystem".
      does not publish that until one setting is clicked.** See
      [design](../plans/2026-07-17-phase-8.4-design.md) +
      [conclusion](../plans/2026-07-17-phase-8.4-conclusion.md).
-- **Phase 8.5** — hygiene + M8 final audit + close (DoD #6) → `v8.0` — ⏳
+- ✅ **Phase 8.5** — hygiene + M8 final audit + close (DoD #6) → `v8.0` — *complete (2026-07-17)*
+   - **ALL SIX DoD PASS — [final audit](../plans/2026-07-17-milestone-8-final-audit.md)**, every row
+     **re-verified LIVE at the tip, not cited** (the M7 audit's method, verbatim): .NET **580/0**
+     (132 + 25 + 423) · JVM **106/0** across 19 suites via `--rerun-tasks` (**27 executed — a cached
+     green is not a re-run**) · publish gate **4 IL2072 + 9 exports off dumpbin + the page probe** on
+     a CLEAN ILC pass (DLL **4217 KB**, unmoved) · smoke **6 nupkg + 5 snupkg** at the one version
+     literal, `repository@commit` at the tip · reference **`Generation: 26 succeeded`**, components
+     present · `release-preflight -SelfTest` **8/8, exit 0** · template's **generated output** clean
+     + **APK 15590 KB** (run 29554045138) · **Yoga 3.2.1 × FOUR pins** printed equal by the required
+     lane · branch protection == exactly the three contexts · **iOS 154/0 AT `6afd8af`** (run
+     **29554540199**) — main's exact tip.
+   - **THE ABI DID NOT MOVE AND NEITHER DID THE SHELLS' SOURCE.** `git diff v7.0..HEAD` over both
+     shell trees touches **zero** `.kt`/`.swift`/`.h`/`.mm` — only `project.yml` (**comment-only**)
+     and `build.gradle.kts` (8.0's publish-head retarget). **The device baselines therefore stand on
+     8.0's provenance, not v7.0's** — which is why 8.0 re-ran both. **M8 added no wire vocabulary at
+     all**; 9 exports / 72-byte bridge / thirteen NodeTypes verified on all three mirrors.
+   - **THE HONESTY ROWS.** **DoD #2 said five packages; SIX ship** (Http — shorthand drift, corrected
+     8.1), **plus a SEVENTH** pack 8.1's one-metadata-home rule **structurally cannot reach** — the
+     rule's true scope is **one home for the six; the seventh agrees by pin-less discipline**.
+     **DoD #3 says "dry-run"; `dotnet nuget push` HAS no `--dry-run`** — a state preflight shipped
+     instead: *the DoD's word is wrong; the thing is better than the word*. **DoD #5's "~20
+     components" counts nothing** — re-measured: **15 / 26 / 196**, and **the blind grep reproduces
+     at exactly 192**.
+   - **THE HYGIENE LEDGER, ITEM BY ITEM.** **DONE** — the README's four counts + the Yoga literal are
+     **gate-held** (`ReadmeDriftTests`, +3, required lane; both sides derived **from the `if`
+     CONDITION, never the step's `name:` prose — this file's own header read "92 JVM" for four
+     milestones**; the roster knows its size, 8.3's I-1; five mutations run and quoted). ⚠ **The
+     literal-deleted mutation went GREEN on its first run: the paragraph explaining that the number
+     has ONE home had named the number.** A third copy minted inside the sentence about not copying —
+     **8.4's Gate 3 author did the identical thing.** **DEFERRED** — the KDoc sweep + map extraction
+     (**one item**; the clean fix retires 8.3's brittle excision and costs a Kotlin change + a **184
+     device re-run**; **trigger: before the first Release that publishes the template pack** — U5
+     bounds it, the pack is not on nuget.org); `BionicNativeAot.targets` → Runtime's `build/` (costs
+     the smoke's inventory tooth). **ACCEPTED, PREMISE FALSE** — 8.4's *"~15-min local Runtime lane"*
+     measures **4 s cold**; the 15 min was the solution BUILD. ***A cost never measured, carried into
+     a ledger, about to justify weakening a pin — this milestone's own failure mode arriving in a
+     document about it.***
+   - **U1 OBSERVED, NOT PREDICTED:** `/pages` → **404**; `Deploy Documentation` at main's tip is
+     **`build: success` / `deploy: failure`** with the exact legible error 8.4 promised. **Nothing
+     renders until the owner clicks Settings → Pages → Source: GitHub Actions**, and **U2 is the
+     quiet arrow — the first check is a LOOK, not a red.**
+   - **`v8.0` PUBLISHES NOTHING** — re-run live, the classifier reads it as a milestone tag and
+     **announces + skips, exit 0**; a `pkg/<semver>` Release is the only publishing shape. **Nothing
+     published; no tag created; no secret added.** See
+     [final audit](../plans/2026-07-17-milestone-8-final-audit.md).
 
 ---
 

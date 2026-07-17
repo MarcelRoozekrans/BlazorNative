@@ -4,7 +4,7 @@
 #
 #   build-test (windows-latest) — the local verification procedure verbatim
 #   (setup.ps1 §1–7 documents the toolchain pins):
-#     build (analyzers ride it) → .NET tests (577 passed / 0 skipped) →
+#     build (analyzers ride it) → .NET tests (580 passed / 0 skipped) →
 #     three NativeAOT publishes of samples/BlazorNative.SampleApp — the
 #     publish head since Phase 8.0: the app owns PublishAot, the exports stay
 #     in Runtime via UnmanagedEntryPointsAssembly, and the artifact is
@@ -1076,6 +1076,51 @@ jobs:
       # lines, exactly the measured gap. NO wire/ABI change, NO golden moved, NO
       # shell code touched: 4 IL2072 / 9 exports / 106 JVM stand.
       #
+      # 577 -> 580 (PHASE 8.5, +3 — Runtime.Tests 420 -> 423): ReadmeDriftTests —
+      # the hygiene item the README ledgered AGAINST ITSELF, closed. The front page
+      # states four counts and a Yoga version; nothing read any of them. Its own
+      # paragraph is the indictment: "for four milestones this table read
+      # 333 / 83 / 111 / 72 while the gates asserted otherwise, and not one of the
+      # four was within 50% of reality." A number on a page is not asserted, and
+      # this repo's whole rule is that asserted beats observed.
+      #
+      #   +1  ReadmeCounts_MatchTheGatesThatAssertThem — each README count against
+      #       the `if` CONDITION that decides its gate. Deliberately NOT the step's
+      #       `name:` prose: that is a copy too, and this file's own header read
+      #       "92 JVM" for four milestones while the gate said otherwise. Parse the
+      #       code, not the label on the code.
+      #   +1  ReadmeCountTable_PinsEveryRowItLists — 8.3's I-1 rule: a roster that
+      #       does not know its own size is a pin that passes while blind. The
+      #       table's rows and the test's roster are compared as SETS both ways, so
+      #       a fifth bar cannot arrive unpinned. MUTATION: a "Fuzz | 9001" row
+      #       added -> RED ("Rows in the table that NO gate here pins: Fuzz").
+      #   +1  ReadmeYogaLiterals_MatchTheGradlePin — the FIFTH home of the Yoga
+      #       version (the four pinned ones are held by this file's parity step
+      #       above). Subjects DERIVED by pattern, not rostered, so copy six is
+      #       held the day it lands.
+      #
+      # MUTATIONS, all run and quoted: README 577 -> 578 -> RED; README Yoga
+      # 3.2.1 -> 3.3.0 -> RED; the fifth row -> RED; `$passed -ne 577` reworded to
+      # a variable -> RED ("found 0 ... the number below is not evidence"); the
+      # diagram's literal DELETED -> RED ("this pin now holds NOTHING").
+      #
+      # ⚠ THE LAST MUTATION FAILED TO RED ON ITS FIRST RUN, and the reason is the
+      # phase's own subject biting the author: the README paragraph written to
+      # explain that the Yoga literal has ONE home had NAMED THE VERSION — a third
+      # copy, minted inside the sentence about not copying. The pattern matched it,
+      # so deleting the diagram's copy left the suite green. Phase 8.4's Gate 3
+      # author did this exact thing while removing a different copy. The pull toward
+      # a fresh copy is not theoretical, and only a mutation found it BOTH times.
+      #
+      # The Phase 6.0 checklist row ("Yoga 3.2.1 linked into both shells") was NOT
+      # pinned — its literal was DELETED. Holding it would force a FALSEHOOD on the
+      # next bump: Phase 6.0 linked 3.2.1 and always will have. The row's subject is
+      # the linking; the version's home is the Gradle pin. A pin that can only be
+      # satisfied by writing something untrue is the wrong pin.
+      #
+      # NO wire/ABI change, NO golden moved, NO shell code touched: 4 IL2072 /
+      # 9 exports / 106 JVM stand.
+      #
       # 574 -> 577 (PHASE 8.4 GATE 4, +3 — Runtime.Tests 419 -> 420, Analyzers.Tests
       # 23 -> 25): the review's two Important findings, fixed rather than deferred.
       #
@@ -1141,7 +1186,7 @@ jobs:
       # components" replaced by the measured 15/26 (S1-3); a PNG social card (S2-4).
       # NO wire/ABI change, NO golden moved, NO shell code touched: 4 IL2072 /
       # 9 exports / 106 JVM stand.
-      - name: .NET tests (assert 577 passed / 0 skipped)
+      - name: .NET tests (assert 580 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -1159,8 +1204,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 577 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 577 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 580 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 580 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # ── NativeAOT publishes + nine-export verification ────────────────────

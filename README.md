@@ -238,7 +238,7 @@ All four counts are asserted in CI — a drift from the baseline fails the build
 
 | Surface | Command | Count | Asserted by |
 |---|---|---|---|
-| .NET | `dotnet test` | 577 passed / 0 skipped | `ci.yml` → `build-test` |
+| .NET | `dotnet test` | 580 passed / 0 skipped | `ci.yml` → `build-test` |
 | JVM (JNA + win-x64 .dll) | `gradlew testDebugUnitTest` | 106 | `ci.yml` → `build-test` |
 | Android (instrumented, AVD) | `gradlew connectedAndroidTest` | 184 | `android-instrumented.yml` |
 | iOS (XCTest, simulator) | `xcodebuild test` | 154 | `ios.yml` |
@@ -246,9 +246,21 @@ All four counts are asserted in CI — a drift from the baseline fails the build
 **The gate is the truth; this table is a copy of it.** When the two disagree, the workflow is
 right — and they have disagreed before: for four milestones this table read 333 / 83 / 111 / 72
 while the gates asserted otherwise, and not one of the four was within 50% of reality. Nothing
-re-runs a number on a page. Pinning this copy is ledgered as one item with the two unpinned
-copies of the Yoga version literal elsewhere in this file: all of them are a single cheap CI
-read away from being held by a gate instead of by someone remembering.
+re-runs a number on a page.
+
+**So a gate re-runs these.** Since Phase 8.5, `ReadmeDriftTests` (in `build-test`, the required
+lane) parses each number above and compares it to the `if` condition that actually decides the
+corresponding gate — the code, not the step's name, which is prose that has drifted too. The
+same test holds the Yoga version literal in the architecture diagram above against the version
+`build.gradle.kts` pins — the fifth home of a number `ci.yml`'s parity step already holds in
+four. The numbers still live on this page; they are simply no longer kept true by someone
+remembering.
+
+*(This paragraph originally named that version — a third copy of the literal, written into the
+sentence explaining that the literal has one home. The pin above caught it: with the diagram's
+copy deleted as a test, the suite stayed green, because the prose copy was still satisfying it.
+Phase 8.4's Gate 3 author did the same thing while removing a different copy. The pull toward a
+fresh copy is not theoretical.)*
 
 ## Status
 
@@ -260,7 +272,7 @@ read away from being held by a gate instead of by someone remembering.
 - [x] Public repo + CI, analyzer rescope, hardening triage, dev inner loop, NuGet packages — Milestone 4
 - [x] Full platform coverage — the **iOS Swift/UIKit shell** (simulator, on CI macOS runners) + host-initiated events (lifecycle, predictive back, deep links) on Android — Milestone 5
 - [x] **Real-UI foundation — Milestone 6** (tagged `v6.0`)
-  - [x] Yoga 3.2.1 linked into both shells — Phase 6.0
+  - [x] Yoga linked into both shells — Phase 6.0
   - [x] Yoga owns all placement; native text measurement; `BnView`'s flex surface + `BnRow`/`BnColumn` — Phase 6.1
   - [x] Real scrolling — `BnScroll` as a viewport over a synthesised content node — Phase 6.2
   - [x] URL images — `BnImage` via Coil/Kingfisher behind one parity contract — Phase 6.3
