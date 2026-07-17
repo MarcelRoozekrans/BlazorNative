@@ -421,47 +421,62 @@ page — but it is the reason to click sooner rather than later.
 **Nothing publishes from a merge. Nothing publishes from a tag. Publishing a
 GitHub Release is the go, and it is the only one.**
 
-**Two disjoint tag namespaces — this is the part to read before you need it:**
+**Phase 8.6 automated everything up to that click and not one step past it.**
+`release-please` now computes the version, writes `CHANGELOG.md`, cuts the tag
+and opens the Release **as a draft** — and GitHub does not fire workflows for
+draft releases. **Your click on Publish is what converts the draft into the
+event `release.yml` listens for.** The law did not bend; it gained a second,
+structural reason to hold.
+
+**The tag namespace — this is the part to read before you need it:**
 
 | Tag | Means | Publishes? |
 |---|---|---|
-| `v<N>.<M>` — `v1.0` … `v8.0` | **milestone** (seven exist; none has ever carried a Release) | **never** |
-| `pkg/<semver>` — `pkg/1.0.0-preview.1` | **package release** | **the only shape that does** |
+| `v<semver>` — `v1.0.0-preview.2` | **package release**, cut by release-please | **the only shape that does** |
+| `v<N>.<M>` — `v1.0` … `v8.0` | **legacy milestone** — the namespace was **retired in Phase 8.6** | **never — it is now a RED** |
+| `pkg/<semver>` — `pkg/1.0.0-preview.2` | **legacy package** — 8.2's namespace, **retired in Phase 8.6** | **never — it is now a RED** |
 
-A Release published on **`v8.0`** — the M8 close tag, and the most natural first
-Release anyone would publish here — **publishes nothing**, says so in the run
-summary, and exits green. That is by design, not a bug: the `release` event has
-no tag filter, so *every* published Release fires the workflow, and the
-classifier is what decides that a milestone announcement announces.
+**The two namespaces can never collide, and the reason is arithmetic rather than
+convention:** `v<N>.<M>` has two components and **two components is not valid
+SemVer**. So `v8.0` can never be a valid `v<semver>` tag — while `v8.0.0` can,
+and *should* publish 8.0.0 if this repo ever gets there.
 
-**The ritual:**
+> **⚠ `v8.0` REDS NOW. It used to skip-and-say-so, and that changed on purpose.**
+>
+> Under Phase 8.2 a Release on `v8.0` announced a milestone and exited green, on
+> one stated premise: *"a milestone Release is a legitimate thing the owner may
+> do at M8's close."* **Phase 8.6 deleted that premise** — `v1.0`–`v7.0` are
+> deleted, `v8.0` was **cancelled** (M8 DoD #6's tag named a ritual, not a
+> result — see `docs/plans/2026-07-17-milestone-8-audit-addendum.md`), and no
+> `v<N>.<M>` will ever be cut again. A Release on `v8.0` is no longer a
+> legitimate action; **it is a mistake, and a green "nothing was published"
+> would tell you all is well after you did something meaningless.**
 
-1. **Bump the version** — one line, `<Version>` in `src/Directory.Build.props`.
-   It is the *only* place a version lives (pinned by `PackageVersionPinTests`).
-2. **PR it, and let CI go green.** The release lane (`release.yml`'s `validate`
-   job) runs on this PR automatically — it is paths-filtered to the props and
-   the release machinery, so a version bump is exactly when it fires. It asks
-   nuget.org whether your new version is still free.
-3. **Merge.**
-4. **Tag the merge commit** and push the tag:
-   ```bash
-   git tag pkg/1.0.0-preview.2 <merge sha>
-   git push origin pkg/1.0.0-preview.2
-   ```
-   *Pushing the tag publishes nothing.* It only creates something to point a
-   Release at.
-5. **GitHub → Releases → Draft a new release** → pick the `pkg/<version>` tag →
-   **write the body**. The body **is the changelog** — it is written at the
-   moment of the go, by the person deciding to go, and it is what a consumer
-   following the nuget.org project link lands on. There is no `CHANGELOG.md` by
-   decision.
-6. **Publish.** That click is the go. `validate` runs every check with no key in
-   the run at all; only then does `push` see the secret.
+**The ritual — release-please's, and it is three steps shorter than the old one:**
 
-**Three things that will otherwise surprise you:**
+1. **Merge PRs with conventional titles.** The PR title becomes main's commit
+   subject, and it is the only text release-please ever reads. See *The commit
+   contract* below.
+2. **release-please opens a release PR** — it bumps the version, writes the
+   changelog, and updates **all seven version literals**. Read it; the changelog
+   in it is the changelog your consumers get. Merging it is what cuts the tag.
+3. **A draft Release appears**, carrying that changelog as its body. **Nothing
+   has fired. Nothing has published.** Edit the body if you want to.
+4. **Publish the draft.** *That click is the go.* `validate` runs every check
+   with no key in the run at all; only then does `push` see the secret.
 
+**Four things that will otherwise surprise you:**
+
+- **The version is a COUNTER, not a computation.** While the version sits at
+  `1.0.0-preview.N`, `fix:`, `feat:` and even `feat!:` **all produce
+  `1.0.0-preview.N+1`** — measured against release-please's own strategy, not
+  assumed. **Conventional commits do not compute this repo's version; they
+  compute its changelog.** A contributor who writes `feat!:` expecting a major
+  bump gets `preview.N+1`, and that is correct behaviour. It is also why a
+  mis-typed subject can only ever cost you a changelog line — **never a wrong
+  version**.
 - **The tag is a claim; the props wins.** The workflow *asserts* that
-  `pkg/1.0.0-preview.2` matches the props and **never overrides it**. Tag ahead
+  `v1.0.0-preview.2` matches the props and **never overrides it**. Tag ahead
   of props, props ahead of tag, tag on the wrong commit — all three are RED,
   naming both values. (Overriding via `-p:Version=` would make the packages
   irreproducible from the commit they name; it is banned and pinned.)
@@ -474,6 +489,45 @@ classifier is what decides that a milestone announcement announces.
   delete** — only *unlist*. If a wrong version publishes, the recovery is
   unlist → bump → release again. It is never "fix it and re-push the same
   version". That single fact is why every check runs before the key.
+
+#### ⚠ Graduating to `1.0.0` — the trap, and nothing in the tooling will warn you
+
+**Read this before you type `Release-As: 1.0.0`. It is the one move in this
+repo's release story that fails silently.**
+
+Reaching `1.0.0` takes **two** things, and doing only the first re-enters preview
+on the very next merge:
+
+| # | The move | Without it |
+|---|---|---|
+| 1 | A commit whose **body** carries `Release-As: 1.0.0` | you stay on the counter |
+| 2 | **A config change** — delete `versioning`, `prerelease` and `prerelease-type` from `release-please-config.json`, so the package falls back to `versioning: default` | **the next commit computes `1.0.1-preview` / `1.1.0-preview` / `2.0.0-preview`** |
+
+**Why step 2 is not optional.** With the prerelease config still in place at
+`1.0.0`, the version has no prerelease part left to bump — so release-please
+takes the *other* branch and **glues `-preview` back on**. Measured against
+release-please 17.10.3's own strategy, from `1.0.0`:
+
+```
+1.0.0  + fix:    ->  1.0.1-preview
+1.0.0  + feat:   ->  1.1.0-preview
+1.0.0  + feat!:  ->  2.0.0-preview
+```
+
+**All three re-enter preview, not just `fix:`.** Step 2 must land in the same PR
+as the `Release-As:` commit, or immediately after it and before any other merge.
+
+> **Nothing catches this.** Not the classifier — the tag and the props would
+> *agree* on `1.0.1-preview`, so the tag↔props assertion is perfectly happy.
+> Not `TheManifest_AgreesWithTheProps` — the manifest and the props would agree
+> too. **Every pin in this repo is green while the version quietly goes
+> backwards. This table is the only guard, which is why it is here rather than
+> in a design doc nobody opens at the moment of the go.**
+
+*(A subtler alternative exists and reaches the same place: keep
+`versioning: prerelease` and set `prerelease: false` — the strategy then strips
+the prerelease part itself. Dropping the three keys is simpler and is what to
+do.)*
 
 #### What the first Release is actually testing
 
