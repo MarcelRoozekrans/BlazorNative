@@ -45,8 +45,8 @@
     "BlazorNativeVersion": {
       "type": "parameter",
       "datatype": "string",
-      "defaultValue": "1.0.0-preview.1", // x-release-please-version
-      "replaces": "1.0.0-preview.1", // x-release-please-version
+      "defaultValue": "1.0.0-preview.2", // x-release-please-version
+      "replaces": "1.0.0-preview.2", // x-release-please-version
       "description": "The BlazorNative package version the generated app references. The default MIRRORS src/Directory.Build.props and is pinned equal to it by TemplateDriftTests — it is not a second source of version truth."
     },
 
