@@ -74,10 +74,14 @@ public sealed class NativeShellBridge : IMobileBridge
         s_pendingHostCalls = new();
 
     /// <summary>The generic permission-gated capabilities carried on the ONE
-    /// HostCallBegin slot. 9.0 wires exactly one (Geolocation); 9.1/9.2/9.3 add an
-    /// op constant + a host handler and touch NO ABI, NO export gate, NO drift test.
-    /// The integer is the wire contract — the host switches on it.</summary>
-    internal enum HostCallOp { Geolocation = 0 }
+    /// HostCallBegin slot. 9.0 wired exactly one (Geolocation); Phase 9.1 adds the
+    /// SECOND (Notifications) — an op-enum value and nothing else on the ABI: NO
+    /// struct grow (still 80 bytes / 10 slots), NO new export (still 10), NO
+    /// drift-pin move. This is the "pay once, reuse thrice" bet paying off on its
+    /// first draw. The integer is the wire contract — the host switches on it, and
+    /// the shells' mirror enums (Kotlin HostCallOp / Swift BnHostCallOp) gain the
+    /// same value at Gates 2/3.</summary>
+    internal enum HostCallOp { Geolocation = 0, Notifications = 1 }
 
     /// <summary>A completion carried back through blazornative_host_call_complete:
     /// the wire status integer (mapped to <see cref="GeolocationStatus"/> etc. by the
@@ -535,6 +539,99 @@ public sealed class NativeShellBridge : IMobileBridge
         => fix.TryGetValue(key, out string? v)
             && double.TryParse(v, NumberStyles.Float, CultureInfo.InvariantCulture, out double d)
             ? d : 0.0;
+
+    // ── Notifications (Phase 9.1 — the FIRST reuse of the 9.0 generic ABI) ────
+    //
+    // schedule / show / cancel + the permission (request / check) are each a
+    // permission-gated host call — an outbound HostCallBegin(op:Notifications, …)
+    // the host completes with a NotificationStatus. They ride the EXISTING
+    // InvokeHostCallAsync verbatim (the pending registry, the cancellation posture,
+    // the unknown-id benignness, the old-shell RequireSlot guard — all reused, none
+    // re-written), so the ONLY new .NET is the args-JSON builders + the status
+    // mapping. NO struct grow, NO new export — the op-enum value + JSON vocabulary
+    // is the whole ABI touch. The action lives INSIDE the flat JSON (geolocation's
+    // `mode` precedent — one op, many sub-actions, no second slot). The completion
+    // carries NO payload for schedule/show/cancel (a status is the whole answer).
+
+    public async ValueTask<NotificationStatus> ScheduleNotificationAsync(NotificationSpec spec, CancellationToken ct = default)
+    {
+        HostCallResult result = await InvokeHostCallAsync(
+            HostCallOp.Notifications, BuildNotificationArgs("schedule", spec), ct).ConfigureAwait(false);
+        return ToNotificationStatus(result.Status);
+    }
+
+    public async ValueTask<NotificationStatus> ShowNotificationAsync(NotificationSpec spec, CancellationToken ct = default)
+    {
+        HostCallResult result = await InvokeHostCallAsync(
+            HostCallOp.Notifications, BuildNotificationArgs("show", spec), ct).ConfigureAwait(false);
+        return ToNotificationStatus(result.Status);
+    }
+
+    public async ValueTask<NotificationStatus> CancelNotificationAsync(int id, CancellationToken ct = default)
+    {
+        HostCallResult result = await InvokeHostCallAsync(
+            HostCallOp.Notifications, BuildNotificationActionArgs("cancel", id), ct).ConfigureAwait(false);
+        return ToNotificationStatus(result.Status);
+    }
+
+    public async ValueTask<NotificationStatus> RequestNotificationPermissionAsync(CancellationToken ct = default)
+    {
+        HostCallResult result = await InvokeHostCallAsync(
+            HostCallOp.Notifications, NotificationRequestArgs, ct).ConfigureAwait(false);
+        return ToNotificationStatus(result.Status);
+    }
+
+    public async ValueTask<NotificationStatus> CheckNotificationPermissionAsync(CancellationToken ct = default)
+    {
+        HostCallResult result = await InvokeHostCallAsync(
+            HostCallOp.Notifications, NotificationCheckArgs, ct).ConfigureAwait(false);
+        return ToNotificationStatus(result.Status);
+    }
+
+    // The permission calls carry only the action — the request-then-note-a-denial
+    // dance (may prompt) and the read-only check (never prompts) on the SAME op,
+    // geolocation's mode precedent verbatim.
+    private const string NotificationRequestArgs = "{\"action\":\"request\"}";
+    private const string NotificationCheckArgs = "{\"action\":\"check\"}";
+
+    /// <summary>Builds the flat-JSON args for schedule/show: action + the spec's
+    /// fields, EVERY field a string (numbers string-encoded, InvariantCulture — the
+    /// geolocation fix-key discipline; `id` decimal, `when` Unix epoch
+    /// MILLISECONDS). `when`/`route` are omitted when absent (show carries no
+    /// `when`; a routeless notification carries no `route`). Reuses the existing
+    /// WriteFlatJsonObject serializer — no new serializer, and its escaping keeps a
+    /// title/body with a quote or newline wire-safe.</summary>
+    private static string BuildNotificationArgs(string action, NotificationSpec spec)
+    {
+        var map = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["action"] = action,
+            ["id"] = spec.Id.ToString(CultureInfo.InvariantCulture),
+            ["title"] = spec.Title,
+            ["body"] = spec.Body,
+        };
+        if (spec.When is { } when)
+            map["when"] = when.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture);
+        if (spec.Route is { } route)
+            map["route"] = route;
+        return WriteFlatJsonObject(map);
+    }
+
+    /// <summary>Builds the flat-JSON args for an id-only action (cancel).</summary>
+    private static string BuildNotificationActionArgs(string action, int id)
+        => WriteFlatJsonObject(new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["action"] = action,
+            ["id"] = id.ToString(CultureInfo.InvariantCulture),
+        });
+
+    /// <summary>Maps the wire status integer to the typed status; an out-of-range
+    /// value (a host bug) becomes <see cref="NotificationStatus.Error"/> — still
+    /// data, never a throw (the ToGeolocationStatus twin).</summary>
+    private static NotificationStatus ToNotificationStatus(int status)
+        => status is >= (int)NotificationStatus.Granted and <= (int)NotificationStatus.Error
+            ? (NotificationStatus)status
+            : NotificationStatus.Error;
 
     // ── Platform info ─────────────────────────────────────────────────────────
     //

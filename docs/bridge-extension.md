@@ -3,10 +3,13 @@
 **Status:** the documented, versioned pattern for growing the shell bridge (M5 DoD #6).
 Since **Phase 9.0 (M9 DoD #1)** it also covers **permission-gated async host calls** —
 section (f) — and the ABI is at **10 exports / 80 bytes** (the first export grow since
-Phase 3.1's `fetch_complete`).
+Phase 3.1's `fetch_complete`). **Phase 9.1 (M9 DoD #3) is the pattern's FIRST declared
+reuse** — local notifications — and it held the bet: the ABI stayed at **10 exports /
+80 bytes**, unchanged. The pattern now has **two** worked capabilities.
 **Worked examples:** clipboard + share (Phase 5.4), the first bridge growth with two
-shells (Android + iOS) in lockstep — section (e); and **geolocation** (Phase 9.0), the
-first *permission-gated* capability — section (f).
+shells (Android + iOS) in lockstep — section (e); **geolocation** (Phase 9.0), the
+first *permission-gated* capability — section (f.7); and **notifications** (Phase 9.1),
+the first *reuse* + the first *inbound-event* capability (tap-through) — section (f.8).
 
 This is the doc a future contributor reads to add a new host capability (camera,
 geolocation, biometrics, …). It covers the bridge model, the **size-negotiation** that
@@ -371,7 +374,10 @@ method + a **`DevHostBridge`** mock + **host handlers on both shells** + (option
 **`BlazorNative.Device`** façade. The generic `HostCallBegin`/`host_call_complete` are
 **shared** — **NOT a new export, NOT a struct grow, NOT an export-gate edit, NOT a
 drift-test move.** The export grew **once** (9→10) in 9.0 and will not again this
-milestone. That is the reuse the 9.0 export event bought.
+milestone. That is the reuse the 9.0 export event bought — **and Phase 9.1 collected on
+it**: notifications added `Notifications = 1` to `HostCallOp` and **nothing else on the
+ABI** (bridge still 80 bytes, exports still 10, every drift pin green as-is). The bet
+held on its first draw.
 
 ### 7. Worked example — geolocation (Phase 9.0)
 
@@ -408,7 +414,117 @@ façade), `BnGeolocationDemoTests` (mount + Locate echoes fix/status). JVM: the
 `adb emu geo fix` real fix + `pm revoke` denial (Gate 2). iOS simulator location + the
 denial path (Gate 3).
 
+### 8. Worked example — notifications (Phase 9.1), and tap-through as an inbound event
+
+**The reuse, stated first:** notifications add `HostCallOp.Notifications = 1` and **nothing
+else on the ABI** — no struct grow (still **80 bytes / 10 slots**), no new export (still
+**10**), no drift-pin move, no export-gate arithmetic. schedule / show / cancel + the
+permission are four **geolocation-shaped** host calls; the tap-through (a notification tap →
+a route) is the one genuinely new shape, and it too fits with **zero ABI change** — see the
+inbound-event note below.
+
+**Op / export:** the EXISTING `HostCallBegin@72` + `blazornative_host_call_complete`. The
+**action lives inside the flat JSON** (geolocation's `mode` precedent — one op, many
+sub-actions, no second slot):
+
+| action | args (flat JSON) | completion status | payload |
+|---|---|---|---|
+| `schedule` | `{"action":"schedule","id":"7","title":"…","body":"…","when":"<unix-ms>","route":"/notifications"}` | `NotificationStatus` | none |
+| `show` | `{"action":"show","id":"7","title":"…","body":"…","route":"/notifications"}` (no `when`) | `NotificationStatus` | none |
+| `cancel` | `{"action":"cancel","id":"7"}` | `NotificationStatus` | none |
+| `request` | `{"action":"request"}` | `NotificationStatus` | none |
+| `check` | `{"action":"check"}` | `NotificationStatus` | none |
+
+Every field crosses as a **string** (numbers string-encoded, `InvariantCulture`; `id`
+decimal, `when` Unix epoch **milliseconds**, `route` a `DEEP_LINK_COMPONENTS` key or absent)
+— reusing `WriteFlatJsonObject`/`ParseFlatJsonObject`, no new serializer. schedule/show/cancel
+carry **no completion payload** (a status is the whole answer — *less* than geolocation asked).
+
+**`NotificationStatus` — the NEW wire-mirrored status** (geolocation's shape minus
+`LocationUnavailable`, which has no notification analogue). Defined byte-identically across
+.NET / Kotlin / Swift; .NET sees only the integer, and an out-of-range value → `Error`
+(still data, never a throw):
+
+| status | Name | Meaning | Android | iOS |
+|---|---|---|---|---|
+| 0 | `Granted` | permission held; the op ran (posted / scheduled / cancelled) | API<33 implicit, or `POST_NOTIFICATIONS` granted | `.authorized` / `.provisional` |
+| 1 | `Denied` | denied **this time**; a later request MAY prompt | not granted ∧ rationale true | (n/a — iOS prompts once) |
+| 2 | `DeniedPermanently` | "don't ask again" / iOS `.denied` | not granted ∧ rationale false (after a request) | `.denied` |
+| 3 | `Restricted` | policy / MDM — the user **cannot** grant it | device-policy restriction | `.restricted` |
+| 4 | `Error` | unexpected host error (a caught throw) | caught Kotlin throw | caught Swift throw |
+
+The already-granted fast path (the geolocation `check` precedent): a **request short-circuits
+to `Granted` when permission is already held** — never a redundant prompt. Two platform
+folds are recorded so their absence is a decision, not an omission:
+- **Android below API 33 (`SDK_INT < 33`): `POST_NOTIFICATIONS` did not exist and is
+  IMPLICITLY GRANTED** — the host returns `Granted` with no prompt and no manifest gate (the
+  *majority* of devices). On API 33+ it reuses the 9.0 `requestPermissions` /
+  `onRequestPermissionsResult` machinery **verbatim, pointed at a different permission
+  string** — 9.1 writes no new Android permission plumbing.
+- **iOS `.provisional`** (quiet notifications, delivered without a prompt) **folds into
+  `Granted`** — they post, which is what the caller asked. Exposed as a distinct status only
+  if a consumer needs to distinguish quiet delivery; the POC folds it.
+
+**Manifest / Info.plist:** Android adds `<uses-permission
+android:name="android.permission.POST_NOTIFICATIONS" />` in **both** manifests (inert below
+API 33) + the `NotificationPublisher` `BroadcastReceiver`; scheduling uses **inexact**
+`AlarmManager.set` (a notification needs no exact timing) so **no `SCHEDULE_EXACT_ALARM`**.
+**iOS needs no Info.plist key** — authorization is purely runtime (`requestAuthorization`).
+These land with the shell providers at Gates 2/3.
+
+**Tap-through — the genuinely new shape, and NOT a `host_call_complete`.** Tapping a
+notification is an **unsolicited inbound event**: the OS wakes the app with **no in-flight
+.NET `ValueTask`** (the app may have been dead when the notification posted), so there is no
+`requestId` to complete. It rides two EXISTING channels, both ABI-free:
+- **Cold start (app killed):** the tap's `PendingIntent` reproduces the 5.1 launch-time
+  deep-link Intent (`VIEW`, `data = blazornative://<route>`); `MainActivity` resolves the
+  mount via `DEEP_LINK_COMPONENTS` **before the `.so` loads** — untouched by 9.1. iOS carries
+  the route in `userInfo["route"]` and seeds the initial mount the same way.
+- **Warm re-route (app alive):** the tap delivers to `Activity.onNewIntent` (Android) / the
+  UNUC delegate (iOS); the shell dispatches **`host_event("navigate", route)`** over the
+  EXISTING `blazornative_host_event` export. `DispatchHostEventCore` maps the reserved name
+  **`"navigate"`** (the `"back"` precedent) to `NativeNavigationManager.NavigateToAsync` — the
+  name→verb mapping lives in .NET so every shell gets identical semantics. **This is wire
+  vocabulary + a .NET branch, NOT an ABI change.** (iOS milestone-first: the
+  `blazornative_host_event` export EXISTS in the shared runtime but iOS had never called it —
+  9.1's iOS shell simply starts calling it, exactly as 9.0's iOS shell first called
+  `host_call_complete`. Still zero ABI change.)
+
+**.NET surface** (`IMobileBridge` / `NativeShellBridge`, `BlazorNative.Core` types):
+`ScheduleNotificationAsync` / `ShowNotificationAsync(NotificationSpec)`,
+`CancelNotificationAsync(int id)`, `Request`/`CheckNotificationPermissionAsync` — all through
+the EXISTING `InvokeHostCallAsync(op:Notifications, argsJson, ct)` (the pending registry,
+cancellation posture, unknown-id benignness reused, not re-written). `DevHostBridge` mocks a
+**configurable status + an in-memory schedule/cancel list** (all five statuses headless).
+
+**The façade** — `INotifications` in the **SAME 7th package `BlazorNative.Device`** (a sibling
+of `IGeolocation`, a thin delegate over `IMobileBridge`); **no 8th package**, one added
+`AddBlazorNativeDevice()` line. **The demo** — `BnNotificationsDemo` (routed
+`/notifications`), the worked example that `[Inject]`s `INotifications`, echoes every
+`NotificationStatus` as data (denial visible, never thrown), and is the **tap-through landing
+page** (its route is `/notifications`).
+
+**Android** (Gate 2, `AndroidShellBridge.kt`): the `"blazornative_default"` channel; `show`
+→ `NotificationManager.notify`; `schedule` → `AlarmManager` + the `NotificationPublisher`
+receiver; `cancel` → both; `POST_NOTIFICATIONS` request/check reusing the 9.0 machinery; the
+tap `PendingIntent(blazornative://<route>)` + `onNewIntent` + `singleTop` + the
+`host_event("navigate", route)` warm re-route. **iOS** (Gate 3, `AppleShellBridge.swift`):
+`UNUserNotificationCenter` (`UNMutableNotificationContent` + trigger; cancel via `remove*`);
+`requestAuthorization` / `getNotificationSettings`; the `userInfo["route"]` carrier + the
+UNUC delegate calling `host_event("navigate", …)`.
+
+**Tests (Gate 1):** `.NET` `NotificationBridgeTests` (op + action-in-JSON, the five-status
+denial-as-data matrix within a bounded await, the wire-integer mapping incl. out-of-range →
+`Error`, the requestId keying + old-shell-unsupported), `NotificationFacadeTests` (the
+`DevHostBridge` five-status matrix + schedule/show/cancel bookkeeping + the `INotifications`
+façade), `BnNotificationsDemoTests` (mount + the arrival marker + status echo),
+`HostNavigateTests` (the `"navigate"` branch — handled / unknown-route / no-session / fault),
+`NotificationsAbiUnchangedTests` (the reuse headline: 80 bytes / offset 72 / op = 1,
+unchanged). AVD real post + `POST_NOTIFICATIONS` + tap-route (Gate 2); iOS simulator UNUC +
+auth matrix + `didReceive` → navigate (Gate 3).
+
 ---
 
-*Version note: the ABI is at **10 exports / 80 bytes** since Phase 9.0. See `README.md`
-for current counts.*
+*Version note: the ABI is at **10 exports / 80 bytes** since Phase 9.0 — **unchanged by
+Phase 9.1** (notifications added an op-enum value and no ABI). See `README.md` for current
+counts.*

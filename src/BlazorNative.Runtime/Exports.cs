@@ -474,6 +474,21 @@ public static class Exports
     /// exact literal.</summary>
     internal const string BackEventName = "back";
 
+    /// <summary>The reserved host-event name (Phase 9.1) that routes to
+    /// forward-navigation instead of the <see cref="NativeShellBridge.NativeEvents"/>
+    /// multicast — the WARM half of notification tap-through. When a notification is
+    /// tapped over a LIVE app, the shell delivers the tap to
+    /// <c>Activity.onNewIntent</c> (Android) / the UNUC delegate (iOS), parses the
+    /// <c>blazornative://&lt;route&gt;</c>, and — instead of a cold mount — dispatches
+    /// <c>host_event("navigate", route)</c>. Like "back", the name→verb mapping lives
+    /// HERE, in .NET, so every shell gets identical semantics: the payload is the bare
+    /// route string, mapped to <see cref="NativeNavigationManager.NavigateToAsync"/>.
+    /// This is wire vocabulary + a .NET branch over the EXISTING
+    /// blazornative_host_event export — NOT an ABI change (the exact shape 5.1 used to
+    /// add "back"). The Kotlin/Swift shells (Gates 2/3) must use this exact
+    /// literal.</summary>
+    internal const string NavigateEventName = "navigate";
+
     /// <summary>
     /// Managed core of blazornative_host_event (testable without the ABI
     /// crossing). Two routes on ONE ingress:
@@ -517,6 +532,9 @@ public static class Exports
         if (name == BackEventName)
             return DispatchHostBack();
 
+        if (name == NavigateEventName)
+            return DispatchHostNavigate(payload);
+
         try
         {
             bool faulted = NativeShellBridge.RaiseNativeEvent(new NativeEvent(name, payload));
@@ -550,6 +568,43 @@ public static class Exports
         catch (Exception ex)
         {
             Console.Error.WriteLine($"[Exports] host_event 'back' faulted: {ex}");
+            return 2;
+        }
+    }
+
+    /// <summary>Routes the reserved "navigate" host event to the session's nav
+    /// manager (Phase 9.1) — the WARM half of notification tap-through. The payload
+    /// is the target route. rc 0 = navigated / 1 = not handled (no session, or an
+    /// unknown/empty route — the shell had a route the app does not know, benign) /
+    /// 2 = the navigation swap faulted. Sync: NavigateToAsync runs the swap inline,
+    /// so the target page's frames are delivered before this returns. An unknown
+    /// route surfaces as ArgumentException from NavigateToAsync and is mapped to
+    /// rc 1 (not handled) rather than rc 2 (fault): a stale deep link is not a
+    /// renderer fault, and a live session that cannot honour the route simply stays
+    /// put — the caller (the shell) already foregrounded the app.</summary>
+    private static int DispatchHostNavigate(string? route)
+    {
+        if (string.IsNullOrEmpty(route))
+            return 1; // a navigate with no route is nothing to act on (not handled)
+
+        NativeNavigationManager? nav = HostSession.CurrentNavigationManager;
+        if (nav is null)
+            return 1; // nothing mounted → nowhere to navigate from (not handled)
+
+        try
+        {
+            nav.NavigateToAsync(route).GetAwaiter().GetResult();
+            return 0;
+        }
+        catch (ArgumentException)
+        {
+            // An unknown route (a stale/foreign deep link): the live session cannot
+            // honour it, but the app is already foregrounded — not handled, not a fault.
+            return 1;
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[Exports] host_event 'navigate' faulted: {ex}");
             return 2;
         }
     }
