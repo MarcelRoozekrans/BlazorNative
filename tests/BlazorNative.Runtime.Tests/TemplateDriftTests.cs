@@ -47,11 +47,16 @@ namespace BlazorNative.Runtime.Tests;
 //      template that drifts from it lays out differently from both shells,
 //      silently. (ci.yml's parity step owns Yoga's FOURTH copy; this pin owns
 //      the rest.)
-//   5. MainActivity == the repo's, MODULO the two divergences it is ALLOWED:
-//      the map block and the fallback literal. ⚠ Brittle by construction (an
-//      excision), and the design says so; the clean fix (extract the map to its
-//      own file) is a shell change and a 184-test re-run, ledgered rather than
-//      smuggled in here. The excision targets exactly what RouteTableDriftTests
+//   5. MainActivity == the repo's, MODULO the three divergences it is ALLOWED:
+//      the map block, the fallback literal, and the template-only
+//      `import <namespace>.R` (AGP puts R in the `namespace` package; Kotlin
+//      resolves a bare `R` against the FILE's package — the repo's two match by
+//      coincidence, the template's differ by design, so only the template needs
+//      the import. Gate 2's assembleDebug found that; the design had assumed
+//      byte-identity was free here). ⚠ Brittle by construction (an excision),
+//      and the design says so; the clean fix (extract the map to its own file)
+//      is a shell change and a 184-test re-run, ledgered rather than smuggled in
+//      here. The first two excisions target exactly what RouteTableDriftTests
 //      already parses, so the parser is not new.
 //   6. PIN B: the template's OWN map + fallback vs the template's OWN
 //      AppPages.All. The template ships the same contract the repo has — a page
@@ -362,45 +367,55 @@ public sealed class TemplateDriftTests
 
     // ── 4. MainActivity, modulo the map ──────────────────────────────────────
 
-    /// <summary>PIN A — MainActivity ≡ the repo's, MODULO the two divergences it
-    /// is allowed. The template's MainActivity is the one genuinely divergent
-    /// shell file, and it diverges in exactly two places, both of them things
-    /// RouteTableDriftTests already parses:
+    /// <summary>PIN A — MainActivity ≡ the repo's, MODULO the three divergences
+    /// it is allowed. The template's MainActivity is the one genuinely divergent
+    /// shell file. Two of the three are things RouteTableDriftTests already
+    /// parses; the third is an import the repo cannot have:
     ///
     ///   · DEEP_LINK_COMPONENTS — the template's is EMPTY (a one-page app has no
     ///     non-"/" routes), and its KDoc documents the template's contract
     ///     rather than the repo's phase history;
-    ///   · the `?: "…"` fallback literal — the template's is the starter page.
+    ///   · the `?: "…"` fallback literal — the template's is the starter page;
+    ///   · `import &lt;namespace&gt;.R` — TEMPLATE-ONLY. AGP generates R into the
+    ///     `namespace` package while Kotlin resolves a bare `R` against the file's
+    ///     own package; the repo's two happen to be the same string, the
+    ///     template's are deliberately different, so only the template needs the
+    ///     import. Gate 2's assembleDebug on the generated tree is what found
+    ///     that (see ExciseTheAllowedDivergences).
     ///
     /// Everything else is byte-identical, so a shell fix landing in MainActivity
     /// and skipping the template reds here.
     ///
     /// ⚠ BRITTLE, and named as such by the design: this is an excision regex,
-    /// and an excision is a parser that can silently stop matching. Both
-    /// excisions therefore assert they FIRED, in BOTH files — four assertions —
-    /// so a moved map or a rewritten resolution chain reds this test rather than
+    /// and an excision is a parser that can silently stop matching. Every
+    /// excision therefore asserts it FIRED — the map and the fallback in BOTH
+    /// files, the R import in the template and its ABSENCE in the repo — so a
+    /// moved map or a rewritten resolution chain reds this test rather than
     /// quietly comparing the wrong thing. The clean fix (extract the map to its
     /// own file, retiring the excision entirely) is a shell change and a
     /// 184-instrumented-test re-run: ledgered, not smuggled into this phase.</summary>
     [Fact]
     public void TemplateMainActivity_EqualsTheRepos_ModuloTheMapAndTheFallback()
     {
-        string repo = ExciseTheAllowedDivergences(ReadCheckoutFile(RepoMainActivity), RepoMainActivity);
-        string template = ExciseTheAllowedDivergences(ReadCheckoutFile(TemplateMainActivity), TemplateMainActivity);
+        string repo = ExciseTheAllowedDivergences(
+            ReadCheckoutFile(RepoMainActivity), RepoMainActivity, isTemplate: false);
+        string template = ExciseTheAllowedDivergences(
+            ReadCheckoutFile(TemplateMainActivity), TemplateMainActivity, isTemplate: true);
 
         if (repo == template)
             return;
 
         Assert.Fail(
             "MAINACTIVITY DRIFT (8.3 decision 6, Pin A). The template's MainActivity must equal "
-            + "src/BlazorNative.Jni's EXCEPT for the two divergences it is allowed — the "
-            + "DEEP_LINK_COMPONENTS map block and the `?: \"…\"` fallback literal, both excised "
+            + "src/BlazorNative.Jni's EXCEPT for the three divergences it is allowed — the "
+            + "DEEP_LINK_COMPONENTS map block, the `?: \"…\"` fallback literal, and the "
+            + "template-only `import <namespace>.R`, all excised "
             + "before this comparison. Something else moved: a shell fix landed in one copy and "
             + "not the other, and a generated app now runs a different Activity from the one this "
             + "repo tests.\n"
             + "First difference:\n" + FirstDifference(repo, template)
-            + $"\n\nRegenerate the template's copy from the repo's, re-applying ONLY the two "
-            + "divergences (empty map + the starter page's fallback).");
+            + "\n\nRegenerate the template's copy from the repo's, re-applying ONLY the three "
+            + "divergences (empty map + the starter page's fallback + the R import).");
     }
 
     // ── 5. Pin B — the template's own map tracks the template's own pages ────
@@ -648,11 +663,11 @@ public sealed class TemplateDriftTests
         return match.Groups["name"].Value;
     }
 
-    /// <summary>Removes the two divergences Pin A allows, asserting that BOTH
-    /// excisions actually FIRED. That assertion is the whole safety of a brittle
+    /// <summary>Removes the three divergences Pin A allows, asserting that EVERY
+    /// excision actually FIRED. That assertion is the whole safety of a brittle
     /// pin: an excision regex that silently stops matching would compare the
     /// wrong thing and pass.</summary>
-    private static string ExciseTheAllowedDivergences(string source, string file)
+    private static string ExciseTheAllowedDivergences(string source, string file, bool isTemplate)
     {
         // Divergence 1: the map block — its KDoc and the declaration together.
         // The KDoc is part of the block deliberately: it DOCUMENTS the map, so a
@@ -677,7 +692,57 @@ public sealed class TemplateDriftTests
             $"Pin A's fallback excision did not match in {file} — the componentName resolution "
             + "chain moved or was rewritten. Same rule: it reds rather than comparing the wrong "
             + "thing. Re-point it.");
-        return Regex.Replace(source, fallback, "${1}<<FALLBACK>>${3}");
+        source = Regex.Replace(source, fallback, "${1}<<FALLBACK>>${3}");
+
+        // Divergence 3: the `import <namespace>.R` line (with its comment block).
+        // ASYMMETRIC — the only one of the three that is not "same construct,
+        // different content": the template HAS this import and the repo MUST NOT.
+        //
+        // WHY IT EXISTS AT ALL, because it looks like a stray edit and is not:
+        // AGP generates `R` into the `namespace` package, while Kotlin resolves a
+        // bare `R` against the FILE's package. The repo's namespace happens to
+        // equal its source package (io.blazornative.shell), so its bare `R`
+        // resolves and it needs no import. The template deliberately holds the two
+        // apart — shell Kotlin stays io.blazornative.shell (that is what makes the
+        // byte-identity pin a file comparison at all) while `namespace` is the
+        // user's app id — so `R.layout.main` there resolves ONLY through this
+        // import, which generation rewrites to the user's namespace.
+        //
+        // This was NOT a design assumption: 8.3 decision 6 asserted that AGP's
+        // namespace "does not have to match a source package" and concluded the
+        // sources could be byte-identical. That is true for every shell file that
+        // never names `R` — and MainActivity names it three times. Gate 2's
+        // assembleDebug on the GENERATED tree is what found it ("Unresolved
+        // reference 'R'", MainActivity.kt:133), which is precisely why the design
+        // chose a real compile over `gradlew tasks`.
+        //
+        // Asserted in BOTH directions: the template must carry exactly this
+        // import (deleting it breaks the generated build — the pin says so before
+        // a user does), and the repo must NOT (if it ever grows one, its namespace
+        // and package have drifted apart and this excision would be hiding it).
+        const string rImport = @"(?m)^(?://[^\n]*\r?\n)*import [\w.]+\.R\r?\n";
+        Match r = Regex.Match(source, rImport);
+        if (isTemplate)
+        {
+            Assert.True(r.Success,
+                $"Pin A: the template's MainActivity ({file}) has NO `import <namespace>.R`. Its "
+                + "shell Kotlin is in io.blazornative.shell while AGP generates R into the app's "
+                + "`namespace`, so without that import the GENERATED app does not compile: "
+                + "\"Unresolved reference 'R'\" at R.layout.main. Do not delete it to make this "
+                + "pin green — it is the fix, not the drift (found by Gate 2's assembleDebug).");
+            source = source.Remove(r.Index, r.Length);
+        }
+        else
+        {
+            Assert.False(r.Success,
+                $"Pin A: the repo's MainActivity ({file}) has grown an `import <namespace>.R`. It "
+                + "must not need one — its AGP namespace equals its source package "
+                + "(io.blazornative.shell), which is why its bare `R` resolves. An import here "
+                + "means those two have drifted apart, and this excision would silently hide the "
+                + "difference from the template. Stop and analyze.");
+        }
+
+        return source;
     }
 
     private static string ParsePin(string source, string pattern, string name, string file)

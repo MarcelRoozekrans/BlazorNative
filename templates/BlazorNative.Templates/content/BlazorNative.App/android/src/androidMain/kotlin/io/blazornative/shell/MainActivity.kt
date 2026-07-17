@@ -9,6 +9,19 @@ import android.widget.FrameLayout
 import android.widget.TextView
 import android.window.OnBackInvokedCallback
 import android.window.OnBackInvokedDispatcher
+// LOAD-BEARING, and it is the one import the reference shell does NOT have.
+//
+// AGP generates `R` into the `namespace` package (build.gradle.kts — YOURS),
+// while Kotlin resolves a bare `R` against THIS FILE's package. The reference
+// shell gets away with a bare `R` only because its namespace happens to equal
+// its source package (io.blazornative.shell). Here they are deliberately
+// different: the shell's Kotlin stays io.blazornative.shell so it is
+// byte-identical library code, and `namespace` is your app's. So the import is
+// what makes R.layout.main / R.id.* below resolve at all. It is rewritten to
+// your namespace at generation time.
+//
+// Delete it and the generated app does not compile: "Unresolved reference 'R'".
+import com.example.starterapp.R
 import io.blazornative.jni.BlazorNativeRuntime
 import kotlin.concurrent.thread
 
