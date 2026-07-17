@@ -218,13 +218,17 @@ final class BnGeolocation: NSObject, CLLocationManagerDelegate {
     }
 
     private func beginFix(_ requestId: Int64) {
+        // Create + retain the manager FIRST (the delegate-retention contract holds even on
+        // the suppressed test path, where the auth-status override otherwise never creates one).
+        let m = ensureManager()
         if Self.suppressSystemLocationCallsForTest { return } // the test drives didUpdateLocations
-        ensureManager().requestLocation() // one-shot → didUpdateLocations / didFailWithError
+        m.requestLocation() // one-shot → didUpdateLocations / didFailWithError
     }
 
     private func beginAuthorization(_ requestId: Int64) {
+        let m = ensureManager()
         if Self.suppressSystemLocationCallsForTest { return } // owner-device territory; the test drives didChangeAuthorization
-        ensureManager().requestWhenInUseAuthorization() // pops the system alert; the delegate resumes later
+        m.requestWhenInUseAuthorization() // pops the system alert; the delegate resumes later
     }
 
     private func currentAuthorizationStatus() -> CLAuthorizationStatus {
