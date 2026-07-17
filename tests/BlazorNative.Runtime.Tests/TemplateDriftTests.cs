@@ -35,7 +35,30 @@ namespace BlazorNative.Runtime.Tests;
 //      drift is invisible — a pass that is green because it cannot see.
 //   2. The referenced ids are a SUBSET of the shipped six, ENUMERATED from src/
 //      (never rostered — the 8.1 I-2 rule), so a typo'd or foreign id reds.
-//   3. The shell's Kotlin is BYTE-IDENTICAL to src/BlazorNative.Jni's. This is a
+//   3. THE FILE SET ITSELF — WHICH files the template ships, before any pin
+//      says what is IN them. Gate 1's review found the original file blind
+//      here and PROVED it: 7 template files deleted (gradlew, the wrapper jar,
+//      settings.gradle.kts, AndroidManifest.xml, BnStarterPage.razor,
+//      _Imports.razor, gradle.properties) and every pin stayed GREEN, because
+//      the byte-identity pin iterated a HARDCODED 15-path roster and asserted
+//      only `compared > 0`. It did not know how many files it SHOULD pin. That
+//      is this file's own cited rule broken in this file — "never a roster"
+//      (8.1 I-2), the rule ShippedPackageIds() below exists to honour — and it
+//      is this phase's discovered class made live: the .gitignore find proved a
+//      template file can silently never exist, and the pin was blind to 7 of
+//      the 32 that DO. So the set is now pinned three ways, and the split is
+//      deliberate — a set pin says WHICH, a byte pin says WHAT:
+//        · the template's content tree, enumerated FROM DISK and held equal to
+//          an expected manifest — reds on a REMOVED file and on an ADDED one
+//          (the pack ships `content/**` minus bin/obj, so the disk IS the
+//          shipped set: this pin is the nupkg's inventory);
+//        · the byte-identity set is now DERIVED from the template's own
+//          android/src tree rather than rostered — the roster cannot be shrunk
+//          because there is no roster;
+//        · and the REPO's shell tree is enumerated too (pin 9 below), because
+//          neither of the above can see a file src/ grew that the template
+//          never got.
+//   4. The shell's Kotlin is BYTE-IDENTICAL to src/BlazorNative.Jni's. This is a
 //      real byte comparison, not a normalized one, and the trick that buys that
 //      exactness is decision 6's: the template's shell keeps the
 //      io.blazornative.shell PACKAGE (AGP's `namespace`/`applicationId` are
@@ -43,11 +66,11 @@ namespace BlazorNative.Runtime.Tests;
 //      not). A shell change that skips the template reds HERE. Without this the
 //      template would be a second copy of the shell THAT NOTHING COMPILES — the
 //      AGP 9 incident's exact shape.
-//   4. The gradle pins == the repo's. Yoga most of all: one engine, and a
+//   5. The gradle pins == the repo's. Yoga most of all: one engine, and a
 //      template that drifts from it lays out differently from both shells,
 //      silently. (ci.yml's parity step owns Yoga's FOURTH copy; this pin owns
 //      the rest.)
-//   5. MainActivity == the repo's, MODULO the three divergences it is ALLOWED:
+//   6. MainActivity == the repo's, MODULO the three divergences it is ALLOWED:
 //      the map block, the fallback literal, and the template-only
 //      `import <namespace>.R` (AGP puts R in the `namespace` package; Kotlin
 //      resolves a bare `R` against the FILE's package — the repo's two match by
@@ -58,11 +81,11 @@ namespace BlazorNative.Runtime.Tests;
 //      is a shell change and a 184-test re-run, ledgered rather than smuggled in
 //      here. The first two excisions target exactly what RouteTableDriftTests
 //      already parses, so the parser is not new.
-//   6. PIN B: the template's OWN map + fallback vs the template's OWN
+//   7. PIN B: the template's OWN map + fallback vs the template's OWN
 //      AppPages.All. The template ships the same contract the repo has — a page
 //      is declared once; the Kotlin map is the one pinned mirror — so the user
 //      inherits a pin that will insist when they add page two.
-//   7. The guard ORDER, in BOTH copies (the sample's and the template's).
+//   8. The guard ORDER, in BOTH copies (the sample's and the template's).
 //      Stated honestly: a source-order pin proves the ORDER, not the SEMANTICS.
 //      Here the semantics IS the order, and the alternative is nothing —
 //      EnsureRegistered is a static once-guard over a static array, with no seam
@@ -70,10 +93,22 @@ namespace BlazorNative.Runtime.Tests;
 //      AndroidSetStyleDispatch_HasAnArmForEveryYogaStyle pins Kotlin source
 //      shape for the same reason. What it DOES do is cover both copies in one
 //      test, so reference and template cannot drift apart on this line again.
-//   8. global.json + BionicNativeAot.targets == the repo's. A generated app
+//   9. global.json + BionicNativeAot.targets == the repo's. A generated app
 //      inherits NEITHER from the repo, and without them there is no bionic
 //      publish (hence no .so, hence no APK) and no SDK-band pin under the ILC
 //      host.
+//  10. THE REPO'S SIDE OF THE SET — every shell source under the three
+//      subtrees the template MIRRORS is either in the template or named
+//      repo-only, ENUMERATED from src/. Pins 3 and 4 both read the TEMPLATE's
+//      tree, so neither can see the drift that runs the other way: src/ grows a
+//      shell file, the template never gets it, and the generated app compiles
+//      against a shell missing a piece the repo's tests all exercise. That is
+//      the exact failure this file's own docs claim to catch ("a shell change
+//      that skips the template REDS HERE") — and Gate 1's reviewer proved it
+//      did not: a new file in src/BlazorNative.Jni, all 9 tests green. The
+//      repo-only set is NOT a roster of subjects; it is a justified EXCLUSION
+//      list, the same shape as the pack csproj's `Exclude=`, and a new shell
+//      file matches neither arm and reds until someone decides which it is.
 //
 // EVERY PIN ASSERTS NON-VACUITY. A parse that finds nothing REDS rather than
 // passing over an empty read — PackagePurityTests.TypeNamesOf's rule, verbatim:
@@ -91,10 +126,13 @@ public sealed class TemplateDriftTests
     private const string TemplateAppPages = ContentRoot + "/AppPages.cs";
     private const string SampleAppPagesSource = "samples/BlazorNative.SampleApp/SampleAppPages.cs";
 
-    private const string RepoGradle = "src/BlazorNative.Jni/build.gradle.kts";
+    private const string JniRoot = "src/BlazorNative.Jni";
+    private const string TemplateAndroidRoot = ContentRoot + "/android";
+
+    private const string RepoGradle = JniRoot + "/build.gradle.kts";
     private const string TemplateGradle = ContentRoot + "/android/build.gradle.kts";
     private const string RepoMainActivity =
-        "src/BlazorNative.Jni/src/androidMain/kotlin/io/blazornative/shell/MainActivity.kt";
+        JniRoot + "/src/androidMain/kotlin/io/blazornative/shell/MainActivity.kt";
     private const string TemplateMainActivity =
         ContentRoot + "/android/src/androidMain/kotlin/io/blazornative/shell/MainActivity.kt";
 
@@ -165,12 +203,45 @@ public sealed class TemplateDriftTests
             + $"PackageVersionPinTests cannot see it at all), found {packVersions.Count}.");
         literals.Add(($"{PackCsproj} → <Version>", packVersions[0]));
 
-        // NON-VACUITY: a pin that found no literals would green forever.
-        Assert.True(literals.Count >= 5,
-            $"found only {literals.Count} version literals in the template tree — expected at least 5 "
-            + "(three BlazorNative PackageReferences + template.json's default + the pack's own "
-            + "<Version>). The pin is reading the wrong files or the template changed shape; a pin "
-            + "that cannot see its subject must never pass vacuously.");
+        // NON-VACUITY, AND THE HONEST SHAPE (Gate 1 review M-2). This used to be
+        // `literals.Count >= 5` while the pin collects SIX — so a dropped
+        // PackageReference cleared the floor and the pin went on comparing five
+        // literals as if that were the whole set. A floor below the real count
+        // is a floor that is never reached.
+        //
+        // A NAMED SET rather than `== 6`: both red on the drop, but a count
+        // names a number and a set names the FILE. If a fourth BlazorNative
+        // PackageReference is ever added legitimately (Http, say — the subset
+        // pin above already permits any of the shipped six), this reds, and
+        // that is correct: a new version literal is a new mirror, and it gets
+        // added here deliberately rather than sliding in unguarded. That is the
+        // rule this whole file is built on.
+        string[] expectedSources =
+        [
+            $"{AppCsproj} → <PackageReference Include=\"BlazorNative.Analyzers\">",
+            $"{AppCsproj} → <PackageReference Include=\"BlazorNative.Components\">",
+            $"{AppCsproj} → <PackageReference Include=\"BlazorNative.Runtime\">",
+            $"{TemplateJson} → symbols.BlazorNativeVersion.defaultValue",
+            $"{TemplateJson} → symbols.BlazorNativeVersion.replaces",
+            $"{PackCsproj} → <Version>",
+        ];
+
+        var sources = literals.Select(l => l.Where).ToList();
+        var unseen = expectedSources.Except(sources, StringComparer.Ordinal).ToList();
+        var extra = sources.Except(expectedSources, StringComparer.Ordinal).ToList();
+
+        Assert.True(unseen.Count == 0 && extra.Count == 0,
+            $"the version mirror pin collected {literals.Count} literals, not the {expectedSources.Length} "
+            + "it expects — so it is no longer reading the set it claims to.\n"
+            + $"  NOT FOUND (expected, unseen — {unseen.Count}): "
+            + (unseen.Count == 0 ? "(none)" : string.Join(", ", unseen)) + "\n"
+            + $"  UNEXPECTED (found, undeclared — {extra.Count}): "
+            + (extra.Count == 0 ? "(none)" : string.Join(", ", extra)) + "\n\n"
+            + "NOT FOUND means a version literal LEFT the template — or, worse, that it is still "
+            + "there and this pin stopped seeing it, which is a mirror that has quietly stopped "
+            + "being held. UNEXPECTED means a new literal appeared: add it above once you have "
+            + "confirmed it is a mirror and not a second source. A pin that cannot see its subject "
+            + "must never pass vacuously.");
 
         var offenders = literals.Where(l => l.Value != expected).ToList();
         Assert.True(offenders.Count == 0,
@@ -212,7 +283,121 @@ public sealed class TemplateDriftTests
             + $"is: {string.Join(", ", shipped)}. A generated app cannot restore an id nobody packs.");
     }
 
-    // ── 2. The shell's Kotlin, byte-identical ────────────────────────────────
+    // ── 2. The file SET — which files, before what is in them ────────────────
+
+    /// <summary>THE COMPLETENESS PIN (Gate 1 review I-1). Every other pin in
+    /// this file asserts something about the CONTENT of files it already knows
+    /// the names of. This one asserts the NAMES — that the template ships
+    /// exactly these 32 files and no others.
+    ///
+    /// IT EXISTS BECAUSE THE FILE WAS PROVEN BLIND WITHOUT IT. Gate 1's
+    /// reviewer deleted SEVEN template files — gradlew, gradle-wrapper.jar,
+    /// settings.gradle.kts, AndroidManifest.xml, BnStarterPage.razor,
+    /// _Imports.razor, gradle.properties — and every pin here passed, on every
+    /// one. Three of those seven (gradlew, the wrapper jar,
+    /// settings.gradle.kts) are pinned by NOTHING else even now: they are
+    /// byte-identical copies of the repo's that no comparison reads, because
+    /// the pins that could read them iterate names rather than the disk. A
+    /// template missing its wrapper jar is a `dotnet new` that produces a tree
+    /// whose FIRST command fails, and it would have shipped green.
+    ///
+    /// THE DISK IS THE SUBJECT, deliberately (the 8.1 I-2 rule, which the
+    /// original roster broke while citing it four lines above itself). The pack
+    /// ships `content/**` minus bin/obj — BlazorNative.Templates.csproj's
+    /// `&lt;Content Include="content\**\*"
+    /// Exclude="content\**\bin\**;content\**\obj\**" /&gt;` — so this enumeration
+    /// is not a proxy for the nupkg's inventory, it IS the nupkg's inventory,
+    /// read the same way the pack reads it.
+    ///
+    /// THE MANIFEST IS AN EXPECTED VALUE, NOT A ROSTER OF SUBJECTS. That
+    /// distinction is the whole of I-2: enumerate what you MEASURE, declare
+    /// what you EXPECT. The old code inverted it — it declared the subjects and
+    /// measured nothing, so shrinking the declaration shrank the test. Here the
+    /// subjects come off the disk and the declaration is the thing they are
+    /// held against, which is why this reds in BOTH directions: a file removed
+    /// (the seven) and a file added (a copy that silently joined the pack
+    /// without a pin — the AGP 9 shape again, an artifact nothing compares).
+    ///
+    /// A CHANGE TO THE TEMPLATE'S SHAPE IS SUPPOSED TO RED THIS. It is a
+    /// one-line edit to make it green again, and making it deliberately is the
+    /// point: the reader is asked whether the new file needs a pin of its own.</summary>
+    [Fact]
+    public void TemplateContentTree_IsExactlyTheExpectedManifest()
+    {
+        // THE EXPECTED MANIFEST — 32 files, the pack's whole inventory.
+        string[] expected =
+        [
+            // The .NET app the user gets
+            ".template.config/template.json",
+            "AppPages.cs",
+            "BnStarterPage.razor",
+            "MyBlazorNativeApp.csproj",
+            "README.md",
+            "_Imports.razor",
+            "global.json",
+            // The build machinery no `dotnet new` app inherits (decision 7)
+            "build/BionicNativeAot.targets",
+            // The gradle project — wrapper included. `gradlew` and the wrapper
+            // JAR are the app's FIRST command; without them `dotnet new`
+            // produces a tree that cannot build at all.
+            "android/build.gradle.kts",
+            "android/gradle.properties",
+            "android/gradle/wrapper/gradle-wrapper.jar",
+            "android/gradle/wrapper/gradle-wrapper.properties",
+            "android/gradlew",
+            "android/gradlew.bat",
+            "android/settings.gradle.kts",
+            // The shell — androidMain
+            "android/src/androidMain/AndroidManifest.xml",
+            "android/src/androidMain/kotlin/io/blazornative/shell/AndroidShellBridge.kt",
+            "android/src/androidMain/kotlin/io/blazornative/shell/BnSpinner.kt",
+            "android/src/androidMain/kotlin/io/blazornative/shell/MainActivity.kt",
+            "android/src/androidMain/kotlin/io/blazornative/shell/WidgetMapper.kt",
+            "android/src/androidMain/kotlin/io/blazornative/shell/YogaLayout.kt",
+            "android/src/androidMain/res/layout/main.xml",
+            "android/src/androidMain/res/xml/network_security_config.xml",
+            // The shell — the runtime binding surface
+            "android/src/main/kotlin/io/blazornative/jni/BlazorNativeRuntime.kt",
+            "android/src/main/kotlin/io/blazornative/jni/ItemsJson.kt",
+            "android/src/main/kotlin/io/blazornative/jni/NativeBindings.kt",
+            "android/src/main/kotlin/io/blazornative/jni/NativeFrameAdapter.kt",
+            "android/src/main/kotlin/io/blazornative/jni/RenderFrame.kt",
+            "android/src/main/kotlin/io/blazornative/jni/ShellBridge.kt",
+            // The shell — the image tables
+            "android/src/main/kotlin/io/blazornative/shell/ImageContentModeTable.kt",
+            "android/src/main/kotlin/io/blazornative/shell/ImageErrorDispatch.kt",
+            "android/src/main/kotlin/io/blazornative/shell/ImageRequestGuard.kt",
+        ];
+
+        List<string> actual = PackedContentFiles();
+
+        var missing = expected.Except(actual, StringComparer.Ordinal).OrderBy(f => f, StringComparer.Ordinal).ToList();
+        var unexpected = actual.Except(expected, StringComparer.Ordinal).OrderBy(f => f, StringComparer.Ordinal).ToList();
+
+        Assert.True(missing.Count == 0 && unexpected.Count == 0,
+            "THE TEMPLATE'S FILE SET DRIFTED (Gate 1 review I-1). This pin is the one that knows "
+            + "how many files the template SHOULD ship — every other pin here reads the CONTENT of "
+            + "files it is told the names of, and Gate 1 proved that leaves the set itself "
+            + "unguarded (seven files deleted, nine tests green).\n\n"
+            + $"  MISSING (in the manifest, not on disk — {missing.Count}):\n"
+            + (missing.Count == 0 ? "    (none)\n" : string.Join("\n", missing.Select(f => $"    {f}")) + "\n")
+            + $"  UNEXPECTED (on disk, not in the manifest — {unexpected.Count}):\n"
+            + (unexpected.Count == 0 ? "    (none)\n" : string.Join("\n", unexpected.Select(f => $"    {f}")) + "\n")
+            + $"\n(Manifest: {expected.Length} files. On disk: {actual.Count}.)\n\n"
+            + "MISSING means a generated app is short a file — and the failure lands on a "
+            + "stranger's laptop, not here, unless this pin says so first. UNEXPECTED means the "
+            + "pack grew a file no pin in this file compares to anything: decide whether it needs "
+            + "one, then add it to the manifest above. Do not edit the manifest to make this green "
+            + "without answering that question — the edit IS the review.");
+
+        // NON-VACUITY: an enumeration that read nothing would green forever if
+        // the manifest were ever emptied alongside it.
+        Assert.True(actual.Count > 0,
+            $"enumerated ZERO files under {ContentRoot} — the completeness pin read an empty tree. "
+            + "A pin that cannot see its subject must never pass vacuously.");
+    }
+
+    // ── 3. The shell's Kotlin, byte-identical ────────────────────────────────
 
     /// <summary>THE BYTE-IDENTITY PIN (8.3 normative rule 3). The template's
     /// shell sources are a copy of src/BlazorNative.Jni's, and the copy is EXACT
@@ -230,37 +415,28 @@ public sealed class TemplateDriftTests
     ///
     /// Byte comparison is safe across platforms despite git's autocrlf: BOTH
     /// files live in the same checkout under the same .gitattributes
-    /// normalization (`* text=auto`), so they are converted identically.</summary>
+    /// normalization (`* text=auto`), so they are converted identically.
+    ///
+    /// THE SET IS DERIVED, NOT ROSTERED (Gate 1 review I-1). It used to be a
+    /// hardcoded 15-path list, and the reviewer shrank it to ONE path and got a
+    /// green — the pin iterated its own roster, so cutting the roster cut the
+    /// test, and `compared > 0` was happy with one. Now the subjects come off
+    /// the disk: EVERY file in the template's android/ tree is byte-compared to
+    /// src/BlazorNative.Jni's copy at the same relative path, except the five
+    /// that genuinely diverge — each named below with the pin that owns it
+    /// instead. A roster that cannot be shrunk is a roster that does not exist.
+    ///
+    /// Deriving also WIDENED the set from 15 files to 19: `gradlew`,
+    /// `gradlew.bat`, `gradle-wrapper.jar` and `gradle-wrapper.properties` are
+    /// byte-identical copies of the repo's that the roster never listed, so
+    /// nothing compared them at all. They are the app's FIRST command.</summary>
     [Fact]
     public void TemplateShellSources_AreByteIdenticalToTheRepos()
     {
-        // The VERBATIM set (8.3 decision 6's split table). MainActivity is NOT
-        // here — it is the one genuinely divergent file, pinned separately below.
-        var verbatim = new[]
-        {
-            // jni/ — the runtime binding surface
-            "src/main/kotlin/io/blazornative/jni/BlazorNativeRuntime.kt",
-            "src/main/kotlin/io/blazornative/jni/NativeBindings.kt",
-            "src/main/kotlin/io/blazornative/jni/NativeFrameAdapter.kt",
-            "src/main/kotlin/io/blazornative/jni/RenderFrame.kt",
-            "src/main/kotlin/io/blazornative/jni/ShellBridge.kt",
-            "src/main/kotlin/io/blazornative/jni/ItemsJson.kt",
-            // shell/ — the image tables
-            "src/main/kotlin/io/blazornative/shell/ImageContentModeTable.kt",
-            "src/main/kotlin/io/blazornative/shell/ImageErrorDispatch.kt",
-            "src/main/kotlin/io/blazornative/shell/ImageRequestGuard.kt",
-            // shell/ — the mapper, the layout, the bridge, the spinner
-            "src/androidMain/kotlin/io/blazornative/shell/WidgetMapper.kt",
-            "src/androidMain/kotlin/io/blazornative/shell/YogaLayout.kt",
-            "src/androidMain/kotlin/io/blazornative/shell/AndroidShellBridge.kt",
-            "src/androidMain/kotlin/io/blazornative/shell/BnSpinner.kt",
-            // res
-            "src/androidMain/res/layout/main.xml",
-            "src/androidMain/res/xml/network_security_config.xml",
-        };
+        List<string> verbatim = TemplateVerbatimAndroidFiles();
 
         AssertByteIdentical(
-            verbatim.Select(f => ($"src/BlazorNative.Jni/{f}", $"{ContentRoot}/android/{f}")),
+            verbatim.Select(f => ($"{JniRoot}/{f}", $"{TemplateAndroidRoot}/{f}")),
             "THE TEMPLATE'S SHELL KOTLIN IS A PINNED MIRROR of src/BlazorNative.Jni's (8.3 "
             + "normative rule 3) — byte-identical, deliberately: the package stays "
             + "io.blazornative.shell in both precisely so this can be a file comparison. A shell "
@@ -297,7 +473,111 @@ public sealed class TemplateDriftTests
             + "feature band. Copy the change into the template in the same commit.");
     }
 
-    // ── 3. The gradle pins ───────────────────────────────────────────────────
+    /// <summary>THE OTHER SIDE OF THE SET (Gate 1 review I-1). Both pins above
+    /// read the TEMPLATE's tree, so neither can see the drift that runs the
+    /// other way: src/BlazorNative.Jni grows a shell file and the template
+    /// never gets it. The reviewer added exactly that file and watched all nine
+    /// tests pass — while this file's own header claimed, four lines from the
+    /// mutation, that "a shell change that skips the template REDS HERE".
+    ///
+    /// So the REPO's tree is enumerated too, over the three subtrees the
+    /// template mirrors wholesale (src/main/kotlin, src/androidMain/kotlin,
+    /// src/androidMain/res), and every file must be one of two things:
+    ///
+    ///   · in the template — the normal case, and the byte pin above then owns
+    ///     its contents;
+    ///   · or NAMED repo-only, below, with a reason.
+    ///
+    /// The repo-only set is an EXCLUSION list, not a roster of subjects — the
+    /// same shape as the pack csproj's `Exclude=`, and the distinction I-2
+    /// turns on. Nothing is derived FROM it; it only forgives. A new shell file
+    /// matches neither arm, so it reds, and the author answers the question the
+    /// old pin never asked: does the template need this, or is it repo-only?
+    /// Both answers are one line. Neither is silent.
+    ///
+    /// WHY IT MATTERS BEYOND TIDINESS: the template's build.gradle.kts compiles
+    /// `src/main/kotlin` and `src/androidMain/kotlin` in the generated tree. A
+    /// shell file that lands in src/ and is referenced by a file the template
+    /// DOES ship makes every generated app fail to compile — and build-test,
+    /// the lane that owns this contract, would say nothing. template-smoke's
+    /// assembleDebug would eventually catch it as an unresolved reference, on a
+    /// slower lane, naming a symbol instead of the cause.</summary>
+    [Fact]
+    public void EveryRepoShellSource_IsInTheTemplate_OrIsDeliberatelyRepoOnly()
+    {
+        // REPO-ONLY, each with its reason. Not a roster of subjects: nothing is
+        // derived from this list, it only forgives what the enumeration finds.
+        var repoOnly = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            // The inspector/preview surface — a dev-tooling stack the reference
+            // shell hosts (InspectorServer/InspectorHost live in src/jvmHost,
+            // which the template does not mirror at all). Nothing the template
+            // ships references these; Gate 2's assembleDebug on the generated
+            // tree is the standing proof that the six jni files are
+            // self-sufficient without them.
+            ["src/main/kotlin/io/blazornative/jni/InspectorJson.kt"] = "inspector tooling — repo-only",
+            ["src/main/kotlin/io/blazornative/jni/InspectorState.kt"] = "inspector tooling — repo-only",
+            ["src/main/kotlin/io/blazornative/jni/TreeSnapshot.kt"] = "inspector tooling — repo-only",
+            ["src/main/kotlin/io/blazornative/jni/PreviewHost.kt"] = "preview tooling — repo-only",
+            // Git placeholder, not source.
+            ["src/main/kotlin/io/blazornative/jni/.gitkeep"] = "a git placeholder, not a source file",
+        };
+
+        // The three subtrees the template mirrors wholesale. src/androidTest,
+        // src/test, src/jvmHost and src/debug are NOT here: they are the repo's
+        // test and tooling trees, and a template shipping them would be
+        // shipping this repo's test suite to a stranger.
+        string[] mirroredSubtrees =
+        [
+            "src/main/kotlin",
+            "src/androidMain/kotlin",
+            "src/androidMain/res",
+        ];
+
+        var missing = new List<string>();
+        int inspected = 0;
+
+        foreach (string subtree in mirroredSubtrees)
+        {
+            foreach (string file in FilesUnder($"{JniRoot}/{subtree}"))
+            {
+                string relative = $"{subtree}/{file}";
+                inspected++;
+
+                if (repoOnly.ContainsKey(relative))
+                    continue;
+                if (File.Exists(CheckoutPath($"{TemplateAndroidRoot}/{relative}")))
+                    continue;
+
+                missing.Add($"  {JniRoot}/{relative}\n    has no counterpart at {TemplateAndroidRoot}/{relative}");
+            }
+        }
+
+        // NON-VACUITY: an enumeration that read nothing would forgive everything.
+        Assert.True(inspected > 0,
+            $"enumerated ZERO shell sources under {JniRoot} — every repo file is trivially "
+            + "'in the template' when nothing is read. A pin that cannot see its subject must "
+            + "never pass vacuously.");
+
+        Assert.True(missing.Count == 0,
+            "A SHELL FILE EXISTS IN THE REPO AND NOT IN THE TEMPLATE (Gate 1 review I-1). This is "
+            + "the drift this file's header has always claimed to catch — 'a shell change that "
+            + "skips the template REDS HERE' — and until this pin existed it did not: the byte-"
+            + "identity pin walks the TEMPLATE's tree, so a file the template never got was a file "
+            + "it never looked for.\n\n"
+            + string.Join("\n", missing)
+            + $"\n\n({inspected} repo shell sources checked across "
+            + $"{string.Join(", ", mirroredSubtrees)}.)\n\n"
+            + "The template's build.gradle.kts compiles src/main/kotlin and src/androidMain/kotlin "
+            + "in the GENERATED tree. If anything the template ships references this file, every "
+            + "`dotnet new blazornative` app fails to compile — on a stranger's laptop, naming an "
+            + "unresolved symbol rather than the missing copy.\n\n"
+            + "TWO HONEST FIXES, and the choice is the point: copy the file into the template "
+            + "(then the byte pin owns it, and it is pinned forever), or add it to this test's "
+            + "`repoOnly` map with the reason it does not ship. Do not delete this pin.");
+    }
+
+    // ── 4. The gradle pins ───────────────────────────────────────────────────
 
     /// <summary>THE GRADLE PIN. Every pinned literal in the template's
     /// build.gradle.kts is a COPY of the repo's, so every one is drift. A
@@ -365,7 +645,7 @@ public sealed class TemplateDriftTests
             + "silently.\n" + string.Join("\n", offenders));
     }
 
-    // ── 4. MainActivity, modulo the map ──────────────────────────────────────
+    // ── 5. MainActivity, modulo the map ──────────────────────────────────────
 
     /// <summary>PIN A — MainActivity ≡ the repo's, MODULO the three divergences
     /// it is allowed. The template's MainActivity is the one genuinely divergent
@@ -418,7 +698,7 @@ public sealed class TemplateDriftTests
             + "divergences (empty map + the starter page's fallback + the R import).");
     }
 
-    // ── 5. Pin B — the template's own map tracks the template's own pages ────
+    // ── 6. Pin B — the template's own map tracks the template's own pages ────
 
     /// <summary>PIN B — the template ships the SAME CONTRACT the repo has: a page
     /// is declared once (AppPages.All), and the Kotlin map is the one pinned
@@ -480,7 +760,7 @@ public sealed class TemplateDriftTests
             + "names an unregistered page fails with rc 1 at first mount.");
     }
 
-    // ── 6. The guard order, in BOTH copies ───────────────────────────────────
+    // ── 7. The guard order, in BOTH copies ───────────────────────────────────
 
     /// <summary>THE GUARD-ORDER PIN (8.3 decision 5; 8.0 Gate 1 review M-1).
     ///
@@ -521,7 +801,19 @@ public sealed class TemplateDriftTests
                 + "copies, so re-point it deliberately rather than deleting it. (Non-vacuity: a "
                 + "pin that cannot see its subject must never pass vacuously.)");
 
-            string text = body.Groups["body"].Value;
+            // COMMENTS OUT FIRST (Gate 1 review M-1). The IndexOf below reads
+            // source POSITIONS, and a comment is source. Both copies carry a
+            // comment that discusses this very ordering and names
+            // `BlazorNativeApp.RegisterPages(` while doing it — so the pin was
+            // measuring against prose. The reviewer proved it live: a body with
+            // the guard set BEFORE the call (the actual bug) plus a comment
+            // mentioning the call ABOVE it, and the pin PASSED, because the
+            // comment's `RegisterPages(` was the first hit and it preceded the
+            // guard. The pin found its own documentation and called it code.
+            //
+            // Anchoring on the signature was not enough: that keeps the file's
+            // header out, not the comments INSIDE the body. Strip them.
+            string text = StripLineComments(body.Groups["body"].Value);
             int call = text.IndexOf("BlazorNativeApp.RegisterPages(", StringComparison.Ordinal);
             int guard = text.IndexOf("s_registered = true", StringComparison.Ordinal);
 
@@ -745,6 +1037,25 @@ public sealed class TemplateDriftTests
         return source;
     }
 
+    /// <summary>Drops `//` line comments (Gate 1 review M-1). A source-ORDER
+    /// pin must read code positions, and a comment is not one — the guard-order
+    /// pin above was proven to accept the real bug when a comment above it
+    /// happened to name `BlazorNativeApp.RegisterPages(`.
+    ///
+    /// Line comments only, and that is enough BY INSPECTION rather than by
+    /// luck: it is applied to EnsureRegistered()'s body, which in both copies
+    /// is four statements with no string literal at all (so no "http://" to
+    /// mangle) and no block comment. If that body ever grows either, this
+    /// stripper is the thing to revisit — it would truncate a line at a `//`
+    /// inside a string, which fails SAFE here (the pin loses text and reds on a
+    /// missing call) but is not a property to lean on.</summary>
+    private static string StripLineComments(string body)
+        => string.Join("\n", body.Split('\n').Select(line =>
+        {
+            int slashes = line.IndexOf("//", StringComparison.Ordinal);
+            return slashes < 0 ? line : line[..slashes];
+        }));
+
     private static string ParsePin(string source, string pattern, string name, string file)
     {
         Match match = Regex.Match(source, pattern);
@@ -753,6 +1064,81 @@ public sealed class TemplateDriftTests
             + "rewritten — a pin that cannot see its subject must never pass vacuously, so this "
             + "reds. Re-point it deliberately.");
         return match.Groups[1].Value.Trim();
+    }
+
+    // ── The disk enumerations (Gate 1 review I-1) ────────────────────────────
+
+    /// <summary>Every file under a checkout subtree, as forward-slash paths
+    /// relative to it, sorted. THE DISK IS THE SUBJECT — this is the handle
+    /// that lets the set pins above measure what IS rather than iterate what
+    /// someone once wrote down (the 8.1 I-2 rule, which the roster this
+    /// replaced broke while citing it).
+    ///
+    /// bin/ and obj/ are dropped because THE PACK DROPS THEM —
+    /// BlazorNative.Templates.csproj: `&lt;Content Include="content\**\*"
+    /// Exclude="content\**\bin\**;content\**\obj\**" /&gt;`. Matching the pack's
+    /// own glob is what makes this enumeration the nupkg's inventory rather
+    /// than a guess at it. Note what is NOT excluded: `build/`. It holds
+    /// BionicNativeAot.targets and is real shipped content — the .gitignore
+    /// carries a negation for exactly that reason, and that negation's absence
+    /// is the phase's own discovered class (a file that silently never
+    /// exists).</summary>
+    private static List<string> FilesUnder(string relativeRoot)
+    {
+        string root = CheckoutPath(relativeRoot);
+        Assert.True(Directory.Exists(root),
+            $"checkout directory not found: {root} — a set pin cannot enumerate a tree that is not "
+            + "there, and must not pass over it.");
+
+        return Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)
+            .Select(f => Path.GetRelativePath(root, f).Replace(Path.DirectorySeparatorChar, '/'))
+            .Where(f => !f.Split('/').Any(segment =>
+                segment.Equals("bin", StringComparison.Ordinal) || segment.Equals("obj", StringComparison.Ordinal)))
+            .OrderBy(f => f, StringComparer.Ordinal)
+            .ToList();
+    }
+
+    /// <summary>Exactly what the pack will ship: the template's content tree
+    /// off the disk, read the way BlazorNative.Templates.csproj's Content glob
+    /// reads it.</summary>
+    private static List<string> PackedContentFiles() => FilesUnder(ContentRoot);
+
+    /// <summary>The template's android/ files that must be BYTE-IDENTICAL to
+    /// src/BlazorNative.Jni's — the whole tree MINUS the five that genuinely
+    /// diverge. Derived, so it cannot be shrunk (Gate 1 review I-1).
+    ///
+    /// Each exclusion names the pin that owns it instead; none of the five is
+    /// unpinned, which is what makes excluding them honest rather than
+    /// convenient.</summary>
+    private static List<string> TemplateVerbatimAndroidFiles()
+    {
+        var divergent = new HashSet<string>(StringComparer.Ordinal)
+        {
+            // AGP `namespace`/`applicationId` are the user's; every pinned
+            // literal in it is held equal by TemplateGradlePins_EqualTheRepos.
+            "build.gradle.kts",
+            // `rootProject.name` is the user's app, not BlazorNative.Jni.
+            "settings.gradle.kts",
+            // Prose only (the repo's comment cites Phase 2.2 history); the
+            // template's says what AGP 9 needs. No pinned literal lives here.
+            "gradle.properties",
+            // android:label + the FULLY-QUALIFIED activity name — the template's
+            // must be fully qualified precisely because its `namespace` is the
+            // user's while the shell's Kotlin package is not (the same split
+            // that forces MainActivity's R import).
+            "src/androidMain/AndroidManifest.xml",
+            // Pin A owns this one, modulo its three allowed divergences.
+            "src/androidMain/kotlin/io/blazornative/shell/MainActivity.kt",
+        };
+
+        var files = FilesUnder($"{TemplateAndroidRoot}")
+            .Where(f => !divergent.Contains(f))
+            .ToList();
+
+        Assert.True(files.Count > 0,
+            $"derived ZERO verbatim files from {TemplateAndroidRoot} — the byte-identity pin would "
+            + "compare nothing. A pin that cannot see its subject must never pass vacuously.");
+        return files;
     }
 
     // ── Shared helpers ───────────────────────────────────────────────────────

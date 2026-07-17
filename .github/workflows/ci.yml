@@ -4,7 +4,7 @@
 #
 #   build-test (windows-latest) — the local verification procedure verbatim
 #   (setup.ps1 §1–7 documents the toolchain pins):
-#     build (analyzers ride it) → .NET tests (568 passed / 0 skipped) →
+#     build (analyzers ride it) → .NET tests (570 passed / 0 skipped) →
 #     three NativeAOT publishes of samples/BlazorNative.SampleApp — the
 #     publish head since Phase 8.0: the app owns PublishAot, the exports stay
 #     in Runtime via UnmanagedEntryPointsAssembly, and the artifact is
@@ -817,14 +817,23 @@ jobs:
       #       empty read.
       #   +1  TemplateCsprojReferences_AreASubsetOfTheShippedSix — ENUMERATED
       #       from src/, never rostered (the 8.1 I-2 rule).
-      #   +1  TemplateShellSources_AreByteIdenticalToTheRepos — the 15 verbatim
-      #       shell files (13 Kotlin + 2 res) vs src/BlazorNative.Jni's, BYTE
-      #       for byte. Exact rather than normalized because the template's
-      #       Kotlin keeps the io.blazornative.shell PACKAGE (AGP's namespace/
-      #       applicationId are separate identities), which also makes the
-      #       eventual .aar migration a deletion. Without it the template is a
-      #       second copy of the shell THAT NOTHING COMPILES — the AGP 9 shape.
+      #   +1  TemplateShellSources_AreByteIdenticalToTheRepos — the verbatim
+      #       shell files vs src/BlazorNative.Jni's, BYTE for byte. Exact rather
+      #       than normalized because the template's Kotlin keeps the
+      #       io.blazornative.shell PACKAGE (AGP's namespace/applicationId are
+      #       separate identities), which also makes the eventual .aar migration
+      #       a deletion. Without it the template is a second copy of the shell
+      #       THAT NOTHING COMPILES — the AGP 9 shape.
       #       Mutation: one line of src/'s WidgetMapper.kt -> red naming it.
+      #       (8.3 GATE 1 REVIEW I-1: this pin used to iterate a HARDCODED
+      #       15-path roster. The set is now DERIVED from the template's android/
+      #       tree — 19 files, the whole tree minus the five that genuinely
+      #       diverge, each named with the pin that owns it instead. The roster
+      #       could be shrunk to ONE and stay green; a roster that does not exist
+      #       cannot be. Deriving also picked up gradlew, gradlew.bat, the
+      #       wrapper JAR and gradle-wrapper.properties — byte-identical copies
+      #       the roster never listed, so NOTHING compared them, and they are the
+      #       generated app's FIRST command.)
       #   +1  TemplateBuildMachinery_IsByteIdenticalToTheRepos — global.json +
       #       build/BionicNativeAot.targets. A `dotnet new` app inherits
       #       NEITHER, and without them there is no bionic publish at all.
@@ -832,11 +841,22 @@ jobs:
       #       wrapper distribution.
       #   +1  TemplateMainActivity_EqualsTheRepos_ModuloTheMapAndTheFallback —
       #       Pin A. The one genuinely divergent file, and it diverges in
-      #       exactly TWO places (verified: the diff is 2 hunks). Brittle by
-      #       construction (an excision), so BOTH excisions assert they FIRED in
-      #       BOTH files — an excision that stops matching would compare the
-      #       wrong thing and pass. The clean fix (extract the map to its own
-      #       file) is a shell change + a 184-test re-run: LEDGERED.
+      #       exactly THREE places: the map block, the fallback literal, and the
+      #       template-only `import <namespace>.R`. (This comment said TWO when
+      #       Gate 1 wrote it, and that was true then — Gate 2's assembleDebug on
+      #       the GENERATED tree found the third: AGP puts R in the `namespace`
+      #       package while Kotlin resolves a bare `R` against the FILE's
+      #       package. The repo's two match by coincidence; the template's differ
+      #       by design, so only the template needs the import. The design had
+      #       assumed byte-identity was free here — a real compile is what
+      #       disproved it.) Brittle by construction (an excision), so ALL THREE
+      #       excisions assert they FIRED — the map and the fallback in BOTH
+      #       files, the R import in the template AND its ABSENCE in the repo (if
+      #       the repo ever grows one, its namespace and package have drifted
+      #       apart and this excision would be hiding it). An excision that stops
+      #       matching would compare the wrong thing and pass. The clean fix
+      #       (extract the map to its own file) is a shell change + a 184-test
+      #       re-run: LEDGERED.
       #   +2  Pin B — TemplateDeepLinkMap_...PairForPair and
       #       TemplateDefaultFallbackLiteral_... : the template's own map +
       #       fallback vs the template's own AppPages.All. The template ships
@@ -851,6 +871,57 @@ jobs:
       #       the semantics — there is no seam to inject a throwing manifest
       #       into a static once-guard (the AndroidSetStyleDispatch precedent).
       #       Here the semantics IS the order. Covers BOTH copies in one test.
+      #       (8.3 GATE 1 REVIEW M-1: it did the IndexOf over the body INCLUDING
+      #       comments, so it measured against prose. The reviewer ran a body
+      #       carrying the ACTUAL bug plus a comment naming RegisterPages( above
+      #       it and the pin PASSED — it found its own documentation and called
+      #       it code. Comments are stripped first now; the same vehicle reds.)
+      #
+      # 568 -> 570 (PHASE 8.3 GATE 1 REVIEW, +2 — Runtime.Tests 413 -> 415):
+      # I-1, the review's headline, and it is THIS PHASE'S OWN DISCOVERED CLASS
+      # MADE LIVE. The pins above all read the CONTENT of files they were TOLD
+      # the names of, and nothing knew how many files the template SHOULD ship.
+      # The reviewer proved it three ways, all GREEN: the byte roster shrunk
+      # 15 -> 1; a new shell file in src/BlazorNative.Jni the template never
+      # gets; and SEVEN template files deleted — gradlew, the wrapper JAR,
+      # settings.gradle.kts, AndroidManifest.xml, BnStarterPage.razor,
+      # _Imports.razor, gradle.properties — every one of them green. A `dotnet
+      # new` app missing its wrapper JAR is a tree whose FIRST command fails, and
+      # it would have shipped. The .gitignore find in this same phase proved a
+      # template file can silently never exist; the pin was blind to 7 of the 32
+      # that do.
+      #   +1  TemplateContentTree_IsExactlyTheExpectedManifest — the template's
+      #       content tree ENUMERATED FROM DISK and held equal to a 32-name
+      #       expected manifest: reds on a REMOVED file and on an ADDED one. The
+      #       enumeration matches the pack's OWN glob (`content/**` minus
+      #       bin/obj), so it is not a proxy for the nupkg's inventory, it IS the
+      #       nupkg's inventory. The manifest is an EXPECTED VALUE, not a roster
+      #       of subjects — that distinction IS 8.1's I-2 (enumerate what you
+      #       MEASURE, declare what you EXPECT); the old code inverted it, which
+      #       is why shrinking the declaration shrank the test.
+      #       Mutation: the reviewer's 7 deletions -> ONE red naming all seven.
+      #   +1  EveryRepoShellSource_IsInTheTemplate_OrIsDeliberatelyRepoOnly —
+      #       the OTHER side of the set. Both pins above walk the TEMPLATE's
+      #       tree, so neither can see src/ growing a shell file the template
+      #       never gets — the exact drift TemplateDriftTests' header has always
+      #       claimed to catch ("a shell change that skips the template REDS
+      #       HERE") and did not. Enumerates the repo's three mirrored subtrees
+      #       (src/main/kotlin, src/androidMain/kotlin, src/androidMain/res); a
+      #       file is in the template or NAMED repo-only with a reason (the
+      #       inspector/preview stack). That list is an EXCLUSION list, not a
+      #       roster — nothing derives from it, it only forgives — the same shape
+      #       as the pack csproj's `Exclude=`. It matters beyond tidiness: the
+      #       template's gradle compiles those subtrees in the GENERATED tree, so
+      #       a missed copy is every generated app failing to compile, and
+      #       build-test — the lane that OWNS this contract — would have said
+      #       nothing (template-smoke's assembleDebug would eventually name an
+      #       unresolved symbol instead of the cause).
+      #       Mutation: a new .kt in src/'s androidMain -> red naming the path.
+      # Also this commit (no count move): M-1's comment-stripping (above), M-2's
+      # version-literal floor (`>= 5` while the pin collects SIX — a floor below
+      # the real count is a floor never reached) replaced by a NAMED SET that
+      # reds on the dropped PackageReference and names it, and Pin A's "exactly
+      # TWO places" corrected to THREE after Gate 2's R-import fix.
       # Also this commit (no count move): ci.yml's Yoga parity step learns about
       # the template's build.gradle.kts — ONE ENGINE, now FOUR FILES (a
       # generated app that lays out differently from both shells, silently, is
@@ -942,7 +1013,7 @@ jobs:
       # ancestor Import in src/Directory.Build.props. NO library code change,
       # NO wire/ABI change, NO golden moved: the gates below stay 4 IL2072 /
       # 9 exports / 106 JVM (win-x64 re-verified clean this commit).
-      - name: .NET tests (assert 568 passed / 0 skipped)
+      - name: .NET tests (assert 570 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -960,8 +1031,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 568 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 568 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 570 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 570 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # ── NativeAOT publishes + nine-export verification ────────────────────
