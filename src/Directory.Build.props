@@ -119,9 +119,18 @@
          NO Exists GUARD, deliberately — and the asymmetry with README.md
          above is the point. A README may legitimately be absent from a
          project; this icon is one shared file that must always exist, and
-         PackageIcon pointing at a file the package does not carry fails
-         pack as NU5046. THE PACK IS THE PIN, exactly as NU5039 is the
-         readme's — no test needed, and none added.
+         a missing one fails pack as NU5019, "File not found":
+
+           NuGet.Build.Tasks.Pack.targets(222,5): error NU5019: File not
+           found: '...\src\icon.png'            pack exit 1
+
+         THE PACK IS THE PIN, exactly as NU5039 is the readme's — no test
+         needed, and none added. MEASURED, not predicted (8.4 review, S2-5):
+         this said NU5046 (the PackageIcon-not-in-package error) until the
+         mutation was actually run. Because the <None> below carries no
+         Exists() guard, the ITEM fails first and pack never reaches the icon
+         check. The pin is real either way — the code it fires under is not
+         the one this comment claimed.
 
          PNG, not the site's SVG: nuget.org accepts JPEG/PNG only (<=1 MB).
          Both encodings are rendered from website/static/img/logo.svg, and a

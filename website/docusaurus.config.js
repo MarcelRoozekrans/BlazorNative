@@ -20,6 +20,30 @@ const config = {
   // cross-references true, and it governs INTERNAL links only — external rot is
   // unpinnable and accepted.
   onBrokenLinks: 'throw',
+  // AND ANCHORS ARE THE OTHER HALF OF THAT SURFACE (8.4 review, S2-1). The
+  // default is 'warn', which means a dead `#anchor` prints a WARNING and deploys
+  // — `[WARNING] Docusaurus found broken anchors!` followed by `[SUCCESS]`, exit
+  // 0. `onBrokenLinks: 'throw'` above does NOT cover them: it decides pages, not
+  // fragments.
+  //
+  // THIS SITE IS THE CASE THAT NEEDS IT. The component reference is GENERATED
+  // from `<see cref="..."/>`, which xmldoc2md renders as intra-page anchor links
+  // — so the largest body of anchors here is machine-written from C# doc
+  // comments that no one proofreads. Gate 2 fixed five broken anchors at the
+  // source cref; with the default nothing keeps them fixed, and the next bad
+  // cref rots a link that reports SUCCESS.
+  //
+  // Docusaurus agrees, and says so in its own default:
+  //   configValidation.js:123 — `onBrokenAnchors: 'warn', // TODO Docusaurus v4:
+  //   change to throw`
+  // This is v4's behaviour, adopted early rather than inherited late.
+  //
+  // MUTATION (Gate 4): a link to /docs/analyzers#bn9999 ->
+  //   [ERROR] Error: Unable to build website for locale en.
+  //     [cause]: Error: Docusaurus found broken anchors!
+  //        -> linking to /BlazorNative/docs/analyzers#bn9999
+  //   exit 1
+  onBrokenAnchors: 'throw',
 
   markdown: {
     // Divergence 4, and it is FORCED BY THE GENERATED REFERENCE (8.4 decision 3).
@@ -51,11 +75,14 @@ const config = {
     },
   },
 
+  // NO og:image HERE, DELIBERATELY (8.4 review, S2-3). A handwritten
+  // `og:image` full URL used to sit at the top of this list, and it was a THIRD
+  // copy of the baseUrl inside the very file the one-home rule is about —
+  // widening U2's blast radius for nothing. `themeConfig.image` below already
+  // emits a baseUrl-aware `og:image`, so the handwritten one was pure
+  // duplication: the built HTML carries exactly one og:image tag either way
+  // (verified in build/index.html).
   headTags: [
-    {
-      tagName: 'meta',
-      attributes: { property: 'og:image', content: 'https://marcelroozekrans.github.io/BlazorNative/img/social-card.svg' },
-    },
     {
       tagName: 'meta',
       attributes: { property: 'og:title', content: 'BlazorNative' },
@@ -98,13 +125,38 @@ const config = {
   themeConfig:
     /** @type {import('@docusaurus/preset-classic').ThemeConfig} */
     ({
-      image: 'img/social-card.svg',
+      // PNG, NOT THE SVG (8.4 review, S2-4) — and this is decision 6's lesson
+      // arriving a second time. NuGet taught it ("JPEG/PNG only, SVG
+      // unsupported") and it did not transfer to the social card: X, Facebook,
+      // LinkedIn and Slack ALL require a raster og:image, so an SVG here means
+      // `twitter:card: summary_large_image` renders NO preview at all — a link
+      // to this site posts as a bare URL. Nothing reds; the tag is present and
+      // the file resolves 200. The unfurl is simply blank.
+      //
+      // social-card.svg stays as the SOURCE and social-card.png is rendered
+      // from it, mirroring the icon's story (both encodings from one vector).
+      image: 'img/social-card.png',
       navbar: {
         title: 'BlazorNative',
         logo: {
           alt: 'BlazorNative Logo',
           src: 'img/logo.svg',
-          href: '/BlazorNative/',
+          // `href: '/'`, NOT the hardcoded '/BlazorNative/' (8.4 review, S2-3).
+          // Docusaurus resolves this through useBaseUrl — theme-classic's
+          // Logo/index.js is literally `useBaseUrl(logo?.href || '/')` — so '/'
+          // becomes /BlazorNative/ from the ONE baseUrl above, and follows it if
+          // it ever changes.
+          //
+          // The old hardcoded copy WORKED, and only by luck: addBaseUrl skips
+          // prefixing when the url already startsWith(baseUrl). Change baseUrl to
+          // '/Foo/' and that guard stops matching — the logo link becomes
+          // /Foo/BlazorNative/ and 404s. That is U2's blast radius, and this is
+          // one of the two copies inside the file the one-home rule is about.
+          //
+          // NOT `to:` — the review prescribed it, and the build refuses it:
+          // `"navbar.logo.to" is not allowed`. `to` is for navbar ITEMS; the logo
+          // schema takes `href` only. The build is the pin that said so.
+          href: '/',
         },
         items: [
           {

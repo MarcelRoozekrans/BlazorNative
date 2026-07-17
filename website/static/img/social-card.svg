@@ -11,6 +11,12 @@
   </g>
 
   <text x="432" y="286" font-family="Segoe UI, Helvetica Neue, Arial, sans-serif" font-size="76" font-weight="700" fill="#FFFFFF">BlazorNative</text>
-  <text x="432" y="346" font-family="Segoe UI, Helvetica Neue, Arial, sans-serif" font-size="30" fill="#C4B5FD">Blazor components rendered as real Android and iOS views</text>
-  <text x="432" y="392" font-family="Segoe UI, Helvetica Neue, Arial, sans-serif" font-size="30" fill="#C4B5FD">— no WebView, no JavaScript</text>
+  <!-- The line break falls HERE and not at the em-dash, because SVG text does not
+       wrap: the old line 1 ran to ~1232px and the viewBox ends at 1200, so the
+       final "s" of "views" was clipped off. Nothing rendered this file, so
+       nothing showed it — the SVG never reached a rasterizer until the PNG
+       beside it was rendered from it (8.4 review, S2-4). Both lines now end
+       inside 1140. -->
+  <text x="432" y="346" font-family="Segoe UI, Helvetica Neue, Arial, sans-serif" font-size="30" fill="#C4B5FD">Blazor components rendered as real</text>
+  <text x="432" y="392" font-family="Segoe UI, Helvetica Neue, Arial, sans-serif" font-size="30" fill="#C4B5FD">Android and iOS views — no WebView, no JavaScript</text>
 </svg>

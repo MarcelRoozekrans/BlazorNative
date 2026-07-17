@@ -290,9 +290,7 @@ public sealed class BnImage : ComponentBase
 
     /// <summary>Declared height, e.g. <c>"120"</c>. Null = auto. The sizing rule is
     /// <see cref="Width"/>'s and is stated there: BOTH set → definite, never
-    /// measured; NEITHER set → intrinsic. (Its own summary rather than an
-    /// <c>inheritdoc</c> of <see cref="Width"/>, which would document this property
-    /// as "declared width" — <see cref="BnScroll"/>'s precedent.)</summary>
+    /// measured; NEITHER set → intrinsic.</summary>
     [Parameter] public string? Height { get; set; }
 
     /// <inheritdoc cref="BnView.MinWidth"/>

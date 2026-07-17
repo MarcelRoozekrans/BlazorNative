@@ -91,7 +91,10 @@ Write-Host "==> generate-reference: xmldoc2md -> $OutputPath"
 #     ComponentBase hands every component — RendererInfo, Assets,
 #     AssignedRenderMode. Those are ASP.NET Core's web-hosting concepts; this
 #     framework renders to native widgets and has no such thing. Publishing them
-#     on all 21 component pages would tell a stranger the opposite of the truth.
+#     on all 15 component pages would tell a stranger the opposite of the truth.
+#     (15 = the concrete ComponentBase-derived types, measured; "21" was carried
+#     here from an older count and was never true of this assembly — 8.4 review,
+#     S1-3. Pin 1 holds the real number.)
 #     `public` is the consumer's surface, which is what a consumer reference is.
 dotnet xmldoc2md $assembly -o $OutputPath --platform docusaurus --member-accessibility-level public | Out-Host
 if ($LASTEXITCODE -ne 0) { throw "xmldoc2md failed (exit $LASTEXITCODE)" }

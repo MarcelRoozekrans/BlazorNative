@@ -274,8 +274,13 @@ try {
         # file shared by all six — the identity is the framework's, not a
         # package's — and it packs to the ROOT, which is exactly why it costs
         # the counts above and the lib/net10.0 inventory tooth below NOTHING.
-        # Pack is already the pin (PackageIcon naming an unpacked file is
-        # NU5046, and step 1's zero-pack-warning bar catches it); these two
+        # Pack is already the pin, and MEASURED (8.4 review, S2-5): delete
+        # src/icon.png and pack fails `error NU5019: File not found` with exit
+        # 1 — an ERROR, not a warning, so it is pack itself that stops the
+        # build and not step 1's zero-pack-warning bar. (This said NU5046
+        # caught by the warning bar; both halves were wrong, and neither had
+        # been run. The <None> carries no Exists() guard, so the item fails
+        # before pack reaches the NU5046 icon-not-in-package check.) These two
         # lines mirror the readme's pair because the loop is already holding
         # the unzipped package open and the marginal cost is two lines.
         if ($meta.icon -ne "icon.png") {
