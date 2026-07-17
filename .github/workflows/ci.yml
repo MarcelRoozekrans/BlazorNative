@@ -4,7 +4,7 @@
 #
 #   build-test (windows-latest) — the local verification procedure verbatim
 #   (setup.ps1 §1–7 documents the toolchain pins):
-#     build (analyzers ride it) → .NET tests (574 passed / 0 skipped) →
+#     build (analyzers ride it) → .NET tests (577 passed / 0 skipped) →
 #     three NativeAOT publishes of samples/BlazorNative.SampleApp — the
 #     publish head since Phase 8.0: the app owns PublishAot, the exports stay
 #     in Runtime via UnmanagedEntryPointsAssembly, and the artifact is
@@ -1075,7 +1075,73 @@ jobs:
       # -> error CS1591 ... 1 Error(s), exit 1. The price was 8 <inheritdoc />
       # lines, exactly the measured gap. NO wire/ABI change, NO golden moved, NO
       # shell code touched: 4 IL2072 / 9 exports / 106 JVM stand.
-      - name: .NET tests (assert 574 passed / 0 skipped)
+      #
+      # 574 -> 577 (PHASE 8.4 GATE 4, +3 — Runtime.Tests 419 -> 420, Analyzers.Tests
+      # 23 -> 25): the review's two Important findings, fixed rather than deferred.
+      #
+      #   +1  EveryParameter_CarriesADocComment (Runtime.Tests) — PIN 2 GUARANTEED
+      #       HALF OF WHAT THE TAXONOMY CLAIMED FOR IT (review S1-1, which said
+      #       51% — it is 50%; see the count correction below). "Every public
+      #       component member is documented | PINNED | CS1591 as an error" is FALSE
+      #       for .razor: the Razor generator emits `#pragma warning disable 1591`
+      #       at line 3 of every *_razor.g.cs and an @code-block [Parameter] is
+      #       declared INSIDE that file. Read the mutation above and the hole is
+      #       visible in it — Pin 2 was proven with BnButton.Label, and BnButton is
+      #       .cs. Measured split, BY REFLECTION, of the 196 [Parameter]s: 98 in
+      #       .cs (Pin 2 holds them), 98 in .razor (Pin 2 cannot see them) —
+      #       EXACTLY HALF. Nor did EveryPublicComponent_CarriesATypeLevelSummary
+      #       cover it: that pins TYPE-level summaries, which is adjacent.
+      #       MUTATION (the reviewer's, re-run here): delete BnSlider.Value's
+      #       <summary> — the property @bind-Value targets. BEFORE: 0 Warning(s),
+      #       0 Error(s), 4/4 pins green, and P:...BnSlider.Value simply GONE from
+      #       the shipped XML. AFTER ->
+      #         1 of 196 [Parameter] properties have NO <summary> and no
+      #         <inheritdoc> in the shipped XML:
+      #             BnSlider.Value
+      #       An <inheritdoc> counts and must: 124 of the 196 are documented that
+      #       way (BnView's flex/box vocabulary re-exposed by BnFlexPreset, the
+      #       four .razor form controls, BnScroll, BnImage), where one home for the
+      #       sentence is the right answer.
+      #       AND THE PIN CORRECTED THE PHASE'S OWN NUMBER, first run: every source
+      #       here said 192 — the design, the review that reproduced it, this file.
+      #       192 came from `grep '\[Parameter\]'`, which cannot see the four
+      #       `[Parameter, EditorRequired]` declarations in BnList.razor (it read
+      #       BnList as 2; the assembly has 6). ilspycmd over the DLL says 196;
+      #       `grep -cE '\[Parameter[],]'` says 98+98=196. THE PIN DERIVES ITS
+      #       COUNT, which is the only reason the artifact surfaced instead of
+      #       being copied forward a fourth time.
+      #
+      #   +2  AnalyzerHelpLinkDriftTests (Analyzers.Tests) — the SEVEN packaged
+      #       helpLinkUri anchors (review S2-2). They were correct; nothing kept
+      #       them correct (`grep -rln helpLinkUri tests/` returned NOTHING), and
+      #       Gate 1 had already caught one by hand. This is the one link class
+      #       NO site build can reach: absolute external URLs that ship INSIDE a
+      #       nupkg, which onBrokenLinks/onBrokenAnchors never see — they check the
+      #       links the site CONTAINS. A wrong one is a permanent 404 for everyone
+      #       who installed that version; redeploying the site cannot fix it.
+      #       Subjects reflected from SupportedDiagnostics, anchors parsed from
+      #       website/docs/analyzers.md (code fences skipped — the page opens with
+      #       `#pragma warning disable BN0004` inside one), base derived from the
+      #       site's own url + baseUrl.
+      #       MUTATION 1: BN0004's link -> #bn0099 ->
+      #         1 of 7 shipped analyzer help link(s) point at an anchor that does
+      #         not exist.
+      #             BN0004 — #bn0099 matches no heading on the page: ...#bn0099
+      #       MUTATION 2: baseUrl -> '/BlazorNativeMoved/' ->
+      #         7 of 7 shipped analyzer help link(s) are NOT built on this site's
+      #         url + baseUrl.
+      #       That second red IS U2 seen from the package side: move the site and
+      #       all seven links rot at once, with no other witness anywhere.
+      #
+      # Also this commit (no count move): onBrokenAnchors: 'throw' (review S2-1 —
+      # the default 'warn' deployed broken anchors green, and the generated
+      # reference renders every <see cref> as an intra-page anchor); the icon's
+      # recorded error code NU5019, not NU5046 (S2-5, measured); the CS1591 switch
+      # comment pointed at .props, which is not the file that decides (S2-7); "21
+      # components" replaced by the measured 15/26 (S1-3); a PNG social card (S2-4).
+      # NO wire/ABI change, NO golden moved, NO shell code touched: 4 IL2072 /
+      # 9 exports / 106 JVM stand.
+      - name: .NET tests (assert 577 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -1093,8 +1159,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 574 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 574 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 577 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 577 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # ── NativeAOT publishes + nine-export verification ────────────────────

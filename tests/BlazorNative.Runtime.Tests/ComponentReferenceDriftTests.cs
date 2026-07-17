@@ -253,6 +253,102 @@ public sealed class ComponentReferenceDriftTests : IClassFixture<ComponentRefere
             + "assembly. CS1591 cannot help you here: the Razor generator disables it.");
     }
 
+    /// <summary>
+    /// Every <c>[Parameter]</c> a consumer can bind carries a doc comment — a
+    /// non-empty &lt;summary&gt; or an &lt;inheritdoc&gt;.
+    ///
+    /// PIN 2 GUARANTEES ROUGHLY HALF OF WHAT IT READS AS, AND THIS IS THE OTHER
+    /// HALF. CS1591-as-an-error is the stated mechanism for "every public
+    /// component member is documented", but it is structurally blind to .razor:
+    /// the Razor generator emits `#pragma warning disable 1591` at line 3 of
+    /// every *_razor.g.cs, and an @code-block [Parameter] is declared INSIDE
+    /// that generated file. The compiler is not lenient there — it is switched
+    /// off.
+    ///
+    /// Measured, this repo, when the pin was written: of 196 [Parameter]
+    /// properties, 98 live in .cs (Pin 2 holds them) and 98 live in .razor
+    /// (Pin 2 cannot see them) — EXACTLY HALF. The mutation that proves it: delete
+    /// BnSlider.Value's summary and the build is `0 Warning(s), 0 Error(s)` —
+    /// while P:BlazorNative.Components.BnSlider.Value vanishes from the shipped
+    /// XML. That is the property `@bind-Value` targets. Its reference row goes
+    /// blank, its IDE tooltip goes empty, and nothing anywhere turns red.
+    ///
+    /// EveryPublicComponent_CarriesATypeLevelSummary above does not cover this:
+    /// it asserts TYPE-level summaries. A component can carry a perfect class
+    /// summary and document not one of its parameters.
+    ///
+    /// THE COUNT IS DERIVED, AND THAT IS NOT PEDANTRY — IT IS HOW THE NUMBER GOT
+    /// FIXED. Every hand-written source in this repo said "192", from the design
+    /// down. 192 came from `grep '\[Parameter\]'`, which cannot see
+    /// `[Parameter, EditorRequired]` — and BnList.razor declares four of them.
+    /// This pin reflects, so the first time it ran it said 196; ilspycmd over the
+    /// DLL agrees. A pin that trusts a number a human typed inherits that human's
+    /// blind spot.
+    ///
+    /// AN <inheritdoc> COUNTS, and must — it is how 124 of the 196 are
+    /// documented (BnFlexPreset 23; BnCheckbox/BnPicker/BnSlider/BnSwitch 17
+    /// each; BnScroll 16; BnImage 15; BnModal 2). Those are overwhelmingly
+    /// BnView's flex and box vocabulary re-exposed, where
+    /// `<inheritdoc cref="BnView.Shrink"/>` is the RIGHT answer: one home for the
+    /// sentence, and xmldoc2md resolves it on the page. Demanding a hand-written
+    /// summary per property would be demanding the 124 copies this repo exists to
+    /// refuse.
+    ///
+    /// Subjects reflected, expectation declared, never a roster.
+    /// </summary>
+    [Fact]
+    public void EveryParameter_CarriesADocComment()
+    {
+        XDocument xml = ShippedXml();
+
+        // id -> the member element, so <inheritdoc/> is visible AS an element.
+        // PublicSurfaceDocs() cannot serve here and the reason is worth stating:
+        // it returns member.Value, and an inheritdoc-only member's Value is the
+        // EMPTY STRING — indistinguishable from an undocumented one. Reading the
+        // elements is the difference between this pin and a pin that reds on 124
+        // correctly-documented properties.
+        var documented = xml.Descendants("member")
+            .Where(m => m.Attribute("name") is not null)
+            .Where(m => !string.IsNullOrWhiteSpace(m.Element("summary")?.Value)
+                        || m.Element("inheritdoc") is not null)
+            .Select(m => m.Attribute("name")!.Value)
+            .ToHashSet(StringComparer.Ordinal);
+
+        // The subjects: every [Parameter]-decorated public property on a public
+        // type, DeclaredOnly so an inherited parameter is attributed to the type
+        // that declares it — which is where its XML id lives.
+        const BindingFlags flags = BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly;
+        var parameters = PublicTypes()
+            .SelectMany(t => t.GetProperties(flags)
+                .Where(p => p.IsDefined(typeof(ParameterAttribute), inherit: false))
+                .Select(p => (Id: $"P:{t.FullName}.{p.Name}", Type: t.Name, Property: p.Name)))
+            .OrderBy(x => x.Id, StringComparer.Ordinal)
+            .ToList();
+
+        // NON-VACUITY, and it is not ceremony: this pin's whole subject is a set
+        // reflection could silently return empty for (wrong assembly, wrong
+        // attribute type, a BindingFlags typo). An empty subject set makes every
+        // assertion below green while proving nothing at all.
+        Assert.True(parameters.Count > 100,
+            $"reflected only {parameters.Count} [Parameter] properties out of BlazorNative.Components "
+            + "— there were 196 when this pin was written. A pin that cannot see its subject must "
+            + "never pass vacuously.");
+
+        var undocumented = parameters
+            .Where(p => !documented.Contains(p.Id))
+            .ToList();
+
+        Assert.True(undocumented.Count == 0,
+            $"{undocumented.Count} of {parameters.Count} [Parameter] properties have NO <summary> "
+            + "and no <inheritdoc> in the shipped XML:\n"
+            + string.Join("\n", undocumented.Select(p => $"    {p.Type}.{p.Property}"))
+            + "\n\nEach one is a bindable parameter whose reference row renders blank and whose IDE "
+            + "tooltip is empty. IF THE PROPERTY IS DECLARED IN A .razor @code BLOCK, THE COMPILER "
+            + "WILL NOT HELP YOU: the Razor generator disables CS1591 in the file it generates, so "
+            + "the build is green and the doc is simply gone. Write the `///` above the [Parameter], "
+            + "or `<inheritdoc cref=\"...\"/>` if BnView already says it.");
+    }
+
     // ── PIN 3 — the reference is written for strangers ───────────────────────
 
     /// <summary>
