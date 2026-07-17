@@ -38,20 +38,21 @@ class ShellBridgeTest {
     // ── Struct drift tests ───────────────────────────────────────────────────
 
     /**
-     * BlazorNativeBridgeCallbacks must be 72 bytes on x64 since Phase 5.4
-     * (9 × 8-byte fn pointers — clipboard read/write + share appended); both
-     * fetch structs 32 bytes (request: 4 pointers; response: 2 × int + 3
-     * pointers). Mirrors BridgeProtocolNativeTests.cs — if either side drifts,
-     * this catches it before pointers read garbage.
+     * BlazorNativeBridgeCallbacks must be 80 bytes on x64 since Phase 9.0
+     * (10 × 8-byte fn pointers — hostCallBegin appended at offset 72; clipboard
+     * read/write + share were appended at 48/56/64 in Phase 5.4); both fetch
+     * structs 32 bytes (request: 4 pointers; response: 2 × int + 3 pointers).
+     * Mirrors BridgeProtocolNativeTests.cs — if either side drifts, this catches
+     * it before pointers read garbage.
      */
     @Test
-    fun callbacks_struct_is_72_bytes() {
+    fun callbacks_struct_is_80_bytes() {
         // NOTE: Native.getNativeSize(cls) reports POINTER size (8) for
         // non-ByValue Structure classes (struct-by-reference IS a pointer);
         // Structure.size() computes the actual layout.
         assertEquals(
-            72, BlazorNativeBridgeCallbacks().size(),
-            "BlazorNativeBridgeCallbacks must be 9 × 8-byte fn pointers = 72 bytes; " +
+            80, BlazorNativeBridgeCallbacks().size(),
+            "BlazorNativeBridgeCallbacks must be 10 × 8-byte fn pointers = 80 bytes; " +
                 "FieldOrder drifted from BridgeProtocolNative.cs"
         )
         assertEquals(

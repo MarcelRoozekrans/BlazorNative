@@ -7,6 +7,13 @@
          ServerSocket responder (EPERM without it). -->
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- Phase 9.0 (M9 DoD #2): geolocation. The permission-gated async host call
+         (AndroidShellBridge.hostCallBegin → requestPermissions → LocationManager)
+         needs both fine and coarse; the platform LocationManager (fed by
+         `adb emu geo fix` / a mock test provider) is the no-Play-Services path. -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+
     <application
         android:label="BlazorNative"
         android:allowBackup="true"

@@ -160,6 +160,13 @@ class MainActivity : Activity() {
      * deprecated [onBackPressed] fallback). Held so it could be unregistered. */
     private var backCallback: OnBackInvokedCallback? = null
 
+    /** Phase 9.0: the shell bridge, held as a field so [onRequestPermissionsResult]
+     * can forward the OS permission callback into it. Assigned in onCreate; a
+     * recreated Activity builds a FRESH bridge (the app-scoped requestCode→requestId
+     * map is static on AndroidShellBridge, so the in-flight request still routes —
+     * the recreation-survival design). */
+    private var shellBridge: AndroidShellBridge? = null
+
     /** Phase 6.1: held as a field so [onDestroy] can tear its trees down. The
      * runtime's frame callback captures it and OUTLIVES this Activity (the native
      * session is process-global), so an un-destroyed mapper keeps a dead Activity's
@@ -225,6 +232,7 @@ class MainActivity : Activity() {
         // safe — AndroidShellBridge captures applicationContext ONLY (the
         // process-lifetime retention contract on ShellBridgeHandlers).
         val bridge = AndroidShellBridge(this, initialRoute = deepLinkRoute ?: "/", onError = onError)
+        shellBridge = bridge
 
         val componentName = intent.getStringExtra(EXTRA_COMPONENT)
             ?: deepLinkRoute?.let { DEEP_LINK_COMPONENTS[it] }
@@ -290,6 +298,26 @@ class MainActivity : Activity() {
         // (isInitialized: a throw in onCreate before the assignment still destroys.)
         if (::mapper.isInitialized) mapper.destroy()
         super.onDestroy()
+    }
+
+    // ── Permission results → the shell bridge (Phase 9.0, M9 DoD #1) ──────────
+
+    /**
+     * Forwards the system permission-dialog result into the app-scoped
+     * [AndroidShellBridge], which looks the in-flight requestId up in its STATIC
+     * requestCode→requestId map and completes the .NET call (grant → fetch a fix;
+     * deny → a tri-state status). This callback may land on a RECREATED Activity —
+     * the map is static precisely so the fresh bridge this recreated Activity built
+     * still routes the result to the right in-flight .NET continuation (the phase's
+     * named risk). A requestCode the shell never issued is ignored.
+     */
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray,
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        shellBridge?.onPermissionResult(requestCode, permissions, grantResults)
     }
 
     // ── Predictive / system back → NavigateBack (Phase 5.1) ──────────────────

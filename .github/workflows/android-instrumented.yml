@@ -17,7 +17,7 @@
 #   emulator (ubuntu-latest, KVM) — downloads the .so, boots the API 34
 #     google_apis x86_64 Pixel 6 image (mirrors the local AVD
 #     blazornative-pixel6-x86_64), runs connectedAndroidTest with
-#     -PciSoDir pointing at the artifact → asserts 184 passed / 0 failed.
+#     -PciSoDir pointing at the artifact → asserts 188 passed / 0 failed.
 #
 # Baselines are asserted, not observed: count drift fails the job loudly.
 # ─────────────────────────────────────────────────────────────────────────────
@@ -802,7 +802,43 @@ jobs:
       #   The iOS twin lands in the same gate (BnImagePolishMapperTests,
       #   153 -> 154). Count-neutral in this gate: H1's header repoint and H2's
       #   scrollDiagnostics -> diagnostics rename.
-      - name: Assert instrumented baseline (184 passed / 0 failed)
+      # ── Phase 9.0 Gate 2 — GEOLOCATION + the permission pattern (184 -> 188, +4) ──
+      # AndroidShellBridge's real permission-gated flow on the AVD: hostCallBegin (the
+      # generic 80-byte/10-export ABI Gate 1 grew) wired for op=Geolocation ->
+      # requestPermissions / onRequestPermissionsResult -> platform LocationManager ->
+      # host_call_complete -> .NET -> echo. DENIAL IS DATA, never a hang. Each count
+      # mutation-verified (break the thing, watch the RIGHT test go red):
+      #   +2 BnGeolocationAndroidTest (permission NOT held -- the prompt path):
+      #      .locate_denied_shows_a_denial_status_within_a_bounded_await_no_hang --
+      #        tap Locate -> the request is captured (the real system dialog is
+      #        owner-phone territory, the PROVEN/UNPROVEN split) -> deliver a DENY
+      #        through the REAL MainActivity.onRequestPermissionsResult -> the awaiting
+      #        .NET ValueTask resolves to a denial the echo SHOWS, within a bounded
+      #        await. MUTATION: the deny path THROWS instead of statusing -> the
+      #        completion never lands -> the echo stays blank -> this times out and
+      #        reds (the milestone's no-hang law, on device).
+      #      .pending_permission_request_survives_activity_recreation -- THE NAMED
+      #        ANDROID RISK. Tap Locate (request airborne; the app-scoped
+      #        requestCode->requestId map holds it) -> scenario.recreate() (a fresh
+      #        Activity + fresh bridge, what the OS dialog can force) -> the STATIC map
+      #        still holds the entry -> deliver the result to the RECREATED Activity ->
+      #        host_call_complete returns rc 0 (the process-scoped .NET registry never
+      #        noticed the recreation; the map routed to the right in-flight id).
+      #        MUTATION: mis-key the map (store requestCode+1) -> the recreated
+      #        Activity's result finds no entry -> rc never 0 -> this AND the fix
+      #        round-trip red.
+      #   +2 BnGeolocationGrantedAndroidTest (permission HELD -- GrantPermissionRule):
+      #      .locate_with_permission_granted_round_trips_a_real_fix -- a mock GPS test
+      #        provider seeds a fix (the CI-deterministic equivalent of `adb emu geo
+      #        fix <lon> <lat>`, feeding the same getLastKnownLocation(GPS) the bridge
+      #        reads) -> tap Locate -> the fix crosses request->grant->LocationManager
+      #        ->host_call_complete->.NET and the echo shows "fix:52.3702,4.8952". A
+      #        real Granted position, end to end. MUTATION: the struct left at 72 bytes
+      #        -> the drift/marshal pin (ShellBridgeTest) reds before this runs.
+      #      .check_permission_reports_granted_without_prompting -- the read-only
+      #        CheckPermissionAsync path (mode=check): tap Check -> echo
+      #        "status:Granted" with ZERO permission requests raised (never prompts).
+      - name: Assert instrumented baseline (188 passed / 0 failed)
         run: |
           shopt -s globstar nullglob
           xmls=(src/BlazorNative.Jni/build/outputs/androidTest-results/connected/**/*.xml)
@@ -819,8 +855,8 @@ jobs:
             s=$(attr skipped "$x");  skipped=$((skipped + ${s:-0}))
           done
           echo "Instrumented totals across ${#xmls[@]} suite(s): tests=$tests failures=$failures errors=$errors skipped=$skipped"
-          if [ "$tests" -ne 184 ] || [ "$failures" -ne 0 ] || [ "$errors" -ne 0 ] || [ "$skipped" -ne 0 ]; then
-            echo "Instrumented test baseline drift: expected 184 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped" >&2
+          if [ "$tests" -ne 188 ] || [ "$failures" -ne 0 ] || [ "$errors" -ne 0 ] || [ "$skipped" -ne 0 ]; then
+            echo "Instrumented test baseline drift: expected 188 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped" >&2
             exit 1
           fi
 
