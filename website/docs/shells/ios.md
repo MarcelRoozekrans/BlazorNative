@@ -1,3 +1,10 @@
+---
+id: ios
+title: The iOS shell
+sidebar_label: iOS
+sidebar_position: 2
+---
+
 # Adding an iOS shell to a BlazorNative app
 
 **There is no `dotnet new` template for iOS.** This is a manual procedure against a

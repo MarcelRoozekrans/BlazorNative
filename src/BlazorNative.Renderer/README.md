@@ -1,6 +1,6 @@
 # BlazorNative.Renderer
 
-The [BlazorNative](https://github.com/MarcelRoozekrans/BlazorNative) renderer: it
+The [BlazorNative](https://marcelroozekrans.github.io/BlazorNative/) renderer: it
 drives Blazor's RenderTree diffing into a native widget tree and emits binary UI
 patch frames that platform shells (Kotlin/Android, Swift/iOS) apply to real native
 views. NativeAOT/trim-compatible.
@@ -29,4 +29,4 @@ concern.
 Preview (`1.0.0-preview.N`): BlazorNative is a proof of concept heading toward a
 stable release. The ABI and component surface may still move between previews.
 
-License: MIT · Source: <https://github.com/MarcelRoozekrans/BlazorNative>
+License: MIT · Docs: <https://marcelroozekrans.github.io/BlazorNative/>

@@ -64,6 +64,41 @@
   </PropertyGroup>
 
   <PropertyGroup>
+    <!-- PIN 2 (8.4 decision 3) — THE COMPILER IS THE PIN, FOR THE HALF IT CAN
+         SEE. This package's XML docs ARE the docs site's component reference, so
+         an undocumented public member is not a style lapse: it is a hole in a
+         published page. Flipping this un-suppresses CS1591 for THIS package only
+         (the switch itself lives in src/Directory.Build.targets — NOT .props,
+         which is where this comment pointed until the 8.4 review's S2-7: the
+         .props Import is evaluated before the csproj sets the flag, so the
+         NoWarn line had to move to .targets to see it at all. That move IS this
+         pin's second fix; a reader sent to .props finds the file that does not
+         decide), which makes an undocumented [Parameter] a build error rather
+         than a silent gap nobody measures.
+
+         The price was 8 <inheritdoc /> lines — the eight BuildRenderTree
+         overrides, which were the entire measured gap.
+
+         WHAT THIS DOES NOT COVER, AND IT IS ROUGHLY HALF (8.4 review, S1-1):
+         CS1591 is structurally blind to .razor. The Razor generator emits
+         `#pragma warning disable 1591` at line 3 of every *_razor.g.cs, and an
+         @code-block [Parameter] is declared INSIDE that generated file — so
+         deleting a summary there compiles clean, ships an XML with the property
+         gone, and empties a consumer's IDE tooltip with nothing red anywhere.
+         Measured by reflection: of the 196 [Parameter] properties, 98 are in
+         .cs (this pin holds them) and 98 are in .razor (this pin cannot see
+         them). EXACTLY HALF. EveryParameter_CarriesADocComment in Runtime.Tests
+         holds all 196 — it derives the number instead of trusting one, which is
+         how the count above got fixed: "192" was a grep artifact that could not
+         see BnList.razor's four [Parameter, EditorRequired] declarations.
+
+         Per-project NoWarn is established precedent here (Http.csproj,
+         Renderer.csproj). The other five packages stay suppressed, ledgered with
+         their number: 174. -->
+    <BnEnforceDocCoverage>true</BnEnforceDocCoverage>
+  </PropertyGroup>
+
+  <PropertyGroup>
     <!-- Phase 8.1: shared pack metadata lives in src/Directory.Build.props —
          only the per-package voice stays here. -->
     <Description>The public Bn* component library for BlazorNative apps: BnView, BnText, BnButton, BnInput, BnTheme and friends — sealed, AOT/trim-compatible Blazor components (authorable in .razor since Phase 7.1) targeting native widgets.</Description>

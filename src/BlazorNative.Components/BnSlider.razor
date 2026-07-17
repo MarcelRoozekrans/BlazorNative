@@ -60,28 +60,26 @@
         @onchange="HandleChange" />
 
 @code {
-    /// <summary>The current value. Always emitted (invariant) so the host
-    /// prop exists from mount.</summary>
+    /// <summary>The current value, between <see cref="Min"/> and
+    /// <see cref="Max"/>.</summary>
     [Parameter] public float Value { get; set; }
 
-    /// <summary>Raised with the new value on a host change event — the
-    /// write-back half of the <c>@bind-Value</c> pair.</summary>
+    /// <summary>Raised with the new value as the user drags — the write-back
+    /// half of the <c>@bind-Value</c> pair.</summary>
     [Parameter] public EventCallback<float> ValueChanged { get; set; }
 
-    /// <summary>Lower bound of the range — DECLARED on the wire (default 0),
-    /// never a shell-side default.</summary>
+    /// <summary>Lower bound of the range. Default 0.</summary>
     [Parameter] public float Min { get; set; }
 
-    /// <summary>Upper bound of the range — DECLARED on the wire (default
-    /// 100), never a shell-side default.</summary>
+    /// <summary>Upper bound of the range. Default 100.</summary>
     [Parameter] public float Max { get; set; } = 100f;
 
-    /// <summary>Snap increment. Null = continuous (the prop is absent from
-    /// the wire — the un-styled invariant).</summary>
+    /// <summary>Snap increment — the value moves in multiples of this. Null =
+    /// continuous.</summary>
     [Parameter] public float? Step { get; set; }
 
-    /// <summary>False disables the host widget (it renders disabled and
-    /// dispatches nothing). Default true.</summary>
+    /// <summary>Set false to show the platform's disabled slider and stop it
+    /// responding. Default true.</summary>
     [Parameter] public bool Enabled { get; set; } = true;
 
     // ── The flex ITEM surface (BnScroll's — how this leaf sits in its parent) ─

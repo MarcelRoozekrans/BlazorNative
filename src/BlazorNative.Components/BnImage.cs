@@ -165,12 +165,12 @@ namespace BlazorNative.Components;
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// <summary>
-/// A URL image — emits the <c>img</c> element (host NodeType "image"). The shell
-/// fetches, decodes and measures the bytes; .NET only names the source.
-/// <see cref="Src"/> is a <b>prop</b>, and the rest is <see cref="BnView"/>'s flex
-/// <b>item</b> surface (<see cref="Grow"/>, <see cref="Shrink"/>,
-/// <see cref="Basis"/>, <see cref="AlignSelf"/>, the box, <see cref="Margin"/>,
-/// <see cref="Position"/>).
+/// An image loaded from a URL. Renders as a native <c>ImageView</c> on Android
+/// and a <c>UIImageView</c> on iOS. The platform fetches, decodes and measures
+/// the bytes — your code only names the source. The rest of its surface is
+/// <see cref="BnView"/>'s flex <b>item</b> surface (<see cref="Grow"/>,
+/// <see cref="Shrink"/>, <see cref="Basis"/>, <see cref="AlignSelf"/>, the box,
+/// <see cref="Margin"/>, <see cref="Position"/>).
 /// </summary>
 /// <remarks>
 /// <para>
@@ -178,20 +178,18 @@ namespace BlazorNative.Components;
 /// <see cref="Width"/> <em>and</em> <see cref="Height"/> and the frame is exactly
 /// those numbers, always — the bytes never move it, so nothing below it ever
 /// reflows. Set NEITHER and the image is <em>intrinsic</em>: it measures
-/// <c>0 × 0</c> until its bytes arrive and its <b>natural pixel size</b> (in
-/// dp/pt) afterwards, at which point the shell marks its Yoga node dirty, the tree
-/// re-solves, and its siblings below move down. Exactly one reflow, never two.
+/// <c>0 × 0</c> until its bytes arrive and its <b>natural pixel size</b> (in dp
+/// or pt) afterwards, at which point the layout re-solves and its siblings below
+/// move down. Exactly one reflow, never two.
 /// </para>
 /// <para>
-/// <b>On failure the node stays <c>0 × 0</c></b>: it reserves no space, and it does
-/// not retry. On a <see cref="Src"/> change, or when the node is removed, the shell
-/// cancels the in-flight request — a completion must never paint into a removed
-/// node (on iOS that would touch a freed Yoga handle). And on
-/// <b><see cref="Src"/> → <c>null</c></b> — which the renderer emits as
-/// <c>UpdateProp("src", null)</c> — the shell cancels, <em>clears</em> the image,
-/// marks the node dirty and re-solves: an intrinsic image collapses back to
-/// <c>0 × 0</c> and its siblings move back <em>up</em>. That is the reflow in the
-/// other direction, and it is part of the contract.
+/// <b>On failure the node stays <c>0 × 0</c></b>: it reserves no space, and it
+/// does not retry. Changing <see cref="Src"/>, or removing the image, cancels the
+/// in-flight request, so a late arrival can never paint into something you have
+/// replaced. Setting <b><see cref="Src"/> to <c>null</c></b> clears the image and
+/// re-solves: an intrinsic image collapses back to <c>0 × 0</c> and its siblings
+/// move back <em>up</em>. That is the same reflow in the other direction, and it
+/// is part of the contract rather than an accident.
 /// </para>
 /// <para>
 /// <b>Not a flex container, and not a container at all.</b> There is no
@@ -201,79 +199,58 @@ namespace BlazorNative.Components;
 /// compose (a <see cref="BnView"/> parent with an absolutely positioned child).
 /// </para>
 /// <para>
-/// <b>The 6.3 ledger, resolved (Phase 7.5)</b> — <see cref="PlaceholderColor"/>,
-/// <see cref="OnError"/> and <see cref="ContentMode"/>, each designed as a
-/// measurement rule and each adding <em>zero</em> measurement states: a
-/// placeholder never measures, a failure never changes measurement, a mode is
-/// paint-only. The contract in the paragraphs above survives verbatim.
+/// <b>Nothing else here changes the sizing rules above.</b>
+/// <see cref="PlaceholderColor"/> never measures, <see cref="OnError"/> never
+/// changes measurement, and <see cref="ContentMode"/> is paint-only. Whatever you
+/// set among those three, the frame is the one the two paragraphs above describe.
 /// </para>
 /// </remarks>
 public sealed class BnImage : ComponentBase
 {
-    /// <summary>The image source — a URL the SHELL fetches (there is no binary
-    /// path on the wire). Rides the <c>UpdateProp</c> wire, <b>not</b> the
-    /// <c>SetStyle</c> one: it is neither layout nor paint, so it belongs to
-    /// neither half of the shells' style routing table (see the file header).
-    /// <para>Null = no source: nothing is fetched and the node keeps measuring
-    /// <c>0 × 0</c> (unless <see cref="Width"/>/<see cref="Height"/> say
-    /// otherwise). Changing it cancels any in-flight request for this node.</para>
-    /// <para><b>Setting it BACK to null is a real wire event</b>, not a no-op: it
-    /// emits <c>UpdateProp(nodeId, "src", null)</c> (the same shape
-    /// <see cref="BnButton.Enabled"/> uses when it leaves the tree), and the shells
-    /// must cancel, CLEAR the image, <c>markDirty</c> and re-solve — so an intrinsic
-    /// image collapses to <c>0 × 0</c> and its siblings move back UP. That is the
-    /// reflow in the other direction; see the file header.</para>
+    /// <summary>The image URL. The platform fetches it — you cannot hand this
+    /// component bytes.
+    /// <para>Null = no source: nothing is fetched, and the node keeps measuring
+    /// <c>0 × 0</c> unless <see cref="Width"/> and <see cref="Height"/> say
+    /// otherwise. Changing it cancels any request still in flight for this
+    /// image.</para>
+    /// <para><b>Setting it back to null is a real change, not a no-op:</b> the
+    /// image is cleared, and an intrinsic node collapses to <c>0 × 0</c> so its
+    /// siblings move back up.</para>
     /// </summary>
     [Parameter] public string? Src { get; set; }
 
-    /// <summary>The placeholder — a COLOR (Phase 7.5 design decision 1; not
-    /// content, not a second source), painted while a request is in flight and
-    /// kept as the error state's visual after a terminal failure; cleared when
-    /// the bytes paint (letterbox bars show <see cref="BackgroundColor"/>,
-    /// never the placeholder) and cleared with the image on
-    /// <see cref="Src"/> → null.
-    /// <para><b>It never measures and never reflows</b> — paint inside
-    /// whatever box Yoga already gave the node, so an <em>intrinsic</em>
-    /// image's placeholder is invisible (a 0 × 0 box paints nothing; correct,
-    /// not diagnosed). Rides the <c>UpdateProp</c> wire as
-    /// <c>placeholderColor</c> — a distinct prop from the input hint
-    /// <c>placeholder</c>, whose name has been taken since M2. Null = no
-    /// placeholder (and <c>placeholderColor → null</c> on a re-render clears
-    /// it — the prop-wire null precedent).</para></summary>
+    /// <summary>A colour to paint while the image is loading — a hex string, not
+    /// content and not a second image. It stays as the visible state if the load
+    /// fails, and is cleared once the real bytes paint. Null = no placeholder.
+    /// <para><b>It never measures and never reflows:</b> it paints inside
+    /// whatever box the layout already gave the node. That means an
+    /// <em>intrinsic</em> image's placeholder is invisible — a <c>0 × 0</c> box
+    /// paints nothing — so give the image a size if you want a placeholder to
+    /// show. Letterbox bars show <see cref="BackgroundColor"/>, never
+    /// this.</para></summary>
     [Parameter] public string? PlaceholderColor { get; set; }
 
-    /// <summary>How the bytes paint INSIDE the box Yoga computed (Phase 7.5
-    /// design decision 3). <b>Paint-only, normatively</b>: the mode never
-    /// consults or changes measurement, so every layout frame is
-    /// mode-invariant — and the paint never escapes the layout box (both
-    /// shells clip). Rides the <c>UpdateProp</c> wire as <c>contentMode</c>
-    /// with the strict lowercase wire words (<c>contain</c> / <c>cover</c> /
-    /// <c>stretch</c> / <c>center</c>).
-    /// <para>Null = unset: nothing on the wire, and the shells default to
-    /// <see cref="ImageContentMode.Contain"/> — the 6.3 contract row both
-    /// already render (deliberately NOT React Native's <c>cover</c>; the
-    /// recorded decision lives in ImageContentMode.cs). Removing the
-    /// parameter emits <c>contentMode → null</c>, which restores that default
-    /// (the <see cref="BnButton.Enabled"/>-null precedent).</para></summary>
+    /// <summary>How the pixels are painted inside the box the layout gave this
+    /// image. <b>Paint-only:</b> the mode never changes measurement, so every
+    /// frame is identical under all four modes and the paint never escapes the
+    /// box — both platforms clip it.
+    /// <para>Null leaves the platform default, which is <c>Contain</c>
+    /// (aspect-fit). Clearing the parameter restores that default. See
+    /// <see cref="ImageContentMode"/> for the four modes.</para></summary>
     [Parameter] public ImageContentMode? ContentMode { get; set; }
 
-    /// <summary>Raised when the shell's image load for this node terminates in
-    /// FAILURE (Phase 7.5 design decision 2 — the <c>error</c> event, the
-    /// <c>scroll</c> precedent). The args carry the failed <c>src</c>,
-    /// verbatim, and nothing else. OPTIONAL: the attach is emitted only when a
-    /// delegate is set (<c>HasDelegate</c> — the <see cref="BnScroll.OnScroll"/>
-    /// pattern), so an unwired BnImage's patch shape is byte-identical to the
-    /// pre-7.5 one and no existing golden churns.
-    /// <para><b>Failure never changes measurement</b>: a declared box holds
-    /// (it was declared, not failed, into its space), an intrinsic node stays
-    /// 0 × 0 — fallback UI is this handler's re-render (swap the
-    /// <see cref="Src"/>, unmount, show a message), never the shell's
-    /// self-mutation. Dispatched at most once per terminated request, only for
-    /// a live one (a superseded request's error is a stale callback and
-    /// dispatches nothing); CANCELLED — a <see cref="Src"/> change,
-    /// <see cref="Src"/> → null, node removal — is not an error and never
-    /// dispatches. Success has no wire signal (no <c>OnLoad</c> — out of
-    /// scope, named).</para></summary>
+    /// <summary>Raised when the image fails to load. The arguments carry the
+    /// failed URL and nothing else. Optional: nothing is attached to the native
+    /// control unless you supply a handler.
+    /// <para><b>Failure never changes measurement:</b> a declared box keeps its
+    /// size, an intrinsic node stays <c>0 × 0</c>. The platform will not
+    /// substitute anything of its own — a fallback is whatever you render from
+    /// this handler (swap the <see cref="Src"/>, unmount the image, show a
+    /// message).</para>
+    /// <para>It fires at most once per request, and only for the request that is
+    /// still current: cancelling — changing <see cref="Src"/>, setting it to
+    /// null, or removing the image — is not a failure and raises nothing. There
+    /// is no matching success event.</para></summary>
     [Parameter] public EventCallback<BnImageErrorEventArgs> OnError { get; set; }
 
     /// <inheritdoc cref="BnView.BackgroundColor"/>
@@ -313,9 +290,7 @@ public sealed class BnImage : ComponentBase
 
     /// <summary>Declared height, e.g. <c>"120"</c>. Null = auto. The sizing rule is
     /// <see cref="Width"/>'s and is stated there: BOTH set → definite, never
-    /// measured; NEITHER set → intrinsic. (Its own summary rather than an
-    /// <c>inheritdoc</c> of <see cref="Width"/>, which would document this property
-    /// as "declared width" — <see cref="BnScroll"/>'s precedent.)</summary>
+    /// measured; NEITHER set → intrinsic.</summary>
     [Parameter] public string? Height { get; set; }
 
     /// <inheritdoc cref="BnView.MinWidth"/>
@@ -347,6 +322,7 @@ public sealed class BnImage : ComponentBase
     /// <inheritdoc cref="BnView.Left"/>
     [Parameter] public string? Left { get; set; }
 
+    /// <inheritdoc />
     protected override void BuildRenderTree(RenderTreeBuilder b)
     {
         b.OpenElement(0, "img");

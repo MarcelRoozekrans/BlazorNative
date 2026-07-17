@@ -86,26 +86,25 @@
         @onchange="HandleChange" />
 
 @code {
-    /// <summary>The item display strings. Serialized to the flat-JSON array
-    /// grammar (BnItemsJson — the normative grammar) on the <c>items</c>
-    /// prop; <c>[]</c> when null/empty. Items are opaque display text —
-    /// commas, quotes, non-ASCII are all legal content.</summary>
+    /// <summary>The strings to show. Null or empty means an empty picker.
+    /// The text is opaque — commas, quotes and non-ASCII are all fine.</summary>
     [Parameter] public IReadOnlyList<string>? Items { get; set; }
 
-    /// <summary>The selection, CLAMPED per the normative rule (file header)
-    /// before it reaches the wire: -1 iff <see cref="Items"/> is empty,
-    /// otherwise into [0, Count-1].</summary>
+    /// <summary>The selected index. It is always clamped to something valid
+    /// before it reaches the platform: <c>-1</c> when <see cref="Items"/> is
+    /// empty, otherwise into <c>[0, Count-1]</c>. When the clamp moves it,
+    /// <see cref="SelectedIndexChanged"/> fires with the clamped value so your
+    /// bound state matches what is on screen.</summary>
     [Parameter] public int SelectedIndex { get; set; }
 
-    /// <summary>Raised with the newly selected index on a host change event
-    /// — the write-back half of the <c>@bind-SelectedIndex</c> pair. ALSO
-    /// raised with the clamped index when an items change forces a clamp
-    /// (the state-owner rule: the bound state re-syncs to what the native
-    /// widget shows).</summary>
+    /// <summary>Raised with the newly selected index when the user picks — the
+    /// write-back half of the <c>@bind-SelectedIndex</c> pair. It is <b>also</b>
+    /// raised with the clamped index when a change to <see cref="Items"/> forces
+    /// one, so your bound state never drifts from what the picker shows.</summary>
     [Parameter] public EventCallback<int> SelectedIndexChanged { get; set; }
 
-    /// <summary>False disables the host widget (it renders disabled and
-    /// dispatches nothing). Default true.</summary>
+    /// <summary>Set false to show the platform's disabled picker and stop it
+    /// responding. Default true.</summary>
     [Parameter] public bool Enabled { get; set; } = true;
 
     // ── The flex ITEM surface (BnScroll's — how this leaf sits in its parent) ─

@@ -47,9 +47,15 @@ options:
 # the image code calls Yoga only through the plain-C `bn_yoga_*` surface, exactly
 # as every other Swift file does.
 #
-# Pinned to 7.x: Kingfisher 7 supports iOS 12+ (this project targets 13.0) and its
-# `KingfisherManager.retrieveImage` is the API the shell is written against. A
-# major bump is a deliberate change, not a resolver's choice.
+# The `from:` below is the pin, and it is the ONE home for the version — this
+# comment names no number on purpose. `KingfisherManager.retrieveImage` is the API
+# the shell is written against and it survived the major bump; a further major bump
+# is a deliberate change, not a resolver's choice.
+#
+# (This comment read "Pinned to 7.x" until Phase 8.4. It was true when written at
+# 6.3, then Renovate bumped the dependency and the prose did not follow — so the
+# file stated 7 and meant 8. That is the whole reason the number lives in exactly
+# one place here now.)
 packages:
   Kingfisher:
     url: https://github.com/onevcat/Kingfisher.git

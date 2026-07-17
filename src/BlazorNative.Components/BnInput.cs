@@ -5,56 +5,54 @@ using Microsoft.AspNetCore.Components.Web;
 namespace BlazorNative.Components;
 
 /// <summary>
-/// Single-line text input — emits an <c>input</c> (host NodeType "input":
-/// EditText on Android) with <c>value</c> / <c>placeholder</c> props and a
-/// <c>change</c> event attach.
+/// A single-line text box. Renders as a native <c>EditText</c> on Android and a
+/// <c>UITextField</c> on iOS.
 /// </summary>
 /// <remarks>
-/// <para><b>@bind mechanics, not syntax</b> (Phase 3.4 design decision):
-/// this component ships the <see cref="Value"/> +
-/// <see cref="ValueChanged"/> (<c>EventCallback&lt;string&gt;</c>) pair —
-/// exactly what Razor's <c>@bind-Value</c> compiles to. The Razor syntax
-/// itself awaits .razor compilation (M6); until then parents wire the pair
-/// by hand: <c>Value</c> in, <c>ValueChanged</c> out.</para>
+/// <para>
+/// It exposes the <see cref="Value"/> / <see cref="ValueChanged"/> pair, which
+/// is what <c>@bind-Value</c> needs — so binding is the ordinary Blazor syntax:
+/// </para>
+/// <example>
+/// <code>
+/// &lt;BnInput @bind-Value="_name" Placeholder="Your name" /&gt;
 ///
-/// <para>The loop: host change event (EditText TextWatcher → 3.2 dispatch
-/// plumbing) → the <c>onchange</c> handler here invokes
-/// <see cref="ValueChanged"/> with the <see cref="ChangeEventArgs"/> value →
-/// parent state mutates → re-render → <c>UpdatePropPatch("value")</c> → the
-/// host writes the widget under its <c>applyingBatch</c> guard (no echo
-/// dispatch).</para>
-///
-/// <para><see cref="Enabled"/> follows BnButton's boolean-attribute
-/// semantics: <c>enabled</c> emitted only when false. Hand-written
-/// BuildRenderTree with gap-numbered sequences.</para>
+/// @code {
+///     private string _name = "";
+/// }
+/// </code>
+/// </example>
+/// <para>
+/// You can also wire the two halves by hand — <see cref="Value"/> in,
+/// <see cref="ValueChanged"/> out — when you need to intercept the edit.
+/// </para>
 /// </remarks>
 public sealed class BnInput : ComponentBase
 {
-    /// <summary>The current text. Always emitted (empty string included) so
-    /// the host prop exists from mount.</summary>
+    /// <summary>The current text. Null is sent as an empty string, so the text
+    /// box always has a definite value.</summary>
     [Parameter] public string? Value { get; set; }
 
-    /// <summary>Raised with the new text on a host change event — the
+    /// <summary>Raised with the new text when the user edits the box — the
     /// write-back half of the <c>@bind-Value</c> pair.</summary>
     [Parameter] public EventCallback<string> ValueChanged { get; set; }
 
-    /// <summary>Hint text shown while empty. Null = unset.</summary>
+    /// <summary>Hint text shown while the box is empty. Null = none.</summary>
     [Parameter] public string? Placeholder { get; set; }
 
-    /// <summary>False disables the host widget. Default true.</summary>
+    /// <summary>Set false to show the platform's disabled text box and stop it
+    /// accepting input. Default true.</summary>
     [Parameter] public bool Enabled { get; set; } = true;
 
-    /// <summary>Raised when the host input gains focus (Phase 4.2, DoD #4).
-    /// OPTIONAL: the <c>focus</c> attach is emitted only when a delegate is
-    /// set (<c>HasDelegate</c>) — an unwired BnInput's patch shape is
-    /// byte-identical to the pre-4.2 one, so BnDemo's canonical golden
-    /// (4 attaches) does not churn.</summary>
+    /// <summary>Raised when the text box gains focus. Optional: nothing is
+    /// attached to the native control unless you supply a handler.</summary>
     [Parameter] public EventCallback<FocusEventArgs> OnFocus { get; set; }
 
-    /// <summary>Raised when the host input loses focus. Same
-    /// attach-only-when-set contract as <see cref="OnFocus"/>.</summary>
+    /// <summary>Raised when the text box loses focus. Optional, like
+    /// <see cref="OnFocus"/>.</summary>
     [Parameter] public EventCallback<FocusEventArgs> OnBlur { get; set; }
 
+    /// <inheritdoc />
     protected override void BuildRenderTree(RenderTreeBuilder b)
     {
         b.OpenElement(0, "input");

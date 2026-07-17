@@ -343,6 +343,79 @@ grep -rF '${{ secrets.NUGET_API_KEY }}' .github/   # exactly one hit — that hi
 
 ---
 
+### GitHub Pages — enabling the docs site
+
+**This repository needs exactly one click, and it is the only thing standing
+between `website/` and a live docs site.** There is no secret, no token, no
+branch, and nothing to mint: `docs.yml` authenticates to Pages with an OIDC
+`id-token` the workflow already requests. The `github-pages` environment is
+created **automatically** on the first deploy.
+
+**Where it goes:** repo → **Settings** → **Pages** → **Build and deployment** →
+**Source** → select **`GitHub Actions`**.
+
+That is the whole list. Verify it took:
+
+```bash
+gh api repos/MarcelRoozekrans/BlazorNative/pages --jq .build_type   # → workflow
+```
+
+Before the click that endpoint is a **404** (`has_pages: false`), which is itself
+the check — a 404 means the setting has not been made. The target state is what
+`AdoNet.Async` already shows: `build_type: "workflow"`.
+
+**What happens after.** `docs.yml` `build` → `deploy` runs on every push to
+`main`, and the site lands at
+**<https://marcelroozekrans.github.io/BlazorNative/>**.
+
+**Its paths filter is deliberately wider than `website/**`, and that is the part
+to understand rather than to memorize.** The component reference is *generated*
+from `src/BlazorNative.Components`' XML doc comments at build time — so a PR that
+improves a `<summary>`, or that changes whether those doc comments exist at all,
+changes the site without touching `website/`. Under a `website/**`-only filter
+main would take that commit and never redeploy, serving a stale reference with
+nothing red anywhere, for exactly as long as nobody looked. So the filter names
+every input the reference is a function of: the components, the two props/targets
+files that decide whether the XML is generated and whether CS1591 is an error,
+the generator script, its tool manifest, and the workflow itself.
+
+**The executable truth is `.github/workflows/docs.yml`, job `build` — read the
+`paths:` lists there rather than a copy here.** There are two of them (the `push`
+filter and the `pull_request` filter): GitHub Actions supports no YAML anchors, so
+they are duplicated by construction and must be edited together. A transcription
+on this page would be a third copy that rots the day either list moves.
+
+`docs.yml` also builds on `pull_request` (a broken docs build is caught before it
+lands), with `deploy` gated off `pull_request` so a PR never touches Pages, never
+takes the `pages` concurrency group, and never needs `id-token`. It is
+**advisory** — it is not a required check, and `build-test` / `android-build` /
+`ios-build` keep their names and contexts.
+
+**Until the click, `deploy` fails** — loudly, on `main`, with a legible Pages
+error. Everything already re-pointed at the site 404s in that interval: the six
+packages' READMEs, `PackageProjectUrl`, and the analyzers' `helpLinkUri` values.
+That is bounded and it is strictly better than the alternative — nothing
+publishes without your Release (so no consumer can reach those URLs first), and
+the old targets are a 404 *forever*.
+
+**The one link that argument does not cover is the root `README.md`'s
+Documentation link**, because this repo is public: it 404s for anyone browsing
+GitHub between the merge and the click. That is the honest cost of shipping the
+site's inbound link with the site, and it is the shortest-lived item on this
+page — but it is the reason to click sooner rather than later.
+
+> ⚠ **The first check after clicking is a LOOK, not a red.** This is the quiet
+> arrow, and it is the one thing on this page that CI cannot catch for you. The
+> site's `baseUrl` (`'/BlazorNative/'` in `website/docusaurus.config.js`) is only
+> correct relative to where Pages actually serves it. **A wrong `baseUrl` builds
+> green, deploys green, and reports success** — and produces a page with dead CSS
+> and 404 links. No local build and no workflow can see it; only a real fetch of
+> the real URL can. So after the first deploy goes green, **open
+> <https://marcelroozekrans.github.io/BlazorNative/> and confirm it has
+> styling.** Green is not the evidence here; your eyes are.
+
+---
+
 ### Publishing a release (the manual go)
 
 **Nothing publishes from a merge. Nothing publishes from a tag. Publishing a

@@ -4,7 +4,7 @@
 #
 #   build-test (windows-latest) — the local verification procedure verbatim
 #   (setup.ps1 §1–7 documents the toolchain pins):
-#     build (analyzers ride it) → .NET tests (570 passed / 0 skipped) →
+#     build (analyzers ride it) → .NET tests (577 passed / 0 skipped) →
 #     three NativeAOT publishes of samples/BlazorNative.SampleApp — the
 #     publish head since Phase 8.0: the app owns PublishAot, the exports stay
 #     in Runtime via UnmanagedEntryPointsAssembly, and the artifact is
@@ -13,7 +13,9 @@
 #     each publish must show exactly the 4 accepted IL2072 trim warnings) →
 #     nine-export verification (dumpbin via vswhere / llvm-readelf from the
 #     pinned NDK) → Gradle testDebugUnitTest against the fresh win-x64 dll
-#     (92 passed / 0 failed) → the instrumented sources COMPILE →
+#     (106 passed / 0 failed — the assertion is the step near the end of this
+#     job; this header is a copy, and it read 92 for four milestones) →
+#     the instrumented sources COMPILE →
 #     consumer smoke (SIX packages packed at the one props version, nupkg
 #     purity interrogated, then a blank consumer mounts a Bn* component,
 #     exercises RegisterPages, and trips the analyzers; Phase 4.5 extended by
@@ -1013,7 +1015,133 @@ jobs:
       # ancestor Import in src/Directory.Build.props. NO library code change,
       # NO wire/ABI change, NO golden moved: the gates below stay 4 IL2072 /
       # 9 exports / 106 JVM (win-x64 re-verified clean this commit).
-      - name: .NET tests (assert 570 passed / 0 skipped)
+      #
+      # 570 -> 574 (PHASE 8.4 GATE 2, +4 — Runtime.Tests 415 -> 419): the docs
+      # site's component reference is GENERATED from BlazorNative.Components' XML
+      # docs (M8 DoD #5), and the generator ALREADY LIED ONCE. Run against
+      # bin/Release/net10.0 it prints "Generation: 10 succeeded, 0 failed", exits
+      # 0, and emits TEN types and ZERO components — no BnView, no BnText, no
+      # BnButton. Microsoft.AspNetCore.Components.dll is not beside the assembly
+      # there, so ComponentBase does not resolve and every type deriving from it
+      # is dropped SILENTLY. Against a publish output: 26. Same tool, same exit
+      # code, same green. Nothing that does not COUNT can see the difference.
+      #   +1  GeneratedReference_DocumentsExactlyThePublicTypes — the generated
+      #       page set vs the assembly's public types, BOTH SIDES MEASURED (the
+      #       expectation is reflected, not rostered, so a rename moves it), red
+      #       both ways, non-vacuity asserted on each side first.
+      #       MUTATION (the real one, not a hypothesis — it is what happened
+      #       first): point scripts/generate-reference.ps1 at bin/ ->
+      #         MISSING (— 16): ...bnbutton.md ...bntext.md ...bnview.md
+      #         (Assembly: 26 public types. Generated: 10 pages.)
+      #   +1  GeneratedReference_ContainsTheComponents_NotJustTheEnums — the
+      #       anti-vacuity heart as its own assertion. The blind run produced ten
+      #       VALID pages (six enums, two helpers, BnTheme, _Imports); a page
+      #       count alone calls that a healthy 10. Same mutation ->
+      #         THE REFERENCE IS MISSING 15 OF 15 COMPONENTS: BnActivityIndicator,
+      #         BnButton, ..., BnText, BnView
+      #   +1  EveryPublicComponent_CarriesATypeLevelSummary — PIN 2 IS
+      #       STRUCTURALLY BLIND HERE, which is why this is a test and not the
+      #       compiler. The Razor generator emits `#pragma warning disable 1591`
+      #       into generated files, so a .razor component with no type summary
+      #       compiles clean forever — the measured gap said 8 while the
+      #       reference had SIX headless pages (a `@* ... *@` header is a RAZOR
+      #       comment and never reaches the assembly). Six .razor.cs partials fix
+      #       it; this stops it coming back.
+      #   +1  PublishedDocs_SpeakToConsumers_NotToTheRepo (Pin 3) — a voice regex
+      #       over the shipped XML, filtered to the surface the generator
+      #       publishes (public members of public types — internal maintainer
+      #       docs like BnListWindow's arithmetic are NOT consumer surface and a
+      #       whole-file regex would teach the next author to delete engineering
+      #       truth to go green). That XML is BOTH consumer surfaces: the site's
+      #       reference AND the .xml packed beside the DLL, which is IntelliSense.
+      #       MUTATION: re-add "since Phase 3.4 Gate 1; the BnDemo goldens stay
+      #       byte-identical" to BnText ->
+      #         4 PUBLISHED doc comment(s) speak to this repo rather than to a
+      #         stranger.  matched /\bPhase \d/ ... /\bGate \d/ ...
+      #         /\bBnDemo\b/ ... /\bgolden/
+      #       (That mutation also CORRECTED the pin, which is why one runs
+      #       them: /\bgolden\b/ does NOT match "goldens" - the trailing
+      #       boundary fails against the plural, and "the BnDemo goldens" is
+      #       the exact phrase that WAS in the file. 3 of the 4 patterns
+      #       fired; the trailing \b is gone and all 4 fire now.)
+      #
+      # Also this commit (no count move): Pin 2 — CS1591 as an ERROR for
+      # BlazorNative.Components only, via BnEnforceDocCoverage. It read as ON and
+      # was OFF twice: Directory.Build.props is imported BEFORE the project body
+      # (property true, NoWarn ";CS1591" anyway — src/Directory.Build.targets
+      # fixes the ordering), and then a warning is not a gate, because THIS
+      # WORKFLOW builds without -warnaserror (line 195) and nothing in the repo
+      # sets TreatWarningsAsErrors. MUTATION: delete BnButton.Label's <summary>
+      # -> error CS1591 ... 1 Error(s), exit 1. The price was 8 <inheritdoc />
+      # lines, exactly the measured gap. NO wire/ABI change, NO golden moved, NO
+      # shell code touched: 4 IL2072 / 9 exports / 106 JVM stand.
+      #
+      # 574 -> 577 (PHASE 8.4 GATE 4, +3 — Runtime.Tests 419 -> 420, Analyzers.Tests
+      # 23 -> 25): the review's two Important findings, fixed rather than deferred.
+      #
+      #   +1  EveryParameter_CarriesADocComment (Runtime.Tests) — PIN 2 GUARANTEED
+      #       HALF OF WHAT THE TAXONOMY CLAIMED FOR IT (review S1-1, which said
+      #       51% — it is 50%; see the count correction below). "Every public
+      #       component member is documented | PINNED | CS1591 as an error" is FALSE
+      #       for .razor: the Razor generator emits `#pragma warning disable 1591`
+      #       at line 3 of every *_razor.g.cs and an @code-block [Parameter] is
+      #       declared INSIDE that file. Read the mutation above and the hole is
+      #       visible in it — Pin 2 was proven with BnButton.Label, and BnButton is
+      #       .cs. Measured split, BY REFLECTION, of the 196 [Parameter]s: 98 in
+      #       .cs (Pin 2 holds them), 98 in .razor (Pin 2 cannot see them) —
+      #       EXACTLY HALF. Nor did EveryPublicComponent_CarriesATypeLevelSummary
+      #       cover it: that pins TYPE-level summaries, which is adjacent.
+      #       MUTATION (the reviewer's, re-run here): delete BnSlider.Value's
+      #       <summary> — the property @bind-Value targets. BEFORE: 0 Warning(s),
+      #       0 Error(s), 4/4 pins green, and P:...BnSlider.Value simply GONE from
+      #       the shipped XML. AFTER ->
+      #         1 of 196 [Parameter] properties have NO <summary> and no
+      #         <inheritdoc> in the shipped XML:
+      #             BnSlider.Value
+      #       An <inheritdoc> counts and must: 124 of the 196 are documented that
+      #       way (BnView's flex/box vocabulary re-exposed by BnFlexPreset, the
+      #       four .razor form controls, BnScroll, BnImage), where one home for the
+      #       sentence is the right answer.
+      #       AND THE PIN CORRECTED THE PHASE'S OWN NUMBER, first run: every source
+      #       here said 192 — the design, the review that reproduced it, this file.
+      #       192 came from `grep '\[Parameter\]'`, which cannot see the four
+      #       `[Parameter, EditorRequired]` declarations in BnList.razor (it read
+      #       BnList as 2; the assembly has 6). ilspycmd over the DLL says 196;
+      #       `grep -cE '\[Parameter[],]'` says 98+98=196. THE PIN DERIVES ITS
+      #       COUNT, which is the only reason the artifact surfaced instead of
+      #       being copied forward a fourth time.
+      #
+      #   +2  AnalyzerHelpLinkDriftTests (Analyzers.Tests) — the SEVEN packaged
+      #       helpLinkUri anchors (review S2-2). They were correct; nothing kept
+      #       them correct (`grep -rln helpLinkUri tests/` returned NOTHING), and
+      #       Gate 1 had already caught one by hand. This is the one link class
+      #       NO site build can reach: absolute external URLs that ship INSIDE a
+      #       nupkg, which onBrokenLinks/onBrokenAnchors never see — they check the
+      #       links the site CONTAINS. A wrong one is a permanent 404 for everyone
+      #       who installed that version; redeploying the site cannot fix it.
+      #       Subjects reflected from SupportedDiagnostics, anchors parsed from
+      #       website/docs/analyzers.md (code fences skipped — the page opens with
+      #       `#pragma warning disable BN0004` inside one), base derived from the
+      #       site's own url + baseUrl.
+      #       MUTATION 1: BN0004's link -> #bn0099 ->
+      #         1 of 7 shipped analyzer help link(s) point at an anchor that does
+      #         not exist.
+      #             BN0004 — #bn0099 matches no heading on the page: ...#bn0099
+      #       MUTATION 2: baseUrl -> '/BlazorNativeMoved/' ->
+      #         7 of 7 shipped analyzer help link(s) are NOT built on this site's
+      #         url + baseUrl.
+      #       That second red IS U2 seen from the package side: move the site and
+      #       all seven links rot at once, with no other witness anywhere.
+      #
+      # Also this commit (no count move): onBrokenAnchors: 'throw' (review S2-1 —
+      # the default 'warn' deployed broken anchors green, and the generated
+      # reference renders every <see cref> as an intra-page anchor); the icon's
+      # recorded error code NU5019, not NU5046 (S2-5, measured); the CS1591 switch
+      # comment pointed at .props, which is not the file that decides (S2-7); "21
+      # components" replaced by the measured 15/26 (S1-3); a PNG social card (S2-4).
+      # NO wire/ABI change, NO golden moved, NO shell code touched: 4 IL2072 /
+      # 9 exports / 106 JVM stand.
+      - name: .NET tests (assert 577 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -1031,8 +1159,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 570 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 570 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 577 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 577 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # ── NativeAOT publishes + nine-export verification ────────────────────

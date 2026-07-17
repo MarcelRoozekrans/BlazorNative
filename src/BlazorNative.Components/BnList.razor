@@ -77,36 +77,31 @@
     private int _windowStart;
     private int _windowEnd;
 
-    /// <summary>The items. @key'd BY ITEM, so they must be distinct (Blazor
-    /// throws on duplicate keys). Never null — defaults to empty.</summary>
+    /// <summary>The items to show. Keyed by the item, so they must be
+    /// distinct — duplicates throw. Never null; defaults to empty.</summary>
     [Parameter, EditorRequired] public IReadOnlyList<TItem> Items { get; set; } = [];
 
-    /// <summary>Fixed row height in dp/pt — REQUIRED and positive (design
-    /// decision 3: exact window arithmetic; variable heights are ledgered
-    /// with their own design problem). Every window row is emitted with
-    /// exactly this height.</summary>
+    /// <summary>Row height in dp or pt — required, and must be positive. Every
+    /// row is exactly this tall; variable row heights are not supported.</summary>
     [Parameter, EditorRequired] public float ItemHeight { get; set; }
 
-    /// <summary>Viewport height in dp/pt — REQUIRED and positive. One number,
-    /// two consumers: forwarded to the BnScroll viewport (stringified
-    /// invariantly) AND fed to the window arithmetic. A flex-sized viewport
-    /// (Grow/Basis) is deliberately NOT supported in 7.2: the window math
-    /// needs the number .NET-side, and a viewport whose height .NET does not
-    /// know cannot be windowed exactly.</summary>
+    /// <summary>Viewport height in dp or pt — required, and must be positive.
+    /// It has to be a number rather than a flex size: the list computes which
+    /// rows to render from it, and it cannot do that for a viewport whose height
+    /// only the layout engine knows.</summary>
     [Parameter, EditorRequired] public float Height { get; set; }
 
-    /// <summary>Rows rendered BEYOND the visible span on each side, clamped
-    /// at the list ends. Overscan absorbs the dispatch latency of a fling —
-    /// the window only moves every ItemHeight dp of travel.</summary>
+    /// <summary>How many extra rows to render beyond each edge of the viewport.
+    /// They absorb the latency of a fast fling. Default 4.</summary>
     [Parameter] public int Overscan { get; set; } = 4;
 
-    /// <summary>Viewport width, forwarded to <see cref="BnScroll"/> (same
-    /// string grammar). Null = unset (the un-styled invariant).</summary>
+    /// <summary>Viewport width, in the same grammar as
+    /// <see cref="BnView.Width"/>. Null = auto.</summary>
     [Parameter] public string? Width { get; set; }
 
-    /// <summary>The row's CONTENT. BnList owns the row wrapper (a BnView of
-    /// exactly <see cref="ItemHeight"/>, keyed by the item); this fragment
-    /// fills it.</summary>
+    /// <summary>The content of one row. The list owns the row box itself — a
+    /// container exactly <see cref="ItemHeight"/> tall — and this fragment fills
+    /// it. The item is available as <c>@context</c>.</summary>
     [Parameter, EditorRequired] public RenderFragment<TItem>? RowTemplate { get; set; }
 
     private string HeightStr => ((float?)Height).ToStyleValue()!;

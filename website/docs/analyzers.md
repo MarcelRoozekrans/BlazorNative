@@ -1,3 +1,10 @@
+---
+id: analyzers
+title: Analyzer rules
+sidebar_label: Analyzer rules
+sidebar_position: 6
+---
+
 # BlazorNative Analyzer Rules (BN)
 
 The `BlazorNative.Analyzers` project ships the BN rule set — compile-time guards for code

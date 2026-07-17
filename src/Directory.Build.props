@@ -56,8 +56,27 @@
     <Authors>Marcel Roozekrans</Authors>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <RepositoryUrl>https://github.com/MarcelRoozekrans/BlazorNative</RepositoryUrl>
-    <!-- 8.4 re-points this at the docs site (a named 8.4 input). -->
-    <PackageProjectUrl>https://github.com/MarcelRoozekrans/BlazorNative</PackageProjectUrl>
+
+    <!-- THE TWO URLs ARE DIFFERENT FACTS, and 8.4 is where they stop being the
+         same string. RepositoryUrl is WHERE THE SOURCE IS — it feeds the nuspec
+         <repository> element (with the commit, via PublishRepositoryUrl), which
+         is what nuget.org renders as "Source repository" and what the smoke
+         interrogates as repository@commit. It stays the repo, because the repo
+         is where the source is.
+
+         PackageProjectUrl is WHERE THE PROJECT LIVES for a reader — nuget.org's
+         "Project website" link. Until 8.4 there was nowhere else to send them,
+         so it pointed at the repo too. The docs site exists now, so it points
+         there: a stranger who clicks through from a package page wants the
+         getting-started page, not a source tree.
+
+         ⚠ It 404s until the owner clicks Settings → Pages → Source: GitHub
+         Actions (docs/GITHUB-SETUP.md, "GitHub Pages — enabling the docs
+         site"). That is bounded and it is strictly better than the old target:
+         nothing publishes without the owner's Release (8.2), so no consumer
+         can see this URL before the click, and the interval is one setting
+         long. -->
+    <PackageProjectUrl>https://marcelroozekrans.github.io/BlazorNative/</PackageProjectUrl>
 
     <!-- Symbols + SourceLink + determinism (every claim is a CI assertion,
          not a property setting — the smoke's interrogate step checks the
@@ -85,18 +104,77 @@
          not a hazard. -->
     <PackageReadmeFile>README.md</PackageReadmeFile>
 
-    <!-- XML docs ride into the packages (8.4's xmldoc2md raw material).
-         CS1591 (missing doc comment) is suppressed BY DECISION (8.1 design
-         decision 2): doc coverage is 8.4's editorial work; holding the
-         zero-warning bar hostage to it would force doc-stub spam. The gap
-         stays visible in the shipped XML, not hidden. -->
+    <!-- THE ICON (8.4 decision 6 — the trigger 8.2 set fired: the docs-site
+         identity exists, so the icon is a derivative of it rather than a
+         second invention). ONE file for all six packages, unlike the
+         per-project README: the identity is the framework's, not a
+         package's.
+
+         It packs to the package ROOT (PackagePath="\"), next to README.md —
+         which is why it costs the smoke NOTHING: the 6+5 feed counts count
+         PACKAGES, and the inventory tooth is an exact-set compare scoped to
+         lib/net10.0. An icon at the root is invisible to both. Verified,
+         not assumed.
+
+         NO Exists GUARD, deliberately — and the asymmetry with README.md
+         above is the point. A README may legitimately be absent from a
+         project; this icon is one shared file that must always exist, and
+         a missing one fails pack as NU5019, "File not found":
+
+           NuGet.Build.Tasks.Pack.targets(222,5): error NU5019: File not
+           found: '...\src\icon.png'            pack exit 1
+
+         THE PACK IS THE PIN, exactly as NU5039 is the readme's — no test
+         needed, and none added. MEASURED, not predicted (8.4 review, S2-5):
+         this said NU5046 (the PackageIcon-not-in-package error) until the
+         mutation was actually run. Because the <None> below carries no
+         Exists() guard, the ITEM fails first and pack never reaches the icon
+         check. The pin is real either way — the code it fires under is not
+         the one this comment claimed.
+
+         PNG, not the site's SVG: nuget.org accepts JPEG/PNG only (<=1 MB).
+         Both encodings are rendered from website/static/img/logo.svg, and a
+         mismatch between them is deliberately UNPINNED — a wrong icon is
+         VISIBLE to anyone who opens the page, and pins are for the facts
+         that are invisibly wrong (8.4 decision 4). -->
+    <PackageIcon>icon.png</PackageIcon>
+
+    <!-- XML docs ride into the packages — and for BlazorNative.Components they
+         are the docs site's component reference, generated from this XML at
+         build time (8.4 decision 3). The `///` next to the property is the ONE
+         home for what that property does; the site prints it.
+
+         CS1591 (missing doc comment) stays suppressed by default (8.1 decision
+         2) — 174 undocumented members across Runtime (87), Core (52), Analyzers
+         (16), Renderer (13) and Http (6). Those are the plumbing (exports,
+         bridge callbacks, DevHostBridge), not the component reference, and
+         documenting them is a milestone-sized job that DoD #5 does not ask for.
+         Ledgered with the number named rather than hidden.
+
+         BnEnforceDocCoverage FLIPS IT PER PACKAGE (8.4 Pin 2), and
+         BlazorNative.Components sets it true. There the compiler IS the pin: an
+         undocumented [Parameter] stops compiling, so the reference's raw
+         material cannot silently thin. The condition keeps 8.1's
+         one-metadata-home rule intact — the property lives here, the opt-in
+         lives in the csproj that wants it.
+
+         The mechanism is built for the other five; flipping each is a
+         per-package editorial job, ledgered to M9.
+
+         THE NoWarn ITSELF LIVES IN src/Directory.Build.targets, NOT HERE, and
+         that is not a style choice: this file is imported BEFORE the project
+         body, so a condition here reads BnEnforceDocCoverage before the csproj
+         has set it and suppresses CS1591 no matter what. The pin reads as ON and
+         is OFF. See that file's header — it carries the measurement. -->
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
-    <NoWarn>$(NoWarn);CS1591</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
     <None Include="$(MSBuildProjectDirectory)\README.md" Pack="true" PackagePath="\"
           Condition="Exists('$(MSBuildProjectDirectory)\README.md')" />
+    <!-- ThisFileDirectory, not ProjectDirectory: one icon beside THIS file,
+         shared by all six. -->
+    <None Include="$(MSBuildThisFileDirectory)icon.png" Pack="true" PackagePath="\" />
   </ItemGroup>
 
 </Project>

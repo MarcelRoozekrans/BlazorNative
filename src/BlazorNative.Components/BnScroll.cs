@@ -122,8 +122,8 @@ namespace BlazorNative.Components;
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// <summary>
-/// A scrolling viewport — emits the <c>scroll</c> element (host NodeType
-/// "scroll"). It <em>is</em> a flex <b>item</b> (<see cref="BnView"/>'s item
+/// A scrolling viewport. Renders as a native <c>ScrollView</c> on Android and a
+/// <c>UIScrollView</c> on iOS. It <em>is</em> a flex <b>item</b> (<see cref="BnView"/>'s item
 /// parameters: <see cref="Grow"/>, <see cref="Shrink"/>, <see cref="Basis"/>,
 /// <see cref="AlignSelf"/>, the box, <see cref="Margin"/>,
 /// <see cref="Position"/>) that scrolls its content.
@@ -132,17 +132,16 @@ namespace BlazorNative.Components;
 /// <para>
 /// <b>Not a flex container.</b> There is no <c>Direction</c>, <c>Justify</c>,
 /// <c>Align</c>, <c>Wrap</c>, <c>Gap</c> or <c>Padding</c> parameter: those
-/// would style the scroll node, whose only child is the shells' synthetic
-/// content node — they would space nothing, or push the content to a negative
-/// offset a scroll view can never scroll back to. To lay out the content, put a
+/// would style the viewport itself rather than the content inside it — they
+/// would space nothing, or push the content to a negative offset a scroll view
+/// can never scroll back to. To lay out the content, put a
 /// <see cref="BnColumn"/> inside: <c>&lt;BnScroll Height="200"&gt;&lt;BnColumn
-/// Gap="8"&gt;…&lt;/BnColumn&gt;&lt;/BnScroll&gt;</c>. The shells IGNORE (and
-/// log) those style names on a scroll node, so the raw-element route is closed
-/// too.
+/// Gap="8"&gt;…&lt;/BnColumn&gt;&lt;/BnScroll&gt;</c>. Both platforms ignore
+/// those style names on a scroll node, so there is no way around it.
 /// </para>
 /// <para>
-/// <b>Vertical only</b> (6.2 design decision 2). Horizontal scrolling is a
-/// different widget class on Android and is ledgered, not stubbed.
+/// <b>Vertical only.</b> Horizontal scrolling is a different widget class on
+/// Android, and is not supported rather than half-supported.
 /// </para>
 /// <para>
 /// <b>Give it a definite height.</b> An <c>auto</c>-height <c>BnScroll</c> takes
@@ -152,8 +151,8 @@ namespace BlazorNative.Components;
 /// <c>Grow="1" Basis="0"</c> (CSS's <c>flex: 1</c>).
 /// </para>
 /// <para>
-/// <b><see cref="Grow"/> ALONE IS NOT ENOUGH</b>, and this component's docs used
-/// to say it was (corrected at the Phase 6.2 Gate 2 review). With
+/// <b><see cref="Grow"/> alone is not enough</b>, and it is the mistake
+/// everybody makes here. With
 /// <see cref="Basis"/> left at <c>auto</c>, the scroll node's flex basis is its
 /// <em>content's</em> height, so the free space against a shorter parent is
 /// <b>negative</b> — and <see cref="Grow"/> only distributes <em>positive</em>
@@ -164,9 +163,8 @@ namespace BlazorNative.Components;
 /// CSS's <c>flex: 1</c> shorthand sets the basis to <c>0</c>.
 /// </para>
 /// <para>
-/// Children ride the wire as children of the scroll node; the shells re-parent
-/// them into a synthetic content node whose Yoga-computed height is the content
-/// size (see the file header).
+/// Your children are re-parented into a content node inside the viewport, whose
+/// height is the total content height — that is what the platform scrolls.
 /// </para>
 /// </remarks>
 public sealed class BnScroll : ComponentBase
@@ -202,9 +200,9 @@ public sealed class BnScroll : ComponentBase
     /// <inheritdoc cref="BnView.Width"/>
     [Parameter] public string? Width { get; set; }
 
-    /// <summary>Height of the VIEWPORT, e.g. <c>"200"</c>. Null = auto — and an
-    /// auto-height scroll takes its height from its content, so nothing scrolls
-    /// (see the class remarks). Either this, or <see cref="Grow"/> <b>plus</b>
+    /// <summary>Height of the <b>viewport</b>, e.g. <c>"200"</c>. Null = auto —
+    /// and an auto-height scroll takes its height from its content, so nothing
+    /// scrolls. Either this, or <see cref="Grow"/> <b>plus</b>
     /// <see cref="Basis"/><c>="0"</c> inside a bounded parent — <see cref="Grow"/>
     /// on its own does NOT bound a viewport whose content is taller than its
     /// parent.</summary>
@@ -241,25 +239,28 @@ public sealed class BnScroll : ComponentBase
 
     // ── Events ────────────────────────────────────────────────────────────────
 
-    /// <summary>Raised with the shell-conflated vertical content offset (dp/pt)
-    /// when the viewport scrolls (Phase 7.2 — the <c>onScroll</c> wire).
-    /// OPTIONAL: the <c>scroll</c> attach is emitted only when a delegate is
-    /// set (<c>HasDelegate</c> — the <see cref="BnInput.OnFocus"/> pattern from
-    /// 4.2), so an unwired BnScroll's patch shape is byte-identical to the
-    /// pre-7.2 one and BnScrollDemo's golden (1 attach: the back click) does
-    /// not churn. The shell conflates: at most ONE dispatch per committed
-    /// frame, latest offset wins — a slow consumer sees fewer, fresher events,
-    /// never a queue (the wire contract, mirrored in both shells in Gates
-    /// 2/3). The offset arrives raw: iOS rubber-banding can make it negative
-    /// or push it past the scroll range — consumers clamp
-    /// (<see cref="BnList{TItem}"/>'s window function does).</summary>
+    /// <summary>Raised with the vertical content offset, in dp on Android and pt
+    /// on iOS, as the viewport scrolls. Optional: nothing is attached to the
+    /// native control unless you supply a handler.
+    /// <para>
+    /// <b>Events are conflated, not queued</b> — at most one per rendered frame,
+    /// latest offset wins. A slow handler therefore sees fewer, fresher events
+    /// rather than a growing backlog, so you cannot use this to count scroll
+    /// ticks.
+    /// </para>
+    /// <para>
+    /// <b>The offset arrives raw.</b> iOS rubber-banding can report a negative
+    /// offset, or one past the end of the scroll range. Clamp it if your maths
+    /// depends on it being inside the content.
+    /// </para></summary>
     [Parameter] public EventCallback<BnScrollEventArgs> OnScroll { get; set; }
 
-    /// <summary>The scrolled content. Rides the wire as children of the scroll
-    /// node; the shells parent it into the synthetic content node. Wrap it in a
-    /// <see cref="BnColumn"/> to give it a gap, a padding or an alignment.</summary>
+    /// <summary>The content to scroll. Wrap it in a <see cref="BnColumn"/> to
+    /// give it a gap, a padding or an alignment — this component will not do
+    /// that for you.</summary>
     [Parameter] public RenderFragment? ChildContent { get; set; }
 
+    /// <inheritdoc />
     protected override void BuildRenderTree(RenderTreeBuilder b)
     {
         b.OpenElement(0, "scroll");

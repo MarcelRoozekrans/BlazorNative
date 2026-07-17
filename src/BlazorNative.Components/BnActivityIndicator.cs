@@ -34,15 +34,33 @@ namespace BlazorNative.Components;
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// <summary>
-/// An indeterminate spinner — emits the <c>activityindicator</c> element
-/// (host NodeType "activityindicator", wire id 12). Android:
-/// <c>ProgressBar</c>; iOS: <c>UIActivityIndicatorView</c>. It animates while
-/// mounted: show it with <c>@if</c>, hide it by unmounting — there is no
-/// start/stop parameter, and no parameter at all (a measured leaf whose
-/// intrinsic size is the platform's own).
+/// An indeterminate spinner. Renders as an indeterminate <c>ProgressBar</c> on
+/// Android and a <c>UIActivityIndicatorView</c> on iOS.
 /// </summary>
+/// <remarks>
+/// <para>
+/// <b>It has no parameters, including no start/stop.</b> It animates for as long
+/// as it is mounted, so you control it with <c>@if</c> — render it while you are
+/// loading and unmount it when you are done. There is no hidden state to get
+/// wrong.
+/// </para>
+/// <para>
+/// Its size is the platform's own: it measures itself, so you do not give it a
+/// width or a height. Put it in a <see cref="BnView"/> if you need to place or
+/// pad it.
+/// </para>
+/// <example>
+/// <code>
+/// @if (_loading)
+/// {
+///     &lt;BnActivityIndicator /&gt;
+/// }
+/// </code>
+/// </example>
+/// </remarks>
 public sealed class BnActivityIndicator : ComponentBase
 {
+    /// <inheritdoc />
     protected override void BuildRenderTree(RenderTreeBuilder b)
     {
         b.OpenElement(0, "activityindicator");

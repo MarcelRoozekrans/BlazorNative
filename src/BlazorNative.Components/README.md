@@ -1,7 +1,7 @@
 # BlazorNative.Components
 
 The public `Bn*` component library for
-[BlazorNative](https://github.com/MarcelRoozekrans/BlazorNative) apps: `BnView`,
+[BlazorNative](https://marcelroozekrans.github.io/BlazorNative/) apps: `BnView`,
 `BnText`, `BnButton`, `BnInput`, `BnRow`/`BnColumn`, `BnScroll`, `BnImage`, `BnList`,
 form controls, `BnModal`, and `BnTheme` — sealed, AOT/trim-compatible Blazor
 components that render to real native widgets through the BlazorNative renderer.
@@ -30,4 +30,4 @@ Android and iOS shells.
 Preview (`1.0.0-preview.N`): BlazorNative is a proof of concept heading toward a
 stable release. The ABI and component surface may still move between previews.
 
-License: MIT · Source: <https://github.com/MarcelRoozekrans/BlazorNative>
+License: MIT · Docs: <https://marcelroozekrans.github.io/BlazorNative/>

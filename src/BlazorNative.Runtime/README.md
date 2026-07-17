@@ -1,6 +1,6 @@
 # BlazorNative.Runtime
 
-The [BlazorNative](https://github.com/MarcelRoozekrans/BlazorNative) runtime: the 9
+The [BlazorNative](https://marcelroozekrans.github.io/BlazorNative/) runtime: the 9
 `blazornative_*` native exports the shells call, the host session, the binary
 frame/bridge wire protocol, and the registration API through which your app names
 its pages. NativeAOT/trim-compatible — your app project owns the publish head
@@ -29,4 +29,4 @@ by name only. Registration is validated loudly and happens exactly once.
 Preview (`1.0.0-preview.N`): BlazorNative is a proof of concept heading toward a
 stable release. The ABI and component surface may still move between previews.
 
-License: MIT · Source: <https://github.com/MarcelRoozekrans/BlazorNative>
+License: MIT · Docs: <https://marcelroozekrans.github.io/BlazorNative/>
