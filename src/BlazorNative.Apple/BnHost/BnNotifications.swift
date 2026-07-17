@@ -141,7 +141,19 @@ final class BnNotifications: NSObject, UNUserNotificationCenterDelegate {
     /// The UNNotificationRequest most recently handed to the center (captured BEFORE the
     /// add, so a show/schedule's construction — id, content, userInfo route, trigger — is
     /// deterministically assertable regardless of the sim's real delivery/authorization).
+    ///
+    /// WHY A SEAM AND NOT getPendingNotificationRequests (a doc-vs-reality finding): an
+    /// UNAUTHORIZED app's `add` does NOT register a pending request — the CI simulator is
+    /// always unauthorized (the permission ALERT is the un-grantable owner-device gesture,
+    /// exactly as 9.0's location dialog was), so getPendingNotificationRequests is empty on
+    /// CI. The production `add`/`remove` still run (the real code path), and this seam is
+    /// what makes the construction deterministically assertable on the sim.
     static var lastAddedRequestForTest: UNNotificationRequest?
+
+    /// The identifier the most recent `cancel` targeted at the real center (captured
+    /// alongside the real remove* calls) — the same reason as lastAddedRequestForTest: an
+    /// unauthorized sim never had a pending request to observe removed.
+    static var lastCancelledIdForTest: String?
 
     static func resetForTest() {
         authorizationStatusOverrideForTest = nil
@@ -151,6 +163,7 @@ final class BnNotifications: NSObject, UNUserNotificationCenterDelegate {
         lastHostCallCompleteRcForTest = Int32.min
         lastHostEventRcForTest = Int32.min
         lastAddedRequestForTest = nil
+        lastCancelledIdForTest = nil
     }
 
     func clearInFlightForTest() { lock.lock(); inFlightRequestId = nil; pendingPermissionContext = nil; lock.unlock() }
@@ -374,6 +387,7 @@ final class BnNotifications: NSObject, UNUserNotificationCenterDelegate {
     /// unsuppressed so the sim tests read the removal back via getPending.
     private func cancel(requestId: Int64, idString: String?) {
         let identifier = idString ?? "0"
+        BnNotifications.lastCancelledIdForTest = identifier
         let center = UNUserNotificationCenter.current()
         center.removePendingNotificationRequests(withIdentifiers: [identifier])
         center.removeDeliveredNotifications(withIdentifiers: [identifier])

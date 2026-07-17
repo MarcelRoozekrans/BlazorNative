@@ -913,9 +913,12 @@ jobs:
           #       three-way mirror, byte-identical to .NET/Kotlin).
           #   +1  show builds an IMMEDIATE request (nil trigger) carrying id/title/body and the
           #       tap-through route in userInfo -> Granted.
-          #   +1  schedule adds a PENDING time-interval request the REAL centre holds (read
-          #       back via getPendingNotificationRequests) -> Granted.
-          #   +1  cancel removes the pending request from the REAL centre -> Granted (idempotent).
+          #   +1  schedule builds a one-shot time-interval request from `when` -> Granted.
+          #   +1  cancel targets the id at the REAL centre's remove* -> Granted (idempotent).
+          #       (show/schedule/cancel assert on the construction SEAM, not
+          #       getPendingNotificationRequests: an UNAUTHORIZED sim never registers a pending
+          #       request — the permission alert is owner-device territory — so getPending is
+          #       empty on CI; the production add/remove still run. A doc-vs-reality finding.)
           #   +3  the denial DANCE: notDetermined then the user's outcome as DATA — deny ->
           #       DeniedPermanently (a value, never a Swift error across the C boundary, never a
           #       hang), grant -> Granted, and a late DUPLICATE result no-ops (one-shot context).
