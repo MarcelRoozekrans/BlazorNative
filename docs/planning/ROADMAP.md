@@ -949,7 +949,196 @@ Developer experience and ecosystem".
      on a stranger's laptop.** **Nothing published; no tag created.** See
      [design](../plans/2026-07-17-phase-8.3-design.md) +
      [conclusion](../plans/2026-07-17-phase-8.3-conclusion.md).
-- **Phase 8.4** — the docs site: Docusaurus + GitHub Pages (DoD #5) — ⏳
+- ✅ **Phase 8.4** — the docs site: Docusaurus + GitHub Pages (DoD #5) — *complete (2026-07-17)*
+   - **The site exists** — `website/`, Docusaurus **3.10.2**, scaffolded from the owner's **live**
+     AdoNet.Async mirror: **41 pages**, `onBrokenLinks: 'throw'` **and `onBrokenAnchors: 'throw'`**,
+     no versioning, no blog, no i18n, **no search** (assessed, not waved: Algolia needs a live URL
+     and an application, so it **cannot be applied for until U1 closes**; ledgered with a trigger —
+     >30 pages, or the owner asks). **`docs.yml` builds on PRs and deploys on main, and is
+     ADVISORY** — the three required gates keep their names and contexts; a fourth required check is
+     a branch-protection change DoD #5 does not ask for.
+   - **THE HEADLINE — a phase about stale copies that KEPT CATCHING ITSELF.** **(1) The generator
+     lied during design.** xmldoc2md against `bin/` → **`Generation: 10 succeeded, 0 failed` — exit
+     0, green — and ZERO components.** `Microsoft.AspNetCore.Components.dll` is not beside the
+     assembly → `ComponentBase` will not resolve → **every derived type drops SILENTLY**. Against a
+     **publish** output: **26**. ***10 vs 26 is invisible to anything that does not count*** — the
+     fourth arrival of 8.1's `return ,$names`, 8.1 I-3's blind scanner and 8.3 I-1's roster, by a
+     new door. **It is not a risk that was mitigated; it is a defect that already happened, on this
+     machine, during design — found by counting.** **(2) Pin 2 read as ON and was OFF, TWICE:**
+     `src/Directory.Build.props` imports **before** the project body, so
+     `{BnEnforceDocCoverage:true, NoWarn:…;CS1591}` — **true and suppressed anyway** (fixed with
+     `src/Directory.Build.targets`); then **STILL not a pin**, because `ci.yml` builds without
+     `-warnaserror` and nothing set `TreatWarningsAsErrors` — CS1591 would have been **8 warnings in
+     a lane that exits 0**. ***A pin's costume on a pin's absence.*** **(3) Pin 2's guarantee covered
+     exactly HALF the parameter surface** (review S1-1): **the Razor generator emits `#pragma warning
+     disable 1591` at line 3 of every `*_razor.g.cs`**, and `@code`-block `[Parameter]`s live inside
+     it → **CS1591 is structurally blind**. Deleting `BnSlider.Value`'s summary → **0 errors, 4/4
+     pins green, and the property `@bind-Value` targets GONE from the shipped XML**. Closed by
+     `EveryParameter_CarriesADocComment`. **(4) `onBrokenAnchors` defaults to `'warn'`** — anchors are
+     **half** the internal-link surface, and **the reference is GENERATED from `<see cref>`→anchor
+     links**, so the site's largest anchor body is machine-written from doc comments nobody
+     proofreads; **Gate 2 fixed five at the source cref and nothing kept them fixed**. Now `'throw'`
+     (Docusaurus's own default carries `// TODO Docusaurus v4: change to throw` — **v4's behaviour
+     adopted early rather than inherited late**).
+   - **THE COUNT THAT WAS TRUE OF SOMETHING ELSE — the phase's emblem.** **"21" was TRUE** as *21
+     documented types* (27 − 6 headless razor components) **before Gate 2's editorial pass**. It was
+     then **transplanted into three files as "21 components"**, where **it was never true of
+     anything**. Measured: **15 concrete `ComponentBase` types, 26 public types, 196 `[Parameter]`
+     properties** (`ci.yml`'s own recorded Pin 1 mutation says *"MISSING 15 OF 15 COMPONENTS"*, which
+     is how we know). **The original measurement did not rot — it was COPIED OUT OF ITS MEANING**,
+     the exact failure mode the design is built around, landing on the design. **And "192" was wrong
+     too:** it came from `grep '[Parameter]'`, which **cannot see `[Parameter, EditorRequired]`**
+     (BnList declares **four**; the review read BnList as **2**, the assembly says **6**). **The fix
+     pass's pin DERIVED 196 on its first run, because it reflects instead of grepping** — and **the
+     review had reproduced the design's number and reconciled to it, inheriting the same blind
+     pattern**. The blind half is **exactly 50% (98/98)**, not the 51% computed. *A number is not
+     measured until the thing that reads it can see every form it takes.*
+   - **THE DocFX ANSWER, as the owner asked for it.** **DocFX genuinely wins the free API
+     reference** — native .NET, ingests assemblies + XML docs, no glue, auto cross-linking; **for a
+     repo whose reference surface IS .NET types that is the most relevant feature either tool has,
+     and Docusaurus lacks it at any price.** **Docusaurus wins that the owner already runs it** (one
+     toolchain, one CI shape, one thing to upgrade) **and a docs site is 80% prose**. **What
+     MEASURING changed, and why it is not close:** the XML docs were **already COMPLETE** (8 gaps,
+     all `BuildRenderTree`) — **so nothing was traded away; 8.1's premise that "doc coverage is
+     8.4's editorial work" was WRONG. Coverage was done; VOICE was the job.** And their content was
+     **repo-voiced**: `BnTheme` cited *"Phase 3.4 design §4"*; `BnView` said *"since Phase 3.4 Gate
+     1"*, *"the BnDemo goldens stay byte-identical"* and *"Razor awaits .razor compilation (M6)"* —
+     **which was not merely dated but FALSE**: `<BnInput @bind-Value="_text" />` is live in
+     **`BnDemo.razor:51`**, so four component pages would have told strangers the framework cannot do
+     what the sample app does on line 51. **DocFX would have published that phase history exactly as
+     faithfully** — a generator is a printing press. **Both tools needed the same editorial pass on
+     the same XML. DocFX saves the PLUMBING, not the WORK** — and against a toolchain the owner
+     already knows, **plumbing is the cheaper thing to give up.**
+   - **THE ONE-HOME RULE AS SHIPPED — GENERATED / LINKED / OWNED.** ***"Kept in sync is not a
+     home."*** **The site NEVER includes — it POINTS.** Docusaurus *can* read outside its tree
+     (`docs.path`), so INCLUDE was available and **rejected**: it makes the site's build depend on the
+     shape of contributor docs and produces a second *rendering* of a doc written to be read in the
+     repo — **it buys nothing a link does not**. **8.3's iOS-doc precedent, generalized: *prose a gate
+     does not keep true should POINT, not COPY*.** **The component reference is GENERATED**
+     (`scripts/generate-reference.ps1` → xmldoc2md against a **publish** output → **27 MDX** into a
+     `.gitignore`d dir) **and never committed** — the `///` next to the code stays the one home; **if
+     the copy need not exist, the pin for it need not exist**. `docs/plans/` links **as a class**; the
+     parity page **states the claim and links** 6.3 §parity + `ShellFrameTableDriftTests` rather than
+     reproducing the 10-row table. **Reviewer-audited: the site states NO number a gate owns** — no
+     counts, no versions, **no Yoga literal**. *A number on a page nobody re-runs is a number that is
+     already wrong.*
+   - **GATE 1's BEST CATCH — a permanent 404 INSIDE a package.** The design named **ONE** inbound link
+     to the moved docs; **there were EIGHT**. The other seven are **`helpLinkUri` values in the
+     analyzer sources** — *the string a consumer's IDE opens from a BN squiggle*. **Deleting
+     `docs/analyzers.md` per the fates table would have shipped a permanent 404 to every user of every
+     BN rule, at the moment they are already confused.** Re-pointed — and now **PINNED**
+     (`AnalyzerHelpLinkDriftTests`, review S2-2). They were correct; **nothing kept them correct**
+     (`grep -rln helpLinkUri tests/` returned **nothing**). **They ship INSIDE a nupkg and are
+     absolute external URLs: the ONE link class a consumer's IDE resolves that no site build can ever
+     see** — `onBrokenLinks`/`onBrokenAnchors` check the links the *site contains*, not the ones
+     pointed *at* it from a released package, and **a wrong one is a permanent 404 for everyone who
+     installed that version; redeploying the site cannot fix it**. **Both sides derived** (subjects
+     reflected from `SupportedDiagnostics`; anchors parsed from the page **with code fences skipped**
+     — it opens with `#pragma warning disable BN0004` inside one, which a naive `/^#/` parser mints an
+     anchor for; the base composed from the site's own `url` + `baseUrl` + `routeBasePath` + the file's
+     name, so **not one segment is transcribed**). **Its `baseUrl` mutation reds all seven at once — U2
+     from the package side.**
+   - **The design-corrections** (the review judged **15 of 16** right — the corrections are the
+     record): no `prism-razor.js` (it is **`prism-cshtml.js`**; razor is an alias); **Gate 1 cannot own
+     the sidebar** (the autogenerated category needs Gate 2's generated dir); **`generate-reference.ps1`
+     has exactly TWO callers** — the site's `prebuild` and Pin 1 — ***"had the lane and the pin run
+     different pipelines, the pin would be green while the lane went blind"*** (**the review called this
+     the strongest architectural call in the phase**); the script **asserts NOTHING about
+     completeness**, so Pin 1's mutation proves **Pin 1**, not a guard; **GitHub Actions has no YAML
+     anchors** (the two filters are duplicated by construction, kept identical); **`format: 'detect'`**
+     (MDX rejects the generator's `<br>`); **the paths filter must be wider than `website/**`**
+     (+`Directory.Build.props`/`.targets` — ***"they decide whether the XML exists at all"***);
+     **Pin 3 scans the PUBLIC SURFACE, not the file** (the shipped XML also documents internal types —
+     `BnItemsJson`, `BnListWindow.Compute`, `BnPicker.Clamp` — that the generator drops; **a whole-file
+     regex would red on maintainer docs doing their job and *teach the next author to delete
+     engineering truth to go green***); **Pin 3's own mutation CORRECTED the pin** (`/\bgolden\b/`
+     **cannot match "goldens"**, the plural the repo writes — 3 of 4 fired; the boundary is gone).
+     **THE 16th: the design asked for an IMPOSSIBLE mutation** (*"rename a component ⇒ Pin 1 red both
+     ways"*) — **Pin 1 derives BOTH sides**, so a rename moves the type and its expectation together:
+     **green, correctly, and by design**, exactly as its own doc comment claims. Satisfying it would
+     need **the hand-maintained roster 8.3's I-1 forbids**. ***STRUCK, with the reason. The mutation was
+     mis-specified, not the pin.***
+   - **Review: PASS with 2 Important + 8 lesser — ALL applied, none deferred. And THREE PRESCRIPTIONS
+     THE FIX PASS REFUSED, CORRECTLY** (worth recording: **the reviewer is strong and was still wrong
+     three times**): **reusing `PublicSurfaceDocs()` for S1-1 would have reddened 124
+     correctly-documented properties** — it returns `member.Value`, and **an inheritdoc-only member's
+     Value is the EMPTY STRING**, indistinguishable from undocumented (**124 of the 196 are documented
+     that way**, overwhelmingly BnView's flex vocabulary re-exposed — demanding a hand-written summary
+     each would demand **the 124 copies this repo exists to refuse**); **`navbar.logo.to` is invalid** —
+     **the build refuses it** (*"navbar.logo.to is not allowed"*): `to` is for navbar **items**, the
+     logo schema takes `href` only, so **the diagnosis was right and `href: '/'` is the remedy, and the
+     build is the pin that said so**; and **the "192" reconciliation**. **S2-3** also found **two more
+     baseUrl copies inside the file the one-home rule is about** — the navbar logo's hardcoded
+     `href: '/BlazorNative/'` **WORKED, and only by luck** (`addBaseUrl` skips prefixing when the url
+     already `startsWith(baseUrl)`): **move the site and that guard stops matching** and the logo
+     becomes `/Foo/BlazorNative/` and 404s. **U2's blast radius, from inside the config.**
+   - **THE SEVENTH PACKAGE** (Gate 3's find — **no ledger had noticed**): 8.1 declared
+     `src/Directory.Build.props` **the ONE metadata home**; **8.3 then created
+     `templates/BlazorNative.Templates` OUTSIDE `src/` DELIBERATELY** — a seventh csproj inside
+     **un-licenses** the props (**the shipped-set pin is what makes that home legal**) — so it carries
+     its own `PackageProjectUrl` **by necessity**, and it was **still pointing at the repo while the six
+     moved to the site**. ***Shipping 6-of-7 is not a rule, it is a coincidence waiting to be noticed by
+     a user.*** Split the same way Gate 3 split the six: **`RepositoryUrl` = where the source is;
+     `PackageProjectUrl` = where the docs are** — **verified in the PACKED nuspec rather than the
+     csproj, since the pack is what a user gets** (a props edit that never reached a package would have
+     read as done). **Also Gate 3's:** the footer label **`Source: <repo>`** re-pointed at a docs site
+     would read ***"Source: a site that is not the source"*** — **a fact made wrong by the act of fixing
+     it**, this phase's own failure class arriving through the door marked "mechanical". Now **`Docs:`**;
+     nothing is lost — **nuget.org still renders Source from the nuspec's `<repository>`**, which the
+     smoke already interrogates as `repository@commit`.
+   - **FOUND ONLY BECAUSE SOMETHING FINALLY LOOKED:** the social-card SVG's tagline **overflowed its own
+     1200px viewBox**, clipping the final "s" from "views" — SVG text does not wrap, and **nothing had
+     ever rendered the file**, so **nothing had ever shown it**. And **`og:image` as an SVG renders NO
+     preview on any social platform** (X, Facebook, LinkedIn, Slack — **all require a raster**): a link
+     posted as a bare URL would have unfurled *nothing*, **with the tag present and the file resolving
+     200**. **Decision 6 had already learned this for NuGet ("JPEG/PNG only, SVG unsupported") and it
+     did not transfer.** Both fixed; **the card is a PNG**, the SVG stays as the vector source.
+   - **The Gate 3 sweep — and the design was the one that was wrong.** The four counts
+     (333/83/111/72 → **577/106/184/154**) were taken **from their own gates, not from the design**,
+     which cited `ci.yml:1016` and `ci.yml:1273`; **the gates are at `:1076` and `:1333`**. ***Two of
+     four line numbers rotted within a day of being written, in the document arguing that copies
+     rot.*** The table now cites **WORKFLOW → JOB** — stable and greppable — and **never a line
+     number**, **and it says it is a copy**. `GITHUB-SETUP.md`'s Pages section **refused to transcribe
+     the paths filter**: the draft was **WRONG BEFORE IT WAS SAVED** (five entries against the seven
+     `docs.yml` carries) — *a doc misquoting the filter it exists to explain, in the section about
+     stale copies* — so it explains **why** the filter is wide and **sends the reader to `docs.yml`**.
+     **Falsified by M7, found by reading the CODE rather than the ROADMAP:** *"Placeholder/OnError/
+     ContentMode — each gets its own design in M7"* (**all three SHIPPED in 7.5**) and *"no onScroll…
+     it needs its own design"* (**7.2**); two stale demo-page rosters **DELETED, not re-typed** — their
+     home is `SampleAppPages.cs`, and *re-typing nine names that would be ten next phase is the defect,
+     not the fix*.
+   - **Final counts:** .NET **577/0** (Renderer **132** + Analyzers **25** + Runtime **420**;
+     **570 → 574 → 577** with provenance; re-run at close: 25 / 132 / 420, 0 failed / 0 skipped) ·
+     JVM **106/0** untouched · **device lanes untouched** (**184**/**154** on prior provenance — **no
+     wire/ABI/golden/shell change**) · **publish gates unmoved STRUCTURALLY, argued not re-quoted**
+     (`Directory.Build.props`/`.targets` exist **ONLY under `src/`**; the publish head is `samples/`,
+     so **MSBuild's upward search finds nothing** — the XML docs, the CS1591 flip and the icon metadata
+     never reach it; 4 IL2072 / 9 exports stand) · **smoke PASS: 6 nupkg + 5 snupkg**, zero pack
+     warnings, nuspec + inventory ✓ ×6, **`icon.png` at the package ROOT**, and **it printed the
+     packaged link live** (`warning BN0011: … /docs/analyzers#bn0011`) · **fresh-clone `npm run
+     build`** (generated dir + `.docusaurus` + `build` deleted): `Generation: 26 succeeded, 0 failed` →
+     **27 files** → **[SUCCESS], 41 pages, 0 warnings, 0 broken links, 0 broken anchors**, exactly
+     **one** baseUrl-aware `og:image` · **actionlint 1.7.7 clean, all workflows** · **the icon: pack IS
+     the pin, verified by RUNNING it** — **`error NU5019: File not found`, exit 1**, ***not NU5046 as
+     three places claimed***: the `<None>` carries **no `Exists()` guard**, so the **item-level**
+     failure fires before pack reaches the check NU5046 names (the load-bearing claim — *the pack is
+     the pin* — is **VERIFIED TRUE**; only the code was wrong).
+   - **DoD #5 closes with its arrows NAMED (U1–U7).** **U1/U2 stand and matter: NOTHING RENDERS until
+     the owner clicks Settings → Pages → Source: GitHub Actions** (`has_pages: false` today), **and U2
+     is THE QUIET ARROW — a wrong `baseUrl` builds GREEN, deploys GREEN, reports success, and serves a
+     STYLELESS site; no local build and no workflow can see it. The owner's first check is a LOOK, not
+     a red.** Every re-pointed link (**7 `helpLinkUri` + the twelve README links + the template's**)
+     **404s until that click — bounded** (nothing publishes without the owner's Release; the interval is
+     one setting long) **and strictly better than the old targets, which 404 FOREVER**; **the root
+     README's Documentation link is the ONE exposure that argument does not cover** — the repo is
+     public — **named rather than smuggled**. **U3 stands: Pin 3 catches phase history; it cannot catch
+     dull, wrong-level or unhelpful — taste is unpinnable**, and **the review found it live**
+     (`BnImage.cs:291`'s maintainer parenthetical shipping to a public page, carrying no banned word;
+     cut). **U7** (the card's unfurl) is **decision 6's lesson arriving a second time**. **Nothing
+     published; no tag created; no secret added — this phase publishes a website and nothing else, and
+     does not publish that until one setting is clicked.** See
+     [design](../plans/2026-07-17-phase-8.4-design.md) +
+     [conclusion](../plans/2026-07-17-phase-8.4-conclusion.md).
 - **Phase 8.5** — hygiene + M8 final audit + close (DoD #6) → `v8.0` — ⏳
 
 ---

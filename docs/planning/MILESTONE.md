@@ -191,11 +191,137 @@ the 4-IL2072 shape), 8.0 finds out before anything is packaged.
    generated-output probe), and **U6 matters: proven on the CI runner, not on a stranger's
    laptop.** **The template does not publish until the owner's Release — the same gate as
    the packages.**
-5. **The docs site.** Docusaurus in `website/`, deployed to GitHub Pages via a `docs.yml`
+5. ✅ **The docs site.** Docusaurus in `website/`, deployed to GitHub Pages via a `docs.yml`
    mirroring AdoNet.Async; content: getting started (the template path), the architecture
    story (one Blazor app → NativeAOT → two shells; the wire, the ABI freeze, Yoga), the
    component reference (~20 components — hand-curated or xmldoc2md-generated, decided in
    the phase), the parity contract, and both shell setup guides.
+   **⚠ THE DoD's OWN "~20 components" IS NOT A COUNT OF ANYTHING — measured at Phase 8.4
+   Gate 4: 15 concrete `ComponentBase` types, 26 public types, 196 `[Parameter]`
+   properties.** Recorded here so 8.5's audit does not trip on the wording. The reference
+   generates **26 pages** (the public surface), not 15 or 20. **"21 components" — the number
+   that reached three files this phase — was born TRUE as *21 documented types* (27 − 6
+   headless razor components) and was then copied out of its meaning**, which is the failure
+   mode DoD #5 turned out to be about.
+   **DoD-wording honesty — "both shell setup guides" named a document that did not exist.**
+   There has never been an Android shell setup guide, because **the Android path IS the
+   template** (`ios-shell-setup.md:3-6` says so). A hole in the DoD's wording, not in 8.3's
+   delivery. Resolved by **writing** `website/docs/shells/android.md` (short, honest, and it
+   does not transcribe the Gradle files) rather than by restating the DoD.
+   **Closed by Phase 8.4** ([conclusion](../plans/2026-07-17-phase-8.4-conclusion.md)):
+   `website/` (Docusaurus 3.10.2, scaffolded from the live AdoNet.Async mirror, 41 pages,
+   `onBrokenLinks` **and `onBrokenAnchors`** = `'throw'`); **the component reference is
+   GENERATED** (`scripts/generate-reference.ps1` → xmldoc2md against a **publish** output →
+   27 MDX into a `.gitignore`d dir) **and never committed** — the `///` next to the code
+   stays the one home; `docs.yml` builds on PRs, deploys on main, and is **advisory** (the
+   three required gates keep their names and contexts); the icon shipped (**128×128 PNG**,
+   packed to all six roots — **8.2's trigger fired**); `docs/ios-shell-setup.md` and
+   `docs/analyzers.md` **MOVED**, repo copies deleted.
+   **THE HEADLINE — a phase about stale copies that kept catching itself.** **(1) The
+   generator lied during design**: xmldoc2md against `bin/` → **`Generation: 10 succeeded, 0
+   failed`, exit 0, green — and ZERO components.** `Microsoft.AspNetCore.Components.dll` is
+   not beside the assembly, so `ComponentBase` will not resolve, so **every derived type
+   drops SILENTLY**. Against a publish output: **26**. ***10 vs 26 is invisible to anything
+   that does not count*** — the fourth arrival of 8.1's `return ,$names` and 8.3's blind
+   roster, by a new door. **(2) Pin 2 read as ON and was OFF, twice**: the `.props` imports
+   *before* the project body, so `{BnEnforceDocCoverage:true, NoWarn:…;CS1591}` — true and
+   suppressed anyway (fixed with `src/Directory.Build.targets`); then **still not a pin**,
+   because `ci.yml` builds without `-warnaserror` — CS1591 would have been **8 warnings in a
+   lane that exits 0**. ***A pin's costume on a pin's absence.*** **(3) Pin 2's guarantee
+   covered exactly HALF the parameter surface** (review S1-1): the Razor generator emits
+   `#pragma warning disable 1591` at **line 3 of every `*_razor.g.cs`**, so an `@code`-block
+   `[Parameter]` is **structurally invisible** to CS1591 — deleting `BnSlider.Value`'s
+   summary gave **0 errors, 4/4 pins green, and the property `@bind-Value` targets GONE from
+   the shipped XML**. Closed by `EveryParameter_CarriesADocComment`. **(4)
+   `onBrokenAnchors` defaulted to `'warn'`** — anchors are half the internal-link surface and
+   **the reference is GENERATED from `<see cref>`→anchor links**; Gate 2 fixed five and
+   nothing kept them fixed. Now `'throw'` (Docusaurus's own default carries
+   `// TODO Docusaurus v4: change to throw`).
+   **"192" WAS WRONG TOO** — it came from `grep '[Parameter]'`, which **cannot see
+   `[Parameter, EditorRequired]`** (BnList declares four; the review read BnList as **2**
+   where the assembly has **6**). **The fix pass's pin derived 196 on its first run, because
+   it REFLECTS instead of grepping** — and the review had reproduced the design's number and
+   reconciled to it, **inheriting the same blind pattern**. The blind half is **exactly 50%
+   (98/98)**, not 51%. *A number is not measured until the thing that reads it can see every
+   form it takes.*
+   **THE DocFX ANSWER, as the owner asked for it:** **DocFX genuinely wins the free API
+   reference** — native .NET, ingests assemblies + XML docs, no glue; **for a repo whose
+   reference surface IS .NET types that is the most relevant feature either tool has, and
+   Docusaurus lacks it at any price.** Docusaurus wins that **the owner already runs it** (one
+   toolchain, one CI shape) and **a docs site is 80% prose**. **What MEASURING changed:** the
+   XML docs were **already COMPLETE** (so nothing was traded away — **8.1's premise that "doc
+   coverage is 8.4's editorial work" was WRONG; coverage was done, VOICE was the job**), and
+   their content was **repo-voiced** — `BnView` said *"since Phase 3.4 Gate 1"*, *"the BnDemo
+   goldens stay byte-identical"*, and *"Razor awaits .razor compilation (M6)"*, **which was
+   not merely dated but FALSE** (`<BnInput @bind-Value="_text" />` is live in
+   `BnDemo.razor:51`). **DocFX would have published that phase history exactly as
+   faithfully.** **Both tools needed the same editorial pass on the same XML. DocFX saves the
+   plumbing, not the work** — and against a toolchain the owner already knows, **plumbing is
+   the cheaper thing to give up.**
+   **THE ONE-HOME RULE AS SHIPPED — GENERATED / LINKED / OWNED; *"kept in sync is not a
+   home"*. The site NEVER includes, it POINTS** (8.3's iOS-doc precedent generalized: *prose
+   a gate does not keep true should point, not copy*). `docs/plans/` links **as a class**.
+   **The site states NO number a gate owns** — reviewer-audited: no counts, no versions, **no
+   Yoga literal**.
+   **Gate 1's best catch — a permanent 404 INSIDE a package.** The design named **ONE**
+   inbound link to the moved docs; there were **EIGHT**. The other seven are `helpLinkUri`
+   values in the analyzer sources — *the string a consumer's IDE opens from a BN squiggle*.
+   Deleting `docs/analyzers.md` per the fates table would have shipped **a permanent 404 to
+   every user of every BN rule, at the moment they are already confused**. Re-pointed, and now
+   **PINNED** (`AnalyzerHelpLinkDriftTests`, review S2-2): **they ship INSIDE a nupkg — the one
+   link class a consumer's IDE resolves that no site build can ever see** (absolute external
+   URLs are invisible to `onBrokenLinks`/`onBrokenAnchors`). Its `baseUrl` mutation **reds all
+   seven at once — U2 from the package side**.
+   **THE SEVENTH PACKAGE** (Gate 3's find, no ledger had noticed): 8.1 declared
+   `src/Directory.Build.props` the ONE metadata home; **8.3 then created
+   `templates/BlazorNative.Templates` OUTSIDE `src/` DELIBERATELY** (a seventh csproj inside
+   **un-licenses** the props — the shipped-set pin is what makes that home legal), so it
+   carries its own `PackageProjectUrl` **by necessity**, still pointing at the repo while the
+   six moved. ***Shipping 6-of-7 is not a rule, it is a coincidence waiting to be noticed by a
+   user.*** Split the same way: **RepositoryUrl = where the source is; PackageProjectUrl =
+   where the docs are** — verified **in the PACKED nuspec, since the pack is what a user
+   gets**. Also Gate 3's: the footer label **`Source: <repo>`** re-pointed at a docs site would
+   read ***"Source: a site that is not the source"*** — **a fact made wrong by the act of
+   fixing it**; now `Docs:` (nuget.org still renders Source from `<repository>`).
+   **Review: PASS with 2 Important + 8 lesser — ALL applied, none deferred.** **THREE
+   PRESCRIPTIONS THE FIX PASS REFUSED, CORRECTLY** (the reviewer is strong and was still wrong
+   three times): reusing `PublicSurfaceDocs()` for S1-1 would have **reddened 124
+   correctly-documented properties** (it returns `member.Value`; an **inheritdoc-only
+   member's Value is the EMPTY STRING** — indistinguishable from undocumented); **`navbar.logo.to`
+   is invalid** (the build refuses it: *"navbar.logo.to is not allowed"* — the diagnosis was
+   right, `href: '/'` is the remedy); and the **"192" reconciliation**. **The 16th design row:
+   the design asked for an IMPOSSIBLE mutation** (*"rename a component ⇒ Pin 1 red both
+   ways"*) — **Pin 1 derives BOTH sides**, so a rename moves them together: **green, correctly,
+   and by design**. Satisfying it would need **the roster 8.3's I-1 forbids**. ***STRUCK, with
+   the reason.*** **Pin 3's own mutation corrected the pin** (`/\bgolden\b/` cannot match
+   *"goldens"*, the plural the repo writes) and **Pin 3 scans the PUBLIC SURFACE, not the
+   file** — a whole-file regex would red on maintainer docs doing their job and ***teach the
+   next author to delete engineering truth to go green***.
+   **FOUND ONLY BECAUSE SOMETHING FINALLY LOOKED:** the social card's tagline **overflowed its
+   own 1200px viewBox**, clipping "views" — **invisible for as long as nothing rasterized it**;
+   and **an SVG `og:image` renders NO preview on any social platform** (all require raster) —
+   **decision 6 had already learned that for NuGet ("JPEG/PNG only") and it did not transfer**.
+   Both fixed; the card is a PNG.
+   Evidence: .NET **577/0** (Renderer 132 + Analyzers 25 + Runtime 420; **570 → 574 → 577**
+   with provenance) · JVM **106/0** untouched · device lanes **untouched** (184/154 on prior
+   provenance — **no wire/ABI/golden/shell change**) · publish gates unmoved **STRUCTURALLY**
+   (`Directory.Build.props`/`.targets` exist **ONLY under `src/`**; the publish head is
+   `samples/`, so **MSBuild's upward search finds nothing**) · smoke **PASS**: **6 nupkg + 5
+   snupkg**, zero pack warnings, nuspec + inventory ×6, **`icon.png` at root**, and it printed
+   the packaged link **live** (`warning BN0011: … /docs/analyzers#bn0011`) · fresh-clone
+   `npm run build`: `Generation: 26 succeeded` → 27 files → **[SUCCESS], 41 pages, 0 warnings,
+   0 broken links/anchors** · actionlint clean · **the icon: pack IS the pin, verified by
+   running it** — **`NU5019 File not found`, exit 1**, ***not NU5046 as three places claimed***
+   (the `<None>` carries no `Exists()` guard, so the item-level failure fires first).
+   **DoD #5 closes with its arrows NAMED (U1–U7).** **U1/U2 stand and matter: nothing renders
+   until the owner clicks Settings → Pages → Source: GitHub Actions, and U2 is THE QUIET ARROW
+   — a wrong `baseUrl` builds GREEN and deploys a styleless site, so the owner's first check is
+   a LOOK, not a red.** Every re-pointed link (7 `helpLinkUri` + the READMEs + the template)
+   404s until that click — **bounded, and strictly better than the old targets, which 404
+   FOREVER**. **U3 stands: Pin 3 catches phase history; it cannot catch dull, wrong-level or
+   unhelpful — taste is unpinnable** (the review found `BnImage.cs:291`'s maintainer
+   parenthetical shipping to a public page; cut). **Nothing published; no tag created; no
+   secret added — this phase publishes a website and nothing else.**
 6. **Hygiene + close:** every new surface CI-asserted (counts + gates with provenance);
    decision log per phase; final audit → tag **`v8.0`**.
 
