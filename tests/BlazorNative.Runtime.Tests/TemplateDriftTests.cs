@@ -254,6 +254,88 @@ public sealed class TemplateDriftTests
             + $"\n(Checked {literals.Count} literals in total.)");
     }
 
+    /// <summary>THE SUBSTITUTION-COLLISION PIN (Phase 8.7), and it exists because
+    /// 8.7 ARMED THE TRAP IT GUARDS. `dotnet new` substitutes the BlazorNativeVersion
+    /// symbol by EXACT STRING MATCH: every occurrence of `replaces` anywhere in the
+    /// generated content becomes the user's `--BlazorNativeVersion` value. That was
+    /// harmless while the version was `1.0.0-preview.1` — a string nothing else could
+    /// plausibly contain. PHASE 8.7 MOVED IT TO PLAIN `0.x` SEMVER, which is short,
+    /// generic, and shaped exactly like the third-party version pins this template is
+    /// full of.
+    ///
+    /// THE LIVE COLLISION, measured at 8.7 and reachable: the android gradle file pins
+    /// `com.facebook.soloader:soloader:0.12.1`. The day this repo releases `0.12.1`,
+    /// `replaces` becomes `"0.12.1"` — and `dotnet new blazornative --BlazorNativeVersion
+    /// 0.13.0` rewrites SOLOADER'S pin to 0.13.0 and generates an app that cannot build.
+    ///
+    /// ⚠ AND EVERY OTHER LANE IS BLIND TO IT, which is the whole reason this pin is
+    /// worth its lines. template-smoke runs `dotnet new blazornative` WITHOUT
+    /// `--BlazorNativeVersion`, so the substitution replaces the default with ITSELF —
+    /// a no-op. The collision is invisible until a real user overrides the version,
+    /// and then it is their build that breaks, not ours.</summary>
+    [Fact]
+    public void TheVersionLiteral_CollidesWithNoOtherStringInTheTemplate()
+    {
+        string replaces;
+        using (JsonDocument doc = JsonDocument.Parse(
+            ReadCheckoutFile(TemplateJson),
+            new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true }))
+        {
+            replaces = doc.RootElement.GetProperty("symbols").GetProperty("BlazorNativeVersion")
+                .GetProperty("replaces").GetString() ?? "";
+        }
+
+        Assert.False(string.IsNullOrWhiteSpace(replaces),
+            $"{TemplateJson}'s BlazorNativeVersion.replaces is empty — this pin searches for that "
+            + "string, and searching for an empty string proves nothing. A pin that cannot see its "
+            + "subject must never pass vacuously.");
+
+        // The ONLY legitimate homes for the literal, and each is a MIRROR the pin
+        // above already holds equal to the props. template.json is excluded because
+        // `dotnet new` CONSUMES it — it declares the substitution, it is not subject
+        // to it, and it does not ship into the generated app.
+        var hits = new List<(string File, int Line, string Text)>();
+        foreach (string relative in TrackedFilesUnder(ContentRoot))
+        {
+            if (relative.Replace('\\', '/') == ".template.config/template.json")
+                continue;
+
+            string path = CheckoutPath($"{ContentRoot}/{relative}");
+            string[] lines;
+            try { lines = File.ReadAllLines(path); }
+            catch (IOException) { continue; }   // a binary the wrapper ships; no substitution risk
+
+            for (int i = 0; i < lines.Length; i++)
+            {
+                if (!lines[i].Contains(replaces, StringComparison.Ordinal))
+                    continue;
+                // The three annotated PackageReference lines ARE the version, by design.
+                if (lines[i].Contains("x-release-please-version", StringComparison.Ordinal))
+                    continue;
+                hits.Add((relative, i + 1, lines[i].Trim()));
+            }
+        }
+
+        Assert.True(hits.Count == 0,
+            $"VERSION-SUBSTITUTION COLLISION. The template's version literal is \"{replaces}\", and that "
+            + "exact string also appears on the line(s) below. `dotnet new` substitutes BY STRING MATCH, "
+            + $"so `dotnet new blazornative --BlazorNativeVersion <other>` would rewrite these too:\n"
+            + string.Join("\n", hits.Select(h => $"  {ContentRoot}/{h.File}:{h.Line}\n    {h.Text}"))
+            + "\n\n⚠ DO NOT SILENCE THIS BY ADDING AN EXCEPTION ABOVE. The line is not a mirror and it "
+            + "is not supposed to hold the version — that is precisely the bug. It means this repo's "
+            + "version has collided with a THIRD-PARTY pin that happens to share its shape, and a "
+            + "generated app built by anyone who overrides the version will not compile.\n"
+            + "The fix is one of:\n"
+            + "  · release a different version (the collision is with one specific value, and the next "
+            + "one along is free) — cheapest, and the version carries no meaning worth defending;\n"
+            + "  · change the colliding pin, if it is ours to change;\n"
+            + "  · give the symbol a distinctive `replaces` token and teach release-please to write "
+            + "THAT line — a real design change, not a test edit.\n"
+            + "This pin exists because template-smoke CANNOT see this: it generates with the default "
+            + "version, so the substitution is a no-op there and the collision stays invisible until a "
+            + "user hits it.");
+    }
+
     /// <summary>THE SUBSET PIN. The template references Runtime + Components +
     /// Analyzers (Core/Renderer/Http arrive transitively via Runtime — the
     /// sample proves the shape). The shipped set is ENUMERATED from src/, never

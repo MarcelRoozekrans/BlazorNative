@@ -180,13 +180,29 @@ public sealed class PackageVersionPinTests
     /// is wrong". The subject is better, not gone.
     ///
     /// ⚠ WHAT THIS PIN CANNOT SEE, named because a guard's limits belong next to
-    /// the guard: the rung-4 graduation trap (8.6 decision 2). Reaching 1.0.0
-    /// without dropping `versioning`/`prerelease`/`prerelease-type` from
-    /// release-please-config.json makes the NEXT commit compute `1.0.1-preview` —
-    /// and the manifest and the props would AGREE on that, so this pin is
-    /// perfectly happy. So is the classifier. The only guard there is prose, and
-    /// it lives in docs/GITHUB-SETUP.md where the person doing the graduating is
-    /// standing.</summary>
+    /// the guard: it is an EQUALITY claim, so anything that moves the manifest and
+    /// the props TOGETHER is invisible to it. Two such moves are live at 0.x, and
+    /// Phase 8.7 measured both:
+    ///
+    ///   · AN ACCIDENTAL GRADUATION. `bump-minor-pre-major: true` is what keeps a
+    ///     `feat!:` at 0.x on the MINOR (0.1.0 -> 0.2.0). Flip it to false — which
+    ///     is what "mirror AdoNet.Async" invites, and the reference really does set
+    ///     it — and the very next `feat!:` computes 1.0.0. That is a graduation
+    ///     nobody decided, and nuget.org has NO hard delete, so it is permanent.
+    ///     The manifest and the props would agree on 1.0.0 perfectly.
+    ///   · A `release-as` FOOTER IN A COMMIT BODY. It is read FIRST, before any
+    ///     counting (versioning-strategies/default.js), and it sets the version
+    ///     outright. Manifest and props agree on whatever it named.
+    ///
+    /// So does the classifier, in both cases: tag and props agree. scripts/
+    /// footer-check.ps1 is the guard for the second one; the first one's guard is
+    /// prose, and it lives in docs/GITHUB-SETUP.md where the person graduating is
+    /// standing.
+    ///
+    /// (Phase 8.6's version of this note named the `-preview` re-entry trap —
+    /// reaching 1.0.0 without dropping `versioning`/`prerelease`/`prerelease-type`
+    /// re-glued the suffix on. Phase 8.7 deleted those three keys with the
+    /// prerelease scheme itself, so that trap no longer exists to be documented.)</summary>
     [Fact]
     public void TheManifest_AgreesWithTheProps()
     {

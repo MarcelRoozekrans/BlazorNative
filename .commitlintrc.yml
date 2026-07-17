@@ -73,8 +73,11 @@
 #            token too, did not also propose a hand-picked version.)
 #
 #   So this file's closing claim — "NEVER A WRONG VERSION" — is exact about the
-#   SUBJECT and must not be read as covering the BODY. The subject's TYPE cannot
-#   move the version at 1.0.0-preview.N. A body's release-as footer sets it
+#   SUBJECT and must not be read as covering the BODY. ⚠ AND PHASE 8.7 NARROWED
+#   THE SUBJECT HALF: at 0.x the type DOES move the version (`fix:` -> patch,
+#   `feat:` -> minor), so the claim is no longer "the type cannot move it" but
+#   "the type cannot move it PAST the minor" — see the closing note below. A
+#   body's release-as footer, by contrast, sets it
 #   outright, at any rung, and it short-circuits everything: the strategy scans
 #   for that note FIRST, before any breaking/feature counting. That is rung 3
 #   working as designed (8.6 decision 2) — and it is why a WHY body that
@@ -154,9 +157,21 @@
 #
 # The honest consequence of the whole arrangement, stated rather than hidden: a
 # mis-titled PR CAN merge, and release-please will silently ignore it — no
-# changelog line, no bump contribution. THAT FAILURE IS A MISSING CHANGELOG
-# ENTRY, NEVER A WRONG VERSION: at 1.0.0-preview.N the commit type cannot move
-# the version at all (measured — see .github/workflows/release-please.yml).
+# changelog line, no bump contribution.
+#
+# ⚠ PHASE 8.7 CHANGED WHAT THAT COSTS, AND THE OLD SENTENCE HERE IS NOW FALSE.
+# It said "NEVER A WRONG VERSION: at 1.0.0-preview.N the commit type cannot move
+# the version at all". That was TRUE of the preview counter and DIED WITH IT. At
+# 0.x the type moves the version: `fix:` -> patch, `feat:`/`feat!:` -> minor
+# (measured — see .github/workflows/release-please.yml). So a mis-typed subject
+# now costs a missing changelog entry AND possibly the wrong RUNG — a patch where
+# a minor belonged.
+#
+# THE LANE IS STILL SAFELY ADVISORY, but on a narrower claim than before: the
+# damage is BOUNDED BY THE MINOR. No subject can reach 1.0.0, because
+# `bump-minor-pre-major` decides that and no commit text can flip it. The one
+# thing that CAN name a version outright is a release-as footer in a BODY, and
+# that is scripts/footer-check.ps1's subject, not this file's.
 # ─────────────────────────────────────────────────────────────────────────────
 extends:
   - "@commitlint/config-conventional"

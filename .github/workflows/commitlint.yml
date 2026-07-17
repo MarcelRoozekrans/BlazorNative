@@ -38,12 +38,23 @@
 #
 # THE HONEST CONSEQUENCE, stated rather than hidden: A MIS-TITLED PR CAN MERGE,
 # and release-please will silently ignore it — no changelog line, no bump
-# contribution. That failure is A MISSING CHANGELOG ENTRY, NEVER A WRONG VERSION,
-# and that is not a hope — it is measured: at 1.0.0-preview.N, `fix:`, `feat:`
-# and `feat!:` all produce preview.N+1, so the commit TYPE cannot move the
-# version at all (see .github/workflows/release-please.yml). The blast radius of
-# a mis-typed subject is a changelog section. That is what makes advisory safe
-# here, and it would not be safe in a repo where the type computed the version.
+# contribution.
+#
+# ⚠ PHASE 8.7 FALSIFIED THE OLD REASON THIS WAS SAFE, so it is restated rather
+# than left standing. This block used to say the failure is "A MISSING CHANGELOG
+# ENTRY, NEVER A WRONG VERSION ... at 1.0.0-preview.N, `fix:`, `feat:` and
+# `feat!:` all produce preview.N+1, so the commit TYPE cannot move the version at
+# all" — and it closed by noting that it "would not be safe in a repo where the
+# type computed the version". THIS IS NOW THAT REPO: at 0.x, `fix:` -> patch and
+# `feat:`/`feat!:` -> minor (measured; see release-please.yml).
+#
+# ADVISORY IS STILL RIGHT, ON A NARROWER CLAIM: the blast radius of a mis-typed
+# subject is now A CHANGELOG SECTION PLUS AT MOST ONE RUNG — a patch where a
+# minor belonged, or the reverse. It is BOUNDED BY THE MINOR and can never reach
+# 1.0.0, because `bump-minor-pre-major` decides that and no subject text can flip
+# it. A wrong rung on an unpublished-until-clicked draft is cheap; the owner reads
+# the release PR before merging it. The unbounded hazard was never the subject —
+# it is a release-as footer in a BODY, and footer-check is the lane for that.
 #
 # Promoting this to required is the owner's call and a branch-protection change.
 # It is not taken here.

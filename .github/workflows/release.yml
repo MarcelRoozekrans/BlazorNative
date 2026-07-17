@@ -104,11 +104,22 @@ on:
   # FIRST thing validate does is classify the tag.
   #
   # `published` IS ALSO THE ONE CORRECT TRIGGER FOR THIS REPO, and 8.2 chose it
-  # for its own reasons before that was knowable. Our packages are pre-releases
-  # (1.0.0-preview.N) published FROM A DRAFT, and GitHub documents that "the
-  # `prereleased` type will not trigger for pre-releases published from draft
-  # releases, but the `published` type will trigger." Had 8.2 picked `released`
-  # or `prereleased`, 8.6 would have had to change it. Verified, not assumed.
+  # for its own reasons before that was knowable. It is correct under BOTH of
+  # this repo's version schemes, which is the point worth keeping:
+  #   · under 8.6's `1.0.0-preview.N`, the Releases were flagged PRE-RELEASE, and
+  #     GitHub documents that "the `prereleased` type will not trigger for
+  #     pre-releases published from draft releases, but the `published` type will
+  #     trigger";
+  #   · under 8.7's `0.x`, `prerelease` is gone from release-please-config.json,
+  #     so the draft is an ORDINARY Release — and `published` fires for those too.
+  # Had 8.2 picked `released` or `prereleased`, 8.6 would have had to change it,
+  # and 8.7 would have had to change it back. Verified, not assumed.
+  #
+  # ⚠ ONE REAL CONSEQUENCE OF 0.x, because it changes what consumers get: `0.1.0`
+  # has no prerelease suffix, so NuGet treats it as a STABLE version. `dotnet add
+  # package BlazorNative.Runtime` resolves it WITHOUT `--prerelease`, which
+  # `1.0.0-preview.N` never did. The 0 major is what now says "pre-1.0", and the
+  # packages' own READMEs say it in words.
   # Note: editing or re-publishing an existing Release fires `edited`, NOT
   # `published` — this workflow does not re-fire. Recovery from a partial push
   # is an Actions re-run (see docs/GITHUB-SETUP.md).

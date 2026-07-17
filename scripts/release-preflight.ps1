@@ -21,7 +21,7 @@
                    derived from the props would compare the props TO ITSELF —
                    green, vacuous, and exactly 8.1's headline sin. The table
                    supplies real negative inputs instead (`v9.9.9` vs props
-                   `1.0.0-preview.2` is a REAL mismatch, and its row expects
+                   `0.1.0` is a REAL mismatch, and its row expects
                    RED).
 
       -Tag <t>     Classify + assert, then emit the verdict for release.yml's
@@ -108,7 +108,7 @@
 
 .EXAMPLE
     .\scripts\release-preflight.ps1 -SelfTest
-    .\scripts\release-preflight.ps1 -Tag v1.0.0-preview.2
+    .\scripts\release-preflight.ps1 -Tag v0.1.0
     .\scripts\release-preflight.ps1 -Preflight
 #>
 
@@ -152,7 +152,7 @@ function Write-Fail([string]$text) { Write-Host "  ✗  $text" -ForegroundColor 
 #
 #  WHY THE RETIRED NAMESPACES GET NAMED ARMS RATHER THAN FALLING TO THE GENERIC
 #  ONE — the house rule already in this script: different mistakes, different
-#  sentences. A `pkg/1.0.0-preview.2` Release means someone followed
+#  sentences. A `pkg/0.1.0` Release means someone followed
 #  docs/GITHUB-SETUP.md's OLD ritual, and that reader deserves "the `pkg/`
 #  namespace was retired in Phase 8.6; release-please owns `v<semver>` now" —
 #  not "tag is in neither namespace", which reads like a typo report.
@@ -189,8 +189,11 @@ $LegacyPackageTagPattern = '^pkg/(.+)$'
 # UNRECOGNIZED ("you used no namespace at all").
 $PackageTagPattern = '^v(.+)$'
 
-# SemVer 2.0.0, the official expression from semver.org. `1.0.0-preview.1` and
-# `9.9.9` match; `not-a-version` does not.
+# SemVer 2.0.0, the official expression from semver.org. `0.1.0`, `0.2.0-rc.1`
+# and `9.9.9` match; `not-a-version` does not. The prerelease example is kept
+# deliberately even though Phase 8.7 retired the `-preview` scheme: the pattern
+# still ACCEPTS a prerelease part, and an example set that only showed plain
+# 0.x versions would under-describe the regex it documents.
 $SemVerPattern = '^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$'
 
 # The two-arm positive control's subject (8.2 design decision 4). newtonsoft.json
@@ -252,7 +255,7 @@ function Get-ShippedPackageIds {
 #  THE CLASSIFIER + THE ASSERTION — one pure function over (tag, props version)
 #
 #  Pure and parameterised ON PURPOSE. It is the whole reason the self-test table
-#  can supply REAL negative inputs (`pkg/9.9.9` against props `1.0.0-preview.1`)
+#  can supply REAL negative inputs (`pkg/9.9.9` against props `0.0.0`)
 #  rather than deriving a tag from the live props and comparing the props to
 #  itself. `-Tag` passes the live props; `-SelfTest` passes the table's.
 # ─────────────────────────────────────────────────────────────────────────────
@@ -325,7 +328,7 @@ function Get-ReleaseVerdict {
 
     # ── ARM 3: the ONE publishing namespace ──────────────────────────────────
     # [regex]::Match is CASE-SENSITIVE (unlike `-match` above). `v` is the only
-    # spelling that opens this door; `V1.0.0-preview.2` falls through to
+    # spelling that opens this door; `V0.1.0` falls through to
     # unrecognized -> RED. That strictness is the right default for the arm that
     # can publish, and it is deliberate: toward publishing is the one direction
     # this phase's law does not bend.
@@ -362,8 +365,13 @@ function Get-ReleaseVerdict {
         #
         # CASE, and this is the ONE non-obvious PUBLISH in the script, so it is
         # stated rather than left to be discovered: `-ne` is CASE-INSENSITIVE,
-        # so `v1.0.0-PREVIEW.2` compares EQUAL to the props' `1.0.0-preview.2`
-        # and the verdict is PUBLISH. That is benign, for two independent
+        # so `v0.2.0-RC.1` compares EQUAL to the props' `0.2.0-rc.1` and the
+        # verdict is PUBLISH. ⚠ THE EXAMPLE IS NOW HYPOTHETICAL AND IS KEPT ON
+        # PURPOSE: Phase 8.7 moved the version to plain 0.x semver, which has NO
+        # alphabetic part for a case to differ in, so nothing this repo currently
+        # releases can exercise this. The comparison stays case-insensitive
+        # anyway — deleting the defence because today's versions cannot trip it
+        # would arm it for the first `-rc` tag. That is benign, for two independent
         # reasons: NuGet versions ARE case-insensitive by spec, and —
         # decisively — THE TAG NEVER FEEDS THE PACK (guard 4). What ships is
         # whatever src/Directory.Build.props spells, and the release path never
@@ -454,7 +462,8 @@ function Test-VersionPublished {
         [Parameter(Mandatory)][string]$Version
     )
     if (-not $State.Registered) { return $false }
-    # NuGet versions are case-insensitive ('1.0.0-Preview.1' == '1.0.0-preview.1').
+    # NuGet versions are case-insensitive ('0.2.0-RC.1' == '0.2.0-rc.1'). Plain
+    # 0.x has no letters to differ in, so this is latent today and kept anyway.
     return @($State.Versions | ForEach-Object { $_.ToLowerInvariant() }) -contains $Version.ToLowerInvariant()
 }
 
@@ -511,12 +520,12 @@ function Invoke-ControlArms {
     THE PROPS VALUES ARE THE TABLE'S, NOT THE LIVE ONES. That is the point: a
     row that derived its tag from the live props would compare the props to
     itself and pass forever, including after someone deleted the comparison.
-    Row 2 (`v9.9.9` vs `1.0.0-preview.2`) is a real mismatch with a real
+    Row 2 (`v9.9.9` vs `0.1.0`) is a real mismatch with a real
     expected RED, and it is what makes the assertion provable with no Release
     in existence.
 
-    THE TABLE'S PROPS IS `1.0.0-preview.2` AND THE LIVE PROPS IS SOMETHING ELSE
-    — deliberately, and it is worth one sentence. `1.0.0-preview.2` is the
+    THE TABLE'S PROPS IS `0.1.0` AND THE LIVE PROPS IS SOMETHING ELSE
+    — deliberately, and it is worth one sentence. `0.1.0` is the
     version release-please proposes NEXT, so it is a value the live file does
     not hold; a row that happened to agree with the live props would be a row
     that could pass by reading the wrong file.
@@ -533,15 +542,15 @@ function Invoke-SelfTest {
     Write-Host ""
 
     $rows = @(
-        @{ Tag = "v1.0.0-preview.2";    Props = "1.0.0-preview.2"; Class = "package";          Verdict = "PUBLISH"; Why = "the happy path — release-please's own tag shape, matching the props" }
-        @{ Tag = "v9.9.9";              Props = "1.0.0-preview.2"; Class = "package";          Verdict = "RED";     Why = "a REAL mismatch (not props-vs-props) — the assertion must BITE; its new subject is release-please's config" }
-        @{ Tag = "v8.0";                Props = "1.0.0-preview.2"; Class = "legacy-milestone"; Verdict = "RED";     Why = "THE ARM 8.6 INVERTS — was SKIP in 8.2; v8.0 is cancelled, not pending" }
-        @{ Tag = "v1.0";                Props = "1.0.0-preview.2"; Class = "legacy-milestone"; Verdict = "RED";     Why = "a retired tag's shape — the arm reds on the SHAPE, never on a tag list, so this row was true while v1.0 was live and is unchanged now it is gone (deleted 2026-07-17). The row never read a tag; that is the point of it" }
-        @{ Tag = "pkg/1.0.0-preview.2"; Props = "1.0.0-preview.2"; Class = "legacy-package";   Verdict = "RED";     Why = "8.2's namespace, retired — note the props MATCHES and it is still RED" }
-        @{ Tag = "1.0.0-preview.2";     Props = "1.0.0-preview.2"; Class = "unrecognized";     Verdict = "RED";     Why = "bare semver, no 'v' — the props matches, still RED" }
-        @{ Tag = "release/1.0.0";       Props = "1.0.0-preview.2"; Class = "unrecognized";     Verdict = "RED";     Why = "rejected namespace (b) — 'release/' is spent on BRANCHES by the owner's GitVersion.yml" }
-        @{ Tag = "vnot-a-version";      Props = "1.0.0-preview.2"; Class = "malformed";        Verdict = "RED";     Why = "the 'v' namespace with a payload that is not semver" }
-        @{ Tag = "";                    Props = "1.0.0-preview.2"; Class = "unrecognized";     Verdict = "RED";     Why = "no tag at all" }
+        @{ Tag = "v0.1.0";              Props = "0.1.0"; Class = "package";          Verdict = "PUBLISH"; Why = "the happy path — release-please's own tag shape, matching the props" }
+        @{ Tag = "v9.9.9";              Props = "0.1.0"; Class = "package";          Verdict = "RED";     Why = "a REAL mismatch (not props-vs-props) — the assertion must BITE; its new subject is release-please's config" }
+        @{ Tag = "v8.0";                Props = "0.1.0"; Class = "legacy-milestone"; Verdict = "RED";     Why = "THE ARM 8.6 INVERTS — was SKIP in 8.2; v8.0 is cancelled, not pending" }
+        @{ Tag = "v1.0";                Props = "0.1.0"; Class = "legacy-milestone"; Verdict = "RED";     Why = "a retired tag's shape — the arm reds on the SHAPE, never on a tag list, so this row was true while v1.0 was live and is unchanged now it is gone (deleted 2026-07-17). The row never read a tag; that is the point of it" }
+        @{ Tag = "pkg/0.1.0";           Props = "0.1.0"; Class = "legacy-package";   Verdict = "RED";     Why = "8.2's namespace, retired — note the props MATCHES and it is still RED" }
+        @{ Tag = "0.1.0";               Props = "0.1.0"; Class = "unrecognized";     Verdict = "RED";     Why = "bare semver, no 'v' — the props matches, still RED" }
+        @{ Tag = "release/1.0.0";       Props = "0.1.0"; Class = "unrecognized";     Verdict = "RED";     Why = "rejected namespace (b) — 'release/' is spent on BRANCHES by the owner's GitVersion.yml" }
+        @{ Tag = "vnot-a-version";      Props = "0.1.0"; Class = "malformed";        Verdict = "RED";     Why = "the 'v' namespace with a payload that is not semver" }
+        @{ Tag = "";                    Props = "0.1.0"; Class = "unrecognized";     Verdict = "RED";     Why = "no tag at all" }
     )
 
     $failures = @()
