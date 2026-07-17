@@ -19,7 +19,7 @@ namespace BlazorNative.Runtime.Tests;
 //
 // The 4.5 shape (a phase-stamped literal repeated per-csproj, 7 files of churn
 // per bump) is dead; drift BACK to per-csproj literals must be a red, not a
-// review catch. Three teeth:
+// review catch. Four teeth:
 //
 //   1. THE PROPS CARRIES EXACTLY ONE <Version> — zero means the source of
 //      truth vanished (and consumer-smoke.ps1, which PARSES this file for the
@@ -35,6 +35,12 @@ namespace BlazorNative.Runtime.Tests;
 //      remembering to tell this file about it.
 //   3. THE MANIFEST AGREES WITH THE PROPS (8.6) — the arrow that arrived WITH
 //      the automation, and the one no pin watched. See its own docstring.
+//   4. EVERY EXTRA-FILE NAMES ITS UPDATER (8.6 Gate 2) — teeth 1-3 all assume
+//      release-please can actually WRITE the mirrors. It could not: a bare
+//      path string picks the updater by FILE EXTENSION, and template.json's
+//      `.json` bought a strict `JSON.parse` that threw on the very `//`
+//      annotations decision 3 put there. No release PR would ever have opened.
+//      Found by a real --dry-run at Gate 2, not by reading. See its docstring.
 //
 // Enumerated from the checkout (build-test is the one required lane where
 // every file is checkout-visible — the drift-test house rule; RepoRoot is
@@ -224,6 +230,142 @@ public sealed class PackageVersionPinTests
             + "agree with, and the whole suite goes green while the packages publish one release "
             + "behind forever. Do not edit the manifest to make this pass: it is the author, and "
             + "editing it by hand is the thing this rule exists to stop.");
+    }
+
+    /// <summary>THE UPDATER PIN (Phase 8.6 Gate 2, P7). Every `extra-files`
+    /// entry must name its updater OUTRIGHT — the object form
+    /// `{"type":"generic","path":…}` — and never the bare path string.
+    ///
+    /// IT EXISTS BECAUSE THE BARE STRING SHIPPED A CRASH, and only a real
+    /// `--dry-run` could see it. 8.6 decision 3 chose ONE updater kind for all
+    /// four files — the Generic (annotation) updater, a line-scoped regex
+    /// replace — and rejected `json`+jsonpath and `xml`+xpath explicitly,
+    /// because both round-trip the WHOLE document through a parser/serializer
+    /// and reformat files that are this repo's version truth. Gate 1 then wrote
+    /// the four paths as bare strings, which LOOKS like it says that.
+    ///
+    /// It does not. A bare string dispatches ON FILE EXTENSION
+    /// (release-please strategies/base.js, an `else if` ladder). Only the final
+    /// `else` yields the Generic updater. `.json` yields
+    /// CompositeUpdater(GenericJson("$.version"), Generic), and
+    /// GenericJson.updateContent opens with a bare `JSON.parse(content)`.
+    /// `.template.config/template.json` carries the two `//` annotations
+    /// decision 3 deliberately added, so that parse threw:
+    ///
+    ///   SyntaxError: Expected double-quoted property name in JSON at position
+    ///   1699 (line 48 column 42)
+    ///
+    /// — column 42 being exactly where the `//` starts. release-please would
+    /// have crashed on every run and NO release PR would ever have opened. The
+    /// other three end `.props` and `.csproj`, match no arm, and reached the
+    /// Generic updater BY ACCIDENT OF THEIR EXTENSIONS. So decision 3's "one
+    /// updater kind everywhere" was true for three files by luck and false for
+    /// the fourth — and nothing in the tree could tell the difference, because
+    /// the dispatch is invisible at the config.
+    ///
+    /// THE FAILURE DIRECTION WAS SAFE (design row U1: "no PR appears" — loud,
+    /// and nothing publishes), and that is exactly why it needed a pin rather
+    /// than a shrug: a machine that never runs is a machine nobody notices is
+    /// broken. The automation would simply have never worked, quietly, and the
+    /// first person to look would have been reading a stack trace from a
+    /// third-party updater about a file they did not know it read.
+    ///
+    /// WHAT THIS PIN IS NOT: it is not a copy of release-please's dispatch
+    /// ladder. It does not know which extensions are special, and it must not —
+    /// that list is a third-party's internal table and it drifts. It asserts
+    /// ONE invariant with no extension knowledge at all: we never use the form
+    /// whose updater depends on the extension. A `.json` file added tomorrow,
+    /// or a `.props` renamed to `.xml` next year, is covered without this pin
+    /// learning anything new.
+    ///
+    /// `{"type":"generic"}` is code-supported (base.js `case 'generic'`) AND
+    /// schema-valid (the `extra-files` items' fifth anyOf arm, typeEnum
+    /// ["generic"], required [type, path]) — both checked against the shipped
+    /// artifacts rather than assumed, which is the Q2-1 rule: this repo ships a
+    /// `$schema` reference, so a key the schema rejects is a red squiggle in
+    /// every editor that honours it, and that trade was already refused once
+    /// this phase.</summary>
+    [Fact]
+    public void EveryExtraFile_NamesTheGenericUpdaterOutright()
+    {
+        string configPath = Path.Combine(RepoRoot(), "release-please-config.json");
+        Assert.True(File.Exists(configPath),
+            $"release-please-config.json not found at {configPath} — it is where the version's "
+            + "AUTHOR is told which files to write. Its absence must be a RED, not a vacuous pass: "
+            + "a pin that cannot see its subject must never pass vacuously.");
+
+        using JsonDocument config = JsonDocument.Parse(File.ReadAllText(configPath));
+
+        JsonElement extraFiles = default;
+        bool found = config.RootElement.TryGetProperty("packages", out JsonElement packages)
+            && packages.TryGetProperty(".", out JsonElement rootPackage)
+            && rootPackage.TryGetProperty("extra-files", out extraFiles);
+        Assert.True(found,
+            "could not read packages[\".\"][\"extra-files\"] out of release-please-config.json — "
+            + "either the root package path changed or `extra-files` is gone. If it is gone, the six "
+            + "mirrors are no longer written by anything and every bump leaves them behind: "
+            + "TheManifest_AgreesWithTheProps reds on the props, but the FIVE template literals "
+            + "would drift silently. Re-point this pin deliberately rather than deleting it.");
+
+        var bareStrings = new List<string>();
+        var wrongType = new List<string>();
+        int inspected = 0;
+
+        foreach (JsonElement entry in extraFiles.EnumerateArray())
+        {
+            inspected++;
+
+            if (entry.ValueKind == JsonValueKind.String)
+            {
+                bareStrings.Add(entry.GetString() ?? "(null)");
+                continue;
+            }
+
+            string path = entry.TryGetProperty("path", out JsonElement p)
+                ? p.GetString() ?? "(null path)"
+                : "(no `path` key)";
+            string type = entry.TryGetProperty("type", out JsonElement t)
+                ? t.GetString() ?? "(null type)"
+                : "(no `type` key)";
+
+            if (type != "generic")
+                wrongType.Add($"    {path}\n      declares type \"{type}\", must be \"generic\"");
+        }
+
+        // NON-VACUITY: an empty `extra-files` would make every claim below
+        // trivially true while the six mirrors go unwritten forever.
+        Assert.True(inspected > 0,
+            "release-please-config.json's `extra-files` is EMPTY — so release-please writes the "
+            + "manifest and CHANGELOG.md and NOTHING ELSE, and all six version mirrors (the props "
+            + "included) sit at their old values after every release. This pin would have passed "
+            + "over an empty read. A pin that cannot see its subject must never pass vacuously.");
+
+        Assert.True(bareStrings.Count == 0 && wrongType.Count == 0,
+            "AN EXTRA-FILE DOES NOT NAME ITS UPDATER (8.6 decision 3; Gate 2 P7).\n\n"
+            + $"  BARE PATH STRINGS ({bareStrings.Count}) — the updater is chosen by FILE EXTENSION:\n"
+            + (bareStrings.Count == 0
+                ? "    (none)\n"
+                : string.Join("\n", bareStrings.Select(f => $"    {f}")) + "\n")
+            + $"  OBJECT FORM, WRONG TYPE ({wrongType.Count}):\n"
+            + (wrongType.Count == 0 ? "    (none)\n" : string.Join("\n", wrongType) + "\n")
+            + $"\n({inspected} extra-file entr(ies) inspected.)\n\n"
+            + "Decision 3 chose ONE updater for all four files: the Generic (annotation) updater, a "
+            + "LINE-scoped regex replace that touches the annotated line and nothing else. It "
+            + "rejected `json`+jsonpath and `xml`+xpath outright, because both round-trip the whole "
+            + "document through a parser and re-emit it — a formatting risk taken, on this repo's "
+            + "version truth, for no gain.\n\n"
+            + "A BARE STRING DOES NOT ASK FOR THAT UPDATER. It asks release-please to guess from "
+            + "the extension (strategies/base.js): `.json` -> GenericJson + Generic, `.yaml`/`.yml` "
+            + "-> GenericYaml + Generic, `.toml` -> GenericToml + Generic, `.xml` -> GenericXml + "
+            + "Generic, and ONLY the final `else` -> Generic alone. GenericJson opens with "
+            + "`JSON.parse(content)`, which is strict — and it threw on template.json's `//` "
+            + "annotations at line 48 column 42, which is where the `//` starts. Gate 2's dry-run "
+            + "found that; no amount of reading the config did, because the config looks correct.\n\n"
+            + "Write the object form and say which updater you mean:\n"
+            + "    { \"type\": \"generic\", \"path\": \"path/to/file\" }\n\n"
+            + "If you genuinely want a round-trip updater for some new file, that is a decision-3 "
+            + "change: make it deliberately, in the design, and expect the reformat. Do not reach "
+            + "it by writing a string and letting an extension decide.");
     }
 
     /// <summary>The props' single <Version>, read the same way

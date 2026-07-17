@@ -9,10 +9,10 @@
       "prerelease-type": "preview",
       "draft": true,
       "extra-files": [
-        "src/Directory.Build.props",
-        "templates/BlazorNative.Templates/BlazorNative.Templates.csproj",
-        "templates/BlazorNative.Templates/content/BlazorNative.App/MyBlazorNativeApp.csproj",
-        "templates/BlazorNative.Templates/content/BlazorNative.App/.template.config/template.json"
+        { "type": "generic", "path": "src/Directory.Build.props" },
+        { "type": "generic", "path": "templates/BlazorNative.Templates/BlazorNative.Templates.csproj" },
+        { "type": "generic", "path": "templates/BlazorNative.Templates/content/BlazorNative.App/MyBlazorNativeApp.csproj" },
+        { "type": "generic", "path": "templates/BlazorNative.Templates/content/BlazorNative.App/.template.config/template.json" }
       ]
     }
   }

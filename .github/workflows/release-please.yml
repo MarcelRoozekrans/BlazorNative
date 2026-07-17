@@ -112,6 +112,54 @@
 #
 #   "draft": true                 ← THE LAW. The owner's click is the go.
 #
+#   "extra-files"                 THE SIX MIRRORS (decision 3), and every entry is
+#                                 the OBJECT form `{"type":"generic","path":…}`
+#                                 rather than a bare path string. THAT IS NOT
+#                                 STYLE — IT IS THE FIX FOR A REAL CRASH, found by
+#                                 Gate 2's dry-run and not by reading.
+#
+#                                 A BARE STRING DISPATCHES ON FILE EXTENSION
+#                                 (strategies/base.js, the `else if` ladder). Only
+#                                 the final `else` gives you the Generic
+#                                 (annotation) updater. A path ending `.json` gets
+#                                 CompositeUpdater(GenericJson('$.version'),
+#                                 Generic) — and GenericJson.updateContent opens
+#                                 with a bare `JSON.parse(content)`.
+#                                 `.template.config/template.json` carries two
+#                                 `//` annotations, so that parse THREW:
+#
+#                                   SyntaxError: Expected double-quoted property
+#                                   name in JSON at position 1699 (line 48 col 42)
+#
+#                                 — column 42 being exactly where the `//` starts.
+#                                 release-please would have crashed on every run:
+#                                 no release PR, ever. (Failure direction SAFE —
+#                                 U1, "no PR appears": loud, and nothing
+#                                 publishes.) The other three end `.props` and
+#                                 `.csproj`, match no arm, and reached the Generic
+#                                 updater BY ACCIDENT OF THEIR EXTENSIONS.
+#
+#                                 So decision 3's "one updater kind — the Generic
+#                                 (annotation) updater — everywhere" was true for
+#                                 three files by luck and false for the fourth.
+#                                 `{"type":"generic"}` (base.js `case 'generic'`;
+#                                 schema arm 5, `required: [type, path]` — checked,
+#                                 not assumed) names the updater OUTRIGHT at all
+#                                 four sites, so the sentence is now true by
+#                                 construction and no future rename can quietly
+#                                 re-dispatch a file into a round-trip updater.
+#                                 Pinned by ReleasePleaseConfigPinTests.
+#
+#                                 ⚠ THE LESSON ARRIVED TWICE IN ONE PHASE. Line 74
+#                                 above already says release-please reads JSON with
+#                                 strict `JSON.parse` — measured at Gate 1, for the
+#                                 CONFIG file. The same fact was true of a SECOND
+#                                 json file release-please reads, and the design
+#                                 checked that `dotnet new` and TemplateDriftTests
+#                                 tolerate JSONC without asking whether
+#                                 release-please — the one tool that MUST write it
+#                                 — does. It does not.
+#
 #   "bootstrap-sha"               a3fe234 — main's tip when this branch was cut
 #                                 (PR #107, the M8 final audit). It answers 8.1's
 #                                 third rejection reason ("conventional-commit
