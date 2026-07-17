@@ -14,6 +14,13 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 
+    <!-- Phase 9.1 (M9 DoD #3): local notifications. POST_NOTIFICATIONS is the
+         Android 13+ runtime permission the shell requests before show/schedule
+         (inert below API 33, where notifications are implicitly permitted). The
+         scheduled path uses an INEXACT AlarmManager alarm, so NO SCHEDULE_EXACT_ALARM
+         is needed. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <application
         android:label="BlazorNative"
         android:allowBackup="true"
@@ -21,6 +28,7 @@
         android:networkSecurityConfig="@xml/network_security_config">
         <activity
             android:name=".MainActivity"
+            android:launchMode="singleTop"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -38,6 +46,15 @@
                 <data android:scheme="blazornative" />
             </intent-filter>
         </activity>
+
+        <!-- Phase 9.1: the scheduled-notification publisher. MANIFEST-declared (not
+             a runtime receiver) so a `schedule` alarm still fires after the process
+             is killed. The nested binary name is Outer$Inner
+             (AndroidShellBridge.NotificationPublisher). Not exported — only the
+             app's own AlarmManager alarm targets it. -->
+        <receiver
+            android:name="io.blazornative.shell.AndroidShellBridge$NotificationPublisher"
+            android:exported="false" />
     </application>
 
 </manifest>
