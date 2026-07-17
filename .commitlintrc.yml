@@ -1,0 +1,132 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# BlazorNative — the commit contract (Phase 8.6, decisions 5 and 6).
+#
+# THIS FILE IS THE ONE AUTHORITY. commitlint.yml pipes the PR TITLE through it
+# and nothing else re-states these enums. That is deliberate:
+# `amannn/action-semantic-pull-request` was rejected precisely because its
+# `types:`/`scopes:` inputs would be a SECOND copy of these lists — 8.1 normative
+# rule 2's exact sin, and the one this repo deleted a roster to avoid.
+#
+# ─── WHY THE PR TITLE AND NOT THE COMMITS ───────────────────────────────────
+#
+# This repo squash-merges. Under squash, the branch's commit subjects are
+# DISCARDED — they never reach main and release-please never sees them. Linting
+# them would enforce a contract on text that is thrown away, and would red PRs
+# for honest WIP commits. So the PR title is the subject, and it is the only
+# thing linted.
+#
+# ⚠ AND THAT IS ONLY SOUND IF THE PR TITLE ACTUALLY WINS. As this repository is
+#   configured TODAY it does not:
+#
+#       squash_merge_commit_title = COMMIT_OR_PR_TITLE
+#
+#   GitHub's COMMIT_OR_PR_TITLE means: IF THE PR HAS EXACTLY ONE COMMIT, THAT
+#   COMMIT'S SUBJECT BECOMES MAIN'S SUBJECT AND THE PR TITLE IS IGNORED. Only
+#   multi-commit PRs use the title. So a single-commit PR titled
+#   `feat(runtime): …` whose commit says `wip` lands `wip` on main — PASSING THIS
+#   LINT, and arriving at release-please as an unparseable subject.
+#
+#   UNTIL THE OWNER SETS squash_merge_commit_title TO PR_TITLE, THIS CONTRACT IS
+#   DECORATIVE FOR SINGLE-COMMIT PRs. That is a repository setting, not a file in
+#   this tree, and it is the FIRST step of Phase 8.6's implementation sequence:
+#
+#       gh api -X PATCH repos/MarcelRoozekrans/BlazorNative \
+#         -f squash_merge_commit_title=PR_TITLE \
+#         -f squash_merge_commit_message=COMMIT_MESSAGES
+#
+#   squash_merge_commit_message stays COMMIT_MESSAGES: the branch commits' WHY
+#   bodies concatenate into main's body, which is where this repo's prose goes
+#   and where release-please reads `Release-As:` and `BREAKING CHANGE:` footers
+#   from.
+#
+# ─── THE HOUSE STYLE MOVES, IT DOES NOT DIE ─────────────────────────────────
+#
+# The finding-in-the-headline — `Phase 8.4 — the docs site: the generator said
+# "10 succeeded, 0 failed" and shipped zero components` — stops being a SUBJECT
+# and becomes the first line of the PR description / commit BODY. The subject
+# becomes `feat(docs): the Docusaurus docs site`. The ~40 phase conclusions in
+# docs/plans remain the real record; the generated CHANGELOG.md is a consumer's
+# index, added BESIDE the record and not instead of it.
+#
+# ─── ⚠ WHAT THIS FILE DOES *NOT* DO, so nobody mistakes it ──────────────────
+#
+# THE SCOPE-ENUM IS SEVERITY 1 — A WARNING. commitlint exits non-zero only on
+# severity 2. So an UNLISTED SCOPE PASSES. Combined with commitlint.yml being
+# advisory (not a fourth required check), THE SCOPE-ENUM DOES NOT ENFORCE
+# ANYTHING — IT DOCUMENTS. That is deliberate (the enum will drift as the repo
+# grows, a hard red on scope would block a legitimate PR at the worst possible
+# moment, and config-conventional does not require a scope at all) and it mirrors
+# the reference exactly, which is what the owner asked for. But "we have a
+# scope-enum" must not be read as "scopes are enforced". They are not.
+#
+# The honest consequence of the whole arrangement, stated rather than hidden: a
+# mis-titled PR CAN merge, and release-please will silently ignore it — no
+# changelog line, no bump contribution. THAT FAILURE IS A MISSING CHANGELOG
+# ENTRY, NEVER A WRONG VERSION: at 1.0.0-preview.N the commit type cannot move
+# the version at all (measured — see .github/workflows/release-please.yml).
+# ─────────────────────────────────────────────────────────────────────────────
+extends:
+  - "@commitlint/config-conventional"
+
+rules:
+  # Mirrored from the reference verbatim, severity 2.
+  type-enum:
+    - 2
+    - always
+    - - feat
+      - fix
+      - docs
+      - style
+      - refactor
+      - perf
+      - test
+      - build
+      - ci
+      - chore
+      - revert
+
+  # ⚠ SEVERITY 1 = WARNING. An unlisted scope PASSES. See the header.
+  #
+  # CONSUMER-FACING, and that is the decision. The reference's enum is AREAS
+  # (core, dataset, adapters, benchmarks, validation, ci, deps) — ours cannot be
+  # a copy, because their areas are not our areas. A consumer's changelog wants
+  # COMPONENTS, not phases: `fix(phase-7.5): the dispatch table's ROW ORDER is
+  # normative` means everything in this repo and nothing on nuget.org.
+  #
+  # `phase-N` IS DELIBERATELY ABSENT, AND THAT IS THE POINT. The scope answers
+  # WHAT, never WHEN. docs/plans answers WHEN, and it always did.
+  #
+  # The six package scopes are lowercase short names, not package ids — a scope
+  # is a changelog heading, and `feat(BlazorNative.Components):` reads like a
+  # stack trace.
+  scope-enum:
+    - 1
+    - always
+    - - core           # BlazorNative.Core
+      - renderer       # BlazorNative.Renderer
+      - http           # BlazorNative.Http
+      - components     # BlazorNative.Components
+      - runtime        # BlazorNative.Runtime
+      - analyzers      # BlazorNative.Analyzers
+      - templates      # dotnet new blazornative
+      - docs           # the Docusaurus site + the guides
+      - android        # the JNI shell
+      - ios            # the Apple shell
+      - ci             # the lanes
+      - deps           # Renovate's own scope
+      - release        # the release machinery itself
+
+  # Mirrored from the reference verbatim, severity 2.
+  subject-case:
+    - 2
+    - never
+    - - sentence-case
+      - start-case
+      - pascal-case
+      - upper-case
+
+  # 100, named explicitly by the owner. Mirrored from the reference verbatim.
+  header-max-length:
+    - 2
+    - always
+    - 100

