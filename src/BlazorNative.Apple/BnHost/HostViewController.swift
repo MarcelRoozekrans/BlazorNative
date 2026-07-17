@@ -53,11 +53,20 @@ final class HostViewController: UIViewController {
         self.mapper = mapper
         self.runtime = runtime
 
+        // Phase 9.1: install the UNUserNotificationCenter delegate BEFORE boot so a
+        // notification tap (cold launch, or warm while alive) reaches the shell. A COLD
+        // tap stashes its route; we resolve it to a mount component (deepLinkComponents —
+        // iOS mounts by NAME) so the launch route SEEDS the initial mount, the way the
+        // sim boot tests mount a routed component. Absent a tap, BnDemo is the default.
+        // (The real cold-tap timing/UX is owner-device territory — the M9 iOS deferral.)
+        runtime.installNotificationDelegate()
+
         // Boot off the main thread (init/mount are synchronous work); the mapper
         // hops its render batch back to the main queue on CommitFrame.
         DispatchQueue.global(qos: .userInitiated).async {
+            let component = runtime.bridge.notifications.resolvedLaunchComponent() ?? "BnDemo"
             do {
-                try runtime.start(component: "BnDemo", os: "ios")
+                try runtime.start(component: component, os: "ios")
             } catch {
                 NSLog("[HostViewController] boot failed: \(error)")
             }
