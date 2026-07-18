@@ -1505,7 +1505,63 @@ emulator lanes. The inspector channel is ledgered a third time. Maps to BACKLOG.
      simulator-scoped + labeled (Apple Developer account trigger). See
      [design](../plans/2026-07-17-phase-9.1-design.md) +
      [conclusion](../plans/2026-07-17-phase-9.1-conclusion.md).
-- **Phase 9.2** — biometrics + secure storage (DoD #4) — ⏳
+- ✅ **Phase 9.2** — biometrics + secure storage (DoD #4) — *complete (2026-07-18)*
+   - **THE HEADLINE — the 9.0 ABI bet paid a THIRD time: biometrics + secure storage cost the ABI
+     NOTHING.** Two ops (`Biometrics = 2`, `SecureStorage = 3`) ride the **existing** `HostCallBegin`
+     slot (offset 72) and `host_call_complete` export; the secure `get`'s value rides the OPTIONAL
+     payload the completion channel has carried since 9.0 (geolocation's fix was the first user —
+     this is the SECOND, proving the channel generic, not geolocation-shaped). **Bridge stayed 80
+     bytes / 10 exports, no drift-pin moved, no gate arithmetic** — proven on all three RIDs
+     (win-x64/bionic `dumpbin`+`readelf`; iOS `nm` gate `all 10 present`). Falsifiable, not asserted:
+     `SecureBiometricsAbiUnchangedTests` pins 80 / offset 72 / ops 2+3, and the iOS struct-grow
+     mutant **failed to COMPILE** (`missing argument 'mutantEleventhSlot'`, run 29636616995) — the
+     type system enforces the freeze. *Pay once, reuse thrice — now demonstrated three times.*
+   - **The OS-key binding — the security crux, and WHERE it can be proven** (this phase's real
+     lesson). Owner chose **OS-key-level** binding (the OS refuses plaintext without a fresh auth,
+     immune to a control-flow bypass) over app-level. **Android PROVES it** — the AVD's software
+     keystore enforces `setUserAuthenticationRequired(true)`: a plain get of an auth-bound secret
+     returns AuthFailed, mutation-airtight (drop `setUserAuthenticationRequired` → the binding test
+     reds alone). **iOS asserts the CONTRACT with OS-enforcement UNPROVEN** — the simulator has NO
+     Secure Enclave and treats `.biometryCurrentSet` as a no-op, so CI asserts the shell REQUESTS the
+     ACL (construction seam) + enforces the contract from its own auth-bound cache, but the
+     OS-enforced refusal is named **UNPROVEN-until-real-device**. The milestone's clearest example of
+     a security property provable on one platform and not the other, recorded honestly.
+   - **Two real platform asymmetries, both documented:** (1) an auth-bound `set` PROMPTS on Android
+     (the AES per-use-auth key needs a fresh auth to encrypt) but does NOT on iOS (the Keychain ACL
+     gates retrieval only) — same wire, different write-time UX; (2) the iOS simulator enforces no
+     `SecAccessControl` (no Enclave) where the Android emulator's software keystore does. Storage:
+     raw AndroidKeyStore AES/GCM (no dep) + iOS Keychain (no dep). **`androidx.biometric:biometric:1.1.0`
+     is the first new gradle dep of M9** (repo + template, now drift-ENFORCED). MainActivity became
+     a `FragmentActivity` (BiometricPrompt's host) — a real shell change, mirrored, predictive-back
+     unchanged (all 193 prior instrumented tests stayed green). `IBiometrics` + `ISecureStorage` in
+     the existing **7th package** `BlazorNative.Device` (no 8th); `/secure` demo (`BnSecureDemo`, the
+     12th routed page, sample-only). **The M5 secure-storage deferral CLOSES here** — a
+     four-milestone-old ledger item retired. Secret-in-memory: the wire is intra-process/trusted
+     (encryption at rest); non-zeroable plaintext copies are documented for the POC, the zeroable
+     pass is M10; 8 KB cap at the .NET boundary (`SecretResult.MaxValueBytes`, oversize → Error,
+     never crosses).
+   - **Gate 3's 5-run iOS Keychain convergence, honestly** (Mac-less setup): entitlement →
+     sim-no-Enclave → a plain-path regression (the sim returns a `kSecAttrAccessControl` attr even
+     for plain items → misclassification, fixed by keying off the shell's own cache) → **a real bug**
+     (the biometrics deny replied SYNCHRONOUSLY inside `hostCallBegin`, hanging the bounded await —
+     the milestone's **denial-as-data LAW caught it** — fixed via the notifications deferred-reply
+     pattern). The law found a genuine bug.
+   - **Counts (all CI-asserted):** .NET **717/0** (560 + 132 + 25) · JVM **115/0** (**110 → 115**,
+     +5 — `BiometricsSecureStorageTest.kt`) · Android instrumented **201/0** (**193 → 201**, +8 on
+     the AVD: OS-key binding proven, gated round-trip, denial-no-hang) · iOS XCTest **218/0**
+     (**189 → 218**, +29, run 29636347300; the 10-export `nm` gate unchanged) · publish gate **4
+     IL2072 + 10 exports** (UNCHANGED — the reuse proof). Mutations: Gate 1 (auth-throws,
+     getWithAuth-ignores-requireAuth, reuse-proof-81-bytes, oversize-crosses), Gate 2
+     (drop-`setUserAuthenticationRequired`, cryptoObject-null, deny-throws — on the AVD), Gate 3
+     (acl-dropped `29636589965`, deny-drops `29636604241` the 11.6s hang, struct-grow `29636616995`
+     the compile-fail).
+   - **PROVEN on CI** = both status matrices as data, the Keystore/Keychain round-trip, Android's
+     OS-enforced AuthFail, the gated read via the seam, denial-no-hang. **UNPROVEN until the owner's
+     physical Android phone** = the real fingerprint sensor + TEE-enforced auth-bound decrypt + real
+     lockout (biometrics is THE least emulator-like capability). **iOS OS-enforced binding → real
+     device, DEFERRED** (no Apple account — doubly gated). See
+     [design](../plans/2026-07-17-phase-9.2-design.md) +
+     [conclusion](../plans/2026-07-18-phase-9.2-conclusion.md).
 - **Phase 9.3** — camera photo capture (DoD #5) — *heaviest last, on mature machinery* — ⏳
 - **Phase 9.4** — hygiene + M9 final audit + close (DoD #6; no tag — the 8.6 rule) — ⏳
 

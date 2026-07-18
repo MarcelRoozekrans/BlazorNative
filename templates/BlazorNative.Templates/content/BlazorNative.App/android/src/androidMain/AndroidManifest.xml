@@ -13,6 +13,12 @@
          this only if your app never posts notifications. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- Biometrics: USE_BIOMETRIC is a NORMAL permission (granted at install, no
+         runtime prompt) that BiometricPrompt / BiometricManager use. Secure storage's
+         raw AndroidKeyStore needs no manifest permission. Remove this only if your app
+         never authenticates biometrically. -->
+    <uses-permission android:name="android.permission.USE_BIOMETRIC" />
+
     <application
         android:label="MyBlazorNativeApp"
         android:allowBackup="true"

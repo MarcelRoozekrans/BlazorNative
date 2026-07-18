@@ -130,6 +130,18 @@ public static class SampleAppPages
         // HERE (cold: deep-link mount; warm: host_event("navigate",…) re-route). The
         // .NET/wire half lives here; Gates 2/3 wire the shells' real post.
         BlazorNativePage.Routed<BnNotificationsDemo>("/notifications", "BnNotificationsDemo"),
+        // Phase 9.2: the biometrics + secure-storage proof page (route "/secure" —
+        // M9 DoD #4). The TWELFTH routed page and the THIRD worked example of the
+        // permission pattern (the SECOND reuse of the 9.0 generic ABI): app code
+        // injects BOTH the IBiometrics and ISecureStorage FACADES (the 7th package)
+        // and authenticate + set/get/getWithAuth/delete ride the SAME
+        // HostCallBegin/host_call_complete pair geolocation opened — no struct grow,
+        // no new export (two ops, ABI unchanged at 80 bytes / 10 exports). It shows
+        // THE PAIRING (an auth-bound set → a biometric-gated unlock) and denial as
+        // DATA (a failed auth / AuthFailed / NotFound echoed, never thrown). The
+        // .NET/wire half lives here; Gates 2/3 wire the shells (AVD BiometricPrompt +
+        // AndroidKeyStore; iOS LAContext + Keychain). Sample-only (template-minimal).
+        BlazorNativePage.Routed<BnSecureDemo>("/secure", "BnSecureDemo"),
         // Phase 4.2: the focus/blur proof app (BnInput OnFocus/OnBlur →
         // echo BnText — M4 DoD #4). Scaffolding, like CompositionProbe.
         BlazorNativePage.Named<FocusProbe>("FocusProbe"),

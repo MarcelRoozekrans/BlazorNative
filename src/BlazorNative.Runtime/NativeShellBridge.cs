@@ -74,14 +74,15 @@ public sealed class NativeShellBridge : IMobileBridge
         s_pendingHostCalls = new();
 
     /// <summary>The generic permission-gated capabilities carried on the ONE
-    /// HostCallBegin slot. 9.0 wired exactly one (Geolocation); Phase 9.1 adds the
-    /// SECOND (Notifications) — an op-enum value and nothing else on the ABI: NO
-    /// struct grow (still 80 bytes / 10 slots), NO new export (still 10), NO
-    /// drift-pin move. This is the "pay once, reuse thrice" bet paying off on its
-    /// first draw. The integer is the wire contract — the host switches on it, and
-    /// the shells' mirror enums (Kotlin HostCallOp / Swift BnHostCallOp) gain the
-    /// same value at Gates 2/3.</summary>
-    internal enum HostCallOp { Geolocation = 0, Notifications = 1 }
+    /// HostCallBegin slot. 9.0 wired exactly one (Geolocation); Phase 9.1 added the
+    /// SECOND (Notifications); Phase 9.2 adds TWO at once (Biometrics = 2,
+    /// SecureStorage = 3) — op-enum values and nothing else on the ABI: NO struct
+    /// grow (still 80 bytes / 10 slots), NO new export (still 10), NO drift-pin move.
+    /// This is the "pay once (9.0), reuse thrice" bet paying its THIRD draw. The
+    /// integer is the wire contract — the host switches on it, and the shells' mirror
+    /// enums (Kotlin HostCallOp / Swift BnHostCallOp) gain the same values at Gates
+    /// 2/3.</summary>
+    internal enum HostCallOp { Geolocation = 0, Notifications = 1, Biometrics = 2, SecureStorage = 3 }
 
     /// <summary>A completion carried back through blazornative_host_call_complete:
     /// the wire status integer (mapped to <see cref="GeolocationStatus"/> etc. by the
@@ -632,6 +633,150 @@ public sealed class NativeShellBridge : IMobileBridge
         => status is >= (int)NotificationStatus.Granted and <= (int)NotificationStatus.Error
             ? (NotificationStatus)status
             : NotificationStatus.Error;
+
+    // ── Biometrics + secure storage (Phase 9.2 — the SECOND reuse of the 9.0 ABI) ─
+    //
+    // TWO ops (Biometrics = 2, SecureStorage = 3), both riding the EXISTING
+    // InvokeHostCallAsync verbatim (the pending registry, the cancellation posture,
+    // the unknown-id benignness, the old-shell RequireSlot guard — all reused, none
+    // re-written). The ONLY new .NET is the args-JSON builders, the two status maps
+    // (incl. out-of-range → Error), and the SecretResult parse (the value in the
+    // {"value":…} payload on Ok — the ParseGeolocationResult twin). NO struct grow,
+    // NO new export — the op-enum values + JSON vocabulary are the whole ABI touch.
+    // The action lives INSIDE the flat JSON (geolocation's `mode` precedent). Denial
+    // is DATA: every terminal outcome resolves the ValueTask with a status.
+
+    public async ValueTask<BiometricStatus> AuthenticateAsync(string reason, CancellationToken ct = default)
+    {
+        HostCallResult result = await InvokeHostCallAsync(
+            HostCallOp.Biometrics, BuildBiometricArgs("authenticate", reason), ct).ConfigureAwait(false);
+        return ToBiometricStatus(result.Status);
+    }
+
+    public async ValueTask<BiometricStatus> IsBiometricAvailableAsync(CancellationToken ct = default)
+    {
+        // The read-only availability check (never prompts) — geolocation's `check`
+        // sibling. Authenticated means "present + enrolled + ready" (no auth ran).
+        HostCallResult result = await InvokeHostCallAsync(
+            HostCallOp.Biometrics, BiometricCheckArgs, ct).ConfigureAwait(false);
+        return ToBiometricStatus(result.Status);
+    }
+
+    public async ValueTask<SecureStorageStatus> SetSecretAsync(string key, string value, bool requireAuth, CancellationToken ct = default)
+    {
+        // The soft 8 KB cap, enforced at THIS .NET boundary: an oversize value
+        // RETURNS a status and never crosses the wire — a large value is a misuse,
+        // not a store (§8). Never a crash, never a hang.
+        if (Encoding.UTF8.GetByteCount(value) > SecretResult.MaxValueBytes)
+            return SecureStorageStatus.Error;
+
+        HostCallResult result = await InvokeHostCallAsync(
+            HostCallOp.SecureStorage, BuildSecretSetArgs(key, value, requireAuth), ct).ConfigureAwait(false);
+        return ToSecureStorageStatus(result.Status);
+    }
+
+    public async ValueTask<SecretResult> GetSecretAsync(string key, CancellationToken ct = default)
+    {
+        HostCallResult result = await InvokeHostCallAsync(
+            HostCallOp.SecureStorage, BuildSecretGetArgs("get", key, reason: null), ct).ConfigureAwait(false);
+        return ParseSecretResult(in result);
+    }
+
+    public async ValueTask<SecretResult> GetSecretWithAuthAsync(string key, string reason, CancellationToken ct = default)
+    {
+        // THE PAIRING: getWithAuth triggers the OS biometric prompt host-side and the
+        // OS-key-bound decrypt; the plaintext returns in the SAME {"value":…} payload
+        // as plain get. A denied/failed gate returns AuthFailed (no value) — the OS
+        // refuses the plaintext, and that refusal is DATA.
+        HostCallResult result = await InvokeHostCallAsync(
+            HostCallOp.SecureStorage, BuildSecretGetArgs("getWithAuth", key, reason), ct).ConfigureAwait(false);
+        return ParseSecretResult(in result);
+    }
+
+    public async ValueTask<SecureStorageStatus> DeleteSecretAsync(string key, CancellationToken ct = default)
+    {
+        HostCallResult result = await InvokeHostCallAsync(
+            HostCallOp.SecureStorage, BuildSecretDeleteArgs(key), ct).ConfigureAwait(false);
+        return ToSecureStorageStatus(result.Status);
+    }
+
+    // The biometric availability check carries only the action (the geolocation
+    // `mode:"check"` / notifications `action:"check"` precedent, never prompts).
+    private const string BiometricCheckArgs = "{\"action\":\"check\"}";
+
+    /// <summary>Builds the flat-JSON args for a biometric action carrying a prompt
+    /// reason (authenticate). Reuses WriteFlatJsonObject — the escaping keeps a
+    /// reason with a quote or newline wire-safe.</summary>
+    private static string BuildBiometricArgs(string action, string reason)
+        => WriteFlatJsonObject(new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["action"] = action,
+            ["reason"] = reason,
+        });
+
+    /// <summary>Builds the flat-JSON args for a secure `set`: action + key + value +
+    /// the auth flag ("0"/"1"). An auth-bound write (auth:"1") provisions the item
+    /// under the OS-key auth binding so a matching getWithAuth can decrypt it (§4c).</summary>
+    private static string BuildSecretSetArgs(string key, string value, bool requireAuth)
+        => WriteFlatJsonObject(new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["action"] = "set",
+            ["key"] = key,
+            ["value"] = value,
+            ["auth"] = requireAuth ? "1" : "0",
+        });
+
+    /// <summary>Builds the flat-JSON args for a secure `get`/`getWithAuth`: action +
+    /// key, plus the prompt reason for getWithAuth (the OS biometric sheet's message).</summary>
+    private static string BuildSecretGetArgs(string action, string key, string? reason)
+    {
+        var map = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["action"] = action,
+            ["key"] = key,
+        };
+        if (reason is not null)
+            map["reason"] = reason;
+        return WriteFlatJsonObject(map);
+    }
+
+    /// <summary>Builds the flat-JSON args for a secure `delete` (key only).</summary>
+    private static string BuildSecretDeleteArgs(string key)
+        => WriteFlatJsonObject(new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["action"] = "delete",
+            ["key"] = key,
+        });
+
+    /// <summary>Maps the wire status integer to <see cref="BiometricStatus"/>; an
+    /// out-of-range value (a host bug) becomes <see cref="BiometricStatus.Error"/> —
+    /// still data, never a throw (the ToGeolocationStatus twin).</summary>
+    private static BiometricStatus ToBiometricStatus(int status)
+        => status is >= (int)BiometricStatus.Authenticated and <= (int)BiometricStatus.Error
+            ? (BiometricStatus)status
+            : BiometricStatus.Error;
+
+    /// <summary>Maps the wire status integer to <see cref="SecureStorageStatus"/>;
+    /// an out-of-range value becomes <see cref="SecureStorageStatus.Error"/>.</summary>
+    private static SecureStorageStatus ToSecureStorageStatus(int status)
+        => status is >= (int)SecureStorageStatus.Ok and <= (int)SecureStorageStatus.Error
+            ? (SecureStorageStatus)status
+            : SecureStorageStatus.Error;
+
+    /// <summary>Parses a completion into a typed <see cref="SecretResult"/>. Only an
+    /// Ok status carries a value (the flat-JSON {"value":…} payload — the SECOND user
+    /// of the payload channel geolocation's fix opened, proving it is generic, not
+    /// geolocation-specific); every other status is the status alone with a null
+    /// value. Reading the wrong payload key is the named get-parse mutation.</summary>
+    private static SecretResult ParseSecretResult(in HostCallResult result)
+    {
+        SecureStorageStatus status = ToSecureStorageStatus(result.Status);
+        if (status != SecureStorageStatus.Ok)
+            return new SecretResult(status, null);
+
+        Dictionary<string, string> payload = ParseFlatJsonObject(result.PayloadJson);
+        return new SecretResult(status, payload.TryGetValue("value", out string? v) ? v : null);
+    }
 
     // ── Platform info ─────────────────────────────────────────────────────────
     //

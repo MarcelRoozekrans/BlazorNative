@@ -222,6 +222,101 @@ public sealed class DevHostBridge : IMobileBridge, IDisposable
         return ValueTask.FromResult(NotificationStatus);
     }
 
+    // ── Biometrics + secure storage (Phase 9.2 — the headless lane) ───────────
+    //
+    // The CENTRAL headless proof of denial-as-data for BOTH capabilities, NO device:
+    // a settable biometric auth-result drives authenticate (all six statuses) and
+    // GATES the pairing (getWithAuth returns the value only when the auth-result is
+    // Authenticated, else AuthFailed), and an in-memory secret dict honours
+    // set/get/delete AND the per-key requireAuth flag. So the headless lane drives
+    // every status — Authenticated/Failed/Cancelled/Unavailable/LockedOut and
+    // Ok/NotFound/AuthFailed/Unavailable/Error — and the pairing, within a bounded
+    // await, before any device work. This is a SEPARATE store from the plain
+    // unencrypted _storage above (the M5-deferred secure variant, closed here) — the
+    // plain slots are untouched.
+
+    /// <summary>The status the next <see cref="AuthenticateAsync"/> returns AND the
+    /// gate the pairing (<see cref="GetSecretWithAuthAsync"/>) checks: an auth-bound
+    /// secret is released only when this is <see cref="Core.BiometricStatus.Authenticated"/>,
+    /// else the read is <see cref="SecureStorageStatus.AuthFailed"/>. Default
+    /// Authenticated. Set it to drive a failed / cancelled / locked-out / no-hardware
+    /// path headless.</summary>
+    public BiometricStatus BiometricAuthResult { get; set; } = BiometricStatus.Authenticated;
+
+    private readonly Dictionary<string, (string Value, bool RequireAuth)> _secrets = new();
+
+    /// <summary>Snapshot of the in-memory secret store — useful in tests.</summary>
+    public IReadOnlyDictionary<string, (string Value, bool RequireAuth)> SecretSnapshot => _secrets;
+
+    public ValueTask<BiometricStatus> AuthenticateAsync(string reason, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        // Denial-as-data: a failed / cancelled / locked-out / no-hardware auth
+        // RETURNS its status — it does NOT throw and does NOT hang.
+        Console.WriteLine($"[DevBridge] Biometric.Authenticate → {BiometricAuthResult}");
+        return ValueTask.FromResult(BiometricAuthResult);
+    }
+
+    public ValueTask<BiometricStatus> IsBiometricAvailableAsync(CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        // The read-only availability check: Unavailable when the mock says biometrics
+        // are absent, otherwise Authenticated ("present + enrolled + ready").
+        BiometricStatus available = BiometricAuthResult == BiometricStatus.Unavailable
+            ? BiometricStatus.Unavailable
+            : BiometricStatus.Authenticated;
+        return ValueTask.FromResult(available);
+    }
+
+    public ValueTask<SecureStorageStatus> SetSecretAsync(string key, string value, bool requireAuth, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        // The soft 8 KB cap enforced at the .NET boundary — an oversize value RETURNS
+        // a status, never crashes (the on-device NativeShellBridge enforces the same).
+        if (System.Text.Encoding.UTF8.GetByteCount(value) > SecretResult.MaxValueBytes)
+        {
+            Console.WriteLine($"[DevBridge] SecureStorage.Set {key} → Error (oversize)");
+            return ValueTask.FromResult(SecureStorageStatus.Error);
+        }
+        _secrets[key] = (value, requireAuth);
+        Console.WriteLine($"[DevBridge] SecureStorage.Set {key} (requireAuth={requireAuth}) → Ok");
+        return ValueTask.FromResult(SecureStorageStatus.Ok);
+    }
+
+    public ValueTask<SecretResult> GetSecretAsync(string key, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        // Plain get: an auth-bound item read WITHOUT the prompt correctly fails
+        // AuthFailed (the OS-key would refuse the plaintext); an absent key is NotFound.
+        if (!_secrets.TryGetValue(key, out var entry))
+            return ValueTask.FromResult(new SecretResult(SecureStorageStatus.NotFound, null));
+        if (entry.RequireAuth)
+            return ValueTask.FromResult(new SecretResult(SecureStorageStatus.AuthFailed, null));
+        return ValueTask.FromResult(new SecretResult(SecureStorageStatus.Ok, entry.Value));
+    }
+
+    public ValueTask<SecretResult> GetSecretWithAuthAsync(string key, string reason, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        // THE PAIRING, honoured headless: getWithAuth returns the value only when the
+        // mocked biometric gate is Authenticated; a denied gate returns AuthFailed
+        // (no value) — the "getWithAuth must honour requireAuth" contract the bypass
+        // mutation breaks. An absent key is NotFound regardless of the gate.
+        if (!_secrets.TryGetValue(key, out var entry))
+            return ValueTask.FromResult(new SecretResult(SecureStorageStatus.NotFound, null));
+        if (BiometricAuthResult != BiometricStatus.Authenticated)
+            return ValueTask.FromResult(new SecretResult(SecureStorageStatus.AuthFailed, null));
+        return ValueTask.FromResult(new SecretResult(SecureStorageStatus.Ok, entry.Value));
+    }
+
+    public ValueTask<SecureStorageStatus> DeleteSecretAsync(string key, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        _secrets.Remove(key); // idempotent — deleting an absent key still statuses Ok
+        Console.WriteLine($"[DevBridge] SecureStorage.Delete {key} → Ok");
+        return ValueTask.FromResult(SecureStorageStatus.Ok);
+    }
+
     // ── Platform info ─────────────────────────────────────────────────────────
 
     public string PlatformInfo =>

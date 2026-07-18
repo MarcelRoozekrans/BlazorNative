@@ -17,7 +17,7 @@
 #   emulator (ubuntu-latest, KVM) — downloads the .so, boots the API 34
 #     google_apis x86_64 Pixel 6 image (mirrors the local AVD
 #     blazornative-pixel6-x86_64), runs connectedAndroidTest with
-#     -PciSoDir pointing at the artifact → asserts 193 passed / 0 failed.
+#     -PciSoDir pointing at the artifact → asserts 201 passed / 0 failed.
 #
 # Baselines are asserted, not observed: count drift fails the job loudly.
 # ─────────────────────────────────────────────────────────────────────────────
@@ -873,7 +873,45 @@ jobs:
       #        notify posts nothing -> the activeNotifications probe reds.
       #      .show_with_permission_held_never_prompts -- the already-granted fast path:
       #        tap Show -> "status:Granted" with ZERO permission requests raised.
-      - name: Assert instrumented baseline (193 passed / 0 failed)
+      # ── Phase 9.2 Gate 2 — BIOMETRICS + SECURE STORAGE (193 -> 201, +8) ──────────
+      # The SECOND reuse of the 9.0 generic ABI: op=Biometrics + op=SecureStorage ride
+      # the SAME hostCallBegin slot (no struct grow, no new export -- still 80 bytes / 10
+      # exports). AndroidShellBridge's real flow on the AVD: raw AndroidKeyStore
+      # AES-256-GCM, the OS-key-level biometric binding, and androidx BiometricPrompt
+      # against MainActivity (now a FragmentActivity). Biometrics is where the emulator is
+      # LEAST like reality (adb emu finger touch injects a SYNTHETIC event; the keystore
+      # is software-backed and the real system sheet is not CI-drivable), so the real
+      # BiometricPrompt is bypassed via biometricGateHook -- the geolocation/notifications
+      # real-dialog split, verbatim. The REAL fingerprint-sensor decrypt is owner-phone
+      # territory (the design's UNPROVEN-until-hardware half). Each count mutation-verified:
+      #   +3 SecureStorageAndroidTest (the keystore core, driven directly -- real crypto):
+      #      .nonauth_secret_round_trips_through_the_android_keystore -- a real AES-256-GCM
+      #        set -> get(value) -> delete -> NotFound through the AndroidKeyStore.
+      #      .a_plain_get_of_an_auth_bound_item_authfails_the_os_key_binding -- THE SECURITY
+      #        CRUX. An auth-bound key (setUserAuthenticationRequired(true)) + a stored blob;
+      #        a plain get returns AuthFailed (the keystore's own KeyInfo says the key is
+      #        user-auth-required and the OS would refuse the decrypt). MUTATION: drop
+      #        setUserAuthenticationRequired from provisionKey -> the plain get decrypts ->
+      #        Error, never AuthFailed -> this reds (verified: 1 red, this test alone).
+      #      .biometric_check_reports_a_status_as_data -- canAuthenticate maps to a
+      #        BiometricStatus VALUE in range (never a throw).
+      #   +5 BnSecureAndroidTest (through BnSecureDemo -- the real .NET round-trip):
+      #      .authenticate_via_the_prompt_seam_echoes_authenticated -- seam success ->
+      #        Authenticated, echoed as DATA.
+      #      .authenticate_denied_is_data_within_a_bounded_await_no_hang -- seam denial ->
+      #        Cancelled within a bounded await. MUTATION: the deny path THROWS instead of
+      #        statusing -> no completion -> the echo stays blank -> this times out and reds
+      #        (verified: 1 red, 12.5s timeout, this test alone -- the no-hang law).
+      #      .unlock_of_an_absent_secret_is_not_found_no_hang -- getWithAuth of an absent
+      #        secret -> NotFound before any prompt, DATA, no hang.
+      #      .unlock_of_an_auth_bound_secret_passes_a_cryptoobject_to_the_prompt_and_denial_is_authfailed
+      #        -- getWithAuth of an app-global auth-bound secret inits the decrypt Cipher and
+      #        hands the prompt a CryptoObject; the seam asserts it IS present (the OS-key
+      #        binding on the READ side) and a denial -> AuthFailed. MUTATION: pass
+      #        crypto=null to the prompt -> hasCryptoObject false -> this reds (verified: 1
+      #        red, "MUST pass a CryptoObject", this test alone).
+      #      .delete_echoes_ok -- delete is idempotent + permission-free -> Ok.
+      - name: Assert instrumented baseline (201 passed / 0 failed)
         run: |
           shopt -s globstar nullglob
           xmls=(src/BlazorNative.Jni/build/outputs/androidTest-results/connected/**/*.xml)
@@ -890,8 +928,8 @@ jobs:
             s=$(attr skipped "$x");  skipped=$((skipped + ${s:-0}))
           done
           echo "Instrumented totals across ${#xmls[@]} suite(s): tests=$tests failures=$failures errors=$errors skipped=$skipped"
-          if [ "$tests" -ne 193 ] || [ "$failures" -ne 0 ] || [ "$errors" -ne 0 ] || [ "$skipped" -ne 0 ]; then
-            echo "Instrumented test baseline drift: expected 193 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped" >&2
+          if [ "$tests" -ne 201 ] || [ "$failures" -ne 0 ] || [ "$errors" -ne 0 ] || [ "$skipped" -ne 0 ]; then
+            echo "Instrumented test baseline drift: expected 201 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped" >&2
             exit 1
           fi
 

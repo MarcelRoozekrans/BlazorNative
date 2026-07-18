@@ -86,10 +86,22 @@ generically — the shape 9.1–9.3 reuse with no further ABI change.**
    payoff:** 9.1 added an op (`Notifications = 1`) and touched the ABI at nothing — bridge
    still 80 bytes, exports still 10, no drift-pin moved, proven falsifiable
    (`NotificationsAbiUnchangedTests`; the iOS struct-grow mutant failed to COMPILE).
-4. **Biometrics + secure storage**: BiometricPrompt / LocalAuthentication gating a
-   Keystore / Keychain-backed store (set/get/delete secrets); the M5 secure-storage
-   deferral closes; the emulator's fake-biometric path is CI's lane and the owner's
-   phone is the real proof.
+4. **Biometrics + secure storage**: ✅ **Closed by Phase 9.2.** BiometricPrompt
+   (Android, on a FragmentActivity host) / LocalAuthentication (iOS) gating an
+   AndroidKeyStore AES/GCM · iOS Keychain store (set/get/delete secrets), `IBiometrics`
+   + `ISecureStorage` in the existing 7th package `BlazorNative.Device`, `/secure` demo
+   (the 12th routed page, sample-only). **The M5 secure-storage deferral CLOSES here** —
+   a four-milestone-old ledger item retired. Owner chose **OS-key-level** binding (the OS
+   refuses plaintext without a fresh auth) over app-level: **Android PROVES it** on the
+   AVD (the software keystore enforces `setUserAuthenticationRequired` — a plain get of an
+   auth-bound secret returns AuthFailed); **iOS asserts the CONTRACT with OS-enforcement
+   UNPROVEN** (the simulator has no Secure Enclave and no-ops `.biometryCurrentSet` —
+   real-device deferred with the Apple account). **The ABI stayed FROZEN — the pay-once
+   payoff, a THIRD time:** 9.2 added two ops (`Biometrics = 2`, `SecureStorage = 3`) and
+   touched the ABI at nothing — bridge still 80 bytes, exports still 10, no drift-pin
+   moved, proven falsifiable (`SecureBiometricsAbiUnchangedTests`; the iOS struct-grow
+   mutant failed to COMPILE). `androidx.biometric:biometric:1.1.0` is the first new gradle
+   dep of M9 (repo + template, drift-enforced).
 5. **Camera (photo capture)**: capture a photo via the native capture UI, hand the
    image across the wire (the design decides the handoff — file path vs bytes — and
    records why; density/`ContentMode` interplay per the M7 image work), permission
@@ -111,7 +123,8 @@ generically — the shape 9.1–9.3 reuse with no further ABI change.**
 
 ## Inherited from prior milestones (the ledger M9 consumes or carries)
 
-- **From M5:** secure storage (consumed by DoD #4); FCM push (carried, trigger above).
+- **From M5:** secure storage — ✅ **CLOSED by Phase 9.2** (consumed by DoD #4, the
+  four-milestone-old deferral retired); FCM push (carried, trigger above).
 - **From M8:** the KDoc sweep + map extraction — **trigger: before the first Release
   that publishes the template pack** (may fire mid-M9 if the owner publishes; release
   PRs #115/#116 have merged — 0.1.0 and 0.2.0 tagged — and #117 (0.3.0) is open, but no

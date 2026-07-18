@@ -765,6 +765,13 @@ public sealed class TemplateDriftTests
             ["Yoga"] = @"implementation\(""com\.facebook\.yoga:yoga:([^""]+)""\)",
             ["soloader"] = @"implementation\(""com\.facebook\.soloader:soloader:([^""]+)""\)",
             ["Coil"] = @"implementation\(""io\.coil-kt:coil:([^""]+)""\)",
+            // androidx.biometric — the first new gradle dep of M9 (Phase 9.2's
+            // biometrics + OS-key-bound secure storage). The dep lives in BOTH the
+            // repo's build.gradle.kts and the template's, and until this entry existed
+            // the mirror was SYNCED but not ENFORCED: ParsePin reds if the pattern is
+            // absent from either file, so dropping the dep from the template gradle now
+            // reds this pin (it did not before — the gap Gate 2 flagged).
+            ["androidx.biometric"] = @"implementation\(""androidx\.biometric:biometric:([^""]+)""\)",
             ["compileSdk"] = @"(?m)^\s*compileSdk = (\d+)",
             ["minSdk"] = @"(?m)^\s*minSdk = (\d+)",
             ["targetSdk"] = @"(?m)^\s*targetSdk = (\d+)",
