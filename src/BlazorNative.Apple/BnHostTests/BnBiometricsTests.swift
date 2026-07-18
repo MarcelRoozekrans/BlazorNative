@@ -197,11 +197,24 @@ final class BnBiometricsTests: BnHostTestCase {
 
     // ── BOOT: the round trip through the REAL host_call_complete (the /secure demo) ─
 
+    // The evaluatePolicy reply is DEFERRED — captured, then fired AFTER the op is
+    // confirmed in flight (the notifications-boot pattern). This is the realistic shape
+    // (the OS Face ID sheet resolves LATER, off the hostCallBegin call — a synchronous
+    // reply during hostCallBegin is a path production never takes) and it absorbs the
+    // first-cold-boot event-dispatch latency (this is the first NativeAOT boot in the
+    // process) BEFORE the bounded echo poll begins.
+
     func testAuthenticateBootRoundTripsAuthenticatedThroughTheRealHostCallComplete() throws {
-        BnBiometrics.evaluatePolicyReplyOverrideForTest = { _, reply in reply(true, nil) }
+        var pendingReply: ((Bool, Error?) -> Void)?
+        BnBiometrics.evaluatePolicyReplyOverrideForTest = { _, reply in pendingReply = reply }
         let form = try bootSecureDemo()
+        let bio = try XCTUnwrap(runtime?.bridge.biometrics)
 
         try tapButton("Authenticate", in: form)
+        XCTAssertTrue(pollUntil(deadline: 30) { bio.hasInFlightRequestForTest() },
+                      "Authenticate never reached the evaluation (the tap did not round-trip to the biometrics op)")
+        pendingReply?(true, nil) // the OS (here the seam) confirms the identity
+
         XCTAssertTrue(pollUntil { self.echoLabel()?.text == "status:Authenticated" },
                       "Authenticate never round-tripped Authenticated to the echo (a hang or mis-route)")
         XCTAssertEqual(BnBiometrics.lastHostCallCompleteRcForTest, 0,
@@ -209,10 +222,16 @@ final class BnBiometricsTests: BnHostTestCase {
     }
 
     func testAuthenticateBootDeniedIsDataWithinABoundedAwaitNoHang() throws {
-        BnBiometrics.evaluatePolicyReplyOverrideForTest = { _, reply in reply(false, LAError(.userCancel)) }
+        var pendingReply: ((Bool, Error?) -> Void)?
+        BnBiometrics.evaluatePolicyReplyOverrideForTest = { _, reply in pendingReply = reply }
         let form = try bootSecureDemo()
+        let bio = try XCTUnwrap(runtime?.bridge.biometrics)
 
         try tapButton("Authenticate", in: form)
+        XCTAssertTrue(pollUntil(deadline: 30) { bio.hasInFlightRequestForTest() },
+                      "Authenticate never reached the evaluation")
+        pendingReply?(false, LAError(.userCancel)) // the user cancels (the sheet is owner-device territory)
+
         // The awaiting .NET ValueTask resolves to a CANCELLED the echo shows — bounded
         // await. A HANG (denial thrown/dropped) times this poll out and reddens.
         XCTAssertTrue(pollUntil { self.echoLabel()?.text == "status:Cancelled" },
