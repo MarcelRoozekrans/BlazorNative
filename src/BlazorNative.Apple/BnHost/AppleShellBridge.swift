@@ -65,6 +65,18 @@ final class AppleShellBridge {
     /// BnNotifications). A second op case, not a second export.
     let notifications = BnNotifications()
 
+    /// Phase 9.2: the biometrics half of the SAME generic permission-gated host-call op
+    /// — the SECOND reuse of the 9.0 ABI, riding the same hostCallBegin slot (op=2, no
+    /// new export). Owned here (app-lifetime) so it holds the LAContext across the async
+    /// evaluatePolicy — the CLLocationManager/LAContext retention lesson (see BnBiometrics).
+    let biometrics = BnBiometrics()
+
+    /// Phase 9.2: the secure-storage half of the SAME op (op=3, no new export) — the
+    /// Keychain-backed encrypted store whose auth-bound items are OS-key gated
+    /// (.biometryCurrentSet). Owned here (app-lifetime) so it holds the LAContext across a
+    /// getWithAuth evaluation (see BnSecureStorage). A third op case, not a third export.
+    let secureStorage = BnSecureStorage()
+
     init(initialRoute: String = "/") {
         self.route = initialRoute
     }
@@ -198,6 +210,10 @@ final class AppleShellBridge {
             geolocation.begin(requestId: requestId, argsJson: argsJson)
         case BnHostCallOp.notifications:
             notifications.begin(requestId: requestId, argsJson: argsJson)
+        case BnHostCallOp.biometrics:
+            biometrics.begin(requestId: requestId, argsJson: argsJson)
+        case BnHostCallOp.secureStorage:
+            secureStorage.begin(requestId: requestId, argsJson: argsJson)
         default:
             NSLog("[AppleShellBridge] hostCallBegin: unknown op \(op) (request \(requestId)) — completing Error")
             geolocation.completeUnknownOp(requestId: requestId)

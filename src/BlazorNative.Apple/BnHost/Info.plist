@@ -57,6 +57,17 @@
 	     NOT declared. -->
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>BlazorNative uses your location to show your current position in the geolocation demo.</string>
+	<!-- ── Phase 9.2 Gate 3: the Face ID purpose string ───────────────────────────
+	     LAContext.evaluatePolicy(.deviceOwnerAuthenticationWithBiometrics) and a
+	     SecItemCopyMatching on a .biometryCurrentSet Keychain item both read this string
+	     for the Face ID system prompt, and iOS CRASHES the app at the evaluation if the
+	     key is absent (SIGABRT on Face-ID devices). A real sentence, not a placeholder —
+	     the App Store rejects an empty/boilerplate purpose string, and it is the text a
+	     real user reads under the Face ID sheet. Touch ID needs no purpose string
+	     (§3c) — this key covers the Face ID surface for both `authenticate` and the
+	     OS-key-bound `getWithAuth`. -->
+	<key>NSFaceIDUsageDescription</key>
+	<string>BlazorNative uses Face ID to confirm it's you and to unlock secrets you store in the secure demo.</string>
 	<!-- ── Phase 9.1 Gate 3: no Info.plist key for LOCAL notifications ─────────────
 	     Unlike location (whose requestWhenInUseAuthorization CRASHES without a purpose
 	     string), UNUserNotificationCenter authorization for LOCAL notifications is
