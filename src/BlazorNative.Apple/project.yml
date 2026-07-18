@@ -85,6 +85,13 @@ targets:
         INFOPLIST_FILE: BnHost/Info.plist
         GENERATE_INFOPLIST_FILE: NO
         ENABLE_TESTABILITY: YES
+        # Phase 9.2 Gate 3: the keychain-access-groups entitlement BnSecureStorage's
+        # SecItem* calls need. Without it the unsigned (CODE_SIGNING_ALLOWED=NO) app has
+        # no application access group and EVERY Keychain op returns
+        # errSecMissingEntitlement (-34018) → SecureStorageStatus.Error. The simulator's
+        # securityd honours this embedded (simulated) entitlement even unsigned, so the
+        # REAL Keychain works in the hosted XCTest. See BnHost/BnHost.entitlements.
+        CODE_SIGN_ENTITLEMENTS: BnHost/BnHost.entitlements
         SWIFT_OBJC_BRIDGING_HEADER: BnHost/BlazorNativeRuntimeC.h
         # Phase 6.0 Yoga spike / Phase 6.1 layout engine: the app links Yoga's static
         # lib (built from source by ios.yml) ALONGSIDE the runtime .a. libyoga.a is

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- ── Phase 9.2 Gate 3: the keychain-access-group the secure store needs ──────
+	     BnSecureStorage's SecItemAdd / SecItemCopyMatching / SecItemDelete run inside the
+	     HOSTED XCTest bundle, injected into this app. WITHOUT a keychain-access-groups
+	     entitlement the (unsigned, CODE_SIGNING_ALLOWED=NO) app has no application access
+	     group, so EVERY SecItem* call returns errSecMissingEntitlement (-34018) — which
+	     the shell surfaces as SecureStorageStatus.Error. The simulator's securityd honours
+	     this embedded entitlement even unsigned (it is a simulated entitlement, not a
+	     signed one), so declaring the group makes the REAL Keychain usable in CI.
+
+	     A bare literal group (no $(AppIdentifierPrefix) team prefix) is deliberate: the
+	     lane builds UNSIGNED for the simulator, where the prefix is undefined; the group
+	     only has to be self-consistent for one app reading its own items. There is no iOS
+	     template tree (the demo is sample-only), so no real-app entitlement is affected. -->
+	<key>keychain-access-groups</key>
+	<array>
+		<string>io.blazornative.bnhost</string>
+	</array>
+</dict>
+</plist>

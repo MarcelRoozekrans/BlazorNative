@@ -324,8 +324,17 @@ jobs:
             -destination "platform=iOS Simulator,id=${{ steps.sim.outputs.udid }}" \
             -resultBundlePath ../../ios-out/BnHost.xcresult \
             -derivedDataPath "$RUNNER_TEMP/DerivedData" \
-            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGN_IDENTITY="-" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=YES \
             2>&1 | tee ../../ios-out/xcodebuild-test.log
+          # Phase 9.2 Gate 3: AD-HOC sign the simulator app (identity "-") instead of the
+          # prior CODE_SIGNING_ALLOWED=NO. Signing is what EMBEDS BnHost.entitlements'
+          # keychain-access-groups into the binary; the simulator's securityd honours the
+          # ad-hoc-signed (simulated) entitlement, so BnSecureStorage's SecItem* calls stop
+          # returning errSecMissingEntitlement (-34018 → SecureStorageStatus.Error). No
+          # provisioning profile is needed for an ad-hoc simulator build. The render/wire
+          # tests are unaffected — signing is a post-link step, not a behaviour change.
 
       - name: Collect crash reports + test console (on crash/failure)
         if: always()
