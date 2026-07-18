@@ -65,6 +65,40 @@ public interface IMobileBridge
     ValueTask<NotificationStatus> RequestNotificationPermissionAsync(CancellationToken ct = default);
     ValueTask<NotificationStatus> CheckNotificationPermissionAsync(CancellationToken ct = default);
 
+    // Biometrics + Secure storage (Phase 9.2 — M9 DoD #4; the SECOND reuse of the
+    // 9.0 generic ABI, and it closes the M5 secure-storage deferral). TWO op-enum
+    // values (Biometrics = 2, SecureStorage = 3) + two wire-mirrored status enums —
+    // and NOTHING else on the ABI: NO struct grow (still 80 bytes / 10 slots), NO
+    // new export (still 10), NO drift-pin move. The "pay once (9.0), reuse thrice"
+    // bet paying its THIRD draw. Every op is a permission-gated host call riding the
+    // SAME HostCallBegin/host_call_complete pair geolocation opened; the action lives
+    // INSIDE the flat JSON (geolocation's `mode` precedent).
+    //
+    // Biometrics: AuthenticateAsync shows an OS biometric prompt and returns a
+    // BiometricStatus VALUE — failure / cancellation / lockout / no-hardware are all
+    // DATA, never an exception and never a hang (the milestone law). The read-only
+    // availability check (never prompts) is the geolocation-check sibling: it returns
+    // Authenticated to mean "present + enrolled + ready" (no auth performed — the
+    // check-returns-success precedent, geolocation's check returning Granted).
+    //
+    // Secure storage: an encrypted-at-rest key/value store (Keystore / Keychain
+    // host-side), DISTINCT from the plain unencrypted StorageRead/Write/Delete slots
+    // (offsets 16/24/32) — this is what M5 deferred. set/get/getWithAuth/delete each
+    // return a SecureStorageStatus; get/getWithAuth carry the value back in the
+    // OPTIONAL flat-JSON {"value":…} payload host_call_complete has carried since 9.0
+    // (geolocation's fix is the first user; this is the second) — NO new export.
+    // getWithAuth is THE PAIRING: the secret is bound to biometric auth at the
+    // OS-KEY level (the OS itself refuses the plaintext without a fresh auth), so an
+    // auth-bound write (requireAuth:true) MUST pair with an auth-bound read. A soft
+    // 8 KB cap on the value is enforced at THIS .NET boundary (an oversize value
+    // RETURNS a status, never crosses, never crashes — SecretResult.MaxValueBytes).
+    ValueTask<BiometricStatus>     AuthenticateAsync(string reason, CancellationToken ct = default);
+    ValueTask<BiometricStatus>     IsBiometricAvailableAsync(CancellationToken ct = default);
+    ValueTask<SecureStorageStatus> SetSecretAsync(string key, string value, bool requireAuth, CancellationToken ct = default);
+    ValueTask<SecretResult>        GetSecretAsync(string key, CancellationToken ct = default);
+    ValueTask<SecretResult>        GetSecretWithAuthAsync(string key, string reason, CancellationToken ct = default);
+    ValueTask<SecureStorageStatus> DeleteSecretAsync(string key, CancellationToken ct = default);
+
     // Platform info — sync raw-JSON form + async typed form. (The sync form is
     // a Phase 2.3 WASM-era shape — it read the BLAZOR_PLATFORM_INFO env var on
     // Mono-WASI; today NativeShellBridge builds the JSON from the
@@ -190,3 +224,84 @@ public enum NotificationStatus
 /// is the tap-through target (a <c>DEEP_LINK_COMPONENTS</c> key) or null.</summary>
 public readonly record struct NotificationSpec(
     int Id, string Title, string Body, DateTimeOffset? When, string? Route);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Biometrics + secure-storage value types (Phase 9.2 — M9 DoD #4)
+//
+// BiometricStatus and SecureStorageStatus are WIRE-MIRRORED: the host maps each
+// platform's native outcome into them host-side, and .NET only ever sees the
+// integer (+ the get payload). The numeric values are the ABI contract —
+// mirrored byte-identically by the Kotlin (HostCallOp) and Swift (BnHostCallOp)
+// shells at Gates 2/3 (pinned like the callback struct). Do NOT reorder: the host
+// passes these integers back across blazornative_host_call_complete — the SAME
+// export geolocation/notifications use, with NO struct grow and NO new export (the
+// phase headline, made falsifiable by SecureBiometricsAbiUnchangedTests).
+//
+// BiometricStatus — SIX values (a richer terminal set than notifications: a prompt
+// can fail-but-retryable, be cancelled, or lock out, so it earns its own enum):
+//
+//   0 Authenticated  — the user proved presence (evaluatePolicy / onAuthenticationSucceeded).
+//                       On a read-only availability check it means "present + enrolled + ready"
+//                       (no auth performed — the geolocation-check-returns-Granted precedent).
+//   1 Failed         — a biometric was presented and rejected; retry allowed
+//   2 Cancelled      — the user dismissed the prompt (or the app cancelled)
+//   3 Unavailable    — no hardware, or none enrolled
+//   4 LockedOut      — too many failures — temporarily (or permanently) locked
+//   5 Error          — unexpected host error (a caught Kotlin/Swift throw)
+//
+// Failure (1), cancellation (2), unavailability (3), lockout (4) and error (5) are
+// all VALUES, never exceptions and never hangs — the awaiting ValueTask always
+// resolves. An out-of-range integer maps to Error (still data, never a throw).
+// ─────────────────────────────────────────────────────────────────────────────
+
+public enum BiometricStatus
+{
+    Authenticated = 0,
+    Failed = 1,
+    Cancelled = 2,
+    Unavailable = 3,
+    LockedOut = 4,
+    Error = 5,
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SecureStorageStatus — FIVE values. The biometric-gate detail (failed vs
+// cancelled vs lockout) folds into AuthFailed for storage — the caller only needs
+// "couldn't unlock"; a consumer wanting the finer grain uses IBiometrics.
+//
+//   0 Ok           — set/delete succeeded; GET FOUND THE VALUE ({"value":…} payload on get)
+//   1 NotFound     — get/getWithAuth of an absent key (no payload)
+//   2 AuthFailed   — the biometric gate on getWithAuth denied / failed / cancelled / locked out
+//   3 Unavailable  — no secure hardware / Keystore unusable / (getWithAuth) biometrics not enrolled
+//   4 Error        — unexpected host error (a caught throw, a decrypt failure, malformed/oversize args)
+//
+// NotFound (1), AuthFailed (2), Unavailable (3) and Error (4) are all VALUES,
+// never exceptions and never hangs. Out-of-range → Error.
+// ─────────────────────────────────────────────────────────────────────────────
+
+public enum SecureStorageStatus
+{
+    Ok = 0,
+    NotFound = 1,
+    AuthFailed = 2,
+    Unavailable = 3,
+    Error = 4,
+}
+
+/// <summary>The terminal outcome of a secure <c>get</c> / <c>getWithAuth</c>: a
+/// status and, only when <see cref="SecureStorageStatus.Ok"/>, the stored value.
+/// Every other status carries a null value (the <see cref="GeolocationResult"/>
+/// twin). The value crosses the intra-process C-ABI as a UTF-8 string in the flat
+/// JSON <c>{"value":…}</c> payload — see the security note in
+/// <c>docs/bridge-extension.md §(f).9</c>: the wire is trusted (encryption is at
+/// rest, not on the wire); the POC's accepted hazard is the in-memory lifetime of
+/// non-zeroable plaintext copies, a zeroable-buffer hardening pass being M10.
+/// Binary secrets cross base64-encoded.</summary>
+public readonly record struct SecretResult(SecureStorageStatus Status, string? Value)
+{
+    /// <summary>The soft cap on a secret value, enforced at the .NET boundary (an
+    /// oversize value RETURNS a status — never crosses, never crashes). Secure
+    /// storage is for secrets (tokens, keys), not blobs; a large value is a misuse,
+    /// not a store. Recorded as a decision (§8).</summary>
+    public const int MaxValueBytes = 8 * 1024;
+}
