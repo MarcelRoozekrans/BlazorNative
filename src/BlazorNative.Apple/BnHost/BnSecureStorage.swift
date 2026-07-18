@@ -20,11 +20,29 @@
 //     `.biometryCurrentSet` INVALIDATES the item if the enrolled biometric set changes.
 //   • get(key) → SecItemCopyMatching with kSecUseAuthenticationUI = .fail so a plain
 //     get NEVER silently prompts: a non-auth item returns Ok+value; an AUTH-bound item
-//     returns errSecInteractionNotAllowed → AuthFailed (the OS refusing the bytes
-//     without auth). THE OS-BINDING PROOF — a plain get of an auth item MUST AuthFail.
+//     is REFUSED as AuthFailed. THE CONTRACT — a plain get of an auth item must not hand
+//     back the plaintext. (See the OS-BINDING note below: on a real device the OS itself
+//     refuses; on the simulator the shell refuses off the ACL/marker.)
 //   • getWithAuth(key,reason) → the OS Face ID evaluation unlocks the item and the
 //     plaintext returns in {"value":…}; a non-auth item is read directly (no prompt).
 //   • delete(key) → SecItemDelete (idempotent — a missing item is still Ok).
+//
+// THE OS-KEY BINDING — PROVEN vs UNPROVEN (the honest split, mirroring biometrics and
+// the Android gate). The iOS SIMULATOR has NO Secure Enclave and does NOT enforce a
+// SecAccessControl — `.biometryCurrentSet` is a documented no-op there: a plain get of
+// an auth item returns the bytes the real OS would refuse. So the OS-ENFORCED refusal
+// is genuinely unprovable in CI (and iOS real-device is DEFERRED — no Apple Developer
+// account). What IS proven, deterministically:
+//   • the shell REQUESTS the binding — an auth-bound set builds + attaches a
+//     `.biometryCurrentSet` SecAccessControl (asserted via `lastSetAccessControlForTest`,
+//     a construction seam; the "drop the ACL" mutation reds it);
+//   • the CONTRACT — the shell refuses a plain get of an auth-bound item (AuthFailed, no
+//     value), learning the binding from the ACL/marker the way Android reads the
+//     keystore's KeyInfo;
+//   • the STATUS contract through the gate — getWithAuth authorize returns the REAL
+//     Keychain value, deny is AuthFailed, no hang.
+// The OS-enforced Secure-Enclave refusal (safe even against a control-flow bypass) is
+// the UNPROVEN-until-real-device half — named, not smuggled.
 //
 // THE iOS-vs-ANDROID ASYMMETRY (a real platform difference, documented not hidden): an
 // auth-bound `set` does NOT prompt on iOS. The `.biometryCurrentSet` ACL gates
@@ -43,10 +61,10 @@
 // the geolocation/notifications split). So the gated read is driven behind
 // `authGateHookForTest`, which hands the test a `BnSecureAuthGate` INSTEAD of popping
 // the sheet — CI proves the wire, the {"value":…} payload, the status mapping and
-// denial-as-data no-hang. The DETERMINISTIC OS-BINDING (a plain get of an auth item
-// AuthFails) is proven DIRECTLY against the real Keychain ACL. The plain path
-// (set/get/delete of non-auth items) runs the REAL Keychain end-to-end. The real
-// biometric-gated Secure-Enclave read is the documented UNPROVEN-until-hardware half.
+// denial-as-data no-hang. The plain path (set/get/delete of non-auth items) runs the
+// REAL Keychain end-to-end. The OS-key binding is proven at the CONTRACT level (the
+// shell attaches the ACL + refuses a plain get); the OS-ENFORCED Secure-Enclave refusal
+// is the UNPROVEN-until-real-device half (see the OS-KEY BINDING note above).
 // ─────────────────────────────────────────────────────────────────────────────
 
 import Foundation
@@ -83,6 +101,20 @@ final class BnSecureStorage {
     /// The Keychain service every item is filed under (account = the app-chosen key).
     static let service = "io.blazornative.secure"
 
+    /// The kSecAttrLabel sentinel stamped on an AUTH-bound item ALONGSIDE the real
+    /// `.biometryCurrentSet` SecAccessControl. WHY A READABLE MARKER: the iOS SIMULATOR
+    /// has NO Secure Enclave and does NOT enforce a SecAccessControl (the ACL is a
+    /// documented no-op there — a plain get returns the bytes the real OS would refuse).
+    /// So the shell cannot learn "this item is auth-bound" from the OS refusing it on the
+    /// sim; the label is how the enclave-less simulator surfaces the binding so the shell
+    /// still routes the gated read and still REFUSES a plain get. On a REAL device the OS
+    /// refuses first (errSecInteractionNotAllowed → auth-bound before the label is even
+    /// read), so the marker is a simulator affordance, never the security itself — the
+    /// security is the ACL, whose OS-enforced refusal is the UNPROVEN-until-real-device
+    /// half (iOS real-device is DEFERRED). The Android parity: there the keystore's own
+    /// KeyInfo carries the auth requirement; here the item carries the ACL + this marker.
+    static let authLabel = "bn-authbound"
+
     private let lock = NSLock()
 
     /// STRONG. The `LAContext` under a getWithAuth evaluation — held for the call's
@@ -97,12 +129,15 @@ final class BnSecureStorage {
     /// territory). Null in production → the real `LAContext.evaluatePolicy` sheet is used.
     static var authGateHookForTest: ((BnSecureAuthGate) -> Void)?
 
-    /// The seam's model of the OS-unlocked plaintext: an auth-bound `set` under an active
-    /// gate hook retains the value here so a seam-authorized getWithAuth can return it
-    /// (the sim's Secure Enclave read behind a real gesture is owner-device territory —
-    /// production reads the real `.biometryCurrentSet` item with the freshly-evaluated
-    /// context). Populated ONLY while `authGateHookForTest` is set; never in production.
-    private static var testAuthPlaintextForSeam: [String: String] = [:]
+    /// The CONSTRUCTION spy (the assert-the-code-requests-the-binding seam): the
+    /// SecAccessControl the most recent auth-bound `set` ATTACHED to its item, or nil for
+    /// a plain set. Because the simulator does not ENFORCE the ACL (no Secure Enclave), a
+    /// test cannot prove the OS refuses a plain get there; it CAN prove the shell
+    /// requested the binding — this pins that an auth-bound set built + attached a
+    /// `.biometryCurrentSet` SecAccessControl. The "drop the ACL" mutation leaves this nil
+    /// and reds the construction assertion (the sim's OS-refusal tripwire being
+    /// unavailable). Set on every `secureSet`.
+    static var lastSetAccessControlForTest: SecAccessControl?
 
     /// Intercepts the completion so a PURE unit test (no NativeAOT boot) observes the
     /// routed (requestId, status, payload) without a live .NET continuation.
@@ -115,7 +150,7 @@ final class BnSecureStorage {
 
     static func resetForTest() {
         authGateHookForTest = nil
-        testAuthPlaintextForSeam = [:]
+        lastSetAccessControlForTest = nil
         completeHookForTest = nil
         lastHostCallCompleteRcForTest = Int32.min
     }
@@ -163,6 +198,7 @@ final class BnSecureStorage {
         _ = secureDelete(key: key) // idempotent overwrite
         var query = baseQuery(key)
         query[kSecValueData as String] = Data(value.utf8)
+        Self.lastSetAccessControlForTest = nil
         if requireAuth {
             var acError: Unmanaged<CFError>?
             guard let access = SecAccessControlCreateWithFlags(
@@ -173,13 +209,18 @@ final class BnSecureStorage {
                 NSLog("[BnSecureStorage] set('\(key)') auth: SecAccessControl create failed — Unavailable")
                 return BnSecureStorageStatus.unavailable
             }
+            Self.lastSetAccessControlForTest = access // the construction spy — the code REQUESTED the binding
             query[kSecAttrAccessControl as String] = access
+            // The enclave-less-simulator readback marker (see `authLabel`): the sim does
+            // not enforce the ACL, so the shell stamps a label to still learn the item is
+            // auth-bound. On a real device the OS refuses first, so the label is a sim
+            // affordance, not the security.
+            query[kSecAttrLabel as String] = Self.authLabel
             // The add must not itself prompt on the sim (there is no gesture to satisfy).
             // A context with interaction disabled keeps SecItemAdd non-interactive.
             let context = LAContext()
             context.interactionNotAllowed = true
             query[kSecUseAuthenticationContext as String] = context
-            if Self.authGateHookForTest != nil { Self.testAuthPlaintextForSeam[key] = value }
         } else {
             query[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
         }
@@ -190,9 +231,13 @@ final class BnSecureStorage {
     }
 
     /// get (the PLAIN op — NEVER prompts): probe the item with kSecUseAuthenticationUI =
-    /// .fail. A non-auth item returns Ok + value; an AUTH-bound item returns
-    /// errSecInteractionNotAllowed → AuthFailed (THE OS-BINDING PROOF — the OS refuses the
-    /// bytes without auth); a missing key is NotFound; anything else Error.
+    /// .fail. A non-auth item returns Ok + value; an AUTH-bound item is REFUSED as
+    /// AuthFailed — THE CONTRACT: a plain get of a biometric-bound secret must not hand
+    /// back the plaintext. On a REAL device the OS refuses first (errSecInteractionNotAllowed);
+    /// on the enclave-less SIMULATOR the securityd would return the bytes, so the SHELL
+    /// refuses (it knows the item is auth-bound from the ACL/marker — the Android
+    /// keyRequiresAuth parity). The OS-LEVEL refusal is the UNPROVEN-until-real-device
+    /// half. A missing key is NotFound; anything else Error.
     func secureGet(key: String) -> (status: Int32, value: String?) {
         switch probe(key) {
         case .notFound: return (BnSecureStorageStatus.notFound, nil)
@@ -205,7 +250,6 @@ final class BnSecureStorage {
     /// delete: drop the item. Idempotent — a missing item is still Ok (the Android twin).
     @discardableResult
     func secureDelete(key: String) -> Int32 {
-        Self.testAuthPlaintextForSeam.removeValue(forKey: key)
         let status = SecItemDelete(baseQuery(key) as CFDictionary)
         if status == errSecSuccess || status == errSecItemNotFound { return BnSecureStorageStatus.ok }
         NSLog("[BnSecureStorage] delete('\(key)') SecItemDelete → OSStatus \(status)")
@@ -227,13 +271,13 @@ final class BnSecureStorage {
             complete(requestId, BnSecureStorageStatus.ok, valuePayload(value)) // no prompt to show
         case .failed:
             complete(requestId, BnSecureStorageStatus.error, nil)
-        case .authBound:
+        case .authBound(let probedValue):
             let context = LAContext()
             lock.lock(); inFlightContext = context; lock.unlock() // retained for the call
             let gate = BnSecureAuthGate(
                 reason: reason,
                 hasAuthBoundItem: true,
-                authenticate: { [weak self] in self?.finishAuthorizedRead(requestId: requestId, key: key, context: context) },
+                authenticate: { [weak self] in self?.finishAuthorizedRead(requestId: requestId, key: key, context: context, probedValue: probedValue) },
                 deny: { [weak self] in self?.complete(requestId, BnSecureStorageStatus.authFailed, nil) })
             if let hook = Self.authGateHookForTest { hook(gate); return }
             // Production: the OS Face ID evaluation. On success the freshly-evaluated
@@ -245,24 +289,22 @@ final class BnSecureStorage {
         }
     }
 
-    /// The OS-unlocked read of an auth-bound item. Under the test seam this models the
-    /// Secure-Enclave read by returning the retained plaintext (the real gesture-driven
-    /// read is owner-device territory); in production it reads the real
-    /// `.biometryCurrentSet` Keychain item with the freshly-evaluated context. Either way
-    /// the value crosses in {"value":…}; a read that yields nothing is AuthFailed.
-    private func finishAuthorizedRead(requestId: Int64, key: String, context: LAContext) {
-        if Self.authGateHookForTest != nil {
-            if let value = Self.testAuthPlaintextForSeam[key] {
-                complete(requestId, BnSecureStorageStatus.ok, valuePayload(value))
-            } else {
-                complete(requestId, BnSecureStorageStatus.authFailed, nil)
-            }
+    /// The OS-unlocked read of an auth-bound item, run once the gate (OS or seam) grants.
+    /// On the enclave-less SIMULATOR the probe ALREADY surfaced the bytes (the ACL is not
+    /// enforced), so `probedValue` is the REAL Keychain value the read returns — a genuine
+    /// round-trip, only the biometric decision seamed. On a REAL device the probe was
+    /// refused (probedValue nil), so this reads the `.biometryCurrentSet` item afresh with
+    /// the OS-unlocked context. The value crosses in {"value":…}; a read that yields
+    /// nothing is AuthFailed.
+    private func finishAuthorizedRead(requestId: Int64, key: String, context: LAContext, probedValue: String?) {
+        if let value = probedValue {
+            complete(requestId, BnSecureStorageStatus.ok, valuePayload(value))
             return
         }
         var query = baseQuery(key)
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
-        query[kSecUseAuthenticationContext as String] = context // the OS-unlocked context
+        query[kSecUseAuthenticationContext as String] = context // the OS-unlocked context (real device)
         var out: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &out)
         if status == errSecSuccess, let data = out as? Data, let value = String(data: data, encoding: .utf8) {
@@ -277,29 +319,44 @@ final class BnSecureStorage {
     private enum Probe {
         case notFound
         case plain(String)
-        case authBound
+        /// Auth-bound. Carries the value when the platform surfaced it (the enclave-less
+        /// simulator, which does not enforce the ACL) and nil when the OS refused it (a
+        /// real device — the OS-enforced refusal).
+        case authBound(String?)
         case failed
     }
 
-    /// Reads the item with UI DISALLOWED (kSecUseAuthenticationUI = .fail) so no prompt
-    /// ever fires: a plain item hands back its bytes; an auth-bound item comes back
-    /// errSecInteractionNotAllowed (the OS refusing without auth UI) — the deterministic,
-    /// enrollment-free read of the OS binding.
+    /// Reads the item (data + attributes) with UI DISALLOWED (kSecUseAuthenticationUI =
+    /// .fail) so no prompt ever fires, then classifies it:
+    ///   • errSecInteractionNotAllowed → auth-bound, value withheld (a REAL device: the OS
+    ///     refused the bytes without auth UI — the OS-enforced binding);
+    ///   • errSecSuccess carrying the `.biometryCurrentSet` access-control attribute OR the
+    ///     `authLabel` marker → auth-bound WITH the value (the SIMULATOR: no Secure Enclave,
+    ///     so the ACL is a no-op and the bytes come back — the shell learns the binding
+    ///     from the attribute/marker, not from an OS refusal);
+    ///   • errSecSuccess without either → a plain item;
+    ///   • errSecItemNotFound → absent.
     private func probe(_ key: String) -> Probe {
         var query = baseQuery(key)
         query[kSecReturnData as String] = true
+        query[kSecReturnAttributes as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
         query[kSecUseAuthenticationUI as String] = kSecUseAuthenticationUIFail
         var out: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &out)
         switch status {
         case errSecSuccess:
-            if let data = out as? Data, let value = String(data: data, encoding: .utf8) { return .plain(value) }
+            guard let dict = out as? [String: Any] else { return .failed }
+            let value = (dict[kSecValueData as String] as? Data).flatMap { String(data: $0, encoding: .utf8) }
+            let isAuthBound = dict[kSecAttrAccessControl as String] != nil
+                || (dict[kSecAttrLabel as String] as? String) == Self.authLabel
+            if isAuthBound { return .authBound(value) }
+            if let value = value { return .plain(value) }
             return .failed
+        case errSecInteractionNotAllowed:
+            return .authBound(nil) // a REAL device refused the bytes without auth — auth-bound
         case errSecItemNotFound:
             return .notFound
-        case errSecInteractionNotAllowed:
-            return .authBound
         default:
             NSLog("[BnSecureStorage] probe('\(key)') SecItemCopyMatching → OSStatus \(status)")
             return .failed

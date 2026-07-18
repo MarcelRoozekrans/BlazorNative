@@ -111,21 +111,35 @@ final class BnSecureStorageTests: BnHostTestCase {
         XCTAssertEqual(bridge.secureStorage.secureDelete(key: plainKey), BnSecureStorageStatus.ok)
     }
 
-    // ── THE OS-KEY BINDING: a plain get of an auth-bound item AuthFails ───────────
+    // ── THE OS-KEY BINDING: the construction + the refused plain get ──────────────
+    //
+    // THE HONESTY SPLIT (the iOS Simulator has NO Secure Enclave and does NOT enforce a
+    // SecAccessControl — `.biometryCurrentSet` is a documented no-op there, so a plain
+    // get on the sim WOULD return the bytes the real OS refuses; iOS real-device is
+    // DEFERRED). So the OS-ENFORCED refusal is UNPROVEN-until-real-device. What IS proven
+    // deterministically: the shell REQUESTS the binding (attaches the ACL — the
+    // construction spy) and ENFORCES the contract (refuses a plain get). The Android
+    // parity: there the keystore's KeyInfo carries the auth requirement; here the item
+    // carries the ACL + marker.
 
-    func testPlainGetOfAnAuthBoundItemAuthFailsTheOsKeyBinding() {
+    func testAnAuthBoundSetAttachesTheAclAndTheShellRefusesAPlainGet() {
         let bridge = AppleShellBridge()
-        // An auth-bound set provisions the item under a SecAccessControl(.biometryCurrentSet)
-        // — the OS gates RETRIEVAL. Note it does NOT prompt on the WRITE (the iOS asymmetry).
+        // THE CONSTRUCTION: an auth-bound set builds + attaches a .biometryCurrentSet
+        // SecAccessControl. Asserted via the construction spy — the "drop the ACL"
+        // mutation leaves it nil and reds this (the enclave-less sim's OS-refusal tripwire
+        // being unavailable). It does NOT prompt on the WRITE (the iOS asymmetry).
         XCTAssertEqual(bridge.secureStorage.secureSet(key: authKey, value: "hunter2", requireAuth: true),
-                       BnSecureStorageStatus.ok, "auth-bound set must store the .biometryCurrentSet item")
+                       BnSecureStorageStatus.ok)
+        XCTAssertNotNil(BnSecureStorage.lastSetAccessControlForTest,
+                        "an auth-bound set MUST attach a .biometryCurrentSet SecAccessControl (the OS-key binding, requested)")
 
-        // A plain get cannot satisfy the item's biometric requirement, and it never
-        // prompts (kSecUseAuthenticationUI=.fail) — the OS returns the bytes to NO ONE
-        // without auth. THE SECURITY CONTRACT: AuthFailed, never the plaintext.
+        // THE CONTRACT: the shell refuses a plain get of the auth-bound item (AuthFailed,
+        // no value) — it will not hand back a biometric-bound secret without the gated
+        // read. On the sim the shell enforces off the ACL/marker; on a real device the OS
+        // refuses first. The OS-LEVEL refusal is the UNPROVEN-until-real-device half.
         let got = bridge.secureStorage.secureGet(key: authKey)
         XCTAssertEqual(got.status, BnSecureStorageStatus.authFailed,
-                       "the OS-key binding must refuse a plain get of an auth-bound item")
+                       "the shell must refuse a plain get of an auth-bound item")
         XCTAssertNil(got.value, "an AuthFailed get carries no value")
     }
 

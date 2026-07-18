@@ -968,13 +968,15 @@ jobs:
           #   +1  the secure wire enum pinned 0..4 + op=3.
           #   +3  the PLAIN Keychain store round-trips a secret (set->get->delete->NotFound); a get
           #       of an absent key is NotFound; delete is idempotent Ok — REAL Keychain.
-          #   +1  THE OS-KEY BINDING: a plain get of a `.biometryCurrentSet` AUTH item returns
-          #       AuthFailed (kSecUseAuthenticationUI=.fail -> errSecInteractionNotAllowed; the OS
-          #       refuses the bytes without auth UI). The security contract, proven REAL against
-          #       the Keychain ACL; the "drop the SecAccessControl" mutation reds it.
+          #   +1  THE OS-KEY BINDING (contract-level — the enclave-less-sim honesty): an auth-bound
+          #       set ATTACHES a `.biometryCurrentSet` SecAccessControl (the construction spy) and
+          #       the shell REFUSES a plain get of it (AuthFailed, no value). The iOS Simulator has
+          #       NO Secure Enclave and does NOT enforce the ACL (a no-op there — a plain get WOULD
+          #       return the bytes), and iOS real-device is DEFERRED, so the OS-ENFORCED refusal is
+          #       UNPROVEN-until-real-device; the "drop the ACL" mutation reds the construction spy.
           #   +4  getWithAuth: absent -> NotFound (before any prompt); a seam-AUTHORIZE returns the
-          #       value in {"value":…} (the pairing, the payload channel's 2nd user); a seam-DENY ->
-          #       AuthFailed (DATA, no hang); a PLAIN item reads DIRECTLY (no gate, no prompt).
+          #       REAL Keychain value in {"value":…} (the pairing, the payload channel's 2nd user);
+          #       a seam-DENY -> AuthFailed (DATA, no hang); a PLAIN item reads DIRECTLY (no gate).
           #   +1  the iOS-vs-Android ASYMMETRY: an auth-bound `set` does NOT prompt on iOS (the ACL
           #       gates retrieval, not storage; Android's per-use-auth key prompts on write).
           #   +1  an unknown secure ACTION -> Error; +1 op=3 ROUTES to the secure-storage handler.
@@ -982,10 +984,13 @@ jobs:
           #       the REAL host_call_complete (the pairing, rc 0); Unlock after Delete echoes
           #       "status:NotFound" within a BOUNDED await (no hang).
           # SIMULATOR-SCOPED + LABELLED (the M9 iOS deferral): the REAL Face ID sheet + the TEE-
-          # enforced Secure-Enclave read behind it are owner-device territory (iOS real-device is
-          # DEFERRED; the sim's enrolled Face ID is a menu toggle, not a TrueDepth capture, and the
-          # gesture is not drivable in a hosted XCTest). The authGate/evaluatePolicy seams stand in;
-          # the OS-key BINDING itself (a plain get AuthFails) is proven REAL against the Keychain.
+          # enforced Secure-Enclave refusal are owner-device territory (iOS real-device is DEFERRED;
+          # the sim has NO Secure Enclave and does NOT enforce a SecAccessControl, so a plain get on
+          # the sim returns the bytes the real OS refuses). The authGate/evaluatePolicy seams stand
+          # in; the OS-key binding is proven at the CONTRACT level (the shell attaches the ACL +
+          # refuses a plain get), the OS-enforced refusal being the UNPROVEN-until-real-device half.
+          # A hosted-XCTest keychain works because the app is ad-hoc signed with a
+          # keychain-access-groups entitlement (BnHost.entitlements) — else SecItem* -34018.
           if [ "$failed" -ne 0 ] || [ "$passed" -ne 218 ]; then
             grep -E "Test Case '.*' (passed|failed)" "$log" || true
             echo "iOS XCTest baseline drift: expected 218 passed / 0 failed, got passed=$passed failed=$failed" >&2
