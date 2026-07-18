@@ -14,10 +14,10 @@ namespace BlazorNative.Device;
 
 public static class ServiceCollectionExtensions
 {
-    /// <summary>Registers <see cref="IGeolocation"/> and <see cref="INotifications"/>
-    /// (and the other M9 device facades as they land). Requires an
-    /// <c>IMobileBridge</c> to already be registered — each facade is a thin delegate
-    /// over it.
+    /// <summary>Registers <see cref="IGeolocation"/>, <see cref="INotifications"/>,
+    /// <see cref="IBiometrics"/> and <see cref="ISecureStorage"/> (and the other M9
+    /// device facades as they land). Requires an <c>IMobileBridge</c> to already be
+    /// registered — each facade is a thin delegate over it.
     ///
     /// <code>
     /// // In your DI setup (the runtime composition root, or a test harness):
@@ -26,12 +26,16 @@ public static class ServiceCollectionExtensions
     /// // In your component — inject the ergonomic facade, not the low-level bridge:
     /// [Inject] public IGeolocation Geo { get; set; } = default!;
     /// [Inject] public INotifications Notifications { get; set; } = default!;
+    /// [Inject] public IBiometrics Biometrics { get; set; } = default!;
+    /// [Inject] public ISecureStorage Secrets { get; set; } = default!;
     /// </code>
     /// </summary>
     public static IServiceCollection AddBlazorNativeDevice(this IServiceCollection services)
     {
         services.AddSingleton<IGeolocation, Geolocation>();
         services.AddSingleton<INotifications, Notifications>(); // Phase 9.1 — the notifications facade (no 8th package)
+        services.AddSingleton<IBiometrics, Biometrics>();       // Phase 9.2 — biometrics (no 8th package)
+        services.AddSingleton<ISecureStorage, SecureStorage>(); // Phase 9.2 — secure storage (M5 deferral closed)
         return services;
     }
 }

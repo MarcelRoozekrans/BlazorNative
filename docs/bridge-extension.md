@@ -4,12 +4,15 @@
 Since **Phase 9.0 (M9 DoD #1)** it also covers **permission-gated async host calls** —
 section (f) — and the ABI is at **10 exports / 80 bytes** (the first export grow since
 Phase 3.1's `fetch_complete`). **Phase 9.1 (M9 DoD #3) is the pattern's FIRST declared
-reuse** — local notifications — and it held the bet: the ABI stayed at **10 exports /
-80 bytes**, unchanged. The pattern now has **two** worked capabilities.
-**Worked examples:** clipboard + share (Phase 5.4), the first bridge growth with two
-shells (Android + iOS) in lockstep — section (e); **geolocation** (Phase 9.0), the
-first *permission-gated* capability — section (f.7); and **notifications** (Phase 9.1),
-the first *reuse* + the first *inbound-event* capability (tap-through) — section (f.8).
+reuse** — local notifications — and it held the bet. **Phase 9.2 (M9 DoD #4) is the SECOND
+reuse** — biometrics + secure storage, TWO ops at once — and it held the bet a THIRD time:
+the ABI stayed at **10 exports / 80 bytes**, unchanged. The pattern now has **three** worked
+capabilities. **Worked examples:** clipboard + share (Phase 5.4), the first bridge growth
+with two shells (Android + iOS) in lockstep — section (e); **geolocation** (Phase 9.0), the
+first *permission-gated* capability — section (f.7); **notifications** (Phase 9.1), the
+first *reuse* + the first *inbound-event* capability (tap-through) — section (f.8); and
+**biometrics + secure storage** (Phase 9.2), the first *value-returning* completion and the
+first *non-permission-gated* host call — section (f.9).
 
 This is the doc a future contributor reads to add a new host capability (camera,
 geolocation, biometrics, …). It covers the bridge model, the **size-negotiation** that
@@ -523,8 +526,148 @@ façade), `BnNotificationsDemoTests` (mount + the arrival marker + status echo),
 unchanged). AVD real post + `POST_NOTIFICATIONS` + tap-route (Gate 2); iOS simulator UNUC +
 auth matrix + `didReceive` → navigate (Gate 3).
 
+### 9. Worked example — biometrics + secure storage (Phase 9.2), and two things new to the pattern
+
+**The reuse, stated first:** biometrics + secure storage add `HostCallOp.Biometrics = 2` and
+`HostCallOp.SecureStorage = 3` and **nothing else on the ABI** — no struct grow (still **80
+bytes / 10 slots**), no new export (still **10**), no drift-pin move. TWO capabilities at once,
+one of which returns a payload and one of which prompts, and the ABI does not move — the "pay
+once (9.0), reuse thrice" bet's THIRD draw. This phase also **closes the M5 secure-storage
+deferral** (`docs/planning/MILESTONE.md:114` — "secure storage, consumed by DoD #4"), which is
+**DISTINCT** from the plain unencrypted `StorageRead`/`Write`/`Delete` slots (offsets 16/24/32,
+Android `SharedPreferences` / iOS `UserDefaults`): those stay exactly as they are; secure
+storage is the encrypted, optionally biometric-bound variant riding the async op.
+
+**Two ops / one export:** the EXISTING `HostCallBegin@72` + `blazornative_host_call_complete`.
+The **action lives inside the flat JSON** (geolocation's `mode` precedent — one op, many
+sub-actions):
+
+| op | action | args (flat JSON) | completion status | payload |
+|---|---|---|---|---|
+| `Biometrics` | `authenticate` | `{"action":"authenticate","reason":"…"}` | `BiometricStatus` | none |
+| `Biometrics` | `check` | `{"action":"check"}` (never prompts) | `BiometricStatus` | none |
+| `SecureStorage` | `set` | `{"action":"set","key":"…","value":"…","auth":"0"\|"1"}` | `SecureStorageStatus` | none |
+| `SecureStorage` | `get` | `{"action":"get","key":"…"}` | `SecureStorageStatus` | **`{"value":…}` on `Ok`** |
+| `SecureStorage` | `getWithAuth` | `{"action":"getWithAuth","key":"…","reason":"…"}` | `SecureStorageStatus` | **`{"value":…}` on `Ok`** |
+| `SecureStorage` | `delete` | `{"action":"delete","key":"…"}` | `SecureStorageStatus` | none |
+
+Every field crosses as a **string**, reusing `WriteFlatJsonObject`/`ParseFlatJsonObject` — no
+new serializer. `auth` is `"1"` for a `requireAuth:true` write (the OS-key binding, below),
+`"0"` otherwise.
+
+**`BiometricStatus` — a NEW wire-mirrored status, SIX values** (a richer terminal set than
+notifications: a prompt can fail-but-retryable, be cancelled, or lock out, so it earns its own
+enum). `Authenticated=0`, `Failed=1`, `Cancelled=2`, `Unavailable=3`, `LockedOut=4`, `Error=5`.
+Defined byte-identically across .NET / Kotlin / Swift; .NET sees only the integer, and an
+out-of-range value → `Error` (still data, never a throw). The read-only `check` returns
+`Authenticated` to mean "present + enrolled + ready" (no auth ran — the geolocation-`check`-
+returns-`Granted` precedent). `authenticate` returns **no token and no secret**: the honest
+gate for a stored secret is the OS-key-bound `getWithAuth`, not a .NET bool an attacker could
+skip.
+
+**`SecureStorageStatus` — a NEW wire-mirrored status, FIVE values.** `Ok=0`, `NotFound=1`,
+`AuthFailed=2`, `Unavailable=3`, `Error=4`. The biometric-gate detail (failed vs cancelled vs
+lockout) **folds into `AuthFailed`** — the caller only needs "couldn't unlock"; a consumer
+wanting the finer grain uses `IBiometrics.AuthenticateAsync`.
+
+**THE FIRST NEW TEACHING — a completion that RETURNS A VALUE.** Secure `get`/`getWithAuth`
+return `{"value":…}` on `Ok`. This forces **no ABI change**: `host_call_complete` is
+`int(long, int status, const char* payloadJsonUtf8)` — it has carried an **optional flat-JSON
+payload since 9.0**, and geolocation's `Granted` fix (`{"lat":…,"lng":…}`) is the first user.
+Secure storage is the **second** user, which proves the payload channel is **generic, not
+geolocation-specific** — any capability may return a flat-JSON payload on success. Every non-`Ok`
+status carries a null payload; the .NET side parses into a typed `SecretResult(Status, Value?)`
+(the `GeolocationResult` twin), value only on `Ok`.
+
+**THE SECOND NEW TEACHING — a capability that is NOT permission-gated in the OS-dialog sense.**
+Secure storage's plain `set`/`get`/`delete` show **no runtime prompt** (unlike
+location/notifications/biometrics). They still ride the SAME async begin/complete for
+uniformity: **"async-begin" does not imply "prompts"** — it implies "may suspend and completes
+off-lane" (the Keystore/Keychain can block on first-touch key generation). The OS-key-bound
+`getWithAuth` is where a prompt re-enters, and it is a **store action, not a permission gate**.
+
+**THE PAIRING — `getWithAuth`, bound at the OS-KEY level (the honest design).** An auth-bound
+read requires an auth-bound *write*, so `SetSecretAsync` takes a `requireAuth` flag. On
+**iOS** a `requireAuth:true` item is stored with a `SecAccessControl(.biometryCurrentSet)` +
+`kSecAttrAccessibleWhenUnlockedThisDeviceOnly`; `SecItemCopyMatching` then triggers the
+OS-owned Face/Touch ID evaluation and the Secure Enclave will not return the bytes without a
+fresh auth. On **Android** the AES key is generated in the `AndroidKeyStore` with
+`setUserAuthenticationRequired(true)`, and decrypt requires a `BiometricPrompt` with a
+`CryptoObject` wrapping a `Cipher` initialised from that key. **The security property:** even if
+an attacker reaches the read code path, the OS still refuses the plaintext without a live
+biometric. A plain `get` of an auth-bound item (no prompt) correctly fails `AuthFailed`/
+`Unavailable`. This is the honest answer to DoD #4 ("BiometricPrompt / LocalAuthentication
+*gating* a Keystore/Keychain store"); an app-level prompt-then-read is strictly weaker and is
+rejected as the default.
+
+**.NET surface** (`IMobileBridge` / `NativeShellBridge`, `BlazorNative.Core` types):
+`AuthenticateAsync(reason)` / `IsBiometricAvailableAsync`; `SetSecretAsync(key, value,
+requireAuth)` / `GetSecretAsync(key)` / `GetSecretWithAuthAsync(key, reason)` /
+`DeleteSecretAsync(key)` — all through the EXISTING `InvokeHostCallAsync(op, argsJson, ct)`
+(the pending registry, cancellation posture, unknown-id benignness reused, not re-written). A
+**soft 8 KB cap** on the value (`SecretResult.MaxValueBytes`) is enforced at the .NET boundary:
+an oversize value RETURNS `Error` and never crosses the wire (secrets, not blobs). `DevHostBridge`
+mocks a **settable biometric auth-result** (drives `authenticate` and GATES the pairing) + an
+**in-memory secret dict honouring `requireAuth`** — every status and the pairing, headless.
+
+**The façades** — `IBiometrics` + `ISecureStorage` in the **SAME 7th package
+`BlazorNative.Device`** (siblings of `IGeolocation`/`INotifications`, thin delegates over
+`IMobileBridge`); **no 8th package**, two added `AddBlazorNativeDevice()` lines. **The demo** —
+`BnSecureDemo` (routed `/secure`, the 12th page, sample-only), the worked example that
+`[Inject]`s BOTH facades, shows the pairing (an auth-bound `SetAsync` → a biometric-gated
+`GetWithAuthAsync`), and echoes every status/value as data (denial visible, never thrown).
+
+**The dependency / the gradle mirror (Gate 2's NEW class of drift).** Android adds **exactly
+one** gradle dependency, `androidx.biometric:biometric` (the Jetpack `BiometricPrompt` — the
+modern API, and the `CryptoObject` path the OS-key pairing needs); storage uses the **no-dep**
+raw `AndroidKeyStore` (`androidx.security:security-crypto`/EncryptedSharedPreferences is rejected
+— deprecated, drags in Tink, and the auth-bound key needs raw AndroidKeyStore anyway). The
+`implementation("androidx.biometric:biometric:<pinned-ver>")` line must land in **BOTH**
+`src/BlazorNative.Jni/build.gradle.kts` **and** the template's `android/build.gradle.kts`
+`dependencies { … }` block — otherwise a generated app compiles a shell referencing
+`BiometricPrompt` with no dependency on the classpath. This is a **NEW class of drift for M9**
+(9.0/9.1 added no gradle deps), so Gate 2's process ledger names the gradle mirror alongside the
+Kotlin shell mirrors and runs `TemplateDriftTests` + `RouteTableDriftTests` before pushing. Pin
+an exact version (the shell-versions-are-pinned law). iOS needs **`NSFaceIDUsageDescription`** in
+`Info.plist` (the Face ID purpose string) and no dependency (`LocalAuthentication` / `Security`
+are system frameworks).
+
+**Tests (Gate 1):** `.NET` `SecureBiometricsAbiUnchangedTests` (the reuse headline made
+falsifiable a third time: 80 bytes / offset 72 / `Biometrics == 2` / `SecureStorage == 3`,
+unchanged), `BiometricsBridgeTests` (op + action-in-JSON, the six-status denial matrix within a
+bounded await, the wire mapping incl. out-of-range → `Error`, old-shell-unsupported),
+`SecureStorageBridgeTests` (op + the four action shapes incl. the `auth` flag, the `{"value":…}`
+payload parse on `Ok`, the five-status matrix, the 8 KB cap at the boundary, requestId keying),
+`BiometricsSecureFacadeTests` (the `DevHostBridge` biometric + secure matrices, THE PAIRING —
+mocked-auth `getWithAuth` returns the value, mocked-deny returns `AuthFailed` — the facades),
+`BnSecureDemoTests` (mount + Authenticate/Unlock echoes + the value from the payload channel).
+AVD `BiometricPrompt` + AndroidKeyStore + the `CryptoObject` gated read (Gate 2); iOS simulator
+`LAContext` + Keychain `SecAccessControl(.biometryCurrentSet)` (Gate 3).
+
+### The security note — a secret crossing the C-ABI (the one new hazard)
+
+**The wire is intra-process and trusted; the exposure is in-memory lifetime, not interception.**
+A secret value crosses the boundary as a UTF-8 string in a flat-JSON `{"value":…}` payload,
+host ↔ NativeAOT runtime — **both halves of the same process**. There is no network, no IPC, no
+other process on the wire; the encryption is **at rest** (Keystore/Keychain), not on the wire.
+So the hazard is not interception — it is **how many copies of the plaintext live in process
+memory, and for how long**: the .NET `string` (immutable, GC-managed, **not zeroable**, movable
+by GC compaction); the marshalled UTF-8 buffer (`Marshal.StringToCoTaskMemUTF8` in,
+`Marshal.PtrToStringUTF8` out — freed in a `finally` but **not zeroed before free**); the
+host-side Kotlin/Swift `String` (and, on Android, the base64 intermediate); and the 9.0
+async-handler-capture window (the payload lives in the pending-registry
+`TaskCompletionSource<HostCallResult>` until the awaiting continuation runs). **For a POC this is
+ACCEPTABLE and documented, not fixed here.** A hardening pass (M10's perf/security scope) would
+marshal secrets through a zeroable `byte[]`/`Span<byte>` rather than an immutable `string`, zero
+the native buffer before `FreeCoTaskMem`, and shorten the TCS capture window. **Binary secrets**
+(a raw key, not text) are **base64-encoded** to cross the string→string flat JSON (the demo uses
+text). **Size:** the payload is a single unbounded `const char*`, but secure storage is for
+**secrets (tokens, keys), not blobs** — a **soft 8 KB cap** (`SecretResult.MaxValueBytes`) is
+enforced at the .NET boundary with an `Error` status if exceeded (a large value is a misuse, not
+a store). Recorded as a decision.
+
 ---
 
 *Version note: the ABI is at **10 exports / 80 bytes** since Phase 9.0 — **unchanged by
-Phase 9.1** (notifications added an op-enum value and no ABI). See `README.md` for current
-counts.*
+Phase 9.1** (notifications) **and Phase 9.2** (biometrics + secure storage added two op-enum
+values and no ABI). See `README.md` for current counts.*

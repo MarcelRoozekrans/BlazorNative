@@ -1366,7 +1366,35 @@ jobs:
       # exports, and consumer-smoke stays 7 nupkg + 6 snupkg (INotifications joins the
       # existing Device package — no 8th). Android/iOS shells wire the real post at
       # Gates 2/3 (their gates move then).
-      - name: .NET tests (assert 655 passed / 0 skipped)
+      #
+      # 655 -> 717 (PHASE 9.2, +62 — Runtime.Tests 498 -> 560): biometrics + secure
+      # storage (M9 DoD #4) — the SECOND reuse of the 9.0 generic ABI, TWO ops at once
+      # (Biometrics = 2, SecureStorage = 3), and it added ZERO ABI (bridge still 80
+      # bytes, exports still 10; the pins are green AS-IS, NOT edited). It also CLOSES
+      # the M5 secure-storage deferral. The whole +62 is in Runtime.Tests (Renderer 132
+      # / Analyzers 25 stand), the five new test files plus one modified suite
+      # (RouteTableDrift renamed its baseline fact for the 12th route — no method count
+      # change):
+      #   +3   SecureBiometricsAbiUnchangedTests (the reuse headline made falsifiable a
+      #        THIRD time: 80 bytes / HostCallBegin@72 / Biometrics == 2 / SecureStorage
+      #        == 3, UNCHANGED)
+      #   +16  BiometricsBridgeTests         (op + action-in-JSON, the six-status denial
+      #        matrix, the wire mapping incl. out-of-range -> Error, old-shell-unsupported)
+      #   +22  SecureStorageBridgeTests      (op + the four action shapes incl. the auth
+      #        "0"/"1" flag, the {"value":…} payload parse on Ok, the five-status matrix,
+      #        the 8 KB cap enforced at the boundary, requestId keying, old-shell)
+      #   +17  BiometricsSecureFacadeTests   (the DevHostBridge biometric + secure
+      #        matrices, THE PAIRING — mocked-auth getWithAuth returns the value,
+      #        mocked-deny returns AuthFailed — the 8 KB cap, the IBiometrics /
+      #        ISecureStorage facades)
+      #   +4   BnSecureDemoTests             (mount + Authenticate/Unlock echoes, value
+      #        from the payload channel, AuthFailed as data)
+      # NO ABI change (the two ops ride the existing HostCallBegin/host_call_complete as
+      # op-enum values 2 and 3), NO new export: the publish gates below stay 4 IL2072 /
+      # 10 exports, and consumer-smoke stays 7 nupkg + 6 snupkg (IBiometrics +
+      # ISecureStorage join the existing Device package — no 8th). Android/iOS shells
+      # wire the real BiometricPrompt/LAContext + Keystore/Keychain at Gates 2/3.
+      - name: .NET tests (assert 717 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -1384,8 +1412,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 655 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 655 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 717 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 717 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # ── NativeAOT publishes + nine-export verification ────────────────────

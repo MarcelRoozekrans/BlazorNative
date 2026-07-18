@@ -137,6 +137,7 @@ class MainActivity : Activity() {
             "/imagepolish" to "BnImagePolishDemo",
             "/geolocation" to "BnGeolocationDemo",
             "/notifications" to "BnNotificationsDemo",
+            "/secure" to "BnSecureDemo",
         )
 
         /** Phase 9.1 — the reserved host-event name for WARM notification
