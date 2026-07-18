@@ -142,6 +142,19 @@ public static class SampleAppPages
         // .NET/wire half lives here; Gates 2/3 wire the shells (AVD BiometricPrompt +
         // AndroidKeyStore; iOS LAContext + Keychain). Sample-only (template-minimal).
         BlazorNativePage.Routed<BnSecureDemo>("/secure", "BnSecureDemo"),
+        // Phase 9.3: the camera photo-capture proof page (route "/camera" — M9 DoD #5).
+        // The THIRTEENTH routed page, the FOURTH worked example of the permission
+        // pattern (the THIRD reuse of the 9.0 generic ABI) and the LAST M9 capability:
+        // app code injects the ICamera FACADE (the 5th, the 7th package) and capture +
+        // check ride the SAME HostCallBegin/host_call_complete pair geolocation opened —
+        // no struct grow, no new export (Camera = 4, ABI unchanged at 80 bytes / 10
+        // exports). The captured photo crosses as a file:// PATH, not bytes, and that
+        // path becomes a definite-size BnImage's Src — the capabilities COMPOSE (camera
+        // → file → BnImage), discharging the M6/M7 natural-size-image ledger item. It
+        // shows the Cancelled/Denied split as DATA (never thrown). The .NET/wire half
+        // lives here; Gates 2/3 wire the shells (AVD ACTION_IMAGE_CAPTURE + FileProvider;
+        // iOS UIImagePickerController). Sample-only (template-minimal).
+        BlazorNativePage.Routed<BnCameraDemo>("/camera", "BnCameraDemo"),
         // Phase 4.2: the focus/blur proof app (BnInput OnFocus/OnBlur →
         // echo BnText — M4 DoD #4). Scaffolding, like CompositionProbe.
         BlazorNativePage.Named<FocusProbe>("FocusProbe"),

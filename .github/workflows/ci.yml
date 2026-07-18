@@ -1394,7 +1394,34 @@ jobs:
       # 10 exports, and consumer-smoke stays 7 nupkg + 6 snupkg (IBiometrics +
       # ISecureStorage join the existing Device package — no 8th). Android/iOS shells
       # wire the real BiometricPrompt/LAContext + Keystore/Keychain at Gates 2/3.
-      - name: .NET tests (assert 717 passed / 0 skipped)
+      #
+      # 717 -> 754 (PHASE 9.3, +37 — Runtime.Tests 560 -> 597): camera photo capture
+      # (M9 DoD #5) — the THIRD reuse of the 9.0 generic ABI (Camera = 4), and the LAST
+      # M9 capability. Camera returns an IMAGE, but the image crosses as a file PATH in
+      # the completion payload, not bytes, so it added ZERO ABI (bridge still 80 bytes,
+      # exports still 10 — NOT 11, camera adds no export; the pins are green AS-IS, NOT
+      # edited). The whole +37 is in Runtime.Tests (Renderer 132 / Analyzers 25 stand),
+      # the four new camera test files plus one modified suite (RouteTableDrift renamed
+      # its baseline fact for the 13th route — no method count change):
+      #   +3   CameraAbiUnchangedTests  (the reuse headline made falsifiable a FOURTH
+      #        time: 80 bytes / HostCallBegin@72 / Camera == 4, UNCHANGED)
+      #   +17  CameraBridgeTests        (op + the capture/check action shapes incl.
+      #        maxDim/quality, the {"path",…} payload parse, the path-key-not-data pin,
+      #        the five-status matrix incl. out-of-range -> Error, the no-path-on-cancel
+      #        matrix, requestId keying, old-shell-unsupported)
+      #   +13  CameraFacadeTests        (the DevHostBridge five-status matrix, the canned
+      #        test-image path with real bytes, the NO-PATH-ON-CANCEL matrix, the check,
+      #        the ICamera facade)
+      #   +4   BnCameraDemoTests        (mount shape — a definite Contain image; THE
+      #        COMPOSITION — a captured path becomes the BnImage Src; cancel echoes
+      #        status with no src; check echoes availability)
+      # NO ABI change (Camera rides the existing HostCallBegin/host_call_complete as
+      # op-enum value 4, and the image crosses as a PATH not bytes — no binary/buffer
+      # export): the publish gates below stay 4 IL2072 / 10 exports, and consumer-smoke
+      # stays 7 nupkg + 6 snupkg (ICamera joins the existing Device package — no 8th).
+      # Android/iOS shells wire the real ACTION_IMAGE_CAPTURE + FileProvider /
+      # UIImagePickerController at Gates 2/3.
+      - name: .NET tests (assert 754 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -1412,8 +1439,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 717 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 717 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 754 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 754 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # ── NativeAOT publishes + nine-export verification ────────────────────

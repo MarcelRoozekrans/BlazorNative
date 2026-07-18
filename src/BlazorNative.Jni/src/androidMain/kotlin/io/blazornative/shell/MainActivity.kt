@@ -145,6 +145,7 @@ class MainActivity : FragmentActivity() {
             "/geolocation" to "BnGeolocationDemo",
             "/notifications" to "BnNotificationsDemo",
             "/secure" to "BnSecureDemo",
+            "/camera" to "BnCameraDemo",
         )
 
         /** Phase 9.1 — the reserved host-event name for WARM notification
