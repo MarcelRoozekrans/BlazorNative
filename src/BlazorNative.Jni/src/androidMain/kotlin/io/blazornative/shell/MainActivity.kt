@@ -1,6 +1,5 @@
 package io.blazornative.shell
 
-import android.app.Activity
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
@@ -9,6 +8,7 @@ import android.widget.FrameLayout
 import android.widget.TextView
 import android.window.OnBackInvokedCallback
 import android.window.OnBackInvokedDispatcher
+import androidx.fragment.app.FragmentActivity
 import io.blazornative.jni.BlazorNativeRuntime
 import kotlin.concurrent.thread
 
@@ -28,6 +28,13 @@ import kotlin.concurrent.thread
  * and Phase 3.0e deleted the WASM era from the tree entirely — the NativeAOT
  * runtime is the only boot path.
  *
+ * Phase 9.2 (M9 DoD #4): a FragmentActivity (not a plain Activity) — androidx
+ * BiometricPrompt requires a FragmentActivity host to attach its internal
+ * fragment, and AndroidShellBridge's op=Biometrics / op=SecureStorage prompt
+ * against this activity. FragmentActivity extends ComponentActivity but adds NO
+ * back-dispatcher callback of its own here (this activity registers none on the
+ * onBackPressedDispatcher), so the manual predictive-back path below is unchanged.
+ *
  * Threading/lifetime notes:
  *  - [runtime] is an Activity FIELD deliberately: it strongly holds the JNA
  *    frame callback; if it were a local, GC could collect the callback's
@@ -37,7 +44,7 @@ import kotlin.concurrent.thread
  *    (adapter/consumer throws inside the JNA callback) route through
  *    onError → Log.e — JNA would otherwise swallow them to stderr.
  */
-class MainActivity : Activity() {
+class MainActivity : FragmentActivity() {
 
     companion object {
         /**

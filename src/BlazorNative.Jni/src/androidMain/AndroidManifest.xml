@@ -21,6 +21,11 @@
          is needed. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- Phase 9.2 (M9 DoD #4): biometrics. USE_BIOMETRIC is a NORMAL permission
+         (granted at install, NO runtime prompt) that BiometricPrompt / BiometricManager
+         use. Secure storage's raw AndroidKeyStore needs no manifest permission. -->
+    <uses-permission android:name="android.permission.USE_BIOMETRIC" />
+
     <application
         android:label="BlazorNative"
         android:allowBackup="true"

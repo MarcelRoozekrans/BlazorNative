@@ -133,6 +133,56 @@ object HostCallOp {
     // reused for the calls, host_event reused for warm tap-through). The mirror of
     // NativeShellBridge.HostCallOp.Notifications (.NET) / BnHostCallOp (Swift).
     const val NOTIFICATIONS = 1
+
+    // Phase 9.2 (M9 DoD #4) — the SECOND reuse of the 9.0 generic ABI, and it adds
+    // TWO op-enum values at once: biometrics (an OS auth prompt) and secure storage
+    // (an encrypted-at-rest, optionally biometric-bound key/value store). Both ride
+    // the SAME hostCallBegin slot; the ABI does not move (still 80 bytes / 10 slots /
+    // 10 exports). The mirror of NativeShellBridge.HostCallOp.Biometrics /
+    // .SecureStorage (.NET) / BnHostCallOp (Swift). The integer IS the wire contract.
+    const val BIOMETRICS = 2
+    const val SECURE_STORAGE = 3
+}
+
+/**
+ * The wire-mirrored biometric completion status — byte-identical to .NET's
+ * BiometricStatus enum (BlazorNative.Core/IMobileBridge.cs) and Swift's mirror. The
+ * host maps its platform's native outcome (Android BiometricPrompt.AuthenticationCallback
+ * / BiometricManager.canAuthenticate) into one of these SIX values and passes the
+ * integer back across blazornative_host_call_complete — the SAME export geolocation /
+ * notifications use, with NO struct grow and NO new export (the phase headline).
+ * Failure (1), cancellation (2), unavailability (3), lockout (4) and error (5) are all
+ * VALUES: the awaiting .NET ValueTask always resolves, never a thrown exception across
+ * the boundary and never a dropped completion (a hang). Do NOT reorder — these ARE the
+ * ABI contract. A richer terminal set than notifications (a prompt can fail-but-retry,
+ * be cancelled, or lock out), so biometrics earns its own enum.
+ */
+object BiometricStatus {
+    const val AUTHENTICATED = 0  // the user proved presence (onAuthenticationSucceeded); or, on
+                                 // the read-only check, "present + enrolled + ready"
+    const val FAILED = 1         // a biometric was presented and rejected; retry allowed
+    const val CANCELLED = 2      // the user dismissed the prompt (or the app cancelled)
+    const val UNAVAILABLE = 3    // no hardware, or none enrolled
+    const val LOCKED_OUT = 4     // too many failures — temporarily (or permanently) locked
+    const val ERROR = 5          // unexpected host error (a caught throw)
+}
+
+/**
+ * The wire-mirrored secure-storage completion status — byte-identical to .NET's
+ * SecureStorageStatus enum (IMobileBridge.cs) and Swift's mirror. FIVE values: the
+ * biometric-gate detail (failed vs cancelled vs lockout) folds into AuthFailed for
+ * storage — the caller only needs "couldn't unlock". get/getWithAuth carry the value
+ * back in the OPTIONAL flat-JSON {"value":…} payload host_call_complete has carried
+ * since 9.0 (geolocation's fix is the first user; this is the second) — NO new export.
+ * NotFound (1), AuthFailed (2), Unavailable (3) and Error (4) are all VALUES, never a
+ * thrown exception and never a hang. Do NOT reorder — these ARE the ABI contract.
+ */
+object SecureStorageStatus {
+    const val OK = 0            // set/delete succeeded; GET FOUND THE VALUE ({"value":…} on get)
+    const val NOT_FOUND = 1     // get/getWithAuth of an absent key (no payload)
+    const val AUTH_FAILED = 2   // the biometric gate on getWithAuth denied / failed / cancelled / locked out
+    const val UNAVAILABLE = 3   // no secure hardware / Keystore unusable / biometrics not enrolled
+    const val ERROR = 4         // unexpected host error (a caught throw, a decrypt failure, malformed args)
 }
 
 /**

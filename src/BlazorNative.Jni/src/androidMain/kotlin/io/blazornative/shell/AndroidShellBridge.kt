@@ -22,7 +22,16 @@ import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
+import android.security.keystore.KeyGenParameterSpec
+import android.security.keystore.KeyInfo
+import android.security.keystore.KeyProperties
+import android.util.Base64
 import android.util.Log
+import androidx.biometric.BiometricManager
+import androidx.biometric.BiometricPrompt
+import androidx.core.content.ContextCompat
+import androidx.fragment.app.FragmentActivity
+import io.blazornative.jni.BiometricStatus
 import io.blazornative.jni.BridgeFetchCompleter
 import io.blazornative.jni.BridgeFetchRequest
 import io.blazornative.jni.BridgeHostCallCompleter
@@ -30,15 +39,22 @@ import io.blazornative.jni.FlatJson
 import io.blazornative.jni.HostCallOp
 import io.blazornative.jni.HostCallStatus
 import io.blazornative.jni.NotificationStatus
+import io.blazornative.jni.SecureStorageStatus
 import io.blazornative.jni.ShellBridgeHandlers
 import java.lang.ref.WeakReference
 import java.net.HttpURLConnection
 import java.net.URL
+import java.security.KeyStore
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import javax.crypto.Cipher
+import javax.crypto.KeyGenerator
+import javax.crypto.SecretKey
+import javax.crypto.SecretKeyFactory
+import javax.crypto.spec.GCMParameterSpec
 
 /**
  * Phase 3.1 Gate 3 — the Android implementation of [ShellBridgeHandlers]:
@@ -237,6 +253,8 @@ class AndroidShellBridge(
         when (op) {
             HostCallOp.GEOLOCATION -> handleGeolocation(requestId, argsJson)
             HostCallOp.NOTIFICATIONS -> handleNotifications(requestId, argsJson)
+            HostCallOp.BIOMETRICS -> handleBiometrics(requestId, argsJson)
+            HostCallOp.SECURE_STORAGE -> handleSecureStorage(requestId, argsJson)
             // An unknown op is DATA, not a crash: complete with Error so the
             // awaiting .NET ValueTask resolves rather than leaking pending.
             else -> {
@@ -583,6 +601,413 @@ class AndroidShellBridge(
         lastHostCallCompleteRcForTest = rc
     }
 
+    // ── Biometrics + secure storage (Phase 9.2 — the SECOND reuse of the 9.0 ABI) ─
+    //
+    // op=Biometrics and op=SecureStorage ride the SAME hostCallBegin slot geolocation
+    // opened; the action lives INSIDE the flat JSON (geolocation's `mode` precedent).
+    // Every completion is a wire-mirrored status INTEGER (BiometricStatus /
+    // SecureStorageStatus) via BridgeHostCallCompleter — denial / failure / cancel /
+    // lockout / not-found / auth-failed are DATA, never a thrown exception across the
+    // JNA boundary and never a dropped completion (a hang, the milestone law).
+    //
+    // SECURE STORAGE is raw AndroidKeyStore AES-256-GCM (no dependency; distinct from
+    // the plain SharedPreferences store the storageRead/Write/Delete slots back). Each
+    // value is encrypted with a per-key keystore key and stored as base64(iv):base64(ct)
+    // in the "blazornative_secure" SharedPreferences — the CIPHERTEXT is safe at rest;
+    // the prefs file is not itself a secret store.
+    //
+    // THE OS-KEY-LEVEL BINDING (the security crux): a requireAuth:true secret is
+    // encrypted under a key generated with setUserAuthenticationRequired(true), so the
+    // OS ITSELF refuses any crypto operation on it without a fresh auth (an AES per-use
+    // auth key's doFinal throws UserNotAuthenticatedException — confirmed on device).
+    // getWithAuth presents a BiometricPrompt wrapping the decrypt Cipher in a
+    // CryptoObject; only the OS-unlocked cipher can decrypt. A plain get of the same
+    // item CANNOT satisfy the key's auth requirement and returns AuthFailed — the OS
+    // enforces the gate at the key, not the app, so a control-flow bypass still cannot
+    // read the plaintext. (An AES per-use-auth key requires a fresh auth for ENCRYPT
+    // too, so a requireAuth:true WRITE prompts as well — the honest consequence of AES.)
+    //
+    // BIOMETRICS is androidx BiometricPrompt (the CryptoObject-capable Jetpack API) run
+    // on the main thread against MainActivity as the FragmentActivity host. The read-only
+    // `check` maps BiometricManager.canAuthenticate(BIOMETRIC_STRONG) to a status and
+    // never prompts.
+    //
+    // THE TEST SEAM (the geolocation/notifications split, verbatim): the REAL system
+    // BiometricPrompt sheet + a real fingerprint are owner-phone territory — the
+    // emulator's fingerprint is a synthetic path (adb emu finger touch injects a fake
+    // event) and the sheet is not CI-drivable. So [biometricGateHook], when set
+    // (instrumented only), REPLACES the real prompt: the test drives the outcome and CI
+    // proves the wire, the CryptoObject binding, the status mapping and denial-as-data
+    // no-hang. The deterministic OS-KEY BINDING (a plain get of an auth item AuthFails)
+    // is proven directly against the keystore; the real fingerprint-driven decrypt is
+    // the documented UNPROVEN-until-hardware half.
+
+    /** SharedPreferences holding the encrypted secrets (base64(iv):base64(ct) per key).
+     * The ciphertext is safe at rest — the encryption keys live in the AndroidKeyStore,
+     * never here. Distinct from the plain "blazornative" store (storageRead/Write). */
+    private val secretPrefs: SharedPreferences =
+        appContext.getSharedPreferences(SECURE_PREFS_NAME, Context.MODE_PRIVATE)
+
+    /** The biometrics op. action=check is the read-only availability peek (never
+     * prompts — the geolocation `mode:check` sibling); action=authenticate shows the OS
+     * BiometricPrompt (no CryptoObject) and returns a BiometricStatus. */
+    private fun handleBiometrics(requestId: Long, argsJson: String) {
+        val args = FlatJson.parse(argsJson)
+        when (val action = args["action"] ?: "authenticate") {
+            "check" -> completeHostCall(requestId, canAuthenticateStatus(), null)
+            "authenticate" -> runBiometricGate(
+                reason = args["reason"] ?: "Authenticate",
+                crypto = null,
+                onAuthenticated = { completeHostCall(requestId, BiometricStatus.AUTHENTICATED, null) },
+                onDenied = { status -> completeHostCall(requestId, status, null) },
+            )
+            else -> {
+                onError("biometrics: unknown action '$action' (request $requestId)",
+                    IllegalArgumentException("unsupported biometric action $action"))
+                completeHostCall(requestId, BiometricStatus.ERROR, null)
+            }
+        }
+    }
+
+    /** BiometricManager.canAuthenticate(BIOMETRIC_STRONG) → a BiometricStatus for the
+     * read-only check: SUCCESS ⇒ Authenticated ("present + enrolled + ready"); no
+     * hardware / none enrolled / unavailable ⇒ Unavailable (the design's check maps
+     * every non-success to Unavailable — a status, never a throw). */
+    internal fun canAuthenticateStatus(): Int =
+        when (BiometricManager.from(appContext)
+            .canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG)) {
+            BiometricManager.BIOMETRIC_SUCCESS -> BiometricStatus.AUTHENTICATED
+            else -> BiometricStatus.UNAVAILABLE
+        }
+
+    /** The secure-storage op. set/get/getWithAuth/delete each complete with a
+     * SecureStorageStatus; get/getWithAuth carry the value in the {"value":…} payload
+     * on Ok. The synchronous arms (plain get / plain set / delete) compute a
+     * [SecureOutcome] and complete inline; the auth arms (auth-bound set, getWithAuth of
+     * an auth item) suspend behind a BiometricPrompt and complete from its callback. */
+    private fun handleSecureStorage(requestId: Long, argsJson: String) {
+        val args = FlatJson.parse(argsJson)
+        val key = args["key"].orEmpty()
+        when (val action = args["action"] ?: "get") {
+            "set" ->
+                if (args["auth"] == "1") secureSetAuth(requestId, key, args["value"].orEmpty())
+                else complete(requestId, secureSetPlainCore(key, args["value"].orEmpty()))
+            "get" -> complete(requestId, secureGetCore(key))
+            "getWithAuth" -> secureGetWithAuth(requestId, key, args["reason"] ?: "Unlock")
+            "delete" -> complete(requestId, secureDeleteCore(key))
+            else -> {
+                onError("secure storage: unknown action '$action' (request $requestId)",
+                    IllegalArgumentException("unsupported secure-storage action $action"))
+                completeHostCall(requestId, SecureStorageStatus.ERROR, null)
+            }
+        }
+    }
+
+    private fun complete(requestId: Long, outcome: SecureOutcome) =
+        completeHostCall(requestId, outcome.status, outcome.value?.let { mapOf("value" to it) })
+
+    /** A plain (non-auth) set: provision a non-auth keystore key, encrypt, persist.
+     * Prompt-free. Returns Ok, or Error on a caught failure (a status, never a throw). */
+    internal fun secureSetPlainCore(key: String, value: String): SecureOutcome =
+        try {
+            val secretKey = provisionKey(key, requireAuth = false)
+            val cipher = Cipher.getInstance(AES_GCM).apply { init(Cipher.ENCRYPT_MODE, secretKey) }
+            storeBlob(key, cipher.iv, cipher.doFinal(value.toByteArray(Charsets.UTF_8)))
+            SecureOutcome(SecureStorageStatus.OK, null)
+        } catch (t: Throwable) {
+            onError("secure set('$key') failed", t)
+            SecureOutcome(secureErrorStatus(t), null)
+        }
+
+    /** An auth-bound set: provision a user-auth-required key, then encrypt BEHIND a
+     * BiometricPrompt (an AES per-use-auth key's encrypt doFinal also needs a fresh
+     * auth — the honest consequence of AES-at-the-key). The CryptoObject wraps the
+     * encrypt Cipher the OS unlocks. A no-biometric-enrolled device fails provisioning
+     * with Unavailable; a denied prompt is AuthFailed — both DATA, never a hang. */
+    private fun secureSetAuth(requestId: Long, key: String, value: String) {
+        val cipher: Cipher
+        val iv: ByteArray
+        try {
+            val secretKey = provisionKey(key, requireAuth = true)
+            cipher = Cipher.getInstance(AES_GCM).apply { init(Cipher.ENCRYPT_MODE, secretKey) }
+            iv = cipher.iv
+        } catch (t: Throwable) {
+            onError("secure set('$key', auth) provisioning failed (request $requestId)", t)
+            completeHostCall(requestId, secureErrorStatus(t), null)
+            return
+        }
+        runBiometricGate(
+            reason = "Confirm to store a protected secret",
+            crypto = BiometricPrompt.CryptoObject(cipher),
+            onAuthenticated = { result ->
+                try {
+                    val c = result?.cryptoObject?.cipher ?: cipher
+                    storeBlob(key, iv, c.doFinal(value.toByteArray(Charsets.UTF_8)))
+                    completeHostCall(requestId, SecureStorageStatus.OK, null)
+                } catch (t: Throwable) {
+                    onError("secure set('$key', auth) encrypt failed after auth (request $requestId)", t)
+                    completeHostCall(requestId, SecureStorageStatus.AUTH_FAILED, null)
+                }
+            },
+            onDenied = { completeHostCall(requestId, SecureStorageStatus.AUTH_FAILED, null) },
+        )
+    }
+
+    /** A plain get: NotFound when absent; AUTH-BOUND ITEMS RETURN AuthFailed (a plain
+     * get cannot satisfy the key's user-auth requirement — the OS-key binding, read
+     * from the keystore's own KeyInfo, and the OS would refuse the decrypt regardless);
+     * otherwise decrypt and return the value on Ok. */
+    internal fun secureGetCore(key: String): SecureOutcome =
+        try {
+            val blob = loadBlob(key)
+            val secretKey = loadKey(key)
+            when {
+                blob == null || secretKey == null -> SecureOutcome(SecureStorageStatus.NOT_FOUND, null)
+                keyRequiresAuth(secretKey) -> SecureOutcome(SecureStorageStatus.AUTH_FAILED, null)
+                else -> SecureOutcome(SecureStorageStatus.OK, decrypt(secretKey, blob))
+            }
+        } catch (t: Throwable) {
+            onError("secure get('$key') failed", t)
+            SecureOutcome(secureErrorStatus(t), null)
+        }
+
+    /** getWithAuth: NotFound when absent; a NON-auth item is read directly (no prompt
+     * to show); an AUTH-BOUND item inits the decrypt Cipher, wraps it in a CryptoObject
+     * and lets the OS unlock it behind a fresh BiometricPrompt — only the OS-unlocked
+     * cipher can decrypt (a plain get above correctly AuthFails). Denial/failure ⇒
+     * AuthFailed, DATA, never a hang. */
+    private fun secureGetWithAuth(requestId: Long, key: String, reason: String) {
+        val blob: SecretBlob
+        val secretKey: SecretKey
+        val cipher: Cipher
+        try {
+            val b = loadBlob(key); val k = loadKey(key)
+            if (b == null || k == null) { completeHostCall(requestId, SecureStorageStatus.NOT_FOUND, null); return }
+            if (!keyRequiresAuth(k)) {
+                completeHostCall(requestId, SecureStorageStatus.OK, mapOf("value" to decrypt(k, b)))
+                return
+            }
+            blob = b; secretKey = k
+            cipher = Cipher.getInstance(AES_GCM).apply {
+                init(Cipher.DECRYPT_MODE, secretKey, GCMParameterSpec(GCM_TAG_BITS, blob.iv))
+            }
+        } catch (t: Throwable) {
+            onError("secure getWithAuth('$key') failed (request $requestId)", t)
+            completeHostCall(requestId, secureErrorStatus(t), null)
+            return
+        }
+        runBiometricGate(
+            reason = reason,
+            crypto = BiometricPrompt.CryptoObject(cipher),
+            onAuthenticated = { result ->
+                try {
+                    // The OS-unlocked cipher from the CryptoObject is the ONLY one that
+                    // can decrypt — use it, never a fresh unbound cipher.
+                    val c = result?.cryptoObject?.cipher ?: cipher
+                    val plain = String(c.doFinal(blob.ct), Charsets.UTF_8)
+                    completeHostCall(requestId, SecureStorageStatus.OK, mapOf("value" to plain))
+                } catch (t: Throwable) {
+                    onError("secure getWithAuth('$key') decrypt failed after auth (request $requestId)", t)
+                    completeHostCall(requestId, SecureStorageStatus.AUTH_FAILED, null)
+                }
+            },
+            onDenied = { completeHostCall(requestId, SecureStorageStatus.AUTH_FAILED, null) },
+        )
+    }
+
+    /** delete: drop the keystore key AND the stored ciphertext. Idempotent — a missing
+     * key is still Ok (nothing to remove). */
+    internal fun secureDeleteCore(key: String): SecureOutcome =
+        try {
+            androidKeyStore().deleteEntry(aliasFor(key))
+            secretPrefs.edit().remove(key).commit()
+            SecureOutcome(SecureStorageStatus.OK, null)
+        } catch (t: Throwable) {
+            onError("secure delete('$key') failed", t)
+            SecureOutcome(SecureStorageStatus.ERROR, null)
+        }
+
+    /**
+     * Presents the OS BiometricPrompt on the main thread against MainActivity as the
+     * FragmentActivity host (with [crypto] when this auth gates a keystore cipher), OR,
+     * when [biometricGateHook] is set (instrumented only), hands a [BiometricGate] to
+     * the test INSTEAD OF popping the real system sheet — the geolocation/notifications
+     * split (the real prompt is owner-phone territory; the emulator's is synthetic).
+     * [onAuthenticated] runs on a successful auth; [onDenied] gets a BiometricStatus for
+     * every non-success terminal (cancel/lockout/unavailable/error) — all DATA.
+     */
+    private fun runBiometricGate(
+        reason: String,
+        crypto: BiometricPrompt.CryptoObject?,
+        onAuthenticated: (BiometricPrompt.AuthenticationResult?) -> Unit,
+        onDenied: (Int) -> Unit,
+    ) {
+        val hook = biometricGateHook
+        if (hook != null) {
+            hook(BiometricGate(crypto != null, onAuthenticated, onDenied))
+            return
+        }
+        val activity = activityRef.get() as? FragmentActivity
+        if (activity == null) {
+            // No FragmentActivity to prompt on — DATA, not a hang.
+            onError("biometric prompt: no foreground FragmentActivity",
+                IllegalStateException("no FragmentActivity"))
+            onDenied(if (crypto != null) SecureStorageStatus.AUTH_FAILED else BiometricStatus.ERROR)
+            return
+        }
+        activity.runOnUiThread {
+            val prompt = BiometricPrompt(
+                activity, ContextCompat.getMainExecutor(appContext),
+                object : BiometricPrompt.AuthenticationCallback() {
+                    override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) =
+                        onAuthenticated(result)
+
+                    // Non-terminal on device (retry allowed; the sheet stays up) — do
+                    // NOT complete here. A terminal outcome arrives via onError
+                    // (cancel/lockout) or a later success, so the await never hangs.
+                    override fun onAuthenticationFailed() {}
+
+                    override fun onAuthenticationError(code: Int, msg: CharSequence) =
+                        onDenied(errorCodeToStatus(code, crypto != null))
+                })
+            val info = BiometricPrompt.PromptInfo.Builder()
+                .setTitle(reason)
+                .setNegativeButtonText("Cancel")
+                .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG)
+                .build()
+            if (crypto != null) prompt.authenticate(info, crypto) else prompt.authenticate(info)
+        }
+    }
+
+    /** A BiometricPrompt error code → a status. For a storage gate ([storage] true) it
+     * folds into SecureStorageStatus (AuthFailed/Unavailable); for standalone
+     * authenticate it is the full BiometricStatus (Cancelled/LockedOut/Unavailable). */
+    private fun errorCodeToStatus(code: Int, storage: Boolean): Int = when (code) {
+        BiometricPrompt.ERROR_USER_CANCELED, BiometricPrompt.ERROR_NEGATIVE_BUTTON,
+        BiometricPrompt.ERROR_CANCELED ->
+            if (storage) SecureStorageStatus.AUTH_FAILED else BiometricStatus.CANCELLED
+        BiometricPrompt.ERROR_LOCKOUT, BiometricPrompt.ERROR_LOCKOUT_PERMANENT ->
+            if (storage) SecureStorageStatus.AUTH_FAILED else BiometricStatus.LOCKED_OUT
+        BiometricPrompt.ERROR_NO_BIOMETRICS, BiometricPrompt.ERROR_HW_NOT_PRESENT,
+        BiometricPrompt.ERROR_HW_UNAVAILABLE, BiometricPrompt.ERROR_NO_DEVICE_CREDENTIAL ->
+            if (storage) SecureStorageStatus.UNAVAILABLE else BiometricStatus.UNAVAILABLE
+        else -> if (storage) SecureStorageStatus.AUTH_FAILED else BiometricStatus.ERROR
+    }
+
+    // ── Keystore helpers (raw AndroidKeyStore AES-256-GCM) ────────────────────
+
+    private fun aliasFor(key: String): String = KEY_ALIAS_PREFIX + key
+
+    private fun androidKeyStore(): KeyStore =
+        KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
+
+    /** Generates a fresh AES-256-GCM key for [key] (deleting any prior). A
+     * [requireAuth] key is generated with setUserAuthenticationRequired(true) — the
+     * OS-KEY-LEVEL binding — so the OS refuses every crypto op on it without a fresh
+     * biometric auth (API 30+ pins BIOMETRIC_STRONG via setUserAuthenticationParameters;
+     * such a key can only be GENERATED on a device with an enrolled biometric — a
+     * no-biometric device surfaces as Unavailable, DATA). [allowDeviceCredentialForTest]
+     * additionally permits the device credential, used ONLY by the instrumented binding
+     * test so an auth-bound key can be provisioned on a CI emulator that has a lock-screen
+     * PIN but no scriptable fingerprint; production is biometric-only. */
+    internal fun provisionKey(
+        key: String,
+        requireAuth: Boolean,
+        allowDeviceCredentialForTest: Boolean = false,
+    ): SecretKey {
+        androidKeyStore().deleteEntry(aliasFor(key))
+        val gen = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, ANDROID_KEYSTORE)
+        val spec = KeyGenParameterSpec.Builder(
+            aliasFor(key), KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
+            .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+            .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+            .setKeySize(256)
+        if (requireAuth) {
+            spec.setUserAuthenticationRequired(true)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                val types = if (allowDeviceCredentialForTest)
+                    KeyProperties.AUTH_BIOMETRIC_STRONG or KeyProperties.AUTH_DEVICE_CREDENTIAL
+                else KeyProperties.AUTH_BIOMETRIC_STRONG
+                spec.setUserAuthenticationParameters(0, types)
+            }
+        }
+        gen.init(spec.build())
+        return gen.generateKey()
+    }
+
+    private fun loadKey(key: String): SecretKey? =
+        androidKeyStore().getKey(aliasFor(key), null) as? SecretKey
+
+    /** Reads the keystore's OWN record of whether [secretKey] is user-auth-bound
+     * (KeyInfo.isUserAuthenticationRequired) — the OS-key property, not an app flag. A
+     * plain get of such a key cannot proceed (the OS would refuse the decrypt); this is
+     * the deterministic tripwire the "drop setUserAuthenticationRequired" mutation reds. */
+    private fun keyRequiresAuth(secretKey: SecretKey): Boolean =
+        try {
+            val factory = SecretKeyFactory.getInstance(secretKey.algorithm, ANDROID_KEYSTORE)
+            (factory.getKeySpec(secretKey, KeyInfo::class.java) as KeyInfo).isUserAuthenticationRequired
+        } catch (t: Throwable) {
+            // A key whose auth binding we cannot read is treated as auth-bound (fail
+            // closed — never hand back plaintext on an unreadable gate).
+            true
+        }
+
+    private fun decrypt(secretKey: SecretKey, blob: SecretBlob): String {
+        val cipher = Cipher.getInstance(AES_GCM).apply {
+            init(Cipher.DECRYPT_MODE, secretKey, GCMParameterSpec(GCM_TAG_BITS, blob.iv))
+        }
+        return String(cipher.doFinal(blob.ct), Charsets.UTF_8)
+    }
+
+    private fun storeBlob(key: String, iv: ByteArray, ct: ByteArray) {
+        val encoded = Base64.encodeToString(iv, Base64.NO_WRAP) + ":" +
+            Base64.encodeToString(ct, Base64.NO_WRAP)
+        check(secretPrefs.edit().putString(key, encoded).commit()) {
+            "secure store commit failed for '$key'"
+        }
+    }
+
+    private fun loadBlob(key: String): SecretBlob? {
+        val encoded = secretPrefs.getString(key, null) ?: return null
+        val parts = encoded.split(":")
+        if (parts.size != 2) return null
+        return SecretBlob(
+            Base64.decode(parts[0], Base64.NO_WRAP), Base64.decode(parts[1], Base64.NO_WRAP))
+    }
+
+    /** A provisioning failure for an auth-bound key on a device with no enrolled
+     * biometric (KeyGenerator throws) is Unavailable, not Error — the honest "no secure
+     * biometric here" status. Everything else caught is Error. */
+    private fun secureErrorStatus(t: Throwable): Int =
+        if (t is java.security.InvalidAlgorithmParameterException || t is IllegalStateException)
+            SecureStorageStatus.UNAVAILABLE
+        else SecureStorageStatus.ERROR
+
+    /** The parsed ciphertext blob (a fresh GCM IV per write; the tag rides the
+     * ciphertext). */
+    private class SecretBlob(val iv: ByteArray, val ct: ByteArray)
+
+    /** The outcome of a synchronous secure-storage op — a status and, only on Ok get,
+     * the value (the GeolocationResult/SecretResult twin). */
+    internal data class SecureOutcome(val status: Int, val value: String?)
+
+    /**
+     * The test seam's handle on a pending biometric auth (instrumented only). [succeed]
+     * drives a successful auth; [deny] drives a terminal denial with a status. For a
+     * storage CryptoObject gate, a hook [succeed] CANNOT unlock the OS-bound cipher (no
+     * real auth happened) so the shell's decrypt/encrypt still refuses — the seam proves
+     * the wire + the CryptoObject binding + denial-as-data no-hang, never the real
+     * OS-unlocked decrypt (owner-phone territory).
+     */
+    class BiometricGate internal constructor(
+        val hasCryptoObject: Boolean,
+        private val onAuthenticated: (BiometricPrompt.AuthenticationResult?) -> Unit,
+        private val onDenied: (Int) -> Unit,
+    ) {
+        fun succeed() = onAuthenticated(null)
+        fun deny(status: Int) = onDenied(status)
+    }
+
     private fun performFetch(requestId: Long, request: BridgeFetchRequest) {
         try {
             val conn = URL(request.url).openConnection() as HttpURLConnection
@@ -672,9 +1097,36 @@ class AndroidShellBridge(
         }
     }
 
+    /** Test seam (instrumented only): provisions an AUTH-BOUND keystore key for [key]
+     * and writes a stored blob WITHOUT encrypting (an AES per-use-auth key's encrypt
+     * needs a real auth, which is not CI-scriptable). Lets the binding test set up an
+     * auth-bound item so a plain [secureGetCore] can prove it returns AuthFailed. Uses
+     * the device-credential fallback so the key generates on a CI emulator with a PIN
+     * but no enrolled fingerprint. Returns true if provisioned. */
+    internal fun writeAuthBoundSecretForTest(key: String): Boolean =
+        try {
+            provisionKey(key, requireAuth = true, allowDeviceCredentialForTest = true)
+            // A dummy blob — a plain get AuthFails at the key BEFORE any decrypt, so the
+            // bytes need not be valid ciphertext (the mutation that drops the auth flag
+            // makes the get attempt the decrypt, which then fails the GCM tag → Error,
+            // still ≠ AuthFailed, so the tripwire reds either way).
+            storeBlob(key, ByteArray(12), ByteArray(32))
+            true
+        } catch (t: Throwable) {
+            onError("writeAuthBoundSecretForTest('$key') failed", t)
+            false
+        }
+
     companion object {
         private const val TAG = "BlazorNative"
         private const val PREFS_NAME = "blazornative"
+
+        // ── Secure storage (Phase 9.2) ───────────────────────────────────────
+        private const val SECURE_PREFS_NAME = "blazornative_secure"
+        private const val KEY_ALIAS_PREFIX = "bn_secret_"
+        private const val ANDROID_KEYSTORE = "AndroidKeyStore"
+        private const val AES_GCM = "AES/GCM/NoPadding"
+        private const val GCM_TAG_BITS = 128
 
         /** ClipData label for clipboard writes + the share Intent MIME type. */
         private const val CLIP_LABEL = "BlazorNative"
@@ -832,5 +1284,14 @@ class AndroidShellBridge(
          * cannot reach MainActivity's private bridge instance; reset it in the
          * test's finally so it never leaks across tests. */
         @Volatile @JvmStatic var shareLaunchHook: ((Intent) -> Unit)? = null
+
+        /** Test seam (instrumented BnSecureAndroidTest): when non-null, [runBiometricGate]
+         * hands the pending auth to this hook INSTEAD OF popping the real system
+         * BiometricPrompt sheet — the geolocation/notifications split (the real prompt +
+         * a real fingerprint are owner-phone territory; the emulator's is synthetic). The
+         * test drives BiometricGate.succeed()/deny(status) and CI proves the wire, the
+         * CryptoObject binding (hasCryptoObject) and denial-as-data no-hang. Null in
+         * production; reset in the test's finally so it never leaks across tests. */
+        @Volatile @JvmStatic var biometricGateHook: ((BiometricGate) -> Unit)? = null
     }
 }

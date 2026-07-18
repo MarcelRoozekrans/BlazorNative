@@ -81,6 +81,18 @@ dependencies {
     // package and a different ImageLoader surface. 2.7.0 is the last 2.x, minSdk 21.
     implementation("io.coil-kt:coil:2.7.0")
 
+    // Phase 9.2 (M9 DoD #4): AndroidX Biometric — the Jetpack BiometricPrompt (one
+    // consistent API across API 23+) and the CryptoObject plumbing the OS-key-bound
+    // secure-storage read needs (AndroidShellBridge op=Biometrics / op=SecureStorage).
+    // The phase's ONE new Android dependency; secure storage itself uses the no-dep
+    // raw AndroidKeyStore (androidx.security:security-crypto is deprecated + drags in
+    // Tink, and the auth-bound key needs raw AndroidKeyStore anyway). Pinned exact (the
+    // shell-versions-are-pinned law) and MIRRORED into the template's build.gradle.kts
+    // — a generated app compiles a shell that references BiometricPrompt, so a template
+    // missing this dep fails to compile. Transitively supplies androidx.fragment, which
+    // is why MainActivity can extend FragmentActivity (BiometricPrompt's required host).
+    implementation("androidx.biometric:biometric:1.1.0")
+
     // Kotlin stdlib
     implementation(kotlin("stdlib-jdk8", kotlinVersion))
 

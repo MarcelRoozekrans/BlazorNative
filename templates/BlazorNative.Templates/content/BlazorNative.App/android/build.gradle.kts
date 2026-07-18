@@ -68,6 +68,14 @@ dependencies {
     // rewrite with a different package and a different ImageLoader surface.
     implementation("io.coil-kt:coil:2.7.0")
 
+    // AndroidX Biometric — the Jetpack BiometricPrompt and the CryptoObject plumbing
+    // the shell's biometrics + OS-key-bound secure storage use (AndroidShellBridge).
+    // The shell references BiometricPrompt, so this dependency is REQUIRED to compile
+    // the generated app; it must stay pinned to the same version the reference shell
+    // builds against. It transitively supplies androidx.fragment (MainActivity extends
+    // FragmentActivity, BiometricPrompt's required host).
+    implementation("androidx.biometric:biometric:1.1.0")
+
     // Kotlin stdlib
     implementation(kotlin("stdlib-jdk8", kotlinVersion))
 }
