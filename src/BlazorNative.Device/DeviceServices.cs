@@ -15,9 +15,10 @@ namespace BlazorNative.Device;
 public static class ServiceCollectionExtensions
 {
     /// <summary>Registers <see cref="IGeolocation"/>, <see cref="INotifications"/>,
-    /// <see cref="IBiometrics"/> and <see cref="ISecureStorage"/> (and the other M9
-    /// device facades as they land). Requires an <c>IMobileBridge</c> to already be
-    /// registered — each facade is a thin delegate over it.
+    /// <see cref="IBiometrics"/>, <see cref="ISecureStorage"/> and
+    /// <see cref="ICamera"/> (the full M9 device roster — the 7th package is the last,
+    /// no 8th). Requires an <c>IMobileBridge</c> to already be registered — each facade
+    /// is a thin delegate over it.
     ///
     /// <code>
     /// // In your DI setup (the runtime composition root, or a test harness):
@@ -28,6 +29,7 @@ public static class ServiceCollectionExtensions
     /// [Inject] public INotifications Notifications { get; set; } = default!;
     /// [Inject] public IBiometrics Biometrics { get; set; } = default!;
     /// [Inject] public ISecureStorage Secrets { get; set; } = default!;
+    /// [Inject] public ICamera Camera { get; set; } = default!;
     /// </code>
     /// </summary>
     public static IServiceCollection AddBlazorNativeDevice(this IServiceCollection services)
@@ -36,6 +38,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<INotifications, Notifications>(); // Phase 9.1 — the notifications facade (no 8th package)
         services.AddSingleton<IBiometrics, Biometrics>();       // Phase 9.2 — biometrics (no 8th package)
         services.AddSingleton<ISecureStorage, SecureStorage>(); // Phase 9.2 — secure storage (M5 deferral closed)
+        services.AddSingleton<ICamera, Camera>();               // Phase 9.3 — camera (no 8th package; M9 roster closed)
         return services;
     }
 }

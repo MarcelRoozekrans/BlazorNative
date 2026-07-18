@@ -99,6 +99,37 @@ public interface IMobileBridge
     ValueTask<SecretResult>        GetSecretWithAuthAsync(string key, string reason, CancellationToken ct = default);
     ValueTask<SecureStorageStatus> DeleteSecretAsync(string key, CancellationToken ct = default);
 
+    // Camera photo capture (Phase 9.3 — M9 DoD #5; the THIRD reuse of the 9.0
+    // generic ABI, and the LAST M9 capability). ONE op-enum value (Camera = 4) + one
+    // wire-mirrored status enum (CameraStatus) — and NOTHING else on the ABI: NO
+    // struct grow (still 80 bytes / 10 slots), NO new export (still 10), NO drift-pin
+    // move. The "pay once (9.0), reuse thrice" bet paying its FOURTH draw.
+    //
+    // THE NEW TEACHING (the phase's real design work): the result is an IMAGE —
+    // potentially megabytes — but it CROSSES AS A FILE PATH, not bytes. The shell
+    // captures the photo to an app-cache temp JPEG and the completion payload names
+    // the file: {"path":"file:///…","width","height","bytes"} (a few hundred bytes of
+    // JSON, the exact small-flat-JSON channel geolocation's fix / secure get already
+    // use). The bytes never touch the wire; the OS wrote them to disk and .NET is
+    // handed their address — which is why the ABI stays frozen and no binary/buffer
+    // export is added. A captured file:// path is a valid BnImage.Src, so the
+    // capability the app just exercised feeds straight into the M7 image component.
+    //
+    // Denial/cancellation is DATA: a user cancel, a denied permission, no camera and a
+    // host error are all CameraStatus VALUES — never an exception, never a hang (the
+    // milestone law). CapturePhotoAsync returns a typed PhotoResult (path + final,
+    // post-downscale dims + file size on Captured; nulls/zeros otherwise). The
+    // read-only availability check (never prompts, never launches the camera UI) is
+    // the geolocation-check sibling: it returns Captured to mean "present + usable"
+    // (no capture ran) and Unavailable on a device with no camera (the honest iOS
+    // simulator result). The temp file is APP-OWNED after handoff (the .NET side never
+    // deletes it — it lives in the shell's cache dir); the shell prunes its own
+    // capture subdir on each capture as a leak backstop. On-device NativeShellBridge
+    // maps the op into argsJson{action:…} over the generic InvokeHostCallAsync;
+    // DevHostBridge mocks every status + a canned test-image path headless.
+    ValueTask<PhotoResult>  CapturePhotoAsync(CaptureOptions options, CancellationToken ct = default);
+    ValueTask<CameraStatus> CheckCameraAvailabilityAsync(CancellationToken ct = default);
+
     // Platform info — sync raw-JSON form + async typed form. (The sync form is
     // a Phase 2.3 WASM-era shape — it read the BLAZOR_PLATFORM_INFO env var on
     // Mono-WASI; today NativeShellBridge builds the JSON from the
@@ -305,3 +336,70 @@ public readonly record struct SecretResult(SecureStorageStatus Status, string? V
     /// not a store. Recorded as a decision (§8).</summary>
     public const int MaxValueBytes = 8 * 1024;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Camera value types (Phase 9.3 — M9 DoD #5)
+//
+// CameraStatus is the WIRE-MIRRORED status: the host maps each platform's native
+// outcome into it host-side, and .NET only ever sees the integer (+ the capture
+// payload). The numeric values are the ABI contract — mirrored byte-identically by
+// the Kotlin (HostCallOp) and Swift (BnHostCallOp) shells at Gates 2/3 (pinned like
+// the callback struct). Do NOT reorder: the host passes these integers back across
+// blazornative_host_call_complete — the SAME export geolocation/notifications/
+// biometrics use, with NO struct grow and NO new export (the phase headline, made
+// falsifiable by CameraAbiUnchangedTests).
+//
+//   0 Captured    — a photo was taken and written; the payload carries the path
+//   1 Cancelled   — the user backed out of the camera UI (a NORMAL outcome)
+//   2 Denied      — the OS refused camera access (a PERMISSION outcome; iOS)
+//   3 Unavailable — no camera hardware / capture UI not available (the honest iOS-
+//                    simulator result); also the read-only check's "no camera" answer
+//   4 Error       — unexpected host error (a caught throw, a write/encode failure,
+//                    malformed args)
+//
+// Cancellation (1), denial (2), unavailability (3) and error (4) are all VALUES,
+// never exceptions and never hangs — the awaiting ValueTask always resolves. An
+// out-of-range integer maps to Error (still data, never a throw). Note the split
+// between Cancelled (the user chose not to shoot) and Denied (the OS refused access):
+// the demo shows both distinctly.
+// ─────────────────────────────────────────────────────────────────────────────
+
+public enum CameraStatus
+{
+    Captured = 0,
+    Cancelled = 1,
+    Denied = 2,
+    Unavailable = 3,
+    Error = 4,
+}
+
+/// <summary>The knobs the app sets so it controls the captured file's size. The
+/// system camera app writes a full-resolution JPEG (often 4000×3000+, several MB);
+/// the shell then downsamples it to <see cref="MaxDimension"/> on the long edge and
+/// re-encodes at <see cref="Quality"/> before returning the path, so the file — and
+/// the bitmap BnImage decodes from it — is bounded. A <c>0</c>
+/// <see cref="MaxDimension"/> means "keep full resolution" (explicit opt-in to the
+/// big file). Defaults: a ~2048 px long edge and JPEG quality 85 (a couple hundred
+/// KB for fidelity a phone screen cannot out-resolve).</summary>
+public readonly record struct CaptureOptions(int MaxDimension = 2048, int Quality = 85);
+
+/// <summary>The terminal outcome of a <see cref="IMobileBridge.CapturePhotoAsync"/>
+/// call: a status and, only when <see cref="CameraStatus.Captured"/>, the captured
+/// file's <c>file://</c> path and its FINAL (post-downscale) dimensions + size. Every
+/// other status carries a null path and zeros (the <see cref="GeolocationResult"/> /
+/// <see cref="SecretResult"/> twin). The path points into the app's PRIVATE cache
+/// (Android <c>getCacheDir()</c> / iOS <c>NSTemporaryDirectory()</c>) — not
+/// world-readable, not external storage; the exposure is a location, not the image's
+/// content, and the bytes never enter managed memory as a marshalled string (they
+/// stay in the file the OS wrote — a benefit of the file-path handoff over
+/// bytes-inline). THE OWNERSHIP BOUNDARY: once the path crosses to .NET the APP OWNS
+/// THE FILE — the façade does NOT auto-delete on return (the app may still be reading
+/// it, or handing it to BnImage which decodes asynchronously); the shell prunes its
+/// own capture subdir on each capture as a leak backstop. See
+/// <c>docs/bridge-extension.md §(f).10</c>.</summary>
+public readonly record struct PhotoResult(
+    CameraStatus Status,
+    string? Path,      // file:// path in the app cache; null unless Captured
+    int Width,         // final (post-downscale) pixel dimensions; 0 unless Captured
+    int Height,
+    long SizeBytes);   // final file size in bytes; 0 unless Captured
