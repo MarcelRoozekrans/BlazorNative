@@ -6,13 +6,18 @@ section (f) — and the ABI is at **10 exports / 80 bytes** (the first export gr
 Phase 3.1's `fetch_complete`). **Phase 9.1 (M9 DoD #3) is the pattern's FIRST declared
 reuse** — local notifications — and it held the bet. **Phase 9.2 (M9 DoD #4) is the SECOND
 reuse** — biometrics + secure storage, TWO ops at once — and it held the bet a THIRD time:
-the ABI stayed at **10 exports / 80 bytes**, unchanged. The pattern now has **three** worked
-capabilities. **Worked examples:** clipboard + share (Phase 5.4), the first bridge growth
-with two shells (Android + iOS) in lockstep — section (e); **geolocation** (Phase 9.0), the
-first *permission-gated* capability — section (f.7); **notifications** (Phase 9.1), the
-first *reuse* + the first *inbound-event* capability (tap-through) — section (f.8); and
-**biometrics + secure storage** (Phase 9.2), the first *value-returning* completion and the
-first *non-permission-gated* host call — section (f.9).
+the ABI stayed at **10 exports / 80 bytes**, unchanged. **Phase 9.3 (M9 DoD #5) is the THIRD
+reuse** — camera photo capture — and it held the bet a FOURTH time while returning an
+IMAGE, because the image crosses as a **file PATH**, not bytes: the ABI is still **10 exports
+/ 80 bytes**, unchanged. The pattern now has **four** worked capabilities. **Worked
+examples:** clipboard + share (Phase 5.4), the first bridge growth with two shells (Android +
+iOS) in lockstep — section (e); **geolocation** (Phase 9.0), the first *permission-gated*
+capability — section (f.7); **notifications** (Phase 9.1), the first *reuse* + the first
+*inbound-event* capability (tap-through) — section (f.8); **biometrics + secure storage**
+(Phase 9.2), the first *value-returning* completion and the first *non-permission-gated* host
+call — section (f.9); and **camera photo capture** (Phase 9.3), the first completion whose
+result is a **LARGE artifact handed by REFERENCE (a file path), not by value** — section
+(f.10).
 
 This is the doc a future contributor reads to add a new host capability (camera,
 geolocation, biometrics, …). It covers the bridge model, the **size-negotiation** that
@@ -666,8 +671,144 @@ text). **Size:** the payload is a single unbounded `const char*`, but secure sto
 enforced at the .NET boundary with an `Error` status if exceeded (a large value is a misuse, not
 a store). Recorded as a decision.
 
+### 10. Worked example — camera photo capture (Phase 9.3), and a result that is a FILE, not inline data
+
+**The reuse, stated first:** camera adds `HostCallOp.Camera = 4` and **nothing else on the
+ABI** — no struct grow (still **80 bytes / 10 slots**), no new export (still **10**), no
+drift-pin move. capture / check are two **geolocation-shaped** host calls; the payload channel
+carries the result. The "pay once (9.0), reuse thrice" bet's FOURTH draw — and the one that
+looked most likely to force a grow, because the RESULT IS AN IMAGE (1–10 MB of JPEG), holds
+for the reason (f.10)'s new teaching states.
+
+**Op / export:** the EXISTING `HostCallBegin@72` + `blazornative_host_call_complete`. The
+**action lives inside the flat JSON** (geolocation's `mode` precedent — one op, many
+sub-actions, no second slot):
+
+| action | args (flat JSON) | completion status | payload |
+|---|---|---|---|
+| `capture` | `{"action":"capture","maxDim":"2048","quality":"85"}` | `CameraStatus` | **`{"path":…,"width":…,"height":…,"bytes":…}` on `Captured`** |
+| `check` | `{"action":"check"}` (never launches the camera UI) | `CameraStatus` | none |
+
+Every field crosses as a **string** (numbers string-encoded, `InvariantCulture`), reusing
+`WriteFlatJsonObject`/`ParseFlatJsonObject` — no new serializer. `maxDim` caps the file's long
+edge (the shell downsamples the full-resolution capture); `maxDim:"0"` keeps full resolution
+(explicit opt-in to the big file); `quality` is the JPEG re-encode quality.
+
+**`CameraStatus` — a NEW wire-mirrored status, FIVE values.** Defined byte-identically across
+.NET / Kotlin / Swift; .NET sees only the integer (+ the capture payload), and an out-of-range
+value → `Error` (still data, never a throw):
+
+| status | Name | Meaning | Android (Intent path) | iOS (`UIImagePickerController`) |
+|---|---|---|---|---|
+| 0 | `Captured` | a photo was taken and written; the payload carries the path | `RESULT_OK` + a written output URI | `didFinishPickingMediaWithInfo` + a written temp file |
+| 1 | `Cancelled` | the user backed out of the camera UI (a NORMAL outcome) | `RESULT_CANCELED` | `imagePickerControllerDidCancel` |
+| 2 | `Denied` | the OS refused camera access (permission) | (Intent path: not reached — no runtime `CAMERA` permission) | `AVAuthorizationStatus.denied` / `.restricted` |
+| 3 | `Unavailable` | no camera hardware / capture UI not available | no camera app resolves the Intent | `!isSourceTypeAvailable(.camera)` — the honest iOS-simulator result |
+| 4 | `Error` | unexpected host error (a caught throw, a write/encode failure, malformed args) | any other failure | any other failure |
+
+Note the split between `Cancelled` (the user chose not to shoot — a normal outcome) and
+`Denied` (the OS refused access — a permission outcome): the demo shows both distinctly. The
+read-only `check` returns `Captured` to mean "present + usable" (no capture ran — the
+geolocation-`check`-returns-`Granted` precedent) and `Unavailable` on a device with no camera.
+
+**THE NEW TEACHING — a completion whose result is a LARGE artifact handed by REFERENCE (a file
+path), not by value.** Geolocation returned a tiny `{lat,lng}`; notifications a status; secure
+`get` a small string under an 8 KB cap. **A photo is 1–10 MB of JPEG — the thing a reader
+expects to force the ABI.** It does not, because the shell writes the captured JPEG to an
+app-cache temp file and the completion payload carries the **`path`** (a few hundred bytes of
+JSON naming a file), NOT the file's contents. `host_call_complete` already carries an optional
+flat-JSON payload (geolocation's fix, secure `get`'s value); camera is the THIRD user, and it
+generalises the payload channel to **artifacts too big to inline**: *when a capability produces
+a blob, the payload NAMES it (a path), it does not CARRY it — the bytes stay on disk and the ABI
+stays frozen.* The bytes never cross the C-ABI; the OS wrote them to disk and .NET is handed
+their address. **The image being large does not make the MESSAGE large** — which is exactly why
+the struct and the export set do not move. `CameraAbiUnchangedTests` pins `SizeOf == 80` /
+offset 72 / `Camera == 4`, UNCHANGED — the falsifiable headline.
+
+**Bytes-inline as base64 is REJECTED** (design §2): a 3 MB JPEG is ~4 MB base64 marshalled
+through a flat-JSON `const char*` into a non-zeroable, GC-movable .NET `string` held in the
+pending registry — the 9.2 secret-in-memory hazard ×1000, ~1000× the 8 KB secure-storage
+precedent, for a photo that isn't even a secret. A **new binary/buffer export** is rejected too
+— it would be the one ABI grow M9 swore off (9.0 paid the export event once). The file path
+makes both unnecessary, and it composes: a captured `file://` path is a valid `BnImage.Src`
+(Coil / Kingfisher both load `file://` locals), so the capability the app just exercised feeds
+straight into the M7 image component.
+
+**THE TEMP-FILE LIFETIME (the one obligation the file-path handoff carries).** A file handoff
+introduces a file that must eventually die. The rule, normative:
+
+- **Location.** The shell writes to a dedicated subdirectory of the app's **cache** dir
+  (Android `File(cacheDir, "blazornative_captures")`; iOS a `blazornative_captures` folder under
+  `NSTemporaryDirectory()`) — cache, not files/documents, so the OS may reclaim it under storage
+  pressure and it is never backed up. Not world-readable, not external storage: the path is a
+  **location, not the image's content**.
+- **Ownership after handoff.** Once the path crosses to .NET, **the app owns the file.** The
+  façade does NOT auto-delete on return — the app may still be reading it, or handing it to
+  `BnImage`, which decodes **asynchronously**. The `/camera` demo shows the honest lifecycle:
+  display the photo, then the app is free to delete it. **The .NET side never deletes the file**
+  (it lives in the shell's cache dir) — state the ownership boundary.
+- **The backstop.** So a crashed or careless app cannot leak captures forever, **each `capture`
+  first prunes the capture subdir** to a bounded budget (keep-last-N, e.g. 3, and/or a TTL). This
+  is a shell-side safety net, not a correctness guarantee the app can lean on.
+- **A bridge-mediated `Delete` is deferred, not shipped.** The app can delete a cache-dir file
+  with ordinary .NET I/O; a façade `DeleteAsync` would be a new op for no new capability. It is a
+  labelled follow-up.
+
+**THE EXIF-NORMALIZATION RULE (§2e — the shell's second host-side obligation).** A phone photo
+is very often stored **rotated with an EXIF orientation tag** (portrait shots are commonly a
+landscape buffer + "rotate 90°"). The shell **normalizes orientation host-side**: it applies the
+EXIF rotation to the pixel buffer, writes an **upright** JPEG, and **resets the orientation tag
+to 1 (identity)**. Rationale: a raw-file consumer gets an upright image with no EXIF literacy
+required; and — the one-platform-at-a-time bug it forbids — Coil and Kingfisher both **honor EXIF
+on decode**, so baking rotation into the pixels while leaving the tag at "rotate 90°" would make
+them rotate a SECOND time. Bake pixels AND reset the tag → each layer rotates zero times after
+the shell. (A named Gate-2 mutation: leave the tag un-reset → a double-rotation assertion reds.)
+
+**`CameraStatus`, `CaptureOptions`, `PhotoResult`** (`BlazorNative.Core`):
+`CapturePhotoAsync(CaptureOptions{MaxDimension=2048, Quality=85})` →
+`PhotoResult(CameraStatus Status, string? Path, int Width, int Height, long SizeBytes)` — path +
+FINAL (post-downscale) dims + size on `Captured`, nulls/zeros otherwise (the `GeolocationResult`
+/ `SecretResult` twin). `CheckCameraAvailabilityAsync` is the read-only sibling. Both go through
+the EXISTING `InvokeHostCallAsync(op:Camera, argsJson, ct)` — the pending registry, cancellation
+posture, unknown-id benignness reused, not re-written; the only new .NET is the args builder, the
+`ToCameraStatus` map (incl. out-of-range → `Error`), and the `ParsePhotoResult` payload parse.
+`DevHostBridge` mocks a **settable capture result + a canned test-image path** (a real `file://`
+fixture with known dims) — every status and the composition, headless; a non-`Captured` result
+carries **no path** (a cancel has no file).
+
+**The façade** — `ICamera` in the **SAME 7th package `BlazorNative.Device`** (a sibling of
+`IGeolocation`/`INotifications`/`IBiometrics`/`ISecureStorage`, a thin delegate over
+`IMobileBridge`); **no 8th package**, one added `AddBlazorNativeDevice()` line. **9.3 confirms
+the 7th package is the last — the M9 device roster closes.** **The demo** — `BnCameraDemo` (routed
+`/camera`, the 13th page, sample-only), the worked example that `[Inject]`s `ICamera`, displays
+the captured `file://` path in a **definite-size `BnImage` with `ContentMode="Contain"`** (the
+capabilities composing — camera → file → BnImage; the M6/M7 natural-size-image ledger item
+discharged), and echoes the `Cancelled`/`Denied` split as data.
+
+**Android** (Gate 2, `AndroidShellBridge.kt`): the `MediaStore.ACTION_IMAGE_CAPTURE` **Intent**
+path — hand off to the system camera app, which writes the full-res JPEG to an output URI the
+shell supplies via a **`FileProvider`** (the Intent path needs **NO runtime `CAMERA`
+permission**); on `RESULT_OK` downsample + normalize EXIF + write to the cache subdir + return
+the path. **iOS** (Gate 3, `AppleShellBridge.swift`): `UIImagePickerController(.camera)` — the
+delegate's `didFinishPickingMediaWithInfo` yields a `UIImage` the shell normalizes + writes;
+`NSCameraUsageDescription` in `Info.plist`. **The simulator has NO camera at all**, so
+`check → Unavailable` is the honest simulator result and the capture is seam-mocked. The
+FileProvider `<provider>` + `res/xml/file_paths.xml` are a NEW class of manifest+resource drift,
+synced into both trees at Gate 2.
+
+**Tests (Gate 1):** `.NET` `CameraAbiUnchangedTests` (the reuse headline falsifiable a fourth
+time: 80 bytes / offset 72 / `Camera == 4`, unchanged), `CameraBridgeTests` (op + the
+capture/check action shapes, the `{"path",…}` payload parse incl. the path-key-not-`data` pin,
+the five-status matrix incl. out-of-range → `Error`, the no-path-on-cancel matrix, requestId
+keying, old-shell-unsupported), `CameraFacadeTests` (the `DevHostBridge` five-status matrix + the
+canned test-image path with real bytes + the no-path-on-cancel matrix + the `ICamera` facade),
+`BnCameraDemoTests` (mount + THE COMPOSITION — a captured path becomes the `BnImage` `Src`). AVD
+`ACTION_IMAGE_CAPTURE` real capture + the file→BnImage round-trip (Gate 2); iOS simulator
+`check → Unavailable` + the seam-mocked capture (Gate 3).
+
 ---
 
 *Version note: the ABI is at **10 exports / 80 bytes** since Phase 9.0 — **unchanged by
-Phase 9.1** (notifications) **and Phase 9.2** (biometrics + secure storage added two op-enum
-values and no ABI). See `README.md` for current counts.*
+Phase 9.1** (notifications), **Phase 9.2** (biometrics + secure storage added two op-enum
+values and no ABI) **and Phase 9.3** (camera added one op-enum value and no ABI — the image
+crosses as a PATH, not bytes). See `README.md` for current counts.*
