@@ -75,14 +75,16 @@ public sealed class NativeShellBridge : IMobileBridge
 
     /// <summary>The generic permission-gated capabilities carried on the ONE
     /// HostCallBegin slot. 9.0 wired exactly one (Geolocation); Phase 9.1 added the
-    /// SECOND (Notifications); Phase 9.2 adds TWO at once (Biometrics = 2,
-    /// SecureStorage = 3) — op-enum values and nothing else on the ABI: NO struct
-    /// grow (still 80 bytes / 10 slots), NO new export (still 10), NO drift-pin move.
-    /// This is the "pay once (9.0), reuse thrice" bet paying its THIRD draw. The
-    /// integer is the wire contract — the host switches on it, and the shells' mirror
-    /// enums (Kotlin HostCallOp / Swift BnHostCallOp) gain the same values at Gates
-    /// 2/3.</summary>
-    internal enum HostCallOp { Geolocation = 0, Notifications = 1, Biometrics = 2, SecureStorage = 3 }
+    /// SECOND (Notifications); Phase 9.2 added TWO at once (Biometrics = 2,
+    /// SecureStorage = 3); Phase 9.3 adds the FIFTH (Camera = 4) — op-enum values and
+    /// nothing else on the ABI: NO struct grow (still 80 bytes / 10 slots), NO new
+    /// export (still 10), NO drift-pin move. This is the "pay once (9.0), reuse
+    /// thrice" bet paying its FOURTH draw — and Camera does it while returning an
+    /// IMAGE, because the image crosses as a PATH in the completion payload, not bytes
+    /// (no binary/buffer export). The integer is the wire contract — the host switches
+    /// on it, and the shells' mirror enums (Kotlin HostCallOp / Swift BnHostCallOp)
+    /// gain the same values at Gates 2/3.</summary>
+    internal enum HostCallOp { Geolocation = 0, Notifications = 1, Biometrics = 2, SecureStorage = 3, Camera = 4 }
 
     /// <summary>A completion carried back through blazornative_host_call_complete:
     /// the wire status integer (mapped to <see cref="GeolocationStatus"/> etc. by the
@@ -777,6 +779,101 @@ public sealed class NativeShellBridge : IMobileBridge
         Dictionary<string, string> payload = ParseFlatJsonObject(result.PayloadJson);
         return new SecretResult(status, payload.TryGetValue("value", out string? v) ? v : null);
     }
+
+    // ── Camera (Phase 9.3 — the THIRD reuse of the 9.0 ABI, the last M9 capability) ─
+    //
+    // capture / check ride the EXISTING InvokeHostCallAsync verbatim (the pending
+    // registry, the cancellation posture, the unknown-id benignness, the old-shell
+    // RequireSlot guard — all reused, none re-written) with op=Camera and the action
+    // inside the flat JSON (geolocation's `mode` precedent). The ONLY new .NET is the
+    // args-JSON builders, the ToCameraStatus map (incl. out-of-range → Error), and the
+    // PhotoResult parse. NO struct grow, NO new export — the op-enum value + JSON
+    // vocabulary are the whole ABI touch.
+    //
+    // THE NEW SHAPE: the result is a LARGE artifact (a photo) handed by REFERENCE — a
+    // file PATH the shell wrote — not by value. On Captured the payload is
+    // {"path":"file:///…","width":…,"height":…,"bytes":…}: the SAME optional flat-JSON
+    // payload channel host_call_complete has carried since 9.0 (geolocation's fix, then
+    // secure get's value), used here to NAME a file rather than carry its contents. The
+    // bytes never cross the C-ABI, so the image being large does not make the MESSAGE
+    // large — which is exactly why the ABI stays frozen (§0/§2 of the design). Denial
+    // is DATA: cancel / denied / unavailable / error each resolve the ValueTask with a
+    // status, no throw, no hang.
+
+    public async ValueTask<PhotoResult> CapturePhotoAsync(CaptureOptions options, CancellationToken ct = default)
+    {
+        HostCallResult result = await InvokeHostCallAsync(
+            HostCallOp.Camera, BuildCaptureArgs(options), ct).ConfigureAwait(false);
+        return ParsePhotoResult(in result);
+    }
+
+    public async ValueTask<CameraStatus> CheckCameraAvailabilityAsync(CancellationToken ct = default)
+    {
+        // The read-only availability check (never prompts, never launches the camera
+        // UI) — geolocation's `check` sibling. Captured means "present + usable" (no
+        // capture ran); Unavailable is the honest no-camera answer (the iOS simulator).
+        HostCallResult result = await InvokeHostCallAsync(
+            HostCallOp.Camera, CameraCheckArgs, ct).ConfigureAwait(false);
+        return ToCameraStatus(result.Status);
+    }
+
+    // The availability check carries only the action (the geolocation `mode:"check"` /
+    // notifications-and-biometrics `action:"check"` precedent, never prompts/launches).
+    private const string CameraCheckArgs = "{\"action\":\"check\"}";
+
+    /// <summary>Builds the flat-JSON args for a capture: action + the downscale cap +
+    /// the JPEG re-encode quality, EVERY field a string (numbers string-encoded,
+    /// InvariantCulture — the geolocation fix-key discipline). The shell downsamples
+    /// the full-resolution capture to `maxDim` on the long edge and re-encodes at
+    /// `quality` before writing the temp file (§2d). Reuses WriteFlatJsonObject — no
+    /// new serializer.</summary>
+    private static string BuildCaptureArgs(CaptureOptions options)
+        => WriteFlatJsonObject(new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["action"] = "capture",
+            ["maxDim"] = options.MaxDimension.ToString(CultureInfo.InvariantCulture),
+            ["quality"] = options.Quality.ToString(CultureInfo.InvariantCulture),
+        });
+
+    /// <summary>Maps the wire status integer to <see cref="CameraStatus"/>; an
+    /// out-of-range value (a host bug) becomes <see cref="CameraStatus.Error"/> —
+    /// still data, never a throw (the ToGeolocationStatus twin).</summary>
+    private static CameraStatus ToCameraStatus(int status)
+        => status is >= (int)CameraStatus.Captured and <= (int)CameraStatus.Error
+            ? (CameraStatus)status
+            : CameraStatus.Error;
+
+    /// <summary>Parses a completion into a typed <see cref="PhotoResult"/>. Only a
+    /// Captured status carries a file — the flat-JSON {"path":…,"width":…,"height":…,
+    /// "bytes":…} payload NAMING the temp JPEG (a LARGE artifact by REFERENCE, the
+    /// THIRD user of the 9.0 payload channel — geolocation's fix and secure get's value
+    /// are the first two); every other status is the status alone with a null path and
+    /// zero dims. Reading the wrong payload key (e.g. `file` for `path`, or a
+    /// bytes-inline `data`) is the named composition-reds mutation.</summary>
+    private static PhotoResult ParsePhotoResult(in HostCallResult result)
+    {
+        CameraStatus status = ToCameraStatus(result.Status);
+        if (status != CameraStatus.Captured)
+            return new PhotoResult(status, null, 0, 0, 0);
+
+        Dictionary<string, string> payload = ParseFlatJsonObject(result.PayloadJson);
+        return new PhotoResult(
+            status,
+            Path: payload.TryGetValue("path", out string? p) ? p : null,
+            Width: ParseWireInt(payload, "width"),
+            Height: ParseWireInt(payload, "height"),
+            SizeBytes: ParseWireLong(payload, "bytes"));
+    }
+
+    private static int ParseWireInt(IReadOnlyDictionary<string, string> map, string key)
+        => map.TryGetValue(key, out string? v)
+            && int.TryParse(v, NumberStyles.Integer, CultureInfo.InvariantCulture, out int n)
+            ? n : 0;
+
+    private static long ParseWireLong(IReadOnlyDictionary<string, string> map, string key)
+        => map.TryGetValue(key, out string? v)
+            && long.TryParse(v, NumberStyles.Integer, CultureInfo.InvariantCulture, out long n)
+            ? n : 0;
 
     // ── Platform info ─────────────────────────────────────────────────────────
     //

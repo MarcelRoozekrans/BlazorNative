@@ -317,6 +317,80 @@ public sealed class DevHostBridge : IMobileBridge, IDisposable
         return ValueTask.FromResult(SecureStorageStatus.Ok);
     }
 
+    // ── Camera (Phase 9.3 — the headless capture lane) ────────────────────────
+    //
+    // A settable capture RESULT + a canned test-image path so tests drive every
+    // status — Captured (returns the canned path + known dims), Cancelled, Denied,
+    // Unavailable, Error — with NO device and NO camera, the central proof of
+    // denial/cancel-as-data. The canned path is a REAL file:// URI (a tiny fixture
+    // JPEG the harness writes to a temp path), so the headless lane can also exercise
+    // the BnImage-consumes-the-capture composition (a captured path becomes a valid
+    // BnImage.Src — §6). A non-Captured result carries NO path and zero dims — a
+    // cancel that carried a path would be the named mutation (a cancel has no file).
+
+    /// <summary>A tiny 1×1 JPEG the harness writes ONCE to a temp path, so the
+    /// Captured result names a real file:// URI a BnImage can take as its Src. The
+    /// bytes are a valid minimal JPEG; the path (not the bytes) is the handoff.</summary>
+    private const string CannedImageBase64 =
+        "/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRof" +
+        "Hh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAAB" +
+        "AAAAAAAAAAAAAAAAAAAAAP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q==";
+
+    private static readonly Lazy<(string Uri, long Bytes)> s_cannedImage = new(WriteCannedImage);
+
+    private static (string Uri, long Bytes) WriteCannedImage()
+    {
+        byte[] bytes = Convert.FromBase64String(CannedImageBase64);
+        string path = Path.Combine(Path.GetTempPath(), "blazornative-devhost-capture.jpg");
+        File.WriteAllBytes(path, bytes);
+        return (new Uri(path).AbsoluteUri, bytes.LongLength); // file:///…
+    }
+
+    /// <summary>The status the next <see cref="CapturePhotoAsync"/> returns (default
+    /// <see cref="Core.CameraStatus.Captured"/>) AND what
+    /// <see cref="CheckCameraAvailabilityAsync"/> reports (Unavailable → Unavailable,
+    /// else Captured = "present + usable"). Set it to drive a cancel / denied /
+    /// unavailable / error path headless.</summary>
+    public CameraStatus CameraCaptureResult { get; set; } = CameraStatus.Captured;
+
+    /// <summary>The file:// path a Captured result returns (default the canned
+    /// fixture). Settable so a test can point the composition at another path.</summary>
+    public string? CameraCapturedPath { get; set; } = s_cannedImage.Value.Uri;
+
+    /// <summary>The final dimensions / size a Captured result reports (default the
+    /// fixture's). Ignored for every non-Captured status.</summary>
+    public int CameraCapturedWidth { get; set; } = 1;
+    public int CameraCapturedHeight { get; set; } = 1;
+    public long CameraCapturedSizeBytes { get; set; } = s_cannedImage.Value.Bytes;
+
+    public ValueTask<PhotoResult> CapturePhotoAsync(CaptureOptions options, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        // Denial-as-data: a cancelled / denied / unavailable / error capture RETURNS
+        // its status with NO path and zero dims — it does NOT throw and does NOT hang.
+        // Only a Captured result carries the path + dims (a cancel carries NO path).
+        if (CameraCaptureResult != CameraStatus.Captured)
+        {
+            Console.WriteLine($"[DevBridge] Camera.Capture → {CameraCaptureResult}");
+            return ValueTask.FromResult(new PhotoResult(CameraCaptureResult, null, 0, 0, 0));
+        }
+        Console.WriteLine($"[DevBridge] Camera.Capture → Captured {CameraCapturedPath}");
+        return ValueTask.FromResult(new PhotoResult(
+            CameraStatus.Captured, CameraCapturedPath,
+            CameraCapturedWidth, CameraCapturedHeight, CameraCapturedSizeBytes));
+    }
+
+    public ValueTask<CameraStatus> CheckCameraAvailabilityAsync(CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        // The read-only availability check: Unavailable when the mock says there is no
+        // camera, otherwise Captured ("present + usable" — no capture ran).
+        CameraStatus available = CameraCaptureResult == CameraStatus.Unavailable
+            ? CameraStatus.Unavailable
+            : CameraStatus.Captured;
+        return ValueTask.FromResult(available);
+    }
+
     // ── Platform info ─────────────────────────────────────────────────────────
 
     public string PlatformInfo =>

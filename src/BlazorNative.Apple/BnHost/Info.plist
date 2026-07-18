@@ -68,6 +68,20 @@
 	     OS-key-bound `getWithAuth`. -->
 	<key>NSFaceIDUsageDescription</key>
 	<string>BlazorNative uses Face ID to confirm it's you and to unlock secrets you store in the secure demo.</string>
+	<!-- ── Phase 9.3 Gate 3: the camera purpose string ────────────────────────────
+	     UIImagePickerController(.camera) and AVCaptureDevice.requestAccess(for: .video)
+	     both read this string for the system camera permission alert, and iOS CRASHES
+	     the app at the capture call if the key is absent (SIGABRT: "This app has
+	     crashed because it attempted to access privacy-sensitive data without a usage
+	     description. The app's Info.plist must contain an NSCameraUsageDescription
+	     key"). A real sentence, not a placeholder — the App Store rejects an empty/
+	     boilerplate purpose string, and it is the text a real user reads under the
+	     camera prompt. Recorded as a decision (design §9 Gate 3), not an omission.
+	     No NSPhotoLibraryUsageDescription: 9.3 captures via the CAMERA source only —
+	     the gallery/photo-library picker (PHPicker) is a different, out-of-scope
+	     capability. -->
+	<key>NSCameraUsageDescription</key>
+	<string>BlazorNative uses your camera to take a photo in the camera demo.</string>
 	<!-- ── Phase 9.1 Gate 3: no Info.plist key for LOCAL notifications ─────────────
 	     Unlike location (whose requestWhenInUseAuthorization CRASHES without a purpose
 	     string), UNUserNotificationCenter authorization for LOCAL notifications is

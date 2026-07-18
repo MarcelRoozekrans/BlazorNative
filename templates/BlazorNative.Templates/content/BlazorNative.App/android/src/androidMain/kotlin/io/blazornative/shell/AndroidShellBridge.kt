@@ -15,13 +15,18 @@ import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Matrix
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
+import android.media.ExifInterface
 import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
+import android.provider.MediaStore
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyInfo
 import android.security.keystore.KeyProperties
@@ -30,17 +35,21 @@ import android.util.Log
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import androidx.fragment.app.FragmentActivity
 import io.blazornative.jni.BiometricStatus
 import io.blazornative.jni.BridgeFetchCompleter
 import io.blazornative.jni.BridgeFetchRequest
 import io.blazornative.jni.BridgeHostCallCompleter
+import io.blazornative.jni.CameraStatus
 import io.blazornative.jni.FlatJson
 import io.blazornative.jni.HostCallOp
 import io.blazornative.jni.HostCallStatus
 import io.blazornative.jni.NotificationStatus
 import io.blazornative.jni.SecureStorageStatus
 import io.blazornative.jni.ShellBridgeHandlers
+import java.io.File
+import java.io.FileOutputStream
 import java.lang.ref.WeakReference
 import java.net.HttpURLConnection
 import java.net.URL
@@ -249,12 +258,20 @@ class AndroidShellBridge(
         HandlerThread("BlazorNative-Location").apply { isDaemon = true; start() }
     private val locationHandler: Handler = Handler(locationThread.looper)
 
+    /** Phase 9.3: a single daemon thread for camera capture-file processing (decode +
+     * EXIF-rotate + downscale + JPEG re-encode of a multi-MB image) — NEVER the main thread /
+     * dispatch lane. Daemon so it never blocks process exit. */
+    private val cameraExecutor: ExecutorService = Executors.newSingleThreadExecutor { r ->
+        Thread(r, "BlazorNative-Camera").apply { isDaemon = true }
+    }
+
     override fun hostCallBegin(requestId: Long, op: Int, argsJson: String) {
         when (op) {
             HostCallOp.GEOLOCATION -> handleGeolocation(requestId, argsJson)
             HostCallOp.NOTIFICATIONS -> handleNotifications(requestId, argsJson)
             HostCallOp.BIOMETRICS -> handleBiometrics(requestId, argsJson)
             HostCallOp.SECURE_STORAGE -> handleSecureStorage(requestId, argsJson)
+            HostCallOp.CAMERA -> handleCamera(requestId, argsJson)
             // An unknown op is DATA, not a crash: complete with Error so the
             // awaiting .NET ValueTask resolves rather than leaking pending.
             else -> {
@@ -1117,6 +1134,358 @@ class AndroidShellBridge(
             false
         }
 
+    // ── Camera (Phase 9.3 — the THIRD reuse of the 9.0 ABI, the last M9 capability) ─
+    //
+    // op=Camera rides the SAME hostCallBegin slot geolocation opened; the action lives
+    // INSIDE the flat JSON (geolocation's `mode` precedent). Every completion is a
+    // wire-mirrored CameraStatus INTEGER via BridgeHostCallCompleter — cancel / unavailable /
+    // error are DATA (a status 1..4 + null payload), never a thrown exception across the JNA
+    // boundary and never a dropped completion (a hang, the milestone law).
+    //
+    // THE INTENT PATH — NO runtime CAMERA permission. capture launches
+    // MediaStore.ACTION_IMAGE_CAPTURE and hands off to the SYSTEM camera app, which owns the
+    // sensor and its permission; the shell only supplies the output URI (via a FileProvider)
+    // and receives the result. So there is no CAMERA-permission branch on Android at all
+    // (denial-as-data still holds for Unavailable/Cancelled/Error). The direct Camera2/CameraX
+    // path — an in-app camera UI that WOULD need the runtime permission — is rejected for 9.3.
+    //
+    // THE IMAGE HANDOFF — a file PATH, not bytes. The camera app writes a full-res JPEG to the
+    // FileProvider content:// URI; the shell then downsamples to maxDim, NORMALIZES EXIF (bakes
+    // the rotation into the pixels AND resets the tag to identity — a re-encoded JPEG carries no
+    // orientation tag, so Coil/Kingfisher, which honor EXIF on decode, do NOT rotate a second
+    // time), re-encodes at `quality`, and returns {"path":"file://…","width","height","bytes"}.
+    // The bytes never cross the C-ABI. The temp file lives in an app-CACHE subdir the app owns
+    // after handoff; each capture first PRUNES that subdir to a bounded budget (keep-last-N) as
+    // the leak backstop.
+    //
+    // THE ACTIVITY-RESULT SPLIT (the geolocation recreation-survival split, verbatim): the
+    // capture Intent's result lands in MainActivity.onActivityResult, which forwards to
+    // [onCameraResult]. The requestCode→pending map is APP-SCOPED (static) so a result landing
+    // on a recreated Activity still routes to the in-flight .NET requestId; the pending record
+    // carries the output File + the options, holding no Activity ref.
+    //
+    // THE TEST SEAM (the geolocation/notifications/biometrics split, verbatim): the REAL system
+    // camera app's shutter is not CI-drivable under instrumentation (the emulator's is a
+    // synthetic scene, not a lens; the real camera-app UI is owner-phone territory). So
+    // [cameraCaptureHook], when set (instrumented only), REPLACES the real Intent launch: it
+    // hands the test a [CameraCapture] bound to the SAME FileProvider output URI and the SAME
+    // result-processing path, so CI asserts the FILE→BnImage contract deterministically —
+    // captureScene writes synthetic bytes THROUGH the FileProvider URI (exercising the provider
+    // authority for real) and delivers RESULT_OK; cancel() delivers RESULT_CANCELED. The real
+    // camera-app UI + a real sensor + real EXIF off a real capture are the documented
+    // UNPROVEN-until-hardware half (owner's phone).
+
+    /** The camera op. action=check is the read-only availability peek (never launches the
+     * camera UI — the geolocation `mode:check` sibling); action=capture launches
+     * ACTION_IMAGE_CAPTURE (or the seam) and returns a CameraStatus + a {"path",…} payload on
+     * Captured. maxDim/quality ride the flat JSON (numbers string-encoded). */
+    private fun handleCamera(requestId: Long, argsJson: String) {
+        val args = FlatJson.parse(argsJson)
+        when (val action = args["action"] ?: "capture") {
+            "check" -> completeHostCall(requestId, cameraAvailabilityStatus(), null)
+            "capture" -> capturePhoto(
+                requestId,
+                CaptureOptions(
+                    maxDim = args["maxDim"]?.toIntOrNull() ?: DEFAULT_MAX_DIM,
+                    quality = args["quality"]?.toIntOrNull() ?: DEFAULT_QUALITY,
+                ),
+            )
+            else -> {
+                onError("camera: unknown action '$action' (request $requestId)",
+                    IllegalArgumentException("unsupported camera action $action"))
+                completeHostCall(requestId, CameraStatus.ERROR, null)
+            }
+        }
+    }
+
+    /** Is a system camera app present to satisfy ACTION_IMAGE_CAPTURE? Captured ("present +
+     * usable" — no capture ran) when one resolves; Unavailable (the honest no-camera answer)
+     * otherwise. Needs the manifest `<queries>` for IMAGE_CAPTURE on API 30+ (package
+     * visibility). Never prompts, never launches the camera UI. */
+    internal fun cameraAvailabilityStatus(): Int =
+        if (Intent(MediaStore.ACTION_IMAGE_CAPTURE).resolveActivity(appContext.packageManager) != null)
+            CameraStatus.CAPTURED
+        else CameraStatus.UNAVAILABLE
+
+    /** Launches ACTION_IMAGE_CAPTURE (or, under the seam, hands the test a [CameraCapture]). The
+     * capture dir is PRUNED first (the leak backstop). A missing FileProvider/authority or no
+     * resolving camera app is DATA (Error/Unavailable), never a thrown exception, never a hang. */
+    private fun capturePhoto(requestId: Long, options: CaptureOptions) {
+        pruneCaptureDir() // the leak backstop — keep-last-N, before every capture
+
+        val outputFile: File
+        val outputUri: Uri
+        try {
+            outputFile = newCaptureFile()
+            outputUri = FileProvider.getUriForFile(appContext, fileProviderAuthority(), outputFile)
+        } catch (t: Throwable) {
+            // A mis-authoritied/misconfigured FileProvider throws here — DATA, not a crash.
+            onError("camera capture: could not build the FileProvider output URI (request $requestId)", t)
+            completeHostCall(requestId, CameraStatus.ERROR, null)
+            return
+        }
+
+        val hook = cameraCaptureHook
+        if (hook != null) {
+            // Test seam (instrumented only) — the real system camera app's shutter is not
+            // CI-drivable (owner-phone territory). The test writes a synthetic scene THROUGH the
+            // FileProvider URI and delivers the result through the SAME processing path.
+            hook(CameraCapture(
+                outputUri,
+                writeScene = { bytes -> writeThroughProvider(outputUri, bytes) },
+                onResult = { resultCode -> completeCameraCapture(requestId, resultCode, outputFile, options) },
+            ))
+            return
+        }
+
+        val intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
+            .putExtra(MediaStore.EXTRA_OUTPUT, outputUri)
+            .addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+        if (intent.resolveActivity(appContext.packageManager) == null) {
+            // No camera app to satisfy the Intent — Unavailable, DATA.
+            completeHostCall(requestId, CameraStatus.UNAVAILABLE, null)
+            return
+        }
+        val activity = activityRef.get()
+        if (activity == null) {
+            onError("camera capture $requestId: no foreground Activity to launch the camera on",
+                IllegalStateException("no Activity"))
+            completeHostCall(requestId, CameraStatus.UNAVAILABLE, null)
+            return
+        }
+        val requestCode = nextRequestCode.getAndIncrement() and 0xFFFF // low 16 bits (framework rule)
+        pendingCameraRequests[requestCode] = CameraPending(requestId, outputFile, options)
+        activity.runOnUiThread {
+            @Suppress("DEPRECATION") // startActivityForResult — the result routes via onActivityResult
+            activity.startActivityForResult(intent, requestCode)
+        }
+    }
+
+    /**
+     * The forwarding target for MainActivity.onActivityResult — reads the APP-SCOPED map (so a
+     * recreated Activity routes to the in-flight requestId) and completes the .NET call. Returns
+     * true when the requestCode was one of ours (found + routed), false otherwise (a foreign
+     * requestCode the shell never issued — the caller ignores it).
+     */
+    fun onCameraResult(requestCode: Int, resultCode: Int): Boolean {
+        val pending = pendingCameraRequests.remove(requestCode) ?: return false
+        completeCameraCapture(pending.requestId, resultCode, pending.outputFile, pending.options)
+        return true
+    }
+
+    /** RESULT_CANCELED (the user backed out) → Cancelled, NO path — DATA, never a hang.
+     * RESULT_OK → process the written file (downscale + EXIF-normalize + re-encode) OFF the main
+     * thread and complete Captured with the {"path",…} payload, or Error on a caught failure. */
+    internal fun completeCameraCapture(requestId: Long, resultCode: Int, outputFile: File, options: CaptureOptions) {
+        if (resultCode != Activity.RESULT_OK) {
+            completeHostCall(requestId, CameraStatus.CANCELLED, null)
+            return
+        }
+        // Decoding a multi-MB JPEG is heavy — never on the main thread / dispatch lane.
+        cameraExecutor.execute {
+            val outcome = processCapturedFile(outputFile, options)
+            completeHostCall(requestId, outcome.status, outcome.payload)
+        }
+    }
+
+    /** Writes [bytes] THROUGH the FileProvider content URI — exactly as the system camera app
+     * writes to EXTRA_OUTPUT. Used by the capture seam so CI exercises the provider authority
+     * for real (a mis-authoritied provider fails to open the stream). */
+    private fun writeThroughProvider(uri: Uri, bytes: ByteArray) {
+        (appContext.contentResolver.openOutputStream(uri)
+            ?: error("could not open the FileProvider output URI for writing: $uri"))
+            .use { it.write(bytes) }
+    }
+
+    /**
+     * Downsamples [file] to [CaptureOptions.maxDim] on the long edge, NORMALIZES EXIF
+     * orientation (bakes the rotation into the pixels AND resets the tag — a re-encoded JPEG
+     * carries no orientation tag, so a raw-file consumer gets an upright image and Coil/
+     * Kingfisher do NOT rotate a second time), re-encodes JPEG at [CaptureOptions.quality] back
+     * into the same cache file, and reports the FINAL dimensions + byte size. A decode/encode
+     * failure is DATA (Error), never a throw. `internal` so the direct instrumented test can
+     * drive it against a synthetic input and assert the bounded dims + the identity tag.
+     */
+    internal fun processCapturedFile(file: File, options: CaptureOptions): CaptureOutcome =
+        try {
+            val orientation = readExifOrientation(file)
+
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(file.absolutePath, bounds)
+            if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
+                onError("camera capture: '$file' did not decode to a bitmap",
+                    IllegalStateException("empty/undecodable capture"))
+                CaptureOutcome(CameraStatus.ERROR, null, 0, 0, 0)
+            } else {
+                val decodeOpts = BitmapFactory.Options().apply {
+                    inSampleSize = computeInSampleSize(bounds.outWidth, bounds.outHeight, options.maxDim)
+                }
+                var bmp = BitmapFactory.decodeFile(file.absolutePath, decodeOpts)
+                    ?: error("BitmapFactory.decodeFile returned null for $file")
+                // Bake the EXIF rotation into the pixels FIRST (so the reported dims are upright),
+                // then bound the long edge to maxDim.
+                bmp = applyExifRotation(bmp, orientation)
+                bmp = scaleToMaxDim(bmp, options.maxDim)
+                FileOutputStream(file).use {
+                    bmp.compress(Bitmap.CompressFormat.JPEG, options.quality.coerceIn(1, 100), it)
+                }
+                val outcome = CaptureOutcome(
+                    CameraStatus.CAPTURED, "file://" + file.absolutePath, bmp.width, bmp.height, file.length())
+                bmp.recycle()
+                outcome
+            }
+        } catch (t: Throwable) {
+            onError("camera capture processing failed for '$file'", t)
+            CaptureOutcome(CameraStatus.ERROR, null, 0, 0, 0)
+        }
+
+    /** The captured photo's EXIF orientation tag (ORIENTATION_NORMAL when absent/unreadable). */
+    private fun readExifOrientation(file: File): Int =
+        try {
+            ExifInterface(file.absolutePath)
+                .getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
+        } catch (t: Throwable) {
+            ExifInterface.ORIENTATION_NORMAL
+        }
+
+    /** Applies an EXIF orientation to [bmp], returning an upright bitmap (the input recycled if a
+     * new one is produced). Identity for ORIENTATION_NORMAL/undefined. */
+    private fun applyExifRotation(bmp: Bitmap, orientation: Int): Bitmap {
+        val matrix = Matrix()
+        when (orientation) {
+            ExifInterface.ORIENTATION_ROTATE_90 -> matrix.postRotate(90f)
+            ExifInterface.ORIENTATION_ROTATE_180 -> matrix.postRotate(180f)
+            ExifInterface.ORIENTATION_ROTATE_270 -> matrix.postRotate(270f)
+            ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> matrix.postScale(-1f, 1f)
+            ExifInterface.ORIENTATION_FLIP_VERTICAL -> matrix.postScale(1f, -1f)
+            ExifInterface.ORIENTATION_TRANSPOSE -> { matrix.postRotate(90f); matrix.postScale(-1f, 1f) }
+            ExifInterface.ORIENTATION_TRANSVERSE -> { matrix.postRotate(270f); matrix.postScale(-1f, 1f) }
+            else -> return bmp // NORMAL / undefined — nothing to bake
+        }
+        val rotated = Bitmap.createBitmap(bmp, 0, 0, bmp.width, bmp.height, matrix, true)
+        if (rotated !== bmp) bmp.recycle()
+        return rotated
+    }
+
+    /** Scales [bmp] so its LONG edge is at most [maxDim] (a `null`/`0`/negative maxDim keeps full
+     * resolution). Never upscales. */
+    private fun scaleToMaxDim(bmp: Bitmap, maxDim: Int): Bitmap {
+        if (maxDim <= 0) return bmp
+        val longEdge = maxOf(bmp.width, bmp.height)
+        if (longEdge <= maxDim) return bmp
+        val ratio = maxDim.toDouble() / longEdge
+        val w = (bmp.width * ratio).toInt().coerceAtLeast(1)
+        val h = (bmp.height * ratio).toInt().coerceAtLeast(1)
+        val scaled = Bitmap.createScaledBitmap(bmp, w, h, true)
+        if (scaled !== bmp) bmp.recycle()
+        return scaled
+    }
+
+    /** The largest power-of-two inSampleSize that keeps both dimensions ≥ maxDim (the
+     * decode-bounds → sampled-decode step; scaleToMaxDim then bounds the long edge exactly). */
+    private fun computeInSampleSize(width: Int, height: Int, maxDim: Int): Int {
+        if (maxDim <= 0) return 1
+        var sample = 1
+        var w = width
+        var h = height
+        while (w / 2 >= maxDim && h / 2 >= maxDim) {
+            w /= 2; h /= 2; sample *= 2
+        }
+        return sample
+    }
+
+    /** The FileProvider authority — `${applicationId}.fileprovider`, matching the manifest
+     * `<provider android:authorities="${applicationId}.fileprovider">`. packageName IS the
+     * applicationId, so this is correct in both the reference app and a generated one. */
+    private fun fileProviderAuthority(): String = appContext.packageName + ".fileprovider"
+
+    /** The dedicated app-CACHE subdir the captures live in (OS-reclaimable, never backed up),
+     * created on demand — declared in res/xml/file_paths.xml as a `<cache-path>`. */
+    private fun captureDir(): File = File(appContext.cacheDir, CAPTURE_DIR_NAME).apply { mkdirs() }
+
+    /** A fresh, unique output file in the capture dir. */
+    private fun newCaptureFile(): File =
+        File(captureDir(), "capture_${System.currentTimeMillis()}_${nextCaptureSeq.getAndIncrement()}.jpg")
+
+    /** THE LEAK BACKSTOP (design §2c): keep the most recent [CAPTURE_KEEP_LAST] captures and
+     * delete the rest, so a crashed/careless app cannot leak captures forever. A shell-side
+     * safety net, not a correctness guarantee the app leans on. `internal` so the prune test can
+     * drive it directly. */
+    internal fun pruneCaptureDir() {
+        try {
+            val files = captureDir().listFiles()?.filter { it.isFile } ?: return
+            if (files.size <= CAPTURE_KEEP_LAST) return
+            files.sortedByDescending { it.lastModified() }
+                .drop(CAPTURE_KEEP_LAST)
+                .forEach { runCatching { it.delete() } }
+        } catch (t: Throwable) {
+            onError("camera capture-dir prune failed", t)
+        }
+    }
+
+    /** Test seam (instrumented CameraCaptureAndroidTest): runs the FULL capture-file production
+     * — a fresh capture file, its FileProvider content URI, a write of [jpegBytes] THROUGH that
+     * URI (exercising the provider authority for real — a mis-authoritied provider throws here),
+     * then the downscale + EXIF-normalize + re-encode — and RETURNS the outcome for assertion.
+     * The direct-core equivalent of the seam's captureScene, minus the .NET completion, so CI can
+     * assert the bounded dims / the baked-and-reset EXIF against a synthetic input. */
+    internal fun captureThroughProviderForTest(jpegBytes: ByteArray, options: CaptureOptions): CaptureOutcome {
+        val file = newCaptureFile()
+        val uri = FileProvider.getUriForFile(appContext, fileProviderAuthority(), file)
+        writeThroughProvider(uri, jpegBytes)
+        return processCapturedFile(file, options)
+    }
+
+    /** Test seam (instrumented CameraCaptureAndroidTest): wipes the capture subdir so the prune
+     * test starts from a known-empty state (the captures are app-cache — regenerable). */
+    internal fun clearCaptureDirForTest() {
+        captureDir().listFiles()?.forEach { runCatching { it.delete() } }
+    }
+
+    /** Test seam (instrumented CameraCaptureAndroidTest): how many capture files remain. */
+    internal fun captureFileCountForTest(): Int = captureDir().listFiles()?.count { it.isFile } ?: 0
+
+    /** The captured-photo options carried in the flat JSON (maxDim = the long-edge cap, quality =
+     * the JPEG re-encode quality). The Kotlin mirror of .NET's CaptureOptions. */
+    internal data class CaptureOptions(val maxDim: Int, val quality: Int)
+
+    /** The outcome of processing a captured file — a status and, only on Captured, the file's
+     * final path/dims/size (the SecureOutcome/GeolocationResult twin). The Captured payload is
+     * the {"path",…} flat JSON host_call_complete carries; every other status carries null. */
+    internal data class CaptureOutcome(
+        val status: Int, val path: String?, val width: Int, val height: Int, val bytes: Long,
+    ) {
+        val payload: Map<String, String>?
+            get() = if (status == CameraStatus.CAPTURED && path != null) linkedMapOf(
+                "path" to path,
+                "width" to width.toString(),
+                "height" to height.toString(),
+                "bytes" to bytes.toString(),
+            ) else null
+    }
+
+    /** The app-scoped pending capture record — the requestId + the output File + the options,
+     * held whole in the static map so a result landing on a recreated Activity still knows which
+     * .NET call to complete and how to process the file. Holds NO Activity ref. */
+    private class CameraPending(val requestId: Long, val outputFile: File, val options: CaptureOptions)
+
+    /**
+     * The test seam's handle on a pending capture (instrumented only). [captureScene] writes
+     * synthetic JPEG bytes THROUGH the FileProvider [outputUri] — exactly as the system camera
+     * app writes to EXTRA_OUTPUT, so the provider authority is exercised for real — and delivers
+     * RESULT_OK; [cancel] delivers RESULT_CANCELED. The real system camera-app shutter is
+     * owner-phone territory; this seam proves the wire + the FileProvider + the downscale/EXIF
+     * processing + the file→path→BnImage composition deterministically on CI.
+     */
+    class CameraCapture internal constructor(
+        val outputUri: Uri,
+        private val writeScene: (ByteArray) -> Unit,
+        private val onResult: (Int) -> Unit,
+    ) {
+        fun captureScene(jpegBytes: ByteArray) { writeScene(jpegBytes); onResult(Activity.RESULT_OK) }
+        fun cancel() = onResult(Activity.RESULT_CANCELED)
+    }
+
     companion object {
         private const val TAG = "BlazorNative"
         private const val PREFS_NAME = "blazornative"
@@ -1127,6 +1496,15 @@ class AndroidShellBridge(
         private const val ANDROID_KEYSTORE = "AndroidKeyStore"
         private const val AES_GCM = "AES/GCM/NoPadding"
         private const val GCM_TAG_BITS = 128
+
+        // ── Camera (Phase 9.3) ───────────────────────────────────────────────
+        /** The app-cache subdir the captures live in (mirrored in res/xml/file_paths.xml's
+         * `<cache-path>`), the default long-edge cap + JPEG quality (the .NET CaptureOptions
+         * defaults), and the prune budget (keep-last-N — the leak backstop). */
+        private const val CAPTURE_DIR_NAME = "blazornative_captures"
+        private const val DEFAULT_MAX_DIM = 2048
+        private const val DEFAULT_QUALITY = 85
+        private const val CAPTURE_KEEP_LAST = 3
 
         /** ClipData label for clipboard writes + the share Intent MIME type. */
         private const val CLIP_LABEL = "BlazorNative"
@@ -1161,6 +1539,18 @@ class AndroidShellBridge(
          * the POST_NOTIFICATIONS dialog can recreate the Activity mid-request, and the
          * recreated Activity's fresh bridge must still know what to post. */
         private val pendingNotificationRequests = ConcurrentHashMap<Int, NotificationRequest>()
+
+        /** Phase 9.3: the camera arm of the app-scoped pending state — the
+         * requestCode→pending-capture map (the in-flight requestId + the output File + the
+         * options), consulted when the capture Intent's result lands in onActivityResult. STATIC
+         * for the same recreation-survival reason: the system camera activity can recreate the
+         * calling Activity, and the recreated Activity's fresh bridge must still route the result
+         * to the in-flight .NET continuation and know how to process the written file. */
+        private val pendingCameraRequests = ConcurrentHashMap<Int, CameraPending>()
+
+        /** Monotonic suffix for capture file names (paired with a millisecond timestamp) so two
+         * captures in the same millisecond cannot collide. Static, matching the static map. */
+        private val nextCaptureSeq = AtomicInteger(1)
 
         // ── Notifications: the channel + the shared builder (Phase 9.1) ──────────
 
@@ -1293,5 +1683,23 @@ class AndroidShellBridge(
          * CryptoObject binding (hasCryptoObject) and denial-as-data no-hang. Null in
          * production; reset in the test's finally so it never leaks across tests. */
         @Volatile @JvmStatic var biometricGateHook: ((BiometricGate) -> Unit)? = null
+
+        /** Test seam (instrumented BnCameraAndroidTest / CameraCaptureAndroidTest): when non-null,
+         * a `capture` hands the pending capture to this hook INSTEAD OF launching the real
+         * ACTION_IMAGE_CAPTURE Intent — the geolocation/notifications/biometrics real-UI split
+         * (the system camera app's shutter is not CI-drivable; the emulator's is a synthetic
+         * scene, the real camera-app UI is owner-phone territory). The test drives
+         * CameraCapture.captureScene(bytes)/cancel() and CI proves the wire, the FileProvider
+         * output URI, the downscale/EXIF processing and the file→path→BnImage composition
+         * deterministically. Null in production; reset in the test's finally so it never leaks
+         * across tests. */
+        @Volatile @JvmStatic var cameraCaptureHook: ((CameraCapture) -> Unit)? = null
+
+        /** Test seam: drain the app-scoped camera pending map + clear the capture hook between
+         * tests so a leftover entry never routes a later test's result. */
+        @JvmStatic fun resetCameraForTest() {
+            pendingCameraRequests.clear()
+            cameraCaptureHook = null
+        }
     }
 }

@@ -1,6 +1,7 @@
 # Milestone 9 — Host APIs (Platform Breadth)
 
-**Status:** in progress — opened 2026-07-17
+**Status:** in progress — opened 2026-07-17; **5/6 DoD closed** (only #6, hygiene + the
+final audit, remains — Phase 9.4)
 **Source:** BACKLOG "P4 — full platform coverage" (remainder). The roadmap called this
 milestone "Platform Breadth + Real Device"; the second half is **deferred at
 milestone-open** (below), so the name now says what the milestone actually is.
@@ -102,10 +103,29 @@ generically — the shape 9.1–9.3 reuse with no further ABI change.**
    moved, proven falsifiable (`SecureBiometricsAbiUnchangedTests`; the iOS struct-grow
    mutant failed to COMPILE). `androidx.biometric:biometric:1.1.0` is the first new gradle
    dep of M9 (repo + template, drift-enforced).
-5. **Camera (photo capture)**: capture a photo via the native capture UI, hand the
-   image across the wire (the design decides the handoff — file path vs bytes — and
-   records why; density/`ContentMode` interplay per the M7 image work), permission
-   story, emulator's fake feed in CI + the owner's phone as the real proof.
+5. **Camera (photo capture)**: ✅ **Closed by Phase 9.3.** `ACTION_IMAGE_CAPTURE` to the
+   system camera app (Android, NO runtime CAMERA permission — a FileProvider for the
+   output URI, a NEW manifest+resource drift class, template 32→33 files) /
+   `UIImagePickerController(.camera)` + `NSCameraUsageDescription` (iOS); `ICamera` the
+   5th Device façade in the existing 7th package, `/camera` demo (the 13th routed page,
+   sample-only). **The image crosses as a file PATH, not bytes** — the payload NAMES the
+   blob on the OPTIONAL `host_call_complete` payload (bytes-inline rejected: multi-MB
+   through a non-zeroable string, and not a secret), the bytes stay on disk. **The ABI
+   stayed FROZEN — the pay-once payoff, a FOURTH time, despite a multi-MB result:** 9.3
+   added one op (`Camera = 4`) + `CameraStatus` and touched the ABI at nothing — bridge
+   still 80 bytes, exports still 10, no drift-pin moved, proven falsifiable
+   (`CameraAbiUnchangedTests`; the iOS struct-grow mutant failed to COMPILE). **The M6/M7
+   "revisit ContentMode with a real natural-size image" ledger item CLOSES here** — the
+   captured photo is a valid `BnImage.Src` displayed in a DEFINITE 240×320 box with
+   `ContentMode="Contain"` (proven on the AVD end-to-end + iOS via `naturalPixelSize`);
+   both shells NORMALIZE EXIF so Coil/Kingfisher never double-rotate. **Emulator honesty,
+   the sharpest of M9:** Android's shutter isn't CI-drivable so the result is seam-driven
+   but written THROUGH the real FileProvider URI; **the iOS simulator has NO camera at
+   all** — `check → Unavailable` is the CORRECT sim result, a real capture DOUBLY UNPROVEN
+   (no sim camera AND no Apple account). **UNPROVEN → the owner's physical Android phone:**
+   the real camera UI + sensor + EXIF (the milestone's second least-emulated capability,
+   with biometrics). **SafeAreaView, flagged three phases as camera's likely trigger, is
+   NOT tripped** — the capture UI is system chrome, not app-laid-out.
 6. **Hygiene + close:** every new surface CI-asserted (counts + gates with provenance);
    the sample app grows a demo page per capability (the proof surface discipline);
    decision log per phase; final audit. **No milestone tag** — closure is the audit
@@ -130,9 +150,9 @@ generically — the shape 9.1–9.3 reuse with no further ABI change.**
   PRs #115/#116 have merged — 0.1.0 and 0.2.0 tagged — and #117 (0.3.0) is open, but no
   package publishes until `NUGET_API_KEY` is live and the manual pipeline runs);
   `BionicNativeAot.targets` → the Runtime package's `build/`;
-  SafeAreaView/edge-to-edge (watch: the camera capture UI and notification tap-through
-  are the likeliest phases to force it — if one does, it lands there with its named
-  problem); density assets (trigger: the first bundled-asset story).
+  SafeAreaView/edge-to-edge — ✅ **RESOLVED by Phase 9.3, NOT tripped** (the capture UI is
+  system chrome, not app-laid-out; the three-phase watch closes with a reason); density
+  assets (trigger: the first bundled-asset story).
 - **CI posture:** five required contexts (`build-test`, `android-build`, `ios-build`,
   `pr-title`, `footer-check`); advisory device lanes unchanged; the owner's phone is
   never a CI dependency.
@@ -145,9 +165,11 @@ Tracked in `ROADMAP.md`. Approved at milestone-open:
   proven on the simplest permission-gated API before anything heavier*
 - **Phase 9.1** — local notifications + tap-through (DoD #3)
 - **Phase 9.2** — biometrics + secure storage (DoD #4)
-- **Phase 9.3** — camera photo capture (DoD #5) — *last deliberately: heaviest, and it
-  inherits mature permission machinery*
-- **Phase 9.4** — hygiene + M9 final audit + close (DoD #6)
+- ✅ **Phase 9.3** — camera photo capture (DoD #5) — *complete (2026-07-18); heaviest,
+  last deliberately, and it inherited mature permission machinery — the ABI stayed frozen
+  a FOURTH time despite a multi-MB result*
+- **Phase 9.4** — hygiene + M9 final audit + close (DoD #6) — **the only one left; M9 is
+  now at 5/6 DoD**
 
 ## Why this milestone exists
 

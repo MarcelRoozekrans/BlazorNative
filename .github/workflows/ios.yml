@@ -350,7 +350,7 @@ jobs:
             > ios-out/xcresult.json 2>/dev/null || true
           ls -la ios-out/crash || true
 
-      - name: Assert XCTest baseline (218 passed / 0 failed)
+      - name: Assert XCTest baseline (233 passed / 0 failed)
         if: always()
         run: |
           log=ios-out/xcodebuild-test.log
@@ -991,9 +991,55 @@ jobs:
           # refuses a plain get), the OS-enforced refusal being the UNPROVEN-until-real-device half.
           # A hosted-XCTest keychain works because the app is ad-hoc signed with a
           # keychain-access-groups entitlement (BnHost.entitlements) — else SecItem* -34018.
-          if [ "$failed" -ne 0 ] || [ "$passed" -ne 218 ]; then
+          #
+          # 218 -> 233 (Phase 9.3 Gate 3, +15) — camera photo capture's iOS half: op=Camera
+          # (=4, the FOURTH reuse of the 9.0 ABI — NO struct grow, NO new export, BnDriftTests'
+          # 80-byte/offset-72/10-export pins UNMOVED) over UIImagePickerController(.camera), and
+          # THE IMAGE CROSSES AS A PATH (a temp JPEG the shell writes; the payload NAMES it,
+          # never the bytes). All in BnCameraTests.
+          #   THE SIM-HAS-NO-CAMERA HONESTY (design §9 Gate 3 — worse than 9.2's no-Enclave):
+          #   +1  check → Unavailable is the REAL, CORRECT simulator result (NO override — the
+          #       real isSourceTypeAvailable(.camera) is FALSE on the sim), asserted AS SUCH.
+          #   +1  a bare capture on the sim → Unavailable too (the availability gate first), DATA,
+          #       no path, no hang.
+          #   +1  check with a camera present (the override) → Captured ("present + usable").
+          #   THE SEAM ROUND-TRIP (the capture UI is un-drivable in CI — doubly UNPROVEN: no sim
+          #   camera AND no Apple account, iOS real-device DEFERRED — so the availability +
+          #   authorization overrides open the gates, the picker present is suppressed, and the
+          #   test fires the REAL delegate with a canned UIImage — the geolocation hand-rolled fire):
+          #   +1  THE COMPOSITION — a seam capture writes a file THROUGH the real processing path
+          #       (normalize + downscale + encode + write); the {"path",…} payload names it; the
+          #       path resolves to a real file on disk with real bytes that BnImage MEASURES
+          #       (BnImageLoader.naturalPixelSize — the exact function the image node's Yoga
+          #       measure func calls: camera → file → BnImage compose).
+          #   +1  the cancel path → Cancelled, no path, the in-flight slot consumed (no hang).
+          #       (Mutation: didCancel → Error reds this.)
+          #   +1  EXIF/orientation NORMALIZE — a 40×60 `.right` buffer (displays 60×40) is BAKED
+          #       upright: the reported + on-disk dims are 60×40, not the raw 40×60. (Mutation:
+          #       skip normalize reds this.)
+          #   +1  the downscale bounds the long edge to maxDim (400×200 @ maxDim 100 → 100×50,
+          #       the FINAL file's dims reported).
+          #   THE PERMISSION MATRIX (the AVAuthorizationStatus seam — denial is DATA):
+          #   +1  .denied → Denied (no path); +1 .restricted → Unavailable.
+          #   +1  an unknown ACTION → Error (4), never a crash.
+          #   +1  op=4 ROUTES to the camera handler (the camera-only completeHook firing proves it).
+          #   +1  the wire status enum pinned 0..4 + op=4 (the three-way mirror, byte-identical).
+          #   +1  the picker + its (weakly-held) delegate RETAINED across the capture then released
+          #       (the CLLocationManager/UNUserNotificationCenter weak-delegate lesson — a property
+          #       pin, no observable otherwise sees the hold).
+          #   +2  BOOT (real NativeAOT, /camera mounted): Take Photo → the seam shutter round-trips
+          #       "captured:48x64:<bytes>" through the REAL host_call_complete (rc 0) into a LIVE
+          #       .NET continuation; and a cancel echoes "status:Cancelled" within a BOUNDED await
+          #       (no hang). NO HANG is the milestone law, asserted on the sim.
+          # SIMULATOR-SCOPED + LABELLED (the M9 iOS deferral, doubly so for camera): the sim has NO
+          # camera at all, so UIImagePickerController(.camera) is genuinely UNAVAILABLE — check →
+          # Unavailable is the honest result asserted as correct, the capture round-trip is
+          # seam-mocked, and a real camera UI + a real sensor capture wait on a real iPhone (no
+          # Apple account). The production UIImagePickerController / AVCaptureDevice calls are
+          # untouched. NSCameraUsageDescription is present in Info.plist (SIGABRT otherwise).
+          if [ "$failed" -ne 0 ] || [ "$passed" -ne 233 ]; then
             grep -E "Test Case '.*' (passed|failed)" "$log" || true
-            echo "iOS XCTest baseline drift: expected 218 passed / 0 failed, got passed=$passed failed=$failed" >&2
+            echo "iOS XCTest baseline drift: expected 233 passed / 0 failed, got passed=$passed failed=$failed" >&2
             exit 1
           fi
 

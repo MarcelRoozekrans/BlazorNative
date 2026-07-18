@@ -49,6 +49,7 @@ enum BnHostCallOp {
     static let notifications: Int32 = 1  // Phase 9.1 (mirror of .NET HostCallOp.Notifications = 1 / Kotlin NOTIFICATIONS = 1)
     static let biometrics: Int32 = 2     // Phase 9.2 (mirror of .NET HostCallOp.Biometrics = 2 / Kotlin BIOMETRICS = 2)
     static let secureStorage: Int32 = 3  // Phase 9.2 (mirror of .NET HostCallOp.SecureStorage = 3 / Kotlin SECURE_STORAGE = 3)
+    static let camera: Int32 = 4         // Phase 9.3 (mirror of .NET HostCallOp.Camera = 4 / Kotlin CAMERA = 4)
 }
 
 /// The wire-mirrored tri-state status (mirror of GeolocationStatus / Kotlin

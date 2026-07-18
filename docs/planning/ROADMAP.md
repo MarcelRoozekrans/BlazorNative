@@ -1562,7 +1562,67 @@ emulator lanes. The inspector channel is ledgered a third time. Maps to BACKLOG.
      device, DEFERRED** (no Apple account — doubly gated). See
      [design](../plans/2026-07-17-phase-9.2-design.md) +
      [conclusion](../plans/2026-07-18-phase-9.2-conclusion.md).
-- **Phase 9.3** — camera photo capture (DoD #5) — *heaviest last, on mature machinery* — ⏳
+- ✅ **Phase 9.3** — camera photo capture (DoD #5) — *complete (2026-07-18)*
+   - **THE HEADLINE — the 9.0 ABI bet paid a FOURTH time: camera cost the ABI NOTHING, despite a
+     multi-MB result.** One op (`Camera = 4`) + `CameraStatus` ride the **existing** `HostCallBegin`
+     slot (offset 72) and `host_call_complete` export; the captured image rides the OPTIONAL payload
+     the completion channel has carried since 9.0 (geolocation first, secure-storage/notifications
+     second/third — camera is the FOURTH, the channel now proven generic across a coordinate, a
+     status, a secret, and a **file path**). **Bridge stayed 80 bytes / 10 exports, no drift-pin
+     moved, no gate arithmetic** — proven on all three RIDs (win-x64/bionic `dumpbin`+`readelf`; iOS
+     `nm` gate `all 10 present`, run 29639956941). Falsifiable, not asserted: `CameraAbiUnchangedTests`
+     pins 80 / offset 72 / `Camera == 4`, and the iOS struct-grow mutant **failed to COMPILE**
+     (`missing argument 'cameraExtra'`, run 29640255862) — the type system enforces the freeze.
+     *Pay once, reuse thrice — now demonstrated four times, the sharpest test yet (a multi-MB image
+     is exactly what "obviously" needs a new export; it did not).*
+   - **THE IMAGE HANDOFF — the phase's real decision.** A photo is 1–10 MB, but the payload NAMES a
+     file — `{"path":"file://…","width","height","bytes"}` — it does not carry the bytes. Bytes-inline
+     REJECTED (multi-MB through a `const char*` + a non-zeroable .NET string, ~1000× the secure-storage
+     in-memory hazard, and not even a secret); a binary export REJECTED (it would grow the ABI). The
+     temp file lands in the app-cache dir (OS-reclaimable), the app owns it after handoff (`BnImage`
+     decodes async — no auto-delete race), the shell prunes its capture dir per-capture as a leak
+     backstop; the .NET side never deletes it (ownership boundary stated).
+   - **BnImage composition — capabilities composing across milestones, and a ledger DISCHARGED.** The
+     captured `file://` path is a valid `BnImage.Src` (Coil/Kingfisher load locals); the `/camera`
+     demo displays it in a DEFINITE 240×320 `BnImage` with `ContentMode="Contain"`. **This DISCHARGES
+     the M6/M7 "revisit ContentMode with a real natural-size image" ledger item** — a real megapixel
+     photo in a definite box, natural size never measured, no reflow. Proven on the AVD end-to-end AND
+     on iOS via `BnImageLoader.naturalPixelSize` (the exact function the image node's Yoga measure func
+     calls). Both shells NORMALIZE EXIF (bake rotation into upright pixels + reset the tag) so
+     Coil/Kingfisher never double-rotate — Android via `ExifInterface`+`Matrix`, iOS via
+     `UIImage.imageOrientation` redraw.
+   - **The capture path + permission.** Android `ACTION_IMAGE_CAPTURE` to the system camera app —
+     **NO runtime CAMERA permission** (the system app owns the sensor), only a `FileProvider` for the
+     output URI (a `<provider>` + `res/xml/file_paths.xml` — a NEW manifest+resource drift class,
+     mirrored to the template, file-count 32 → 33). iOS `UIImagePickerController(.camera)` +
+     `NSCameraUsageDescription` + `AVCaptureDevice` auth. Denial/cancel is DATA (`CameraStatus`
+     Captured/Cancelled/Denied/Unavailable/Error) — never a thrown exception across the boundary,
+     never a hang. `ICamera` the **5th Device façade** in the existing **7th package** (no 8th);
+     `/camera` demo (`BnCameraDemo`, the 13th routed page, sample-only).
+   - **The emulator/simulator honesty (this phase's sharpest).** Android's fake-scene satisfies
+     `ACTION_IMAGE_CAPTURE` but the system camera-app SHUTTER isn't CI-drivable — so the result is
+     seam-driven, BUT the synthetic bytes are written THROUGH the real FileProvider `content://` URI
+     (the authority exercised for real — proven by the mis-authority mutation). **iOS is worse: the
+     simulator has NO camera at all** — `check → Unavailable` is asserted as the CORRECT sim result
+     (not a workaround), and a real capture is DOUBLY UNPROVEN (no sim camera AND no Apple account).
+     **SafeAreaView — flagged three phases as camera's likely trigger — is NOT tripped**: the capture
+     UI is system chrome, not app-laid-out. A three-phase-carried ledger item resolved with a reason.
+   - **Counts (all CI-asserted):** .NET **754/0** (597 + 132 + 25) · JVM **119/0** (**115 → 119**,
+     +4 — `CameraTest.kt`) · Android instrumented **209/0** (**201 → 209**, +8 on the AVD: the
+     capture→file→BnImage round-trip through the real FileProvider URI, EXIF-normalize, cancel-no-hang)
+     · iOS XCTest **233/0** (**218 → 233**, +15, run 29639956941; the 10-export `nm` gate unchanged)
+     · publish gate **4 IL2072 + 10 exports** (UNCHANGED — the reuse proof). Mutations: Gate 1
+     (cancel-throws, reuse-proof-81-bytes, no-path-on-cancel), Gate 2 (no-EXIF-normalize,
+     mis-authority-FileProvider — on the AVD), Gate 3 (no-normalize `29640247999`, cancel-path
+     `29640250307`, cancel-drop `29640252796` the hang, struct-grow `29640255862` the compile-fail).
+   - **PROVEN on CI** = both status matrices as data, the capture→file→BnImage composition (real
+     FileProvider URI on Android, seam on iOS), EXIF-normalize, cancel-no-hang, iOS check→Unavailable.
+     **UNPROVEN until the owner's physical Android phone** = the real camera UI + sensor + EXIF (the
+     milestone's SECOND least-emulated capability, with biometrics). **iOS real capture → doubly
+     deferred** (no sim camera + no Apple account). **This is M9's LAST capability — only DoD #6
+     (hygiene + audit, Phase 9.4) remains.** See
+     [design](../plans/2026-07-18-phase-9.3-design.md) +
+     [conclusion](../plans/2026-07-18-phase-9.3-conclusion.md).
 - **Phase 9.4** — hygiene + M9 final audit + close (DoD #6; no tag — the 8.6 rule) — ⏳
 
 ---

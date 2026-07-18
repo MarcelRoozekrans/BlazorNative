@@ -238,10 +238,10 @@ All four counts are asserted in CI — a drift from the baseline fails the build
 
 | Surface | Command | Count | Asserted by |
 |---|---|---|---|
-| .NET | `dotnet test` | 717 passed / 0 skipped | `ci.yml` → `build-test` |
-| JVM (JNA + win-x64 .dll) | `gradlew testDebugUnitTest` | 115 | `ci.yml` → `build-test` |
-| Android (instrumented, AVD) | `gradlew connectedAndroidTest` | 201 | `android-instrumented.yml` |
-| iOS (XCTest, simulator) | `xcodebuild test` | 218 | `ios.yml` |
+| .NET | `dotnet test` | 754 passed / 0 skipped | `ci.yml` → `build-test` |
+| JVM (JNA + win-x64 .dll) | `gradlew testDebugUnitTest` | 119 | `ci.yml` → `build-test` |
+| Android (instrumented, AVD) | `gradlew connectedAndroidTest` | 209 | `android-instrumented.yml` |
+| iOS (XCTest, simulator) | `xcodebuild test` | 233 | `ios.yml` |
 
 **The gate is the truth; this table is a copy of it.** When the two disagree, the workflow is
 right — and they have disagreed before: for four milestones this table read 333 / 83 / 111 / 72

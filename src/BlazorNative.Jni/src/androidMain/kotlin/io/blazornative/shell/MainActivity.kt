@@ -145,6 +145,7 @@ class MainActivity : FragmentActivity() {
             "/geolocation" to "BnGeolocationDemo",
             "/notifications" to "BnNotificationsDemo",
             "/secure" to "BnSecureDemo",
+            "/camera" to "BnCameraDemo",
         )
 
         /** Phase 9.1 — the reserved host-event name for WARM notification
@@ -343,6 +344,24 @@ class MainActivity : FragmentActivity() {
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         shellBridge?.onPermissionResult(requestCode, permissions, grantResults)
+    }
+
+    // ── Camera capture result → the shell bridge (Phase 9.3, M9 DoD #5) ────────
+
+    /**
+     * Forwards the ACTION_IMAGE_CAPTURE result into the app-scoped [AndroidShellBridge], which
+     * looks the in-flight requestId up in its STATIC requestCode→pending-capture map and
+     * completes the .NET call (RESULT_OK → downscale + EXIF-normalize + return the file path;
+     * RESULT_CANCELED → Cancelled, no path). Like the permission result this may land on a
+     * RECREATED Activity (the system camera activity can recreate the caller) — the map is
+     * static precisely so the fresh bridge this recreated Activity built still routes the result
+     * to the right in-flight .NET continuation. A requestCode the shell never issued is ignored.
+     */
+    @Deprecated("startActivityForResult/onActivityResult — the shell routes the camera result via the static pending map (recreation-survival, the permission-result twin)")
+    @Suppress("DEPRECATION")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        shellBridge?.onCameraResult(requestCode, resultCode)
     }
 
     // ── Warm notification tap-through → NavigateToAsync (Phase 9.1, M9 DoD #3) ──

@@ -77,6 +77,15 @@ final class AppleShellBridge {
     /// getWithAuth evaluation (see BnSecureStorage). A third op case, not a third export.
     let secureStorage = BnSecureStorage()
 
+    /// Phase 9.3: the camera half of the SAME generic permission-gated host-call op — the
+    /// FOURTH reuse of the 9.0 ABI, riding the same hostCallBegin slot (op=4, no new export,
+    /// no struct grow). The image crosses as a file PATH in the completion payload, not
+    /// bytes, so the ABI stays 80 bytes / 10 exports. Owned here (app-lifetime) so it holds
+    /// the UIImagePickerController + its delegate across the async capture UI (the
+    /// CLLocationManager/UNUserNotificationCenter weak-delegate retention lesson — see
+    /// BnCamera). A fourth op case, not a fourth export.
+    let camera = BnCamera()
+
     init(initialRoute: String = "/") {
         self.route = initialRoute
     }
@@ -214,6 +223,8 @@ final class AppleShellBridge {
             biometrics.begin(requestId: requestId, argsJson: argsJson)
         case BnHostCallOp.secureStorage:
             secureStorage.begin(requestId: requestId, argsJson: argsJson)
+        case BnHostCallOp.camera:
+            camera.begin(requestId: requestId, argsJson: argsJson)
         default:
             NSLog("[AppleShellBridge] hostCallBegin: unknown op \(op) (request \(requestId)) — completing Error")
             geolocation.completeUnknownOp(requestId: requestId)
