@@ -139,6 +139,17 @@ final class BnSecureStorage {
     /// unavailable). Set on every `secureSet`.
     static var lastSetAccessControlForTest: SecAccessControl?
 
+    /// The set of accounts this process stored AUTH-bound — the CERTAIN, enclave-less-
+    /// simulator detection of "is this item auth-bound". The simulator does not enforce
+    /// the `.biometryCurrentSet` ACL AND its attribute readback is unreliable (it surfaces
+    /// a kSecAttrAccessControl attribute for PLAIN items too — the run-3 leak), so the
+    /// shell cannot classify an item from the Keychain alone there. This cache is backed
+    /// by the REAL ACL on the item (the construction, asserted via the spy) + the
+    /// `authLabel` marker; on a REAL device the OS refusal (errSecInteractionNotAllowed) is
+    /// authoritative and this is only a fast-path. Populated on an auth-bound set, cleared
+    /// on delete / a plain overwrite. Static because the Keychain is process-global.
+    private static var authBoundAccounts: Set<String> = []
+
     /// Intercepts the completion so a PURE unit test (no NativeAOT boot) observes the
     /// routed (requestId, status, payload) without a live .NET continuation.
     static var completeHookForTest: ((Int64, Int32, String?) -> Int32)?
@@ -151,6 +162,7 @@ final class BnSecureStorage {
     static func resetForTest() {
         authGateHookForTest = nil
         lastSetAccessControlForTest = nil
+        authBoundAccounts = []
         completeHookForTest = nil
         lastHostCallCompleteRcForTest = Int32.min
     }
@@ -211,11 +223,13 @@ final class BnSecureStorage {
             }
             Self.lastSetAccessControlForTest = access // the construction spy — the code REQUESTED the binding
             query[kSecAttrAccessControl as String] = access
-            // The enclave-less-simulator readback marker (see `authLabel`): the sim does
-            // not enforce the ACL, so the shell stamps a label to still learn the item is
-            // auth-bound. On a real device the OS refuses first, so the label is a sim
-            // affordance, not the security.
+            // The enclave-less-simulator detection aids (see `authLabel` / `authBoundAccounts`):
+            // the sim neither enforces the ACL nor reliably surfaces it (it returns an
+            // accc attribute for PLAIN items too), so the shell stamps a label AND records
+            // the account so it can still learn the item is auth-bound. On a real device
+            // the OS refuses first, so these are sim affordances, not the security.
             query[kSecAttrLabel as String] = Self.authLabel
+            Self.authBoundAccounts.insert(key)
             // The add must not itself prompt on the sim (there is no gesture to satisfy).
             // A context with interaction disabled keeps SecItemAdd non-interactive.
             let context = LAContext()
@@ -250,6 +264,7 @@ final class BnSecureStorage {
     /// delete: drop the item. Idempotent — a missing item is still Ok (the Android twin).
     @discardableResult
     func secureDelete(key: String) -> Int32 {
+        Self.authBoundAccounts.remove(key)
         let status = SecItemDelete(baseQuery(key) as CFDictionary)
         if status == errSecSuccess || status == errSecItemNotFound { return BnSecureStorageStatus.ok }
         NSLog("[BnSecureStorage] delete('\(key)') SecItemDelete → OSStatus \(status)")
@@ -330,11 +345,12 @@ final class BnSecureStorage {
     /// .fail) so no prompt ever fires, then classifies it:
     ///   • errSecInteractionNotAllowed → auth-bound, value withheld (a REAL device: the OS
     ///     refused the bytes without auth UI — the OS-enforced binding);
-    ///   • errSecSuccess carrying the `.biometryCurrentSet` access-control attribute OR the
-    ///     `authLabel` marker → auth-bound WITH the value (the SIMULATOR: no Secure Enclave,
-    ///     so the ACL is a no-op and the bytes come back — the shell learns the binding
-    ///     from the attribute/marker, not from an OS refusal);
-    ///   • errSecSuccess without either → a plain item;
+    ///   • errSecSuccess for an account in `authBoundAccounts` OR carrying the `authLabel`
+    ///     marker → auth-bound WITH the value (the SIMULATOR: no Secure Enclave, so the ACL
+    ///     is a no-op and the bytes come back — the shell learns the binding from the
+    ///     cache/marker, NOT from the kSecAttrAccessControl attribute, which the sim also
+    ///     returns for PLAIN items, and NOT from an OS refusal);
+    ///   • errSecSuccess for a plain item → a plain read;
     ///   • errSecItemNotFound → absent.
     private func probe(_ key: String) -> Probe {
         var query = baseQuery(key)
@@ -348,7 +364,9 @@ final class BnSecureStorage {
         case errSecSuccess:
             guard let dict = out as? [String: Any] else { return .failed }
             let value = (dict[kSecValueData as String] as? Data).flatMap { String(data: $0, encoding: .utf8) }
-            let isAuthBound = dict[kSecAttrAccessControl as String] != nil
+            // Classify off the SHELL's own signals (cache/marker), never the sim's
+            // unreliable kSecAttrAccessControl attribute (returned for plain items too).
+            let isAuthBound = Self.authBoundAccounts.contains(key)
                 || (dict[kSecAttrLabel as String] as? String) == Self.authLabel
             if isAuthBound { return .authBound(value) }
             if let value = value { return .plain(value) }
