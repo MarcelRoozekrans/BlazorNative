@@ -1,148 +1,69 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# BlazorNative RELEASE (Phase 8.2 Gate 1 — M8 DoD #3). THE ONE DOOR.
+# BlazorNative RELEASE VALIDATION (Phase 8.2, re-cut Phase 9.x — the PR-time
+# validation lane).
 #
-# Nothing publishes to nuget.org except a PUBLISHED GITHUB RELEASE on a
-# `v<semver>` tag. Merges publish nothing. Tags publish nothing. Publishing
-# the Release IS the go, and it is the owner's hand on it.
+# THIS FILE NO LONGER PUBLISHES ANYTHING, AND IT NEVER MENTIONS THE NUGET KEY.
+# The publish moved, whole, into release-please.yml — read that file's header for
+# why (the short version: release-please cuts the Release with GITHUB_TOKEN, and
+# GitHub does not fire `release: published` for a GITHUB_TOKEN-created Release, so
+# a workflow waiting on that event NEVER auto-fired and nothing ever reached
+# nuget.org). The push now runs in the SAME workflow run that cuts the tag, gated
+# on release-please's own `release_created` output. The single `NUGET_API_KEY`
+# reference lives there, in that workflow's `push` job, and NOWHERE else —
+# ReleaseWorkflowPinTests reds the required build-test lane if a second reference
+# appears in ANY workflow (comments counted too).
 #
-# PHASE 8.6 AUTOMATED EVERYTHING UP TO THAT HAND AND NOT ONE STEP PAST IT.
-# release-please now computes the version, writes the changelog, cuts the tag
-# and opens the Release — as a DRAFT. GitHub does not fire `published` for a
-# draft ("Workflows are not triggered for the created, edited, or deleted
-# activity types for draft releases" — Actions docs, verbatim). So the owner's
-# click is what converts the draft into the event this file listens for. THE LAW
-# HOLDS STRUCTURALLY, NOT BY PROMISE, and it now holds in two independent ways.
+# WHAT THIS FILE IS NOW: the release machinery's PR-time validation lane, and
+# nothing more. It runs on PRs — and on main pushes — that touch the release
+# machinery or BUMP THE PROPS (i.e. the release-preparation change itself), which
+# is precisely when "is this version still free on nuget.org?" is a question with
+# an answer worth having. It carries NO key, packs nothing for publication, and
+# uploads no feed: it exercises the door's own logic (the classifier self-test)
+# and asks nuget.org for its state, so that release-please.yml's publish jobs —
+# which run the SAME scripts — are proven on every relevant PR long before they
+# ever run for real.
 #
-# TWO JOBS, and the split is the whole design:
+# WHY THIS LANE STILL EARNS ITS KEEP AFTER THE PUSH LEFT. The decisions the
+# release makes — the tag classifier, the tag↔props assertion, the nuget.org
+# preflight — all live in `scripts/release-preflight.ps1`, whose `-SelfTest`
+# table runs here on every PR. That is what lets release-please.yml's `validate`
+# job be trusted the first time it runs against a real tag: its logic was proven,
+# with real negative inputs, on the PRs that led up to it. A workflow that only
+# ever runs once per release is the least-exercised code in the repo; this lane
+# is how its logic gets exercised continuously, with no key and no publish.
 #
-#   validate — NO KEY, EVER. Everything provable happens here, BEFORE the key
-#              exists in the run. Runs on `release: published` AND on PRs/main
-#              pushes that touch the release machinery (paths-filtered below).
-#   push     — needs: validate, if: github.event_name == 'release'. The ONLY
-#              reference to secrets.NUGET_API_KEY in this repository (pinned by
-#              ReleaseWorkflowPinTests). It downloads the bytes validate packed
-#              and pushes them. IT RE-PACKS NOTHING.
+# ADVISORY BY DESIGN — this is NOT a required check. The three required gates keep
+# their names and contexts (`build-test`, `android-build`, `ios-build`). Making
+# this required would put nuget.org's availability on the critical path of every
+# PR that touches the props — an outage would red a required gate on a change that
+# has nothing to do with nuget.org.
 #
-# WHY THE SPLIT, in one fact: THE SIX-PACKAGE PUSH IS NOT ATOMIC, CANNOT BE MADE
-# ATOMIC, AND HAS NO UNDO. nuget.org has no hard delete — a published version can
-# only be UNLISTED, never replaced. There is no transaction and no rollback, so
-# front-loading every check is the only mitigation there is, and the push step is
-# the smallest, dumbest thing that can work.
-#
-# THIS WORKFLOW DECIDES NOTHING (8.2 design decision 6). YAML expressions, `if:`
-# guards and shell one-liners in a workflow that fires once per Release are the
-# least testable code in the repo. Every decision — the tag classifier, the
-# tag↔props assertion, the nuget.org preflight — lives in
-# `scripts/release-preflight.ps1`, whose `-SelfTest` table runs on every PR.
-# What lives here is wiring.
-#
-# THE LANE IS SELF-PROVING, AND THE PROOF IS LAYERED. Both layers are real, and
-# neither is faith — this is the honest division of labour between them (Gate 1
-# review I-1; this comment used to end "no actionlint, no `act`, no faith", which
-# disparaged the exact evidence Gate 1 leaned on).
-#
-# STATICALLY — actionlint reads this file WITHOUT running it and validates THREE
-# things: the event NAME, the expression chain, and the `needs:` graph.
-# Demonstrated with controlled mutants, every one of which it caught: `releases:`
-# for `release:` (U1's EXACT shape — so the misspelled-trigger failure mode is
-# statically excluded), a mistyped job output name, a mistyped step id, a
-# `needs.<job>.outputs.<name>` typo, and `needs: validat`. Within those three,
-# the typos are off the table before this file ever fires.
-#
-# THE STATIC LAYER'S OWN LIMIT, since a claim about what a tool proves must say
-# where it stops: the `paths:` filters below are PLAIN STRINGS to actionlint. It
-# cannot know whether `scripts/release-preflight.ps1` exists — mutant-tested, and
-# it passes a typo'd path GREEN. A misspelled path silently narrows this lane to
-# nothing.
-#
-# BY RUNNING — what no static tool can know, and it is exactly the complement:
-# that GitHub actually FIRES on a published Release, that the paths filter
-# SELECTS this file (the gap above — the PR run is the only thing that closes
-# it), and that the runner REACHES nuget.org. A workflow is only ever exercised
-# when it RUNS, so a release.yml that has never fired is a file nobody has
-# watched work. The `pull_request` paths trigger means THIS FILE'S FIRST PROOF IS
-# ITS OWN PR — the PR that adds it runs it, and that run is P1's real evidence.
-#
-# (Ordering flaw, recorded not hidden: P1 was written as a Gate 1 bar, but the PR
-# that proves it is a Gate 2 deliverable — so at Gate 1 the only available
-# evidence was the static layer, honestly reported as such. See the design's gate
-# table.)
-#
-# ADVISORY BY DESIGN — this is NOT a fourth required check. The three required
-# gates keep their names and contexts (`build-test`, `android-build`,
-# `ios-build`; branch protection). Making this required would put nuget.org's
-# availability on the critical path of every PR that touches the props — an
-# outage would red a required gate on a change that has nothing to do with
-# nuget.org.
-#
-# WHAT IS *NOT* PROVEN HERE, recorded rather than implied (8.2 design, "RECORDED
-# UNPROVEN"): that `release: types: [published]` actually fires this workflow
-# (U1); that the secret resolves (U2); that nuget.org ACCEPTS these nupkgs — no
-# reserved-prefix 403 (U3); that the adjacent .snupkg reaches the symbol server
-# (U4); that --skip-duplicate no-ops a real 409 (U5); that six pushes across a
-# minutes-wide async indexing window behave (U6); that the validate -> push
-# ARTIFACT HAND-OFF carries the feed (U7 — the upload is `release`-gated, so no
-# PR ever exercises it); and that `needs.validate.outputs.verdict` PROPAGATES
-# across the job boundary (U8 — this repo's FIRST `needs.<job>.outputs` consumer;
-# U7/U8 added by the Gate 1 review, finding I-2).
-#
-# Every one of them fails in the SAFE direction — nothing publishes — and all but
-# ONE announce themselves to the owner who has just clicked Publish and is
-# watching. U8 IS THE QUIET ONE: an empty verdict makes the `if:` below false and
-# `push` SKIPS instead of redding. So the first Release's check is "did push
-# RUN?", not merely "was there a red?". Every arrow that could fail *toward*
-# publishing is proven. See docs/GITHUB-SETUP.md.
-#
-# See docs/plans/2026-07-16-phase-8.2-design.md for all eight decisions.
+# See docs/plans/2026-07-16-phase-8.2-design.md for the original eight decisions;
+# the publish relocation onto release-please.yml's `release_created` is the Phase
+# 9.x auto-publish re-cut. See docs/GITHUB-SETUP.md.
 # ─────────────────────────────────────────────────────────────────────────────
-name: release
+name: release-validation
 
 on:
-  # THE GO. `types: [published]` is the only selector the release event has —
-  # it carries NO tag filter, so EVERY published Release fires this workflow,
-  # including one on a retired milestone tag (`v8.0`). That is exactly why the
-  # FIRST thing validate does is classify the tag.
-  #
-  # `published` IS ALSO THE ONE CORRECT TRIGGER FOR THIS REPO, and 8.2 chose it
-  # for its own reasons before that was knowable. It is correct under BOTH of
-  # this repo's version schemes, which is the point worth keeping:
-  #   · under 8.6's `1.0.0-preview.N`, the Releases were flagged PRE-RELEASE, and
-  #     GitHub documents that "the `prereleased` type will not trigger for
-  #     pre-releases published from draft releases, but the `published` type will
-  #     trigger";
-  #   · under 8.7's `0.x`, `prerelease` is gone from release-please-config.json,
-  #     so the draft is an ORDINARY Release — and `published` fires for those too.
-  # Had 8.2 picked `released` or `prereleased`, 8.6 would have had to change it,
-  # and 8.7 would have had to change it back. Verified, not assumed.
-  #
-  # ⚠ ONE REAL CONSEQUENCE OF 0.x, because it changes what consumers get: `0.1.0`
-  # has no prerelease suffix, so NuGet treats it as a STABLE version. `dotnet add
-  # package BlazorNative.Runtime` resolves it WITHOUT `--prerelease`, which
-  # `1.0.0-preview.N` never did. The 0 major is what now says "pre-1.0", and the
-  # packages' own READMEs say it in words.
-  # Note: editing or re-publishing an existing Release fires `edited`, NOT
-  # `published` — this workflow does not re-fire. Recovery from a partial push
-  # is an Actions re-run (see docs/GITHUB-SETUP.md).
-  release:
-    types: [published]
-
   # THE SELF-PROVING TRIGGER (8.2 decision 4). Aimed at the moment it matters:
   # PRs that touch the release machinery — or BUMP THE PROPS, i.e. the
-  # release-preparation PR itself, which is precisely when "is this version
-  # still free?" is a question with an answer worth having. It does not run on
-  # the other 95% of PRs, which have nothing to do with releasing.
+  # release-preparation PR itself, which is precisely when "is this version still
+  # free?" is a question with an answer worth having. It does not run on the
+  # other 95% of PRs, which have nothing to do with releasing.
   pull_request:
     paths:
       - .github/workflows/release.yml
+      - .github/workflows/release-please.yml
       - scripts/release-preflight.ps1
       - src/Directory.Build.props
 
-  # Re-validate on the merge commit — THE COMMIT THE TAG WILL NAME. The
-  # validate that matters is the one on the commit being released.
+  # Re-validate on the merge commit — THE COMMIT A TAG WILL NAME. The validate
+  # that matters is the one on the commit being released.
   push:
     branches: [main]
     paths:
       - .github/workflows/release.yml
+      - .github/workflows/release-please.yml
       - scripts/release-preflight.ps1
       - src/Directory.Build.props
 
@@ -155,7 +76,10 @@ env:
 
 jobs:
   # ───────────────────────────────────────────────────────────────────────────
-  # validate — no key, ever. If it is provable, it is proven here.
+  # validate — no key, ever. It exercises the release door's logic and the
+  # nuget.org preflight so release-please.yml's publish jobs are proven before
+  # they ever run for real. It does NOT pack a publishable feed and does NOT
+  # push anything (release-please.yml owns both).
   # ───────────────────────────────────────────────────────────────────────────
   validate:
     runs-on: windows-latest
@@ -163,11 +87,6 @@ jobs:
     defaults:
       run:
         shell: pwsh
-    outputs:
-      # The push job's guard. Emitted by release-preflight.ps1 -Tag; empty on
-      # PR/push events (the classify step does not run), which is harmless —
-      # the push job is `if:`-guarded on the event type as well.
-      verdict: ${{ steps.classify.outputs.verdict }}
 
     steps:
       - uses: actions/checkout@v7
@@ -178,244 +97,24 @@ jobs:
           global-json-file: global.json
 
       # ── The door's own logic, proven on every run ────────────────────────
-      # FIRST, and on EVERY event including PRs. This is what makes the
+      # The 9-row classifier table with NEGATIVE rows. This is what makes the
       # classifier and the tag↔props assertion provable WITHOUT a Release: on a
       # PR there is no tag, so a lane that "tested" the assertion against a tag
       # derived from the props would compare the props to ITSELF — green,
-      # vacuous, and exactly 8.1's headline sin. The table supplies real
-      # negative inputs (`v9.9.9` vs a props of `1.0.0-preview.2`) instead.
+      # vacuous, and exactly 8.1's headline sin. The table supplies real negative
+      # inputs (`v9.9.9` vs a props of `0.1.0`) instead.
       - name: Classifier self-test (9 rows — negative rows included)
         run: |
           .\scripts\release-preflight.ps1 -SelfTest
           if ($LASTEXITCODE -ne 0) { throw "release-preflight -SelfTest failed (exit $LASTEXITCODE)" }
 
-      # ── Classify THIS Release's tag ──────────────────────────────────────
-      # ONE namespace publishes (8.6 decision 4):
-      #   v<semver>    -> package          -> assert tag == props, then proceed
-      #   v<N>.<M>     -> legacy-milestone -> RED
-      #   pkg/<semver> -> legacy-package   -> RED
-      #   anything else-> unrecognized     -> RED
-      # 8.2's milestone arm was skip-and-say-so on ONE premise — "a milestone
-      # Release is a legitimate thing the owner may do at M8's close". PHASE 8.6
-      # DELETED THAT PREMISE: the milestone-tag namespace is RETIRED, v1.0-v7.0
-      # were deleted (2026-07-17, the last step of 8.6's close), and v8.0
-      # was cancelled. A Release on v8.0 is now a mistake, so it reds. `skip` no
-      # longer exists in the verdict vocabulary. The arm rests on the RETIREMENT,
-      # which is a decision — not on the tags being gone, so it was already
-      # correct while all seven were live and did not change when they went.
-      - name: Classify the release tag (and assert it against the props version)
-        id: classify
-        if: github.event_name == 'release'
-        run: |
-          .\scripts\release-preflight.ps1 -Tag "${{ github.event.release.tag_name }}"
-          if ($LASTEXITCODE -ne 0) { throw "the release tag was REJECTED — see the step summary. Nothing was published." }
-
       # ── nuget.org state — the one thing no local step can know ────────────
-      # There is no `dotnet nuget push --dry-run` (verified from the live CLI,
-      # not recalled), and the smoke already validates these packages more
-      # thoroughly than a push would. So the dry-run lane is defined by what a
-      # REAL push can reject that nothing local can: the state of nuget.org.
-      # It carries a TWO-ARM POSITIVE CONTROL — all six ids are 404 today, so
-      # an absence scanner must prove it can SEE and DISTINGUISH before its
-      # "all clear" means anything. See the script.
-      #
-      # THE `verdict != 'skip'` GUARD IS GONE (8.6 decision 4), and its removal
-      # is a deletion rather than a replacement because it lost its SUBJECT: the
-      # verdict vocabulary is now `publish` and RED, and a RED classify THROWS —
-      # so no later step in this job runs anyway. A guard against a value the
-      # classifier can no longer emit is decoration, and decoration on the one
-      # file that decides whether a push happens is worse than nothing.
-      #
-      # `needs.validate.outputs.verdict == 'publish'` on the `push` job STAYS.
-      # That one is normative rule 1 made structural, and it is untouched.
-      - name: nuget.org preflight (two control arms, then the shipped six)
+      # There is no `dotnet nuget push --dry-run`. The preflight carries a
+      # TWO-ARM POSITIVE CONTROL — an absence scanner must prove it can SEE and
+      # DISTINGUISH before its "all clear" means anything. Running it here, on the
+      # PR that bumps the props, answers "is this version still free?" while there
+      # is still time to change the answer. See the script.
+      - name: nuget.org preflight (two control arms, then the shipped set)
         run: |
           .\scripts\release-preflight.ps1 -Preflight
-          if ($LASTEXITCODE -ne 0) { throw "the nuget.org preflight FAILED — see the step summary. Nothing was published." }
-
-      # ── Pack the bytes that will be pushed ───────────────────────────────
-      # RELEASE EVENTS ONLY. On a PR this lane deliberately does NOT re-pack,
-      # re-interrogate, re-restore or re-run ConsumerSmoke: `build-test` — a
-      # REQUIRED check — owns all of that on EVERY PR. Duplicating it here
-      # would buy nothing and add a second pack path to drift.
-      #
-      # And on a Release it IS the same script, which is why this runner is
-      # windows-latest rather than the reference implementation's ubuntu-latest
-      # (consumer-smoke.ps1 is Windows-shaped: literal backslashes in its paths
-      # are filename characters on Linux). The alternative — a second pack loop
-      # written into this workflow — is a pack path nobody's PR ever exercises,
-      # drifting silently against the one that is proven every day. THE RELEASE
-      # LANE PACKS WITH THE SAME SCRIPT THE REQUIRED LANE PROVES.
-      - name: Pack + validate the six (consumer-smoke.ps1 — the same script build-test runs)
-        if: github.event_name == 'release' && steps.classify.outputs.verdict == 'publish'
-        run: |
-          .\scripts\consumer-smoke.ps1
-          if ($LASTEXITCODE -ne 0) { throw "consumer-smoke.ps1 failed (exit $LASTEXITCODE) — nothing was published." }
-
-      # PACK ONCE, VALIDATE THOSE BYTES, PUSH THOSE BYTES. The artifact IS the
-      # hand-off: the push job downloads exactly what the smoke just proved. If
-      # push re-packed, it would be pushing bytes nobody validated.
-      #
-      # THE PRECEDENT, NAMED ACCURATELY (Gate 1 review I-3). This shape —
-      # upload-artifact@v7 in one job, `needs:` + download-artifact@v8 in the
-      # next — is the one android-instrumented.yml's `publish-so` -> `emulator`
-      # uses, and that is the ADVISORY NIGHTLY lane, not a required one. Same
-      # actions, same versions, exercised every night; but the arrow is proven by
-      # the nightly, and this comment says so rather than borrowing a required
-      # lane's authority. It is NOT copied from `build-test -> android-build`, as
-      # this file previously claimed: ci.yml has NO `needs:` edges at all and
-      # downloads no artifacts — android-build self-publishes. That hand-off does
-      # not exist and never did. This lane's own arrow is U7: `release`-gated, so
-      # no PR ever exercises it (see docs/GITHUB-SETUP.md).
-      - name: Upload the validated feed (the bytes push will send — it packs nothing)
-        if: github.event_name == 'release' && steps.classify.outputs.verdict == 'publish'
-        uses: actions/upload-artifact@v7
-        with:
-          name: packages
-          path: artifacts/packages/
-          if-no-files-found: error
-          retention-days: 90
-
-  # ───────────────────────────────────────────────────────────────────────────
-  # push — the only job that has ever heard of the key.
-  # ───────────────────────────────────────────────────────────────────────────
-  push:
-    needs: validate
-    # BOTH conditions, deliberately. The event guard is normative rule 1 made
-    # structural (merges publish nothing; tags publish nothing — only a
-    # published Release does), and the verdict guard is the classifier's answer.
-    #
-    # THE VERDICT GUARD DID NOT LOSE ITS SUBJECT WHEN `skip` DIED (8.6 decision
-    # 4), and the distinction is worth one line because the preflight step's
-    # sibling guard DID and was deleted. `verdict` is only ever `publish` now —
-    # every other classification THROWS in validate, so this job's `needs:` edge
-    # never resolves. But U8 is the quiet failure this guard still owns: an
-    # EMPTY verdict (the `needs.<job>.outputs` arrow silently not propagating)
-    # makes this `if:` false and SKIPS the push rather than redding it. So the
-    # first Release's check is "did push RUN?", not merely "was there a red?".
-    if: github.event_name == 'release' && needs.validate.outputs.verdict == 'publish'
-    runs-on: windows-latest
-    timeout-minutes: 20
-    defaults:
-      run:
-        shell: pwsh
-
-    # THE ONE REFERENCE. The `secrets.NUGET_API_KEY` expression on the next line
-    # is the ONLY one across .github/workflows/*.yml, and ReleaseWorkflowPinTests
-    # reds in the required lane if a second ever appears (in ci.yml, in the
-    # validate job above, anywhere). It is job-level rather than step-level
-    # precisely so the presence check and the push can both read it while the
-    # reference stays singular.
-    #
-    # That pin counts COMMENTS too — which is why every comment in this file
-    # spells the secret by NAME and never in its `${{ … }}` form. Deliberate,
-    # and it has now caught two violations, both of them here: this comment
-    # block quoting the expression it describes, and then the grep example that
-    # documented the rule. Prose cannot read a secret — only the expression can,
-    # and only the expression is what the pin counts. The strictness buys a
-    # greppable one-line audit ("what can reach my key?"), written out in
-    # docs/GITHUB-SETUP.md, which is not a workflow file and can therefore quote
-    # the expression safely. A pin with a comment-stripping parser would be a
-    # pin that can be fooled — or worse, one that eats its own subject and goes
-    # green.
-    #
-    # ⚠ RESIDUAL, stated rather than papered over (8.2 decision 7, an owner
-    # call): a repo-level secret is readable by any workflow run on a branch by
-    # an actor with write access. A GitHub environment with a branch restriction
-    # would scope it — rejected because the owner's law is "one secret, and the
-    # Release is the go", and an environment gate is a SECOND go on an action
-    # that is already manual. The mitigations that cost nothing are taken:
-    # exactly one reference, one job, guarded on `release`, pinned by a test.
-    env:
-      NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
-
-    steps:
-      # NO CHECKOUT, DELIBERATELY. This job has no source tree — so "push
-      # re-packs nothing" is STRUCTURAL rather than promised: there is nothing
-      # here to pack FROM. The only bytes in this job are the ones validate
-      # proved and uploaded. (It is also why setup-dotnet takes an explicit
-      # band here instead of global.json — there is no global.json to read, and
-      # `dotnet nuget push` is a transport, not a build.)
-      - name: Setup .NET SDK (10.0.x — nuget push is a transport; there is no project to build)
-        uses: actions/setup-dotnet@v6
-        with:
-          dotnet-version: '10.0.x'
-
-      - name: Download the validated feed (these bytes were packed and proven by validate)
-        uses: actions/download-artifact@v8
-        with:
-          name: packages
-          path: artifacts/packages
-
-      # A NAMED presence check. An absent or mistyped secret otherwise surfaces
-      # as a bare 401 from a CLI, at the one moment the owner is least able to
-      # debug it. The key is never echoed — only its presence and length.
-      - name: Assert NUGET_API_KEY is present
-        run: |
-          if ([string]::IsNullOrWhiteSpace($env:NUGET_API_KEY)) {
-            throw "NUGET_API_KEY is unset or misnamed — the one secret this repository needs. Add it at Settings -> Secrets and variables -> Actions, named EXACTLY 'NUGET_API_KEY'. See docs/GITHUB-SETUP.md -> 'Secrets — NUGET_API_KEY, the one secret'. Nothing was published."
-          }
-          Write-Host "NUGET_API_KEY is present ($($env:NUGET_API_KEY.Length) chars) — not echoed."
-
-      # ── The push ─────────────────────────────────────────────────────────
-      # ENUMERATED FROM THE FEED, not from a name list. A list of six names here
-      # would be the shipped set's FIFTH copy (8.1 normative rule 2 / the I-2
-      # finding), which would then need pinning — and the only thing that would
-      # WANT one is dependency-ordered pushing, which is theatre: nuget.org
-      # accepts a package whose dependencies are not yet published, and its
-      # validation and indexing are ASYNCHRONOUS and take MINUTES. Ordering the
-      # six would narrow a minutes-wide window by the seconds the pushes take.
-      # Noise, not a mitigation — for a real drift surface.
-      #
-      # SYMBOLS RIDE BY ADJACENCY. The .snupkg files sit beside their .nupkg in
-      # this same artifact, and `dotnet nuget push` carries an adjacent symbol
-      # package automatically (the CLI's own evidence: `-n|--no-symbols` is an
-      # opt-OUT). The glob is *.nupkg, which does NOT match *.snupkg — no double
-      # push. The smoke's PAIRING tooth is what makes that adjacency a fact
-      # rather than an assumption. That symbols actually LAND on the symbol
-      # server is UNPROVEN until the first Release (U4) — recorded, not claimed.
-      #
-      # --skip-duplicate is ONLY safe because the preflight above is loud, and
-      # the pair is the design: --skip-duplicate owns RECOVERY (three pushed,
-      # three failed -> re-run the job; the three already up must not 409 the
-      # re-run, or the owner is left hand-pushing from a laptop with the
-      # production key — the worst end state for a phase whose law is "one
-      # door"). The preflight owns "you forgot to bump" — the failure
-      # --skip-duplicate would otherwise MASK by pushing nothing and going
-      # green. Neither is sound alone.
-      - name: dotnet nuget push (the enumerated feed — --skip-duplicate; the preflight already proved the version is free)
-        run: |
-          $feed = "artifacts/packages"
-          $nupkgs = @(Get-ChildItem $feed -Filter *.nupkg -File)
-          if ($nupkgs.Count -eq 0) {
-            throw "ZERO .nupkg found in $feed — the artifact hand-off from validate is broken. Pushing nothing and going green is the failure this check exists to prevent."
-          }
-          Write-Host "pushing $($nupkgs.Count) packages (symbols ride adjacent):"
-          $nupkgs | ForEach-Object { Write-Host "  $($_.Name)" }
-          Get-ChildItem $feed -Filter *.snupkg -File | ForEach-Object { Write-Host "  (symbols) $($_.Name)" }
-
-          dotnet nuget push $nupkgs.FullName `
-            --api-key $env:NUGET_API_KEY `
-            --source https://api.nuget.org/v3/index.json `
-            --skip-duplicate
-          if ($LASTEXITCODE -ne 0) {
-            throw "dotnet nuget push failed (exit $LASTEXITCODE). PARTIAL FAILURE IS RECOVERABLE: re-run THIS JOB from the Actions UI — --skip-duplicate makes the packages that already landed no-ops. Do NOT edit and re-publish the Release (that fires `edited`, not `published`, so this workflow will not re-fire). See docs/GITHUB-SETUP.md."
-          }
-
-      - name: Summarise what was published
-        run: |
-          $nupkgs = @(Get-ChildItem "artifacts/packages" -Filter *.nupkg -File)
-          $lines = @(
-            "### ✅ Published to nuget.org",
-            "",
-            "Release **${{ github.event.release.tag_name }}** — $($nupkgs.Count) packages pushed from the feed ``validate`` packed and proved.",
-            ""
-          )
-          $lines += $nupkgs | ForEach-Object { "- ``$($_.Name)``" }
-          $lines += @(
-            "",
-            "nuget.org validation and indexing are **asynchronous** — packages take minutes to become restorable, and a consumer restoring inside that window may see an unindexed dependency. That window is self-healing.",
-            "",
-            "Symbols rode adjacent to their packages; that they reached the symbol server is not asserted here (see ``docs/GITHUB-SETUP.md``)."
-          )
-          $lines -join "`n" | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          if ($LASTEXITCODE -ne 0) { throw "the nuget.org preflight FAILED — see the step summary." }

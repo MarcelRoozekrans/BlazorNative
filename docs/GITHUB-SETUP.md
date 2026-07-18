@@ -187,7 +187,7 @@ public, before the phase closes.)
 > publish. Nothing in `ci.yml` downloads an artifact: `build-test`'s `.so`
 > uploads are there to be downloaded by a *person*, not by a job. The repo's one
 > long-standing cross-job artifact hand-off is in `android-instrumented.yml`
-> (`publish-so` → `emulator`, the **advisory nightly** lane); `release.yml`'s
+> (`publish-so` → `emulator`, the **advisory nightly** lane); `release-please.yml`'s
 > `validate` → `push` is the second. *(Phase 8.2 Gate 1 review M-7: this section
 > previously described `android-build` as "ubuntu-latest, `needs: build-test`",
 > compiling against a `.so` `build-test` uploads. It has never been any of those
@@ -321,13 +321,13 @@ computed from the tree.
 reads that name and nothing else).
 
 **The standing law, and it is a test rather than a promise:** the key is
-referenced by **exactly one job in exactly one workflow** — `release.yml`'s
-`push` job, guarded on `github.event_name == 'release'`. `ReleaseWorkflowPinTests`
-reds the **required** `build-test` lane if a second reference ever appears
-anywhere under `.github/workflows/`. So this is a complete answer — grep for the
-**expression**, not the bare name (`release.yml`'s own comments discuss the
-secret by name; only the `${{ … }}` form can actually read it, and only that form
-is what the pin counts):
+referenced by **exactly one job in exactly one workflow** — `release-please.yml`'s
+`push` job, guarded on `needs.release-please.outputs.release_created == 'true'`.
+`ReleaseWorkflowPinTests` reds the **required** `build-test` lane if a second
+reference ever appears anywhere under `.github/workflows/`. So this is a complete
+answer — grep for the **expression**, not the bare name (`release-please.yml`'s
+own comments discuss the secret by name; only the `${{ … }}` form can actually
+read it, and only that form is what the pin counts):
 
 ```bash
 grep -rF '${{ secrets.NUGET_API_KEY }}' .github/   # exactly one hit — that hit is the door
@@ -336,10 +336,10 @@ grep -rF '${{ secrets.NUGET_API_KEY }}' .github/   # exactly one hit — that hi
 > **Scoping, and the residual we accept.** A repo-level secret is readable by
 > any workflow run on a branch by an actor with write access. A GitHub
 > *environment* with a branch restriction would narrow that — it is deliberately
-> **not** used, because the owner's law is *one secret, and the Release is the
-> go*, and an environment gate is a **second** manual approval on an action that
-> is already manual. The mitigations that cost nothing are taken: one reference,
-> one job, `if:`-guarded, pinned by a test.
+> **not** used, because the owner's law is *one secret, and the release-PR merge is
+> the go*, and an environment gate is a **second** manual approval on an action
+> that is already a deliberate merge. The mitigations that cost nothing are taken:
+> one reference, one job, `if:`-guarded on `release_created`, pinned by a test.
 
 ---
 
@@ -416,17 +416,30 @@ page — but it is the reason to click sooner rather than later.
 
 ---
 
-### Publishing a release (the manual go)
+### Publishing a release (auto-publish on merge)
 
-**Nothing publishes from a merge. Nothing publishes from a tag. Publishing a
-GitHub Release is the go, and it is the only one.**
+**Merging the release PR is the go, and it is the only one.** That single merge
+cuts the tag, publishes the GitHub Release, AND pushes the packages to nuget.org
+— all in one `release-please.yml` workflow run. An ordinary merge that is *not* a
+release-PR merge publishes nothing; a bare tag publishes nothing.
 
-**Phase 8.6 automated everything up to that click and not one step past it.**
-`release-please` now computes the version, writes `CHANGELOG.md`, cuts the tag
-and opens the Release **as a draft** — and GitHub does not fire workflows for
-draft releases. **Your click on Publish is what converts the draft into the
-event `release.yml` listens for.** The law did not bend; it gained a second,
-structural reason to hold.
+**Phase 8.6 automated everything up to a manual Publish click; the Phase 9.x
+re-cut removed that last click too — "auto release of everything".** `release-please`
+computes the version, writes `CHANGELOG.md`, and opens a release PR. When you
+merge it, release-please cuts the tag and Release, and — in the **same run** — its
+`validate` job packs and proves the packages with no key present, then its `push`
+job (the one place `NUGET_API_KEY` lives) pushes them to nuget.org.
+
+> **Why the publish had to move into `release-please.yml`.** It used to live in
+> `release.yml`, gated on `release: types: [published]`. That never fired:
+> release-please cuts the Release with `GITHUB_TOKEN`, and **GitHub does not fire
+> workflow triggers for `GITHUB_TOKEN`-created events** (anti-recursion). So the
+> Release and tag appeared, `release.yml` never ran, and **nothing ever reached
+> nuget.org** — proven live, `v0.1.0` existed while every package 404'd. A human
+> clicking Publish used to supply that event (a click is not a `GITHUB_TOKEN`
+> action); removing the human removed the trigger. Publishing in the same run,
+> gated on release-please's own `release_created` output, needs no second event.
+> `release.yml` remains, keyless, as the PR-time validation lane.
 
 **The tag namespace — this is the part to read before you need it:**
 
@@ -463,17 +476,14 @@ and *should* publish 8.0.0 if this repo ever gets there.
 > emptying it are two different acts**, and only the first one ever had to have
 > happened for this box to be true.
 
-**The ritual — release-please's. It is not shorter than the old one; it is
-different in kind, and that is the whole point:**
+**The ritual — release-please's. You author nothing; the machine writes the
+version, the tag and the changelog, and the merge does the rest:**
 
-> The old ritual was **six steps and you authored the release**: you bumped a
-> version literal by hand, you typed a tag, you drafted the Release. This one is
-> **also six steps, and you author nothing** — you *approve*, you *read*, you
-> *merge*, you *publish*. **The machine writes the version and the tag; every one
-> of your six steps is a review or a go.** Counting steps was always the wrong
-> measure. *(The count is stated plainly here because an earlier draft of this
-> section claimed "three steps shorter" while listing four steps against the old
-> six. It was two, and now it is none. This house counts precisely.)*
+> Every step below is a **review or a go** — you *merge* work, you *approve* the
+> release PR's checks, you *read* the changelog, and you *merge* the release PR.
+> That final merge is the whole publish: tag, Release, and nuget.org, in one run.
+> There is no draft to publish and no Publish click any more — removing it is the
+> "auto release of everything" decision.
 
 1. **Merge PRs with conventional titles.** The PR title becomes main's commit
    subject, and it is the only text release-please ever reads. See *The commit
@@ -492,15 +502,16 @@ different in kind, and that is the whole point:**
    props did not) **has not run either.** The click starts them; they then red a
    bad release PR *before* you can merge it.
    > **If you never click, nothing breaks — it stalls.** A required check that
-   > never ran cannot be satisfied, so the PR cannot merge: no tag, no draft, no
+   > never ran cannot be satisfied, so the PR cannot merge: no tag, no Release, no
    > publish. **The failure direction is safe.** This is the deliberate price of
    > keeping *one* secret in this repo; a PAT would start the checks
    > automatically and was rejected for being a second secret that expires.
-4. **Merge the release PR** once it is green. That is what cuts the tag.
-5. **A draft Release appears**, carrying that changelog as its body. **Nothing
-   has fired. Nothing has published.** Edit the body if you want to.
-6. **Publish the draft.** *That click is the go.* `validate` runs every check
-   with no key in the run at all; only then does `push` see the secret.
+4. **Merge the release PR** once it is green. **That merge is the go.** In the
+   same `release-please.yml` run it cuts the tag, publishes the Release, and then
+   — gated on `release_created` — `validate` packs and proves the seven packages
+   with **no key in the run at all**, and only then does `push` see the secret and
+   send them to nuget.org. Watch that run: the check is *"did `push` run?"*, since
+   the one quiet failure mode (U8 below) skips `push` rather than reddening it.
 
 **Four things that will otherwise surprise you:**
 
@@ -527,11 +538,11 @@ different in kind, and that is the whole point:**
   of props, props ahead of tag, tag on the wrong commit — all three are RED,
   naming both values. (Overriding via `-p:Version=` would make the packages
   irreproducible from the commit they name; it is banned and pinned.)
-- **Recovery from a partial push is an Actions re-run, NOT a Release edit.**
-  Three packages up and three failed is recoverable: **re-run the `push` job
-  from the Actions UI** — `--skip-duplicate` makes the three that landed
-  no-ops. Editing and re-publishing the Release fires `edited`, **not**
-  `published`, so the workflow will *not* re-fire.
+- **Recovery from a partial push is an Actions re-run.** Three packages up and
+  three failed is recoverable: **re-run the `push` job from the Actions UI** —
+  `--skip-duplicate` makes the three that landed no-ops. (Re-running the whole
+  `release-please.yml` run works too, but re-running just `push` is enough, and
+  it re-uses the feed `validate` already uploaded.)
 - **A published version can never be replaced.** nuget.org has **no hard
   delete** — only *unlist*. If a wrong version publishes, the recovery is
   unlist → bump → release again. It is never "fix it and re-push the same
@@ -592,17 +603,17 @@ this repo that cannot be tested by using it** — there is no key, no throwaway
 registry, and no publish until you publish. Everything provable is proven on
 every PR; what remains is listed here rather than implied. **Every arrow below
 fails in the safe direction — nothing publishes — and announces itself to you,
-standing there having just clicked Publish.**
+standing there having just merged the release PR.**
 
 | # | Unproven until your first Release | If it is wrong, you see |
 |---|---|---|
-| U1 | `release: types: [published]` actually fires the workflow | **Nothing happens** — no run appears. Safe: it cannot mis-publish. (`actionlint` proves the event *name* is real; that GitHub *fires* it is what a Release proves.) |
+| U1 | release-please's `release_created` output actually gates the publish jobs to fire on a real release-PR merge | **Nothing happens** — the `validate` / `push` jobs skip. Safe: it cannot mis-publish. (`actionlint` proves the `if:`/`needs` expression chain is real; that the merge run actually emits `release_created == 'true'` and starts the jobs is what the first release proves.) |
 | U2 | `NUGET_API_KEY` resolves — present and correctly named | A named RED: *"NUGET_API_KEY is unset or misnamed — see docs/GITHUB-SETUP.md"*, instead of a bare 401 from a CLI |
 | U3 | nuget.org **accepts** these nupkgs — no reserved-prefix 403 | A 403 or an async validation failure on first push. All six ids are unregistered today, so nothing is reserved — but a reserved-prefix answer cannot be obtained without a key |
 | U4 | The adjacent `.snupkg` reaches the symbol server | Packages publish, symbols silently do not. **Recoverable** — symbols can be pushed later |
 | U5 | `--skip-duplicate` no-ops a real 409 | A re-run reds instead of skipping. Recoverable by hand |
 | U6 | Six pushes across a minutes-wide async indexing window behave | A consumer restoring inside the window sees an unindexed dependency. **Self-healing** |
-| U7 | The **artifact hand-off** from `validate` to `push` carries the packed feed | The upload is `release`-gated, so **no PR can exercise it** — only a real Release does. A loud RED: *"ZERO .nupkg found — the artifact hand-off from validate is broken"*. That guard exists so this fails **loudly** instead of pushing nothing and going green. Safe: nothing publishes. (Same actions and versions as `publish-so → emulator` in the nightly `android-instrumented.yml`, which runs this shape every night.) |
+| U7 | The **artifact hand-off** from `validate` to `push` carries the packed feed | The upload is `release_created`-gated, so **no PR can exercise it** — only a real release-PR merge does. A loud RED: *"ZERO .nupkg found — the artifact hand-off from validate is broken"*. That guard exists so this fails **loudly** instead of pushing nothing and going green. Safe: nothing publishes. (Same actions and versions as `publish-so → emulator` in the nightly `android-instrumented.yml`, which runs this shape every night.) |
 | U8 | `needs.validate.outputs.verdict` **reaches the `push` job** | This is the repo's **first** `needs.<job>.outputs` consumer — no other lane uses one. If it is wrong, the value is empty, the `if:` is false, and **`push` skips silently** — safe (nothing publishes) but **quiet**: you would see a *skipped* job, not a red one. So check that `push` actually ran. `actionlint` statically rules out every **typo** shape *in this chain* (job-output names, step ids, `needs.<job>.outputs.<name>`, and `needs:` itself — all mutant-tested), so "is it spelled right" is settled; what a Release proves is that the runtime does what the syntax says |
 
 **The blast radius of the first firing is one unlistable preview of a package
@@ -610,9 +621,9 @@ nobody depends on yet** — which is the cheapest possible way to learn all eigh
 these at once, and it is cheap *on purpose*.
 
 > **All eight fail in the safe direction — nothing publishes — and seven of them
-> say so loudly. U8 is the one quiet failure**: an empty verdict skips `push`
-> rather than reddening it. So when you publish the first Release, the check is
-> **"did `push` actually run?"**, not just "was there a red?". *(U7 and U8 were
+> say so loudly. U8 is the one quiet failure**: an empty `release_created` skips
+> `push` rather than reddening it. So when you merge the first release PR, the
+> check is **"did `push` actually run?"**, not just "was there a red?". *(U7 and U8 were
 > added by the Phase 8.2 Gate 1 review, finding I-2: both are arrows no PR can
 > exercise, and a table that omitted them was claiming more coverage than the
 > lane has.)*
