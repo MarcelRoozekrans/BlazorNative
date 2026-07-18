@@ -17,7 +17,7 @@
 #   emulator (ubuntu-latest, KVM) — downloads the .so, boots the API 34
 #     google_apis x86_64 Pixel 6 image (mirrors the local AVD
 #     blazornative-pixel6-x86_64), runs connectedAndroidTest with
-#     -PciSoDir pointing at the artifact → asserts 201 passed / 0 failed.
+#     -PciSoDir pointing at the artifact → asserts 209 passed / 0 failed.
 #
 # Baselines are asserted, not observed: count drift fails the job loudly.
 # ─────────────────────────────────────────────────────────────────────────────
@@ -911,7 +911,54 @@ jobs:
       #        crypto=null to the prompt -> hasCryptoObject false -> this reds (verified: 1
       #        red, "MUST pass a CryptoObject", this test alone).
       #      .delete_echoes_ok -- delete is idempotent + permission-free -> Ok.
-      - name: Assert instrumented baseline (201 passed / 0 failed)
+      # ── Phase 9.3 Gate 2 — CAMERA PHOTO CAPTURE + FileProvider (201 -> 209, +8) ──
+      # The THIRD reuse of the 9.0 generic ABI and the LAST M9 capability: op=Camera rides
+      # the SAME hostCallBegin slot (no struct grow, no new export -- still 80 bytes / 10
+      # exports). The image crosses as a file PATH, not bytes: the ACTION_IMAGE_CAPTURE
+      # Intent path (NO runtime CAMERA permission -- the system camera app owns the sensor)
+      # writes the JPEG to a FileProvider output URI; the shell downscales + normalizes EXIF
+      # + re-encodes and returns {"path",...}. The real camera-app SHUTTER is not CI-drivable
+      # (the emulator's is a synthetic scene, the real UI is owner-phone territory), so the
+      # capture RESULT is seam-driven (cameraCaptureHook -- the geolocation/notifications/
+      # biometrics real-UI split): CameraCapture writes synthetic bytes THROUGH the
+      # FileProvider URI (as the camera app writes to EXTRA_OUTPUT) and delivers the result
+      # through the SAME processing path, so CI asserts the FILE -> BnImage contract
+      # deterministically. Each count mutation-verified (break the thing, watch the RIGHT
+      # test go red):
+      #   +5 CameraCaptureAndroidTest (the shell core, driven DIRECTLY -- real FileProvider +
+      #      real decode/encode):
+      #      .capture_writes_a_real_jpeg_through_the_fileprovider_with_bytes -- bytes written
+      #        THROUGH the FileProvider content URI -> a real cache-dir JPEG with bytes; the
+      #        file:// path + byte size returned. MUTATION: mis-authority the <provider> ->
+      #        FileProvider.getUriForFile throws -> no file, no bytes -> this reds.
+      #      .capture_downscales_to_maxdim_on_the_long_edge -- a 4000x3000 scene at maxDim
+      #        1024 lands with its long edge <= 1024 (aspect preserved). MUTATION: skip the
+      #        downscale -> 4000 > 1024 -> reds.
+      #      .capture_normalizes_exif_baking_rotation_and_resetting_the_tag -- a landscape
+      #        400x200 input tagged ROTATE_90 -> upright PORTRAIT 200x400 output pixels AND an
+      #        identity EXIF tag (a re-encoded JPEG carries none), so Coil/Kingfisher do NOT
+      #        double-rotate. MUTATION: skip applyExifRotation -> stays 400x200 landscape ->
+      #        the "width < height" assertion reds.
+      #      .prune_keeps_only_the_last_n_captures -- six captures -> prune -> 3 survive (the
+      #        leak backstop). MUTATION: skip the prune -> all six remain -> reds.
+      #      .check_reports_camera_availability_as_data -- the AVD's emulated back camera +
+      #        the manifest <queries> for IMAGE_CAPTURE -> Captured (available), a DATA value.
+      #   +3 BnCameraAndroidTest (through BnCameraDemo -- the real .NET round-trip):
+      #      .take_photo_composes_a_captured_file_into_a_measured_bnimage -- THE COMPOSITION
+      #        (camera -> file -> BnImage). The seam writes a 640x480 scene through the
+      #        FileProvider and delivers RESULT_OK -> the shell returns the file:// path -> the
+      #        demo sets it as the BnImage Src -> Coil loads the local file and the BnImage
+      #        MEASURES at the demo's definite 240x320 box (the M6/M7 ledger discharge: a
+      #        multi-megapixel photo cannot reflow the layout) and PAINTS it. MUTATION:
+      #        mis-authority the FileProvider -> the capture errors -> the echo never reads
+      #        "captured:" -> this reds.
+      #      .capture_cancelled_is_data_within_a_bounded_await_no_hang -- the seam cancels ->
+      #        status:Cancelled within a bounded await, no path, the BnImage stays empty.
+      #        MUTATION: the cancel path THROWS instead of statusing -> no completion -> the
+      #        echo stays blank -> this times out and reds (the no-hang law).
+      #      .check_reports_availability_as_data -- Check -> status:Captured (available on the
+      #        AVD) without launching the camera UI.
+      - name: Assert instrumented baseline (209 passed / 0 failed)
         run: |
           shopt -s globstar nullglob
           xmls=(src/BlazorNative.Jni/build/outputs/androidTest-results/connected/**/*.xml)
@@ -928,8 +975,8 @@ jobs:
             s=$(attr skipped "$x");  skipped=$((skipped + ${s:-0}))
           done
           echo "Instrumented totals across ${#xmls[@]} suite(s): tests=$tests failures=$failures errors=$errors skipped=$skipped"
-          if [ "$tests" -ne 201 ] || [ "$failures" -ne 0 ] || [ "$errors" -ne 0 ] || [ "$skipped" -ne 0 ]; then
-            echo "Instrumented test baseline drift: expected 201 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped" >&2
+          if [ "$tests" -ne 209 ] || [ "$failures" -ne 0 ] || [ "$errors" -ne 0 ] || [ "$skipped" -ne 0 ]; then
+            echo "Instrumented test baseline drift: expected 209 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped" >&2
             exit 1
           fi
 

@@ -142,6 +142,15 @@ object HostCallOp {
     // .SecureStorage (.NET) / BnHostCallOp (Swift). The integer IS the wire contract.
     const val BIOMETRICS = 2
     const val SECURE_STORAGE = 3
+
+    // Phase 9.3 (M9 DoD #5) — the THIRD reuse of the 9.0 generic ABI and the LAST M9
+    // capability: camera photo capture. ONE op-enum value here and the ABI moves at
+    // nothing else (still 80 bytes / 10 slots / 10 exports). The headline is HOW the
+    // result crosses: a photo is a LARGE artifact, but it is handed by REFERENCE — the
+    // completion payload NAMES a file (a file:// PATH the shell wrote), it does not
+    // carry the bytes, so no binary/buffer export is added and the struct does not grow.
+    // The mirror of NativeShellBridge.HostCallOp.Camera (.NET) / BnHostCallOp (Swift).
+    const val CAMERA = 4
 }
 
 /**
@@ -203,6 +212,28 @@ object NotificationStatus {
     const val DENIED_PERMANENTLY = 2  // "don't ask again" — only Settings changes it
     const val RESTRICTED = 3          // device policy / MDM — the user CANNOT grant it
     const val ERROR = 4               // unexpected host error (a caught throw)
+}
+
+/**
+ * The wire-mirrored camera completion status — byte-identical to .NET's CameraStatus
+ * enum (BlazorNative.Core/IMobileBridge.cs) and Swift's mirror. FIVE values. The host
+ * maps its platform's native outcome into one of these and passes the integer back
+ * across blazornative_host_call_complete — the SAME export geolocation / notifications /
+ * biometrics use, with NO struct grow and NO new export (the phase headline). On CAPTURED
+ * the completion carries the {"path":…,"width":…,"height":…,"bytes":…} flat-JSON payload
+ * NAMING the temp JPEG (a LARGE artifact by REFERENCE — the bytes stay on disk); every
+ * other status carries a NULL payload. A user cancel (1), a denied permission (2 — the
+ * Intent path never reaches it on Android; iOS does), no camera hardware (3) and a host
+ * error (4) are all VALUES: the awaiting .NET ValueTask always resolves, never a thrown
+ * exception across the boundary and never a dropped completion (a hang). Do NOT reorder —
+ * these ARE the ABI contract.
+ */
+object CameraStatus {
+    const val CAPTURED = 0     // a photo was taken and written; the payload carries the path
+    const val CANCELLED = 1    // the user backed out of the camera UI (no path)
+    const val DENIED = 2       // the OS refused camera access (permission — iOS; the Android Intent path never reaches it)
+    const val UNAVAILABLE = 3  // no camera hardware / capture UI not available (the honest no-camera answer)
+    const val ERROR = 4        // unexpected host error (a caught throw, a write/encode failure, malformed args)
 }
 
 /**

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Phase 9.3 (M9 DoD #5): the FileProvider path config for ACTION_IMAGE_CAPTURE.
+     A single <cache-path> exposing the app-cache "blazornative_captures" subdir
+     (getCacheDir()/blazornative_captures) — mirrors AndroidShellBridge's
+     CAPTURE_DIR_NAME. Cache, not files/documents: the OS may reclaim it under
+     storage pressure and it is never backed up. The system camera app receives a
+     content:// URI under this root to write the captured JPEG to. -->
+<paths>
+    <cache-path name="blazornative_captures" path="blazornative_captures/" />
+</paths>
