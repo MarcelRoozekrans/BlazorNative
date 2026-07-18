@@ -7,7 +7,6 @@
       "initial-version": "0.1.0",
       "bump-minor-pre-major": true,
       "bump-patch-for-minor-pre-major": false,
-      "draft": true,
       "extra-files": [
         { "type": "generic", "path": "src/Directory.Build.props" },
         { "type": "generic", "path": "templates/BlazorNative.Templates/BlazorNative.Templates.csproj" },
