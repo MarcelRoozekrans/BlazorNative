@@ -1,72 +1,65 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# BlazorNative RELEASE-PLEASE (Phase 8.6 — the release automation).
+# BlazorNative RELEASE-PLEASE (Phase 8.6, re-cut Phase 9.x — the release
+# automation, now END TO END).
 #
-# WHAT THIS WORKFLOW DOES: it opens a pull request. That is all it does.
+# WHAT THIS WORKFLOW DOES: it opens a release PR, and — when that PR is merged —
+# it cuts the tag, publishes the GitHub Release, AND pushes the packages to
+# nuget.org. All in ONE workflow run. Merging the release PR is the go.
 #
-# On every push to main it recomputes the next version from the conventional
-# commit subjects since the last release, writes CHANGELOG.md, updates all seven
-# version literals, and opens (or updates) a release PR. Merging that PR cuts the
-# tag and opens a GitHub Release — AS A DRAFT.
+# ⚠ WHY THE PUBLISH LIVES HERE AND NOT IN release.yml — READ THIS FIRST, BECAUSE
+#   THE OBVIOUS SPLIT IS THE ONE THAT NEVER FIRES.
 #
-# ⚠ THE RELEASE PR ARRIVES WITH ITS CHECKS NOT STARTED, AND THAT IS A STEP IN THE
-#   RITUAL, NOT A BUG. This workflow opens the PR with GITHUB_TOKEN (see the token
-#   comment on the step below, which explains why it is not a PAT). When a workflow
-#   using GITHUB_TOKEN creates or updates a pull request, the resulting
-#   `pull_request` event creates its workflow runs in an APPROVAL-REQUIRED state:
-#   GitHub shows a "Approve workflows to run" banner, and someone with write access
-#   must click it before build-test / android-build / ios-build start at all.
+#   release.yml used to own the push, gated on `release: types: [published]`.
+#   That design was structurally dead: release-please cuts the Release using the
+#   default GITHUB_TOKEN (see the token comment on the action step below, and why
+#   it is not a PAT), and GITHUB DOES NOT FIRE WORKFLOW TRIGGERS FOR EVENTS
+#   CREATED BY GITHUB_TOKEN. This is GitHub's anti-recursion rule, verbatim from
+#   the Actions docs: "events triggered by the GITHUB_TOKEN ... will not create a
+#   new workflow run." So a Release cut by this workflow NEVER produced a
+#   `release: published` event, release.yml NEVER auto-fired, and nothing ever
+#   reached nuget.org — the tag and the Release existed, the packages did not.
+#   (Proven live: v0.1.0 tag + Release existed while api.nuget.org returned
+#   BlobNotFound for every package, and no release.yml run was ever triggered by
+#   a `release` event — only by push/pull_request.)
 #
-#   SO THE PIN THAT AUDITS THIS MACHINE — PackageVersionPinTests
-#   .TheManifest_AgreesWithTheProps, which reds if release-please bumps the
-#   manifest without the props — DOES NOT RUN ON THIS WORKFLOW'S PR UNTIL THAT
-#   CLICK. The click starts it; it then reds a bad machine before the merge.
+#   A human clicking "Publish" on a draft USED to supply that event, because a
+#   human's click is not a GITHUB_TOKEN action. Removing the human (the owner's
+#   "auto release of everything" decision) removed the only thing that ever fired
+#   the push. So the push had to move INTO this run, where no second event is
+#   needed. That is exactly the shape the reference implementation (AdoNet.Async)
+#   uses: a publish job in release-please.yml, gated on the action's own
+#   `release_created` output, packing and pushing in the same run the tag was cut.
 #
-#   IF YOU DO NOTHING, NOTHING HAPPENS: the PR sits with no checks, and a required
-#   check that never ran cannot be satisfied, so branch protection will not let it
-#   merge. No merge, no tag, no draft, no publish. The failure direction is SAFE
-#   (design UNPROVEN row U8). The ritual is in docs/GITHUB-SETUP.md, step 3.
+# ⚠⚠ THE KEY MOVED, IT DID NOT MULTIPLY. `secrets.NUGET_API_KEY` is referenced
+#    EXACTLY ONCE in the whole repository — the `push` job's job-level `env:`
+#    below — and ReleaseWorkflowPinTests reds the required build-test lane if a
+#    second reference ever appears in ANY workflow (comments counted too). The
+#    single-secret law is unchanged; only its address is. release.yml no longer
+#    mentions the key at all: it is now the PR-time validation lane and nothing
+#    more. (This block spells the secret by NAME, never in its `${{ … }}`
+#    expression form, precisely because the pin counts prose too — the same
+#    discipline release.yml kept.)
 #
-# ⚠⚠ THIS WORKFLOW HAS NO `publish` JOB, NO `needs:`, NO SECOND JOB, AND IT NEVER
-#    MENTIONS THE NUGET KEY. THAT IS NOT AN OVERSIGHT. DO NOT ADD ONE.
+#    The reference's per-pack version override (the MSBuild Version /
+#    PackageVersion properties, set on the CLI) is still forbidden here and still
+#    pinned (TheReleaseWorkflow_NeverOverridesTheVersion, now retargeted at this
+#    file — and, like the key, spelled in prose WITHOUT the literal `p:`-flag form
+#    the pin counts). They can afford it because GitVersion computes their
+#    version; THIS REPO HAS A LITERAL, ON PURPOSE, and the tag is a CLAIM the
+#    validate job ASSERTS against src/Directory.Build.props — never overrides.
 #
-#    The owner's reference implementation — AdoNet.Async — has a release-please.yml
-#    that carries its own publish job:
+# ⚠ THE VALIDATE / PUSH SPLIT IS THE OLD release.yml DESIGN, RELOCATED WHOLE.
+#   Everything provable happens in `validate`, with NO KEY in the run; only
+#   `push` — which packs nothing and has no source tree — ever sees the secret.
+#   THE SEVEN-PACKAGE PUSH IS NOT ATOMIC, CANNOT BE MADE ATOMIC, AND HAS NO UNDO:
+#   nuget.org has no hard delete, only unlist. So front-loading every check
+#   before the key is the only mitigation there is, and the push step stays the
+#   smallest, dumbest thing that can work (enumerate the feed, --skip-duplicate).
 #
-#        publish:
-#          needs: release-please
-#          if: ${{ needs.release-please.outputs.release_created }}
-#          ...
-#          - name: Push to NuGet
-#            run: dotnet nuget push ./nupkg/*.nupkg --api-key <the key> ...
-#
-#    MERGING THEIR RELEASE PR PUBLISHES SIX PACKAGES. NO CLICK. Copying that file
-#    into this repo — the obvious, natural move, and the one a contributor will
-#    attempt, because "mirror the reference" is how every other decision in this
-#    phase was made — IMPORTS AN AUTOMATIC nuget.org PUSH AND DESTROYS M8 DoD #3's
-#    LAW IN ONE PASTE.
-#
-#    That paste does not merely get reviewed. It REDS:
-#    ReleaseWorkflowPinTests.TheNugetApiKey_IsReferencedExactlyOnce_AndOnlyInReleaseYml
-#    counts the key's expression across every .github/workflows/*.yml — comments
-#    included — and asserts exactly one reference, in release.yml. The pin that
-#    stops this was written in Phase 8.2 for an entirely different reason, and it
-#    was already biting on this shape a milestone before the shape arrived.
-#    (Which is also why the block above spells the push line without the key's
-#    real expression: the pin counts prose too, deliberately.)
-#
-#    Their `-p:Version=` / `-p:PackageVersion=` on every pack is forbidden here
-#    for the same family of reasons, and is likewise already pinned
-#    (TheReleaseWorkflow_NeverOverridesTheVersion). They can afford it because
-#    GitVersion computes their version anyway — there is no literal to
-#    contradict. THIS REPO HAS A LITERAL, ON PURPOSE.
-#
-# THE LAW, AND WHY A DRAFT IS THE WHOLE DESIGN. `release.yml` publishes on
-# `release: types: [published]`. release-please cuts the Release as a DRAFT
-# (`"draft": true` in release-please-config.json). GitHub does not fire
-# `published` for a draft — "Workflows are not triggered for the created,
-# edited, or deleted activity types for draft releases" (Actions docs, verbatim).
-# So EVERYTHING BEFORE THE OWNER'S CLICK IS AUTOMATIC AND THE CLICK ITSELF IS
-# UNTOUCHED. The law holds structurally, not by promise.
+#   Both jobs are gated on `needs.release-please.outputs.release_created`, which
+#   is `'true'` ONLY on the run that merges a release PR — never on an ordinary
+#   push to main (which just opens/updates the PR). So an everyday merge computes
+#   a version and touches no key; only the release-PR merge publishes.
 #
 # ─── THE CONFIG, AND WHY EVERY VALUE IS WHAT IT IS ───────────────────────────
 #
@@ -94,7 +87,18 @@
 #                                 DefaultVersioningStrategy, and the two flags
 #                                 below are its only knobs.
 #
-#   "draft": true                 ← THE LAW. The owner's click is the go.
+#   (no "draft" key)              THE DRAFT IS GONE, AND ITS ABSENCE IS THE
+#                                 DECISION. 8.6 set `"draft": true` so a human had
+#                                 to click Publish — that click WAS the go, and
+#                                 the whole law rested on it. "Auto release of
+#                                 everything" retired the click: a merged release
+#                                 PR now cuts an ORDINARY (published) Release, and
+#                                 the `push` job below is what reaches nuget.org
+#                                 in the SAME run. Draft vs published no longer
+#                                 gates anything — the publish is `release_created`
+#                                 -gated, not event-gated — so the draft would buy
+#                                 only a stranded state (packages pushed, Release
+#                                 still draft). It was deleted, not retuned.
 #
 #   "extra-files"                 THE SIX MIRRORS (decision 3), and every entry is
 #                                 the OBJECT form `{"type":"generic","path":…}`
@@ -132,35 +136,22 @@
 #                                 four sites, so the sentence is now true by
 #                                 construction and no future rename can quietly
 #                                 re-dispatch a file into a round-trip updater.
-#                                 Pinned by ReleasePleaseConfigPinTests.
+#                                 Pinned by PackageVersionPinTests
+#                                 .EveryExtraFile_NamesTheGenericUpdaterOutright.
 #
-#                                 ⚠ THE LESSON ARRIVED TWICE IN ONE PHASE. Line 74
-#                                 above already says release-please reads JSON with
-#                                 strict `JSON.parse` — measured at Gate 1, for the
-#                                 CONFIG file. The same fact was true of a SECOND
-#                                 json file release-please reads, and the design
-#                                 checked that `dotnet new` and TemplateDriftTests
-#                                 tolerate JSONC without asking whether
-#                                 release-please — the one tool that MUST write it
-#                                 — does. It does not.
-#
-#   "bootstrap-sha"               a3fe234 — main's tip when this branch was cut
-#                                 (PR #107, the M8 final audit). It answers 8.1's
-#                                 third rejection reason ("conventional-commit
-#                                 inference mis-bumps phase-structured history")
-#                                 by drawing a line: release-please never reads a
-#                                 single pre-8.6 commit. Without it, it finds no
-#                                 last release (zero Releases have ever existed,
-#                                 and no v<semver> tag exists) and walks all 580
-#                                 commits, of which the only conventional ones are
-#                                 Renovate's. Harmless but wrong-shaped; this
-#                                 makes it correct rather than merely survivable.
+#   "bootstrap-sha"               a3fe234 — main's tip when the release machinery
+#                                 was cut (PR #107, the M8 final audit). It draws
+#                                 a line: release-please never reads a single
+#                                 pre-8.6 commit. Without it, it finds no last
+#                                 release and walks all of history, of which the
+#                                 only conventional commits are Renovate's.
+#                                 Harmless but wrong-shaped; this makes it correct
+#                                 rather than merely survivable.
 #
 #                                 ⚠ IT MUST NAME A COMMIT THAT EXISTS ON MAIN.
 #                                 A SHA from a feature branch is not on main after
 #                                 a squash-merge, so release-please would never
 #                                 find it and would silently walk all of history.
-#                                 a3fe234 is origin/main's tip today.
 #
 #   "bump-minor-pre-major": true  LIVE, AND IT IS THE ONE STOPPING AN ACCIDENTAL
 #                                 1.0.0. At 0.x a `feat!:` bumps the MINOR
@@ -185,8 +176,7 @@
 #
 # ⚠ BOTH FLAGS ARE GATED ON `version.isPreMajor` — `major < 1` (version.ts). They
 # are live ONLY while this repo is 0.x. AT 1.0.0 THEY BOTH BECOME DEAD NO-OPS BY
-# THEMSELVES; nothing has to be remembered. (8.6 omitted both and called them dead,
-# correctly, at 1.0.0-preview.N — major 1. The 0.x move is what woke them up.)
+# THEMSELVES; nothing has to be remembered.
 #
 # ⚠ THE LADDER, MEASURED against release-please 17.10.3's own
 # DefaultVersioningStrategy (executed, not traced). From 0.1.0:
@@ -194,84 +184,278 @@
 #     fix:    ->  0.1.1        feat:   ->  0.2.0        feat!:  ->  0.2.0
 #
 # `feat:` and `feat!:` AGREE at 0.x — both are a minor bump — and that is not a
-# bug, it is what `bump-minor-pre-major` buys. Note what it means: THE COMMIT TYPE
-# NOW MOVES THE VERSION (8.6's "the version is a counter" is dead — that was a
-# property of the prerelease scheme, not of this repo). A `fix:` and a `feat:` are
-# genuinely different releases now.
+# bug, it is what `bump-minor-pre-major` buys. THE COMMIT TYPE NOW MOVES THE
+# VERSION. A `fix:` and a `feat:` are genuinely different releases now.
 #
-# The commitlint gate stays safely ADVISORY, but the reason CHANGED and the old one
-# no longer holds: it is not that the type cannot move the version — it can. It is
-# that the blast radius of a mis-typed SUBJECT at 0.x is bounded by the minor: the
-# worst a wrong type does is a patch where a minor belonged, or a minor where a
-# patch belonged. It can never reach 1.0.0, because `bump-minor-pre-major` is what
-# decides that and no subject can flip it. (A `release-as` FOOTER in a BODY still
-# sets the version outright — that is footer-check.ps1's subject, not commitlint's.)
+# The commitlint gate stays safely ADVISORY: the blast radius of a mis-typed
+# SUBJECT at 0.x is bounded by the minor — the worst a wrong type does is a patch
+# where a minor belonged, or a minor where a patch belonged. It can never reach
+# 1.0.0, because `bump-minor-pre-major` decides that and no subject can flip it.
+# (A `release-as` FOOTER in a BODY still sets the version outright — that is
+# footer-check.ps1's subject, not commitlint's.)
 #
-# ⚠ GRADUATING TO 1.0.0 — and it is NO LONGER A TRAP. Under 8.6's prerelease scheme
-# it took a `Release-As:` commit AND a config change, and stopping at the commit
-# silently re-entered preview. Deleting the prerelease scheme deleted that trap: a
-# `Release-As: 1.0.0` commit is now SUFFICIENT, and the two flags above deactivate
-# themselves at major 1. What changes at graduation is BEHAVIOUR, not config:
-# `feat!:` starts producing 2.0.0 instead of a minor. docs/GITHUB-SETUP.md carries
-# the full section where the person graduating is standing.
+# ⚠ GRADUATING TO 1.0.0 — a `Release-As: 1.0.0` commit is SUFFICIENT, and the two
+# flags above deactivate themselves at major 1. What changes at graduation is
+# BEHAVIOUR, not config: `feat!:` starts producing 2.0.0 instead of a minor.
+# docs/GITHUB-SETUP.md carries the full section where the person graduating is
+# standing.
 #
 # See docs/plans/2026-07-17-phase-8.6-design.md for 8.6's nine decisions; Phase 8.7
-# replaced its decision 2 (the counter) with the 0.x ladder above.
+# replaced its decision 2 (the counter) with the 0.x ladder above; the publish
+# relocation onto `release_created` is the Phase 9.x auto-publish re-cut.
 # ─────────────────────────────────────────────────────────────────────────────
 name: release-please
 
 on:
   push:
     branches: [main]
-  # RE-RUNNABLE ON DEMAND, and the reason is a real one that already happened.
-  #
-  # On its first live run (2026-07-17, the 8.6 merge) release-please created its
-  # branch with the right manifest and then FAILED at the PR: "GitHub Actions is
-  # not permitted to create or approve pull requests" — a repo setting, since
-  # enabled. The design's U1 predicted exactly this shape ("no PR appears —
-  # loud") and it failed loudly, as recorded. But with `push: main` as the only
-  # trigger there was NO WAY TO RE-RUN IT: the fix could only be proven by
-  # merging something else, which makes an unrelated PR the test harness for the
-  # release machinery.
-  #
-  # A workflow whose only trigger is an event you cannot stage is a workflow you
-  # cannot debug. This costs nothing (it computes and opens a PR; it publishes
-  # nothing — release.yml fires on `release: published` alone) and it buys the
-  # ability to answer "is release-please healthy?" without merging anything.
+  # RE-RUNNABLE ON DEMAND. On its first live run (2026-07-17) release-please
+  # created its branch and then FAILED at the PR ("GitHub Actions is not
+  # permitted to create or approve pull requests" — a repo setting, since
+  # enabled). With `push: main` as the only trigger there was NO WAY TO RE-RUN
+  # it: the fix could only be proven by merging something else. A workflow whose
+  # only trigger is an event you cannot stage is a workflow you cannot debug.
+  # This costs nothing on an ordinary dispatch (release_created is false, so the
+  # publish jobs below skip) and buys the ability to answer "is release-please
+  # healthy?" without merging anything.
   workflow_dispatch:
 
 permissions:
   contents: write
   pull-requests: write
 
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
 jobs:
-  # ONE JOB. There is no second one, and the block at the top of this file is
-  # why. What this job produces is a pull request; a human merges it, and a
-  # human clicks Publish on the draft it leads to.
+  # ───────────────────────────────────────────────────────────────────────────
+  # release-please — opens/updates the release PR, and (on the merge of that PR)
+  # cuts the tag + publishes the Release. Its `release_created` output is the
+  # gate for the two publish jobs below.
+  # ───────────────────────────────────────────────────────────────────────────
   release-please:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    outputs:
+      # 'true' ONLY on the run that merges a release PR — the one run that should
+      # publish. Every ordinary push to main leaves this empty/false and the
+      # validate + push jobs skip.
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+      version: ${{ steps.release.outputs.version }}
     steps:
       - uses: googleapis/release-please-action@v5
+        id: release
         with:
-          # The default GITHUB_TOKEN, deliberately — it can open a PR and cut a
-          # draft Release, and it CANNOT publish to nuget.org, because the one
-          # thing that can is a secret this workflow has never heard of.
+          # The default GITHUB_TOKEN, deliberately. THE KNOWN COST, AND THE
+          # OWNER'S DECISION: this token is why the release PR's checks arrive
+          # APPROVAL-REQUIRED (a human clicks "Approve workflows to run" before
+          # build-test / android-build / ios-build start). release-please-action's
+          # README names the remedy — a PAT — and it is REJECTED ON PURPOSE: a PAT
+          # is a SECOND repo-scoped secret that expires and needs rotation, sitting
+          # next to the one NUGET secret this repo's whole law is built around. The
+          # approve-click costs one click and expires never.
           #
-          # THE KNOWN COST, AND THE OWNER'S DECISION. This token is exactly why
-          # the release PR's checks arrive APPROVAL-REQUIRED (the block at the
-          # top of this file). release-please-action's own README names the
-          # remedy: "You will want to configure a GitHub Actions secret with a
-          # Personal Access Token if you want GitHub Actions CI checks to run on
-          # Release Please PRs."
-          #
-          # THE PAT IS REJECTED, ON PURPOSE. It would buy automatic CI at the
-          # price of a SECOND repo-scoped secret — one that expires, needs
-          # rotation, and would sit next to NUGET_API_KEY in a repo whose whole
-          # release law is "one secret, and it is only reachable after a human
-          # click". The approve-click costs one click and expires never. It is
-          # the same shape as the draft-publish click this phase already treats
-          # as the go: a human gate, not a hurdle to route around.
+          # This token also does NOT contradict the auto-publish design. The
+          # anti-recursion rule (a GITHUB_TOKEN-created Release fires no `release`
+          # event) is exactly WHY the publish lives in THIS run, gated on the
+          # action's own `release_created` output, rather than in a second workflow
+          # waiting for an event that never comes.
           token: ${{ secrets.GITHUB_TOKEN }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # validate — no key, ever. If it is provable, it is proven here, BEFORE the
+  # key exists in any run. Runs ONLY when a release PR was just merged.
+  # ───────────────────────────────────────────────────────────────────────────
+  validate:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created == 'true' }}
+    # windows-latest rather than the reference's ubuntu-latest: consumer-smoke.ps1
+    # is Windows-shaped (literal backslashes in its paths are filename characters
+    # on Linux). THE RELEASE LANE PACKS WITH THE SAME SCRIPT THE REQUIRED
+    # build-test LANE PROVES on every PR.
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      # Check out the exact commit the tag names — the one being released.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.release-please.outputs.tag_name }}
+
+      - name: Setup .NET SDK (global.json — 10.0.3xx band)
+        uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+
+      # ── The door's own logic, proven on every PR too ─────────────────────
+      # The 9-row classifier table with NEGATIVE rows — the same self-test the
+      # required lane runs. It is what makes the tag↔props assertion below
+      # non-vacuous.
+      - name: Classifier self-test (9 rows — negative rows included)
+        run: |
+          .\scripts\release-preflight.ps1 -SelfTest
+          if ($LASTEXITCODE -ne 0) { throw "release-preflight -SelfTest failed (exit $LASTEXITCODE)" }
+
+      # ── Classify THIS release's tag, and assert it against the props ──────
+      # ONE namespace publishes: v<semver> -> assert tag == props, then proceed;
+      # everything else REDS. THE PROPS WINS AND THE TAG IS A CLAIM — this never
+      # overrides the version (no MSBuild version-property override); it verifies it.
+      - name: Classify the release tag (and assert it against the props version)
+        run: |
+          .\scripts\release-preflight.ps1 -Tag "${{ needs.release-please.outputs.tag_name }}"
+          if ($LASTEXITCODE -ne 0) { throw "the release tag was REJECTED — see the step summary. Nothing was published." }
+
+      # ── nuget.org state — the one thing no local step can know ────────────
+      # There is no `dotnet nuget push --dry-run`. The preflight carries a
+      # TWO-ARM POSITIVE CONTROL so an absence scanner must prove it can SEE and
+      # DISTINGUISH before its "all clear" means anything. It reds on a forgotten
+      # bump BEFORE the key exists — which is what makes --skip-duplicate safe in
+      # the push job.
+      - name: nuget.org preflight (two control arms, then the shipped set)
+        run: |
+          .\scripts\release-preflight.ps1 -Preflight
+          if ($LASTEXITCODE -ne 0) { throw "the nuget.org preflight FAILED — see the step summary. Nothing was published." }
+
+      # ── Pack the bytes that will be pushed ───────────────────────────────
+      # THE SAME SCRIPT build-test runs on every PR. PACK ONCE, VALIDATE THOSE
+      # BYTES, PUSH THOSE BYTES: the artifact IS the hand-off; the push job
+      # downloads exactly what the smoke just proved and re-packs nothing.
+      - name: Pack + validate the packages (consumer-smoke.ps1 — the same script build-test runs)
+        run: |
+          .\scripts\consumer-smoke.ps1
+          if ($LASTEXITCODE -ne 0) { throw "consumer-smoke.ps1 failed (exit $LASTEXITCODE) — nothing was published." }
+
+      # This upload -> download hand-off is the same shape the advisory nightly
+      # android-instrumented.yml (`publish-so` -> `emulator`) exercises every
+      # night: upload-artifact@v7 here, download-artifact@v8 in `push`.
+      - name: Upload the validated feed (the bytes push will send — it packs nothing)
+        uses: actions/upload-artifact@v7
+        with:
+          name: packages
+          path: artifacts/packages/
+          if-no-files-found: error
+          retention-days: 90
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # push — the only job that has ever heard of the key.
+  # ───────────────────────────────────────────────────────────────────────────
+  push:
+    needs: [release-please, validate]
+    # Same release_created gate. `validate` already implies it, but naming it
+    # here keeps the guard structural and independent of the needs chain.
+    if: ${{ needs.release-please.outputs.release_created == 'true' }}
+    runs-on: windows-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: pwsh
+
+    # THE ONE REFERENCE. The `secrets.NUGET_API_KEY` expression on the next line
+    # is the ONLY one across .github/workflows/*.yml, and ReleaseWorkflowPinTests
+    # reds the required build-test lane if a second ever appears (in ci.yml, in
+    # release.yml, in the validate job above — anywhere). It is job-level rather
+    # than step-level so the presence check and the push can both read it while
+    # the reference stays singular.
+    #
+    # That pin counts COMMENTS too — which is why every comment in this file
+    # spells the secret by NAME and never in its `${{ … }}` form. The strictness
+    # buys a greppable one-line audit ("what can reach my key?"), written out in
+    # docs/GITHUB-SETUP.md, which is not a workflow file and can quote the
+    # expression safely.
+    #
+    # ⚠ RESIDUAL, stated rather than papered over (owner call): a repo-level
+    # secret is readable by any workflow run on a branch by an actor with write
+    # access. A GitHub environment with a branch restriction would scope it —
+    # rejected because the owner's law is "one secret, and the release-PR merge is
+    # the go", and an environment gate is a SECOND go on an action that is already
+    # a deliberate merge. The mitigations that cost nothing are taken: exactly one
+    # reference, one job, gated on release_created, pinned by a test.
+    env:
+      NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+
+    steps:
+      # NO CHECKOUT, DELIBERATELY. This job has no source tree — so "push
+      # re-packs nothing" is STRUCTURAL rather than promised: there is nothing
+      # here to pack FROM. The only bytes in this job are the ones validate
+      # proved and uploaded. (It is also why setup-dotnet takes an explicit band
+      # here instead of global.json — there is no global.json to read, and
+      # `dotnet nuget push` is a transport, not a build.)
+      - name: Setup .NET SDK (10.0.x — nuget push is a transport; there is no project to build)
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Download the validated feed (these bytes were packed and proven by validate)
+        uses: actions/download-artifact@v8
+        with:
+          name: packages
+          path: artifacts/packages
+
+      # A NAMED presence check. An absent or mistyped secret otherwise surfaces
+      # as a bare 401 from a CLI, at the one moment the owner is least able to
+      # debug it. The key is never echoed — only its presence and length.
+      - name: Assert NUGET_API_KEY is present
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:NUGET_API_KEY)) {
+            throw "NUGET_API_KEY is unset or misnamed — the one secret this repository needs. Add it at Settings -> Secrets and variables -> Actions, named EXACTLY 'NUGET_API_KEY'. See docs/GITHUB-SETUP.md -> 'Secrets — NUGET_API_KEY, the one secret'. Nothing was published."
+          }
+          Write-Host "NUGET_API_KEY is present ($($env:NUGET_API_KEY.Length) chars) — not echoed."
+
+      # ── The push ─────────────────────────────────────────────────────────
+      # ENUMERATED FROM THE FEED, not from a name list (which would be the
+      # shipped set's Nth copy and would then need its own pin). Ordering the
+      # pushes is theatre: nuget.org accepts a package whose dependencies are not
+      # yet published, and its validation and indexing are ASYNCHRONOUS (minutes).
+      #
+      # SYMBOLS RIDE BY ADJACENCY. The .snupkg files sit beside their .nupkg and
+      # `dotnet nuget push` carries an adjacent symbol package automatically
+      # (`-n|--no-symbols` is an opt-OUT). The glob is *.nupkg, which does NOT
+      # match *.snupkg — no double push. That symbols actually LAND on the symbol
+      # server is UNPROVEN until the first real push — recorded, not claimed.
+      #
+      # --skip-duplicate owns RECOVERY: three pushed, three failed -> re-run the
+      # job; the three already up must not 409 the re-run. The preflight above
+      # owns "you forgot to bump" — the failure --skip-duplicate would otherwise
+      # MASK by pushing nothing and going green. Neither is sound alone.
+      - name: dotnet nuget push (the enumerated feed — --skip-duplicate; the preflight already proved the version is free)
+        run: |
+          $feed = "artifacts/packages"
+          $nupkgs = @(Get-ChildItem $feed -Filter *.nupkg -File)
+          if ($nupkgs.Count -eq 0) {
+            throw "ZERO .nupkg found in $feed — the artifact hand-off from validate is broken. Pushing nothing and going green is the failure this check exists to prevent."
+          }
+          Write-Host "pushing $($nupkgs.Count) packages (symbols ride adjacent):"
+          $nupkgs | ForEach-Object { Write-Host "  $($_.Name)" }
+          Get-ChildItem $feed -Filter *.snupkg -File | ForEach-Object { Write-Host "  (symbols) $($_.Name)" }
+
+          dotnet nuget push $nupkgs.FullName `
+            --api-key $env:NUGET_API_KEY `
+            --source https://api.nuget.org/v3/index.json `
+            --skip-duplicate
+          if ($LASTEXITCODE -ne 0) {
+            throw "dotnet nuget push failed (exit $LASTEXITCODE). PARTIAL FAILURE IS RECOVERABLE: re-run THIS JOB from the Actions UI — --skip-duplicate makes the packages that already landed no-ops. See docs/GITHUB-SETUP.md."
+          }
+
+      - name: Summarise what was published
+        run: |
+          $nupkgs = @(Get-ChildItem "artifacts/packages" -Filter *.nupkg -File)
+          $lines = @(
+            "### ✅ Published to nuget.org",
+            "",
+            "Release **${{ needs.release-please.outputs.tag_name }}** — $($nupkgs.Count) packages pushed from the feed ``validate`` packed and proved.",
+            ""
+          )
+          $lines += $nupkgs | ForEach-Object { "- ``$($_.Name)``" }
+          $lines += @(
+            "",
+            "nuget.org validation and indexing are **asynchronous** — packages take minutes to become restorable, and a consumer restoring inside that window may see an unindexed dependency. That window is self-healing.",
+            "",
+            "Symbols rode adjacent to their packages; that they reached the symbol server is not asserted here (see ``docs/GITHUB-SETUP.md``)."
+          )
+          $lines -join "`n" | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
