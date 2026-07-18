@@ -1,7 +1,8 @@
 # Milestone 9 — Host APIs (Platform Breadth)
 
-**Status:** in progress — opened 2026-07-17; **5/6 DoD closed** (only #6, hygiene + the
-final audit, remains — Phase 9.4)
+**Status:** ✅ **complete — 2026-07-18**; **6/6 DoD closed** — Phase 9.4 shipped the hygiene +
+[final audit](../plans/2026-07-18-milestone-9-final-audit.md) (all six DoD PASS; the ABI grew
+exactly once in 9.0 and held for three more capabilities; no tag — the 8.6 rule, closure is the audit)
 **Source:** BACKLOG "P4 — full platform coverage" (remainder). The roadmap called this
 milestone "Platform Breadth + Real Device"; the second half is **deferred at
 milestone-open** (below), so the name now says what the milestone actually is.
@@ -126,7 +127,7 @@ generically — the shape 9.1–9.3 reuse with no further ABI change.**
    the real camera UI + sensor + EXIF (the milestone's second least-emulated capability,
    with biometrics). **SafeAreaView, flagged three phases as camera's likely trigger, is
    NOT tripped** — the capture UI is system chrome, not app-laid-out.
-6. **Hygiene + close:** every new surface CI-asserted (counts + gates with provenance);
+6. **Hygiene + close:** ✅ **Closed by Phase 9.4** ([final audit](../plans/2026-07-18-milestone-9-final-audit.md) — all 6 DoD PASS, ABI grew exactly once re-proven, counts reconciled gate ↔ README, .NET 754 re-run live). Every new surface CI-asserted (counts + gates with provenance);
    the sample app grows a demo page per capability (the proof surface discipline);
    decision log per phase; final audit. **No milestone tag** — closure is the audit
    (the 8.6 rule). Release-please rides along: these phases land as `feat:` commits,

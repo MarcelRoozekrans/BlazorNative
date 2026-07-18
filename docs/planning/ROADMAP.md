@@ -1373,7 +1373,7 @@ Developer experience and ecosystem".
 
 ---
 
-### 🔄 Milestone 9 — Host APIs (Platform Breadth)  *(active — opened 2026-07-17)*
+### ✅ Milestone 9 — Host APIs (Platform Breadth)  *(complete 2026-07-18)*
 
 The bridge grows four real capabilities via the
 [bridge-extension pattern](../bridge-extension.md): **geolocation, local notifications,
@@ -1623,7 +1623,21 @@ emulator lanes. The inspector channel is ledgered a third time. Maps to BACKLOG.
      (hygiene + audit, Phase 9.4) remains.** See
      [design](../plans/2026-07-18-phase-9.3-design.md) +
      [conclusion](../plans/2026-07-18-phase-9.3-conclusion.md).
-- **Phase 9.4** — hygiene + M9 final audit + close (DoD #6; no tag — the 8.6 rule) — ⏳
+- ✅ **Phase 9.4** — hygiene + M9 final audit + close (DoD #6; no tag — the 8.6 rule) —
+  *complete (2026-07-18)*
+   - **M9 CLOSED — all 6 DoD PASS**, verified against live artifacts, not planning prose. See the
+     [final audit](../plans/2026-07-18-milestone-9-final-audit.md). **.NET suite re-run live: 754/0/0**
+     (Runtime 597 + Renderer 132 + Analyzers 25) — matches the `ci.yml` gate literal. **The ABI grew
+     EXACTLY ONCE** (9.0, 72→80 bytes / 9→10 exports): re-proven at three mirrors (`BridgeProtocolNative.cs`
+     80 bytes/HostCallBegin@72, `BlazorNativeRuntimeC.h` the same, 10 `[UnmanagedCallersOnly]` exports)
+     + three falsifiable `*AbiUnchangedTests` suites (every iOS struct-grow mutant failed to COMPILE);
+     `HostCallOp` has exactly the 5 ops (Geolocation=0 … Camera=4). **Counts reconcile gate ↔ README**:
+     754 / 119 / 209 / 233 — no row left behind (the 9.2 lesson). **Ledger settled**: M5 secure storage
+     CONSUMED (9.2), M6/M7 natural-size + SafeAreaView DISCHARGED (9.3); carried forward = real-device
+     iOS/TestFlight (Apple account), FCM push (Firebase), inspector channel (3rd deferral). **Honest
+     UNPROVEN**: camera sensor + biometrics on the physical phone, iOS Secure Enclave. **No tag** (8.6
+     rule — closure is the audit). Git: PRs #118/#127/#128/#129 landed on `main` as `feat:` commits;
+     `git tag -l` empty.
 
 ---
 
