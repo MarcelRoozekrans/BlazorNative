@@ -341,7 +341,7 @@ jobs:
             > ios-out/xcresult.json 2>/dev/null || true
           ls -la ios-out/crash || true
 
-      - name: Assert XCTest baseline (154 passed / 0 failed)
+      - name: Assert XCTest baseline (218 passed / 0 failed)
         if: always()
         run: |
           log=ios-out/xcodebuild-test.log
@@ -935,9 +935,51 @@ jobs:
           #       milestone law, asserted on the sim.
           # The real permission ALERT + the real tap UX are owner-device territory; the auth-
           # status override + the prompt-suppress switch + the hand-rolled tap fire stand in.
-          if [ "$failed" -ne 0 ] || [ "$passed" -ne 189 ]; then
+          #
+          # 189 -> 218 (Phase 9.2 Gate 3, +29) — biometrics + secure storage's iOS half:
+          # AppleShellBridge.hostCallBegin (offset 72) wired for op=Biometrics (=2) over
+          # LAContext and op=SecureStorage (=3) over the Keychain — the SECOND reuse of the
+          # 9.0 ABI (NO struct grow, NO new export, BnDriftTests' 80-byte/offset-72/10-export
+          # pins UNMOVED), and the SECOND user of the {"value":…} host_call_complete payload
+          # channel geolocation opened. Split BnBiometricsTests (+15) / BnSecureStorageTests (+14).
+          #   +2  biometric CHECK: canEvaluatePolicy available -> Authenticated, not-enrolled ->
+          #       Unavailable (the read-only peek, never a prompt).
+          #   +7  the authenticate MATRIX via the evaluatePolicy REPLY seam — each LAError as a
+          #       status VALUE: success -> Authenticated, authenticationFailed -> Failed,
+          #       userCancel/systemCancel -> Cancelled, biometryLockout -> LockedOut,
+          #       biometryNotAvailable -> Unavailable, an out-of-set code -> Error (all six
+          #       0..5 asserted; DATA, never a Swift throw across the C boundary, never a hang).
+          #   +1  an unknown biometric ACTION -> Error; +1 op=2 ROUTES to the biometrics handler.
+          #   +1  the biometric wire enum pinned 0..5 + op=2 (the three-way mirror, byte-identical).
+          #   +1  LAContext RETENTION across a suspended evaluation (the CLLocationManager weak-
+          #       delegate lesson: a deallocated context cancels the eval) — held then released.
+          #   +2  BOOT (/secure mounted): an Authenticate tap round-trips "status:Authenticated"
+          #       through the REAL host_call_complete (rc 0); a userCancel echoes "status:Cancelled"
+          #       within a BOUNDED await (no hang).
+          #   +1  the secure wire enum pinned 0..4 + op=3.
+          #   +3  the PLAIN Keychain store round-trips a secret (set->get->delete->NotFound); a get
+          #       of an absent key is NotFound; delete is idempotent Ok — REAL Keychain.
+          #   +1  THE OS-KEY BINDING: a plain get of a `.biometryCurrentSet` AUTH item returns
+          #       AuthFailed (kSecUseAuthenticationUI=.fail -> errSecInteractionNotAllowed; the OS
+          #       refuses the bytes without auth UI). The security contract, proven REAL against
+          #       the Keychain ACL; the "drop the SecAccessControl" mutation reds it.
+          #   +4  getWithAuth: absent -> NotFound (before any prompt); a seam-AUTHORIZE returns the
+          #       value in {"value":…} (the pairing, the payload channel's 2nd user); a seam-DENY ->
+          #       AuthFailed (DATA, no hang); a PLAIN item reads DIRECTLY (no gate, no prompt).
+          #   +1  the iOS-vs-Android ASYMMETRY: an auth-bound `set` does NOT prompt on iOS (the ACL
+          #       gates retrieval, not storage; Android's per-use-auth key prompts on write).
+          #   +1  an unknown secure ACTION -> Error; +1 op=3 ROUTES to the secure-storage handler.
+          #   +2  BOOT (/secure mounted): Set (auth) then Unlock round-trips "value:hunter2" through
+          #       the REAL host_call_complete (the pairing, rc 0); Unlock after Delete echoes
+          #       "status:NotFound" within a BOUNDED await (no hang).
+          # SIMULATOR-SCOPED + LABELLED (the M9 iOS deferral): the REAL Face ID sheet + the TEE-
+          # enforced Secure-Enclave read behind it are owner-device territory (iOS real-device is
+          # DEFERRED; the sim's enrolled Face ID is a menu toggle, not a TrueDepth capture, and the
+          # gesture is not drivable in a hosted XCTest). The authGate/evaluatePolicy seams stand in;
+          # the OS-key BINDING itself (a plain get AuthFails) is proven REAL against the Keychain.
+          if [ "$failed" -ne 0 ] || [ "$passed" -ne 218 ]; then
             grep -E "Test Case '.*' (passed|failed)" "$log" || true
-            echo "iOS XCTest baseline drift: expected 189 passed / 0 failed, got passed=$passed failed=$failed" >&2
+            echo "iOS XCTest baseline drift: expected 218 passed / 0 failed, got passed=$passed failed=$failed" >&2
             exit 1
           fi
 
