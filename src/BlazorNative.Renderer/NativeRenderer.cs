@@ -376,7 +376,26 @@ public sealed class NativeRenderer : BlazorRenderer
             patches.Add(new CommitFramePatch(frameId, timestamp));
 
             var frame = new RenderFrame(frameId, timestamp, patches.AsSpan().ToArray());
-            _ = _frames.InvokeAsync(frame, default);
+
+            // OBSERVE the Frames task — never discard it (#123). Frames is the
+            // documented TEST channel, and AsyncEventHandler reports a
+            // subscriber fault THROUGH the returned task: a discarded task
+            // silently swallows a throw inside a frame subscriber (a failing
+            // assertion), so a test could be green while actually failing.
+            // Route the fault through the SAME HandleException path the
+            // synchronous body uses, so StrictErrors surfaces it. Sequential
+            // subscribers complete inline (the common case) → the task is
+            // already done, so GetResult() rethrows into the catch below; a
+            // genuinely async subscriber gets a fault continuation so its
+            // throw is still routed, never dropped.
+            var framesTask = _frames.InvokeAsync(frame, default);
+            if (framesTask.IsCompleted)
+                framesTask.GetAwaiter().GetResult();
+            else
+                framesTask.AsTask().ContinueWith(
+                    static (t, self) => ((NativeRenderer)self!).HandleException(
+                        t.Exception!.InnerException ?? t.Exception),
+                    this, TaskContinuationOptions.OnlyOnFaulted);
             DispatchFrame(frame);
         }
         catch (Exception ex)
