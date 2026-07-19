@@ -15,4 +15,5 @@ gradlew text eol=lf
 *.jar   binary
 *.so    binary
 *.dll   binary
+*.ttf   binary
 *.keystore binary

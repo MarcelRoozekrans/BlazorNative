@@ -92,6 +92,23 @@
 	     environment entitlement + UIBackgroundModes:remote-notification) is out of
 	     scope for the POC. -->
 
+	<!-- ── Font parity Gate A (#126): bundle + register Inter ─────────────────────
+	     UIAppFonts registers the app-bundled TrueType font at launch, so
+	     `UIFont(name: "Inter-Regular", size:)` resolves it declaratively — no
+	     CTFontManagerRegisterFontsForURL boot call needed. The VALUE is the ttf's
+	     bundle FILENAME (resources copy flat to the bundle root, so the path is just
+	     the name); the NAME iOS then resolves by is the font's PostScript name
+	     `Inter-Regular` (nameID 6), which is NOT the same string and must be verified
+	     against the asset — a wrong PostScript name silently falls back to the system
+	     font. BnFontTests.testInterRegularIsRegisteredAndNotTheSystemFallback is the
+	     load guard that turns that from an assumption into a checked fact. The font is
+	     bundled via project.yml's BnHost `sources: - path: BnHost` (Fonts/ rides along;
+	     XcodeGen adds .ttf to Copy Bundle Resources). No text-rendering behavior change
+	     yet — Gate B forces Inter onto the text leaves + measure path. -->
+	<key>UIAppFonts</key>
+	<array>
+		<string>Inter-Regular.ttf</string>
+	</array>
 	<key>UILaunchStoryboardName</key>
 	<string></string>
 	<key>UIRequiredDeviceCapabilities</key>
