@@ -1,8 +1,10 @@
 # Milestone 10 — Consolidation & Hardening
 
-**Status:** 🔄 **active — opened 2026-07-19; 2/7 DoD closed** — Phase 10.0 fixed the two
+**Status:** 🔄 **active — opened 2026-07-19; 4/7 DoD closed.** Phase 10.0 fixed the two
 correctness bugs (#121, #123), red-first, no frozen-ABI change
-([conclusion](../plans/2026-07-19-phase-10.0-conclusion.md)).
+([conclusion](../plans/2026-07-19-phase-10.0-conclusion.md)); Phase 10.1 governed the two
+version literals (#120, #122)
+([conclusion](../plans/2026-07-19-phase-10.1-conclusion.md)).
 **Predecessor:** Milestone 9 — complete 2026-07-18
 ([final audit](../plans/2026-07-18-milestone-9-final-audit.md), all 6 DoD PASS; the ABI
 grew exactly once in 9.0 and held for three more capabilities; no tag — the 8.6 rule,
@@ -73,12 +75,17 @@ door accurate — a legitimate place to wind down.
    the fix and pass after — the false-green risk is the finding, so the proof must be that
    green now means green.
 
-3. **No stale version reported to consumers** (#120). `Exports.VersionNumber` (the
+3. **No stale version reported to consumers** (#120). ✅ **Closed by Phase 10.1** —
+   `Exports.VersionNumber` is now a release-please-governed mirror (`0.1.0` +
+   `x-release-please-version`, added to `extra-files`) with a drift pin == props; red-first
+   proved `1.4.0-phase-5.4 ≠ 0.1.0`. `Exports.VersionNumber` (the
    ungoverned 8th literal, frozen at `1.4.0-phase-5.4`) is brought **into** the version
    apparatus — mirrored from the manifest/props like the other literals (drift-pinned) or
    removed if nothing needs it. A consumer reading the runtime version gets the real one.
 
-4. **The one load-bearing version is guarded** (#122). `RuntimeFrameworkVersion` (`10.0.9`,
+4. **The one load-bearing version is guarded** (#122). ✅ **Closed by Phase 10.1** — a drift
+   pin parses every `RuntimeFrameworkVersion` occurrence and asserts agreement (canonical
+   derived from the files, not hardcoded); mutation-proven it bites. `RuntimeFrameworkVersion` (`10.0.9`,
    duplicated in the sample + template with no pin — the version that makes bionic/iOS
    NativeAOT compile at all) gets a drift pin linking its occurrences, matching the
    discipline every cosmetic literal already gets.
@@ -104,6 +111,11 @@ door accurate — a legitimate place to wind down.
      count is refreshed to the live baseline (.NET 754 / JVM 119 / Android 209 / iOS 233).
    - **No stale milestone/version prose** — references to mid-build state (M8/M9 in
      progress, draft flow, pre-publish) are brought to "M9 complete, published, hardening."
+   - **The version-governance numerology** (Phase 10.1 follow-up): `Directory.Build.props`'s
+     "one author, six mirrors, seven literals across four files" + the "count of eight" line,
+     `PackageVersionPinTests.cs`'s "N is 6" header, and `docs/bridge-extension.md`'s
+     `1.4.0-phase-5.4` narrative — reconciled to the post-10.1 count (5 governed files / 8
+     literals) coherently.
    - Where practical, a drift guard is added for any doc claim that a test can pin (counts,
      export names), so the docs can't silently re-drift.
 
