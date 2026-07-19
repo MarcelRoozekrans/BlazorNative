@@ -10,9 +10,9 @@ sidebar_position: 2
 This is the Android path, because **the Android path is the template**. iOS is a manual
 procedure against a reference shell — see [Shells → iOS](../shells/ios.md).
 
-If `dotnet new install` has not worked for you yet, read
-[Installation](./installation.md) first — the template is not on nuget.org until the
-maintainer cuts a Release, and that is the expected reason.
+If `dotnet new blazornative` is not found, read [Installation](./installation.md) first —
+the template is published on nuget.org (v0.1.0), and `dotnet new install
+BlazorNative.Templates` is the one-line install.
 
 ## 1. Create the app
 
