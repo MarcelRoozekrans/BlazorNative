@@ -1641,7 +1641,7 @@ emulator lanes. The inspector channel is ledgered a third time. Maps to BACKLOG.
 
 ---
 
-### 🔄 Milestone 10 — Consolidation & Hardening  *(active — opened 2026-07-19; old P6 "Framework Hardening", **rescoped to correctness + accuracy debt**)*
+### ✅ Milestone 10 — Consolidation & Hardening  *(complete 2026-07-19; old P6 "Framework Hardening", **rescoped to correctness + accuracy debt**)*
 
 **0.1.0 is published** (seven packages, 2026-07-19) — the library is *consumed*, and the
 9.0 full-repo review found defects that ship inside it. M10 adds **no platform surface**;
@@ -1667,8 +1667,11 @@ iOS (no Apple account), FCM push (no Firebase), and the inspector channel stay o
   auto-publish/published-0.1.0 reality with the honest CI-coverage split; `BnListWindow` in
   `double` (red-first); six #125 items fixed-or-ledgered; actions SHA-pinned. .NET 780 / JVM
   120. [conclusion](../plans/2026-07-19-phase-10.2-conclusion.md)*
-- **Phase 10.3** — hygiene + M10 final audit + close (no tag — the 8.6 rule) — **the only one
-  left; M10 at 6/7 DoD**.
+- ✅ **Phase 10.3** — hygiene + M10 final audit + close (no tag — the 8.6 rule) — *complete
+  (2026-07-19); all 7 DoD PASS on live evidence — .NET re-run live at 780/0/0, the four gate
+  literals ↔ README rows reconciled, the frozen bridge re-proven unmoved (80 bytes / 10
+  exports / 5 ops; the init-input struct the only thing that grew), issues #119–#125 CLOSED /
+  #126 correctly deferred. [final audit](../plans/2026-07-19-milestone-10-final-audit.md)*.
 
 ---
 
