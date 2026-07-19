@@ -65,9 +65,12 @@ class BootSmokeNativeTest {
             versionString.contains("BlazorNative.Runtime"),
             "Expected version string to mention 'BlazorNative.Runtime'; got '$versionString'"
         )
+        // The version is now governed from the props (#120) and walks with the
+        // package (0.1.0, 0.1.1, …) — assert a semver shape, not a pinned literal,
+        // so a release bump doesn't re-red this boot smoke.
         assertTrue(
-            versionString.contains("phase-5.4"),
-            "Expected version string to mention 'phase-5.4'; got '$versionString'"
+            Regex("""\d+\.\d+\.\d+""").containsMatchIn(versionString),
+            "Expected version string to carry a semver; got '$versionString'"
         )
     }
 

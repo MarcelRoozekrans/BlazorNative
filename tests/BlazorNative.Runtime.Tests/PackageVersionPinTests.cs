@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Xml.Linq;
 
 namespace BlazorNative.Runtime.Tests;
@@ -382,6 +383,126 @@ public sealed class PackageVersionPinTests
             + "If you genuinely want a round-trip updater for some new file, that is a decision-3 "
             + "change: make it deliberately, in the design, and expect the reformat. Do not reach "
             + "it by writing a string and letting an extension decide.");
+    }
+
+    /// <summary>THE RUNTIME-VERSION MIRROR PIN (Phase 10.1, #120). The runtime's
+    /// consumer-visible version literal — BlazorNative.Runtime.Exports.VersionNumber,
+    /// the string the C-ABI `version` export returns and the value
+    /// NativeShellBridge.PlatformInfo / GetPlatformInfoAsync report as AppVersion —
+    /// must equal the props <Version>, the same manifest↔props equality every other
+    /// mirror gets.
+    ///
+    /// WHY IT WAS NEEDED. Until 10.1 this literal was an EIGHTH, ungoverned version
+    /// string: it sat at "1.4.0-phase-5.4", frozen ~4 milestones back, in NO test
+    /// and NOT in release-please's extra-files. The package was 0.1.0, so any
+    /// consumer reading the runtime version got a number four milestones stale. It
+    /// is now a release-please Generic mirror (annotated `// x-release-please-version`
+    /// in Exports.cs and named in release-please-config.json's extra-files), so a
+    /// release bumps it in lockstep with the props — and this pin reds the day the
+    /// two disagree, in the required build-test lane, exactly like the manifest pin.
+    ///
+    /// SOUND AS AN ALWAYS-TRUE INVARIANT ON MAIN: release-please rewrites BOTH the
+    /// props and Exports.cs in the same release PR, so they agree at every commit on
+    /// main between releases. There is no window in which they legitimately differ.</summary>
+    [Fact]
+    public void TheRuntimeVersionExport_AgreesWithTheProps()
+    {
+        string propsVersion = PropsVersion();
+
+        Assert.True(
+            BlazorNative.Runtime.Exports.VersionNumber == propsVersion,
+            "THE RUNTIME VERSION EXPORT AND THE PROPS DISAGREE (Phase 10.1, #120). "
+            + "BlazorNative.Runtime.Exports.VersionNumber is the consumer-visible runtime version — "
+            + "it is what the C-ABI `version` export returns (as \"BlazorNative.Runtime <VersionNumber>\") "
+            + "and what NativeShellBridge reports as the PlatformInfo version and GetPlatformInfoAsync's "
+            + "AppVersion. It is a release-please Generic MIRROR of the props <Version> and must equal "
+            + "it at every commit on main.\n"
+            + $"  Exports.VersionNumber      is \"{BlazorNative.Runtime.Exports.VersionNumber}\"\n"
+            + $"  src/Directory.Build.props  <Version>  is \"{propsVersion}\"\n\n"
+            + "release-please writes BOTH in the same release PR (Exports.cs is named in "
+            + "release-please-config.json's extra-files, and its literal carries the "
+            + "`// x-release-please-version` annotation the Generic updater rewrites). A disagreement "
+            + "means one of:\n"
+            + "  · release-please-config.json's `extra-files` no longer names src/BlazorNative.Runtime/Exports.cs;\n"
+            + "  · the `// x-release-please-version` annotation was removed from, or moved off, the "
+            + "VersionNumber line (the Generic updater is LINE-scoped);\n"
+            + "  · someone hand-edited the literal. Do not — it is a mirror, not a source.");
+    }
+
+    /// <summary>THE RUNTIME-FRAMEWORK-VERSION DRIFT PIN (Phase 10.1, #122). The
+    /// ONE load-bearing version this repo did not guard.
+    ///
+    /// `RuntimeFrameworkVersion` pins the EXACT NativeAOT runtime pack the bionic
+    /// (Android) and iOS publishes compile against — its own csproj comment says it
+    /// exists "so a servicing release can't silently change the toolchain under us".
+    /// It is the version that makes those NativeAOT builds compile at all, yet it
+    /// was hardcoded in THREE csproj spots (the sample's bionic + iOS PropertyGroups
+    /// and the template's bionic one) with NO test linking them — while every
+    /// cosmetic literal in the tree was pinned.
+    ///
+    /// This pin PARSES the value out of every occurrence and asserts they AGREE. It
+    /// pattern-derives the canonical value from occurrence #1 rather than hardcoding
+    /// a second copy of the literal (which would be the very duplication the finding
+    /// warns against): a deliberate bump is a one-line edit per file that this test
+    /// makes visible, and a bump that misses a file reds here in the required
+    /// build-test lane — before a generated or sample app compiles against a runtime
+    /// pack the others do not use.
+    ///
+    /// The occurrences currently AGREE, so this is a GUARD, not a bug-fix; its bite
+    /// was proven by mutation at authoring (Phase 10.1 Gate B).</summary>
+    [Fact]
+    public void EveryRuntimeFrameworkVersion_AgreesAcrossSampleAndTemplate()
+    {
+        string[] files =
+        [
+            Path.Combine(RepoRoot(), "samples", "BlazorNative.SampleApp", "BlazorNative.SampleApp.csproj"),
+            Path.Combine(RepoRoot(), "templates", "BlazorNative.Templates", "content",
+                "BlazorNative.App", "MyBlazorNativeApp.csproj"),
+        ];
+
+        var occurrences = new List<(string Where, string Value)>();
+        foreach (string file in files)
+        {
+            Assert.True(File.Exists(file),
+                $"{file} not found — this drift pin links the RuntimeFrameworkVersion literals across "
+                + "the sample and the template, and it cannot compare a file that is not there. A pin "
+                + "that cannot see its subject must never pass vacuously.");
+
+            string text = File.ReadAllText(file);
+            var matches = Regex.Matches(text, @"<RuntimeFrameworkVersion>([^<]+)</RuntimeFrameworkVersion>");
+            foreach (Match m in matches)
+                occurrences.Add(($"{Path.GetFileName(file)} → <RuntimeFrameworkVersion>", m.Groups[1].Value.Trim()));
+        }
+
+        // NON-VACUITY: fewer than the three known occurrences means the literal
+        // moved or was renamed and this pin stopped seeing its subject — a pin that
+        // reads nothing agrees with nothing. Three is the current count (sample ×2,
+        // template ×1); a NEW occurrence is welcome (it is one more thing held equal)
+        // so the floor is >=3, not ==3.
+        Assert.True(occurrences.Count >= 3,
+            $"expected at least 3 RuntimeFrameworkVersion occurrences across the sample (×2) and "
+            + $"template (×1) csproj, found {occurrences.Count}. The literal moved, was renamed, or a "
+            + "PropertyGroup was dropped — re-point this pin deliberately rather than letting it pass "
+            + "over a set it can no longer see.\n"
+            + (occurrences.Count == 0 ? "(none)" : string.Join("\n", occurrences.Select(o => $"  {o.Where} = \"{o.Value}\""))));
+
+        // Pattern-derive the canonical value from occurrence #1 — never a hardcoded
+        // second copy of "10.0.9" (the duplication #122 is about). Everything else
+        // must equal it.
+        string canonical = occurrences[0].Value;
+        var offenders = occurrences.Where(o => o.Value != canonical).ToList();
+
+        Assert.True(offenders.Count == 0,
+            "RUNTIMEFRAMEWORKVERSION DRIFT (Phase 10.1, #122). This is the version that pins the exact "
+            + "NativeAOT runtime pack the bionic and iOS publishes compile against — the one the "
+            + "toolchain-stability comment guards, and the one that makes those builds compile at all. "
+            + "Every occurrence across the sample and template csproj MUST be identical, or a generated "
+            + "app (or the sample) builds against a runtime pack the others do not use, silently.\n"
+            + $"  canonical (occurrence #1): \"{canonical}\"\n"
+            + "  offenders:\n"
+            + string.Join("\n", offenders.Select(o => $"    {o.Where} = \"{o.Value}\" (must be \"{canonical}\")"))
+            + $"\n(Checked {occurrences.Count} occurrences in total. To bump the runtime pack, change "
+            + "EVERY occurrence in the same commit.)");
     }
 
     /// <summary>The props' single <Version>, read the same way

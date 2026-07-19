@@ -1658,8 +1658,10 @@ iOS (no Apple account), FCM push (no Firebase), and the inspector channel stay o
   red-first; iOS-reports-Android fixed via an explicit init-struct `PlatformInfoKind` (both
   shells, frozen bridge untouched), and the false-green `Frames` drop closed. .NET 766 / iOS
   235. [conclusion](../plans/2026-07-19-phase-10.0-conclusion.md)*
-- **Phase 10.1** — version governance: the stale `Exports.VersionNumber` (#120) and the
-  unguarded load-bearing `RuntimeFrameworkVersion` (#122), both into the pin apparatus.
+- ✅ **Phase 10.1** — version governance (#120, #122) — *complete (2026-07-19);
+  `Exports.VersionNumber` now a release-please-governed mirror + drift pin (red-first proved
+  the `1.4.0-phase-5.4` staleness), `RuntimeFrameworkVersion` drift-pinned across sample +
+  template (mutation-proven). .NET 768. [conclusion](../plans/2026-07-19-phase-10.1-conclusion.md)*
 - **Phase 10.2** — docs + README accuracy sweep (owner ask + #119: retired draft-publish →
   auto-publish, published-0.1.0 state, refreshed counts, no overclaim) + `BnListWindow`
   precision (#124) and the grouped low-severity cleanups (#125).

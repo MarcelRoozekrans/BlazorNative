@@ -62,7 +62,8 @@ class BootSmokeNativeAndroidTest {
         assertEquals("init failed: $error", 0, result.status)
         val version = result.versionString?.getString(0, "UTF-8") ?: ""
         assertTrue("unexpected version: $version", version.contains("BlazorNative.Runtime"))
-        assertTrue("unexpected version: $version", version.contains("phase-5.4"))
+        // Governed semver (#120), not a pinned literal — survives release bumps.
+        assertTrue("unexpected version: $version", Regex("""\d+\.\d+\.\d+""").containsMatchIn(version))
 
         // Gate 3 review follow-up: cross-check the second export shape —
         // blazornative_version() (bare pointer return) must agree with the
