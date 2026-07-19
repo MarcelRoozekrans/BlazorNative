@@ -39,8 +39,18 @@ namespace BlazorNative.Runtime.Tests;
 // Parser rules (the style-table parser's, reused): the declaration is
 // anchored at line start so a comment that MENTIONS the map cannot match,
 // and a parse that finds zero pairs FAILS the test — never vacuously green.
+//
+// SERIALIZED in the "host-session" collection, and it MUST be. Most pins here
+// read the static `SampleAppPages.All`, but `AndroidDefaultFallbackLiteral_...`
+// reads the LIVE global `PageManifest.DefaultComponent`. `RegistrationTests`
+// (also "host-session") transiently registers a probe page as the "/" default
+// and restores the sample app's "BnDemo" in a finally — without a shared
+// collection this test runs in PARALLEL with that mutation and reads the probe
+// name, a nondeterministic red that the strict 754-count gate turns into a
+// failed release PR. The collection makes the two mutually exclusive.
 // ─────────────────────────────────────────────────────────────────────────────
 
+[Collection("host-session")]
 public sealed class RouteTableDriftTests
 {
     private const string KotlinMainActivity =
