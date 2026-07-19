@@ -1654,9 +1654,10 @@ security model, and the P3 perf-hardening ledger (#8/#9/#12/#13)** — is **re-d
 *investment, not need*** (worth doing only if this heads toward real adoption). Real-device
 iOS (no Apple account), FCM push (no Firebase), and the inspector channel stay out.
 
-- **Phase 10.0** — the two correctness bugs: `PlatformKind.Android` hardcoded so iOS
-  reports Android (#121), and `Frames` handler faults silently swallowed — a false-green
-  test risk (#123). *Test-integrity first, red-first.*
+- ✅ **Phase 10.0** — the two correctness bugs (#121, #123) — *complete (2026-07-19),
+  red-first; iOS-reports-Android fixed via an explicit init-struct `PlatformInfoKind` (both
+  shells, frozen bridge untouched), and the false-green `Frames` drop closed. .NET 766 / iOS
+  235. [conclusion](../plans/2026-07-19-phase-10.0-conclusion.md)*
 - **Phase 10.1** — version governance: the stale `Exports.VersionNumber` (#120) and the
   unguarded load-bearing `RuntimeFrameworkVersion` (#122), both into the pin apparatus.
 - **Phase 10.2** — docs + README accuracy sweep (owner ask + #119: retired draft-publish →

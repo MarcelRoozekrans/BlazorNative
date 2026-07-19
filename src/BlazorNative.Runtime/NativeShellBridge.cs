@@ -107,7 +107,9 @@ public sealed class NativeShellBridge : IMobileBridge
     private static Action<NativeEvent>? s_nativeEvents;
 
     // Init-time platform options (Exports.Init stores them; PlatformInfo serves them).
-    private sealed record PlatformOptions(string Os, int ApiLevel, string? Note);
+    // Phase 10.0 (#121): Kind is host-supplied like Os — the shell passes its real
+    // PlatformKind through the init options, so an iOS app no longer reports Android.
+    private sealed record PlatformOptions(string Os, int ApiLevel, string? Note, PlatformKind Kind);
     private static PlatformOptions? s_platformOptions;
 
     // ── Registration (blazornative_register_bridge / Exports.Init plumbing) ──
@@ -157,9 +159,12 @@ public sealed class NativeShellBridge : IMobileBridge
     }
 
     /// <summary>Stores Init's platform options; <see cref="PlatformInfo"/> and
-    /// <see cref="GetPlatformInfoAsync"/> serve them.</summary>
-    internal static void SetPlatformInfo(string os, int apiLevel, string? note)
-        => Volatile.Write(ref s_platformOptions, new PlatformOptions(os, apiLevel, note));
+    /// <see cref="GetPlatformInfoAsync"/> serve them. Phase 10.0 (#121): the
+    /// host-supplied <paramref name="kind"/> is served verbatim, so the reported
+    /// PlatformKind is the shell's real one (iOS on iOS, Android on Android) rather
+    /// than a hardcoded constant.</summary>
+    internal static void SetPlatformInfo(string os, int apiLevel, string? note, PlatformKind kind)
+        => Volatile.Write(ref s_platformOptions, new PlatformOptions(os, apiLevel, note, kind));
 
     /// <summary>Test-only: unregister + drain pending fetches so state can't
     /// leak across tests (the "host-session" xUnit collection serializes
@@ -877,9 +882,11 @@ public sealed class NativeShellBridge : IMobileBridge
 
     // ── Platform info ─────────────────────────────────────────────────────────
     //
-    // Exports.Init stores its options (os / apiLevel / note); the bridge
+    // Exports.Init stores its options (os / apiLevel / note / kind); the bridge
     // serves them. Pragmatic representation mirroring DevHostBridge's shape.
-    // Kind is Android — the only native shell registering this bridge in M3.
+    // Phase 10.0 (#121): Kind is the shell's real PlatformKind (host-supplied
+    // through the init options), NOT a hardcoded constant — the same runtime is
+    // linked into every native shell, so hardcoding Android made iOS lie.
 
     public string PlatformInfo
     {
@@ -890,7 +897,7 @@ public sealed class NativeShellBridge : IMobileBridge
                 return "{}"; // Init not called yet — same "{}" fallback the WASM-era WasiBridge used (deleted Phase 3.2)
 
             var sb = new StringBuilder(96);
-            sb.Append("{\"kind\":\"Android\",\"os\":");
+            sb.Append("{\"kind\":\"").Append(opts.Kind).Append("\",\"os\":");
             AppendJsonString(sb, opts.Os);
             sb.Append(",\"apiLevel\":").Append(opts.ApiLevel);
             if (opts.Note is not null)
@@ -909,7 +916,10 @@ public sealed class NativeShellBridge : IMobileBridge
     {
         PlatformOptions? opts = Volatile.Read(ref s_platformOptions);
         return ValueTask.FromResult(new PlatformInfo(
-            PlatformKind.Android,
+            // Phase 10.0 (#121): serve the shell's real kind. No options yet (Init
+            // not called) → DevHost, the same safe non-lying default an un-updated
+            // shell's ordinal 0 maps to — never Android.
+            opts?.Kind ?? PlatformKind.DevHost,
             OsVersion: opts?.Os ?? "",
             AppVersion: Exports.VersionNumber,
             IsDebug: false));

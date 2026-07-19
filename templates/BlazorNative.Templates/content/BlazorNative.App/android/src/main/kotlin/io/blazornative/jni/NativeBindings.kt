@@ -280,16 +280,38 @@ interface NativeBindings : Library {
  *       public IntPtr PlatformInfoOs;        // const char* — host-allocated UTF-8
  *       public int    PlatformInfoApiLevel;
  *       public IntPtr PlatformInfoNote;      // const char* — optional
+ *       public int    PlatformInfoKind;      // Phase 10.0 (#121) — PlatformKind ordinal
  *   }
  *
- * x64 layout (16-byte aligned): 8 + 4 + (4 pad) + 8 = 24 bytes (when passed as
- * standalone struct). JNA computes size from FieldOrder + field types.
+ * x64 layout (8-byte aligned): 8 + 4 + (4 pad) + 8 + 4 + (4 tail pad) = 32 bytes
+ * (when passed as standalone struct). JNA computes size from FieldOrder + field
+ * types. Phase 10.0 (#121) appended platformInfoKind AFTER the three original
+ * fields — offsets 0/8/16 are unchanged, so an old shell's 24-byte call still lands
+ * every prior field; the runtime reads kind=0 (DevHost, the safe default) from the
+ * absent tail. The shell passes its real PlatformKind ordinal (Android=1) so an iOS
+ * app cannot report Android.
  */
-@Structure.FieldOrder("platformInfoOs", "platformInfoApiLevel", "platformInfoNote")
+/**
+ * Phase 10.0 (#121): the ABI-mirrored PlatformKind ordinals the shared runtime
+ * decodes in `blazornative_init` (Exports.cs ToPlatformKind) — byte-identical to
+ * BlazorNative.Core.PlatformKind (DevHost=0, Android=1, iOS=2, Windows=3, Mac=4).
+ * The Android shell passes ANDROID so the runtime reports Android; a dev/preview
+ * host leaves the default (DevHost), never Android.
+ */
+object BnPlatformKind {
+    const val DEV_HOST: Int = 0
+    const val ANDROID: Int = 1
+    const val IOS: Int = 2
+    const val WINDOWS: Int = 3
+    const val MAC: Int = 4
+}
+
+@Structure.FieldOrder("platformInfoOs", "platformInfoApiLevel", "platformInfoNote", "platformInfoKind")
 open class BlazorNativeInitOptions : Structure() {
     @JvmField var platformInfoOs: Pointer? = null
     @JvmField var platformInfoApiLevel: Int = 0
     @JvmField var platformInfoNote: Pointer? = null
+    @JvmField var platformInfoKind: Int = 0
 
     class ByReference : BlazorNativeInitOptions(), Structure.ByReference
 }

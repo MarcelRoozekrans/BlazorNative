@@ -29,7 +29,7 @@
 // Struct-layout contract — mirror of src/BlazorNative.Runtime/Exports.cs
 // (BlazorNativeInitOptions / BlazorNativeInitResult, [StructLayout(Sequential)],
 // little-endian, 8-byte pointers). The C compiler reproduces the same layout:
-//   bn_init_options : os@0(ptr) apiLevel@8(int) pad@12 note@16(ptr)  → 24 bytes
+//   bn_init_options : os@0(ptr) apiLevel@8(int) pad@12 note@16(ptr) kind@24(int) → 32 bytes  (Phase 10.0 #121)
 //   bn_init_result  : status@0(int) pad@4 error@8(ptr) version@16(ptr) → 24 bytes
 // (This mirrors the proven 5.0 spike stub, recorded in the Phase 5.2 conclusion:
 // docs/plans/2026-07-12-phase-5.2-conclusion.md.)
@@ -51,11 +51,18 @@ extern "C" {
 #endif
 
 // Mirror of BlazorNativeInitOptions (Exports.cs). Host-owned during the call.
+// Phase 10.0 (#121): platformInfoKind carries the shell's real PlatformKind ordinal
+// (DevHost=0, Android=1, iOS=2, Windows=3, Mac=4) so an iOS app stops reporting
+// Android. Appended AFTER the three original fields — offsets 0/8/16 are unchanged;
+// the struct grows 24 → 32 bytes (kind@24 + 4 bytes tail padding to the 8-byte
+// pointer alignment). This is the init-INPUT struct, NOT the frozen 80-byte
+// callbacks bridge (bn_bridge_callbacks below — unchanged).
 typedef struct {
     const char* platformInfoOs;    // offset 0  — host-allocated UTF-8
     int32_t     platformInfoApiLevel; // offset 8
     const char* platformInfoNote;  // offset 16 — optional (may be NULL)
-} bn_init_options;
+    int32_t     platformInfoKind;  // offset 24 — PlatformKind ordinal (Phase 10.0)
+} bn_init_options;                 // 32 bytes
 
 // Mirror of BlazorNativeInitResult (Exports.cs). Returned BY VALUE.
 typedef struct {

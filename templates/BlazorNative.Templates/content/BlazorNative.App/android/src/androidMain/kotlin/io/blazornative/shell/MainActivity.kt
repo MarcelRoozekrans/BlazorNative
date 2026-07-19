@@ -23,6 +23,7 @@ import androidx.fragment.app.FragmentActivity
 // Delete it and the generated app does not compile: "Unresolved reference 'R'".
 import com.example.starterapp.R
 import io.blazornative.jni.BlazorNativeRuntime
+import io.blazornative.jni.BnPlatformKind
 import kotlin.concurrent.thread
 
 /**
@@ -234,6 +235,7 @@ class MainActivity : FragmentActivity() {
                     componentName = componentName,
                     platformOs = "android",
                     apiLevel = Build.VERSION.SDK_INT,
+                    platformKind = BnPlatformKind.ANDROID, // Phase 10.0 (#121): report Android, not a shared default
                     bridge = bridge,
                 )
                 booted = true // host→.NET entry (lifecycle/back) is safe only now

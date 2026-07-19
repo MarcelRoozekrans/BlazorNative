@@ -350,7 +350,7 @@ jobs:
             > ios-out/xcresult.json 2>/dev/null || true
           ls -la ios-out/crash || true
 
-      - name: Assert XCTest baseline (233 passed / 0 failed)
+      - name: Assert XCTest baseline (235 passed / 0 failed)
         if: always()
         run: |
           log=ios-out/xcodebuild-test.log
@@ -1037,9 +1037,19 @@ jobs:
           # seam-mocked, and a real camera UI + a real sensor capture wait on a real iPhone (no
           # Apple account). The production UIImagePickerController / AVCaptureDevice calls are
           # untouched. NSCameraUsageDescription is present in Info.plist (SIGABRT otherwise).
-          if [ "$failed" -ne 0 ] || [ "$passed" -ne 233 ]; then
+          #
+          # 233 -> 235 (Phase 10.0 #121, +2) — the iOS shell must report iOS, not Android
+          # (the shared runtime used to hardcode PlatformKind.Android). BnPlatformInfoTests
+          # adds the kind to the init options (bn_init_options grows 24 -> 32 bytes,
+          # platformInfoKind@24 — NOT the frozen 80-byte bridge, still 80/offset-72/10-export
+          # in BnDriftTests):
+          #   +1  testInitOptionsCarriesTheShellsPlatformKind — the ABI third-mirror
+          #       (32 bytes, kind@24) + the ordinal contract (iOS=2, NOT Android=1).
+          #   +1  testRealRuntimeAcceptsIosPlatformKind — the real linked runtime boots
+          #       with an iOS-kind init (status 0), the on-device round-trip of the fix.
+          if [ "$failed" -ne 0 ] || [ "$passed" -ne 235 ]; then
             grep -E "Test Case '.*' (passed|failed)" "$log" || true
-            echo "iOS XCTest baseline drift: expected 233 passed / 0 failed, got passed=$passed failed=$failed" >&2
+            echo "iOS XCTest baseline drift: expected 235 passed / 0 failed, got passed=$passed failed=$failed" >&2
             exit 1
           fi
 

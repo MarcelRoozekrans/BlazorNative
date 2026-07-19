@@ -36,8 +36,10 @@ class BootSmokeNativeAndroidTest {
         assertEquals(24, Native.getNativeSize(BlazorNativeInitResult.ByValue::class.java))
         // Native.getNativeSize(Class) returns POINTER_SIZE for non-ByValue
         // Structures (they're passed by pointer) — measure the actual struct
-        // layout via an instance instead.
-        assertEquals(24, BlazorNativeInitOptions.ByReference().size())
+        // layout via an instance instead. Phase 10.0 (#121) appended
+        // platformInfoKind (int) → 24 grew to 32 bytes (kind@24 + 4 tail pad to
+        // the 8-byte pointer alignment); offsets 0/8/16 are unchanged.
+        assertEquals(32, BlazorNativeInitOptions.ByReference().size())
     }
 
     @Test

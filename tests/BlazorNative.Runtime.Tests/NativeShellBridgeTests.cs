@@ -589,4 +589,101 @@ public sealed class NativeShellBridgeTests
             () => bridge.NavigateAsync("/x").AsTask());
         Assert.Equal(NotRegisteredMessage, ex.Message);
     }
+
+    // ── Phase 10.0 (#121): the reported PlatformKind is the shell's real one ──────
+    //
+    // The runtime is linked into BOTH native shells' static archives, so a kind
+    // hardcoded to Android meant an iOS app reported Android through the public
+    // IMobileBridge.PlatformInfo / GetPlatformInfoAsync surface. The kind now flows
+    // from the shell through the init options, exactly like the os string.
+
+    [Fact]
+    public async Task PlatformInfo_ReportsTheShellsKind_iOS_NotAndroid()
+    {
+        // The RED-FIRST case: an iOS shell passes os "ios" + kind iOS. Against the
+        // pre-fix hardcoded-Android runtime this asserts Android and FAILS; after the
+        // fix the stored kind is served and it reports iOS.
+        NativeShellBridge.SetPlatformInfo("ios", apiLevel: 0, note: "ios-shell", kind: PlatformKind.iOS);
+        try
+        {
+            var bridge = new NativeShellBridge();
+
+            PlatformInfo info = await bridge.GetPlatformInfoAsync();
+            Assert.Equal(PlatformKind.iOS, info.Platform);
+            Assert.NotEqual(PlatformKind.Android, info.Platform);
+            Assert.Equal("ios", info.OsVersion);
+
+            // The JSON builder serves the same kind (it is the on-device Blazor
+            // surface's string view — must not say "Android" either).
+            Assert.Contains("\"kind\":\"iOS\"", bridge.PlatformInfo);
+            Assert.DoesNotContain("Android", bridge.PlatformInfo);
+        }
+        finally { NativeShellBridge.ResetForTests(); }
+    }
+
+    [Fact]
+    public async Task PlatformInfo_ReportsTheShellsKind_Android_StillAndroid()
+    {
+        // The regression guard: the Android shell passes kind Android and still
+        // reports Android (the fix must not merely swap one constant for another).
+        NativeShellBridge.SetPlatformInfo("android", apiLevel: 34, note: "android-shell", kind: PlatformKind.Android);
+        try
+        {
+            var bridge = new NativeShellBridge();
+
+            PlatformInfo info = await bridge.GetPlatformInfoAsync();
+            Assert.Equal(PlatformKind.Android, info.Platform);
+            Assert.Equal("android", info.OsVersion);
+            Assert.Contains("\"kind\":\"Android\"", bridge.PlatformInfo);
+        }
+        finally { NativeShellBridge.ResetForTests(); }
+    }
+
+    [Fact]
+    public async Task PlatformInfo_UnsetKind_DefaultsToDevHost_NotAndroid()
+    {
+        // A shell that predates the field passes ordinal 0 → DevHost, the safe
+        // non-lying default. It must NOT be silently reported as Android (the old
+        // hardcoded value). Exports.ToPlatformKind(0) is DevHost; drive that.
+        NativeShellBridge.SetPlatformInfo("dev", apiLevel: 0, note: null, kind: Exports.ToPlatformKind(0));
+        try
+        {
+            var bridge = new NativeShellBridge();
+
+            PlatformInfo info = await bridge.GetPlatformInfoAsync();
+            Assert.Equal(PlatformKind.DevHost, info.Platform);
+            Assert.NotEqual(PlatformKind.Android, info.Platform);
+            Assert.Contains("\"kind\":\"DevHost\"", bridge.PlatformInfo);
+        }
+        finally { NativeShellBridge.ResetForTests(); }
+    }
+
+    [Theory]
+    [InlineData(0, PlatformKind.DevHost)]
+    [InlineData(1, PlatformKind.Android)]
+    [InlineData(2, PlatformKind.iOS)]
+    [InlineData(3, PlatformKind.Windows)]
+    [InlineData(4, PlatformKind.Mac)]
+    [InlineData(5, PlatformKind.DevHost)]    // out of range → safe default, not Android
+    [InlineData(-1, PlatformKind.DevHost)]   // negative junk → safe default, not Android
+    public void ToPlatformKind_MapsTheInitOptionsOrdinal_ByEnumValue(int ordinal, PlatformKind expected)
+    {
+        // THE ORDINAL CONTRACT the shells encode against (Android=1, iOS=2, …). If
+        // the enum is ever reordered this pin reds — the Kotlin/Swift shells pass
+        // these exact integers across the ABI, so the mapping is load-bearing.
+        Assert.Equal(expected, Exports.ToPlatformKind(ordinal));
+    }
+
+    [Fact]
+    public void InitOptionsStruct_Is32Bytes_MirroringTheCHeaderAndKotlinJna()
+    {
+        // Phase 10.0 (#121): the init-INPUT struct grew 24 → 32 bytes when
+        // platformInfoKind (int) was appended. This pin holds the .NET side of the
+        // ABI mirror equal to the C header (bn_init_options → 32 bytes) and the
+        // Kotlin JNA size assertion (BootSmokeNativeAndroidTest → 32). The frozen
+        // 80-byte callbacks bridge is a SEPARATE struct and is unaffected — see
+        // BridgeProtocolNativeTests. If this reds, the three mirrors have drifted:
+        // re-sync deliberately, do not just bump the number.
+        Assert.Equal(32, Marshal.SizeOf<BlazorNativeInitOptions>());
+    }
 }

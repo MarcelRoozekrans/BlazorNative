@@ -1,6 +1,8 @@
 # Milestone 10 — Consolidation & Hardening
 
-**Status:** 🔄 **active — opened 2026-07-19.** No DoD closed yet.
+**Status:** 🔄 **active — opened 2026-07-19; 2/7 DoD closed** — Phase 10.0 fixed the two
+correctness bugs (#121, #123), red-first, no frozen-ABI change
+([conclusion](../plans/2026-07-19-phase-10.0-conclusion.md)).
 **Predecessor:** Milestone 9 — complete 2026-07-18
 ([final audit](../plans/2026-07-18-milestone-9-final-audit.md), all 6 DoD PASS; the ABI
 grew exactly once in 9.0 and held for three more capabilities; no tag — the 8.6 rule,
@@ -51,14 +53,20 @@ door accurate — a legitimate place to wind down.
 
 ## Definition of Done
 
-1. **iOS no longer reports Android** (#121). `PlatformKind` in the shared runtime's
+1. **iOS no longer reports Android** (#121). ✅ **Closed by Phase 10.0** — an explicit
+   `PlatformInfoKind` on the init-input struct (24→32 bytes; frozen bridge untouched), both
+   shells pass their own kind, unset → `DevHost` not `Android`; iOS XCTest + .NET red-first.
+   `PlatformKind` in the shared runtime's
    `PlatformInfo` / `GetPlatformInfoAsync` must reflect the *actual* shell, not a
    hardcoded `Android`. The kind comes from the shell (like the `os` string already does)
    — an init-option or bridge-supplied value — so the iOS `.a` and the Android runtime
    report their own platform. Proven on both shells (the iOS XCTest asserts `iOS`, not
    `Android`).
 
-2. **The test channel cannot swallow a failure** (#123). `NativeRenderer` must observe the
+2. **The test channel cannot swallow a failure** (#123). ✅ **Closed by Phase 10.0** — the
+   discarded `Frames` `InvokeAsync` task is now observed and its fault routed through
+   `HandleException` / `StrictErrors`; a throw-in-subscriber test FAILED on unfixed `main`
+   and passes after (red-first, the finding being false-green). `NativeRenderer` must observe the
    `Frames` `InvokeAsync` task so a fault in a frame subscriber routes through
    `HandleException` / surfaces under `StrictErrors` instead of being dropped. **Red-first
    is mandatory here:** a test that throws inside a `Frames` subscriber must FAIL before
