@@ -1,10 +1,13 @@
 # Milestone 10 — Consolidation & Hardening
 
-**Status:** 🔄 **active — opened 2026-07-19; 4/7 DoD closed.** Phase 10.0 fixed the two
+**Status:** 🔄 **active — opened 2026-07-19; 6/7 DoD closed.** Phase 10.0 fixed the two
 correctness bugs (#121, #123), red-first, no frozen-ABI change
 ([conclusion](../plans/2026-07-19-phase-10.0-conclusion.md)); Phase 10.1 governed the two
 version literals (#120, #122)
-([conclusion](../plans/2026-07-19-phase-10.1-conclusion.md)).
+([conclusion](../plans/2026-07-19-phase-10.1-conclusion.md)); Phase 10.2 fixed precision +
+the grouped cleanups and swept the docs/README to the published, auto-publish reality (#124,
+#125, #119) ([conclusion](../plans/2026-07-19-phase-10.2-conclusion.md)). Only the final
+audit (DoD #7, Phase 10.3) remains.
 **Predecessor:** Milestone 9 — complete 2026-07-18
 ([final audit](../plans/2026-07-18-milestone-9-final-audit.md), all 6 DoD PASS; the ABI
 grew exactly once in 9.0 and held for three more capabilities; no tag — the 8.6 rule,
@@ -90,12 +93,20 @@ door accurate — a legitimate place to wind down.
    NativeAOT compile at all) gets a drift pin linking its occurrences, matching the
    discipline every cosmetic literal already gets.
 
-5. **Precision + cleanups triaged** (#124, #125). `BnListWindow.Compute` either uses exact
+5. **Precision + cleanups triaged** (#124, #125). ✅ **Closed by Phase 10.2** — `BnListWindow`
+   computes in `double` (red-first, real drift-exposing inputs); the six #125 items each fixed
+   (handler-id, arena overflow, Kotlin null-patches parity, dead-code delete, actions
+   SHA-pinned) or re-ledgered with a written reason (#125.4: Blazor already elides empty
+   callbacks — proven). `BnListWindow.Compute` either uses exact
    integer arithmetic or the documented item-count bound is *enforced* (a value past which
    `float` drifts must not silently mis-window). The grouped low-severity items (#125) are
    each fixed **or** re-ledgered with a written reason — none left silently open.
 
-6. **The docs and README tell the truth** (owner ask + #119). A full accuracy sweep of the
+6. **The docs and README tell the truth** (owner ask + #119). ✅ **Closed by Phase 10.2** —
+   the site + README swept to the auto-publish reality, the published-0.1.0 install story, the
+   honest CI-coverage split (#119: .NET + JVM gate a PR; Android + iOS advisory), refreshed
+   counts (780/120/209/235), and the 10.1 version-numerology reconciled; Docusaurus builds
+   clean. A full accuracy sweep of the
    **Docusaurus site** (`website/docs/**`) and **`README.md`**:
    - **The release model is current** — every mention of the retired *draft-Release +
      manual-publish click* flow is rewritten to the **auto-publish-on-merge** reality

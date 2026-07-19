@@ -1662,10 +1662,13 @@ iOS (no Apple account), FCM push (no Firebase), and the inspector channel stay o
   `Exports.VersionNumber` now a release-please-governed mirror + drift pin (red-first proved
   the `1.4.0-phase-5.4` staleness), `RuntimeFrameworkVersion` drift-pinned across sample +
   template (mutation-proven). .NET 768. [conclusion](../plans/2026-07-19-phase-10.1-conclusion.md)*
-- **Phase 10.2** — docs + README accuracy sweep (owner ask + #119: retired draft-publish →
-  auto-publish, published-0.1.0 state, refreshed counts, no overclaim) + `BnListWindow`
-  precision (#124) and the grouped low-severity cleanups (#125).
-- **Phase 10.3** — hygiene + M10 final audit + close (no tag — the 8.6 rule).
+- ✅ **Phase 10.2** — docs/README accuracy sweep (#119 + owner ask) + `BnListWindow` precision
+  (#124) + grouped cleanups (#125) — *complete (2026-07-19); site + README swept to the
+  auto-publish/published-0.1.0 reality with the honest CI-coverage split; `BnListWindow` in
+  `double` (red-first); six #125 items fixed-or-ledgered; actions SHA-pinned. .NET 780 / JVM
+  120. [conclusion](../plans/2026-07-19-phase-10.2-conclusion.md)*
+- **Phase 10.3** — hygiene + M10 final audit + close (no tag — the 8.6 rule) — **the only one
+  left; M10 at 6/7 DoD**.
 
 ---
 
