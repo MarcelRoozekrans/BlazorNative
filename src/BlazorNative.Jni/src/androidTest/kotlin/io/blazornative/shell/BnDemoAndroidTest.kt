@@ -1,5 +1,6 @@
 package io.blazornative.shell
 
+import android.graphics.Typeface
 import android.graphics.drawable.ColorDrawable
 import android.view.View
 import android.view.ViewGroup
@@ -7,9 +8,11 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.TextView
+import androidx.core.content.res.ResourcesCompat
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -235,6 +238,19 @@ class BnDemoAndroidTest {
                 // (It carries Padding="8", so it hugs the text PLUS 2 × 8dp.)
                 val panel = echoPanel(act)!!
                 val text = echoText(act)!!
+
+                // Font parity Gate B (#126) — THE RESOLVED-FAMILY GUARD. Gate A proved Inter
+                // is REGISTERED (res/font resolves); this proves the mapper actually FORCED it
+                // onto the rendered text leaves. A silent fallback to Roboto would render green
+                // in Gate A but redden HERE, against the typeface the TextView actually carries.
+                val inter = ResourcesCompat.getFont(act, R.font.inter_regular)
+                assertNotNull("the bundled Inter must resolve from res/font (Gate A)", inter)
+                assertNotEquals("a text leaf must NOT fall back to Roboto — Gate B forces Inter",
+                    Typeface.DEFAULT, text.typeface)
+                assertEquals("the echo text leaf must carry the bundled Inter typeface", inter, text.typeface)
+                val title = f.getChildAt(0) as TextView
+                assertEquals("the title text leaf must carry the bundled Inter typeface", inter, title.typeface)
+
                 assertEquals("the echo panel's own View padding must be 0 too", 0, panel.paddingTop)
                 assertEquals("the echo panel must hug its MEASURED text child plus its 8dp of " +
                     "Yoga padding, top and bottom",

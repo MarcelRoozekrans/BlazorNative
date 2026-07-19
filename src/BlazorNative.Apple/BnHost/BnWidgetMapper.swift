@@ -2216,6 +2216,27 @@ final class BnWidgetMapper {
         return views[parentId]
     }
 
+    // ── Font parity Gate B (#126): the bundled Inter, forced on every text leaf ──
+    /// Whether the Inter fallback has already been logged — the miss is logged ONCE
+    /// (not per label) so a name regression is visible in the log without flooding it.
+    private static var interFontFallbackLogged = false
+
+    /// The one place a `UILabel`/measure gets its font. Resolves the bundled Inter by
+    /// its PostScript name (Gate A registered it via `UIAppFonts`; `BnFontTests` guards
+    /// the name). A nil here means the registration/name regressed — we fall back to the
+    /// system font so text still renders, but LOG it once, because a silent fallback is
+    /// exactly the parity break this feature exists to close.
+    private static func interFont(ofSize size: CGFloat) -> UIFont {
+        if let inter = UIFont(name: "Inter-Regular", size: size) { return inter }
+        if !interFontFallbackLogged {
+            interFontFallbackLogged = true
+            NSLog("[BnWidgetMapper] Inter-Regular did not resolve — falling back to the system "
+                + "font. FONT PARITY IS BROKEN: check the bundled Inter-Regular.ttf is in the app "
+                + "bundle and Info.plist UIAppFonts registers it (see BnFontTests).")
+        }
+        return .systemFont(ofSize: size)
+    }
+
     private func makeView(nodeType: String) -> UIView {
         switch nodeType {
         case "view":
@@ -2226,6 +2247,12 @@ final class BnWidgetMapper {
         case "text":
             let label = UILabel()
             label.numberOfLines = 0
+            // Font parity Gate B (#126): force Inter at creation, at the system default
+            // label point size (`UIFont.labelFontSize` — 17pt, what an unstyled UILabel
+            // uses today) so only the FAMILY changes, not the visible default size. The
+            // measure path is `sizeThatFits`, which reads `label.font`, so this one
+            // assignment also makes measurement use Inter (no separate measure font).
+            label.font = Self.interFont(ofSize: UIFont.labelFontSize)
             return label
         case "button":
             let button = UIButton(type: .system)
@@ -3449,7 +3476,10 @@ final class BnWidgetMapper {
                 NSLog("[BnWidgetMapper] SetStyle fontSize ignored: \(value ?? "nil")")
                 return
             }
-            label.font = UIFont.systemFont(ofSize: size)
+            // Font parity Gate B (#126): the same bundled Inter as at creation, at the
+            // requested size — so a `fontSize` restyle keeps the family. `markDirty`'s
+            // re-measure runs through `sizeThatFits`/`label.font`, so measurement follows.
+            label.font = Self.interFont(ofSize: size)
             markDirty(label) // a bigger font is a bigger intrinsic size
         default:
             NSLog("[BnWidgetMapper] SetStyle '\(property)' not yet supported (Phase 6.2+ extends)")
