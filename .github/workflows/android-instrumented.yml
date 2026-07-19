@@ -17,7 +17,7 @@
 #   emulator (ubuntu-latest, KVM) — downloads the .so, boots the API 34
 #     google_apis x86_64 Pixel 6 image (mirrors the local AVD
 #     blazornative-pixel6-x86_64), runs connectedAndroidTest with
-#     -PciSoDir pointing at the artifact → asserts 209 passed / 0 failed.
+#     -PciSoDir pointing at the artifact → asserts 210 passed / 0 failed.
 #
 # Baselines are asserted, not observed: count drift fails the job loudly.
 # ─────────────────────────────────────────────────────────────────────────────
@@ -911,6 +911,10 @@ jobs:
       #        crypto=null to the prompt -> hasCryptoObject false -> this reds (verified: 1
       #        red, "MUST pass a CryptoObject", this test alone).
       #      .delete_echoes_ok -- delete is idempotent + permission-free -> Ok.
+      # ── Font parity (#126, 209 -> 210, +1) ── Inter is bundled in res/font;
+      #    BnFontAndroidTest asserts ResourcesCompat.getFont(R.font.inter_regular) resolves
+      #    (not Typeface.DEFAULT). The resolved-typeface assertions in BnDemoAndroidTest ride
+      #    existing test methods (no further count move).
       # ── Phase 9.3 Gate 2 — CAMERA PHOTO CAPTURE + FileProvider (201 -> 209, +8) ──
       # The THIRD reuse of the 9.0 generic ABI and the LAST M9 capability: op=Camera rides
       # the SAME hostCallBegin slot (no struct grow, no new export -- still 80 bytes / 10
@@ -958,7 +962,7 @@ jobs:
       #        echo stays blank -> this times out and reds (the no-hang law).
       #      .check_reports_availability_as_data -- Check -> status:Captured (available on the
       #        AVD) without launching the camera UI.
-      - name: Assert instrumented baseline (209 passed / 0 failed)
+      - name: Assert instrumented baseline (210 passed / 0 failed)
         run: |
           shopt -s globstar nullglob
           xmls=(src/BlazorNative.Jni/build/outputs/androidTest-results/connected/**/*.xml)
@@ -975,8 +979,8 @@ jobs:
             s=$(attr skipped "$x");  skipped=$((skipped + ${s:-0}))
           done
           echo "Instrumented totals across ${#xmls[@]} suite(s): tests=$tests failures=$failures errors=$errors skipped=$skipped"
-          if [ "$tests" -ne 209 ] || [ "$failures" -ne 0 ] || [ "$errors" -ne 0 ] || [ "$skipped" -ne 0 ]; then
-            echo "Instrumented test baseline drift: expected 209 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped" >&2
+          if [ "$tests" -ne 210 ] || [ "$failures" -ne 0 ] || [ "$errors" -ne 0 ] || [ "$skipped" -ne 0 ]; then
+            echo "Instrumented test baseline drift: expected 210 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped" >&2
             exit 1
           fi
 

@@ -247,8 +247,8 @@ that lane, not your PR. The `Asserted by` column below names which is which.
 |---|---|---|---|
 | .NET | `dotnet test` | 780 passed / 0 skipped | `ci.yml` → `build-test` — **required, gates the PR** |
 | JVM (JNA + win-x64 .dll) | `gradlew testDebugUnitTest` | 120 | `ci.yml` → `build-test` — **required, gates the PR** |
-| Android (instrumented, AVD) | `gradlew connectedAndroidTest` | 209 | `android-instrumented.yml` — advisory (nightly/dispatch) |
-| iOS (XCTest, simulator) | `xcodebuild test` | 235 | `ios.yml` — advisory (on-merge/dispatch) |
+| Android (instrumented, AVD) | `gradlew connectedAndroidTest` | 210 | `android-instrumented.yml` — advisory (nightly/dispatch) |
+| iOS (XCTest, simulator) | `xcodebuild test` | 236 | `ios.yml` — advisory (on-merge/dispatch) |
 
 **The gate is the truth; this table is a copy of it.** When the two disagree, the workflow is
 right — and they have disagreed before: for four milestones this table read 333 / 83 / 111 / 72
