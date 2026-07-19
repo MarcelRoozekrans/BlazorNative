@@ -1171,7 +1171,19 @@ class WidgetMapper(
             // Font parity Gate B (#126): a text leaf is forced onto the bundled Inter at
             // creation. This is also the LAYOUT font — the Yoga measure callback measures
             // this same TextView instance, so it measures in Inter, not Roboto.
-            "text"   -> TextView(context).apply { typeface = interTypeface }
+            //
+            // Font parity Gate C (#126): includeFontPadding = false. A TextView adds extra
+            // top/bottom padding derived from the font's ascent/descent by DEFAULT (ON) —
+            // space iOS's UILabel line box does NOT add — so the same Inter text at the same
+            // size measures TALLER on Android. Turning it off drops that padding and aligns
+            // the per-line text box with iOS. The Yoga measure callback measures THIS SAME
+            // instance (YogaLayout: view.measure), so display and measurement share the
+            // setting and cannot diverge. Chrome (Button/EditText) is deliberately untouched —
+            // control chrome stays native (the feature's explicit boundary).
+            "text"   -> TextView(context).apply {
+                typeface = interTypeface
+                includeFontPadding = false
+            }
             "button" -> Button(context)
             "input"  -> EditText(context)
             // Phase 6.3 — **THE CONTENT MODE IS SET EXPLICITLY, AND IT IS A TWO-SHELL
@@ -1241,7 +1253,11 @@ class WidgetMapper(
             else     -> {
                 Log.w(TAG, "Unknown nodeType ${p.nodeType} — falling back to TextView")
                 // Font parity Gate B (#126): the fallback is a text leaf too — same Inter.
-                TextView(context).apply { typeface = interTypeface }
+                // Gate C: and the same includeFontPadding = false (see the `text` arm).
+                TextView(context).apply {
+                    typeface = interTypeface
+                    includeFontPadding = false
+                }
             }
         }
         nodes[p.nodeId] = view

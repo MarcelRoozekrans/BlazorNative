@@ -69,6 +69,25 @@ struct BnRect: Equatable {
 ///
 /// Screaming case, deliberately un-Swifty: it is the same token Kotlin writes, and the two
 /// declarations are compared as TEXT by a test that does not know either language.
+///
+/// ── FONT PARITY GATE C (#126): WHY THESE CELLS STAY MEASURED ─────────────────────────
+/// Gate C bundled Inter on both shells and normalized Android's line box
+/// (`includeFontPadding = false`), so a single-line text leaf's PER-LINE box now agrees
+/// with iOS's UILabel. The remaining `MEASURED` cells were audited for un-skipping and each
+/// stays measured for a stated reason (DoD #2's sanctioned narrowing — a narrowed skip with
+/// rationale, never a forced green):
+///   · the `/layout` **text row** is a MULTI-LINE wrapped label at each shell's
+///     PLATFORM-DEFAULT font size (iOS `UIFont.labelFontSize` = 17pt; a bare Android
+///     `TextView` takes the theme default, which is not 17). Gate B unified the FAMILY, not
+///     the SIZE, and this leaf sets no `fontSize`, so the two shells render it at different
+///     sizes AND wrap it into a font-and-platform-dependent line COUNT (iOS Core Text vs
+///     Android `StaticLayout`). Not integer-parity-safe.
+///   · every **back row / back section** hugs a native `← Back` **button** — control chrome
+///     (`UIButton` vs `android.widget.Button`), whose intrinsic size folds in content insets
+///     and a min touch target the two frameworks compute differently. Chrome stays native by
+///     the feature's own boundary; it is not a font-metric cell.
+/// Un-skipping a text cell needs a SINGLE-LINE leaf at an EXPLICIT shared fontSize — a
+/// demo-surface addition, out of this gate's scope.
 let MEASURED: CGFloat = .nan
 
 func bnRect(_ x: CGFloat, _ y: CGFloat, _ w: CGFloat, _ h: CGFloat) -> BnRect {

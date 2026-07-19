@@ -238,7 +238,7 @@ Each count is asserted by a workflow — but **not all four gate a pull request,
 and the honest split matters.** Only the `build-test` lane is a required check, so a
 drift in the **.NET (780)** or the **JVM `testDebugUnitTest` (120)** count **fails the
 PR build** — both are load-bearing, and the JVM guard is not a formality: it caught a
-real break in Phase 10.1. The **Android (209)** and **iOS (235)** counts are asserted in
+real break in Phase 10.1. The **Android (210)** and **iOS (236)** counts are asserted in
 the `android-instrumented.yml` (nightly + manual dispatch) and `ios.yml` (on merge to
 `main` + manual dispatch) lanes, which are **advisory, not required** — a drift there reds
 that lane, not your PR. The `Asserted by` column below names which is which.

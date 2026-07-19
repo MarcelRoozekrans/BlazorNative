@@ -65,7 +65,26 @@ internal data class BnRect(val x: Float, val y: Float, val w: Float, val h: Floa
  * not a constant anyone gets to invent (see [assertOracle]). The dimension is
  * declared present but NOT asserted; the measured leaves are pinned relationally and
  * by oracle instead. It is a token the drift parser reads on both shells, so a
- * dimension that is measured on one platform and pinned on the other is a failure. */
+ * dimension that is measured on one platform and pinned on the other is a failure.
+ *
+ * ── FONT PARITY GATE C (#126): WHY THESE CELLS STAY MEASURED ──────────────────────
+ * Gate C bundled Inter on both shells and normalized Android's line box
+ * (`includeFontPadding = false`, WidgetMapper), so a single-line text leaf's PER-LINE
+ * box now agrees with iOS's UILabel. The remaining `MEASURED` cells were audited for
+ * un-skipping and each stays measured for a stated reason (DoD #2's sanctioned
+ * narrowing — a narrowed skip with rationale, never a forced green):
+ *   · the `/layout` **text row** is a MULTI-LINE wrapped label at each shell's
+ *     PLATFORM-DEFAULT font size (iOS `UIFont.labelFontSize` = 17pt; a bare Android
+ *     `TextView` takes the theme default, which is not 17). Gate B unified the FAMILY,
+ *     not the SIZE, and this leaf sets no `fontSize`, so the two shells render it at
+ *     different sizes AND wrap it into a font-and-platform-dependent line COUNT
+ *     (Android `StaticLayout` vs iOS Core Text). Not integer-parity-safe.
+ *   · every **back row / back section** hugs a native `← Back` **button** — control
+ *     chrome (`android.widget.Button` vs `UIButton`), whose intrinsic size folds in
+ *     content insets and a min touch target the two frameworks compute differently.
+ *     Chrome stays native by the feature's own boundary; it is not a font-metric cell.
+ * Un-skipping a text cell needs a SINGLE-LINE leaf at an EXPLICIT shared fontSize — a
+ * demo-surface addition, out of this gate's scope. */
 internal val MEASURED: Float = Float.NaN
 
 internal fun bnRect(x: Float, y: Float, w: Float, h: Float) = BnRect(x, y, w, h)
@@ -165,6 +184,12 @@ internal fun assertOracle(what: String, v: android.widget.TextView, availableWid
     oracle.text = v.text
     oracle.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, v.textSize)
     oracle.typeface = v.typeface
+    // Font parity Gate C (#126): mirror the live view's includeFontPadding. A `text` leaf
+    // turns it OFF at creation (WidgetMapper) to match iOS's UILabel line box; the oracle
+    // must ask with the SAME setting or it would measure the Android-padded height the
+    // production view no longer has. Copied from the live view — not hardcoded — so it stays
+    // correct for a chrome leaf too (a Button keeps the default ON; chrome stays native).
+    oracle.includeFontPadding = v.includeFontPadding
     oracle.measure(
         View.MeasureSpec.makeMeasureSpec(availableWidthPx, View.MeasureSpec.AT_MOST),
         View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
