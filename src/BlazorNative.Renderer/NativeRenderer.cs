@@ -1073,6 +1073,31 @@ public sealed class NativeRenderer : BlazorRenderer
         _tree.RemoveComponent(componentId, RemoveNodeEventRegistrations);
     }
 
+    /// <summary>Narrows Blazor's <c>ulong</c> event-handler id to the <c>int</c>
+    /// the AttachEvent wire and the renderer's int-indexed handler table use —
+    /// FAILING LOUD at the SAME boundary the dispatch side rejects (#125.1).
+    /// <para>
+    /// The asymmetry this closes: <c>Exports.DispatchEventCore</c> rejects a
+    /// <c>handlerId &gt; int.MaxValue</c> as malformed (rc 3) BEFORE its own
+    /// <c>(int)</c> cast, but attach used to narrow with a bare <c>(int)</c> —
+    /// silent truncation that could wrap negative or ALIAS onto a live handler,
+    /// so the two sides disagreed about the very same id. They now agree: an id
+    /// past <c>int.MaxValue</c> is unrepresentable in the table, so attach throws
+    /// rather than emit an AttachEvent carrying a truncated id nothing can
+    /// dispatch to. Unreachable from normal frames (Blazor's handler ids count
+    /// from 1 and reaching 2³¹ needs &gt;2e9 attaches in one session) — a guard,
+    /// pinned by a direct unit test, not a live path.</para></summary>
+    internal static int NarrowHandlerId(ulong handlerId)
+    {
+        if (handlerId > int.MaxValue)
+            throw new InvalidOperationException(
+                $"event handler id {handlerId} exceeds the renderer's int-indexed handler table — "
+                + "Blazor assigned an id past int.MaxValue, which neither the AttachEvent wire nor the "
+                + "dispatch_event boundary (Exports.DispatchEventCore rejects the same range as rc 3) "
+                + "can represent. Silently truncating it could alias onto a live handler.");
+        return (int)handlerId;
+    }
+
     private void ProcessAttribute(int nodeId, ref BnRenderTreeFrame frame, ref PooledList<RenderPatch> patches)
     {
         var name = frame.AttributeName ?? "";
@@ -1081,7 +1106,7 @@ public sealed class NativeRenderer : BlazorRenderer
         if (name.StartsWith("on", StringComparison.OrdinalIgnoreCase))
         {
             var eventName = name[2..].ToLowerInvariant();
-            var handlerId = (int)frame.AttributeEventHandlerId;
+            var handlerId = NarrowHandlerId(frame.AttributeEventHandlerId);
             // THE AttachEvent emission site — the detach registry records the
             // handlerId here (a SetAttribute re-attach overwrites: last wins,
             // so a later detach carries the LIVE handlerId). Task 5.

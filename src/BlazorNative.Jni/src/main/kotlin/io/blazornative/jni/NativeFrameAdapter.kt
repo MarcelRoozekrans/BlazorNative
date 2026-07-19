@@ -109,6 +109,17 @@ object NativeFrameAdapter {
         require(patchCount in 0..MAX_PATCHES) {
             "corrupt BlazorNativeFrame: patchCount=$patchCount (allowed 0..$MAX_PATCHES)"
         }
+        // Parity with Swift BnFrameAdapter's `nullPatchesPointer` guard
+        // (BnFrameAdapter.swift): a positive patchCount with a NULL patches
+        // pointer is a corrupt frame. JNA's getPointer returns null when the
+        // field is 0, so without this the decode loop below NPEs generically on
+        // the first getInt; fail loud with the count instead — the same
+        // diagnostic the Swift twin already gives, and the twin's reason to
+        // exist (a corrupt frame pointer must name itself, not surface as an
+        // opaque NPE the dropped-frame handler cannot attribute).
+        require(!(patchCount > 0 && patchesPtr == null)) {
+            "corrupt BlazorNativeFrame: patchCount=$patchCount but the patches pointer is NULL"
+        }
         val frameId = framePtr.getInt(FRAME_FRAME_ID)
         val timestampMs = framePtr.getLong(FRAME_TIMESTAMP_MS)
 

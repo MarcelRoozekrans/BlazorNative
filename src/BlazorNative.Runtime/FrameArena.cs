@@ -139,11 +139,38 @@ internal sealed unsafe class FrameArena : IDisposable
         return p;
     }
 
-    private void Grow(nuint needed)
+    /// <summary>The doubling growth policy, with the overflow guard (#125.3),
+    /// extracted so the guard is unit-testable WITHOUT a 2⁶³-byte allocation.
+    /// <para>
+    /// THE BUG THIS CLOSES: the old body did <c>newCapacity = _capacity * 2</c>
+    /// with no upper bound. <c>_capacity</c> is always a power of two (16 KiB
+    /// start, only ever doubled), so once it reaches 2⁶³ the next double WRAPS —
+    /// to a smaller value (silent under-allocation, then the bump write in
+    /// <see cref="Alloc"/> runs past the block and corrupts the native heap) or,
+    /// when it wraps to 0, the <c>while</c> spins forever. A frame that needs
+    /// more than the largest representable capacity is a corrupt patch count,
+    /// never a real frame — so this throws loud instead.</para>
+    /// The loop cannot overflow once <paramref name="needed"/> is bounded: it
+    /// only doubles while <c>newCapacity &lt; needed ≤ 2⁶³</c>, so the value
+    /// doubled is always below 2⁶³ and the result stays under nuint's max.</summary>
+    internal static nuint GrownCapacity(nuint capacity, nuint needed)
     {
-        nuint newCapacity = _capacity * 2;
+        nuint maxCapacity = (nuint)1 << (UIntPtr.Size * 8 - 1); // 2⁶³ on 64-bit, 2³¹ on 32-bit
+        if (needed > maxCapacity)
+            throw new OutOfMemoryException(
+                $"FrameArena cannot grow to {needed} bytes — it exceeds the maximum arena capacity "
+                + $"{maxCapacity}. A frame that large is a corrupt patch count, not a real frame; "
+                + "doubling past this point overflows nuint (to a smaller value or to 0).");
+
+        nuint newCapacity = capacity;
         while (newCapacity < needed)
             newCapacity *= 2;
+        return newCapacity;
+    }
+
+    private void Grow(nuint needed)
+    {
+        nuint newCapacity = GrownCapacity(_capacity, needed);
 
         // Retire (don't free) the outgrown block: pointers handed out earlier
         // in this frame still reference it. Freed on the next Reset().

@@ -156,6 +156,43 @@ public sealed unsafe class FrameArenaTests
             $"Expected < 100000 managed bytes allocated across 900 rent/dispose cycles, got {delta}");
     }
 
+    // ── The Grow() overflow guard (#125.3) ───────────────────────────────────
+    //
+    // Grow doubles capacity; _capacity is always a power of two, so once it
+    // reaches 2⁶³ the next double WRAPS — to a smaller value (silent
+    // under-allocation → the next bump write corrupts the native heap) or to 0
+    // (the doubling loop spins forever). The guard lives in the extracted
+    // GrownCapacity so it can be proven WITHOUT a 2⁶³-byte allocation.
+
+    private static readonly nuint MaxCapacity = (nuint)1 << (UIntPtr.Size * 8 - 1);
+
+    [Fact]
+    public void GrownCapacity_DoublesToTheSmallestPowerOfTwoThatFits()
+    {
+        Assert.Equal((nuint)16 * 1024, FrameArena.GrownCapacity(16 * 1024, 16 * 1024));
+        Assert.Equal((nuint)32 * 1024, FrameArena.GrownCapacity(16 * 1024, 20 * 1024));
+        Assert.Equal((nuint)64 * 1024, FrameArena.GrownCapacity(16 * 1024, 40 * 1024));
+    }
+
+    /// <summary>The guard's edge: the largest representable capacity is legal
+    /// and does NOT overflow — GrownCapacity returns it rather than doubling
+    /// past it (which would wrap and either under-allocate or loop forever).</summary>
+    [Fact]
+    public void GrownCapacity_AtTheMaximum_ReturnsItWithoutOverflowing()
+        => Assert.Equal(MaxCapacity, FrameArena.GrownCapacity(MaxCapacity, MaxCapacity));
+
+    /// <summary>THE GUARD BITES: one byte past the maximum representable
+    /// capacity throws loud instead of overflowing nuint. Reachable only from a
+    /// corrupt patch count — a real frame never asks for 2⁶³ bytes of native
+    /// scratch — so this direct call is the guard's only witness.</summary>
+    [Fact]
+    public void GrownCapacity_PastTheMaximum_ThrowsLoud_NotOverflowsToZero()
+    {
+        var ex = Assert.Throws<OutOfMemoryException>(
+            () => FrameArena.GrownCapacity(16 * 1024, MaxCapacity + 1));
+        Assert.Contains("corrupt patch count", ex.Message);
+    }
+
     private static void RunEncodeIshCycle()
     {
         using var arena = FrameArena.Rent();

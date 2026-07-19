@@ -4,6 +4,7 @@ import com.sun.jna.Memory
 import com.sun.jna.Pointer
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
@@ -179,6 +180,31 @@ class NativeFrameAdapterTest {
                 RenderPatch.DetachEvent(nodeId = 4, handlerId = 17, eventName = "click"),
             ),
             decoded.patches
+        )
+    }
+
+    /**
+     * Phase 10.2 (#125.5) — the NULL-patches guard, parity with Swift
+     * BnFrameAdapter's `nullPatchesPointer`. A frame that claims a positive
+     * patchCount but carries a NULL patches pointer is corrupt: JNA's
+     * getPointer returns null for a 0 field, so the decode loop would NPE
+     * generically on the first getInt. The guard fails loud with the count
+     * instead — the diagnostic the Swift twin already gives, so the
+     * dropped-frame handler can name the cause. patchCount 0 with a null
+     * pointer is NOT corrupt (an empty frame) and is covered by the loop simply
+     * never running — asserted here too.
+     */
+    @Test
+    fun read_positivePatchCount_withNullPatchesPointer_throwsDescriptively() {
+        val frame = Memory(NativeFrameAdapter.FRAME_SIZE).apply { clear() }
+        // FRAME_PATCHES left 0 (cleared) → JNA getPointer returns null.
+        frame.setInt(NativeFrameAdapter.FRAME_PATCH_COUNT, 3)
+        val ex = assertThrows(IllegalArgumentException::class.java) {
+            NativeFrameAdapter.read(frame)
+        }
+        assertTrue(
+            ex.message!!.contains("patches pointer is NULL"),
+            "expected the descriptive null-patches diagnostic, got: ${ex.message}"
         )
     }
 

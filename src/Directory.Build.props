@@ -43,8 +43,10 @@
        into which a version is ever DECIDED. The <Version> below is its FIRST
        MIRROR and remains the build's single source of truth — nothing in the
        build, the pack, the smoke or the classifier ever reads the manifest.
-       Every other version literal mirrors THIS one. One author, six mirrors,
-       seven literals across four files.
+       Every other version literal mirrors THIS one. One author, seven mirrors,
+       eight literals across five files. (Phase 10.1 added a fifth governed
+       file, BlazorNative.Runtime/Exports.cs, whose VersionNumber literal is the
+       runtime's consumer-visible version and now a release-please mirror too.)
 
        NO VERSION LITERAL IS EVER HAND-EDITED AGAIN (8.6 decision 3). The
        release-please annotation on the Version line below is what makes that
@@ -70,8 +72,8 @@
        release, forever. It is a no-op only while the sentence happens to contain
        no version number — i.e. the trap is armed and waiting for whoever adds an
        example to the docs. So the invariant is kept greppable instead:
-       `grep -rc <the token>` over the four extra-files is SEVEN, and seven is
-       the number of version literals. A count of eight means someone wrote prose
+       `grep -rc <the token>` over the five extra-files is EIGHT, and eight is
+       the number of version literals. A count of nine means someone wrote prose
        that release-please is now editing.
 
        The house has met this shape one file over: release.yml's comments must

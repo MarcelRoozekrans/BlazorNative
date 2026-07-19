@@ -263,6 +263,14 @@ host error, the **48-byte old-shell → unsupported** forward-compat, and the
 for today's numbers)*: .NET 230 / JVM 79 / Android 40 / iOS XCTest 13; version
 `1.4.0-phase-5.4`; exports unchanged at 9.
 
+> **On that `1.4.0-phase-5.4` version string.** It was the runtime's frozen
+> `BlazorNative.Runtime.Exports.VersionNumber` — a hand-stamped literal that sat
+> untouched for ~4 milestones. Since **Phase 10.1 (#120)** that literal is a
+> governed **release-please mirror** of the package version (the props
+> `<Version>`, `0.1.0` today), annotated `// x-release-please-version` in
+> `Exports.cs` and pinned by `PackageVersionPinTests.TheRuntimeVersionExport_AgreesWithTheProps`.
+> The runtime version is now the semver every package ships under, not a phase stamp.
+
 ---
 
 ## (f) The Permission Pattern — permission-gated async host calls (Phase 9.0)

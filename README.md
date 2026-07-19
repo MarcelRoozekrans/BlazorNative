@@ -4,7 +4,7 @@
 
 **[Documentation](https://marcelroozekrans.github.io/BlazorNative/)** — getting started, the architecture story, the component reference (generated from the components' own doc comments), the parity contract, and both shell setup guides.
 
-> **Status: pre-release proof of concept.** Milestones 1–7 are complete. Milestone 7 (Components + Razor) shipped `.razor` authoring and the components a real app opens with — a virtualized list, form controls, a modal, and the image surface's polish — on top of Milestone 6's Yoga engine, which owns all placement on both shells and asserts identical frame tables on the Android emulator and the iOS simulator. Milestone 8 (Developer Ecosystem) is in progress. Not production-ready — the API surface is unstable and changes without notice.
+> **Status: pre-release proof of concept.** Milestones 1–9 are complete, and the seven packages are **published on nuget.org** (v0.1.0 — a stable release, no `--prerelease` needed). Milestone 8 (Developer Ecosystem) shipped publish-ready packages, `dotnet new blazornative`, and the public docs site; Milestone 9 (Platform Breadth) added the host-capability bridge pattern — geolocation, notifications, biometrics + secure storage, and camera — on top of Milestone 7's `.razor` authoring and component library and Milestone 6's Yoga engine, which owns all placement on both shells and asserts identical frame tables on the Android emulator and the iOS simulator. **Milestone 10 (Consolidation & Hardening) is in progress.** Not production-ready — the API surface is unstable and changes without notice; iOS is simulator-only (real-device iOS is deferred).
 
 > .NET → NativeAOT → native mobile widgets. Blazor components rendered as real Android and iOS views, no WebView, no JavaScript, no wasm.
 
@@ -153,7 +153,7 @@ Honest boundaries, all ledgered:
 - **No horizontal scroll.** Android's `ScrollView` is vertical-only; horizontal is a different widget class that would have to be chosen at `CreateNode` from a `flexDirection` that arrives in a *later* `SetStyle` patch.
 - **No `scrollTo`**, and no scroll-offset restore across navigation. (`onScroll` itself shipped in M7 — it got the design its 60 Hz demanded, and arrives conflated rather than queued, so you cannot count ticks with it.)
 - **`alignContent`, `rowGap`, `columnGap`, `display`, `flex`** are accepted by nothing — no typed parameter, no producer. Every accepted name is a name three parsers must implement.
-- **iOS is simulator-only.** Real-device iOS (code signing, provisioning, App Store validation) needs an Apple Developer account and is Milestone 9.
+- **iOS is simulator-only.** Real-device iOS (code signing, provisioning, App Store validation) needs an Apple Developer account and is **deferred** — that account is the trigger. (Milestone 9 delivered the rest of platform breadth; real-device iOS was the one item it carried forward.)
 
 ## Dev experience
 
@@ -234,14 +234,21 @@ BlazorNative/
 
 ## Test surface
 
-All four counts are asserted in CI — a drift from the baseline fails the build.
+Each count is asserted by a workflow — but **not all four gate a pull request,
+and the honest split matters.** Only the `build-test` lane is a required check, so a
+drift in the **.NET (780)** or the **JVM `testDebugUnitTest` (120)** count **fails the
+PR build** — both are load-bearing, and the JVM guard is not a formality: it caught a
+real break in Phase 10.1. The **Android (209)** and **iOS (235)** counts are asserted in
+the `android-instrumented.yml` (nightly + manual dispatch) and `ios.yml` (on merge to
+`main` + manual dispatch) lanes, which are **advisory, not required** — a drift there reds
+that lane, not your PR. The `Asserted by` column below names which is which.
 
 | Surface | Command | Count | Asserted by |
 |---|---|---|---|
-| .NET | `dotnet test` | 768 passed / 0 skipped | `ci.yml` → `build-test` |
-| JVM (JNA + win-x64 .dll) | `gradlew testDebugUnitTest` | 119 | `ci.yml` → `build-test` |
-| Android (instrumented, AVD) | `gradlew connectedAndroidTest` | 209 | `android-instrumented.yml` |
-| iOS (XCTest, simulator) | `xcodebuild test` | 235 | `ios.yml` |
+| .NET | `dotnet test` | 780 passed / 0 skipped | `ci.yml` → `build-test` — **required, gates the PR** |
+| JVM (JNA + win-x64 .dll) | `gradlew testDebugUnitTest` | 120 | `ci.yml` → `build-test` — **required, gates the PR** |
+| Android (instrumented, AVD) | `gradlew connectedAndroidTest` | 209 | `android-instrumented.yml` — advisory (nightly/dispatch) |
+| iOS (XCTest, simulator) | `xcodebuild test` | 235 | `ios.yml` — advisory (on-merge/dispatch) |
 
 **The gate is the truth; this table is a copy of it.** When the two disagree, the workflow is
 right — and they have disagreed before: for four milestones this table read 333 / 83 / 111 / 72
@@ -284,7 +291,9 @@ fresh copy is not theoretical.)*
   - [x] `BnModal`, the first overlay surface + the RN parity survey's cheap wins — Phase 7.4
   - [x] `BnImage` polish — `PlaceholderColor` / `OnError` / `ContentMode`, each its own *measurement* design — Phase 7.5
   - [x] Route-registry unification + milestone audit (all 8 DoD PASS) — Phase 7.6
-- [ ] **Developer Ecosystem — Milestone 8** (in progress): publish-ready packages, `dotnet new blazornative`, and a public docs site
+- [x] **Developer Ecosystem — Milestone 8**: publish-ready packages, `dotnet new blazornative`, and a public docs site — **published to nuget.org (v0.1.0)** with release automation (release-please auto-publish on merge)
+- [x] **Platform Breadth — Milestone 9**: the host-capability bridge pattern — geolocation, notifications, biometrics + secure storage, camera — each a permission-gated async host call with **zero further ABI change** (real-device iOS deferred)
+- [ ] **Consolidation & Hardening — Milestone 10** (in progress): low-severity hardening, docs/README accuracy, and precision fixes
 
 The demo app's pages are declared once, in `samples/BlazorNative.SampleApp/SampleAppPages.cs` — that array is the roster, and the runtime's mount registry and route table are derived views of it.
 

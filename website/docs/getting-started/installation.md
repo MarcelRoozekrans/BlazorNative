@@ -7,32 +7,51 @@ sidebar_position: 1
 
 # Installation
 
-## Before you start — the template is not on nuget.org yet
+## Install the template
 
-:::warning The one thing that will not work yet
+BlazorNative is **published on nuget.org** — **v0.1.0**, a stable release, so nothing here
+needs `--prerelease`. Installing the template is one command:
 
-`dotnet new install BlazorNative.Templates` **will fail today**, and it is not your setup.
-Nothing in this project is published to nuget.org until the maintainer cuts a GitHub
-Release; the packages and the template are built and verified on every pull request, but
-they are *inert* until then.
+```bash
+dotnet new install BlazorNative.Templates
+```
 
-Until that Release exists, the way to get the template is to build it from the repository:
+There is deliberately **no version on that command** — the current version lives on
+nuget.org, which is the only place that knows it. To pin one, append `::0.1.0`.
+
+Then go to [Quick start](./quick-start.md) to create and run an app.
+
+### Consuming the packages directly
+
+If you are wiring BlazorNative into an existing project rather than using the template, the
+**seven packages** are on nuget.org, all at the same version (no `--prerelease`):
+
+| Package | What it is |
+|---|---|
+| `BlazorNative.Runtime` | NativeAOT composition root + the C-ABI export surface |
+| `BlazorNative.Components` | the `Bn*` component library |
+| `BlazorNative.Renderer` | the headless renderer + patch model |
+| `BlazorNative.Core` | the `IMobileBridge` contract + bridge implementations |
+| `BlazorNative.Http` | `HttpClient` over the host fetch bridge |
+| `BlazorNative.Device` | device-capability façades (geolocation, notifications, biometrics, secure storage, camera) |
+| `BlazorNative.Analyzers` | the compile-time analyzers |
+
+```bash
+dotnet add package BlazorNative.Components
+dotnet add package BlazorNative.Runtime
+# …and the others as you need them
+```
+
+### Building from source instead
+
+Prefer to build the template locally — to hack on it, or to try an unreleased change? Clone
+and pack it, then install from the local feed:
 
 ```bash
 git clone https://github.com/MarcelRoozekrans/BlazorNative.git
 cd BlazorNative
 dotnet pack templates/BlazorNative.Templates -c Release -o ./artifacts/packages
 dotnet new install ./artifacts/packages/BlazorNative.Templates.*.nupkg
-```
-
-:::
-
-Once the template is published, installing it is one command — and note there is **no
-version on it**, deliberately. The current version lives on nuget.org, which is the only
-place that knows it:
-
-```bash
-dotnet new install BlazorNative.Templates
 ```
 
 ## Prerequisites
@@ -70,7 +89,7 @@ powershell -ExecutionPolicy Bypass -File setup.ps1
 dotnet new list blazornative
 ```
 
-If the template is installed, that lists it. If it does not, the install did not take —
-see the warning at the top of this page before assuming your machine is at fault.
+If the template is installed, that lists it. If it does not, re-run the install command at
+the top of this page before assuming your machine is at fault.
 
 Next: [Quick start](./quick-start.md).
