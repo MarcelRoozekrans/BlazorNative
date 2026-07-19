@@ -28,13 +28,23 @@
     "@docusaurus/types": "3.10.2"
   },
   "browserslist": {
-    "production": [">0.5%", "not dead", "not op_mini all"],
-    "development": ["last 3 chrome version", "last 3 firefox version", "last 5 safari version"]
+    "production": [
+      ">0.5%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 3 chrome version",
+      "last 3 firefox version",
+      "last 5 safari version"
+    ]
   },
   "engines": {
     "node": ">=18.0"
   },
   "overrides": {
-    "webpack": "5.108.4"
+    "webpack": "5.108.4",
+    "serialize-javascript": ">=7.0.5",
+    "uuid": ">=11.1.1"
   }
 }
