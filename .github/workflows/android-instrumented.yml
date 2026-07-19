@@ -202,7 +202,7 @@ jobs:
       # the first failure — hence the `|| touch` capture so logcat is dumped
       # even when Gradle fails, with the final `test` propagating the failure.
       - name: Instrumented tests (API 34 google_apis x86_64 Pixel 6 — mirrors local AVD blazornative-pixel6-x86_64)
-        uses: reactivecircus/android-emulator-runner@v2
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
         with:
           api-level: 34
           arch: x86_64
