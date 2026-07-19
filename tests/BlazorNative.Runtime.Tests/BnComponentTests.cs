@@ -213,6 +213,30 @@ public sealed class BnComponentTests : IDisposable
         Assert.Null(PropOn(frames[^1], root.NodeId, "enabled").Value);
     }
 
+    /// <summary>THE UN-WIRED CLICK INVARIANT (#125.4). BnButton emits its
+    /// <c>onclick</c> UNCONDITIONALLY — unlike BnInput.OnFocus / BnScroll.OnScroll,
+    /// which guard <c>if (X.HasDelegate)</c> — yet a button mounted with NO
+    /// OnClick still puts NOTHING on the event wire, because Blazor's diff ELIDES
+    /// an EventCallback attribute whose delegate is absent (no handler id is
+    /// assigned, the attribute frame is dropped). So the guard the peers carry is
+    /// belt-and-suspenders here, not a correctness requirement, and this pin is
+    /// what makes that reliance explicit: if a future Blazor ever stopped eliding,
+    /// an unwired button would start emitting a phantom handler-id-0 attach and
+    /// THIS test reds — which is the signal to add the guard then, not now.</summary>
+    [Fact]
+    public void BnButton_OnClickUnsubscribed_EmitsNoAttachAtAll_BlazorElidesTheEmptyCallback()
+    {
+        var (renderer, frames) = CreateCapturingSession();
+
+        renderer.Mount<BnButton>(ParameterView.FromDictionary(new Dictionary<string, object?>
+        {
+            [nameof(BnButton.Label)] = "Unwired",
+        }));
+        Assert.NotEmpty(frames);
+
+        Assert.Empty(frames[0].Patches.OfType<AttachEventPatch>());
+    }
+
     // ── BnInput ───────────────────────────────────────────────────────────────
 
     [Fact]
