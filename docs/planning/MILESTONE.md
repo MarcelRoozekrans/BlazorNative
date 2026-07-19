@@ -1,13 +1,15 @@
 # Milestone 10 — Consolidation & Hardening
 
-**Status:** 🔄 **active — opened 2026-07-19; 6/7 DoD closed.** Phase 10.0 fixed the two
-correctness bugs (#121, #123), red-first, no frozen-ABI change
+**Status:** ✅ **complete — 2026-07-19; all 7 DoD PASS**
+([final audit](../plans/2026-07-19-milestone-10-final-audit.md), the frozen bridge re-proven
+unmoved at 80 bytes / 10 exports; .NET re-run live at 780/0/0; no tag — the 8.6 rule).
+Phase 10.0 fixed the two correctness bugs (#121, #123), red-first, no frozen-ABI change
 ([conclusion](../plans/2026-07-19-phase-10.0-conclusion.md)); Phase 10.1 governed the two
 version literals (#120, #122)
 ([conclusion](../plans/2026-07-19-phase-10.1-conclusion.md)); Phase 10.2 fixed precision +
 the grouped cleanups and swept the docs/README to the published, auto-publish reality (#124,
-#125, #119) ([conclusion](../plans/2026-07-19-phase-10.2-conclusion.md)). Only the final
-audit (DoD #7, Phase 10.3) remains.
+#125, #119) ([conclusion](../plans/2026-07-19-phase-10.2-conclusion.md)); Phase 10.3 is the
+final audit (DoD #7) — this milestone's close.
 **Predecessor:** Milestone 9 — complete 2026-07-18
 ([final audit](../plans/2026-07-18-milestone-9-final-audit.md), all 6 DoD PASS; the ABI
 grew exactly once in 9.0 and held for three more capabilities; no tag — the 8.6 rule,
@@ -130,7 +132,12 @@ door accurate — a legitimate place to wind down.
    - Where practical, a drift guard is added for any doc claim that a test can pin (counts,
      export names), so the docs can't silently re-drift.
 
-7. **Hygiene + close.** Every fix CI-asserted (counts + gates with provenance); a decision
+7. **Hygiene + close.** ✅ **Closed by Phase 10.3** — the
+   [final audit](../plans/2026-07-19-milestone-10-final-audit.md) verified all six above
+   against live evidence (.NET 780/0/0 re-run live, the four gate literals ↔ README rows
+   reconciled, the frozen bridge re-proven unmoved at 80 bytes / 10 exports / 5 ops with the
+   init-input struct the only thing that grew, issues #119–#125 CLOSED / #126 correctly
+   OPEN), docs-only, no tag. Every fix CI-asserted (counts + gates with provenance); a decision
    log per phase; the closed issues closed on GitHub with the fixing commit; a **final
    audit** verifying all six above against live evidence. **No milestone tag** — closure is
    the audit (the 8.6 rule). Fixes land as `fix:` commits, so release-please walks the
