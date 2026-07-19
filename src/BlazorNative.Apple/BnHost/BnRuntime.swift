@@ -24,6 +24,19 @@
 
 import Foundation
 
+/// Phase 10.0 (#121): the ABI-mirrored PlatformKind ordinals. These integers are
+/// the contract the shared runtime decodes in `blazornative_init` (Exports.cs
+/// ToPlatformKind), the byte-identical twin of BlazorNative.Core.PlatformKind's
+/// ordinals (DevHost=0, Android=1, iOS=2, Windows=3, Mac=4). The iOS shell passes
+/// `.iOS` so an iOS app no longer reports Android through the platform-info surface.
+enum BnPlatformKind {
+    static let devHost: Int32 = 0
+    static let android: Int32 = 1
+    static let iOS: Int32 = 2
+    static let windows: Int32 = 3
+    static let mac: Int32 = 4
+}
+
 /// Global @convention(c) trampoline. It cannot capture, so it forwards to the
 /// singleton. Held as a top-level `let` for the process lifetime — the twin of
 /// BlazorNativeRuntime's strongly-held FrameCallback object.
@@ -188,12 +201,17 @@ final class BnRuntime {
 
         // init — nest withCString so the borrowed pointers stay alive across the
         // call (init copies the strings; it does not retain the pointers).
+        // Phase 10.0 (#121): pass platformInfoKind = iOS (ordinal 2, mirroring
+        // BlazorNative.Core.PlatformKind) so the shared runtime reports iOS through
+        // IMobileBridge.PlatformInfo / GetPlatformInfoAsync instead of the old
+        // hardcoded Android. os stays "ios" (the display-OS string, already correct).
         let result: bn_init_result = os.withCString { osPtr in
             "ios-shell".withCString { notePtr in
                 var opts = bn_init_options(
                     platformInfoOs: osPtr,
                     platformInfoApiLevel: apiLevel,
-                    platformInfoNote: notePtr)
+                    platformInfoNote: notePtr,
+                    platformInfoKind: BnPlatformKind.iOS)
                 return blazornative_init(&opts)
             }
         }

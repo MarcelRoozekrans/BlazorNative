@@ -321,6 +321,11 @@ class BlazorNativeRuntime(
         componentName: String = "HelloComponent",
         platformOs: String = "android",
         apiLevel: Int = 0,
+        // Phase 10.0 (#121): the shell's real PlatformKind ordinal (BnPlatformKind).
+        // Defaults to DEV_HOST — dev/preview/inspector hosts that boot through here
+        // report DevHost, and the Android shell passes ANDROID explicitly (MainActivity)
+        // so an iOS app can never inherit Android from a shared runtime constant.
+        platformKind: Int = BnPlatformKind.DEV_HOST,
         // Phase 3.1: when non-null, the six shell callbacks are registered
         // BEFORE mount (components resolving IMobileBridge need a live host).
         bridge: ShellBridgeHandlers? = null,
@@ -337,6 +342,7 @@ class BlazorNativeRuntime(
             platformInfoOs = osMem
             platformInfoApiLevel = apiLevel
             platformInfoNote = noteMem
+            platformInfoKind = platformKind // Phase 10.0 (#121): report the shell's real kind
         }
         val init = lib.blazornative_init(opts)
         if (init.status != 0) {

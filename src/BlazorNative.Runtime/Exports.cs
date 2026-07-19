@@ -62,6 +62,15 @@ public struct BlazorNativeInitOptions
     public IntPtr PlatformInfoOs;        // const char* — host-allocated UTF-8
     public int    PlatformInfoApiLevel;
     public IntPtr PlatformInfoNote;      // const char* — optional
+    // Phase 10.0 (#121): the shell's real PlatformKind ordinal (DevHost=0,
+    // Android=1, iOS=2, Windows=3, Mac=4 — mirrors BlazorNative.Core.PlatformKind).
+    // Appended AFTER the three original fields so the LayoutKind.Sequential offsets
+    // 0/8/16 are unchanged — an old shell that predates this field leaves it 0
+    // (DevHost, a safe non-lying default), a new shell passes its own ordinal so an
+    // iOS app stops reporting Android. Both shells ship in this repo and update in
+    // lockstep with the C header / Kotlin JNA mirror; this is the init-INPUT struct,
+    // NOT the frozen 80-byte callbacks bridge.
+    public int    PlatformInfoKind;
 }
 
 [StructLayout(LayoutKind.Sequential)]
@@ -116,7 +125,11 @@ public static class Exports
                         ? "" : Marshal.PtrToStringUTF8(opts->PlatformInfoOs) ?? "",
                     apiLevel: opts->PlatformInfoApiLevel,
                     note: opts->PlatformInfoNote == IntPtr.Zero
-                        ? null : Marshal.PtrToStringUTF8(opts->PlatformInfoNote));
+                        ? null : Marshal.PtrToStringUTF8(opts->PlatformInfoNote),
+                    // Phase 10.0 (#121): map the shell-supplied ordinal to PlatformKind.
+                    // An unset (0), unknown, or out-of-range value falls back to DevHost
+                    // — a safe non-lying default, never Android.
+                    kind: ToPlatformKind(opts->PlatformInfoKind));
             }
 
             // Phase 3.0b deliberately does NOT mount a renderer or build a full
@@ -147,6 +160,18 @@ public static class Exports
             };
         }
     }
+
+    /// <summary>Phase 10.0 (#121): maps the shell-supplied init-options ordinal to
+    /// <see cref="PlatformKind"/>. The int mirrors the enum ordinal by contract
+    /// (DevHost=0, Android=1, iOS=2, Windows=3, Mac=4 — pinned by
+    /// NativeShellBridgeTests.ToPlatformKind_MapsTheInitOptionsOrdinal_ByEnumValue).
+    /// An unset (0) value is DevHost, and any
+    /// unknown/out-of-range ordinal ALSO falls back to DevHost — a safe non-lying
+    /// default for a shell that predates or mis-sets the field, never Android.</summary>
+    internal static PlatformKind ToPlatformKind(int ordinal)
+        => Enum.IsDefined(typeof(PlatformKind), ordinal)
+            ? (PlatformKind)ordinal
+            : PlatformKind.DevHost;
 
     [UnmanagedCallersOnly(EntryPoint = "blazornative_shutdown", CallConvs = new[] { typeof(CallConvCdecl) })]
     public static void Shutdown()
