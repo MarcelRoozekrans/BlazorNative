@@ -9,6 +9,7 @@
       "bump-patch-for-minor-pre-major": false,
       "extra-files": [
         { "type": "generic", "path": "src/Directory.Build.props" },
+        { "type": "generic", "path": "src/BlazorNative.Runtime/Exports.cs" },
         { "type": "generic", "path": "templates/BlazorNative.Templates/BlazorNative.Templates.csproj" },
         { "type": "generic", "path": "templates/BlazorNative.Templates/content/BlazorNative.App/MyBlazorNativeApp.csproj" },
         { "type": "generic", "path": "templates/BlazorNative.Templates/content/BlazorNative.App/.template.config/template.json" }
