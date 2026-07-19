@@ -1641,14 +1641,28 @@ emulator lanes. The inspector channel is ledgered a third time. Maps to BACKLOG.
 
 ---
 
-### ⏳ Milestone 10 — Framework Hardening  *(pending — old P6)*
+### 🔄 Milestone 10 — Consolidation & Hardening  *(active — opened 2026-07-19; old P6 "Framework Hardening", **rescoped to correctness + accuracy debt**)*
 
-Accessibility, i18n (with the `InvariantGlobalization` workaround), performance & memory
-budgets (the M1-deferred allocation-budget work continues), a security model (URL
-allowlist, secure buffers, crash isolation), error handling & crash recovery, and the
-**open hardening ledger** (issues #8/#9/#12/#13 — async-handler window, dispatch-lane
-starvation, RemoveComponent bucket scan, TranslateToViewIndex memoization). Maps to
-BACKLOG.md "P6 — Framework hardening".
+**0.1.0 is published** (seven packages, 2026-07-19) — the library is *consumed*, and the
+9.0 full-repo review found defects that ship inside it. M10 adds **no platform surface**;
+it makes the published 0.1.x **honestly correct** and its **docs + README accurate**, then
+stops. Backbone = the review findings **#119–#125**; scope + owner decisions in
+[MILESTONE.md](MILESTONE.md).
+
+The broader "old P6" hardening — **accessibility, i18n, performance/memory budgets, the
+security model, and the P3 perf-hardening ledger (#8/#9/#12/#13)** — is **re-deferred as
+*investment, not need*** (worth doing only if this heads toward real adoption). Real-device
+iOS (no Apple account), FCM push (no Firebase), and the inspector channel stay out.
+
+- **Phase 10.0** — the two correctness bugs: `PlatformKind.Android` hardcoded so iOS
+  reports Android (#121), and `Frames` handler faults silently swallowed — a false-green
+  test risk (#123). *Test-integrity first, red-first.*
+- **Phase 10.1** — version governance: the stale `Exports.VersionNumber` (#120) and the
+  unguarded load-bearing `RuntimeFrameworkVersion` (#122), both into the pin apparatus.
+- **Phase 10.2** — docs + README accuracy sweep (owner ask + #119: retired draft-publish →
+  auto-publish, published-0.1.0 state, refreshed counts, no overclaim) + `BnListWindow`
+  precision (#124) and the grouped low-severity cleanups (#125).
+- **Phase 10.3** — hygiene + M10 final audit + close (no tag — the 8.6 rule).
 
 ---
 

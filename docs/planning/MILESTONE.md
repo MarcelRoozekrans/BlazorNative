@@ -1,182 +1,156 @@
-# Milestone 9 — Host APIs (Platform Breadth)
+# Milestone 10 — Consolidation & Hardening
 
-**Status:** ✅ **complete — 2026-07-18**; **6/6 DoD closed** — Phase 9.4 shipped the hygiene +
-[final audit](../plans/2026-07-18-milestone-9-final-audit.md) (all six DoD PASS; the ABI grew
-exactly once in 9.0 and held for three more capabilities; no tag — the 8.6 rule, closure is the audit)
-**Source:** BACKLOG "P4 — full platform coverage" (remainder). The roadmap called this
-milestone "Platform Breadth + Real Device"; the second half is **deferred at
-milestone-open** (below), so the name now says what the milestone actually is.
-**Predecessor:** Milestone 8 — complete 2026-07-17
-([final audit](../plans/2026-07-17-milestone-8-final-audit.md) all 6 DoD PASS +
-[addendum](../plans/2026-07-17-milestone-8-audit-addendum.md); no tag — the
-milestone-tag namespace was retired in 8.6, and milestones close on their audits).
+**Status:** 🔄 **active — opened 2026-07-19.** No DoD closed yet.
+**Predecessor:** Milestone 9 — complete 2026-07-18
+([final audit](../plans/2026-07-18-milestone-9-final-audit.md), all 6 DoD PASS; the ABI
+grew exactly once in 9.0 and held for three more capabilities; no tag — the 8.6 rule,
+closure is the audit).
+**Source:** the full-repo review at `3866410` (Phase 9.0, 2026-07-17), which filed eight
+concrete findings — issues **#119–#126** — plus M9's own earmark: *"Accessibility, i18n,
+perf/security hardening — Milestone 10,"* and the owner's ask (2026-07-19) to **sweep the
+docs and README** now that the release model and published state have changed.
 
 ## Goal
 
-After M8 a stranger can consume the library, but an app built on it can only *render*:
-no sensor, no capture, no secure secret, no notification — the bridge has grown exactly
-once (clipboard/share, 5.4). After M9 an app can **ask where it is, take a photo, prove
-who's holding the phone, keep a secret, and schedule a local notification** — each one a
-real native capability behind the same C-ABI discipline, on both shells, permission
-story included. The proof surface is the sample app plus **the owner's physical Android
-phone** for the capabilities an emulator only pretends to have.
+**0.1.0 is published** (seven packages on nuget.org, 2026-07-19). The library is now
+*consumed*, not just built — and the 9.0 review found **real defects that ship inside it**:
+an iOS app that reports itself as Android through a public API, a test channel that can
+swallow a failing assertion (a false-green risk), and a version string frozen four
+milestones back that consumers can read. M10 does **not add platform surface**. It makes
+the published 0.1.x **honestly correct**, and makes the **docs and README tell the truth**
+about what the project is now (published, auto-publishing, M9-complete) rather than what it
+was mid-build. It needs **no device, no Apple account, no Firebase** — everything is
+reachable from the setup already in hand.
 
-**The ABI, frozen since M1, grew once in Phase 9.0 — deliberately, argued, and
-generically.** An honest async-permission completion could ride no existing export
-(`fetch_complete` is fetch-typed; `host_event` is contractually synchronous), so the
-bridge grew 72→80 bytes (+1 `HostCallBegin` slot, the `FetchBegin` twin) and 9→10
-exports (+`blazornative_host_call_complete`, the `fetch_complete` twin). Shaped generically
-(op-enum + flat-JSON) so 9.1/9.2/9.3 add an op constant with ZERO further struct/export/
-gate/drift change — pay once, reuse thrice. This is the last ABI grow M9 plans.
+**This is a deliberately small, unglamorous milestone, and that is the point.** The POC
+proved its thesis across M1–M9; adding features on top of known defects and stale docs is
+worse than paying them down. M10 leaves the published library trustworthy and its front
+door accurate — a legitimate place to wind down.
 
-## Scoping decisions (owner, 2026-07-17)
+## Scoping decisions (owner, 2026-07-19)
 
-1. **Real-device iOS is DEFERRED — no Apple Developer account for now.** With no local
-   Mac, the honest path to a physical iPhone is CI-signed IPA → TestFlight, which
-   requires the account. The trigger is named: *the owner acquires the account* → a
-   TestFlight phase opens (signing + provisioning in CI + upload via the App Store
-   Connect API; ~2 new secrets). Until then iOS stays **simulator-scoped and labeled as
-   such**, exactly as M5–M8 shipped it.
-2. **All four host-API groups ship**: geolocation · camera (photo capture) · local
-   notifications · biometrics + secure storage (the M5 secure-storage deferral rides
-   with biometrics as a natural pair). **FCM push stays ledgered** — it needs a Firebase
-   project (owner-owned external dependency, the NUGET_API_KEY shape) and a server-side
-   story; local notifications land first.
-3. **The owner has a physical Android phone** — each phase ships documented
-   device-proof steps (USB debugging, `adb` over USB) for the capabilities the emulator
-   simulates (camera feed, biometrics). CI stays on the emulator lanes; the phone is
-   the honesty check, not a CI node.
-4. **The on-device inspector channel is ledgered again** (4.4 carryover, third
-   deferral) — developer tooling with no user-facing pull; trigger unchanged.
-
-## The named risk (spike-shaped, first)
-
-**Permissions are a NEW cross-cutting surface the bridge has never carried.** The one
-bridge growth so far (clipboard, 5.4) needed no permission, no user prompt, no app
-suspension. Every M9 API needs: a runtime-permission request (Android) / purpose string
-+ system prompt (iOS), an async flow where **the OS suspends the app mid-call** to show
-its dialog, a denial story (.NET must see "denied" as data, not an exception or a
-hang), and a re-request/settings story. If the C-ABI's async callback shape (the 72-byte
-bridge's completion path) can't carry "the user said no" cleanly, every later phase
-inherits the flaw — so Phase 9.0 proves the permission machinery **on the simplest
-permission-gated API (geolocation)** before anything heavier is built. **Proven: the
-72-byte completion path could not carry it cleanly, so it grew to 80 bytes / 10 exports,
-generically — the shape 9.1–9.3 reuse with no further ABI change.**
+1. **No new platform surface.** Real-device iOS / TestFlight stays **out** — the owner has
+   no iPhone and no Apple Developer account; the trigger is unchanged (acquire the
+   account). **FCM push** stays ledgered (needs a Firebase project). **The inspector
+   channel** stays ledgered (fourth deferral).
+2. **Accessibility, i18n, and typography parity (#126) are OUT — reclassified as
+   *investment, not need*.** They are "make it a real product people use" work, worth
+   doing only if this heads toward real adoption; M9 earmarked them for M10, and M10
+   **re-defers** them with that reasoning stated. This milestone is **correctness +
+   accuracy debt only.**
+3. **Docs and README are in scope as a first-class deliverable** (owner ask, 2026-07-19).
+   Today's release-model change (draft-publish → auto-publish, PR #136) and the 0.1.0
+   publish mean the Docusaurus site and `README.md` describe a world that no longer
+   exists. A correctness milestone that fixes the code but leaves the front door lying is
+   only half honest.
+4. **The proof surface is CI + the existing suites.** No new external dependency, no new
+   secret, no device lane. Fixes land behind the five required gates like everything else.
+5. **A red-first proof per real bug.** Each correctness fix (DoD #1, #2) lands a test that
+   FAILS against the current code first — the standing discipline, and doubly so for #123,
+   whose whole nature is that a broken thing looks green.
 
 ## Definition of Done
 
-1. **The permission pattern, proven and documented.** ✅ **Closed by Phase 9.0.** A
-   versioned extension of [bridge-extension.md](../bridge-extension.md) —
-   section (f), the reusable pattern 9.1/9.2/9.3 copy: how a permission-gated call flows
-   (request → OS prompt → grant/deny → completion callback), how denial reaches .NET as
-   data, what re-request looks like, on both shells — written as the pattern the
-   remaining phases copy, with the 5.4 worked-example discipline. Proven: denial is a
-   status integer, never an exception or a hang (tested on both shells within a bounded
-   await); the OS-suspends-the-app risk is proven (Android Activity recreation mid-prompt,
-   iOS async CLLocationManager, both routing to the same in-flight continuation).
-2. **Geolocation** (`BlazorNative.Device`): ✅ **Closed by Phase 9.0.** Current
-   position on both shells (Android `LocationManager` + `requestPermissions`, iOS
-   `CLLocationManager` when-in-use), permission story per DoD #1, `IGeolocation` in the
-   new 7th package over `IMobileBridge.GetCurrentPositionAsync` (DevHostBridge mocks the
-   tri-state headless), `/geolocation` demo in SampleApp, device tests on both lanes.
-3. **Local notifications**: ✅ **Closed by Phase 9.1.** schedule / show / cancel + both
-   tap-through halves (cold via the 5.1 launch deep-link, warm via `onNewIntent` /
-   `didReceive` → the reserved `"navigate"` host event → `NavigateToAsync`), the permission
-   story (POST_NOTIFICATIONS on Android 13+ with the implicit-grant fast path below API 33,
-   `UNUserNotificationCenter` on iOS), `INotifications` in the existing 7th package,
-   `/notifications` demo, device tests on both lanes. **The ABI stayed FROZEN — the pay-once
-   payoff:** 9.1 added an op (`Notifications = 1`) and touched the ABI at nothing — bridge
-   still 80 bytes, exports still 10, no drift-pin moved, proven falsifiable
-   (`NotificationsAbiUnchangedTests`; the iOS struct-grow mutant failed to COMPILE).
-4. **Biometrics + secure storage**: ✅ **Closed by Phase 9.2.** BiometricPrompt
-   (Android, on a FragmentActivity host) / LocalAuthentication (iOS) gating an
-   AndroidKeyStore AES/GCM · iOS Keychain store (set/get/delete secrets), `IBiometrics`
-   + `ISecureStorage` in the existing 7th package `BlazorNative.Device`, `/secure` demo
-   (the 12th routed page, sample-only). **The M5 secure-storage deferral CLOSES here** —
-   a four-milestone-old ledger item retired. Owner chose **OS-key-level** binding (the OS
-   refuses plaintext without a fresh auth) over app-level: **Android PROVES it** on the
-   AVD (the software keystore enforces `setUserAuthenticationRequired` — a plain get of an
-   auth-bound secret returns AuthFailed); **iOS asserts the CONTRACT with OS-enforcement
-   UNPROVEN** (the simulator has no Secure Enclave and no-ops `.biometryCurrentSet` —
-   real-device deferred with the Apple account). **The ABI stayed FROZEN — the pay-once
-   payoff, a THIRD time:** 9.2 added two ops (`Biometrics = 2`, `SecureStorage = 3`) and
-   touched the ABI at nothing — bridge still 80 bytes, exports still 10, no drift-pin
-   moved, proven falsifiable (`SecureBiometricsAbiUnchangedTests`; the iOS struct-grow
-   mutant failed to COMPILE). `androidx.biometric:biometric:1.1.0` is the first new gradle
-   dep of M9 (repo + template, drift-enforced).
-5. **Camera (photo capture)**: ✅ **Closed by Phase 9.3.** `ACTION_IMAGE_CAPTURE` to the
-   system camera app (Android, NO runtime CAMERA permission — a FileProvider for the
-   output URI, a NEW manifest+resource drift class, template 32→33 files) /
-   `UIImagePickerController(.camera)` + `NSCameraUsageDescription` (iOS); `ICamera` the
-   5th Device façade in the existing 7th package, `/camera` demo (the 13th routed page,
-   sample-only). **The image crosses as a file PATH, not bytes** — the payload NAMES the
-   blob on the OPTIONAL `host_call_complete` payload (bytes-inline rejected: multi-MB
-   through a non-zeroable string, and not a secret), the bytes stay on disk. **The ABI
-   stayed FROZEN — the pay-once payoff, a FOURTH time, despite a multi-MB result:** 9.3
-   added one op (`Camera = 4`) + `CameraStatus` and touched the ABI at nothing — bridge
-   still 80 bytes, exports still 10, no drift-pin moved, proven falsifiable
-   (`CameraAbiUnchangedTests`; the iOS struct-grow mutant failed to COMPILE). **The M6/M7
-   "revisit ContentMode with a real natural-size image" ledger item CLOSES here** — the
-   captured photo is a valid `BnImage.Src` displayed in a DEFINITE 240×320 box with
-   `ContentMode="Contain"` (proven on the AVD end-to-end + iOS via `naturalPixelSize`);
-   both shells NORMALIZE EXIF so Coil/Kingfisher never double-rotate. **Emulator honesty,
-   the sharpest of M9:** Android's shutter isn't CI-drivable so the result is seam-driven
-   but written THROUGH the real FileProvider URI; **the iOS simulator has NO camera at
-   all** — `check → Unavailable` is the CORRECT sim result, a real capture DOUBLY UNPROVEN
-   (no sim camera AND no Apple account). **UNPROVEN → the owner's physical Android phone:**
-   the real camera UI + sensor + EXIF (the milestone's second least-emulated capability,
-   with biometrics). **SafeAreaView, flagged three phases as camera's likely trigger, is
-   NOT tripped** — the capture UI is system chrome, not app-laid-out.
-6. **Hygiene + close:** ✅ **Closed by Phase 9.4** ([final audit](../plans/2026-07-18-milestone-9-final-audit.md) — all 6 DoD PASS, ABI grew exactly once re-proven, counts reconciled gate ↔ README, .NET 754 re-run live). Every new surface CI-asserted (counts + gates with provenance);
-   the sample app grows a demo page per capability (the proof surface discipline);
-   decision log per phase; final audit. **No milestone tag** — closure is the audit
-   (the 8.6 rule). Release-please rides along: these phases land as `feat:` commits,
-   so the changelog writes itself and the version walks 0.x as designed.
+1. **iOS no longer reports Android** (#121). `PlatformKind` in the shared runtime's
+   `PlatformInfo` / `GetPlatformInfoAsync` must reflect the *actual* shell, not a
+   hardcoded `Android`. The kind comes from the shell (like the `os` string already does)
+   — an init-option or bridge-supplied value — so the iOS `.a` and the Android runtime
+   report their own platform. Proven on both shells (the iOS XCTest asserts `iOS`, not
+   `Android`).
+
+2. **The test channel cannot swallow a failure** (#123). `NativeRenderer` must observe the
+   `Frames` `InvokeAsync` task so a fault in a frame subscriber routes through
+   `HandleException` / surfaces under `StrictErrors` instead of being dropped. **Red-first
+   is mandatory here:** a test that throws inside a `Frames` subscriber must FAIL before
+   the fix and pass after — the false-green risk is the finding, so the proof must be that
+   green now means green.
+
+3. **No stale version reported to consumers** (#120). `Exports.VersionNumber` (the
+   ungoverned 8th literal, frozen at `1.4.0-phase-5.4`) is brought **into** the version
+   apparatus — mirrored from the manifest/props like the other literals (drift-pinned) or
+   removed if nothing needs it. A consumer reading the runtime version gets the real one.
+
+4. **The one load-bearing version is guarded** (#122). `RuntimeFrameworkVersion` (`10.0.9`,
+   duplicated in the sample + template with no pin — the version that makes bionic/iOS
+   NativeAOT compile at all) gets a drift pin linking its occurrences, matching the
+   discipline every cosmetic literal already gets.
+
+5. **Precision + cleanups triaged** (#124, #125). `BnListWindow.Compute` either uses exact
+   integer arithmetic or the documented item-count bound is *enforced* (a value past which
+   `float` drifts must not silently mis-window). The grouped low-severity items (#125) are
+   each fixed **or** re-ledgered with a written reason — none left silently open.
+
+6. **The docs and README tell the truth** (owner ask + #119). A full accuracy sweep of the
+   **Docusaurus site** (`website/docs/**`) and **`README.md`**:
+   - **The release model is current** — every mention of the retired *draft-Release +
+     manual-publish click* flow is rewritten to the **auto-publish-on-merge** reality
+     (PR #136): merging a release PR publishes from `release-please.yml`'s own `push` job,
+     no draft, no click. (`GITHUB-SETUP.md` was updated in #136; the site + README are
+     swept for the same.)
+   - **The published state is current** — the docs reflect that **0.1.0 is live on
+     nuget.org** (seven packages), with a correct install/getting-started path a stranger
+     can follow.
+   - **No overclaim survives** (#119) — the README's "all four test counts asserted in CI"
+     line is corrected to say which gates actually gate a PR (`.NET` + the two compile
+     gates) vs. which are dispatch/nightly (Android + iOS instrumented), and every cited
+     count is refreshed to the live baseline (.NET 754 / JVM 119 / Android 209 / iOS 233).
+   - **No stale milestone/version prose** — references to mid-build state (M8/M9 in
+     progress, draft flow, pre-publish) are brought to "M9 complete, published, hardening."
+   - Where practical, a drift guard is added for any doc claim that a test can pin (counts,
+     export names), so the docs can't silently re-drift.
+
+7. **Hygiene + close.** Every fix CI-asserted (counts + gates with provenance); a decision
+   log per phase; the closed issues closed on GitHub with the fixing commit; a **final
+   audit** verifying all six above against live evidence. **No milestone tag** — closure is
+   the audit (the 8.6 rule). Fixes land as `fix:` commits, so release-please walks the
+   patch version (0.1.0 → 0.1.1 → …) and the changelog writes itself; doc-only changes ride
+   as `docs:`/`chore:` and don't bump.
 
 ## Out of scope for this milestone
 
 - **Real-device iOS / TestFlight** — deferred; trigger = the Apple Developer account.
-- **FCM push** — ledgered; trigger = a Firebase project + the notifications base landing.
-- **The inspector channel** — ledgered (third time); trigger unchanged.
-- Video capture, gallery/picker, audio recording — camera is *photo capture* only.
-- Background location, geofencing — foreground position only.
-- Accessibility, i18n, perf/security hardening — **Milestone 10**.
+- **FCM push** — ledgered; trigger = a Firebase project.
+- **The inspector channel** — ledgered (fourth deferral).
+- **Accessibility, internationalization, typography/font parity (#126)** — investment, not
+  need; re-deferred with reasoning (scoping decision 2).
+- **The P5 feature epics** — State (#22), Styling (#21), Navigation package (#23), CLI
+  tool (#24), component-library expansion (#20). Genuine future work, not correctness debt.
 
-## Inherited from prior milestones (the ledger M9 consumes or carries)
+## Inherited from prior milestones (the ledger M10 carries)
 
-- **From M5:** secure storage — ✅ **CLOSED by Phase 9.2** (consumed by DoD #4, the
-  four-milestone-old deferral retired); FCM push (carried, trigger above).
-- **From M8:** the KDoc sweep + map extraction — **trigger: before the first Release
-  that publishes the template pack** (may fire mid-M9 if the owner publishes; release
-  PRs #115/#116 have merged — 0.1.0 and 0.2.0 tagged — and #117 (0.3.0) is open, but no
-  package publishes until `NUGET_API_KEY` is live and the manual pipeline runs);
-  `BionicNativeAot.targets` → the Runtime package's `build/`;
-  SafeAreaView/edge-to-edge — ✅ **RESOLVED by Phase 9.3, NOT tripped** (the capture UI is
-  system chrome, not app-laid-out; the three-phase watch closes with a reason); density
+- **From the 9.0 review:** issues #119–#125 — **this milestone's backbone** (DoD #1–#6);
+  #126 (font parity) re-deferred as investment.
+- **From M8:** the KDoc sweep + map extraction — **trigger fired** (0.1.0 published), but
+  the template *pack* is not on nuget.org (separate feed), so it stays ledgered until that
+  feed publishes; `BionicNativeAot.targets` → the Runtime package's `build/`; density
   assets (trigger: the first bundled-asset story).
+- **From M5:** FCM push (carried, trigger above).
 - **CI posture:** five required contexts (`build-test`, `android-build`, `ios-build`,
-  `pr-title`, `footer-check`); advisory device lanes unchanged; the owner's phone is
-  never a CI dependency.
+  `pr-title`, `footer-check`); advisory device lanes unchanged. **Auto-publish is live**
+  (PR #136, 2026-07-19): merging a release PR publishes to nuget.org from
+  `release-please.yml`'s own `push` job — so DoD #7's `fix:` commits walk 0.1.x on merge.
 
 ## Initial phase plan
 
 Tracked in `ROADMAP.md`. Approved at milestone-open:
 
-- **Phase 9.0** — the permission pattern + geolocation (DoD #1, #2) — *the named risk,
-  proven on the simplest permission-gated API before anything heavier*
-- **Phase 9.1** — local notifications + tap-through (DoD #3)
-- **Phase 9.2** — biometrics + secure storage (DoD #4)
-- ✅ **Phase 9.3** — camera photo capture (DoD #5) — *complete (2026-07-18); heaviest,
-  last deliberately, and it inherited mature permission machinery — the ABI stayed frozen
-  a FOURTH time despite a multi-MB result*
-- **Phase 9.4** — hygiene + M9 final audit + close (DoD #6) — **the only one left; M9 is
-  now at 5/6 DoD**
+- **Phase 10.0** — the two correctness bugs (DoD #1, #2): iOS-platform-kind and the
+  swallowed-`Frames`-fault. *Test-integrity first — #123 protects every other proof in the
+  repo, so it goes first, red-first.*
+- **Phase 10.1** — version governance (DoD #3, #4): the stale `Exports.VersionNumber` and
+  the unguarded `RuntimeFrameworkVersion`, both into the pin apparatus.
+- **Phase 10.2** — docs + README accuracy sweep (DoD #6) + precision & cleanups (DoD #5):
+  the site and README brought current (release model, published state, counts, no
+  overclaim), plus `BnListWindow` and the grouped #125 items.
+- **Phase 10.3** — hygiene + M10 final audit + close (DoD #7).
 
 ## Why this milestone exists
 
-M1–M8 built a rendering engine, an authoring story, and an ecosystem — a stranger can
-`dotnet new` an app that draws. It still can't do anything a *mobile* app exists to do:
-no sensors, no camera, no secrets, no notifications. M9 is where the bridge-extension
-pattern earns its name — four real capabilities through an ABI that grew exactly once
-(9.0, generically) and then holds, with the permission model (the thing clipboard never
-needed) proven once and reused three times.
+M1–M9 built and shipped: a rendering engine, an authoring story, an ecosystem, five native
+capabilities, and seven packages on nuget.org. The 9.0 review then found that some of what
+shipped is *wrong* — an iOS app calling itself Android, a test lane that can lie green, a
+version literal four milestones stale — and today's release-model change left the docs and
+README describing a flow that no longer exists. Now that the library is public, those are
+things a consumer can hit and read, not internal notes. M10 pays that debt down, makes the
+front door accurate, and stops — the honest bookend to a POC that has already proven what
+it set out to prove.
