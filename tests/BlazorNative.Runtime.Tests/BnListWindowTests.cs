@@ -179,6 +179,38 @@ public sealed class BnListWindowTests
         => Assert.Throws<ArgumentOutOfRangeException>(
             () => BnListWindow.Compute(float.NaN, Viewport, ItemHeight, Count, Overscan));
 
+    // ── Large-count exact arithmetic (#124): float drifts past 2²⁴ ────────────
+    //
+    // float is exact for integers only to 2²⁴ (16,777,216); a real list can
+    // scroll well past that (millions of rows × tens of dp), and the window
+    // arithmetic — maxOffset = count·itemHeight − viewport, and the floor/ceil
+    // divisions — then rounds across a ROW boundary and hands back a window off
+    // by a row. These two cases use offsets that ARE exactly float-representable
+    // (so the drift is purely in the ARITHMETIC, not the input rounding) and an
+    // itemHeight that is not a power of two (a power-of-two divisor divides
+    // exactly in float, hiding the division drift). The expected windows are the
+    // exact-integer answer; they FAIL against the old float arithmetic and PASS
+    // once maxOffset/clamped/firstVisible/lastVisibleExclusive move to double.
+
+    /// <summary>An IN-RANGE offset deep past 2²⁴: firstVisible = floor(offset /
+    /// itemHeight) drifts up a row in float (20,000,044 / 65 lands a hair below
+    /// row 307,692's boundary, but float rounds the quotient up to 307,693).
+    /// Overscan 0 isolates the visible-span floor. Exact answer: [307692, 307700).</summary>
+    [Fact]
+    public void LargeCount_InRangeOffset_FirstVisibleIsExact_NotFloatDrifted()
+        => Assert.Equal((307692, 307700),
+            BnListWindow.Compute(20_000_044f, 400f, 65f, 2_000_000, 0));
+
+    /// <summary>A past-the-end offset (the bottom / 6.2-shrink window) clamps to
+    /// maxOffset = count·itemHeight − viewport. In float that product
+    /// (524,295 × 66 = 34,603,470) is not exactly representable and the clamp
+    /// lands two dp high, pushing the bottom window's Start up a row. Exact
+    /// answer: [524284, 524295).</summary>
+    [Fact]
+    public void LargeCount_PastEndOffset_BottomWindowIsExact_NotFloatDrifted()
+        => Assert.Equal((524284, 524295),
+            BnListWindow.Compute(40_000_000f, 400f, 66f, 524_295, 4));
+
     // ── The spacer identity BnList builds on: the window tiles the content ────
 
     /// <summary>For any window, lead spacer + live rows + trail spacer must

@@ -71,15 +71,24 @@ internal static class BnListWindow
         // Clamp the offset to the legal scroll range. Content shorter than the
         // viewport has range 0 — every offset resolves to 0 and the window is
         // the whole list (via the End clamp below).
-        var maxOffset = MathF.Max(0f, count * itemHeight - viewport);
-        var clamped = Math.Clamp(offset, 0f, maxOffset);
+        //
+        // EXACT ARITHMETIC IN DOUBLE (#124): float is exact for integers only
+        // to 2²⁴ (16,777,216), but a real list scrolls well past that
+        // (millions of rows × tens of dp: count·itemHeight ≈ 3.5e7 here). In
+        // float, maxOffset and the floor/ceil divisions round across a ROW
+        // boundary and the window drifts by a row. double is exact to 2⁵³ —
+        // beyond any list a device can hold — so every intermediate below runs
+        // in double. The public inputs stay float (the shell's unit is float);
+        // only the internal arithmetic widens.
+        var maxOffset = Math.Max(0.0, (double)count * itemHeight - viewport);
+        var clamped = Math.Clamp((double)offset, 0.0, maxOffset);
 
         // First visible row: the row containing the viewport's top edge.
         // Last visible row boundary (EXCLUSIVE): ceil of the bottom edge — a
         // bottom edge landing exactly on a row boundary does NOT make the row
         // below it visible (half-open all the way down).
-        var firstVisible = (int)MathF.Floor(clamped / itemHeight);
-        var lastVisibleExclusive = (int)MathF.Ceiling((clamped + viewport) / itemHeight);
+        var firstVisible = (int)Math.Floor(clamped / itemHeight);
+        var lastVisibleExclusive = (int)Math.Ceiling((clamped + viewport) / itemHeight);
 
         var start = Math.Max(firstVisible - overscan, 0);
         var end = Math.Min(lastVisibleExclusive + overscan, count);
