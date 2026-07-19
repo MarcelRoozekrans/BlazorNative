@@ -245,7 +245,7 @@ public sealed class PackageVersionPinTests
             + "line and nothing else, so an annotation on the wrong line is an annotation on no line);\n"
             + "  · someone hand-edited a version literal. Nobody does that any more.\n\n"
             + "NOTHING ELSE IN THIS REPO CATCHES THIS. Every other version pin compares a MIRROR to "
-            + "the props — so a props left behind by its own author is a props all six mirrors still "
+            + "the props — so a props left behind by its own author is a props all seven mirrors still "
             + "agree with, and the whole suite goes green while the packages publish one release "
             + "behind forever. Do not edit the manifest to make this pass: it is the author, and "
             + "editing it by hand is the thing this rule exists to stop.");
@@ -353,7 +353,7 @@ public sealed class PackageVersionPinTests
         }
 
         // NON-VACUITY: an empty `extra-files` would make every claim below
-        // trivially true while the six mirrors go unwritten forever.
+        // trivially true while the seven mirrors go unwritten forever.
         Assert.True(inspected > 0,
             "release-please-config.json's `extra-files` is EMPTY — so release-please writes the "
             + "manifest and CHANGELOG.md and NOTHING ELSE, and all six version mirrors (the props "
