@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.1.1](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.1.0...v0.1.1) (2026-07-19)
+
+
+### Bug Fixes
+
+* **build:** govern Exports.VersionNumber ([#120](https://github.com/MarcelRoozekrans/BlazorNative/issues/120)) and drift-pin RuntimeFrameworkVersion ([#122](https://github.com/MarcelRoozekrans/BlazorNative/issues/122)) ([#143](https://github.com/MarcelRoozekrans/BlazorNative/issues/143)) ([3d3d374](https://github.com/MarcelRoozekrans/BlazorNative/commit/3d3d37427a88377154500d986e72ab93b04ace28))
+* precision + grouped cleanups + docs accuracy sweep ([#124](https://github.com/MarcelRoozekrans/BlazorNative/issues/124), [#125](https://github.com/MarcelRoozekrans/BlazorNative/issues/125), [#119](https://github.com/MarcelRoozekrans/BlazorNative/issues/119)) ([#144](https://github.com/MarcelRoozekrans/BlazorNative/issues/144)) ([7ca1ac5](https://github.com/MarcelRoozekrans/BlazorNative/commit/7ca1ac5e9f819e3d4867bf6ef9030c7e4eda07a0))
+* surface Frames subscriber faults ([#123](https://github.com/MarcelRoozekrans/BlazorNative/issues/123)) and report the real iOS platform kind ([#121](https://github.com/MarcelRoozekrans/BlazorNative/issues/121)) ([#141](https://github.com/MarcelRoozekrans/BlazorNative/issues/141)) ([068dbd7](https://github.com/MarcelRoozekrans/BlazorNative/commit/068dbd709dc3ca16918553773e003fedff72f07b))
+
 ## 0.1.0 (2026-07-18)
 
 
