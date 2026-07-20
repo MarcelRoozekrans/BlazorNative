@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.1.1...v0.2.0) (2026-07-20)
+
+
+### Features
+
+* **shells:** bundle inter and force one font on both shells for text parity ([#126](https://github.com/MarcelRoozekrans/BlazorNative/issues/126)) ([#146](https://github.com/MarcelRoozekrans/BlazorNative/issues/146)) ([50320bf](https://github.com/MarcelRoozekrans/BlazorNative/commit/50320bf60fd8ee0a6bb794456ce255212427926b))
+
 ## [0.1.1](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.1.0...v0.1.1) (2026-07-19)
 
 
