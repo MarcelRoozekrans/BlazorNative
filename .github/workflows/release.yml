@@ -90,6 +90,10 @@ jobs:
 
     steps:
       - uses: actions/checkout@v7
+        with:
+          # The bump-detection step below diffs the props <Version> against the
+          # PR base (or the push parent), so it needs both commits present.
+          fetch-depth: 0
 
       - name: Setup .NET SDK (global.json — 10.0.3xx band)
         uses: actions/setup-dotnet@v6
@@ -108,13 +112,48 @@ jobs:
           .\scripts\release-preflight.ps1 -SelfTest
           if ($LASTEXITCODE -ne 0) { throw "release-preflight -SelfTest failed (exit $LASTEXITCODE)" }
 
+      # ── the preflight only BITES on a version bump ───────────────────────
+      # The nuget-state check answers "is the NEW version free?" — a question
+      # only a release-preparation bump asks. But this workflow's `paths:` also
+      # fire it on machinery/feature PRs (they touch release-preflight.ps1 /
+      # release-please.yml / release.yml) and on the machinery merge to main —
+      # where the props still holds the CURRENT, already-published version. An
+      # unconditional preflight there reds on that version being (correctly)
+      # already out: a false positive on every such PR. So gate it — run the
+      # nuget preflight ONLY when this ref changes the props <Version> vs its
+      # baseline (PR: the base branch; push: the parent commit). The self-test
+      # above is version-agnostic and always runs; the REAL publish-time gate is
+      # release-please.yml's own preflight (release_created), untouched, which
+      # still hard-checks the version at push. This step matches the comment the
+      # preflight always carried ("on the PR that bumps the props").
+      - name: Is the props <Version> being bumped? (the preflight only bites when it is)
+        id: bump
+        run: |
+          $base = "${{ github.event.pull_request.base.sha || github.event.before }}"
+          $bumped = 'true'  # safe default: an unknown baseline runs the preflight (today's behaviour)
+          if ([string]::IsNullOrWhiteSpace($base) -or $base -match '^0{40}$') {
+            Write-Host "no resolvable baseline (first push / empty before) — running the preflight (safe default)"
+          } else {
+            try {
+              $diff = git diff "$base" HEAD -- src/Directory.Build.props 2>$null
+              $bumped = if ($diff | Select-String -Pattern '(?m)^\+\s*<Version>' -Quiet) { 'true' } else { 'false' }
+              Write-Host "props <Version> changed vs ${base}: $bumped"
+            } catch {
+              Write-Host "could not diff the props vs ${base} ($($_.Exception.Message)) — running the preflight (safe default)"
+            }
+          }
+          "bumped=$bumped" | Out-File $env:GITHUB_OUTPUT -Append
+
       # ── nuget.org state — the one thing no local step can know ────────────
       # There is no `dotnet nuget push --dry-run`. The preflight carries a
       # TWO-ARM POSITIVE CONTROL — an absence scanner must prove it can SEE and
       # DISTINGUISH before its "all clear" means anything. Running it here, on the
       # PR that bumps the props, answers "is this version still free?" while there
-      # is still time to change the answer. See the script.
+      # is still time to change the answer. See the script. (Gated above: a PR
+      # that does not bump the props is not preparing a release, and the current
+      # already-published version is not a finding there.)
       - name: nuget.org preflight (two control arms, then the shipped set)
+        if: steps.bump.outputs.bumped == 'true'
         run: |
           .\scripts\release-preflight.ps1 -Preflight
           if ($LASTEXITCODE -ne 0) { throw "the nuget.org preflight FAILED — see the step summary." }
