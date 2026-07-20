@@ -59,7 +59,7 @@ options:
 packages:
   Kingfisher:
     url: https://github.com/onevcat/Kingfisher.git
-    from: 8.10.0
+    from: 8.11.0
 
 settings:
   base:
