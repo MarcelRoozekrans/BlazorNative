@@ -187,10 +187,13 @@ let bnLayoutDemoFrames: [String: BnRect] = bnFrameTable([
     "wrap 3": bnRect(0, 40, 90, 40),
     "text row": bnRect(0, 400, 150, MEASURED),
     "back row": bnRect(0, MEASURED, 300, MEASURED),
-    // Font parity Gate C (#126): single-line leaf at fontSize 20. HEIGHT IS CI-PENDING —
-    // replace the 4th arg `MEASURED` below with the shared literal H once ios.yml +
-    // android-instrumented.yml report equal heights. Keep it identical to the Kotlin twin.
-    "parity row": bnRect(0, MEASURED, 300, MEASURED),
+    // Font parity Gate C (#126): single-line Inter leaf at fontSize 20. Height is now a
+    // SHARED LITERAL (24.333pt) — the payoff: both shells render one bundled font at one
+    // explicit size, so the height that used to be MEASURED (SF Pro vs Roboto differed) is
+    // an asserted number equal across shells (iOS measured 24.333pt; Android within the
+    // 0.5dp frame tolerance). y stays MEASURED — the row sits below the native ← Back
+    // button, whose chrome height is platform-variant. Keep identical to the Kotlin twin.
+    "parity row": bnRect(0, MEASURED, 300, 24.333),
 ])
 // BN-FRAME-TABLE-END
 
