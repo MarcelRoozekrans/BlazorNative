@@ -1675,6 +1675,28 @@ iOS (no Apple account), FCM push (no Firebase), and the inspector channel stay o
 
 ---
 
+### 🔄 Milestone 11 — Production Readiness  *(active — opened 2026-07-20)*
+
+From *works + published + hardened* to **production-grade**: an app author builds on the
+published 0.2.0 packages without footguns, the emulator-faked capabilities are proven on real
+Android hardware, and the public API is committed to with concrete 1.0 criteria. Owner direction
+(2026-07-20) + the seed finding that the deep-link route map is the last hand-written
+single-source-of-truth violation. All four pillars in; device proof is Android-only (iOS
+real-device still gated on the Apple account). Full scope + owner decisions in
+[MILESTONE.md](MILESTONE.md).
+
+- **Phase 11.0** — deep-link route codegen: generate `DEEP_LINK_COMPONENTS` from the app's pages
+  at build time (no hand-edit, no silent wrong-screen footgun) + a consumer-footgun audit (DoD #1).
+- **Phase 11.1** — consumer dogfooding: a fresh app on the **published 0.2.0** packages (not the
+  repo sample); fix the getting-started friction it surfaces (DoD #3).
+- **Phase 11.2** — real-device Android: camera, biometrics, geolocation, notifications + smoke on
+  the owner's phone, recorded in a device-proof doc; discharges the physical-phone ledger (DoD #2).
+- **Phase 11.3** — API stability: mark the stable surface (a PublicAPI baseline gate) + write the
+  1.0 criteria (DoD #4). 1.0 is DEFINED here, not necessarily CUT.
+- **Phase 11.4** — hygiene + M11 final audit + close (DoD #5, no milestone tag).
+
+---
+
 ### 🔮 Backlog / Future *(uncommitted — promote to a dated milestone when they approach)*
 
 **Enterprise readiness** (old P7): OTA updates with delta + rollback, MD3 / iOS HIG
