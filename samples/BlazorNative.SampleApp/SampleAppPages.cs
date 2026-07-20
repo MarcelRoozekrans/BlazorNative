@@ -13,9 +13,10 @@ namespace BlazorNative.SampleApp;
 // BlazorNativeApp.RegisterPages API. The 7.6 normative rule holds verbatim
 // with the owner swapped: a page is declared ONCE — one row in THIS array;
 // Runtime's store and its two derived views (mount registry, route table)
-// cannot drift from it by construction; Android's DEEP_LINK_COMPONENTS
-// remains the one PINNED MIRROR, drift-tested pair-for-pair against this
-// array by RouteTableDriftTests in the required build-test lane.
+// cannot drift from it by construction; Android's deep-link map is, since
+// Phase 11.0, GENERATED from these rows at build time (BlazorNative.RouteGen)
+// rather than hand-written — drift-tested pair-for-pair against this array by
+// RouteTableDriftTests in the required build-test lane.
 //
 // WHO CALLS Init(): nobody, by name — that is the point. There is no managed
 // Main in a NativeLib; [ModuleInitializer] is the one hook where app code

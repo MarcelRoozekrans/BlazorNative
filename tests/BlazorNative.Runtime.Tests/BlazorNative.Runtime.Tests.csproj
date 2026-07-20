@@ -44,6 +44,10 @@
          for the pages' internal-const frame arithmetic (the 6.2 pattern,
          new grantor). -->
     <ProjectReference Include="..\..\samples\BlazorNative.SampleApp\BlazorNative.SampleApp.csproj" />
+    <!-- Phase 11.0 (M11 DoD #1): RouteTableDriftTests regenerates the deep-link
+         map through RouteManifest.Extract to compare it, independently, against
+         SampleAppPages.All — the same tool the build target invokes. -->
+    <ProjectReference Include="..\..\tools\BlazorNative.RouteGen\BlazorNative.RouteGen.csproj" />
   </ItemGroup>
 
   <ItemGroup>

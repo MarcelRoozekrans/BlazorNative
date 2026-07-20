@@ -16,10 +16,12 @@ namespace BlazorNative.Runtime;
 //     from ALL rows;
 //   - `NativeNavigationManager.Routes` (route → name) is DERIVED from the
 //     routed rows (Route != null);
-//   - Android's `MainActivity.DEEP_LINK_COMPONENTS` is the one surviving
-//     PINNED MIRROR (Intent-parse time, before the .so loads — the 5.1
-//     record), drift-tested pair-for-pair by RouteTableDriftTests against
-//     the app's manifest in the required build-test lane;
+//   - Android's deep-link map (res/raw/blazornative_routes.json, read at
+//     Intent-parse time before the .so loads — the 5.1 record) is, since
+//     Phase 11.0, GENERATED from these rows at build time by
+//     BlazorNative.RouteGen rather than hand-written — so it is a DERIVED
+//     VIEW too, not a mirror; RouteTableDriftTests guards the generator's
+//     output pair-for-pair against the manifest in the build-test lane;
 //   - iOS has NO route surface at all — mounts by NAME (the 7.5 record).
 //
 // LAZY-AFTER-FREEZE (Phase 8.0, the static-ctor preinit hazard): the derived

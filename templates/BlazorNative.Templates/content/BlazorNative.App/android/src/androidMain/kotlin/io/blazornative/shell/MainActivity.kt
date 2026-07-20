@@ -78,35 +78,6 @@ class MainActivity : FragmentActivity() {
          * of the launch-time deep-link mechanism; https App Links are later work. */
         const val DEEP_LINK_SCHEME = "blazornative"
 
-        /**
-         * The shell's deep-link route -> mount-component map: `blazornative://<route>`
-         * opens the page this map names.
-         *
-         * **A page is declared ONCE**, in your app's `AppPages.All` (AppPages.cs).
-         * This map is the one PINNED MIRROR of its ROUTED rows -- it cannot be a
-         * derived view of them, because it is consulted at Intent-parse time in
-         * onCreate, BEFORE the native library loads. So when you add a ROUTED page,
-         * add its pair HERE too, in the same commit. A mirror that drifts fails no
-         * compile and no test: the deep link just opens the wrong screen, on Android
-         * alone, silently.
-         *
-         * It starts EMPTY because a one-page app has no non-"/" routes: the "/" row
-         * is the one pair this map deliberately does not carry -- it rides the
-         * `?: "BnStarterPage"` fallback below. Add pairs as you add routes:
-         *
-         *     private val DEEP_LINK_COMPONENTS = mapOf(
-         *         "/about" to "BnAboutPage",
-         *     )
-         *
-         * The shell resolves the deep-link target component HERE (and still mounts
-         * by NAME) rather than leaning on .NET's first-mount startup-route-honor,
-         * because that honor only fires on a session's FIRST mount -- which never
-         * holds under Activity recreation. Direct resolution is robust; the route
-         * slot is still seeded so .NET's CurrentRoute agrees. Unknown route ->
-         * the fallback.
-         */
-        private val DEEP_LINK_COMPONENTS = mapOf<String, String>()
-
         /** Phase 9.1 — the reserved host-event name for WARM notification
          * tap-through. [onNewIntent] dispatches it with the route as the payload;
          * .NET's DispatchHostEventCore maps it to NavigateToAsync (the "back"
@@ -204,10 +175,10 @@ class MainActivity : FragmentActivity() {
 
         // Phase 5.1 (M5 DoD #5): a VIEW-intent deep link (blazornative://<route>)
         // both seeds the startup route (so .NET's CurrentRoute agrees) AND
-        // resolves the mount component by name (DEEP_LINK_COMPONENTS) — the
+        // resolves the mount component by name (the generated route map) — the
         // mount is still by NAME, per the design, but resolved shell-side so it
         // is robust to Activity recreation + the shared instrumented session
-        // (see DEEP_LINK_COMPONENTS). PRECEDENCE: an explicit EXTRA_COMPONENT
+        // (see loadDeepLinkRoutes). PRECEDENCE: an explicit EXTRA_COMPONENT
         // (test override) wins the mount over a deep link; the route seed still
         // applies.
         val deepLinkRoute = parseDeepLinkRoute(intent)
@@ -219,8 +190,10 @@ class MainActivity : FragmentActivity() {
         val bridge = AndroidShellBridge(this, initialRoute = deepLinkRoute ?: "/", onError = onError)
         shellBridge = bridge
 
+        val routes = loadDeepLinkRoutes()
         val componentName = intent.getStringExtra(EXTRA_COMPONENT)
-            ?: deepLinkRoute?.let { DEEP_LINK_COMPONENTS[it] }
+            ?: deepLinkRoute?.let { routes[it] }
+            ?: routes["/"]
             ?: "BnStarterPage"
 
         // Phase 5.1: register predictive back on API 33+ (the AVD is API 34, so
@@ -422,6 +395,47 @@ class MainActivity : FragmentActivity() {
         } catch (t: Throwable) {
             Log.e(tag, "back dispatch threw", t)
             false
+        }
+    }
+
+    /**
+     * Phase 11.0 (M11 DoD #1): the deep-link route → mount-component map, read
+     * from the build-time-GENERATED Android resource
+     * res/raw/blazornative_routes.json.
+     *
+     * A page is declared ONCE, in the app's manifest (AppPages.All →
+     * BlazorNativeApp.RegisterPages); BlazorNative.RouteGen reads that registry at
+     * build time and emits this resource, so the map is never hand-maintained and
+     * cannot drift from the pages — the pre-11.0 footgun (add a routed page, forget
+     * the hand-written map, and the deep link silently opens the wrong screen). The
+     * shell still resolves the target component HERE, at Intent-parse time BEFORE
+     * the native library loads: the resource is readable without .NET.
+     *
+     * Resolved by NAME (getIdentifier), not the compile-time
+     * R.raw.blazornative_routes: this file is a byte-identical template mirror and a
+     * generated app's R lives in a different package, so a compile-time R reference
+     * here would fail `dotnet new` template compilation (the WidgetMapper font
+     * precedent). A missing or malformed resource → an empty map, LOGGED, and the
+     * caller falls back to the default component — a deep link resolves to the
+     * default rather than crashing Intent parse.
+     */
+    private fun loadDeepLinkRoutes(): Map<String, String> {
+        return try {
+            val id = resources.getIdentifier("blazornative_routes", "raw", packageName)
+            if (id == 0) {
+                Log.w(tag, "deep-link routes (res/raw/blazornative_routes.json) did not " +
+                    "resolve — deep links fall back to the default component")
+                return emptyMap()
+            }
+            val json = resources.openRawResource(id).bufferedReader().use { it.readText() }
+            val obj = org.json.JSONObject(json)
+            buildMap {
+                for (key in obj.keys()) put(key, obj.getString(key))
+            }
+        } catch (t: Throwable) {
+            Log.e(tag, "failed to read res/raw/blazornative_routes.json — deep links fall " +
+                "back to the default component", t)
+            emptyMap()
         }
     }
 

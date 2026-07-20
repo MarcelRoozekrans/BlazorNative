@@ -55,6 +55,11 @@ build/
 src/BlazorNative.Jni/src/androidMain/assets/
 src/BlazorNative.Jni/src/androidMain/jniLibs/
 
+# Phase 11.0 - the deep-link route map, generated at build time by
+# BlazorNative.RouteGen (GenerateBlazorNativeRoutes). A build artifact: the drift
+# test regenerates + compares, so there is no checked-in copy to drift.
+src/BlazorNative.Jni/src/androidMain/res/raw/blazornative_routes.json
+
 # Phase 3.0c - NDK shims BionicNativeAot.targets writes next to the publishing csproj (deleted only when linking succeeds)
 android_clang.cmd
 android_llvm-objcopy.cmd

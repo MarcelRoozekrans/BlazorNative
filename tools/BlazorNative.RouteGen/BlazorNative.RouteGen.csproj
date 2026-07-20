@@ -1,0 +1,60 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- ─────────────────────────────────────────────────────────────────────
+       BlazorNative.RouteGen — Phase 11.0 (M11 DoD #1: deep-link route codegen).
+
+       THE BUILD-TIME CODEGEN behind the shells' deep-link map. A page is
+       declared ONCE, in the app's manifest (SampleAppPages.All →
+       BlazorNativeApp.RegisterPages); until 11.0 Android's
+       DEEP_LINK_COMPONENTS was a HAND-WRITTEN mirror of its routed rows —
+       a consumer footgun (add a routed page, forget the map, the deep link
+       silently opens the wrong screen). This tool GENERATES that map so it
+       cannot drift.
+
+       GATE-A PIVOT — Roslyn SOURCE analysis, no assembly loading. The first
+       cut loaded the built app assembly and reflected the framework registry;
+       that cannot survive CI, because a per-RID linux-bionic-ARM64 managed dll
+       cannot load into the x64 build host ("The assembly architecture is not
+       compatible with the current process architecture"). Real Android devices
+       are arm64, so it MUST work for arm64. So the tool now PARSES the app's C#
+       SOURCE (Microsoft.CodeAnalysis.CSharp / Roslyn) for
+       BlazorNativePage.Routed<T>(route, name) registrations and emits their
+       (route, name) rows as an Android raw resource
+       (res/raw/blazornative_routes.json). It loads NOTHING — no assembly, no
+       RID, no arch — so it is RID-INDEPENDENT: byte-identical output for
+       win-x64, linux-bionic-x64 AND linux-bionic-arm64 (the whole fix). It
+       matches the Routed<T> call SHAPE, NOT a convention-named array, so it is
+       GENERAL — any consumer app, not just SampleAppPages.
+
+       Invoked by the GenerateBlazorNativeRoutes target in
+       build/BionicNativeAot.targets (imported into every consumer app): the
+       target writes @(Compile) to a list file and passes it here.
+
+       LITERALS ONLY (RouteManifest.cs header + the design ledger): both
+       arguments of a Routed<T>(...) call must be string literals, the single
+       exception being the framework's BlazorNativeApp.DefaultRoute ("/"). A
+       non-literal errors with the file+line rather than dropping the row.
+       ───────────────────────────────────────────────────────────────────── -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>BlazorNative.RouteGen</RootNamespace>
+    <AssemblyName>BlazorNative.RouteGen</AssemblyName>
+    <IsPackable>false</IsPackable>
+    <!-- A build-time host tool: never AOT, never RID-specific. The consumer's
+         ProjectReference undefines RuntimeIdentifier so this builds for the
+         host even during a linux-bionic publish. -->
+    <PublishAot>false</PublishAot>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Roslyn — the source-analysis engine behind the Gate-A pivot. Pinned to
+         5.6.0, the same version BlazorNative.Analyzers uses, so the toolchain is
+         uniform across the repo. -->
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="5.6.0" />
+  </ItemGroup>
+
+</Project>

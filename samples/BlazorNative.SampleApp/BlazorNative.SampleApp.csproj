@@ -92,6 +92,15 @@
     <NativeLib>Static</NativeLib>
   </PropertyGroup>
 
+  <!-- Phase 11.0 (M11 DoD #1): the deep-link route codegen writes the Android
+       shell's generated map HERE — the repo shell's res/raw. The app owns where
+       its shell lives; BionicNativeAot.targets' GenerateBlazorNativeRoutes target
+       (below the import) consumes this path. Gitignored: a build artifact the
+       drift test regenerates and compares (nothing checked in to drift). -->
+  <PropertyGroup>
+    <BlazorNativeRoutesResourcePath>$(MSBuildProjectDirectory)\..\..\src\BlazorNative.Jni\src\androidMain\res\raw\blazornative_routes.json</BlazorNativeRoutesResourcePath>
+  </PropertyGroup>
+
   <Import Project="..\..\build\BionicNativeAot.targets" />
 
   <ItemGroup>
@@ -134,6 +143,14 @@
          BlazorNative.Runtime.csproj's analyzer reference for the rationale. -->
     <ProjectReference Include="..\..\src\BlazorNative.Analyzers\BlazorNative.Analyzers.csproj"
                       OutputItemType="Analyzer" ReferenceOutputAssembly="false"
+                      UndefineProperties="RuntimeIdentifier;PublishAot;PublishAotUsingRuntimePack" />
+    <!-- Phase 11.0 (M11 DoD #1): builds the deep-link route codegen tool so
+         GenerateBlazorNativeRoutes can invoke it. ReferenceOutputAssembly=false
+         (a build-time host tool, not a runtime dependency); UndefineProperties so
+         it builds for the HOST during a linux-bionic publish (the 5.0 RID shield,
+         same as the analyzer). -->
+    <ProjectReference Include="..\..\tools\BlazorNative.RouteGen\BlazorNative.RouteGen.csproj"
+                      ReferenceOutputAssembly="false"
                       UndefineProperties="RuntimeIdentifier;PublishAot;PublishAotUsingRuntimePack" />
   </ItemGroup>
 
