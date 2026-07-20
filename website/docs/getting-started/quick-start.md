@@ -11,8 +11,8 @@ This is the Android path, because **the Android path is the template**. iOS is a
 procedure against a reference shell — see [Shells → iOS](../shells/ios.md).
 
 If `dotnet new blazornative` is not found, read [Installation](./installation.md) first —
-the template is published on nuget.org (v0.1.0), and `dotnet new install
-BlazorNative.Templates` is the one-line install.
+the template is published on nuget.org, and `dotnet new install BlazorNative.Templates` is
+the one-line install.
 
 ## 1. Create the app
 
@@ -43,15 +43,16 @@ cd android
 not hand you an APK with stale native assets — the failure you would otherwise get is an
 app that launches and shows nothing.
 
-## 3. The desktop loop, no emulator
+## 3. The win-x64 publish
 
 ```bash
 dotnet publish . -c Release -r win-x64
 ```
 
-That produces a `BlazorNative.Runtime.dll` a host JVM process can load through JNA — the
-same C-ABI, the same patches, the same widget tree, without an emulator in the way. It is
-the fastest feedback surface this project has.
+That produces the loadable native `BlazorNative.Runtime.dll` — the same C-ABI, the same
+patches, the same widget tree as on device. It exposes the exact export surface a JNA host
+would bind to. Note the template ships **no runnable desktop host today**: this publish
+gives you the loadable `.dll`, not an app you can launch without writing a host of your own.
 
 ## Adding a page
 
