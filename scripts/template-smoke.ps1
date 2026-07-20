@@ -482,6 +482,49 @@ warnings" — it is the app being gone.
     }
     Write-OK "THE GENERATED APP CLEARS THE PUBLISH BAR: 4 IL2072, the 9 exports off BlazorNative.Runtime.dll (canonicalized from $appName.dll), '$starterPage' in the image ($dllKb KB)"
 
+    # ── 5.5 GATE B'S POINT — the generated app derived its OWN deep-link map ──
+    # A COMPILE ALONE CANNOT PROVE THIS, and that is the whole reason this arm
+    # exists. MainActivity reads res/raw/blazornative_routes.json by NAME
+    # (getIdentifier) at Intent-parse time, before the .so loads — so a MISSING
+    # resource is not a build error, it is a silent fallback to the ultimate
+    # default. The publish above ran GenerateBlazorNativeRoutes (AfterTargets=
+    # Build), which read THIS generated app's own AppPages.cs via the
+    # BlazorNative.RouteGen tool — and a `dotnet new` app has no repo tools/ dir,
+    # so the tool came from the copy packed INTO BlazorNative.Runtime under tools/
+    # (Gate B's shipping mechanism), resolved through GeneratePathProperty on the
+    # Runtime PackageReference. So the generated app must now carry its map with
+    # the starter route it declared — the deep-link mapping a consumer gets FOR
+    # FREE from one Routed<T> row, which is DoD #1's footgun-removal proven end to
+    # end for a generated app, not just the repo.
+    Write-Step "asserting the generated app produced its deep-link map (res/raw/blazornative_routes.json) ..."
+    $routesJson = Join-Path $appDir "android\src\androidMain\res\raw\blazornative_routes.json"
+    if (-not (Test-Path $routesJson)) {
+        Write-Fail @"
+THE GENERATED APP DID NOT PRODUCE ITS DEEP-LINK MAP.
+
+Expected: $routesJson
+
+GenerateBlazorNativeRoutes runs during publish (AfterTargets=Build) and writes
+the Android shell's res/raw/blazornative_routes.json from the generated app's OWN
+routed pages. Its absence means the codegen did not run for a generated app —
+most likely the RouteGenAssembly property did not resolve to the RouteGen tool
+packed into BlazorNative.Runtime under tools/ (Gate B), or
+BlazorNativeRoutesResourcePath is unset in the template's csproj. A compile alone
+cannot catch this: the shell reads the resource by name at runtime and silently
+falls back when it is missing, so this lane is the only thing that sees it.
+"@
+        exit 1
+    }
+    $routesText = Get-Content $routesJson -Raw
+    $routes = $routesText | ConvertFrom-Json
+    $starterRoute = $routes.'/'
+    if ($starterRoute -ne $starterPage) {
+        Write-Host $routesText -ForegroundColor DarkGray
+        Write-Fail "the generated deep-link map does not map the default route '/' to the starter page '$starterPage' (got '$starterRoute'). The map must derive from the generated app's AppPages.All — Routed<BnStarterPage>(BlazorNativeApp.DefaultRoute, '$starterPage') — so a wrong or empty mapping is exactly the drift this codegen makes impossible."
+        exit 1
+    }
+    Write-OK "the generated app derived its deep-link map: res/raw/blazornative_routes.json maps '/' -> '$starterPage' (DoD #1 footgun removed for a consumer — one Routed<T> row, no shell edit)"
+
     # ── 6. The generated Android project assembles (P6) ──────────────────────
     # -PappPubRoot points the generated project at the SAMPLE's publish tree:
     # build-test already published both bionic RIDs (ci.yml's win-x64/bionic-x64/

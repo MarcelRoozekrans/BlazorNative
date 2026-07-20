@@ -79,4 +79,61 @@
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.10" />
   </ItemGroup>
 
+  <!-- ─────────────────────────────────────────────────────────────────────
+       Phase 11.0 Gate B (M11 DoD #1): SHIP THE DEEP-LINK ROUTE CODEGEN TO
+       CONSUMERS. The GenerateBlazorNativeRoutes target in
+       build/BionicNativeAot.targets runs `dotnet "$(RouteGenAssembly)"` — and a
+       `dotnet new blazornative` app has no repo tools/ dir for the default
+       $(RouteGenAssembly) to point at. So BlazorNative.RouteGen's build output
+       is packed INTO this package under tools/, and the template's csproj
+       resolves $(RouteGenAssembly) to $(PkgBlazorNative_Runtime)\tools\... via
+       GeneratePathProperty on its BlazorNative.Runtime PackageReference. Every
+       consumer references Runtime, so the tool travels wherever the target does.
+
+       ONE PARSER, NOT TWO: the packed tool is compiled from the SAME
+       tools/BlazorNative.RouteGen/RouteManifest.cs that the repo build runs
+       (SampleApp's ProjectReference) and that RouteTableDriftTests exercises in
+       process. The consumer path cannot diverge from the drift-tested extractor
+       because it is the identical source, compiled once.
+
+       WHY THE OUTPUT FILES, NOT A PACKAGE DEPENDENCY: RouteGen is IsPackable=false
+       and this reference is ReferenceOutputAssembly=false + PrivateAssets=all, so
+       neither RouteGen nor its transitive Microsoft.CodeAnalysis.CSharp becomes a
+       nuspec <dependency> of this package (consumer-smoke's dependency allow-list
+       stays clean) — the Roslyn dlls ride as plain tools/ FILES that `dotnet
+       <dll>` loads beside the tool. UndefineProperties shields the tool from the
+       RID/AOT a consumer's `-r <rid>` publish propagates (the 5.0 RID shield the
+       analyzer references already use).
+       ───────────────────────────────────────────────────────────────────── -->
+  <PropertyGroup>
+    <RouteGenToolDir>$(MSBuildThisFileDirectory)..\..\tools\BlazorNative.RouteGen\bin\$(Configuration)\net10.0\</RouteGenToolDir>
+    <!-- Hook the pack so the tool's output rides into the nupkg under tools/. -->
+    <TargetsForTfmSpecificContentInPackage>$(TargetsForTfmSpecificContentInPackage);_AddRouteGenToolToPackage</TargetsForTfmSpecificContentInPackage>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\tools\BlazorNative.RouteGen\BlazorNative.RouteGen.csproj"
+                      ReferenceOutputAssembly="false" PrivateAssets="all"
+                      UndefineProperties="RuntimeIdentifier;PublishAot;PublishAotUsingRuntimePack" />
+  </ItemGroup>
+
+  <!-- The ProjectReference above builds RouteGen before Pack, so its output dir
+       exists here. Glob the tool + its Roslyn deps (dll, .deps.json,
+       .runtimeconfig.json) into tools/; skip the .pdb (symbols do not belong in a
+       build-time tool a consumer only ever execs). NON-EMPTY GUARD: an empty tool
+       dir means the ProjectReference did not build — fail the pack loudly rather
+       than ship a Runtime package that silently cannot generate routes. -->
+  <Target Name="_AddRouteGenToolToPackage">
+    <ItemGroup>
+      <_RouteGenToolFile Include="$(RouteGenToolDir)**\*" Exclude="$(RouteGenToolDir)**\*.pdb" />
+    </ItemGroup>
+    <Error Condition="'@(_RouteGenToolFile)' == ''"
+           Text="_AddRouteGenToolToPackage: no BlazorNative.RouteGen output under '$(RouteGenToolDir)' — the deep-link route codegen tool did not build, so this package would ship without it and every consumer's GenerateBlazorNativeRoutes would fail. Build tools/BlazorNative.RouteGen first (the ProjectReference above does this on a normal pack)." />
+    <ItemGroup>
+      <TfmSpecificPackageFile Include="@(_RouteGenToolFile)">
+        <PackagePath>tools/%(RecursiveDir)%(Filename)%(Extension)</PackagePath>
+      </TfmSpecificPackageFile>
+    </ItemGroup>
+  </Target>
+
 </Project>
