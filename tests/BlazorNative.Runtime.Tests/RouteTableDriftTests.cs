@@ -1,53 +1,60 @@
 using System.Text.RegularExpressions;
+using BlazorNative.RouteGen;
 using BlazorNative.SampleApp;
 
 namespace BlazorNative.Runtime.Tests;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// RouteTableDriftTests — Phase 7.6 (design decision 1, M7 DoD #8: the
-// route-registry unification's PIN). Phase 8.0 retargeted the manifest
-// expressions to the app's `SampleAppPages.All` — the registration inversion
-// moved the ONE declaration to the app, and the drift-test discipline follows
-// the manifest's new owner (DoD #1's own demand). Everything else in this
-// file survives verbatim: same lane, same pair pin, same default-fallback
-// pin, same nine-page content baseline.
+// RouteTableDriftTests — Phase 7.6 (M7 DoD #8: the route-registry unification's
+// PIN), retargeted by Phase 8.0 to the app's manifest, and RESHAPED by Phase 11.0
+// (M11 DoD #1: deep-link route codegen).
 //
-// A page is declared ONCE — one row in the app's manifest. `HostSession`'s
-// mount registry and `NativeNavigationManager`'s route table are DERIVED
-// VIEWS of that array (same object graph — they cannot drift). Android's
-// `MainActivity.DEEP_LINK_COMPONENTS` is the one surviving PINNED MIRROR: it
-// is consulted at Intent-parse time, BEFORE the .so is loaded (the 5.1
-// structural record), so it must be a hand-written copy — and a hand-written
-// copy that drifts (`"/form"` → the wrong page) fails no compile, no test, no
-// lane: a deep link quietly opens the wrong screen on ONE platform. That is
-// the exact silent-cross-shell-drift class the style tables closed in 6.1,
-// and this file is the same fix: the mirror is parsed out of the checkout as
-// TEXT and compared in `build-test`, the one required lane where every file
-// is checkout-visible (ShellStyleTableDriftTests' own rationale — neither
-// shell's lane can see the other's source; build-test sees them all). Drift
-// fails the required lane in the commit that causes it.
+// WHAT CHANGED AT 11.0. Android's `MainActivity.DEEP_LINK_COMPONENTS` used to be a
+// HAND-WRITTEN mapOf(route → component), consulted at Intent-parse time before the
+// .so loads — the one surviving PINNED MIRROR of the manifest's routed rows, and a
+// consumer FOOTGUN: an app author who added a routed page and forgot to hand-edit
+// the map got a deep link that silently opened the wrong screen. 11.0 replaced the
+// hand-written map with a BUILD-TIME-GENERATED Android resource
+// (res/raw/blazornative_routes.json): BlazorNative.RouteGen loads the built app
+// assembly, triggers RegisterPages, reads the framework registry's routed rows and
+// emits them; MainActivity parses THAT at Intent-parse time. There is no longer any
+// hand-written Kotlin map to drift, so the pair-for-pair Kotlin-text pin is RETIRED
+// — drift is now impossible by construction (one generator, one resource, both
+// shells read it). Its replacement guards the GENERATOR instead:
 //
-// PAIRS, NOT NAME SETS: for routes the drift that matters is a route mapped
-// to the WRONG page, which set-equality cannot see — the pin compares
-// route → component pair-for-pair, and its failure message names the
-// offending pairs in both directions.
+//   · GeneratedRoutesJson_ReproducesTheManifestsRoutedRows_PairForPair runs the
+//     REAL RouteGen extractor against the REAL built SampleApp assembly, serializes
+//     the result exactly as the build target does, parses it back the way
+//     MainActivity does, and holds it PAIR-FOR-PAIR against SampleAppPages.All's
+//     routed rows (the "/" default row included). It is NOT vacuous: the extractor
+//     reads the manifest by loading a fresh, isolated copy of the assembly and
+//     reflecting the framework registry, while the expected side reads the in-
+//     process SampleAppPages.All directly — two independent reads of the one
+//     source. A generator bug (a dropped row, a mangled name, a lost default)
+//     reddens it.
 //
-// iOS has NO route surface at all — `BnRuntime.start(component:)` mounts by
-// NAME (verified in the 7.5 Gate 3 report). The day it grows a deep-link
-// story, it gains a mirror AND a [Fact] here — a decision, not an accident.
+// KEPT VERBATIM:
+//   · AndroidDefaultFallbackLiteral_… — the resource carries the "/" default now,
+//     but MainActivity keeps a hard-coded `?: "…"` ULTIMATE fallback for a missing
+//     or malformed resource. That literal must still name the manifest's default
+//     component, so a renamed default page cannot boot a resource-less app into the
+//     wrong screen. Pinned from checkout TEXT, the 7.6 way.
+//   · ManifestRoutedRows_MatchTheThirteenPageBaseline — the content pin. A drift
+//     test comparing two surfaces is blind to a row deleted from BOTH; this literal
+//     catches a routed page silently vanishing from the SOURCE.
 //
-// Parser rules (the style-table parser's, reused): the declaration is
-// anchored at line start so a comment that MENTIONS the map cannot match,
-// and a parse that finds zero pairs FAILS the test — never vacuously green.
+// iOS has NO route surface at all — BnRuntime.start(component:) mounts by NAME
+// (the 7.5 Gate 3 record). The day it grows a deep-link story it gains its own
+// resource + a [Fact] here — a decision, not an accident.
 //
-// SERIALIZED in the "host-session" collection, and it MUST be. Most pins here
-// read the static `SampleAppPages.All`, but `AndroidDefaultFallbackLiteral_...`
-// reads the LIVE global `PageManifest.DefaultComponent`. `RegistrationTests`
-// (also "host-session") transiently registers a probe page as the "/" default
-// and restores the sample app's "BnDemo" in a finally — without a shared
-// collection this test runs in PARALLEL with that mutation and reads the probe
-// name, a nondeterministic red that the strict 754-count gate turns into a
-// failed release PR. The collection makes the two mutually exclusive.
+// SERIALIZED in the "host-session" collection, and it MUST be. AndroidDefaultFallback…
+// reads the LIVE global PageManifest.DefaultComponent; RegistrationTests (also
+// "host-session") transiently registers a probe as the "/" default and restores
+// "BnDemo" in a finally — without the shared collection this test would race that
+// mutation and read the probe name, a nondeterministic red the strict count gate
+// turns into a failed release PR. (GeneratedRoutesJson… reads its own isolated ALC,
+// untouched by that mutation, but the collection costs nothing and keeps the file's
+// rule uniform.)
 // ─────────────────────────────────────────────────────────────────────────────
 
 [Collection("host-session")]
@@ -56,68 +63,76 @@ public sealed class RouteTableDriftTests
     private const string KotlinMainActivity =
         "src/BlazorNative.Jni/src/androidMain/kotlin/io/blazornative/shell/MainActivity.kt";
 
-    /// <summary>The Kotlin declaration — anchored at line start, so the KDoc
-    /// above it (which discusses the map at length) cannot be mistaken for
-    /// the table itself.</summary>
-    private const string KotlinDeepLinkDeclaration =
-        @"(?m)^\s*private val DEEP_LINK_COMPONENTS = mapOf\((?<body>[^)]*)\)";
-
-    /// <summary>The Kotlin default-fallback literal — anchored to the elvis
-    /// chain that CONSUMES the map (`?: deepLinkRoute?.let { DEEP_LINK_COMPONENTS[it] }`
-    /// followed by `?: "…"`), so no other string literal in the file can
-    /// match. This is the one row the map deliberately does not carry ("/" is
-    /// the no-deep-link default), pinned where it actually lives.</summary>
+    /// <summary>The Kotlin ULTIMATE fallback literal — anchored to the elvis chain
+    /// that consumes the generated map (`?: routes["/"]` followed by `?: "…"`), so
+    /// no other string literal in the file can match. This is the last-ditch
+    /// default the shell mounts when the generated resource is missing/malformed.</summary>
     private const string KotlinDefaultFallbackDeclaration =
-        @"DEEP_LINK_COMPONENTS\[it\] \}\s*\?\:\s*""(?<name>[^""]+)""";
+        @"\?\:\s*routes\[""/""\]\s*\r?\n\s*\?\:\s*""(?<name>[^""]+)""";
 
-    /// <summary>The manifest's routed rows, minus the default route — exactly
-    /// what the Kotlin map is supposed to mirror ("/" rides the separate
-    /// `?: "BnDemo"` fallback, pinned below).</summary>
-    private static Dictionary<string, string> ExpectedDeepLinkPairs()
+    /// <summary>The manifest's routed rows — every page with a Route (the "/"
+    /// default INCLUDED, because the generated resource carries it too). This is
+    /// exactly what the generated JSON is supposed to be.</summary>
+    private static Dictionary<string, string> ExpectedRoutedRows()
         => SampleAppPages.All
-            .Where(p => p.Route is not null && p.Route != BlazorNativeApp.DefaultRoute)
+            .Where(p => p.Route is not null)
             .ToDictionary(p => p.Route!, p => p.Name, StringComparer.Ordinal);
 
-    /// <summary>THE PAIR PIN. Android's deep-link map must be exactly the
-    /// manifest's routed rows minus "/", PAIR-FOR-PAIR — a route pointing at
-    /// the WRONG page is drift set-equality cannot see, and it is the drift
-    /// that actually hurts: the deep link opens the wrong screen, on one
-    /// platform, silently.</summary>
+    /// <summary>THE GENERATOR PIN (Phase 11.0). The build-time codegen's output must
+    /// reproduce the manifest's routed rows PAIR-FOR-PAIR — a route pointing at the
+    /// WRONG page is the drift that actually hurts (a deep link opens the wrong
+    /// screen), and set-equality cannot see it. This runs the REAL extractor against
+    /// the REAL built SampleApp assembly, round-trips the JSON exactly as the build
+    /// target + MainActivity do, and compares to SampleAppPages.All independently.</summary>
     [Fact]
-    public void AndroidDeepLinkMap_IsTheManifestsRoutedRowsMinusDefault_PairForPair()
+    public void GeneratedRoutesJson_ReproducesTheManifestsRoutedRows_PairForPair()
     {
-        Dictionary<string, string> kotlin =
-            ParsePairTable(ReadShellSource(KotlinMainActivity), KotlinDeepLinkDeclaration);
-        Dictionary<string, string> expected = ExpectedDeepLinkPairs();
+        // 1) run the actual generator against the actual built app assembly.
+        string appDll = typeof(SampleAppPages).Assembly.Location;
+        IReadOnlyList<RoutedPage> routed = RouteManifest.Extract(appDll);
 
-        var onlyInManifest = expected.Where(e => !kotlin.ContainsKey(e.Key)).ToList();
-        var onlyInKotlin = kotlin.Where(k => !expected.ContainsKey(k.Key)).ToList();
+        // 2) serialize the way the build target does, and parse it back the way
+        //    MainActivity does (a flat JSON object) — so this exercises the emitted
+        //    RESOURCE FORMAT, not just the in-memory list.
+        string json = RouteManifest.ToJson(routed);
+        Dictionary<string, string> generated = ParseFlatJsonObject(json);
+
+        Dictionary<string, string> expected = ExpectedRoutedRows();
+
+        var onlyInManifest = expected.Where(e => !generated.ContainsKey(e.Key)).ToList();
+        var onlyInGenerated = generated.Where(g => !expected.ContainsKey(g.Key)).ToList();
         var wrongComponent = expected
-            .Where(e => kotlin.TryGetValue(e.Key, out string? actual) && actual != e.Value)
-            .Select(e => (Route: e.Key, Manifest: e.Value, Kotlin: kotlin[e.Key]))
+            .Where(e => generated.TryGetValue(e.Key, out string? actual) && actual != e.Value)
+            .Select(e => (Route: e.Key, Manifest: e.Value, Generated: generated[e.Key]))
             .ToList();
 
         Assert.True(
-            onlyInManifest.Count == 0 && onlyInKotlin.Count == 0 && wrongComponent.Count == 0,
-            "MainActivity.kt's DEEP_LINK_COMPONENTS must mirror SampleAppPages' routed rows "
-            + "(minus \"/\", which rides the ?: fallback) PAIR-FOR-PAIR.\n"
-            + $"  only in the manifest (route missing from Kotlin): {JoinPairs(onlyInManifest)}\n"
-            + $"  only in Kotlin (route the manifest does not know): {JoinPairs(onlyInKotlin)}\n"
+            onlyInManifest.Count == 0 && onlyInGenerated.Count == 0 && wrongComponent.Count == 0,
+            "The GENERATED deep-link map (res/raw/blazornative_routes.json, produced by "
+            + "BlazorNative.RouteGen) must reproduce SampleAppPages' routed rows (the \"/\" default "
+            + "included) PAIR-FOR-PAIR — this is the pin that the codegen replaced the hand-written "
+            + "Kotlin mirror with.\n"
+            + $"  only in the manifest (route missing from the generated JSON): {JoinPairs(onlyInManifest)}\n"
+            + $"  only in the generated JSON (route the manifest does not know): {JoinPairs(onlyInGenerated)}\n"
             + "  route mapped to the WRONG page: "
             + (wrongComponent.Count == 0
                 ? "(none)"
                 : string.Join(", ", wrongComponent.Select(w =>
-                    $"\"{w.Route}\" → manifest says \"{w.Manifest}\", Kotlin says \"{w.Kotlin}\"")))
-            + "\nThe map is consulted at Intent-parse time, before the .so loads — it MUST be a "
-            + "hand-written copy, and a copy that drifts opens the WRONG SCREEN from a deep link "
-            + "on Android alone, silently. Fix the pair in the same commit.");
+                    $"\"{w.Route}\" → manifest says \"{w.Manifest}\", generated says \"{w.Generated}\"")))
+            + "\nThe generator reads the framework registry directly, so a mismatch here is a bug in "
+            + "RouteManifest.Extract/ToJson — the map is no longer hand-maintained, so fix the "
+            + "generator, not a copy.");
+
+        // NON-VACUITY: a generator that emitted nothing would compare two empty
+        // reads (expected is never empty) — but guard the round-trip explicitly.
+        Assert.NotEmpty(generated);
     }
 
-    /// <summary>THE DEFAULT-FALLBACK PIN. The one routed row the Kotlin map
-    /// does not carry: no deep link (or an unknown one) mounts the `?:`
-    /// literal, which must be the manifest's default row's component. If the
-    /// default page is ever renamed on one side only, Android boots into the
-    /// wrong app — this is that drift, caught in the commit that causes it.</summary>
+    /// <summary>THE DEFAULT-FALLBACK PIN. The generated resource now carries the "/"
+    /// row, but MainActivity keeps a hard-coded `?: "…"` ULTIMATE fallback for a
+    /// missing/malformed resource. That literal must be the manifest's default
+    /// component — otherwise a resource-less boot (or a renamed default) mounts a
+    /// name nothing registers. Pinned from checkout text, as before.</summary>
     [Fact]
     public void AndroidDefaultFallbackLiteral_IsTheManifestsDefaultComponent()
     {
@@ -125,19 +140,19 @@ public sealed class RouteTableDriftTests
 
         Assert.True(
             fallback == PageManifest.DefaultComponent,
-            $"MainActivity.kt's deep-link fallback literal (?: \"{fallback}\") must be the "
-            + $"manifest's default component (\"{PageManifest.DefaultComponent}\" — the \"/\" "
-            + "row). It is the one pair DEEP_LINK_COMPONENTS deliberately omits, so the pair "
-            + "pin above cannot see it drift; this pin can. Change both in the same commit.");
+            $"MainActivity.kt's ultimate deep-link fallback literal (?: \"{fallback}\") must be the "
+            + $"manifest's default component (\"{PageManifest.DefaultComponent}\" — the \"/\" row). "
+            + "It is the last-ditch default the shell mounts when the generated "
+            + "res/raw/blazornative_routes.json is missing or malformed; if it named an unregistered "
+            + "page, a resource-less boot would fail with rc 1 at first mount. Change both in the "
+            + "same commit.");
     }
 
-    /// <summary>THE CONTENT PIN — the routed-page ordered baseline, retargeted
-    /// from the retired NavigationTests tautology to the manifest itself
-    /// (Phase 7.6). A drift test comparing two surfaces is blind to a row
-    /// deleted from BOTH: this literal catches a routed page silently
-    /// vanishing from the SOURCE. (+BnListDemo, Phase 7.2 — "/list";
-    /// +BnFormDemo, Phase 7.3 — "/form"; +BnModalDemo, Phase 7.4 — "/modal";
-    /// +BnImagePolishDemo, Phase 7.5 — "/imagepolish";
+    /// <summary>THE CONTENT PIN — the routed-page ordered baseline. A drift test
+    /// comparing two surfaces is blind to a row deleted from BOTH: this literal
+    /// catches a routed page silently vanishing from the SOURCE. (+BnListDemo,
+    /// Phase 7.2 — "/list"; +BnFormDemo, Phase 7.3 — "/form"; +BnModalDemo,
+    /// Phase 7.4 — "/modal"; +BnImagePolishDemo, Phase 7.5 — "/imagepolish";
     /// +BnGeolocationDemo, Phase 9.0 — "/geolocation";
     /// +BnNotificationsDemo, Phase 9.1 — "/notifications";
     /// +BnSecureDemo, Phase 9.2 — "/secure";
@@ -155,41 +170,29 @@ public sealed class RouteTableDriftTests
                 .OrderBy(n => n, StringComparer.Ordinal));
     }
 
-    // ── The parser ───────────────────────────────────────────────────────────
+    // ── Parsers ────────────────────────────────────────────────────────────────
 
-    /// <summary>Every `"route" to "name"` pair inside the declaration
-    /// <paramref name="pattern"/>'s body. Fails loudly when the declaration
-    /// cannot be found OR parses to zero pairs: a moved or emptied table must
-    /// break this test, never silently pass it.</summary>
-    private static Dictionary<string, string> ParsePairTable(string source, string pattern)
+    /// <summary>Parses a flat one-level JSON object (`{ "k": "v", ... }`) the way
+    /// MainActivity's org.json.JSONObject read does. Fails loudly on an empty parse:
+    /// a generator that emitted an empty object must red, never pass vacuously.</summary>
+    private static Dictionary<string, string> ParseFlatJsonObject(string json)
     {
-        Match match = Regex.Match(source, pattern, RegexOptions.Singleline);
-        Assert.True(match.Success,
-            $"could not find DEEP_LINK_COMPONENTS in {KotlinMainActivity} (pattern: {pattern}). "
-            + "It moved or was renamed — this drift test IS the contract, so re-point it "
-            + "deliberately rather than deleting it.");
-
         var pairs = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (Match pair in Regex.Matches(
-            match.Groups["body"].Value, @"""(?<route>[^""]+)""\s+to\s+""(?<name>[^""]+)"""))
-        {
-            pairs[pair.Groups["route"].Value] = pair.Groups["name"].Value;
-        }
-
-        Assert.NotEmpty(pairs);
+        foreach (Match m in Regex.Matches(json, @"""(?<k>(?:[^""\\]|\\.)*)""\s*:\s*""(?<v>(?:[^""\\]|\\.)*)"""))
+            pairs[Regex.Unescape(m.Groups["k"].Value)] = Regex.Unescape(m.Groups["v"].Value);
         return pairs;
     }
 
-    /// <summary>The `?: "…"` literal at the end of the map-consuming elvis
-    /// chain. Same loud-failure rule: a rewritten resolution chain must
-    /// break this test, not skip it.</summary>
+    /// <summary>The `?: "…"` literal at the end of the map-consuming elvis chain.
+    /// A rewritten resolution chain must break this test, not skip it.</summary>
     private static string ParseDefaultFallback(string source)
     {
         Match match = Regex.Match(source, KotlinDefaultFallbackDeclaration, RegexOptions.Singleline);
         Assert.True(match.Success,
-            $"could not find the deep-link default fallback (?: \"…\") in {KotlinMainActivity} "
-            + $"(pattern: {KotlinDefaultFallbackDeclaration}). The componentName resolution chain "
-            + "moved or was rewritten — re-point this pin deliberately rather than deleting it.");
+            $"could not find the ultimate deep-link fallback (?: routes[\"/\"] ?: \"…\") in "
+            + $"{KotlinMainActivity} (pattern: {KotlinDefaultFallbackDeclaration}). The componentName "
+            + "resolution chain moved or was rewritten — re-point this pin deliberately rather than "
+            + "deleting it.");
         return match.Groups["name"].Value;
     }
 
@@ -201,9 +204,7 @@ public sealed class RouteTableDriftTests
     }
 
     /// <summary>The repo root — the nearest ancestor of the test binary holding
-    /// BlazorNative.sln. The shell's source is not a build input of this project,
-    /// so it is read from the checkout (which is what makes `build-test` the only
-    /// lane that can host this test — ShellStyleTableDriftTests' rule).</summary>
+    /// BlazorNative.sln.</summary>
     private static string RepoRoot()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);

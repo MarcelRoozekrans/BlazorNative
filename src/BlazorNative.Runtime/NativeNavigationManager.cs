@@ -22,9 +22,10 @@ namespace BlazorNative.Runtime;
 // design decision 1) — the manifest is the single page authority; this table
 // and HostSession's mount registry are projections of the same object graph,
 // so a route's value is a mount-registry key BY CONSTRUCTION. Android's
-// MainActivity.DEEP_LINK_COMPONENTS remains a hand-written PINNED MIRROR
-// (Intent-parse time — before the .so loads), drift-tested pair-for-pair by
-// RouteTableDriftTests in the required build-test lane.
+// deep-link map (res/raw/blazornative_routes.json, read at Intent-parse time —
+// before the .so loads) is, since Phase 11.0, GENERATED from these rows at build
+// time by BlazorNative.RouteGen rather than hand-written; RouteTableDriftTests
+// guards the generator's output pair-for-pair in the required build-test lane.
 //
 // CurrentRoute: tracked .NET-side; lazily initialized by querying the host's
 // CurrentRoute buffer callback — a host-restored route that maps to a known

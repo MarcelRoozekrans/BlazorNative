@@ -112,4 +112,39 @@
         </PropertyGroup>
         <WriteLinesToFile Condition="$(RemoveSections) == 'true'" File="$(ExportsFile)" Lines="$([System.IO.File]::ReadAllText($(ExportsFile)).Replace('global: _init; _fini;','global: '))" Overwrite="true"/>
     </Target>
+
+    <!-- ─────────────────────────────────────────────────────────────────────
+         Phase 11.0 (M11 DoD #1): deep-link route codegen. Generates the Android
+         shell's deep-link map (res/raw/blazornative_routes.json) from the app's
+         ACTUAL registered routed pages, so no consumer ever hand-maintains it.
+
+         BlazorNative.RouteGen loads the just-built managed app assembly
+         ($(TargetPath)), triggers its [ModuleInitializer] (RegisterPages), reads
+         the framework registry's routed (route, name) rows and writes them as the
+         flat JSON MainActivity parses at Intent-parse time. It reads the registry
+         (not a convention-named array), so it is GENERAL — any consumer app.
+
+         CONSUMER-DRIVEN: $(BlazorNativeRoutesResourcePath) — the full path to the
+         shell's res/raw/blazornative_routes.json — is set by the app project (the
+         app owns where its shell lives; the framework target cannot know it). Unset
+         → this target is a no-op (a consumer without an Android shell, or before
+         its shell is wired). $(RouteGenAssembly) defaults to the repo tool output
+         and is overridable by a consumer that gets the tool packaged.
+
+         ORDERING: AfterTargets="Build" (the managed assembly $(TargetPath) exists)
+         and BeforeTargets="IlcCompile" (mirrors PrepareNdkBatches). gradle/AGP
+         merges Android resources in a SEPARATE process, AFTER `dotnet publish`
+         fully completes, so the resource is always present before the AGP resource
+         step reads it — CI's android-build + instrumented lanes prove it on-device.
+         ───────────────────────────────────────────────────────────────────────── -->
+    <PropertyGroup>
+        <RouteGenAssembly Condition="'$(RouteGenAssembly)' == ''">$(MSBuildThisFileDirectory)..\tools\BlazorNative.RouteGen\bin\$(Configuration)\net10.0\BlazorNative.RouteGen.dll</RouteGenAssembly>
+    </PropertyGroup>
+    <Target Name="GenerateBlazorNativeRoutes" AfterTargets="Build" BeforeTargets="IlcCompile"
+            Condition="'$(BlazorNativeRoutesResourcePath)' != ''">
+        <Error Condition="!Exists('$(RouteGenAssembly)')"
+               Text="GenerateBlazorNativeRoutes: BlazorNative.RouteGen not found at '$(RouteGenAssembly)'. The consumer set BlazorNativeRoutesResourcePath but the codegen tool was not built — add it as a ProjectReference (ReferenceOutputAssembly=false, UndefineProperties=RuntimeIdentifier) or set RouteGenAssembly to the packaged tool." />
+        <MakeDir Directories="$([System.IO.Path]::GetDirectoryName('$(BlazorNativeRoutesResourcePath)'))" />
+        <Exec Command="dotnet &quot;$(RouteGenAssembly)&quot; &quot;$(TargetPath)&quot; &quot;$(BlazorNativeRoutesResourcePath)&quot;" />
+    </Target>
 </Project>

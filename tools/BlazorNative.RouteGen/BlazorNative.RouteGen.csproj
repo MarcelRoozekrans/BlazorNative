@@ -1,0 +1,46 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- ─────────────────────────────────────────────────────────────────────
+       BlazorNative.RouteGen — Phase 11.0 (M11 DoD #1: deep-link route codegen).
+
+       THE BUILD-TIME CODEGEN behind the shells' deep-link map. A page is
+       declared ONCE, in the app's manifest (SampleAppPages.All →
+       BlazorNativeApp.RegisterPages); until 11.0 Android's
+       DEEP_LINK_COMPONENTS was a HAND-WRITTEN mirror of its routed rows —
+       a consumer footgun (add a routed page, forget the map, the deep link
+       silently opens the wrong screen). This tool GENERATES that map so it
+       cannot drift: it loads the built app assembly into an isolated,
+       collectible AssemblyLoadContext, triggers the app's [ModuleInitializer]
+       (which calls RegisterPages), then reads the framework's OWN registry
+       (PageManifest) for the routed (route, name) rows and emits them as an
+       Android raw resource (res/raw/blazornative_routes.json). It reads the
+       registry, NOT a convention-named array, so it is GENERAL — it works for
+       any consumer app, not just SampleAppPages.
+
+       Invoked by the GenerateBlazorNativeRoutes target in
+       build/BionicNativeAot.targets (imported into every consumer app),
+       after the managed Build, before gradle reads Android resources.
+
+       NO FrameworkReference: the app is a Library (no runtimeconfig), so this
+       tool resolves the app's dependency graph itself — BlazorNative.* project
+       outputs from the app's bin dir, NuGet package assets from the app's
+       .deps.json → the global-packages folder (RouteManifest.cs). Proven in the
+       Phase 11.0 Gate A spike against both a Library build (bin + deps.json) and
+       a full copy-local output (bin only).
+       ───────────────────────────────────────────────────────────────────── -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>BlazorNative.RouteGen</RootNamespace>
+    <AssemblyName>BlazorNative.RouteGen</AssemblyName>
+    <IsPackable>false</IsPackable>
+    <!-- A build-time host tool: never AOT, never RID-specific. The consumer's
+         ProjectReference undefines RuntimeIdentifier so this builds for the
+         host even during a linux-bionic publish. -->
+    <PublishAot>false</PublishAot>
+  </PropertyGroup>
+
+</Project>

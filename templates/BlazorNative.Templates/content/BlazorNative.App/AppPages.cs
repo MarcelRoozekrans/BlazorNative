@@ -12,13 +12,14 @@ namespace MyBlazorNativeApp;
 // cannot drift from it), so adding a page is one row here and nothing else on
 // the .NET side.
 //
-// THE ONE EXCEPTION, and it is pinned: Android's
-// MainActivity.DEEP_LINK_COMPONENTS (android/src/androidMain/kotlin/io/
-// blazornative/shell/MainActivity.kt) is a hand-written MIRROR of this array's
-// ROUTED rows. It cannot be a derived view — it is consulted at Intent-parse
-// time, BEFORE the native library loads. So when you add a ROUTED page, add its
-// row there too. A mirror that drifts fails no compile and no test: the deep
-// link just opens the wrong screen, on Android alone, silently.
+// AND THE ANDROID DEEP-LINK MAP IS DERIVED TOO (since Phase 11.0). A deep link
+// (blazornative://<route>) resolves to a page at Intent-parse time, BEFORE the
+// native library loads — so Android reads a map that cannot be a live view of this
+// array. But that map (res/raw/blazornative_routes.json) is GENERATED from this
+// array at BUILD time (BlazorNative.RouteGen reads your registered pages and emits
+// it), not hand-written. So adding a ROUTED page is ONE row here and nothing else:
+// no shell file to edit, and the deep-link mapping cannot silently drift from your
+// pages.
 //
 // WHO CALLS Init(): nobody, by name — that is the point. There is no managed
 // Main in a NativeLib; [ModuleInitializer] is the one hook where app code runs
@@ -51,8 +52,9 @@ public static class AppPages
         BlazorNativePage.Routed<BnStarterPage>(BlazorNativeApp.DefaultRoute, "BnStarterPage"),
         // Add your next page here, e.g.:
         //   BlazorNativePage.Routed<BnAboutPage>("/about", "BnAboutPage"),
-        // A ROUTED row also needs its pair in MainActivity.DEEP_LINK_COMPONENTS
-        // (see the header). An unrouted probe/screen is:
+        // Adding a ROUTED row is all you do — Android's deep-link map is generated
+        // from THIS array at build time, so there is no shell file to hand-edit.
+        // An unrouted probe/screen is:
         //   BlazorNativePage.Named<SomeScreen>("SomeScreen"),
     ];
 

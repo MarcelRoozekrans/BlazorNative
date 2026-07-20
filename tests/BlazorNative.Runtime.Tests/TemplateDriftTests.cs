@@ -72,21 +72,27 @@ namespace BlazorNative.Runtime.Tests;
 //      template that drifts from it lays out differently from both shells,
 //      silently. (ci.yml's parity step owns Yoga's FOURTH copy; this pin owns
 //      the rest.)
-//   6. MainActivity == the repo's, MODULO the three divergences it is ALLOWED:
-//      the map block, the fallback literal, and the template-only
-//      `import <namespace>.R` (AGP puts R in the `namespace` package; Kotlin
-//      resolves a bare `R` against the FILE's package — the repo's two match by
-//      coincidence, the template's differ by design, so only the template needs
-//      the import. Gate 2's assembleDebug found that; the design had assumed
-//      byte-identity was free here). ⚠ Brittle by construction (an excision),
-//      and the design says so; the clean fix (extract the map to its own file)
-//      is a shell change and a 184-test re-run, ledgered rather than smuggled in
-//      here. The first two excisions target exactly what RouteTableDriftTests
-//      already parses, so the parser is not new.
-//   7. PIN B: the template's OWN map + fallback vs the template's OWN
-//      AppPages.All. The template ships the same contract the repo has — a page
-//      is declared once; the Kotlin map is the one pinned mirror — so the user
-//      inherits a pin that will insist when they add page two.
+//   6. MainActivity == the repo's, MODULO the TWO divergences it is ALLOWED:
+//      the ultimate fallback literal and the template-only `import <namespace>.R`
+//      (AGP puts R in the `namespace` package; Kotlin resolves a bare `R` against
+//      the FILE's package — the repo's two match by coincidence, the template's
+//      differ by design, so only the template needs the import. Gate 2's
+//      assembleDebug found that; the design had assumed byte-identity was free
+//      here). ⚠ Brittle by construction (an excision), and the design says so.
+//      Phase 11.0 RETIRED the third divergence (the DEEP_LINK_COMPONENTS map
+//      block): both copies now read the build-time-generated resource through the
+//      identical loadDeepLinkRoutes(), so the loader is byte-identical pinned code
+//      and the excision that used to remove the map is gone. The fallback excision
+//      targets exactly what RouteTableDriftTests parses, so the parser is not new.
+//   7. PIN B (the template's OWN hand-written map vs its OWN AppPages.All) —
+//      RETIRED at 11.0: the template has no hand-written map any more, it reads
+//      the same generated resource the repo does, so the pairs cannot drift from
+//      the pages by construction (the footgun this milestone closes, closed for
+//      the consumer too — Gate B proves the template's generated resource in the
+//      template-smoke lane). What survives is the half the resource does not
+//      subsume: the ultimate `?: "…"` fallback literal must name the template's
+//      default page, so a resource-less generated app still boots into something
+//      that registers.
 //   8. The guard ORDER, in BOTH copies (the sample's and the template's).
 //      Stated honestly: a source-order pin proves the ORDER, not the SEMANTICS.
 //      Here the semantics IS the order, and the alternative is nothing —
@@ -827,15 +833,13 @@ public sealed class TemplateDriftTests
 
     // ── 5. MainActivity, modulo the map ──────────────────────────────────────
 
-    /// <summary>PIN A — MainActivity ≡ the repo's, MODULO the three divergences
-    /// it is allowed. The template's MainActivity is the one genuinely divergent
-    /// shell file. Two of the three are things RouteTableDriftTests already
-    /// parses; the third is an import the repo cannot have:
+    /// <summary>PIN A — MainActivity ≡ the repo's, MODULO the TWO divergences it is
+    /// allowed. The template's MainActivity is the one genuinely divergent shell
+    /// file. One is a literal RouteTableDriftTests already parses; the other is an
+    /// import the repo cannot have:
     ///
-    ///   · DEEP_LINK_COMPONENTS — the template's is EMPTY (a one-page app has no
-    ///     non-"/" routes), and its KDoc documents the template's contract
-    ///     rather than the repo's phase history;
-    ///   · the `?: "…"` fallback literal — the template's is the starter page;
+    ///   · the ultimate `?: "…"` fallback literal — the template's is the starter
+    ///     page (BnStarterPage), the repo's is BnDemo;
     ///   · `import &lt;namespace&gt;.R` — TEMPLATE-ONLY. AGP generates R into the
     ///     `namespace` package while Kotlin resolves a bare `R` against the file's
     ///     own package; the repo's two happen to be the same string, the
@@ -843,19 +847,20 @@ public sealed class TemplateDriftTests
     ///     import. Gate 2's assembleDebug on the generated tree is what found
     ///     that (see ExciseTheAllowedDivergences).
     ///
-    /// Everything else is byte-identical, so a shell fix landing in MainActivity
-    /// and skipping the template reds here.
+    /// PHASE 11.0 removed the THIRD divergence (the DEEP_LINK_COMPONENTS map
+    /// block): both copies now read the build-time-generated resource through the
+    /// identical loadDeepLinkRoutes(), so the loader — KDoc and all — is
+    /// byte-identical pinned code, and there is no map to excise. Everything else
+    /// is byte-identical, so a shell fix landing in MainActivity and skipping the
+    /// template reds here.
     ///
-    /// ⚠ BRITTLE, and named as such by the design: this is an excision regex,
-    /// and an excision is a parser that can silently stop matching. Every
-    /// excision therefore asserts it FIRED — the map and the fallback in BOTH
-    /// files, the R import in the template and its ABSENCE in the repo — so a
-    /// moved map or a rewritten resolution chain reds this test rather than
-    /// quietly comparing the wrong thing. The clean fix (extract the map to its
-    /// own file, retiring the excision entirely) is a shell change and a
-    /// 184-instrumented-test re-run: ledgered, not smuggled into this phase.</summary>
+    /// ⚠ BRITTLE, and named as such by the design: this is an excision regex, and
+    /// an excision is a parser that can silently stop matching. Every excision
+    /// therefore asserts it FIRED — the fallback in BOTH files, the R import in the
+    /// template and its ABSENCE in the repo — so a rewritten resolution chain reds
+    /// this test rather than quietly comparing the wrong thing.</summary>
     [Fact]
-    public void TemplateMainActivity_EqualsTheRepos_ModuloTheMapAndTheFallback()
+    public void TemplateMainActivity_EqualsTheRepos_ModuloTheFallbackAndTheImport()
     {
         string repo = ExciseTheAllowedDivergences(
             ReadCheckoutFile(RepoMainActivity), RepoMainActivity, isTemplate: false);
@@ -866,66 +871,39 @@ public sealed class TemplateDriftTests
             return;
 
         Assert.Fail(
-            "MAINACTIVITY DRIFT (8.3 decision 6, Pin A). The template's MainActivity must equal "
-            + "src/BlazorNative.Jni's EXCEPT for the three divergences it is allowed — the "
-            + "DEEP_LINK_COMPONENTS map block, the `?: \"…\"` fallback literal, and the "
-            + "template-only `import <namespace>.R`, all excised "
-            + "before this comparison. Something else moved: a shell fix landed in one copy and "
-            + "not the other, and a generated app now runs a different Activity from the one this "
-            + "repo tests.\n"
+            "MAINACTIVITY DRIFT (8.3 decision 6, Pin A; 11.0 dropped the map divergence). The "
+            + "template's MainActivity must equal src/BlazorNative.Jni's EXCEPT for the two "
+            + "divergences it is allowed — the ultimate `?: \"…\"` fallback literal and the "
+            + "template-only `import <namespace>.R`, both excised before this comparison. Something "
+            + "else moved: a shell fix landed in one copy and not the other, and a generated app "
+            + "now runs a different Activity from the one this repo tests.\n"
             + "First difference:\n" + FirstDifference(repo, template)
-            + "\n\nRegenerate the template's copy from the repo's, re-applying ONLY the three "
-            + "divergences (empty map + the starter page's fallback + the R import).");
+            + "\n\nRegenerate the template's copy from the repo's, re-applying ONLY the two "
+            + "divergences (the starter page's fallback + the R import).");
     }
 
-    // ── 6. Pin B — the template's own map tracks the template's own pages ────
+    // ── 6. Pin B — the template's default fallback tracks its default page ───
 
-    /// <summary>PIN B — the template ships the SAME CONTRACT the repo has: a page
-    /// is declared once (AppPages.All), and the Kotlin map is the one pinned
-    /// mirror of its routed rows. So the user inherits a pin that will insist
-    /// when they add page two — which is the moment this contract stops being
-    /// theory for them.
-    ///
-    /// PAIRS, NOT NAME SETS (RouteTableDriftTests' rule): the drift that matters
-    /// is a route mapped to the WRONG page, which set-equality cannot see.
-    ///
-    /// The template's AppPages.cs is CONTENT, not a compiled reference, so its
-    /// manifest is parsed out of the checkout as text — the same handle every
-    /// other pin in this file uses on the template.</summary>
-    [Fact]
-    public void TemplateDeepLinkMap_IsTheTemplateManifestsRoutedRowsMinusDefault_PairForPair()
-    {
-        Dictionary<string, string> kotlin = ParseKotlinPairTable(
-            ReadCheckoutFile(TemplateMainActivity), TemplateMainActivity, allowEmpty: true);
-        Dictionary<string, string> expected = TemplateRoutedPairs();
+    // PIN B (the hand-written map half) — RETIRED at Phase 11.0. It used to hold
+    // the template's MainActivity.DEEP_LINK_COMPONENTS pair-for-pair against the
+    // template's own AppPages.All routed rows, so a user who added page two and
+    // forgot the map got a red. There is no hand-written map any more: the template
+    // reads the build-time-generated res/raw/blazornative_routes.json (the same
+    // codegen the repo uses), so the pairs cannot drift from the pages by
+    // construction — the exact footgun this milestone closes, now closed for the
+    // consumer too. The template's OWN generated resource is proven by Gate B (the
+    // template-smoke lane: a generated app compiles and its routes.json contains the
+    // added page); wiring the template's codegen target + a generated-routes pin on
+    // it is Gate B's business, not this repo-side gate's. What survives here is the
+    // half the generated resource does NOT subsume: the ultimate fallback literal.
 
-        var onlyInManifest = expected.Where(e => !kotlin.ContainsKey(e.Key)).ToList();
-        var onlyInKotlin = kotlin.Where(k => !expected.ContainsKey(k.Key)).ToList();
-        var wrongComponent = expected
-            .Where(e => kotlin.TryGetValue(e.Key, out string? actual) && actual != e.Value)
-            .Select(e => $"\"{e.Key}\" → manifest says \"{e.Value}\", Kotlin says \"{kotlin[e.Key]}\"")
-            .ToList();
-
-        Assert.True(
-            onlyInManifest.Count == 0 && onlyInKotlin.Count == 0 && wrongComponent.Count == 0,
-            "TEMPLATE ROUTE DRIFT (Pin B). The template's MainActivity.DEEP_LINK_COMPONENTS must "
-            + "mirror the template's own AppPages.All routed rows (minus \"/\", which rides the ?: "
-            + "fallback) PAIR-FOR-PAIR — the same contract the repo holds itself to, shipped to the "
-            + "user.\n"
-            + $"  only in AppPages.All (route missing from Kotlin): {JoinPairs(onlyInManifest)}\n"
-            + $"  only in Kotlin (route AppPages.All does not know): {JoinPairs(onlyInKotlin)}\n"
-            + "  route mapped to the WRONG page: "
-            + (wrongComponent.Count == 0 ? "(none)" : string.Join(", ", wrongComponent))
-            + "\nThe map is consulted at Intent-parse time, before the .so loads — it MUST be a "
-            + "hand-written copy, and a copy that drifts opens the WRONG SCREEN from a deep link.");
-    }
-
-    /// <summary>PIN B's other half — the one routed row the map deliberately does
-    /// not carry. No deep link (or an unknown one) mounts the `?:` literal, which
-    /// must be the template manifest's default row's component. Rename the
-    /// starter page on one side only and a generated app boots into a name
-    /// nothing registers: rc 1 at first mount, the phase's whole nightmare,
-    /// shipped.</summary>
+    /// <summary>The one row the resource-backed resolution still hard-codes: the
+    /// template's MainActivity keeps a `?: "…"` ULTIMATE fallback for a missing or
+    /// malformed generated resource, and it must be the template manifest's default
+    /// row's component. Rename the starter page on one side only and a resource-less
+    /// generated app boots into a name nothing registers: rc 1 at first mount, the
+    /// phase's whole nightmare, shipped. The template's AppPages.cs is CONTENT, so
+    /// its manifest is parsed out of the checkout as text.</summary>
     [Fact]
     public void TemplateDefaultFallbackLiteral_IsTheTemplateManifestsDefaultComponent()
     {
@@ -1023,16 +1001,6 @@ public sealed class TemplateDriftTests
 
     // ── The parsers ──────────────────────────────────────────────────────────
 
-    /// <summary>The template manifest's routed rows, minus the default route —
-    /// exactly what the template's Kotlin map is supposed to mirror. Parsed as
-    /// TEXT: AppPages.cs is template content, not a compiled reference, so
-    /// (unlike RouteTableDriftTests, which can hold SampleAppPages.All in its
-    /// hand) the checkout is the only handle.</summary>
-    private static Dictionary<string, string> TemplateRoutedPairs()
-        => ParseTemplateManifest()
-            .Where(r => r.Route is not null && r.Route != "BlazorNativeApp.DefaultRoute")
-            .ToDictionary(r => r.Route!.Trim('"'), r => r.Name, StringComparer.Ordinal);
-
     private static string TemplateDefaultComponent()
     {
         var defaults = ParseTemplateManifest()
@@ -1050,8 +1018,8 @@ public sealed class TemplateDriftTests
     /// the file's header comment — which discusses the array and shows example
     /// rows in prose — cannot be mistaken for the array itself; and commented-out
     /// example rows INSIDE the array (the template has two, deliberately, as
-    /// documentation) are stripped before parsing, or Pin B would demand Kotlin
-    /// entries for pages that do not exist.</summary>
+    /// documentation) are stripped before parsing, or the default-fallback pin
+    /// would read a page that does not exist.</summary>
     private static List<(string? Route, string Name)> ParseTemplateManifest()
     {
         string source = ReadCheckoutFile(TemplateAppPages);
@@ -1062,9 +1030,9 @@ public sealed class TemplateDriftTests
             RegexOptions.Singleline);
         Assert.True(array.Success,
             $"could not find the `public static readonly BlazorNativePage[] All = [ … ];` "
-            + $"declaration in {TemplateAppPages}. It moved or was rewritten — Pin B IS the "
-            + "contract that the template's route map tracks the template's pages, so re-point it "
-            + "deliberately rather than deleting it.");
+            + $"declaration in {TemplateAppPages}. It moved or was rewritten — the template's "
+            + "default-fallback pin reads this to find the boot page, so re-point it deliberately "
+            + "rather than deleting it.");
 
         // Drop comment lines: the template ships commented-out example rows on
         // purpose (they are how a user learns the two factories).
@@ -1084,91 +1052,54 @@ public sealed class TemplateDriftTests
 
         Assert.True(rows.Count > 0,
             $"parsed ZERO page rows out of {TemplateAppPages}'s All array — a generated app would "
-            + "register no pages at all, and Pin B would pass over an empty read. A pin that "
-            + "cannot see its subject must never pass vacuously.");
+            + "register no pages at all, and the default-fallback pin would pass over an empty read. "
+            + "A pin that cannot see its subject must never pass vacuously.");
         return rows;
     }
 
-    /// <summary>Every `"route" to "name"` pair inside DEEP_LINK_COMPONENTS.
-    /// Accepts the explicit-type form (`mapOf&lt;String, String&gt;()`), which the
-    /// template needs because an EMPTY `mapOf()` cannot infer its type — the one
-    /// spelling difference the empty map forces.
-    ///
-    /// <paramref name="allowEmpty"/> is the template's case and it is a
-    /// deliberate, narrow exception to the never-vacuous rule: the template's map
-    /// is CORRECTLY empty (one page, no non-"/" routes), so emptiness is the
-    /// expected content rather than a failed read. The read itself is still
-    /// asserted — the DECLARATION must be found, which is the part that could
-    /// silently stop matching.</summary>
-    private static Dictionary<string, string> ParseKotlinPairTable(string source, string file, bool allowEmpty)
-    {
-        Match match = Regex.Match(
-            source,
-            @"(?m)^\s*private val DEEP_LINK_COMPONENTS = mapOf(?:<[^>]*>)?\((?<body>[^)]*)\)",
-            RegexOptions.Singleline);
-        Assert.True(match.Success,
-            $"could not find DEEP_LINK_COMPONENTS in {file}. It moved or was renamed — this drift "
-            + "test IS the contract, so re-point it deliberately rather than deleting it.");
-
-        var pairs = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (Match pair in Regex.Matches(
-            match.Groups["body"].Value, @"""(?<route>[^""]+)""\s+to\s+""(?<name>[^""]+)"""))
-        {
-            pairs[pair.Groups["route"].Value] = pair.Groups["name"].Value;
-        }
-
-        if (!allowEmpty)
-            Assert.NotEmpty(pairs);
-        return pairs;
-    }
-
-    /// <summary>The `?: "…"` literal at the end of the map-consuming elvis chain
-    /// — RouteTableDriftTests' pattern, on the template's copy.</summary>
+    /// <summary>The ultimate `?: "…"` literal at the end of the map-consuming elvis
+    /// chain (`?: routes["/"]` then `?: "…"`) — RouteTableDriftTests' 11.0 pattern,
+    /// on the template's copy.</summary>
     private static string ParseKotlinFallback(string source, string file)
     {
         Match match = Regex.Match(
-            source, @"DEEP_LINK_COMPONENTS\[it\] \}\s*\?\:\s*""(?<name>[^""]+)""", RegexOptions.Singleline);
+            source, @"\?\:\s*routes\[""/""\]\s*\r?\n\s*\?\:\s*""(?<name>[^""]+)""", RegexOptions.Singleline);
         Assert.True(match.Success,
-            $"could not find the deep-link default fallback (?: \"…\") in {file}. The componentName "
-            + "resolution chain moved or was rewritten — re-point this pin deliberately rather "
-            + "than deleting it.");
+            $"could not find the ultimate deep-link fallback (?: routes[\"/\"] ?: \"…\") in {file}. "
+            + "The componentName resolution chain moved or was rewritten — re-point this pin "
+            + "deliberately rather than deleting it.");
         return match.Groups["name"].Value;
     }
 
-    /// <summary>Removes the three divergences Pin A allows, asserting that EVERY
+    /// <summary>Removes the TWO divergences Pin A allows, asserting that EVERY
     /// excision actually FIRED. That assertion is the whole safety of a brittle
     /// pin: an excision regex that silently stops matching would compare the
-    /// wrong thing and pass.</summary>
+    /// wrong thing and pass.
+    ///
+    /// PHASE 11.0 retired the THIRD divergence — the DEEP_LINK_COMPONENTS map
+    /// block. There is no hand-written map any more (both copies read the
+    /// build-time-generated res/raw/blazornative_routes.json through the identical
+    /// loadDeepLinkRoutes()), so the block that used to diverge — a repo KDoc full
+    /// of phase history above a template's empty map — is GONE from both, and its
+    /// excision with it. The loader is now byte-identical pinned code. What remains
+    /// divergent is the ultimate `?: "…"` fallback literal and the template-only
+    /// `import &lt;namespace&gt;.R`.</summary>
     private static string ExciseTheAllowedDivergences(string source, string file, bool isTemplate)
     {
-        // Divergence 1: the map block — its KDoc and the declaration together.
-        // The KDoc is part of the block deliberately: it DOCUMENTS the map, so a
-        // repo KDoc full of phase history ("Phase 7.5 adds /imagepolish …") would
-        // otherwise have to ship, verbatim and false, above a template map that
-        // is empty. Excising the doc with its declaration lets each copy describe
-        // its own contract truthfully. What remains pinned is all of the file's
-        // CODE.
-        const string mapBlock =
-            @"(?s)/\*\*(?:(?!\*/).)*\*/\r?\n\s*private val DEEP_LINK_COMPONENTS = mapOf(?:<[^>]*>)?\([^)]*\)";
-        Match map = Regex.Match(source, mapBlock);
-        Assert.True(map.Success,
-            $"Pin A's map-block excision did not match in {file} — the DEEP_LINK_COMPONENTS "
-            + "declaration or its KDoc moved. An excision that silently stops matching would make "
-            + "this pin compare the wrong thing and PASS, so it reds instead. Re-point it.");
-        source = source.Remove(map.Index, map.Length).Insert(map.Index, "<<DEEP_LINK_COMPONENTS>>");
-
-        // Divergence 2: the fallback literal — exactly what RouteTableDriftTests
-        // parses, so the parser is not new.
-        const string fallback = @"(DEEP_LINK_COMPONENTS\[it\] \}\s*\?\:\s*"")([^""]+)("")";
+        // Divergence 1: the ultimate fallback literal — the last `?: "…"` in the
+        // componentName chain (`?: routes["/"]` then `?: "<default>"`), which the
+        // repo names "BnDemo" and the template the starter page. Same anchor
+        // RouteTableDriftTests uses, so the parser is not new.
+        const string fallback = @"(\?\:\s*routes\[""/""\]\s*\r?\n\s*\?\:\s*"")([^""]+)("")";
         Assert.True(Regex.IsMatch(source, fallback),
             $"Pin A's fallback excision did not match in {file} — the componentName resolution "
-            + "chain moved or was rewritten. Same rule: it reds rather than comparing the wrong "
-            + "thing. Re-point it.");
+            + "chain moved or was rewritten. An excision that silently stops matching would make "
+            + "this pin compare the wrong thing and PASS, so it reds instead. Re-point it.");
         source = Regex.Replace(source, fallback, "${1}<<FALLBACK>>${3}");
 
-        // Divergence 3: the `import <namespace>.R` line (with its comment block).
-        // ASYMMETRIC — the only one of the three that is not "same construct,
-        // different content": the template HAS this import and the repo MUST NOT.
+        // Divergence 2: the `import <namespace>.R` line (with its comment block).
+        // ASYMMETRIC — the one of the two that is not "same construct, different
+        // content": the template HAS this import and the repo MUST NOT.
         //
         // WHY IT EXISTS AT ALL, because it looks like a stray edit and is not:
         // AGP generates `R` into the `namespace` package, while Kotlin resolves a
@@ -1611,15 +1542,6 @@ public sealed class TemplateDriftTests
         => XDocument.Load(csproj).Root!
             .Elements("ItemGroup").Elements("PackageReference")
             .ToList();
-
-    private static string JoinPairs(IEnumerable<KeyValuePair<string, string>> pairs)
-    {
-        var list = pairs
-            .OrderBy(p => p.Key, StringComparer.Ordinal)
-            .Select(p => $"\"{p.Key}\" → \"{p.Value}\"")
-            .ToList();
-        return list.Count == 0 ? "(none)" : string.Join(", ", list);
-    }
 
     private static string CheckoutPath(string relativePath)
         => Path.Combine(RepoRoot(), relativePath.Replace('/', Path.DirectorySeparatorChar));
