@@ -236,7 +236,7 @@ BlazorNative/
 
 Each count is asserted by a workflow — but **not all four gate a pull request,
 and the honest split matters.** Only the `build-test` lane is a required check, so a
-drift in the **.NET (779)** or the **JVM `testDebugUnitTest` (120)** count **fails the
+drift in the **.NET (780)** or the **JVM `testDebugUnitTest` (120)** count **fails the
 PR build** — both are load-bearing, and the JVM guard is not a formality: it caught a
 real break in Phase 10.1. The **Android (210)** and **iOS (236)** counts are asserted in
 the `android-instrumented.yml` (nightly + manual dispatch) and `ios.yml` (on merge to
@@ -245,7 +245,7 @@ that lane, not your PR. The `Asserted by` column below names which is which.
 
 | Surface | Command | Count | Asserted by |
 |---|---|---|---|
-| .NET | `dotnet test` | 779 passed / 0 skipped | `ci.yml` → `build-test` — **required, gates the PR** |
+| .NET | `dotnet test` | 780 passed / 0 skipped | `ci.yml` → `build-test` — **required, gates the PR** |
 | JVM (JNA + win-x64 .dll) | `gradlew testDebugUnitTest` | 120 | `ci.yml` → `build-test` — **required, gates the PR** |
 | Android (instrumented, AVD) | `gradlew connectedAndroidTest` | 210 | `android-instrumented.yml` — advisory (nightly/dispatch) |
 | iOS (XCTest, simulator) | `xcodebuild test` | 236 | `ios.yml` — advisory (on-merge/dispatch) |

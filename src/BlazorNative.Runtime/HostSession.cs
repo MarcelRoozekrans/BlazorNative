@@ -35,6 +35,15 @@ internal static unsafe class HostSession
     private static NativeNavigationManager? s_navigation; // born with the session (Phase 3.5)
     private static IntPtr s_frameCallback; // delegate* unmanaged[Cdecl]<BlazorNativeFrame*, void>
 
+    // Phase 0.4.0-prep Gate A (design §1): the app's captured service-
+    // registration delegate — the ConfigureServices seam. Written ONCE via
+    // BlazorNativeApp.ConfigureServices (at the app's [ModuleInitializer],
+    // beside RegisterPages); read ONCE by EnsureSession under s_lock and
+    // invoked on the ServiceCollection after the framework's registrations and
+    // before BuildServiceProvider. Null = never set = no-op (the baseline app).
+    // Same Volatile idiom as s_renderer/s_navigation above.
+    private static Action<IServiceCollection>? s_configureServices;
+
     /// <summary>Root componentId of the CURRENT page (Phase 3.5): tracked at
     /// every mount so the navigation swap knows what to unmount. -1 = none.
     /// Single-threaded post-boot contract (same as the renderer's dispatch
@@ -87,6 +96,13 @@ internal static unsafe class HostSession
     /// delivery; re-registration is allowed (last wins).</summary>
     public static void SetFrameCallback(IntPtr fnPtr)
         => Volatile.Write(ref s_frameCallback, fnPtr);
+
+    /// <summary>Stores the app's ConfigureServices delegate (design §1) —
+    /// backing BlazorNativeApp.ConfigureServices. Consumed once by
+    /// EnsureSession when it builds the session's provider. Same Volatile
+    /// write idiom as SetFrameCallback; last write wins.</summary>
+    internal static void SetConfigureServices(Action<IServiceCollection>? configure)
+        => Volatile.Write(ref s_configureServices, configure);
 
     /// <summary>Test-only strict-mode toggle (Phase 3.3 Task 6, DoD #9):
     /// applied to the session renderer at EnsureSession AND to a live session
@@ -146,6 +162,10 @@ internal static unsafe class HostSession
             Volatile.Write(ref s_navigation, null);
             Volatile.Write(ref s_currentRootComponentId, -1);
             Volatile.Write(ref s_frameCallback, IntPtr.Zero);
+            // Gate A: clear the app's captured ConfigureServices delegate too,
+            // so a session-composition capture never leaks across tests (the
+            // ConfigureServices seam's isolation, alongside the renderer's).
+            Volatile.Write(ref s_configureServices, null);
         }
     }
 
@@ -332,6 +352,14 @@ internal static unsafe class HostSession
             // session also keeps the concrete instance for the route-aware
             // initial mount + swap plumbing (TryMount/SwapRoot).
             services.AddSingleton<INavigationManager, NativeNavigationManager>();
+            // Phase 0.4.0-prep Gate A (design §1): the app-service seam. The
+            // app's captured ConfigureServices delegate runs LAST — after every
+            // framework registration above, immediately before the build — so an
+            // app registration is purely additive, or a conscious last-write over
+            // a framework contract. Null (never set) = no-op. Read once here,
+            // under s_lock; still exactly ONE ServiceProvider.
+            Action<IServiceCollection>? configure = Volatile.Read(ref s_configureServices);
+            configure?.Invoke(services);
             ServiceProvider provider = services.BuildServiceProvider();
             renderer = provider.GetRequiredService<NativeRenderer>();
             Volatile.Write(ref s_navigation,

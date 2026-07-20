@@ -1,6 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
 using BlazorNative.Renderer;
 using Microsoft.AspNetCore.Components;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace BlazorNative.Runtime;
 
@@ -95,6 +96,25 @@ public static class BlazorNativeApp
     /// <see cref="InvalidOperationException"/>.</summary>
     public static void RegisterPages(params BlazorNativePage[] pages)
         => PageManifest.Register(pages);
+
+    /// <summary>Registers app-authored services into the framework's DI
+    /// container. Captured ONCE, at app startup, alongside
+    /// <see cref="RegisterPages"/> (in a NativeAOT app: from a
+    /// <c>[ModuleInitializer]</c> — see the file header), and consumed ONCE by
+    /// the host session's composition root: <paramref name="configure"/> runs
+    /// on the same <see cref="IServiceCollection"/> the framework registered
+    /// its own services into, AFTER those registrations and immediately BEFORE
+    /// the single provider is built — so an app <c>[Inject]</c> reaches app
+    /// services exactly as it reaches framework ones, and a re-registration of
+    /// a framework contract is a conscious last-write (MS.DI resolves the last
+    /// registration). Additive and last-wins; there is exactly ONE provider.
+    /// Never calling it is the baseline — the field stays null and the host
+    /// session skips the invocation.</summary>
+    public static void ConfigureServices(Action<IServiceCollection> configure)
+    {
+        ArgumentNullException.ThrowIfNull(configure);
+        HostSession.SetConfigureServices(configure);
+    }
 
     /// <summary>Test-only: tears down the registration store AND the two
     /// derived views so the empty-registry rc-1 diagnostic and the validation
