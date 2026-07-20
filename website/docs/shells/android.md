@@ -64,37 +64,63 @@ The display name lives in `android/src/androidMain/AndroidManifest.xml`.
 
 ### The launcher page
 
-The shell boots into a component **by name**, and the name it falls back to is your starter
-page's. That name is one of a pair:
+The shell boots into the component registered for the `"/"` route — and that comes from your
+manifest, not from a shell edit. `AppPages.All` in `AppPages.cs` registers your starter page at
+`BlazorNativeApp.DefaultRoute` (`"/"`), and the generated deep-link map (below) carries that `/`
+row, so the shell mounts it on a normal launch.
 
-- `AppPages.All` in `AppPages.cs` — the manifest that registers the page on the .NET side.
-- `MainActivity.kt`'s fallback — the name the shell mounts when no deep link or extra says
-  otherwise.
-
-Rename the page and both need the new name. **A mismatch is not a compile error** — the
-mount fails at runtime.
+`MainActivity.kt` also holds a hard-coded `?: "BnStarterPage"` **fallback** — the name it mounts
+only if the generated resource is missing or malformed. `dotnet new` rewrites that literal to your
+starter page's name for you, and a drift test in the reference repo pins it against `AppPages.All`,
+so a renamed default page cannot boot a resource-less app into the wrong screen. You do not normally
+touch it.
 
 ### Deep links
 
 The shell ships a custom-scheme intent filter (a custom scheme needs no domain
 verification; `https` App Links are more work and are yours to add). Routed pages reach it
-through a map in `MainActivity.kt`:
+through a map in `res/raw/blazornative_routes.json`:
 
 ```bash
 adb shell am start -a android.intent.action.VIEW -d "blazornative://about"
 ```
 
-:::caution The one place that does not derive
+:::tip The map is generated — nothing to hand-edit
 
-`DEEP_LINK_COMPONENTS` is a **hand-written mirror** of the routed rows in `AppPages.All`. It
-cannot be derived from them: it is read at Intent-parse time, *before* the native library is
-loaded. Add a routed page, add its pair here.
+`res/raw/blazornative_routes.json` is **generated from `AppPages.All` at build time**
+(`BlazorNative.RouteGen` parses your `Routed<T>(route, name)` rows and emits the resource;
+`MainActivity` reads it at Intent-parse time, *before* the native library loads). It cannot drift
+from your pages — add a routed row and the deep link resolves. This was the last place a page lived
+twice; since v0.2.0 the mount registry, the route table, **and** this map are all views over that
+one array.
 
-Everything else about a page is derived from `AppPages.All` — the mount registry and the
-route table are views over that one array, so they cannot drift from it. This map can, and
-when it does, nothing fails: the deep link opens the wrong screen, silently.
+The URI **scheme** (`blazornative://`) is yours to change for a production app — it lives in two
+paired places, `AndroidManifest.xml`'s `<data android:scheme="…"/>` and `MainActivity`'s
+`DEEP_LINK_SCHEME`. Two apps that both ship `blazornative://` collide on one device (Android shows a
+disambiguation), so pick your own before you publish.
 
 :::
+
+## Capabilities and permissions
+
+The template `AndroidManifest.xml` **pre-declares everything the shell's capabilities need**, with a
+comment on each entry. There is nothing to hand-add to *use* a capability — the shell is copied
+source in a single app module (no library manifest-merge yet), so the manifest you receive already
+carries:
+
+| Capability | Manifest entry (pre-declared) | Runtime prompt |
+|---|---|---|
+| Networking (`BnImage`, `HttpClient`) | `uses-permission INTERNET` | none |
+| Local notifications | `uses-permission POST_NOTIFICATIONS` + the publisher `<receiver>` | Android 13+ runtime, requested by the shell |
+| Biometrics + OS-key-bound secure storage | `uses-permission USE_BIOMETRIC` | none (normal permission) |
+| Camera capture | the `ACTION_IMAGE_CAPTURE` `<queries>` + the `FileProvider` `<provider>` (`res/xml/file_paths.xml`) | none — the system camera app owns the sensor |
+
+The camera `FileProvider` authority is `${applicationId}.fileprovider` — AGP substitutes **your**
+`applicationId` at build and the shell reads `packageName` at runtime, so it needs no editing.
+
+The inverse is the only thing to mind: because everything is pre-declared, an app that never
+authenticates still *ships* `USE_BIOMETRIC`. Each entry carries a "Remove this only if your app
+never…" comment — **trim the permissions your app does not use before a store submission.**
 
 ## What the NDK shim does
 

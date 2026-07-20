@@ -123,6 +123,15 @@ registers `"BnStarterPage"`. A mismatch is not a compile error: the mount fails 
 Also yours to change: the **bundle id and display name** in `BnHost/Info.plist` and
 `project.yml` (`PRODUCT_BUNDLE_IDENTIFIER`, the target/scheme names).
 
+**And the capability usage-description strings — rewrite the copy, keep the keys.** `BnHost/Info.plist`
+carries `NSCameraUsageDescription`, `NSLocationWhenInUseUsageDescription` and
+`NSFaceIDUsageDescription`. iOS **`SIGABRT`s at the capability call** if a key is absent, so copying
+the shell hands you the keys you need for free. But the *strings* are BlazorNative demo copy
+("BlazorNative uses your camera to take a photo in the camera demo") — they are the sentence your
+user reads under the system prompt, and the App Store rejects empty or boilerplate text. Rewrite each
+to your app's real purpose; the key is what matters to the OS, the sentence is app-specific and yours.
+Drop a key only if your app never uses that capability.
+
 ---
 
 ## 4. What is a stub, not a feature
