@@ -1700,7 +1700,11 @@ real-device still gated on the Apple account). Full scope + owner decisions in
   the owner's phone, recorded in a device-proof doc; discharges the physical-phone ledger (DoD #2).
 - **Phase 11.3** — API stability: mark the stable surface (a PublicAPI baseline gate) + write the
   1.0 criteria (DoD #4). 1.0 is DEFINED here, not necessarily CUT.
-- **Phase 11.4** — hygiene + M11 final audit + close (DoD #5, no milestone tag).
+- **Phase 11.4** — logging discipline ([#155](https://github.com/MarcelRoozekrans/BlazorNative/issues/155)):
+  one level-gated logging seam, **quiet-by-default in Release**, unified across both shells (DoD #6).
+  Today logging is un-gated and split — iOS `NSLog` emits normal-path chatter in Release, Android
+  discards `Console.Error` to `/dev/null`; no unified level control.
+- **Phase 11.5** — hygiene + M11 final audit + close (DoD #5, no milestone tag).
 
 ---
 

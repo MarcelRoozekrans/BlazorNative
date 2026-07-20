@@ -1,6 +1,6 @@
 # Milestone 11 — Production Readiness
 
-**Status:** 🔄 **active — opened 2026-07-20.** 1 / 5 DoD closed (#1 — Phase 11.0).
+**Status:** 🔄 **active — opened 2026-07-20.** 1 / 6 DoD closed (#1 — Phase 11.0).
 **Predecessor:** Milestone 10 — Consolidation & Hardening, complete 2026-07-19
 ([final audit](../plans/2026-07-19-milestone-10-final-audit.md), all 7 DoD PASS; no tag — 8.6 rule).
 **Source:** owner direction (2026-07-20): *"work towards a production-grade framework,"* dogfood
@@ -94,8 +94,22 @@ the project stops being a proof-of-concept and starts being something a stranger
 
 5. **Hygiene + close.** Every new surface CI-asserted (the codegen output drift-guarded, the
    public-API baseline gated); a decision log per phase; the device-proof doc; a **final audit**
-   verifying all five above. **No milestone tag** (8.6 rule — closure is the audit); a 1.0.0
+   verifying all of the above. **No milestone tag** (8.6 rule — closure is the audit); a 1.0.0
    *package* release, if the owner cuts it, is a separate release-please tag.
+
+6. **Logging discipline — quiet-in-Release, level-gated, unified**
+   ([#155](https://github.com/MarcelRoozekrans/BlazorNative/issues/155)). Diagnostic logging today
+   is **not build-configuration gated** and behaves **differently per shell**: iOS `NSLog` emits
+   normal-path chatter (`native init ok`, `mounted <component>`, the `[BnWidgetMapper] … ignored`
+   volume) in **Release** builds; Android discards the .NET runtime's `Console.Error` to `/dev/null`
+   and only surfaces the shell's explicit `Log.e`; the renderer `ILogger` is hard-coded to
+   `Warning`. M11 gives the framework **one level-gated logging seam** the runtime + both shells
+   route through, **quiet by default in Release** (Info/Debug/Verbose suppressed, Warn/Error only),
+   preferring `os_log`/`Logger` over unconditional `NSLog` on iOS and the `Log` sink on Android — so
+   the two shells log **consistently**, no internal exception detail/paths leak at default Release
+   verbosity, and verbose diagnostics are opt-in. An end user sees none of it either way (no
+   on-screen console); this is about a production binary not shipping developer chatter and about
+   one honest, controllable logging story across platforms.
 
 ## Out of scope for this milestone
 
@@ -132,7 +146,9 @@ Tracked in `ROADMAP.md`. Approved at milestone-open:
 - **Phase 11.2** — real-device Android validation, all capabilities, recorded (DoD #2) —
   *owner-run over USB; the milestone's honesty check.*
 - **Phase 11.3** — API stability review + the 1.0 criteria + public-API baseline (DoD #4).
-- **Phase 11.4** — hygiene + M11 final audit + close (DoD #5).
+- **Phase 11.4** — logging discipline (DoD #6, [#155](https://github.com/MarcelRoozekrans/BlazorNative/issues/155)):
+  one level-gated logging seam, quiet-by-default in Release, unified across both shells.
+- **Phase 11.5** — hygiene + M11 final audit + close (DoD #5).
 
 ## Why this milestone exists
 
