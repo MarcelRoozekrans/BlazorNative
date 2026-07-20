@@ -146,9 +146,9 @@
          would cover a fourth reference with no roster at all — but at the cost
          of a whole-document DOMParser/XMLSerializer round-trip on every
          release). -->
-    <PackageReference Include="BlazorNative.Runtime" Version="0.2.0" GeneratePathProperty="true" /> <!-- x-release-please-version -->
-    <PackageReference Include="BlazorNative.Components" Version="0.2.0" /> <!-- x-release-please-version -->
-    <PackageReference Include="BlazorNative.Analyzers" Version="0.2.0" PrivateAssets="all" /> <!-- x-release-please-version -->
+    <PackageReference Include="BlazorNative.Runtime" Version="0.3.0" GeneratePathProperty="true" /> <!-- x-release-please-version -->
+    <PackageReference Include="BlazorNative.Components" Version="0.3.0" /> <!-- x-release-please-version -->
+    <PackageReference Include="BlazorNative.Analyzers" Version="0.3.0" PrivateAssets="all" /> <!-- x-release-please-version -->
   </ItemGroup>
 
   <ItemGroup>
