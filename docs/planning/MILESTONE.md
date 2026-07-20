@@ -1,6 +1,6 @@
 # Milestone 11 — Production Readiness
 
-**Status:** 🔄 **active — opened 2026-07-20.** No DoD closed yet.
+**Status:** 🔄 **active — opened 2026-07-20.** 1 / 5 DoD closed (#1 — Phase 11.0).
 **Predecessor:** Milestone 10 — Consolidation & Hardening, complete 2026-07-19
 ([final audit](../plans/2026-07-19-milestone-10-final-audit.md), all 7 DoD PASS; no tag — 8.6 rule).
 **Source:** owner direction (2026-07-20): *"work towards a production-grade framework,"* dogfood
@@ -47,6 +47,25 @@ the project stops being a proof-of-concept and starts being something a stranger
    vacuous, with a written rationale). **Plus a footgun audit:** enumerate every other place a
    consumer must hand-edit a shell file when adding a page/capability, and derive or document
    each.
+
+   ✅ **Closed by Phase 11.0** (2026-07-20). **Mechanism:** `MainActivity`'s hand-written
+   `DEEP_LINK_COMPONENTS` map is gone — `BlazorNative.RouteGen` parses the app's C# **source**
+   (Roslyn, so it loads no per-RID dll and is **arch-independent** — the arm64 pivot away from an
+   assembly-load approach that could not survive CI) for `Routed<T>(route, name)` rows and emits
+   `res/raw/blazornative_routes.json` at build time; `MainActivity` reads it at Intent-parse. The
+   generator ships **inside the `BlazorNative.Runtime` package**, so a `dotnet new` app derives its
+   **own** map (template-smoke proves it). `RouteTableDriftTests` flipped from mirroring a
+   hand-written map to **verifying the generated one** pair-for-pair; the Kotlin-text pin is retired
+   (nothing left to drift), the default-fallback + content pins kept. **Audit outcome
+   ([footgun audit](../plans/2026-07-20-phase-11.0-footgun-audit.md)):** the deep-link map was the
+   *only* page-keyed shell hand-edit (no other `when`/map is per-page); every capability's Android
+   manifest surface — permissions, camera `<queries>`, the FileProvider `<provider>` + `file_paths.xml`,
+   the notification `<receiver>` — is **template-supplied (DERIVED)**, so nothing is hand-added to use
+   a capability (the shell is copied source, no manifest-merge needed); the un-derivable rest (app
+   identity, the per-app URI scheme, iOS usage-description *copy*, the iOS root-component source edits +
+   csproj recipe) is **DOCUMENTED** where a consumer looks. Three stale consumer docs (quick-start,
+   shells/android, shells/ios) were corrected.
+   [Conclusion](../plans/2026-07-20-phase-11.0-conclusion.md).
 
 2. **Real-device Android proof — all capabilities, recorded.** The app runs on the owner's
    physical Android phone; **camera** (real sensor + EXIF, no emulated shutter), **biometrics**
