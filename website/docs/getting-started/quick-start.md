@@ -63,14 +63,14 @@ BlazorNativePage.Routed<BnAboutPage>("/about", "BnAboutPage"),   // route + moun
 BlazorNativePage.Named<SomeScreen>("SomeScreen"),                // mount name only
 ```
 
-:::caution The one place that does not derive
+:::tip Everything derives — including the deep-link map
 
-Android's `DEEP_LINK_COMPONENTS` map in `MainActivity.kt` is a **hand-written mirror** of
-the routed rows. It cannot be derived — it is read at Intent-parse time, *before* the
-native library is loaded. Add a routed page, add its pair there.
-
-A mirror that drifts fails no compile and no test: the deep link just opens the wrong
-screen, silently.
+Adding a **routed** page is that one row and nothing else. Android's deep-link map
+(`res/raw/blazornative_routes.json`, read at Intent-parse time *before* the native library
+loads) used to be a hand-written mirror in `MainActivity.kt` you had to keep in sync — the last
+place a page lived twice. Since v0.2.0 it is **generated from `AppPages.All` at build time**
+(`BlazorNative.RouteGen` reads your routed rows and emits the resource), so it cannot drift from
+your pages and there is no shell file to edit. Add the row; the deep link works.
 
 :::
 

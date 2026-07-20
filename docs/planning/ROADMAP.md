@@ -1685,15 +1685,26 @@ single-source-of-truth violation. All four pillars in; device proof is Android-o
 real-device still gated on the Apple account). Full scope + owner decisions in
 [MILESTONE.md](MILESTONE.md).
 
-- **Phase 11.0** — deep-link route codegen: generate `DEEP_LINK_COMPONENTS` from the app's pages
-  at build time (no hand-edit, no silent wrong-screen footgun) + a consumer-footgun audit (DoD #1).
+- ✅ **Phase 11.0** — deep-link route codegen + the consumer-footgun audit (DoD #1) — *complete
+  (2026-07-20).* The hand-written `DEEP_LINK_COMPONENTS` map is **generated from `AppPages.All` at
+  build time** by `BlazorNative.RouteGen` (Roslyn **source** analysis — arch-independent, the arm64
+  pivot; emits `res/raw/blazornative_routes.json`), shipped inside the `BlazorNative.Runtime` package
+  so a `dotnet new` app derives its own map; `RouteTableDriftTests` reshaped to guard the generator.
+  The [footgun audit](../plans/2026-07-20-phase-11.0-footgun-audit.md) confirmed it was the last
+  page-keyed hand-edit: capability manifest entries are template-supplied (DERIVED), the un-derivable
+  rest (app identity, URI scheme, iOS usage-string copy, iOS source edits) DOCUMENTED; three stale
+  consumer docs fixed. [Conclusion](../plans/2026-07-20-phase-11.0-conclusion.md).
 - **Phase 11.1** — consumer dogfooding: a fresh app on the **published 0.2.0** packages (not the
   repo sample); fix the getting-started friction it surfaces (DoD #3).
 - **Phase 11.2** — real-device Android: camera, biometrics, geolocation, notifications + smoke on
   the owner's phone, recorded in a device-proof doc; discharges the physical-phone ledger (DoD #2).
 - **Phase 11.3** — API stability: mark the stable surface (a PublicAPI baseline gate) + write the
   1.0 criteria (DoD #4). 1.0 is DEFINED here, not necessarily CUT.
-- **Phase 11.4** — hygiene + M11 final audit + close (DoD #5, no milestone tag).
+- **Phase 11.4** — logging discipline ([#155](https://github.com/MarcelRoozekrans/BlazorNative/issues/155)):
+  one level-gated logging seam, **quiet-by-default in Release**, unified across both shells (DoD #6).
+  Today logging is un-gated and split — iOS `NSLog` emits normal-path chatter in Release, Android
+  discards `Console.Error` to `/dev/null`; no unified level control.
+- **Phase 11.5** — hygiene + M11 final audit + close (DoD #5, no milestone tag).
 
 ---
 
