@@ -48,6 +48,22 @@
          ProjectReference undefines RuntimeIdentifier so this builds for the
          host even during a linux-bionic publish. -->
     <PublishAot>false</PublishAot>
+    <!-- Phase 11.0 Gate B — this tool SHIPS to consumers: its build output is
+         packed into the BlazorNative.Runtime package under tools/ (see that
+         csproj's _AddRouteGenToolToPackage target), and a generated app resolves
+         $(RouteGenAssembly) to it via GeneratePathProperty on the Runtime
+         PackageReference. Two properties keep the packed set lean and OS-neutral:
+           · UseAppHost=false — the tool is always invoked as `dotnet <dll>`
+             (the GenerateBlazorNativeRoutes target's Exec), never through a
+             native launcher, so the per-OS apphost .exe is dead weight in the
+             package (and a win-x64 .exe in a package a linux/macOS build restores
+             is worse than dead weight).
+           · SatelliteResourceLanguages=en — drops Roslyn's 14 localized
+             resources.dll satellite folders from the output; the tool emits only
+             its own English diagnostics, so the localized Roslyn strings never
+             surface, and they would otherwise multiply the packed file count. -->
+    <UseAppHost>false</UseAppHost>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
   </PropertyGroup>
 
   <ItemGroup>

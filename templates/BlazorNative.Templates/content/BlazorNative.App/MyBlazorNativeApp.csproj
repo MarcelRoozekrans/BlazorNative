@@ -57,6 +57,29 @@
     <RuntimeFrameworkVersion>10.0.9</RuntimeFrameworkVersion>
   </PropertyGroup>
 
+  <!-- Phase 11.0 Gate B (M11 DoD #1): the deep-link route codegen, wired for a
+       GENERATED app. BionicNativeAot.targets' GenerateBlazorNativeRoutes target
+       (below) reads this app's routed pages from SOURCE and writes the Android
+       shell's res/raw/blazornative_routes.json — so adding a Routed<T> page is
+       one row in AppPages.cs and the deep-link map follows, with no shell file to
+       hand-edit (the footgun this milestone closes, closed for you too).
+
+       TWO app-owned settings the framework target cannot know:
+         · BlazorNativeRoutesResourcePath — WHERE this app's Android shell keeps
+           its generated resource (the app owns its shell tree; here it is the
+           android/ project this template ships). Unset → the target is a no-op.
+         · RouteGenAssembly — the codegen tool itself. A `dotnet new` app has no
+           repo tools/ dir for the target's default path, so it points instead at
+           the copy packed INTO BlazorNative.Runtime under tools/ (Gate B). The
+           $(PkgBlazorNative_Runtime) property comes from GeneratePathProperty on
+           the BlazorNative.Runtime PackageReference below. Both are set BEFORE the
+           import so the target's `Condition="'$(RouteGenAssembly)' == ''"` default
+           does not override this value. -->
+  <PropertyGroup>
+    <BlazorNativeRoutesResourcePath>$(MSBuildProjectDirectory)\android\src\androidMain\res\raw\blazornative_routes.json</BlazorNativeRoutesResourcePath>
+    <RouteGenAssembly>$(PkgBlazorNative_Runtime)\tools\BlazorNative.RouteGen.dll</RouteGenAssembly>
+  </PropertyGroup>
+
   <!-- The vendored NDK cross-compile shim. WITHOUT THIS THERE IS NO BIONIC
        PUBLISH, hence no .so, hence no APK — it supplies the linker/ar shims and
        the NDK>=26 section fix-ups the bionic RIDs need on a Windows host. It
@@ -123,7 +146,7 @@
          would cover a fourth reference with no roster at all — but at the cost
          of a whole-document DOMParser/XMLSerializer round-trip on every
          release). -->
-    <PackageReference Include="BlazorNative.Runtime" Version="0.2.0" /> <!-- x-release-please-version -->
+    <PackageReference Include="BlazorNative.Runtime" Version="0.2.0" GeneratePathProperty="true" /> <!-- x-release-please-version -->
     <PackageReference Include="BlazorNative.Components" Version="0.2.0" /> <!-- x-release-please-version -->
     <PackageReference Include="BlazorNative.Analyzers" Version="0.2.0" PrivateAssets="all" /> <!-- x-release-please-version -->
   </ItemGroup>

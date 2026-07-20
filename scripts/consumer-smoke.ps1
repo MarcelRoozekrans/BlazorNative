@@ -365,6 +365,32 @@ try {
             exit 1
         }
 
+        # ── Gate B (Phase 11.0): the Runtime package SHIPS the deep-link route
+        #    codegen under tools/ ─────────────────────────────────────────────
+        # A `dotnet new blazornative` app has no repo tools/ dir for the
+        # GenerateBlazorNativeRoutes target's default $(RouteGenAssembly), so
+        # BlazorNative.RouteGen + its Roslyn deps are packed INTO this package and
+        # a generated app resolves $(RouteGenAssembly) to
+        # $(PkgBlazorNative_Runtime)\tools\... (GeneratePathProperty). A consumer
+        # that referenced Runtime but got no tool would fail to derive its
+        # deep-link map — and NOTHING ELSE in this smoke would notice, which is
+        # exactly the shape a POSITIVE control is for: the tool's presence and its
+        # runnable deps, read off the real packed surface.
+        if ($proj -eq "Runtime") {
+            $toolFiles = @(
+                "tools\BlazorNative.RouteGen.dll",
+                "tools\BlazorNative.RouteGen.runtimeconfig.json",
+                "tools\Microsoft.CodeAnalysis.dll",
+                "tools\Microsoft.CodeAnalysis.CSharp.dll"
+            )
+            $missingTool = @($toolFiles | Where-Object { -not (Test-Path (Join-Path $dest $_)) })
+            if ($missingTool.Count -ne 0) {
+                Write-Fail "$id`: the deep-link route codegen is NOT packed under tools/ (missing: $($missingTool -join ', ')). Phase 11.0 Gate B packs BlazorNative.RouteGen + its Roslyn deps into this package so a generated app can run GenerateBlazorNativeRoutes; without them a generated (dotnet new) app cannot derive its deep-link map, and nothing else here would catch it. See BlazorNative.Runtime.csproj's _AddRouteGenToolToPackage target."
+                exit 1
+            }
+            Write-Host "     $id tools/ ✓ — BlazorNative.RouteGen.dll + Roslyn deps (Gate B: a generated app gets the route codegen from the package)" -ForegroundColor DarkGray
+        }
+
         Write-Host "     $id $version — nuspec ✓ (MIT, readme, repository@commit $($repository.GetAttribute('commit').Substring(0,8))…), inventory ✓, $($typeNames.Count) types clean (sentinel $sentinel ✓)" -ForegroundColor DarkGray
     }
     Write-OK "nupkg interrogation clean: purity, nuspec truth, and inventory shape on all seven"
