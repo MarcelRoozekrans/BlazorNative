@@ -251,6 +251,36 @@ function Get-ShippedPackageIds {
     return $ids
 }
 
+<#
+.SYNOPSIS
+    The template pack's PackageId — the EIGHTH publishable, sourced from the one
+    file that owns its identity (Phase 0.4.0 Gate B).
+.DESCRIPTION
+    Get-ShippedPackageIds enumerates src/ ONLY (8.1 normative rule 2), and the
+    template lives OUTSIDE src/ deliberately (a seventh csproj there un-licenses
+    the props — PackagePurityTests). So src/ enumeration structurally CANNOT
+    reach the template id, and the preflight would query the seven and miss the
+    eighth — the one publishable whose taken-version red is what makes
+    --skip-duplicate safe on the template's own push. This is a NAMED query, not
+    a bare literal: the id is read from the pack csproj's <PackageId>, its single
+    home, the same "necessity, not drift" shape the csproj already uses for its
+    own metadata. Non-vacuity: exactly one non-empty <PackageId> or throw.
+#>
+function Get-TemplatePackageId {
+    $csproj = Join-Path $repoRoot "templates\BlazorNative.Templates\BlazorNative.Templates.csproj"
+    if (-not (Test-Path $csproj)) {
+        throw "template csproj not found at $csproj — it is the one home of the template PackageId (Phase 0.4.0 Gate B). The preflight cannot query the template's nuget.org state without it, and querying a hardcoded literal would be the eighth copy of an id that lives in exactly one place."
+    }
+    $csprojXml = [xml](Get-Content $csproj -Raw)
+    $idNodes = @($csprojXml.Project.PropertyGroup | ForEach-Object { $_ } |
+        Where-Object { $_.PSObject.Properties.Name -contains "PackageId" } |
+        ForEach-Object { $_.PackageId })
+    if ($idNodes.Count -ne 1 -or [string]::IsNullOrWhiteSpace($idNodes[0])) {
+        throw "expected exactly ONE non-empty <PackageId> in $csproj, found $($idNodes.Count) — the template id has one home and the preflight reads it from there, not from a literal."
+    }
+    return $idNodes[0]
+}
+
 # ─────────────────────────────────────────────────────────────────────────────
 #  THE CLASSIFIER + THE ASSERTION — one pure function over (tag, props version)
 #
@@ -657,6 +687,13 @@ function Invoke-Preflight {
     # id), not by reasoning. Same family as the smoke's Get-TypeNames wrapping
     # bug: let the pipeline ENUMERATE, and collect with @() where it lands.
     $ids = @(Get-ShippedPackageIds)
+    # THE EIGHTH publishable, sourced from its csproj <PackageId> (Phase 0.4.0
+    # Gate B). src/ enumeration cannot reach it — the template lives outside
+    # src/ by design — so it is a NAMED addition to the queried set, not a
+    # rostered literal. Its taken-version red before the key exists is what makes
+    # --skip-duplicate safe on the template's own push in release-please.yml.
+    $templateId = Get-TemplatePackageId
+    $queriedIds = @($ids) + $templateId
 
     Write-Host ""
     Write-Host "  ──────────────────────────────────────────────────────" -ForegroundColor DarkGray
@@ -665,17 +702,18 @@ function Invoke-Preflight {
     Write-Host ""
     Write-OK "version source: src/Directory.Build.props → $propsVersion"
     Write-OK "shipped set: $($ids.Count) ids ENUMERATED from src/ (never rostered — 8.1 normative rule 2): $($ids -join ', ')"
+    Write-OK "template pack: '$templateId' (the eighth publishable — outside src/, so enumeration cannot reach it; read from its csproj <PackageId>)"
     Write-Host ""
 
     if (-not (Invoke-ControlArms)) {
-        Write-Fail "the nuget.org scanner FAILED its positive control — the six were NOT consulted. A blind scanner reporting 'all clear' is the exact vacuity this control exists to prevent (8.2 decision 4; 8.1's I-3 recurring)."
+        Write-Fail "the nuget.org scanner FAILED its positive control — the shipped set was NOT consulted. A blind scanner reporting 'all clear' is the exact vacuity this control exists to prevent (8.2 decision 4; 8.1's I-3 recurring)."
         return 1
     }
 
     Write-Host ""
-    Write-Step "querying the shipped six at $propsVersion ..."
+    Write-Step "querying the $($queriedIds.Count) publishables (the seven from src/ + the template pack) at $propsVersion ..."
     $taken = @()
-    foreach ($id in $ids) {
+    foreach ($id in $queriedIds) {
         $state = Test-NugetState -Id $id
         if (Test-VersionPublished -State $state -Version $propsVersion) {
             $taken += $id
@@ -721,7 +759,7 @@ function Invoke-Preflight {
     }
 
     Write-Host ""
-    Write-OK "nuget.org preflight CLEAR: $propsVersion is free for all $($ids.Count) ids (and the scanner proved it can see — the arms above)"
+    Write-OK "nuget.org preflight CLEAR: $propsVersion is free for all $($queriedIds.Count) ids (the seven from src/ + the template pack; and the scanner proved it can see — the arms above)"
     return 0
 }
 

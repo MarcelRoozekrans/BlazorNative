@@ -342,6 +342,33 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
+      # ── Pack + PROVE the template, on its OWN feed ───────────────────────
+      # THE SAME SCRIPT the required build-test lane runs on every PR
+      # (ci.yml's "Template smoke" step). It packs
+      # templates/BlazorNative.Templates -> artifacts/templates (its OWN feed,
+      # NEVER artifacts/packages), then proves the pack end to end: install,
+      # `dotnet new blazornative`, publish, and the tripwire trio. Its
+      # precondition is a populated artifacts/packages, which the consumer-smoke
+      # step above just supplied (that feed is still on disk — upload does not
+      # consume it). PACK ONCE, VALIDATE THOSE BYTES, PUSH THOSE BYTES — now the
+      # template rides the same rule the seven do.
+      - name: Pack + validate the template (template-smoke.ps1 — its OWN feed, artifacts/templates)
+        run: |
+          .\scripts\template-smoke.ps1
+          if ($LASTEXITCODE -ne 0) { throw "template-smoke.ps1 failed (exit $LASTEXITCODE) — nothing was published." }
+
+      # The SECOND artifact, its OWN feed. artifacts/templates carries exactly
+      # ONE nupkg (the content-only template pack, no snupkg) and never touches
+      # artifacts/packages, so the 7+6 count consumer-smoke asserts is untouched.
+      # The push job downloads THIS and pushes it in a dedicated step.
+      - name: Upload the template feed (artifacts/templates — pushed on its own; the 7+6 packages feed is untouched)
+        uses: actions/upload-artifact@v7
+        with:
+          name: templates
+          path: artifacts/templates/
+          if-no-files-found: error
+          retention-days: 90
+
   # ───────────────────────────────────────────────────────────────────────────
   # push — the only job that has ever heard of the key.
   # ───────────────────────────────────────────────────────────────────────────
@@ -397,6 +424,14 @@ jobs:
           name: packages
           path: artifacts/packages
 
+      # The template's OWN feed — a SEPARATE artifact, a SEPARATE directory, and
+      # (below) a SEPARATE push. Nothing from here ever enters artifacts/packages.
+      - name: Download the template feed (packed and proven by validate — its own push below)
+        uses: actions/download-artifact@v8
+        with:
+          name: templates
+          path: artifacts/templates
+
       # A NAMED presence check. An absent or mistyped secret otherwise surfaces
       # as a bare 401 from a CLI, at the one moment the owner is least able to
       # debug it. The key is never echoed — only its presence and length.
@@ -440,6 +475,37 @@ jobs:
             --skip-duplicate
           if ($LASTEXITCODE -ne 0) {
             throw "dotnet nuget push failed (exit $LASTEXITCODE). PARTIAL FAILURE IS RECOVERABLE: re-run THIS JOB from the Actions UI — --skip-duplicate makes the packages that already landed no-ops. See docs/GITHUB-SETUP.md."
+          }
+
+      # ── The template push — SAME key, OTHER feed ─────────────────────────
+      # A SECOND `dotnet nuget push`, reusing the job-level $env:NUGET_API_KEY
+      # shell variable the packages push above reads — NOT a second reference to
+      # the secret in its `${{ … }}` expression form (there stays EXACTLY ONE of
+      # those across the repo, pinned by ReleaseWorkflowPinTests, which counts
+      # comments too — so this comment names the secret WITHOUT its expression
+      # form, exactly as the job-level env: block above does). The glob is
+      # artifacts/templates/*.nupkg — a DIFFERENT directory, ONE file — so
+      # artifacts/packages is never touched and its 7+6 count is untouched. The
+      # content-only pack carries no .snupkg, so nothing rides adjacent here.
+      # --skip-duplicate owns recovery: nuget.org is append-only, so a re-run of
+      # a partially-failed push is a no-op on what already landed, and the
+      # preflight (which now covers this id) owns "you forgot to bump".
+      - name: dotnet nuget push the template (artifacts/templates — same job-level key, its own feed; --skip-duplicate)
+        run: |
+          $feed = "artifacts/templates"
+          $nupkgs = @(Get-ChildItem $feed -Filter *.nupkg -File)
+          if ($nupkgs.Count -eq 0) {
+            throw "ZERO .nupkg found in $feed — the template artifact hand-off from validate is broken. Pushing nothing and going green is the failure this check exists to prevent."
+          }
+          Write-Host "pushing the template pack ($($nupkgs.Count)):"
+          $nupkgs | ForEach-Object { Write-Host "  $($_.Name)" }
+
+          dotnet nuget push $nupkgs.FullName `
+            --api-key $env:NUGET_API_KEY `
+            --source https://api.nuget.org/v3/index.json `
+            --skip-duplicate
+          if ($LASTEXITCODE -ne 0) {
+            throw "dotnet nuget push (template) failed (exit $LASTEXITCODE). PARTIAL FAILURE IS RECOVERABLE: re-run THIS JOB from the Actions UI — --skip-duplicate makes a template pack that already landed a no-op. See docs/GITHUB-SETUP.md."
           }
 
       - name: Summarise what was published
