@@ -142,7 +142,11 @@ Tracked in `ROADMAP.md`. Approved at milestone-open:
 - **Phase 11.0** — deep-link route codegen + the consumer-footgun audit (DoD #1) — *the seed
   finding; a concrete single-source-of-truth fix, first because dogfooding will lean on it.*
 - **Phase 11.1** — consumer dogfooding on the published 0.2.0 (DoD #3) — *walk the newcomer
-  path; the friction it finds feeds back into #1's audit and the docs.*
+  path; the friction it finds feeds back into #1's audit and the docs.* Dogfooding surfaced the
+  **sealed composition root** as a real gap, so 11.1 also grows one framework `feat` — a public
+  `BlazorNativeApp.ConfigureServices` app-service DI seam — shipping in **0.4.0** (cross-ref
+  DoD #4 / the Phase 11.3 PublicAPI baseline). See
+  [phase-11.1 design](../plans/2026-07-20-phase-11.1-design.md).
 - **Phase 11.2** — real-device Android validation, all capabilities, recorded (DoD #2) —
   *owner-run over USB; the milestone's honesty check.*
 - **Phase 11.3** — API stability review + the 1.0 criteria + public-API baseline (DoD #4).
