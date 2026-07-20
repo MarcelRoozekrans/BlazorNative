@@ -48,8 +48,13 @@
      ├─ [3] text section  (0, 400, 150,  H)    BnRow W=150, NO height
      │    └─ text leaf    (0,   0, w,    H)    w ≤ 150; H = the NATIVELY MEASURED
      │                                          height of the wrapped label
-     └─ [4] back section  (0, 400+H, 300, Hb)  BnRow W=300, NO height
-          └─ "← Back"     (0,   0, Wb,   Hb)   Hb/Wb = the button's measured size
+     ├─ [4] back section  (0, 400+H, 300, Hb)  BnRow W=300, NO height
+     │    └─ "← Back"     (0,   0, Wb,   Hb)   Hb/Wb = the button's measured size
+     └─ [5] parity section(0,  ⋯ , 300, Hp)    BnRow W=300, NO height — font
+          └─ text leaf    (0,   0, wp,   Hp)   parity (#126): SINGLE-LINE, explicit
+                                               FontSize=20. Hp is the SAME literal on
+                                               both shells (Inter + Gate C line box) —
+                                               the un-skipped `parity row` cell.
 
     The wrap row's boxes are 90dp, not 100. Four 100s in a 300 row would put
     three on line 1 ONLY because Yoga's break test is `consumed + item >
@@ -59,12 +64,15 @@
     that has nothing to do with the engine. 90 × 3 = 270 leaves 30dp of
     slack: the break is unambiguous.
 
-    The last two rows are the DoD #3 proof and are the ONLY frames without
-    fixed numbers — deliberately: a font's metrics are not a constant we get
-    to invent. The shells assert them RELATIONALLY (H > 0; the text row's
-    height EQUALS the leaf's measured height; the back row starts at
-    y = 400 + H). Everything above them is a fixed number on both platforms,
-    which is why the measured leaves sit at the END of the column: a
+    Rows [3] and [4] are the DoD #3 proof and carry no fixed height —
+    deliberately: a MULTI-LINE label at each shell's platform-default size, and
+    a native button, are not constants we get to invent. The shells assert them
+    RELATIONALLY (H > 0; the text row's height EQUALS the leaf's measured
+    height; the back row starts at y = 400 + H). Row [5] is the font-parity
+    proof (#126): a SINGLE-LINE leaf at an EXPLICIT shared FontSize, whose
+    height IS a cross-shell literal (Hp) once CI measures it — the un-skipped
+    `parity row` cell. Everything above these measured rows is a fixed number
+    on both platforms, which is why they all sit at the END of the column: a
     font-dependent height must not shift the frames the parity assertion is
     built on.
 
@@ -123,6 +131,18 @@
        (a button sizes itself). *@
     <BnRow Width="300">
         <BnButton Label="← Back" OnClick="GoBack" />
+    </BnRow>
+
+    @* [5] the font-parity proof (#126). Unlike [3]'s MULTI-LINE label at each
+       shell's platform-default size, this is a SINGLE-LINE leaf at an EXPLICIT
+       shared FontSize (20). With the bundled Inter and Android's normalized line
+       box (includeFontPadding=false, Gate C), one line of Inter at 20 measures to
+       the SAME height on both shells — so its row's measured height is a CROSS-
+       SHELL LITERAL, the frame-table `parity row` cell the drift test now pins by
+       number instead of by MEASURED token. It sits LAST so its font-dependent
+       height shifts nothing above it. Text is short enough never to wrap at 300. *@
+    <BnRow Width="300">
+        <BnText Text="Parity 20pt" FontSize="20" />
     </BnRow>
 </BnColumn>
 

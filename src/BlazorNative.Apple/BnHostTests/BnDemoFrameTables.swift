@@ -86,8 +86,11 @@ struct BnRect: Equatable {
 ///     (`UIButton` vs `android.widget.Button`), whose intrinsic size folds in content insets
 ///     and a min touch target the two frameworks compute differently. Chrome stays native by
 ///     the feature's own boundary; it is not a font-metric cell.
-/// Un-skipping a text cell needs a SINGLE-LINE leaf at an EXPLICIT shared fontSize — a
-/// demo-surface addition, out of this gate's scope.
+/// Un-skipping a text cell needs a SINGLE-LINE leaf at an EXPLICIT shared fontSize. That
+/// surface now exists — `/layout`'s `parity row` (`bnLayoutDemoFrames`, a fontSize-20
+/// single-line leaf). Its height is written MEASURED here only until CI reports it on both
+/// shells; the controller then swaps that one cell to the shared literal H, and this token
+/// stops covering it. The cells above stay MEASURED for the stated reasons.
 let MEASURED: CGFloat = .nan
 
 func bnRect(_ x: CGFloat, _ y: CGFloat, _ w: CGFloat, _ h: CGFloat) -> BnRect {
@@ -159,6 +162,13 @@ func assertFrame(_ table: [String: BnRect], _ key: String, _ view: UIView, _ why
 // anyone gets to invent, and pinning one would be pinning the simulator's font. They are LAST
 // in the column precisely so a font-dependent height cannot shift anything the parity table
 // rests on — and they are asserted by ORACLE instead (assertOracle).
+//
+// The `parity row` (font parity Gate C, #126) is the exception that is NOT a bare MEASURED
+// forever: it is a SINGLE-LINE text leaf at an EXPLICIT shared fontSize (20), so — with the
+// bundled Inter and Android's normalized line box (includeFontPadding = false) — its per-line
+// height is the SAME on both shells. Its height is written MEASURED here only until CI reports
+// it; the controller then replaces that 4th arg with the shared literal H (un-skipping the
+// cell). It sits LAST for the same reason: a measured height must shift nothing above it.
 // ─────────────────────────────────────────────────────────────────────────────
 // BN-FRAME-TABLE BnLayoutDemo
 let bnLayoutDemoFrames: [String: BnRect] = bnFrameTable([
@@ -177,6 +187,10 @@ let bnLayoutDemoFrames: [String: BnRect] = bnFrameTable([
     "wrap 3": bnRect(0, 40, 90, 40),
     "text row": bnRect(0, 400, 150, MEASURED),
     "back row": bnRect(0, MEASURED, 300, MEASURED),
+    // Font parity Gate C (#126): single-line leaf at fontSize 20. HEIGHT IS CI-PENDING —
+    // replace the 4th arg `MEASURED` below with the shared literal H once ios.yml +
+    // android-instrumented.yml report equal heights. Keep it identical to the Kotlin twin.
+    "parity row": bnRect(0, MEASURED, 300, MEASURED),
 ])
 // BN-FRAME-TABLE-END
 

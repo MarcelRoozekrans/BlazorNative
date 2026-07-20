@@ -59,7 +59,7 @@
 //
 // ── AND ONE FRAME THAT IS A *NEGATIVE* ───────────────────────────────────────
 //
-// The root column **hugs its five sections** rather than filling the host. On Android
+// The root column **hugs its six sections** rather than filling the host. On Android
 // that assertion catches a stock `FrameLayout` host root re-laying out every TOP-LEVEL
 // node behind Yoga's back. A plain `UIView` does not re-place its subviews, so iOS
 // ought to get it for free — but "ought to" is not an assertion, and the old shell DID
@@ -89,7 +89,7 @@ final class BnLayoutDemoTests: BnHostTestCase {
         try runtime.start(component: "BnLayoutDemo", os: "ios")
 
         let root = try pollForDemo(in: host)
-        XCTAssertEqual(root.subviews.count, 5, "the demo has five sections")
+        XCTAssertEqual(root.subviews.count, 6, "the demo has six sections")
 
         // THE CANONICAL TABLE — declared in BnDemoFrameTables.swift, and pinned against the
         // Android shell's own declaration by ShellFrameTableDriftTests in the REQUIRED lane.
@@ -99,7 +99,7 @@ final class BnLayoutDemoTests: BnHostTestCase {
         let f = bnLayoutDemoFrames
 
         // The root BnColumn fills the host's width (Yoga's default alignItems:
-        // stretch) and stacks its five sections.
+        // stretch) and stacks its six sections.
         XCTAssertEqual(root.frame.minX, 0, accuracy: 0.5, "the root column starts at the host's origin")
         XCTAssertEqual(root.frame.minY, 0, accuracy: 0.5)
         XCTAssertEqual(root.frame.width, host.bounds.width, accuracy: 0.5,
@@ -175,6 +175,36 @@ final class BnLayoutDemoTests: BnHostTestCase {
         XCTAssertEqual(back.frame.minY, 0, accuracy: 0.5)
         assertOracle("the measured button", back, availableWidth: backRow.frame.width)
 
+        // ── [5] the font-parity proof: a SINGLE-LINE leaf at an EXPLICIT fontSize ──
+        // Unlike the text row above (a MULTI-LINE label at the platform-default size),
+        // this leaf is ONE line at a SHARED size (20), so its measured height is a
+        // cross-shell literal (bundled Inter + the Gate C line box). Its row's height is
+        // MEASURED in the table today (step 1); once CI reports the height on both shells
+        // it becomes that literal — this block already asserts the row against whatever
+        // the table says (assertFrame skips MEASURED, pins a literal), so no test edit is
+        // needed when the swap lands.
+        let parityRow = root.subviews[5]
+        let parityLeaf = try XCTUnwrap(parityRow.subviews[0] as? UILabel,
+                                       "the parity leaf must be a UILabel")
+        assertFrame(f, "parity row", parityRow)
+        XCTAssertEqual(parityRow.frame.minY, backRow.frame.maxY, accuracy: 0.5,
+                       "the parity row starts where the back row ended")
+        XCTAssertGreaterThan(parityLeaf.frame.height, 0, "the parity leaf has a measured height")
+        XCTAssertLessThan(parityLeaf.frame.height, parityLeaf.font.lineHeight * 1.5,
+                          "SINGLE LINE: 'Parity 20pt' does not wrap at 300pt, so the leaf is one "
+                          + "line box (\(parityLeaf.frame.height)pt vs one line "
+                          + "\(parityLeaf.font.lineHeight)pt) — this is what makes its height an "
+                          + "integer-parity-safe literal, unlike the multi-line text row")
+        XCTAssertEqual(parityRow.frame.height, parityLeaf.frame.height, accuracy: 0.5,
+                       "the parity row declares no height and hugs the leaf's single-line height")
+        XCTAssertEqual(parityLeaf.frame.minX, 0, accuracy: 0.5, "the leaf starts at the row's origin")
+        XCTAssertEqual(parityLeaf.frame.minY, 0, accuracy: 0.5)
+        assertOracle("the parity leaf", parityLeaf, availableWidth: parityRow.frame.width)
+        // FONT PARITY HEIGHT PROBE (#126): the controller reads this from the iOS log to
+        // fill the `parity row` table literal. iOS points == the table's dp (1:1).
+        NSLog("[font-parity] single-line leaf height=\(parityLeaf.frame.height)pt fontSize=20 "
+              + "— the cross-shell literal H; replace MEASURED in BnDemoFrameTables 'parity row'")
+
         // ── THE ROOT COLUMN HUGS ITS CONTENT ─────────────────────────────────
         // The root BnColumn declares no height, so Yoga sizes it to the sum of its five
         // sections — and NOTHING ELSE may size it. On Android this catches a stock
@@ -182,8 +212,8 @@ final class BnLayoutDemoTests: BnHostTestCase {
         // surviving NSLayoutConstraint (the pre-6.1 shell pinned the top-level node's
         // top/leading/trailing edges, and a live constraint fighting a frame assignment
         // is a classic UIKit bug).
-        XCTAssertEqual(root.frame.height, backRow.frame.maxY, accuracy: 0.5,
-                       "the root column must HUG its five sections, not fill the host")
+        XCTAssertEqual(root.frame.height, parityRow.frame.maxY, accuracy: 0.5,
+                       "the root column must HUG its six sections, not fill the host")
         XCTAssertNotEqual(root.frame.height, host.bounds.height,
                           "…and that height must not COINCIDE with the host's, or the assertion "
                           + "above proves nothing (host=\(host.bounds.height), content=\(root.frame.height))")
@@ -197,17 +227,17 @@ final class BnLayoutDemoTests: BnHostTestCase {
     // states).
 
     /// Pumps the MAIN runloop (draining the mapper's DispatchQueue.main.async batch)
-    /// until the mount frame has been applied AND laid out: five sections under the
+    /// until the mount frame has been applied AND laid out: six sections under the
     /// root column, and the root actually has a computed height.
     private func pollForDemo(in host: UIView, deadline seconds: TimeInterval = 30) throws -> UIView {
         let end = Date().addingTimeInterval(seconds)
         while Date() < end {
             RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.05))
-            if let root = host.subviews.first, root.subviews.count == 5, root.frame.height > 0 {
+            if let root = host.subviews.first, root.subviews.count == 6, root.frame.height > 0 {
                 return root
             }
         }
-        XCTFail("BnLayoutDemo never rendered a laid-out five-section tree within \(Int(seconds))s")
+        XCTFail("BnLayoutDemo never rendered a laid-out six-section tree within \(Int(seconds))s")
         throw BnRuntimeError.mountFailed(rc: -1, component: "BnLayoutDemo")
     }
 }

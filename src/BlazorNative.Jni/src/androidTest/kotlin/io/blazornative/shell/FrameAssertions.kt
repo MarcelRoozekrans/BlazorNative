@@ -83,8 +83,11 @@ internal data class BnRect(val x: Float, val y: Float, val w: Float, val h: Floa
  *     chrome (`android.widget.Button` vs `UIButton`), whose intrinsic size folds in
  *     content insets and a min touch target the two frameworks compute differently.
  *     Chrome stays native by the feature's own boundary; it is not a font-metric cell.
- * Un-skipping a text cell needs a SINGLE-LINE leaf at an EXPLICIT shared fontSize — a
- * demo-surface addition, out of this gate's scope. */
+ * Un-skipping a text cell needs a SINGLE-LINE leaf at an EXPLICIT shared fontSize. That
+ * surface now exists — `/layout`'s `parity row` ([bnLayoutDemoFrames], a fontSize-20
+ * single-line leaf). Its height is written MEASURED here only until CI reports it on both
+ * shells; the controller then swaps that one cell to the shared literal H, and this token
+ * stops covering it. The cells above stay MEASURED for the stated reasons. */
 internal val MEASURED: Float = Float.NaN
 
 internal fun bnRect(x: Float, y: Float, w: Float, h: Float) = BnRect(x, y, w, h)
