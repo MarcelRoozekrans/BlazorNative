@@ -127,8 +127,10 @@ the project stops being a proof-of-concept and starts being something a stranger
 - **The physical-phone proof** (M9 owner-owed) — ✅ **consumed by DoD #2** (all capabilities, on
   real Android hardware).
 - **The KDoc sweep + map extraction** (M8) — trigger was "before the first Release that
-  publishes the template pack"; the template pack is still not on nuget.org (separate feed), so
-  it stays ledgered — but the DoD #3 dogfooding pass is the natural place to revisit it.
+  publishes the template pack"; the map-extraction half is **done** (Phase 11.0 RouteGen retired the
+  inline map + its excision), and the KDoc-correctness half + **publishing the template pack** +
+  the **`ConfigureServices` DI seam** are the three changes bundled into the **0.4.0** release that
+  11.1 Gate C/D depends on — see [0.4.0-prep design](../plans/2026-07-20-phase-0.4.0-prep-design.md).
 - **From M5:** FCM push (carried, trigger above).
 - **The P3 perf-hardening ledger** (#8/#9/#12/#13) — deferred with revisit-triggers unfired;
   M11 may revisit under DoD #4 if a stability review surfaces one, else it stays ledgered.
