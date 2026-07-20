@@ -1,194 +1,126 @@
-# Milestone 10 — Consolidation & Hardening
+# Milestone 11 — Production Readiness
 
-**Status:** ✅ **complete — 2026-07-19; all 7 DoD PASS**
-([final audit](../plans/2026-07-19-milestone-10-final-audit.md), the frozen bridge re-proven
-unmoved at 80 bytes / 10 exports; .NET re-run live at 780/0/0; no tag — the 8.6 rule).
-Phase 10.0 fixed the two correctness bugs (#121, #123), red-first, no frozen-ABI change
-([conclusion](../plans/2026-07-19-phase-10.0-conclusion.md)); Phase 10.1 governed the two
-version literals (#120, #122)
-([conclusion](../plans/2026-07-19-phase-10.1-conclusion.md)); Phase 10.2 fixed precision +
-the grouped cleanups and swept the docs/README to the published, auto-publish reality (#124,
-#125, #119) ([conclusion](../plans/2026-07-19-phase-10.2-conclusion.md)); Phase 10.3 is the
-final audit (DoD #7) — this milestone's close.
-**Predecessor:** Milestone 9 — complete 2026-07-18
-([final audit](../plans/2026-07-18-milestone-9-final-audit.md), all 6 DoD PASS; the ABI
-grew exactly once in 9.0 and held for three more capabilities; no tag — the 8.6 rule,
-closure is the audit).
-**Source:** the full-repo review at `3866410` (Phase 9.0, 2026-07-17), which filed eight
-concrete findings — issues **#119–#126** — plus M9's own earmark: *"Accessibility, i18n,
-perf/security hardening — Milestone 10,"* and the owner's ask (2026-07-19) to **sweep the
-docs and README** now that the release model and published state have changed.
+**Status:** 🔄 **active — opened 2026-07-20.** No DoD closed yet.
+**Predecessor:** Milestone 10 — Consolidation & Hardening, complete 2026-07-19
+([final audit](../plans/2026-07-19-milestone-10-final-audit.md), all 7 DoD PASS; no tag — 8.6 rule).
+**Source:** owner direction (2026-07-20): *"work towards a production-grade framework,"* dogfood
+the published packages, and *test on an actual Android device.* Seeded by a concrete finding —
+the deep-link route map is the last hand-written single-source-of-truth violation.
 
 ## Goal
 
-**0.1.0 is published** (seven packages on nuget.org, 2026-07-19). The library is now
-*consumed*, not just built — and the 9.0 review found **real defects that ship inside it**:
-an iOS app that reports itself as Android through a public API, a test channel that can
-swallow a failing assertion (a false-green risk), and a version string frozen four
-milestones back that consumers can read. M10 does **not add platform surface**. It makes
-the published 0.1.x **honestly correct**, and makes the **docs and README tell the truth**
-about what the project is now (published, auto-publishing, M9-complete) rather than what it
-was mid-build. It needs **no device, no Apple account, no Firebase** — everything is
-reachable from the setup already in hand.
+M1–M10 built, published (0.2.0 on nuget.org), and hardened the library — it *works*, and its
+docs are honest. M11 takes it from *works* to **production-grade**: an app author can build a
+real app on the published packages **without footguns**, the capabilities an emulator only
+*pretends* to have are **proven on real Android hardware**, and the public API is understood
+well enough to **commit to it** — with concrete criteria for a 1.0. This is the milestone where
+the project stops being a proof-of-concept and starts being something a stranger can depend on.
 
-**This is a deliberately small, unglamorous milestone, and that is the point.** The POC
-proved its thesis across M1–M9; adding features on top of known defects and stale docs is
-worse than paying them down. M10 leaves the published library trustworthy and its front
-door accurate — a legitimate place to wind down.
+## Scoping decisions (owner, 2026-07-20)
 
-## Scoping decisions (owner, 2026-07-19)
-
-1. **No new platform surface.** Real-device iOS / TestFlight stays **out** — the owner has
-   no iPhone and no Apple Developer account; the trigger is unchanged (acquire the
-   account). **FCM push** stays ledgered (needs a Firebase project). **The inspector
-   channel** stays ledgered (fourth deferral).
-2. **Accessibility, i18n, and typography parity (#126) are OUT — reclassified as
-   *investment, not need*.** They are "make it a real product people use" work, worth
-   doing only if this heads toward real adoption; M9 earmarked them for M10, and M10
-   **re-defers** them with that reasoning stated. This milestone is **correctness +
-   accuracy debt only.**
-3. **Docs and README are in scope as a first-class deliverable** (owner ask, 2026-07-19).
-   Today's release-model change (draft-publish → auto-publish, PR #136) and the 0.1.0
-   publish mean the Docusaurus site and `README.md` describe a world that no longer
-   exists. A correctness milestone that fixes the code but leaves the front door lying is
-   only half honest.
-4. **The proof surface is CI + the existing suites.** No new external dependency, no new
-   secret, no device lane. Fixes land behind the five required gates like everything else.
-5. **A red-first proof per real bug.** Each correctness fix (DoD #1, #2) lands a test that
-   FAILS against the current code first — the standing discipline, and doubly so for #123,
-   whose whole nature is that a broken thing looks green.
+1. **All four pillars are in** (owner chose all): deep-link route codegen, real-device Android
+   validation, consumer dogfooding, and API stability + a path to 1.0.
+2. **Real-device Android proves ALL capabilities end-to-end** (owner has the phone): camera,
+   biometrics, geolocation, and notifications, plus an interaction smoke — on the physical
+   device over `adb`/USB, not a CI node. CI stays on the emulator/simulator lanes; the phone is
+   the honesty check, and its results are RECORDED (a device-proof doc), not asserted in CI.
+3. **iOS real-device stays deferred** — still no Apple Developer account. Device proof is
+   **Android-only**; iOS remains simulator-scoped and labeled as such (unchanged since M5).
+4. **Dogfooding consumes the PUBLISHED 0.2.0 packages** from nuget.org (not the in-repo
+   `ProjectReference` sample) — the real "a stranger `dotnet new`s and ships" path.
+5. **1.0 is DEFINED here, not necessarily CUT here.** M11 identifies + marks the stable API
+   surface and writes the concrete 1.0 criteria; whether to actually graduate to 1.0.0 (a
+   `Release-As: 1.0.0` package tag — NOT a milestone tag) is a separate owner go once the
+   criteria are met. The `bump-minor-pre-major` graduation trap is respected.
 
 ## Definition of Done
 
-1. **iOS no longer reports Android** (#121). ✅ **Closed by Phase 10.0** — an explicit
-   `PlatformInfoKind` on the init-input struct (24→32 bytes; frozen bridge untouched), both
-   shells pass their own kind, unset → `DevHost` not `Android`; iOS XCTest + .NET red-first.
-   `PlatformKind` in the shared runtime's
-   `PlatformInfo` / `GetPlatformInfoAsync` must reflect the *actual* shell, not a
-   hardcoded `Android`. The kind comes from the shell (like the `os` string already does)
-   — an init-option or bridge-supplied value — so the iOS `.a` and the Android runtime
-   report their own platform. Proven on both shells (the iOS XCTest asserts `iOS`, not
-   `Android`).
+1. **Deep-link routing derives end-to-end — the hand-written mirror is gone** (the seed
+   finding). `MainActivity.kt`'s `DEEP_LINK_COMPONENTS` map is no longer hand-maintained: a
+   **build-time step generates** the route→component map from the app's registered pages (the
+   same `SampleAppPages.All` the drift test already parses) into a generated Android resource or
+   Kotlin file that `MainActivity` reads at Intent-parse time (still before the .NET runtime
+   loads — the runtime constraint holds; only the *source* changes from hand-written to
+   generated). An app author who adds a routed page gets the deep-link mapping **for free** — no
+   hand-edit, no silent wrong-screen footgun. The drift test flips from *checking* a
+   hand-written map to *verifying the generated one* (or is retired if generation makes it
+   vacuous, with a written rationale). **Plus a footgun audit:** enumerate every other place a
+   consumer must hand-edit a shell file when adding a page/capability, and derive or document
+   each.
 
-2. **The test channel cannot swallow a failure** (#123). ✅ **Closed by Phase 10.0** — the
-   discarded `Frames` `InvokeAsync` task is now observed and its fault routed through
-   `HandleException` / `StrictErrors`; a throw-in-subscriber test FAILED on unfixed `main`
-   and passes after (red-first, the finding being false-green). `NativeRenderer` must observe the
-   `Frames` `InvokeAsync` task so a fault in a frame subscriber routes through
-   `HandleException` / surfaces under `StrictErrors` instead of being dropped. **Red-first
-   is mandatory here:** a test that throws inside a `Frames` subscriber must FAIL before
-   the fix and pass after — the false-green risk is the finding, so the proof must be that
-   green now means green.
+2. **Real-device Android proof — all capabilities, recorded.** The app runs on the owner's
+   physical Android phone; **camera** (real sensor + EXIF, no emulated shutter), **biometrics**
+   (real fingerprint/face + a TEE-backed AndroidKeyStore, not the AVD's software keystore),
+   **geolocation** (real GPS/fused location), and **notifications** (real post + tap-through,
+   cold and warm) are each exercised and **recorded** in a device-proof doc (steps, `adb`
+   invocations, observed results, screenshots/log excerpts). This **discharges the standing
+   physical-phone ledger item** — the two least-emulated (camera, biometrics) get the honest
+   proof the emulator couldn't give.
 
-3. **No stale version reported to consumers** (#120). ✅ **Closed by Phase 10.1** —
-   `Exports.VersionNumber` is now a release-please-governed mirror (`0.1.0` +
-   `x-release-please-version`, added to `extra-files`) with a drift pin == props; red-first
-   proved `1.4.0-phase-5.4 ≠ 0.1.0`. `Exports.VersionNumber` (the
-   ungoverned 8th literal, frozen at `1.4.0-phase-5.4`) is brought **into** the version
-   apparatus — mirrored from the manifest/props like the other literals (drift-pinned) or
-   removed if nothing needs it. A consumer reading the runtime version gets the real one.
+3. **Consumer dogfooding — a stranger can really ship.** A **fresh app outside this repo**
+   consumes the **published 0.2.0** packages (`dotnet new blazornative` → the 7 `dotnet add
+   package` refs, no `ProjectReference`), builds the Android (and iOS-sim) shell, and runs. The
+   getting-started path is walked as a newcomer would; **every friction point found is fixed**
+   (docs, template defaults, error messages, missing steps) or ledgered with a reason. The
+   result: a written, reproducible "zero-to-running app" that does not touch the repo sources.
 
-4. **The one load-bearing version is guarded** (#122). ✅ **Closed by Phase 10.1** — a drift
-   pin parses every `RuntimeFrameworkVersion` occurrence and asserts agreement (canonical
-   derived from the files, not hardcoded); mutation-proven it bites. `RuntimeFrameworkVersion` (`10.0.9`,
-   duplicated in the sample + template with no pin — the version that makes bionic/iOS
-   NativeAOT compile at all) gets a drift pin linking its occurrences, matching the
-   discipline every cosmetic literal already gets.
+4. **API stability + the 1.0 path.** The **public API surface** of the shipped packages is
+   reviewed and its stable core identified; unstable/experimental surface is **marked** (a
+   public-API baseline — e.g. `Microsoft.CodeAnalysis.PublicApiAnalyzers` `PublicAPI.*.txt` — so
+   an accidental breaking change reds a PR, and/or `[Experimental]` on genuinely-unstable bits).
+   **Concrete 1.0 criteria** are written down (what must be true — API frozen, both shells
+   real-device-proven where possible, docs complete, the deferred ledger resolved-or-accepted).
+   The README's "API changes without notice" claim is updated to reflect the marked-stable
+   surface.
 
-5. **Precision + cleanups triaged** (#124, #125). ✅ **Closed by Phase 10.2** — `BnListWindow`
-   computes in `double` (red-first, real drift-exposing inputs); the six #125 items each fixed
-   (handler-id, arena overflow, Kotlin null-patches parity, dead-code delete, actions
-   SHA-pinned) or re-ledgered with a written reason (#125.4: Blazor already elides empty
-   callbacks — proven). `BnListWindow.Compute` either uses exact
-   integer arithmetic or the documented item-count bound is *enforced* (a value past which
-   `float` drifts must not silently mis-window). The grouped low-severity items (#125) are
-   each fixed **or** re-ledgered with a written reason — none left silently open.
-
-6. **The docs and README tell the truth** (owner ask + #119). ✅ **Closed by Phase 10.2** —
-   the site + README swept to the auto-publish reality, the published-0.1.0 install story, the
-   honest CI-coverage split (#119: .NET + JVM gate a PR; Android + iOS advisory), refreshed
-   counts (780/120/209/235), and the 10.1 version-numerology reconciled; Docusaurus builds
-   clean. A full accuracy sweep of the
-   **Docusaurus site** (`website/docs/**`) and **`README.md`**:
-   - **The release model is current** — every mention of the retired *draft-Release +
-     manual-publish click* flow is rewritten to the **auto-publish-on-merge** reality
-     (PR #136): merging a release PR publishes from `release-please.yml`'s own `push` job,
-     no draft, no click. (`GITHUB-SETUP.md` was updated in #136; the site + README are
-     swept for the same.)
-   - **The published state is current** — the docs reflect that **0.1.0 is live on
-     nuget.org** (seven packages), with a correct install/getting-started path a stranger
-     can follow.
-   - **No overclaim survives** (#119) — the README's "all four test counts asserted in CI"
-     line is corrected to say which gates actually gate a PR (`.NET` + the two compile
-     gates) vs. which are dispatch/nightly (Android + iOS instrumented), and every cited
-     count is refreshed to the live baseline (.NET 754 / JVM 119 / Android 209 / iOS 233).
-   - **No stale milestone/version prose** — references to mid-build state (M8/M9 in
-     progress, draft flow, pre-publish) are brought to "M9 complete, published, hardening."
-   - **The version-governance numerology** (Phase 10.1 follow-up): `Directory.Build.props`'s
-     "one author, six mirrors, seven literals across four files" + the "count of eight" line,
-     `PackageVersionPinTests.cs`'s "N is 6" header, and `docs/bridge-extension.md`'s
-     `1.4.0-phase-5.4` narrative — reconciled to the post-10.1 count (5 governed files / 8
-     literals) coherently.
-   - Where practical, a drift guard is added for any doc claim that a test can pin (counts,
-     export names), so the docs can't silently re-drift.
-
-7. **Hygiene + close.** ✅ **Closed by Phase 10.3** — the
-   [final audit](../plans/2026-07-19-milestone-10-final-audit.md) verified all six above
-   against live evidence (.NET 780/0/0 re-run live, the four gate literals ↔ README rows
-   reconciled, the frozen bridge re-proven unmoved at 80 bytes / 10 exports / 5 ops with the
-   init-input struct the only thing that grew, issues #119–#125 CLOSED / #126 correctly
-   OPEN), docs-only, no tag. Every fix CI-asserted (counts + gates with provenance); a decision
-   log per phase; the closed issues closed on GitHub with the fixing commit; a **final
-   audit** verifying all six above against live evidence. **No milestone tag** — closure is
-   the audit (the 8.6 rule). Fixes land as `fix:` commits, so release-please walks the
-   patch version (0.1.0 → 0.1.1 → …) and the changelog writes itself; doc-only changes ride
-   as `docs:`/`chore:` and don't bump.
+5. **Hygiene + close.** Every new surface CI-asserted (the codegen output drift-guarded, the
+   public-API baseline gated); a decision log per phase; the device-proof doc; a **final audit**
+   verifying all five above. **No milestone tag** (8.6 rule — closure is the audit); a 1.0.0
+   *package* release, if the owner cuts it, is a separate release-please tag.
 
 ## Out of scope for this milestone
 
-- **Real-device iOS / TestFlight** — deferred; trigger = the Apple Developer account.
-- **FCM push** — ledgered; trigger = a Firebase project.
-- **The inspector channel** — ledgered (fourth deferral).
-- **Accessibility, internationalization, typography/font parity (#126)** — investment, not
-  need; re-deferred with reasoning (scoping decision 2).
-- **The P5 feature epics** — State (#22), Styling (#21), Navigation package (#23), CLI
-  tool (#24), component-library expansion (#20). Genuine future work, not correctness debt.
+- **Real-device iOS / TestFlight** — still gated on the Apple Developer account (trigger
+  unchanged).
+- **FCM push** — still gated on a Firebase project.
+- **New framework surface** — State (#22), Styling (#21), the Navigation package (#23), the CLI
+  tool (#24), component expansion (#20) are *growth*, not *readiness*; a later milestone.
+- **The inspector channel** (ledgered) — developer tooling, not consumer-facing.
+- **Actually cutting 1.0.0** — M11 defines the criteria and marks the surface; the graduation is
+  a separate owner decision once the criteria are met.
 
-## Inherited from prior milestones (the ledger M10 carries)
+## Inherited from prior milestones (the ledger M11 consumes or carries)
 
-- **From the 9.0 review:** issues #119–#125 — **this milestone's backbone** (DoD #1–#6);
-  #126 (font parity) re-deferred as investment.
-- **From M8:** the KDoc sweep + map extraction — **trigger fired** (0.1.0 published), but
-  the template *pack* is not on nuget.org (separate feed), so it stays ledgered until that
-  feed publishes; `BionicNativeAot.targets` → the Runtime package's `build/`; density
-  assets (trigger: the first bundled-asset story).
+- **The physical-phone proof** (M9 owner-owed) — ✅ **consumed by DoD #2** (all capabilities, on
+  real Android hardware).
+- **The KDoc sweep + map extraction** (M8) — trigger was "before the first Release that
+  publishes the template pack"; the template pack is still not on nuget.org (separate feed), so
+  it stays ledgered — but the DoD #3 dogfooding pass is the natural place to revisit it.
 - **From M5:** FCM push (carried, trigger above).
-- **CI posture:** five required contexts (`build-test`, `android-build`, `ios-build`,
-  `pr-title`, `footer-check`); advisory device lanes unchanged. **Auto-publish is live**
-  (PR #136, 2026-07-19): merging a release PR publishes to nuget.org from
-  `release-please.yml`'s own `push` job — so DoD #7's `fix:` commits walk 0.1.x on merge.
+- **The P3 perf-hardening ledger** (#8/#9/#12/#13) — deferred with revisit-triggers unfired;
+  M11 may revisit under DoD #4 if a stability review surfaces one, else it stays ledgered.
+- **CI posture:** five required contexts unchanged; advisory device lanes unchanged; the owner's
+  phone is never a CI dependency.
 
 ## Initial phase plan
 
 Tracked in `ROADMAP.md`. Approved at milestone-open:
 
-- **Phase 10.0** — the two correctness bugs (DoD #1, #2): iOS-platform-kind and the
-  swallowed-`Frames`-fault. *Test-integrity first — #123 protects every other proof in the
-  repo, so it goes first, red-first.*
-- **Phase 10.1** — version governance (DoD #3, #4): the stale `Exports.VersionNumber` and
-  the unguarded `RuntimeFrameworkVersion`, both into the pin apparatus.
-- **Phase 10.2** — docs + README accuracy sweep (DoD #6) + precision & cleanups (DoD #5):
-  the site and README brought current (release model, published state, counts, no
-  overclaim), plus `BnListWindow` and the grouped #125 items.
-- **Phase 10.3** — hygiene + M10 final audit + close (DoD #7).
+- **Phase 11.0** — deep-link route codegen + the consumer-footgun audit (DoD #1) — *the seed
+  finding; a concrete single-source-of-truth fix, first because dogfooding will lean on it.*
+- **Phase 11.1** — consumer dogfooding on the published 0.2.0 (DoD #3) — *walk the newcomer
+  path; the friction it finds feeds back into #1's audit and the docs.*
+- **Phase 11.2** — real-device Android validation, all capabilities, recorded (DoD #2) —
+  *owner-run over USB; the milestone's honesty check.*
+- **Phase 11.3** — API stability review + the 1.0 criteria + public-API baseline (DoD #4).
+- **Phase 11.4** — hygiene + M11 final audit + close (DoD #5).
 
 ## Why this milestone exists
 
-M1–M9 built and shipped: a rendering engine, an authoring story, an ecosystem, five native
-capabilities, and seven packages on nuget.org. The 9.0 review then found that some of what
-shipped is *wrong* — an iOS app calling itself Android, a test lane that can lie green, a
-version literal four milestones stale — and today's release-model change left the docs and
-README describing a flow that no longer exists. Now that the library is public, those are
-things a consumer can hit and read, not internal notes. M10 pays that debt down, makes the
-front door accurate, and stops — the honest bookend to a POC that has already proven what
-it set out to prove.
+The library is published and hardened, but "published" is not "dependable." A consumer today
+hand-edits a Kotlin map when they add a page (and their deep link breaks silently if they slip);
+the two capabilities that most need a real phone have only ever run on an emulator that fakes
+them; nobody has actually built an app from the *published* packages start to finish; and the
+API is officially "changes without notice." M11 closes each of those — the footgun, the
+emulator honesty gap, the untested consumer path, and the unstable-API disclaimer — so the next
+honest sentence about this project is not "it's a proof of concept" but "you can build on it."
