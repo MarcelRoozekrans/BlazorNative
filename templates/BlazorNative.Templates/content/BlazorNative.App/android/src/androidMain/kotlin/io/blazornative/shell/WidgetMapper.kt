@@ -420,8 +420,14 @@ class WidgetMapper(
      * frame-callback thread's hot path.
      */
     private val interTypeface: Typeface by lazy {
-        ResourcesCompat.getFont(context, R.font.inter_regular) ?: run {
-            Log.w(TAG, "Inter (R.font.inter_regular) did not resolve — falling back to " +
+        // Resolve by resource NAME at runtime, not the compile-time `R.font.inter_regular`:
+        // this file is a byte-identical template mirror, and the generated app's R lives in a
+        // different package (com.example.starterapp), so a compile-time R reference here fails
+        // `dotnet new` template compilation. getIdentifier keys off context.packageName, so it
+        // resolves in both the repo shell and any generated app. Called once (lazy).
+        val fontId = context.resources.getIdentifier("inter_regular", "font", context.packageName)
+        (if (fontId != 0) ResourcesCompat.getFont(context, fontId) else null) ?: run {
+            Log.w(TAG, "Inter (res/font/inter_regular) did not resolve — falling back to " +
                 "Typeface.DEFAULT (Roboto). FONT PARITY IS BROKEN: check res/font/inter_regular.ttf " +
                 "(see BnFontAndroidTest).")
             Typeface.DEFAULT
