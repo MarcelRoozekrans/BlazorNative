@@ -6,6 +6,33 @@
 # it cuts the tag, publishes the GitHub Release, AND pushes the packages to
 # nuget.org. All in ONE workflow run. Merging the release PR is the go.
 #
+# ⚠ THE BOT-MERGE TRIGGER GAP, AND THE `publish_ref` RECOVERY LEVER — READ THIS
+#   IF A MERGED RELEASE PR DID NOT PUBLISH.
+#
+#   "Merging the release PR is the go" has ONE failure mode, and it bit live:
+#   the auto-publish rides on the `push: main` event that the merge produces,
+#   and a merge whose commit was authored by a BOT (a GITHUB_TOKEN-authored
+#   merge commit) can SUPPRESS that workflow trigger — the same anti-recursion
+#   family as the Release-event gap documented below. When that happens the
+#   `release-please` job never runs on the merge, so `release_created` is never
+#   `'true'`, and a catch-up `workflow_dispatch` re-run only OPENS/updates the
+#   next PR — on that dispatch `release_created` is false too. A separate
+#   catch-up can create the tag + GitHub Release directly, but with
+#   `release_created=false` the `validate`/`push` jobs SKIP: the tag exists and
+#   its packages were never pushed. (Proven live: v0.1.1's tag + Release existed
+#   while nuget.org still served only 0.1.0.)
+#
+#   THE LEVER: `workflow_dispatch` takes a `publish_ref` input — a v-prefixed
+#   tag (e.g. v0.1.1). When set, `validate` and `push` are gated on
+#   `release_created == 'true' OR publish_ref != ''`, `validate` CHECKS OUT that
+#   tag (so it packs the tag's bytes, not main's), and the classify/assert step
+#   asserts THAT tag against the props at that ref. It is a durable recovery
+#   path, not a bypass: still ONE key, still the same `validate`→`push` split,
+#   still the same tag↔props assertion and nuget.org preflight before the key
+#   exists in any run. An EMPTY publish_ref changes nothing — the auto-publish
+#   path (`release_created == 'true'`) fires validate + push exactly as before.
+#   Usage: `gh workflow run release-please.yml --ref main -f publish_ref=v0.1.1`.
+#
 # ⚠ WHY THE PUBLISH LIVES HERE AND NOT IN release.yml — READ THIS FIRST, BECAUSE
 #   THE OBVIOUS SPLIT IS THE ONE THAT NEVER FIRES.
 #
@@ -215,10 +242,23 @@ on:
   # enabled). With `push: main` as the only trigger there was NO WAY TO RE-RUN
   # it: the fix could only be proven by merging something else. A workflow whose
   # only trigger is an event you cannot stage is a workflow you cannot debug.
-  # This costs nothing on an ordinary dispatch (release_created is false, so the
-  # publish jobs below skip) and buys the ability to answer "is release-please
-  # healthy?" without merging anything.
+  # An ordinary dispatch with an EMPTY `publish_ref` costs nothing (release_created
+  # is false and publish_ref is empty, so the publish jobs below skip) and buys
+  # the ability to answer "is release-please healthy?" without merging anything.
+  #
+  # ⚠ THE `publish_ref` RECOVERY LEVER — see the header's "THE BOT-MERGE TRIGGER
+  #   GAP" section. A non-empty `publish_ref` (a v-prefixed tag) turns THIS SAME
+  #   dispatch into a manual (re)publish of an EXISTING tag: validate + push run
+  #   against that tag's checkout, gated on `release_created OR publish_ref`. It
+  #   is one key, one push job, still gated — the manual path only ADDS a second
+  #   way to satisfy the gate; it never widens what the push does.
   workflow_dispatch:
+    inputs:
+      publish_ref:
+        description: "a v-prefixed tag (e.g. v0.1.1) to (re)publish; recovery for when a release-PR merge didn't trigger the auto-publish."
+        required: false
+        type: string
+        default: ""
 
 permissions:
   contents: write
@@ -272,7 +312,12 @@ jobs:
   # ───────────────────────────────────────────────────────────────────────────
   validate:
     needs: release-please
-    if: ${{ needs.release-please.outputs.release_created == 'true' }}
+    # release_created OR publish_ref: the auto-publish path (a release-PR merge
+    # set release_created) AND the manual recovery path (a dispatch supplied a
+    # v-tag in publish_ref, for when the bot-merge trigger gap left an existing
+    # tag unpublished). Empty publish_ref on an ordinary dispatch/push does NOT
+    # satisfy this — the auto path is unchanged.
+    if: ${{ needs.release-please.outputs.release_created == 'true' || github.event.inputs.publish_ref != '' }}
     # windows-latest rather than the reference's ubuntu-latest: consumer-smoke.ps1
     # is Windows-shaped (literal backslashes in its paths are filename characters
     # on Linux). THE RELEASE LANE PACKS WITH THE SAME SCRIPT THE REQUIRED
@@ -283,10 +328,13 @@ jobs:
       run:
         shell: pwsh
     steps:
-      # Check out the exact commit the tag names — the one being released.
+      # Check out the exact ref being published — the tag's commit, so the
+      # packed bytes are the TAG's and not main's. On the manual recovery path
+      # that is `publish_ref` (e.g. v0.1.1); on the auto path publish_ref is
+      # empty and this falls back to release-please's own tag_name.
       - uses: actions/checkout@v7
         with:
-          ref: ${{ needs.release-please.outputs.tag_name }}
+          ref: ${{ github.event.inputs.publish_ref || needs.release-please.outputs.tag_name }}
 
       - name: Setup .NET SDK (global.json — 10.0.3xx band)
         uses: actions/setup-dotnet@v6
@@ -306,9 +354,14 @@ jobs:
       # ONE namespace publishes: v<semver> -> assert tag == props, then proceed;
       # everything else REDS. THE PROPS WINS AND THE TAG IS A CLAIM — this never
       # overrides the version (no MSBuild version-property override); it verifies it.
+      # THE TAG THIS STEP ASSERTS: the manual recovery input when set
+      # (publish_ref, e.g. v0.1.1), else release-please's own tag_name. The
+      # tag↔props assertion is unchanged — at the ref checked out above, the
+      # props MUST equal the tag's version (v0.1.1's props are 0.1.1), or this
+      # reds before the key exists in any run.
       - name: Classify the release tag (and assert it against the props version)
         run: |
-          .\scripts\release-preflight.ps1 -Tag "${{ needs.release-please.outputs.tag_name }}"
+          .\scripts\release-preflight.ps1 -Tag "${{ github.event.inputs.publish_ref || needs.release-please.outputs.tag_name }}"
           if ($LASTEXITCODE -ne 0) { throw "the release tag was REJECTED — see the step summary. Nothing was published." }
 
       # ── nuget.org state — the one thing no local step can know ────────────
@@ -347,9 +400,11 @@ jobs:
   # ───────────────────────────────────────────────────────────────────────────
   push:
     needs: [release-please, validate]
-    # Same release_created gate. `validate` already implies it, but naming it
-    # here keeps the guard structural and independent of the needs chain.
-    if: ${{ needs.release-please.outputs.release_created == 'true' }}
+    # Same `release_created OR publish_ref` gate as validate. `validate` already
+    # implies it (and only produces the artifact when it ran), but naming it here
+    # keeps the guard structural and independent of the needs chain — the push
+    # fires on exactly the two conditions the artifact can exist under.
+    if: ${{ needs.release-please.outputs.release_created == 'true' || github.event.inputs.publish_ref != '' }}
     runs-on: windows-latest
     timeout-minutes: 20
     defaults:
@@ -448,7 +503,7 @@ jobs:
           $lines = @(
             "### ✅ Published to nuget.org",
             "",
-            "Release **${{ needs.release-please.outputs.tag_name }}** — $($nupkgs.Count) packages pushed from the feed ``validate`` packed and proved.",
+            "Release **${{ github.event.inputs.publish_ref || needs.release-please.outputs.tag_name }}** — $($nupkgs.Count) packages pushed from the feed ``validate`` packed and proved.",
             ""
           )
           $lines += $nupkgs | ForEach-Object { "- ``$($_.Name)``" }
