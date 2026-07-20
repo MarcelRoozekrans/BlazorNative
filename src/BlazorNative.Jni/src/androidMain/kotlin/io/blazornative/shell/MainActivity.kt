@@ -18,8 +18,8 @@ import kotlin.concurrent.thread
  *
  * On launch: spawns a background thread that runs [BlazorNativeRuntime.start]
  * (init → register frame callback → register shell bridge → mount
- * BnDemo, or the [EXTRA_COMPONENT] Intent-extra override; 4 [BOOT]
- * lines since Phase 3.1) against the
+ * the app's default component, or the [EXTRA_COMPONENT] Intent-extra
+ * override; 4 [BOOT] lines since Phase 3.1) against the
  * NativeAOT libBlazorNative.Runtime.so from the APK's jniLibs. Frames
  * arrive through the C-ABI struct path (NativeFrameAdapter) and render via
  * [WidgetMapper] into widget_root; [BOOT] status lines go to logcat and the
@@ -50,9 +50,9 @@ class MainActivity : FragmentActivity() {
     companion object {
         /**
          * Phase 3.3 Task 9: Intent-extra override for the mounted component
-         * (a mount-registry name, HostSession.cs). Absent → "BnDemo" since
-         * Phase 3.4 Gate 4 — the Bn* library demo (bound input + live echo +
-         * cascading theme toggle) IS the launcher experience; tests that pin
+         * (a mount-registry name, HostSession.cs). Absent → the app's default
+         * launcher component (the last-resort mount name in [onCreate]'s chain,
+         * which the deep-link route table's "/" row overrides); tests that pin
          * another component's shape pass it explicitly ("HelloComponent",
          * "CompositionProbe") via ActivityScenario.launch(Intent). An unknown
          * name fails the boot loudly (mount rc 1 → FAIL in the console pane),

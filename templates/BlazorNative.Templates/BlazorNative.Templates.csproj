@@ -10,9 +10,9 @@
        templates/ rather than src/ (8.3 design decision 1, normative rule 4):
 
          · PackagePurityTests.TheShippedSet_IsExactlyTheSrcCsprojs proves
-           src/ holds exactly the six shipped csprojs — and THAT proof is
+           src/ holds exactly the seven shipped csprojs — and THAT proof is
            what licenses src/Directory.Build.props to be the packaging home
-           at all. A seventh csproj under src/ reds that pin and un-licenses
+           at all. An eighth csproj under src/ reds that pin and un-licenses
            the props.
          · The six's pins are ASSEMBLY-shaped: type purity off the PE, a
            sentinel type per package, snupkg pairing, ResolveAssemblyPath.
@@ -21,14 +21,23 @@
            hole in a pin (the 8.1 four-copies lesson).
 
        THE FEED IS SEPARATE — artifacts/templates, never artifacts/packages.
-       consumer-smoke.ps1 asserts an EXACT `6 nupkg + 5 snupkg`; a seventh
-       nupkg in that feed would turn an exact count into "6 or 7, depending",
+       consumer-smoke.ps1 asserts an EXACT `7 nupkg + 6 snupkg`; an eighth
+       nupkg in that feed would turn an exact count into "7 or 8, depending",
        which is a count that no longer means anything.
 
-       IT DOES NOT PUBLISH THIS PHASE. release.yml's push enumerates
-       artifacts/packages and this pack is not in it, so no release-machinery
-       edit is required and 8.2's verdict is untouched. DoD #4 requires
-       "creation → build validated on CI", not publication.
+       IT PUBLISHES SINCE PHASE 0.4.0 (Gate B) — but from its OWN feed, and
+       that is what keeps the count above untouched. release-please.yml's push
+       job now packs this pack into artifacts/templates (via
+       scripts/template-smoke.ps1 -PackOnly in the validate job — pack + nupkg
+       validation, NO Android SDK / gradle / bionic publish) and pushes
+       artifacts/templates/*.nupkg in a DEDICATED step, reusing the push job's
+       job-level $env:NUGET_API_KEY shell variable — NOT a second reference to
+       the secret in its expression form, so ReleaseWorkflowPinTests still counts
+       exactly one — with the skip-duplicate flag (nuget.org is append-only, so a
+       re-run of a partially-failed push is a no-op). It is NEVER enumerated from
+       artifacts/packages, so the 7+6 count there is untouched. Until 0.4.0 this
+       pack was built and validated on CI but never published (an M8 deferral);
+       DoD #4 only ever required "creation → build validated on CI".
 
        VERSION: NOT declared here. <Version> is inherited from... nothing —
        templates/ has no Directory.Build.props and this project is outside
@@ -65,14 +74,14 @@
     <PackageTags>dotnet-new;templates;blazor;android;nativeaot;mobile</PackageTags>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <!--
-      The SEVENTH publishable package, and the one 8.1's "ONE metadata home" rule
+      The EIGHTH publishable package, and the one 8.1's "ONE metadata home" rule
       does not reach: src/Directory.Build.props is scoped to src/, and 8.3 put this
-      pack OUTSIDE src/ deliberately (a seventh csproj there un-licenses the props —
+      pack OUTSIDE src/ deliberately (an eighth csproj there un-licenses the props —
       the shipped-set pin is what makes that home legal). So these two facts live
-      here by necessity, not by drift — but they must AGREE with the six.
+      here by necessity, not by drift — but they must AGREE with the seven.
       RepositoryUrl = where the source is. PackageProjectUrl = where the docs are.
-      One string once, two facts now (Phase 8.4 Gate 3 split them for the six; this
-      is the seventh, which no ledger had noticed).
+      One string once, two facts now (Phase 8.4 Gate 3 split them for the six library
+      packages; this is the eighth, which no ledger had noticed).
     -->
     <RepositoryUrl>https://github.com/MarcelRoozekrans/BlazorNative</RepositoryUrl>
     <PackageProjectUrl>https://marcelroozekrans.github.io/BlazorNative/</PackageProjectUrl>
