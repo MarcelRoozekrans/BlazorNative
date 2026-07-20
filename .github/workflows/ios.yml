@@ -350,7 +350,7 @@ jobs:
             > ios-out/xcresult.json 2>/dev/null || true
           ls -la ios-out/crash || true
 
-      - name: Assert XCTest baseline (235 passed / 0 failed)
+      - name: Assert XCTest baseline (236 passed / 0 failed)
         if: always()
         run: |
           log=ios-out/xcodebuild-test.log
@@ -1047,9 +1047,14 @@ jobs:
           #       (32 bytes, kind@24) + the ordinal contract (iOS=2, NOT Android=1).
           #   +1  testRealRuntimeAcceptsIosPlatformKind — the real linked runtime boots
           #       with an iOS-kind init (status 0), the on-device round-trip of the fix.
-          if [ "$failed" -ne 0 ] || [ "$passed" -ne 235 ]; then
+          #
+          # 235 -> 236 (font parity #126, +1) — Inter is bundled + registered (UIAppFonts);
+          # BnFontTests asserts UIFont(name:"Inter-Regular") resolves (family Inter, not the
+          # system fallback). The resolved-family assertions in BnRenderTests ride existing
+          # test methods (no further count move).
+          if [ "$failed" -ne 0 ] || [ "$passed" -ne 236 ]; then
             grep -E "Test Case '.*' (passed|failed)" "$log" || true
-            echo "iOS XCTest baseline drift: expected 235 passed / 0 failed, got passed=$passed failed=$failed" >&2
+            echo "iOS XCTest baseline drift: expected 236 passed / 0 failed, got passed=$passed failed=$failed" >&2
             exit 1
           fi
 

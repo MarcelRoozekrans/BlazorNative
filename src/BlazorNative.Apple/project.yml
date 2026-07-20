@@ -75,6 +75,14 @@ targets:
     type: application
     platform: iOS
     sources:
+      # The whole BnHost/ tree. XcodeGen infers each file's build phase from its
+      # type, so the bundled font — BnHost/Fonts/Inter-Regular.ttf (font parity
+      # Gate A, #126) — rides along into Copy Bundle Resources automatically, the
+      # same way every non-source asset here does; it needs no explicit entry (an
+      # explicit one would DOUBLE-ADD it alongside this folder source). The OFL
+      # license (Fonts/OFL.txt) sits beside it. Info.plist's UIAppFonts registers
+      # the ttf at launch; the font iOS resolves by is its PostScript name
+      # `Inter-Regular`, which BnFontTests guards.
       - path: BnHost
     dependencies:
       # Phase 6.3 — see the `packages:` block above. The ONLY target that links it.

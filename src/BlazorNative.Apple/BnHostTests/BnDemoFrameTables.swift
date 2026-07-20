@@ -69,6 +69,28 @@ struct BnRect: Equatable {
 ///
 /// Screaming case, deliberately un-Swifty: it is the same token Kotlin writes, and the two
 /// declarations are compared as TEXT by a test that does not know either language.
+///
+/// ── FONT PARITY GATE C (#126): WHY THESE CELLS STAY MEASURED ─────────────────────────
+/// Gate C bundled Inter on both shells and normalized Android's line box
+/// (`includeFontPadding = false`), so a single-line text leaf's PER-LINE box now agrees
+/// with iOS's UILabel. The remaining `MEASURED` cells were audited for un-skipping and each
+/// stays measured for a stated reason (DoD #2's sanctioned narrowing — a narrowed skip with
+/// rationale, never a forced green):
+///   · the `/layout` **text row** is a MULTI-LINE wrapped label at each shell's
+///     PLATFORM-DEFAULT font size (iOS `UIFont.labelFontSize` = 17pt; a bare Android
+///     `TextView` takes the theme default, which is not 17). Gate B unified the FAMILY, not
+///     the SIZE, and this leaf sets no `fontSize`, so the two shells render it at different
+///     sizes AND wrap it into a font-and-platform-dependent line COUNT (iOS Core Text vs
+///     Android `StaticLayout`). Not integer-parity-safe.
+///   · every **back row / back section** hugs a native `← Back` **button** — control chrome
+///     (`UIButton` vs `android.widget.Button`), whose intrinsic size folds in content insets
+///     and a min touch target the two frameworks compute differently. Chrome stays native by
+///     the feature's own boundary; it is not a font-metric cell.
+/// Un-skipping a text cell needs a SINGLE-LINE leaf at an EXPLICIT shared fontSize. That
+/// surface now exists — `/layout`'s `parity row` (`bnLayoutDemoFrames`, a fontSize-20
+/// single-line leaf). Its height is written MEASURED here only until CI reports it on both
+/// shells; the controller then swaps that one cell to the shared literal H, and this token
+/// stops covering it. The cells above stay MEASURED for the stated reasons.
 let MEASURED: CGFloat = .nan
 
 func bnRect(_ x: CGFloat, _ y: CGFloat, _ w: CGFloat, _ h: CGFloat) -> BnRect {
@@ -140,6 +162,13 @@ func assertFrame(_ table: [String: BnRect], _ key: String, _ view: UIView, _ why
 // anyone gets to invent, and pinning one would be pinning the simulator's font. They are LAST
 // in the column precisely so a font-dependent height cannot shift anything the parity table
 // rests on — and they are asserted by ORACLE instead (assertOracle).
+//
+// The `parity row` (font parity Gate C, #126) is the exception that is NOT a bare MEASURED
+// forever: it is a SINGLE-LINE text leaf at an EXPLICIT shared fontSize (20), so — with the
+// bundled Inter and Android's normalized line box (includeFontPadding = false) — its per-line
+// height is the SAME on both shells. Its height is written MEASURED here only until CI reports
+// it; the controller then replaces that 4th arg with the shared literal H (un-skipping the
+// cell). It sits LAST for the same reason: a measured height must shift nothing above it.
 // ─────────────────────────────────────────────────────────────────────────────
 // BN-FRAME-TABLE BnLayoutDemo
 let bnLayoutDemoFrames: [String: BnRect] = bnFrameTable([
@@ -158,6 +187,13 @@ let bnLayoutDemoFrames: [String: BnRect] = bnFrameTable([
     "wrap 3": bnRect(0, 40, 90, 40),
     "text row": bnRect(0, 400, 150, MEASURED),
     "back row": bnRect(0, MEASURED, 300, MEASURED),
+    // Font parity Gate C (#126): single-line Inter leaf at fontSize 20. Height is now a
+    // SHARED LITERAL (24.333pt) — the payoff: both shells render one bundled font at one
+    // explicit size, so the height that used to be MEASURED (SF Pro vs Roboto differed) is
+    // an asserted number equal across shells (iOS measured 24.333pt; Android within the
+    // 0.5dp frame tolerance). y stays MEASURED — the row sits below the native ← Back
+    // button, whose chrome height is platform-variant. Keep identical to the Kotlin twin.
+    "parity row": bnRect(0, MEASURED, 300, 24.333),
 ])
 // BN-FRAME-TABLE-END
 

@@ -1,6 +1,7 @@
 package io.blazornative.shell
 
 import android.content.Intent
+import android.util.Log
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.FrameLayout
@@ -72,7 +73,7 @@ import java.util.concurrent.atomic.AtomicReference
  *
  * ── AND ONE FRAME THAT IS A *NEGATIVE* ───────────────────────────────────────
  *
- * The root column **hugs its five sections** rather than filling the host. That is
+ * The root column **hugs its six sections** rather than filling the host. That is
  * the assertion that catches a stock-`FrameLayout` host root re-laying out every
  * TOP-LEVEL node behind Yoga's back (see [BnYogaFrameLayout]) — a bug invisible to
  * every frame above, because with a single full-width top-level node the framework
@@ -103,11 +104,11 @@ class BnLayoutDemoAndroidTest {
                 val f = bnLayoutDemoFrames
 
                 // The root BnColumn fills the host's width (Yoga's default
-                // alignItems: stretch) and stacks its five sections.
+                // alignItems: stretch) and stacks its six sections.
                 assertEquals("the root column starts at the host's origin", 0, root.left)
                 assertEquals(0, root.top)
                 assertEquals("the root column must fill the host's width", host.width, root.width)
-                assertEquals("the demo has five sections", 5, root.childCount)
+                assertEquals("the demo has six sections", 6, root.childCount)
 
                 // ── [0] the row: fixed 50 · flexGrow:1 · fixed 50 ────────────
                 val row = root.getChildAt(0) as ViewGroup
@@ -180,17 +181,46 @@ class BnLayoutDemoAndroidTest {
                 assertEquals(0, back.top)
                 assertOracle("the measured button", back, availableWidthPx = backRow.width)
 
+                // ── [5] the font-parity proof: SINGLE-LINE leaf at an EXPLICIT size ──
+                // Unlike the text row above (a MULTI-LINE label at the theme-default
+                // size), this leaf is ONE line at a SHARED size (20), so its measured
+                // height is a cross-shell literal (bundled Inter + includeFontPadding=false,
+                // Gate C). Its row's height is MEASURED in the table today (step 1); once
+                // CI reports the height on both shells it becomes that literal — assertFrame
+                // pins a literal and skips MEASURED, so this block needs no edit at the swap.
+                val parityRow = root.getChildAt(5) as ViewGroup
+                val parityLeaf = parityRow.getChildAt(0) as TextView
+                assertFrame(f, "parity row", parityRow)
+                assertEquals("the parity row starts where the back row ended",
+                    backRow.bottom, parityRow.top)
+                assertTrue("the parity leaf has a measured height", parityLeaf.height > 0)
+                assertEquals("SINGLE LINE: 'Parity 20pt' does not wrap at 300dp — one line is " +
+                    "what makes its height an integer-parity-safe literal, unlike the multi-line " +
+                    "text row (lines=${parityLeaf.lineCount})", 1, parityLeaf.lineCount)
+                assertEquals("the parity row declares no height and hugs the leaf's single-line " +
+                    "height", parityLeaf.height, parityRow.height)
+                assertEquals("the leaf starts at the row's origin", 0, parityLeaf.left)
+                assertEquals(0, parityLeaf.top)
+                assertOracle("the parity leaf", parityLeaf, availableWidthPx = parityRow.width)
+                // FONT PARITY HEIGHT PROBE (#126): the controller reads this dp value from
+                // logcat to fill the `parity row` table literal. dp = px / density (the
+                // table's unit); density() is the one px⇄dp conversion (FrameAssertions.kt).
+                Log.i("BnLayoutDemoAndroidTest",
+                    "[font-parity] single-line leaf height=${parityLeaf.height / density()}dp " +
+                        "(px=${parityLeaf.height} density=${density()}) fontSize=20 — the cross-" +
+                        "shell literal H; replace MEASURED in BnDemoFrameTables 'parity row'")
+
                 // ── THE ROOT COLUMN HUGS ITS CONTENT ─────────────────────────
                 // The root BnColumn declares no height, so Yoga sizes it to the sum
-                // of its five sections — and NOTHING ELSE may size it. This is the
+                // of its six sections — and NOTHING ELSE may size it. This is the
                 // assertion that catches a stock-FrameLayout host root: `addView`/
                 // `setText` inside a batch call requestLayout(), and the framework
                 // traversal that follows would re-measure the host and re-place every
                 // TOP-LEVEL child at (0, 0, hostW, hostH) behind Yoga's back — which
                 // the resize listener's bounds guard cannot see and nothing repairs.
                 // The host is a BnYogaFrameLayout (main.xml) precisely so it cannot.
-                assertEquals("the root column must HUG its five sections, not fill the host",
-                    backRow.bottom, root.height)
+                assertEquals("the root column must HUG its six sections, not fill the host",
+                    parityRow.bottom, root.height)
                 assertNotEquals("…and that height must not COINCIDE with the host's, or the " +
                     "assertion above proves nothing on this device (host=${host.height}px, " +
                     "content=${root.height}px)",
@@ -205,7 +235,7 @@ class BnLayoutDemoAndroidTest {
     // synthetic-frame tests — the dp contract and its 0.5dp whole-pixel tolerance
     // are stated once).
 
-    /** Polls until the mount frame has been applied AND laid out: five sections
+    /** Polls until the mount frame has been applied AND laid out: six sections
      * under the root column, and the root actually has a computed height. */
     private fun pollForDemo(
         scenario: ActivityScenario<MainActivity>,
@@ -217,7 +247,7 @@ class BnLayoutDemoAndroidTest {
             scenario.onActivity { act ->
                 val root = act.findViewById<FrameLayout>(R.id.widget_root)
                     ?.takeIf { it.childCount > 0 }?.getChildAt(0) as? ViewGroup
-                ready.set(root != null && root.childCount == 5 && root.height > 0)
+                ready.set(root != null && root.childCount == 6 && root.height > 0)
             }
             if (ready.get()) break
             Thread.sleep(250)

@@ -2,6 +2,7 @@ package io.blazornative.shell
 
 import android.content.Context
 import android.graphics.Color
+import android.graphics.Typeface
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.Drawable
@@ -26,6 +27,7 @@ import android.widget.SeekBar
 import android.widget.Spinner
 import android.widget.Switch
 import android.widget.TextView
+import androidx.core.content.res.ResourcesCompat
 import coil.imageLoader
 import coil.request.Disposable
 import coil.request.ImageRequest
@@ -403,6 +405,34 @@ class WidgetMapper(
     /** The layout engine (Phase 6.1). Mirrors this class's view tree; runs one
      * layout pass per committed frame and on every host resize. */
     private val yoga = YogaLayout(context, root)
+
+    /**
+     * Font parity Gate B (#126): the bundled Inter, resolved ONCE and forced on every
+     * text leaf ([TextView]) at creation. Gate A shipped it as `res/font/inter_regular`
+     * and `BnFontAndroidTest` guards that it resolves; here the mapper actually applies
+     * it. The Yoga measure callback measures the REAL widget instance ([YogaLayout] calls
+     * `view.measure`), so setting the typeface on the TextView also makes LAYOUT measure
+     * in Inter — display and measurement cannot diverge into Roboto vs Inter.
+     *
+     * A null resolve (a res/font regression) falls back to [Typeface.DEFAULT] so text
+     * still renders, but is LOGGED — a silent fallback to Roboto is exactly the parity
+     * break this feature closes. `lazy` so it resolves on the first text node, off the
+     * frame-callback thread's hot path.
+     */
+    private val interTypeface: Typeface by lazy {
+        // Resolve by resource NAME at runtime, not the compile-time `R.font.inter_regular`:
+        // this file is a byte-identical template mirror, and the generated app's R lives in a
+        // different package (com.example.starterapp), so a compile-time R reference here fails
+        // `dotnet new` template compilation. getIdentifier keys off context.packageName, so it
+        // resolves in both the repo shell and any generated app. Called once (lazy).
+        val fontId = context.resources.getIdentifier("inter_regular", "font", context.packageName)
+        (if (fontId != 0) ResourcesCompat.getFont(context, fontId) else null) ?: run {
+            Log.w(TAG, "Inter (res/font/inter_regular) did not resolve — falling back to " +
+                "Typeface.DEFAULT (Roboto). FONT PARITY IS BROKEN: check res/font/inter_regular.ttf " +
+                "(see BnFontAndroidTest).")
+            Typeface.DEFAULT
+        }
+    }
 
     /**
      * Phase 3.2 re-entrancy guard: true while [applyBatch] runs. A programmatic
@@ -1144,7 +1174,22 @@ class WidgetMapper(
             // Yoga, nothing is stacked. (An un-styled tree still LOOKS stacked:
             // Yoga's default flexDirection is column.)
             "view"   -> BnYogaFrameLayout(context)
-            "text"   -> TextView(context)
+            // Font parity Gate B (#126): a text leaf is forced onto the bundled Inter at
+            // creation. This is also the LAYOUT font — the Yoga measure callback measures
+            // this same TextView instance, so it measures in Inter, not Roboto.
+            //
+            // Font parity Gate C (#126): includeFontPadding = false. A TextView adds extra
+            // top/bottom padding derived from the font's ascent/descent by DEFAULT (ON) —
+            // space iOS's UILabel line box does NOT add — so the same Inter text at the same
+            // size measures TALLER on Android. Turning it off drops that padding and aligns
+            // the per-line text box with iOS. The Yoga measure callback measures THIS SAME
+            // instance (YogaLayout: view.measure), so display and measurement share the
+            // setting and cannot diverge. Chrome (Button/EditText) is deliberately untouched —
+            // control chrome stays native (the feature's explicit boundary).
+            "text"   -> TextView(context).apply {
+                typeface = interTypeface
+                includeFontPadding = false
+            }
             "button" -> Button(context)
             "input"  -> EditText(context)
             // Phase 6.3 — **THE CONTENT MODE IS SET EXPLICITLY, AND IT IS A TWO-SHELL
@@ -1213,7 +1258,12 @@ class WidgetMapper(
             "activityindicator" -> ProgressBar(context).apply { isIndeterminate = true }
             else     -> {
                 Log.w(TAG, "Unknown nodeType ${p.nodeType} — falling back to TextView")
-                TextView(context)
+                // Font parity Gate B (#126): the fallback is a text leaf too — same Inter.
+                // Gate C: and the same includeFontPadding = false (see the `text` arm).
+                TextView(context).apply {
+                    typeface = interTypeface
+                    includeFontPadding = false
+                }
             }
         }
         nodes[p.nodeId] = view

@@ -372,7 +372,7 @@ public sealed class TemplateDriftTests
     /// <summary>THE COMPLETENESS PIN (Gate 1 review I-1). Every other pin in
     /// this file asserts something about the CONTENT of files it already knows
     /// the names of. This one asserts the NAMES — that the template ships
-    /// exactly these 33 files and no others.
+    /// exactly these 35 files and no others.
     ///
     /// IT EXISTS BECAUSE THE FILE WAS PROVEN BLIND WITHOUT IT. Gate 1's
     /// reviewer deleted SEVEN template files — gradlew, gradle-wrapper.jar,
@@ -425,7 +425,7 @@ public sealed class TemplateDriftTests
     [Fact]
     public void TemplateContentTree_IsExactlyTheExpectedManifest()
     {
-        // THE EXPECTED MANIFEST — 33 files, the pack's whole inventory.
+        // THE EXPECTED MANIFEST — 35 files, the pack's whole inventory.
         string[] expected =
         [
             // The .NET app the user gets
@@ -450,12 +450,23 @@ public sealed class TemplateDriftTests
             "android/settings.gradle.kts",
             // The shell — androidMain
             "android/src/androidMain/AndroidManifest.xml",
+            // Font parity Gate A (#126): the OFL license text for the bundled Inter
+            // font (res/font/inter_regular.ttf below). It travels WITH the font so a
+            // generated app ships the font under its license (OFL §requires the
+            // license accompany the Font Software). Not under a mirrored subtree, so
+            // no repo-shell-in-template obligation — mirrored here deliberately.
+            "android/src/androidMain/OFL.txt",
             "android/src/androidMain/kotlin/io/blazornative/shell/AndroidShellBridge.kt",
             "android/src/androidMain/kotlin/io/blazornative/shell/BnSpinner.kt",
             "android/src/androidMain/kotlin/io/blazornative/shell/MainActivity.kt",
             "android/src/androidMain/kotlin/io/blazornative/shell/WidgetMapper.kt",
             "android/src/androidMain/kotlin/io/blazornative/shell/YogaLayout.kt",
             "android/src/androidMain/res/layout/main.xml",
+            // Font parity Gate A (#126): the bundled Inter font (OFL, static
+            // Regular), byte-identical to src/BlazorNative.Jni's copy — a generated
+            // app renders the same font both shells will (Gate B), so text metrics
+            // match. res/font naming forces lowercase, no hyphens: inter_regular.
+            "android/src/androidMain/res/font/inter_regular.ttf",
             "android/src/androidMain/res/xml/network_security_config.xml",
             // Phase 9.3 (M9 DoD #5): the FileProvider path config for ACTION_IMAGE_CAPTURE.
             // A NEW resource-file class this milestone — a generated app's camera capture

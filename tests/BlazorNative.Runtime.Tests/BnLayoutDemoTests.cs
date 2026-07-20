@@ -82,11 +82,12 @@ public sealed class BnLayoutDemoTests
             Assert.Equal("view", root.NodeType);
             AssertStyles(mount, root.NodeId, "root", ("flexDirection", "column"));
 
-            // Five sections, in THIS order (the frame table's [0]..[4]).
+            // Six sections, in THIS order (the frame table's [0]..[5]).
             List<int> sections = ChildrenOf(mount, root.NodeId);
-            Assert.Equal(5, sections.Count);
+            Assert.Equal(6, sections.Count);
             (int rowSection, int colSection, int wrapSection, int textSection, int backSection) =
                 (sections[0], sections[1], sections[2], sections[3], sections[4]);
+            int paritySection = sections[5];
 
             // [0] row 300×100: 50 · Grow=1 · 50 → frames (0,0,50,100) (50,0,200,100) (250,0,50,100)
             AssertStyles(mount, rowSection, "row section",
@@ -150,6 +151,22 @@ public sealed class BnLayoutDemoTests
                 p => p.Text == "← Back");
             Assert.Equal(back, CreateOf(mount, caption.NodeId).ParentId);
 
+            // [5] the font-parity proof (#126): a 300-wide row with a SINGLE-LINE text
+            //     leaf at an EXPLICIT FontSize (20). Unlike [3]'s multi-line label at the
+            //     platform default, one line of the bundled Inter at 20 measures to the
+            //     SAME height on both shells (Gate C line box) — so the shells' `parity
+            //     row` frame-table cell is a cross-shell LITERAL, not a MEASURED skip. The
+            //     fontSize rides the SetStyle wire like every other style (kind 6).
+            AssertStyles(mount, paritySection, "parity section",
+                ("flexDirection", "row"), ("width", "300"));
+            int parityLeaf = Assert.Single(ChildrenOf(mount, paritySection));
+            // A text node carrying EXACTLY one style: the explicit fontSize (unlike the
+            // text row's leaf, which sets none). AssertNode pins the nodeType "text" too.
+            AssertNode(mount, parityLeaf, "parity leaf", "text", ("fontSize", "20"));
+            ReplaceTextPatch parityText = Assert.Single(mount.Patches.OfType<ReplaceTextPatch>(),
+                p => p.Text == "Parity 20pt");
+            Assert.Equal(parityLeaf, CreateOf(mount, parityText.NodeId).ParentId);
+
             // One event on the page: the back click. And NOT ONE prop patch —
             // every style rides the SetStyle wire (kind 6); if a flex name ever
             // falls out of the renderer allow-list it lands here as an
@@ -159,9 +176,10 @@ public sealed class BnLayoutDemoTests
             Assert.Equal("click", attach.EventName);
             Assert.Empty(mount.Patches.OfType<UpdatePropPatch>());
 
-            // The whole tree, counted: 1 root + 5 sections + 3 + 3 + 4 boxes
-            // + text leaf + its text node + button + its label node = 20 creates.
-            Assert.Equal(20, mount.Patches.OfType<CreateNodePatch>().Count());
+            // The whole tree, counted: 1 root + 6 sections + 3 + 3 + 4 boxes
+            // + text leaf + its text node + button + its label node
+            // + parity leaf + its text node = 23 creates.
+            Assert.Equal(23, mount.Patches.OfType<CreateNodePatch>().Count());
         }
         finally
         {

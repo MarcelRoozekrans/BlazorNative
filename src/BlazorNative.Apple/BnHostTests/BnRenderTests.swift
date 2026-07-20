@@ -94,6 +94,15 @@ final class BnRenderTests: BnHostTestCase {
         let title = try XCTUnwrap(form.subviews[0] as? UILabel, "[0] must be the title UILabel")
         XCTAssertEqual(title.text, "BnDemo")
         XCTAssertEqual(title.font.pointSize, 24, accuracy: 0.01, "title fontSize must be 24")
+        // Font parity Gate B (#126) — THE RESOLVED-FAMILY GUARD. Gate A proved Inter is
+        // REGISTERED; this proves the mapper actually FORCED it onto a rendered text leaf
+        // (here via the `fontSize` SetStyle arm — the title carries fontSize 24). A silent
+        // `?? .systemFont` fallback would render green in Gate A but redden HERE, on the
+        // family iOS actually resolved.
+        XCTAssertEqual(title.font.familyName, "Inter",
+                       "the styled title must render in the bundled Inter family, not the system font")
+        XCTAssertEqual(title.font.fontName, "Inter-Regular",
+                       "the styled title's font must be the bundled Inter-Regular PostScript face")
 
         // [1] the bound UITextField with placeholder.
         let input = try XCTUnwrap(form.subviews[1] as? UITextField, "[1] must be the bound UITextField")
@@ -104,6 +113,13 @@ final class BnRenderTests: BnHostTestCase {
         XCTAssertEqual(echo.subviews.count, 1, "echo panel must have exactly the echo label")
         let echoLabel = try XCTUnwrap(echo.subviews[0] as? UILabel, "echo child must be a UILabel")
         XCTAssertEqual(echoLabel.text, "", "the echo must be empty on mount")
+        // Font parity Gate B (#126) — the CREATION-default path (this label carries no
+        // `fontSize` style, so it keeps the font set at `UILabel` creation). Proves the
+        // default text leaf renders in Inter at the preserved system label point size.
+        XCTAssertEqual(echoLabel.font.familyName, "Inter",
+                       "an unstyled text leaf must default to the bundled Inter family")
+        XCTAssertEqual(echoLabel.font.pointSize, UIFont.labelFontSize, accuracy: 0.01,
+                       "the default label point size (17pt) must be preserved — only the family changed")
 
         // backgroundColor #FFEEAA on BOTH themed containers (DoD #6 surface) — VISUAL
         // names still route to the UIView; only LAYOUT names go to Yoga.

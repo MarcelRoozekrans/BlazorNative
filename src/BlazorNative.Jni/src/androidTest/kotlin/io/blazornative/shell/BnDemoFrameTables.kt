@@ -66,6 +66,14 @@ package io.blazornative.shell
 // constant anyone gets to invent, and pinning one would be pinning the AVD's font. They
 // are LAST in the column precisely so a font-dependent height cannot shift anything the
 // parity table rests on — and they are asserted by ORACLE instead (assertOracle).
+//
+// The `parity row` (font parity Gate C, #126) is the exception that is NOT a bare
+// MEASURED forever: it is a SINGLE-LINE text leaf at an EXPLICIT shared fontSize (20),
+// so — with the bundled Inter and Android's normalized line box (includeFontPadding =
+// false) — its per-line height is the SAME integer on both shells. Its height is written
+// MEASURED here only until CI reports it; the controller then replaces that 4th arg with
+// the shared literal H (un-skipping the cell). It sits LAST for the same reason: a
+// measured height must shift nothing above it.
 // ─────────────────────────────────────────────────────────────────────────────
 // BN-FRAME-TABLE BnLayoutDemo
 internal val bnLayoutDemoFrames: Map<String, BnRect> = bnFrameTable(
@@ -84,6 +92,13 @@ internal val bnLayoutDemoFrames: Map<String, BnRect> = bnFrameTable(
     "wrap 3" to bnRect(0f, 40f, 90f, 40f),
     "text row" to bnRect(0f, 400f, 150f, MEASURED),
     "back row" to bnRect(0f, MEASURED, 300f, MEASURED),
+    // Font parity Gate C (#126): single-line Inter leaf at fontSize 20. Height is now a
+    // SHARED LITERAL (24.333dp) — the payoff: both shells render one bundled font at one
+    // explicit size, so the height that used to be MEASURED (SF Pro vs Roboto differed) is
+    // an asserted number equal across shells (iOS measured 24.333pt; Android within the
+    // 0.5dp frame tolerance). y stays MEASURED — the row sits below the native ← Back
+    // button, whose chrome height is platform-variant. Keep identical to the Swift twin.
+    "parity row" to bnRect(0f, MEASURED, 300f, 24.333f),
 )
 // BN-FRAME-TABLE-END
 

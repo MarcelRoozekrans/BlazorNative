@@ -100,7 +100,7 @@ public sealed class ShellFrameTableDriftTests
     private static readonly IReadOnlyDictionary<string, (string Accessor, int Rows)> Expected =
         new Dictionary<string, (string, int)>(StringComparer.Ordinal)
         {
-            ["BnLayoutDemo"] = ("bnLayoutDemoFrames", 15),
+            ["BnLayoutDemo"] = ("bnLayoutDemoFrames", 16),
             ["BnScrollDemo"] = ("bnScrollDemoFrames", 17),
             ["BnScrollDemo/Image"] = ("bnScrollDemoImageFrames", 1),
             ["BnImageDemo/Before"] = ("bnImageDemoBeforeFrames", 10),
