@@ -99,7 +99,24 @@
 
 .EXAMPLE
     .\scripts\template-smoke.ps1
+.EXAMPLE
+    .\scripts\template-smoke.ps1 -PackOnly
 #>
+
+[CmdletBinding()]
+param(
+    # -PackOnly: run step 0 (version parse) + step 1 (pack -> artifacts/templates)
+    # + a cheap nupkg-content validation, then RETURN before steps 2-6
+    # (install/create/restore/publish/assemble). THE RELEASE LANE'S NEED: the
+    # release-please.yml validate job must PRODUCE + PROVE the exact template
+    # nupkg it will push, and nothing more — with NO Android SDK / NDK / gradle /
+    # bionic publish. The full end-to-end proof (steps 2-6, the tripwire trio +
+    # the generated deep-link map + assembleDebug) is the REQUIRED build-test
+    # lane's job on every PR and is UNCHANGED by this switch: the switch-less
+    # invocation runs the whole script exactly as before. One home for HOW the
+    # template packs (step 1), two proportionate depths of proof.
+    [switch]$PackOnly
+)
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
@@ -176,16 +193,25 @@ Write-OK "version source: src/Directory.Build.props → $version"
 # immediately before it and leaves artifacts/packages populated; locally that is
 # the documented order. Asserted rather than assumed — a restore that silently
 # fell through to nuget.org would prove nothing about THIS commit's packages.
-if (-not (Test-Path $packageFeed)) {
-    Write-Fail "artifacts/packages not found — this lane restores the generated app from the LOCAL feed. Run .\scripts\consumer-smoke.ps1 first (it packs the six; in ci.yml it is the step immediately before this one)."
-    exit 1
+#
+# SCOPED TO THE FULL LANE. Only step 4 (restore the GENERATED app) needs
+# artifacts/packages; -PackOnly stops after step 1 and never restores anything,
+# so it needs NO package feed at all and this precondition would be a false
+# barrier. Gating it here is what lets the release validate job run -PackOnly
+# WITHOUT having packed the six first — and lets a maintainer pack the template
+# in isolation.
+if (-not $PackOnly) {
+    if (-not (Test-Path $packageFeed)) {
+        Write-Fail "artifacts/packages not found — this lane restores the generated app from the LOCAL feed. Run .\scripts\consumer-smoke.ps1 first (it packs the six; in ci.yml it is the step immediately before this one)."
+        exit 1
+    }
+    $feedNupkgs = @(Get-ChildItem $packageFeed -Filter "BlazorNative.*.nupkg" -ErrorAction SilentlyContinue)
+    if ($feedNupkgs.Count -eq 0) {
+        Write-Fail "artifacts/packages holds no BlazorNative.*.nupkg — run .\scripts\consumer-smoke.ps1 first"
+        exit 1
+    }
+    Write-OK "local feed present: $($feedNupkgs.Count) BlazorNative.* nupkg in artifacts/packages"
 }
-$feedNupkgs = @(Get-ChildItem $packageFeed -Filter "BlazorNative.*.nupkg" -ErrorAction SilentlyContinue)
-if ($feedNupkgs.Count -eq 0) {
-    Write-Fail "artifacts/packages holds no BlazorNative.*.nupkg — run .\scripts\consumer-smoke.ps1 first"
-    exit 1
-}
-Write-OK "local feed present: $($feedNupkgs.Count) BlazorNative.* nupkg in artifacts/packages"
 
 $genRoot     = Join-Path ([System.IO.Path]::GetTempPath()) "blazornative-template-smoke-$([Guid]::NewGuid().ToString('N').Substring(0, 8))"
 $cache       = Join-Path ([System.IO.Path]::GetTempPath()) "blazornative-template-cache-$([Guid]::NewGuid().ToString('N').Substring(0, 8))"
@@ -216,6 +242,74 @@ try {
         exit 1
     }
     Write-OK "template packed at $version, zero warnings: $([System.IO.Path]::GetFileName($pack))"
+
+    # ── 1.5 PACK-ONLY (the release lane) — validate the nupkg, then RETURN ────
+    # THE RELEASE validate job needs exactly this: the bytes it will push, packed
+    # and proven, with NO Android SDK / NDK / gradle / bionic publish. So this
+    # branch is the release lane's PROPORTIONATE proof and it stops here — the
+    # deeper end-to-end proof (install -> create -> restore -> publish -> the
+    # tripwire trio -> assembleDebug, steps 2-6 below) is the required build-test
+    # lane's job, unchanged. What it checks off the PACKED bytes: exactly ONE
+    # nupkg, NO snupkg (a content-only pack has none — the pairing tooth's mirror
+    # image), and the packed SHAPE (id/version, Template packageType, content/
+    # material, root README) so a pack that silently lost its template-ness or
+    # its content reds HERE rather than on a stranger's `dotnet new`.
+    if ($PackOnly) {
+        $allNupkgs  = @(Get-ChildItem $templateFeed -Filter "*.nupkg")
+        $allSnupkgs = @(Get-ChildItem $templateFeed -Filter "*.snupkg")
+        if ($allNupkgs.Count -ne 1) {
+            Write-Fail "expected exactly ONE .nupkg in artifacts/templates, found $($allNupkgs.Count): $($allNupkgs.Name -join ', ')"
+            exit 1
+        }
+        if ($allSnupkgs.Count -ne 0) {
+            Write-Fail "a content-only template pack must carry NO .snupkg, found $($allSnupkgs.Count): $($allSnupkgs.Name -join ', ')"
+            exit 1
+        }
+
+        # Content shape, read off the PACKED bytes (the release pushes THESE).
+        $inspectDir = Join-Path ([System.IO.Path]::GetTempPath()) "blazornative-template-packonly-$([Guid]::NewGuid().ToString('N').Substring(0, 8))"
+        try {
+            [System.IO.Compression.ZipFile]::ExtractToDirectory($pack, $inspectDir)
+
+            $nuspecPath = Join-Path $inspectDir "$templateId.nuspec"
+            if (-not (Test-Path $nuspecPath)) {
+                Write-Fail "the packed template has no '$templateId.nuspec'"
+                exit 1
+            }
+            $meta = ([xml](Get-Content $nuspecPath -Raw)).package.metadata
+            if ($meta.id -cne $templateId) {
+                Write-Fail "nuspec id is '$($meta.id)' — expected '$templateId'"
+                exit 1
+            }
+            if ($meta.version -ne $version) {
+                Write-Fail "nuspec version is '$($meta.version)' — expected the props version '$version'"
+                exit 1
+            }
+            # THE packageType is what makes `dotnet new install` treat this as a
+            # template rather than a library — its loss is invisible to a count.
+            $pkgTypeName = $meta.packageTypes.packageType.name
+            if ($pkgTypeName -cne "Template") {
+                Write-Fail "the pack's packageType is '$pkgTypeName' — a content-only template pack must declare <packageType name=`"Template`" />; without it `dotnet new install` would not see a template at all"
+                exit 1
+            }
+            $contentFiles = @(Get-ChildItem (Join-Path $inspectDir "content") -Recurse -File -ErrorAction SilentlyContinue)
+            if ($contentFiles.Count -eq 0) {
+                Write-Fail "the pack carries NO content/ files — a template ships its material under content/; a pack with none would `dotnet new` an empty tree"
+                exit 1
+            }
+            if (-not (Test-Path (Join-Path $inspectDir "README.md"))) {
+                Write-Fail "README.md missing from the pack root (the readme entry points at nothing)"
+                exit 1
+            }
+        }
+        finally {
+            if (Test-Path $inspectDir) { Remove-Item -Recurse -Force $inspectDir -ErrorAction SilentlyContinue }
+        }
+
+        Write-Host ""
+        Write-OK "template PACK-ONLY PASS (-PackOnly): exactly one $([System.IO.Path]::GetFileName($pack)) in artifacts/templates, no snupkg, packageType=Template, $($contentFiles.Count) content/ files, root README — the release lane's push bytes are PRODUCED and VALIDATED with NO Android SDK / gradle / bionic publish. The full end-to-end smoke (no switch) runs in build-test."
+        exit 0
+    }
 
     # ── 2. Install the template FROM THE PACK ────────────────────────────────
     # From the nupkg, not from the content directory: the pack is what a user

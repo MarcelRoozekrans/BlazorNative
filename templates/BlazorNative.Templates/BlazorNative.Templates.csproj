@@ -28,7 +28,8 @@
        IT PUBLISHES SINCE PHASE 0.4.0 (Gate B) — but from its OWN feed, and
        that is what keeps the count above untouched. release-please.yml's push
        job now packs this pack into artifacts/templates (via
-       scripts/template-smoke.ps1 in the validate job) and pushes
+       scripts/template-smoke.ps1 -PackOnly in the validate job — pack + nupkg
+       validation, NO Android SDK / gradle / bionic publish) and pushes
        artifacts/templates/*.nupkg in a DEDICATED step, reusing the push job's
        job-level $env:NUGET_API_KEY shell variable — NOT a second reference to
        the secret in its expression form, so ReleaseWorkflowPinTests still counts
