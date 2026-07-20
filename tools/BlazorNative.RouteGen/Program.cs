@@ -1,32 +1,40 @@
 using BlazorNative.RouteGen;
 
-// BlazorNative.RouteGen <app-assembly-path> <output-json-path>
+// BlazorNative.RouteGen <sources-list-file> <output-json-path>
 //
-// Loads the built app assembly, reads the framework's routed-page registry, and
-// writes the shells' deep-link map to <output-json-path>. Invoked by the
-// GenerateBlazorNativeRoutes target in build/BionicNativeAot.targets. Exit 0 on
-// success; non-zero with a diagnostic on any failure (the build must fail loudly
-// rather than ship a stale or empty map).
+// Phase 11.0 Gate A: PIVOTED from loading the built app assembly to Roslyn SOURCE
+// analysis (arch/RID-independent — see RouteManifest.cs). <sources-list-file> is a
+// newline-delimited list of the app's C# source paths (the build target writes
+// @(Compile) to it); RouteGen parses them for BlazorNativePage.Routed<T> calls and
+// writes the shells' deep-link map to <output-json-path>. Exit 0 on success;
+// non-zero with a diagnostic on any failure (the build must fail loudly rather
+// than ship a stale or empty map).
 
 if (args.Length != 2)
 {
     Console.Error.WriteLine(
-        "usage: BlazorNative.RouteGen <app-assembly-path> <output-json-path>");
+        "usage: BlazorNative.RouteGen <sources-list-file> <output-json-path>");
     return 2;
 }
 
-string appAssemblyPath = args[0];
+string sourcesListPath = args[0];
 string outputPath = args[1];
 
-if (!File.Exists(appAssemblyPath))
+if (!File.Exists(sourcesListPath))
 {
-    Console.Error.WriteLine($"BlazorNative.RouteGen: app assembly not found: {appAssemblyPath}");
+    Console.Error.WriteLine(
+        $"BlazorNative.RouteGen: sources-list file not found: {sourcesListPath}");
     return 3;
 }
 
 try
 {
-    IReadOnlyList<RoutedPage> routed = RouteManifest.Extract(appAssemblyPath);
+    string[] sourceFiles = File.ReadAllLines(sourcesListPath)
+        .Select(l => l.Trim())
+        .Where(l => l.Length > 0)
+        .ToArray();
+
+    IReadOnlyList<RoutedPage> routed = RouteManifest.Extract(sourceFiles);
     string json = RouteManifest.ToJson(routed);
 
     string? dir = Path.GetDirectoryName(Path.GetFullPath(outputPath));

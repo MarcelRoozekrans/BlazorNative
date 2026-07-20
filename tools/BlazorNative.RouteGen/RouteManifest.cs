@@ -1,118 +1,181 @@
-using System.Reflection;
-using System.Runtime.CompilerServices;
-using System.Runtime.Loader;
 using System.Text;
 using System.Text.Json;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace BlazorNative.RouteGen;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// RouteManifest — Phase 11.0 (M11 DoD #1). The extraction + serialization behind
-// the deep-link route codegen. Reads the app's ACTUAL registered routed pages by
-// loading its assembly and consulting the FRAMEWORK registry — general by
-// construction (it never names SampleAppPages).
+// RouteManifest — Phase 11.0 (M11 DoD #1), PIVOTED at Gate A to Roslyn SOURCE
+// analysis. The extraction + serialization behind the deep-link route codegen.
 //
-// SINGLE-INSTANCE HAZARD (the reason for the isolated ALC): the app's
-// [ModuleInitializer] calls BlazorNativeApp.RegisterPages, which writes the
-// process-wide PageManifest store and throws on a second call. The drift test
-// already has SampleApp registered in its own default context, and a build node
-// is reused across builds — so Extract loads the app into a PRIVATE, collectible
-// AssemblyLoadContext (AppLoadContext) and reads THAT context's PageManifest via
-// reflection. Its statics are isolated from any other registration, and the
-// context unloads when Extract returns.
+// WHY SOURCE, NOT THE ASSEMBLY (the Gate-A fix). The first cut LOADED the built
+// app assembly, ran its [ModuleInitializer], and reflected the framework's
+// PageManifest. That could not survive CI: the app is published per-RID, and a
+// linux-bionic-arm64 managed dll cannot be loaded into the x64 build host —
+// "The assembly architecture is not compatible with the current process
+// architecture". Real Android devices are arm64, so this MUST work for arm64.
+// The design's named fallback (docs/plans/2026-07-20-phase-11.0-design.md,
+// "Considered + rejected" / "Risks") is source analysis: parse the app's own
+// SOURCE for the `BlazorNativePage.Routed<T>(route, name)` registrations. It
+// loads NOTHING — no assembly, no RID, no arch — so it produces byte-identical
+// output for win-x64, linux-bionic-x64 AND linux-bionic-arm64. That
+// arch-independence is the whole point of the pivot.
 //
-// WHY Load() IS OVERRIDDEN, not just Resolving. A custom ALC that only handles the
-// Resolving EVENT does NOT isolate: the event fires only AFTER the runtime's
-// default-context fallback, so any assembly the DEFAULT context already has (the
-// test host references BlazorNative.Runtime + Microsoft.AspNetCore.Components) is
-// UNIFIED into this context — and the app's module initializer then re-registers
-// into the DEFAULT PageManifest, which throws "registered twice". Overriding
-// Load() runs BEFORE the default fallback, so the app + its package assemblies are
-// force-loaded into THIS context (a private BlazorNative.Runtime with fresh
-// statics). Only true framework assemblies (System.*, the shared framework) fall
-// through to Load()==null → the default context, where sharing them is correct.
+// GENERAL BY CONSTRUCTION: it matches the framework's `Routed<T>` registration
+// SHAPE, not a convention-named array — it works for any consumer app, not just
+// SampleAppPages.
 //
-// DEPENDENCY RESOLUTION (no FrameworkReference): the consumer app is a Library
-// (OutputType=Library) with no runtimeconfig.json, so AssemblyDependencyResolver
-// cannot locate the NuGet root. We resolve deps ourselves, in order:
-//   1) the app's own bin dir (BlazorNative.* project outputs, and — in a
-//      copy-local host like the test output — every package asset too),
-//   2) the app's .deps.json → the NuGet global-packages folder (package assets a
-//      Library build leaves in the cache rather than copying to bin).
-// Proven in the Gate A spike against both shapes.
+// LITERALS ONLY (the documented constraint — the design ledger). Both string
+// arguments of a `Routed<T>(...)` call must be compile-time string literals so
+// the codegen can read them from source without binding a semantic model. There
+// is ONE framework-owned exception: `BlazorNativeApp.DefaultRoute` (the const
+// "/") is resolved to "/", because the framework's own convention writes the
+// default row as `Routed<T>(BlazorNativeApp.DefaultRoute, "…")` (SampleAppPages
+// AND the template's AppPages both do). Any OTHER non-literal route/name — a
+// variable, a user const, an interpolated or computed string — is something the
+// generator cannot see through, so it ERRORS with the file+line rather than
+// silently dropping the row. The drift test guards the "/" resolution:
+// SampleAppPages.All reads the real BlazorNativeApp.DefaultRoute at runtime, so
+// if that constant ever stopped being "/", the pair-for-pair pin would redden.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// <summary>One routed page: the deep-link route and the mount-registry
 /// component name it resolves to.</summary>
 public readonly record struct RoutedPage(string Route, string Name);
 
+/// <summary>Raised when a <c>Routed&lt;T&gt;(...)</c> call has a route or name
+/// argument the source-analysis codegen cannot read (a non-literal that is not
+/// the framework's <c>DefaultRoute</c> constant). Carries the file+line so the
+/// build can point the author at the exact call to fix.</summary>
+public sealed class NonLiteralRouteArgumentException(string message) : Exception(message);
+
 public static class RouteManifest
 {
-    /// <summary>Loads the built app assembly at <paramref name="appAssemblyPath"/>
-    /// into an isolated, collectible context, triggers its module initializer
-    /// (RegisterPages), and returns the framework registry's routed rows — every
-    /// page with a non-null Route, in manifest order (the "/" default row
-    /// included). Throws if the app registered no routed rows, or if the
-    /// framework registry could not be read (a shape the generator must never
-    /// emit silently).</summary>
-    public static IReadOnlyList<RoutedPage> Extract(string appAssemblyPath)
+    // The framework's default-route constant (BlazorNativeApp.DefaultRoute = "/").
+    // The one non-literal the codegen resolves — see the file header.
+    private const string DefaultRouteConstName = "DefaultRoute";
+    private const string DefaultRouteValue = "/";
+
+    /// <summary>Parses the app's SOURCE files, finds every
+    /// <c>BlazorNativePage.Routed&lt;T&gt;(route, name)</c> registration, and
+    /// returns the routed rows in declaration order (the "/" default row
+    /// included). Loads no assembly — arch/RID-independent. Files are visited in
+    /// ordinal path order, and each file's calls in source-position order, so a
+    /// single manifest file (the framework convention) yields exactly the array's
+    /// order. Skips <c>Named&lt;T&gt;(...)</c> (unrouted). Throws
+    /// <see cref="NonLiteralRouteArgumentException"/> on a non-literal argument,
+    /// and <see cref="InvalidOperationException"/> if no routed row is found.</summary>
+    public static IReadOnlyList<RoutedPage> Extract(IEnumerable<string> sourceFiles)
     {
-        appAssemblyPath = Path.GetFullPath(appAssemblyPath);
-        var alc = new AppLoadContext(appAssemblyPath);
+        var routed = new List<RoutedPage>();
 
-        try
+        foreach (string file in sourceFiles.OrderBy(f => f, StringComparer.Ordinal))
         {
-            Assembly app = alc.LoadFromAssemblyPath(appAssemblyPath);
+            if (!File.Exists(file)) continue;
 
-            // Force the app's [ModuleInitializer] (RegisterPages). CoreCLR runs
-            // module initializers lazily; a build-time host must trigger it.
-            foreach (Module m in app.GetModules())
-                RuntimeHelpers.RunModuleConstructor(m.ModuleHandle);
+            SyntaxTree tree = CSharpSyntaxTree.ParseText(File.ReadAllText(file), path: file);
+            SyntaxNode root = tree.GetRoot();
 
-            Assembly runtime = alc.Assemblies.FirstOrDefault(a =>
-                a.GetName().Name == "BlazorNative.Runtime")
-                ?? throw new InvalidOperationException(
-                    "BlazorNative.Runtime was not loaded by the app assembly — the app at "
-                    + $"'{appAssemblyPath}' does not reference the BlazorNative framework, so it has "
-                    + "no route registry to read.");
-
-            Type pageManifest = runtime.GetType("BlazorNative.Runtime.PageManifest")
-                ?? throw new InvalidOperationException(
-                    "BlazorNative.Runtime.PageManifest not found — the framework's route registry "
-                    + "type moved or was renamed; re-point RouteManifest.Extract deliberately.");
-            var pages = (Array?)pageManifest
-                .GetProperty("Pages", BindingFlags.NonPublic | BindingFlags.Static)?
-                .GetValue(null)
-                ?? throw new InvalidOperationException(
-                    "PageManifest.Pages could not be read — the registry accessor changed shape.");
-
-            var routed = new List<RoutedPage>();
-            foreach (object? page in pages)
+            foreach (InvocationExpressionSyntax call in
+                     root.DescendantNodes().OfType<InvocationExpressionSyntax>())
             {
-                if (page is null) continue;
-                Type t = page.GetType();
-                var route = (string?)t.GetProperty("Route")!.GetValue(page);
-                var name = (string)t.GetProperty("Name")!.GetValue(page)!;
-                if (route is not null)
-                    routed.Add(new RoutedPage(route, name));
+                if (!IsRoutedCall(call)) continue;
+
+                SeparatedSyntaxList<ArgumentSyntax> args = call.ArgumentList.Arguments;
+                string route = ResolveStringArgument(args[0], file, "route");
+                string name = ResolveStringArgument(args[1], file, "name");
+                routed.Add(new RoutedPage(route, name));
             }
-
-            if (routed.Count == 0)
-                throw new InvalidOperationException(
-                    $"the app at '{appAssemblyPath}' registered no ROUTED pages — there is no "
-                    + "deep-link map to generate. A routed app declares at least the \"/\" row.");
-
-            return routed;
         }
-        finally
+
+        if (routed.Count == 0)
+            throw new InvalidOperationException(
+                "the app's source declared no ROUTED pages — there is no deep-link map to "
+                + "generate. A routed app declares at least the \"/\" row "
+                + "(BlazorNativePage.Routed<T>(BlazorNativeApp.DefaultRoute, \"…\")). "
+                + "Confirm the source list passed to RouteGen includes the app's page manifest.");
+
+        return routed;
+    }
+
+    /// <summary>True for a <c>BlazorNativePage.Routed&lt;T&gt;(a, b)</c> call —
+    /// the method name is <c>Routed</c>, with exactly one generic type argument
+    /// and exactly two arguments, invoked on <c>BlazorNativePage</c> (or bare,
+    /// via <c>using static</c>). Deliberately excludes <c>Named&lt;T&gt;(...)</c>
+    /// (one arg, unrouted) and any unrelated <c>Routed</c>.</summary>
+    private static bool IsRoutedCall(InvocationExpressionSyntax call)
+    {
+        GenericNameSyntax? generic;
+        bool receiverOk;
+
+        switch (call.Expression)
         {
-            alc.Unload();
+            // BlazorNativePage.Routed<T>(…) — the normal form.
+            case MemberAccessExpressionSyntax { Name: GenericNameSyntax g } mae:
+                generic = g;
+                receiverOk = ReceiverIsBlazorNativePage(mae.Expression);
+                break;
+            // Routed<T>(…) — a `using static …BlazorNativePage;` form.
+            case GenericNameSyntax g:
+                generic = g;
+                receiverOk = true;
+                break;
+            default:
+                return false;
         }
+
+        return receiverOk
+            && generic.Identifier.Text == "Routed"
+            && generic.TypeArgumentList.Arguments.Count == 1
+            && call.ArgumentList.Arguments.Count == 2;
+    }
+
+    /// <summary>The receiver of a member-access <c>Routed</c> call must name
+    /// <c>BlazorNativePage</c> — accepts the bare identifier and any qualified
+    /// form (<c>BlazorNative.Runtime.BlazorNativePage</c>).</summary>
+    private static bool ReceiverIsBlazorNativePage(ExpressionSyntax receiver) => receiver switch
+    {
+        IdentifierNameSyntax id => id.Identifier.Text == "BlazorNativePage",
+        MemberAccessExpressionSyntax m => m.Name.Identifier.Text == "BlazorNativePage",
+        _ => false,
+    };
+
+    /// <summary>Reads a compile-time string from a <c>Routed</c> argument: a
+    /// string literal, or the framework's <c>DefaultRoute</c> constant ("/").
+    /// Anything else is a non-literal the codegen cannot see through — it throws
+    /// <see cref="NonLiteralRouteArgumentException"/> naming the file+line so the
+    /// build fails loudly instead of dropping the row.</summary>
+    private static string ResolveStringArgument(ArgumentSyntax arg, string file, string kind)
+    {
+        ExpressionSyntax expr = arg.Expression;
+
+        // 1) a plain string literal — the common case for every route and name.
+        if (expr is LiteralExpressionSyntax lit && lit.IsKind(SyntaxKind.StringLiteralExpression))
+            return lit.Token.ValueText;
+
+        // 2) the framework's DefaultRoute constant (BlazorNativeApp.DefaultRoute
+        //    or a bare DefaultRoute via `using static`) — resolves to "/".
+        if (expr is MemberAccessExpressionSyntax { Name.Identifier.Text: DefaultRouteConstName }
+            || expr is IdentifierNameSyntax { Identifier.Text: DefaultRouteConstName })
+            return DefaultRouteValue;
+
+        // 3) anything else — a variable, a user const, an interpolated/computed
+        //    string. The source-analysis codegen cannot read it. Fail LOUD.
+        FileLinePositionSpan span = arg.GetLocation().GetLineSpan();
+        throw new NonLiteralRouteArgumentException(
+            $"{file}({span.StartLinePosition.Line + 1},{span.StartLinePosition.Character + 1}): "
+            + $"the {kind} argument of a BlazorNativePage.Routed<T>(...) call is not a string "
+            + $"literal (found '{expr}'). The deep-link route codegen reads the app's SOURCE, so "
+            + "route/name arguments must be string literals — the only accepted non-literal is the "
+            + "framework's BlazorNativeApp.DefaultRoute (\"/\") for the default row. Replace the "
+            + $"{kind} with a literal, or move the value to a literal at the registration site.");
     }
 
     /// <summary>Serializes the routed rows to the flat JSON the shells read at
     /// Intent-parse time: <c>{ "/route": "ComponentName", ... }</c>, the "/"
-    /// default row included. Stable, 2-space indented, keys in manifest order.</summary>
+    /// default row included. Stable, 2-space indented, keys in declaration order.</summary>
     public static string ToJson(IReadOnlyList<RoutedPage> routed)
     {
         var sb = new StringBuilder();
@@ -128,80 +191,4 @@ public static class RouteManifest
     }
 
     private static string JsonEncode(string s) => JsonSerializer.Serialize(s);
-}
-
-/// <summary>The isolated, collectible context the app is loaded into. Overrides
-/// Load() (not merely Resolving) so the app + its package assemblies are pulled
-/// into THIS context BEFORE the runtime's default-context fallback can unify them
-/// with the host's already-loaded copies — the isolation the double-registration
-/// hazard demands (see the RouteManifest header). Framework assemblies (Load
-/// returns null for anything not in bin/deps) fall through to the default context,
-/// where sharing them is correct.</summary>
-internal sealed class AppLoadContext : AssemblyLoadContext
-{
-    private readonly string _binDir;
-    private readonly Dictionary<string, string> _depMap;
-
-    public AppLoadContext(string appAssemblyPath)
-        : base("blazornative-routegen", isCollectible: true)
-    {
-        _binDir = Path.GetDirectoryName(appAssemblyPath)!;
-        _depMap = BuildDepMap(appAssemblyPath);
-    }
-
-    protected override Assembly? Load(AssemblyName name)
-    {
-        string local = Path.Combine(_binDir, name.Name + ".dll");
-        if (File.Exists(local)) return LoadFromAssemblyPath(local);
-        if (_depMap.TryGetValue(name.Name + ".dll", out string? p) && File.Exists(p))
-            return LoadFromAssemblyPath(p);
-        return null; // System.* / shared framework → the default context
-    }
-
-    /// <summary>filename → absolute path, from the app's .deps.json runtime assets
-    /// mapped onto the NuGet global-packages folder. Empty when there is no
-    /// .deps.json beside the assembly (a copy-local host resolves from bin
-    /// instead).</summary>
-    private static Dictionary<string, string> BuildDepMap(string appAssemblyPath)
-    {
-        var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        string depsPath = Path.ChangeExtension(appAssemblyPath, ".deps.json");
-        if (!File.Exists(depsPath)) return map;
-
-        string nuget = Environment.GetEnvironmentVariable("NUGET_PACKAGES")
-            ?? Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-                ".nuget", "packages");
-
-        using JsonDocument doc = JsonDocument.Parse(File.ReadAllText(depsPath));
-        if (!doc.RootElement.TryGetProperty("targets", out JsonElement targets)) return map;
-        doc.RootElement.TryGetProperty("libraries", out JsonElement libraries);
-
-        foreach (JsonProperty target in targets.EnumerateObject())
-        {
-            foreach (JsonProperty lib in target.Value.EnumerateObject()) // "id/version"
-            {
-                if (!lib.Value.TryGetProperty("runtime", out JsonElement runtimeAssets)) continue;
-
-                string idVer = lib.Name;
-                string type = libraries.ValueKind == JsonValueKind.Object
-                    && libraries.TryGetProperty(idVer, out JsonElement le)
-                    && le.TryGetProperty("type", out JsonElement te)
-                        ? te.GetString() ?? "package" : "package";
-                if (type != "package") continue; // project outputs live in the bin dir
-
-                int slash = idVer.IndexOf('/');
-                if (slash < 0) continue;
-                string id = idVer[..slash], ver = idVer[(slash + 1)..];
-                string pkgRoot = Path.Combine(nuget, id.ToLowerInvariant(), ver);
-
-                foreach (JsonProperty asset in runtimeAssets.EnumerateObject())
-                {
-                    string rel = asset.Name.Replace('/', Path.DirectorySeparatorChar);
-                    map[Path.GetFileName(rel)] = Path.Combine(pkgRoot, rel);
-                }
-            }
-        }
-        return map;
-    }
 }

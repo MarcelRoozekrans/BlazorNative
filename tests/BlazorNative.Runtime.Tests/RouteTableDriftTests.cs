@@ -15,23 +15,29 @@ namespace BlazorNative.Runtime.Tests;
 // consumer FOOTGUN: an app author who added a routed page and forgot to hand-edit
 // the map got a deep link that silently opened the wrong screen. 11.0 replaced the
 // hand-written map with a BUILD-TIME-GENERATED Android resource
-// (res/raw/blazornative_routes.json): BlazorNative.RouteGen loads the built app
-// assembly, triggers RegisterPages, reads the framework registry's routed rows and
-// emits them; MainActivity parses THAT at Intent-parse time. There is no longer any
+// (res/raw/blazornative_routes.json): BlazorNative.RouteGen parses the app's SOURCE
+// for BlazorNativePage.Routed<T>(route, name) registrations and emits them;
+// MainActivity parses THAT at Intent-parse time. There is no longer any
 // hand-written Kotlin map to drift, so the pair-for-pair Kotlin-text pin is RETIRED
 // — drift is now impossible by construction (one generator, one resource, both
 // shells read it). Its replacement guards the GENERATOR instead:
 //
 //   · GeneratedRoutesJson_ReproducesTheManifestsRoutedRows_PairForPair runs the
-//     REAL RouteGen extractor against the REAL built SampleApp assembly, serializes
+//     REAL RouteGen extractor against the REAL SampleApp SOURCE files, serializes
 //     the result exactly as the build target does, parses it back the way
 //     MainActivity does, and holds it PAIR-FOR-PAIR against SampleAppPages.All's
 //     routed rows (the "/" default row included). It is NOT vacuous: the extractor
-//     reads the manifest by loading a fresh, isolated copy of the assembly and
-//     reflecting the framework registry, while the expected side reads the in-
-//     process SampleAppPages.All directly — two independent reads of the one
-//     source. A generator bug (a dropped row, a mangled name, a lost default)
+//     reads the manifest by PARSING the app's .cs source (Roslyn) — loading no
+//     assembly — while the expected side reads the in-process SampleAppPages.All
+//     (the compiled objects) directly. Two independent derivations of the one
+//     source: a generator bug (a dropped row, a mangled name, a lost default)
 //     reddens it.
+//
+//   GATE-A PIVOT: the extractor was assembly-loading (reflect the framework
+//   registry off the built dll); that could not survive CI, because a per-RID
+//   linux-bionic-arm64 managed dll cannot load into the x64 build host. It now
+//   reads SOURCE — arch/RID-independent — so this test drives it against the
+//   SampleApp source tree, not typeof(SampleAppPages).Assembly.Location.
 //
 // KEPT VERBATIM:
 //   · AndroidDefaultFallbackLiteral_… — the resource carries the "/" default now,
@@ -82,14 +88,15 @@ public sealed class RouteTableDriftTests
     /// reproduce the manifest's routed rows PAIR-FOR-PAIR — a route pointing at the
     /// WRONG page is the drift that actually hurts (a deep link opens the wrong
     /// screen), and set-equality cannot see it. This runs the REAL extractor against
-    /// the REAL built SampleApp assembly, round-trips the JSON exactly as the build
-    /// target + MainActivity do, and compares to SampleAppPages.All independently.</summary>
+    /// the REAL SampleApp SOURCE files (Roslyn, no assembly load — the Gate-A pivot),
+    /// round-trips the JSON exactly as the build target + MainActivity do, and
+    /// compares to SampleAppPages.All independently.</summary>
     [Fact]
     public void GeneratedRoutesJson_ReproducesTheManifestsRoutedRows_PairForPair()
     {
-        // 1) run the actual generator against the actual built app assembly.
-        string appDll = typeof(SampleAppPages).Assembly.Location;
-        IReadOnlyList<RoutedPage> routed = RouteManifest.Extract(appDll);
+        // 1) run the actual generator against the actual SampleApp SOURCE tree
+        //    (the same @(Compile) the build target feeds it) — no assembly loaded.
+        IReadOnlyList<RoutedPage> routed = RouteManifest.Extract(SampleAppSourceFiles());
 
         // 2) serialize the way the build target does, and parse it back the way
         //    MainActivity does (a flat JSON object) — so this exercises the emitted
@@ -194,6 +201,29 @@ public sealed class RouteTableDriftTests
             + "resolution chain moved or was rewritten — re-point this pin deliberately rather than "
             + "deleting it.");
         return match.Groups["name"].Value;
+    }
+
+    /// <summary>The SampleApp's C# source files — the app's manifest lives in
+    /// SampleAppPages.cs, but the whole tree is passed (excluding obj/bin) to
+    /// mirror the build target's @(Compile) input. This is the INDEPENDENT read:
+    /// the generator parses these files, while the expected side reads the
+    /// compiled SampleAppPages.All in-process.</summary>
+    private static string[] SampleAppSourceFiles()
+    {
+        string projectDir = Path.Combine(RepoRoot(), "samples", "BlazorNative.SampleApp");
+        Assert.True(Directory.Exists(projectDir), $"SampleApp project dir not found: {projectDir}");
+        return Directory.EnumerateFiles(projectDir, "*.cs", SearchOption.AllDirectories)
+            .Where(f => !IsUnderIntermediateDir(f))
+            .ToArray();
+    }
+
+    /// <summary>Excludes obj/ and bin/ so the generator sees the hand-written
+    /// source, never a build-intermediate copy.</summary>
+    private static bool IsUnderIntermediateDir(string path)
+    {
+        string p = path.Replace('\\', '/');
+        return p.Contains("/obj/", StringComparison.Ordinal)
+            || p.Contains("/bin/", StringComparison.Ordinal);
     }
 
     private static string ReadShellSource(string relativePath)
