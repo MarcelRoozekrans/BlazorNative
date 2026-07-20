@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.3.0](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.2.0...v0.3.0) (2026-07-20)
+
+
+### Features
+
+* **build:** ship RouteGen in the Runtime package so a generated app derives its route map (M11 [#1](https://github.com/MarcelRoozekrans/BlazorNative/issues/1)) ([#153](https://github.com/MarcelRoozekrans/BlazorNative/issues/153)) ([c4f6745](https://github.com/MarcelRoozekrans/BlazorNative/commit/c4f674588f233a858bdc2f0f72b491375bd6b07f))
+* **routing:** generate the deep-link route map at build time, not by hand (M11 [#1](https://github.com/MarcelRoozekrans/BlazorNative/issues/1)) ([#151](https://github.com/MarcelRoozekrans/BlazorNative/issues/151)) ([0bcf8e8](https://github.com/MarcelRoozekrans/BlazorNative/commit/0bcf8e8e5ef9b1a4e913e5b0fd3fe552a8b79432))
+* ship deep-link route codegen to dotnet new apps (m11 phase 11.0 gate b) ([c4f6745](https://github.com/MarcelRoozekrans/BlazorNative/commit/c4f674588f233a858bdc2f0f72b491375bd6b07f))
+
 ## [0.2.0](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.1.1...v0.2.0) (2026-07-20)
 
 
