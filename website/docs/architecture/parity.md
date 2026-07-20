@@ -29,10 +29,16 @@ site is downstream of.
 
 ## What it does not guarantee
 
-- **Not pixel-identical rendering.** Fonts, anti-aliasing, ripples, shadows and control
-  chrome are the platform's own. A `Button` looks like an Android button and a `UIButton`
-  looks like an iOS one. The parity claim is about *geometry*, not about pretending you are
-  not on a phone.
+- **Not pixel-identical rendering — but typography now IS identical.** Both shells bundle
+  and force **one font (Inter, OFL)** on every text leaf, so text metrics match and the
+  geometry contract now covers text: a single-line text row measures to the *same* height on
+  both shells (asserted, not skipped — the frame tables' `MEASURED` cells existed precisely
+  because SF Pro and Roboto differed). What stays the platform's own is **native control
+  chrome** — a `Button` looks like an Android button and a `UIButton` like an iOS one, plus
+  anti-aliasing, ripples and shadows. Making chrome pixel-identical is a much larger,
+  architecture-shifting effort (custom-drawn controls) and is a deliberate, separate boundary,
+  not folded in here. The parity claim is about *geometry* (now including text), not about
+  pretending you are not on a phone.
 - **Not identical internals.** The two shells use different image libraries with different
   cache, eviction and prefetch policies. The contract is drawn on **frames**, deliberately,
   and nowhere else — what must match is the measured size, *when* it is reported, and what
