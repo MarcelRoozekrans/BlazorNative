@@ -1,5 +1,7 @@
 using System.Runtime.CompilerServices;
 using BlazorNative.Runtime;
+// For BlazorNativeApp.ConfigureServices below — YOUR app's own DI registrations.
+using Microsoft.Extensions.DependencyInjection;
 
 namespace MyBlazorNativeApp;
 
@@ -87,6 +89,21 @@ public static class AppPages
         if (s_registered)
             return;
         BlazorNativeApp.RegisterPages(All);
+
+        // YOUR OWN SERVICES (optional). ConfigureServices hands you the SAME
+        // IServiceCollection the framework registered its services into — your
+        // registrations run last, immediately before the one provider is built,
+        // so a page can [Inject] your services exactly as it injects the
+        // framework's (IGeolocation, HttpClient, INavigationManager, ...).
+        // Capture it HERE, beside RegisterPages: both must happen before the
+        // first mount, and this initializer is that moment. Uncomment to use:
+        //
+        //   BlazorNativeApp.ConfigureServices(static services =>
+        //       services.AddSingleton<IMyService, MyService>());
+        //
+        // Additive, or a deliberate last-write over a framework registration
+        // (MS.DI resolves the last one). Never calling it is the default.
+
         s_registered = true; // only after the call SUCCEEDS — see the note above
     }
 }
