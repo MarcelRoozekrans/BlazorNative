@@ -187,7 +187,9 @@ Tracked in `ROADMAP.md`. Approved at milestone-open:
   DoD #4 / the Phase 11.3 PublicAPI baseline). See
   [phase-11.1 design](../plans/2026-07-20-phase-11.1-design.md).
 - **Phase 11.2** — real-device Android validation, all capabilities, recorded (DoD #2) —
-  *owner-run over USB; the milestone's honesty check.*
+  *owner-run over USB; the milestone's honesty check.* **Designed 2026-07-21, awaiting the owner's
+  device session** — [design](../plans/2026-07-21-phase-11.2-design.md) ·
+  [device runbook](../plans/2026-07-21-phase-11.2-device-runbook.md).
 - **Phase 11.3** — API stability review + the 1.0 criteria + public-API baseline (DoD #4).
 - **Phase 11.4** — logging discipline (DoD #6, [#155](https://github.com/MarcelRoozekrans/BlazorNative/issues/155)):
   one level-gated logging seam, quiet-by-default in Release, unified across both shells.
