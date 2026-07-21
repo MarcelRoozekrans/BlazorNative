@@ -67,7 +67,7 @@
          what release-please's `extra-files` targets; it rewrites this line on
          every release PR. The pin below it did not become redundant — it became
          the thing that audits a MACHINE rather than a human. -->
-    <Version>0.4.0</Version> <!-- x-release-please-version -->
+    <Version>0.4.1</Version> <!-- x-release-please-version -->
     <Title>BlazorNative App Template</Title>
     <Authors>Marcel Roozekrans</Authors>
     <Description>`dotnet new blazornative` — a Blazor app compiled with NativeAOT into a native Android shell. Creates the .NET app (pages, manifest, the NativeAOT publish head) and a runnable Android/Gradle shell tree.</Description>
