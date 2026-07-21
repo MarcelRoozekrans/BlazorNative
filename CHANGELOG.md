@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.3.0...v0.4.0) (2026-07-20)
+
+
+### Features
+
+* add BlazorNativeApp.ConfigureServices app-service DI seam ([#159](https://github.com/MarcelRoozekrans/BlazorNative/issues/159)) ([1b880a6](https://github.com/MarcelRoozekrans/BlazorNative/commit/1b880a65c0c5b495b39befbf38ff8a986f6f93d5))
+
 ## [0.3.0](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.2.0...v0.3.0) (2026-07-20)
 
 
