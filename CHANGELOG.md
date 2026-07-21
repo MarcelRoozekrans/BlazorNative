@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.4.0...v0.4.1) (2026-07-21)
+
+
+### Bug Fixes
+
+* make the ConfigureServices seam usable from the template's AppPages ([#165](https://github.com/MarcelRoozekrans/BlazorNative/issues/165)) ([a8a3273](https://github.com/MarcelRoozekrans/BlazorNative/commit/a8a327386284ad141558eb8e517b308c72aad2ac))
+
 ## [0.4.0](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.3.0...v0.4.0) (2026-07-20)
 
 
