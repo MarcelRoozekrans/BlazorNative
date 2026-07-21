@@ -69,7 +69,7 @@ BlazorNativePage.Named<SomeScreen>("SomeScreen"),                // mount name o
 Adding a **routed** page is that one row and nothing else. Android's deep-link map
 (`res/raw/blazornative_routes.json`, read at Intent-parse time *before* the native library
 loads) used to be a hand-written mirror in `MainActivity.kt` you had to keep in sync — the last
-place a page lived twice. Since v0.2.0 it is **generated from `AppPages.All` at build time**
+place a page lived twice. Since v0.3.0 it is **generated from `AppPages.All` at build time**
 (`BlazorNative.RouteGen` reads your routed rows and emits the resource), so it cannot drift from
 your pages and there is no shell file to edit. Add the row; the deep link works.
 
