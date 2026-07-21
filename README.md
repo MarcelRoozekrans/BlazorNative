@@ -4,7 +4,9 @@
 
 **[Documentation](https://marcelroozekrans.github.io/BlazorNative/)** — getting started, the architecture story, the component reference (generated from the components' own doc comments), the parity contract, and both shell setup guides.
 
-> **Status: pre-release proof of concept.** Milestones 1–9 are complete, and the seven packages are **published on nuget.org** (v0.1.0 — a stable release, no `--prerelease` needed). Milestone 8 (Developer Ecosystem) shipped publish-ready packages, `dotnet new blazornative`, and the public docs site; Milestone 9 (Platform Breadth) added the host-capability bridge pattern — geolocation, notifications, biometrics + secure storage, and camera — on top of Milestone 7's `.razor` authoring and component library and Milestone 6's Yoga engine, which owns all placement on both shells and asserts identical frame tables on the Android emulator and the iOS simulator. **Milestone 10 (Consolidation & Hardening) is in progress.** Not production-ready — the API surface is unstable and changes without notice; iOS is simulator-only (real-device iOS is deferred).
+> **Status: pre-1.0, published, and being hardened.** Milestones 1–10 are complete and the packages are **published on nuget.org** — currently **v0.4.0**, a stable release (no `--prerelease` needed). Milestone 8 shipped publish-ready packages and the public docs site; Milestone 9 added the host-capability bridge pattern — geolocation, notifications, biometrics + secure storage, and camera — on top of Milestone 7's `.razor` authoring and component library and Milestone 6's Yoga engine, which owns all placement on both shells and asserts identical frame tables on the Android emulator and the iOS simulator; Milestone 10 (Consolidation & Hardening) closed the review findings. **Milestone 11 (Production Readiness) is in progress**: deep-link routing now derives end-to-end (no hand-written mirror), and the packages have been dogfooded by building apps outside this repo from nuget.org alone.
+>
+> **What "not production-ready" still means, precisely.** The **public API is not yet frozen** and may change between minor versions (marking the stable surface and writing concrete 1.0 criteria is M11 work in progress). **iOS is simulator-only** — real-device iOS is deferred (no Apple Developer account). The capabilities are proven on an emulator/simulator; **real-hardware validation is in progress**. Diagnostic logging is not yet level-gated, and a render error is logged rather than surfaced ([#164](https://github.com/MarcelRoozekrans/BlazorNative/issues/164), [#155](https://github.com/MarcelRoozekrans/BlazorNative/issues/155)).
 
 > .NET → NativeAOT → native mobile widgets. Blazor components rendered as real Android and iOS views, no WebView, no JavaScript, no wasm.
 
@@ -291,9 +293,10 @@ fresh copy is not theoretical.)*
   - [x] `BnModal`, the first overlay surface + the RN parity survey's cheap wins — Phase 7.4
   - [x] `BnImage` polish — `PlaceholderColor` / `OnError` / `ContentMode`, each its own *measurement* design — Phase 7.5
   - [x] Route-registry unification + milestone audit (all 8 DoD PASS) — Phase 7.6
-- [x] **Developer Ecosystem — Milestone 8**: publish-ready packages, `dotnet new blazornative`, and a public docs site — **published to nuget.org (v0.1.0)** with release automation (release-please auto-publish on merge)
+- [x] **Developer Ecosystem — Milestone 8**: publish-ready packages, `dotnet new blazornative`, and a public docs site — **published to nuget.org** with release automation (release-please auto-publish on merge)
 - [x] **Platform Breadth — Milestone 9**: the host-capability bridge pattern — geolocation, notifications, biometrics + secure storage, camera — each a permission-gated async host call with **zero further ABI change** (real-device iOS deferred)
-- [ ] **Consolidation & Hardening — Milestone 10** (in progress): low-severity hardening, docs/README accuracy, and precision fixes
+- [x] **Consolidation & Hardening — Milestone 10**: low-severity hardening, docs/README accuracy, and precision fixes — all 7 DoD PASS
+- [ ] **Production Readiness — Milestone 11** (in progress): 2 of 6 done — deep-link routing derives end-to-end with a consumer-footgun audit (Phase 11.0), and consumer dogfooding proved a stranger can ship from the published packages alone (Phase 11.1). Remaining: real-device Android validation, API stability + concrete 1.0 criteria, logging discipline, and the milestone audit
 
 The demo app's pages are declared once, in `samples/BlazorNative.SampleApp/SampleAppPages.cs` — that array is the roster, and the runtime's mount registry and route table are derived views of it.
 
