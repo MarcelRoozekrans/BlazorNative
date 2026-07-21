@@ -1678,7 +1678,8 @@ iOS (no Apple account), FCM push (no Firebase), and the inspector channel stay o
 ### 🔄 Milestone 11 — Production Readiness  *(active — opened 2026-07-20)*
 
 From *works + published + hardened* to **production-grade**: an app author builds on the
-published 0.2.0 packages without footguns, the emulator-faked capabilities are proven on real
+published packages without footguns (0.2.0 at milestone-open; 0.4.0 by the time 11.1 walked it),
+the emulator-faked capabilities are proven on real
 Android hardware, and the public API is committed to with concrete 1.0 criteria. Owner direction
 (2026-07-20) + the seed finding that the deep-link route map is the last hand-written
 single-source-of-truth violation. All four pillars in; device proof is Android-only (iOS
@@ -1694,8 +1695,27 @@ real-device still gated on the Apple account). Full scope + owner decisions in
   page-keyed hand-edit: capability manifest entries are template-supplied (DERIVED), the un-derivable
   rest (app identity, URI scheme, iOS usage-string copy, iOS source edits) DOCUMENTED; three stale
   consumer docs fixed. [Conclusion](../plans/2026-07-20-phase-11.0-conclusion.md).
-- **Phase 11.1** — consumer dogfooding: a fresh app on the **published 0.2.0** packages (not the
-  repo sample); fix the getting-started friction it surfaces (DoD #3).
+- ✅ **Phase 11.1** — consumer dogfooding + the ZeroAlloc showcase (DoD #3) — *complete
+  (2026-07-21).* Two apps built **outside the repo from nuget.org only**, no `ProjectReference` —
+  `bn-baseline` on published **0.3.0**, `bn-zeroalloc-showcase` on published **0.4.0** and scaffolded
+  from the **published template**. **0.4.0 is the milestone release**: the `ConfigureServices`
+  app-service DI seam (#159), the KDoc sweep (#161), a nuget-preflight fix (#163), and — via #162 —
+  the **first release ever to publish `BlazorNative.Templates`** (verified live by a real
+  `dotnet new install`, closing the M8 carryover and making the docs' front-door claim true). Every
+  publish across `win-x64` / `linux-bionic-x64` / `linux-bionic-arm64` held the **4-IL2072
+  yardstick** — including with **11 ZeroAlloc packages** layered on (no `Microsoft.CodeAnalysis`
+  diamond, no duplicate-generator emit); 1 package dropped with a written reason (`ZeroAlloc.Cache`
+  fails at `csc` — upstream Cache#87). RouteGen derived the deep-link map **from the packages alone**
+  and regenerated it on an added page with zero shell edits (11.0's claim, proven for a consumer);
+  the seam was proven **at runtime** by an ABI harness P/Invoking the *published* NativeAOT binary
+  (app-service output in the first frame's patches, all 6 pages `rc = 0`). **14 friction items**, each
+  fixed / resolved / dismissed / ledgered / deferred — docs fixes in #157, the template DI `using` in
+  flight as #165, the rc-0-on-faulted-render design gap filed as #164 → Phase 11.4. **Boundaries:**
+  initial-frame render only (no UI event dispatched), DevHost bridge only, APK built but **not
+  installed** — real hardware is DoD #2; iOS-sim deferred.
+  [Conclusion](../plans/2026-07-21-phase-11.1-conclusion.md) ·
+  [friction ledger](../plans/2026-07-21-phase-11.1-friction-ledger.md) ·
+  [walkthrough](../plans/2026-07-21-phase-11.1-walkthrough.md).
 - **Phase 11.2** — real-device Android: camera, biometrics, geolocation, notifications + smoke on
   the owner's phone, recorded in a device-proof doc; discharges the physical-phone ledger (DoD #2).
 - **Phase 11.3** — API stability: mark the stable surface (a PublicAPI baseline gate) + write the
