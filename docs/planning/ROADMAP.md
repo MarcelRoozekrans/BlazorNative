@@ -1718,6 +1718,10 @@ real-device still gated on the Apple account). Full scope + owner decisions in
   [walkthrough](../plans/2026-07-21-phase-11.1-walkthrough.md).
 - **Phase 11.2** — real-device Android: camera, biometrics, geolocation, notifications + smoke on
   the owner's phone, recorded in a device-proof doc; discharges the physical-phone ledger (DoD #2).
+  **Designed 2026-07-21 — awaiting the owner's device session.** Vehicle: the repo sample app (the
+  only one carrying all four capability demos). See
+  [design](../plans/2026-07-21-phase-11.2-design.md) ·
+  [device runbook](../plans/2026-07-21-phase-11.2-device-runbook.md).
 - **Phase 11.3** — API stability: mark the stable surface (a PublicAPI baseline gate) + write the
   1.0 criteria (DoD #4). 1.0 is DEFINED here, not necessarily CUT.
 - **Phase 11.4** — logging discipline ([#155](https://github.com/MarcelRoozekrans/BlazorNative/issues/155)):
