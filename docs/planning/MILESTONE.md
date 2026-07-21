@@ -1,6 +1,6 @@
 # Milestone 11 — Production Readiness
 
-**Status:** 🔄 **active — opened 2026-07-20.** 1 / 6 DoD closed (#1 — Phase 11.0).
+**Status:** 🔄 **active — opened 2026-07-20.** 2 / 6 DoD closed (#1 — Phase 11.0; #3 — Phase 11.1).
 **Predecessor:** Milestone 10 — Consolidation & Hardening, complete 2026-07-19
 ([final audit](../plans/2026-07-19-milestone-10-final-audit.md), all 7 DoD PASS; no tag — 8.6 rule).
 **Source:** owner direction (2026-07-20): *"work towards a production-grade framework,"* dogfood
@@ -83,6 +83,40 @@ the project stops being a proof-of-concept and starts being something a stranger
    (docs, template defaults, error messages, missing steps) or ledgered with a reason. The
    result: a written, reproducible "zero-to-running app" that does not touch the repo sources.
 
+   ✅ **Closed by Phase 11.1** (2026-07-21). **Mechanism:** two apps built **outside this repo**
+   from **nuget.org only**, no `ProjectReference` — `bn-baseline` on published **0.3.0** and
+   `bn-zeroalloc-showcase` on published **0.4.0**, the latter scaffolded from the **published**
+   template. **0.4.0 is the milestone release**: it shipped the `ConfigureServices` seam
+   ([#159](https://github.com/MarcelRoozekrans/BlazorNative/pull/159)), the KDoc sweep (#161), a
+   nuget-preflight fix (#163) — and, via [#162](https://github.com/MarcelRoozekrans/BlazorNative/pull/162),
+   it is the **first release ever to publish `BlazorNative.Templates`**, closing the M8 carryover and
+   making the getting-started docs' front-door claim true (verified live: a real
+   `dotnet new install BlazorNative.Templates` resolved `@0.4.0`). **Evidence:** every publish —
+   `win-x64`, `linux-bionic-x64`, `linux-bionic-arm64`, both apps — emitted **exactly the 4 accepted
+   IL2072s** and zero other trim/AOT warnings, *including with 11 ZeroAlloc packages layered on*
+   (no `Microsoft.CodeAnalysis` diamond, no duplicate-generator emit); dual-ABI APKs built from
+   `gradlew assembleDebug`; RouteGen derived the deep-link map **from the packages alone** and
+   regenerated it on an added page with **zero shell hand-edits** (11.0's claim confirmed for a
+   consumer); and the new DI seam was proven **at runtime** — an ABI harness P/Invoked the
+   *published* NativeAOT binary, replayed `blazornative_init` → `register_frame_callback` → `mount`,
+   and the first frame's patches carried the app service's own output (a shared-singleton count
+   proving instance identity), all 6 pages `rc = 0`. One package dropped **with a written reason**
+   (`ZeroAlloc.Cache` 1.1.15 — fails at `csc`, never reached the trim gate; upstream
+   [Cache#87](https://github.com/ZeroAlloc-Net/ZeroAlloc.Cache/issues/87)). **Friction:** 14 items,
+   each fixed / resolved / dismissed-with-investigation / ledgered-with-an-owner / deferred-by-decision
+   — docs fixes in [#157](https://github.com/MarcelRoozekrans/BlazorNative/pull/157) (the "seven
+   packages" line → 3 direct + 4 transitive; the version literal made version-*agnostic*; the
+   desktop-dev-loop claim made honest with **no host invented**; the three env prerequisites), the
+   template DI `using` in flight as **#165**, and the rc-0-on-faulted-render design gap filed as
+   [#164](https://github.com/MarcelRoozekrans/BlazorNative/issues/164) → **Phase 11.4 / DoD #6**.
+   **Boundaries kept explicit:** pages mount and render their *initial frame* (`OnInitialized` /
+   `OnAfterRenderAsync` ran) but **no UI event was dispatched**; capabilities ran on the **DevHost
+   bridge**, the APK was built **but not installed**, so real hardware stays **DoD #2 / Phase 11.2**;
+   **iOS-sim deferred** per scoping decision #3.
+   [Conclusion](../plans/2026-07-21-phase-11.1-conclusion.md) ·
+   [friction ledger](../plans/2026-07-21-phase-11.1-friction-ledger.md) ·
+   [zero-to-running walkthrough](../plans/2026-07-21-phase-11.1-walkthrough.md).
+
 4. **API stability + the 1.0 path.** The **public API surface** of the shipped packages is
    reviewed and its stable core identified; unstable/experimental surface is **marked** (a
    public-API baseline — e.g. `Microsoft.CodeAnalysis.PublicApiAnalyzers` `PublicAPI.*.txt` — so
@@ -131,6 +165,9 @@ the project stops being a proof-of-concept and starts being something a stranger
   inline map + its excision), and the KDoc-correctness half + **publishing the template pack** +
   the **`ConfigureServices` DI seam** are the three changes bundled into the **0.4.0** release that
   11.1 Gate C/D depends on — see [0.4.0-prep design](../plans/2026-07-20-phase-0.4.0-prep-design.md).
+  ✅ **DISCHARGED** — **0.4.0 published 2026-07-21** with all three (#161 KDoc, #162 template
+  publish, #159 the seam; #163 the preflight fix). It is the **first release to publish
+  `BlazorNative.Templates`**, verified live by a real `dotnet new install`.
 - **From M5:** FCM push (carried, trigger above).
 - **The P3 perf-hardening ledger** (#8/#9/#12/#13) — deferred with revisit-triggers unfired;
   M11 may revisit under DoD #4 if a stability review surfaces one, else it stays ledgered.
@@ -143,8 +180,8 @@ Tracked in `ROADMAP.md`. Approved at milestone-open:
 
 - **Phase 11.0** — deep-link route codegen + the consumer-footgun audit (DoD #1) — *the seed
   finding; a concrete single-source-of-truth fix, first because dogfooding will lean on it.*
-- **Phase 11.1** — consumer dogfooding on the published 0.2.0 (DoD #3) — *walk the newcomer
-  path; the friction it finds feeds back into #1's audit and the docs.* Dogfooding surfaced the
+- ✅ **Phase 11.1** — consumer dogfooding on the published packages (DoD #3) — *complete
+  (2026-07-21); walked on 0.3.0 then 0.4.0, not 0.2.0, because both shipped mid-phase.* Dogfooding surfaced the
   **sealed composition root** as a real gap, so 11.1 also grows one framework `feat` — a public
   `BlazorNativeApp.ConfigureServices` app-service DI seam — shipping in **0.4.0** (cross-ref
   DoD #4 / the Phase 11.3 PublicAPI baseline). See
