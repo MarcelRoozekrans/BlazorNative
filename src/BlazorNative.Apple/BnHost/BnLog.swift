@@ -184,7 +184,13 @@ enum BnLog {
     static func error(_ category: String,
                       _ message: @autoclosure () -> String,
                       privacy: BnLogPrivacy = .redacted) {
-        write(BnLogLevel.error, category, message, privacy)
+        // The gate is HERE, not one call deeper in [write]: forwarding an
+        // @autoclosure to another @autoclosure requires calling it (Swift: "add ()
+        // to forward"), which would evaluate the message BEFORE the threshold
+        // compare and hand back exactly the per-patch string building the
+        // autoclosure exists to avoid.
+        guard isEnabled(BnLogLevel.error) else { return }
+        emit(BnLogLevel.error, category, message(), privacy)
     }
 
     /// Something the author asked for was dropped, or a host contract was bent.
@@ -195,28 +201,52 @@ enum BnLog {
     static func warn(_ category: String,
                      _ message: @autoclosure () -> String,
                      privacy: BnLogPrivacy = .redacted) {
-        write(BnLogLevel.warn, category, message, privacy)
+        // The gate is HERE, not one call deeper in [write]: forwarding an
+        // @autoclosure to another @autoclosure requires calling it (Swift: "add ()
+        // to forward"), which would evaluate the message BEFORE the threshold
+        // compare and hand back exactly the per-patch string building the
+        // autoclosure exists to avoid.
+        guard isEnabled(BnLogLevel.warn) else { return }
+        emit(BnLogLevel.warn, category, message(), privacy)
     }
 
     /// Success narration (boot lines). Suppressed in Release.
     static func info(_ category: String,
                      _ message: @autoclosure () -> String,
                      privacy: BnLogPrivacy = .redacted) {
-        write(BnLogLevel.info, category, message, privacy)
+        // The gate is HERE, not one call deeper in [write]: forwarding an
+        // @autoclosure to another @autoclosure requires calling it (Swift: "add ()
+        // to forward"), which would evaluate the message BEFORE the threshold
+        // compare and hand back exactly the per-patch string building the
+        // autoclosure exists to avoid.
+        guard isEnabled(BnLogLevel.info) else { return }
+        emit(BnLogLevel.info, category, message(), privacy)
     }
 
     /// Developer detail. Suppressed in Release.
     static func debug(_ category: String,
                       _ message: @autoclosure () -> String,
                       privacy: BnLogPrivacy = .redacted) {
-        write(BnLogLevel.debug, category, message, privacy)
+        // The gate is HERE, not one call deeper in [write]: forwarding an
+        // @autoclosure to another @autoclosure requires calling it (Swift: "add ()
+        // to forward"), which would evaluate the message BEFORE the threshold
+        // compare and hand back exactly the per-patch string building the
+        // autoclosure exists to avoid.
+        guard isEnabled(BnLogLevel.debug) else { return }
+        emit(BnLogLevel.debug, category, message(), privacy)
     }
 
     /// Per-frame / per-patch tracing. Suppressed in Release.
     static func verbose(_ category: String,
                         _ message: @autoclosure () -> String,
                         privacy: BnLogPrivacy = .redacted) {
-        write(BnLogLevel.verbose, category, message, privacy)
+        // The gate is HERE, not one call deeper in [write]: forwarding an
+        // @autoclosure to another @autoclosure requires calling it (Swift: "add ()
+        // to forward"), which would evaluate the message BEFORE the threshold
+        // compare and hand back exactly the per-patch string building the
+        // autoclosure exists to avoid.
+        guard isEnabled(BnLogLevel.verbose) else { return }
+        emit(BnLogLevel.verbose, category, message(), privacy)
     }
 
     /// Emits at an arbitrary ordinal — the entry point the `@_cdecl` [BnLogC]
