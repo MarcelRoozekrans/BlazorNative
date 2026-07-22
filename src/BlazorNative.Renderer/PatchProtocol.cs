@@ -1,3 +1,5 @@
+using System.ComponentModel;
+
 namespace BlazorNative.Renderer;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -20,6 +22,11 @@ namespace BlazorNative.Renderer;
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// <summary>A single atomic UI change produced by the headless renderer.</summary>
+/// <remarks>Not part of the supported public API: the patch hierarchy is public only so the
+/// frame encoder in <c>BlazorNative.Runtime</c> can read it across the assembly boundary. It is
+/// the renderer's <em>in-memory</em> model, not the wire format (see the file header), so the
+/// framework re-shapes it freely. Tier NOT-API.</remarks>
+[EditorBrowsable(EditorBrowsableState.Never)]
 public abstract record RenderPatch;
 
 // ── Node lifecycle ────────────────────────────────────────────────────────────
@@ -33,7 +40,10 @@ public abstract record RenderPatch;
 /// renderer translates Blazor sibling slots to view indices, skipping
 /// component slots (NativeWidgetTree.TranslateToHostInsertIndex). This
 /// retires AppendChildPatch: creation carries its own placement, and moves
-/// are remove+insert at POC fidelity (a dedicated move patch is YAGNI).</remarks>
+/// are remove+insert at POC fidelity (a dedicated move patch is YAGNI).
+/// <para>Not part of the supported public API — see <see cref="RenderPatch"/>. Tier
+/// NOT-API.</para></remarks>
+[EditorBrowsable(EditorBrowsableState.Never)]
 public sealed record CreateNodePatch(
     int     NodeId,
     string  NodeType,       // "view" | "text" | "button" | "input" | "scroll" | "image"
@@ -46,6 +56,8 @@ public sealed record CreateNodePatch(
 // stays reserved-dormant so wire ids never renumber.
 
 /// <summary>Remove a node and its subtree from the widget tree.</summary>
+/// <remarks>Not part of the supported public API — see <see cref="RenderPatch"/>. Tier NOT-API.</remarks>
+[EditorBrowsable(EditorBrowsableState.Never)]
 public sealed record RemoveNodePatch(
     int NodeId
 ) : RenderPatch;
@@ -53,6 +65,8 @@ public sealed record RemoveNodePatch(
 // ── Property updates ──────────────────────────────────────────────────────────
 
 /// <summary>Set or update a property on a node (e.g. placeholder, enabled, value).</summary>
+/// <remarks>Not part of the supported public API — see <see cref="RenderPatch"/>. Tier NOT-API.</remarks>
+[EditorBrowsable(EditorBrowsableState.Never)]
 public sealed record UpdatePropPatch(
     int    NodeId,
     string Name,
@@ -60,12 +74,16 @@ public sealed record UpdatePropPatch(
 ) : RenderPatch;
 
 /// <summary>Update the text content of a text node.</summary>
+/// <remarks>Not part of the supported public API — see <see cref="RenderPatch"/>. Tier NOT-API.</remarks>
+[EditorBrowsable(EditorBrowsableState.Never)]
 public sealed record ReplaceTextPatch(
     int    NodeId,
     string Text
 ) : RenderPatch;
 
 /// <summary>Apply a style property to a node.</summary>
+/// <remarks>Not part of the supported public API — see <see cref="RenderPatch"/>. Tier NOT-API.</remarks>
+[EditorBrowsable(EditorBrowsableState.Never)]
 public sealed record SetStylePatch(
     int    NodeId,
     string Property,        // camelCase CSS-like: "backgroundColor", "fontSize"
@@ -80,7 +98,10 @@ public sealed record SetStylePatch(
 /// re-render swaps a handler delegate in place (a SetAttribute edit with a
 /// fresh handlerId, no RemoveAttribute); the renderer's detach registry
 /// follows suit, so a later detach carries the NEWEST handlerId. Hosts must
-/// swap their watcher, never stack a second one.</remarks>
+/// swap their watcher, never stack a second one.
+/// <para>Not part of the supported public API — see <see cref="RenderPatch"/>. Tier
+/// NOT-API.</para></remarks>
+[EditorBrowsable(EditorBrowsableState.Never)]
 public sealed record AttachEventPatch(
     int    NodeId,
     string EventName,       // "click" | "change" | "focus" | "blur" | "scroll"
@@ -92,6 +113,8 @@ public sealed record AttachEventPatch(
 /// the ORIGINAL handlerId through its (nodeId, eventName) registry, and
 /// <paramref name="EventName"/> tells the host exactly which watcher to drop
 /// (no map-membership guessing; rides the wire's free Text field).</summary>
+/// <remarks>Not part of the supported public API — see <see cref="RenderPatch"/>. Tier NOT-API.</remarks>
+[EditorBrowsable(EditorBrowsableState.Never)]
 public sealed record DetachEventPatch(
     int    NodeId,
     int    HandlerId,
@@ -104,6 +127,8 @@ public sealed record DetachEventPatch(
 /// Signals the native shell that a batch of patches is complete and ready to apply.
 /// The shell must apply all preceding patches atomically before this commit.
 /// </summary>
+/// <remarks>Not part of the supported public API — see <see cref="RenderPatch"/>. Tier NOT-API.</remarks>
+[EditorBrowsable(EditorBrowsableState.Never)]
 public sealed record CommitFramePatch(
     int FrameId,
     long TimestampMs
@@ -112,12 +137,19 @@ public sealed record CommitFramePatch(
 // ── Frame envelope ────────────────────────────────────────────────────────────
 
 /// <summary>A complete render frame — the unit sent over the bridge per render cycle.</summary>
+/// <remarks>Not part of the supported public API: public only so the frame encoder in
+/// <c>BlazorNative.Runtime</c> can consume it across the assembly boundary. Tier NOT-API.</remarks>
+[EditorBrowsable(EditorBrowsableState.Never)]
 public sealed record RenderFrame(
     int              FrameId,
     long             TimestampMs,
     RenderPatch[]    Patches);
 
 /// <summary>An event dispatched from the native shell back into the renderer.</summary>
+/// <remarks>Not part of the supported public API: public only so the host session in
+/// <c>BlazorNative.Runtime</c> can hand decoded shell events to <see cref="NativeRenderer"/>
+/// across the assembly boundary. Tier NOT-API.</remarks>
+[EditorBrowsable(EditorBrowsableState.Never)]
 public sealed record NativeUiEvent(
     int    NodeId,
     int    HandlerId,

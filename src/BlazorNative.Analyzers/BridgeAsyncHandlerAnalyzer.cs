@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.ComponentModel;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -24,6 +25,11 @@ namespace BlazorNative.Analyzers;
 // https://marcelroozekrans.github.io/BlazorNative/docs/analyzers
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// <summary>Reports BN0014 — the bridge async-handler rule.</summary>
+/// <remarks>Not part of the supported public API — public only because Roslyn instantiates
+/// analyzer entry points; unreferenceable by consumers. See
+/// <see cref="MobilePolicyAnalyzer"/>. Tier NOT-API.</remarks>
+[EditorBrowsable(EditorBrowsableState.Never)]
 [DiagnosticAnalyzer(LanguageNames.CSharp)]
 public sealed class BridgeAsyncHandlerAnalyzer : DiagnosticAnalyzer
 {
