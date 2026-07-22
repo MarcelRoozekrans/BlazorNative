@@ -10,6 +10,27 @@ namespace BlazorNative.Core;
 // DevHostBridge is the in-process mock for tests and dev harnesses.
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// <summary>The .NET-side bridge contract between app code and the native host.
+/// Resolve it from DI and call it; the host supplies the implementation
+/// (<c>NativeShellBridge</c> on-device, <c>DevHostBridge</c> in a harness).</summary>
+/// <remarks>
+/// <para><b>API-additions policy (consume-only contract).</b> This interface is a
+/// contract you <i>call</i>, not one you implement. Members are added to it as
+/// capabilities land — one small group per capability — and such an addition is
+/// declared <b>non-breaking</b>, because every supported consumer is a caller and a
+/// caller is unaffected by a wider interface.</para>
+/// <para>The corollary is the part that binds: <b>implementing this interface
+/// outside BlazorNative is unsupported.</b> A new member will break an external
+/// implementer at compile time, in a minor version, with no major bump and no
+/// deprecation window. If you need a stand-in for tests, use
+/// <see cref="DevHostBridge"/> or the narrow <c>BlazorNative.Device</c> façades
+/// (<c>IGeolocation</c>, <c>INotifications</c>, <c>IBiometrics</c>,
+/// <c>ISecureStorage</c>, <c>ICamera</c>) — those are sized to be mocked; this is
+/// not. The alternative policy — shipping <c>virtual</c> default implementations so
+/// additions stay source-compatible for implementers — was considered and rejected:
+/// it would put method bodies in a package whose entire purpose is to hold none.</para>
+/// <para>See <c>docs/plans/2026-07-21-phase-11.3-api-tiers.md</c> (tier: STABLE).</para>
+/// </remarks>
 public interface IMobileBridge
 {
     // Navigation

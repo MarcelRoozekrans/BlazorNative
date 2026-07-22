@@ -5,13 +5,35 @@ namespace BlazorNative.Core;
 // The navigation contract, in Core beside IMobileBridge: components depend on
 // THIS; each runtime provides the implementation (NativeNavigationManager in
 // BlazorNative.Runtime does the root swap + host notification on Android).
-// M6 lifts it into a dedicated BlazorNative.Navigation package.
+// This header once read "M6 lifts it into a dedicated BlazorNative.Navigation
+// package." It did not: M6 closed without the lift and the lift is now issue #23,
+// explicitly out of M11's scope (docs/planning/MILESTONE.md). The contract's home
+// is BlazorNative.Core and stays there for the foreseeable future — see the
+// <remarks> on the interface and docs/plans/2026-07-21-phase-11.3-api-tiers.md.
 //
 // Phase 5.1 (M5 DoD #5) adds NavigateBackAsync — host-INITIATED back (the
 // predictive-back gesture routes here through blazornative_host_event). Deep
 // links still feed the existing startup-route channel (QueryStartupRoute).
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// <summary>The navigation contract. Resolve it from DI and call it; the runtime
+/// supplies the implementation (<c>NativeNavigationManager</c> in
+/// <c>BlazorNative.Runtime</c>).</summary>
+/// <remarks>
+/// <para><b>API-additions policy (consume-only contract).</b> Same policy as
+/// <see cref="IMobileBridge"/>: this interface is a contract you <i>call</i>.
+/// Adding a member is declared <b>non-breaking</b>, because every supported
+/// consumer is a caller. <b>Implementing it outside BlazorNative is
+/// unsupported</b> — an addition will break an external implementer at compile
+/// time, in a minor version. Default (<c>virtual</c>) interface members were
+/// considered and rejected: the contracts package holds no bodies.</para>
+/// <para><b>Location.</b> This type lives in <c>BlazorNative.Core</c>. Moving it to
+/// a dedicated <c>BlazorNative.Navigation</c> package is tracked as issue #23 and
+/// is <i>not</i> planned for 1.0; if it ever happens, it ships with a
+/// <c>[TypeForwardedTo]</c> from <c>BlazorNative.Core</c>, which makes the move
+/// non-breaking for both source and binary consumers.</para>
+/// <para>See <c>docs/plans/2026-07-21-phase-11.3-api-tiers.md</c> (tier: STABLE).</para>
+/// </remarks>
 public interface INavigationManager
 {
     /// <summary>The current route. Initialized at session start from the
