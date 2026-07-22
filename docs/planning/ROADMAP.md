@@ -1740,8 +1740,32 @@ real-device still gated on the Apple account). Full scope + owner decisions in
   [Device proof](../plans/2026-07-22-phase-11.2-device-proof.md) ·
   [design](../plans/2026-07-21-phase-11.2-design.md) ·
   [device runbook, amended](../plans/2026-07-21-phase-11.2-device-runbook.md).
-- **Phase 11.3** — API stability: mark the stable surface (a PublicAPI baseline gate) + write the
-  1.0 criteria (DoD #4). 1.0 is DEFINED here, not necessarily CUT.
+- ✅ **Phase 11.3** — API stability: mark the stable surface (a PublicAPI baseline gate) + write
+  the 1.0 criteria (DoD #4) — *complete (2026-07-22).* **1.0 is DEFINED here, not CUT.** Four
+  sequential gates, A before B being the load-bearing ordering — *a baseline generated before the
+  review acquires unearned authority.*
+  **A** (#176): all **88** public types classified **55 STABLE / 2 PROVISIONAL / 31 NOT-API** in a
+  reviewable [tier table](../plans/2026-07-21-phase-11.3-api-tiers.md); the four contentious calls
+  decided in writing; the **consume-only** interface-additions policy written into `IMobileBridge`
+  and `INavigationManager`'s own xmldoc, where a consumer meets it through IntelliSense.
+  **B** (#180): six `PublicAPI.Shipped.txt` baselines (1 166 lines) with RS0016/RS0017/RS0037 as
+  **errors** behind `BnEnforcePublicApi` in `Directory.Build.targets` (**not `.props`** — the
+  CS1591 bug that cost that pin its teeth twice), plus a diagnostic-ID roster pin for Analyzers,
+  which is deliberately baseline-*excluded* because its contract is the 7 `BN00xx` ids and a
+  `.txt` would guard the wrong noun. **Proven by mutation:** `BnButton.Label` → `BnButton.Text`
+  gave `error RS0016` ×2 + `error RS0017` ×2, exit 1.
+  **C** (#183): 28 of 31 NOT-API types marked `[EditorBrowsable(Never)]` with a per-type reason;
+  the 3 unmarkable generated types ledgered, not skipped; the
+  [`[Experimental]` policy](../plans/2026-07-21-phase-11.3-experimental-policy.md) written with
+  `BN1xxx` reserved and **zero** uses argued.
+  **D**: the [1.0 criteria](../plans/2026-07-22-phase-11.3-one-point-oh-criteria.md) as a
+  standalone checkable doc — **12 blockers, 7 met, 5 open and every open one owned** — the
+  consumer-facing [API-stability page + compatibility statement](../../website/docs/api-stability.md),
+  and the README re-cut from *"not yet frozen"* to **"marked but not yet frozen"** with its
+  version literal removed so it cannot re-stale.
+  **The finding that justifies reading a baseline instead of generating one:**
+  [#181](https://github.com/MarcelRoozekrans/BlazorNative/issues/181) — `default(BlazorNativePage)`
+  yields a page with a **null mount thunk**, found in a `.txt` line nobody wrote.
 - **Phase 11.4** — logging discipline ([#155](https://github.com/MarcelRoozekrans/BlazorNative/issues/155)):
   one level-gated logging seam, **quiet-by-default in Release**, unified across both shells (DoD #6).
   Today logging is un-gated and split — iOS `NSLog` emits normal-path chatter in Release, Android

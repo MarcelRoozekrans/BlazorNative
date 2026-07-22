@@ -58,6 +58,7 @@ const sidebars = {
       ],
     },
     'analyzers',
+    'api-stability',
     'contributing',
   ],
 };

@@ -2,7 +2,7 @@
 id: contributing
 title: Contributing
 sidebar_label: Contributing
-sidebar_position: 7
+sidebar_position: 8
 ---
 
 # Contributing

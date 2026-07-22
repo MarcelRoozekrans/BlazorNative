@@ -1,7 +1,7 @@
 # Milestone 11 — Production Readiness
 
-**Status:** 🔄 **active — opened 2026-07-20.** 3 / 6 DoD closed (#1 — Phase 11.0; **#2 — Phase
-11.2**; #3 — Phase 11.1).
+**Status:** 🔄 **active — opened 2026-07-20.** 4 / 6 DoD closed (#1 — Phase 11.0; #2 — Phase
+11.2; #3 — Phase 11.1; **#4 — Phase 11.3**).
 **Predecessor:** Milestone 10 — Consolidation & Hardening, complete 2026-07-19
 ([final audit](../plans/2026-07-19-milestone-10-final-audit.md), all 7 DoD PASS; no tag — 8.6 rule).
 **Source:** owner direction (2026-07-20): *"work towards a production-grade framework,"* dogfood
@@ -197,6 +197,59 @@ the project stops being a proof-of-concept and starts being something a stranger
    real-device-proven where possible, docs complete, the deferred ledger resolved-or-accepted).
    The README's "API changes without notice" claim is updated to reflect the marked-stable
    surface.
+
+   ✅ **Closed by Phase 11.3** (2026-07-22), across four gates.
+
+   **Mechanism.** **Gate A** ([#176](https://github.com/MarcelRoozekrans/BlazorNative/pull/176))
+   classified all **88** public types into **55 STABLE / 2 PROVISIONAL / 31 NOT-API** in a
+   reviewable [tier table](../plans/2026-07-21-phase-11.3-api-tiers.md), decided the four
+   contentious calls **in writing** (`NativeRenderer` = NOT-API, marked not moved; `DevHostBridge`
+   = PROVISIONAL; `INavigationManager` stays in `.Core` with `[TypeForwardedTo]` as the recorded
+   mitigation), and wrote the **consume-only interface-additions policy** into the shipped xmldoc
+   of `IMobileBridge` and `INavigationManager` — *before* the first post-1.0 addition, which is
+   the only thing that makes it honest. **Gate B**
+   ([#180](https://github.com/MarcelRoozekrans/BlazorNative/pull/180)) landed **six**
+   `PublicAPI.Shipped.txt` baselines (1 166 lines) with `RS0016`/`RS0017`/`RS0037` escalated to
+   **errors** via a per-package `BnEnforcePublicApi` property in `src/Directory.Build.targets` —
+   **`.targets`, not `.props`**, the CS1591 lesson re-applied — plus an analyzer **diagnostic-ID
+   roster** pin (the 7 `BN00xx` ids, both directions) replacing a `.txt` baseline for the
+   Analyzers package, whose real contract a `.txt` cannot express. **Gate C**
+   ([#183](https://github.com/MarcelRoozekrans/BlazorNative/pull/183) — **open at the time Gate D
+   was written**, so criterion A3 is the one blocker this milestone entry does not yet claim)
+   marked **28 of 31** NOT-API
+   types `[EditorBrowsable(Never)]` with a per-type reason, ledgered the **3 unmarkable**
+   generated types rather than skipping them, and wrote the
+   [`[Experimental]` policy](../plans/2026-07-21-phase-11.3-experimental-policy.md) — `BN1xxx`
+   reserved, disjoint from `BN0xxx`, never reused — with the argued finding that the current
+   surface warrants **zero** uses. **Gate D** produced the standalone
+   [1.0 criteria](../plans/2026-07-22-phase-11.3-one-point-oh-criteria.md) (**12 blockers**, 7 met
+   / 5 open, each open one owned), the consumer-facing
+   [API-stability page + compatibility statement](../../website/docs/api-stability.md), and the
+   README re-cut.
+
+   **Evidence — the strongest single fact is a mutation, not a green build.** Renaming
+   `BnButton.Label` → `BnButton.Text` produced **`error RS0016` ×2 + `error RS0017` ×2 and exit
+   1**. A green `build-test` would have proven nothing here: CS1591 *"read as ON and was OFF"*
+   **twice** (`src/Directory.Build.targets:51`–`:63`), and this gate was wired specifically to not
+   reproduce that. The `.razor` risk was also closed empirically rather than assumed — `BnSlider`'s
+   23 generator-produced parameters appear in the baseline, so the pin has no hole where the
+   consumer surface is widest.
+
+   **Findings the review produced, which is the point of reading a baseline rather than
+   generating one.** [#181](https://github.com/MarcelRoozekrans/BlazorNative/issues/181) —
+   `default(BlazorNativePage)` yields a page with a **null mount thunk**, because C# guarantees a
+   public parameterless constructor on every struct and the type's xmldoc claims the two factories
+   are *"the only way in."* Its sibling
+   [#178](https://github.com/MarcelRoozekrans/BlazorNative/issues/178) is the same trap on
+   `CaptureOptions`. Neither was found by a test or a bug report; both were found by reading a
+   generated `.txt` file line by line. They are carried as criterion **Q5**.
+
+   **Boundaries kept explicit:** the API is **marked, not frozen** — `bump-minor-pre-major` is
+   still on and a minor may still break the surface *deliberately*; the baseline makes a break
+   **visible**, not impossible. Making `NativeRenderer` + the patch model `internal` is a
+   **breaking** change deliberately **not** made here (criterion S3), so a consumer can still bind
+   to them — `[EditorBrowsable(Never)]` is a signpost, not a barrier. **1.0 is defined here, not
+   cut here** (scoping decision 5).
 
 5. **Hygiene + close.** Every new surface CI-asserted (the codegen output drift-guarded, the
    public-API baseline gated); a decision log per phase; the device-proof doc; a **final audit**
