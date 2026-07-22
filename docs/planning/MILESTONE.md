@@ -214,8 +214,7 @@ the project stops being a proof-of-concept and starts being something a stranger
    **`.targets`, not `.props`**, the CS1591 lesson re-applied — plus an analyzer **diagnostic-ID
    roster** pin (the 7 `BN00xx` ids, both directions) replacing a `.txt` baseline for the
    Analyzers package, whose real contract a `.txt` cannot express. **Gate C**
-   ([#183](https://github.com/MarcelRoozekrans/BlazorNative/pull/183) — **open at the time Gate D
-   was written**, so criterion A3 is the one blocker this milestone entry does not yet claim)
+   ([#183](https://github.com/MarcelRoozekrans/BlazorNative/pull/183))
    marked **28 of 31** NOT-API
    types `[EditorBrowsable(Never)]` with a per-type reason, ledgered the **3 unmarkable**
    generated types rather than skipping them, and wrote the
