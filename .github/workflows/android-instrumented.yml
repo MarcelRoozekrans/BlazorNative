@@ -17,7 +17,7 @@
 #   emulator (ubuntu-latest, KVM) — downloads the .so, boots the API 34
 #     google_apis x86_64 Pixel 6 image (mirrors the local AVD
 #     blazornative-pixel6-x86_64), runs connectedAndroidTest with
-#     -PciSoDir pointing at the artifact → asserts 212 passed / 0 failed.
+#     -PciSoDir pointing at the artifact → asserts 213 passed / 0 failed.
 #
 # Baselines are asserted, not observed: count drift fails the job loudly.
 # ─────────────────────────────────────────────────────────────────────────────
@@ -934,7 +934,7 @@ jobs:
       #        crypto=null to the prompt -> hasCryptoObject false -> this reds (verified: 1
       #        red, "MUST pass a CryptoObject", this test alone).
       #      .delete_echoes_ok -- delete is idempotent + permission-free -> Ok.
-      # ── Phase 11.4 Gate B — THE STDERR -> LOGCAT PUMP (210 -> 212, +2) ──
+      # ── Phase 11.4 Gate B — THE STDERR -> LOGCAT PUMP (210 -> 213, +3) ──
       #    BnStderrPumpAndroidTest. ⚠ NOT RUN LOCALLY when Gate B landed: no device was
       #    attached and booting one was out of scope, so this lane is where these two
       #    first execute. They exist because ONE THING IN THE TRANSPORT CANNOT BE PINNED
@@ -944,11 +944,18 @@ jobs:
       #    the syscall (line splitting, partial lines, the [BN|L|category] round trip,
       #    the unprefixed fallback) is pinned there, over an in-memory stream, and only
       #    the syscall is pinned here.
-      #      .stderrWrites_reachTheSink_throughTheRealDup2 -- Os.write(FileDescriptor.err,
-      #        …) after install() reaches the pump's sink with the level its prefix
-      #        declared. Asserted against the INJECTED SINK, deliberately, not by
+      #      .stderrWrites_reachTheSink_throughTheRealDup2 -- a write to an EXPLICIT
+      #        descriptor 2 after install() reaches the pump's sink with the level its
+      #        prefix declared. Asserted against the INJECTED SINK, deliberately, not by
       #        scraping `logcat -d`: the scrape is timing-sensitive and belongs in Phase
       #        11.2's device runbook as an observation, not in a gate (design §8.2).
+      #      .javaFileDescriptorErr_isTheProcessStderr (#191, +1) -- the probe the FIRST
+      #        dispatch used, Os.write(FileDescriptor.err, …), PLUS an assertion on that
+      #        descriptor's integer. The pair is a DISCRIMINATOR: this one red while the
+      #        one above is green means ART did not hand out the literal fd 2 and the
+      #        original failure was a test bug; both red means the transport is broken.
+      #        Every message carries the dup2 result, the pipe fds and the reader
+      #        thread's liveness, so the next dispatch settles it instead of guessing.
       #      .install_isIdempotent -- a second install() returns false. A second dup2
       #        would re-point fd 2 at a NEW pipe and orphan the first reader, losing
       #        every line written between the two; Activity recreation re-enters
@@ -1004,7 +1011,7 @@ jobs:
       #        echo stays blank -> this times out and reds (the no-hang law).
       #      .check_reports_availability_as_data -- Check -> status:Captured (available on the
       #        AVD) without launching the camera UI.
-      - name: Assert instrumented baseline (212 passed / 0 failed)
+      - name: Assert instrumented baseline (213 passed / 0 failed)
         run: |
           shopt -s globstar nullglob
           xmls=(src/BlazorNative.Jni/build/outputs/androidTest-results/connected/**/*.xml)
@@ -1021,8 +1028,8 @@ jobs:
             s=$(attr skipped "$x");  skipped=$((skipped + ${s:-0}))
           done
           echo "Instrumented totals across ${#xmls[@]} suite(s): tests=$tests failures=$failures errors=$errors skipped=$skipped"
-          if [ "$tests" -ne 212 ] || [ "$failures" -ne 0 ] || [ "$errors" -ne 0 ] || [ "$skipped" -ne 0 ]; then
-            echo "Instrumented test baseline drift: expected 212 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped" >&2
+          if [ "$tests" -ne 213 ] || [ "$failures" -ne 0 ] || [ "$errors" -ne 0 ] || [ "$skipped" -ne 0 ]; then
+            echo "Instrumented test baseline drift: expected 213 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped" >&2
             exit 1
           fi
 
