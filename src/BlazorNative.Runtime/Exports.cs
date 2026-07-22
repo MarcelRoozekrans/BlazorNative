@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using BlazorNative.Core;
@@ -56,6 +57,12 @@ namespace BlazorNative.Runtime;
 // long-form contract.
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// <summary>The init-INPUT struct a shell passes to <c>blazornative_init</c>.</summary>
+/// <remarks>Not part of the supported public API: public because it is a parameter type of an
+/// <c>[UnmanagedCallersOnly]</c> export, and its contract is the sequential C layout mirrored in
+/// the C header and the Kotlin JNA structure — not this managed declaration. Its audience is the
+/// two shells in this repo. Tier NOT-API.</remarks>
+[EditorBrowsable(EditorBrowsableState.Never)]
 [StructLayout(LayoutKind.Sequential)]
 public struct BlazorNativeInitOptions
 {
@@ -73,6 +80,10 @@ public struct BlazorNativeInitOptions
     public int    PlatformInfoKind;
 }
 
+/// <summary>The init-OUTPUT struct <c>blazornative_init</c> writes back to the shell.</summary>
+/// <remarks>Not part of the supported public API — a C-ABI export struct, see
+/// <see cref="BlazorNativeInitOptions"/>. Tier NOT-API.</remarks>
+[EditorBrowsable(EditorBrowsableState.Never)]
 [StructLayout(LayoutKind.Sequential)]
 public struct BlazorNativeInitResult
 {
@@ -81,6 +92,13 @@ public struct BlazorNativeInitResult
     public IntPtr VersionString;         // const char* — static, never freed
 }
 
+/// <summary>The ten <c>[UnmanagedCallersOnly]</c> C entry points the native shells call.</summary>
+/// <remarks>Not part of the supported public API: <c>[UnmanagedCallersOnly]</c> requires the
+/// exported methods to be public static, so the containing class is public purely as a
+/// consequence of the export mechanism. No app author calls <c>Exports.Init</c> — the callers are
+/// the Kotlin/JNA and Swift/ObjC++ shells in this repo, and the exported set is separately gated
+/// by a symbol-count check on every published binary. Tier NOT-API.</remarks>
+[EditorBrowsable(EditorBrowsableState.Never)]
 public static class Exports
 {
     // Static UTF-8 cstrings — allocated once on first type touch via the static

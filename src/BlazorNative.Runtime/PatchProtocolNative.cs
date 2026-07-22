@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Runtime.InteropServices;
 
 namespace BlazorNative.Runtime;
@@ -25,7 +26,11 @@ namespace BlazorNative.Runtime;
 /// <summary>Wire ids for the RenderPatch types. AppendChild = 2 is
 /// RESERVED-DORMANT since Phase 3.3 deleted AppendChildPatch (DoD #10 —
 /// CreateNode.AuxInt carries InsertIndex instead): the id is never emitted
-/// and never reused, so wire ids stay stable across hosts (no ABI break).</summary>
+/// and never reused, so wire ids stay stable across hosts (no ABI break).
+/// <para>Not part of the supported public API: a wire-protocol enum, public because it is a field
+/// type of the frame structs that cross the C ABI. Its contract is the numeric ids mirrored in
+/// Kotlin and Swift, not the managed enum. Tier NOT-API.</para></summary>
+[EditorBrowsable(EditorBrowsableState.Never)]
 public enum BlazorNativePatchKind : int
 {
     CreateNode = 1, AppendChild = 2 /* reserved-dormant */, RemoveNode = 3, UpdateProp = 4,
@@ -46,13 +51,22 @@ public enum BlazorNativePatchKind : int
 /// shape: new ids on the existing int32 field, both shells' nodeTypes arrays
 /// (+ their content/length pins) gain the entries in Gates 2/3. `modal` is the
 /// overlay NodeType (anchor + overlay shell-side — design decision 1);
-/// `activityindicator` is a measured leaf (decision 5).</summary>
+/// `activityindicator` is a measured leaf (decision 5).
+/// <para>Not part of the supported public API — a wire-protocol enum, see
+/// <see cref="BlazorNativePatchKind"/>. Tier NOT-API.</para></summary>
+[EditorBrowsable(EditorBrowsableState.Never)]
 public enum BlazorNativeNodeType : int
 {
     None = 0, View = 1, Text = 2, Button = 3, Input = 4, Image = 5, Scroll = 6, Picker = 7,
     Checkbox = 8, Switch = 9, Slider = 10, Modal = 11, ActivityIndicator = 12,
 }
 
+/// <summary>One patch as it crosses the frame wire — the 48-byte native record the shells decode.</summary>
+/// <remarks>Not part of the supported public API: public because it crosses the C ABI, and its
+/// contract is the 48-byte layout pinned in PatchProtocolNativeTests and mirrored by
+/// NativeFrameAdapter (Kotlin) / BnFrameAdapter (Swift) — not this managed declaration. Tier
+/// NOT-API.</remarks>
+[EditorBrowsable(EditorBrowsableState.Never)]
 [StructLayout(LayoutKind.Sequential)]
 public struct BlazorNativePatch
 {
@@ -67,6 +81,10 @@ public struct BlazorNativePatch
     public IntPtr PropValue;              // offset 40 (UpdateProp/SetStyle: value; NULL = null)
 }                                         // total 48 bytes
 
+/// <summary>The 24-byte native frame envelope handed to the host's frame callback.</summary>
+/// <remarks>Not part of the supported public API — a C-ABI wire struct, see
+/// <see cref="BlazorNativePatch"/>. Tier NOT-API.</remarks>
+[EditorBrowsable(EditorBrowsableState.Never)]
 [StructLayout(LayoutKind.Sequential)]
 public struct BlazorNativeFrame
 {

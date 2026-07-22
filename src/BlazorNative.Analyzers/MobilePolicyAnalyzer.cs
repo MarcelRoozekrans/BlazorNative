@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.ComponentModel;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -29,6 +30,14 @@ namespace BlazorNative.Analyzers;
 // Full rule docs: https://marcelroozekrans.github.io/BlazorNative/docs/analyzers
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// <summary>Reports BN0004 / BN0010 / BN0011 / BN0013 — the mobile-policy rules.</summary>
+/// <remarks>Not part of the supported public API: Roslyn requires an analyzer entry point to be
+/// public so the host can instantiate it. A consumer can never reference this type — the package
+/// ships as an <c>analyzers/dotnet/cs</c> asset with Roslyn as <c>PrivateAssets="all"</c>, so
+/// consuming projects receive diagnostics, never a compile-time reference. The contract that must
+/// not change is the <em>diagnostic ids</em>, pinned by the roster test in
+/// <c>tests/BlazorNative.Analyzers.Tests</c>. Tier NOT-API.</remarks>
+[EditorBrowsable(EditorBrowsableState.Never)]
 [DiagnosticAnalyzer(LanguageNames.CSharp)]
 public sealed class MobilePolicyAnalyzer : DiagnosticAnalyzer
 {

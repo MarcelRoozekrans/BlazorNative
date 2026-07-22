@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Runtime.InteropServices;
 
 namespace BlazorNative.Runtime;
@@ -75,9 +76,15 @@ namespace BlazorNative.Runtime;
 /// Phase 5.4 appended clipboard read/write + share (offsets 48/56/64). If you add a
 /// slot, append it here, in the Kotlin @Structure.FieldOrder mirror, in the Swift
 /// header, and pin its offset in BOTH drift tests (BridgeProtocolNativeTests.cs /
-/// ShellBridgeTest.kt).</summary>
+/// ShellBridgeTest.kt).
+/// <para>Not part of the supported public API. This is a C-ABI mirror: it is public because it
+/// crosses the <c>[UnmanagedCallersOnly]</c> export boundary, and its real contract is the
+/// <em>byte layout</em> (80 bytes, <c>HostCallBegin</c> at offset 72) pinned in
+/// BridgeProtocolNativeTests and in the Kotlin/Swift mirrors — not this managed declaration. Its
+/// audience is the two shells in this repo, never an app author. Tier NOT-API.</para></summary>
+[EditorBrowsable(EditorBrowsableState.Never)]
 [StructLayout(LayoutKind.Sequential)]
-public struct BlazorNativeBridgeCallbacks           // 10 × IntPtr = 80 bytes
+public struct BlazorNativeBridgeCallbacks          // 10 × IntPtr = 80 bytes
 {
     public IntPtr Navigate;        // offset 0  — int (const char* routeUtf8)
     public IntPtr CurrentRoute;    // offset 8  — int (char* buf, int cap)
@@ -100,9 +107,12 @@ public struct BlazorNativeBridgeCallbacks           // 10 × IntPtr = 80 bytes
 /// <summary>Fetch request handed to the host's FetchBegin callback.
 /// .NET-owned; the struct and every string it references are valid ONLY for
 /// the duration of the FetchBegin call. Headers cross as a flat JSON object
-/// string (<c>{"k":"v",...}</c>).</summary>
+/// string (<c>{"k":"v",...}</c>).
+/// <para>Not part of the supported public API — a C-ABI mirror whose contract is its byte layout,
+/// see <see cref="BlazorNativeBridgeCallbacks"/>. Tier NOT-API.</para></summary>
+[EditorBrowsable(EditorBrowsableState.Never)]
 [StructLayout(LayoutKind.Sequential)]
-public struct BlazorNativeFetchRequest              // 4 × IntPtr = 32 bytes
+public struct BlazorNativeFetchRequest             // 4 × IntPtr = 32 bytes
 {
     public IntPtr Url;             // offset 0  — const char*, never NULL
     public IntPtr Method;          // offset 8  — const char*, never NULL ("GET", ...)
@@ -112,9 +122,12 @@ public struct BlazorNativeFetchRequest              // 4 × IntPtr = 32 bytes
 
 /// <summary>Fetch response the host passes to
 /// <c>blazornative_fetch_complete</c>. Host-owned; valid ONLY during that
-/// call — .NET copies everything before returning.</summary>
+/// call — .NET copies everything before returning.
+/// <para>Not part of the supported public API — a C-ABI mirror whose contract is its byte layout,
+/// see <see cref="BlazorNativeBridgeCallbacks"/>. Tier NOT-API.</para></summary>
+[EditorBrowsable(EditorBrowsableState.Never)]
 [StructLayout(LayoutKind.Sequential)]
-public struct BlazorNativeFetchResponse             // 2 × int + 3 × IntPtr = 32 bytes
+public struct BlazorNativeFetchResponse            // 2 × int + 3 × IntPtr = 32 bytes
 {
     public int    StatusCode;      // offset 0  — HTTP status (meaningful when Ok != 0)
     public int    Ok;              // offset 4  — 0 = transport error (see ErrorMessage)
