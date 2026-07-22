@@ -46,8 +46,15 @@ interface NativeBindings : Library {
      * Phase 3.0d: mounts a registered component by name. [componentName] is
      * NUL-terminated UTF-8 bytes (append a trailing 0 to the encoded string).
      * The first frame callback fires BEFORE this returns (sync mount contract).
-     * Status: 0 ok / 1 unknown component / 2 mount threw (detail on the
-     * process stderr) / 3 name pointer null.
+     * Status: 0 ok / 1 unknown component / 2 mount threw / 3 name pointer null.
+     *
+     * WHERE THE DETAIL IS (corrected in Phase 11.4 Gate B). rc 2's detail is written
+     * to the runtime's stderr — which on Android USED TO MEAN NOWHERE (fd 2 is
+     * /dev/null there), so this contract pointed the reader at a destination the
+     * platform destroys. The shell now installs BnStderrLogcatPump before init, so
+     * the detail arrives in LOGCAT under `BlazorNative/<category>` at the severity
+     * its `[BN|…]` prefix declares (`adb logcat -s BlazorNative/…`). On the desktop
+     * JVM it is still plain stderr.
      */
     fun blazornative_mount(componentName: ByteArray): Int
 
@@ -62,7 +69,9 @@ interface NativeBindings : Library {
      *   0 = dispatched (incl. stale-handler at-most-once)
      *   1 = no session/nothing mounted
      *   2 = dispatch faulted — the handler, the resulting re-render, or frame
-     *       delivery threw (detail on native stderr)
+     *       delivery threw (detail on the runtime's stderr → LOGCAT under
+     *       `BlazorNative/…` since Phase 11.4 Gate B's pump; plain stderr on the
+     *       desktop JVM)
      *   3 = malformed/NULL args OR handlerId > int.MaxValue
      *
      * SYNCHRONOUS: the handler, the re-render, AND the frame callback all
@@ -79,7 +88,8 @@ interface NativeBindings : Library {
      * runtime's shell bridge (the struct memory may be freed after this returns;
      * the CALLBACK OBJECTS must stay strongly referenced — see the lifetime note
      * on [BlazorNativeBridgeCallbacks]). Returns 0 on success, 2 on null pointer /
-     * bad size / failure (detail on the process stderr). Re-registration is
+     * bad size / failure (detail on the runtime's stderr → LOGCAT under
+     * `BlazorNative/…` since Phase 11.4 Gate B's pump). Re-registration is
      * allowed (last wins) — but the PREVIOUS registration's callback objects must
      * stay alive too (an in-flight .NET op may still hold the old snapshot);
      * BridgeRegistrar parks every registration forever (POC rule from
@@ -113,8 +123,9 @@ interface NativeBindings : Library {
      *       the shell falls through to default back (Android finishes). ONLY the
      *       "back" route returns rc 1; the multicast path never does
      *   2 = a subscriber (or the re-render it drove) faulted — CONTAINED
-     *       (isolation) but surfaced; OR the back swap faulted; detail on native
-     *       stderr — log LOUDLY
+     *       (isolation) but surfaced; OR the back swap faulted; detail on the
+     *       runtime's stderr → LOGCAT under `BlazorNative/…` since Phase 11.4
+     *       Gate B's pump — log LOUDLY
      *   3 = malformed: NULL / empty [nameUtf8] (a NULL payload is legal)
      *
      * SYNCHRONOUS: the subscriber's StateHasChanged re-render — or the back
@@ -132,8 +143,9 @@ interface NativeBindings : Library {
      * across the call ([BridgeFetchCompleter] does). Return codes:
      *   0 = delivered
      *   1 = unknown / already-completed id — benign cancellation race, ignore
-     *   2 = invalid call or internal bridge failure — log LOUDLY; detail
-     *       lands on the runtime's stderr
+     *   2 = invalid call or internal bridge failure — log LOUDLY; detail lands
+     *       on the runtime's stderr, and therefore in LOGCAT under
+     *       `BlazorNative/…` (Phase 11.4 Gate B's pump)
      */
     fun blazornative_fetch_complete(requestId: Long, response: BlazorNativeFetchResponse.ByReference): Int
 
@@ -152,7 +164,8 @@ interface NativeBindings : Library {
      * status value, NEVER as a thrown exception across this boundary. Return codes:
      *   0 = delivered
      *   1 = unknown / already-completed id — benign cancellation race, ignore
-     *   2 = invalid call or internal bridge failure — log LOUDLY; detail on stderr
+     *   2 = invalid call or internal bridge failure — log LOUDLY; detail on the
+     *       runtime's stderr → LOGCAT under `BlazorNative/…` (Phase 11.4 Gate B)
      */
     fun blazornative_host_call_complete(requestId: Long, status: Int, payloadJsonUtf8: Pointer?): Int
 
@@ -167,7 +180,13 @@ interface NativeBindings : Library {
      * the mount call). Gate 3's BlazorNativeRuntime therefore wraps the
      * callback body in try/catch routed to its pluggable onError sink
      * (android.util.Log only when the Activity wires it) so dropped frames
-     * surface deliberately instead of vanishing into an untailed stderr.
+     * surface deliberately rather than relying on stderr alone.
+     *
+     * Phase 11.4 Gate B made the OTHER half true as well: JNA's own trace no
+     * longer vanishes. It goes to fd 2, which the shell's stderr pump forwards
+     * to logcat as `BlazorNative/native` at Log.w (it carries no `[BN|…]`
+     * prefix — it is not our line). The onError route stays: it is the one that
+     * carries a MESSAGE naming the dropped frame, not just a stack.
      */
     interface FrameCallback : com.sun.jna.Callback {
         fun invoke(frame: Pointer)
@@ -281,15 +300,29 @@ interface NativeBindings : Library {
  *       public int    PlatformInfoApiLevel;
  *       public IntPtr PlatformInfoNote;      // const char* — optional
  *       public int    PlatformInfoKind;      // Phase 10.0 (#121) — PlatformKind ordinal
+ *       public int    LogLevel;              // Phase 11.4 (#155) — BnLogLevel ordinal
  *   }
  *
- * x64 layout (8-byte aligned): 8 + 4 + (4 pad) + 8 + 4 + (4 tail pad) = 32 bytes
- * (when passed as standalone struct). JNA computes size from FieldOrder + field
- * types. Phase 10.0 (#121) appended platformInfoKind AFTER the three original
- * fields — offsets 0/8/16 are unchanged, so an old shell's 24-byte call still lands
- * every prior field; the runtime reads kind=0 (DevHost, the safe default) from the
- * absent tail. The shell passes its real PlatformKind ordinal (Android=1) so an iOS
- * app cannot report Android.
+ * x64 layout (8-byte aligned): 8 + 4 + (4 pad) + 8 + 4 + 4 = 32 bytes (when passed
+ * as standalone struct). JNA computes size from FieldOrder + field types.
+ * Phase 10.0 (#121) appended platformInfoKind AFTER the three original fields —
+ * offsets 0/8/16 are unchanged, so an old shell's 24-byte call still lands every
+ * prior field; the runtime reads kind=0 (DevHost, the safe default) from the absent
+ * tail. The shell passes its real PlatformKind ordinal (Android=1) so an iOS app
+ * cannot report Android.
+ *
+ * PHASE 11.4 GATE B appended `logLevel` at OFFSET 28 — and it cost ZERO BYTES.
+ * platformInfoKind at 24 was followed by 4 bytes of TAIL PADDING (the struct's
+ * alignment is 8 because it holds pointers), so the new int lands in padding that
+ * was already being allocated: the size stays 32, and BootSmokeNativeAndroidTest's
+ * `size() == 32` pin is UNCHANGED rather than edited — which is exactly what proves
+ * the field was free (design §5.4). This struct is the init-INPUT, NOT the frozen
+ * 80-byte callbacks bridge, so appending here spends none of the "five capabilities,
+ * zero ABI change" property.
+ *
+ * ORDINAL 0 MEANS "UNSET". A shell that predates the field leaves it zero and the
+ * runtime applies its own default (Warn) — the same safe non-lying rule
+ * platformInfoKind's ordinal 0 → DevHost follows.
  */
 /**
  * Phase 10.0 (#121): the ABI-mirrored PlatformKind ordinals the shared runtime
@@ -306,14 +339,64 @@ object BnPlatformKind {
     const val MAC: Int = 4
 }
 
-@Structure.FieldOrder("platformInfoOs", "platformInfoApiLevel", "platformInfoNote", "platformInfoKind")
+@Structure.FieldOrder("platformInfoOs", "platformInfoApiLevel", "platformInfoNote", "platformInfoKind", "logLevel")
 open class BlazorNativeInitOptions : Structure() {
-    @JvmField var platformInfoOs: Pointer? = null
-    @JvmField var platformInfoApiLevel: Int = 0
-    @JvmField var platformInfoNote: Pointer? = null
-    @JvmField var platformInfoKind: Int = 0
+    @JvmField var platformInfoOs: Pointer? = null       // offset 0
+    @JvmField var platformInfoApiLevel: Int = 0         // offset 8  (4 bytes pad at 12)
+    @JvmField var platformInfoNote: Pointer? = null     // offset 16
+    @JvmField var platformInfoKind: Int = 0             // offset 24 — Phase 10.0 (#121)
+    @JvmField var logLevel: Int = BnLogLevel.UNSET      // offset 28 — Phase 11.4 (#155)
 
     class ByReference : BlazorNativeInitOptions(), Structure.ByReference
+}
+
+/**
+ * Phase 11.4 Gate B (#155): the ABI-mirrored BnLogLevel ordinals the shared runtime
+ * decodes in `blazornative_init` (Exports.cs → BnLog.SetLevelFromOrdinal) —
+ * byte-identical to BlazorNative.Core.BnLogLevel. The shell puts one of these in
+ * `BlazorNativeInitOptions.logLevel` (offset 28), exactly as it puts a
+ * [BnPlatformKind] ordinal at offset 24.
+ *
+ * A MESSAGE IS EMITTED WHEN ITS LEVEL IS AT OR MORE SEVERE THAN (numerically ≤) the
+ * threshold, so the threshold is a CEILING on verbosity: WARN ships errors and
+ * warnings, VERBOSE ships everything.
+ *
+ * [UNSET] is the wire's "the shell said nothing" and resolves runtime-side to the
+ * quiet Release default (Warn). NEVER RENUMBER — these are wire values, and the two
+ * copies (here and BnLogLevel.cs) are held equal by BnLogFormatDriftTests.
+ */
+object BnLogLevel {
+    /** Reserved: the shell declared nothing → the runtime's default (Warn). */
+    const val UNSET: Int = 0
+
+    /** Faults only. */
+    const val ERROR: Int = 1
+
+    /** Faults + dropped wires / bent host contracts. THE RELEASE DEFAULT. */
+    const val WARN: Int = 2
+
+    /** …plus success narration (boot lines). */
+    const val INFO: Int = 3
+
+    /** …plus developer detail, including full exception stacks. */
+    const val DEBUG: Int = 4
+
+    /** …plus per-frame / per-patch tracing. */
+    const val VERBOSE: Int = 5
+
+    /** Case-insensitive name → ordinal, for the shell's app-facing knob
+     * (MainActivity reads a manifest `<meta-data>` value like "Debug"). An
+     * unrecognised name — including null — resolves to [UNSET], i.e. the runtime's
+     * default, because a typo in a manifest must not silently turn logging OFF. */
+    @JvmStatic
+    fun fromName(name: String?): Int = when (name?.trim()?.lowercase()) {
+        "error" -> ERROR
+        "warn", "warning" -> WARN
+        "info", "information" -> INFO
+        "debug" -> DEBUG
+        "verbose", "trace" -> VERBOSE
+        else -> UNSET
+    }
 }
 
 /**

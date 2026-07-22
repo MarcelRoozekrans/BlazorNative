@@ -190,9 +190,20 @@ class DispatchEventTest {
             msg.contains("dispatch faulted — the handler, the resulting re-render, or frame delivery threw"),
             "rc-2 message must carry the frozen Gate 1 wording; got: $msg"
         )
+        // Phase 11.4 Gate B CORRECTED THIS ADVICE, and the update is the good case:
+        // the message used to end "reproduce on desktop JVM to see it" because the
+        // detail went to a stderr Android DISCARDS. The shell now installs a
+        // dup2-based stderr pump before init, so the detail reaches logcat on the
+        // device — the hint was true, it stopped being true, and it moved with the
+        // behaviour rather than rotting into folklore.
         assertTrue(
-            msg.contains("detail on native stderr — reproduce on desktop JVM to see it"),
-            "rc-2 message must carry the desktop-JVM reproduction hint; got: $msg"
+            msg.contains("detail on the runtime's stderr — logcat `BlazorNative/…` on Android"),
+            "rc-2 message must point at the destination the detail ACTUALLY reaches; got: $msg"
+        )
+        assertTrue(
+            !msg.contains("reproduce on desktop JVM"),
+            "the pre-11.4 desktop-JVM workaround must be gone — it tells the reader to leave " +
+                "the device to see something logcat now carries; got: $msg"
         )
     }
 

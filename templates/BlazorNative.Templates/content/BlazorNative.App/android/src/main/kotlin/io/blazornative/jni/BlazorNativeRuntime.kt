@@ -29,8 +29,12 @@ class BlazorNativeRuntime(
     // (re-render frames delivered inside dispatchEvent)} — consumers must be
     // safe for both (Android: post to the main thread before touching views).
     private val onFrame: (RenderFrame) -> Unit,
-    // (JVM-only default — Android callers must pass a Log-based sink: stderr
-    // goes to /dev/null on Android, not logcat.)
+    // (JVM-only default — Android callers must pass a Log-based sink. This is
+    // the SHELL's own Kotlin diagnostics, and it is NOT what Phase 11.4 Gate B's
+    // stderr pump covers: the pump redirects process fd 2, which is where the
+    // NATIVE runtime writes; ART routes a JVM `System.err.println` through its
+    // own path with the tag "System.err", losing the level and the category. So
+    // the pluggable sink stays, and the Activity still passes Log.e.)
     private val onError: (String, Throwable) -> Unit = { msg, t -> System.err.println("$msg: $t") },
 ) {
     private val callback = object : NativeBindings.FrameCallback {
@@ -202,7 +206,7 @@ class BlazorNativeRuntime(
         1 -> "dispatch_event(handlerId=$handlerId, '$eventName') → rc 1: no session/nothing mounted"
         2 -> "dispatch_event(handlerId=$handlerId, '$eventName') → rc 2: dispatch faulted — " +
             "the handler, the resulting re-render, or frame delivery threw " +
-            "(detail on native stderr — reproduce on desktop JVM to see it)"
+            "(detail on the runtime's stderr — logcat `BlazorNative/…` on Android)"
         3 -> "dispatch_event(handlerId=$handlerId, '$eventName') → rc 3: malformed/NULL args " +
             "OR handlerId > int.MaxValue (writer bug — should be impossible from this API)"
         else -> "dispatch_event(handlerId=$handlerId, '$eventName') → undocumented rc $rc"
@@ -282,8 +286,8 @@ class BlazorNativeRuntime(
         1 -> "host_event('$name') → rc 1: not handled — at the origin (no previous " +
             "route / no session); the shell falls through to default back"
         2 -> "host_event('$name') → rc 2: faulted — a NativeEvents subscriber, its " +
-            "re-render, or the back swap threw (detail on native stderr — " +
-            "reproduce on desktop JVM to see it)"
+            "re-render, or the back swap threw (detail on the runtime's stderr — " +
+            "logcat `BlazorNative/…` on Android)"
         3 -> "host_event('$name') → rc 3: malformed/NULL event name (writer bug — " +
             "should be impossible from this API)"
         else -> "host_event('$name') → undocumented rc $rc"
@@ -326,6 +330,14 @@ class BlazorNativeRuntime(
         // report DevHost, and the Android shell passes ANDROID explicitly (MainActivity)
         // so an iOS app can never inherit Android from a shared runtime constant.
         platformKind: Int = BnPlatformKind.DEV_HOST,
+        // Phase 11.4 Gate B (#155): the shell's declared BnLogLevel ordinal, read
+        // by the runtime BEFORE its first managed line (Exports.cs →
+        // BnLog.SetLevelFromOrdinal). Defaults to UNSET, which the runtime resolves
+        // to its own quiet Release default (Warn) — so a host that says nothing
+        // gets the documented default rather than an accidental verbosity. It is
+        // the ONLY input applied early enough to govern init's own failure path,
+        // which is why it rides the init struct rather than a setter.
+        logLevel: Int = BnLogLevel.UNSET,
         // Phase 3.1: when non-null, the six shell callbacks are registered
         // BEFORE mount (components resolving IMobileBridge need a live host).
         bridge: ShellBridgeHandlers? = null,
@@ -343,6 +355,7 @@ class BlazorNativeRuntime(
             platformInfoApiLevel = apiLevel
             platformInfoNote = noteMem
             platformInfoKind = platformKind // Phase 10.0 (#121): report the shell's real kind
+            this.logLevel = logLevel        // Phase 11.4 (#155): offset 28, size still 32
         }
         val init = lib.blazornative_init(opts)
         if (init.status != 0) {
@@ -370,8 +383,8 @@ class BlazorNativeRuntime(
             1 -> throw IllegalStateException("unknown component '$componentName'")
             else -> throw IllegalStateException(
                 "mount($componentName) failed with status $rc — detail went to " +
-                    "native stderr, which Android discards; reproduce on the " +
-                    "desktop JVM to see it"
+                    "the runtime's stderr; on Android the shell's stderr pump " +
+                    "forwards it to logcat (`adb logcat -s BlazorNative/…`)"
             )
         }
         return lines

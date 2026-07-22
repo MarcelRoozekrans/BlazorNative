@@ -4,7 +4,7 @@
 #
 #   build-test (windows-latest) — the local verification procedure verbatim
 #   (setup.ps1 §1–7 documents the toolchain pins):
-#     build (analyzers ride it) → .NET tests (843 passed / 0 skipped) →
+#     build (analyzers ride it) → .NET tests (848 passed / 0 skipped) →
 #     three NativeAOT publishes of samples/BlazorNative.SampleApp — the
 #     publish head since Phase 8.0: the app owns PublishAot, the exports stay
 #     in Runtime via UnmanagedEntryPointsAssembly, and the artifact is
@@ -13,7 +13,7 @@
 #     each publish must show exactly the 4 accepted IL2072 trim warnings) →
 #     nine-export verification (dumpbin via vswhere / llvm-readelf from the
 #     pinned NDK) → Gradle testDebugUnitTest against the fresh win-x64 dll
-#     (120 passed / 0 failed — the assertion is the step near the end of this
+#     (148 passed / 0 failed — the assertion is the step near the end of this
 #     job; this header is a copy, and it read 92 for four milestones) →
 #     the instrumented sources COMPILE →
 #     consumer smoke (SIX packages packed at the one props version, nupkg
@@ -1421,7 +1421,31 @@ jobs:
       # stays 7 nupkg + 6 snupkg (ICamera joins the existing Device package — no 8th).
       # Android/iOS shells wire the real ACTION_IMAGE_CAPTURE + FileProvider /
       # UIImagePickerController at Gates 2/3.
-      - name: .NET tests (assert 843 passed / 0 skipped)
+      #
+      # 843 -> 848 (PHASE 11.4 GATE B, +5 — Runtime.Tests 678 -> 683): the Android
+      # stderr -> logcat transport (M11 DoD #6, #155/#164). The whole +5 is ONE new
+      # file, BnLogFormatDriftTests, and every one of its five pins exists for design
+      # RISK R1 — the line format `[BN|E|category] message` is WRITTEN by C#
+      # (BnLog.FormatLine) and PARSED by Kotlin (BnLogFormat.parse), two copies of one
+      # contract in two languages:
+      #   +1  TheLinePrefix_IsIdenticalInCSharpAndKotlin
+      #   +1  EveryLevelsTagCharacter_IsIdenticalInCSharpAndKotlin
+      #   +1  EveryLevelsFormattedLine_ParsesBackToTheSameTriple  (the round trip:
+      #       C#'s REAL output run through the Kotlin parser's rules, with the prefix
+      #       and the tag map READ OUT OF the checked-out Kotlin source)
+      #   +1  TheBnLogLevelOrdinals_AreIdenticalInCSharpAndKotlin (the init-input
+      #       ordinal at BlazorNativeInitOptions offset 28)
+      #   +1  TheTemplatesParser_DeclaresTheSamePrefix
+      # ⚠ WHY FIVE PINS FOR A STRING: R1's failure shape is a SILENT DOWNGRADE. A
+      # one-character drift sends every framework line to the pump's unprefixed
+      # fallback — Log.w, tag BlazorNative/native — and nothing throws, nothing
+      # crashes, and logcat still fills. Errors simply arrive as warnings, forever.
+      # NO ABI change: the log level rides BlazorNativeInitOptions' existing TAIL
+      # PADDING at offset 28 (SizeOf stays 32), the bridge stays 80 bytes and the
+      # exports stay 10 — this phase is designed specifically not to spend that.
+      # The JVM baseline moves in the same commit (120 -> 148, below); the iOS lane
+      # is Gate C and does not move here.
+      - name: .NET tests (assert 848 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -1439,8 +1463,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 843 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 843 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 848 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 848 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # ── NativeAOT publishes + nine-export verification ────────────────────
@@ -1716,7 +1740,31 @@ jobs:
       #     handler state, so the swap costs nothing: never-attached still drops,
       #     at the one moment the answer is true. Both tables swapped as literal
       #     twins; iOS pins the mount batch end-to-end (ios.yml, 152 → 153).
-      - name: JVM tests (Gradle testDebugUnitTest — assert 120 passed / 0 failed)
+      # ── Phase 11.4 Gate B: 120 → 148, +28 — the stderr → logcat transport
+      #    (M11 DoD #6, #155/#164). Two new files, and the split matters:
+      #      +22 BnStderrPumpTest      — the format round trip for all five levels
+      #          (design R1, pinned WITHIN Kotlin: format → parse through the
+      #          declared constants, so the shape can only be changed in one place;
+      #          the CROSS-LANGUAGE half is .NET's BnLogFormatDriftTests), the
+      #          unprefixed-line fallback matrix (kept VERBATIM at Log.w, never
+      #          dropped — that output is the BCL's and NativeAOT's, the half no
+      #          bridge-based transport could have carried), and the pump's real
+      #          hazards: a line split across a read, a tail with no trailing
+      #          newline, a multi-byte character split mid-sequence, CRLF, a
+      #          runaway line capped, and a THROWING SINK that must not kill a
+      #          process-lifetime daemon reader.
+      #      +6  BnLogLevelWireTest    — the init-input carrier: the struct is
+      #          STILL 32 bytes AND logLevel marshals to offset 28 (the pair is the
+      #          proof the field was free — either half alone is satisfiable by a
+      #          struct that never grew or by one that grew to 40), ordinal 0 =
+      #          unset, and the manifest knob's name→ordinal parse.
+      #    ⚠ THE dup2 ITSELF IS NOT PINNED HERE and cannot be: android.system.Os is
+      #    one of the android.jar methods this lane throws "not mocked" from. That
+      #    half is BnStderrPumpAndroidTest on the nightly instrumented lane, and it
+      #    too asserts against the INJECTED SINK rather than scraping `logcat -d`
+      #    (design §8.1 pin 5 — a logcat scrape is timing-sensitive and is a
+      #    runbook observation, not a gate).
+      - name: JVM tests (Gradle testDebugUnitTest — assert 148 passed / 0 failed)
         working-directory: src/BlazorNative.Jni
         run: |
           .\gradlew.bat --no-daemon testDebugUnitTest
@@ -1730,8 +1778,8 @@ jobs:
             $errors += [int]$suite.errors; $skipped += [int]$suite.skipped
           }
           Write-Host "JVM test totals across $($xmls.Count) suites: tests=$tests failures=$failures errors=$errors skipped=$skipped"
-          if ($tests -ne 120 -or $failures -ne 0 -or $errors -ne 0 -or $skipped -ne 0) {
-            throw "JVM test baseline drift: expected 120 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped"
+          if ($tests -ne 148 -or $failures -ne 0 -or $errors -ne 0 -or $skipped -ne 0) {
+            throw "JVM test baseline drift: expected 148 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped"
           }
 
       # the instrumented-sources compile gate moved to its own required job
