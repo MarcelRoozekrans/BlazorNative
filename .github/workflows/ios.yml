@@ -350,7 +350,7 @@ jobs:
             > ios-out/xcresult.json 2>/dev/null || true
           ls -la ios-out/crash || true
 
-      - name: Assert XCTest baseline (236 passed / 0 failed)
+      - name: Assert XCTest baseline (242 passed / 0 failed)
         if: always()
         run: |
           log=ios-out/xcodebuild-test.log
@@ -1052,9 +1052,37 @@ jobs:
           # BnFontTests asserts UIFont(name:"Inter-Regular") resolves (family Inter, not the
           # system fallback). The resolved-family assertions in BnRenderTests ride existing
           # test methods (no further count move).
-          if [ "$failed" -ne 0 ] || [ "$passed" -ne 236 ]; then
+          #
+          # 236 -> 242 (PHASE 11.4 GATE C, +6) — the iOS logging seam (M11 DoD #6, #155).
+          # All 78 shipped NSLog sites under BnHost/ moved onto BnLog (os_log / os.Logger),
+          # BnYogaLayout.mm's 4 going through the @_cdecl BnLogC shim, and the runtime's
+          # stderr now reaches the unified log through BnStderrPump. The whole +6 is ONE
+          # new file, BnHostTests/BnLogTests.swift:
+          #   +1  testTheGateEmitsAtOrAboveTheThreshold — the DIRECTION of the compare.
+          #       Inverted, Release ships Verbose and Debug builds go silent, and both
+          #       read as "logging is a bit odd" rather than as a bug.
+          #   +1  testAnUnsetOrOutOfRangeOrdinalResolvesToTheDefault — what makes the
+          #       offset-28 field back-compatible: a shell that predates it leaves the
+          #       tail padding zero, and zero must mean "apply the default" (Warn).
+          #   +1  testAnUnrecognisedLevelNameResolvesToUnsetAndNotToSilence — a typo in
+          #       Info.plist / BN_LOG_LEVEL must not turn logging OFF.
+          #   +1  testEveryLevelRoundTripsThroughTheLineFormat — design R1's same-language
+          #       half (the CROSS-language half is pinned from the .NET suite, which reads
+          #       BnLog.swift's constants: BnLogFormatDriftTests).
+          #   +1  testAnUnprefixedLineFallsBackToWarnUnderTheNativeCategory — BCL /
+          #       NativeAOT / third-party output is NEVER DROPPED; it is the half no
+          #       bridge-based transport could have carried.
+          #   +1  testThePumpSplitsLinesAndBuffersPartialOnes — a read boundary landing
+          #       mid-line must not emit two half-lines, the second having lost its prefix
+          #       and therefore its severity.
+          # NO ABI change: bn_init_options gained logLevel at offset 28, which is the tail
+          # padding Phase 10.0 already allocated — sizeof stays 32 (BnPlatformInfoTests'
+          # existing size assertion is UNCHANGED and gains an offset(of:) line inside the
+          # same test method, so it adds no count), the callbacks bridge stays 80 and the
+          # nm -gU gate still asserts exactly 10 blazornative_* exports.
+          if [ "$failed" -ne 0 ] || [ "$passed" -ne 242 ]; then
             grep -E "Test Case '.*' (passed|failed)" "$log" || true
-            echo "iOS XCTest baseline drift: expected 236 passed / 0 failed, got passed=$passed failed=$failed" >&2
+            echo "iOS XCTest baseline drift: expected 242 passed / 0 failed, got passed=$passed failed=$failed" >&2
             exit 1
           fi
 

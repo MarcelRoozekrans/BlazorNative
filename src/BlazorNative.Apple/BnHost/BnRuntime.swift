@@ -61,7 +61,7 @@ enum BnRuntimeError: Error, CustomStringConvertible {
             switch rc {
             case 1: return "unknown component '\(c)'"
             case 3: return "mount('\(c)') — name pointer null"
-            default: return "mount('\(c)') failed with status \(rc) — detail went to native stderr"
+            default: return "mount('\(c)') failed with status \(rc) — the detail is in the unified log (subsystem io.blazornative, category native)"
             }
         }
     }
@@ -76,7 +76,7 @@ struct BnDispatchError: Error, CustomStringConvertible {
     var description: String {
         switch rc {
         case 1: return "dispatch_event(handlerId=\(handlerId), '\(eventName)') → rc 1: no session/nothing mounted"
-        case 2: return "dispatch_event(handlerId=\(handlerId), '\(eventName)') → rc 2: dispatch faulted (handler/re-render/frame delivery threw — detail on native stderr)"
+        case 2: return "dispatch_event(handlerId=\(handlerId), '\(eventName)') → rc 2: dispatch faulted (handler/re-render/frame delivery threw — the detail is in the unified log, subsystem io.blazornative, category native)"
         case 3: return "dispatch_event(handlerId=\(handlerId), '\(eventName)') → rc 3: malformed args or handlerId out of range"
         default: return "dispatch_event(handlerId=\(handlerId), '\(eventName)') → undocumented rc \(rc)"
         }
@@ -89,6 +89,12 @@ final class BnRuntime {
     /// mirroring register_frame_callback's last-wins contract).
     static var shared: BnRuntime?
 
+    /// The unified-log category for this file — the tag that used to be the
+    /// bracketed `[BnRuntime]` prefix inside every `NSLog` string. The brackets are
+    /// gone because the seam owns the presentation now; the CATEGORY is what
+    /// `log stream --predicate 'category == "BnRuntime"'` filters on.
+    static let logCategory = "BnRuntime"
+
     private let mapper: BnWidgetMapper
 
     /// The host half of the shell bridge (navigate/current-route/storage/fetch).
@@ -99,10 +105,14 @@ final class BnRuntime {
     /// post-boot .NET entry serializes through it. Never call the ABI off it.
     private let dispatchLane = DispatchQueue(label: "BlazorNative-Dispatch")
 
-    /// Frame-decode / dispatch error sink (drop loudly). Defaults to NSLog; the
+    /// Frame-decode / dispatch error sink (drop loudly). Defaults to [BnLog]; the
     /// host/test may override to capture.
+    ///
+    /// Phase 11.4: the error's description is REDACTED by default (BnLog.swift's
+    /// privacy rule) — an `Error`'s text is exactly the "internal exception detail"
+    /// #155 asks not to leak at Release verbosity, and `NSLog` had no way to say so.
     var onError: ((String, Error) -> Void) = { msg, err in
-        NSLog("[BnRuntime] \(msg): \(err)")
+        BnLog.error(BnRuntime.logCategory, "\(msg): \(err)")
     }
 
     init(mapper: BnWidgetMapper, bridge: AppleShellBridge = AppleShellBridge()) {
@@ -199,6 +209,13 @@ final class BnRuntime {
         // frame can never find a nil singleton.
         BnRuntime.shared = self
 
+        // Phase 11.4 Gate C (#155): resolve the verbosity BEFORE the first line is
+        // written, and apply it to BOTH sides of the boundary — the Swift seam here
+        // and, through `bn_init_options.logLevel` at offset 28 below, the managed
+        // one. One threshold, declared once, honoured by both shells.
+        let logLevel = BnRuntime.resolveLogLevel()
+        BnLog.setLevelFromOrdinal(logLevel)
+
         // init — nest withCString so the borrowed pointers stay alive across the
         // call (init copies the strings; it does not retain the pointers).
         // Phase 10.0 (#121): pass platformInfoKind = iOS (ordinal 2, mirroring
@@ -211,7 +228,8 @@ final class BnRuntime {
                     platformInfoOs: osPtr,
                     platformInfoApiLevel: apiLevel,
                     platformInfoNote: notePtr,
-                    platformInfoKind: BnPlatformKind.iOS)
+                    platformInfoKind: BnPlatformKind.iOS,
+                    logLevel: logLevel)  // Phase 11.4 (#155): offset 28, read before the first managed line
                 return blazornative_init(&opts)
             }
         }
@@ -220,12 +238,14 @@ final class BnRuntime {
             throw BnRuntimeError.initFailed(status: result.status, detail: detail)
         }
         let version = result.version.map { String(cString: $0) } ?? "<null>"
-        NSLog("[BnRuntime] native init ok — \(version)")
+        // `.safe`: the framework's OWN version string, no app/user/OS data. One of
+        // exactly three `.safe` sites in the shell — see BnLog.swift's privacy rule.
+        BnLog.info(BnRuntime.logCategory, "native init ok — \(version)", privacy: .safe)
 
         // register the frame callback
         let regRc = blazornative_register_frame_callback(bnFrameTrampoline)
         guard regRc == 0 else { throw BnRuntimeError.registerFailed(rc: regRc) }
-        NSLog("[BnRuntime] frame callback registered")
+        BnLog.info(BnRuntime.logCategory, "frame callback registered", privacy: .safe)
 
         // register the shell bridge BEFORE mount (components resolving the bridge
         // need a live host). Route the singleton first so a mount-time currentRoute
@@ -246,12 +266,12 @@ final class BnRuntime {
         // the runtime min-copies + zero-fills.
         let bridgeRc = blazornative_register_bridge(Int32(MemoryLayout<bn_bridge_callbacks>.size), &callbacks)
         guard bridgeRc == 0 else { throw BnRuntimeError.bridgeRegisterFailed(rc: bridgeRc) }
-        NSLog("[BnRuntime] shell bridge registered")
+        BnLog.info(BnRuntime.logCategory, "shell bridge registered", privacy: .safe)
 
         // mount — the sync first frame fires inside this call
         let mountRc = component.withCString { blazornative_mount($0) }
         guard mountRc == 0 else { throw BnRuntimeError.mountFailed(rc: mountRc, component: component) }
-        NSLog("[BnRuntime] mounted \(component)")
+        BnLog.info(BnRuntime.logCategory, "mounted \(component)")
 
         // Phase 9.1: a live session now exists — wire the WARM notification tap-through so
         // the delegate's `didReceive` re-routes over host_event on the serial lane (the ABI
@@ -284,6 +304,34 @@ final class BnRuntime {
     /// bridge is live; the bridge's strong hold on the handler keeps the weak delegate alive.
     func installNotificationDelegate() {
         bridge.notifications.installDelegate()
+    }
+
+    /// Phase 11.4 Gate C (#155): resolves the `BnLogLevel` ordinal this boot passes
+    /// in `bn_init_options.logLevel` (offset 28) and applies to the Swift seam.
+    ///
+    /// The iOS twin of `MainActivity.resolveLogLevel`, with the same two-step
+    /// precedence and the same "a typo must not turn logging OFF" rule — only the
+    /// platform's idioms differ (Android reads an Intent extra then a manifest
+    /// `<meta-data>`; iOS reads an environment variable then Info.plist):
+    ///
+    ///   1. the `BN_LOG_LEVEL` ENVIRONMENT VARIABLE — a per-launch override, set
+    ///      from an Xcode scheme or `xcrun simctl launch --console --env`. This is
+    ///      what a developer reaches for to get one verbose session without
+    ///      rebuilding, and it is how a simulator run can be asked to prove the
+    ///      Release build is quiet by turning the noise back on;
+    ///   2. the `io.blazornative.logLevel` INFO.PLIST STRING — the APP AUTHOR'S
+    ///      declaration, which ships with the build.
+    ///
+    /// Anything unrecognised — including both being absent — resolves to
+    /// [BnLogLevel.unset] (0), which the runtime AND [BnLog] both read as "apply
+    /// the default", i.e. Warn. A misspelled value therefore falls back to the
+    /// quiet-but-not-silent default rather than to silence.
+    static func resolveLogLevel() -> Int32 {
+        let fromEnv = BnLogLevel.fromName(ProcessInfo.processInfo.environment["BN_LOG_LEVEL"])
+        if fromEnv != BnLogLevel.unset { return fromEnv }
+
+        let plist = Bundle.main.object(forInfoDictionaryKey: "io.blazornative.logLevel") as? String
+        return BnLogLevel.fromName(plist)
     }
 
     /// Invoked from the @convention(c) trampoline on the callback thread. Decodes

@@ -48,6 +48,19 @@ final class HostViewController: UIViewController {
         // Do not boot under tests — the XCTest bundle owns the native session.
         guard NSClassFromString("XCTestCase") == nil else { return }
 
+        // Phase 11.4 Gate C (#155/#164): THE TRANSPORT, and it must be installed
+        // BEFORE anything calls into the runtime. Everything the shared .NET runtime
+        // writes to `Console.Error` — its 31 diagnostic sites, the BCL's own output,
+        // NativeAOT's TypeLoadException detail, and `blazornative_init`'s deliberate
+        // full `ex.ToString()` on a trim failure — goes to process fd 2, which an
+        // unattached iOS build surfaces nowhere. This points fd 2 at the unified log.
+        //
+        // Inside the XCTest guard ON PURPOSE: the test bundle is HOSTED in this
+        // process and xcodebuild reads the runner's stdio, so capturing fd 2 under
+        // XCTest would redirect the test output out of xcodebuild's hands. See
+        // BnStderrPump.swift's header.
+        BnStderrPump.install()
+
         let mapper = BnWidgetMapper(root: view)
         let runtime = BnRuntime(mapper: mapper)
         self.mapper = mapper
@@ -68,7 +81,9 @@ final class HostViewController: UIViewController {
             do {
                 try runtime.start(component: component, os: "ios")
             } catch {
-                NSLog("[HostViewController] boot failed: \(error)")
+                // A boot fault. Redacted by default: the error's description carries
+                // the runtime's own detail (design §7's information-disclosure rule).
+                BnLog.error("HostViewController", "boot failed: \(error)")
             }
         }
     }

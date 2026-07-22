@@ -65,12 +65,20 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 #include "BnYogaLayout.h"
+// Phase 11.4 Gate C (#155): the `@_cdecl` bridge to the Swift logging seam. This
+// file is Objective-C++ and CANNOT call Swift — the shell's C++ traffic is plain-C
+// in both directions (see project.yml on why Yoga's headers must never reach
+// Swift). `BnLogC` is implemented `@_cdecl("BnLogC")` in BnLog.swift; both files
+// are in the BnHost target, so the unmangled symbol resolves at link.
+#include "BnLog.h"
 
 #include <yoga/Yoga.h>
 
 #import <Foundation/Foundation.h>
 
 #include <cmath>
+#include <cstdarg>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <string>
@@ -83,10 +91,48 @@ static_assert((int)bn_yoga_measure_undefined == (int)YGMeasureModeUndefined, "YG
 static_assert((int)bn_yoga_measure_exactly == (int)YGMeasureModeExactly, "YGMeasureMode drift");
 static_assert((int)bn_yoga_measure_at_most == (int)YGMeasureModeAtMost, "YGMeasureMode drift");
 
-static const char* const kTag = "[BnYogaLayout]";
+// The unified-log CATEGORY (no brackets — the seam owns the presentation now; this
+// used to be the bracketed prefix pasted into every NSLog format string).
+static const char* const kTag = "BnYogaLayout";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 11.4 Gate C: THE FOUR NSLog SITES IN THIS FILE, FUNNELLED.
+//
+// All four are `SetStyle … ignored` / `insert index out of range` diagnostics —
+// design §4.3's "a wire the app author asked for was silently dropped" class, so
+// they are WARN on both shells and they SHIP IN RELEASE. They are not chatter and
+// they are deliberately not demoted to debug.
+//
+// The formatting is done here and the finished string is handed to [BnLogC] as one
+// UTF-8 payload. That is on purpose: the `@_cdecl` shim takes a plain
+// `const char*` rather than a format + varargs, because a variadic C boundary into
+// Swift would have to reimplement printf on the far side for no benefit — there
+// are four callers and they all live in this file.
+//
+// `vsnprintf` INTO A STACK BUFFER, NOT `NSString`, and that is not a style
+// preference: this target does not declare CLANG_ENABLE_OBJC_ARC either way in
+// project.yml, so an `[[NSString alloc] init…]` here would leak under manual
+// retain/release and an `autorelease` would not compile under ARC. Plain C++ is
+// correct under both, allocates nothing, and needs no autorelease pool on the
+// render thread. The buffer is the same order as the unified log's own per-entry
+// truncation; a longer message is cut, never overrun (vsnprintf always NUL-terminates).
+//
+// The gate lives in Swift (BnLogC returns immediately below the threshold), so a
+// suppressed line still pays for the formatting here. Accepted: these fire on a
+// broken page, not per frame.
+// ─────────────────────────────────────────────────────────────────────────────
+__attribute__((format(printf, 1, 2)))
+static void bn_log_warn(const char* format, ...) {
+    char buffer[1024];
+    va_list args;
+    va_start(args, format);
+    vsnprintf(buffer, sizeof(buffer), format, args);
+    va_end(args);
+    BnLogC(BN_LOG_WARN, kTag, buffer);
+}
 
 static void bn_log_ignore(const char* property, const char* detail) {
-    NSLog(@"%s SetStyle %s ignored: %s", kTag, property, detail ? detail : "(null)");
+    bn_log_warn("SetStyle %s ignored: %s", property, detail ? detail : "(null)");
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -250,7 +296,7 @@ void bn_yoga_node_insert_child(bn_yoga_node parent, bn_yoga_node child, int32_t 
     // a stack trace naming the renderer.
     int32_t at = (index < 0 || index > count) ? count : index;
     if (index > count) {
-        NSLog(@"%s insert index %d out of range (childCount=%d) — appending", kTag, index, count);
+        bn_log_warn("insert index %d out of range (childCount=%d) — appending", index, count);
     }
     YGNodeInsertChild(p, (YGNodeRef)child, (size_t)at);
 }
@@ -471,8 +517,8 @@ static BnLength bn_parse_length(const char* property,
         return out;
     }
     if (parsed < 0.0f && !negativeAllowed) {
-        NSLog(@"%s SetStyle %s ignored: negative values are not accepted (got '%s')",
-              kTag, property, value);
+        bn_log_warn("SetStyle %s ignored: negative values are not accepted (got '%s')",
+                    property, value);
         return out;
     }
 
@@ -491,8 +537,8 @@ static int bn_parse_unitless(const char* property, const char* value, float defa
         return 0;
     }
     if (parsed < 0.0f) {
-        NSLog(@"%s SetStyle %s ignored: negative values are not accepted (got '%s')",
-              kTag, property, value);
+        bn_log_warn("SetStyle %s ignored: negative values are not accepted (got '%s')",
+                    property, value);
         return 0;
     }
     *out = parsed;

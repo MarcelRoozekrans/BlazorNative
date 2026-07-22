@@ -40,7 +40,7 @@ enum BnYogaProbe {
     /// to compute, then discard, then have Swift compute the very same tree again).
     static func warmUp() {
         let r = toResult(bn_yoga_warm_up())
-        NSLog("[BnYogaProbe] Yoga warm-up ok — box2.width=\(r.box2.width) text.height=\(r.text.height) measureFired=\(r.measureFired)")
+        BnLog.info("BnYogaProbe", "Yoga warm-up ok — box2.width=\(r.box2.width) text.height=\(r.text.height) measureFired=\(r.measureFired)")
     }
 
     /// The CANONICAL tree (built in BnYogaProbe.mm; byte-identical to the one the

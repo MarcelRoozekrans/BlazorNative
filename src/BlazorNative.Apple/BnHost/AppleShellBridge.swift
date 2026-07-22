@@ -97,7 +97,7 @@ final class AppleShellBridge {
         routeLock.lock()
         route = newRoute
         routeLock.unlock()
-        NSLog("[AppleShellBridge] navigate → \(newRoute)")
+        BnLog.info("AppleShellBridge", "navigate → \(newRoute)")
         return 0
     }
 
@@ -139,7 +139,7 @@ final class AppleShellBridge {
     /// stray fetch surfaces immediately instead of hanging. Wire a real
     /// URLSession + `blazornative_fetch_complete` when a component needs it.
     func fetchBegin(_ requestId: Int64) -> Int32 {
-        NSLog("[AppleShellBridge] fetchBegin id=\(requestId) — unsupported (5.3 stub), returning -1")
+        BnLog.warn("AppleShellBridge", "fetchBegin id=\(requestId) — unsupported (5.3 stub), returning -1")
         return -1
     }
 
@@ -179,7 +179,7 @@ final class AppleShellBridge {
         // Production: build + present the share sheet on the MAIN thread.
         DispatchQueue.main.async {
             guard let presenter = AppleShellBridge.topPresenter() else {
-                NSLog("[AppleShellBridge] share: no presenter available — skipped")
+                BnLog.warn("AppleShellBridge", "share: no presenter available — skipped")
                 return
             }
             let avc = UIActivityViewController(activityItems: items, applicationActivities: nil)
@@ -226,7 +226,7 @@ final class AppleShellBridge {
         case BnHostCallOp.camera:
             camera.begin(requestId: requestId, argsJson: argsJson)
         default:
-            NSLog("[AppleShellBridge] hostCallBegin: unknown op \(op) (request \(requestId)) — completing Error")
+            BnLog.warn("AppleShellBridge", "hostCallBegin: unknown op \(op) (request \(requestId)) — completing Error")
             geolocation.completeUnknownOp(requestId: requestId)
         }
         return 0

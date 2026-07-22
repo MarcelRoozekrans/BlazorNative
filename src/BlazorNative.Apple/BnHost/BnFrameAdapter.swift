@@ -182,7 +182,7 @@ enum BnFrameAdapter {
                 default:
                     // Unknown wire id (incl. dormant 2/AppendChild): a newer
                     // runtime talking to an older shell. Skip, leave a trace.
-                    NSLog("[BnFrameAdapter] skipping unknown patch kind \(kind) (patch \(i) of \(patchCount))")
+                    BnLog.warn("BnFrameAdapter", "skipping unknown patch kind \(kind) (patch \(i) of \(patchCount))")
                 }
             }
         }

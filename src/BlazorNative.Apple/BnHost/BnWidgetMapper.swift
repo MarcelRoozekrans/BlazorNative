@@ -657,7 +657,7 @@ final class BnWidgetMapper {
     /// Both of the scroll node's diagnostics (the container-style drop and the
     /// definite-height warning) name a failure whose symptom is a page that does not
     /// move: no exception, no wrong frame, nothing to see. So they are RECORDED as well
-    /// as logged — `NSLog` is not an assertion surface, and a diagnostic no test can see
+    /// as logged — the unified log is not an assertion surface, and a diagnostic no test can see
     /// is a diagnostic that can quietly stop firing.
     private struct BnDiagnosticKey: Hashable { let nodeId: Int32; let kind: String }
     private var diagnosed: [(nodeId: Int32, message: String)] = []
@@ -1144,7 +1144,7 @@ final class BnWidgetMapper {
     /// The mapper's runtime diagnostics, in emission order: the scroll pair (6.2's
     /// container-style ignore-and-log rule and the definite-height warning), the
     /// modal-style drops (7.4), and the image contentMode rejections (7.5). Exposed
-    /// because `NSLog` is not an assertion surface and every one of these failures is
+    /// because the unified log is not an assertion surface and every one of these failures is
     /// SILENT on the device. `BnScrollTests` / `BnModalMapperTests` /
     /// `BnImagePolishMapperTests` assert them. The twin of Kotlin's
     /// `WidgetMapper.diagnostics`. (Renamed from `scrollDiagnostics` in 7.6 — the
@@ -1554,7 +1554,13 @@ final class BnWidgetMapper {
     private func diagnose(nodeId: Int32, kind: String, message: String) {
         guard diagnosedKeys.insert(BnDiagnosticKey(nodeId: nodeId, kind: kind)).inserted else { return }
         diagnosed.append((nodeId, message))
-        NSLog("[BnWidgetMapper] \(message)")
+        // Phase 11.4 Gate C: the funnel's NSLog became BnLog.warn — the level is
+        // Warn per design §4.3 (a dropped wire is not chatter), and the DEDUPE ABOVE
+        // IS UNCHANGED. The other 52 sites in this file were NOT folded into this
+        // funnel: it warns ONCE per (nodeId, kind) and it appends to [diagnostics],
+        // which three test classes assert on — routing 52 unrelated sites through it
+        // would change both semantics. Design §4.2 says so in as many words.
+        BnLog.warn("BnWidgetMapper", message)
     }
 
     /// Half a point — below the 0.5 tolerance every frame assertion in this engine
@@ -1597,7 +1603,7 @@ final class BnWidgetMapper {
         // selection.
         if eventName == "change", views[nodeId] is UIPickerView {
             guard let state = pickerStates[nodeId] else {
-                NSLog("[BnWidgetMapper] AttachEvent 'change' for picker \(nodeId) has no state: ignored")
+                BnLog.warn("BnWidgetMapper", "AttachEvent 'change' for picker \(nodeId) has no state: ignored")
                 return
             }
             state.handlerId = handlerId
@@ -1613,7 +1619,7 @@ final class BnWidgetMapper {
         // UIControl, and its wire is state, not a control-event target.
         if eventName == "error" {
             guard let state = imageStates[nodeId] else {
-                NSLog("[BnWidgetMapper] AttachEvent 'error' ignored: node \(nodeId) is "
+                BnLog.warn("BnWidgetMapper", "AttachEvent 'error' ignored: node \(nodeId) is "
                       + "\(views[nodeId].map { String(describing: type(of: $0)) } ?? "unknown"), "
                       + "not an image node")
                 return
@@ -1622,7 +1628,7 @@ final class BnWidgetMapper {
             return
         }
         guard let control = views[nodeId] as? UIControl else {
-            NSLog("[BnWidgetMapper] AttachEvent '\(eventName)' for node \(nodeId): not a UIControl — ignored")
+            BnLog.warn("BnWidgetMapper", "AttachEvent '\(eventName)' for node \(nodeId): not a UIControl — ignored")
             return
         }
         let controlEvent: UIControl.Event
@@ -1684,24 +1690,24 @@ final class BnWidgetMapper {
                     return quantized.description
                 }
             default:
-                NSLog("[BnWidgetMapper] AttachEvent 'change' ignored: node \(nodeId) is a "
+                BnLog.warn("BnWidgetMapper", "AttachEvent 'change' ignored: node \(nodeId) is a "
                       + "\(type(of: control)) — not a change-bearing widget")
                 return
             }
         case "focus":
             guard control is UITextField else {
-                NSLog("[BnWidgetMapper] AttachEvent 'focus' ignored: node \(nodeId) is not a UITextField"); return
+                BnLog.warn("BnWidgetMapper", "AttachEvent 'focus' ignored: node \(nodeId) is not a UITextField"); return
             }
             controlEvent = .editingDidBegin
             payload = { nil }
         case "blur":
             guard control is UITextField else {
-                NSLog("[BnWidgetMapper] AttachEvent 'blur' ignored: node \(nodeId) is not a UITextField"); return
+                BnLog.warn("BnWidgetMapper", "AttachEvent 'blur' ignored: node \(nodeId) is not a UITextField"); return
             }
             controlEvent = .editingDidEnd
             payload = { nil }
         default:
-            NSLog("[BnWidgetMapper] AttachEvent '\(eventName)' not supported (forward compat): skipped")
+            BnLog.warn("BnWidgetMapper", "AttachEvent '\(eventName)' not supported (forward compat): skipped")
             return
         }
         let key = EventKey(nodeId: nodeId, event: eventName)
@@ -1757,7 +1763,7 @@ final class BnWidgetMapper {
             return
         }
         guard let view = views[nodeId] else {
-            NSLog("[BnWidgetMapper] AttachEvent 'click' for unknown nodeId \(nodeId): ignored")
+            BnLog.warn("BnWidgetMapper", "AttachEvent 'click' for unknown nodeId \(nodeId): ignored")
             return
         }
         if let button = view as? UIButton {
@@ -1767,7 +1773,7 @@ final class BnWidgetMapper {
             return
         }
         if view is UIControl {
-            NSLog("[BnWidgetMapper] AttachEvent 'click' ignored: node \(nodeId) is a "
+            BnLog.warn("BnWidgetMapper", "AttachEvent 'click' ignored: node \(nodeId) is a "
                   + "\(type(of: view)) — a control owns its touches; the tap-recognizer "
                   + "arm is for PLAIN views (design decision 4)")
             return
@@ -1794,7 +1800,7 @@ final class BnWidgetMapper {
         // absorbed downstream (the rc-0 at-most-once contract, same as click).
         if eventName == "scroll" {
             guard scrollWires.removeValue(forKey: nodeId) != nil else {
-                NSLog("[BnWidgetMapper] DetachEvent 'scroll' for node \(nodeId) has no live wire: ignored")
+                BnLog.warn("BnWidgetMapper", "DetachEvent 'scroll' for node \(nodeId) has no live wire: ignored")
                 return
             }
             // The proxy died with the wire (the delegate slot is weak and zeroes),
@@ -1811,7 +1817,7 @@ final class BnWidgetMapper {
         // and nil dispatches nothing.
         if eventName == "change", views[nodeId] is UIPickerView {
             guard let state = pickerStates[nodeId] else {
-                NSLog("[BnWidgetMapper] DetachEvent 'change' for picker \(nodeId) has no state: ignored")
+                BnLog.warn("BnWidgetMapper", "DetachEvent 'change' for picker \(nodeId) has no state: ignored")
                 return
             }
             state.handlerId = nil
@@ -1823,7 +1829,7 @@ final class BnWidgetMapper {
         // (`bnImageErrorDispatchAction`).
         if eventName == "error" {
             guard let state = imageStates[nodeId] else {
-                NSLog("[BnWidgetMapper] DetachEvent 'error' for node \(nodeId) has no image state: ignored")
+                BnLog.warn("BnWidgetMapper", "DetachEvent 'error' for node \(nodeId) has no image state: ignored")
                 return
             }
             state.errorHandlerId = nil
@@ -1831,7 +1837,7 @@ final class BnWidgetMapper {
         }
         let key = EventKey(nodeId: nodeId, event: eventName)
         if eventTargets[key] == nil {
-            NSLog("[BnWidgetMapper] DetachEvent '\(eventName)' for node \(nodeId): no live target — ignored")
+            BnLog.warn("BnWidgetMapper", "DetachEvent '\(eventName)' for node \(nodeId): no live target — ignored")
         }
         removeTarget(for: key)
     }
@@ -1885,7 +1891,7 @@ final class BnWidgetMapper {
     /// handler) instead of stacking a second slot.
     private func handleAttachScroll(nodeId: Int32, handlerId: Int32) {
         guard let scroll = views[nodeId] as? UIScrollView else {
-            NSLog("[BnWidgetMapper] AttachEvent 'scroll' ignored: node \(nodeId) is a "
+            BnLog.warn("BnWidgetMapper", "AttachEvent 'scroll' ignored: node \(nodeId) is a "
                   + "\(views[nodeId].map { String(describing: type(of: $0)) } ?? "unknown node"), "
                   + "not a UIScrollView")
             return
@@ -2017,7 +2023,7 @@ final class BnWidgetMapper {
             // THROWS** (`view as ScrollView`); this aborts the create, loudly in debug and
             // logged in release, and registers NOTHING (the `views` entry is made below).
             guard let scroll = view as? UIScrollView else {
-                NSLog("[BnWidgetMapper] node \(nodeId) is a `scroll` node but its view is a "
+                BnLog.warn("BnWidgetMapper", "node \(nodeId) is a `scroll` node but its view is a "
                       + "\(type(of: view)), not a UIScrollView — the node is DROPPED. It would "
                       + "otherwise be a scroll node with no content view (children parented into "
                       + "the viewport itself), no content node (no contentSize, nothing scrolls), "
@@ -2050,7 +2056,7 @@ final class BnWidgetMapper {
             // `picker` whose view failed it would silently stop being a picker
             // (no dataSource → an empty wheel, no delegate → no dispatches).
             guard let pickerView = view as? UIPickerView else {
-                NSLog("[BnWidgetMapper] node \(nodeId) is a `picker` node but its view is a "
+                BnLog.warn("BnWidgetMapper", "node \(nodeId) is a `picker` node but its view is a "
                       + "\(type(of: view)), not a UIPickerView — the node is DROPPED (it would "
                       + "otherwise be a picker with no dataSource — an empty wheel — and no "
                       + "delegate — no dispatches).")
@@ -2185,7 +2191,7 @@ final class BnWidgetMapper {
             value.withCString { v in bn_yoga_node_set_style(node, n, v) }
         }
         if rc != 1 {
-            NSLog("[BnWidgetMapper] shell-fixed style \(name)=\(value) was REJECTED by the "
+            BnLog.warn("BnWidgetMapper", "shell-fixed style \(name)=\(value) was REJECTED by the "
                   + "style grammar — the modal's fixed geometry is broken")
             assertionFailure("shell-fixed style \(name)=\(value) rejected")
         }
@@ -2230,7 +2236,7 @@ final class BnWidgetMapper {
         if let inter = UIFont(name: "Inter-Regular", size: size) { return inter }
         if !interFontFallbackLogged {
             interFontFallbackLogged = true
-            NSLog("[BnWidgetMapper] Inter-Regular did not resolve — falling back to the system "
+            BnLog.warn("BnWidgetMapper", "Inter-Regular did not resolve — falling back to the system "
                 + "font. FONT PARITY IS BROKEN: check the bundled Inter-Regular.ttf is in the app "
                 + "bundle and Info.plist UIAppFonts registers it (see BnFontTests).")
         }
@@ -2379,7 +2385,7 @@ final class BnWidgetMapper {
             spinner.startAnimating()
             return spinner
         default:
-            NSLog("[BnWidgetMapper] Unknown nodeType '\(nodeType)' — falling back to UILabel")
+            BnLog.warn("BnWidgetMapper", "Unknown nodeType '\(nodeType)' — falling back to UILabel")
             return UILabel()
         }
     }
@@ -2618,7 +2624,7 @@ final class BnWidgetMapper {
 
     private func handleUpdateProp(nodeId: Int32, name: String, value: String?) {
         guard let view = views[nodeId] else {
-            NSLog("[BnWidgetMapper] UpdateProp for unknown nodeId \(nodeId): ignored")
+            BnLog.warn("BnWidgetMapper", "UpdateProp for unknown nodeId \(nodeId): ignored")
             return
         }
         switch name {
@@ -2627,7 +2633,7 @@ final class BnWidgetMapper {
                 field.placeholder = value
                 markDirty(field) // the placeholder sizes an empty UITextField
             } else {
-                NSLog("[BnWidgetMapper] UpdateProp placeholder ignored: node \(nodeId) is not a UITextField")
+                BnLog.warn("BnWidgetMapper", "UpdateProp placeholder ignored: node \(nodeId) is not a UITextField")
             }
         case "value":
             switch view {
@@ -2658,7 +2664,7 @@ final class BnWidgetMapper {
                 case "true": toggle.setOn(true, animated: false)
                 case "false", nil: toggle.setOn(false, animated: false)
                 default:
-                    NSLog("[BnWidgetMapper] UpdateProp value ignored on node \(nodeId): "
+                    BnLog.warn("BnWidgetMapper", "UpdateProp value ignored on node \(nodeId): "
                           + "'\(value ?? "nil")' is not the checkbox wire grammar "
                           + "(exactly \"true\"/\"false\")")
                 }
@@ -2666,36 +2672,36 @@ final class BnWidgetMapper {
             // state ([applySlider] — order-independent within a batch).
             case let slider as UISlider:
                 guard let state = sliderStates[nodeId] else {
-                    NSLog("[BnWidgetMapper] UpdateProp value for slider \(nodeId) has no state: ignored")
+                    BnLog.warn("BnWidgetMapper", "UpdateProp value for slider \(nodeId) has no state: ignored")
                     return
                 }
                 guard let v = value.flatMap(Self.parseWireFloat) else {
-                    NSLog("[BnWidgetMapper] UpdateProp value ignored on slider \(nodeId): "
+                    BnLog.warn("BnWidgetMapper", "UpdateProp value ignored on slider \(nodeId): "
                           + "'\(value ?? "nil")' is not an invariant float")
                     return
                 }
                 state.value = v
                 applySlider(slider, state)
             default:
-                NSLog("[BnWidgetMapper] UpdateProp value ignored: node \(nodeId) is a "
+                BnLog.warn("BnWidgetMapper", "UpdateProp value ignored: node \(nodeId) is a "
                       + "\(type(of: view)), not a value-bearing widget")
             }
         // Phase 7.3 — the slider's declared range/step (BnSlider always declares
         // min/max; step only when set — null resets to continuous).
         case "min", "max", "step":
             guard let slider = view as? UISlider else {
-                NSLog("[BnWidgetMapper] UpdateProp \(name) ignored: node \(nodeId) is a "
+                BnLog.warn("BnWidgetMapper", "UpdateProp \(name) ignored: node \(nodeId) is a "
                       + "\(type(of: view)), not a UISlider")
                 return
             }
             guard let state = sliderStates[nodeId] else {
-                NSLog("[BnWidgetMapper] UpdateProp \(name) for slider \(nodeId) has no state: ignored")
+                BnLog.warn("BnWidgetMapper", "UpdateProp \(name) for slider \(nodeId) has no state: ignored")
                 return
             }
             var parsed: Float?
             if let value = value {
                 guard let v = Self.parseWireFloat(value) else {
-                    NSLog("[BnWidgetMapper] UpdateProp \(name) ignored on slider \(nodeId): "
+                    BnLog.warn("BnWidgetMapper", "UpdateProp \(name) ignored on slider \(nodeId): "
                           + "'\(value)' is not an invariant float")
                     return
                 }
@@ -2712,14 +2718,14 @@ final class BnWidgetMapper {
             if let picker = view as? UIPickerView {
                 handleItems(nodeId: nodeId, picker: picker, json: value)
             } else {
-                NSLog("[BnWidgetMapper] UpdateProp items ignored: node \(nodeId) is a "
+                BnLog.warn("BnWidgetMapper", "UpdateProp items ignored: node \(nodeId) is a "
                       + "\(type(of: view)), not a UIPickerView")
             }
         case "selectedIndex":
             if let picker = view as? UIPickerView {
                 handleSelectedIndex(nodeId: nodeId, picker: picker, value: value)
             } else {
-                NSLog("[BnWidgetMapper] UpdateProp selectedIndex ignored: node \(nodeId) is a "
+                BnLog.warn("BnWidgetMapper", "UpdateProp selectedIndex ignored: node \(nodeId) is a "
                       + "\(type(of: view)), not a UIPickerView")
             }
         case "enabled":
@@ -2744,11 +2750,11 @@ final class BnWidgetMapper {
         // ignored, the backgroundColor arm's posture.
         case "scrimColor":
             guard let overlay = modalOverlays[nodeId] else {
-                NSLog("[BnWidgetMapper] UpdateProp scrimColor ignored: node \(nodeId) is not a modal")
+                BnLog.warn("BnWidgetMapper", "UpdateProp scrimColor ignored: node \(nodeId) is not a modal")
                 return
             }
             guard let color = value.flatMap(BnColor.parse) else {
-                NSLog("[BnWidgetMapper] UpdateProp scrimColor ignored on modal \(nodeId): "
+                BnLog.warn("BnWidgetMapper", "UpdateProp scrimColor ignored on modal \(nodeId): "
                       + "'\(value ?? "nil")' is not a parseable color")
                 return
             }
@@ -2760,7 +2766,7 @@ final class BnWidgetMapper {
             if let image = view as? BnImageView {
                 handleSrc(nodeId: nodeId, view: image, url: value)
             } else {
-                NSLog("[BnWidgetMapper] UpdateProp src ignored: node \(nodeId) is a "
+                BnLog.warn("BnWidgetMapper", "UpdateProp src ignored: node \(nodeId) is a "
                       + "\(type(of: view)), not an image")
             }
         // Phase 7.5 (design decision 1) — the image's placeholder COLOR. A PROP, not a
@@ -2771,12 +2777,12 @@ final class BnWidgetMapper {
         // paint, never Yoga.
         case "placeholderColor":
             guard let image = view as? BnImageView else {
-                NSLog("[BnWidgetMapper] UpdateProp placeholderColor ignored: node \(nodeId) is a "
+                BnLog.warn("BnWidgetMapper", "UpdateProp placeholderColor ignored: node \(nodeId) is a "
                       + "\(type(of: view)), not an image")
                 return
             }
             guard let state = imageStates[nodeId] else {
-                NSLog("[BnWidgetMapper] UpdateProp placeholderColor for image \(nodeId) has no "
+                BnLog.warn("BnWidgetMapper", "UpdateProp placeholderColor for image \(nodeId) has no "
                       + "state: ignored")
                 return
             }
@@ -2789,7 +2795,7 @@ final class BnWidgetMapper {
                 return
             }
             guard let color = BnColor.parse(value) else {
-                NSLog("[BnWidgetMapper] UpdateProp placeholderColor ignored on image \(nodeId): "
+                BnLog.warn("BnWidgetMapper", "UpdateProp placeholderColor ignored on image \(nodeId): "
                       + "'\(value)' is not a parseable color") // the backgroundColor posture
                 return
             }
@@ -2810,7 +2816,7 @@ final class BnWidgetMapper {
         // by construction).
         case "contentMode":
             guard let image = view as? BnImageView else {
-                NSLog("[BnWidgetMapper] UpdateProp contentMode ignored: node \(nodeId) is a "
+                BnLog.warn("BnWidgetMapper", "UpdateProp contentMode ignored: node \(nodeId) is a "
                       + "\(type(of: view)), not an image")
                 return
             }
@@ -2833,7 +2839,7 @@ final class BnWidgetMapper {
             case .center: image.contentMode = .center
             }
         default:
-            NSLog("[BnWidgetMapper] UpdateProp '\(name)' not yet supported (Phase 6.3+ extends)")
+            BnLog.warn("BnWidgetMapper", "UpdateProp '\(name)' not yet supported (Phase 6.3+ extends)")
         }
     }
 
@@ -3021,7 +3027,7 @@ final class BnWidgetMapper {
             view.bnNaturalSize = natural
         } else {
             view.bnNaturalSize = .zero
-            NSLog("[BnWidgetMapper] the image for node \(nodeId) (\(url)) decoded to a UIImage "
+            BnLog.warn("BnWidgetMapper", "the image for node \(nodeId) (\(url)) decoded to a UIImage "
                   + "with NO pixel buffer (an animated/vector format): it has no natural size "
                   + "this shell knows how to read in the contract's unit (one FILE PIXEL is one "
                   + "dp/pt), so it measures 0 × 0 and reserves nothing. Ledgered — those formats "
@@ -3065,7 +3071,7 @@ final class BnWidgetMapper {
         guard !destroyed else { return } // see [recordImageResult]
         recordImageResult(BnImageResult(nodeId: nodeId, url: url, outcome: .error))
         clearIfMine(nodeId: nodeId, generation: generation, view: view)
-        NSLog("[BnWidgetMapper] image load failed for node \(nodeId) (\(url)): \(error) — the "
+        BnLog.warn("BnWidgetMapper", "image load failed for node \(nodeId) (\(url)): \(error) — the "
               + "node stays 0 × 0 and reserves nothing")
         decideAndDispatchError(nodeId: nodeId, generation: generation, view: view, url: url)
     }
@@ -3189,7 +3195,7 @@ final class BnWidgetMapper {
                                  requestGeneration: generation,
                                  currentView: views[nodeId],
                                  requestView: view) {
-            NSLog("[BnWidgetMapper] stale image \(what) for node \(nodeId) (\(url)) dropped: the "
+            BnLog.warn("BnWidgetMapper", "stale image \(what) for node \(nodeId) (\(url)) dropped: the "
                   + "node was removed, or its src was written again. Nothing painted, and no "
                   + "freed YGNodeRef was touched.")
             return false
@@ -3277,7 +3283,7 @@ final class BnWidgetMapper {
     /// makes the items/selectedIndex patch order immaterial.
     private func handleItems(nodeId: Int32, picker: UIPickerView, json: String?) {
         guard let state = pickerStates[nodeId] else {
-            NSLog("[BnWidgetMapper] UpdateProp items for picker \(nodeId) has no state: ignored")
+            BnLog.warn("BnWidgetMapper", "UpdateProp items for picker \(nodeId) has no state: ignored")
             return
         }
         // null = the attribute was removed; BnPicker never does (it writes "[]"),
@@ -3287,7 +3293,7 @@ final class BnWidgetMapper {
             do {
                 items = try BnItemsJson.parse(json)
             } catch {
-                NSLog("[BnWidgetMapper] UpdateProp items for picker \(nodeId) is MALFORMED — "
+                BnLog.warn("BnWidgetMapper", "UpdateProp items for picker \(nodeId) is MALFORMED — "
                       + "rendering an EMPTY picker rather than a wrong one: \(error)")
                 items = []
             }
@@ -3316,13 +3322,13 @@ final class BnWidgetMapper {
     /// carries a clamped index already). Unparseable is logged and ignored.
     private func handleSelectedIndex(nodeId: Int32, picker: UIPickerView, value: String?) {
         guard let state = pickerStates[nodeId] else {
-            NSLog("[BnWidgetMapper] UpdateProp selectedIndex for picker \(nodeId) has no state: ignored")
+            BnLog.warn("BnWidgetMapper", "UpdateProp selectedIndex for picker \(nodeId) has no state: ignored")
             return
         }
         var requested: Int?
         if let value = value {
             guard let parsed = Int(value) else {
-                NSLog("[BnWidgetMapper] UpdateProp selectedIndex ignored on picker \(nodeId): "
+                BnLog.warn("BnWidgetMapper", "UpdateProp selectedIndex ignored on picker \(nodeId): "
                       + "'\(value)' is not an invariant int")
                 return
             }
@@ -3396,7 +3402,7 @@ final class BnWidgetMapper {
     /// (visible) rather than being silently swallowed here.
     private func handleSetStyle(nodeId: Int32, property: String, value: String?) {
         guard let view = views[nodeId] else {
-            NSLog("[BnWidgetMapper] SetStyle for unknown nodeId \(nodeId): ignored")
+            BnLog.warn("BnWidgetMapper", "SetStyle for unknown nodeId \(nodeId): ignored")
             return
         }
         // Phase 7.4 — **SetStyle on a `modal` node is diagnosed-and-ignored**
@@ -3446,7 +3452,7 @@ final class BnWidgetMapper {
             guard let node = yogaNodes[nodeId] else {
                 // A collapsed text alias owns no Yoga node. Android drops the style the
                 // same way (its YogaLayout has no entry for the alias id).
-                NSLog("[BnWidgetMapper] SetStyle \(property) ignored: node \(nodeId) has no Yoga node")
+                BnLog.warn("BnWidgetMapper", "SetStyle \(property) ignored: node \(nodeId) has no Yoga node")
                 return
             }
             // A NULL value RESETS the property to Yoga's default — the wire's reset
@@ -3463,17 +3469,17 @@ final class BnWidgetMapper {
         switch property {
         case "backgroundColor":
             guard let color = value.flatMap(BnColor.parse) else {
-                NSLog("[BnWidgetMapper] SetStyle backgroundColor ignored: \(value ?? "nil")")
+                BnLog.warn("BnWidgetMapper", "SetStyle backgroundColor ignored: \(value ?? "nil")")
                 return
             }
             view.backgroundColor = color
         case "fontSize":
             guard let label = view as? UILabel else {
-                NSLog("[BnWidgetMapper] SetStyle fontSize ignored: node \(nodeId) is not a UILabel")
+                BnLog.warn("BnWidgetMapper", "SetStyle fontSize ignored: node \(nodeId) is not a UILabel")
                 return
             }
             guard let size = parseCGFloat(value) else {
-                NSLog("[BnWidgetMapper] SetStyle fontSize ignored: \(value ?? "nil")")
+                BnLog.warn("BnWidgetMapper", "SetStyle fontSize ignored: \(value ?? "nil")")
                 return
             }
             // Font parity Gate B (#126): the same bundled Inter as at creation, at the
@@ -3482,7 +3488,7 @@ final class BnWidgetMapper {
             label.font = Self.interFont(ofSize: size)
             markDirty(label) // a bigger font is a bigger intrinsic size
         default:
-            NSLog("[BnWidgetMapper] SetStyle '\(property)' not yet supported (Phase 6.2+ extends)")
+            BnLog.warn("BnWidgetMapper", "SetStyle '\(property)' not yet supported (Phase 6.2+ extends)")
         }
     }
 
