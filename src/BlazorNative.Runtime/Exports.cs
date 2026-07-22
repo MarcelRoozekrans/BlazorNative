@@ -197,6 +197,17 @@ public static class Exports
             // InnerException chain + stack come along — for the actual R1
             // failure modes (TypeLoadException, MissingMethodException from
             // NativeAOT trim), Message alone hides the offending type/member.
+            //
+            // THE ONE DOCUMENTED EXEMPTION FROM §7's RELEASE REDACTION (Phase
+            // 11.4). Everywhere else the seam reduces an exception to type +
+            // message + top frame below Debug verbosity (BnLog.FormatException),
+            // precisely so internal detail does not leak at default Release
+            // verbosity. This site keeps the full ToString() ON PURPOSE, and the
+            // trade is stated rather than assumed: it is a ONE-SHOT boot failure
+            // on a binary that is already not going to run, the diagnostic value
+            // of the offending type name outweighs the disclosure, and it does
+            // not go to a log at all — it is handed back to the SHELL, in-process,
+            // through the init result. Not an oversight; a decision.
             return new BlazorNativeInitResult
             {
                 Status = 1,
@@ -283,7 +294,29 @@ public static class Exports
     /// Builds the DI session lazily on first call. The first render completes
     /// synchronously, so the registered frame callback has already fired when
     /// this returns. Status: 0 ok / 1 unknown component / 2 mount threw
-    /// (detail on stderr) / 3 name pointer null.
+    /// (detail on stderr — logcat / the unified log since Phase 11.4 Gates B
+    /// and C) / 3 name pointer null.
+    /// <para>
+    /// PHASE 11.4 GATE D (#164) — WHAT rc 2 NOW ALSO COVERS. A PARAMETER-BINDING
+    /// fault (a component handed a parameter name it does not declare —
+    /// <c>@bind-Value</c> where the property is <c>Checked</c>) aborts the mount
+    /// and lands here. It used to log and continue, leaving rc 0 and a
+    /// half-rendered screen. It is an author bug, never transient, so the host
+    /// gets a signal it can act on. EVERY OTHER render fault keeps the
+    /// log-and-continue posture and still returns 0 — see
+    /// <c>NativeRenderer.HandleException</c> and
+    /// <c>BlazorInterop.ParameterBindingFrames</c> for the exact boundary.
+    /// </para>
+    /// <para>
+    /// NO NEW rc, DELIBERATELY: <c>BlazorNativeRuntime.kt</c>'s mount <c>when</c>
+    /// ends in <c>else -&gt; throw</c>, so an unknown rc is fatal — a "non-fatal
+    /// rc 4" would hard-crash every consumer still on an older COPIED shell.
+    /// Design §6.2 also DEFERS option (b) (a host error callback in a new
+    /// bridge slot 11, or a frame flag), with this trigger: revisit it when a
+    /// genuinely RECOVERABLE fault class appears that the host must react to
+    /// PROGRAMMATICALLY — retry, fall back, report — rather than merely observe
+    /// in a log. None of the five shipped capabilities has produced one.
+    /// </para>
     /// </summary>
     [UnmanagedCallersOnly(EntryPoint = "blazornative_mount", CallConvs = new[] { typeof(CallConvCdecl) })]
     public static int Mount(IntPtr componentNameUtf8)

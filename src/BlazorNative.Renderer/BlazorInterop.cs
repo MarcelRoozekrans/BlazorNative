@@ -129,6 +129,101 @@ internal static class BlazorInterop
     /// re-render seam (<c>TriggerRootRenderForTests</c>).</summary>
     public static void StateHasChangedViaAccessor(ComponentBase component)
         => RefAccessors.StateHasChanged(component);
+
+    // ── Phase 11.4 Gate D (#164): parameter-binding fault PROVENANCE ─────────
+    //
+    // #164's fault — `<BnSwitch @bind-Value=…>` where the property is `Checked`
+    // — is an InvalidOperationException raised by Blazor's parameter-property
+    // writer. It is categorically an AUTHOR bug: it cannot be transient, it
+    // fails identically on every run of every device, and continuing renders a
+    // screen that is wrong in a way the user cannot report. NativeRenderer
+    // aborts the mount for it (design §6.2) instead of logging and carrying on.
+    //
+    // WHY THE CLASSIFIER LIVES HERE, and not in NativeRenderer: deciding "this
+    // exception came out of Blazor's parameter-supply path" is knowledge of
+    // Microsoft.AspNetCore.Components' INTERNAL LAYOUT, which is this file's
+    // entire job (see the header). NativeRenderer asks a question; the answer's
+    // fragility is quarantined here with the rest of it.
+    //
+    // WHY CALL SITE AND NOT MESSAGE TEXT (design §11 R3 — the phase's sharpest
+    // risk). `ex.Message.Contains("does not have a property matching")` would be
+    // LOCALIZABLE (the BCL/ASP.NET resource strings are satellite-assembly
+    // material), version-fragile, and — worst of all — its failure mode is
+    // SILENT: it stops matching, mount goes back to returning 0, and nothing
+    // looks broken. The frames below are METHOD IDENTITIES. They are not
+    // localized, they are not reworded for clarity, and when Blazor renames one
+    // the pin in ParameterBindingFaultTests reddens on the upgrade PR — which is
+    // the moment a human is already reading the diff.
+    //
+    // FAIL DIRECTION. A stack with no recognizable frame classifies as NOT a
+    // binding fault, so the renderer keeps today's log-and-continue posture.
+    // That is deliberate: the failure mode of this predicate is "#164 is not
+    // fixed for that fault", never "a recoverable fault crashed the app" — the
+    // StrictErrors-in-production outcome #164 explicitly rules out.
+
+    /// <summary>The Blazor methods that MAKE a fault a parameter-binding fault:
+    /// the property-writing machinery behind <c>SetParametersAsync</c>.
+    /// <list type="bullet">
+    /// <item><c>ComponentProperties.SetProperties</c> — the writer itself; it is
+    /// what throws for an unknown/unsettable incoming parameter name (internal
+    /// type, and the only frame guaranteed to survive an optimized build: it is
+    /// far too large to inline).</item>
+    /// <item><c>ParameterView.SetParameterProperties</c> — its one-line PUBLIC
+    /// caller, listed because a debug/JIT stack shows it and an inlining
+    /// decision that erases it must not erase the classification.</item>
+    /// </list>
+    /// Deliberately NOT listed: <c>ComponentState.SupplyCombinedParameters</c>
+    /// and <c>ComponentBase.SetParametersAsync</c>. They enclose the whole of
+    /// parameter supply, including a component's own <c>SetParametersAsync</c>
+    /// override — genuinely app code, and not the "always an author bug, never
+    /// transient" class §6.2 scoped this to. Widening to them is a decision,
+    /// not a tweak.</summary>
+    internal static readonly string[] ParameterBindingFrames =
+    [
+        "Microsoft.AspNetCore.Components.Reflection.ComponentProperties.SetProperties",
+        "Microsoft.AspNetCore.Components.ParameterView.SetParameterProperties",
+    ];
+
+    /// <summary>True when <paramref name="exception"/> (or anything in its inner
+    /// chain) was raised inside Blazor's parameter-property writer — see
+    /// <see cref="ParameterBindingFrames"/>.</summary>
+    /// <remarks>Reads <c>Exception.StackTrace</c>, the recorded PROVENANCE of the
+    /// throw, not <c>Message</c>. NativeAOT keeps member names in stack traces by
+    /// default (the repo sets no <c>StackTraceSupport</c> anywhere, and
+    /// <c>Exports.Init</c> already banks on ToString()'s stack surviving the
+    /// C-ABI crossing); if a consumer ever trims them away, this returns false
+    /// and the renderer falls back to log-and-continue. The chain walk is
+    /// depth-capped so a cyclic/pathological InnerException cannot spin an error
+    /// path.</remarks>
+    internal static bool IsParameterBindingFault(Exception? exception)
+    {
+        for (int depth = 0; exception is not null && depth < 8; depth++)
+        {
+            if (exception is AggregateException aggregate)
+            {
+                foreach (Exception inner in aggregate.InnerExceptions)
+                {
+                    if (IsParameterBindingFault(inner))
+                        return true;
+                }
+                return false;
+            }
+
+            string? stack = exception.StackTrace;
+            if (stack is not null)
+            {
+                foreach (string frame in ParameterBindingFrames)
+                {
+                    if (stack.Contains(frame, StringComparison.Ordinal))
+                        return true;
+                }
+            }
+
+            exception = exception.InnerException;
+        }
+
+        return false;
+    }
 }
 
 /// <summary>Thrown when the linked Blazor assembly's internal layout no longer matches the shape
