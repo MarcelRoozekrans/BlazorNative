@@ -294,11 +294,13 @@ that lane, not your PR. The `Asserted by` column below names which is which.
 | Android (instrumented, AVD) | `gradlew connectedAndroidTest` | 213 | `android-instrumented.yml` — advisory (nightly/dispatch) |
 | iOS (XCTest, simulator) | `xcodebuild test` | 242 | `ios.yml` — advisory (on-merge/dispatch) |
 
-⚠ **The Android 213 is an expectation, not an observation.** The last dispatch ran 212 and one of
-them — `BnStderrPumpAndroidTest.stderrWrites_reachTheSink_throughTheRealDup2` — **failed**
-([#191](https://github.com/MarcelRoozekrans/BlazorNative/issues/191)). The +1 is that issue's
-second, discriminating probe; the count stays unverified until the lane is dispatched again, and
-the lane will stay red until #191 is understood.
+⚠ **The Android 213 has been run at 212/213, not yet at 213/213.**
+[#191](https://github.com/MarcelRoozekrans/BlazorNative/issues/191)'s dispatch proved the Android
+stderr transport works on API 34 (`dup2Result=2`, reader alive, the explicit-fd-2 write
+round-tripped) and identified the original red as **test-side**: `FileDescriptor.err` is an ART
+dup at fd 54, not the process stderr. The discriminator that reported this has since been inverted
+into a passing invariant, so the lane is **expected** to be fully green — but that has not been
+observed yet and needs one more dispatch.
 
 **The gate is the truth; this table is a copy of it.** When the two disagree, the workflow is
 right — and they have disagreed before: for four milestones this table read 333 / 83 / 111 / 72
