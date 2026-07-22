@@ -294,13 +294,15 @@ that lane, not your PR. The `Asserted by` column below names which is which.
 | Android (instrumented, AVD) | `gradlew connectedAndroidTest` | 213 | `android-instrumented.yml` — advisory (nightly/dispatch) |
 | iOS (XCTest, simulator) | `xcodebuild test` | 242 | `ios.yml` — advisory (on-merge/dispatch) |
 
-⚠ **The Android 213 has been run at 212/213, not yet at 213/213.**
+✅ **The Android 213 has been observed green at 213/213**
+([run 29948996623](https://github.com/MarcelRoozekrans/BlazorNative/actions/runs/29948996623):
+`tests=213 failures=0 errors=0 skipped=0`).
 [#191](https://github.com/MarcelRoozekrans/BlazorNative/issues/191)'s dispatch proved the Android
 stderr transport works on API 34 (`dup2Result=2`, reader alive, the explicit-fd-2 write
 round-tripped) and identified the original red as **test-side**: `FileDescriptor.err` is an ART
-dup at fd 54, not the process stderr. The discriminator that reported this has since been inverted
-into a passing invariant, so the lane is **expected** to be fully green — but that has not been
-observed yet and needs one more dispatch.
+dup at fd 54, not the process stderr. The probe now writes through `ParcelFileDescriptor.fromFd(2)`
+— a dup of fd 2, sharing the open file description — with the assertion unchanged (a strict
+`assertEquals` on the whole `BnLogRecord`), and #191 is closed.
 
 **The gate is the truth; this table is a copy of it.** When the two disagree, the workflow is
 right — and they have disagreed before: for four milestones this table read 333 / 83 / 111 / 72
