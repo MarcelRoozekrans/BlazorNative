@@ -1716,12 +1716,30 @@ real-device still gated on the Apple account). Full scope + owner decisions in
   [Conclusion](../plans/2026-07-21-phase-11.1-conclusion.md) ·
   [friction ledger](../plans/2026-07-21-phase-11.1-friction-ledger.md) ·
   [walkthrough](../plans/2026-07-21-phase-11.1-walkthrough.md).
-- **Phase 11.2** — real-device Android: camera, biometrics, geolocation, notifications + smoke on
-  the owner's phone, recorded in a device-proof doc; discharges the physical-phone ledger (DoD #2).
-  **Designed 2026-07-21 — awaiting the owner's device session.** Vehicle: the repo sample app (the
-  only one carrying all four capability demos). See
+- ✅ **Phase 11.2** — real-device Android validation (DoD #2) — *complete (2026-07-22).* Run by the
+  owner on a **Xiaomi 24069PC21G, `arm64-v8a`, Android 16 / SDK 36** — newer than any CI lane —
+  with both bionic publishes holding the **4-IL2072 yardstick** and a dual-ABI APK.
+  **All four capabilities proven against real hardware:** a fused **geolocation** fix
+  (`fix:‹lat›,‹lon›`, *identical to platform rounding* against `dumpsys location`); a real
+  **notification** with `POST_NOTIFICATIONS` genuinely flipping `false → true`, surviving a process
+  kill, and **cold** tap-through into a new pid on `BnNotificationsDemo`; a real **camera** capture
+  via `ACTION_IMAGE_CAPTURE` at `3072x4096` round-tripped into `BnImage`; and **biometrics +
+  secure storage** with three distinct `keystore2` challenges and a complete positive/negative pair
+  (`Unlock + CANCEL → AuthFailed` vs `Unlock + FINGERPRINT → value:hunter2`) — **the OS**, not the
+  app, refusing decryption without fresh Class-3 auth, on a StrongBox-reporting device. Phase
+  11.0's generated route map resolved a **cold** deep link *before the .NET runtime loaded* and
+  carried **all 13 routes** with the pid unchanged — no crash on any route. **Two findings:**
+  [#178](https://github.com/MarcelRoozekrans/BlazorNative/issues/178) (`CapturePhotoAsync()`'s
+  `options = default` bypasses `CaptureOptions`' documented defaults → quality 1, no downscale —
+  invisible to the DevHost bridge) and the **DoD #2 "+ EXIF" clause amended as unsatisfiable** (the
+  shell strips EXIF on purpose when it normalises orientation; real-sensor evidence is now the
+  sensor-resolution dimensions + a real scene + the `ACTION_IMAGE_CAPTURE` path). **Boundaries:**
+  warm notification tap-through and the location permission prompt **not exercised**, interaction
+  smoke **PARTIAL** — **MIUI blocks `adb shell input` entirely**, so every tap was a human tap and
+  nothing could be scripted. **Discharges the M9 physical-phone ledger item.**
+  [Device proof](../plans/2026-07-22-phase-11.2-device-proof.md) ·
   [design](../plans/2026-07-21-phase-11.2-design.md) ·
-  [device runbook](../plans/2026-07-21-phase-11.2-device-runbook.md).
+  [device runbook, amended](../plans/2026-07-21-phase-11.2-device-runbook.md).
 - **Phase 11.3** — API stability: mark the stable surface (a PublicAPI baseline gate) + write the
   1.0 criteria (DoD #4). 1.0 is DEFINED here, not necessarily CUT.
 - **Phase 11.4** — logging discipline ([#155](https://github.com/MarcelRoozekrans/BlazorNative/issues/155)):

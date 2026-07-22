@@ -1,6 +1,7 @@
 # Milestone 11 — Production Readiness
 
-**Status:** 🔄 **active — opened 2026-07-20.** 2 / 6 DoD closed (#1 — Phase 11.0; #3 — Phase 11.1).
+**Status:** 🔄 **active — opened 2026-07-20.** 3 / 6 DoD closed (#1 — Phase 11.0; **#2 — Phase
+11.2**; #3 — Phase 11.1).
 **Predecessor:** Milestone 10 — Consolidation & Hardening, complete 2026-07-19
 ([final audit](../plans/2026-07-19-milestone-10-final-audit.md), all 7 DoD PASS; no tag — 8.6 rule).
 **Source:** owner direction (2026-07-20): *"work towards a production-grade framework,"* dogfood
@@ -75,6 +76,77 @@ the project stops being a proof-of-concept and starts being something a stranger
    invocations, observed results, screenshots/log excerpts). This **discharges the standing
    physical-phone ledger item** — the two least-emulated (camera, biometrics) get the honest
    proof the emulator couldn't give.
+
+   ⚠ **AMENDMENT (2026-07-22) — the camera clause's "+ EXIF" is WITHDRAWN as unsatisfiable, and
+   replaced.** The clause as written asks the capture to carry camera EXIF (`Make` / `Model` /
+   `DateTimeOriginal` / exposure) as the anti-emulated-shutter proof. **It cannot be satisfied
+   without a regression**, and the reason is a deliberate framework behaviour rather than a
+   device or session failure: the Android shell **normalises orientation** by baking the EXIF
+   rotation into the pixels *and resetting the tag to identity*, then re-encoding the JPEG —
+   precisely so EXIF-honouring decoders (Coil on Android, Kingfisher on iOS) do not rotate the
+   image a second time (`src/BlazorNative.Jni/.../AndroidShellBridge.kt:1152-1156`, `:1300-1307`,
+   where the shell says so in its own comments). A re-encoded JPEG carries **no camera EXIF at
+   all**; the real capture reported `EXIF present: False`, `JFIF present: True`. Demanding EXIF
+   would be demanding the shell stop doing the thing it is designed to do. **Replaced by — and
+   this is what DoD #2 now requires as real-sensor evidence:** (a) the reported capture
+   **dimensions match a genuine sensor resolution** (the session got **3072×4096**, 12.6 MP — no
+   AVD shutter produces that), (b) the frame is a **real photographed scene**, recognisable, not
+   a synthetic green/checkerboard, and (c) it arrived via **`MediaStore.ACTION_IMAGE_CAPTURE`** —
+   the system camera app that owns the physical sensor — and round-tripped through FileProvider →
+   path → C-ABI → .NET → `BnImage`. The clause is amended rather than waived: the *"no emulated
+   shutter"* burden is unchanged, only the instrument that discharges it.
+
+   ✅ **Closed by Phase 11.2** (2026-07-22 — the owner's device session, run manually on the
+   phone). **Device:** Xiaomi 24069PC21G (`peridot`), `arm64-v8a`, **Android 16 / SDK 36** —
+   *newer than any CI lane exercises* — reporting `android.hardware.strongbox_keystore=300`.
+   Both bionic publishes held the **4-IL2072 yardstick** exactly; the APK carried both
+   `lib/arm64-v8a/` (5.4 MB) and `lib/x86_64/` (5.2 MB) `.so`s.
+   **Mechanism + evidence, per capability:** **Geolocation** — app echo
+   `fix:‹lat›,‹lon›`, **identical to platform rounding** against `dumpsys location`'s
+   fused *and* network last-known records, so the value round-tripped faithfully rather than
+   merely looking plausible. **Notifications** — `POST_NOTIFICATIONS` genuinely flipped
+   `granted=false` → `granted=true` (the API 33+ runtime prompt, on API 36); a real
+   `NotificationRecord(pkg=io.blazornative.shell … id=7 … channel=blazornative_default …)` posted;
+   it **survived a process kill** and a shade tap **cold-started a new pid (16535)** onto
+   `[BOOT] mounted BnNotificationsDemo` + `arrived:/notifications`. **Camera** — no permission
+   prompt, which is *correct* (`ACTION_IMAGE_CAPTURE` means the system camera owns the sensor —
+   the Phase 11.0 footgun audit's claim, confirmed on hardware); echo
+   `captured:3072x4096:93670`, the photo rendered back into `BnImage`. **Biometrics + secure
+   storage** — **three distinct `keystore2` challenges**, `isStrongBiometric=true`, and a complete
+   positive/negative pair: `Unlock + CANCEL → status:AuthFailed` versus
+   `Unlock + FINGERPRINT → value:hunter2`. That is **the OS refusing to decrypt the auth-bound key
+   without fresh Class-3 authentication and permitting it with** — enforcement, not the app
+   choosing what to display, and a stronger result than the runbook had planned for (it expected
+   to settle for a device self-report plus an AVD negative control, since nothing in the repo
+   surfaces `KeyInfo.getSecurityLevel()`). **Deep link on hardware:** the **cold**
+   `blazornative://notifications` resolved at Intent-parse **before the .NET runtime loaded**, and
+   **all 13 routes** deep-linked in sequence with **pid 16535 unchanged — no crash on any route**,
+   proving Phase 11.0's generated route map end-to-end on a device.
+   **Finding filed:** [#178](https://github.com/MarcelRoozekrans/BlazorNative/issues/178) —
+   `CapturePhotoAsync()`'s `options = default` zero-initialises `CaptureOptions`, bypassing its
+   record primary-constructor defaults, so every consumer silently gets `Quality=0` → `1` and no
+   downscale (`Camera.cs:19`, `IMobileBridge.cs:384`, `AndroidShellBridge.kt:1330`). A defect the
+   DevHost bridge could never have shown.
+   **NOT exercised, recorded rather than rounded off:** the **warm** notification tap-through (the
+   warm re-route path it depends on *was* proven on the same hardware via a warm
+   `blazornative://geolocation`); the **location permission prompt** (pre-granted on this device —
+   the notification prompt *was* exercised); the **interaction smoke is PARTIAL** (the starter
+   page's text-input echo was driven end-to-end; `/list` `/scroll` `/form` `/modal` mounted
+   without crash but were not manually driven); and the **standalone `IBiometrics.AuthenticateAsync`
+   path** (a raw session-log label reading `Authenticate → status:Ok` resolves against the code to
+   **`Set`** — `BiometricStatus` has no `Ok` member, `SecureStorageStatus` does — so the biometrics
+   clause rests **solely** on the `Set` / `Unlock+cancel` / `Unlock+fingerprint` triple, which is
+   the stronger basis anyway since all three are the OS keystore enforcing rather than an app-level
+   status echo). Cause of the interaction gaps: **MIUI blocks `adb shell input` entirely** — no
+   `MotionEvent` reached the app — so **every tap was a human tap** and nothing could be scripted. Also unchanged: the key's security level is a **device report**, not
+   an app observation; geolocation `Accuracy` is still not surfaced
+   ([#169](https://github.com/MarcelRoozekrans/BlazorNative/issues/169)); one device, one OEM
+   skin, one OS version; **iOS real-device remains deferred**. Screenshots and logcat dumps stayed
+   in the session scratchpad **outside the repo** — the verbatim excerpts in the proof doc are the
+   in-repo record.
+   [Device proof](../plans/2026-07-22-phase-11.2-device-proof.md) ·
+   [runbook, amended](../plans/2026-07-21-phase-11.2-device-runbook.md) ·
+   [design](../plans/2026-07-21-phase-11.2-design.md).
 
 3. **Consumer dogfooding — a stranger can really ship.** A **fresh app outside this repo**
    consumes the **published 0.2.0** packages (`dotnet new blazornative` → the 7 `dotnet add
@@ -158,8 +230,14 @@ the project stops being a proof-of-concept and starts being something a stranger
 
 ## Inherited from prior milestones (the ledger M11 consumes or carries)
 
-- **The physical-phone proof** (M9 owner-owed) — ✅ **consumed by DoD #2** (all capabilities, on
-  real Android hardware).
+- **The physical-phone proof** (M9 owner-owed) — ✅ **DISCHARGED 2026-07-22.** Consumed by DoD #2
+  and now actually *done*: the owner ran the session on a Xiaomi 24069PC21G (Android 16 / SDK 36,
+  `arm64-v8a`) and all four capabilities were exercised against real hardware — a real fused
+  location fix, a real notification post + grant + cold tap-through, a real system-camera capture,
+  and the **OS keystore** enforcing auth-bound decryption against a real enrolled fingerprint. The
+  ledger item is closed; it immediately paid for itself with
+  [#178](https://github.com/MarcelRoozekrans/BlazorNative/issues/178), a defect only a real
+  encoder could have surfaced. [Device proof](../plans/2026-07-22-phase-11.2-device-proof.md).
 - **The KDoc sweep + map extraction** (M8) — trigger was "before the first Release that
   publishes the template pack"; the map-extraction half is **done** (Phase 11.0 RouteGen retired the
   inline map + its excision), and the KDoc-correctness half + **publishing the template pack** +
@@ -186,9 +264,16 @@ Tracked in `ROADMAP.md`. Approved at milestone-open:
   `BlazorNativeApp.ConfigureServices` app-service DI seam — shipping in **0.4.0** (cross-ref
   DoD #4 / the Phase 11.3 PublicAPI baseline). See
   [phase-11.1 design](../plans/2026-07-20-phase-11.1-design.md).
-- **Phase 11.2** — real-device Android validation, all capabilities, recorded (DoD #2) —
-  *owner-run over USB; the milestone's honesty check.* **Designed 2026-07-21, awaiting the owner's
-  device session** — [design](../plans/2026-07-21-phase-11.2-design.md) ·
+- ✅ **Phase 11.2** — real-device Android validation, all capabilities, recorded (DoD #2) —
+  *complete (2026-07-22); owner-run on the phone, the milestone's honesty check.* All four
+  capabilities exercised on a Xiaomi 24069PC21G (Android 16 / SDK 36); the generated route map
+  proven across **all 13 routes** in one process; **cold** deep link + **cold** notification
+  tap-through both landed on the right page. Two findings: **#178** (`CaptureOptions` defaults
+  never apply) and the **DoD #2 EXIF-clause amendment** above. Runbook amended from the session
+  (MIUI blocks `adb` input injection; `force-stop` clears notifications; `installDebug` fails
+  `INSTALL_FAILED_USER_RESTRICTED`; the JDK/NDK env traps recurred).
+  [Device proof](../plans/2026-07-22-phase-11.2-device-proof.md) ·
+  [design](../plans/2026-07-21-phase-11.2-design.md) ·
   [device runbook](../plans/2026-07-21-phase-11.2-device-runbook.md).
 - **Phase 11.3** — API stability review + the 1.0 criteria + public-API baseline (DoD #4).
 - **Phase 11.4** — logging discipline (DoD #6, [#155](https://github.com/MarcelRoozekrans/BlazorNative/issues/155)):
