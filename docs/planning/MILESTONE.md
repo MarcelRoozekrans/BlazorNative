@@ -1,8 +1,9 @@
 # Milestone 11 — Production Readiness
 
-**Status:** 🔄 **active — opened 2026-07-20.** 5 / 6 DoD closed (#1 — Phase 11.0; #2 — Phase
-11.2; #3 — Phase 11.1; #4 — Phase 11.3; **#6 — Phase 11.4**). Only **#5** — hygiene + the final
-audit (Phase 11.5) — remains.
+**Status:** ✅ **COMPLETE — closed 2026-07-22** on its
+[final audit](../plans/2026-07-22-milestone-11-final-audit.md) (**PASS WITH FINDINGS**, 7 findings
+recorded; **no tag** — the 8.6 rule, closure is the audit). **6 / 6 DoD closed** (#1 — Phase 11.0;
+#2 — Phase 11.2; #3 — Phase 11.1; #4 — Phase 11.3; **#5 — Phase 11.5**; #6 — Phase 11.4).
 **Predecessor:** Milestone 10 — Consolidation & Hardening, complete 2026-07-19
 ([final audit](../plans/2026-07-19-milestone-10-final-audit.md), all 7 DoD PASS; no tag — 8.6 rule).
 **Source:** owner direction (2026-07-20): *"work towards a production-grade framework,"* dogfood
@@ -222,8 +223,10 @@ the project stops being a proof-of-concept and starts being something a stranger
    [`[Experimental]` policy](../plans/2026-07-21-phase-11.3-experimental-policy.md) — `BN1xxx`
    reserved, disjoint from `BN0xxx`, never reused — with the argued finding that the current
    surface warrants **zero** uses. **Gate D** produced the standalone
-   [1.0 criteria](../plans/2026-07-22-phase-11.3-one-point-oh-criteria.md) (**12 blockers**, 7 met
-   / 5 open, each open one owned), the consumer-facing
+   [1.0 criteria](../plans/2026-07-22-phase-11.3-one-point-oh-criteria.md) (**12 blockers**, 8 met
+   / 4 open at the time of writing — **9 / 3 after Phase 11.4 closed Q2**, see the
+   [final audit](../plans/2026-07-22-milestone-11-final-audit.md); each open one owned), the
+   consumer-facing
    [API-stability page + compatibility statement](../../website/docs/api-stability.md), and the
    README re-cut.
 
@@ -255,6 +258,28 @@ the project stops being a proof-of-concept and starts being something a stranger
    public-API baseline gated); a decision log per phase; the device-proof doc; a **final audit**
    verifying all of the above. **No milestone tag** (8.6 rule — closure is the audit); a 1.0.0
    *package* release, if the owner cuts it, is a separate release-please tag.
+
+   ✅ **Closed by Phase 11.5** (2026-07-22) — the
+   [**M11 final audit**](../plans/2026-07-22-milestone-11-final-audit.md), verdict **PASS WITH
+   FINDINGS**. **Method:** no criterion accepted because a conclusion doc says so — each DoD checked
+   against live source, the CI gate literals (the `if`/`-ne` lines that DECIDE), the run logs of the
+   three lanes this host cannot execute, `gh issue` read live, and `git tag -l`. **Re-run live:** the
+   .NET suite at the audited tip, and Phase 11.3's `BnButton.Label → Text` baseline mutation, because
+   *the strongest fact available for DoD #4 is a mutation, not a green build.* **CI-observed, cited
+   not re-run:** Android instrumented **213/213** (run 29948996623) and iOS **242** (run 29949367282,
+   on the audited tip `cf80930`). **UNVERIFIED here:** the JVM **148** — `gradlew testDebugUnitTest`
+   fails at `:verifyNativeAssets` without both bionic `.so` publishes, so it rests on gate-literal ↔
+   README reconciliation, the same posture M8–M10 took for their un-runnable lanes.
+   **Seven findings, none blocking**, four of them stale records the audit found **and fixed**: the
+   Android carve-out below (resolved by #193 and still described as red in three docs); the
+   *"210 → 212"* Android delta (the gate says **213**); the README's *"not yet at 213/213"* block;
+   and a **7 met / 5 open** 1.0 tally contradicting the criteria doc's own **8 / 4**. The two
+   substantive ones: **`[EditorBrowsable(Never)]` is a new surface with NO CI guard** — 28 markings
+   asserted by nothing, `PublicAPI.Shipped.txt` records signatures not attributes, so deleting one
+   reds nothing (the single place this DoD's own sentence is not literally true; the natural first
+   follow-up); and the route-map drift test proves the **generator**, not the **build wiring** —
+   that half is covered by the instrumented lane and the device session, i.e. advisory lanes, not the
+   required one. **No tag created.**
 
 6. **Logging discipline — quiet-in-Release, level-gated, unified**
    ([#155](https://github.com/MarcelRoozekrans/BlazorNative/issues/155)). Diagnostic logging today
@@ -317,8 +342,9 @@ the project stops being a proof-of-concept and starts being something a stranger
    method identities in the stack (`ComponentProperties.SetProperties` +
    `ParameterView.SetParameterProperties`), proven by a test feeding an **impostor carrying #164's
    message verbatim**. Its **fail direction is safe** — an unrecognised stack → log-and-continue,
-   never a false fatal. Suite **782 → 864** (.NET) · **120 → 148** (JVM) · **210 → 212** (Android
-   instrumented) · **236 → 242** (iOS).
+   never a false fatal. Suite **782 → 864** (.NET) · **120 → 148** (JVM) · **210 → 213** (Android
+   instrumented — 212 at Gate B, **213** once #193 landed the pump's honest-install assertion) ·
+   **236 → 242** (iOS).
 
    **Findings + deliberate divergences.** The mapper's `ignored`/`skipped` diagnostics **stay at
    `Warn` and ship in Release**, against #155's literal goal text — each records a dropped wire, and
@@ -334,10 +360,22 @@ the project stops being a proof-of-concept and starts being something a stranger
    **Boundaries kept explicit.** The iOS sweep **is** CI-verified — `ios.yml` ran and passed on
    `71470db` including `Assert XCTest baseline (242 passed / 0 failed)` — but **no device, no
    simulator session and no Mac were used by the author**, and CI never watched a Release build's
-   console. **The Android instrumented lane has not run since before Gate A** (last execution:
-   `88e2b1c`, 2026-07-22 05:50Z), so `BnStderrPumpAndroidTest` — the only proof `Os.dup2` installs
-   over fd 2 on a real Android runtime — has **never executed** and the `212` baseline is an
-   expectation; the lane is advisory, but it should be green before the M11 audit.
+   console.
+   ✅ **THE ANDROID CARVE-OUT IS RESOLVED (2026-07-22) — read DoD #6's closure WITHOUT it.** DoD #6
+   was closed while the Android transport's only device-level proof was **unrun**; when dispatched on
+   `f53f74a` it went **red** (211/212), and it took three rounds to establish the cause was a **test**
+   bug, not a transport bug: the probe wrote via `Os.write(FileDescriptor.err, …)`, and on ART
+   `FileDescriptor.err` is a **dup sitting at fd 54**, not literal fd 2 — so the probe bypassed the
+   pipe while the pump was fine (run-2 diagnostics: `dup2Result=2`, reader alive, the explicit-fd-2
+   control write **passed**). [#191](https://github.com/MarcelRoozekrans/BlazorNative/issues/191) is
+   **CLOSED** by #193, which replaced the *instrument* — `ParcelFileDescriptor.fromFd(2)`, a dup of
+   fd 2 that shares the open file description — **without softening the assertion** (still a strict
+   `assertEquals` on the whole `BnLogRecord`). The lane is now **213/213 green**
+   ([run 29948996623](https://github.com/MarcelRoozekrans/BlazorNative/actions/runs/29948996623):
+   `tests=213 failures=0 errors=0 skipped=0`), so `Os.pipe()` + `Os.dup2()` over fd 2 **is**
+   device-proven on a real Android runtime. The instrumented delta for M11 is therefore
+   **210 → 213**, not 212. *(Residual, stated: that run is on the branch tip `c779294`, not on the
+   squash-merge `cf80930` — identical tree, standard advisory-lane posture.)*
    **"A Release build is actually quiet on a device" is inspection-only and NOT done** — the
    mechanism is proven, the silence is not observed. **[#155](https://github.com/MarcelRoozekrans/BlazorNative/issues/155)
    therefore stays OPEN with two named remainders** (the device observation; the level knob absent
@@ -385,8 +423,12 @@ the project stops being a proof-of-concept and starts being something a stranger
 
 Tracked in `ROADMAP.md`. Approved at milestone-open:
 
-- **Phase 11.0** — deep-link route codegen + the consumer-footgun audit (DoD #1) — *the seed
-  finding; a concrete single-source-of-truth fix, first because dogfooding will lean on it.*
+- ✅ **Phase 11.0** — deep-link route codegen + the consumer-footgun audit (DoD #1) — *complete
+  (2026-07-20); the seed finding; a concrete single-source-of-truth fix, first because dogfooding
+  would lean on it.* The generated `res/raw/blazornative_routes.json` is **`.gitignore`d** and
+  untracked, so it cannot rot back into a hand-maintained mirror.
+  [Conclusion](../plans/2026-07-20-phase-11.0-conclusion.md) ·
+  [footgun audit](../plans/2026-07-20-phase-11.0-footgun-audit.md).
 - ✅ **Phase 11.1** — consumer dogfooding on the published packages (DoD #3) — *complete
   (2026-07-21); walked on 0.3.0 then 0.4.0, not 0.2.0, because both shipped mid-phase.* Dogfooding surfaced the
   **sealed composition root** as a real gap, so 11.1 also grows one framework `feat` — a public
@@ -404,7 +446,14 @@ Tracked in `ROADMAP.md`. Approved at milestone-open:
   [Device proof](../plans/2026-07-22-phase-11.2-device-proof.md) ·
   [design](../plans/2026-07-21-phase-11.2-design.md) ·
   [device runbook](../plans/2026-07-21-phase-11.2-device-runbook.md).
-- **Phase 11.3** — API stability review + the 1.0 criteria + public-API baseline (DoD #4).
+- ✅ **Phase 11.3** — API stability review + the 1.0 criteria + public-API baseline (DoD #4) —
+  *complete (2026-07-22).* Four gates, **A before B being the load-bearing ordering** — a baseline
+  generated before the review acquires unearned authority. 88 types classified 55/2/31; six
+  `PublicAPI.Shipped.txt` baselines (1 166 lines) with RS0016/17/37 as **errors** from
+  `Directory.Build.targets`, **proven by mutation**; 28 NOT-API types marked
+  `[EditorBrowsable(Never)]`; the 1.0 criteria as a standalone checkable doc.
+  *(No single `-conclusion.md` — the decisions live across the tier table, the `[Experimental]`
+  policy and the criteria doc; noted as finding **F5** in the M11 audit.)*
 - ✅ **Phase 11.4** — logging discipline (DoD #6, [#155](https://github.com/MarcelRoozekrans/BlazorNative/issues/155))
   — *complete (2026-07-22).* One level-gated seam (`BnLog`, default **`Warn`**, not `#if DEBUG`),
   the level riding the init input at **offset 28 with `SizeOf` still 32**, **31** `Console.Error`
@@ -414,9 +463,19 @@ Tracked in `ROADMAP.md`. Approved at milestone-open:
   with the already-documented `rc 2` rather than report success over a half-rendered screen. Every
   other render fault keeps log-and-continue, deliberately
   ([design](../plans/2026-07-21-phase-11.4-design.md) §6.2). **#155 stays open** on its
-  quiet-in-Release *observation*; the Android instrumented lane has not re-run since Gate A.
+  quiet-in-Release *observation* alone; the Android instrumented lane **has since run green at
+  213/213** (#191 → #193 — the red was a test-side descriptor mismatch, not the transport).
   [Conclusion](../plans/2026-07-22-phase-11.4-conclusion.md).
-- **Phase 11.5** — hygiene + M11 final audit + close (DoD #5).
+- ✅ **Phase 11.5** — hygiene + the M11 final audit + close (DoD #5) — *complete (2026-07-22).*
+  Verdict **PASS WITH FINDINGS**; the .NET suite and the DoD #4 baseline mutation **re-run live**,
+  Android 213 / iOS 242 **CI-observed and cited**, JVM 148 **UNVERIFIED here** (`:verifyNativeAssets`
+  needs both bionic publishes). Seven findings — four stale records found **and fixed** (the resolved
+  Android carve-out still written as red in three docs; `210 → 212` where the gate says **213**; the
+  README's *"not yet at 213/213"*; a 1.0 tally of 7/5 contradicting the criteria doc's own 8/4), one
+  genuinely un-guarded surface (**`[EditorBrowsable(Never)]`**, 28 markings asserted by nothing), one
+  scope limit on the route-map drift test (it proves the generator, not the build wiring), one
+  missing 11.3 conclusion doc, and the carried residuals. **No tag.**
+  [Final audit](../plans/2026-07-22-milestone-11-final-audit.md).
 
 ## Why this milestone exists
 

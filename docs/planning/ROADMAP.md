@@ -1675,7 +1675,11 @@ iOS (no Apple account), FCM push (no Firebase), and the inspector channel stay o
 
 ---
 
-### 🔄 Milestone 11 — Production Readiness  *(active — opened 2026-07-20)*
+### ✅ Milestone 11 — Production Readiness  *(complete — opened 2026-07-20, closed 2026-07-22)*
+
+**All 6 DoD PASS** on the [final audit](../plans/2026-07-22-milestone-11-final-audit.md)
+(**PASS WITH FINDINGS**, 7 findings recorded, 4 of them stale records the audit fixed). **No tag** —
+the 8.6 rule; a milestone closes on its audit.
 
 From *works + published + hardened* to **production-grade**: an app author builds on the
 published packages without footguns (0.2.0 at milestone-open; 0.4.0 by the time 11.1 walked it),
@@ -1759,7 +1763,8 @@ real-device still gated on the Apple account). Full scope + owner decisions in
   [`[Experimental]` policy](../plans/2026-07-21-phase-11.3-experimental-policy.md) written with
   `BN1xxx` reserved and **zero** uses argued.
   **D**: the [1.0 criteria](../plans/2026-07-22-phase-11.3-one-point-oh-criteria.md) as a
-  standalone checkable doc — **12 blockers, 7 met, 5 open and every open one owned** — the
+  standalone checkable doc — **12 blockers, 8 met, 4 open and every open one owned** (**9 / 3** once
+  Phase 11.4 closed **Q2**; see the [final audit](../plans/2026-07-22-milestone-11-final-audit.md)) — the
   consumer-facing [API-stability page + compatibility statement](../../website/docs/api-stability.md),
   and the README re-cut from *"not yet frozen"* to **"marked but not yet frozen"** with its
   version literal removed so it cannot re-stale.
@@ -1795,16 +1800,41 @@ real-device still gated on the Apple account). Full scope + owner decisions in
   direction is safe (unrecognised stack → log-and-continue, never a false fatal).
   **Two drift pins** keep the migrations from rotting, both asserting their own non-vacuity, the
   iOS one with a **deletion guard** — "no bare NSLog" is trivially satisfiable by deleting every
-  diagnostic. Suite **782 → 864** · JVM **120 → 148** · Android **210 → 212** · iOS **236 → 242**.
+  diagnostic. Suite **782 → 864** · JVM **120 → 148** · Android **210 → 213** · iOS **236 → 242**.
   **Boundaries:** the iOS sweep **is** CI-verified (`ios.yml` green on `71470db` with its 242
-  assertion), but **no device, simulator session or Mac was used by the author**; the **Android
-  instrumented lane has not re-run since before Gate A**, so `BnStderrPumpAndroidTest` has never
-  executed; and **"a Release build is actually quiet on a device" is inspection-only and NOT done**.
-  **#155 therefore stays open** with two named remainders (the device observation; the level knob
-  absent from `website/docs/**`); **#164 is closed**.
+  assertion), but **no device, simulator session or Mac was used by the author**; and **"a Release
+  build is actually quiet on a device" is inspection-only and NOT done**.
+  ✅ **The Android carve-out is RESOLVED.** DoD #6 was closed while `BnStderrPumpAndroidTest` — the
+  only proof `Os.dup2` takes over fd 2 on a real Android runtime — had **never executed**; dispatched
+  on `f53f74a` it went **red** (211/212), and three rounds established a **test-side** cause, not a
+  transport one: on ART `FileDescriptor.err` is a dup at **fd 54**, so the probe bypassed the pipe
+  while the pump was fine (`dup2Result=2`, reader alive, explicit-fd-2 control write passed).
+  #193 swapped the instrument to `ParcelFileDescriptor.fromFd(2)` **without softening the assertion**
+  and the lane is now **213/213 green**
+  ([run 29948996623](https://github.com/MarcelRoozekrans/BlazorNative/actions/runs/29948996623));
+  [#191](https://github.com/MarcelRoozekrans/BlazorNative/issues/191) is **closed**.
+  **#155 therefore stays open** on one remainder plus a docs gap (the quiet-in-Release device
+  observation; the level knob absent from `website/docs/**`); **#164 is closed**.
   [Conclusion](../plans/2026-07-22-phase-11.4-conclusion.md) ·
   [design](../plans/2026-07-21-phase-11.4-design.md).
-- **Phase 11.5** — hygiene + M11 final audit + close (DoD #5, no milestone tag).
+- ✅ **Phase 11.5** — hygiene + the M11 final audit + close (DoD #5, **no milestone tag**) —
+  *complete (2026-07-22).* Verdict **PASS WITH FINDINGS**. Audited in the spirit the milestone
+  earned: CS1591 was *"read as ON and was OFF"* twice, Gate B was wired to prove itself **by
+  mutation**, and Gate B's Android sibling merged with its device proof **unrun** — so nothing here
+  is accepted on a conclusion doc's word. **Re-run live:** the .NET suite at the audited tip and the
+  `BnButton.Label → Text` baseline mutation. **CI-observed and cited:** Android **213/213**
+  (run 29948996623), iOS **242** (run 29949367282, on `cf80930`). **UNVERIFIED:** JVM **148** —
+  `gradlew testDebugUnitTest` fails at `:verifyNativeAssets` without both bionic `.so` publishes.
+  **Seven findings, none blocking.** Four were stale records, found and **fixed**: the resolved
+  Android carve-out still written as red in three docs; a `210 → 212` delta where the gate says
+  **213**; the README's *"not yet at 213/213"*; and a **7 met / 5 open** 1.0 tally contradicting the
+  criteria doc's own **8 / 4**. The substantive two: **`[EditorBrowsable(Never)]` has no CI guard**
+  — 28 markings asserted by nothing, since `PublicAPI.Shipped.txt` records signatures and not
+  attributes, the single place DoD #5's *"every new surface CI-asserted"* is not literally true; and
+  the route-map drift test proves the **generator**, not the **build wiring** (that half rides the
+  advisory instrumented lane and the device session). **1.0 stands at 9 met / 3 open** — A5 is a
+  release cycle, Q1 is one observation, Q3 is one decision; none is a build.
+  [Final audit](../plans/2026-07-22-milestone-11-final-audit.md).
 
 ---
 
