@@ -220,8 +220,7 @@ public sealed class NativeNavigationManager : INavigationManager
             catch (Exception ex)
             {
                 // ex.ToString(): the subscriber is app code — keep its stack.
-                Console.Error.WriteLine(
-                    $"[NativeNavigationManager] RouteChanged subscriber threw: {ex}");
+                BnLog.Error("NativeNavigationManager", "RouteChanged subscriber threw", ex);
             }
         }
     }

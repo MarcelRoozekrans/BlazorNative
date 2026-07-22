@@ -685,5 +685,37 @@ public sealed class NativeShellBridgeTests
         // BridgeProtocolNativeTests. If this reds, the three mirrors have drifted:
         // re-sync deliberately, do not just bump the number.
         Assert.Equal(32, Marshal.SizeOf<BlazorNativeInitOptions>());
+
+        // ── PHASE 11.4 GATE A (#155): THE PIN GETS STRONGER, NOT MERELY EDITED ──
+        //
+        // `LogLevel` (int) was appended for the log threshold. The design's central
+        // claim is that it COST NOTHING: alignment is 8 (the struct holds IntPtrs),
+        // so PlatformInfoKind at 24 was already followed by 4 bytes of TAIL PADDING,
+        // and the new int lands inside it.
+        //
+        // THE TWO ASSERTIONS TOGETHER ARE THE PROOF, and neither alone is:
+        //   - SizeOf == 32 alone would still hold if the field had been declared
+        //     somewhere that displaced an existing offset.
+        //   - OffsetOf == 28 alone would still hold if the struct had grown to 40.
+        // Only the pair says "free, not smuggled in". Measured before the field was
+        // written (32 → 32, offset 28), not assumed from the alignment rule.
+        //
+        // Back-compat follows from the size being UNCHANGED: a shell that predates
+        // the field allocates 32 bytes anyway and leaves offset 28 zero, and ordinal
+        // 0 = unset = Warn (BnLogTests.SetLevelFromOrdinal_…). Strictly safer than
+        // M10's own growth, which DID move the size.
+        Assert.Equal(28, (int)Marshal.OffsetOf<BlazorNativeInitOptions>(
+            nameof(BlazorNativeInitOptions.LogLevel)));
+
+        // The three original offsets are unmoved — the property that made M10's
+        // append-only growth safe, restated because THIS field relies on it too.
+        Assert.Equal(0,  (int)Marshal.OffsetOf<BlazorNativeInitOptions>(
+            nameof(BlazorNativeInitOptions.PlatformInfoOs)));
+        Assert.Equal(8,  (int)Marshal.OffsetOf<BlazorNativeInitOptions>(
+            nameof(BlazorNativeInitOptions.PlatformInfoApiLevel)));
+        Assert.Equal(16, (int)Marshal.OffsetOf<BlazorNativeInitOptions>(
+            nameof(BlazorNativeInitOptions.PlatformInfoNote)));
+        Assert.Equal(24, (int)Marshal.OffsetOf<BlazorNativeInitOptions>(
+            nameof(BlazorNativeInitOptions.PlatformInfoKind)));
     }
 }

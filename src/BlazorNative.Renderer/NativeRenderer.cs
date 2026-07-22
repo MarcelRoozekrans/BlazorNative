@@ -113,7 +113,7 @@ public sealed class NativeRenderer : BlazorRenderer
         _tree.ContractWarning = message =>
         {
             if (StrictErrors)
-                Console.Error.WriteLine($"[NativeRenderer] contract warning: {message}");
+                BnLog.Warn("NativeRenderer", $"contract warning: {message}");
         };
     }
 
@@ -293,7 +293,7 @@ public sealed class NativeRenderer : BlazorRenderer
                 }
                 catch (Exception ex)
                 {
-                    Console.Error.WriteLine($"[BlazorNative.Renderer] {ex}");
+                    BnLog.Error("BlazorNative.Renderer", "post-dispatch action threw", ex);
                     _uiEventDispatchException ??= ex;
                 }
             }
@@ -418,7 +418,7 @@ public sealed class NativeRenderer : BlazorRenderer
             // logs), so logging here too would double-report the same
             // exception. Non-strict keeps the frame-id context line.
             if (!StrictErrors)
-                Console.Error.WriteLine($"[NativeRenderer] frame {frameId} failed: {ex}");
+                BnLog.Error("NativeRenderer", $"frame {frameId} failed", ex);
             HandleException(ex);
         }
         finally
@@ -443,7 +443,7 @@ public sealed class NativeRenderer : BlazorRenderer
         if (_uiEventDispatchDepth > 0)
         {
             _uiEventDispatchException ??= exception;
-            Console.Error.WriteLine($"[BlazorNative.Renderer] {exception}");
+            BnLog.Error("BlazorNative.Renderer", "render fault (dispatch window)", exception);
             return;
         }
 
@@ -454,7 +454,7 @@ public sealed class NativeRenderer : BlazorRenderer
         if (StrictErrors)
             System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(exception).Throw();
 
-        Console.Error.WriteLine($"[BlazorNative.Renderer] {exception}");
+        BnLog.Error("BlazorNative.Renderer", "render fault", exception);
     }
 
     /// <summary>Renderer contract violations (Phase 3.3 Task 6): a poisoned
@@ -467,7 +467,10 @@ public sealed class NativeRenderer : BlazorRenderer
     {
         if (StrictErrors)
             throw new InvalidOperationException($"[NativeRenderer] contract violation: {message}");
-        Console.Error.WriteLine($"[NativeRenderer] contract violation (dropped): {message}");
+        // Warn, not Error: non-strict DROPS it and carries on, and design §4.3's
+        // finding is that a silently-dropped wire is exactly the Warn class — real,
+        // actionable, rare, and it must survive into Release.
+        BnLog.Warn("NativeRenderer", $"contract violation (dropped): {message}");
     }
 
     /// <summary>Test-only: routes a message through the contract-violation
@@ -1218,7 +1221,8 @@ public sealed class NativeRenderer : BlazorRenderer
             }
             catch (ArgumentException ex)
             {
-                Console.Error.WriteLine($"[NativeRenderer] stale handler {e.HandlerId}: {ex.Message}");
+                // Warn: a stale handler id is a teardown race, tolerated by design.
+                BnLog.Warn("NativeRenderer", $"stale handler {e.HandlerId}: {ex.Message}");
             }
             finally
             {

@@ -430,7 +430,13 @@ public sealed class DevHostBridge : IMobileBridge, IDisposable
             try { ((Action<NativeEvent>)handler)(evt); }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"[NativeEvents] subscriber threw: {ex.GetType().Name}: {ex.Message}");
+                // Phase 11.4: this ONE site migrates even though DevHostBridge's 18
+                // Console.Write* calls do not. Those are the dev host's UI — its
+                // stdout IS the product. This is a DIAGNOSTIC on a fault path, the
+                // exact twin of NativeShellBridge's and NativeNavigationManager's
+                // subscriber-threw lines, and leaving it behind would make the drift
+                // pin exempt a whole file to protect one line that belongs in the seam.
+                BnLog.Error("NativeEvents", "subscriber threw", ex);
             }
         }
     }

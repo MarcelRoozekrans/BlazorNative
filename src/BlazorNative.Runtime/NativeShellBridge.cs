@@ -384,8 +384,11 @@ public sealed class NativeShellBridge : IMobileBridge
     {
         if (!s_pendingFetches.TryRemove(requestId, out var tcs))
         {
-            Console.Error.WriteLine(
-                $"[NativeShellBridge] fetch_complete for unknown/completed id {requestId} — ignored (cancellation race)");
+            // Warn, not Error: a benign, expected cancellation race — the request
+            // was already removed. Loud enough to explain a missing response, not
+            // loud enough to read as a fault.
+            BnLog.Warn("NativeShellBridge",
+                $"fetch_complete for unknown/completed id {requestId} — ignored (cancellation race)");
             return 1;
         }
 
@@ -509,8 +512,9 @@ public sealed class NativeShellBridge : IMobileBridge
     {
         if (!s_pendingHostCalls.TryRemove(requestId, out var tcs))
         {
-            Console.Error.WriteLine(
-                $"[NativeShellBridge] host_call_complete for unknown/completed id {requestId} — ignored (cancellation race)");
+            // Warn — the CompleteFetch twin, same benign race.
+            BnLog.Warn("NativeShellBridge",
+                $"host_call_complete for unknown/completed id {requestId} — ignored (cancellation race)");
             return 1;
         }
 
@@ -980,8 +984,7 @@ public sealed class NativeShellBridge : IMobileBridge
                 // ex.ToString(): the subscriber (and any re-render it drove) is
                 // app code — keep its stack for logcat, same as RouteChanged.
                 faulted = true;
-                Console.Error.WriteLine(
-                    $"[NativeShellBridge] NativeEvents subscriber threw: {ex}");
+                BnLog.Error("NativeShellBridge", "NativeEvents subscriber threw", ex);
             }
         }
         return faulted;
