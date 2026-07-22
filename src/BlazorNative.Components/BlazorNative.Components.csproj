@@ -96,6 +96,20 @@
          Renderer.csproj). The other five packages stay suppressed, ledgered with
          their number: 174. -->
     <BnEnforceDocCoverage>true</BnEnforceDocCoverage>
+
+    <!-- PHASE 11.3 GATE B — the CS1591 pin above, one contract over. This
+         package carries a PublicAPI.Shipped.txt baseline and
+         RS0016/RS0017/RS0037 are ERRORS here. Same home for the same reason:
+         the switch lives in src/Directory.Build.targets, NOT .props, because
+         .props is imported before this line and would read the flag empty.
+
+         And it closes exactly the hole CS1591 cannot reach. CS1591 is blind to
+         .razor (the generator emits `#pragma warning disable 1591` at line 3 of
+         every *_razor.g.cs), so 98 of the 196 [Parameter] properties are
+         invisible to it. PublicApiAnalyzers analyses the COMPILATION, generated
+         code included — BnSlider's 23 .razor-declared parameters are in the
+         baseline, which is the Gate A falsifiable check that proves it. -->
+    <BnEnforcePublicApi>true</BnEnforcePublicApi>
   </PropertyGroup>
 
   <PropertyGroup>

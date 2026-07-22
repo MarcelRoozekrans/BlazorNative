@@ -1,0 +1,23 @@
+#nullable enable
+BlazorNative.Device.IBiometrics
+BlazorNative.Device.IBiometrics.AuthenticateAsync(string! reason, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<BlazorNative.Core.BiometricStatus>
+BlazorNative.Device.IBiometrics.IsAvailableAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<bool>
+BlazorNative.Device.ICamera
+BlazorNative.Device.ICamera.CapturePhotoAsync(BlazorNative.Core.CaptureOptions options = default(BlazorNative.Core.CaptureOptions), System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<BlazorNative.Core.PhotoResult>
+BlazorNative.Device.ICamera.CheckAvailabilityAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<BlazorNative.Core.CameraStatus>
+BlazorNative.Device.IGeolocation
+BlazorNative.Device.IGeolocation.CheckPermissionAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<BlazorNative.Core.GeolocationStatus>
+BlazorNative.Device.IGeolocation.GetCurrentPositionAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<BlazorNative.Core.GeolocationResult>
+BlazorNative.Device.INotifications
+BlazorNative.Device.INotifications.CancelAsync(int id, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<BlazorNative.Core.NotificationStatus>
+BlazorNative.Device.INotifications.CheckPermissionAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<BlazorNative.Core.NotificationStatus>
+BlazorNative.Device.INotifications.RequestPermissionAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<BlazorNative.Core.NotificationStatus>
+BlazorNative.Device.INotifications.ScheduleAsync(BlazorNative.Core.NotificationSpec spec, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<BlazorNative.Core.NotificationStatus>
+BlazorNative.Device.INotifications.ShowAsync(BlazorNative.Core.NotificationSpec spec, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<BlazorNative.Core.NotificationStatus>
+BlazorNative.Device.ISecureStorage
+BlazorNative.Device.ISecureStorage.DeleteAsync(string! key, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<BlazorNative.Core.SecureStorageStatus>
+BlazorNative.Device.ISecureStorage.GetAsync(string! key, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<BlazorNative.Core.SecretResult>
+BlazorNative.Device.ISecureStorage.GetWithAuthAsync(string! key, string! reason, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<BlazorNative.Core.SecretResult>
+BlazorNative.Device.ISecureStorage.SetAsync(string! key, string! value, bool requireAuth = false, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<BlazorNative.Core.SecureStorageStatus>
+BlazorNative.Device.ServiceCollectionExtensions
+static BlazorNative.Device.ServiceCollectionExtensions.AddBlazorNativeDevice(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!

@@ -8,6 +8,16 @@
   </PropertyGroup>
 
   <PropertyGroup>
+    <!-- PHASE 11.3 GATE B — this package carries a PublicAPI.Shipped.txt
+         baseline and RS0016/RS0017/RS0037 are ERRORS here. The switch itself
+         lives in src/Directory.Build.targets, NOT .props: .props is imported
+         BEFORE this line, so a condition there would read the flag empty and
+         the pin would be off while reading as on (that file's header carries
+         the measurement, and the CS1591 pin paid for it twice). -->
+    <BnEnforcePublicApi>true</BnEnforcePublicApi>
+  </PropertyGroup>
+
+  <PropertyGroup>
     <!-- Phase 8.1: shared pack metadata (Version/Authors/license/readme/
          symbols/SourceLink) lives in src/Directory.Build.props — only the
          per-package voice stays here. See the 2026-07-16 phase-8.1 design. -->

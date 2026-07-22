@@ -65,4 +65,96 @@
     <WarningsAsErrors Condition="'$(BnEnforceDocCoverage)' == 'true'">$(WarningsAsErrors);CS1591</WarningsAsErrors>
   </PropertyGroup>
 
+  <!-- ─────────────────────────────────────────────────────────────────────
+       PHASE 11.3 GATE B — THE PUBLIC-API BASELINE, AND WHY IT LIVES HERE.
+
+       BnEnforcePublicApi is BnEnforceDocCoverage's twin, one file down and
+       for the identical reason. The design (docs/plans/2026-07-21-phase-11.3-design.md
+       §4) says it in one line: put this in Directory.Build.props and the
+       condition is evaluated BEFORE the csproj sets the flag — the property
+       reads back "true" and the switch is off. That is the measurement in
+       this file's header at :28-:34, and it cost the CS1591 pin its teeth
+       TWICE. Directory.Build.targets is imported AFTER the project body, so
+       the opt-in is visible and the condition means what it says.
+
+       WHY WARNINGS-AS-ERRORS, NOT JUST THE ANALYZER. RS0016/RS0017 default to
+       `warning`. ci.yml:195 builds with no -warnaserror and there is no
+       TreatWarningsAsErrors anywhere in the repo (:57 above), so a warning
+       here would print into a lane that exits 0 — a pin's costume on a pin's
+       absence. The named proof is a MUTATION, never a green build: rename
+       BnButton.Label to BnButton.Text and the build must stop with
+       `error RS0016` (Text undeclared) AND `error RS0017` (Label gone).
+
+         RS0016 — a public member is in neither PublicAPI.*.txt   (API added)
+         RS0017 — a PublicAPI.*.txt line has no matching member   (API removed)
+         RS0037 — nullability annotations are recorded in the baseline, so
+                  `string` -> `string?` is a diff too. Opt-in, and ON: this
+                  repo is nullable-enabled throughout and an un-annotated
+                  baseline would sleep through a real break.
+
+       WHAT IS BASELINED. Six packages — Core, Renderer, Http, Components,
+       Runtime, Device. NOT BlazorNative.Analyzers: it ships as an analyzer
+       asset with PrivateAssets=all, so a consumer never gets a compile-time
+       reference to MobilePolicyAnalyzer. Its real contract is the seven
+       BN00xx diagnostic IDs — what a consumer types into a NoWarn — which a
+       .txt of class names cannot express. A pin that guards the wrong noun
+       manufactures confidence, so that package gets the pin it actually needs
+       instead: AnalyzerDiagnosticRosterTests (Gate B's A2, both directions).
+
+       GENERATED TYPES ARE IN THE BASELINE, DELIBERATELY. Three of the 88
+       exported types are emitted, not written: the two ZeroAlloc.Inject
+       ...ServiceCollectionExtensions and Razor's BlazorNative.Components._Imports.
+       They are NOT excluded from the analyzer. If a ZeroAlloc or Razor
+       version bump changes them, that IS a change to the shipped public
+       surface a consumer can bind to, and a red build is the correct signal —
+       the alternative is a generator silently re-shaping our package. (It is
+       also the check that proves the baseline sees generated code at all:
+       BnSlider's 23 parameters are declared in .razor and reach the surface
+       only through the Razor generator.)
+
+       The PackageReference sits here rather than in six csprojs for the same
+       reason the NoWarn does: one home for the policy, one opt-in line per
+       package. The item is visible to restore because Directory.Build.targets
+       is imported during EVALUATION, not during target execution.
+       ───────────────────────────────────────────────────────────────────── -->
+  <PropertyGroup>
+    <WarningsAsErrors Condition="'$(BnEnforcePublicApi)' == 'true'">$(WarningsAsErrors);RS0016;RS0017;RS0037</WarningsAsErrors>
+
+    <!-- RS0041 ("uses some oblivious reference types") IS SUPPRESSED, AND ONLY
+         RS0041. It fired exactly SIX times, all of them on the same symbol in
+         six *_razor.g.cs files:
+
+           override BlazorNative.Components.BnSlider.BuildRenderTree(
+               Microsoft.AspNetCore.Components.Rendering.RenderTreeBuilder __builder) -> void
+
+         The Razor generator emits no `#nullable` context in the file it writes,
+         so its `__builder` parameter is nullable-OBLIVIOUS — not un-annotated by
+         our choice, but by a generator we do not own and cannot annotate. The
+         baseline records the fact honestly with the analyzer's own `~` prefix on
+         those six lines, which is precisely what `~` is for; RS0041 is the
+         advisory that the prefix exists, not a defect report. Leaving it on
+         would put six permanent warnings into a lane whose bar is zero — and a
+         warning nobody can act on is how a log stops being read.
+
+         The hand-written override next to them carries `RenderTreeBuilder! b`,
+         i.e. the annotated form, which is the evidence that this suppression is
+         scoped to the generated half and not hiding our own obliviousness. -->
+    <NoWarn Condition="'$(BnEnforcePublicApi)' == 'true'">$(NoWarn);RS0041</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(BnEnforcePublicApi)' == 'true'">
+    <!-- Same roslyn-analyzers family and same version as the Analyzers
+         project's Microsoft.CodeAnalysis.Analyzers 5.6.0
+         (BlazorNative.Analyzers.csproj:49). Analyzer-only assets, private:
+         nothing about this reference reaches a consumer's dependency graph. -->
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" Version="5.6.0">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime;build;native;contentfiles;analyzers;buildtransitive</IncludeAssets>
+    </PackageReference>
+    <!-- Relative Includes in an imported file resolve against the PROJECT
+         directory, so each of the six picks up its own pair. -->
+    <AdditionalFiles Include="PublicAPI.Shipped.txt" />
+    <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
+  </ItemGroup>
+
 </Project>

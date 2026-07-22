@@ -1,0 +1,303 @@
+#nullable enable
+~override BlazorNative.Core.BridgeHttpRequest.Equals(object obj) -> bool
+~override BlazorNative.Core.BridgeHttpRequest.ToString() -> string
+~override BlazorNative.Core.BridgeHttpResponse.Equals(object obj) -> bool
+~override BlazorNative.Core.BridgeHttpResponse.ToString() -> string
+~override BlazorNative.Core.CaptureOptions.Equals(object obj) -> bool
+~override BlazorNative.Core.CaptureOptions.ToString() -> string
+~override BlazorNative.Core.GeolocationPosition.Equals(object obj) -> bool
+~override BlazorNative.Core.GeolocationPosition.ToString() -> string
+~override BlazorNative.Core.GeolocationResult.Equals(object obj) -> bool
+~override BlazorNative.Core.GeolocationResult.ToString() -> string
+~override BlazorNative.Core.NativeEvent.Equals(object obj) -> bool
+~override BlazorNative.Core.NativeEvent.ToString() -> string
+~override BlazorNative.Core.NotificationSpec.Equals(object obj) -> bool
+~override BlazorNative.Core.NotificationSpec.ToString() -> string
+~override BlazorNative.Core.PhotoResult.Equals(object obj) -> bool
+~override BlazorNative.Core.PhotoResult.ToString() -> string
+~override BlazorNative.Core.PlatformInfo.Equals(object obj) -> bool
+~override BlazorNative.Core.PlatformInfo.ToString() -> string
+~override BlazorNative.Core.SecretResult.Equals(object obj) -> bool
+~override BlazorNative.Core.SecretResult.ToString() -> string
+BlazorNative.Core.BiometricStatus
+BlazorNative.Core.BiometricStatus.Authenticated = 0 -> BlazorNative.Core.BiometricStatus
+BlazorNative.Core.BiometricStatus.Cancelled = 2 -> BlazorNative.Core.BiometricStatus
+BlazorNative.Core.BiometricStatus.Error = 5 -> BlazorNative.Core.BiometricStatus
+BlazorNative.Core.BiometricStatus.Failed = 1 -> BlazorNative.Core.BiometricStatus
+BlazorNative.Core.BiometricStatus.LockedOut = 4 -> BlazorNative.Core.BiometricStatus
+BlazorNative.Core.BiometricStatus.Unavailable = 3 -> BlazorNative.Core.BiometricStatus
+BlazorNative.Core.BnImageErrorEventArgs
+BlazorNative.Core.BnImageErrorEventArgs.BnImageErrorEventArgs() -> void
+BlazorNative.Core.BnImageErrorEventArgs.Src.get -> string!
+BlazorNative.Core.BnImageErrorEventArgs.Src.init -> void
+BlazorNative.Core.BnScrollEventArgs
+BlazorNative.Core.BnScrollEventArgs.BnScrollEventArgs() -> void
+BlazorNative.Core.BnScrollEventArgs.OffsetY.get -> float
+BlazorNative.Core.BnScrollEventArgs.OffsetY.init -> void
+BlazorNative.Core.BridgeHttpRequest
+BlazorNative.Core.BridgeHttpRequest.Body.get -> string?
+BlazorNative.Core.BridgeHttpRequest.Body.init -> void
+BlazorNative.Core.BridgeHttpRequest.BridgeHttpRequest() -> void
+BlazorNative.Core.BridgeHttpRequest.BridgeHttpRequest(string! Url, string! Method = "GET", string? Body = null, System.Collections.Generic.IReadOnlyDictionary<string!, string!>? Headers = null) -> void
+BlazorNative.Core.BridgeHttpRequest.Deconstruct(out string! Url, out string! Method, out string? Body, out System.Collections.Generic.IReadOnlyDictionary<string!, string!>? Headers) -> void
+BlazorNative.Core.BridgeHttpRequest.Equals(BlazorNative.Core.BridgeHttpRequest other) -> bool
+BlazorNative.Core.BridgeHttpRequest.Headers.get -> System.Collections.Generic.IReadOnlyDictionary<string!, string!>?
+BlazorNative.Core.BridgeHttpRequest.Headers.init -> void
+BlazorNative.Core.BridgeHttpRequest.Method.get -> string!
+BlazorNative.Core.BridgeHttpRequest.Method.init -> void
+BlazorNative.Core.BridgeHttpRequest.Url.get -> string!
+BlazorNative.Core.BridgeHttpRequest.Url.init -> void
+BlazorNative.Core.BridgeHttpResponse
+BlazorNative.Core.BridgeHttpResponse.Body.get -> string!
+BlazorNative.Core.BridgeHttpResponse.Body.init -> void
+BlazorNative.Core.BridgeHttpResponse.BridgeHttpResponse() -> void
+BlazorNative.Core.BridgeHttpResponse.BridgeHttpResponse(int StatusCode, string! Body, System.Collections.Generic.IReadOnlyDictionary<string!, string!>! Headers) -> void
+BlazorNative.Core.BridgeHttpResponse.Deconstruct(out int StatusCode, out string! Body, out System.Collections.Generic.IReadOnlyDictionary<string!, string!>! Headers) -> void
+BlazorNative.Core.BridgeHttpResponse.Equals(BlazorNative.Core.BridgeHttpResponse other) -> bool
+BlazorNative.Core.BridgeHttpResponse.Headers.get -> System.Collections.Generic.IReadOnlyDictionary<string!, string!>!
+BlazorNative.Core.BridgeHttpResponse.Headers.init -> void
+BlazorNative.Core.BridgeHttpResponse.StatusCode.get -> int
+BlazorNative.Core.BridgeHttpResponse.StatusCode.init -> void
+BlazorNative.Core.CameraStatus
+BlazorNative.Core.CameraStatus.Cancelled = 1 -> BlazorNative.Core.CameraStatus
+BlazorNative.Core.CameraStatus.Captured = 0 -> BlazorNative.Core.CameraStatus
+BlazorNative.Core.CameraStatus.Denied = 2 -> BlazorNative.Core.CameraStatus
+BlazorNative.Core.CameraStatus.Error = 4 -> BlazorNative.Core.CameraStatus
+BlazorNative.Core.CameraStatus.Unavailable = 3 -> BlazorNative.Core.CameraStatus
+BlazorNative.Core.CaptureOptions
+BlazorNative.Core.CaptureOptions.CaptureOptions() -> void
+BlazorNative.Core.CaptureOptions.CaptureOptions(int MaxDimension = 2048, int Quality = 85) -> void
+BlazorNative.Core.CaptureOptions.Deconstruct(out int MaxDimension, out int Quality) -> void
+BlazorNative.Core.CaptureOptions.Equals(BlazorNative.Core.CaptureOptions other) -> bool
+BlazorNative.Core.CaptureOptions.MaxDimension.get -> int
+BlazorNative.Core.CaptureOptions.MaxDimension.init -> void
+BlazorNative.Core.CaptureOptions.Quality.get -> int
+BlazorNative.Core.CaptureOptions.Quality.init -> void
+BlazorNative.Core.DevHostBridge
+BlazorNative.Core.DevHostBridge.AuthenticateAsync(string! reason, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<BlazorNative.Core.BiometricStatus>
+BlazorNative.Core.DevHostBridge.BiometricAuthResult.get -> BlazorNative.Core.BiometricStatus
+BlazorNative.Core.DevHostBridge.BiometricAuthResult.set -> void
+BlazorNative.Core.DevHostBridge.CameraCapturedHeight.get -> int
+BlazorNative.Core.DevHostBridge.CameraCapturedHeight.set -> void
+BlazorNative.Core.DevHostBridge.CameraCapturedPath.get -> string?
+BlazorNative.Core.DevHostBridge.CameraCapturedPath.set -> void
+BlazorNative.Core.DevHostBridge.CameraCapturedSizeBytes.get -> long
+BlazorNative.Core.DevHostBridge.CameraCapturedSizeBytes.set -> void
+BlazorNative.Core.DevHostBridge.CameraCapturedWidth.get -> int
+BlazorNative.Core.DevHostBridge.CameraCapturedWidth.set -> void
+BlazorNative.Core.DevHostBridge.CameraCaptureResult.get -> BlazorNative.Core.CameraStatus
+BlazorNative.Core.DevHostBridge.CameraCaptureResult.set -> void
+BlazorNative.Core.DevHostBridge.CancelNotificationAsync(int id, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<BlazorNative.Core.NotificationStatus>
+BlazorNative.Core.DevHostBridge.CapturePhotoAsync(BlazorNative.Core.CaptureOptions options, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<BlazorNative.Core.PhotoResult>
+BlazorNative.Core.DevHostBridge.CheckCameraAvailabilityAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<BlazorNative.Core.CameraStatus>
+BlazorNative.Core.DevHostBridge.CheckGeolocationPermissionAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<BlazorNative.Core.GeolocationStatus>
+BlazorNative.Core.DevHostBridge.CheckNotificationPermissionAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<BlazorNative.Core.NotificationStatus>
+BlazorNative.Core.DevHostBridge.ClipboardReadAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<string!>
+BlazorNative.Core.DevHostBridge.ClipboardSnapshot.get -> string!
+BlazorNative.Core.DevHostBridge.ClipboardWriteAsync(string! text, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+BlazorNative.Core.DevHostBridge.DeleteSecretAsync(string! key, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<BlazorNative.Core.SecureStorageStatus>
+BlazorNative.Core.DevHostBridge.DeleteStorageAsync(string! key, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+BlazorNative.Core.DevHostBridge.DevHostBridge() -> void
+BlazorNative.Core.DevHostBridge.Dispose() -> void
+BlazorNative.Core.DevHostBridge.FetchAsync(BlazorNative.Core.BridgeHttpRequest request, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<BlazorNative.Core.BridgeHttpResponse>
+BlazorNative.Core.DevHostBridge.GeolocationPosition.get -> BlazorNative.Core.GeolocationPosition
+BlazorNative.Core.DevHostBridge.GeolocationPosition.set -> void
+BlazorNative.Core.DevHostBridge.GeolocationStatus.get -> BlazorNative.Core.GeolocationStatus
+BlazorNative.Core.DevHostBridge.GeolocationStatus.set -> void
+BlazorNative.Core.DevHostBridge.GetCurrentPositionAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<BlazorNative.Core.GeolocationResult>
+BlazorNative.Core.DevHostBridge.GetCurrentRouteAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<string!>
+BlazorNative.Core.DevHostBridge.GetPlatformInfoAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<BlazorNative.Core.PlatformInfo>
+BlazorNative.Core.DevHostBridge.GetSecretAsync(string! key, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<BlazorNative.Core.SecretResult>
+BlazorNative.Core.DevHostBridge.GetSecretWithAuthAsync(string! key, string! reason, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<BlazorNative.Core.SecretResult>
+BlazorNative.Core.DevHostBridge.InjectEvent(string! name, string? payload = null) -> void
+BlazorNative.Core.DevHostBridge.IsBiometricAvailableAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<BlazorNative.Core.BiometricStatus>
+BlazorNative.Core.DevHostBridge.NativeEvents -> System.Action<BlazorNative.Core.NativeEvent>?
+BlazorNative.Core.DevHostBridge.NavigateAsync(string! route, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+BlazorNative.Core.DevHostBridge.Notifications.get -> System.Collections.Generic.IReadOnlyList<BlazorNative.Core.NotificationSpec>!
+BlazorNative.Core.DevHostBridge.NotificationStatus.get -> BlazorNative.Core.NotificationStatus
+BlazorNative.Core.DevHostBridge.NotificationStatus.set -> void
+BlazorNative.Core.DevHostBridge.PlatformInfo.get -> string!
+BlazorNative.Core.DevHostBridge.ReadStorageAsync(string! key, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<string?>
+BlazorNative.Core.DevHostBridge.RequestNotificationPermissionAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<BlazorNative.Core.NotificationStatus>
+BlazorNative.Core.DevHostBridge.RouteHistory.get -> System.Collections.Generic.IReadOnlyList<string!>!
+BlazorNative.Core.DevHostBridge.ScheduleNotificationAsync(BlazorNative.Core.NotificationSpec spec, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<BlazorNative.Core.NotificationStatus>
+BlazorNative.Core.DevHostBridge.SecretSnapshot.get -> System.Collections.Generic.IReadOnlyDictionary<string!, (string! Value, bool RequireAuth)>!
+BlazorNative.Core.DevHostBridge.SetSecretAsync(string! key, string! value, bool requireAuth, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<BlazorNative.Core.SecureStorageStatus>
+BlazorNative.Core.DevHostBridge.ShareAsync(string! text, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+BlazorNative.Core.DevHostBridge.ShowNotificationAsync(BlazorNative.Core.NotificationSpec spec, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<BlazorNative.Core.NotificationStatus>
+BlazorNative.Core.DevHostBridge.StorageSnapshot.get -> System.Collections.Generic.IReadOnlyDictionary<string!, string!>!
+BlazorNative.Core.DevHostBridge.WriteStorageAsync(string! key, string! value, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+BlazorNative.Core.GeolocationPosition
+BlazorNative.Core.GeolocationPosition.Accuracy.get -> double
+BlazorNative.Core.GeolocationPosition.Accuracy.init -> void
+BlazorNative.Core.GeolocationPosition.Altitude.get -> double?
+BlazorNative.Core.GeolocationPosition.Altitude.init -> void
+BlazorNative.Core.GeolocationPosition.Deconstruct(out double Latitude, out double Longitude, out double Accuracy, out double? Altitude, out long TimestampUnixMs) -> void
+BlazorNative.Core.GeolocationPosition.Equals(BlazorNative.Core.GeolocationPosition other) -> bool
+BlazorNative.Core.GeolocationPosition.GeolocationPosition() -> void
+BlazorNative.Core.GeolocationPosition.GeolocationPosition(double Latitude, double Longitude, double Accuracy, double? Altitude, long TimestampUnixMs) -> void
+BlazorNative.Core.GeolocationPosition.Latitude.get -> double
+BlazorNative.Core.GeolocationPosition.Latitude.init -> void
+BlazorNative.Core.GeolocationPosition.Longitude.get -> double
+BlazorNative.Core.GeolocationPosition.Longitude.init -> void
+BlazorNative.Core.GeolocationPosition.TimestampUnixMs.get -> long
+BlazorNative.Core.GeolocationPosition.TimestampUnixMs.init -> void
+BlazorNative.Core.GeolocationResult
+BlazorNative.Core.GeolocationResult.Deconstruct(out BlazorNative.Core.GeolocationStatus Status, out BlazorNative.Core.GeolocationPosition? Position) -> void
+BlazorNative.Core.GeolocationResult.Equals(BlazorNative.Core.GeolocationResult other) -> bool
+BlazorNative.Core.GeolocationResult.GeolocationResult() -> void
+BlazorNative.Core.GeolocationResult.GeolocationResult(BlazorNative.Core.GeolocationStatus Status, BlazorNative.Core.GeolocationPosition? Position) -> void
+BlazorNative.Core.GeolocationResult.Position.get -> BlazorNative.Core.GeolocationPosition?
+BlazorNative.Core.GeolocationResult.Position.init -> void
+BlazorNative.Core.GeolocationResult.Status.get -> BlazorNative.Core.GeolocationStatus
+BlazorNative.Core.GeolocationResult.Status.init -> void
+BlazorNative.Core.GeolocationStatus
+BlazorNative.Core.GeolocationStatus.Denied = 1 -> BlazorNative.Core.GeolocationStatus
+BlazorNative.Core.GeolocationStatus.DeniedPermanently = 2 -> BlazorNative.Core.GeolocationStatus
+BlazorNative.Core.GeolocationStatus.Error = 5 -> BlazorNative.Core.GeolocationStatus
+BlazorNative.Core.GeolocationStatus.Granted = 0 -> BlazorNative.Core.GeolocationStatus
+BlazorNative.Core.GeolocationStatus.LocationUnavailable = 4 -> BlazorNative.Core.GeolocationStatus
+BlazorNative.Core.GeolocationStatus.Restricted = 3 -> BlazorNative.Core.GeolocationStatus
+BlazorNative.Core.IMobileBridge
+BlazorNative.Core.IMobileBridge.AuthenticateAsync(string! reason, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<BlazorNative.Core.BiometricStatus>
+BlazorNative.Core.IMobileBridge.CancelNotificationAsync(int id, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<BlazorNative.Core.NotificationStatus>
+BlazorNative.Core.IMobileBridge.CapturePhotoAsync(BlazorNative.Core.CaptureOptions options, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<BlazorNative.Core.PhotoResult>
+BlazorNative.Core.IMobileBridge.CheckCameraAvailabilityAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<BlazorNative.Core.CameraStatus>
+BlazorNative.Core.IMobileBridge.CheckGeolocationPermissionAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<BlazorNative.Core.GeolocationStatus>
+BlazorNative.Core.IMobileBridge.CheckNotificationPermissionAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<BlazorNative.Core.NotificationStatus>
+BlazorNative.Core.IMobileBridge.ClipboardReadAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<string!>
+BlazorNative.Core.IMobileBridge.ClipboardWriteAsync(string! text, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+BlazorNative.Core.IMobileBridge.DeleteSecretAsync(string! key, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<BlazorNative.Core.SecureStorageStatus>
+BlazorNative.Core.IMobileBridge.DeleteStorageAsync(string! key, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+BlazorNative.Core.IMobileBridge.FetchAsync(BlazorNative.Core.BridgeHttpRequest request, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<BlazorNative.Core.BridgeHttpResponse>
+BlazorNative.Core.IMobileBridge.GetCurrentPositionAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<BlazorNative.Core.GeolocationResult>
+BlazorNative.Core.IMobileBridge.GetCurrentRouteAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<string!>
+BlazorNative.Core.IMobileBridge.GetPlatformInfoAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<BlazorNative.Core.PlatformInfo>
+BlazorNative.Core.IMobileBridge.GetSecretAsync(string! key, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<BlazorNative.Core.SecretResult>
+BlazorNative.Core.IMobileBridge.GetSecretWithAuthAsync(string! key, string! reason, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<BlazorNative.Core.SecretResult>
+BlazorNative.Core.IMobileBridge.IsBiometricAvailableAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<BlazorNative.Core.BiometricStatus>
+BlazorNative.Core.IMobileBridge.NativeEvents -> System.Action<BlazorNative.Core.NativeEvent>!
+BlazorNative.Core.IMobileBridge.NavigateAsync(string! route, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+BlazorNative.Core.IMobileBridge.PlatformInfo.get -> string!
+BlazorNative.Core.IMobileBridge.ReadStorageAsync(string! key, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<string?>
+BlazorNative.Core.IMobileBridge.RequestNotificationPermissionAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<BlazorNative.Core.NotificationStatus>
+BlazorNative.Core.IMobileBridge.ScheduleNotificationAsync(BlazorNative.Core.NotificationSpec spec, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<BlazorNative.Core.NotificationStatus>
+BlazorNative.Core.IMobileBridge.SetSecretAsync(string! key, string! value, bool requireAuth, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<BlazorNative.Core.SecureStorageStatus>
+BlazorNative.Core.IMobileBridge.ShareAsync(string! text, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+BlazorNative.Core.IMobileBridge.ShowNotificationAsync(BlazorNative.Core.NotificationSpec spec, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<BlazorNative.Core.NotificationStatus>
+BlazorNative.Core.IMobileBridge.WriteStorageAsync(string! key, string! value, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+BlazorNative.Core.INavigationManager
+BlazorNative.Core.INavigationManager.CurrentRoute.get -> string!
+BlazorNative.Core.INavigationManager.NavigateBackAsync() -> System.Threading.Tasks.ValueTask<bool>
+BlazorNative.Core.INavigationManager.NavigateToAsync(string! route) -> System.Threading.Tasks.ValueTask
+BlazorNative.Core.INavigationManager.RouteChanged -> System.Action<string!>!
+BlazorNative.Core.NativeEvent
+BlazorNative.Core.NativeEvent.Deconstruct(out string! Name, out string? Payload) -> void
+BlazorNative.Core.NativeEvent.Equals(BlazorNative.Core.NativeEvent other) -> bool
+BlazorNative.Core.NativeEvent.Name.get -> string!
+BlazorNative.Core.NativeEvent.Name.init -> void
+BlazorNative.Core.NativeEvent.NativeEvent() -> void
+BlazorNative.Core.NativeEvent.NativeEvent(string! Name, string? Payload = null) -> void
+BlazorNative.Core.NativeEvent.Payload.get -> string?
+BlazorNative.Core.NativeEvent.Payload.init -> void
+BlazorNative.Core.NotificationSpec
+BlazorNative.Core.NotificationSpec.Body.get -> string!
+BlazorNative.Core.NotificationSpec.Body.init -> void
+BlazorNative.Core.NotificationSpec.Deconstruct(out int Id, out string! Title, out string! Body, out System.DateTimeOffset? When, out string? Route) -> void
+BlazorNative.Core.NotificationSpec.Equals(BlazorNative.Core.NotificationSpec other) -> bool
+BlazorNative.Core.NotificationSpec.Id.get -> int
+BlazorNative.Core.NotificationSpec.Id.init -> void
+BlazorNative.Core.NotificationSpec.NotificationSpec() -> void
+BlazorNative.Core.NotificationSpec.NotificationSpec(int Id, string! Title, string! Body, System.DateTimeOffset? When, string? Route) -> void
+BlazorNative.Core.NotificationSpec.Route.get -> string?
+BlazorNative.Core.NotificationSpec.Route.init -> void
+BlazorNative.Core.NotificationSpec.Title.get -> string!
+BlazorNative.Core.NotificationSpec.Title.init -> void
+BlazorNative.Core.NotificationSpec.When.get -> System.DateTimeOffset?
+BlazorNative.Core.NotificationSpec.When.init -> void
+BlazorNative.Core.NotificationStatus
+BlazorNative.Core.NotificationStatus.Denied = 1 -> BlazorNative.Core.NotificationStatus
+BlazorNative.Core.NotificationStatus.DeniedPermanently = 2 -> BlazorNative.Core.NotificationStatus
+BlazorNative.Core.NotificationStatus.Error = 4 -> BlazorNative.Core.NotificationStatus
+BlazorNative.Core.NotificationStatus.Granted = 0 -> BlazorNative.Core.NotificationStatus
+BlazorNative.Core.NotificationStatus.Restricted = 3 -> BlazorNative.Core.NotificationStatus
+BlazorNative.Core.PhotoResult
+BlazorNative.Core.PhotoResult.Deconstruct(out BlazorNative.Core.CameraStatus Status, out string? Path, out int Width, out int Height, out long SizeBytes) -> void
+BlazorNative.Core.PhotoResult.Equals(BlazorNative.Core.PhotoResult other) -> bool
+BlazorNative.Core.PhotoResult.Height.get -> int
+BlazorNative.Core.PhotoResult.Height.init -> void
+BlazorNative.Core.PhotoResult.Path.get -> string?
+BlazorNative.Core.PhotoResult.Path.init -> void
+BlazorNative.Core.PhotoResult.PhotoResult() -> void
+BlazorNative.Core.PhotoResult.PhotoResult(BlazorNative.Core.CameraStatus Status, string? Path, int Width, int Height, long SizeBytes) -> void
+BlazorNative.Core.PhotoResult.SizeBytes.get -> long
+BlazorNative.Core.PhotoResult.SizeBytes.init -> void
+BlazorNative.Core.PhotoResult.Status.get -> BlazorNative.Core.CameraStatus
+BlazorNative.Core.PhotoResult.Status.init -> void
+BlazorNative.Core.PhotoResult.Width.get -> int
+BlazorNative.Core.PhotoResult.Width.init -> void
+BlazorNative.Core.PlatformInfo
+BlazorNative.Core.PlatformInfo.AppVersion.get -> string!
+BlazorNative.Core.PlatformInfo.AppVersion.init -> void
+BlazorNative.Core.PlatformInfo.Deconstruct(out BlazorNative.Core.PlatformKind Platform, out string! OsVersion, out string! AppVersion, out bool IsDebug) -> void
+BlazorNative.Core.PlatformInfo.Equals(BlazorNative.Core.PlatformInfo other) -> bool
+BlazorNative.Core.PlatformInfo.IsDebug.get -> bool
+BlazorNative.Core.PlatformInfo.IsDebug.init -> void
+BlazorNative.Core.PlatformInfo.OsVersion.get -> string!
+BlazorNative.Core.PlatformInfo.OsVersion.init -> void
+BlazorNative.Core.PlatformInfo.Platform.get -> BlazorNative.Core.PlatformKind
+BlazorNative.Core.PlatformInfo.Platform.init -> void
+BlazorNative.Core.PlatformInfo.PlatformInfo() -> void
+BlazorNative.Core.PlatformInfo.PlatformInfo(BlazorNative.Core.PlatformKind Platform, string! OsVersion, string! AppVersion, bool IsDebug) -> void
+BlazorNative.Core.PlatformKind
+BlazorNative.Core.PlatformKind.Android = 1 -> BlazorNative.Core.PlatformKind
+BlazorNative.Core.PlatformKind.DevHost = 0 -> BlazorNative.Core.PlatformKind
+BlazorNative.Core.PlatformKind.iOS = 2 -> BlazorNative.Core.PlatformKind
+BlazorNative.Core.PlatformKind.Mac = 4 -> BlazorNative.Core.PlatformKind
+BlazorNative.Core.PlatformKind.Windows = 3 -> BlazorNative.Core.PlatformKind
+BlazorNative.Core.SecretResult
+BlazorNative.Core.SecretResult.Deconstruct(out BlazorNative.Core.SecureStorageStatus Status, out string? Value) -> void
+BlazorNative.Core.SecretResult.Equals(BlazorNative.Core.SecretResult other) -> bool
+BlazorNative.Core.SecretResult.SecretResult() -> void
+BlazorNative.Core.SecretResult.SecretResult(BlazorNative.Core.SecureStorageStatus Status, string? Value) -> void
+BlazorNative.Core.SecretResult.Status.get -> BlazorNative.Core.SecureStorageStatus
+BlazorNative.Core.SecretResult.Status.init -> void
+BlazorNative.Core.SecretResult.Value.get -> string?
+BlazorNative.Core.SecretResult.Value.init -> void
+BlazorNative.Core.SecureStorageStatus
+BlazorNative.Core.SecureStorageStatus.AuthFailed = 2 -> BlazorNative.Core.SecureStorageStatus
+BlazorNative.Core.SecureStorageStatus.Error = 4 -> BlazorNative.Core.SecureStorageStatus
+BlazorNative.Core.SecureStorageStatus.NotFound = 1 -> BlazorNative.Core.SecureStorageStatus
+BlazorNative.Core.SecureStorageStatus.Ok = 0 -> BlazorNative.Core.SecureStorageStatus
+BlazorNative.Core.SecureStorageStatus.Unavailable = 3 -> BlazorNative.Core.SecureStorageStatus
+const BlazorNative.Core.SecretResult.MaxValueBytes = 8192 -> int
+override BlazorNative.Core.BridgeHttpRequest.GetHashCode() -> int
+override BlazorNative.Core.BridgeHttpResponse.GetHashCode() -> int
+override BlazorNative.Core.CaptureOptions.GetHashCode() -> int
+override BlazorNative.Core.GeolocationPosition.GetHashCode() -> int
+override BlazorNative.Core.GeolocationResult.GetHashCode() -> int
+override BlazorNative.Core.NativeEvent.GetHashCode() -> int
+override BlazorNative.Core.NotificationSpec.GetHashCode() -> int
+override BlazorNative.Core.PhotoResult.GetHashCode() -> int
+override BlazorNative.Core.PlatformInfo.GetHashCode() -> int
+override BlazorNative.Core.SecretResult.GetHashCode() -> int
+static BlazorNative.Core.BridgeHttpRequest.operator !=(BlazorNative.Core.BridgeHttpRequest left, BlazorNative.Core.BridgeHttpRequest right) -> bool
+static BlazorNative.Core.BridgeHttpRequest.operator ==(BlazorNative.Core.BridgeHttpRequest left, BlazorNative.Core.BridgeHttpRequest right) -> bool
+static BlazorNative.Core.BridgeHttpResponse.operator !=(BlazorNative.Core.BridgeHttpResponse left, BlazorNative.Core.BridgeHttpResponse right) -> bool
+static BlazorNative.Core.BridgeHttpResponse.operator ==(BlazorNative.Core.BridgeHttpResponse left, BlazorNative.Core.BridgeHttpResponse right) -> bool
+static BlazorNative.Core.CaptureOptions.operator !=(BlazorNative.Core.CaptureOptions left, BlazorNative.Core.CaptureOptions right) -> bool
+static BlazorNative.Core.CaptureOptions.operator ==(BlazorNative.Core.CaptureOptions left, BlazorNative.Core.CaptureOptions right) -> bool
+static BlazorNative.Core.GeolocationPosition.operator !=(BlazorNative.Core.GeolocationPosition left, BlazorNative.Core.GeolocationPosition right) -> bool
+static BlazorNative.Core.GeolocationPosition.operator ==(BlazorNative.Core.GeolocationPosition left, BlazorNative.Core.GeolocationPosition right) -> bool
+static BlazorNative.Core.GeolocationResult.operator !=(BlazorNative.Core.GeolocationResult left, BlazorNative.Core.GeolocationResult right) -> bool
+static BlazorNative.Core.GeolocationResult.operator ==(BlazorNative.Core.GeolocationResult left, BlazorNative.Core.GeolocationResult right) -> bool
+static BlazorNative.Core.NativeEvent.operator !=(BlazorNative.Core.NativeEvent left, BlazorNative.Core.NativeEvent right) -> bool
+static BlazorNative.Core.NativeEvent.operator ==(BlazorNative.Core.NativeEvent left, BlazorNative.Core.NativeEvent right) -> bool
+static BlazorNative.Core.NotificationSpec.operator !=(BlazorNative.Core.NotificationSpec left, BlazorNative.Core.NotificationSpec right) -> bool
+static BlazorNative.Core.NotificationSpec.operator ==(BlazorNative.Core.NotificationSpec left, BlazorNative.Core.NotificationSpec right) -> bool
+static BlazorNative.Core.PhotoResult.operator !=(BlazorNative.Core.PhotoResult left, BlazorNative.Core.PhotoResult right) -> bool
+static BlazorNative.Core.PhotoResult.operator ==(BlazorNative.Core.PhotoResult left, BlazorNative.Core.PhotoResult right) -> bool
+static BlazorNative.Core.PlatformInfo.operator !=(BlazorNative.Core.PlatformInfo left, BlazorNative.Core.PlatformInfo right) -> bool
+static BlazorNative.Core.PlatformInfo.operator ==(BlazorNative.Core.PlatformInfo left, BlazorNative.Core.PlatformInfo right) -> bool
+static BlazorNative.Core.SecretResult.operator !=(BlazorNative.Core.SecretResult left, BlazorNative.Core.SecretResult right) -> bool
+static BlazorNative.Core.SecretResult.operator ==(BlazorNative.Core.SecretResult left, BlazorNative.Core.SecretResult right) -> bool

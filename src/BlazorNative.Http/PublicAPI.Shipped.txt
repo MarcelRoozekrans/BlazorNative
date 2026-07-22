@@ -1,0 +1,9 @@
+#nullable enable
+BlazorNative.Http.BridgeHttpHandler
+BlazorNative.Http.BridgeHttpHandler.BridgeHttpHandler(BlazorNative.Core.IMobileBridge! bridge) -> void
+BlazorNative.Http.ServiceCollectionExtensions
+Microsoft.Extensions.DependencyInjection.BlazorNativeHttpServicesServiceCollectionExtensions
+static BlazorNative.Http.ServiceCollectionExtensions.AddBlazorNativeHttp(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static BlazorNative.Http.ServiceCollectionExtensions.AddBlazorNativeHttpClient(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, string! name, string? baseAddress = null) -> Microsoft.Extensions.DependencyInjection.IHttpClientBuilder!
+static BlazorNative.Http.ServiceCollectionExtensions.AddBlazorNativeHttpClient<TClient>(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, string? baseAddress = null) -> Microsoft.Extensions.DependencyInjection.IHttpClientBuilder!
+static Microsoft.Extensions.DependencyInjection.BlazorNativeHttpServicesServiceCollectionExtensions.AddBlazorNativeHttpServices(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!

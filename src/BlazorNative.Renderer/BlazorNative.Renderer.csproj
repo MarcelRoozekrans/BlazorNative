@@ -24,6 +24,20 @@
   </PropertyGroup>
 
   <PropertyGroup>
+    <!-- PHASE 11.3 GATE B — this package carries a PublicAPI.Shipped.txt
+         baseline and RS0016/RS0017/RS0037 are ERRORS here. The switch itself
+         lives in src/Directory.Build.targets, NOT .props: .props is imported
+         BEFORE this line, so a condition there would read the flag empty and
+         the pin would be off while reading as on (that file's header carries
+         the measurement, and the CS1591 pin paid for it twice).
+
+         Baselined PRECISELY BECAUSE most of this package is NOT-API (the tier
+         table, §3.6): an accidental widening of NativeRenderer should be
+         visible even though nothing here is advertised. -->
+    <BnEnforcePublicApi>true</BnEnforcePublicApi>
+  </PropertyGroup>
+
+  <PropertyGroup>
     <!-- Phase 8.1: shared pack metadata lives in src/Directory.Build.props —
          only the per-package voice stays here. -->
     <Description>The BlazorNative renderer: drives Blazor's RenderTree diffing into a native widget tree and emits binary UI patch frames for platform shells. NativeAOT/trim-compatible.</Description>
