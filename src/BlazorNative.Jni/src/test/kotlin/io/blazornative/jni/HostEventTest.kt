@@ -201,9 +201,16 @@ class HostEventTest {
             msg.contains("faulted — a NativeEvents subscriber, its re-render, or the back swap threw"),
             "rc-2 message must carry the frozen wording; got: $msg"
         )
+        // Phase 11.4 Gate B: see the twin note in DispatchEventTest — the
+        // desktop-JVM workaround existed because Android discarded the detail, and
+        // the stderr → logcat pump retired it.
         assertTrue(
-            msg.contains("reproduce on desktop JVM to see it"),
-            "rc-2 message must carry the desktop-JVM reproduction hint; got: $msg"
+            msg.contains("detail on the runtime's stderr — logcat `BlazorNative/…` on Android"),
+            "rc-2 message must point at the destination the detail ACTUALLY reaches; got: $msg"
+        )
+        assertTrue(
+            !msg.contains("reproduce on desktop JVM"),
+            "the pre-11.4 desktop-JVM workaround must be gone; got: $msg"
         )
     }
 

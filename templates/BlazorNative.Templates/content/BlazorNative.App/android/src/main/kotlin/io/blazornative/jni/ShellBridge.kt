@@ -479,8 +479,9 @@ object BridgeFetchCompleter {
      *   HeadersJson pointer (not "{}"), matching the request-side convention.
      * @return the export's return code: 0 = delivered; 1 = unknown /
      *   already-completed id (benign cancellation race — ignored); 2 =
-     *   invalid call / internal bridge failure (logged LOUDLY here; detail
-     *   lands on the runtime's stderr).
+     *   invalid call / internal bridge failure (logged LOUDLY here; detail lands
+     *   on the runtime's stderr — which since Phase 11.4 Gate B means LOGCAT
+     *   under `BlazorNative/…` on Android, not /dev/null).
      */
     fun completeSuccess(
         requestId: Long,
@@ -537,7 +538,8 @@ object BridgeFetchCompleter {
             1 -> {} // unknown/already-completed id — benign cancellation race, ignore
             else -> System.err.println(
                 "[BridgeFetchCompleter] blazornative_fetch_complete($requestId) returned $rc — " +
-                    "invalid call or internal bridge failure; check the runtime's stderr for detail"
+                    "invalid call or internal bridge failure; check the runtime's stderr " +
+                    "for detail (logcat `BlazorNative/…` on Android since Phase 11.4 Gate B)"
             )
         }
         return rc
@@ -576,7 +578,8 @@ object BridgeHostCallCompleter {
      * @return the export's return code: 0 = delivered; 1 = unknown /
      *   already-completed id (benign cancellation race — ignored); 2 = invalid
      *   call / internal bridge failure (logged LOUDLY here; detail on the
-     *   runtime's stderr).
+     *   runtime's stderr — LOGCAT under `BlazorNative/…` on Android since
+     *   Phase 11.4 Gate B).
      */
     fun complete(requestId: Long, status: Int, payload: Map<String, String>?): Int {
         // The local keeps the Memory strongly reachable across the call.
@@ -593,7 +596,8 @@ object BridgeHostCallCompleter {
             1 -> {} // unknown/already-completed id — benign cancellation race, ignore
             else -> System.err.println(
                 "[BridgeHostCallCompleter] blazornative_host_call_complete($requestId) returned $rc — " +
-                    "invalid call or internal bridge failure; check the runtime's stderr for detail"
+                    "invalid call or internal bridge failure; check the runtime's stderr " +
+                    "for detail (logcat `BlazorNative/…` on Android since Phase 11.4 Gate B)"
             )
         }
         return rc

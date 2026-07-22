@@ -1,6 +1,7 @@
 package io.blazornative.shell
 
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
@@ -10,6 +11,7 @@ import android.window.OnBackInvokedCallback
 import android.window.OnBackInvokedDispatcher
 import androidx.fragment.app.FragmentActivity
 import io.blazornative.jni.BlazorNativeRuntime
+import io.blazornative.jni.BnLogLevel
 import io.blazornative.jni.BnPlatformKind
 import kotlin.concurrent.thread
 
@@ -80,6 +82,39 @@ class MainActivity : FragmentActivity() {
 
         /** Test seam: reset the warm-navigate rc probe between tests. */
         @JvmStatic fun resetNavigateRcForTest() { lastNavigateHostEventRcForTest = Int.MIN_VALUE }
+
+        /**
+         * Phase 11.4 Gate B (#155): Intent-extra override for the framework log
+         * level — a BnLogLevel NAME ("Error"/"Warn"/"Info"/"Debug"/"Verbose"),
+         * case-insensitive. Highest precedence, mirroring [EXTRA_COMPONENT]'s
+         * test-override role: an instrumented test or `adb shell am start -e … Debug`
+         * can raise verbosity for ONE launch without touching the app.
+         */
+        const val EXTRA_LOG_LEVEL = "io.blazornative.shell.EXTRA_LOG_LEVEL"
+
+        /**
+         * Phase 11.4 Gate B (#155): THE APP AUTHOR'S KNOB — a manifest
+         * `<meta-data android:name="io.blazornative.logLevel" android:value="Debug"/>`
+         * on the `<application>` (or on this `<activity>`).
+         *
+         * WHY MANIFEST META-DATA RATHER THAN THE MSBUILD PROPERTY §3.3(3) SKETCHES.
+         * The design's third input is "an MSBuild property flowing into the shell's
+         * own default". On Android there is no such flow: the shell is a GRADLE
+         * project built from COPIED SOURCE, and the .NET build only ever produces the
+         * `.so` it links — no MSBuild property reaches this file. The honest Android
+         * equivalents were a gradle `buildConfigField` (which needs
+         * `buildFeatures { buildConfig = true }` in both this build.gradle.kts and
+         * the template's mirror, to configure something a manifest attribute already
+         * expresses) or this. Manifest meta-data wins: it is per-APK, per-flavour,
+         * needs no build-system change in either copy, and an app author editing
+         * their own AndroidManifest is the platform-idiomatic way to set an app-wide
+         * default. The MSBuild-property variant is therefore SCOPED OUT for Android,
+         * deliberately; iOS's Info.plist twin is Gate C's to decide.
+         *
+         * An absent or unparseable value resolves to UNSET → the runtime's quiet
+         * Release default (Warn), never to silence.
+         */
+        const val LOG_LEVEL_META_DATA = "io.blazornative.logLevel"
     }
 
     private val tag = "BlazorNative"
@@ -123,6 +158,28 @@ class MainActivity : FragmentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // ── Phase 11.4 Gate B (#155/#164): THE STDERR → LOGCAT PUMP ──────────
+        //
+        // FIRST STATEMENT IN onCreate, AND THE ORDER IS THE POINT — not tidiness.
+        // Everything the .NET runtime, the BCL and NativeAOT itself diagnose goes
+        // to process fd 2, which Android sends to /dev/null. BnStderrLogcatPump
+        // dup2()s a pipe over fd 2 and forwards each line to android.util.Log.
+        //
+        // It MUST be installed before `blazornative_init` runs — i.e. before the
+        // dlopen that NativeBindings.INSTANCE triggers inside runtime.start() on
+        // the boot thread below. init's failure path is the one place the
+        // framework deliberately emits a full ex.ToString(), because for the real
+        // NativeAOT trim failures (TypeLoadException, MissingMethodException) the
+        // Message alone hides the offending type. Catching THAT line is one of the
+        // two reasons the design chose this transport over routing logs through
+        // the bridge; install it late and the highest-value diagnostic the
+        // framework ever writes is still lost.
+        //
+        // Ahead of SoLoader too, so a native-loader failure is visible as well.
+        // Idempotent: Activity recreation re-enters onCreate and the second call
+        // is a no-op — fd 2 is already ours and one reader thread is enough.
+        BnStderrLogcatPump.install()
 
         // Phase 6.1: Yoga's JNI core loads through SoLoader, which must be
         // initialised once per process BEFORE the first YogaNode — and every
@@ -196,6 +253,7 @@ class MainActivity : FragmentActivity() {
                     platformOs = "android",
                     apiLevel = Build.VERSION.SDK_INT,
                     platformKind = BnPlatformKind.ANDROID, // Phase 10.0 (#121): report Android, not a shared default
+                    logLevel = resolveLogLevel(),          // Phase 11.4 (#155): offset 28, read before the first managed line
                     bridge = bridge,
                 )
                 booted = true // host→.NET entry (lifecycle/back) is safe only now
@@ -423,6 +481,54 @@ class MainActivity : FragmentActivity() {
             Log.e(tag, "failed to read res/raw/blazornative_routes.json — deep links fall " +
                 "back to the default component", t)
             emptyMap()
+        }
+    }
+
+    /**
+     * Phase 11.4 Gate B (#155): resolves the BnLogLevel ordinal this boot passes in
+     * `BlazorNativeInitOptions.logLevel` (offset 28).
+     *
+     * PRECEDENCE, highest first — the same shape [EXTRA_COMPONENT] establishes for
+     * the mount name:
+     *   1. the [EXTRA_LOG_LEVEL] Intent extra — a per-launch override for a test or
+     *      an `adb shell am start -e …` session;
+     *   2. the [LOG_LEVEL_META_DATA] manifest entry — the APP AUTHOR'S declaration,
+     *      read from this Activity's `<meta-data>` first and then the
+     *      `<application>`'s, so an app can set one app-wide default and still
+     *      override it for a debug Activity;
+     *   3. nothing — ordinal 0 (UNSET), which the runtime resolves to its own quiet
+     *      Release default (Warn).
+     *
+     * NEVER THROWS AND NEVER SILENCES. A typo'd name, a missing package entry, or a
+     * SecurityException reading meta-data all fall through to UNSET, because the
+     * failure mode of "the log config was wrong" must not be "there are no logs".
+     */
+    private fun resolveLogLevel(): Int {
+        intent?.getStringExtra(EXTRA_LOG_LEVEL)?.let { name ->
+            val fromExtra = BnLogLevel.fromName(name)
+            if (fromExtra != BnLogLevel.UNSET) return fromExtra
+            Log.w(tag, "$EXTRA_LOG_LEVEL='$name' is not a BnLogLevel name " +
+                "(Error/Warn/Info/Debug/Verbose) — falling back to the manifest/default")
+        }
+
+        return try {
+            val pm = packageManager
+            val activityMeta = pm.getActivityInfo(componentName, PackageManager.GET_META_DATA)
+                .metaData?.getString(LOG_LEVEL_META_DATA)
+            val appMeta = pm.getApplicationInfo(packageName, PackageManager.GET_META_DATA)
+                .metaData?.getString(LOG_LEVEL_META_DATA)
+
+            val name = activityMeta ?: appMeta ?: return BnLogLevel.UNSET
+            val level = BnLogLevel.fromName(name)
+            if (level == BnLogLevel.UNSET) {
+                Log.w(tag, "<meta-data android:name=\"$LOG_LEVEL_META_DATA\" " +
+                    "android:value=\"$name\"/> is not a BnLogLevel name " +
+                    "(Error/Warn/Info/Debug/Verbose) — using the runtime default")
+            }
+            level
+        } catch (t: Throwable) {
+            Log.w(tag, "could not read $LOG_LEVEL_META_DATA — using the runtime default", t)
+            BnLogLevel.UNSET
         }
     }
 

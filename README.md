@@ -182,6 +182,48 @@ The NativeAOT publish dominates both lanes; everything downstream of it is secon
 
 **The inspector rides the native session.** `make inspect` serves http://localhost:5199 over the same NativeAOT dll, C-ABI frames, and dispatch lane the Android app rides. It is fast-restart like everything native: restart the host (rerun `make inspect`) to pick up a rebuilt dll; `PORT=n` / `COMPONENT=Name` override the defaults. The page is one self-contained inline HTML file (no CDN, no build step): widget tree (`<details>`-collapsible, auto-refreshing over SSE), patch tail, event log, and per-node dispatch buttons that call `POST /api/dispatch` on the live session.
 
+### Logging on Android
+
+**Everything the runtime writes now reaches logcat**, and until Phase 11.4 none of it did.
+The .NET side writes diagnostics to `Console.Error` — process **fd 2** — and Android sends fd 2
+to `/dev/null`. So a faulted render, a `TypeLoadException` out of a trimmed build, or the BCL's
+own output simply vanished on the one platform that matters. The shell now installs
+`BnStderrLogcatPump` as the **first statement of `MainActivity.onCreate`** — a pipe `dup2`'d over
+fd 2 with a daemon reader forwarding each line to `android.util.Log`:
+
+```
+adb logcat -s BlazorNative BlazorNative/runtime BlazorNative/renderer
+```
+
+Framework lines carry a `[BN|<level>|<category>]` prefix that the pump parses back into the
+right severity and the tag `BlazorNative/<category>`. **Anything unprefixed is kept, not
+dropped** — BCL output, NativeAOT dumps and third-party native libraries arrive at `Log.w` under
+`BlazorNative/native`.
+
+**Choosing a level.** The default is `Warn` — errors and warnings ship in Release, everything
+else is suppressed, and it is a *runtime* default rather than `#if DEBUG` so a shipped Release
+build can still be opened up. Two ways in:
+
+```xml
+<!-- AndroidManifest.xml, on <application> or the <activity> -->
+<meta-data android:name="io.blazornative.logLevel" android:value="Debug" />
+```
+
+```bash
+# one launch only, no rebuild
+adb shell am start -n <pkg>/io.blazornative.shell.MainActivity \
+  -e io.blazornative.shell.EXTRA_LOG_LEVEL Verbose
+```
+
+Levels are `Error` · `Warn` · `Info` · `Debug` · `Verbose`. An absent or misspelled value falls
+back to the default — a wrong log config never means *no* logs. The level travels in the init
+struct and is read **before the first managed line**, which is what lets it govern
+`blazornative_init`'s own failure path; changing it needs a restart.
+
+> ⚠ **fd 2 is process-global and the redirect is one-way.** If your app also redirects stderr —
+> Crashlytics and Sentry's NDK handlers do — **last writer wins**. Install order decides whose
+> output survives; there is no way to share the descriptor.
+
 ## Prerequisites
 
 | Tool | Purpose | Required |
@@ -238,18 +280,18 @@ BlazorNative/
 
 Each count is asserted by a workflow — but **not all four gate a pull request,
 and the honest split matters.** Only the `build-test` lane is a required check, so a
-drift in the **.NET (843)** or the **JVM `testDebugUnitTest` (120)** count **fails the
+drift in the **.NET (848)** or the **JVM `testDebugUnitTest` (148)** count **fails the
 PR build** — both are load-bearing, and the JVM guard is not a formality: it caught a
-real break in Phase 10.1. The **Android (210)** and **iOS (236)** counts are asserted in
+real break in Phase 10.1. The **Android (212)** and **iOS (236)** counts are asserted in
 the `android-instrumented.yml` (nightly + manual dispatch) and `ios.yml` (on merge to
 `main` + manual dispatch) lanes, which are **advisory, not required** — a drift there reds
 that lane, not your PR. The `Asserted by` column below names which is which.
 
 | Surface | Command | Count | Asserted by |
 |---|---|---|---|
-| .NET | `dotnet test` | 843 passed / 0 skipped | `ci.yml` → `build-test` — **required, gates the PR** |
-| JVM (JNA + win-x64 .dll) | `gradlew testDebugUnitTest` | 120 | `ci.yml` → `build-test` — **required, gates the PR** |
-| Android (instrumented, AVD) | `gradlew connectedAndroidTest` | 210 | `android-instrumented.yml` — advisory (nightly/dispatch) |
+| .NET | `dotnet test` | 848 passed / 0 skipped | `ci.yml` → `build-test` — **required, gates the PR** |
+| JVM (JNA + win-x64 .dll) | `gradlew testDebugUnitTest` | 148 | `ci.yml` → `build-test` — **required, gates the PR** |
+| Android (instrumented, AVD) | `gradlew connectedAndroidTest` | 212 | `android-instrumented.yml` — advisory (nightly/dispatch) |
 | iOS (XCTest, simulator) | `xcodebuild test` | 236 | `ios.yml` — advisory (on-merge/dispatch) |
 
 **The gate is the truth; this table is a copy of it.** When the two disagree, the workflow is

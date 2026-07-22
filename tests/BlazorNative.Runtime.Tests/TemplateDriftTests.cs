@@ -378,7 +378,7 @@ public sealed class TemplateDriftTests
     /// <summary>THE COMPLETENESS PIN (Gate 1 review I-1). Every other pin in
     /// this file asserts something about the CONTENT of files it already knows
     /// the names of. This one asserts the NAMES — that the template ships
-    /// exactly these 35 files and no others.
+    /// exactly these 37 files and no others.
     ///
     /// IT EXISTS BECAUSE THE FILE WAS PROVEN BLIND WITHOUT IT. Gate 1's
     /// reviewer deleted SEVEN template files — gradlew, gradle-wrapper.jar,
@@ -431,7 +431,7 @@ public sealed class TemplateDriftTests
     [Fact]
     public void TemplateContentTree_IsExactlyTheExpectedManifest()
     {
-        // THE EXPECTED MANIFEST — 35 files, the pack's whole inventory.
+        // THE EXPECTED MANIFEST — 37 files, the pack's whole inventory.
         string[] expected =
         [
             // The .NET app the user gets
@@ -464,6 +464,13 @@ public sealed class TemplateDriftTests
             "android/src/androidMain/OFL.txt",
             "android/src/androidMain/kotlin/io/blazornative/shell/AndroidShellBridge.kt",
             "android/src/androidMain/kotlin/io/blazornative/shell/BnSpinner.kt",
+            // Phase 11.4 Gate B (#155/#164): the stderr → logcat pump's Android half
+            // — the Os.pipe()/Os.dup2() install that MainActivity calls as onCreate's
+            // first statement. A generated app without it runs a shell whose runtime
+            // diagnostics still go to /dev/null, which is the whole defect the phase
+            // closes; and MainActivity references it, so the file's absence is a
+            // compile error in every `dotnet new blazornative` app.
+            "android/src/androidMain/kotlin/io/blazornative/shell/BnStderrLogcatPump.kt",
             "android/src/androidMain/kotlin/io/blazornative/shell/MainActivity.kt",
             "android/src/androidMain/kotlin/io/blazornative/shell/WidgetMapper.kt",
             "android/src/androidMain/kotlin/io/blazornative/shell/YogaLayout.kt",
@@ -480,6 +487,12 @@ public sealed class TemplateDriftTests
             "android/src/androidMain/res/xml/file_paths.xml",
             // The shell — the runtime binding surface
             "android/src/main/kotlin/io/blazornative/jni/BlazorNativeRuntime.kt",
+            // Phase 11.4 Gate B: the pump's PURE half — the `[BN|L|category] message`
+            // parser and the line-splitting drain loop, Android-free so the JVM lane
+            // can pin them. BnStderrLogcatPump (androidMain, above) is the thin
+            // syscall wrapper over it, so a template with one and not the other does
+            // not compile.
+            "android/src/main/kotlin/io/blazornative/jni/BnLogFormat.kt",
             "android/src/main/kotlin/io/blazornative/jni/ItemsJson.kt",
             "android/src/main/kotlin/io/blazornative/jni/NativeBindings.kt",
             "android/src/main/kotlin/io/blazornative/jni/NativeFrameAdapter.kt",
