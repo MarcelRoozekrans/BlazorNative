@@ -1,5 +1,6 @@
 using System.Buffers;
 using System.Collections.Concurrent;
+using System.ComponentModel;
 using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -35,6 +36,14 @@ namespace BlazorNative.Runtime;
 // IMobileBridge.
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// <summary>The on-device <see cref="IMobileBridge"/> implementation, backed by the registered
+/// C-ABI callbacks.</summary>
+/// <remarks>Not part of the supported public API: public only so <c>internal static unsafe class
+/// HostSession</c> (<c>HostSession.cs:31</c>) can construct and register it across the
+/// Runtime→Core boundary. A consumer resolves <see cref="IMobileBridge"/> from DI — the interface
+/// is the supported surface (tier STABLE) and this class is never named in app code. Tier
+/// NOT-API.</remarks>
+[EditorBrowsable(EditorBrowsableState.Never)]
 public sealed class NativeShellBridge : IMobileBridge
 {
     internal const string NotRegisteredMessage =

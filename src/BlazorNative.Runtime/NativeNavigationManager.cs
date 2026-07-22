@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using BlazorNative.Core;
 
 namespace BlazorNative.Runtime;
@@ -34,6 +35,13 @@ namespace BlazorNative.Runtime;
 // (back button, deep links) is explicitly M5.
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// <summary>The on-device <see cref="INavigationManager"/> implementation, driving the root swap
+/// through the host session.</summary>
+/// <remarks>Not part of the supported public API: public only so <c>internal static unsafe class
+/// HostSession</c> (<c>HostSession.cs:31</c>) can compose it across the Runtime→Core boundary. A
+/// consumer injects <see cref="INavigationManager"/> (tier STABLE) and never names this class.
+/// Tier NOT-API.</remarks>
+[EditorBrowsable(EditorBrowsableState.Never)]
 public sealed class NativeNavigationManager : INavigationManager
 {
     internal const string DefaultRoute = PageManifest.DefaultRoute;

@@ -131,6 +131,16 @@ internal static class BlazorInterop
         => RefAccessors.StateHasChanged(component);
 }
 
+/// <summary>Thrown when the linked Blazor assembly's internal layout no longer matches the shape
+/// this renderer reflects over.</summary>
+/// <remarks>Not part of the supported public API: it escapes only from the renderer's
+/// reflection-over-Blazor-internals seam (this file), which runs behind
+/// <see cref="NativeRenderer"/>. A consumer would catch it only if it were driving the renderer
+/// directly, which is unsupported. Public because the seam that throws it is reached from types
+/// outside <c>BlazorInterop</c>'s accessibility. Tier NOT-API.</remarks>
+// Fully qualified — see the note on NativeRenderer: System.ComponentModel.IComponent would
+// collide with Microsoft.AspNetCore.Components.IComponent in this file.
+[System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
 public sealed class BlazorVersionMismatchException : Exception
 {
     public BlazorVersionMismatchException(string message) : base(message) { }

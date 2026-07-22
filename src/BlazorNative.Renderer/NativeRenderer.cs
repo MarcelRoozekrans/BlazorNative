@@ -20,6 +20,19 @@ namespace BlazorNative.Renderer;
 // ArrayRange<T> directly — those names should appear nowhere else in this file.
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// <summary>The headless Blazor renderer that turns render batches into native patches.</summary>
+/// <remarks>Not part of the supported public API. It is public for one mechanical reason: its only
+/// consumer is <c>internal static unsafe class HostSession</c> in <c>BlazorNative.Runtime</c>
+/// (<c>HostSession.cs:31</c>), which holds it, sets <see cref="StrictErrors"/> and calls
+/// <see cref="RunAfterDispatch"/> — an internal type in a <em>different assembly</em> cannot reach
+/// an internal type here. The members exposed are renderer internals (frame sink, strict-error
+/// switch, dispatch pump); no app author sets them. App code mounts through
+/// <c>BlazorNativePage.Routed&lt;T&gt;</c>, whose mount thunk is itself <c>internal</c>. The
+/// non-breaking fix (<c>internal</c> + <c>InternalsVisibleTo</c>) is recorded as 1.0 criterion S3.
+/// Tier NOT-API.</remarks>
+// Fully qualified: a file-level `using System.ComponentModel` would make IComponent ambiguous
+// against Microsoft.AspNetCore.Components.IComponent, which this file uses throughout.
+[System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
 [Singleton]
 public sealed class NativeRenderer : BlazorRenderer
 {
