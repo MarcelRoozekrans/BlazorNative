@@ -1766,10 +1766,44 @@ real-device still gated on the Apple account). Full scope + owner decisions in
   **The finding that justifies reading a baseline instead of generating one:**
   [#181](https://github.com/MarcelRoozekrans/BlazorNative/issues/181) — `default(BlazorNativePage)`
   yields a page with a **null mount thunk**, found in a `.txt` line nobody wrote.
-- **Phase 11.4** — logging discipline ([#155](https://github.com/MarcelRoozekrans/BlazorNative/issues/155)):
-  one level-gated logging seam, **quiet-by-default in Release**, unified across both shells (DoD #6).
-  Today logging is un-gated and split — iOS `NSLog` emits normal-path chatter in Release, Android
-  discards `Console.Error` to `/dev/null`; no unified level control.
+- ✅ **Phase 11.4** — logging discipline ([#155](https://github.com/MarcelRoozekrans/BlazorNative/issues/155)
+  + [#164](https://github.com/MarcelRoozekrans/BlazorNative/issues/164)) — *complete (2026-07-22).*
+  Four gates. Before it, the framework's diagnostics reached **nobody on either shipping platform**:
+  Android discards process stderr to `/dev/null` (the repo *depended* on that and said so), iOS had
+  the opposite failure — **78** unconditional, always-public `NSLog` sites shipping in Release — and
+  the only throttle in the whole framework was nine characters long and not configurable.
+  **A** (#185): `BnLog` in `.Core` — five levels, a `volatile int` threshold, a pluggable sink,
+  exception redaction; default **`Warn`** and deliberately **not `#if DEBUG`** (a build switch
+  cannot be opened by a consumer already shipping Release). The level rides
+  `BlazorNativeInitOptions` at **offset 28 with `SizeOf` still 32** — and the pin got *stronger*,
+  asserting **both**, because neither alone distinguishes "free" from "smuggled in at a cost". All
+  **31** `Console.Error` sites migrated; `RendererServices`' hard-coded `Warning` now delegates, so
+  Blazor's `ILogger` shares the one throttle.
+  **B** (#187): the Android transport — `Os.pipe()` + `Os.dup2()` over fd 2 into `android.util.Log`,
+  **pure Kotlin, no NDK/JNI**, installed as the **first statement of `onCreate`** so it catches
+  `blazornative_init`'s own trim-failure `ToString()`. Plus a `<meta-data>` / Intent-extra knob and
+  the **12** KDoc rc contracts that pointed readers at a stderr Android destroys, true at last.
+  **C** (#188): `BnLog.swift` on `os_log`/`Logger` — chosen for the **information-disclosure** half
+  of #155, not the noise half (`Logger` interpolation is **private by default**; `NSLog` is always
+  public, and gating cannot fix that because an `Error` ships in Release by design). All **78**
+  sites swept to **zero**, an `@_cdecl BnLogC` shim for the 4 Objective-C++ sites, an iOS-13
+  `os_log` fallback beneath `Logger`'s iOS-14 floor, and the same pump in Swift.
+  **D** (#189): a parameter-binding fault **aborts the mount** at the **existing rc 2** — not a new
+  rc, because `BlazorNativeRuntime.kt` treats an unknown rc as fatal and a "non-fatal rc 4" would
+  hard-crash every consumer on an older **copied** shell. The classifier keys on **provenance,
+  never message text**, proven by an **impostor carrying #164's message verbatim**; its fail
+  direction is safe (unrecognised stack → log-and-continue, never a false fatal).
+  **Two drift pins** keep the migrations from rotting, both asserting their own non-vacuity, the
+  iOS one with a **deletion guard** — "no bare NSLog" is trivially satisfiable by deleting every
+  diagnostic. Suite **782 → 864** · JVM **120 → 148** · Android **210 → 212** · iOS **236 → 242**.
+  **Boundaries:** the iOS sweep **is** CI-verified (`ios.yml` green on `71470db` with its 242
+  assertion), but **no device, simulator session or Mac was used by the author**; the **Android
+  instrumented lane has not re-run since before Gate A**, so `BnStderrPumpAndroidTest` has never
+  executed; and **"a Release build is actually quiet on a device" is inspection-only and NOT done**.
+  **#155 therefore stays open** with two named remainders (the device observation; the level knob
+  absent from `website/docs/**`); **#164 is closed**.
+  [Conclusion](../plans/2026-07-22-phase-11.4-conclusion.md) ·
+  [design](../plans/2026-07-21-phase-11.4-design.md).
 - **Phase 11.5** — hygiene + M11 final audit + close (DoD #5, no milestone tag).
 
 ---

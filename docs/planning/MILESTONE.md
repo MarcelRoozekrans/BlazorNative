@@ -1,7 +1,8 @@
 # Milestone 11 — Production Readiness
 
-**Status:** 🔄 **active — opened 2026-07-20.** 4 / 6 DoD closed (#1 — Phase 11.0; #2 — Phase
-11.2; #3 — Phase 11.1; **#4 — Phase 11.3**).
+**Status:** 🔄 **active — opened 2026-07-20.** 5 / 6 DoD closed (#1 — Phase 11.0; #2 — Phase
+11.2; #3 — Phase 11.1; #4 — Phase 11.3; **#6 — Phase 11.4**). Only **#5** — hygiene + the final
+audit (Phase 11.5) — remains.
 **Predecessor:** Milestone 10 — Consolidation & Hardening, complete 2026-07-19
 ([final audit](../plans/2026-07-19-milestone-10-final-audit.md), all 7 DoD PASS; no tag — 8.6 rule).
 **Source:** owner direction (2026-07-20): *"work towards a production-grade framework,"* dogfood
@@ -269,6 +270,82 @@ the project stops being a proof-of-concept and starts being something a stranger
    on-screen console); this is about a production binary not shipping developer chatter and about
    one honest, controllable logging story across platforms.
 
+   ✅ **Closed by Phase 11.4** (2026-07-22), across four gates.
+
+   **Mechanism.** **Gate A** ([#185](https://github.com/MarcelRoozekrans/BlazorNative/pull/185)) —
+   `BnLog` in `BlazorNative.Core`: five levels plus a reserved ordinal 0, a `volatile int`
+   threshold, a pluggable sink, and exception redaction. The default is **`Warn`** and deliberately
+   **not `#if DEBUG`** (`BnLog.cs:78`) — a build-configuration switch cannot be opened by a consumer
+   already shipping Release who needs one verbose session, and it makes the two configurations' code
+   paths differ. The level rides `BlazorNativeInitOptions` at **offset 28 with `SizeOf` still 32**
+   (it lands in tail padding alignment-8 had already reserved; the struct is explicitly *not* the
+   frozen 80-byte callbacks bridge). **All 31** `Console.Error` sites migrated, and
+   `RendererServices`' hard-coded `>= LogLevel.Warning` now delegates to the seam — which is what
+   makes Blazor's own `ILogger` and the framework's diagnostics share **one** throttle. **Gate B**
+   ([#187](https://github.com/MarcelRoozekrans/BlazorNative/pull/187)) — the Android transport:
+   `Os.pipe()` + `Os.dup2()` over fd 2 with a daemon reader into `android.util.Log`, **pure Kotlin,
+   no NDK and no JNI** (both APIs are API 21; the module floor is `minSdk 24`), installed as the
+   **first statement of `MainActivity.onCreate`** — before SoLoader and before the `dlopen`, because
+   `blazornative_init`'s failure path is the one place the framework emits a full `ex.ToString()`
+   for the trim failures whose `Message` hides the offending type. Plus the Kotlin struct mirror's
+   `logLevel`, a `<meta-data>` / Intent-extra level knob, and the **12** KDoc rc contracts that
+   pointed readers at a stderr Android destroys, true for the first time. **Gate C**
+   ([#188](https://github.com/MarcelRoozekrans/BlazorNative/pull/188)) — the iOS transport:
+   `BnLog.swift` on `os_log`/`Logger`, chosen for the **information-disclosure** half of #155 rather
+   than the noise half (`Logger` interpolation is **private by default**; `NSLog` is always public,
+   and level gating cannot fix that because an `Error` ships in Release by design). All **78**
+   shipped `NSLog` sites under `BnHost/` swept — **zero bare `NSLog` calls remain** — with an
+   `@_cdecl BnLogC` shim for the 4 Objective-C++ sites, an iOS-13 `os_log` fallback beneath
+   `Logger`'s iOS-14 floor, and the **same stdio pump in Swift**. **Gate D**
+   ([#189](https://github.com/MarcelRoozekrans/BlazorNative/pull/189)) closed
+   [#164](https://github.com/MarcelRoozekrans/BlazorNative/issues/164): a parameter-binding fault
+   **aborts the mount** via the **already-documented rc 2** — not a new rc, because
+   `BlazorNativeRuntime.kt`'s mount `when` ends in `else -> throw`, so a "non-fatal rc 4" would
+   hard-crash every consumer still on an older **copied** shell. No Kotlin, Swift or template file
+   changed.
+
+   **Evidence.** The struct pin was made **stronger, not merely edited**: it asserts `SizeOf == 32`
+   **and** `OffsetOf(LogLevel) == 28` (`NativeShellBridgeTests.cs:687`, `:707`), because **neither
+   alone distinguishes "free" from "smuggled in at a cost"** — size alone would hold if the field
+   had displaced an offset, offset alone would hold if the struct had grown to 40 — and it was
+   measured before/after rather than deduced. Two drift pins stop the migrations rotting:
+   `ConsoleErrorDriftTests` (zero bare `Console.Error` in `src/**/*.cs`) and `NSLogDriftTests` (zero
+   bare `NSLog` under `BnHost/`), **both asserting their own non-vacuity** and the iOS one carrying a
+   **deletion guard** — *"no bare NSLog"* is trivially satisfiable by deleting every diagnostic, and
+   the mapper's `ignored`/`skipped` lines are the only record that a wire the author asked for was
+   silently dropped. Gate D's classifier keys on **provenance, never message text**: two Blazor
+   method identities in the stack (`ComponentProperties.SetProperties` +
+   `ParameterView.SetParameterProperties`), proven by a test feeding an **impostor carrying #164's
+   message verbatim**. Its **fail direction is safe** — an unrecognised stack → log-and-continue,
+   never a false fatal. Suite **782 → 864** (.NET) · **120 → 148** (JVM) · **210 → 212** (Android
+   instrumented) · **236 → 242** (iOS).
+
+   **Findings + deliberate divergences.** The mapper's `ignored`/`skipped` diagnostics **stay at
+   `Warn` and ship in Release**, against #155's literal goal text — each records a dropped wire, and
+   Android already levelled them `Log.w`; demoting them would hide the one class of message that
+   reliably indicates a real author bug, in the build where it costs most. Gate D's classifier is
+   **narrower than the design**: `SupplyCombinedParameters` is deliberately excluded, because it
+   encloses a component's own `SetParametersAsync` override — including it would have made a
+   throwing `OnParametersSet` a boot failure. The public level setter landed as `BnLog.Level` in
+   `.Core` rather than a `BlazorNativeApp` property. New public API was declared into
+   **`PublicAPI.Unshipped.txt`** in two packages — Phase 11.3 Gate B's baseline red-flagging it on
+   its **first live encounter**, working exactly as designed.
+
+   **Boundaries kept explicit.** The iOS sweep **is** CI-verified — `ios.yml` ran and passed on
+   `71470db` including `Assert XCTest baseline (242 passed / 0 failed)` — but **no device, no
+   simulator session and no Mac were used by the author**, and CI never watched a Release build's
+   console. **The Android instrumented lane has not run since before Gate A** (last execution:
+   `88e2b1c`, 2026-07-22 05:50Z), so `BnStderrPumpAndroidTest` — the only proof `Os.dup2` installs
+   over fd 2 on a real Android runtime — has **never executed** and the `212` baseline is an
+   expectation; the lane is advisory, but it should be green before the M11 audit.
+   **"A Release build is actually quiet on a device" is inspection-only and NOT done** — the
+   mechanism is proven, the silence is not observed. **[#155](https://github.com/MarcelRoozekrans/BlazorNative/issues/155)
+   therefore stays OPEN with two named remainders** (the device observation; the level knob absent
+   from `website/docs/**`), per the standing rule not to tidy by closing issues with real remainder —
+   the owner decides. #164 is **closed**.
+   [Conclusion](../plans/2026-07-22-phase-11.4-conclusion.md) ·
+   [design](../plans/2026-07-21-phase-11.4-design.md).
+
 ## Out of scope for this milestone
 
 - **Real-device iOS / TestFlight** — still gated on the Apple Developer account (trigger
@@ -328,13 +405,17 @@ Tracked in `ROADMAP.md`. Approved at milestone-open:
   [design](../plans/2026-07-21-phase-11.2-design.md) ·
   [device runbook](../plans/2026-07-21-phase-11.2-device-runbook.md).
 - **Phase 11.3** — API stability review + the 1.0 criteria + public-API baseline (DoD #4).
-- **Phase 11.4** — logging discipline (DoD #6, [#155](https://github.com/MarcelRoozekrans/BlazorNative/issues/155)):
-  one level-gated logging seam, quiet-by-default in Release, unified across both shells. Gate D
-  also closes [#164](https://github.com/MarcelRoozekrans/BlazorNative/issues/164)'s *other* half —
-  Gates A–C made a faulted render **visible**; Gate D makes a parameter-binding fault **abort the
-  mount** with the already-documented `rc 2` rather than report success over a half-rendered
-  screen. Every other render fault keeps log-and-continue, deliberately
-  ([design](../plans/2026-07-21-phase-11.4-design.md) §6.2).
+- ✅ **Phase 11.4** — logging discipline (DoD #6, [#155](https://github.com/MarcelRoozekrans/BlazorNative/issues/155))
+  — *complete (2026-07-22).* One level-gated seam (`BnLog`, default **`Warn`**, not `#if DEBUG`),
+  the level riding the init input at **offset 28 with `SizeOf` still 32**, **31** `Console.Error`
+  and **78** `NSLog` sites migrated, and a stderr pump on **both** shells. Gate D also closed
+  [#164](https://github.com/MarcelRoozekrans/BlazorNative/issues/164)'s *other* half — Gates A–C
+  made a faulted render **visible**; Gate D makes a parameter-binding fault **abort the mount**
+  with the already-documented `rc 2` rather than report success over a half-rendered screen. Every
+  other render fault keeps log-and-continue, deliberately
+  ([design](../plans/2026-07-21-phase-11.4-design.md) §6.2). **#155 stays open** on its
+  quiet-in-Release *observation*; the Android instrumented lane has not re-run since Gate A.
+  [Conclusion](../plans/2026-07-22-phase-11.4-conclusion.md).
 - **Phase 11.5** — hygiene + M11 final audit + close (DoD #5).
 
 ## Why this milestone exists
