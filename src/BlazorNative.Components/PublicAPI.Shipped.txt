@@ -1,0 +1,499 @@
+#nullable enable
+~override BlazorNative.Components.BnCheckbox.BuildRenderTree(Microsoft.AspNetCore.Components.Rendering.RenderTreeBuilder __builder) -> void
+~override BlazorNative.Components.BnList<TItem>.BuildRenderTree(Microsoft.AspNetCore.Components.Rendering.RenderTreeBuilder __builder) -> void
+~override BlazorNative.Components.BnModal.BuildRenderTree(Microsoft.AspNetCore.Components.Rendering.RenderTreeBuilder __builder) -> void
+~override BlazorNative.Components.BnPicker.BuildRenderTree(Microsoft.AspNetCore.Components.Rendering.RenderTreeBuilder __builder) -> void
+~override BlazorNative.Components.BnSlider.BuildRenderTree(Microsoft.AspNetCore.Components.Rendering.RenderTreeBuilder __builder) -> void
+~override BlazorNative.Components.BnSwitch.BuildRenderTree(Microsoft.AspNetCore.Components.Rendering.RenderTreeBuilder __builder) -> void
+abstract BlazorNative.Components.BnFlexPreset.PresetDirection.get -> BlazorNative.Components.FlexDirection
+BlazorNative.Components._Imports
+BlazorNative.Components._Imports._Imports() -> void
+BlazorNative.Components._Imports.Execute() -> void
+BlazorNative.Components.BnActivityIndicator
+BlazorNative.Components.BnActivityIndicator.BnActivityIndicator() -> void
+BlazorNative.Components.BnButton
+BlazorNative.Components.BnButton.BnButton() -> void
+BlazorNative.Components.BnButton.Enabled.get -> bool
+BlazorNative.Components.BnButton.Enabled.set -> void
+BlazorNative.Components.BnButton.Label.get -> string?
+BlazorNative.Components.BnButton.Label.set -> void
+BlazorNative.Components.BnButton.OnClick.get -> Microsoft.AspNetCore.Components.EventCallback<Microsoft.AspNetCore.Components.Web.MouseEventArgs!>
+BlazorNative.Components.BnButton.OnClick.set -> void
+BlazorNative.Components.BnCheckbox
+BlazorNative.Components.BnCheckbox.AlignSelf.get -> BlazorNative.Components.FlexAlign?
+BlazorNative.Components.BnCheckbox.AlignSelf.set -> void
+BlazorNative.Components.BnCheckbox.BackgroundColor.get -> string?
+BlazorNative.Components.BnCheckbox.BackgroundColor.set -> void
+BlazorNative.Components.BnCheckbox.Basis.get -> string?
+BlazorNative.Components.BnCheckbox.Basis.set -> void
+BlazorNative.Components.BnCheckbox.BnCheckbox() -> void
+BlazorNative.Components.BnCheckbox.Bottom.get -> string?
+BlazorNative.Components.BnCheckbox.Bottom.set -> void
+BlazorNative.Components.BnCheckbox.Checked.get -> bool
+BlazorNative.Components.BnCheckbox.Checked.set -> void
+BlazorNative.Components.BnCheckbox.CheckedChanged.get -> Microsoft.AspNetCore.Components.EventCallback<bool>
+BlazorNative.Components.BnCheckbox.CheckedChanged.set -> void
+BlazorNative.Components.BnCheckbox.Enabled.get -> bool
+BlazorNative.Components.BnCheckbox.Enabled.set -> void
+BlazorNative.Components.BnCheckbox.Grow.get -> float?
+BlazorNative.Components.BnCheckbox.Grow.set -> void
+BlazorNative.Components.BnCheckbox.Height.get -> string?
+BlazorNative.Components.BnCheckbox.Height.set -> void
+BlazorNative.Components.BnCheckbox.Left.get -> string?
+BlazorNative.Components.BnCheckbox.Left.set -> void
+BlazorNative.Components.BnCheckbox.Margin.get -> string?
+BlazorNative.Components.BnCheckbox.Margin.set -> void
+BlazorNative.Components.BnCheckbox.MaxHeight.get -> string?
+BlazorNative.Components.BnCheckbox.MaxHeight.set -> void
+BlazorNative.Components.BnCheckbox.MaxWidth.get -> string?
+BlazorNative.Components.BnCheckbox.MaxWidth.set -> void
+BlazorNative.Components.BnCheckbox.MinHeight.get -> string?
+BlazorNative.Components.BnCheckbox.MinHeight.set -> void
+BlazorNative.Components.BnCheckbox.MinWidth.get -> string?
+BlazorNative.Components.BnCheckbox.MinWidth.set -> void
+BlazorNative.Components.BnCheckbox.Position.get -> BlazorNative.Components.FlexPosition?
+BlazorNative.Components.BnCheckbox.Position.set -> void
+BlazorNative.Components.BnCheckbox.Right.get -> string?
+BlazorNative.Components.BnCheckbox.Right.set -> void
+BlazorNative.Components.BnCheckbox.Shrink.get -> float?
+BlazorNative.Components.BnCheckbox.Shrink.set -> void
+BlazorNative.Components.BnCheckbox.Top.get -> string?
+BlazorNative.Components.BnCheckbox.Top.set -> void
+BlazorNative.Components.BnCheckbox.Width.get -> string?
+BlazorNative.Components.BnCheckbox.Width.set -> void
+BlazorNative.Components.BnColumn
+BlazorNative.Components.BnColumn.BnColumn() -> void
+BlazorNative.Components.BnFlexPreset
+BlazorNative.Components.BnFlexPreset.Align.get -> BlazorNative.Components.FlexAlign?
+BlazorNative.Components.BnFlexPreset.Align.set -> void
+BlazorNative.Components.BnFlexPreset.AlignSelf.get -> BlazorNative.Components.FlexAlign?
+BlazorNative.Components.BnFlexPreset.AlignSelf.set -> void
+BlazorNative.Components.BnFlexPreset.BackgroundColor.get -> string?
+BlazorNative.Components.BnFlexPreset.BackgroundColor.set -> void
+BlazorNative.Components.BnFlexPreset.Basis.get -> string?
+BlazorNative.Components.BnFlexPreset.Basis.set -> void
+BlazorNative.Components.BnFlexPreset.BnFlexPreset() -> void
+BlazorNative.Components.BnFlexPreset.Bottom.get -> string?
+BlazorNative.Components.BnFlexPreset.Bottom.set -> void
+BlazorNative.Components.BnFlexPreset.ChildContent.get -> Microsoft.AspNetCore.Components.RenderFragment?
+BlazorNative.Components.BnFlexPreset.ChildContent.set -> void
+BlazorNative.Components.BnFlexPreset.Gap.get -> string?
+BlazorNative.Components.BnFlexPreset.Gap.set -> void
+BlazorNative.Components.BnFlexPreset.Grow.get -> float?
+BlazorNative.Components.BnFlexPreset.Grow.set -> void
+BlazorNative.Components.BnFlexPreset.Height.get -> string?
+BlazorNative.Components.BnFlexPreset.Height.set -> void
+BlazorNative.Components.BnFlexPreset.Justify.get -> BlazorNative.Components.FlexJustify?
+BlazorNative.Components.BnFlexPreset.Justify.set -> void
+BlazorNative.Components.BnFlexPreset.Left.get -> string?
+BlazorNative.Components.BnFlexPreset.Left.set -> void
+BlazorNative.Components.BnFlexPreset.Margin.get -> string?
+BlazorNative.Components.BnFlexPreset.Margin.set -> void
+BlazorNative.Components.BnFlexPreset.MaxHeight.get -> string?
+BlazorNative.Components.BnFlexPreset.MaxHeight.set -> void
+BlazorNative.Components.BnFlexPreset.MaxWidth.get -> string?
+BlazorNative.Components.BnFlexPreset.MaxWidth.set -> void
+BlazorNative.Components.BnFlexPreset.MinHeight.get -> string?
+BlazorNative.Components.BnFlexPreset.MinHeight.set -> void
+BlazorNative.Components.BnFlexPreset.MinWidth.get -> string?
+BlazorNative.Components.BnFlexPreset.MinWidth.set -> void
+BlazorNative.Components.BnFlexPreset.Padding.get -> float?
+BlazorNative.Components.BnFlexPreset.Padding.set -> void
+BlazorNative.Components.BnFlexPreset.Position.get -> BlazorNative.Components.FlexPosition?
+BlazorNative.Components.BnFlexPreset.Position.set -> void
+BlazorNative.Components.BnFlexPreset.Right.get -> string?
+BlazorNative.Components.BnFlexPreset.Right.set -> void
+BlazorNative.Components.BnFlexPreset.Shrink.get -> float?
+BlazorNative.Components.BnFlexPreset.Shrink.set -> void
+BlazorNative.Components.BnFlexPreset.Top.get -> string?
+BlazorNative.Components.BnFlexPreset.Top.set -> void
+BlazorNative.Components.BnFlexPreset.Width.get -> string?
+BlazorNative.Components.BnFlexPreset.Width.set -> void
+BlazorNative.Components.BnFlexPreset.Wrap.get -> BlazorNative.Components.FlexWrap?
+BlazorNative.Components.BnFlexPreset.Wrap.set -> void
+BlazorNative.Components.BnImage
+BlazorNative.Components.BnImage.AlignSelf.get -> BlazorNative.Components.FlexAlign?
+BlazorNative.Components.BnImage.AlignSelf.set -> void
+BlazorNative.Components.BnImage.BackgroundColor.get -> string?
+BlazorNative.Components.BnImage.BackgroundColor.set -> void
+BlazorNative.Components.BnImage.Basis.get -> string?
+BlazorNative.Components.BnImage.Basis.set -> void
+BlazorNative.Components.BnImage.BnImage() -> void
+BlazorNative.Components.BnImage.Bottom.get -> string?
+BlazorNative.Components.BnImage.Bottom.set -> void
+BlazorNative.Components.BnImage.ContentMode.get -> BlazorNative.Components.ImageContentMode?
+BlazorNative.Components.BnImage.ContentMode.set -> void
+BlazorNative.Components.BnImage.Grow.get -> float?
+BlazorNative.Components.BnImage.Grow.set -> void
+BlazorNative.Components.BnImage.Height.get -> string?
+BlazorNative.Components.BnImage.Height.set -> void
+BlazorNative.Components.BnImage.Left.get -> string?
+BlazorNative.Components.BnImage.Left.set -> void
+BlazorNative.Components.BnImage.Margin.get -> string?
+BlazorNative.Components.BnImage.Margin.set -> void
+BlazorNative.Components.BnImage.MaxHeight.get -> string?
+BlazorNative.Components.BnImage.MaxHeight.set -> void
+BlazorNative.Components.BnImage.MaxWidth.get -> string?
+BlazorNative.Components.BnImage.MaxWidth.set -> void
+BlazorNative.Components.BnImage.MinHeight.get -> string?
+BlazorNative.Components.BnImage.MinHeight.set -> void
+BlazorNative.Components.BnImage.MinWidth.get -> string?
+BlazorNative.Components.BnImage.MinWidth.set -> void
+BlazorNative.Components.BnImage.OnError.get -> Microsoft.AspNetCore.Components.EventCallback<BlazorNative.Core.BnImageErrorEventArgs!>
+BlazorNative.Components.BnImage.OnError.set -> void
+BlazorNative.Components.BnImage.PlaceholderColor.get -> string?
+BlazorNative.Components.BnImage.PlaceholderColor.set -> void
+BlazorNative.Components.BnImage.Position.get -> BlazorNative.Components.FlexPosition?
+BlazorNative.Components.BnImage.Position.set -> void
+BlazorNative.Components.BnImage.Right.get -> string?
+BlazorNative.Components.BnImage.Right.set -> void
+BlazorNative.Components.BnImage.Shrink.get -> float?
+BlazorNative.Components.BnImage.Shrink.set -> void
+BlazorNative.Components.BnImage.Src.get -> string?
+BlazorNative.Components.BnImage.Src.set -> void
+BlazorNative.Components.BnImage.Top.get -> string?
+BlazorNative.Components.BnImage.Top.set -> void
+BlazorNative.Components.BnImage.Width.get -> string?
+BlazorNative.Components.BnImage.Width.set -> void
+BlazorNative.Components.BnInput
+BlazorNative.Components.BnInput.BnInput() -> void
+BlazorNative.Components.BnInput.Enabled.get -> bool
+BlazorNative.Components.BnInput.Enabled.set -> void
+BlazorNative.Components.BnInput.OnBlur.get -> Microsoft.AspNetCore.Components.EventCallback<Microsoft.AspNetCore.Components.Web.FocusEventArgs!>
+BlazorNative.Components.BnInput.OnBlur.set -> void
+BlazorNative.Components.BnInput.OnFocus.get -> Microsoft.AspNetCore.Components.EventCallback<Microsoft.AspNetCore.Components.Web.FocusEventArgs!>
+BlazorNative.Components.BnInput.OnFocus.set -> void
+BlazorNative.Components.BnInput.Placeholder.get -> string?
+BlazorNative.Components.BnInput.Placeholder.set -> void
+BlazorNative.Components.BnInput.Value.get -> string?
+BlazorNative.Components.BnInput.Value.set -> void
+BlazorNative.Components.BnInput.ValueChanged.get -> Microsoft.AspNetCore.Components.EventCallback<string!>
+BlazorNative.Components.BnInput.ValueChanged.set -> void
+BlazorNative.Components.BnList<TItem>
+BlazorNative.Components.BnList<TItem>.BnList() -> void
+BlazorNative.Components.BnList<TItem>.Height.get -> float
+BlazorNative.Components.BnList<TItem>.Height.set -> void
+BlazorNative.Components.BnList<TItem>.ItemHeight.get -> float
+BlazorNative.Components.BnList<TItem>.ItemHeight.set -> void
+BlazorNative.Components.BnList<TItem>.Items.get -> System.Collections.Generic.IReadOnlyList<TItem>!
+BlazorNative.Components.BnList<TItem>.Items.set -> void
+BlazorNative.Components.BnList<TItem>.Overscan.get -> int
+BlazorNative.Components.BnList<TItem>.Overscan.set -> void
+BlazorNative.Components.BnList<TItem>.RowTemplate.get -> Microsoft.AspNetCore.Components.RenderFragment<TItem>?
+BlazorNative.Components.BnList<TItem>.RowTemplate.set -> void
+BlazorNative.Components.BnList<TItem>.Width.get -> string?
+BlazorNative.Components.BnList<TItem>.Width.set -> void
+BlazorNative.Components.BnModal
+BlazorNative.Components.BnModal.BackgroundColor.get -> string?
+BlazorNative.Components.BnModal.BackgroundColor.set -> void
+BlazorNative.Components.BnModal.BnModal() -> void
+BlazorNative.Components.BnModal.ChildContent.get -> Microsoft.AspNetCore.Components.RenderFragment?
+BlazorNative.Components.BnModal.ChildContent.set -> void
+BlazorNative.Components.BnModal.ContentHeight.get -> string?
+BlazorNative.Components.BnModal.ContentHeight.set -> void
+BlazorNative.Components.BnModal.ContentWidth.get -> string?
+BlazorNative.Components.BnModal.ContentWidth.set -> void
+BlazorNative.Components.BnModal.Padding.get -> float?
+BlazorNative.Components.BnModal.Padding.set -> void
+BlazorNative.Components.BnModal.ScrimColor.get -> string?
+BlazorNative.Components.BnModal.ScrimColor.set -> void
+BlazorNative.Components.BnModal.Visible.get -> bool
+BlazorNative.Components.BnModal.Visible.set -> void
+BlazorNative.Components.BnModal.VisibleChanged.get -> Microsoft.AspNetCore.Components.EventCallback<bool>
+BlazorNative.Components.BnModal.VisibleChanged.set -> void
+BlazorNative.Components.BnPicker
+BlazorNative.Components.BnPicker.AlignSelf.get -> BlazorNative.Components.FlexAlign?
+BlazorNative.Components.BnPicker.AlignSelf.set -> void
+BlazorNative.Components.BnPicker.BackgroundColor.get -> string?
+BlazorNative.Components.BnPicker.BackgroundColor.set -> void
+BlazorNative.Components.BnPicker.Basis.get -> string?
+BlazorNative.Components.BnPicker.Basis.set -> void
+BlazorNative.Components.BnPicker.BnPicker() -> void
+BlazorNative.Components.BnPicker.Bottom.get -> string?
+BlazorNative.Components.BnPicker.Bottom.set -> void
+BlazorNative.Components.BnPicker.Enabled.get -> bool
+BlazorNative.Components.BnPicker.Enabled.set -> void
+BlazorNative.Components.BnPicker.Grow.get -> float?
+BlazorNative.Components.BnPicker.Grow.set -> void
+BlazorNative.Components.BnPicker.Height.get -> string?
+BlazorNative.Components.BnPicker.Height.set -> void
+BlazorNative.Components.BnPicker.Items.get -> System.Collections.Generic.IReadOnlyList<string!>?
+BlazorNative.Components.BnPicker.Items.set -> void
+BlazorNative.Components.BnPicker.Left.get -> string?
+BlazorNative.Components.BnPicker.Left.set -> void
+BlazorNative.Components.BnPicker.Margin.get -> string?
+BlazorNative.Components.BnPicker.Margin.set -> void
+BlazorNative.Components.BnPicker.MaxHeight.get -> string?
+BlazorNative.Components.BnPicker.MaxHeight.set -> void
+BlazorNative.Components.BnPicker.MaxWidth.get -> string?
+BlazorNative.Components.BnPicker.MaxWidth.set -> void
+BlazorNative.Components.BnPicker.MinHeight.get -> string?
+BlazorNative.Components.BnPicker.MinHeight.set -> void
+BlazorNative.Components.BnPicker.MinWidth.get -> string?
+BlazorNative.Components.BnPicker.MinWidth.set -> void
+BlazorNative.Components.BnPicker.Position.get -> BlazorNative.Components.FlexPosition?
+BlazorNative.Components.BnPicker.Position.set -> void
+BlazorNative.Components.BnPicker.Right.get -> string?
+BlazorNative.Components.BnPicker.Right.set -> void
+BlazorNative.Components.BnPicker.SelectedIndex.get -> int
+BlazorNative.Components.BnPicker.SelectedIndex.set -> void
+BlazorNative.Components.BnPicker.SelectedIndexChanged.get -> Microsoft.AspNetCore.Components.EventCallback<int>
+BlazorNative.Components.BnPicker.SelectedIndexChanged.set -> void
+BlazorNative.Components.BnPicker.Shrink.get -> float?
+BlazorNative.Components.BnPicker.Shrink.set -> void
+BlazorNative.Components.BnPicker.Top.get -> string?
+BlazorNative.Components.BnPicker.Top.set -> void
+BlazorNative.Components.BnPicker.Width.get -> string?
+BlazorNative.Components.BnPicker.Width.set -> void
+BlazorNative.Components.BnRow
+BlazorNative.Components.BnRow.BnRow() -> void
+BlazorNative.Components.BnScroll
+BlazorNative.Components.BnScroll.AlignSelf.get -> BlazorNative.Components.FlexAlign?
+BlazorNative.Components.BnScroll.AlignSelf.set -> void
+BlazorNative.Components.BnScroll.BackgroundColor.get -> string?
+BlazorNative.Components.BnScroll.BackgroundColor.set -> void
+BlazorNative.Components.BnScroll.Basis.get -> string?
+BlazorNative.Components.BnScroll.Basis.set -> void
+BlazorNative.Components.BnScroll.BnScroll() -> void
+BlazorNative.Components.BnScroll.Bottom.get -> string?
+BlazorNative.Components.BnScroll.Bottom.set -> void
+BlazorNative.Components.BnScroll.ChildContent.get -> Microsoft.AspNetCore.Components.RenderFragment?
+BlazorNative.Components.BnScroll.ChildContent.set -> void
+BlazorNative.Components.BnScroll.Grow.get -> float?
+BlazorNative.Components.BnScroll.Grow.set -> void
+BlazorNative.Components.BnScroll.Height.get -> string?
+BlazorNative.Components.BnScroll.Height.set -> void
+BlazorNative.Components.BnScroll.Left.get -> string?
+BlazorNative.Components.BnScroll.Left.set -> void
+BlazorNative.Components.BnScroll.Margin.get -> string?
+BlazorNative.Components.BnScroll.Margin.set -> void
+BlazorNative.Components.BnScroll.MaxHeight.get -> string?
+BlazorNative.Components.BnScroll.MaxHeight.set -> void
+BlazorNative.Components.BnScroll.MaxWidth.get -> string?
+BlazorNative.Components.BnScroll.MaxWidth.set -> void
+BlazorNative.Components.BnScroll.MinHeight.get -> string?
+BlazorNative.Components.BnScroll.MinHeight.set -> void
+BlazorNative.Components.BnScroll.MinWidth.get -> string?
+BlazorNative.Components.BnScroll.MinWidth.set -> void
+BlazorNative.Components.BnScroll.OnScroll.get -> Microsoft.AspNetCore.Components.EventCallback<BlazorNative.Core.BnScrollEventArgs!>
+BlazorNative.Components.BnScroll.OnScroll.set -> void
+BlazorNative.Components.BnScroll.Position.get -> BlazorNative.Components.FlexPosition?
+BlazorNative.Components.BnScroll.Position.set -> void
+BlazorNative.Components.BnScroll.Right.get -> string?
+BlazorNative.Components.BnScroll.Right.set -> void
+BlazorNative.Components.BnScroll.Shrink.get -> float?
+BlazorNative.Components.BnScroll.Shrink.set -> void
+BlazorNative.Components.BnScroll.Top.get -> string?
+BlazorNative.Components.BnScroll.Top.set -> void
+BlazorNative.Components.BnScroll.Width.get -> string?
+BlazorNative.Components.BnScroll.Width.set -> void
+BlazorNative.Components.BnSlider
+BlazorNative.Components.BnSlider.AlignSelf.get -> BlazorNative.Components.FlexAlign?
+BlazorNative.Components.BnSlider.AlignSelf.set -> void
+BlazorNative.Components.BnSlider.BackgroundColor.get -> string?
+BlazorNative.Components.BnSlider.BackgroundColor.set -> void
+BlazorNative.Components.BnSlider.Basis.get -> string?
+BlazorNative.Components.BnSlider.Basis.set -> void
+BlazorNative.Components.BnSlider.BnSlider() -> void
+BlazorNative.Components.BnSlider.Bottom.get -> string?
+BlazorNative.Components.BnSlider.Bottom.set -> void
+BlazorNative.Components.BnSlider.Enabled.get -> bool
+BlazorNative.Components.BnSlider.Enabled.set -> void
+BlazorNative.Components.BnSlider.Grow.get -> float?
+BlazorNative.Components.BnSlider.Grow.set -> void
+BlazorNative.Components.BnSlider.Height.get -> string?
+BlazorNative.Components.BnSlider.Height.set -> void
+BlazorNative.Components.BnSlider.Left.get -> string?
+BlazorNative.Components.BnSlider.Left.set -> void
+BlazorNative.Components.BnSlider.Margin.get -> string?
+BlazorNative.Components.BnSlider.Margin.set -> void
+BlazorNative.Components.BnSlider.Max.get -> float
+BlazorNative.Components.BnSlider.Max.set -> void
+BlazorNative.Components.BnSlider.MaxHeight.get -> string?
+BlazorNative.Components.BnSlider.MaxHeight.set -> void
+BlazorNative.Components.BnSlider.MaxWidth.get -> string?
+BlazorNative.Components.BnSlider.MaxWidth.set -> void
+BlazorNative.Components.BnSlider.Min.get -> float
+BlazorNative.Components.BnSlider.Min.set -> void
+BlazorNative.Components.BnSlider.MinHeight.get -> string?
+BlazorNative.Components.BnSlider.MinHeight.set -> void
+BlazorNative.Components.BnSlider.MinWidth.get -> string?
+BlazorNative.Components.BnSlider.MinWidth.set -> void
+BlazorNative.Components.BnSlider.Position.get -> BlazorNative.Components.FlexPosition?
+BlazorNative.Components.BnSlider.Position.set -> void
+BlazorNative.Components.BnSlider.Right.get -> string?
+BlazorNative.Components.BnSlider.Right.set -> void
+BlazorNative.Components.BnSlider.Shrink.get -> float?
+BlazorNative.Components.BnSlider.Shrink.set -> void
+BlazorNative.Components.BnSlider.Step.get -> float?
+BlazorNative.Components.BnSlider.Step.set -> void
+BlazorNative.Components.BnSlider.Top.get -> string?
+BlazorNative.Components.BnSlider.Top.set -> void
+BlazorNative.Components.BnSlider.Value.get -> float
+BlazorNative.Components.BnSlider.Value.set -> void
+BlazorNative.Components.BnSlider.ValueChanged.get -> Microsoft.AspNetCore.Components.EventCallback<float>
+BlazorNative.Components.BnSlider.ValueChanged.set -> void
+BlazorNative.Components.BnSlider.Width.get -> string?
+BlazorNative.Components.BnSlider.Width.set -> void
+BlazorNative.Components.BnSwitch
+BlazorNative.Components.BnSwitch.AlignSelf.get -> BlazorNative.Components.FlexAlign?
+BlazorNative.Components.BnSwitch.AlignSelf.set -> void
+BlazorNative.Components.BnSwitch.BackgroundColor.get -> string?
+BlazorNative.Components.BnSwitch.BackgroundColor.set -> void
+BlazorNative.Components.BnSwitch.Basis.get -> string?
+BlazorNative.Components.BnSwitch.Basis.set -> void
+BlazorNative.Components.BnSwitch.BnSwitch() -> void
+BlazorNative.Components.BnSwitch.Bottom.get -> string?
+BlazorNative.Components.BnSwitch.Bottom.set -> void
+BlazorNative.Components.BnSwitch.Checked.get -> bool
+BlazorNative.Components.BnSwitch.Checked.set -> void
+BlazorNative.Components.BnSwitch.CheckedChanged.get -> Microsoft.AspNetCore.Components.EventCallback<bool>
+BlazorNative.Components.BnSwitch.CheckedChanged.set -> void
+BlazorNative.Components.BnSwitch.Enabled.get -> bool
+BlazorNative.Components.BnSwitch.Enabled.set -> void
+BlazorNative.Components.BnSwitch.Grow.get -> float?
+BlazorNative.Components.BnSwitch.Grow.set -> void
+BlazorNative.Components.BnSwitch.Height.get -> string?
+BlazorNative.Components.BnSwitch.Height.set -> void
+BlazorNative.Components.BnSwitch.Left.get -> string?
+BlazorNative.Components.BnSwitch.Left.set -> void
+BlazorNative.Components.BnSwitch.Margin.get -> string?
+BlazorNative.Components.BnSwitch.Margin.set -> void
+BlazorNative.Components.BnSwitch.MaxHeight.get -> string?
+BlazorNative.Components.BnSwitch.MaxHeight.set -> void
+BlazorNative.Components.BnSwitch.MaxWidth.get -> string?
+BlazorNative.Components.BnSwitch.MaxWidth.set -> void
+BlazorNative.Components.BnSwitch.MinHeight.get -> string?
+BlazorNative.Components.BnSwitch.MinHeight.set -> void
+BlazorNative.Components.BnSwitch.MinWidth.get -> string?
+BlazorNative.Components.BnSwitch.MinWidth.set -> void
+BlazorNative.Components.BnSwitch.Position.get -> BlazorNative.Components.FlexPosition?
+BlazorNative.Components.BnSwitch.Position.set -> void
+BlazorNative.Components.BnSwitch.Right.get -> string?
+BlazorNative.Components.BnSwitch.Right.set -> void
+BlazorNative.Components.BnSwitch.Shrink.get -> float?
+BlazorNative.Components.BnSwitch.Shrink.set -> void
+BlazorNative.Components.BnSwitch.Top.get -> string?
+BlazorNative.Components.BnSwitch.Top.set -> void
+BlazorNative.Components.BnSwitch.Width.get -> string?
+BlazorNative.Components.BnSwitch.Width.set -> void
+BlazorNative.Components.BnText
+BlazorNative.Components.BnText.BnText() -> void
+BlazorNative.Components.BnText.FontSize.get -> float?
+BlazorNative.Components.BnText.FontSize.set -> void
+BlazorNative.Components.BnText.Text.get -> string?
+BlazorNative.Components.BnText.Text.set -> void
+BlazorNative.Components.BnTheme
+BlazorNative.Components.BnTheme.<Clone>$() -> BlazorNative.Components.BnTheme!
+BlazorNative.Components.BnTheme.AltBackground.get -> string!
+BlazorNative.Components.BnTheme.AltBackground.init -> void
+BlazorNative.Components.BnTheme.Background.get -> string!
+BlazorNative.Components.BnTheme.Background.init -> void
+BlazorNative.Components.BnTheme.BnTheme(string! Background, string! AltBackground) -> void
+BlazorNative.Components.BnTheme.Deconstruct(out string! Background, out string! AltBackground) -> void
+BlazorNative.Components.BnTheme.Equals(BlazorNative.Components.BnTheme? other) -> bool
+BlazorNative.Components.BnView
+BlazorNative.Components.BnView.Align.get -> BlazorNative.Components.FlexAlign?
+BlazorNative.Components.BnView.Align.set -> void
+BlazorNative.Components.BnView.AlignSelf.get -> BlazorNative.Components.FlexAlign?
+BlazorNative.Components.BnView.AlignSelf.set -> void
+BlazorNative.Components.BnView.BackgroundColor.get -> string?
+BlazorNative.Components.BnView.BackgroundColor.set -> void
+BlazorNative.Components.BnView.Basis.get -> string?
+BlazorNative.Components.BnView.Basis.set -> void
+BlazorNative.Components.BnView.BnView() -> void
+BlazorNative.Components.BnView.Bottom.get -> string?
+BlazorNative.Components.BnView.Bottom.set -> void
+BlazorNative.Components.BnView.ChildContent.get -> Microsoft.AspNetCore.Components.RenderFragment?
+BlazorNative.Components.BnView.ChildContent.set -> void
+BlazorNative.Components.BnView.Direction.get -> BlazorNative.Components.FlexDirection?
+BlazorNative.Components.BnView.Direction.set -> void
+BlazorNative.Components.BnView.Gap.get -> string?
+BlazorNative.Components.BnView.Gap.set -> void
+BlazorNative.Components.BnView.Grow.get -> float?
+BlazorNative.Components.BnView.Grow.set -> void
+BlazorNative.Components.BnView.Height.get -> string?
+BlazorNative.Components.BnView.Height.set -> void
+BlazorNative.Components.BnView.Justify.get -> BlazorNative.Components.FlexJustify?
+BlazorNative.Components.BnView.Justify.set -> void
+BlazorNative.Components.BnView.Left.get -> string?
+BlazorNative.Components.BnView.Left.set -> void
+BlazorNative.Components.BnView.Margin.get -> string?
+BlazorNative.Components.BnView.Margin.set -> void
+BlazorNative.Components.BnView.MaxHeight.get -> string?
+BlazorNative.Components.BnView.MaxHeight.set -> void
+BlazorNative.Components.BnView.MaxWidth.get -> string?
+BlazorNative.Components.BnView.MaxWidth.set -> void
+BlazorNative.Components.BnView.MinHeight.get -> string?
+BlazorNative.Components.BnView.MinHeight.set -> void
+BlazorNative.Components.BnView.MinWidth.get -> string?
+BlazorNative.Components.BnView.MinWidth.set -> void
+BlazorNative.Components.BnView.Padding.get -> float?
+BlazorNative.Components.BnView.Padding.set -> void
+BlazorNative.Components.BnView.Position.get -> BlazorNative.Components.FlexPosition?
+BlazorNative.Components.BnView.Position.set -> void
+BlazorNative.Components.BnView.Right.get -> string?
+BlazorNative.Components.BnView.Right.set -> void
+BlazorNative.Components.BnView.Shrink.get -> float?
+BlazorNative.Components.BnView.Shrink.set -> void
+BlazorNative.Components.BnView.Top.get -> string?
+BlazorNative.Components.BnView.Top.set -> void
+BlazorNative.Components.BnView.Width.get -> string?
+BlazorNative.Components.BnView.Width.set -> void
+BlazorNative.Components.BnView.Wrap.get -> BlazorNative.Components.FlexWrap?
+BlazorNative.Components.BnView.Wrap.set -> void
+BlazorNative.Components.FlexAlign
+BlazorNative.Components.FlexAlign.Auto = 0 -> BlazorNative.Components.FlexAlign
+BlazorNative.Components.FlexAlign.Baseline = 5 -> BlazorNative.Components.FlexAlign
+BlazorNative.Components.FlexAlign.Center = 2 -> BlazorNative.Components.FlexAlign
+BlazorNative.Components.FlexAlign.FlexEnd = 3 -> BlazorNative.Components.FlexAlign
+BlazorNative.Components.FlexAlign.FlexStart = 1 -> BlazorNative.Components.FlexAlign
+BlazorNative.Components.FlexAlign.Stretch = 4 -> BlazorNative.Components.FlexAlign
+BlazorNative.Components.FlexDirection
+BlazorNative.Components.FlexDirection.Column = 1 -> BlazorNative.Components.FlexDirection
+BlazorNative.Components.FlexDirection.ColumnReverse = 3 -> BlazorNative.Components.FlexDirection
+BlazorNative.Components.FlexDirection.Row = 0 -> BlazorNative.Components.FlexDirection
+BlazorNative.Components.FlexDirection.RowReverse = 2 -> BlazorNative.Components.FlexDirection
+BlazorNative.Components.FlexJustify
+BlazorNative.Components.FlexJustify.Center = 1 -> BlazorNative.Components.FlexJustify
+BlazorNative.Components.FlexJustify.FlexEnd = 2 -> BlazorNative.Components.FlexJustify
+BlazorNative.Components.FlexJustify.FlexStart = 0 -> BlazorNative.Components.FlexJustify
+BlazorNative.Components.FlexJustify.SpaceAround = 4 -> BlazorNative.Components.FlexJustify
+BlazorNative.Components.FlexJustify.SpaceBetween = 3 -> BlazorNative.Components.FlexJustify
+BlazorNative.Components.FlexJustify.SpaceEvenly = 5 -> BlazorNative.Components.FlexJustify
+BlazorNative.Components.FlexPosition
+BlazorNative.Components.FlexPosition.Absolute = 1 -> BlazorNative.Components.FlexPosition
+BlazorNative.Components.FlexPosition.Relative = 0 -> BlazorNative.Components.FlexPosition
+BlazorNative.Components.FlexStyleValues
+BlazorNative.Components.FlexWrap
+BlazorNative.Components.FlexWrap.NoWrap = 0 -> BlazorNative.Components.FlexWrap
+BlazorNative.Components.FlexWrap.Wrap = 1 -> BlazorNative.Components.FlexWrap
+BlazorNative.Components.FlexWrap.WrapReverse = 2 -> BlazorNative.Components.FlexWrap
+BlazorNative.Components.ImageContentMode
+BlazorNative.Components.ImageContentMode.Center = 3 -> BlazorNative.Components.ImageContentMode
+BlazorNative.Components.ImageContentMode.Contain = 0 -> BlazorNative.Components.ImageContentMode
+BlazorNative.Components.ImageContentMode.Cover = 1 -> BlazorNative.Components.ImageContentMode
+BlazorNative.Components.ImageContentMode.Stretch = 2 -> BlazorNative.Components.ImageContentMode
+BlazorNative.Components.ImageContentModes
+const BlazorNative.Components.BnModal.DefaultScrimColor = "#80000000" -> string!
+override BlazorNative.Components.BnFlexPreset.BuildRenderTree(Microsoft.AspNetCore.Components.Rendering.RenderTreeBuilder! b) -> void
+override BlazorNative.Components.BnList<TItem>.OnParametersSet() -> void
+override BlazorNative.Components.BnPicker.OnParametersSetAsync() -> System.Threading.Tasks.Task!
+override BlazorNative.Components.BnTheme.Equals(object? obj) -> bool
+override BlazorNative.Components.BnTheme.GetHashCode() -> int
+override BlazorNative.Components.BnTheme.ToString() -> string!
+static BlazorNative.Components.BnTheme.operator !=(BlazorNative.Components.BnTheme? left, BlazorNative.Components.BnTheme? right) -> bool
+static BlazorNative.Components.BnTheme.operator ==(BlazorNative.Components.BnTheme? left, BlazorNative.Components.BnTheme? right) -> bool
+static BlazorNative.Components.FlexStyleValues.ToStyleValue(this BlazorNative.Components.FlexAlign value) -> string!
+static BlazorNative.Components.FlexStyleValues.ToStyleValue(this BlazorNative.Components.FlexAlign? value) -> string?
+static BlazorNative.Components.FlexStyleValues.ToStyleValue(this BlazorNative.Components.FlexDirection value) -> string!
+static BlazorNative.Components.FlexStyleValues.ToStyleValue(this BlazorNative.Components.FlexDirection? value) -> string?
+static BlazorNative.Components.FlexStyleValues.ToStyleValue(this BlazorNative.Components.FlexJustify value) -> string!
+static BlazorNative.Components.FlexStyleValues.ToStyleValue(this BlazorNative.Components.FlexJustify? value) -> string?
+static BlazorNative.Components.FlexStyleValues.ToStyleValue(this BlazorNative.Components.FlexPosition value) -> string!
+static BlazorNative.Components.FlexStyleValues.ToStyleValue(this BlazorNative.Components.FlexPosition? value) -> string?
+static BlazorNative.Components.FlexStyleValues.ToStyleValue(this BlazorNative.Components.FlexWrap value) -> string!
+static BlazorNative.Components.FlexStyleValues.ToStyleValue(this BlazorNative.Components.FlexWrap? value) -> string?
+static BlazorNative.Components.FlexStyleValues.ToStyleValue(this float? value) -> string?
+static BlazorNative.Components.ImageContentModes.ToWireValue(this BlazorNative.Components.ImageContentMode value) -> string!
+static BlazorNative.Components.ImageContentModes.ToWireValue(this BlazorNative.Components.ImageContentMode? value) -> string?

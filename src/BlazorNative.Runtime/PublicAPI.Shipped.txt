@@ -1,0 +1,134 @@
+#nullable enable
+BlazorNative.Runtime.BlazorNativeApp
+BlazorNative.Runtime.BlazorNativeBridgeCallbacks
+BlazorNative.Runtime.BlazorNativeBridgeCallbacks.BlazorNativeBridgeCallbacks() -> void
+BlazorNative.Runtime.BlazorNativeBridgeCallbacks.ClipboardRead -> nint
+BlazorNative.Runtime.BlazorNativeBridgeCallbacks.ClipboardWrite -> nint
+BlazorNative.Runtime.BlazorNativeBridgeCallbacks.CurrentRoute -> nint
+BlazorNative.Runtime.BlazorNativeBridgeCallbacks.FetchBegin -> nint
+BlazorNative.Runtime.BlazorNativeBridgeCallbacks.HostCallBegin -> nint
+BlazorNative.Runtime.BlazorNativeBridgeCallbacks.Navigate -> nint
+BlazorNative.Runtime.BlazorNativeBridgeCallbacks.Share -> nint
+BlazorNative.Runtime.BlazorNativeBridgeCallbacks.StorageDelete -> nint
+BlazorNative.Runtime.BlazorNativeBridgeCallbacks.StorageRead -> nint
+BlazorNative.Runtime.BlazorNativeBridgeCallbacks.StorageWrite -> nint
+BlazorNative.Runtime.BlazorNativeFetchRequest
+BlazorNative.Runtime.BlazorNativeFetchRequest.BlazorNativeFetchRequest() -> void
+BlazorNative.Runtime.BlazorNativeFetchRequest.Body -> nint
+BlazorNative.Runtime.BlazorNativeFetchRequest.HeadersJson -> nint
+BlazorNative.Runtime.BlazorNativeFetchRequest.Method -> nint
+BlazorNative.Runtime.BlazorNativeFetchRequest.Url -> nint
+BlazorNative.Runtime.BlazorNativeFetchResponse
+BlazorNative.Runtime.BlazorNativeFetchResponse.BlazorNativeFetchResponse() -> void
+BlazorNative.Runtime.BlazorNativeFetchResponse.BodyUtf8 -> nint
+BlazorNative.Runtime.BlazorNativeFetchResponse.ErrorMessage -> nint
+BlazorNative.Runtime.BlazorNativeFetchResponse.HeadersJson -> nint
+BlazorNative.Runtime.BlazorNativeFetchResponse.Ok -> int
+BlazorNative.Runtime.BlazorNativeFetchResponse.StatusCode -> int
+BlazorNative.Runtime.BlazorNativeFrame
+BlazorNative.Runtime.BlazorNativeFrame.BlazorNativeFrame() -> void
+BlazorNative.Runtime.BlazorNativeFrame.FrameId -> int
+BlazorNative.Runtime.BlazorNativeFrame.PatchCount -> int
+BlazorNative.Runtime.BlazorNativeFrame.Patches -> nint
+BlazorNative.Runtime.BlazorNativeFrame.TimestampMs -> long
+BlazorNative.Runtime.BlazorNativeInitOptions
+BlazorNative.Runtime.BlazorNativeInitOptions.BlazorNativeInitOptions() -> void
+BlazorNative.Runtime.BlazorNativeInitOptions.PlatformInfoApiLevel -> int
+BlazorNative.Runtime.BlazorNativeInitOptions.PlatformInfoKind -> int
+BlazorNative.Runtime.BlazorNativeInitOptions.PlatformInfoNote -> nint
+BlazorNative.Runtime.BlazorNativeInitOptions.PlatformInfoOs -> nint
+BlazorNative.Runtime.BlazorNativeInitResult
+BlazorNative.Runtime.BlazorNativeInitResult.BlazorNativeInitResult() -> void
+BlazorNative.Runtime.BlazorNativeInitResult.ErrorMessage -> nint
+BlazorNative.Runtime.BlazorNativeInitResult.Status -> int
+BlazorNative.Runtime.BlazorNativeInitResult.VersionString -> nint
+BlazorNative.Runtime.BlazorNativeNodeType
+BlazorNative.Runtime.BlazorNativeNodeType.ActivityIndicator = 12 -> BlazorNative.Runtime.BlazorNativeNodeType
+BlazorNative.Runtime.BlazorNativeNodeType.Button = 3 -> BlazorNative.Runtime.BlazorNativeNodeType
+BlazorNative.Runtime.BlazorNativeNodeType.Checkbox = 8 -> BlazorNative.Runtime.BlazorNativeNodeType
+BlazorNative.Runtime.BlazorNativeNodeType.Image = 5 -> BlazorNative.Runtime.BlazorNativeNodeType
+BlazorNative.Runtime.BlazorNativeNodeType.Input = 4 -> BlazorNative.Runtime.BlazorNativeNodeType
+BlazorNative.Runtime.BlazorNativeNodeType.Modal = 11 -> BlazorNative.Runtime.BlazorNativeNodeType
+BlazorNative.Runtime.BlazorNativeNodeType.None = 0 -> BlazorNative.Runtime.BlazorNativeNodeType
+BlazorNative.Runtime.BlazorNativeNodeType.Picker = 7 -> BlazorNative.Runtime.BlazorNativeNodeType
+BlazorNative.Runtime.BlazorNativeNodeType.Scroll = 6 -> BlazorNative.Runtime.BlazorNativeNodeType
+BlazorNative.Runtime.BlazorNativeNodeType.Slider = 10 -> BlazorNative.Runtime.BlazorNativeNodeType
+BlazorNative.Runtime.BlazorNativeNodeType.Switch = 9 -> BlazorNative.Runtime.BlazorNativeNodeType
+BlazorNative.Runtime.BlazorNativeNodeType.Text = 2 -> BlazorNative.Runtime.BlazorNativeNodeType
+BlazorNative.Runtime.BlazorNativeNodeType.View = 1 -> BlazorNative.Runtime.BlazorNativeNodeType
+BlazorNative.Runtime.BlazorNativePage
+BlazorNative.Runtime.BlazorNativePage.BlazorNativePage() -> void
+BlazorNative.Runtime.BlazorNativePage.Name.get -> string!
+BlazorNative.Runtime.BlazorNativePage.Route.get -> string?
+BlazorNative.Runtime.BlazorNativePatch
+BlazorNative.Runtime.BlazorNativePatch.AuxInt -> int
+BlazorNative.Runtime.BlazorNativePatch.BlazorNativePatch() -> void
+BlazorNative.Runtime.BlazorNativePatch.Kind -> BlazorNative.Runtime.BlazorNativePatchKind
+BlazorNative.Runtime.BlazorNativePatch.NodeId -> int
+BlazorNative.Runtime.BlazorNativePatch.NodeType -> BlazorNative.Runtime.BlazorNativeNodeType
+BlazorNative.Runtime.BlazorNativePatch.ParentNodeId -> int
+BlazorNative.Runtime.BlazorNativePatch.PropName -> nint
+BlazorNative.Runtime.BlazorNativePatch.PropValue -> nint
+BlazorNative.Runtime.BlazorNativePatch.Reserved0 -> int
+BlazorNative.Runtime.BlazorNativePatch.Text -> nint
+BlazorNative.Runtime.BlazorNativePatchKind
+BlazorNative.Runtime.BlazorNativePatchKind.AppendChild = 2 -> BlazorNative.Runtime.BlazorNativePatchKind
+BlazorNative.Runtime.BlazorNativePatchKind.AttachEvent = 7 -> BlazorNative.Runtime.BlazorNativePatchKind
+BlazorNative.Runtime.BlazorNativePatchKind.CommitFrame = 9 -> BlazorNative.Runtime.BlazorNativePatchKind
+BlazorNative.Runtime.BlazorNativePatchKind.CreateNode = 1 -> BlazorNative.Runtime.BlazorNativePatchKind
+BlazorNative.Runtime.BlazorNativePatchKind.DetachEvent = 8 -> BlazorNative.Runtime.BlazorNativePatchKind
+BlazorNative.Runtime.BlazorNativePatchKind.RemoveNode = 3 -> BlazorNative.Runtime.BlazorNativePatchKind
+BlazorNative.Runtime.BlazorNativePatchKind.ReplaceText = 5 -> BlazorNative.Runtime.BlazorNativePatchKind
+BlazorNative.Runtime.BlazorNativePatchKind.SetStyle = 6 -> BlazorNative.Runtime.BlazorNativePatchKind
+BlazorNative.Runtime.BlazorNativePatchKind.UpdateProp = 4 -> BlazorNative.Runtime.BlazorNativePatchKind
+BlazorNative.Runtime.Exports
+BlazorNative.Runtime.NativeNavigationManager
+BlazorNative.Runtime.NativeNavigationManager.CurrentRoute.get -> string!
+BlazorNative.Runtime.NativeNavigationManager.NativeNavigationManager(BlazorNative.Core.IMobileBridge! bridge) -> void
+BlazorNative.Runtime.NativeNavigationManager.NavigateBackAsync() -> System.Threading.Tasks.ValueTask<bool>
+BlazorNative.Runtime.NativeNavigationManager.NavigateToAsync(string! route) -> System.Threading.Tasks.ValueTask
+BlazorNative.Runtime.NativeNavigationManager.RouteChanged -> System.Action<string!>?
+BlazorNative.Runtime.NativeShellBridge
+BlazorNative.Runtime.NativeShellBridge.AuthenticateAsync(string! reason, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<BlazorNative.Core.BiometricStatus>
+BlazorNative.Runtime.NativeShellBridge.CancelNotificationAsync(int id, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<BlazorNative.Core.NotificationStatus>
+BlazorNative.Runtime.NativeShellBridge.CapturePhotoAsync(BlazorNative.Core.CaptureOptions options, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<BlazorNative.Core.PhotoResult>
+BlazorNative.Runtime.NativeShellBridge.CheckCameraAvailabilityAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<BlazorNative.Core.CameraStatus>
+BlazorNative.Runtime.NativeShellBridge.CheckGeolocationPermissionAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<BlazorNative.Core.GeolocationStatus>
+BlazorNative.Runtime.NativeShellBridge.CheckNotificationPermissionAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<BlazorNative.Core.NotificationStatus>
+BlazorNative.Runtime.NativeShellBridge.ClipboardReadAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<string!>
+BlazorNative.Runtime.NativeShellBridge.ClipboardWriteAsync(string! text, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+BlazorNative.Runtime.NativeShellBridge.DeleteSecretAsync(string! key, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<BlazorNative.Core.SecureStorageStatus>
+BlazorNative.Runtime.NativeShellBridge.DeleteStorageAsync(string! key, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+BlazorNative.Runtime.NativeShellBridge.FetchAsync(BlazorNative.Core.BridgeHttpRequest request, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<BlazorNative.Core.BridgeHttpResponse>
+BlazorNative.Runtime.NativeShellBridge.GetCurrentPositionAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<BlazorNative.Core.GeolocationResult>
+BlazorNative.Runtime.NativeShellBridge.GetCurrentRouteAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<string!>
+BlazorNative.Runtime.NativeShellBridge.GetPlatformInfoAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<BlazorNative.Core.PlatformInfo>
+BlazorNative.Runtime.NativeShellBridge.GetSecretAsync(string! key, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<BlazorNative.Core.SecretResult>
+BlazorNative.Runtime.NativeShellBridge.GetSecretWithAuthAsync(string! key, string! reason, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<BlazorNative.Core.SecretResult>
+BlazorNative.Runtime.NativeShellBridge.IsBiometricAvailableAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<BlazorNative.Core.BiometricStatus>
+BlazorNative.Runtime.NativeShellBridge.NativeEvents -> System.Action<BlazorNative.Core.NativeEvent>!
+BlazorNative.Runtime.NativeShellBridge.NativeShellBridge() -> void
+BlazorNative.Runtime.NativeShellBridge.NavigateAsync(string! route, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+BlazorNative.Runtime.NativeShellBridge.PlatformInfo.get -> string!
+BlazorNative.Runtime.NativeShellBridge.ReadStorageAsync(string! key, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<string?>
+BlazorNative.Runtime.NativeShellBridge.RequestNotificationPermissionAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<BlazorNative.Core.NotificationStatus>
+BlazorNative.Runtime.NativeShellBridge.ScheduleNotificationAsync(BlazorNative.Core.NotificationSpec spec, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<BlazorNative.Core.NotificationStatus>
+BlazorNative.Runtime.NativeShellBridge.SetSecretAsync(string! key, string! value, bool requireAuth, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<BlazorNative.Core.SecureStorageStatus>
+BlazorNative.Runtime.NativeShellBridge.ShareAsync(string! text, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+BlazorNative.Runtime.NativeShellBridge.ShowNotificationAsync(BlazorNative.Core.NotificationSpec spec, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<BlazorNative.Core.NotificationStatus>
+BlazorNative.Runtime.NativeShellBridge.WriteStorageAsync(string! key, string! value, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+const BlazorNative.Runtime.BlazorNativeApp.DefaultRoute = "/" -> string!
+static BlazorNative.Runtime.BlazorNativeApp.ConfigureServices(System.Action<Microsoft.Extensions.DependencyInjection.IServiceCollection!>! configure) -> void
+static BlazorNative.Runtime.BlazorNativeApp.RegisterPages(params BlazorNative.Runtime.BlazorNativePage[]! pages) -> void
+static BlazorNative.Runtime.BlazorNativePage.Named<T>(string! name) -> BlazorNative.Runtime.BlazorNativePage
+static BlazorNative.Runtime.BlazorNativePage.Routed<T>(string! route, string! name) -> BlazorNative.Runtime.BlazorNativePage
+static BlazorNative.Runtime.Exports.DispatchEvent(ulong handlerId, nint argsJsonUtf8) -> int
+static BlazorNative.Runtime.Exports.FetchComplete(long requestId, BlazorNative.Runtime.BlazorNativeFetchResponse* response) -> int
+static BlazorNative.Runtime.Exports.HostCallComplete(long requestId, int status, nint payloadJsonUtf8) -> int
+static BlazorNative.Runtime.Exports.HostEvent(nint nameUtf8, nint payloadUtf8) -> int
+static BlazorNative.Runtime.Exports.Init(BlazorNative.Runtime.BlazorNativeInitOptions* opts) -> BlazorNative.Runtime.BlazorNativeInitResult
+static BlazorNative.Runtime.Exports.Mount(nint componentNameUtf8) -> int
+static BlazorNative.Runtime.Exports.RegisterBridge(int structSize, BlazorNative.Runtime.BlazorNativeBridgeCallbacks* callbacks) -> int
+static BlazorNative.Runtime.Exports.RegisterFrameCallback(nint fnPtr) -> int
+static BlazorNative.Runtime.Exports.Shutdown() -> void
+static BlazorNative.Runtime.Exports.Version() -> nint

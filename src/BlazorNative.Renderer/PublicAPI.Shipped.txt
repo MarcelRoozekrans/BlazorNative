@@ -1,0 +1,198 @@
+#nullable enable
+abstract BlazorNative.Renderer.RenderPatch.<Clone>$() -> BlazorNative.Renderer.RenderPatch!
+BlazorNative.Renderer.AttachEventPatch
+BlazorNative.Renderer.AttachEventPatch.AttachEventPatch(int NodeId, string! EventName, int HandlerId) -> void
+BlazorNative.Renderer.AttachEventPatch.Deconstruct(out int NodeId, out string! EventName, out int HandlerId) -> void
+BlazorNative.Renderer.AttachEventPatch.Equals(BlazorNative.Renderer.AttachEventPatch? other) -> bool
+BlazorNative.Renderer.AttachEventPatch.EventName.get -> string!
+BlazorNative.Renderer.AttachEventPatch.EventName.init -> void
+BlazorNative.Renderer.AttachEventPatch.HandlerId.get -> int
+BlazorNative.Renderer.AttachEventPatch.HandlerId.init -> void
+BlazorNative.Renderer.AttachEventPatch.NodeId.get -> int
+BlazorNative.Renderer.AttachEventPatch.NodeId.init -> void
+BlazorNative.Renderer.BlazorVersionMismatchException
+BlazorNative.Renderer.BlazorVersionMismatchException.BlazorVersionMismatchException(string! message) -> void
+BlazorNative.Renderer.CommitFramePatch
+BlazorNative.Renderer.CommitFramePatch.CommitFramePatch(int FrameId, long TimestampMs) -> void
+BlazorNative.Renderer.CommitFramePatch.Deconstruct(out int FrameId, out long TimestampMs) -> void
+BlazorNative.Renderer.CommitFramePatch.Equals(BlazorNative.Renderer.CommitFramePatch? other) -> bool
+BlazorNative.Renderer.CommitFramePatch.FrameId.get -> int
+BlazorNative.Renderer.CommitFramePatch.FrameId.init -> void
+BlazorNative.Renderer.CommitFramePatch.TimestampMs.get -> long
+BlazorNative.Renderer.CommitFramePatch.TimestampMs.init -> void
+BlazorNative.Renderer.CreateNodePatch
+BlazorNative.Renderer.CreateNodePatch.CreateNodePatch(int NodeId, string! NodeType, int? ParentId = null, int InsertIndex = -1) -> void
+BlazorNative.Renderer.CreateNodePatch.Deconstruct(out int NodeId, out string! NodeType, out int? ParentId, out int InsertIndex) -> void
+BlazorNative.Renderer.CreateNodePatch.Equals(BlazorNative.Renderer.CreateNodePatch? other) -> bool
+BlazorNative.Renderer.CreateNodePatch.InsertIndex.get -> int
+BlazorNative.Renderer.CreateNodePatch.InsertIndex.init -> void
+BlazorNative.Renderer.CreateNodePatch.NodeId.get -> int
+BlazorNative.Renderer.CreateNodePatch.NodeId.init -> void
+BlazorNative.Renderer.CreateNodePatch.NodeType.get -> string!
+BlazorNative.Renderer.CreateNodePatch.NodeType.init -> void
+BlazorNative.Renderer.CreateNodePatch.ParentId.get -> int?
+BlazorNative.Renderer.CreateNodePatch.ParentId.init -> void
+BlazorNative.Renderer.DetachEventPatch
+BlazorNative.Renderer.DetachEventPatch.Deconstruct(out int NodeId, out int HandlerId, out string! EventName) -> void
+BlazorNative.Renderer.DetachEventPatch.DetachEventPatch(int NodeId, int HandlerId, string! EventName) -> void
+BlazorNative.Renderer.DetachEventPatch.Equals(BlazorNative.Renderer.DetachEventPatch? other) -> bool
+BlazorNative.Renderer.DetachEventPatch.EventName.get -> string!
+BlazorNative.Renderer.DetachEventPatch.EventName.init -> void
+BlazorNative.Renderer.DetachEventPatch.HandlerId.get -> int
+BlazorNative.Renderer.DetachEventPatch.HandlerId.init -> void
+BlazorNative.Renderer.DetachEventPatch.NodeId.get -> int
+BlazorNative.Renderer.DetachEventPatch.NodeId.init -> void
+BlazorNative.Renderer.NativeRenderer
+BlazorNative.Renderer.NativeRenderer.DispatchUiEventAsync(BlazorNative.Renderer.NativeUiEvent! e) -> System.Threading.Tasks.Task!
+BlazorNative.Renderer.NativeRenderer.Frames -> ZeroAlloc.AsyncEvents.AsyncEvent<BlazorNative.Renderer.RenderFrame!>!
+BlazorNative.Renderer.NativeRenderer.FrameSink.get -> System.Action<BlazorNative.Renderer.RenderFrame!>?
+BlazorNative.Renderer.NativeRenderer.FrameSink.set -> void
+BlazorNative.Renderer.NativeRenderer.Mount<TComponent>() -> int
+BlazorNative.Renderer.NativeRenderer.Mount<TComponent>(Microsoft.AspNetCore.Components.ParameterView parameters) -> int
+BlazorNative.Renderer.NativeRenderer.MountAsync<TComponent>(Microsoft.AspNetCore.Components.ParameterView parameters, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<int>!
+BlazorNative.Renderer.NativeRenderer.MountAsync<TComponent>(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<int>!
+BlazorNative.Renderer.NativeRenderer.NativeRenderer(System.IServiceProvider! services) -> void
+BlazorNative.Renderer.NativeRenderer.RunAfterDispatch(System.Action! action) -> void
+BlazorNative.Renderer.NativeRenderer.StrictErrors.get -> bool
+BlazorNative.Renderer.NativeRenderer.StrictErrors.set -> void
+BlazorNative.Renderer.NativeRenderer.Unmount(int componentId) -> void
+BlazorNative.Renderer.NativeUiEvent
+BlazorNative.Renderer.NativeUiEvent.<Clone>$() -> BlazorNative.Renderer.NativeUiEvent!
+BlazorNative.Renderer.NativeUiEvent.Deconstruct(out int NodeId, out int HandlerId, out string! EventName, out string? Payload) -> void
+BlazorNative.Renderer.NativeUiEvent.Equals(BlazorNative.Renderer.NativeUiEvent? other) -> bool
+BlazorNative.Renderer.NativeUiEvent.EventName.get -> string!
+BlazorNative.Renderer.NativeUiEvent.EventName.init -> void
+BlazorNative.Renderer.NativeUiEvent.HandlerId.get -> int
+BlazorNative.Renderer.NativeUiEvent.HandlerId.init -> void
+BlazorNative.Renderer.NativeUiEvent.NativeUiEvent(int NodeId, int HandlerId, string! EventName, string? Payload = null) -> void
+BlazorNative.Renderer.NativeUiEvent.NodeId.get -> int
+BlazorNative.Renderer.NativeUiEvent.NodeId.init -> void
+BlazorNative.Renderer.NativeUiEvent.Payload.get -> string?
+BlazorNative.Renderer.NativeUiEvent.Payload.init -> void
+BlazorNative.Renderer.RemoveNodePatch
+BlazorNative.Renderer.RemoveNodePatch.Deconstruct(out int NodeId) -> void
+BlazorNative.Renderer.RemoveNodePatch.Equals(BlazorNative.Renderer.RemoveNodePatch? other) -> bool
+BlazorNative.Renderer.RemoveNodePatch.NodeId.get -> int
+BlazorNative.Renderer.RemoveNodePatch.NodeId.init -> void
+BlazorNative.Renderer.RemoveNodePatch.RemoveNodePatch(int NodeId) -> void
+BlazorNative.Renderer.RenderFrame
+BlazorNative.Renderer.RenderFrame.<Clone>$() -> BlazorNative.Renderer.RenderFrame!
+BlazorNative.Renderer.RenderFrame.Deconstruct(out int FrameId, out long TimestampMs, out BlazorNative.Renderer.RenderPatch![]! Patches) -> void
+BlazorNative.Renderer.RenderFrame.Equals(BlazorNative.Renderer.RenderFrame? other) -> bool
+BlazorNative.Renderer.RenderFrame.FrameId.get -> int
+BlazorNative.Renderer.RenderFrame.FrameId.init -> void
+BlazorNative.Renderer.RenderFrame.Patches.get -> BlazorNative.Renderer.RenderPatch![]!
+BlazorNative.Renderer.RenderFrame.Patches.init -> void
+BlazorNative.Renderer.RenderFrame.RenderFrame(int FrameId, long TimestampMs, BlazorNative.Renderer.RenderPatch![]! Patches) -> void
+BlazorNative.Renderer.RenderFrame.TimestampMs.get -> long
+BlazorNative.Renderer.RenderFrame.TimestampMs.init -> void
+BlazorNative.Renderer.RenderPatch
+BlazorNative.Renderer.RenderPatch.RenderPatch() -> void
+BlazorNative.Renderer.RenderPatch.RenderPatch(BlazorNative.Renderer.RenderPatch! original) -> void
+BlazorNative.Renderer.ReplaceTextPatch
+BlazorNative.Renderer.ReplaceTextPatch.Deconstruct(out int NodeId, out string! Text) -> void
+BlazorNative.Renderer.ReplaceTextPatch.Equals(BlazorNative.Renderer.ReplaceTextPatch? other) -> bool
+BlazorNative.Renderer.ReplaceTextPatch.NodeId.get -> int
+BlazorNative.Renderer.ReplaceTextPatch.NodeId.init -> void
+BlazorNative.Renderer.ReplaceTextPatch.ReplaceTextPatch(int NodeId, string! Text) -> void
+BlazorNative.Renderer.ReplaceTextPatch.Text.get -> string!
+BlazorNative.Renderer.ReplaceTextPatch.Text.init -> void
+BlazorNative.Renderer.ServiceCollectionExtensions
+BlazorNative.Renderer.SetStylePatch
+BlazorNative.Renderer.SetStylePatch.Deconstruct(out int NodeId, out string! Property, out string? Value) -> void
+BlazorNative.Renderer.SetStylePatch.Equals(BlazorNative.Renderer.SetStylePatch? other) -> bool
+BlazorNative.Renderer.SetStylePatch.NodeId.get -> int
+BlazorNative.Renderer.SetStylePatch.NodeId.init -> void
+BlazorNative.Renderer.SetStylePatch.Property.get -> string!
+BlazorNative.Renderer.SetStylePatch.Property.init -> void
+BlazorNative.Renderer.SetStylePatch.SetStylePatch(int NodeId, string! Property, string? Value) -> void
+BlazorNative.Renderer.SetStylePatch.Value.get -> string?
+BlazorNative.Renderer.SetStylePatch.Value.init -> void
+BlazorNative.Renderer.UpdatePropPatch
+BlazorNative.Renderer.UpdatePropPatch.Deconstruct(out int NodeId, out string! Name, out string? Value) -> void
+BlazorNative.Renderer.UpdatePropPatch.Equals(BlazorNative.Renderer.UpdatePropPatch? other) -> bool
+BlazorNative.Renderer.UpdatePropPatch.Name.get -> string!
+BlazorNative.Renderer.UpdatePropPatch.Name.init -> void
+BlazorNative.Renderer.UpdatePropPatch.NodeId.get -> int
+BlazorNative.Renderer.UpdatePropPatch.NodeId.init -> void
+BlazorNative.Renderer.UpdatePropPatch.UpdatePropPatch(int NodeId, string! Name, string? Value) -> void
+BlazorNative.Renderer.UpdatePropPatch.Value.get -> string?
+BlazorNative.Renderer.UpdatePropPatch.Value.init -> void
+Microsoft.Extensions.DependencyInjection.BlazorNativeRendererServicesServiceCollectionExtensions
+override BlazorNative.Renderer.AttachEventPatch.<Clone>$() -> BlazorNative.Renderer.AttachEventPatch!
+override BlazorNative.Renderer.AttachEventPatch.Equals(object? obj) -> bool
+override BlazorNative.Renderer.AttachEventPatch.GetHashCode() -> int
+override BlazorNative.Renderer.AttachEventPatch.ToString() -> string!
+override BlazorNative.Renderer.CommitFramePatch.<Clone>$() -> BlazorNative.Renderer.CommitFramePatch!
+override BlazorNative.Renderer.CommitFramePatch.Equals(object? obj) -> bool
+override BlazorNative.Renderer.CommitFramePatch.GetHashCode() -> int
+override BlazorNative.Renderer.CommitFramePatch.ToString() -> string!
+override BlazorNative.Renderer.CreateNodePatch.<Clone>$() -> BlazorNative.Renderer.CreateNodePatch!
+override BlazorNative.Renderer.CreateNodePatch.Equals(object? obj) -> bool
+override BlazorNative.Renderer.CreateNodePatch.GetHashCode() -> int
+override BlazorNative.Renderer.CreateNodePatch.ToString() -> string!
+override BlazorNative.Renderer.DetachEventPatch.<Clone>$() -> BlazorNative.Renderer.DetachEventPatch!
+override BlazorNative.Renderer.DetachEventPatch.Equals(object? obj) -> bool
+override BlazorNative.Renderer.DetachEventPatch.GetHashCode() -> int
+override BlazorNative.Renderer.DetachEventPatch.ToString() -> string!
+override BlazorNative.Renderer.NativeRenderer.Dispatcher.get -> Microsoft.AspNetCore.Components.Dispatcher!
+override BlazorNative.Renderer.NativeUiEvent.Equals(object? obj) -> bool
+override BlazorNative.Renderer.NativeUiEvent.GetHashCode() -> int
+override BlazorNative.Renderer.NativeUiEvent.ToString() -> string!
+override BlazorNative.Renderer.RemoveNodePatch.<Clone>$() -> BlazorNative.Renderer.RemoveNodePatch!
+override BlazorNative.Renderer.RemoveNodePatch.Equals(object? obj) -> bool
+override BlazorNative.Renderer.RemoveNodePatch.GetHashCode() -> int
+override BlazorNative.Renderer.RemoveNodePatch.ToString() -> string!
+override BlazorNative.Renderer.RenderFrame.Equals(object? obj) -> bool
+override BlazorNative.Renderer.RenderFrame.GetHashCode() -> int
+override BlazorNative.Renderer.RenderFrame.ToString() -> string!
+override BlazorNative.Renderer.RenderPatch.Equals(object? obj) -> bool
+override BlazorNative.Renderer.RenderPatch.GetHashCode() -> int
+override BlazorNative.Renderer.RenderPatch.ToString() -> string!
+override BlazorNative.Renderer.ReplaceTextPatch.<Clone>$() -> BlazorNative.Renderer.ReplaceTextPatch!
+override BlazorNative.Renderer.ReplaceTextPatch.Equals(object? obj) -> bool
+override BlazorNative.Renderer.ReplaceTextPatch.GetHashCode() -> int
+override BlazorNative.Renderer.ReplaceTextPatch.ToString() -> string!
+override BlazorNative.Renderer.SetStylePatch.<Clone>$() -> BlazorNative.Renderer.SetStylePatch!
+override BlazorNative.Renderer.SetStylePatch.Equals(object? obj) -> bool
+override BlazorNative.Renderer.SetStylePatch.GetHashCode() -> int
+override BlazorNative.Renderer.SetStylePatch.ToString() -> string!
+override BlazorNative.Renderer.UpdatePropPatch.<Clone>$() -> BlazorNative.Renderer.UpdatePropPatch!
+override BlazorNative.Renderer.UpdatePropPatch.Equals(object? obj) -> bool
+override BlazorNative.Renderer.UpdatePropPatch.GetHashCode() -> int
+override BlazorNative.Renderer.UpdatePropPatch.ToString() -> string!
+override sealed BlazorNative.Renderer.AttachEventPatch.Equals(BlazorNative.Renderer.RenderPatch? other) -> bool
+override sealed BlazorNative.Renderer.CommitFramePatch.Equals(BlazorNative.Renderer.RenderPatch? other) -> bool
+override sealed BlazorNative.Renderer.CreateNodePatch.Equals(BlazorNative.Renderer.RenderPatch? other) -> bool
+override sealed BlazorNative.Renderer.DetachEventPatch.Equals(BlazorNative.Renderer.RenderPatch? other) -> bool
+override sealed BlazorNative.Renderer.RemoveNodePatch.Equals(BlazorNative.Renderer.RenderPatch? other) -> bool
+override sealed BlazorNative.Renderer.ReplaceTextPatch.Equals(BlazorNative.Renderer.RenderPatch? other) -> bool
+override sealed BlazorNative.Renderer.SetStylePatch.Equals(BlazorNative.Renderer.RenderPatch? other) -> bool
+override sealed BlazorNative.Renderer.UpdatePropPatch.Equals(BlazorNative.Renderer.RenderPatch? other) -> bool
+static BlazorNative.Renderer.AttachEventPatch.operator !=(BlazorNative.Renderer.AttachEventPatch? left, BlazorNative.Renderer.AttachEventPatch? right) -> bool
+static BlazorNative.Renderer.AttachEventPatch.operator ==(BlazorNative.Renderer.AttachEventPatch? left, BlazorNative.Renderer.AttachEventPatch? right) -> bool
+static BlazorNative.Renderer.CommitFramePatch.operator !=(BlazorNative.Renderer.CommitFramePatch? left, BlazorNative.Renderer.CommitFramePatch? right) -> bool
+static BlazorNative.Renderer.CommitFramePatch.operator ==(BlazorNative.Renderer.CommitFramePatch? left, BlazorNative.Renderer.CommitFramePatch? right) -> bool
+static BlazorNative.Renderer.CreateNodePatch.operator !=(BlazorNative.Renderer.CreateNodePatch? left, BlazorNative.Renderer.CreateNodePatch? right) -> bool
+static BlazorNative.Renderer.CreateNodePatch.operator ==(BlazorNative.Renderer.CreateNodePatch? left, BlazorNative.Renderer.CreateNodePatch? right) -> bool
+static BlazorNative.Renderer.DetachEventPatch.operator !=(BlazorNative.Renderer.DetachEventPatch? left, BlazorNative.Renderer.DetachEventPatch? right) -> bool
+static BlazorNative.Renderer.DetachEventPatch.operator ==(BlazorNative.Renderer.DetachEventPatch? left, BlazorNative.Renderer.DetachEventPatch? right) -> bool
+static BlazorNative.Renderer.NativeUiEvent.operator !=(BlazorNative.Renderer.NativeUiEvent? left, BlazorNative.Renderer.NativeUiEvent? right) -> bool
+static BlazorNative.Renderer.NativeUiEvent.operator ==(BlazorNative.Renderer.NativeUiEvent? left, BlazorNative.Renderer.NativeUiEvent? right) -> bool
+static BlazorNative.Renderer.RemoveNodePatch.operator !=(BlazorNative.Renderer.RemoveNodePatch? left, BlazorNative.Renderer.RemoveNodePatch? right) -> bool
+static BlazorNative.Renderer.RemoveNodePatch.operator ==(BlazorNative.Renderer.RemoveNodePatch? left, BlazorNative.Renderer.RemoveNodePatch? right) -> bool
+static BlazorNative.Renderer.RenderFrame.operator !=(BlazorNative.Renderer.RenderFrame? left, BlazorNative.Renderer.RenderFrame? right) -> bool
+static BlazorNative.Renderer.RenderFrame.operator ==(BlazorNative.Renderer.RenderFrame? left, BlazorNative.Renderer.RenderFrame? right) -> bool
+static BlazorNative.Renderer.RenderPatch.operator !=(BlazorNative.Renderer.RenderPatch? left, BlazorNative.Renderer.RenderPatch? right) -> bool
+static BlazorNative.Renderer.RenderPatch.operator ==(BlazorNative.Renderer.RenderPatch? left, BlazorNative.Renderer.RenderPatch? right) -> bool
+static BlazorNative.Renderer.ReplaceTextPatch.operator !=(BlazorNative.Renderer.ReplaceTextPatch? left, BlazorNative.Renderer.ReplaceTextPatch? right) -> bool
+static BlazorNative.Renderer.ReplaceTextPatch.operator ==(BlazorNative.Renderer.ReplaceTextPatch? left, BlazorNative.Renderer.ReplaceTextPatch? right) -> bool
+static BlazorNative.Renderer.ServiceCollectionExtensions.AddBlazorNativeRenderer(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static BlazorNative.Renderer.SetStylePatch.operator !=(BlazorNative.Renderer.SetStylePatch? left, BlazorNative.Renderer.SetStylePatch? right) -> bool
+static BlazorNative.Renderer.SetStylePatch.operator ==(BlazorNative.Renderer.SetStylePatch? left, BlazorNative.Renderer.SetStylePatch? right) -> bool
+static BlazorNative.Renderer.UpdatePropPatch.operator !=(BlazorNative.Renderer.UpdatePropPatch? left, BlazorNative.Renderer.UpdatePropPatch? right) -> bool
+static BlazorNative.Renderer.UpdatePropPatch.operator ==(BlazorNative.Renderer.UpdatePropPatch? left, BlazorNative.Renderer.UpdatePropPatch? right) -> bool
+static Microsoft.Extensions.DependencyInjection.BlazorNativeRendererServicesServiceCollectionExtensions.AddBlazorNativeRendererServices(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+virtual BlazorNative.Renderer.RenderPatch.EqualityContract.get -> System.Type!
+virtual BlazorNative.Renderer.RenderPatch.Equals(BlazorNative.Renderer.RenderPatch? other) -> bool
+virtual BlazorNative.Renderer.RenderPatch.PrintMembers(System.Text.StringBuilder! builder) -> bool
