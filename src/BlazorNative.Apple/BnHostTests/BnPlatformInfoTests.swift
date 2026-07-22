@@ -39,6 +39,26 @@ final class BnPlatformInfoTests: XCTestCase {
         XCTAssertEqual(MemoryLayout<bn_init_options>.offset(of: \.platformInfoKind), 24,
                        "platformInfoKind must be appended at offset 24")
 
+        // PHASE 11.4 GATE C (#155): logLevel at offset 28. THESE TWO ASSERTIONS
+        // TOGETHER ARE THE PROOF THAT THE FIELD WAS FREE — the size line above is
+        // UNCHANGED from Phase 10.0, because platformInfoKind at 24 was already
+        // followed by 4 bytes of tail padding (the struct aligns to 8; it holds
+        // pointers). The new int32 lands in bytes that were already allocated, so
+        // the init-INPUT struct carries the shell's verbosity at a cost of ZERO
+        // bytes and the frozen 80-byte callbacks bridge is not involved at all.
+        // Twins: NativeShellBridgeTests.InitOptionsStruct_Is32Bytes… (C#) and
+        // BootSmokeNativeAndroidTest.struct_sizes_match_c_abi (Kotlin/JNA).
+        XCTAssertEqual(MemoryLayout<bn_init_options>.offset(of: \.logLevel), 28,
+                       "logLevel must land at offset 28 — the tail padding that already existed")
+
+        // The wire ordinals the shell encodes against (BlazorNative.Core.BnLogLevel).
+        XCTAssertEqual(BnLogLevel.unset, 0, "ordinal 0 is 'unset' → the runtime default")
+        XCTAssertEqual(BnLogLevel.error, 1)
+        XCTAssertEqual(BnLogLevel.warn, 2)
+        XCTAssertEqual(BnLogLevel.info, 3)
+        XCTAssertEqual(BnLogLevel.debug, 4)
+        XCTAssertEqual(BnLogLevel.verbose, 5)
+
         // The ordinal contract (BlazorNative.Core.PlatformKind: DevHost=0, Android=1,
         // iOS=2, …). The iOS shell sends iOS — and CRUCIALLY not Android.
         XCTAssertEqual(BnPlatformKind.iOS, 2, "iOS is ordinal 2")
@@ -59,7 +79,8 @@ final class BnPlatformInfoTests: XCTestCase {
                     platformInfoOs: osPtr,
                     platformInfoApiLevel: 0,
                     platformInfoNote: notePtr,
-                    platformInfoKind: BnPlatformKind.iOS)
+                    platformInfoKind: BnPlatformKind.iOS,
+                    logLevel: BnLogLevel.unset)  // Phase 11.4: 0 → the runtime default (Warn)
                 return blazornative_init(&opts)
             }
         }

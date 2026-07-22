@@ -4,7 +4,7 @@
 #
 #   build-test (windows-latest) — the local verification procedure verbatim
 #   (setup.ps1 §1–7 documents the toolchain pins):
-#     build (analyzers ride it) → .NET tests (848 passed / 0 skipped) →
+#     build (analyzers ride it) → .NET tests (856 passed / 0 skipped) →
 #     three NativeAOT publishes of samples/BlazorNative.SampleApp — the
 #     publish head since Phase 8.0: the app owns PublishAot, the exports stay
 #     in Runtime via UnmanagedEntryPointsAssembly, and the artifact is
@@ -1445,7 +1445,33 @@ jobs:
       # exports stay 10 — this phase is designed specifically not to spend that.
       # The JVM baseline moves in the same commit (120 -> 148, below); the iOS lane
       # is Gate C and does not move here.
-      - name: .NET tests (assert 848 passed / 0 skipped)
+      #
+      # 848 -> 856 (PHASE 11.4 GATE C, +8 -- Runtime.Tests 683 -> 691): the iOS half.
+      # WHY THIS GATE MATTERS MORE THAN ITS SIZE SUGGESTS: the Swift and Objective-C++
+      # sources it pins are built by EXACTLY ONE THING, ios.yml on a macOS runner. No
+      # required lane compiles them, and most contributors have no Mac. These eight
+      # source-scanning tests are therefore the ONLY feedback on the iOS shell that
+      # arrives before CI, which is why the phase spent them here.
+      #   +4  NSLogDriftTests (NEW FILE) -- design 8.1 pin 6b, "0 bare NSLog under
+      #       BnHost/" after Gate C swept all 78 shipped sites onto BnLog / os_log:
+      #       +1  NoBareNSLog_SurvivesUnderBnHost           (the pin)
+      #       +1  TheScan_IsNotVacuous                      (it read the right 9 files)
+      #       +1  TheTestBundleExemption_IsRealAndStillHoldsNSLog (the regex still
+      #           matches where a match is KNOWN to exist -- BnHostTests' 24, which STAY)
+      #       +1  TheSweptFiles_StillRouteThroughTheSeam    (the sweep MIGRATED the
+      #           diagnostics; it did not satisfy the pin by DELETING them)
+      #   +4  BnLogFormatDriftTests (existing file) -- R1 grew a third and a fourth
+      #       copy of the line format at Gate C:
+      #       +1  TheLinePrefix_IsIdenticalInCSharpAndSwift
+      #       +1  EveryLevelsTagCharacter_IsIdenticalInCSharpAndSwift
+      #       +1  EveryLevelsFormattedLine_ParsesBackToTheSameTriple_InSwift
+      #       +1  TheCdeclShimsHeaderMacros_MatchTheLevelOrdinals (BnLog.h's BN_LOG_*
+      #           macros, which BnYogaLayout.mm hands to the @_cdecl BnLogC shim)
+      # STILL NO ABI CHANGE: bn_init_options gained a logLevel field at offset 28 --
+      # the tail padding Phase 10.0 had already allocated -- so sizeof stays 32, the
+      # callbacks bridge stays 80 bytes and the exports stay 10. The JVM baseline does
+      # not move (Gate C touches no Kotlin); the iOS lane gains XCTest cases.
+      - name: .NET tests (assert 856 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -1463,8 +1489,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 848 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 848 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 856 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 856 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # ── NativeAOT publishes + nine-export verification ────────────────────

@@ -29,7 +29,9 @@
 // Struct-layout contract — mirror of src/BlazorNative.Runtime/Exports.cs
 // (BlazorNativeInitOptions / BlazorNativeInitResult, [StructLayout(Sequential)],
 // little-endian, 8-byte pointers). The C compiler reproduces the same layout:
-//   bn_init_options : os@0(ptr) apiLevel@8(int) pad@12 note@16(ptr) kind@24(int) → 32 bytes  (Phase 10.0 #121)
+//   bn_init_options : os@0(ptr) apiLevel@8(int) pad@12 note@16(ptr) kind@24(int) logLevel@28(int) → 32 bytes
+//                     (kind: Phase 10.0 #121 · logLevel: Phase 11.4 Gate C #155 — it landed in the
+//                      TAIL PADDING that already existed, so the size is UNCHANGED at 32)
 //   bn_init_result  : status@0(int) pad@4 error@8(ptr) version@16(ptr) → 24 bytes
 // (This mirrors the proven 5.0 spike stub, recorded in the Phase 5.2 conclusion:
 // docs/plans/2026-07-12-phase-5.2-conclusion.md.)
@@ -57,12 +59,27 @@ extern "C" {
 // the struct grows 24 → 32 bytes (kind@24 + 4 bytes tail padding to the 8-byte
 // pointer alignment). This is the init-INPUT struct, NOT the frozen 80-byte
 // callbacks bridge (bn_bridge_callbacks below — unchanged).
+//
+// PHASE 11.4 GATE C (#155) appended `logLevel` at OFFSET 28 — AND IT COST ZERO
+// BYTES. platformInfoKind at 24 was followed by 4 bytes of TAIL PADDING (the
+// struct's alignment is 8 because it holds pointers), so the new int32 lands in
+// padding that was already being allocated: sizeof stays 32 and
+// BnPlatformInfoTests' `size == 32` pin is UNCHANGED rather than edited — which
+// is precisely what proves the field was free (design §5.4). Contrast Phase
+// 10.0, which DID grow the struct 24 → 32.
+//
+// Ordinal 0 means "unset": a shell that predates the field leaves it zero and the
+// runtime applies its own default (Warn) — the same safe non-lying rule
+// platformInfoKind's ordinal 0 → DevHost follows. Values are BnLogLevel's
+// (BN_LOG_* in BnLog.h; Error=1 … Verbose=5), byte-identical to
+// BlazorNative.Core.BnLogLevel and to Kotlin's io.blazornative.jni.BnLogLevel.
 typedef struct {
     const char* platformInfoOs;    // offset 0  — host-allocated UTF-8
     int32_t     platformInfoApiLevel; // offset 8
     const char* platformInfoNote;  // offset 16 — optional (may be NULL)
     int32_t     platformInfoKind;  // offset 24 — PlatformKind ordinal (Phase 10.0)
-} bn_init_options;                 // 32 bytes
+    int32_t     logLevel;          // offset 28 — BnLogLevel ordinal (Phase 11.4; was tail padding)
+} bn_init_options;                 // 32 bytes (UNCHANGED by the 11.4 append)
 
 // Mirror of BlazorNativeInitResult (Exports.cs). Returned BY VALUE.
 typedef struct {

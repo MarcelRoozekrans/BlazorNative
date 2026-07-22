@@ -352,12 +352,12 @@ final class BnCamera {
         let upright = normalizedUpright(image)
         let scaled = downscaled(upright, maxDim: options.maxDim)
         guard let cg = scaled.cgImage else {
-            NSLog("[BnCamera] processAndWrite: the captured image has no pixel buffer")
+            BnLog.error("BnCamera", "processAndWrite: the captured image has no pixel buffer")
             return CaptureOutcome(status: BnCameraStatus.error, payload: nil)
         }
         let quality = CGFloat(min(max(options.quality, 1), 100)) / 100.0
         guard let jpeg = scaled.jpegData(compressionQuality: quality) else {
-            NSLog("[BnCamera] processAndWrite: JPEG encode returned nil")
+            BnLog.error("BnCamera", "processAndWrite: JPEG encode returned nil")
             return CaptureOutcome(status: BnCameraStatus.error, payload: nil)
         }
         do {
@@ -370,7 +370,7 @@ final class BnCamera {
             ])
             return CaptureOutcome(status: BnCameraStatus.captured, payload: payload)
         } catch {
-            NSLog("[BnCamera] processAndWrite: could not write the capture file: \(error)")
+            BnLog.error("BnCamera", "processAndWrite: could not write the capture file: \(error)")
             return CaptureOutcome(status: BnCameraStatus.error, payload: nil)
         }
     }

@@ -218,7 +218,7 @@ final class BnSecureStorage {
                 kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
                 .biometryCurrentSet,
                 &acError) else {
-                NSLog("[BnSecureStorage] set('\(key)') auth: SecAccessControl create failed — Unavailable")
+                BnLog.error("BnSecureStorage", "set('\(key)') auth: SecAccessControl create failed — Unavailable")
                 return BnSecureStorageStatus.unavailable
             }
             Self.lastSetAccessControlForTest = access // the construction spy — the code REQUESTED the binding
@@ -240,7 +240,7 @@ final class BnSecureStorage {
         }
         let status = SecItemAdd(query as CFDictionary, nil)
         if status == errSecSuccess { return BnSecureStorageStatus.ok }
-        NSLog("[BnSecureStorage] set('\(key)') SecItemAdd → OSStatus \(status)")
+        BnLog.error("BnSecureStorage", "set('\(key)') SecItemAdd → OSStatus \(status)")
         return mapAddError(status)
     }
 
@@ -267,7 +267,7 @@ final class BnSecureStorage {
         Self.authBoundAccounts.remove(key)
         let status = SecItemDelete(baseQuery(key) as CFDictionary)
         if status == errSecSuccess || status == errSecItemNotFound { return BnSecureStorageStatus.ok }
-        NSLog("[BnSecureStorage] delete('\(key)') SecItemDelete → OSStatus \(status)")
+        BnLog.error("BnSecureStorage", "delete('\(key)') SecItemDelete → OSStatus \(status)")
         return BnSecureStorageStatus.error
     }
 
@@ -376,7 +376,7 @@ final class BnSecureStorage {
         case errSecItemNotFound:
             return .notFound
         default:
-            NSLog("[BnSecureStorage] probe('\(key)') SecItemCopyMatching → OSStatus \(status)")
+            BnLog.error("BnSecureStorage", "probe('\(key)') SecItemCopyMatching → OSStatus \(status)")
             return .failed
         }
     }
