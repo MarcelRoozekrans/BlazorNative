@@ -216,8 +216,8 @@ internal static unsafe class HostSession
         Dictionary<string, Func<NativeRenderer, int>> components = Components;
         if (components.Count == 0)
         {
-            Console.Error.WriteLine(
-                "[HostSession] no pages are registered — the app assembly must call "
+            BnLog.Error("HostSession",
+                "no pages are registered — the app assembly must call "
                 + "BlazorNativeApp.RegisterPages at startup (a [ModuleInitializer]; "
                 + "see samples/BlazorNative.SampleApp).");
             return 1;
@@ -246,7 +246,7 @@ internal static unsafe class HostSession
         {
             // ex.ToString() so the InnerException chain + stack survive the
             // C-ABI crossing (same rationale as Exports.cs Init's catch).
-            Console.Error.WriteLine($"[HostSession] mount '{name}' failed: {ex}");
+            BnLog.Error("HostSession", $"mount '{name}' failed", ex);
             return 2;
         }
     }

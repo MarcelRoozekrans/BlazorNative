@@ -78,6 +78,24 @@ public struct BlazorNativeInitOptions
     // lockstep with the C header / Kotlin JNA mirror; this is the init-INPUT struct,
     // NOT the frozen 80-byte callbacks bridge.
     public int    PlatformInfoKind;
+    // Phase 11.4 Gate A (#155): the shell's declared BnLogLevel ordinal
+    // (Unset=0, Error=1, Warn=2, Info=3, Debug=4, Verbose=5 — mirrors
+    // BlazorNative.Core.BnLogLevel).
+    //
+    // THIS FIELD COSTS ZERO BYTES, which is the whole reason it is allowed to
+    // exist inside a frozen-ABI milestone. The struct's alignment is 8 (it holds
+    // IntPtrs), so PlatformInfoKind at offset 24 was already followed by 4 bytes
+    // of TAIL PADDING. LogLevel lands in that padding at offset 28 and
+    // Marshal.SizeOf stays 32 — measured, not assumed, and pinned BOTH ways by
+    // NativeShellBridgeTests.InitOptionsStruct_Is32Bytes_… (SizeOf == 32 AND
+    // OffsetOf(LogLevel) == 28; either assertion alone would let the field be
+    // smuggled in at a cost).
+    //
+    // Strictly safer than the M10 growth that established the precedent, which
+    // DID change the size 24 → 32: a shell that predates this field allocates 32
+    // bytes anyway and leaves offset 28 zero, and ordinal 0 = unset = Warn, the
+    // quiet Release default. Back-compatible by construction.
+    public int    LogLevel;
 }
 
 /// <summary>The init-OUTPUT struct <c>blazornative_init</c> writes back to the shell.</summary>
@@ -126,6 +144,15 @@ public static class Exports
     {
         try
         {
+            // Phase 11.4 (#155): the log threshold FIRST — before anything else in
+            // this method can write a line. Init's own failure path is the highest
+            // -value diagnostic the framework ever emits, so it must be governed by
+            // the level the shell actually asked for, not by whatever the default
+            // was when the module loaded. Ordinal 0 (a shell predating the field)
+            // resolves to the quiet Warn default.
+            if (opts != null)
+                BnLog.SetLevelFromOrdinal(opts->LogLevel);
+
             // Touch the BlazorInterop static ctor explicitly so VerifyAccessors
             // runs at init time (not lazily at first event dispatch).
             // Throws BlazorVersionMismatchException if Blazor's internal layout
@@ -208,7 +235,7 @@ public static class Exports
         {
             // void export — no rc channel; detail on stderr. The wrap exists for
             // the BN0020 boundary shape: nothing may throw across the C-ABI.
-            Console.Error.WriteLine($"[Exports] shutdown failed: {ex}");
+            BnLog.Error("Exports", "shutdown failed", ex);
         }
     }
 
@@ -246,7 +273,7 @@ public static class Exports
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[Exports] register_frame_callback failed: {ex}");
+            BnLog.Error("Exports", "register_frame_callback failed", ex);
             return 2;
         }
     }
@@ -272,7 +299,7 @@ public static class Exports
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[Exports] mount failed: {ex}");
+            BnLog.Error("Exports", "mount failed", ex);
             return 2;
         }
     }
@@ -295,7 +322,7 @@ public static class Exports
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[Exports] dispatch_event handler {handlerId} failed: {ex}");
+            BnLog.Error("Exports", $"dispatch_event handler {handlerId} failed", ex);
             return 2;
         }
     }
@@ -345,7 +372,9 @@ public static class Exports
         }
         catch (FormatException ex)
         {
-            Console.Error.WriteLine($"[Exports] dispatch_event handler {handlerId}: bad args — {ex.Message}");
+            // Warn, not Error: malformed args are the HOST bending the contract, and
+            // rc 3 already carries the fact to the caller. The line adds the detail.
+            BnLog.Warn("Exports", $"dispatch_event handler {handlerId}: bad args — {ex.Message}");
             return 3;
         }
 
@@ -354,8 +383,8 @@ public static class Exports
         // wrong event — reject as malformed input instead.
         if (handlerId > int.MaxValue)
         {
-            Console.Error.WriteLine(
-                $"[Exports] dispatch_event: handlerId {handlerId} exceeds the handler table's int range — rejected as malformed");
+            BnLog.Warn("Exports",
+                $"dispatch_event: handlerId {handlerId} exceeds the handler table's int range — rejected as malformed");
             return 3;
         }
 
@@ -378,7 +407,7 @@ public static class Exports
             // re-render, or frame delivery threw — visible via rc 2 + full
             // detail on stderr so a device-side crash is diagnosable from
             // logcat.
-            Console.Error.WriteLine($"[Exports] dispatch_event handler {handlerId} faulted: {ex}");
+            BnLog.Error("Exports", $"dispatch_event handler {handlerId} faulted", ex);
             return 2;
         }
     }
@@ -412,7 +441,7 @@ public static class Exports
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[Exports] register_bridge failed: {ex}");
+            BnLog.Error("Exports", "register_bridge failed", ex);
             return 2;
         }
     }
@@ -435,14 +464,15 @@ public static class Exports
         {
             if (response == null)
             {
-                Console.Error.WriteLine($"[Exports] fetch_complete id {requestId}: null response pointer");
+                // Warn: a null pointer is the host bending the contract; rc 2 carries it.
+                BnLog.Warn("Exports", $"fetch_complete id {requestId}: null response pointer");
                 return 2;
             }
             return NativeShellBridge.CompleteFetch(requestId, in *response);
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[Exports] fetch_complete id {requestId} failed: {ex}");
+            BnLog.Error("Exports", $"fetch_complete id {requestId} failed", ex);
             return 2;
         }
     }
@@ -472,7 +502,7 @@ public static class Exports
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[Exports] host_event failed: {ex}");
+            BnLog.Error("Exports", "host_event failed", ex);
             return 2;
         }
     }
@@ -502,7 +532,7 @@ public static class Exports
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[Exports] host_call_complete id {requestId} failed: {ex}");
+            BnLog.Error("Exports", $"host_call_complete id {requestId} failed", ex);
             return 2;
         }
     }
@@ -587,7 +617,7 @@ public static class Exports
         {
             // Defensive: RaiseNativeEvent isolates per-subscriber, so this only
             // trips on an unexpected fault OUTSIDE a subscriber body.
-            Console.Error.WriteLine($"[Exports] host_event '{name}' faulted: {ex}");
+            BnLog.Error("Exports", $"host_event '{name}' faulted", ex);
             return 2;
         }
     }
@@ -610,7 +640,7 @@ public static class Exports
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[Exports] host_event 'back' faulted: {ex}");
+            BnLog.Error("Exports", "host_event 'back' faulted", ex);
             return 2;
         }
     }
@@ -647,7 +677,7 @@ public static class Exports
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[Exports] host_event 'navigate' faulted: {ex}");
+            BnLog.Error("Exports", "host_event 'navigate' faulted", ex);
             return 2;
         }
     }

@@ -1,1 +1,28 @@
 #nullable enable
+BlazorNative.Core.BnLog
+BlazorNative.Core.BnLogLevel
+BlazorNative.Core.BnLogLevel.Debug = 4 -> BlazorNative.Core.BnLogLevel
+BlazorNative.Core.BnLogLevel.Error = 1 -> BlazorNative.Core.BnLogLevel
+BlazorNative.Core.BnLogLevel.Info = 3 -> BlazorNative.Core.BnLogLevel
+BlazorNative.Core.BnLogLevel.Unset = 0 -> BlazorNative.Core.BnLogLevel
+BlazorNative.Core.BnLogLevel.Verbose = 5 -> BlazorNative.Core.BnLogLevel
+BlazorNative.Core.BnLogLevel.Warn = 2 -> BlazorNative.Core.BnLogLevel
+const BlazorNative.Core.BnLog.DefaultLevel = BlazorNative.Core.BnLogLevel.Warn -> BlazorNative.Core.BnLogLevel
+const BlazorNative.Core.BnLog.LinePrefix = "[BN|" -> string!
+static BlazorNative.Core.BnLog.Debug(string! category, string! message) -> void
+static BlazorNative.Core.BnLog.Error(string! category, string! message) -> void
+static BlazorNative.Core.BnLog.Error(string! category, string! message, System.Exception! exception) -> void
+static BlazorNative.Core.BnLog.FormatException(System.Exception! exception, BlazorNative.Core.BnLogLevel verbosity) -> string!
+static BlazorNative.Core.BnLog.FormatLine(BlazorNative.Core.BnLogLevel level, string! category, string! message) -> string!
+static BlazorNative.Core.BnLog.Info(string! category, string! message) -> void
+static BlazorNative.Core.BnLog.IsEnabled(BlazorNative.Core.BnLogLevel level) -> bool
+static BlazorNative.Core.BnLog.Level.get -> BlazorNative.Core.BnLogLevel
+static BlazorNative.Core.BnLog.Level.set -> void
+static BlazorNative.Core.BnLog.SetLevelFromOrdinal(int ordinal) -> void
+static BlazorNative.Core.BnLog.Sink.get -> System.Action<BlazorNative.Core.BnLogLevel, string!, string!>?
+static BlazorNative.Core.BnLog.Sink.set -> void
+static BlazorNative.Core.BnLog.Tag(BlazorNative.Core.BnLogLevel level) -> char
+static BlazorNative.Core.BnLog.Verbose(string! category, string! message) -> void
+static BlazorNative.Core.BnLog.Warn(string! category, string! message) -> void
+static BlazorNative.Core.BnLog.Warn(string! category, string! message, System.Exception! exception) -> void
+static BlazorNative.Core.BnLog.Write(BlazorNative.Core.BnLogLevel level, string! category, string! message) -> void
