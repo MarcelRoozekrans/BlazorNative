@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.5.0](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.4.1...v0.5.0) (2026-07-22)
+
+
+### Features
+
+* add the BnLog level-gated logging seam and migrate all 31 .NET call sites ([#185](https://github.com/MarcelRoozekrans/BlazorNative/issues/185)) ([b329851](https://github.com/MarcelRoozekrans/BlazorNative/commit/b3298517a550b78900937d7aafa4595b973bc6c6))
+* pump the runtime's stderr into logcat and carry the log level from the shell ([#187](https://github.com/MarcelRoozekrans/BlazorNative/issues/187)) ([71868d0](https://github.com/MarcelRoozekrans/BlazorNative/commit/71868d051f222ae13f2a88b54c06a05f5fda005d))
+* sweep the iOS shell's 78 NSLog sites onto an os_log seam (11.4 gate c) ([#188](https://github.com/MarcelRoozekrans/BlazorNative/issues/188)) ([71470db](https://github.com/MarcelRoozekrans/BlazorNative/commit/71470dbba75aeb5076297f7e4a0e0285f5a4d6bc))
+
+
+### Bug Fixes
+
+* abort the mount on a parameter-binding fault so [#164](https://github.com/MarcelRoozekrans/BlazorNative/issues/164) stops reporting rc 0 ([#189](https://github.com/MarcelRoozekrans/BlazorNative/issues/189)) ([f53f74a](https://github.com/MarcelRoozekrans/BlazorNative/commit/f53f74a52170011a789873da672c540962459f70))
+* make the android stderr pump report a failed install honestly ([#191](https://github.com/MarcelRoozekrans/BlazorNative/issues/191)) ([#193](https://github.com/MarcelRoozekrans/BlazorNative/issues/193)) ([cf80930](https://github.com/MarcelRoozekrans/BlazorNative/commit/cf80930fb1f673bf7f5cbe2dd20a47e502b8c3b1))
+
 ## [0.4.1](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.4.0...v0.4.1) (2026-07-21)
 
 
