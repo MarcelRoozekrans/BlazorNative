@@ -282,7 +282,7 @@ Each count is asserted by a workflow — but **not all four gate a pull request,
 and the honest split matters.** Only the `build-test` lane is a required check, so a
 drift in the **.NET (864)** or the **JVM `testDebugUnitTest` (148)** count **fails the
 PR build** — both are load-bearing, and the JVM guard is not a formality: it caught a
-real break in Phase 10.1. The **Android (212)** and **iOS (242)** counts are asserted in
+real break in Phase 10.1. The **Android (213)** and **iOS (242)** counts are asserted in
 the `android-instrumented.yml` (nightly + manual dispatch) and `ios.yml` (on merge to
 `main` + manual dispatch) lanes, which are **advisory, not required** — a drift there reds
 that lane, not your PR. The `Asserted by` column below names which is which.
@@ -291,8 +291,16 @@ that lane, not your PR. The `Asserted by` column below names which is which.
 |---|---|---|---|
 | .NET | `dotnet test` | 864 passed / 0 skipped | `ci.yml` → `build-test` — **required, gates the PR** |
 | JVM (JNA + win-x64 .dll) | `gradlew testDebugUnitTest` | 148 | `ci.yml` → `build-test` — **required, gates the PR** |
-| Android (instrumented, AVD) | `gradlew connectedAndroidTest` | 212 | `android-instrumented.yml` — advisory (nightly/dispatch) |
+| Android (instrumented, AVD) | `gradlew connectedAndroidTest` | 213 | `android-instrumented.yml` — advisory (nightly/dispatch) |
 | iOS (XCTest, simulator) | `xcodebuild test` | 242 | `ios.yml` — advisory (on-merge/dispatch) |
+
+⚠ **The Android 213 has been run at 212/213, not yet at 213/213.**
+[#191](https://github.com/MarcelRoozekrans/BlazorNative/issues/191)'s dispatch proved the Android
+stderr transport works on API 34 (`dup2Result=2`, reader alive, the explicit-fd-2 write
+round-tripped) and identified the original red as **test-side**: `FileDescriptor.err` is an ART
+dup at fd 54, not the process stderr. The discriminator that reported this has since been inverted
+into a passing invariant, so the lane is **expected** to be fully green — but that has not been
+observed yet and needs one more dispatch.
 
 **The gate is the truth; this table is a copy of it.** When the two disagree, the workflow is
 right — and they have disagreed before: for four milestones this table read 333 / 83 / 111 / 72
