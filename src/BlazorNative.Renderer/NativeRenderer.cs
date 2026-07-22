@@ -92,7 +92,12 @@ public sealed class NativeRenderer : BlazorRenderer
     /// rc 2; no double-report).
     /// Default FALSE — the deliberate production POC posture: renderer errors
     /// log to stderr rather than crash the host process (a diagnostics
-    /// surface is M4+ work). ALL test harnesses enable it: this silent
+    /// surface is M4+ work). ONE carve-out since Phase 11.4 Gate D (#164):
+    /// PARAMETER-BINDING faults abort the mount (rc 2) even non-strict — they
+    /// are author bugs, never transient, and log-and-continue leaves a
+    /// half-rendered screen. See <see cref="HandleException"/>; this flag is
+    /// still what governs every OTHER fault class.
+    /// ALL test harnesses enable it: this silent
     /// swallow hid Bug A, Bug B, and the 3.2 diff-cursor bug for days each.
     /// Threading: set before mount, or from the renderer thread; the property
     /// is not synchronized, so a cross-thread mid-render flip races (same
@@ -433,6 +438,11 @@ public sealed class NativeRenderer : BlazorRenderer
         return Task.CompletedTask;
     }
 
+    /// <summary>The last parameter-binding fault this renderer reported
+    /// (Phase 11.4 Gate D). Renderer-scoped and single-threaded like every
+    /// other field here; see the dedupe note in <see cref="HandleException"/>.</summary>
+    private Exception? _reportedBindingFault;
+
     protected override void HandleException(Exception exception)
     {
         // Inside a UI-event dispatch window, remember the first exception so
@@ -453,6 +463,46 @@ public sealed class NativeRenderer : BlazorRenderer
         // why production stays on the log path below.
         if (StrictErrors)
             System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(exception).Throw();
+
+        // Phase 11.4 Gate D (#164): a PARAMETER-BINDING fault is not a
+        // recoverable render fault and never was. It is an author bug —
+        // `@bind-Value` where the property is `Checked` — that cannot be
+        // transient, fails identically on every run of every device, and whose
+        // log-and-continue outcome is a half-rendered screen the user cannot
+        // report. It aborts the mount instead, and the caller boundary
+        // (HostSession.TryMount's catch) maps that to the ALREADY-DOCUMENTED
+        // rc 2. No new rc: BlazorNativeRuntime.kt's `else -> throw` treats an
+        // unknown rc as fatal, so a "non-fatal rc 4" would hard-crash every
+        // consumer still on an older COPIED shell — the StrictErrors-in-
+        // production outcome #164 rules out, arriving through the back door.
+        // rc 2 both shells already handle correctly today.
+        //
+        // This is NOT the strict-mode flip: StrictErrors makes EVERY render
+        // fault fatal, including the genuinely recoverable ones. The posture
+        // below is not reversed, it is SCOPED — see the classifier's contract
+        // (BlazorInterop.ParameterBindingFrames) for what is in and what is
+        // deliberately out.
+        if (BlazorInterop.IsParameterBindingFault(exception))
+        {
+            // Log ONCE per fault instance. The rethrow unwinds through Blazor's
+            // own render machinery, which routes it back here (RenderRootComponentAsync
+            // → SupplyCombinedParameters → HandleExceptionViaErrorBoundary, then again
+            // as the parent's queued render tears down) — three identical
+            // Exception.ToString() blobs in logcat for one author bug is exactly
+            // the noise §4.3 and #155 are about. Reference identity, not equality:
+            // a genuinely SECOND binding fault is a different instance and is
+            // reported.
+            if (!ReferenceEquals(exception, _reportedBindingFault))
+            {
+                _reportedBindingFault = exception;
+                BnLog.Error("BlazorNative.Renderer",
+                    "parameter-binding fault — aborting the mount (#164): a component was given a "
+                    + "parameter it does not declare, or its setter threw. This is an author bug, "
+                    + "not a transient fault, so the mount fails (rc 2) instead of half-rendering.",
+                    exception);
+            }
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(exception).Throw();
+        }
 
         BnLog.Error("BlazorNative.Renderer", "render fault", exception);
     }

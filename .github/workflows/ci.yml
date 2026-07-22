@@ -4,7 +4,7 @@
 #
 #   build-test (windows-latest) — the local verification procedure verbatim
 #   (setup.ps1 §1–7 documents the toolchain pins):
-#     build (analyzers ride it) → .NET tests (856 passed / 0 skipped) →
+#     build (analyzers ride it) → .NET tests (864 passed / 0 skipped) →
 #     three NativeAOT publishes of samples/BlazorNative.SampleApp — the
 #     publish head since Phase 8.0: the app owns PublishAot, the exports stay
 #     in Runtime via UnmanagedEntryPointsAssembly, and the artifact is
@@ -1471,7 +1471,36 @@ jobs:
       # the tail padding Phase 10.0 had already allocated -- so sizeof stays 32, the
       # callbacks bridge stays 80 bytes and the exports stay 10. The JVM baseline does
       # not move (Gate C touches no Kotlin); the iOS lane gains XCTest cases.
-      - name: .NET tests (assert 856 passed / 0 skipped)
+      #
+      # 856 -> 864 (PHASE 11.4 GATE D, +8 -- Runtime.Tests 691 -> 699): #164's OTHER
+      # half. Gates A-C made a faulted render VISIBLE; Gate D makes it SIGNALLED --
+      # a parameter-binding fault now ABORTS the mount and reports the ALREADY
+      # DOCUMENTED rc 2 instead of rc 0 over a half-rendered screen. This is the
+      # phase's one real behaviour change, so all eight tests are in ONE new file,
+      # ParameterBindingFaultTests:
+      #   +1  ABadParameterBinding_AbortsTheMount_WithTheExistingRc2  (#164, answered)
+      #   +1  ARecoverableRenderFault_StillLogsAndContinues_Rc0       (the posture is
+      #       SCOPED, not reversed -- design 11 R3's "too broad" half, and the more
+      #       load-bearing of the pair: classifying NOTHING makes the first test red,
+      #       classifying TOO MUCH makes this one red, and only the designed
+      #       predicate makes both green)
+      #   +1  ARecoverableRenderFault_IsStillLogged_AsAnOrdinaryRenderFault
+      #   +1  TheBindingFault_IsVisibleThroughTheBnLogSeam_Once       (asserted against
+      #       an INJECTED BnLog sink -- Gate A's seam -- not by scraping stderr)
+      #   +1  TheClassifier_IgnoresMessageText_AndKeysOnTheThrowSite  (R3's sharp edge:
+      #       an impostor carrying #164's message VERBATIM is NOT classified)
+      #   +1  TheClassifier_WalksTheInnerChain
+      #   +1  TheAllowListedFrames_StillNameRealBlazorMethods         (the drift pin:
+      #       every allow-listed frame resolved REFLECTIVELY against the linked Blazor
+      #       assembly, so a rename reds the UPGRADE PR rather than silently
+      #       un-fixing #164 in the field)
+      #   +1  TheAllowList_IsTheBindingWriter_NotTheEnclosingSupplyPath
+      # STILL NO ABI CHANGE, AND THAT IS THE POINT: rc 2 already exists and both
+      # shells already handle it. A "non-fatal rc 4" would hit
+      # BlazorNativeRuntime.kt's `else -> throw` and hard-crash every consumer on an
+      # older COPIED shell. No Kotlin, Swift or template file changes -- the JVM,
+      # Android and iOS baselines all hold.
+      - name: .NET tests (assert 864 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -1489,8 +1518,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 856 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 856 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 864 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 864 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # ── NativeAOT publishes + nine-export verification ────────────────────

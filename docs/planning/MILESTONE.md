@@ -329,7 +329,12 @@ Tracked in `ROADMAP.md`. Approved at milestone-open:
   [device runbook](../plans/2026-07-21-phase-11.2-device-runbook.md).
 - **Phase 11.3** — API stability review + the 1.0 criteria + public-API baseline (DoD #4).
 - **Phase 11.4** — logging discipline (DoD #6, [#155](https://github.com/MarcelRoozekrans/BlazorNative/issues/155)):
-  one level-gated logging seam, quiet-by-default in Release, unified across both shells.
+  one level-gated logging seam, quiet-by-default in Release, unified across both shells. Gate D
+  also closes [#164](https://github.com/MarcelRoozekrans/BlazorNative/issues/164)'s *other* half —
+  Gates A–C made a faulted render **visible**; Gate D makes a parameter-binding fault **abort the
+  mount** with the already-documented `rc 2` rather than report success over a half-rendered
+  screen. Every other render fault keeps log-and-continue, deliberately
+  ([design](../plans/2026-07-21-phase-11.4-design.md) §6.2).
 - **Phase 11.5** — hygiene + M11 final audit + close (DoD #5).
 
 ## Why this milestone exists
