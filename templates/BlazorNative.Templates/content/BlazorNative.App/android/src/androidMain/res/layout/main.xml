@@ -1,37 +1,54 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+
+<!-- THE APP OWNS THE WHOLE SCREEN — which is also what the iOS shell does, and
+     that parity is the point of this file's shape (#204).
+
+     This layout used to be a vertical LinearLayout splitting the Activity by
+     WEIGHT: widget_root 3, a green-on-black [BOOT] console ScrollView 2. A flat
+     40% of the screen, in every orientation, reserved for debug narration —
+     including in every app generated from the template, since this file is a
+     byte-identical mirror (TemplateDriftTests).
+
+     Measured on hardware (1220×2712 @ density 480) before it was removed:
+
+                       usable      widget_root        [BOOT] strip
+         portrait      759.3dp     455.3dp (60%)      304.0dp (40%), showing 84dp of text
+         landscape     317.3dp     190.3dp (60%)      127.0dp (40%)
+
+     In landscape the demo page needs 283.3dp and got 190.3dp, so its second
+     button was cut in half at exactly the strip's top edge and its third button
+     never appeared. And the overflow was not even CLIPPED: every
+     BnYogaFrameLayout sets `clipChildren = false` to match iOS's
+     `clipsToBounds == NO`, so the content was drawn and then PAINTED OVER by the
+     opaque strip, which the LinearLayout drew after it. A page that just stops,
+     with nothing on screen to explain it.
+
+     Yoga was never implicated — worth recording, because it is the natural first
+     guess. Both shells re-solve the whole tree against the new bounds on any host
+     resize (YogaLayout's addOnLayoutChangeListener → calculateAndApply, and iOS's
+     twin in HostViewController.viewDidLayoutSubviews). The space was gone before
+     Yoga ever saw it.
+
+     The narration was NOT lost with the strip: it goes to logcat through
+     BnShellLog, gated at Info since #200/#202, and `scripts/devloop.ps1` reads it
+     from there rather than from the screen. iOS never had an on-screen panel at
+     all, so removing this one CLOSES a shell divergence.
+
+     RECLAIMING SPACE IS NOT THE GENERAL FIX, and this comment should not be read
+     as claiming otherwise: a page whose content exceeds the viewport should
+     SCROLL, which is what BnScroll is for and what works at any screen size.
+     Making the host bigger only postpones the truncation. -->
+
+<!-- Phase 6.1: the host root is a BnYogaFrameLayout, NOT a stock FrameLayout.
+     A stock one is not inert: every addView/setText in a batch calls
+     requestLayout(), and the ensuing traversal re-measures this container and
+     re-places every TOP-LEVEL node at (0, 0, hostW, hostH) — behind Yoga's
+     back, in the real Activity only (never in a detached-root test), and the
+     resize listener's bounds guard sees no change so nothing repairs it. Yoga
+     owns ALL placement, including the top level. See BnYogaFrameLayout's KDoc. -->
+<io.blazornative.shell.BnYogaFrameLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical">
-
-    <!-- Phase 6.1: the host root is a BnYogaFrameLayout, NOT a stock FrameLayout.
-         A stock one is not inert: every addView/setText in a batch calls
-         requestLayout(), and the ensuing traversal re-measures this container and
-         re-places every TOP-LEVEL node at (0, 0, hostW, hostH) — behind Yoga's
-         back, in the real Activity only (never in a detached-root test), and the
-         resize listener's bounds guard sees no change so nothing repairs it. Yoga
-         owns ALL placement, including the top level. See BnYogaFrameLayout's KDoc. -->
-    <io.blazornative.shell.BnYogaFrameLayout
-        android:id="@+id/widget_root"
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="3"
-        android:background="#FFFFFF" />
-
-    <ScrollView
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="2"
-        android:background="#000000"
-        android:padding="16dp">
-
-        <TextView
-            android:id="@+id/markers"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:fontFamily="monospace"
-            android:textColor="#00FF00"
-            android:textSize="14sp"
-            android:text="Booting native runtime..." />
-    </ScrollView>
-</LinearLayout>
+    android:background="#FFFFFF" />

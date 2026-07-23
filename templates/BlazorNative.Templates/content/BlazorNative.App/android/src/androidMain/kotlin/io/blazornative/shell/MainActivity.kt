@@ -6,7 +6,6 @@ import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import android.widget.FrameLayout
-import android.widget.TextView
 import android.window.OnBackInvokedCallback
 import android.window.OnBackInvokedDispatcher
 import androidx.fragment.app.FragmentActivity
@@ -37,10 +36,16 @@ import kotlin.concurrent.thread
  * override; 4 [BOOT] lines since Phase 3.1) against the
  * NativeAOT libBlazorNative.Runtime.so from the APK's jniLibs. Frames
  * arrive through the C-ABI struct path (NativeFrameAdapter) and render via
- * [WidgetMapper] into widget_root; [BOOT] status lines go to the green-on-black
- * console TextView ALWAYS, and to logcat only at [BnLogLevel.INFO] or higher
- * (#200 — they are narration, and the default threshold is Warn). The two are
- * deliberately different surfaces: the panel is app UI, the logcat line is a log.
+ * [WidgetMapper] into widget_root, which is the WHOLE Activity — the app owns the
+ * screen, exactly as it does on iOS (#204). [BOOT] status lines go to logcat
+ * through [BnShellLog] at [BnLogLevel.INFO] or higher (#200 — they are narration,
+ * and the default threshold is Warn).
+ *
+ * There is NO on-screen console. There used to be: a green-on-black TextView in a
+ * ScrollView holding 40% of the screen by layout weight, which cost the app 93dp
+ * of its content in landscape and occluded the rest (see res/layout/main.xml for
+ * the measured numbers). Narration lives in logcat now — `adb logcat -s
+ * BlazorNative`, which is where scripts/devloop.ps1 already read it from.
  *
  * The wasmtime/.wasm boot path was retired from this Activity in Phase 3.0d,
  * and Phase 3.0e deleted the WASM era from the tree entirely — the NativeAOT
@@ -57,8 +62,8 @@ import kotlin.concurrent.thread
  *  - [runtime] is an Activity FIELD deliberately: it strongly holds the JNA
  *    frame callback; if it were a local, GC could collect the callback's
  *    trampoline while native code still points at it.
- *  - All throwables are caught → Log.e + "FAIL: ..." in the TextView so a
- *    boot crash is visible without attaching to logcat. Frame-level errors
+ *  - All throwables are caught → Log.e, which ships in Release by design (only
+ *    narration is gated). A boot crash is visible in logcat. Frame-level errors
  *    (adapter/consumer throws inside the JNA callback) route through
  *    onError → Log.e — JNA would otherwise swallow them to stderr.
  */
@@ -224,7 +229,6 @@ class MainActivity : FragmentActivity() {
 
         setContentView(R.layout.main)
 
-        val view = findViewById<TextView>(R.id.markers)
         val widgetRoot = findViewById<FrameLayout>(R.id.widget_root)
         // Phase 3.2: UI listeners forward into the dispatch lane. The lambda
         // captures the lateinit `runtime` field (constructed just below) —
@@ -299,13 +303,20 @@ class MainActivity : FragmentActivity() {
                 // #200: these four are the lines observed leaking at the default
                 // Warn on a released device build. They are NARRATION — Info — so
                 // they are silent in Release and reappear at Info or higher.
-                // ⚠ THE ON-SCREEN PANEL BELOW IS UNCHANGED AND MUST STAY SO: it
-                // is app UI, not logging, and no threshold governs it.
+                //
+                // #204: logcat is now the ONLY destination. This used to also write
+                // the joined lines into an on-screen TextView, and that panel is
+                // gone — it held 40% of the screen to show ~84dp of text and
+                // occluded the app's own content in landscape. Nothing is lost: the
+                // gate above governs the same lines, and `adb logcat -s BlazorNative`
+                // is what devloop already watched.
                 lines.forEach { BnShellLog.info(tag, it) }
-                runOnUiThread { view.text = lines.joinToString("\n") }
             } catch (t: Throwable) {
+                // Log.e, NOT the gate: errors ship in Release by design. This was
+                // also mirrored into the on-screen panel ("FAIL: …") before #204
+                // removed it; logcat carries the whole throwable, which the panel
+                // never did.
                 Log.e(tag, "Boot failed", t)
-                runOnUiThread { view.text = "FAIL: ${t.javaClass.simpleName}: ${t.message}" }
             }
         }
     }
