@@ -30,6 +30,10 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\BlazorNative.Core\BlazorNative.Core.csproj" />
     <ProjectReference Include="..\..\src\BlazorNative.Renderer\BlazorNative.Renderer.csproj" />
+    <!-- Issue #178: pins the ICamera facade's option-resolution (a no-arg
+         CapturePhotoAsync must resolve to 2048/85, not default(CaptureOptions)'s
+         0/0) end-to-end through the real NativeShellBridge args. -->
+    <ProjectReference Include="..\..\src\BlazorNative.Device\BlazorNative.Device.csproj" />
     <ProjectReference Include="..\..\src\BlazorNative.Http\BlazorNative.Http.csproj" />
     <!-- Phase 3.0d Gate 1: BlazorNative.Runtime is an ordinary class library at
          build time (PublishAot only affects publish), so referencing it from a

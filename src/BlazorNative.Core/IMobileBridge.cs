@@ -401,8 +401,27 @@ public enum CameraStatus
 /// the bitmap BnImage decodes from it — is bounded. A <c>0</c>
 /// <see cref="MaxDimension"/> means "keep full resolution" (explicit opt-in to the
 /// big file). Defaults: a ~2048 px long edge and JPEG quality 85 (a couple hundred
-/// KB for fidelity a phone screen cannot out-resolve).</summary>
-public readonly record struct CaptureOptions(int MaxDimension = 2048, int Quality = 85);
+/// KB for fidelity a phone screen cannot out-resolve).
+/// <para>NOTE (issue #178): the EXPLICIT parameterless constructor below is
+/// load-bearing. For a <c>record struct</c> whose primary-constructor parameters
+/// are all optional, <c>new CaptureOptions()</c> binds to the implicit field-zeroing
+/// struct constructor — NOT the primary constructor — so WITHOUT this explicit ctor
+/// even <c>new CaptureOptions()</c> would yield <c>MaxDimension=0, Quality=0</c>
+/// rather than the documented 2048/85. The explicit ctor chains to the primary
+/// constructor so <c>new CaptureOptions()</c> genuinely carries the defaults.
+/// <c>default(CaptureOptions)</c> still zero-initialises (the language guarantees a
+/// zeroing parameterless value for every struct and no ctor can suppress it); a
+/// zeroed value is treated as UNSET at the shell boundary, where a 0 quality maps to
+/// the default rather than the worst-possible encode.</para></summary>
+public readonly record struct CaptureOptions(int MaxDimension = 2048, int Quality = 85)
+{
+    /// <summary>The documented defaults (2048 px long edge, JPEG quality 85). Present
+    /// because a record struct's primary-constructor defaults do NOT apply to
+    /// <c>new CaptureOptions()</c> — that binds to the field-zeroing struct ctor — so
+    /// this explicit ctor chains to the primary constructor to make them real (#178).
+    /// The literals must match the primary-constructor defaults above.</summary>
+    public CaptureOptions() : this(MaxDimension: 2048, Quality: 85) { }
+}
 
 /// <summary>The terminal outcome of a <see cref="IMobileBridge.CapturePhotoAsync"/>
 /// call: a status and, only when <see cref="CameraStatus.Captured"/>, the captured
