@@ -5,6 +5,7 @@
 
 ### Bug Fixes
 
+* close the default(T)-on-struct trap ([#178](https://github.com/MarcelRoozekrans/BlazorNative/issues/178), [#181](https://github.com/MarcelRoozekrans/BlazorNative/issues/181)) and guard NOT-API marks ([#196](https://github.com/MarcelRoozekrans/BlazorNative/issues/196)) ([061d10c](https://github.com/MarcelRoozekrans/BlazorNative/commit/061d10ca501b7739e9bd2e856adf1358ccc6ee32))
 * surface geolocation accuracy on a separate trailing node ([#169](https://github.com/MarcelRoozekrans/BlazorNative/issues/169)) ([#195](https://github.com/MarcelRoozekrans/BlazorNative/issues/195)) ([37a89ca](https://github.com/MarcelRoozekrans/BlazorNative/commit/37a89ca75fab0a15675a7d5c6d123191f82c67b5))
 
 ## [0.5.0](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.4.1...v0.5.0) (2026-07-22)
