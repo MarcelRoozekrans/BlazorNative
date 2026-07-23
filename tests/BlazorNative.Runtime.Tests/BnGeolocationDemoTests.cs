@@ -39,13 +39,33 @@ public sealed class BnGeolocationDemoTests
         NativeShellBridge.ResetForTests();
     }
 
-    private static int EchoTextNode(RenderFrame mount)
+    // The demo now hangs TWO text nodes off root — the echo, then a TRAILING accuracy
+    // line (issue #169). They can no longer be told apart by uniqueness, so they are
+    // pinned by ORDER: node ids are allocated in render order (NativeWidgetTree._nextNodeId
+    // ascends), and the echo (BuildRenderTree sequence 30) is created before the accuracy
+    // line (sequence 40) — so ascending node id = [echo, accuracy]. This is the node-id
+    // selection the issue calls for, replacing the Assert.Single-on-uniqueness pin.
+    private static int EchoTextNode(RenderFrame mount) => TextNodeAt(mount, 0);
+    private static int AccuracyTextNode(RenderFrame mount) => TextNodeAt(mount, 1);
+
+    private static int TextNodeAt(RenderFrame mount, int ordinal)
     {
         var root = Assert.Single(mount.Patches.OfType<CreateNodePatch>(), p => p.ParentId is null);
-        var span = Assert.Single(mount.Patches.OfType<CreateNodePatch>(),
-            p => p.ParentId == root.NodeId && p.NodeType == "text");
+        // The BnText spans (NodeType "text"), root's direct children, ordered by node id
+        // (= render order). Ordinal 0 is the echo, 1 is the trailing accuracy line.
+        CreateNodePatch span = mount.Patches.OfType<CreateNodePatch>()
+            .Where(p => p.ParentId == root.NodeId && p.NodeType == "text")
+            .OrderBy(p => p.NodeId)
+            .ElementAt(ordinal);
         return Assert.Single(mount.Patches.OfType<CreateNodePatch>(),
             p => p.ParentId == span.NodeId).NodeId;
+    }
+
+    /// <summary>The span (BnText host node) that owns the given text node — its parent.</summary>
+    private static int EchoSpan(RenderFrame mount, int textNodeId)
+    {
+        int spanId = Assert.Single(mount.Patches.OfType<CreateNodePatch>(), p => p.NodeId == textNodeId).ParentId!.Value;
+        return spanId;
     }
 
     private static int ClickHandlerForLabel(RenderFrame mount, string label)
@@ -58,15 +78,33 @@ public sealed class BnGeolocationDemoTests
     }
 
     [Fact]
-    public void Mount_Shape_TwoButtons_EmptyEcho()
+    public void Mount_Shape_TwoButtons_EmptyEcho_TrailingEmptyAccuracy()
     {
         var (mount, _) = MountDemo();
         try
         {
             Assert.Equal(2, mount.Patches.OfType<CreateNodePatch>().Count(p => p.NodeType == "button"));
+
             int echo = EchoTextNode(mount);
             var initial = Assert.Single(mount.Patches.OfType<ReplaceTextPatch>(), p => p.NodeId == echo);
             Assert.Equal("", initial.Text);
+
+            // Issue #169: the accuracy line is a SEPARATE text node, empty at mount, placed
+            // AFTER the echo — the device suites' "first TextView/UILabel is the echo"
+            // selectors depend on that trailing placement. Both spans are direct children of
+            // root, and the accuracy span/text are created (and thus appended) AFTER the echo:
+            // node ids ascend in render order, so accuracy > echo proves the trailing order.
+            int accuracy = AccuracyTextNode(mount);
+            var accuracyInitial = Assert.Single(mount.Patches.OfType<ReplaceTextPatch>(), p => p.NodeId == accuracy);
+            Assert.Equal("", accuracyInitial.Text);
+            Assert.True(accuracy > echo, "the accuracy node must be created after the echo (trailing)");
+
+            var root = Assert.Single(mount.Patches.OfType<CreateNodePatch>(), p => p.ParentId is null);
+            int echoSpan = EchoSpan(mount, echo);
+            int accuracySpan = EchoSpan(mount, accuracy);
+            Assert.Equal(root.NodeId, Assert.Single(mount.Patches.OfType<CreateNodePatch>(), p => p.NodeId == echoSpan).ParentId);
+            Assert.Equal(root.NodeId, Assert.Single(mount.Patches.OfType<CreateNodePatch>(), p => p.NodeId == accuracySpan).ParentId);
+            Assert.True(accuracySpan > echoSpan, "the accuracy span must be appended after the echo span (trailing)");
         }
         finally { TearDown(); }
     }
@@ -89,6 +127,52 @@ public sealed class BnGeolocationDemoTests
                 p => p.Text.StartsWith(BnGeolocationDemo.FixPrefix, StringComparison.Ordinal));
             Assert.Equal(echo, echoed.NodeId);
             Assert.Contains("52.3702", echoed.Text);
+        }
+        finally { TearDown(); }
+    }
+
+    [Fact]
+    public void Locate_Granted_RendersTheAccuracyLine_Trailing_NodeIdPinned()
+    {
+        var (mount, frames) = MountDemo();
+        try
+        {
+            FakeShellHost.HostCallStatus = 0; // Granted
+            FakeShellHost.HostCallPayloadJson =
+                """{"lat":"52.3702","lng":"4.8952","accuracy":"12.0","altitude":"3.0","timestamp":"0"}""";
+            int accuracy = AccuracyTextNode(mount);
+            int locate = ClickHandlerForLabel(mount, "Locate");
+
+            Assert.Equal(0, Exports.DispatchEventCore((ulong)locate, """{"name":"click"}"""));
+
+            // The accuracy value (12.0) reaches the SEPARATE trailing node as "acc:<metres>"
+            // — pinned by node id (issue #169), not by uniqueness, and distinct from the echo.
+            var accuracyEcho = Assert.Single(frames[^1].Patches.OfType<ReplaceTextPatch>(),
+                p => p.Text.StartsWith(BnGeolocationDemo.AccuracyPrefix, StringComparison.Ordinal));
+            Assert.Equal(accuracy, accuracyEcho.NodeId);
+            Assert.Contains("12", accuracyEcho.Text);
+        }
+        finally { TearDown(); }
+    }
+
+    [Fact]
+    public void Locate_Denied_LeavesTheAccuracyLineBlank()
+    {
+        var (mount, frames) = MountDemo();
+        try
+        {
+            FakeShellHost.HostCallStatus = (int)Core.GeolocationStatus.Denied;
+            FakeShellHost.HostCallPayloadJson = null;
+            int accuracy = AccuracyTextNode(mount);
+            int locate = ClickHandlerForLabel(mount, "Locate");
+
+            Assert.Equal(0, Exports.DispatchEventCore((ulong)locate, """{"name":"click"}"""));
+
+            // Denial-as-data for accuracy too: the accuracy node NEVER carries an "acc:" value
+            // on a non-Granted outcome (it stays "" — either unchanged, so no patch, or a patch
+            // back to ""). Assert no accuracy patch ever announces a value on this node.
+            Assert.DoesNotContain(frames[^1].Patches.OfType<ReplaceTextPatch>(),
+                p => p.NodeId == accuracy && p.Text.StartsWith(BnGeolocationDemo.AccuracyPrefix, StringComparison.Ordinal));
         }
         finally { TearDown(); }
     }
