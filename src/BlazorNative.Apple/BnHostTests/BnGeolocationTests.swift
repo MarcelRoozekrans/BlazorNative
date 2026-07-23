@@ -272,6 +272,14 @@ final class BnGeolocationTests: BnHostTestCase {
         XCTAssertEqual(coords.count, 2, "echo must carry lat,lng: '\(echo)'")
         XCTAssertEqual(Double(String(coords[0]))!, 52.3702, accuracy: 1e-3)
         XCTAssertEqual(Double(String(coords[1]))!, 4.8952, accuracy: 1e-3)
+
+        // Issue #169: accuracy surfaces on its OWN trailing UILabel ("acc:<metres>") — the
+        // echo shape above is UNCHANGED (still exactly lat,lng). This proves the
+        // round-tripped Accuracy is observable on the device (M11 DoD #2 reads the app's own
+        // value). The Amsterdam fixture's horizontalAccuracy is 5.0.
+        let accuracyText = try XCTUnwrap(accuracyLabel()?.text)
+        XCTAssertTrue(accuracyText.hasPrefix("acc:"), "accuracy line must carry 'acc:<metres>': '\(accuracyText)'")
+        XCTAssertEqual(Double(accuracyText.replacingOccurrences(of: "acc:", with: ""))!, 5.0, accuracy: 1e-3)
         // The completion reached a LIVE .NET continuation (process-scoped registry) → rc 0.
         XCTAssertEqual(BnGeolocation.lastHostCallCompleteRcForTest, 0,
                        "host_call_complete did not route to the in-flight .NET requestId")
@@ -314,17 +322,24 @@ final class BnGeolocationTests: BnHostTestCase {
         return form
     }
 
-    /// The demo root div: root's single child (a plain UIView) with the 3 children
-    /// (Locate/Check buttons + echo label).
+    /// The demo root div: root's single child (a plain UIView) with the 4 children
+    /// (Locate/Check buttons + echo label + trailing accuracy label, issue #169).
     private func probeForm() -> UIView? {
         guard let form = root.subviews.first, form.subviews.count >= 3 else { return nil }
         return form
     }
 
-    /// The echo: the only UILabel that is a DIRECT child of the div (a UIButton's internal
-    /// titleLabel is a subview of the BUTTON, never of the div).
+    /// The echo: the FIRST UILabel that is a DIRECT child of the div (a UIButton's internal
+    /// titleLabel is a subview of the BUTTON, never of the div). Issue #169 added a trailing
+    /// accuracy UILabel, so this is now "first" rather than "only" — the echo is unchanged.
     private func echoLabel() -> UILabel? {
         probeForm()?.subviews.first { $0 is UILabel } as? UILabel
+    }
+
+    /// The accuracy line (issue #169): the SECOND direct-child UILabel of the div — the
+    /// trailing "acc:<metres>" node placed after the echo.
+    private func accuracyLabel() -> UILabel? {
+        probeForm()?.subviews.compactMap { $0 as? UILabel }.dropFirst().first
     }
 
     private func tapButton(_ title: String, in view: UIView,

@@ -4,7 +4,7 @@
 #
 #   build-test (windows-latest) — the local verification procedure verbatim
 #   (setup.ps1 §1–7 documents the toolchain pins):
-#     build (analyzers ride it) → .NET tests (872 passed / 0 skipped) →
+#     build (analyzers ride it) → .NET tests (874 passed / 0 skipped) →
 #     three NativeAOT publishes of samples/BlazorNative.SampleApp — the
 #     publish head since Phase 8.0: the app owns PublishAot, the exports stay
 #     in Runtime via UnmanagedEntryPointsAssembly, and the artifact is
@@ -1501,8 +1501,21 @@ jobs:
       # older COPIED shell. No Kotlin, Swift or template file changes -- the JVM,
       # Android and iOS baselines all hold.
       #
-      # 864 -> 872 (STRUCT-DEFAULT BUG CLASS + F4, +8 -- Runtime.Tests 699 -> 707):
-      # #178/#181 (the default(T)-on-a-struct trap) and audit finding F4.
+      # 864 -> 866 (ISSUE #169, +2 -- Runtime.Tests 699 -> 701): BnGeolocationDemo now
+      # surfaces GeolocationPosition.Accuracy on a SEPARATE trailing "acc:<metres>" text
+      # node (the echo's "fix:lat,lng" shape is UNCHANGED). Two new BnGeolocationDemoTests:
+      #   +1  Locate_Granted_RendersTheAccuracyLine_Trailing_NodeIdPinned  (the accuracy
+      #       value reaches the trailing node, pinned by node id -- not by uniqueness)
+      #   +1  Locate_Denied_LeavesTheAccuracyLineBlank                     (denial-as-data:
+      #       no "acc:" value on a non-Granted outcome)
+      # The existing three shape pins were re-pinned from Assert.Single-on-uniqueness to
+      # node-id ordering (two text nodes now hang off root). NO ABI CHANGE. The device
+      # suites (androidTest / BnHostTests) gained an accuracy assertion each but their
+      # existing selectors are unchanged, so the JVM `testDebugUnitTest` baseline (148,
+      # no geolocation instrumented cases in it) does NOT move.
+      #
+      # 866 -> 874 (STRUCT-DEFAULT BUG CLASS + F4, +8 -- Runtime.Tests 701 -> 709,
+      # stacked on #169 above): #178/#181 (the default(T)-on-a-struct trap) + audit F4.
       #   +3  NotApiEditorBrowsableTests -- the F4 guard: every NOT-API type in the
       #       two runtime-loadable shipped assemblies still carries
       #       [EditorBrowsable(Never)] (a PublicAPI baseline records signatures, not
@@ -1516,7 +1529,7 @@ jobs:
       # The Kotlin/Swift shell change (a 0 quality is UNSET, not coerceIn(1,100)->1)
       # is compiled by the required android-build/ios-build lanes; the JVM, Android
       # instrumented and iOS baselines do not move.
-      - name: .NET tests (assert 872 passed / 0 skipped)
+      - name: .NET tests (assert 874 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -1534,8 +1547,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 872 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 872 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 874 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 874 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # ── NativeAOT publishes + nine-export verification ────────────────────
