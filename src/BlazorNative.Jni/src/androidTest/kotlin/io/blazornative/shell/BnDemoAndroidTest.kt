@@ -7,6 +7,7 @@ import android.view.ViewGroup
 import android.widget.Button
 import android.widget.EditText
 import android.widget.FrameLayout
+import android.widget.ScrollView
 import android.widget.TextView
 import androidx.core.content.res.ResourcesCompat
 import androidx.test.core.app.ActivityScenario
@@ -261,11 +262,23 @@ class BnDemoAndroidTest {
 
     // ── Structural pins (the KDoc tree; positions, not nodeIds) ─────────────
 
-    /** The BnDemo form div: widget_root's single child, once fully mounted. */
-    private fun form(act: MainActivity): ViewGroup? =
-        act.findViewById<FrameLayout>(R.id.widget_root)
+    /** The BnDemo form div.
+     *
+     * #204 wrapped the page in a BnScroll, so the walk is now
+     * widget_root → ScrollView → the SYNTHETIC CONTENT VIEW → the form div.
+     * The content view is the shell's own node — created by WidgetMapper, never on
+     * the wire — and a scroll node's wire children parent into IT, never into the
+     * ScrollView (Phase 6.2, non-negotiable #2). Walking through it rather than
+     * around it is what keeps this selector honest: if the mapper ever stopped
+     * interposing the content node, this returns null rather than silently
+     * matching something else. */
+    private fun form(act: MainActivity): ViewGroup? {
+        val scroll = act.findViewById<FrameLayout>(R.id.widget_root)
             ?.takeIf { it.childCount > 0 }
-            ?.getChildAt(0) as? ViewGroup
+            ?.getChildAt(0) as? ScrollView ?: return null
+        val content = scroll.takeIf { it.childCount > 0 }?.getChildAt(0) as? ViewGroup ?: return null
+        return content.takeIf { it.childCount > 0 }?.getChildAt(0) as? ViewGroup
+    }
 
     /** Form child [1]: the bound EditText. */
     private fun editText(act: MainActivity): EditText? =

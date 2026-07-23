@@ -64,22 +64,35 @@ public sealed class BnDemoTests
             p => p.NodeId == nodeId && p.EventName == "click").HandlerId;
 
     // Structural pins (stable across re-renders — the Gate 3 mirror uses the
-    // same walk): root = the single parentless create; echo panel = the only
-    // "view" child of the root; echo TEXT NODE = grandchild via the echo span.
+    // same walk): root = the single parentless create; form = the root's only
+    // child; echo panel = the only "view" child of the FORM; echo TEXT NODE =
+    // grandchild via the echo span.
+    //
+    // #204 put a BnScroll around the page, so the parentless create is now the
+    // SCROLL VIEWPORT and the themed form div hangs beneath it. The two are kept
+    // as separate accessors rather than collapsing Root() onto the form: the
+    // distinction is the thing the wrapper introduced, and a helper that quietly
+    // skipped past the viewport would let the scroll node vanish from these pins
+    // without a single assertion noticing.
     private static CreateNodePatch Root(RenderFrame mount)
         => Assert.Single(mount.Patches.OfType<CreateNodePatch>(), p => p.ParentId is null);
 
-    private static CreateNodePatch EchoPanel(RenderFrame mount, int rootId)
+    /// <summary>The themed form div — the scroll viewport's single child.</summary>
+    private static CreateNodePatch Form(RenderFrame mount)
         => Assert.Single(mount.Patches.OfType<CreateNodePatch>(),
-            p => p.ParentId == rootId && p.NodeType == "view");
+            p => p.ParentId == Root(mount).NodeId);
+
+    private static CreateNodePatch EchoPanel(RenderFrame mount, int formId)
+        => Assert.Single(mount.Patches.OfType<CreateNodePatch>(),
+            p => p.ParentId == formId && p.NodeType == "view");
 
     private static CreateNodePatch InputNode(RenderFrame mount)
         => Assert.Single(mount.Patches.OfType<CreateNodePatch>(), p => p.NodeType == "input");
 
     private static int EchoTextNode(RenderFrame mount)
     {
-        var root = Root(mount);
-        var panel = EchoPanel(mount, root.NodeId);
+        var form = Form(mount);
+        var panel = EchoPanel(mount, form.NodeId);
         var span = Assert.Single(mount.Patches.OfType<CreateNodePatch>(),
             p => p.ParentId == panel.NodeId);
         return Assert.Single(mount.Patches.OfType<CreateNodePatch>(),
@@ -96,28 +109,40 @@ public sealed class BnDemoTests
     {
         var (mount, _) = MountDemo();
 
-        // Root: the themed form div.
+        // Root: the SCROLL VIEWPORT (#204). It is a flex ITEM, not a container —
+        // Grow/Basis live on it, and the container styles (padding, background)
+        // belong to the form div inside, which is exactly the composition
+        // BnScroll's docs prescribe. Pinning the viewport's own styles here is
+        // what would catch someone "tidying" the padding onto the scroll node,
+        // where both shells ignore it silently.
         var root = Root(mount);
-        Assert.Equal("view", root.NodeType);
-        Assert.Equal(DefaultBackground, StyleOn(mount, root.NodeId, "backgroundColor").Value);
-        Assert.Equal("16", StyleOn(mount, root.NodeId, "padding").Value);
+        Assert.Equal("scroll", root.NodeType);
+        Assert.Equal("1", StyleOn(mount, root.NodeId, "flexGrow").Value);
+        Assert.Equal("0", StyleOn(mount, root.NodeId, "flexBasis").Value);
+
+        // The themed form div: the viewport's single child, and the node that
+        // carries the container styling.
+        var form = Form(mount);
+        Assert.Equal("view", form.NodeType);
+        Assert.Equal(DefaultBackground, StyleOn(mount, form.NodeId, "backgroundColor").Value);
+        Assert.Equal("16", StyleOn(mount, form.NodeId, "padding").Value);
 
         // Title span with fontSize, under the form.
         var title = ContainerOfText(mount, "BnDemo");
         Assert.Equal("text", CreateOf(mount, title).NodeType);
-        Assert.Equal(root.NodeId, CreateOf(mount, title).ParentId);
+        Assert.Equal(form.NodeId, CreateOf(mount, title).ParentId);
         Assert.Equal("24", StyleOn(mount, title, "fontSize").Value);
 
         // The bound input: value + placeholder props, change attach.
         var input = InputNode(mount);
-        Assert.Equal(root.NodeId, input.ParentId);
+        Assert.Equal(form.NodeId, input.ParentId);
         Assert.Equal("", PropOn(mount, input.NodeId, "value").Value);
         Assert.Equal("Type here...", PropOn(mount, input.NodeId, "placeholder").Value);
         Assert.Single(mount.Patches.OfType<AttachEventPatch>(),
             p => p.NodeId == input.NodeId && p.EventName == "change");
 
         // Echo panel: the second themed view, with the echo span inside it.
-        var panel = EchoPanel(mount, root.NodeId);
+        var panel = EchoPanel(mount, form.NodeId);
         Assert.Equal(DefaultBackground, StyleOn(mount, panel.NodeId, "backgroundColor").Value);
         Assert.Equal("8", StyleOn(mount, panel.NodeId, "padding").Value);
         var echoText = Assert.Single(mount.Patches.OfType<ReplaceTextPatch>(), p => p.Text == "");
@@ -131,7 +156,7 @@ public sealed class BnDemoTests
         foreach (var btn in new[] { clear, theme, settings })
         {
             Assert.Equal("button", CreateOf(mount, btn).NodeType);
-            Assert.Equal(root.NodeId, CreateOf(mount, btn).ParentId);
+            Assert.Equal(form.NodeId, CreateOf(mount, btn).ParentId);
             _ = ClickHandlerOn(mount, btn);
         }
 
@@ -143,7 +168,7 @@ public sealed class BnDemoTests
         // appends. FINAL child order: title, input, echo panel, Clear,
         // Theme, Settings →.
         var formChildren = mount.Patches.OfType<CreateNodePatch>()
-            .Where(p => p.ParentId == root.NodeId)
+            .Where(p => p.ParentId == form.NodeId)
             .ToList();
         Assert.Equal(
             new[] { title, input.NodeId, clear, theme, settings, panel.NodeId },
@@ -207,8 +232,8 @@ public sealed class BnDemoTests
     public void ThemeClick_FlipsBackgroundOnBothThemedChildren()
     {
         var (mount, frames) = MountDemo();
-        var root = Root(mount);
-        var panel = EchoPanel(mount, root.NodeId);
+        var form = Form(mount);
+        var panel = EchoPanel(mount, form.NodeId);
         var themeHandler = ClickHandlerOn(mount, ContainerOfText(mount, "Theme"));
 
         Assert.Equal(0, Dispatch(themeHandler, ClickArgs));
@@ -221,7 +246,7 @@ public sealed class BnDemoTests
             .Where(p => p.Property == "backgroundColor" && p.Value == AltBackground)
             .Select(p => p.NodeId)
             .ToHashSet();
-        Assert.Contains(root.NodeId, flipped);
+        Assert.Contains(form.NodeId, flipped);
         Assert.Contains(panel.NodeId, flipped);
         Assert.True(flipped.Count >= 2, "expected ≥2 themed children to flip");
 
@@ -231,7 +256,7 @@ public sealed class BnDemoTests
             .Where(p => p.Property == "backgroundColor" && p.Value == DefaultBackground)
             .Select(p => p.NodeId)
             .ToHashSet();
-        Assert.Contains(root.NodeId, back);
+        Assert.Contains(form.NodeId, back);
         Assert.Contains(panel.NodeId, back);
     }
 }

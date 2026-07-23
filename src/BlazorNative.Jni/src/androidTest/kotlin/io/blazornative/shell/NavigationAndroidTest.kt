@@ -5,6 +5,7 @@ import android.view.ViewGroup
 import android.widget.Button
 import android.widget.EditText
 import android.widget.FrameLayout
+import android.widget.ScrollView
 import android.widget.TextView
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -158,9 +159,19 @@ class NavigationAndroidTest {
             ?.takeIf { it.childCount > 0 }
             ?.getChildAt(0)
 
-    /** The BnDemo form div: widget_root's child once BnDemo is mounted. */
-    private fun form(act: MainActivity): ViewGroup? =
-        (rootChild(act) as? ViewGroup)?.takeIf { it.childCount >= 6 }
+    /** The BnDemo form div, once BnDemo is mounted.
+     *
+     * #204 wrapped BnDemo — and ONLY BnDemo — in a BnScroll, so this walks
+     * rootChild → the synthetic content view → the form. [rootChild] itself is
+     * deliberately left alone: BnSettingsPage is NOT wrapped, and the back-nav
+     * assertions read the settings page through rootChild directly. That
+     * asymmetry is the point of keeping the two helpers separate. */
+    private fun form(act: MainActivity): ViewGroup? {
+        val scroll = rootChild(act) as? ScrollView ?: return null
+        val content = scroll.takeIf { it.childCount > 0 }?.getChildAt(0) as? ViewGroup ?: return null
+        return (content.takeIf { it.childCount > 0 }?.getChildAt(0) as? ViewGroup)
+            ?.takeIf { it.childCount >= 6 }
+    }
 
     /** Form child [1]: the bound EditText. */
     private fun editText(act: MainActivity): EditText? =
