@@ -86,19 +86,35 @@ class BnDemoTest {
     }
 
     // Structural pins (stable across re-renders — the .NET twin's walk):
-    // root = the single parentless create; echo panel = the only "view" child
-    // of the root; echo TEXT NODE = grandchild via the echo span.
+    // root = the single parentless create; form = the root's only child; echo
+    // panel = the only "view" child of the FORM; echo TEXT NODE = grandchild via
+    // the echo span.
+    //
+    // #204 put a BnScroll around the page, so the parentless create is now the
+    // SCROLL VIEWPORT and the themed form div hangs beneath it. Kept as two
+    // accessors rather than collapsing root() onto the form: the distinction is
+    // what the wrapper introduced, and a helper that quietly skipped the viewport
+    // would let the scroll node vanish from these pins unnoticed.
 
     private fun root(mount: RenderFrame): RenderPatch.CreateNode =
         checkNotNull(
             mount.patches.filterIsInstance<RenderPatch.CreateNode>()
                 .singleOrNull { it.parentId == null }
-        ) { "expected exactly one parentless create (the form div); got ${mount.patches}" }
+        ) { "expected exactly one parentless create (the scroll viewport); got ${mount.patches}" }
 
-    private fun echoPanel(mount: RenderFrame, rootId: Int): RenderPatch.CreateNode =
+    /** The themed form div — the scroll viewport's single child. */
+    private fun form(mount: RenderFrame): RenderPatch.CreateNode {
+        val viewportId = root(mount).nodeId
+        return checkNotNull(
+            mount.patches.filterIsInstance<RenderPatch.CreateNode>()
+                .singleOrNull { it.parentId == viewportId }
+        ) { "expected exactly one child of the scroll viewport (the form div); got ${mount.patches}" }
+    }
+
+    private fun echoPanel(mount: RenderFrame, formId: Int): RenderPatch.CreateNode =
         checkNotNull(
             mount.patches.filterIsInstance<RenderPatch.CreateNode>()
-                .singleOrNull { it.parentId == rootId && it.nodeType == "view" }
+                .singleOrNull { it.parentId == formId && it.nodeType == "view" }
         ) { "expected exactly one 'view' child of the form (the echo panel); got ${mount.patches}" }
 
     private fun inputNode(mount: RenderFrame): RenderPatch.CreateNode =
@@ -108,7 +124,7 @@ class BnDemoTest {
         ) { "expected exactly one input create; got ${mount.patches}" }
 
     private fun echoTextNode(mount: RenderFrame): Int {
-        val panel = echoPanel(mount, root(mount).nodeId)
+        val panel = echoPanel(mount, form(mount).nodeId)
         val span = checkNotNull(
             mount.patches.filterIsInstance<RenderPatch.CreateNode>()
                 .singleOrNull { it.parentId == panel.nodeId }
@@ -132,21 +148,32 @@ class BnDemoTest {
         val (_, frames) = bootDemo()
         val mount = frames.first()
 
-        // Root: the themed form div with the default background + padding 16.
+        // Root: the SCROLL VIEWPORT (#204). A flex ITEM, not a container — Grow
+        // and Basis live on it, while padding/background belong to the form div
+        // inside. Pinning that split here is what catches someone moving the
+        // container styles onto the scroll node, where both shells ignore them
+        // silently.
         val root = root(mount)
-        assertEquals("view", root.nodeType, "the form must be a view/div")
-        assertEquals(DEFAULT_BACKGROUND, styleOn(mount, root.nodeId, "backgroundColor").value)
-        assertEquals("16", styleOn(mount, root.nodeId, "padding").value)
+        assertEquals("scroll", root.nodeType, "the page root must be the scroll viewport")
+        assertEquals("1", styleOn(mount, root.nodeId, "flexGrow").value)
+        assertEquals("0", styleOn(mount, root.nodeId, "flexBasis").value)
+
+        // The themed form div: the viewport's single child, carrying the
+        // container styling — default background + padding 16.
+        val form = form(mount)
+        assertEquals("view", form.nodeType, "the form must be a view/div")
+        assertEquals(DEFAULT_BACKGROUND, styleOn(mount, form.nodeId, "backgroundColor").value)
+        assertEquals("16", styleOn(mount, form.nodeId, "padding").value)
 
         // Title span with fontSize 24, under the form.
         val title = containerOfText(mount, "BnDemo")
         assertEquals("text", createOf(mount, title).nodeType, "title must be a text/span")
-        assertEquals(root.nodeId, createOf(mount, title).parentId)
+        assertEquals(form.nodeId, createOf(mount, title).parentId)
         assertEquals("24", styleOn(mount, title, "fontSize").value)
 
         // The bound input: value + placeholder props, change attach.
         val input = inputNode(mount)
-        assertEquals(root.nodeId, input.parentId)
+        assertEquals(form.nodeId, input.parentId)
         assertEquals("", propOn(mount, input.nodeId, "value").value)
         assertEquals("Type here...", propOn(mount, input.nodeId, "placeholder").value)
         assertEquals(
@@ -161,7 +188,7 @@ class BnDemoTest {
         // so its create must carry the MID-LIST InsertIndex 2 across the ABI
         // (after title + input, before the buttons; the chain-fix pin) while
         // everything else appends with the explicit -1.
-        val panel = echoPanel(mount, root.nodeId)
+        val panel = echoPanel(mount, form.nodeId)
         assertEquals(2, panel.insertIndex, "echo panel create must carry the mid-list InsertIndex 2")
         assertEquals(DEFAULT_BACKGROUND, styleOn(mount, panel.nodeId, "backgroundColor").value)
         assertEquals("8", styleOn(mount, panel.nodeId, "padding").value)
@@ -170,7 +197,7 @@ class BnDemoTest {
         ) { "expected exactly one empty ReplaceText (the echo); got ${mount.patches}" }
         assertEquals(echoTextNode(mount), echoText.nodeId, "the empty echo must sit on the pinned echo text node")
         mount.patches.filterIsInstance<RenderPatch.CreateNode>()
-            .filter { it.parentId == root.nodeId && it.nodeId != panel.nodeId }
+            .filter { it.parentId == form.nodeId && it.nodeId != panel.nodeId }
             .forEach { assertEquals(-1, it.insertIndex, "form child ${it.nodeId} must be an explicit -1 append") }
 
         // Buttons under the form, each with a click attach (Phase 3.5:
@@ -178,7 +205,7 @@ class BnDemoTest {
         for (label in listOf("Clear", "Theme", "Settings →")) {
             val btn = containerOfText(mount, label)
             assertEquals("button", createOf(mount, btn).nodeType)
-            assertEquals(root.nodeId, createOf(mount, btn).parentId)
+            assertEquals(form.nodeId, createOf(mount, btn).parentId)
             clickHandlerOn(mount, btn)
         }
 
@@ -249,8 +276,8 @@ class BnDemoTest {
     fun theme_click_flips_both_themed_backgrounds() {
         val (runtime, frames) = bootDemo()
         val mount = frames.first()
-        val rootId = root(mount).nodeId
-        val panelId = echoPanel(mount, rootId).nodeId
+        val formId = form(mount).nodeId
+        val panelId = echoPanel(mount, formId).nodeId
         val themeHandler = clickHandlerOn(mount, containerOfText(mount, "Theme"))
         val framesBefore = frames.size
 
@@ -264,7 +291,7 @@ class BnDemoTest {
             .filter { it.property == "backgroundColor" && it.value == ALT_BACKGROUND }
             .map { it.nodeId }
             .toSet()
-        assertTrue(rootId in flipped, "the form div must flip to $ALT_BACKGROUND; got ${frames.last().patches}")
+        assertTrue(formId in flipped, "the form div must flip to $ALT_BACKGROUND; got ${frames.last().patches}")
         assertTrue(panelId in flipped, "the echo panel must flip to $ALT_BACKGROUND; got ${frames.last().patches}")
         assertTrue(flipped.size >= 2, "expected >=2 themed children to flip; got $flipped")
 
@@ -276,7 +303,7 @@ class BnDemoTest {
             .filter { it.property == "backgroundColor" && it.value == DEFAULT_BACKGROUND }
             .map { it.nodeId }
             .toSet()
-        assertTrue(rootId in back, "the form div must flip back to $DEFAULT_BACKGROUND")
+        assertTrue(formId in back, "the form div must flip back to $DEFAULT_BACKGROUND")
         assertTrue(panelId in back, "the echo panel must flip back to $DEFAULT_BACKGROUND")
     }
 }

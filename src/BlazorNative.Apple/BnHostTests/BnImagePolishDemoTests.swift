@@ -363,10 +363,16 @@ final class BnImagePolishDemoTests: BnHostTestCase {
         let back = try XCTUnwrap(findButton(in: root, title: "← Back"))
         back.sendActions(for: .touchUpInside)
 
-        // BnDemo's shape: root's single child, a plain container with ≥ 6 children
-        // whose second is the bound input (the BnInteractionTests accessors).
+        // BnDemo's shape: since #204 the page is wrapped in a BnScroll, so the walk
+        // is root → UIScrollView → the synthetic content view → the form, a plain
+        // container with ≥ 6 children whose second is the bound input (the same
+        // walk BnInteractionTests.demoForm does, and for the same reason: a scroll
+        // node's wire children parent into the content view, never into the
+        // UIScrollView).
         XCTAssertTrue(pollUntil(15) {
-            guard let page = self.host.subviews.first,
+            guard let scroll = self.host.subviews.first as? UIScrollView,
+                  let content = scroll.subviews.first,
+                  let page = content.subviews.first,
                   type(of: page) == UIView.self,
                   page.subviews.count >= 6 else { return false }
             return page.subviews[1] is UITextField
