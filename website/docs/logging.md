@@ -80,7 +80,13 @@ adb shell am start -e io.blazornative.shell.EXTRA_LOG_LEVEL Debug \
   -n com.example.myapp/io.blazornative.shell.MainActivity
 ```
 
-Framework lines reach **logcat** through the shell's stderr pump. Filter for them:
+Framework lines reach **logcat** through the shell's stderr pump, under the tag
+`BlazorNative/<category>`. The **shell's own** narration — the `[BOOT]` lines, the
+`[deep-link]` routes and the bridge's `navigate` — is written directly by the Kotlin
+shell under the plain `BlazorNative` tag, and since
+[#200](https://github.com/MarcelRoozekrans/BlazorNative/issues/200) it obeys the **same
+threshold**: it is `Info`, so it is silent at the default `Warn` and returns as soon as you
+raise the level with either knob above. Filter for both:
 
 ```bash
 adb logcat | grep BlazorNative

@@ -464,6 +464,13 @@ public sealed class TemplateDriftTests
             "android/src/androidMain/OFL.txt",
             "android/src/androidMain/kotlin/io/blazornative/shell/AndroidShellBridge.kt",
             "android/src/androidMain/kotlin/io/blazornative/shell/BnSpinner.kt",
+            // #200: the shell's OWN level gate. MainActivity and AndroidShellBridge
+            // both call BnShellLog.info for their narration, so a template without
+            // this file is a compile error in every `dotnet new blazornative` app —
+            // and, were it merely absent from the manifest, a generated app whose
+            // boot narration prints at the quiet default on a consumer's device,
+            // which is the defect #200 reports.
+            "android/src/androidMain/kotlin/io/blazornative/shell/BnShellLog.kt",
             // Phase 11.4 Gate B (#155/#164): the stderr → logcat pump's Android half
             // — the Os.pipe()/Os.dup2() install that MainActivity calls as onCreate's
             // first statement. A generated app without it runs a shell whose runtime

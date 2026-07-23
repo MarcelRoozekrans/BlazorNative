@@ -37,8 +37,10 @@ import kotlin.concurrent.thread
  * override; 4 [BOOT] lines since Phase 3.1) against the
  * NativeAOT libBlazorNative.Runtime.so from the APK's jniLibs. Frames
  * arrive through the C-ABI struct path (NativeFrameAdapter) and render via
- * [WidgetMapper] into widget_root; [BOOT] status lines go to logcat and the
- * green-on-black console TextView.
+ * [WidgetMapper] into widget_root; [BOOT] status lines go to the green-on-black
+ * console TextView ALWAYS, and to logcat only at [BnLogLevel.INFO] or higher
+ * (#200 — they are narration, and the default threshold is Warn). The two are
+ * deliberately different surfaces: the panel is app UI, the logcat line is a log.
  *
  * The wasmtime/.wasm boot path was retired from this Activity in Phase 3.0d,
  * and Phase 3.0e deleted the WASM era from the tree entirely — the NativeAOT
@@ -194,6 +196,24 @@ class MainActivity : FragmentActivity() {
         // is a no-op — fd 2 is already ours and one reader thread is enough.
         BnStderrLogcatPump.install()
 
+        // ── #200: THE SHELL'S OWN NARRATION JOINS THE SAME GATE ──────────────
+        //
+        // ONE resolution, TWO uses, from ONE local — and that is the whole
+        // guarantee that this is not a second level concept. `resolveLogLevel()`
+        // reads the documented knobs (EXTRA_LOG_LEVEL / the manifest meta-data)
+        // exactly once; the ordinal is installed in BnShellLog here and handed to
+        // the runtime at BlazorNativeInitOptions.logLevel (offset 28) on the boot
+        // thread below. Raising the level raises both, always, because they are
+        // the same number.
+        //
+        // RESOLVED HERE, NOT ON THE BOOT THREAD (where it used to be read): the
+        // FIRST gated line in this Activity is the deep-link startup route, and
+        // that is emitted further down onCreate, long before the boot thread
+        // reaches init. A threshold installed later would let exactly the lines
+        // #200 observed through at Warn.
+        val logLevel = resolveLogLevel()
+        BnShellLog.setLevelFromOrdinal(logLevel)
+
         // Phase 6.1: Yoga's JNI core loads through SoLoader, which must be
         // initialised once per process BEFORE the first YogaNode — and every
         // node the WidgetMapper creates below allocates one. Done at shell start
@@ -239,7 +259,10 @@ class MainActivity : FragmentActivity() {
         // (test override) wins the mount over a deep link; the route seed still
         // applies.
         val deepLinkRoute = parseDeepLinkRoute(intent)
-        if (deepLinkRoute != null) Log.i(tag, "[deep-link] startup route → $deepLinkRoute")
+        // #200: Info — narration, suppressed at the Release default (Warn) and
+        // back at `Info` or higher. NOT deleted: the Phase 11.2 device runbook
+        // names this exact line in its deep-link PASS criteria.
+        if (deepLinkRoute != null) BnShellLog.info(tag, "[deep-link] startup route → $deepLinkRoute")
 
         // Phase 3.1: the shell half of IMobileBridge. Passing the Activity is
         // safe — AndroidShellBridge captures applicationContext ONLY (the
@@ -266,13 +289,19 @@ class MainActivity : FragmentActivity() {
                     platformOs = "android",
                     apiLevel = Build.VERSION.SDK_INT,
                     platformKind = BnPlatformKind.ANDROID, // Phase 10.0 (#121): report Android, not a shared default
-                    logLevel = resolveLogLevel(),          // Phase 11.4 (#155): offset 28, read before the first managed line
+                    logLevel = logLevel,                   // Phase 11.4 (#155): offset 28, resolved in onCreate (#200) — the SAME ordinal BnShellLog holds
                     bridge = bridge,
                 )
                 booted = true // host→.NET entry (lifecycle/back) is safe only now
-                // Emit each line as one Log.i call so logcat shows them as
+                // Emit each line as one gated Info call so logcat shows them as
                 // atomic lines (filter via `adb logcat -s BlazorNative`).
-                lines.forEach { Log.i(tag, it) }
+                //
+                // #200: these four are the lines observed leaking at the default
+                // Warn on a released device build. They are NARRATION — Info — so
+                // they are silent in Release and reappear at Info or higher.
+                // ⚠ THE ON-SCREEN PANEL BELOW IS UNCHANGED AND MUST STAY SO: it
+                // is app UI, not logging, and no threshold governs it.
+                lines.forEach { BnShellLog.info(tag, it) }
                 runOnUiThread { view.text = lines.joinToString("\n") }
             } catch (t: Throwable) {
                 Log.e(tag, "Boot failed", t)
@@ -378,7 +407,10 @@ class MainActivity : FragmentActivity() {
         setIntent(intent)
         val route = parseDeepLinkRoute(intent) ?: return
         if (!booted) return // nothing mounted yet — a (rare) pre-boot tap is dropped
-        Log.i(tag, "[deep-link] warm re-route → $route")
+        // #200: narration (Info). The rc != 0 line below stays a bare Log.w —
+        // a re-route the live session refused is a bent contract, and warnings
+        // ship in Release.
+        BnShellLog.info(tag, "[deep-link] warm re-route → $route")
         val rc = try {
             runtime.dispatchHostEventAndWait(NAVIGATE_EVENT, route)
         } catch (t: Throwable) {
@@ -499,7 +531,10 @@ class MainActivity : FragmentActivity() {
 
     /**
      * Phase 11.4 Gate B (#155): resolves the BnLogLevel ordinal this boot passes in
-     * `BlazorNativeInitOptions.logLevel` (offset 28).
+     * `BlazorNativeInitOptions.logLevel` (offset 28) — and, since #200, the ordinal
+     * [BnShellLog] gates the shell's OWN narration with. Called EXACTLY ONCE, at the
+     * top of [onCreate], and the single result feeds both: that is what makes the
+     * shell and the runtime incapable of disagreeing about the configured level.
      *
      * PRECEDENCE, highest first — the same shape [EXTRA_COMPONENT] establishes for
      * the mount name:
