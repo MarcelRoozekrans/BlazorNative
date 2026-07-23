@@ -4,7 +4,7 @@
 #
 #   build-test (windows-latest) — the local verification procedure verbatim
 #   (setup.ps1 §1–7 documents the toolchain pins):
-#     build (analyzers ride it) → .NET tests (868 passed / 0 skipped) →
+#     build (analyzers ride it) → .NET tests (876 passed / 0 skipped) →
 #     three NativeAOT publishes of samples/BlazorNative.SampleApp — the
 #     publish head since Phase 8.0: the app owns PublishAot, the exports stay
 #     in Runtime via UnmanagedEntryPointsAssembly, and the artifact is
@@ -1514,17 +1514,33 @@ jobs:
       # existing selectors are unchanged, so the JVM `testDebugUnitTest` baseline (148,
       # no geolocation instrumented cases in it) does NOT move.
       #
-      # 866 -> 868 (#173, +2 -- Runtime.Tests 701 -> 703, stacked on #169 above): the API reference was
-      # widened past Components to BlazorNative.Device, and the drift guard widened
-      # with it. ReferenceDriftTests (the sibling of ComponentReferenceDriftTests)
-      # runs generate-reference.ps1 -Package Device and asserts the generated page
-      # set equals the package's public type set:
+      # 866 -> 874 (STRUCT-DEFAULT BUG CLASS + F4, +8 -- Runtime.Tests 701 -> 709,
+      # stacked on #169 above): #178/#181 (the default(T)-on-a-struct trap) + audit F4.
+      #   +3  NotApiEditorBrowsableTests -- the F4 guard: every NOT-API type in the
+      #       two runtime-loadable shipped assemblies still carries
+      #       [EditorBrowsable(Never)] (a PublicAPI baseline records signatures, not
+      #       attributes, so nothing else caught a deleted mark). Bites both ways.
+      #   +3  CameraBridgeTests -- #178: a no-arg CapturePhotoAsync resolves 2048/85
+      #       through to the shell args (NOT default(CaptureOptions)'s 0/0); an
+      #       explicit options value flows through; an explicit default(CaptureOptions)
+      #       still serialises 0/0 (the straggler the shells now treat as unset).
+      #   +2  RegistrationTests -- #181: default(BlazorNativePage) AND new
+      #       BlazorNativePage() are both rejected at registration, naming the row.
+      # The Kotlin/Swift shell change (a 0 quality is UNSET, not coerceIn(1,100)->1)
+      # is compiled by the required android-build/ios-build lanes; the JVM, Android
+      # instrumented and iOS baselines do not move.
+      #
+      # 874 -> 876 (#173, +2 -- Runtime.Tests 707 -> 709, stacked on the struct-default
+      # class above): the API reference was widened past Components to BlazorNative.Device
+      # and the drift guard widened with it. ReferenceDriftTests (sibling of
+      # ComponentReferenceDriftTests) runs generate-reference.ps1 -Package Device and
+      # asserts the generated page set equals the package public type set:
       #   +1  GeneratedReference_DocumentsExactlyThePublicTypes  (red both directions)
-      #   +1  GeneratedReference_ContainsTheFacadesAndRegistration (the five façades
-      #       + AddBlazorNativeDevice, named so it cannot pass on an empty set)
-      # No product-code behaviour changed; Device gained six type-level doc summaries
-      # and BnEnforceDocCoverage. The JVM/Android/iOS baselines do not move.
-      - name: .NET tests (assert 868 passed / 0 skipped)
+      #   +1  GeneratedReference_ContainsTheFacadesAndRegistration (the five façades +
+      #       AddBlazorNativeDevice, named so it cannot pass on an empty set)
+      # No product behaviour changed; Device gained six type-level doc summaries and
+      # BnEnforceDocCoverage. JVM/Android/iOS baselines do not move.
+      - name: .NET tests (assert 876 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -1542,8 +1558,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 868 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 868 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 876 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 876 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # ── NativeAOT publishes + nine-export verification ────────────────────

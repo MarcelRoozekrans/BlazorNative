@@ -141,6 +141,33 @@ public sealed class RegistrationTests
         });
     }
 
+    /// <summary>Issue #181, spelled out: BlazorNativePage is a readonly struct, so
+    /// C# grants a public parameterless constructor the private ctor cannot suppress
+    /// — `default(BlazorNativePage)` and `new BlazorNativePage()` BOTH compile and
+    /// yield an invalid row (null Name, null Mount thunk). The doc used to claim the
+    /// factories were "the only way in"; they are not. What holds the invariant is the
+    /// registration boundary, which must reject such a row LOUDLY, naming the index —
+    /// not fail silently at first mount. Pinned as its own row-0 case so the fix cannot
+    /// regress into a NullReference downstream.</summary>
+    [Theory]
+    [MemberData(nameof(InvalidDefaultPages))]
+    public void DefaultOrNewBlazorNativePage_Throws_NamingRow0(BlazorNativePage invalid)
+    {
+        WithCleanRegistry(() =>
+        {
+            ArgumentException ex = Assert.Throws<ArgumentException>(
+                () => BlazorNativeApp.RegisterPages(
+                    invalid, // row 0 is the invalid one
+                    BlazorNativePage.Routed<ProbePageA>("/", "PageA")));
+            Assert.Contains("row 0", ex.Message);
+            Assert.Contains("factory-built", ex.Message);
+        });
+    }
+
+    public static TheoryData<BlazorNativePage> InvalidDefaultPages() =>
+        // Both language-guaranteed struct construction paths the private ctor cannot close.
+        new() { default, new BlazorNativePage() };
+
     // ── Once, and never after the freeze ─────────────────────────────────────
 
     [Fact]

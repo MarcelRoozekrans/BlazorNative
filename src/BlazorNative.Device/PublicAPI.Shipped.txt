@@ -3,7 +3,7 @@ BlazorNative.Device.IBiometrics
 BlazorNative.Device.IBiometrics.AuthenticateAsync(string! reason, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<BlazorNative.Core.BiometricStatus>
 BlazorNative.Device.IBiometrics.IsAvailableAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<bool>
 BlazorNative.Device.ICamera
-BlazorNative.Device.ICamera.CapturePhotoAsync(BlazorNative.Core.CaptureOptions options = default(BlazorNative.Core.CaptureOptions), System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<BlazorNative.Core.PhotoResult>
+BlazorNative.Device.ICamera.CapturePhotoAsync(BlazorNative.Core.CaptureOptions? options = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<BlazorNative.Core.PhotoResult>
 BlazorNative.Device.ICamera.CheckAvailabilityAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<BlazorNative.Core.CameraStatus>
 BlazorNative.Device.IGeolocation
 BlazorNative.Device.IGeolocation.CheckPermissionAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<BlazorNative.Core.GeolocationStatus>

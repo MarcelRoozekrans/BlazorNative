@@ -44,8 +44,15 @@ public interface ICamera
     /// straight to a <c>BnImage.Src</c> to display it. A cancel / denied / unavailable
     /// / error outcome is DATA (a status with a null path), never a throw. The app OWNS
     /// the file after this returns (see the interface remarks). <paramref name="options"/>
-    /// caps the file's long edge and JPEG quality (default 2048 px / 85).</summary>
-    ValueTask<PhotoResult> CapturePhotoAsync(CaptureOptions options = default, CancellationToken ct = default);
+    /// caps the file's long edge and JPEG quality; passing <c>null</c> (the default) uses
+    /// the documented defaults — a ~2048 px long edge and JPEG quality 85. NOTE: the
+    /// parameter is <see cref="CaptureOptions"/><c>?</c> rather than
+    /// <c>CaptureOptions = default</c> ON PURPOSE — <c>default(CaptureOptions)</c> zero-
+    /// initialises the struct (<c>MaxDimension=0, Quality=0</c>), bypassing the record's
+    /// primary-constructor defaults, so a bare <c>default</c> would silently request the
+    /// worst-possible quality (issue #178). <c>null</c> ⇒ <c>new CaptureOptions()</c>,
+    /// which DOES run those defaults.</summary>
+    ValueTask<PhotoResult> CapturePhotoAsync(CaptureOptions? options = null, CancellationToken ct = default);
 
     /// <summary>Reads whether a camera is available (present + usable) WITHOUT
     /// launching the capture UI — for a UI that wants to show state before offering a
