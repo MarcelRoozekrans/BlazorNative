@@ -117,7 +117,10 @@ class AndroidShellBridge(
 
     override fun navigate(route: String) {
         this.route = route
-        Log.i(TAG, "[bridge] navigate → $route")
+        // #200: narration (Info) — gated by BnShellLog, which MainActivity
+        // installs from the same resolved ordinal the runtime is given. It was a
+        // bare Log.i, so it printed at the default Warn on every navigation.
+        BnShellLog.info(TAG, "[bridge] navigate → $route")
     }
 
     override fun currentRoute(): String = route

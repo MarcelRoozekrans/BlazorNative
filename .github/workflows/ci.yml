@@ -4,7 +4,7 @@
 #
 #   build-test (windows-latest) — the local verification procedure verbatim
 #   (setup.ps1 §1–7 documents the toolchain pins):
-#     build (analyzers ride it) → .NET tests (876 passed / 0 skipped) →
+#     build (analyzers ride it) → .NET tests (881 passed / 0 skipped) →
 #     three NativeAOT publishes of samples/BlazorNative.SampleApp — the
 #     publish head since Phase 8.0: the app owns PublishAot, the exports stay
 #     in Runtime via UnmanagedEntryPointsAssembly, and the artifact is
@@ -13,7 +13,7 @@
 #     each publish must show exactly the 4 accepted IL2072 trim warnings) →
 #     nine-export verification (dumpbin via vswhere / llvm-readelf from the
 #     pinned NDK) → Gradle testDebugUnitTest against the fresh win-x64 dll
-#     (148 passed / 0 failed — the assertion is the step near the end of this
+#     (158 passed / 0 failed — the assertion is the step near the end of this
 #     job; this header is a copy, and it read 92 for four milestones) →
 #     the instrumented sources COMPILE →
 #     consumer smoke (SIX packages packed at the one props version, nupkg
@@ -1540,7 +1540,36 @@ jobs:
       #       AddBlazorNativeDevice, named so it cannot pass on an empty set)
       # No product behaviour changed; Device gained six type-level doc summaries and
       # BnEnforceDocCoverage. JVM/Android/iOS baselines do not move.
-      - name: .NET tests (assert 876 passed / 0 skipped)
+      #
+      # 876 -> 881 (#200, +5 -- Runtime.Tests 711 -> 716; the older entries above say
+      # 709, which is stale by two -- the OBSERVED split is Renderer 138 + Analyzers 27
+      # + Runtime 716 = 881, and the total is the number the gate below asserts): the
+      # KOTLIN SHELL'S OWN
+      # narration joins the level gate. Phase 11.4 swept .NET's Console.Error (31) and
+      # iOS's NSLog (78) and built the Android pump for the RUNTIME's fd-2 output; it
+      # never swept the shell's own android.util.Log calls, which were never in scope.
+      # Observed on hardware (Xiaomi, Android 16, 0.5.1): at the DEFAULT Warn a cold
+      # launch still printed four Info `[BOOT]` lines, and ZERO lines carried the pump's
+      # `BlazorNative/<category>` tag -- proof they never touched the seam. That is 1.0
+      # criterion Q1 and the remaining half of #155. The whole +5 is ONE new file,
+      # AndroidLogDriftTests -- the third pin in the ConsoleErrorDriftTests /
+      # NSLogDriftTests family:
+      #   +1  NoBareLogInfoDebugOrVerbose_SurvivesInTheAndroidShell  (the pin itself;
+      #       Log.w/Log.e stay bare on purpose -- warnings and errors ship in Release)
+      #   +1  TheScan_IsNotVacuous                     (files found, both trees walked)
+      #   +1  TheInstrumentedTestExemption_IsRealAndStillHoldsBareLogI  (the fixed point
+      #       that proves the DETECTOR detects -- androidTest still uses bare Log.i)
+      #   +1  TheSweptFiles_StillNarrate               ("no bare Log.i" must not be
+      #       satisfied by DELETING the narration -- devloop.ps1 waits for
+      #       "[BOOT] mounted", the 11.2 runbook names the "[deep-link]" lines)
+      #   +1  TheShellsDefaultThreshold_IsTheFrameworksDefault  (BnShellLog.DEFAULT_LEVEL
+      #       read out of the Kotlin source and held equal to the live BnLog.DefaultLevel
+      #       -- the pin that keeps ONE threshold from becoming two)
+      # NO ABI change: the shell reuses the ordinal it already resolves for
+      # BlazorNativeInitOptions.logLevel (offset 28) -- one resolution, two uses, one
+      # local. The JVM baseline moves in the same commit (148 -> 158, below); the
+      # Android instrumented and iOS baselines do not move.
+      - name: .NET tests (assert 881 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -1558,8 +1587,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 876 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 876 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 881 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 881 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # ── NativeAOT publishes + nine-export verification ────────────────────
@@ -1859,7 +1888,27 @@ jobs:
       #    too asserts against the INJECTED SINK rather than scraping `logcat -d`
       #    (design §8.1 pin 5 — a logcat scrape is timing-sensitive and is a
       #    runbook observation, not a gate).
-      - name: JVM tests (Gradle testDebugUnitTest — assert 148 passed / 0 failed)
+      # ── #200: 148 → 158, +10 — the SHELL'S OWN narration behind the same gate.
+      #    One new file, BnShellLogTest, asserted against BnShellLog's INJECTED
+      #    SINK (the rule BnStderrPumpTest established for this module):
+      #      +1  the four [BOOT] lines of the hardware capture are SUPPRESSED at
+      #          the default threshold — issue #200 verbatim, in a unit test;
+      #      +1  …and REAPPEAR at Info, at Log.INFO, under the bare `BlazorNative`
+      #          tag. THE PAIR IS THE POINT: a silence with no control proves
+      #          nothing (#191), and "no narration at all" would satisfy the
+      #          suppression half on its own;
+      #      +3  UNSET and out-of-range resolve to Warn — never to silence — and
+      #          the Kotlin default mirrors BnLog.DefaultLevel;
+      #      +3  the Verbose / Debug / Error thresholds ship exactly what they say;
+      #      +2  isEnabled agrees with what the sink actually receives (a call site
+      #          that guards itself must not disagree with the gate), and UNSET is
+      #          never a MESSAGE level.
+      #    ⚠ WHAT THIS LANE CANNOT SEE: that MainActivity.onCreate actually installs
+      #    the resolved ordinal. That is an Activity-lifecycle fact and belongs to
+      #    the paired device observation #200 asks for (silent at Warn, narration
+      #    back at Verbose). The SOURCE half — no bare Log.i/d/v survives in the
+      #    shell — is AndroidLogDriftTests in the .NET lane above.
+      - name: JVM tests (Gradle testDebugUnitTest — assert 158 passed / 0 failed)
         working-directory: src/BlazorNative.Jni
         run: |
           .\gradlew.bat --no-daemon testDebugUnitTest
@@ -1873,8 +1922,8 @@ jobs:
             $errors += [int]$suite.errors; $skipped += [int]$suite.skipped
           }
           Write-Host "JVM test totals across $($xmls.Count) suites: tests=$tests failures=$failures errors=$errors skipped=$skipped"
-          if ($tests -ne 148 -or $failures -ne 0 -or $errors -ne 0 -or $skipped -ne 0) {
-            throw "JVM test baseline drift: expected 148 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped"
+          if ($tests -ne 158 -or $failures -ne 0 -or $errors -ne 0 -or $skipped -ne 0) {
+            throw "JVM test baseline drift: expected 158 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped"
           }
 
       # the instrumented-sources compile gate moved to its own required job

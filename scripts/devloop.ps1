@@ -21,7 +21,8 @@
     -Android (ADB device lane):
         dotnet publish linux-bionic-x64 → gradlew installDebug (preBuild
         re-stages the fresh .so into jniLibs) → am force-stop + am start
-        MainActivity with EXTRA_COMPONENT → poll logcat for the
+        MainActivity with EXTRA_COMPONENT (and EXTRA_LOG_LEVEL Info, without
+        which the marker below is gated off — see #200) → poll logcat for the
         "[BOOT] mounted <Component>" marker MainActivity logs on a successful
         mount. Requires a RUNNING emulator/device — this script fails fast
         and points at scripts/test-android.ps1 instead of booting one.
@@ -209,8 +210,17 @@ function Invoke-AndroidCycle {
     # am start reports failures in its OUTPUT (e.g. "Error: Activity class
     # does not exist"), often with exit 0 — check both instead of letting the
     # 90 s marker timeout discover it.
+    # EXTRA_LOG_LEVEL Info is LOAD-BEARING for this loop, not a convenience
+    # (#200). The "[BOOT] mounted <Component>" marker this function waits for is
+    # NARRATION, and since #200 the shell gates its own narration at Info — so at
+    # the default Warn threshold the marker never reaches logcat and the wait
+    # below would time out after 90 s on a perfectly healthy boot. Raising the
+    # level through the documented per-launch knob is the honest fix: it asks for
+    # exactly the verbosity this loop consumes, for exactly one launch, and the
+    # same extra is what a consumer uses to see the narration on their own app.
     $amOut = & $adb -s $device shell am start -n io.blazornative.shell/.MainActivity `
-        -e io.blazornative.shell.EXTRA_COMPONENT $Component 2>&1
+        -e io.blazornative.shell.EXTRA_COMPONENT $Component `
+        -e io.blazornative.shell.EXTRA_LOG_LEVEL Info 2>&1
     if ($LASTEXITCODE -ne 0 -or "$amOut" -match 'Error|Exception') {
         Write-Fail "am start failed (exit $LASTEXITCODE):"
         $amOut | Out-Host
