@@ -172,8 +172,15 @@ final class BnCamera {
             onMain { self.complete(requestId, self.availabilityStatus(), nil) }
         case "capture":
             let options = BnCaptureOptions(
+                // maxDim: absent OR unparseable → the default; a 0 is a DELIBERATE "keep full
+                // resolution" opt-in (documented on .NET's CaptureOptions and honored by
+                // downscaled(_:maxDim:)), so it is preserved, not overridden.
                 maxDim: args["maxDim"].flatMap { Int($0) } ?? BnCaptureOptions.defaultMaxDim,
-                quality: args["quality"].flatMap { Int($0) } ?? BnCaptureOptions.defaultQuality)
+                // quality: 0 is NOT a valid JPEG quality (the range is 1..100), so a 0 — exactly
+                // what a marshalled default(CaptureOptions) sends (#178) — means UNSET, not
+                // "encode at min(max(0,1),100)→1" (worst-possible quality). The inner flatMap
+                // routes a 0 (or negative) to nil, so a 0 falls to the documented default.
+                quality: args["quality"].flatMap { Int($0) }.flatMap { $0 > 0 ? $0 : nil } ?? BnCaptureOptions.defaultQuality)
             capture(requestId: requestId, options: options)
         default:
             // An unknown action is DATA (Error), never a crash (the Kotlin posture).

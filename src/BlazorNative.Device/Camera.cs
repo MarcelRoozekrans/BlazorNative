@@ -16,8 +16,12 @@ namespace BlazorNative.Device;
 
 internal sealed class Camera(IMobileBridge bridge) : ICamera
 {
-    public ValueTask<PhotoResult> CapturePhotoAsync(CaptureOptions options = default, CancellationToken ct = default)
-        => bridge.CapturePhotoAsync(options, ct);
+    // options is CaptureOptions? (not `= default`): a bare default(CaptureOptions) zero-
+    // initialises the struct and skips the record's primary-constructor defaults, sending
+    // MaxDimension=0/Quality=0 — the #178 footgun. null ⇒ new CaptureOptions(), which runs
+    // the 2048/85 defaults; a non-null value passes straight through.
+    public ValueTask<PhotoResult> CapturePhotoAsync(CaptureOptions? options = null, CancellationToken ct = default)
+        => bridge.CapturePhotoAsync(options ?? new CaptureOptions(), ct);
 
     public ValueTask<CameraStatus> CheckAvailabilityAsync(CancellationToken ct = default)
         => bridge.CheckCameraAvailabilityAsync(ct);

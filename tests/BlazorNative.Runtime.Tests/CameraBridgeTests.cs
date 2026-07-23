@@ -1,5 +1,7 @@
 using BlazorNative.Core;
+using BlazorNative.Device;
 using BlazorNative.Runtime;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace BlazorNative.Runtime.Tests;
 
@@ -199,6 +201,84 @@ public sealed class CameraBridgeTests
             var ex = await Assert.ThrowsAsync<NotSupportedException>(
                 () => bridge.CapturePhotoAsync(default).AsTask());
             Assert.Contains("not supported", ex.Message);
+        }
+        finally { NativeShellBridge.ResetForTests(); }
+    }
+
+    // ── Issue #178: the ICamera facade resolves the DOCUMENTED defaults ────────────
+    //
+    // The bug: CapturePhotoAsync had `CaptureOptions options = default`, and
+    // default(CaptureOptions) zero-initialises the struct (MaxDimension=0,Quality=0),
+    // bypassing the record's primary-constructor defaults (=2048,=85). The fix makes
+    // the parameter `CaptureOptions? options = null` and substitutes `new CaptureOptions()`
+    // for null. These pin the facade end-to-end THROUGH the real NativeShellBridge args
+    // (the same BuildCaptureArgs the on-device shell parses), not just the struct.
+
+    /// <summary>Resolves the ergonomic <see cref="ICamera"/> facade over the given
+    /// bridge exactly as the runtime composition root does (AddBlazorNativeDevice
+    /// wraps whatever IMobileBridge is registered).</summary>
+    private static ICamera ResolveCamera(NativeShellBridge bridge)
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<IMobileBridge>(bridge);
+        services.AddBlazorNativeDevice();
+        return services.BuildServiceProvider().GetRequiredService<ICamera>();
+    }
+
+    [Fact]
+    public async Task NoArgCapture_ResolvesTheDocumentedDefaults_2048And85_ThroughToTheShellArgs()
+    {
+        var bridge = RegisterFake();
+        try
+        {
+            FakeShellHost.HostCallStatus = (int)CameraStatus.Cancelled; // any terminal outcome
+            ICamera camera = ResolveCamera(bridge);
+
+            await camera.CapturePhotoAsync(); // the natural call — no options
+
+            // null ⇒ new CaptureOptions() ⇒ the primary-ctor defaults, NOT default(T)'s 0/0.
+            Assert.Contains("\"maxDim\":\"2048\"", FakeShellHost.LastHostCallArgs);
+            Assert.Contains("\"quality\":\"85\"", FakeShellHost.LastHostCallArgs);
+            Assert.DoesNotContain("\"quality\":\"0\"", FakeShellHost.LastHostCallArgs);
+        }
+        finally { NativeShellBridge.ResetForTests(); }
+    }
+
+    [Fact]
+    public async Task ExplicitCaptureOptions_StillFlowThrough_Unchanged()
+    {
+        var bridge = RegisterFake();
+        try
+        {
+            FakeShellHost.HostCallStatus = (int)CameraStatus.Cancelled;
+            ICamera camera = ResolveCamera(bridge);
+
+            await camera.CapturePhotoAsync(new CaptureOptions(MaxDimension: 1024, Quality: 70));
+
+            Assert.Contains("\"maxDim\":\"1024\"", FakeShellHost.LastHostCallArgs);
+            Assert.Contains("\"quality\":\"70\"", FakeShellHost.LastHostCallArgs);
+        }
+        finally { NativeShellBridge.ResetForTests(); }
+    }
+
+    /// <summary>Documents the STRAGGLER the shell-boundary fix defends against: an
+    /// EXPLICIT default(CaptureOptions) (or a value marshalled from an older caller)
+    /// still serializes maxDim=0/quality=0 on the wire. The API fix removes this for
+    /// the no-arg call; the Kotlin/Swift shells map a 0 quality to the documented
+    /// default rather than coerceIn(1,100)→1 (defense in depth, issue #178).</summary>
+    [Fact]
+    public async Task ExplicitDefaultCaptureOptions_StillSerializesZeroZero_TheShellStraggler()
+    {
+        var bridge = RegisterFake();
+        try
+        {
+            FakeShellHost.HostCallStatus = (int)CameraStatus.Cancelled;
+            ICamera camera = ResolveCamera(bridge);
+
+            await camera.CapturePhotoAsync(default(CaptureOptions)); // an explicit zeroed struct
+
+            Assert.Contains("\"maxDim\":\"0\"", FakeShellHost.LastHostCallArgs);
+            Assert.Contains("\"quality\":\"0\"", FakeShellHost.LastHostCallArgs);
         }
         finally { NativeShellBridge.ResetForTests(); }
     }

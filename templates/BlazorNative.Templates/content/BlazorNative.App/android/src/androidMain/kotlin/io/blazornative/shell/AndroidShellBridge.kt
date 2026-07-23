@@ -1186,8 +1186,16 @@ class AndroidShellBridge(
             "capture" -> capturePhoto(
                 requestId,
                 CaptureOptions(
+                    // maxDim: absent OR unparseable → the default; a 0 is a DELIBERATE
+                    // "keep full resolution" opt-in (documented on .NET's CaptureOptions
+                    // and honored by scaleToMaxDim), so it is preserved, not overridden.
                     maxDim = args["maxDim"]?.toIntOrNull() ?: DEFAULT_MAX_DIM,
-                    quality = args["quality"]?.toIntOrNull() ?: DEFAULT_QUALITY,
+                    // quality: 0 is NOT a valid JPEG quality (the range is 1..100), so a 0
+                    // — which is exactly what a marshalled default(CaptureOptions) sends
+                    // (#178) — means UNSET, not "encode at coerceIn(1,100)→1" (all-255
+                    // quantisation, visibly posterised). takeIf { it > 0 } routes a 0
+                    // (or negative) to the documented default rather than the worst case.
+                    quality = args["quality"]?.toIntOrNull()?.takeIf { it > 0 } ?: DEFAULT_QUALITY,
                 ),
             )
             else -> {

@@ -27,18 +27,32 @@ namespace BlazorNative.Runtime;
 //
 // TRIM LAW (why the factories exist): the mount thunk must be a statically
 // rooted generic Mount<T> instantiation — the shape that keeps reflection out
-// of the C ABI. The factories are the ONLY way to construct a row's thunk, so
-// the trim-law shape is not constructible any other way: T carries
-// DynamicallyAccessedMembers(All) (flowing NativeRenderer.Mount<T>'s own
-// requirement to the app's call site, where a CONCRETE type satisfies it at
-// compile time), and the lambda is `static r => r.Mount<T>()` — verbatim the
-// row shape PageManifest carried since 7.6. Publish gates hold the proof:
-// exactly 4 IL2072 (all in Renderer internals, none here) and 10 exports.
+// of the C ABI. The factories are the only way to construct a VALID row's
+// thunk: T carries DynamicallyAccessedMembers(All) (flowing
+// NativeRenderer.Mount<T>'s own requirement to the app's call site, where a
+// CONCRETE type satisfies it at compile time), and the lambda is
+// `static r => r.Mount<T>()` — verbatim the row shape PageManifest carried
+// since 7.6. But BlazorNativePage is a readonly struct, so C# ALSO grants a
+// public parameterless constructor: `default(BlazorNativePage)` and
+// `new BlazorNativePage()` compile and produce a row with a null Name and a
+// null Mount thunk — the private constructor cannot suppress them (issue #181).
+// That is caller error, not a shape the framework hands out, and it is caught
+// LOUDLY at the boundary: PageManifest.Validate rejects any row with a null
+// Name or Mount, naming the offending index (see RegisterPages). Publish gates
+// hold the trim proof: exactly 4 IL2072 (all in Renderer internals, none here)
+// and 10 exports.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// <summary>One page declaration: route (null = mount-by-name only), mount-
-/// registry name, and the statically-rooted mount thunk (created ONLY via the
-/// two factories — the trim-law shape is not constructible any other way).</summary>
+/// registry name, and the statically-rooted mount thunk. Build rows through the
+/// two factories (<see cref="Routed{T}"/> / <see cref="Named{T}"/>) — the
+/// supported and only VALID construction path. Because this is a
+/// <c>readonly struct</c>, C# also grants a public parameterless constructor, so
+/// <c>default(BlazorNativePage)</c> and <c>new BlazorNativePage()</c> compile and
+/// yield an INVALID row (null <see cref="Name"/> and null mount thunk); the
+/// private constructor cannot prevent that. Such a row is rejected loudly at
+/// registration (<see cref="BlazorNativeApp.RegisterPages"/> names the offending
+/// index) rather than failing silently at first mount — see issue #181.</summary>
 public readonly struct BlazorNativePage
 {
     public string? Route { get; }
