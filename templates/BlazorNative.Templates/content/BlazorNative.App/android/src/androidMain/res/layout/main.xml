@@ -18,21 +18,42 @@
         android:layout_weight="1"
         android:background="#FFFFFF" />
 
-    <!-- THE [BOOT] STRIP IS A FIXED HEIGHT, NOT A WEIGHTED FRACTION. It used to be
-         `0dp` + `layout_weight="2"` against widget_root's `3` — a flat 40% of the
-         screen in every orientation, in a SCAFFOLDED APP. A fraction is the wrong
-         unit for a debug strip: it needs a couple of lines of text (an absolute
-         amount of space) while your app needs everything else, so weighting it
-         kept the full 40% precisely when there was none to spare. Rotating to
-         landscape is where it shows: the app's area collapses to ~244dp on a
-         407 × 904dp screen, content overflows widget_root, and because every
-         BnYogaFrameLayout sets `clipChildren = false` the overflow is painted
-         over by this opaque panel rather than clipped.
+    <!-- THE [BOOT] STRIP IS A FIXED HEIGHT, NOT A WEIGHTED FRACTION — and that is
+         the decision, not a detail. It used to be `0dp` + `layout_weight="2"`
+         against widget_root's `3`, i.e. a flat 40% of the screen in EVERY
+         orientation. A fraction is exactly the wrong unit for a debug strip: the
+         panel needs a couple of lines of text, which is an ABSOLUTE amount of
+         space, while the app needs everything else. Weighting it meant the strip
+         grew when there was room to spare and — much worse — kept its full 40%
+         when there was none.
+
+         The failure that named this: rotate to landscape and the app's own area
+         collapses from ~540dp to ~244dp on a 407 × 904dp screen, because the
+         strip takes 163dp of the 407dp that is left. Content that fit in portrait
+         then overflows widget_root, and since every BnYogaFrameLayout sets
+         `clipChildren = false` to match iOS's `clipsToBounds == NO`
+         (YogaLayout.kt), the overflow is NOT clipped — it is painted over by this
+         opaque black panel, which the LinearLayout draws after it. The symptom is
+         a page that just stops, with no scrollbar to explain it. (And no
+         scrollbar is CORRECT: a page without a BnScroll has no scroll node, and
+         the engine never invents one — the un-styled invariant.)
+
+         Yoga is not implicated: the resize path re-solves the whole tree against
+         the new bounds on any host resize (YogaLayout's addOnLayoutChangeListener
+         → calculateAndApply, which re-reads root.width/height every pass). The
+         space was gone before Yoga ever saw it.
 
          96dp holds three lines of 14sp monospace inside the 16dp padding, and it
-         scrolls, so no narration is lost. Delete this whole ScrollView if you do
-         not want it — but then also drop MainActivity's `R.id.markers` lookup,
-         which is what writes to it. -->
+         SCROLLS, so nothing is lost — the rest of the narration is a swipe away.
+         iOS has no equivalent panel at all (the app owns the full screen there),
+         so this also narrows a shell divergence rather than widening one.
+
+         This file is on the TEMPLATE MIRROR ROSTER (TemplateDriftTests) and is
+         byte-identical to templates/…/android/src/androidMain/res/layout/main.xml,
+         so this comment is read by app authors too: delete this whole ScrollView
+         if you do not want the strip — but then also drop MainActivity's
+         `R.id.markers` lookup, which is what writes to it. -->
+
     <ScrollView
         android:layout_width="match_parent"
         android:layout_height="96dp"

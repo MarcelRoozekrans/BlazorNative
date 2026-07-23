@@ -46,7 +46,14 @@
          96dp holds three lines of 14sp monospace inside the 16dp padding, and it
          SCROLLS, so nothing is lost — the rest of the narration is a swipe away.
          iOS has no equivalent panel at all (the app owns the full screen there),
-         so this also narrows a shell divergence rather than widening one. -->
+         so this also narrows a shell divergence rather than widening one.
+
+         This file is on the TEMPLATE MIRROR ROSTER (TemplateDriftTests) and is
+         byte-identical to templates/…/android/src/androidMain/res/layout/main.xml,
+         so this comment is read by app authors too: delete this whole ScrollView
+         if you do not want the strip — but then also drop MainActivity's
+         `R.id.markers` lookup, which is what writes to it. -->
+
     <ScrollView
         android:layout_width="match_parent"
         android:layout_height="96dp"
