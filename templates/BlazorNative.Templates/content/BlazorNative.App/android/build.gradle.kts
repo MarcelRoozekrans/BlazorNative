@@ -1,7 +1,7 @@
 import org.gradle.api.tasks.testing.logging.TestExceptionFormat
 
 plugins {
-    id("com.android.application") version "9.3.0"
+    id("com.android.application") version "9.3.1"
 }
 
 // AGP 9 ships built-in Kotlin and the org.jetbrains.kotlin.android plugin is gone, so the
