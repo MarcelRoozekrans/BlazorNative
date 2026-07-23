@@ -7,6 +7,7 @@ import android.view.ViewGroup
 import android.widget.Button
 import android.widget.EditText
 import android.widget.FrameLayout
+import android.widget.ScrollView
 import android.widget.TextView
 import androidx.lifecycle.Lifecycle
 import androidx.test.core.app.ActivityScenario
@@ -153,10 +154,18 @@ class HostEventAndroidTest {
         act.findViewById<FrameLayout>(R.id.widget_root)
             ?.let { firstMatch(it) { v -> v is TextView && v !is Button } } as? TextView
 
-    /** The BnDemo form div: widget_root's child once BnDemo is mounted. */
-    private fun form(act: MainActivity): ViewGroup? =
-        (act.findViewById<FrameLayout>(R.id.widget_root)?.takeIf { it.childCount > 0 }
-            ?.getChildAt(0) as? ViewGroup)?.takeIf { it.childCount >= 6 }
+    /** The BnDemo form div, once BnDemo is mounted. #204 wrapped that page in a
+     * BnScroll, so the walk is widget_root → ScrollView → the synthetic content
+     * view → the form (see BnDemoAndroidTest.form for why it goes THROUGH the
+     * content node rather than around it). */
+    private fun form(act: MainActivity): ViewGroup? {
+        val scroll = act.findViewById<FrameLayout>(R.id.widget_root)
+            ?.takeIf { it.childCount > 0 }
+            ?.getChildAt(0) as? ScrollView ?: return null
+        val content = scroll.takeIf { it.childCount > 0 }?.getChildAt(0) as? ViewGroup ?: return null
+        return (content.takeIf { it.childCount > 0 }?.getChildAt(0) as? ViewGroup)
+            ?.takeIf { it.childCount >= 6 }
+    }
 
     /** The settings title: a non-Button TextView reading exactly "Settings". */
     private fun settingsTitle(act: MainActivity): TextView? =

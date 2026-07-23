@@ -153,7 +153,13 @@ final class BnRenderTests: BnHostTestCase {
         let end = Date().addingTimeInterval(seconds)
         while Date() < end {
             RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.05))
-            if let form = root.subviews.first, form.subviews.count >= 6, form.frame.height > 0 {
+            // #204: root → UIScrollView → synthetic content view → form (see
+            // BnInteractionTests.demoForm for why the walk goes THROUGH the
+            // content node rather than around it).
+            if let scroll = root.subviews.first as? UIScrollView,
+               let content = scroll.subviews.first,
+               let form = content.subviews.first,
+               form.subviews.count >= 6, form.frame.height > 0 {
                 return form
             }
         }

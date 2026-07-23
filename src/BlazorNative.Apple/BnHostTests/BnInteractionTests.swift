@@ -147,8 +147,23 @@ final class BnInteractionTests: BnHostTestCase {
     /// UIControl. `type(of:)`, because a subclass is precisely what is being excluded.
     private func isPlainContainer(_ view: UIView) -> Bool { type(of: view) == UIView.self }
 
+    /// The BnDemo form div.
+    ///
+    /// #204 wrapped the page in a BnScroll, so the walk is
+    /// root → UIScrollView → the SYNTHETIC CONTENT VIEW → the form. The content
+    /// view is the shell's own node — created by BnWidgetMapper, never on the wire
+    /// — and a scroll node's wire children parent into IT, never into the
+    /// UIScrollView (Phase 6.2, non-negotiable #2). This walks THROUGH it rather
+    /// than searching past it: if the mapper ever stopped interposing the content
+    /// node, this returns nil rather than quietly matching something else.
+    ///
+    /// The `isPlainContainer` check stays on the FORM, not the content view: the
+    /// form is the `view` node the wire actually describes, and it is the thing
+    /// whose class this test has an opinion about.
     private func demoForm() -> UIView? {
-        guard let form = root.subviews.first,
+        guard let scroll = root.subviews.first as? UIScrollView,
+              let content = scroll.subviews.first,
+              let form = content.subviews.first,
               isPlainContainer(form),
               form.subviews.count >= 6 else { return nil }
         return form

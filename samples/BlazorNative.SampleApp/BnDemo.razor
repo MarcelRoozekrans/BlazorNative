@@ -25,14 +25,19 @@
 
     Shape (the pinned mount contract — BnDemoTests + Gate 3's BnDemoTest.kt):
       CascadingValue<BnTheme>                       (region — no node)
-      └─ BnThemedPanel #1 → BnView form div          backgroundColor+padding 16
-          ├─ BnText  title "BnDemo"                  span, fontSize 24
-          ├─ BnInput bound (@bind-Value)             input: value+placeholder+change
-          ├─ BnThemedPanel #2 → BnView echo panel    div, backgroundColor+padding 8
-          │   └─ BnText echo (= the bound text)      span
-          ├─ BnButton "Clear"                        button + click
-          ├─ BnButton "Theme"                        button + click
-          └─ BnButton "Settings →"                   button + click → NavigateToAsync("/settings")
+      └─ BnScroll (#204)                             scroll — flexGrow 1, flexBasis 0
+         │                                           the shells interpose a SYNTHETIC
+         │                                           content node under it; the form
+         │                                           parents into THAT, never into the
+         │                                           viewport (6.2 non-negotiable #2)
+         └─ BnThemedPanel #1 → BnView form div       backgroundColor+padding 16
+            ├─ BnText  title "BnDemo"                span, fontSize 24
+            ├─ BnInput bound (@bind-Value)           input: value+placeholder+change
+            ├─ BnThemedPanel #2 → BnView echo panel  div, backgroundColor+padding 8
+            │   └─ BnText echo (= the bound text)    span
+            ├─ BnButton "Clear"                      button + click
+            ├─ BnButton "Theme"                      button + click
+            └─ BnButton "Settings →"                 button + click → NavigateToAsync("/settings")
       (4 event attaches: change + Clear + Theme + Settings →)
 
     The bind loop (DoD #5): change dispatch → BnInput.ValueChanged → _text
@@ -45,17 +50,36 @@
     same dispatch.
     ─────────────────────────────────────────────────────────────────────────
 *@
+@* Grow="1" Basis="0" — CSS's `flex: 1`, and BOTH halves are load-bearing.
+   Grow alone leaves flexBasis at `auto`, so the viewport's basis is its own
+   CONTENT's height; against a shorter host the free space is NEGATIVE, flexGrow
+   never distributes negative space, and the shrink pass does nothing because
+   Yoga defaults flexShrink to 0. The viewport would keep its content's height,
+   equal its own content, and scroll nothing — the exact silent failure
+   BnScroll's KDoc documents and WidgetMapperScrollTest pins. Basis="0" is what
+   makes the free space positive again.
+
+   The host root IS a bounded parent (widget_root is the whole Activity since
+   #204), which is the other half of the requirement.
+
+   No Padding/Gap/Direction here: those are absent from BnScroll BY CONSTRUCTION
+   — they would land on the viewport, whose only Yoga child is the synthetic
+   content node, and fail silently. The BnThemedPanel inside keeps its own
+   Padding="16", which is exactly the composition the component's docs
+   prescribe. *@
 <CascadingValue Value="_theme">
-    <BnThemedPanel Padding="16">
-        <BnText Text="BnDemo" FontSize="24" />
-        <BnInput @bind-Value="_text" Placeholder="Type here..." />
-        <BnThemedPanel Padding="8">
-            <BnText Text="@_text" />
+    <BnScroll Grow="1" Basis="0">
+        <BnThemedPanel Padding="16">
+            <BnText Text="BnDemo" FontSize="24" />
+            <BnInput @bind-Value="_text" Placeholder="Type here..." />
+            <BnThemedPanel Padding="8">
+                <BnText Text="@_text" />
+            </BnThemedPanel>
+            <BnButton Label="Clear" OnClick="Clear" />
+            <BnButton Label="Theme" OnClick="ToggleTheme" />
+            <BnButton Label="Settings →" OnClick="GoToSettings" />
         </BnThemedPanel>
-        <BnButton Label="Clear" OnClick="Clear" />
-        <BnButton Label="Theme" OnClick="ToggleTheme" />
-        <BnButton Label="Settings →" OnClick="GoToSettings" />
-    </BnThemedPanel>
+    </BnScroll>
 </CascadingValue>
 
 @code {
