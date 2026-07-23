@@ -145,8 +145,10 @@ class HostEventAndroidTest {
         act.findViewById(R.id.widget_root)
 
     /** The HostEventProbe echo TextView: the single TextView descendant of
-     * widget_root (root div → span → TextView; the console markers TextView is
-     * OUTSIDE widget_root). */
+     * widget_root (root div → span → TextView). The scoping to widget_root used to
+     * matter because a console markers TextView sat outside it; #204 removed that
+     * panel, so widget_root is now the whole Activity — but the scoping stays, since
+     * it says what this selector means rather than merely how it dodges a neighbour. */
     private fun echoTextView(act: MainActivity): TextView? =
         act.findViewById<FrameLayout>(R.id.widget_root)
             ?.let { firstMatch(it) { v -> v is TextView && v !is Button } } as? TextView

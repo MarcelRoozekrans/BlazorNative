@@ -33,9 +33,11 @@ import java.util.concurrent.atomic.AtomicReference
  *
  * FOCUS PARKING (the judgment call): blur only fires when focus actually
  * LEAVES the EditText, and clearFocus() on the last focusable view can
- * bounce focus straight back — so the test parks focus on the console
- * markers TextView (main.xml's boot pane, made focusable on the UI thread)
- * instead. Parking FIRST also neutralizes the initial-focus ambiguity: in
+ * bounce focus straight back — so the test parks focus on a 1×1 view of its
+ * OWN, added to android.R.id.content (see [parkFocus]). It used to borrow
+ * main.xml's console markers TextView, which #204 deleted along with the rest
+ * of the 40%-of-the-screen boot panel.
+ * Parking FIRST also neutralizes the initial-focus ambiguity: in
  * non-touch mode the first layout may hand the EditText focus at boot, so
  * the test never asserts the pre-park echo, only the two transitions it
  * drives itself.
@@ -218,12 +220,33 @@ class FocusBlurAndroidTest {
     private fun echoText(act: MainActivity): TextView? =
         probeRoot(act)?.takeIf { it.childCount >= 2 }?.getChildAt(1) as? TextView
 
-    /** Steals focus onto the console markers TextView (see class KDoc). */
+    /** Parks focus on a 1×1 view THE TEST OWNS (see class KDoc).
+     *
+     * It used to park on the console markers TextView from main.xml. #204 deleted
+     * that panel — it held 40% of the screen — and the replacement is better than a
+     * like-for-like substitute would have been: a focus test that borrows whatever
+     * app UI happens to be lying around is coupled to layout decisions it has no
+     * stake in, which is exactly how it broke. This target exists only to be
+     * focused, so no layout change can take it away.
+     *
+     * Added to `android.R.id.content`, NOT to widget_root: widget_root is the Yoga
+     * host, every child of it is placed by applyFrames, and a stray view inside it
+     * would be an untracked node in the mapper's view-tree/Yoga-tree count
+     * comparison. 1×1 rather than 0×0 because a zero-area view is not focusable. */
     private fun parkFocus(act: MainActivity) {
-        val console = act.findViewById<TextView>(R.id.markers)
-        console.isFocusableInTouchMode = true
-        console.isFocusable = true
-        console.requestFocus()
+        val content = act.findViewById<ViewGroup>(android.R.id.content)
+        val park = content.findViewWithTag<View>(PARK_TAG) ?: View(act).also { v ->
+            v.tag = PARK_TAG
+            v.isFocusable = true
+            v.isFocusableInTouchMode = true
+            content.addView(v, 1, 1)
+        }
+        park.requestFocus()
+    }
+
+    private companion object {
+        /** Tag identifying the parking view so repeat calls reuse the one view. */
+        const val PARK_TAG = "bn-focus-park"
     }
 
     // ── Polling helpers (BnDemoAndroidTest house style) ──────────────────────
