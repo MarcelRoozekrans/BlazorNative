@@ -131,7 +131,7 @@ public static class Exports
     /// <summary>Single source of truth for the runtime version — the
     /// JNA-visible version cstring and NativeShellBridge.PlatformInfo both
     /// derive from it.</summary>
-    internal const string VersionNumber = "0.5.0"; // x-release-please-version
+    internal const string VersionNumber = "0.5.1"; // x-release-please-version
 
     static Exports()
     {

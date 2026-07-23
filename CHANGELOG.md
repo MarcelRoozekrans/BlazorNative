@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.1](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.5.0...v0.5.1) (2026-07-23)
+
+
+### Bug Fixes
+
+* surface geolocation accuracy on a separate trailing node ([#169](https://github.com/MarcelRoozekrans/BlazorNative/issues/169)) ([#195](https://github.com/MarcelRoozekrans/BlazorNative/issues/195)) ([37a89ca](https://github.com/MarcelRoozekrans/BlazorNative/commit/37a89ca75fab0a15675a7d5c6d123191f82c67b5))
+
 ## [0.5.0](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.4.1...v0.5.0) (2026-07-22)
 
 
