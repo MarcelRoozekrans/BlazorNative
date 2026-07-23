@@ -56,6 +56,13 @@ public sealed class ComponentReferenceFixture : IDisposable
         psi.ArgumentList.Add("-NoProfile");
         psi.ArgumentList.Add("-File");
         psi.ArgumentList.Add(script);
+        // #173: the generator now covers more than one package, so a bare
+        // -OutputPath is ambiguous — name the package. This fixture asserts the
+        // Components pipeline specifically (ComponentBase, the .razor pins), so it
+        // publishes and generates ONLY Components into its temp dir. The sibling
+        // ReferenceDriftTests does the same for each other generated package.
+        psi.ArgumentList.Add("-Package");
+        psi.ArgumentList.Add("Components");
         psi.ArgumentList.Add("-OutputPath");
         psi.ArgumentList.Add(OutputDirectory);
 

@@ -31,6 +31,10 @@
     <ProjectReference Include="..\..\src\BlazorNative.Core\BlazorNative.Core.csproj" />
     <ProjectReference Include="..\..\src\BlazorNative.Renderer\BlazorNative.Renderer.csproj" />
     <ProjectReference Include="..\..\src\BlazorNative.Http\BlazorNative.Http.csproj" />
+    <!-- #173: ReferenceDriftTests reflects BlazorNative.Device's public type set to
+         hold the generated reference against it (the sibling of the Components
+         pin). -->
+    <ProjectReference Include="..\..\src\BlazorNative.Device\BlazorNative.Device.csproj" />
     <!-- Phase 3.0d Gate 1: BlazorNative.Runtime is an ordinary class library at
          build time (PublishAot only affects publish), so referencing it from a
          test project is safe. Gives us PatchProtocolNative/FrameArena/FrameEncoder

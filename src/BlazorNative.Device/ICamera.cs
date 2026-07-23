@@ -27,6 +27,14 @@ namespace BlazorNative.Device;
 // simulator result).
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// <summary>DI-injectable façade over camera photo capture. Inject this rather than the
+/// low-level <see cref="IMobileBridge"/>; <see cref="CapturePhotoAsync"/> hands off to the
+/// system camera UI and returns a <see cref="PhotoResult"/> whose
+/// <see cref="PhotoResult.Path"/> is a <c>file://</c> URI (a valid <c>BnImage.Src</c>) on
+/// capture — a cancel, denial, missing camera or error is DATA, never an exception. The
+/// app owns the returned file. <see cref="CheckAvailabilityAsync"/> reports usability
+/// without launching the UI. Register it with
+/// <see cref="ServiceCollectionExtensions.AddBlazorNativeDevice"/>.</summary>
 public interface ICamera
 {
     /// <summary>Launches the system camera UI and returns the terminal

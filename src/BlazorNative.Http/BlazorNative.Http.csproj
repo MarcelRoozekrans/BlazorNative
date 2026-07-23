@@ -22,6 +22,19 @@
          the pin would be off while reading as on (that file's header carries
          the measurement, and the CS1591 pin paid for it twice). -->
     <BnEnforcePublicApi>true</BnEnforcePublicApi>
+
+    <!-- M11 #173 — DEFERRED, not enforced, and therefore not in the generated API
+         reference (scripts/generate-reference.ps1). The hand-written surface here
+         (BridgeHttpHandler, ServiceCollectionExtensions) is documentable, but this
+         package ALSO uses ZeroAlloc.Inject.Generator, which emits a PUBLIC
+         `BlazorNativeHttpServicesServiceCollectionExtensions.AddBlazorNativeHttpServices`
+         with no XML doc. Unlike the Razor generator, it does not emit
+         `#pragma warning disable 1591`, so CS1591 fires on generated code we cannot
+         annotate — the same class of blind spot the Razor `[Parameter]` pin exists
+         for in Components. Enforcing here would either break the build on generated
+         code or (once suppressed) still leave that type a blank reference stub, which
+         #173 forbids. Runtime and Device (no ZeroAlloc.Inject) turned the switch on;
+         Http joins once the generated-extension doc gap has a real solution. -->
   </PropertyGroup>
 
   <PropertyGroup>

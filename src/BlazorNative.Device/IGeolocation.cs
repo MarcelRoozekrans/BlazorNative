@@ -15,6 +15,13 @@ namespace BlazorNative.Device;
 // current state without popping a dialog.
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// <summary>DI-injectable façade over device location. Inject this rather than the
+/// low-level <see cref="IMobileBridge"/>; <see cref="GetCurrentPositionAsync"/> runs the
+/// whole permission dance host-side and always resolves with a
+/// <see cref="GeolocationResult"/> (a denial is DATA, never an exception or a hang),
+/// while <see cref="CheckPermissionAsync"/> reports the current permission without
+/// prompting. Register it with
+/// <see cref="ServiceCollectionExtensions.AddBlazorNativeDevice"/>.</summary>
 public interface IGeolocation
 {
     /// <summary>Requests-then-fetches the current position: runs the whole

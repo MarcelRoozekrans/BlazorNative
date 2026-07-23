@@ -4,7 +4,7 @@
 #
 #   build-test (windows-latest) — the local verification procedure verbatim
 #   (setup.ps1 §1–7 documents the toolchain pins):
-#     build (analyzers ride it) → .NET tests (864 passed / 0 skipped) →
+#     build (analyzers ride it) → .NET tests (866 passed / 0 skipped) →
 #     three NativeAOT publishes of samples/BlazorNative.SampleApp — the
 #     publish head since Phase 8.0: the app owns PublishAot, the exports stay
 #     in Runtime via UnmanagedEntryPointsAssembly, and the artifact is
@@ -1500,7 +1500,18 @@ jobs:
       # BlazorNativeRuntime.kt's `else -> throw` and hard-crash every consumer on an
       # older COPIED shell. No Kotlin, Swift or template file changes -- the JVM,
       # Android and iOS baselines all hold.
-      - name: .NET tests (assert 864 passed / 0 skipped)
+      #
+      # 864 -> 866 (#173, +2 -- Runtime.Tests 699 -> 701): the API reference was
+      # widened past Components to BlazorNative.Device, and the drift guard widened
+      # with it. ReferenceDriftTests (the sibling of ComponentReferenceDriftTests)
+      # runs generate-reference.ps1 -Package Device and asserts the generated page
+      # set equals the package's public type set:
+      #   +1  GeneratedReference_DocumentsExactlyThePublicTypes  (red both directions)
+      #   +1  GeneratedReference_ContainsTheFacadesAndRegistration (the five façades
+      #       + AddBlazorNativeDevice, named so it cannot pass on an empty set)
+      # No product-code behaviour changed; Device gained six type-level doc summaries
+      # and BnEnforceDocCoverage. The JVM/Android/iOS baselines do not move.
+      - name: .NET tests (assert 866 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -1518,8 +1529,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 864 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 864 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 866 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 866 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # ── NativeAOT publishes + nine-export verification ────────────────────
