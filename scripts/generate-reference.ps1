@@ -150,6 +150,53 @@ if ($OutputPath -and $Package.Count -ne 1) {
     throw "-OutputPath overrides a single package's directory, but $($Package.Count) packages were selected. Pass one -Package, or drop -OutputPath and use -ReferenceRoot."
 }
 
+# ── github-slugger normalization (the #196 cross-PR bug) ────────────────────────
+# xmldoc2md writes in-page / cross-page links as `](target#fragment)`, GUESSING the
+# heading's anchor id. Docusaurus, however, forms the real heading id with
+# github-slugger, and the two disagree the moment a signature carries punctuation
+# github-slugger STRIPS but xmldoc2md RETAINS: a nullable `?`, a generic `<T>`, an
+# array `[]`, a tuple. When they disagree the link points at an id no heading has,
+# and `onBrokenAnchors: 'throw'` (website/docusaurus.config — deliberately a guard)
+# fails the site build. It first bit when #196 changed
+# ICamera.CapturePhotoAsync(CaptureOptions options) to `CaptureOptions? options`:
+# xmldoc2md emitted `#capturephotoasynccaptureoptions?-cancellationtoken`, Docusaurus
+# slugged the heading to `…captureoptions-cancellationtoken`, and they missed on the
+# lone `?`. Components never tripped it because none of its signatures carried one.
+#
+# THE FIX IS IN THE GENERATED OUTPUT, NOT THE SITE CONFIG. We re-slug every link
+# fragment through github-slugger's own rules rather than special-casing `?`, so the
+# next punctuation (generics as coverage widens) is already handled.
+function Convert-ToDocusaurusSlug([string]$fragment) {
+    # github-slugger semantics as Docusaurus applies them to heading TEXT: lowercase,
+    # whitespace -> '-', then drop everything that is not a word char or a hyphen.
+    # xmldoc2md already lowercases and hyphenates the parameter separators the same
+    # way, so removing the retained punctuation is the whole difference.
+    $s = $fragment -replace '\s+', '-'
+    $s = $s -replace '[^\w-]', ''
+    return $s.ToLowerInvariant()
+}
+
+function Repair-DocusaurusAnchors([string]$directory) {
+    # Only the FRAGMENT of a markdown link is rewritten (`](url#FRAGMENT)`), never the
+    # url or the visible text. Idempotent: a fragment already equal to its slug is
+    # unchanged. `pre` stops at the first '#'; `frag` runs to the closing ')'.
+    $anchor = [regex]'\]\((?<pre>[^()\s#]*#)(?<frag>[^()\s]+)\)'
+    $evaluator = {
+        param($m)
+        '](' + $m.Groups['pre'].Value + (Convert-ToDocusaurusSlug $m.Groups['frag'].Value) + ')'
+    }
+    $changed = 0
+    foreach ($file in Get-ChildItem -Path $directory -Filter '*.md' -File) {
+        $text  = Get-Content -Raw -LiteralPath $file.FullName
+        $fixed = $anchor.Replace($text, $evaluator)
+        if ($fixed -ne $text) {
+            Set-Content -NoNewline -LiteralPath $file.FullName -Value $fixed
+            $changed++
+        }
+    }
+    Write-Host "==> generate-reference: normalized heading anchors in $changed file(s) under $directory"
+}
+
 Write-Host "==> generate-reference: restoring the pinned generator (.config/dotnet-tools.json)"
 dotnet tool restore | Out-Host
 if ($LASTEXITCODE -ne 0) { throw "dotnet tool restore failed (exit $LASTEXITCODE)" }
@@ -187,6 +234,10 @@ foreach ($name in $Package) {
     #     consumer's surface, which is what a consumer reference is.
     dotnet xmldoc2md $assembly -o $outDir --platform docusaurus --member-accessibility-level public | Out-Host
     if ($LASTEXITCODE -ne 0) { throw "xmldoc2md failed for $name (exit $LASTEXITCODE)" }
+
+    # Rewrite xmldoc2md's guessed anchors onto the slugs Docusaurus actually emits,
+    # before onBrokenAnchors:'throw' sees them (see the functions above / #196).
+    Repair-DocusaurusAnchors $outDir
 
     $pages = @(Get-ChildItem -Path $outDir -Filter '*.md' -File)
     Write-Host "==> generate-reference [$name]: $($pages.Count) markdown files in $outDir"
