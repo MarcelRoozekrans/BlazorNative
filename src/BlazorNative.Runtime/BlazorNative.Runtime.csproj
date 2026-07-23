@@ -46,6 +46,20 @@
          records 12 NOT-API ones. The .txt records what is public; the tier
          table says which is which. -->
     <BnEnforcePublicApi>true</BnEnforcePublicApi>
+
+    <!-- M11 #173 — DEFERRED, not enforced, and therefore not in the generated API
+         reference (scripts/generate-reference.ps1). This package's STABLE consumer
+         types (BlazorNativeApp — ConfigureServices, RegisterPages — and
+         BlazorNativePage) are the highest-value reference target of the four, but
+         the package ALSO exports ~12 NOT-API public types (the tier note above):
+         PatchProtocolNative / BridgeProtocolNative wire structs, NativeShellBridge,
+         Exports and friends carry ~98 undocumented public members. CS1591 is
+         all-or-nothing per package, so enforcing today would either break the build
+         on those interop types or leave them as blank reference stubs — the thing
+         #173 forbids. Runtime joins once that NOT-API surface is documented (or the
+         reference gains a way to scope to the STABLE tier). Device (5 fully
+         documented façades, no NOT-API surface) is the package whose docs already
+         allowed the switch. -->
   </PropertyGroup>
 
   <PropertyGroup>

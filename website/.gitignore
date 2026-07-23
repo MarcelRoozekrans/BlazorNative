@@ -3,8 +3,11 @@ build/
 .docusaurus/
 .cache-loader/
 
-# The component reference is GENERATED from BlazorNative.Components' XML docs at
-# build time and never committed (Phase 8.4 design, decision 3). The `///` next to
+# The API reference is GENERATED from each package's XML docs at build time and
+# never committed (Phase 8.4 design, decision 3; widened by #173). The `///` next to
 # the code is the one home for those facts; a committed copy here would be a second
 # one, and a second copy is the thing this whole site is built to refuse.
+#   · Components -> docs/components/reference/   (historical home)
+#   · every other generated package -> docs/reference/<package>/  (Device today)
 docs/components/reference/
+docs/reference/

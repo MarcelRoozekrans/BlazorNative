@@ -16,6 +16,12 @@ namespace BlazorNative.Device;
 // CheckPermissionAsync is read-only (no prompt) so a UI can SHOW the current state.
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// <summary>DI-injectable façade over local notifications. Inject this rather than the
+/// low-level <see cref="IMobileBridge"/>; schedule, show and cancel local notifications
+/// (a <see cref="NotificationSpec.Route"/> makes the tap open the app to that page) and
+/// manage the OS permission. Every call resolves with a <see cref="NotificationStatus"/>
+/// value — a denial is DATA, never an exception or a hang. Register it with
+/// <see cref="ServiceCollectionExtensions.AddBlazorNativeDevice"/>.</summary>
 public interface INotifications
 {
     /// <summary>Schedules a local notification to fire at <see cref="NotificationSpec.When"/>

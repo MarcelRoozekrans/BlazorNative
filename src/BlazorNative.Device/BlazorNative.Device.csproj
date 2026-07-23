@@ -15,6 +15,16 @@
          the pin would be off while reading as on (that file's header carries
          the measurement, and the CS1591 pin paid for it twice). -->
     <BnEnforcePublicApi>true</BnEnforcePublicApi>
+
+    <!-- M11 #173 — EVERY PUBLIC MEMBER IS DOCUMENTED, ENFORCED. CS1591 is an
+         ERROR here (WarningsAsErrors rides this flag in src/Directory.Build.targets),
+         so a missing `///` stops the build. This is the OTHER HALF of #173: the
+         API reference now generates a page per public type of this package
+         (scripts/generate-reference.ps1), and a page for an undocumented member is
+         a blank stub — so generation and enforcement turn on together. This
+         package's five façades + AddBlazorNativeDevice were fully documented when
+         the switch was thrown (zero CS1591), which is why it can be first. -->
+    <BnEnforceDocCoverage>true</BnEnforceDocCoverage>
   </PropertyGroup>
 
   <PropertyGroup>

@@ -71,8 +71,11 @@ on:
     branches: [main]
     paths:
       - 'website/**'
-      # The reference is generated FROM here — divergence 1 above.
+      # The reference is generated FROM here — divergence 1 above. #173 widened the
+      # generated set past Components to BlazorNative.Device, so its source is a
+      # reference input too (see scripts/generate-reference.ps1's manifest).
       - 'src/BlazorNative.Components/**'
+      - 'src/BlazorNative.Device/**'
       # …and these decide whether the XML docs exist at all
       # (GenerateDocumentationFile) and whether CS1591 is an error
       # (BnEnforceDocCoverage). They are inputs to the reference exactly as the
@@ -89,6 +92,7 @@ on:
     paths:
       - 'website/**'
       - 'src/BlazorNative.Components/**'
+      - 'src/BlazorNative.Device/**'
       - 'src/Directory.Build.props'
       - 'src/Directory.Build.targets'
       - 'scripts/generate-reference.ps1'

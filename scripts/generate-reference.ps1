@@ -1,7 +1,7 @@
 #Requires -Version 7
 <#
 .SYNOPSIS
-    BlazorNative — generate the component reference (Phase 8.4 Gate 2, M8 DoD #5).
+    BlazorNative — generate the API reference (Phase 8.4 Gate 2 / M11 #173).
 
 .DESCRIPTION
     THE SENTENCE THIS SCRIPT EXISTS FOR: xmldoc2md reports `Generation: 10
@@ -21,37 +21,96 @@
     assembly: `bin/` holds only BlazorNative.Components.dll + BlazorNative.Core.dll,
     so `Microsoft.AspNetCore.Components.dll` is absent, so ComponentBase does not
     resolve, so EVERY type deriving from it is dropped SILENTLY. A publish output
-    carries the dependency, and the components come back.
+    carries the dependency, and the components come back. THE SAME TRAP APPLIES TO
+    EVERY PACKAGE — Runtime's Exports resolve types out of Core, Device's façades
+    out of DI abstractions — so each package is PUBLISHED before it is generated,
+    never read from a bare bin/.
+
+    #173 WIDENED THIS BEYOND COMPONENTS. The generated reference used to cover one
+    of the seven shipped packages; a consumer wanting the five device façades or
+    `AddBlazorNativeDevice()` found nothing. The script now generates TWO packages,
+    each from its own dependency-complete publish:
+
+        Components  -> website/docs/components/reference   (historical home)
+        Device      -> website/docs/reference/device        (the five façades + AddBlazorNativeDevice)
+
+    A PACKAGE IS GENERATED ONLY WHEN ITS DOCS ALLOW IT (#173's coupling, made
+    literal: a page for an undocumented member is a blank stub, so a package is
+    added ONLY once `BnEnforceDocCoverage` can be turned on for it with zero CS1591).
+    Device was the one consumer-facing package whose public surface was already
+    fully `///`-documented (after this change added the five interface + one
+    extension type-level summaries the members already had). The other three
+    consumer-facing packages are DEFERRED, each for a concrete reason recorded at its
+    csproj switch:
+
+      · Runtime — its STABLE types (BlazorNativeApp, BlazorNativePage) are documented,
+        but the package also exports ~12 NOT-API interop types (PatchProtocolNative,
+        BridgeProtocolNative, NativeShellBridge, Exports…) with ~98 undocumented
+        public members. CS1591 is all-or-nothing per package.
+        (src/BlazorNative.Runtime/BlazorNative.Runtime.csproj)
+      · Core — IMobileBridge (27 members), DevHostBridge and six wire-mirrored
+        enums/records are documented only as `//` block comments, not `///` XML.
+        (src/BlazorNative.Core/BlazorNative.Core.csproj)
+      · Http — its hand-written surface is documentable, but ZeroAlloc.Inject.Generator
+        emits a PUBLIC `AddBlazorNativeHttpServices` extension with no XML doc and no
+        `#pragma warning disable 1591`, so CS1591 cannot be cleanly enforced.
+        (src/BlazorNative.Http/BlazorNative.Http.csproj)
+
+    When a gap is closed the package's `BnEnforceDocCoverage` flips on and it is added
+    to the manifest below — generation and enforcement always advance together.
+
+    Renderer and Analyzers are DELIBERATELY EXCLUDED (not merely deferred).
+    Renderer is internal render plumbing a consumer never injects or calls;
+    Analyzers ships with PrivateAssets=all (no compile-time reference reaches a
+    consumer) and its real contract is the seven BN00xx diagnostic IDs, documented
+    on docs/analyzers.md. Generating either would emit pages for a surface nobody
+    binds to.
+
+    THE HONEST COUPLING (#173): a page for an undocumented member is a blank stub.
+    Every generated package therefore has `BnEnforceDocCoverage` ON in its csproj,
+    so CS1591 is an ERROR and a missing `///` stops the build long before it can
+    reach a reference page. Generation and enforcement advance together, by design.
 
     THIS SCRIPT IS THE ONE HOME FOR THAT PIPELINE, and that is the whole reason it
-    is a script rather than four lines inlined into docs.yml. Two callers run it:
+    is a script rather than a handful of lines inlined into docs.yml. Two callers
+    run it:
 
       · .github/workflows/docs.yml — generates the reference it deploys
-      · ComponentReferenceDriftTests (Pin 1, build-test) — the count that proves
-        the reference is complete
+      · the drift pins (build-test) — the counts that prove the reference is
+        complete: ComponentReferenceDriftTests (Components) and
+        ReferenceDriftTests (Runtime/Core/Device/Http).
 
-    If the lane and the pin ran DIFFERENT pipelines, the pin would be green while
+    If the lane and the pins ran DIFFERENT pipelines, the pins would be green while
     the lane went blind — which is precisely the defect above, wearing a pin as a
-    disguise. One home, two callers, so the pin guards the real thing.
+    disguise. One home, many callers, so the pins guard the real thing.
 
-    NOTE WHAT THIS SCRIPT DELIBERATELY DOES NOT DO: it does not assert that the
-    output contains any components. That assertion is Pin 1's, and it lives there
-    ALONE on purpose — a guard here would fire first and the mutation that proves
-    Pin 1 (point this script at bin/) would prove this guard instead. The script
-    generates; the count is somebody else's job. See
-    tests/BlazorNative.Runtime.Tests/ComponentReferenceDriftTests.cs.
+    NOTE WHAT THIS SCRIPT DELIBERATELY DOES NOT DO: it does not assert that any
+    output contains types. That assertion is the pins', and it lives there ALONE on
+    purpose — a guard here would fire first and the mutation that proves a pin
+    (point this script at bin/) would prove this guard instead. The script
+    generates; the count is somebody else's job.
+
+.PARAMETER Package
+    Which package(s) to generate. Omit for ALL of them (what docs.yml's `prebuild`
+    does). A pin passes a single name so it publishes only the assembly it asserts.
 
 .PARAMETER OutputPath
-    Where the markdown lands. Defaults to website/docs/components/reference —
-    which is .gitignore'd, because the reference is GENERATED and never committed
-    (8.4 design decision 3: the `///` next to the code is the one home).
+    Override the output directory for a SINGLE selected package (a pin points this
+    at a temp dir). Ambiguous — and rejected — with more than one package.
+
+.PARAMETER ReferenceRoot
+    Base directory for the non-Components packages. Defaults to
+    website/docs/reference (.gitignore'd — the reference is GENERATED and never
+    committed; the `///` next to the code is the one home, 8.4 decision 3).
 
 .PARAMETER PublishPath
-    Where Components is published first. Defaults under artifacts/ (gitignored).
+    Where the packages are published first. Defaults under artifacts/ (gitignored).
 #>
 [CmdletBinding()]
 param(
+    [string[]]$Package,
     [string]$OutputPath,
+    [string]$ReferenceRoot,
     [string]$PublishPath
 )
 
@@ -60,44 +119,126 @@ $ErrorActionPreference = 'Stop'
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 
-if (-not $OutputPath)  { $OutputPath  = Join-Path $repoRoot 'website/docs/components/reference' }
-if (-not $PublishPath) { $PublishPath = Join-Path $repoRoot 'artifacts/docs-reference/publish' }
+if (-not $ReferenceRoot) { $ReferenceRoot = Join-Path $repoRoot 'website/docs/reference' }
+if (-not $PublishPath)   { $PublishPath   = Join-Path $repoRoot 'artifacts/docs-reference/publish' }
 
-$project = Join-Path $repoRoot 'src/BlazorNative.Components/BlazorNative.Components.csproj'
+# THE MANIFEST — the one place the generated set is declared. Each package is
+# PUBLISHED (dependency-complete) then handed to xmldoc2md. `Default` is where the
+# page set lands on a full run; the Components home is historical (8.4) and the
+# others sit under ReferenceRoot. The drift pins reflect this exact set.
+$manifest = [ordered]@{
+    Components = @{
+        Csproj  = 'src/BlazorNative.Components/BlazorNative.Components.csproj'
+        Dll     = 'BlazorNative.Components.dll'
+        Default = { Join-Path $repoRoot 'website/docs/components/reference' }
+    }
+    Device = @{
+        Csproj  = 'src/BlazorNative.Device/BlazorNative.Device.csproj'
+        Dll     = 'BlazorNative.Device.dll'
+        Default = { Join-Path $ReferenceRoot 'device' }
+    }
+}
+
+if (-not $Package -or $Package.Count -eq 0) { $Package = @($manifest.Keys) }
+
+foreach ($name in $Package) {
+    if (-not $manifest.Contains($name)) {
+        throw "unknown package '$name' — known packages: $($manifest.Keys -join ', ')"
+    }
+}
+if ($OutputPath -and $Package.Count -ne 1) {
+    throw "-OutputPath overrides a single package's directory, but $($Package.Count) packages were selected. Pass one -Package, or drop -OutputPath and use -ReferenceRoot."
+}
+
+# ── github-slugger normalization (the #196 cross-PR bug) ────────────────────────
+# xmldoc2md writes in-page / cross-page links as `](target#fragment)`, GUESSING the
+# heading's anchor id. Docusaurus, however, forms the real heading id with
+# github-slugger, and the two disagree the moment a signature carries punctuation
+# github-slugger STRIPS but xmldoc2md RETAINS: a nullable `?`, a generic `<T>`, an
+# array `[]`, a tuple. When they disagree the link points at an id no heading has,
+# and `onBrokenAnchors: 'throw'` (website/docusaurus.config — deliberately a guard)
+# fails the site build. It first bit when #196 changed
+# ICamera.CapturePhotoAsync(CaptureOptions options) to `CaptureOptions? options`:
+# xmldoc2md emitted `#capturephotoasynccaptureoptions?-cancellationtoken`, Docusaurus
+# slugged the heading to `…captureoptions-cancellationtoken`, and they missed on the
+# lone `?`. Components never tripped it because none of its signatures carried one.
+#
+# THE FIX IS IN THE GENERATED OUTPUT, NOT THE SITE CONFIG. We re-slug every link
+# fragment through github-slugger's own rules rather than special-casing `?`, so the
+# next punctuation (generics as coverage widens) is already handled.
+function Convert-ToDocusaurusSlug([string]$fragment) {
+    # github-slugger semantics as Docusaurus applies them to heading TEXT: lowercase,
+    # whitespace -> '-', then drop everything that is not a word char or a hyphen.
+    # xmldoc2md already lowercases and hyphenates the parameter separators the same
+    # way, so removing the retained punctuation is the whole difference.
+    $s = $fragment -replace '\s+', '-'
+    $s = $s -replace '[^\w-]', ''
+    return $s.ToLowerInvariant()
+}
+
+function Repair-DocusaurusAnchors([string]$directory) {
+    # Only the FRAGMENT of a markdown link is rewritten (`](url#FRAGMENT)`), never the
+    # url or the visible text. Idempotent: a fragment already equal to its slug is
+    # unchanged. `pre` stops at the first '#'; `frag` runs to the closing ')'.
+    $anchor = [regex]'\]\((?<pre>[^()\s#]*#)(?<frag>[^()\s]+)\)'
+    $evaluator = {
+        param($m)
+        '](' + $m.Groups['pre'].Value + (Convert-ToDocusaurusSlug $m.Groups['frag'].Value) + ')'
+    }
+    $changed = 0
+    foreach ($file in Get-ChildItem -Path $directory -Filter '*.md' -File) {
+        $text  = Get-Content -Raw -LiteralPath $file.FullName
+        $fixed = $anchor.Replace($text, $evaluator)
+        if ($fixed -ne $text) {
+            Set-Content -NoNewline -LiteralPath $file.FullName -Value $fixed
+            $changed++
+        }
+    }
+    Write-Host "==> generate-reference: normalized heading anchors in $changed file(s) under $directory"
+}
 
 Write-Host "==> generate-reference: restoring the pinned generator (.config/dotnet-tools.json)"
 dotnet tool restore | Out-Host
 if ($LASTEXITCODE -ne 0) { throw "dotnet tool restore failed (exit $LASTEXITCODE)" }
 
-# THE PUBLISH, NOT THE BUILD. This line is the entire point of the script; see
-# the .DESCRIPTION above before changing it to something that looks equivalent.
-Write-Host "==> generate-reference: publishing BlazorNative.Components (the dependency-complete output)"
-dotnet publish $project -c Release -o $PublishPath --nologo -v minimal | Out-Host
-if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed (exit $LASTEXITCODE)" }
+foreach ($name in $Package) {
+    $entry   = $manifest[$name]
+    $project = Join-Path $repoRoot $entry.Csproj
+    $outDir  = if ($OutputPath) { $OutputPath } else { & $entry.Default }
+    $pubDir  = Join-Path $PublishPath $name
 
-$assembly = Join-Path $PublishPath 'BlazorNative.Components.dll'
-if (-not (Test-Path $assembly)) { throw "published assembly not found: $assembly" }
+    # THE PUBLISH, NOT THE BUILD. This is the entire point of the script; see the
+    # .DESCRIPTION above before changing it to something that looks equivalent.
+    # Each package gets its OWN publish dir so a transitively-referenced type from a
+    # sibling package is present when xmldoc2md resolves the surface.
+    Write-Host "==> generate-reference [$name]: publishing (the dependency-complete output)"
+    dotnet publish $project -c Release -o $pubDir --nologo -v minimal | Out-Host
+    if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed for $name (exit $LASTEXITCODE)" }
 
-# A CLEAN OUTPUT DIRECTORY, every run. The reference is a pure function of the
-# XML docs; a leftover page from a component that no longer exists would be a
-# second copy that outlived its source — the one thing this site refuses.
-if (Test-Path $OutputPath) { Remove-Item -Recurse -Force $OutputPath }
-New-Item -ItemType Directory -Force -Path $OutputPath | Out-Null
+    $assembly = Join-Path $pubDir $entry.Dll
+    if (-not (Test-Path $assembly)) { throw "published assembly not found: $assembly" }
 
-Write-Host "==> generate-reference: xmldoc2md -> $OutputPath"
-# --platform docusaurus  : front matter + link rewriting for this site's shape
-# --member-accessibility-level public
-#     The tool's DEFAULT is `protected`, which documents the protected surface
-#     ComponentBase hands every component — RendererInfo, Assets,
-#     AssignedRenderMode. Those are ASP.NET Core's web-hosting concepts; this
-#     framework renders to native widgets and has no such thing. Publishing them
-#     on all 15 component pages would tell a stranger the opposite of the truth.
-#     (15 = the concrete ComponentBase-derived types, measured; "21" was carried
-#     here from an older count and was never true of this assembly — 8.4 review,
-#     S1-3. Pin 1 holds the real number.)
-#     `public` is the consumer's surface, which is what a consumer reference is.
-dotnet xmldoc2md $assembly -o $OutputPath --platform docusaurus --member-accessibility-level public | Out-Host
-if ($LASTEXITCODE -ne 0) { throw "xmldoc2md failed (exit $LASTEXITCODE)" }
+    # A CLEAN OUTPUT DIRECTORY, every run. The reference is a pure function of the
+    # XML docs; a leftover page from a type that no longer exists would be a second
+    # copy that outlived its source — the one thing this site refuses.
+    if (Test-Path $outDir) { Remove-Item -Recurse -Force $outDir }
+    New-Item -ItemType Directory -Force -Path $outDir | Out-Null
 
-$pages = @(Get-ChildItem -Path $OutputPath -Filter '*.md' -File)
-Write-Host "==> generate-reference: $($pages.Count) markdown files in $OutputPath"
+    Write-Host "==> generate-reference [$name]: xmldoc2md -> $outDir"
+    # --platform docusaurus  : front matter + link rewriting for this site's shape
+    # --member-accessibility-level public
+    #     The tool's DEFAULT is `protected`, which documents the protected surface
+    #     ComponentBase hands every component — RendererInfo, Assets,
+    #     AssignedRenderMode. Those are ASP.NET Core's web-hosting concepts; this
+    #     framework renders to native widgets and has no such thing. `public` is the
+    #     consumer's surface, which is what a consumer reference is.
+    dotnet xmldoc2md $assembly -o $outDir --platform docusaurus --member-accessibility-level public | Out-Host
+    if ($LASTEXITCODE -ne 0) { throw "xmldoc2md failed for $name (exit $LASTEXITCODE)" }
+
+    # Rewrite xmldoc2md's guessed anchors onto the slugs Docusaurus actually emits,
+    # before onBrokenAnchors:'throw' sees them (see the functions above / #196).
+    Repair-DocusaurusAnchors $outDir
+
+    $pages = @(Get-ChildItem -Path $outDir -Filter '*.md' -File)
+    Write-Host "==> generate-reference [$name]: $($pages.Count) markdown files in $outDir"
+}

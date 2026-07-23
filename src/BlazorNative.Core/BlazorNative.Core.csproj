@@ -15,6 +15,19 @@
          the pin would be off while reading as on (that file's header carries
          the measurement, and the CS1591 pin paid for it twice). -->
     <BnEnforcePublicApi>true</BnEnforcePublicApi>
+
+    <!-- M11 #173 — DELIBERATELY NOT YET DOC-ENFORCED, and therefore NOT in the
+         generated API reference (scripts/generate-reference.ps1). Runtime, Http
+         and Device turned BnEnforceDocCoverage on because their public surface was
+         already fully `///`-documented; Core is not. Its gap is real and large —
+         IMobileBridge's 27 members, DevHostBridge, and six wire-mirrored enums /
+         records (PlatformKind, GeolocationStatus, NotificationStatus,
+         BiometricStatus, SecureStorageStatus, CameraStatus, BridgeHttpRequest/
+         Response, PlatformInfo, NativeEvent) carry rich `//` block comments but no
+         `///` XML. Converting those to consumer-facing XML is a dedicated pass;
+         until it lands, enforcing here would only produce blank reference stubs,
+         which #173 explicitly forbids. Generation and enforcement advance
+         together, package by package. -->
   </PropertyGroup>
 
   <PropertyGroup>

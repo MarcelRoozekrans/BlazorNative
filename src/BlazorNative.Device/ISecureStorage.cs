@@ -24,6 +24,14 @@ namespace BlazorNative.Device;
 // .NET boundary (SecretResult.MaxValueBytes) — an oversize value returns Error.
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// <summary>DI-injectable façade over the encrypted-at-rest secret store (Keystore /
+/// Keychain host-side), distinct from the plain unencrypted key/value storage on
+/// <see cref="IMobileBridge"/>. Inject this rather than the low-level bridge; set, get and
+/// delete secrets, each resolving with a <see cref="SecureStorageStatus"/> value (a failure
+/// is DATA, never an exception). <see cref="GetWithAuthAsync"/> is the pairing: an
+/// auth-bound write (<c>requireAuth: true</c>) can only be read back behind a fresh OS
+/// biometric prompt. Register it with
+/// <see cref="ServiceCollectionExtensions.AddBlazorNativeDevice"/>.</summary>
 public interface ISecureStorage
 {
     /// <summary>Stores <paramref name="value"/> under <paramref name="key"/>,

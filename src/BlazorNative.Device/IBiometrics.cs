@@ -18,6 +18,13 @@ namespace BlazorNative.Device;
 // sibling), so a UI can decide whether to OFFER a biometric action.
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// <summary>DI-injectable façade over biometric authentication (Face ID / Touch ID /
+/// fingerprint). Inject this rather than the low-level <see cref="IMobileBridge"/>;
+/// <see cref="AuthenticateAsync"/> proves who is holding the device and returns a
+/// <see cref="BiometricStatus"/> value (failure, cancellation, lockout and no-hardware
+/// are DATA, never an exception), while <see cref="IsAvailableAsync"/> reports presence
+/// and enrolment without prompting. Register it with
+/// <see cref="ServiceCollectionExtensions.AddBlazorNativeDevice"/>.</summary>
 public interface IBiometrics
 {
     /// <summary>Shows an OS biometric prompt (Face ID / Touch ID / fingerprint) with
