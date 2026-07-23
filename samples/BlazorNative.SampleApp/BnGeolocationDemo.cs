@@ -25,8 +25,17 @@ namespace BlazorNative.SampleApp;
 //   root div
 //     ├─ BnButton "Locate" → GetCurrentPositionAsync() → echo the fix OR the status
 //     ├─ BnButton "Check"  → CheckPermissionAsync() (no prompt) → echo the status
-//     └─ BnText echo (mount-pinned text node — the FocusProbe/ClipboardProbe echo
-//        contract: transitions are ReplaceText on a stable nodeId)
+//     ├─ BnText echo (mount-pinned text node — the FocusProbe/ClipboardProbe echo
+//     │  contract: transitions are ReplaceText on a stable nodeId)
+//     └─ BnText accuracy (Phase 11.2 / issue #169 — a SEPARATE trailing node that
+//        surfaces GeolocationPosition.Accuracy as "acc:<metres>", so the round-tripped
+//        accuracy is observable on-device). It is placed AFTER the echo deliberately:
+//        each device suite selects the echo as "the first TextView-not-Button" (Android)
+//        / "the first UILabel" (iOS), so a trailing node leaves those selectors resolving
+//        to the echo, and the echo's "fix:lat,lng" shape is left UNCHANGED (both device
+//        suites split it on ',' and require exactly two doubles). Accuracy is its own
+//        self-describing, independently-assertable "acc:" line — invariant-formatted like
+//        the coords (a locale decimal comma would collide with the split).
 //
 // DENIAL-AS-DATA, made visible: a denied Locate echoes "Denied" (or the exact
 // tri-state) — it never throws and never leaves the echo blank waiting on a hang.
@@ -42,7 +51,13 @@ internal sealed class BnGeolocationDemo : ComponentBase
     /// name follows it, proving denial arrived as DATA (not a throw, not a hang).</summary>
     internal const string StatusPrefix = "status:";
 
+    /// <summary>The prefix the trailing accuracy line carries on a Granted fix —
+    /// "acc:&lt;metres&gt;", invariant-formatted like the coords. Empty on any
+    /// non-Granted outcome (denial-as-data: no fix ⇒ no accuracy to show).</summary>
+    internal const string AccuracyPrefix = "acc:";
+
     private string _echo = "";
+    private string _accuracy = "";
 
     [Inject] public IGeolocation Geo { get; set; } = default!;
 
@@ -66,6 +81,10 @@ internal sealed class BnGeolocationDemo : ComponentBase
         b.AddComponentParameter(31, nameof(BnText.Text), _echo);
         b.CloseComponent();
 
+        b.OpenComponent<BnText>(40);                             // the accuracy line (trailing)
+        b.AddComponentParameter(41, nameof(BnText.Text), _accuracy);
+        b.CloseComponent();
+
         b.CloseElement();
     }
 
@@ -76,9 +95,19 @@ internal sealed class BnGeolocationDemo : ComponentBase
         GeolocationResult result = await Geo.GetCurrentPositionAsync();
         // Coordinates are INVARIANT — a fix is not locale text (a comma decimal
         // separator would also collide with the lat,lng comma).
-        _echo = result is { Status: GeolocationStatus.Granted, Position: { } p }
-            ? FormattableString.Invariant($"{FixPrefix}{p.Latitude},{p.Longitude}")
-            : $"{StatusPrefix}{result.Status}";
+        if (result is { Status: GeolocationStatus.Granted, Position: { } p })
+        {
+            _echo = FormattableString.Invariant($"{FixPrefix}{p.Latitude},{p.Longitude}");
+            // Accuracy on its own trailing line, invariant-formatted like the coords.
+            _accuracy = FormattableString.Invariant($"{AccuracyPrefix}{p.Accuracy}");
+        }
+        else
+        {
+            _echo = $"{StatusPrefix}{result.Status}";
+            // Denial-as-data: no Granted fix ⇒ no accuracy. Clear it so a stale value
+            // never lingers under a fresh denial (the echo's same discipline).
+            _accuracy = "";
+        }
     }
 
     // Check reads the current permission WITHOUT prompting — the read-only path a
@@ -87,5 +116,7 @@ internal sealed class BnGeolocationDemo : ComponentBase
     {
         GeolocationStatus status = await Geo.CheckPermissionAsync();
         _echo = $"{StatusPrefix}{status}";
+        // Check never yields a fix — keep the accuracy line clear.
+        _accuracy = "";
     }
 }

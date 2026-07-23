@@ -51,9 +51,11 @@ import java.util.concurrent.atomic.AtomicReference
 // granted-check are the real end-to-end grants.
 //
 // Shape (BnGeolocationDemo.cs): root div → BnButton "Locate", BnButton "Check",
-// BnText echo. On-screen: widget_root → ViewGroup div → [0] Button "Locate",
-// [1] Button "Check", [2] TextView (the echo span, text-collapsed — the
-// FocusProbe/ClipboardProbe echo contract). Polling + node-by-text/structure is the
+// BnText echo, BnText accuracy. On-screen: widget_root → ViewGroup div → [0] Button
+// "Locate", [1] Button "Check", [2] TextView (the echo span, text-collapsed — the
+// FocusProbe/ClipboardProbe echo contract), [3] TextView (the trailing "acc:" line,
+// issue #169). The echo is still the FIRST TextView-not-Button, so its selector is
+// unchanged; accuracyText picks the SECOND. Polling + node-by-text/structure is the
 // ClipboardAndroidTest house style. STRICT MODE via BlazorNativeTestRunner.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -213,6 +215,14 @@ class BnGeolocationGrantedAndroidTest {
             assertEquals("echo must carry lat,lng: '$echo'", 2, coords.size)
             assertEquals("latitude round-trip", LAT, coords[0].toDouble(), 1e-4)
             assertEquals("longitude round-trip", LNG, coords[1].toDouble(), 1e-4)
+
+            // Issue #169: accuracy surfaces on its OWN trailing line ("acc:<metres>") — the
+            // echo shape above is UNCHANGED (still exactly lat,lng). This proves the
+            // round-tripped Accuracy is observable on-device (M11 DoD #2 records the app's
+            // own value, not just `dumpsys location`). The mock fix seeds accuracy = 5m.
+            val accuracy = GeoHarness.accuracyTextOn(scenario)!!
+            assertTrue("accuracy line must carry 'acc:<metres>': '$accuracy'", accuracy.startsWith("acc:"))
+            assertEquals("accuracy round-trip (mock fix is 5m)", 5.0, accuracy.removePrefix("acc:").toDouble(), 0.5)
         }
     }
 
@@ -312,6 +322,25 @@ private object GeoHarness {
     fun echoTextOn(scenario: ActivityScenario<MainActivity>): String? {
         val out = AtomicReference<String?>(null)
         scenario.onActivity { act -> out.set(echoText(act)?.text?.toString()) }
+        return out.get()
+    }
+
+    /** The accuracy TextView (issue #169): the SECOND root child that is a TextView but NOT
+     * a Button — the trailing "acc:" line (the echo is the first such child). */
+    private fun accuracyText(act: MainActivity): TextView? {
+        val root = probeRoot(act) ?: return null
+        var seen = 0
+        for (i in 0 until root.childCount) {
+            val child = root.getChildAt(i)
+            if (child is TextView && child !is Button && ++seen == 2) return child
+        }
+        return null
+    }
+
+    /** The current accuracy-line string, read on the UI thread (null until mounted). */
+    fun accuracyTextOn(scenario: ActivityScenario<MainActivity>): String? {
+        val out = AtomicReference<String?>(null)
+        scenario.onActivity { act -> out.set(accuracyText(act)?.text?.toString()) }
         return out.get()
     }
 
