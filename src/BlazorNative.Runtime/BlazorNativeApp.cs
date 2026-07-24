@@ -119,9 +119,29 @@ public static class BlazorNativeApp
     /// on the same <see cref="IServiceCollection"/> the framework registered
     /// its own services into, AFTER those registrations and immediately BEFORE
     /// the single provider is built — so an app <c>[Inject]</c> reaches app
-    /// services exactly as it reaches framework ones, and a re-registration of
-    /// a framework contract is a conscious last-write (MS.DI resolves the last
-    /// registration). Additive and last-wins; there is exactly ONE provider.
+    /// services exactly as it reaches framework ones. Additive and last-wins;
+    /// there is exactly ONE provider.
+    /// <para>
+    /// <b>RESERVED CONTRACTS — the one limit on "last-wins" (#210).</b> This
+    /// summary used to say a re-registration of a framework contract was "a
+    /// conscious last-write". That was not true of every contract, and the
+    /// exception was the dangerous kind: the framework re-resolves some of its
+    /// own registrations by concrete type after this delegate runs, so replacing
+    /// one did not override behaviour — it broke composition.
+    /// <see cref="BlazorNative.Core.INavigationManager"/> is the live case:
+    /// re-registering it used to throw <c>InvalidCastException</c> inside the
+    /// host session and fail EVERY mount with rc 2, naming nothing. It now fails
+    /// fast with a message that names the cause.
+    /// </para>
+    /// <para>
+    /// The rule, stated so it can be relied on: last-wins holds for <b>your</b>
+    /// services and for framework services the framework only ever resolves
+    /// through the same abstraction you replaced. It does <b>not</b> hold for
+    /// contracts documented CONSUME-ONLY — <see cref="BlazorNative.Core.INavigationManager"/>
+    /// and <see cref="BlazorNative.Core.IMobileBridge"/> — which the framework
+    /// implements and consumes itself. Adding services is always safe; replacing
+    /// a consume-only contract is not, and is rejected rather than half-honoured.
+    /// </para>
     /// Never calling it is the baseline — the field stays null and the host
     /// session skips the invocation.</summary>
     public static void ConfigureServices(Action<IServiceCollection> configure)

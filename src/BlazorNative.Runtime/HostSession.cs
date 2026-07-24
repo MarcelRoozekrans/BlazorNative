@@ -351,7 +351,18 @@ internal static unsafe class HostSession
             // Core contract so components [Inject] INavigationManager; the
             // session also keeps the concrete instance for the route-aware
             // initial mount + swap plumbing (TryMount/SwapRoot).
-            services.AddSingleton<INavigationManager, NativeNavigationManager>();
+            // #210: registered as the CONCRETE type first, with the Core contract
+            // resolving THROUGH it. The old single line
+            // (`AddSingleton<INavigationManager, NativeNavigationManager>()`) made
+            // the concrete instance reachable ONLY via the interface, so the session
+            // had to downcast what the interface resolved to — and an app that
+            // re-registered the interface made that cast throw. Two registrations
+            // pointing at ONE instance keep the framework's own plumbing resolvable
+            // by a type no app registration can displace, while `[Inject]
+            // INavigationManager` still reaches the same object.
+            services.AddSingleton<NativeNavigationManager>();
+            services.AddSingleton<INavigationManager>(
+                sp => sp.GetRequiredService<NativeNavigationManager>());
             // Phase 0.4.0-prep Gate A (design §1): the app-service seam. The
             // app's captured ConfigureServices delegate runs LAST — after every
             // framework registration above, immediately before the build — so an
@@ -362,8 +373,40 @@ internal static unsafe class HostSession
             configure?.Invoke(services);
             ServiceProvider provider = services.BuildServiceProvider();
             renderer = provider.GetRequiredService<NativeRenderer>();
-            Volatile.Write(ref s_navigation,
-                (NativeNavigationManager)provider.GetRequiredService<INavigationManager>());
+
+            // #210 — RESOLVE THE CONCRETE TYPE, THEN CHECK THE CONTRACT STILL POINTS AT IT.
+            //
+            // This used to be a downcast of what `INavigationManager` resolved to. An app
+            // doing the thing ConfigureServices documents — `services.AddSingleton<
+            // INavigationManager, MyNav>()` — made that cast throw InvalidCastException
+            // *inside* EnsureSession, which TryMount maps to rc 2. Every mount failed, and
+            // the mount-failure log never named DI as the cause. A landmine disguised as a
+            // supported override.
+            //
+            // The concrete resolve cannot throw: nothing an app registers displaces the
+            // NativeNavigationManager registration above.
+            NativeNavigationManager navigation = provider.GetRequiredService<NativeNavigationManager>();
+
+            // …and the interface MUST still resolve to that same instance. This is not
+            // defensive noise — it is the difference between two failure modes, and the
+            // loud one is far better. If an app replaced the contract, components would
+            // `[Inject]` THEIR manager while the shell's route-aware mount and root swap
+            // drove THIS one: navigation would half-work, silently, in a way no stack
+            // trace explains. INavigationManager is consume-only (see its xmldoc and the
+            // 1.0 criteria's A4), so this configuration is unsupported rather than
+            // merely awkward, and saying so at composition time is the honest response.
+            if (!ReferenceEquals(provider.GetRequiredService<INavigationManager>(), navigation))
+            {
+                throw new InvalidOperationException(
+                    "ConfigureServices re-registered INavigationManager. That contract is "
+                    + "CONSUME-ONLY: the framework's route-aware mount and root swap resolve "
+                    + "the concrete NativeNavigationManager, so a replacement would leave "
+                    + "components injecting one navigator while the shell drove another. "
+                    + "Remove the registration — ConfigureServices is last-wins for YOUR "
+                    + "services, not for the framework contracts it re-resolves internally.");
+            }
+
+            Volatile.Write(ref s_navigation, navigation);
             // .NET test hook OR the instrumented-harness env toggle (see
             // StrictErrorsForTests doc) — production default remains false.
             renderer.StrictErrors = Volatile.Read(ref s_strictErrors)

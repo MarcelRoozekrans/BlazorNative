@@ -4,7 +4,7 @@
 #
 #   build-test (windows-latest) — the local verification procedure verbatim
 #   (setup.ps1 §1–7 documents the toolchain pins):
-#     build (analyzers ride it) → .NET tests (885 passed / 0 skipped) →
+#     build (analyzers ride it) → .NET tests (890 passed / 0 skipped) →
 #     three NativeAOT publishes of samples/BlazorNative.SampleApp — the
 #     publish head since Phase 8.0: the app owns PublishAot, the exports stay
 #     in Runtime via UnmanagedEntryPointsAssembly, and the artifact is
@@ -1591,7 +1591,34 @@ jobs:
       # "exactly three buttons" -- were REWRITTEN to state their intent (every button
       # carries a click handler; the serializer truncates nothing) rather than to carry
       # a bigger literal. Android instrumented and iOS baselines do not move.
-      - name: .NET tests (assert 885 passed / 0 skipped)
+      #
+      # 885 -> 890 (#209 + #210, +5 -- Runtime.Tests 720 -> 725): two live bugs a repo
+      # review found, both of which falsified something the project tells consumers in
+      # WRITING, which is why they were fixed before 1.0 rather than ledgered.
+      #   #210 (+2, ConfigureServicesTests): the documented "last-wins" seam threw
+      #        InvalidCastException inside EnsureSession and failed EVERY mount with rc 2,
+      #        naming nothing. The session downcast INavigationManager to the concrete
+      #        type, so an app doing the exact documented thing broke composition.
+      #     +1 WhatAComponentInjects_IsTheSameNavigatorTheShellDrives -- NOT a repro of
+      #        #210 (it passed on the pre-fix build too); it guards the risk the FIX adds,
+      #        since splitting one registration into two is how a second singleton gets
+      #        created by accident.
+      #     +1 ReRegisteringTheNavigationContract_FailsFast_AndTheMessageNamesTheCause --
+      #        this one IS the repro: pre-fix it threw InvalidCastException, so the type
+      #        assertion alone discriminates. Asserts the MESSAGE too, because a fail-fast
+      #        that does not name the cause is no better than the cast it replaced.
+      #   #209 (+3, NullStringSerializationTests): AppendJsonString NRE'd on a null, and
+      #        the capability entry points are async, so the NRE landed in the returned
+      #        ValueTask as a fault -- `await ScheduleAsync(default)` THREW instead of
+      #        resolving with a status, breaking the milestone-wide "denial is data" rule.
+      #        default(NotificationSpec).Title is null WITH NO NULLABLE WARNING.
+      #        THE SUITE WAS BLIND: DevHostBridge.RecordNotification never serializes
+      #        Title/Body, so the same null returned a status normally in every .NET test
+      #        while the device path faulted -- the #164/#191 harness-vs-device class. The
+      #        new tests drive the REAL WriteFlatJsonObject, not the recorder; a test
+      #        through DevHostBridge would have passed on the broken build.
+      # JVM, Android instrumented and iOS baselines do not move.
+      - name: .NET tests (assert 890 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -1609,8 +1636,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 885 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 885 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 890 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 890 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # ── NativeAOT publishes + nine-export verification ────────────────────
