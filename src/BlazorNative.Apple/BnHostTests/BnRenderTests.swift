@@ -67,9 +67,22 @@ final class BnRenderTests: BnHostTestCase {
         let form = try pollForForm(in: root, deadline: 30)
         XCTAssertNil(decodeError, "a frame was dropped during mount")
 
-        // The form is the host view's single child.
-        XCTAssertEqual(root.subviews.count, 1, "root must have exactly the form")
-        XCTAssertEqual(form.subviews.count, 6, "form must have exactly 6 children")
+        // The form is the scroll viewport's content's single child (#204 wrapped the
+        // page in a BnScroll; pollForForm walks root -> UIScrollView -> content -> form).
+        XCTAssertEqual(root.subviews.count, 1, "root must have exactly the scroll viewport")
+
+        // The canonical SIX come first — title, input, echo panel, Clear, Theme,
+        // "Settings →" — and are pinned by index below. #204 appends the capability
+        // menu after them, so this is no longer an equality.
+        //
+        // The old `== 6` was doing two jobs: "the six are there" AND "nothing else
+        // is". The first is what the indexed assertions below already prove. The
+        // second is kept explicitly by the tail check — the menu heading at [6] and a
+        // LAST subview that is the final menu button. A mapper that dropped the tail
+        // of a long child list would still satisfy every [0]…[5] pin above, which is
+        // exactly the failure this replacement is aimed at.
+        XCTAssertGreaterThan(form.subviews.count, 6,
+                             "form must carry the canonical six plus the #204 capability menu")
 
         // ── THE ENGINE CHANGED; THE BEHAVIOUR DID NOT ────────────────────────
         // An un-styled tree still stacks, because Yoga's default flexDirection is
@@ -135,6 +148,24 @@ final class BnRenderTests: BnHostTestCase {
         XCTAssertEqual(theme.title(for: .normal), "Theme")
         let settings = try XCTUnwrap(form.subviews[5] as? UIButton, "[5] must be the Settings UIButton")
         XCTAssertEqual(settings.title(for: .normal), "Settings →")
+
+        // ── THE #204 CAPABILITY MENU: HEAD AND TAIL ──────────────────────────
+        // [6] is the "Explore" heading, and the LAST child is the final menu button.
+        // Checking the tail is the load-bearing half: every assertion above reads
+        // the FIRST six subviews, so a mapper that truncated a long child list would
+        // pass all of them. "Camera" is BnDemo.Destinations' last row — if that list
+        // is reordered this fails loudly rather than silently stopping to mean
+        // anything (RouteMenuDriftTests owns the list's contents; this owns the
+        // claim that the whole list reached the screen).
+        let exploreHeading = try XCTUnwrap(form.subviews[6] as? UILabel,
+                                           "[6] must be the Explore heading")
+        XCTAssertEqual(exploreHeading.text, "Explore")
+
+        let lastMenuButton = try XCTUnwrap(form.subviews.last as? UIButton,
+                                           "the form's last child must be the final menu button")
+        XCTAssertEqual(lastMenuButton.title(for: .normal), "Camera",
+                       "the menu's LAST row must have reached the view tree — a truncated "
+                       + "child list would satisfy every index pin above")
     }
 
     // ── Helpers (mirroring BnDemoAndroidTest's pollForForm/backgroundColorOf) ──

@@ -172,14 +172,33 @@ class InspectorServerTest {
                 "page must be self-contained — no external requests"
             )
 
-            // GET /api/tree — the BnDemo shape: the bound input + 3 buttons.
+            // GET /api/tree — the BnDemo shape.
+            //
+            // This used to assert "exactly three buttons". That literal was a PROXY
+            // for the thing worth proving — that the serializer walks the WHOLE
+            // child list and truncates nothing — and #204's capability menu (11 more
+            // buttons) turned it into a number that reds on every page added to the
+            // sample while naming no cause.
+            //
+            // What replaces it is the same guarantee, stated directly: one input,
+            // the three original buttons, and the menu's FIRST and LAST rows. The
+            // last row is the load-bearing one — a serializer that stopped early
+            // would still emit "Clear"/"Theme"/"Settings →" and drop "Camera",
+            // which is precisely the truncation the count was there to catch.
             val (treeCode, tree) = httpGet("$base/api/tree")
             assertEquals(200, treeCode)
             assertEquals(1, count(tree, "\"type\":\"input\""), "exactly one input; got $tree")
-            assertEquals(3, count(tree, "\"type\":\"button\""), "exactly three buttons; got $tree")
-            for (label in listOf("Clear", "Theme", "Settings →")) {
-                assertTrue(tree.contains("\"text\":${InspectorJson.string(label)}"), "'$label' button missing; got $tree")
+            for (label in listOf("Clear", "Theme", "Settings →", "Explore", "Layout", "Camera")) {
+                assertTrue(tree.contains("\"text\":${InspectorJson.string(label)}"), "'$label' missing; got $tree")
             }
+            // …and every button carries its click handler, which is what the tree is
+            // FOR (the dispatch below harvests one). Buttons and click handlers must
+            // agree in number, whatever that number grows to.
+            assertEquals(
+                count(tree, "\"type\":\"button\""),
+                count(tree, "\"click\":"),
+                "every button in the tree must expose a click handler; got $tree"
+            )
 
             // Harvest the "Settings →" click handlerId FROM THE TREE JSON.
             val settingsHandler = harvestClickHandler(tree, "Settings →")
