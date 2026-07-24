@@ -1149,10 +1149,33 @@ public sealed class NativeShellBridge : IMobileBridge
         }
     }
 
-    private static void AppendJsonString(StringBuilder sb, string value)
+    /// <summary>
+    /// Writes a JSON string literal. <b>A null <paramref name="value"/> is written as
+    /// the empty string, not thrown on (#209.)</b>
+    ///
+    /// <para>This used to take a non-nullable <c>string</c> and iterate it directly, so
+    /// a null NRE'd here — deep inside serialization, several frames below any API the
+    /// caller invoked. The capability arg-builders feed it fields that are
+    /// nullable-in-practice: <c>NotificationSpec</c> is a <c>readonly record struct</c>,
+    /// so <c>default(NotificationSpec).Title</c> is null <b>with no nullable warning</b>,
+    /// and a <c>Title</c> sourced from any <c>string?</c> model field is the same story.
+    /// Because the capability entry points are <c>async</c>, the NRE was captured into
+    /// the returned <c>ValueTask</c> as a fault — so <c>await ScheduleAsync(default)</c>
+    /// THREW rather than resolving with a status, breaking the milestone-wide contract
+    /// that every terminal outcome is a completion with a status, never an exception.
+    /// </para>
+    ///
+    /// <para>Fixed HERE, at the sink, rather than by null-coalescing in each of the five
+    /// call sites: one rule covers every builder that exists and every one added later,
+    /// and the alternative is a discipline nobody can enforce. An empty string is the
+    /// right coalesce — it keeps the outcome a DENIAL-AS-DATA (the host answers an empty
+    /// title / an empty key with its own status) instead of converting a caller's null
+    /// into a crash the caller cannot catch meaningfully.</para>
+    /// </summary>
+    private static void AppendJsonString(StringBuilder sb, string? value)
     {
         sb.Append('"');
-        foreach (char c in value)
+        foreach (char c in value ?? string.Empty)
         {
             switch (c)
             {
