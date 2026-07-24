@@ -230,7 +230,9 @@ final class BnRuntime {
                     platformInfoNote: notePtr,
                     platformInfoKind: BnPlatformKind.iOS,
                     logLevel: logLevel)  // Phase 11.4 (#155): offset 28, read before the first managed line
-                return blazornative_init(&opts)
+                // #213 item 3: pass our compiled struct size — the runtime size-negotiates,
+                // so a header/runtime version skew reads safely instead of out of bounds.
+                return blazornative_init(Int32(MemoryLayout<bn_init_options>.size), &opts)
             }
         }
         guard result.status == 0 else {

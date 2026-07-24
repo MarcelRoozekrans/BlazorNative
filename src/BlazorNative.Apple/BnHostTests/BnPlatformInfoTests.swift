@@ -81,7 +81,7 @@ final class BnPlatformInfoTests: XCTestCase {
                     platformInfoNote: notePtr,
                     platformInfoKind: BnPlatformKind.iOS,
                     logLevel: BnLogLevel.unset)  // Phase 11.4: 0 → the runtime default (Warn)
-                return blazornative_init(&opts)
+                return blazornative_init(Int32(MemoryLayout<bn_init_options>.size), &opts)
             }
         }
 

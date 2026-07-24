@@ -49,7 +49,7 @@ class BootSmokeNativeTest {
             platformInfoNote = noteMem
         }
 
-        val result = NativeBindings.INSTANCE.blazornative_init(opts)
+        val result = NativeBindings.INSTANCE.blazornative_init(opts.size(), opts)
 
         // Diagnostic: print error message even on success (it should be "").
         val errorMessage = result.errorMessage?.getString(0L) ?: "<null>"

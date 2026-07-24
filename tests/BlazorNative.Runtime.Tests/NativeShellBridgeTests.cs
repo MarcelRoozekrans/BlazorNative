@@ -674,6 +674,94 @@ public sealed class NativeShellBridgeTests
         Assert.Equal(expected, Exports.ToPlatformKind(ordinal));
     }
 
+    // ── #213 item 3: blazornative_init size negotiation ──────────────────────────
+
+    /// <summary>Builds a full 32-byte options struct with recognisable non-default values
+    /// in the two tail fields, so a test can tell "copied" from "defaulted".</summary>
+    private static unsafe BlazorNativeInitOptions FullOptions(int kind, int logLevel)
+        => new()
+        {
+            PlatformInfoOs = IntPtr.Zero,
+            PlatformInfoApiLevel = 34,
+            PlatformInfoNote = IntPtr.Zero,
+            PlatformInfoKind = kind,
+            LogLevel = logLevel,
+        };
+
+    /// <summary>
+    /// THE PIN FOR THE OUT-OF-BOUNDS READ. A shell that sends a SHORT buffer — the pre-M10
+    /// 24-byte shape, which stops before PlatformInfoKind (24) and LogLevel (28) — must
+    /// have those two fields read as ZERO (their defaults), never as whatever bytes
+    /// happened to follow the buffer.
+    ///
+    /// <para>Pre-fix, <c>blazornative_init</c> read fixed offsets straight out of the
+    /// caller's memory; at 24 bytes that is past the end. Negotiation copies only the 24
+    /// bytes the shell sent into a zeroed struct, so the tail is a guaranteed zero rather
+    /// than an out-of-bounds read.</para>
+    /// </summary>
+    [Theory]
+    [InlineData(24)] // pre-M10: through PlatformInfoNote's 8 bytes, before Kind/LogLevel
+    [InlineData(28)] // pre-11.4: includes Kind, stops before LogLevel
+    public unsafe void NegotiateInitOptions_ShortBuffer_DefaultsTheFieldsItDoesNotReach(int shortSize)
+    {
+        // Non-default tail values: if negotiation read them, the assertions below would see
+        // them; if it correctly ignores bytes past `shortSize`, they read as 0.
+        BlazorNativeInitOptions source = FullOptions(kind: 2 /*iOS*/, logLevel: 5 /*Verbose*/);
+
+        BlazorNativeInitOptions negotiated = Exports.NegotiateInitOptions(shortSize, &source);
+
+        // Fields WITHIN the short buffer survive; fields past it are the safe defaults.
+        Assert.Equal(34, negotiated.PlatformInfoApiLevel);        // offset 8 — always in range
+        Assert.Equal(0, negotiated.LogLevel);                     // offset 28 — past BOTH short sizes
+        if (shortSize < 28)
+        {
+            // 24-byte case: Kind (offset 24) is also past the end → defaulted → DevHost.
+            Assert.Equal(0, negotiated.PlatformInfoKind);
+            Assert.Equal(PlatformKind.DevHost, Exports.ToPlatformKind(negotiated.PlatformInfoKind));
+        }
+        else
+        {
+            // 28-byte case: Kind (24..27) IS inside the buffer, so it copies through — only
+            // LogLevel defaulted. Asserting it survived proves the negotiation copies the
+            // reached fields rather than blanket-zeroing anything short.
+            Assert.Equal(2, negotiated.PlatformInfoKind);
+        }
+    }
+
+    [Fact]
+    public unsafe void NegotiateInitOptions_FullBuffer_CopiesEveryField()
+    {
+        BlazorNativeInitOptions source = FullOptions(kind: 2, logLevel: 5);
+
+        BlazorNativeInitOptions negotiated = Exports.NegotiateInitOptions(
+            sizeof(BlazorNativeInitOptions), &source);
+
+        Assert.Equal(34, negotiated.PlatformInfoApiLevel);
+        Assert.Equal(2, negotiated.PlatformInfoKind);
+        Assert.Equal(5, negotiated.LogLevel);
+    }
+
+    [Fact]
+    public unsafe void NegotiateInitOptions_OversizeAndDegenerate_AreSafe()
+    {
+        BlazorNativeInitOptions source = FullOptions(kind: 2, logLevel: 5);
+        int known = sizeof(BlazorNativeInitOptions);
+
+        // A NEWER shell claiming a bigger struct: the extra tail is ignored, the known
+        // fields still copy — the runtime never reads past its own sizeof.
+        BlazorNativeInitOptions oversize = Exports.NegotiateInitOptions(known + 64, &source);
+        Assert.Equal(2, oversize.PlatformInfoKind);
+        Assert.Equal(5, oversize.LogLevel);
+
+        // A stray negative/zero size copies nothing → all defaults, not an overflow.
+        Assert.Equal(0, Exports.NegotiateInitOptions(0, &source).LogLevel);
+        Assert.Equal(0, Exports.NegotiateInitOptions(-8, &source).LogLevel);
+
+        // A null pointer (a shell that passed none) yields the all-default struct.
+        Assert.Equal(0, Exports.NegotiateInitOptions(known, null).LogLevel);
+        Assert.Equal(0, Exports.NegotiateInitOptions(known, null).PlatformInfoKind);
+    }
+
     [Fact]
     public void InitOptionsStruct_Is32Bytes_MirroringTheCHeaderAndKotlinJna()
     {
@@ -700,10 +788,14 @@ public sealed class NativeShellBridgeTests
         // Only the pair says "free, not smuggled in". Measured before the field was
         // written (32 → 32, offset 28), not assumed from the alignment rule.
         //
-        // Back-compat follows from the size being UNCHANGED: a shell that predates
-        // the field allocates 32 bytes anyway and leaves offset 28 zero, and ordinal
-        // 0 = unset = Warn (BnLogTests.SetLevelFromOrdinal_…). Strictly safer than
-        // M10's own growth, which DID move the size.
+        // Back-compat NO LONGER rests on the size being unchanged (#213 item 3). The
+        // old note here read "a shell that predates the field allocates 32 bytes anyway
+        // and leaves offset 28 zero" — true of a pre-11.4 shell (32 already) but FALSE
+        // of a pre-10.0 one (24 bytes), which would make offsets 24/28 an out-of-bounds
+        // read. blazornative_init now SIZE-NEGOTIATES (Exports.NegotiateInitOptions), so
+        // a short buffer of ANY historical length is read safely and the missing fields
+        // default — see NegotiateInitOptions_* below. The offsets are still pinned here
+        // because the shells that DO send full structs must agree byte-for-byte.
         Assert.Equal(28, (int)Marshal.OffsetOf<BlazorNativeInitOptions>(
             nameof(BlazorNativeInitOptions.LogLevel)));
 
