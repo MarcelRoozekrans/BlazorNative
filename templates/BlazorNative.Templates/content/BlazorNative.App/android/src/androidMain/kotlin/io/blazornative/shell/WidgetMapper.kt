@@ -14,6 +14,7 @@ import android.util.Log
 import android.util.TypedValue
 import android.view.View
 import android.view.ViewGroup
+import android.view.ViewOutlineProvider
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.Button
@@ -1307,13 +1308,41 @@ class WidgetMapper(
             // Android-only and invisible in a diff. Written out so the default is a
             // DECISION rather than an accident.
             scroll.isFillViewport = false
-            // ── clipChildren: the viewport KEEPS the framework default (true) ──────
-            // Every BnYogaFrameLayout turns clipping OFF to match iOS's
-            // `UIView.clipsToBounds == NO`. A ScrollView is NOT one of those and must
-            // NOT be made one: a viewport that does not clip DRAWS ITS 800dp OF
-            // CONTENT OVER THE WHOLE SCREEN. `true` here is what matches
-            // `UIScrollView.clipsToBounds == YES` — so this is the one container in
-            // the shell where "our containers don't clip" is the WRONG rule to mirror.
+            // ── THE VIEWPORT MUST CLIP — AND `clipChildren` IS NOT WHAT DOES IT ───
+            // (#219. This block used to say the viewport "KEEPS the framework default
+            // (true)" and leave it at that. The conclusion was right — a viewport that
+            // does not clip DRAWS ITS 800dp OF CONTENT OVER THE WHOLE SCREEN, which is
+            // exactly what shipped — but the mechanism was wrong, so nothing enforced
+            // it and the comment described a guarantee that did not exist.)
+            //
+            // Android decides a view's OWN bounds-clip from its PARENT's clipChildren,
+            // not from its own (View.updateDisplayListIfDirty):
+            //
+            //     renderNode.setClipToBounds(
+            //         mParent instanceof ViewGroup && ((ViewGroup) mParent).getClipChildren());
+            //
+            // Every container the mapper builds is a BnYogaFrameLayout, and those set
+            // `clipChildren = false` deliberately, to match iOS's
+            // `UIView.clipsToBounds == NO`. So a ScrollView's parent always says "do
+            // not clip", the ScrollView's RenderNode gets clipToBounds = false, and its
+            // 800dp content escapes its 200dp box and paints down the whole screen.
+            // `scroll.clipChildren = true` — the obvious fix, and the one the old
+            // comment implied — would have changed NOTHING: it governs the level below
+            // (the content view clipped to the CONTENT's own 800dp bounds, which
+            // permits everything).
+            //
+            // clipToOutline + the BOUNDS provider is the parent-INDEPENDENT clip: it
+            // clips this view's contents to this view's own bounds whatever any
+            // ancestor says, which is precisely `UIScrollView.clipsToBounds == YES`.
+            //
+            // The user-visible failure was not just cosmetic: touch dispatch uses
+            // LAYOUT bounds, so the overflow painted outside the viewport was visible
+            // but inert — the page looked full-screen and ignored gestures everywhere
+            // except the real 200dp box, and scrolling corrupted the screen (Android
+            // derives invalidation damage from bounds too, so the escaped pixels were
+            // never repainted in step and decayed to widget_root's white).
+            scroll.outlineProvider = ViewOutlineProvider.BOUNDS
+            scroll.clipToOutline = true
             val content = BnYogaFrameLayout(context)
             scroll.addView(content)
             scrollContents[p.nodeId] = content
