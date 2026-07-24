@@ -180,6 +180,56 @@ final class BnCameraTests: BnHostTestCase {
         XCTAssertFalse(bridge.camera.hasInFlightRequestForTest(), "the in-flight slot is consumed (no hang)")
     }
 
+    // ── #211: the FIRST-RUN permission path presents UIKit on the main thread ─────────────
+
+    /// The path no test drove, which is why it shipped broken.
+    ///
+    /// `.notDetermined` — a brand-new install, the one run you cannot ask a user to repeat —
+    /// reaches `AVCaptureDevice.requestAccess`, whose completion Apple documents as arriving
+    /// on **an arbitrary dispatch queue**. The shell then ran straight on into `presentPicker`,
+    /// constructing a `UIImagePickerController` and calling `present(...)` from whatever queue
+    /// that happened to be. A comment claimed *"the caller hops to main in presentPicker"*;
+    /// `presentPicker` contained no such hop. The comment WAS the safety argument.
+    ///
+    /// This test replies from a background queue — the production behaviour, reproduced
+    /// deliberately — and asserts the picker was reached on main anyway.
+    ///
+    /// **It has to assert a recorded flag rather than rely on a crash**: the simulator
+    /// tolerates UIKit off-main and does not reliably trap, which is precisely how this
+    /// survived a green suite. Without the hop this fails on the flag while everything else
+    /// about the capture still passes.
+    func testFirstRunPermissionGrantPresentsOnTheMainThread() {
+        installCapture()
+        BnCamera.sourceTypeAvailableOverrideForTest = { true }
+        BnCamera.cameraAuthorizationStatusOverrideForTest = { .notDetermined } // first run
+        BnCamera.suppressSystemCameraPresentForTest = true
+
+        // Reply OFF-MAIN, exactly as AVCaptureDevice.requestAccess does.
+        let replied = expectation(description: "requestAccess replied off-main")
+        BnCamera.requestAccessReplyOverrideForTest = { reply in
+            DispatchQueue.global(qos: .userInitiated).async {
+                XCTAssertFalse(Thread.isMainThread, "the override must reply OFF-main, or this test proves nothing")
+                reply(true) // the user grants access
+                replied.fulfill()
+            }
+        }
+
+        let bridge = AppleShellBridge()
+        _ = bridge.hostCallBegin(21, BnHostCallOp.camera, "{\"action\":\"capture\"}")
+        wait(for: [replied], timeout: 5)
+
+        // Drain the main queue so the hop this test is about can actually run.
+        let settled = expectation(description: "main queue drained")
+        DispatchQueue.main.async { settled.fulfill() }
+        wait(for: [settled], timeout: 5)
+
+        XCTAssertEqual(BnCamera.presentedOnMainThreadForTest, true,
+                       "presentPicker constructs and presents UIKit — it MUST run on main. "
+                       + "Reached from AVCaptureDevice.requestAccess's arbitrary queue without a hop (#211).")
+        XCTAssertTrue(bridge.camera.hasInFlightRequestForTest(),
+                      "the capture must still be in flight — the hop must not have lost the request")
+    }
+
     // ── (b) EXIF/orientation NORMALIZE: a rotated input → upright pixels ───────────────────
 
     func testOrientationIsNormalizedToUpright() throws {

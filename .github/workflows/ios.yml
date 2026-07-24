@@ -350,7 +350,7 @@ jobs:
             > ios-out/xcresult.json 2>/dev/null || true
           ls -la ios-out/crash || true
 
-      - name: Assert XCTest baseline (242 passed / 0 failed)
+      - name: Assert XCTest baseline (243 passed / 0 failed)
         if: always()
         run: |
           log=ios-out/xcodebuild-test.log
@@ -1053,6 +1053,20 @@ jobs:
           # system fallback). The resolved-family assertions in BnRenderTests ride existing
           # test methods (no further count move).
           #
+          # 242 -> 243 (#211, +1) — THE FIRST-RUN PERMISSION PATH, which no test drove.
+          #   BnCameraTests.testFirstRunPermissionGrantPresentsOnTheMainThread.
+          #   `.notDetermined` (a brand-new install — the one run you cannot ask a user to
+          #   repeat) reaches AVCaptureDevice.requestAccess, whose completion Apple documents
+          #   as arriving on AN ARBITRARY DISPATCH QUEUE. The shell then ran straight into
+          #   presentPicker, constructing a UIImagePickerController and calling present(...)
+          #   from that queue. A comment claimed "the caller hops to main in presentPicker";
+          #   presentPicker contained no such hop. The comment WAS the safety argument —
+          #   the same failure shape as #219 (a clipChildren comment describing a guarantee
+          #   nothing enforced) and #210 (a "last-wins" doc the downcast contradicted).
+          #   The test replies OFF-MAIN deliberately, reproducing production, and asserts a
+          #   RECORDED FLAG rather than relying on a crash: THE SIMULATOR TOLERATES UIKit
+          #   off-main and does not reliably trap, which is exactly how this survived a green
+          #   suite. requestAccessReplyOverrideForTest existed and no test had ever used it.
           # 236 -> 242 (PHASE 11.4 GATE C, +6) — the iOS logging seam (M11 DoD #6, #155).
           # All 78 shipped NSLog sites under BnHost/ moved onto BnLog (os_log / os.Logger),
           # BnYogaLayout.mm's 4 going through the @_cdecl BnLogC shim, and the runtime's
@@ -1080,9 +1094,9 @@ jobs:
           # existing size assertion is UNCHANGED and gains an offset(of:) line inside the
           # same test method, so it adds no count), the callbacks bridge stays 80 and the
           # nm -gU gate still asserts exactly 10 blazornative_* exports.
-          if [ "$failed" -ne 0 ] || [ "$passed" -ne 242 ]; then
+          if [ "$failed" -ne 0 ] || [ "$passed" -ne 243 ]; then
             grep -E "Test Case '.*' (passed|failed)" "$log" || true
-            echo "iOS XCTest baseline drift: expected 242 passed / 0 failed, got passed=$passed failed=$failed" >&2
+            echo "iOS XCTest baseline drift: expected 243 passed / 0 failed, got passed=$passed failed=$failed" >&2
             exit 1
           fi
 
