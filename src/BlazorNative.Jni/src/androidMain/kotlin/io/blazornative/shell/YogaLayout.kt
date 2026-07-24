@@ -1,11 +1,13 @@
 package io.blazornative.shell
 
 import android.content.Context
+import android.graphics.Rect
 import android.util.AttributeSet
 import android.util.Log
 import android.view.View
 import android.view.View.MeasureSpec
 import android.view.ViewGroup
+import android.widget.ScrollView
 import com.facebook.soloader.SoLoader
 import com.facebook.yoga.YogaAlign
 import com.facebook.yoga.YogaConfigFactory
@@ -930,6 +932,31 @@ class YogaLayout(private val context: Context, private val root: ViewGroup) {
             MeasureSpec.makeMeasureSpec(bottom - top, MeasureSpec.EXACTLY),
         )
         view.layout(left, top, right, bottom)
+
+        // #219 — A SCROLL VIEWPORT CLIPS TO ITS OWN BOX, AND THE CLIP TRACKS THE FRAME.
+        //
+        // Android's usual lever for this is the PARENT's clipChildren, and it is not
+        // available here: every container the mapper builds is a BnYogaFrameLayout, and
+        // those set `clipChildren = false` deliberately to match iOS's
+        // `UIView.clipsToBounds == NO`. A view's own bounds-clip is taken from its
+        // parent (View.updateDisplayListIfDirty), so a viewport under one of those does
+        // not clip and its content paints over the whole Activity — visible, and
+        // (because touch dispatch uses layout bounds) inert.
+        //
+        // WidgetMapper's SCROLL arm sets clipToOutline for the same purpose; that is the
+        // RenderNode path and it is what fixed the real device. It was NOT enough on the
+        // emulator, where the same overflow kept painting — so the outline alone is not a
+        // guarantee across rendering paths. `clipBounds` is applied by View.draw in both
+        // the software and hardware paths, so the two together hold everywhere.
+        //
+        // It belongs HERE rather than next to the outline because a clip in view-local
+        // pixels has to be re-stated whenever the frame changes, and this is the one site
+        // every frame passes through (the file's own non-negotiable). Set unconditionally
+        // rather than only-on-change: the Rect is cheap, and a stale clip after a resize
+        // is exactly the bug this prevents.
+        if (view is ScrollView) {
+            view.clipBounds = Rect(0, 0, right - left, bottom - top)
+        }
     }
 
     /** Yoga's measure mode → Android's MeasureSpec mode, with the dp→px hop.

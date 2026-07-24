@@ -17,7 +17,7 @@
 #   emulator (ubuntu-latest, KVM) — downloads the .so, boots the API 34
 #     google_apis x86_64 Pixel 6 image (mirrors the local AVD
 #     blazornative-pixel6-x86_64), runs connectedAndroidTest with
-#     -PciSoDir pointing at the artifact → asserts 213 passed / 0 failed.
+#     -PciSoDir pointing at the artifact → asserts 214 passed / 0 failed.
 #
 # Baselines are asserted, not observed: count drift fails the job loudly.
 # ─────────────────────────────────────────────────────────────────────────────
@@ -934,6 +934,29 @@ jobs:
       #        crypto=null to the prompt -> hasCryptoObject false -> this reds (verified: 1
       #        red, "MUST pass a CryptoObject", this test alone).
       #      .delete_echoes_ok -- delete is idempotent + permission-free -> Ok.
+      # ── #219 — THE VIEWPORT CLIPS, ASSERTED IN PIXELS (213 -> 214, +1) ──
+      #    BnScrollDemoAndroidTest.the_viewport_clips_its_overflow_and_paints_nothing_
+      #    below_itself. THE PIN WHOSE ABSENCE LET THE BUG SHIP, and the reason it is
+      #    worth its own ledger entry: this lane was GREEN at 213 on the broken build.
+      #    A BnScroll viewport did not clip, so all 800dp of content painted over the
+      #    whole Activity -- and because touch dispatch uses LAYOUT bounds, the escaped
+      #    content was visible but inert. Every scrolling page was unusable by hand.
+      #    NO FRAME MOVED. The viewport was 200dp, the content 800dp, every row sat at
+      #    its exact offset, `scrollable` was true -- the canonical frame table above
+      #    passed in full. A frame table cannot express "and nothing escaped the box",
+      #    which is precisely the gap this closes: the test RENDERS widget_root to a
+      #    Bitmap and asserts row 3's colour appears NOWHERE below the viewport's bottom
+      #    edge. Non-vacuity is asserted first (row 3 really is below the cut; there
+      #    really is host area beneath the viewport to escape into), because both would
+      #    otherwise make the pixel sweep trivially green.
+      #    It also had to be a PIXEL pin, not a property one: asserting
+      #    `scroll.clipChildren` would have PASSED on the broken build -- it was already
+      #    true, and it governs the level below. Android takes a view's own bounds-clip
+      #    from its PARENT's clipChildren, and every mapper container is a
+      #    BnYogaFrameLayout with clipChildren = false (iOS parity), so the fix is
+      #    clipToOutline, which no ancestor can veto. iOS was already correct and
+      #    EXPLICIT (BnWidgetMapper sets scroll.clipsToBounds = true at creation); only
+      #    Android relied on a default, under a comment that claimed parity.
       # ── Phase 11.4 Gate B — THE STDERR -> LOGCAT PUMP (210 -> 213, +3) ──
       #    BnStderrPumpAndroidTest. THIS LANE IS WHERE THE ANDROID TRANSPORT IS PROVEN,
       #    and it is the only place it can be: `android.system.Os` is one of the
@@ -1020,7 +1043,7 @@ jobs:
       #        echo stays blank -> this times out and reds (the no-hang law).
       #      .check_reports_availability_as_data -- Check -> status:Captured (available on the
       #        AVD) without launching the camera UI.
-      - name: Assert instrumented baseline (213 passed / 0 failed)
+      - name: Assert instrumented baseline (214 passed / 0 failed)
         run: |
           shopt -s globstar nullglob
           xmls=(src/BlazorNative.Jni/build/outputs/androidTest-results/connected/**/*.xml)
@@ -1037,8 +1060,8 @@ jobs:
             s=$(attr skipped "$x");  skipped=$((skipped + ${s:-0}))
           done
           echo "Instrumented totals across ${#xmls[@]} suite(s): tests=$tests failures=$failures errors=$errors skipped=$skipped"
-          if [ "$tests" -ne 213 ] || [ "$failures" -ne 0 ] || [ "$errors" -ne 0 ] || [ "$skipped" -ne 0 ]; then
-            echo "Instrumented test baseline drift: expected 213 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped" >&2
+          if [ "$tests" -ne 214 ] || [ "$failures" -ne 0 ] || [ "$errors" -ne 0 ] || [ "$skipped" -ne 0 ]; then
+            echo "Instrumented test baseline drift: expected 214 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped" >&2
             exit 1
           fi
 

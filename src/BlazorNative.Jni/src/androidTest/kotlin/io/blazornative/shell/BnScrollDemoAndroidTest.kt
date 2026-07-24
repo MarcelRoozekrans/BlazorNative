@@ -215,6 +215,88 @@ class BnScrollDemoAndroidTest {
      * using the content view's LAID-OUT height, so a request for 10 000dp coming back
      * as exactly **600** is the ScrollView agreeing with Yoga about the 800.
      */
+    /**
+     * #219 — THE VIEWPORT CLIPS, ASSERTED BY WHAT IS **PAINTED**, NOT BY A FRAME.
+     *
+     * This is the pin whose absence let the bug ship. Every other assertion in this
+     * file — the whole canonical frame table — reads computed frames, and the defect
+     * moved **no frame**: the viewport was 200dp, the content 800dp, every row sat at
+     * exactly its right offset, and `scrollable` was `true`. The tree was perfect and
+     * the screen was wrong, because all 800dp painted straight over the Activity.
+     * A frame table cannot express "and nothing escaped the box", so this renders the
+     * page and reads PIXELS.
+     *
+     * The mechanism it guards (see WidgetMapper's SCROLL arm): Android takes a view's
+     * own bounds-clip from its PARENT's `clipChildren`, and every container the mapper
+     * builds is a BnYogaFrameLayout with `clipChildren = false` (deliberately — iOS
+     * parity). So the viewport's clip must come from `clipToOutline`, which no ancestor
+     * can veto. Asserting `scroll.clipChildren` instead would pass on the BROKEN build:
+     * it governs the level below, and it was already `true` the whole time.
+     *
+     * Row 3 is the probe: at offset 0 it lives at content y 240..320, entirely below the
+     * 200dp cut, so ITS colour must appear nowhere beneath the viewport's bottom edge.
+     */
+    @Test fun the_viewport_clips_its_overflow_and_paints_nothing_below_itself() {
+        // Harvested on the main thread, read off it: geometry + the probe colour.
+        var probeColour = 0
+        var sweepX = 0
+        var sweepTop = 0
+        var sweepBottom = 0
+
+        withDemo { act ->
+            val root = act.findViewById<FrameLayout>(R.id.widget_root)
+            val scroll = scrollOf(act)
+            val content = scroll.getChildAt(0) as ViewGroup
+
+            // Non-vacuity FIRST, both halves. A probe row that is not actually below
+            // the cut, or a host with no room beneath the viewport, would make the
+            // sweep trivially green — which is the very failure mode this pin exists
+            // for.
+            val probe = content.getChildAt(3)
+            assertTrue("row 3 must sit BELOW the viewport for this pin to mean anything",
+                topInViewport(probe, scroll) >= scroll.height)
+
+            val scrollBottomOnScreen = screenY(scroll) + scroll.height
+            val rootBottomOnScreen = screenY(root) + root.height
+            assertTrue("widget_root must extend below the viewport for the overflow to " +
+                "have somewhere to escape TO", rootBottomOnScreen > scrollBottomOnScreen + 1)
+
+            val colour = (probe.background as? android.graphics.drawable.ColorDrawable)?.color
+            assertTrue("row 3 must carry a flat colour to be findable on screen", colour != null)
+
+            probeColour = colour!!
+            sweepX = IntArray(2).also { scroll.getLocationOnScreen(it) }[0] + scroll.width / 2
+            sweepTop = scrollBottomOnScreen + 1
+            sweepBottom = rootBottomOnScreen
+        }
+
+        // THE CAPTURE MUST BE THE COMPOSITED SCREEN, NOT A SOFTWARE RE-DRAW.
+        // The first version of this pin rendered widget_root into a Bitmap with
+        // `root.draw(Canvas(bmp))` and stayed RED after the fix. That was the test's
+        // fault, and the lesson is worth the comment: `clipToOutline` is applied by
+        // the view's RenderNode on the HARDWARE-ACCELERATED path — the one the screen
+        // actually uses — and a manual software draw does not reproduce it. A pin that
+        // measures a path no user sees can be red on correct code (and, worse, green on
+        // broken code). uiAutomation.takeScreenshot() returns what was really
+        // composited, which is the only thing this issue was ever about.
+        val shot = InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()
+        assertTrue("uiAutomation returned no screenshot — cannot judge what was painted",
+            shot != null)
+
+        var offenders = 0
+        for (y in sweepTop until minOf(sweepBottom, shot.height)) {
+            if (shot.getPixel(sweepX, y) == probeColour) offenders++
+        }
+        shot.recycle()
+
+        assertEquals(
+            "row 3's colour was painted ${offenders}px BELOW the viewport — the scroll " +
+                "viewport is not clipping, so its content escapes the box, covers the " +
+                "Activity, and (because touch dispatch uses layout bounds) is visible but " +
+                "inert. See #219: the clip must be clipToOutline, NOT clipChildren.",
+            0, offenders)
+    }
+
     @Test fun driving_the_scroll_position_moves_the_rows_over_the_viewport() {
         val ctx = InstrumentationRegistry.getInstrumentation().targetContext
         val intent = Intent(ctx, MainActivity::class.java)
