@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.6.0](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.5.1...v0.6.0) (2026-07-24)
+
+
+### Features
+
+* give BnDemo a capability menu so every routed page is reachable in-app ([#204](https://github.com/MarcelRoozekrans/BlazorNative/issues/204)) ([#217](https://github.com/MarcelRoozekrans/BlazorNative/issues/217)) ([00f1f2d](https://github.com/MarcelRoozekrans/BlazorNative/commit/00f1f2defdfc85dd85c171382ae97aa69b55f565))
+* give the four capability pages a "&lt;- Back" button ([#204](https://github.com/MarcelRoozekrans/BlazorNative/issues/204)) ([b159d75](https://github.com/MarcelRoozekrans/BlazorNative/commit/b159d75a19fa7d4c5542b0fc0396561143a70544))
+* give the four capability pages a "← Back" button ([#204](https://github.com/MarcelRoozekrans/BlazorNative/issues/204)) ([#218](https://github.com/MarcelRoozekrans/BlazorNative/issues/218)) ([b159d75](https://github.com/MarcelRoozekrans/BlazorNative/commit/b159d75a19fa7d4c5542b0fc0396561143a70544))
+
+
+### Bug Fixes
+
+* clip the BnScroll viewport with clipToOutline, not clipChildren ([#219](https://github.com/MarcelRoozekrans/BlazorNative/issues/219)) ([#220](https://github.com/MarcelRoozekrans/BlazorNative/issues/220)) ([c957ac5](https://github.com/MarcelRoozekrans/BlazorNative/commit/c957ac551ec07d8faab23e29673b8cd5666fd0f0))
+* delete the [BOOT] panel — the android app owns the screen, as it does on iOS ([#204](https://github.com/MarcelRoozekrans/BlazorNative/issues/204)) ([#207](https://github.com/MarcelRoozekrans/BlazorNative/issues/207)) ([560e17d](https://github.com/MarcelRoozekrans/BlazorNative/commit/560e17d2e00d96787d49347a14017f21543f113e))
+* gate the android shell's own log narration behind the level threshold ([#200](https://github.com/MarcelRoozekrans/BlazorNative/issues/200)) ([#202](https://github.com/MarcelRoozekrans/BlazorNative/issues/202)) ([b511508](https://github.com/MarcelRoozekrans/BlazorNative/commit/b511508d20026043170201716bc1a29a5c3f757d))
+* hop to main before presenting the camera picker ([#211](https://github.com/MarcelRoozekrans/BlazorNative/issues/211)) ([#223](https://github.com/MarcelRoozekrans/BlazorNative/issues/223)) ([9a475af](https://github.com/MarcelRoozekrans/BlazorNative/commit/9a475af6320eb2c3f662d77ecb1de0ce697c6bba))
+* park the async Frames fault instead of handling it on a pool thread ([#213](https://github.com/MarcelRoozekrans/BlazorNative/issues/213) item 2) ([#225](https://github.com/MarcelRoozekrans/BlazorNative/issues/225)) ([717f9fc](https://github.com/MarcelRoozekrans/BlazorNative/commit/717f9fc585fae2749a9bb81685c4b97a1eac7ae4))
+* refuse duplicate routes at build time instead of emitting an unreadable map ([#212](https://github.com/MarcelRoozekrans/BlazorNative/issues/212)) ([#224](https://github.com/MarcelRoozekrans/BlazorNative/issues/224)) ([43b4ad4](https://github.com/MarcelRoozekrans/BlazorNative/commit/43b4ad4c68cc92154fe32f11823d2b2af3f8a4fb))
+* RouteGen refuses a duplicate route at build time ([#212](https://github.com/MarcelRoozekrans/BlazorNative/issues/212)) ([43b4ad4](https://github.com/MarcelRoozekrans/BlazorNative/commit/43b4ad4c68cc92154fe32f11823d2b2af3f8a4fb))
+* size-negotiate blazornative_init so an old shell is read safely ([#213](https://github.com/MarcelRoozekrans/BlazorNative/issues/213) item 3) ([#226](https://github.com/MarcelRoozekrans/BlazorNative/issues/226)) ([6ec3894](https://github.com/MarcelRoozekrans/BlazorNative/commit/6ec38941e41bad086d2c286edc229a702dab21f4))
+* the ConfigureServices seam and the JSON sink now honour what they promise ([#209](https://github.com/MarcelRoozekrans/BlazorNative/issues/209), [#210](https://github.com/MarcelRoozekrans/BlazorNative/issues/210)) ([#222](https://github.com/MarcelRoozekrans/BlazorNative/issues/222)) ([c62610e](https://github.com/MarcelRoozekrans/BlazorNative/commit/c62610ea7f116055ab09b0680f3f8f869b15f0c8))
+* wrap BnDemo in a BnScroll so the page scrolls instead of truncating ([#204](https://github.com/MarcelRoozekrans/BlazorNative/issues/204)) ([#208](https://github.com/MarcelRoozekrans/BlazorNative/issues/208)) ([4cce1ae](https://github.com/MarcelRoozekrans/BlazorNative/commit/4cce1ae312995d3171e1d16d34b54fb8f2cbd0ed))
+
 ## [0.5.1](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.5.0...v0.5.1) (2026-07-23)
 
 
