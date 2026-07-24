@@ -37,7 +37,11 @@ namespace BlazorNative.SampleApp;
 //     ├─ BnButton "Set"          → ISecureStorage.SetAsync(auth:true)   → echo status
 //     ├─ BnButton "Unlock"       → ISecureStorage.GetWithAuthAsync      → echo value / status
 //     ├─ BnButton "Delete"       → ISecureStorage.DeleteAsync           → echo status
-//     └─ BnText echo (mount-pinned text node — the ClipboardProbe echo contract)
+//     ├─ BnText echo (mount-pinned text node — the ClipboardProbe echo contract)
+//     └─ BnButton "← Back" → INavigationManager.NavigateToAsync("/")   (#204 — nav
+//        parity with the eight pages that already carried one; TRAILING so the device
+//        suites' "first TextView/UILabel that is not a Button" echo selectors still
+//        resolve to the echo)
 // ─────────────────────────────────────────────────────────────────────────────
 
 internal sealed class BnSecureDemo : ComponentBase
@@ -64,6 +68,10 @@ internal sealed class BnSecureDemo : ComponentBase
 
     [Inject] public IBiometrics Biometrics { get; set; } = default!;
     [Inject] public ISecureStorage Secrets { get; set; } = default!;
+
+    /// <summary>#204: the navigation service, for the trailing "← Back" — the same
+    /// explicit [Inject] public property every other page uses.</summary>
+    [Inject] public INavigationManager Navigation { get; set; } = default!;
 
     protected override void BuildRenderTree(RenderTreeBuilder b)
     {
@@ -97,8 +105,21 @@ internal sealed class BnSecureDemo : ComponentBase
         b.AddComponentParameter(51, nameof(BnText.Text), _echo);
         b.CloseComponent();
 
+        // "← Back" (#204) — nav parity with the eight pages that already carry one.
+        // LAST, after the echo: both device suites select the echo as "the first
+        // TextView/UILabel that is not a Button", so a TRAILING button leaves those
+        // selectors resolving to exactly what they did before.
+        b.OpenComponent<BnButton>(90);
+        b.AddComponentParameter(91, nameof(BnButton.Label), "← Back");
+        b.AddComponentParameter(92, nameof(BnButton.OnClick),
+            EventCallback.Factory.Create<MouseEventArgs>(this, GoBack));
+        b.CloseComponent();
+
         b.CloseElement();
     }
+
+    // Sync-completing (inline dispatcher), like every other page's GoBack.
+    private Task GoBack() => Navigation.NavigateToAsync("/").AsTask();
 
     // Each action echoes its returned status/value as DATA — a denial is SHOWN,
     // never thrown, never left hanging (the BnNotificationsDemo discipline).

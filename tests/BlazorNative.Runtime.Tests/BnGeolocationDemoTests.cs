@@ -83,7 +83,13 @@ public sealed class BnGeolocationDemoTests
         var (mount, _) = MountDemo();
         try
         {
-            Assert.Equal(2, mount.Patches.OfType<CreateNodePatch>().Count(p => p.NodeType == "button"));
+            // 3 buttons: the 2 action buttons (Locate, Check) plus the trailing
+            // "← Back" (#204 — nav parity with the eight pages that already had one).
+            Assert.Equal(3, mount.Patches.OfType<CreateNodePatch>().Count(p => p.NodeType == "button"));
+            // …and it is WIRED, not just drawn: a back button with no handler is a
+            // dead end that looks like an exit, which is worse than no button at all.
+            Assert.True(ClickHandlerForLabel(mount, "← Back") > 0,
+                "the trailing ← Back button must carry a click handler");
 
             int echo = EchoTextNode(mount);
             var initial = Assert.Single(mount.Patches.OfType<ReplaceTextPatch>(), p => p.NodeId == echo);

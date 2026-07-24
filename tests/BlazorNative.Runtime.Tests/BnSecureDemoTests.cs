@@ -68,7 +68,13 @@ public sealed class BnSecureDemoTests
         var (mount, _) = MountDemo();
         try
         {
-            Assert.Equal(4, mount.Patches.OfType<CreateNodePatch>().Count(p => p.NodeType == "button"));
+            // 5 buttons: the 4 action buttons (Authenticate, Set, Unlock, Delete) plus the trailing
+            // "← Back" (#204 — nav parity with the eight pages that already had one).
+            Assert.Equal(5, mount.Patches.OfType<CreateNodePatch>().Count(p => p.NodeType == "button"));
+            // …and it is WIRED, not just drawn: a back button with no handler is a
+            // dead end that looks like an exit, which is worse than no button at all.
+            Assert.True(ClickHandlerForLabel(mount, "← Back") > 0,
+                "the trailing ← Back button must carry a click handler");
             int echo = EchoTextNode(mount);
             var initial = Assert.Single(mount.Patches.OfType<ReplaceTextPatch>(), p => p.NodeId == echo);
             Assert.Equal("ready", initial.Text);

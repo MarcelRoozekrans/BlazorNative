@@ -27,7 +27,7 @@ namespace BlazorNative.SampleApp;
 //     ├─ BnButton "Check"  → CheckPermissionAsync() (no prompt) → echo the status
 //     ├─ BnText echo (mount-pinned text node — the FocusProbe/ClipboardProbe echo
 //     │  contract: transitions are ReplaceText on a stable nodeId)
-//     └─ BnText accuracy (Phase 11.2 / issue #169 — a SEPARATE trailing node that
+//     ├─ BnText accuracy (Phase 11.2 / issue #169 — a SEPARATE trailing node that
 //        surfaces GeolocationPosition.Accuracy as "acc:<metres>", so the round-tripped
 //        accuracy is observable on-device). It is placed AFTER the echo deliberately:
 //        each device suite selects the echo as "the first TextView-not-Button" (Android)
@@ -36,6 +36,10 @@ namespace BlazorNative.SampleApp;
 //        suites split it on ',' and require exactly two doubles). Accuracy is its own
 //        self-describing, independently-assertable "acc:" line — invariant-formatted like
 //        the coords (a locale decimal comma would collide with the split).
+//     └─ BnButton "← Back" → INavigationManager.NavigateToAsync("/")   (#204 — nav
+//        parity with the eight pages that already carried one. LAST, after BOTH text
+//        nodes, for the same reason the accuracy line is placed after the echo: the
+//        selectors above scan for TEXT, and a trailing BUTTON cannot disturb them.)
 //
 // DENIAL-AS-DATA, made visible: a denied Locate echoes "Denied" (or the exact
 // tri-state) — it never throws and never leaves the echo blank waiting on a hang.
@@ -61,6 +65,10 @@ internal sealed class BnGeolocationDemo : ComponentBase
 
     [Inject] public IGeolocation Geo { get; set; } = default!;
 
+    /// <summary>#204: the navigation service, for the trailing "← Back" — the same
+    /// explicit [Inject] public property every other page uses.</summary>
+    [Inject] public INavigationManager Navigation { get; set; } = default!;
+
     protected override void BuildRenderTree(RenderTreeBuilder b)
     {
         b.OpenElement(0, "div");
@@ -85,8 +93,21 @@ internal sealed class BnGeolocationDemo : ComponentBase
         b.AddComponentParameter(41, nameof(BnText.Text), _accuracy);
         b.CloseComponent();
 
+        // "← Back" (#204) — nav parity with the eight pages that already carry one.
+        // LAST, after the echo and the accuracy line: both device suites select the
+        // echo as "the first TextView/UILabel that is not a Button", so a TRAILING
+        // button leaves those selectors resolving to exactly what they did before.
+        b.OpenComponent<BnButton>(90);
+        b.AddComponentParameter(91, nameof(BnButton.Label), "← Back");
+        b.AddComponentParameter(92, nameof(BnButton.OnClick),
+            EventCallback.Factory.Create<MouseEventArgs>(this, GoBack));
+        b.CloseComponent();
+
         b.CloseElement();
     }
+
+    // Sync-completing (inline dispatcher), like every other page's GoBack.
+    private Task GoBack() => Navigation.NavigateToAsync("/").AsTask();
 
     // Locate runs the whole permission dance; the terminal outcome — a fix OR a
     // denial/restriction/unavailable/error — is echoed as DATA. Never throws.
