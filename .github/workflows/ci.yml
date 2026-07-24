@@ -4,7 +4,7 @@
 #
 #   build-test (windows-latest) — the local verification procedure verbatim
 #   (setup.ps1 §1–7 documents the toolchain pins):
-#     build (analyzers ride it) → .NET tests (890 passed / 0 skipped) →
+#     build (analyzers ride it) → .NET tests (892 passed / 0 skipped) →
 #     three NativeAOT publishes of samples/BlazorNative.SampleApp — the
 #     publish head since Phase 8.0: the app owns PublishAot, the exports stay
 #     in Runtime via UnmanagedEntryPointsAssembly, and the artifact is
@@ -1618,7 +1618,26 @@ jobs:
       #        new tests drive the REAL WriteFlatJsonObject, not the recorder; a test
       #        through DevHostBridge would have passed on the broken build.
       # JVM, Android instrumented and iOS baselines do not move.
-      - name: .NET tests (assert 890 passed / 0 skipped)
+      #
+      # 890 -> 892 (#212, +2 -- Runtime.Tests 725 -> 727): RouteGen refuses a DUPLICATE
+      # ROUTE at build time. It used to append both rows and emit both, producing a JSON
+      # object with duplicate keys; Android's loadDeepLinkRoutes parses with
+      # org.json.JSONObject, which THROWS on duplicate keys, so the catch returned
+      # emptyMap() and EVERY deep link silently fell back to the default component -- while
+      # RouteGen exited 0 and the build stayed green. The generator that exists to remove
+      # hand-written drift was emitting a map the device could not read.
+      #   +1 TwoPagesSharingARoute_AreRefusedByTheGenerator_NamingBoth -- the refusal, and
+      #      its MESSAGE: it must name the route AND both pages, or it sends you hunting
+      #      through a manifest for the pair.
+      #   +1 TheDuplicateRouteFixture_IsOtherwiseValid -- non-vacuity. Without it the test
+      #      above would pass if Extract threw on every input, and a fixture rejected for
+      #      an unrelated parse reason would read as success.
+      # Written against a TEMP source file, not the sample manifest: a fixture that made the
+      # real app illegal would red every other test in that file. PageManifest.Validate still
+      # rejects duplicates at startup -- that is the mitigation, not the answer, since the
+      # point of a build-time generator is to fail with the file in front of you.
+      # No ABI change; JVM, Android instrumented and iOS baselines do not move.
+      - name: .NET tests (assert 892 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -1636,8 +1655,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 890 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 890 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 892 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 892 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # ── NativeAOT publishes + nine-export verification ────────────────────

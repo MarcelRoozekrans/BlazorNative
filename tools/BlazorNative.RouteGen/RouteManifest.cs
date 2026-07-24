@@ -51,6 +51,11 @@ public readonly record struct RoutedPage(string Route, string Name);
 /// build can point the author at the exact call to fix.</summary>
 public sealed class NonLiteralRouteArgumentException(string message) : Exception(message);
 
+/// <summary>Two <c>Routed&lt;T&gt;</c> rows declared the same route (#212). Its own type,
+/// like <see cref="NonLiteralRouteArgumentException"/>, so a test can assert WHICH refusal
+/// happened rather than matching on message text.</summary>
+public sealed class DuplicateRouteException(string message) : Exception(message);
+
 public static class RouteManifest
 {
     // The framework's default-route constant (BlazorNativeApp.DefaultRoute = "/").
@@ -70,6 +75,9 @@ public static class RouteManifest
     public static IReadOnlyList<RoutedPage> Extract(IEnumerable<string> sourceFiles)
     {
         var routed = new List<RoutedPage>();
+        // route → the name of the FIRST page that claimed it, so the refusal can name both
+        // sides of the collision rather than only the one that tripped it (#212).
+        var seen = new Dictionary<string, string>(StringComparer.Ordinal);
 
         foreach (string file in sourceFiles.OrderBy(f => f, StringComparer.Ordinal))
         {
@@ -86,6 +94,36 @@ public static class RouteManifest
                 SeparatedSyntaxList<ArgumentSyntax> args = call.ArgumentList.Arguments;
                 string route = ResolveStringArgument(args[0], file, "route");
                 string name = ResolveStringArgument(args[1], file, "name");
+
+                // #212 — REFUSE A DUPLICATE ROUTE AT BUILD TIME.
+                //
+                // Without this the duplicate was appended and ToJson emitted BOTH, producing
+                // a JSON object with duplicate keys ({"/a":…,"/a":…}). On device
+                // MainActivity.loadDeepLinkRoutes parses with org.json.JSONObject, which
+                // THROWS on duplicate keys; the catch returns emptyMap(), so EVERY deep link
+                // silently fell back to the default component. RouteGen still exited 0 and
+                // the build stayed green — the generator that exists to remove hand-written
+                // drift was emitting a map the device could not read.
+                //
+                // PageManifest.Validate already rejects duplicate routes at startup, so an
+                // app crashes on boot either way. That is the mitigation, not the answer:
+                // the whole point of a build-time generator is to fail at BUILD time, with
+                // the file in front of you, rather than on a device with a stack trace that
+                // names JSON parsing.
+                //
+                // Ordinal comparison, matching PageManifest's own route comparison — routes
+                // are wire identifiers, never culture-sensitive text.
+                if (seen.TryGetValue(route, out string? firstName))
+                {
+                    throw new DuplicateRouteException(
+                        $"duplicate route \"{route}\": declared by BOTH \"{firstName}\" and "
+                        + $"\"{name}\". A route is the deep-link map's KEY, so two rows sharing "
+                        + "one produce a JSON object with duplicate keys — which the Android "
+                        + "shell's parser rejects wholesale, silently disabling EVERY deep "
+                        + "link. Give each routed page its own route.");
+                }
+                seen.Add(route, name);
+
                 routed.Add(new RoutedPage(route, name));
             }
         }
