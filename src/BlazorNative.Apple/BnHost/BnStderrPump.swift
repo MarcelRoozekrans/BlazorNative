@@ -135,7 +135,20 @@ enum BnStderrPump {
             let count = buffer.withUnsafeMutableBytes { raw -> Int in
                 read(readFd, raw.baseAddress, raw.count)
             }
-            guard count > 0 else { return }
+            // #213 item 4 — HANDLE EOF, don't just skip it. `count == 0` is EOF (every
+            // writer closed fd 2); `count < 0` is an error (EINTR aside). The old code
+            // was `guard count > 0 else { return }` on both, which had two faults the
+            // Kotlin twin does not: the buffered PARTIAL LINE was never flushed (the
+            // shared drain flushes its tail on EOF — BnLogFormat.drain's
+            // `if (pending.isNotEmpty()) emit(...)`), and the source was left resumed on
+            // a fd that is now permanently readable-but-empty, so it re-fires in a tight
+            // loop reading zero forever. Flush the tail, then CANCEL: the cancel handler
+            // closes readFd, which is the only correct way to stop a dispatch read source.
+            guard count > 0 else {
+                if count == 0 { flushPending(pending: &pending, overflowed: &overflowed) }
+                readSource.cancel()
+                return
+            }
             drain(Data(buffer[0..<count]), pending: &pending, overflowed: &overflowed)
         }
         readSource.setCancelHandler {
@@ -180,6 +193,20 @@ enum BnStderrPump {
         if start < chunk.endIndex {
             append(chunk[start..<chunk.endIndex], to: &pending, overflowed: &overflowed)
         }
+    }
+
+    /// #213 item 4 — EMIT THE BUFFERED TAIL AT EOF. `drain` only emits on `\n`, so a
+    /// final line with no trailing newline sits in `pending` forever. On EOF the writer
+    /// is gone and none is coming, so the tail is a complete line — flush it, exactly as
+    /// the Kotlin twin's shared drain does (`if (pending.isNotEmpty()) emit(...)`).
+    /// Idempotent: an empty `pending` emits nothing, so a double EOF (or a cancel that
+    /// races a final read) cannot double-log. Split out so an XCTest can drive it through
+    /// the injected [sink] rather than a real pipe closing.
+    static func flushPending(pending: inout Data, overflowed: inout Bool) {
+        guard !pending.isEmpty else { return }
+        emit(pending, overflowed)
+        pending = Data()
+        overflowed = false
     }
 
     /// Appends, never past [maxLine]; records whether anything was dropped.
