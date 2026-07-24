@@ -319,6 +319,12 @@ public sealed class NativeRenderer : BlazorRenderer
 
     protected override Task UpdateDisplayAsync(in RenderBatch renderBatch)
     {
+        // #213 item 2: route any Frames fault parked by a ThreadPool continuation. FIRST,
+        // on the renderer thread — the only thread where HandleException's single-threaded
+        // state is safe to touch, and the only place a strict-mode rethrow surfaces at a
+        // boundary someone is actually awaiting.
+        DrainAsyncFramesFault();
+
         var batch = new BnRenderBatch(in renderBatch);
         var timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         var frameId = Interlocked.Increment(ref _frameId);
@@ -410,9 +416,36 @@ public sealed class NativeRenderer : BlazorRenderer
             if (framesTask.IsCompleted)
                 framesTask.GetAwaiter().GetResult();
             else
+                // #213 item 2 — PARK IT, DO NOT HANDLE IT HERE.
+                //
+                // This continuation runs on a ThreadPool thread. It used to call
+                // HandleException directly, which reads and writes three fields this class
+                // declares single-threaded (_uiEventDispatchDepth,
+                // _uiEventDispatchException, _reportedBindingFault) and, under
+                // StrictErrors, rethrows via ExceptionDispatchInfo.Throw() — on a pool
+                // thread, where nothing observes it. So the mechanism meant to stop a
+                // subscriber fault being SWALLOWED could both corrupt renderer state and
+                // swallow the fault a second way.
+                //
+                // #123's actual requirement is only "never discard the task". That is met
+                // by capturing the fault; WHERE it is routed is a separate question, and
+                // the answer is the renderer thread (DrainAsyncFramesFault, called at the
+                // top of the next UpdateDisplayAsync).
+                //
+                // Logged HERE as well, immediately and unconditionally: BnLog is
+                // thread-safe, and the drain only runs if another frame arrives. Without
+                // the log, a fault on the LAST frame of a run would be parked and never
+                // reported — which is the swallow #123 exists to prevent.
                 framesTask.AsTask().ContinueWith(
-                    static (t, self) => ((NativeRenderer)self!).HandleException(
-                        t.Exception!.InnerException ?? t.Exception),
+                    static (t, self) =>
+                    {
+                        var renderer = (NativeRenderer)self!;
+                        Exception fault = t.Exception!.InnerException ?? t.Exception;
+                        BnLog.Error("BlazorNative.Renderer",
+                            "Frames subscriber faulted asynchronously", fault);
+                        // First fault wins — the one that started the trouble, not the last.
+                        Interlocked.CompareExchange(ref renderer._asyncFramesFault, fault, null);
+                    },
                     this, TaskContinuationOptions.OnlyOnFaulted);
             DispatchFrame(frame);
         }
@@ -442,6 +475,44 @@ public sealed class NativeRenderer : BlazorRenderer
     /// (Phase 11.4 Gate D). Renderer-scoped and single-threaded like every
     /// other field here; see the dedupe note in <see cref="HandleException"/>.</summary>
     private Exception? _reportedBindingFault;
+
+    /// <summary>
+    /// A <see cref="Frames"/> subscriber fault that arrived on a ThreadPool thread,
+    /// parked for the renderer thread to route (#213 item 2).
+    ///
+    /// <para><b>The only field here that is deliberately cross-thread</b>, hence the
+    /// Interlocked access. Every other field in this class — including the three
+    /// <see cref="HandleException"/> touches — is single-threaded by contract, which is
+    /// exactly what the old fault continuation broke: it called HandleException straight
+    /// from the pool thread, reading and writing <c>_uiEventDispatchDepth</c>,
+    /// <c>_uiEventDispatchException</c> and <c>_reportedBindingFault</c> from off the
+    /// renderer thread, and under <see cref="StrictErrors"/> it also rethrew via
+    /// <c>ExceptionDispatchInfo.Throw()</c> on that pool thread — where nothing observes
+    /// it.</para>
+    ///
+    /// <para>FIRST fault wins and is never overwritten: the surfaced exception should be
+    /// the one that started the trouble, not whichever landed last.</para>
+    /// </summary>
+    private Exception? _asyncFramesFault;
+
+    /// <summary>Test-only (#213 item 2): the parked async <see cref="Frames"/> fault, or
+    /// null. Lets a test assert the fault was CAPTURED without having to drive a second
+    /// frame to drain it — the assertion this fix most needs is "it was not swallowed".</summary>
+    internal Exception? AsyncFramesFaultForTests => Volatile.Read(ref _asyncFramesFault);
+
+    /// <summary>
+    /// Routes any parked async <see cref="Frames"/> fault, ON THE RENDERER THREAD.
+    /// Called at the top of <see cref="UpdateDisplayAsync"/> — the one place guaranteed to
+    /// be on that thread — so <see cref="HandleException"/>'s single-threaded state is
+    /// touched only from where it is safe, and a strict-mode rethrow surfaces at a real
+    /// boundary instead of on a pool thread nobody is awaiting.
+    /// </summary>
+    private void DrainAsyncFramesFault()
+    {
+        Exception? fault = Interlocked.Exchange(ref _asyncFramesFault, null);
+        if (fault is not null)
+            HandleException(fault);
+    }
 
     protected override void HandleException(Exception exception)
     {

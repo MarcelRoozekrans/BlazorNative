@@ -4,7 +4,7 @@
 #
 #   build-test (windows-latest) — the local verification procedure verbatim
 #   (setup.ps1 §1–7 documents the toolchain pins):
-#     build (analyzers ride it) → .NET tests (892 passed / 0 skipped) →
+#     build (analyzers ride it) → .NET tests (894 passed / 0 skipped) →
 #     three NativeAOT publishes of samples/BlazorNative.SampleApp — the
 #     publish head since Phase 8.0: the app owns PublishAot, the exports stay
 #     in Runtime via UnmanagedEntryPointsAssembly, and the artifact is
@@ -1637,7 +1637,31 @@ jobs:
       # rejects duplicates at startup -- that is the mitigation, not the answer, since the
       # point of a build-time generator is to fail with the file in front of you.
       # No ABI change; JVM, Android instrumented and iOS baselines do not move.
-      - name: .NET tests (assert 892 passed / 0 skipped)
+      #
+      # 892 -> 894 (#213 item 2, +2 -- Renderer.Tests 138 -> 140): the #123 Frames-fault
+      # continuation no longer touches renderer state from a ThreadPool thread.
+      #   #123's rule is "never discard the Frames task" -- Frames is the TEST channel, and
+      #   a discarded task swallows a throw inside a frame subscriber, so a test could be
+      #   green while actually failing. The fix satisfied that and then did the wrong thing
+      #   with what it caught: for an ASYNC subscriber it called HandleException FROM THE
+      #   POOL THREAD, which reads/writes three fields the renderer declares
+      #   single-threaded (_uiEventDispatchDepth, _uiEventDispatchException,
+      #   _reportedBindingFault) and, under StrictErrors, rethrew via
+      #   ExceptionDispatchInfo.Throw() there -- where nothing observes it. The mechanism
+      #   built to stop a swallow could corrupt state AND swallow the fault a second way.
+      #   The fault is now PARKED (Interlocked, first-wins) plus logged immediately, and
+      #   drained through HandleException at the top of the next UpdateDisplayAsync -- on
+      #   the renderer thread, where a strict rethrow reaches a real awaited boundary.
+      #   +1 AnAsyncFramesSubscriberFault_IsParked_NotThrownOnThePoolThread
+      #   +1 TheParkedFault_SurfacesOnTheNextFrame_AndIsDrained (also pins the DRAIN: a
+      #      fault left parked would re-throw on every later frame, turning one subscriber
+      #      bug into a permanently broken renderer)
+      #   MUTATION-PROVEN: with the old continuation restored and the test seam kept, BOTH
+      #   fail; with the fix, both pass. Note the subscriber must `await Task.Yield()` --
+      #   a sequential subscriber completes inline, takes the GetResult() branch, and never
+      #   reaches the continuation, which is why no existing test could see this.
+      # No ABI change; JVM, Android instrumented and iOS baselines do not move.
+      - name: .NET tests (assert 894 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -1655,8 +1679,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 892 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 892 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 894 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 894 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # ── NativeAOT publishes + nine-export verification ────────────────────
