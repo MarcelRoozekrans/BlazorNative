@@ -215,6 +215,67 @@ class BnScrollDemoAndroidTest {
      * using the content view's LAID-OUT height, so a request for 10 000dp coming back
      * as exactly **600** is the ScrollView agreeing with Yoga about the 800.
      */
+    /**
+     * #219 — THE VIEWPORT CLIPS, ASSERTED BY WHAT IS **PAINTED**, NOT BY A FRAME.
+     *
+     * This is the pin whose absence let the bug ship. Every other assertion in this
+     * file — the whole canonical frame table — reads computed frames, and the defect
+     * moved **no frame**: the viewport was 200dp, the content 800dp, every row sat at
+     * exactly its right offset, and `scrollable` was `true`. The tree was perfect and
+     * the screen was wrong, because all 800dp painted straight over the Activity.
+     * A frame table cannot express "and nothing escaped the box", so this renders the
+     * page and reads PIXELS.
+     *
+     * The mechanism it guards (see WidgetMapper's SCROLL arm): Android takes a view's
+     * own bounds-clip from its PARENT's `clipChildren`, and every container the mapper
+     * builds is a BnYogaFrameLayout with `clipChildren = false` (deliberately — iOS
+     * parity). So the viewport's clip must come from `clipToOutline`, which no ancestor
+     * can veto. Asserting `scroll.clipChildren` instead would pass on the BROKEN build:
+     * it governs the level below, and it was already `true` the whole time.
+     *
+     * Row 3 is the probe: at offset 0 it lives at content y 240..320, entirely below the
+     * 200dp cut, so ITS colour must appear nowhere beneath the viewport's bottom edge.
+     */
+    @Test fun the_viewport_clips_its_overflow_and_paints_nothing_below_itself() = withDemo { act ->
+        val root = act.findViewById<FrameLayout>(R.id.widget_root)
+        val scroll = scrollOf(act)
+        val content = scroll.getChildAt(0) as ViewGroup
+
+        // Non-vacuity FIRST: a probe row that is not actually below the cut, or a
+        // host with no room under the viewport, would make every pixel read below
+        // trivially pass.
+        val probe = content.getChildAt(3)
+        assertTrue("row 3 must sit BELOW the viewport for this pin to mean anything",
+            topInViewport(probe, scroll) >= scroll.height)
+        val bandBelow = root.height - (scroll.bottom + 1)
+        assertTrue("widget_root must extend below the viewport for the overflow to have " +
+            "somewhere to escape TO (got ${bandBelow}px)", bandBelow > 0)
+
+        val probeColour = (probe.background as? android.graphics.drawable.ColorDrawable)?.color
+        assertTrue("row 3 must carry a flat colour to be findable in the bitmap", probeColour != null)
+
+        // Render the REAL host, exactly as it draws to the screen.
+        val shot = android.graphics.Bitmap.createBitmap(
+            root.width, root.height, android.graphics.Bitmap.Config.ARGB_8888)
+        root.draw(android.graphics.Canvas(shot))
+
+        // Sweep the band under the viewport. The overflow, if it escapes, lands here —
+        // this is the exact region that was full of rows on the shipped build.
+        val x = scroll.left + scroll.width / 2
+        var offenders = 0
+        for (y in (scroll.bottom + 1) until root.height) {
+            if (shot.getPixel(x, y) == probeColour) offenders++
+        }
+        shot.recycle()
+
+        assertEquals(
+            "row 3's colour was painted ${offenders}px BELOW the viewport — the scroll " +
+                "viewport is not clipping, so its content escapes the box, covers the " +
+                "Activity, and (because touch dispatch uses layout bounds) is visible but " +
+                "inert. See #219: the clip must be clipToOutline, NOT clipChildren.",
+            0, offenders)
+    }
+
     @Test fun driving_the_scroll_position_moves_the_rows_over_the_viewport() {
         val ctx = InstrumentationRegistry.getInstrumentation().targetContext
         val intent = Intent(ctx, MainActivity::class.java)
