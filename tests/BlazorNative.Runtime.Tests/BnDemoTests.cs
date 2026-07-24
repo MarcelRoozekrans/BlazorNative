@@ -1,5 +1,6 @@
 using BlazorNative.Renderer;
 using BlazorNative.Runtime;
+using BlazorNative.SampleApp;   // BnDemo.Destinations — the menu the shape pins below count
 
 namespace BlazorNative.Runtime.Tests;
 
@@ -160,25 +161,50 @@ public sealed class BnDemoTests
             _ = ClickHandlerOn(mount, btn);
         }
 
+        // The capability menu (#204): a heading plus one button per Destinations
+        // row, all FLAT children of the form. Flat is deliberate — a wrapper view
+        // would give the form a second `view` child and break every suite's
+        // "echo panel is the form's only view child" accessor.
+        var explore = ContainerOfText(mount, "Explore");
+        Assert.Equal("text", CreateOf(mount, explore).NodeType);
+        Assert.Equal(form.NodeId, CreateOf(mount, explore).ParentId);
+        Assert.Equal("20", StyleOn(mount, explore, "fontSize").Value);
+
+        var menu = BnDemo.Destinations
+            .Select(d => ContainerOfText(mount, d.Label))
+            .ToArray();
+        Assert.All(menu, btn =>
+        {
+            Assert.Equal("button", CreateOf(mount, btn).NodeType);
+            Assert.Equal(form.NodeId, CreateOf(mount, btn).ParentId);
+            _ = ClickHandlerOn(mount, btn);
+        });
+
         // Order pin for Gate 3. Blazor's FIFO render queue CREATES the form
-        // children as title → input → Clear → Theme → Settings → echo panel
-        // (the panel's BnView is a chained child component, queued behind the
-        // buttons), so the panel's create carries the MID-LIST InsertIndex 2 —
-        // after title + input, before the buttons — while everything else
-        // appends. FINAL child order: title, input, echo panel, Clear,
-        // Theme, Settings →.
+        // children as title → input → Clear → Theme → Settings → Explore →
+        // the menu buttons → echo panel (the panel's BnView is a chained child
+        // component, queued behind everything authored inline), so the panel's
+        // create carries the MID-LIST InsertIndex 2 — after title + input,
+        // before the buttons — while everything else appends. FINAL child order:
+        // title, input, echo panel, Clear, Theme, Settings →, Explore, menu….
         var formChildren = mount.Patches.OfType<CreateNodePatch>()
             .Where(p => p.ParentId == form.NodeId)
             .ToList();
         Assert.Equal(
-            new[] { title, input.NodeId, clear, theme, settings, panel.NodeId },
+            new[] { title, input.NodeId, clear, theme, settings, explore }
+                .Concat(menu)
+                .Append(panel.NodeId),
             formChildren.Select(p => p.NodeId)); // creation (patch) order
         Assert.Equal(2, panel.InsertIndex);
         Assert.All(formChildren.Where(p => p.NodeId != panel.NodeId),
             p => Assert.Equal(-1, p.InsertIndex));
 
-        // Exactly 4 event attaches: change + Clear + Theme + Settings →.
-        Assert.Equal(4, mount.Patches.OfType<AttachEventPatch>().Count());
+        // Every attach accounted for: change + Clear + Theme + Settings → + one
+        // per menu row. Derived from Destinations.Length rather than hard-coded,
+        // so adding a page moves this number with the menu instead of reding a
+        // count nobody can map back to a cause.
+        Assert.Equal(4 + BnDemo.Destinations.Length,
+            mount.Patches.OfType<AttachEventPatch>().Count());
     }
 
     // ── The bind loop headless (DoD #5) ───────────────────────────────────────

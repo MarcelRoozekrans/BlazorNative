@@ -209,11 +209,33 @@ class BnDemoTest {
             clickHandlerOn(mount, btn)
         }
 
-        // Exactly 4 event attaches: change + Clear + Theme + Settings →.
+        // Every attach accounted for: ONE change (the bound input) plus ONE click
+        // per button on the page — Clear, Theme, "Settings →", and the #204
+        // capability menu's rows.
+        //
+        // Derived from the frame's own button count rather than hard-coded. This
+        // file drives the PUBLISHED dll, so a literal here would have to be edited
+        // in lockstep with a .razor it cannot see, and would red with a bare number
+        // that names no cause. The invariant that actually matters is "no button
+        // ships without a handler, and nothing else attaches" — which is what this
+        // now says.
+        val buttons = mount.patches.filterIsInstance<RenderPatch.CreateNode>()
+            .count { it.nodeType == "button" }
+        val attaches = mount.patches.filterIsInstance<RenderPatch.AttachEvent>()
         assertEquals(
-            4,
-            mount.patches.filterIsInstance<RenderPatch.AttachEvent>().size,
-            "exactly change + 3 clicks; got ${mount.patches.filterIsInstance<RenderPatch.AttachEvent>()}"
+            1,
+            attaches.count { it.eventName == "change" },
+            "exactly one change attach (the bound input); got $attaches"
+        )
+        assertEquals(
+            buttons,
+            attaches.count { it.eventName == "click" },
+            "every button must carry exactly one click attach; got $attaches"
+        )
+        assertEquals(
+            buttons + 1,
+            attaches.size,
+            "change + one click per button and NOTHING else; got $attaches"
         )
     }
 

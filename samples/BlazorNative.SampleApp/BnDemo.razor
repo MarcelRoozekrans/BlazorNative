@@ -37,8 +37,10 @@
             │   └─ BnText echo (= the bound text)    span
             ├─ BnButton "Clear"                      button + click
             ├─ BnButton "Theme"                      button + click
-            └─ BnButton "Settings →"                 button + click → NavigateToAsync("/settings")
-      (4 event attaches: change + Clear + Theme + Settings →)
+            ├─ BnButton "Settings →"                 button + click → NavigateToAsync("/settings")
+            ├─ BnText  "Explore"                     span, fontSize 20   ← the menu heading
+            └─ BnButton × 11 (Destinations)          button + click → NavigateToAsync(route)
+      (15 event attaches: change + Clear + Theme + Settings → + 11 menu)
 
     The bind loop (DoD #5): change dispatch → BnInput.ValueChanged → _text
     mutates → re-render → echo ReplaceText + input value UpdateProp.
@@ -48,6 +50,12 @@
     The navigation (DoD #7): Settings click → INavigationManager swaps the
     root (this page's RemoveNodes, then BnSettingsPage's creates) inside the
     same dispatch.
+    The capability menu (#204): every OTHER routed page in SampleAppPages.All,
+    one button per row of Destinations, through the SAME swap. Before this the
+    sample was a hub-and-spoke with no hub — eight pages already carried
+    "← Back" → "/", but nothing in the app linked TO them; they were reachable
+    only by deep link or an Intent extra. RouteMenuDriftTests pins the list
+    against the manifest so a new page cannot be added and left unreachable.
     ─────────────────────────────────────────────────────────────────────────
 *@
 @* Grow="1" Basis="0" — CSS's `flex: 1`, and BOTH halves are load-bearing.
@@ -78,6 +86,23 @@
             <BnButton Label="Clear" OnClick="Clear" />
             <BnButton Label="Theme" OnClick="ToggleTheme" />
             <BnButton Label="Settings →" OnClick="GoToSettings" />
+
+            @* THE CAPABILITY MENU. Flat children of the form ON PURPOSE — wrapping
+               them in a BnView/BnThemedPanel would give the form a SECOND `view`
+               child, and every suite's echo-panel accessor is "the form's only
+               `view` child". A container here would cost four selector rewrites and
+               buy nothing the parent's column layout does not already give.
+
+               Data-driven from Destinations so a new page is one row, not a row plus
+               a hand-copied button — the same "declare it once" rule SampleAppPages
+               applies to the manifest itself. *@
+            <BnText Text="Explore" FontSize="20" />
+            @* `dest`, not `page` — a loop variable named `page` makes `@page.Label`
+               parse as the @page DIRECTIVE and the file stops compiling. *@
+            @foreach (var dest in Destinations)
+            {
+                <BnButton Label="@dest.Label" OnClick="@(_ => Go(dest.Route))" />
+            }
         </BnThemedPanel>
     </BnScroll>
 </CascadingValue>
@@ -88,6 +113,40 @@
 
     private string _text = "";
     private BnTheme _theme = new(DefaultBackground, AltBackground);
+
+    /// <summary>The capability menu's rows — every routed page reachable from
+    /// here.
+    ///
+    /// "/" is absent because it is THIS page, and "/settings" because the
+    /// "Settings →" button above already goes there: that button is the pinned
+    /// DoD #7 navigation proof (NavigationTests and both device suites drive it
+    /// by label), so it keeps its place rather than dissolving into this list.
+    /// Together with those two, every routed row in SampleAppPages.All is
+    /// reachable from this screen.
+    ///
+    /// This list is NOT derived from SampleAppPages.All at runtime, even though it
+    /// could be — BlazorNativePage.Route is public and the manifest is public. The
+    /// reason is the LABELS: the manifest carries mount names ("BnImagePolishDemo"),
+    /// which make poor buttons, so a human-readable label has to live somewhere
+    /// regardless, and a table of labels keyed by route is just this table with an
+    /// indirection. What the manifest is used for is the GUARD:
+    /// RouteMenuDriftTests asserts every routed page except "/" and "/settings"
+    /// appears here, so a page added to the manifest and forgotten here reds a test
+    /// instead of silently becoming unreachable.</summary>
+    internal static readonly (string Label, string Route)[] Destinations =
+    [
+        ("Layout", "/layout"),
+        ("Scroll", "/scroll"),
+        ("Image", "/image"),
+        ("Image polish", "/imagepolish"),
+        ("List", "/list"),
+        ("Form controls", "/form"),
+        ("Modal", "/modal"),
+        ("Geolocation", "/geolocation"),
+        ("Notifications", "/notifications"),
+        ("Secure storage", "/secure"),
+        ("Camera", "/camera"),
+    ];
 
     /// <summary>Phase 3.5: the navigation service (Core contract) — same
     /// explicit [Inject] public property as the hand-written page (NOT
@@ -103,4 +162,8 @@
     // Sync-completing (inline dispatcher): the swap has fully happened —
     // removes + creates delivered — when this Task is observed.
     private Task GoToSettings() => Navigation.NavigateToAsync("/settings").AsTask();
+
+    /// <summary>The menu's navigation — same sync-completing swap as
+    /// <see cref="GoToSettings"/>, just parameterised by route.</summary>
+    private Task Go(string route) => Navigation.NavigateToAsync(route).AsTask();
 }
