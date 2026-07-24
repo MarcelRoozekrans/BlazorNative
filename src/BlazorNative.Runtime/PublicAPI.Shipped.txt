@@ -126,7 +126,7 @@ static BlazorNative.Runtime.Exports.DispatchEvent(ulong handlerId, nint argsJson
 static BlazorNative.Runtime.Exports.FetchComplete(long requestId, BlazorNative.Runtime.BlazorNativeFetchResponse* response) -> int
 static BlazorNative.Runtime.Exports.HostCallComplete(long requestId, int status, nint payloadJsonUtf8) -> int
 static BlazorNative.Runtime.Exports.HostEvent(nint nameUtf8, nint payloadUtf8) -> int
-static BlazorNative.Runtime.Exports.Init(BlazorNative.Runtime.BlazorNativeInitOptions* opts) -> BlazorNative.Runtime.BlazorNativeInitResult
+static BlazorNative.Runtime.Exports.Init(int structSize, BlazorNative.Runtime.BlazorNativeInitOptions* opts) -> BlazorNative.Runtime.BlazorNativeInitResult
 static BlazorNative.Runtime.Exports.Mount(nint componentNameUtf8) -> int
 static BlazorNative.Runtime.Exports.RegisterBridge(int structSize, BlazorNative.Runtime.BlazorNativeBridgeCallbacks* callbacks) -> int
 static BlazorNative.Runtime.Exports.RegisterFrameCallback(nint fnPtr) -> int

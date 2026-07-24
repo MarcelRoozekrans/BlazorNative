@@ -98,7 +98,15 @@ typedef void (*bn_frame_callback)(const void* frame);
 
 // Loads the runtime + verifies Blazor accessors + stores platform info. The
 // first frame does NOT fire here (that is mount). Returns the result by value.
-bn_init_result blazornative_init(bn_init_options* opts);
+//
+// SIZE-NEGOTIATED since #213 item 3, exactly like register_bridge below:
+// structSize is sizeof(bn_init_options) as the CALLER compiled it. The runtime
+// copies min(structSize, its own sizeof) into a zeroed struct, so a shell built
+// against an OLDER header (fewer fields — the struct grew 24 -> 32 bytes over
+// M10/M11) is read safely, with the missing fields defaulting (DevHost kind,
+// quiet Warn log level). A NEWER shell's extra tail is ignored. Pass
+// sizeof(bn_init_options); the runtime never over-reads your buffer.
+bn_init_result blazornative_init(int32_t structSize, bn_init_options* opts);
 
 // Stores the host frame callback (last-wins; NULL disables). Returns 0 on success.
 int32_t blazornative_register_frame_callback(bn_frame_callback callback);

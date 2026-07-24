@@ -49,7 +49,7 @@ fun main(args: Array<String>) {
             platformInfoApiLevel = 0
             platformInfoNote = noteMem
         }
-        val init = lib.blazornative_init(opts)
+        val init = lib.blazornative_init(opts.size(), opts)  // #213 item 3: size-negotiated
         if (init.status != 0) {
             val err = init.errorMessage?.getString(0, "UTF-8") ?: "<no detail>"
             throw IllegalStateException("blazornative_init failed (status=${init.status}): $err")

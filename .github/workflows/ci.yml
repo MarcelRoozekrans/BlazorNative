@@ -4,7 +4,7 @@
 #
 #   build-test (windows-latest) — the local verification procedure verbatim
 #   (setup.ps1 §1–7 documents the toolchain pins):
-#     build (analyzers ride it) → .NET tests (894 passed / 0 skipped) →
+#     build (analyzers ride it) → .NET tests (898 passed / 0 skipped) →
 #     three NativeAOT publishes of samples/BlazorNative.SampleApp — the
 #     publish head since Phase 8.0: the app owns PublishAot, the exports stay
 #     in Runtime via UnmanagedEntryPointsAssembly, and the artifact is
@@ -1661,7 +1661,30 @@ jobs:
       #   a sequential subscriber completes inline, takes the GetResult() branch, and never
       #   reaches the continuation, which is why no existing test could see this.
       # No ABI change; JVM, Android instrumented and iOS baselines do not move.
-      - name: .NET tests (assert 894 passed / 0 skipped)
+      #
+      # 894 -> 898 (#213 item 3, +4 -- Runtime.Tests 727 -> 731): blazornative_init now
+      # SIZE-NEGOTIATES, exactly like blazornative_register_bridge. The export used to take
+      # a bare pointer and read FIXED OFFSETS (Kind at 24, LogLevel at 28); the struct grew
+      # 24 -> 32 bytes over M10/M11, so a shell built against a pre-M10 header allocated 24
+      # bytes and that was an OUT-OF-BOUNDS read, not the merely-uninitialised value the old
+      # comment assumed. THIS IS AN EXPORT SIGNATURE CHANGE, taken deliberately before 1.0
+      # (the PublicAPI.Shipped.txt baseline reds it -- updated in the same commit): both
+      # shells, the C header and the template's two Kotlin mirrors move with it. Signature
+      # is blazornative_init(int structSize, BlazorNativeInitOptions*), and the copy is
+      # Exports.NegotiateInitOptions -- internal, so the cases are unit-tested the way
+      # NativeShellBridge.Register's min-copy is.
+      #   +2 NegotiateInitOptions_ShortBuffer_… (Theory, 24- and 28-byte shapes): a field
+      #      past the caller's buffer reads as ZERO (DevHost / Warn), never past the end.
+      #   +1 NegotiateInitOptions_FullBuffer_CopiesEveryField
+      #   +1 NegotiateInitOptions_OversizeAndDegenerate_AreSafe (newer shell's tail ignored;
+      #      negative/zero size copies nothing; null pointer -> all defaults)
+      # The 32-byte struct pin (InitOptionsStruct_Is32Bytes_…) stays: a shell sending a
+      # FULL struct must still land every field where the runtime reads it -- negotiation
+      # protects a SHORT sender, it does not license the full layout to drift. Cross-ABI
+      # proven on the JVM lane: BootSmokeNativeTest calls the new two-arg init against the
+      # published dll and gets status=0. No ABI struct grow; Android instrumented and iOS
+      # baselines do not move.
+      - name: .NET tests (assert 898 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -1679,8 +1702,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 894 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 894 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 898 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 898 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # ── NativeAOT publishes + nine-export verification ────────────────────

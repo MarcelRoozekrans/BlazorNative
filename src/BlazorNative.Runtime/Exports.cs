@@ -140,18 +140,36 @@ public static class Exports
     }
 
     [UnmanagedCallersOnly(EntryPoint = "blazornative_init", CallConvs = new[] { typeof(CallConvCdecl) })]
-    public static unsafe BlazorNativeInitResult Init(BlazorNativeInitOptions* opts)
+    public static unsafe BlazorNativeInitResult Init(int structSize, BlazorNativeInitOptions* opts)
     {
         try
         {
+            // #213 item 3 — SIZE NEGOTIATION, mirroring blazornative_register_bridge.
+            //
+            // This export used to take a bare pointer and read FIXED OFFSETS (24, 28)
+            // directly out of the caller's buffer. Those offsets are M10/M11 additions —
+            // the struct grew 24 → 32 bytes — so a shell compiled against a pre-M10 header
+            // allocates only 24 bytes, and reading Kind/LogLevel there was an OUT-OF-BOUNDS
+            // read, not merely an uninitialised one. The old comment's "an old shell leaves
+            // it 0" was true of a pre-11.4 shell (32 bytes already, tail padding) and FALSE
+            // of a pre-10.0 one; nothing drew the line.
+            //
+            // The register_bridge boundary already solved exactly this and init did not,
+            // which was the whole defect: a safety resting on "the shells ship in lockstep"
+            // where the codebase had the mechanism to not need the assumption. The copy is
+            // NegotiateInitOptions (internal, so the too-short/oversize/null cases are unit-
+            // tested the way NativeShellBridge.Register's are) — a field the shell did not
+            // supply reads as zero: DevHost for Kind, Unset→Warn for LogLevel.
+            BlazorNativeInitOptions o = NegotiateInitOptions(structSize, opts);
+
             // Phase 11.4 (#155): the log threshold FIRST — before anything else in
             // this method can write a line. Init's own failure path is the highest
             // -value diagnostic the framework ever emits, so it must be governed by
             // the level the shell actually asked for, not by whatever the default
-            // was when the module loaded. Ordinal 0 (a shell predating the field)
-            // resolves to the quiet Warn default.
-            if (opts != null)
-                BnLog.SetLevelFromOrdinal(opts->LogLevel);
+            // was when the module loaded. Ordinal 0 (a shell predating the field,
+            // OR one whose buffer was too short to carry it) resolves to the quiet
+            // Warn default.
+            BnLog.SetLevelFromOrdinal(o.LogLevel);
 
             // Touch the BlazorInterop static ctor explicitly so VerifyAccessors
             // runs at init time (not lazily at first event dispatch).
@@ -162,19 +180,24 @@ public static class Exports
 
             // Phase 3.1: STORE the platform-info options so IMobileBridge
             // .PlatformInfo / GetPlatformInfoAsync can serve them (the host
-            // owns the strings only during this call — copy now).
+            // owns the strings only during this call — copy now). The string
+            // POINTERS are read from the negotiated copy `o`, but the pointees
+            // still live in the caller's buffer for the duration of this call —
+            // the min-copy duplicates the 8-byte pointer fields (offsets 0/16,
+            // always within even the smallest historical struct), not the UTF-8
+            // bytes they address. Marshal.PtrToStringUTF8 copies those now.
             if (opts != null)
             {
                 NativeShellBridge.SetPlatformInfo(
-                    os: opts->PlatformInfoOs == IntPtr.Zero
-                        ? "" : Marshal.PtrToStringUTF8(opts->PlatformInfoOs) ?? "",
-                    apiLevel: opts->PlatformInfoApiLevel,
-                    note: opts->PlatformInfoNote == IntPtr.Zero
-                        ? null : Marshal.PtrToStringUTF8(opts->PlatformInfoNote),
+                    os: o.PlatformInfoOs == IntPtr.Zero
+                        ? "" : Marshal.PtrToStringUTF8(o.PlatformInfoOs) ?? "",
+                    apiLevel: o.PlatformInfoApiLevel,
+                    note: o.PlatformInfoNote == IntPtr.Zero
+                        ? null : Marshal.PtrToStringUTF8(o.PlatformInfoNote),
                     // Phase 10.0 (#121): map the shell-supplied ordinal to PlatformKind.
                     // An unset (0), unknown, or out-of-range value falls back to DevHost
                     // — a safe non-lying default, never Android.
-                    kind: ToPlatformKind(opts->PlatformInfoKind));
+                    kind: ToPlatformKind(o.PlatformInfoKind));
             }
 
             // Phase 3.0b deliberately does NOT mount a renderer or build a full
@@ -228,6 +251,39 @@ public static class Exports
         => Enum.IsDefined(typeof(PlatformKind), ordinal)
             ? (PlatformKind)ordinal
             : PlatformKind.DevHost;
+
+    /// <summary>
+    /// #213 item 3 — copies the caller's init options into a fresh, ZERO-INITIALISED
+    /// struct, reading at most <paramref name="structSize"/> bytes and never more than
+    /// this runtime's own <c>sizeof</c>. The twin of
+    /// <c>NativeShellBridge.Register(structSize, …)</c>, and it exists for the identical
+    /// reason: the struct grew <b>24 → 32 bytes</b> over M10/M11, so a shell compiled
+    /// against an older header allocates a shorter buffer, and reading the newer fields
+    /// (<c>PlatformInfoKind</c> at 24, <c>LogLevel</c> at 28) at fixed offsets was an
+    /// OUT-OF-BOUNDS read — not the merely-uninitialised value the old comment assumed.
+    ///
+    /// <para>The clamp makes the copy length self-contained: the upper bound truncates a
+    /// NEWER shell's extra tail; the lower bound turns a stray negative/zero size into a
+    /// safe no-copy (everything defaults) rather than an overflow. A field the shell did
+    /// not supply reads as zero — <see cref="PlatformKind.DevHost"/> for Kind,
+    /// <c>Unset</c>→<c>Warn</c> for LogLevel — which are exactly the safe non-lying
+    /// defaults the fixed-offset path intended but could not guarantee. The runtime never
+    /// over-reads the caller's buffer.</para>
+    ///
+    /// <para>A null pointer (a shell that passed none) yields the all-default struct.</para>
+    /// </summary>
+    internal static unsafe BlazorNativeInitOptions NegotiateInitOptions(
+        int structSize, BlazorNativeInitOptions* opts)
+    {
+        BlazorNativeInitOptions dest = default; // zero-fills the whole struct incl. any un-copied tail
+        if (opts != null)
+        {
+            int known = sizeof(BlazorNativeInitOptions);
+            int toCopy = Math.Clamp(structSize, 0, known);
+            Buffer.MemoryCopy(opts, &dest, known, toCopy);
+        }
+        return dest;
+    }
 
     [UnmanagedCallersOnly(EntryPoint = "blazornative_shutdown", CallConvs = new[] { typeof(CallConvCdecl) })]
     public static void Shutdown()

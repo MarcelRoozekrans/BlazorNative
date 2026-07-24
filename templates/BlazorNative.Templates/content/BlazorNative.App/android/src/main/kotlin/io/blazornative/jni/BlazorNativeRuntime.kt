@@ -357,7 +357,11 @@ class BlazorNativeRuntime(
             platformInfoKind = platformKind // Phase 10.0 (#121): report the shell's real kind
             this.logLevel = logLevel        // Phase 11.4 (#155): offset 28, size still 32
         }
-        val init = lib.blazornative_init(opts)
+        // #213 item 3: pass our compiled struct size so the runtime size-negotiates.
+        // opts.size() is JNA's measured sizeof for THIS shell's struct — a runtime built
+        // against a newer header reads only what we sent and defaults the rest, rather
+        // than reading past the buffer.
+        val init = lib.blazornative_init(opts.size(), opts)
         if (init.status != 0) {
             val err = init.errorMessage?.getString(0, "UTF-8") ?: "<no detail>"
             throw IllegalStateException("blazornative_init failed (status=${init.status}): $err")

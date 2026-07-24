@@ -57,7 +57,7 @@ class BootSmokeNativeAndroidTest {
             platformInfoNote = noteMem
         }
 
-        val result = NativeBindings.INSTANCE.blazornative_init(opts)
+        val result = NativeBindings.INSTANCE.blazornative_init(opts.size(), opts)
         val error = result.errorMessage?.getString(0, "UTF-8") ?: ""
         assertEquals("init failed: $error", 0, result.status)
         val version = result.versionString?.getString(0, "UTF-8") ?: ""

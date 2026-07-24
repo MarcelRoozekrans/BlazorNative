@@ -341,7 +341,7 @@ class NativeFrameAdapterTest {
             platformInfoApiLevel = 0
             platformInfoNote = noteMem
         }
-        val result = NativeBindings.INSTANCE.blazornative_init(opts)
+        val result = NativeBindings.INSTANCE.blazornative_init(opts.size(), opts)
         assertEquals(0, result.status, "blazornative_init failed: ${result.errorMessage?.getString(0, "UTF-8")}")
     }
 }

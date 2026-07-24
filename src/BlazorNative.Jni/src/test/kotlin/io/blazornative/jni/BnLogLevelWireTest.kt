@@ -25,8 +25,11 @@ class BnLogLevelWireTest {
 
         assertEquals(32, opts.size(),
             "BlazorNativeInitOptions must stay 32 bytes — the .NET mirror asserts " +
-                "Marshal.SizeOf == 32 and blazornative_init does NOT size-negotiate " +
-                "(unlike register_bridge), so the two allocations must agree exactly.")
+                "Marshal.SizeOf == 32, and although blazornative_init now SIZE-NEGOTIATES " +
+                "(#213 item 3), the offsets below still have to agree byte-for-byte: a shell " +
+                "sending a FULL struct must land every field where the runtime reads it. " +
+                "Negotiation protects a shell sending a SHORT struct; it does not license the " +
+                "full-struct layout to drift.")
         // The offset is proven by MARSHALLING, not by asking JNA where it thinks
         // the field is: two distinguishable sentinels are written through the
         // Kotlin fields and read back out of the native memory BY OFFSET. That is

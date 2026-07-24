@@ -26,7 +26,11 @@ import com.sun.jna.Structure
  */
 interface NativeBindings : Library {
 
-    fun blazornative_init(opts: BlazorNativeInitOptions.ByReference): BlazorNativeInitResult.ByValue
+    // #213 item 3: SIZE-NEGOTIATED, like blazornative_register_bridge below. structSize
+    // is the shell's compiled sizeof — the runtime copies min(structSize, its own) into a
+    // zeroed struct, so a header/runtime version skew is read safely (missing fields
+    // default) instead of out of bounds. Pass BlazorNativeInitOptions().size().
+    fun blazornative_init(structSize: Int, opts: BlazorNativeInitOptions.ByReference): BlazorNativeInitResult.ByValue
     fun blazornative_shutdown()
     fun blazornative_version(): Pointer
 
