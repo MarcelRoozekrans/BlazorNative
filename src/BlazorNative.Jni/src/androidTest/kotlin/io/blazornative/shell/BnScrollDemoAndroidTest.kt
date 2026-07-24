@@ -236,35 +236,56 @@ class BnScrollDemoAndroidTest {
      * Row 3 is the probe: at offset 0 it lives at content y 240..320, entirely below the
      * 200dp cut, so ITS colour must appear nowhere beneath the viewport's bottom edge.
      */
-    @Test fun the_viewport_clips_its_overflow_and_paints_nothing_below_itself() = withDemo { act ->
-        val root = act.findViewById<FrameLayout>(R.id.widget_root)
-        val scroll = scrollOf(act)
-        val content = scroll.getChildAt(0) as ViewGroup
+    @Test fun the_viewport_clips_its_overflow_and_paints_nothing_below_itself() {
+        // Harvested on the main thread, read off it: geometry + the probe colour.
+        var probeColour = 0
+        var sweepX = 0
+        var sweepTop = 0
+        var sweepBottom = 0
 
-        // Non-vacuity FIRST: a probe row that is not actually below the cut, or a
-        // host with no room under the viewport, would make every pixel read below
-        // trivially pass.
-        val probe = content.getChildAt(3)
-        assertTrue("row 3 must sit BELOW the viewport for this pin to mean anything",
-            topInViewport(probe, scroll) >= scroll.height)
-        val bandBelow = root.height - (scroll.bottom + 1)
-        assertTrue("widget_root must extend below the viewport for the overflow to have " +
-            "somewhere to escape TO (got ${bandBelow}px)", bandBelow > 0)
+        withDemo { act ->
+            val root = act.findViewById<FrameLayout>(R.id.widget_root)
+            val scroll = scrollOf(act)
+            val content = scroll.getChildAt(0) as ViewGroup
 
-        val probeColour = (probe.background as? android.graphics.drawable.ColorDrawable)?.color
-        assertTrue("row 3 must carry a flat colour to be findable in the bitmap", probeColour != null)
+            // Non-vacuity FIRST, both halves. A probe row that is not actually below
+            // the cut, or a host with no room beneath the viewport, would make the
+            // sweep trivially green — which is the very failure mode this pin exists
+            // for.
+            val probe = content.getChildAt(3)
+            assertTrue("row 3 must sit BELOW the viewport for this pin to mean anything",
+                topInViewport(probe, scroll) >= scroll.height)
 
-        // Render the REAL host, exactly as it draws to the screen.
-        val shot = android.graphics.Bitmap.createBitmap(
-            root.width, root.height, android.graphics.Bitmap.Config.ARGB_8888)
-        root.draw(android.graphics.Canvas(shot))
+            val scrollBottomOnScreen = screenY(scroll) + scroll.height
+            val rootBottomOnScreen = screenY(root) + root.height
+            assertTrue("widget_root must extend below the viewport for the overflow to " +
+                "have somewhere to escape TO", rootBottomOnScreen > scrollBottomOnScreen + 1)
 
-        // Sweep the band under the viewport. The overflow, if it escapes, lands here —
-        // this is the exact region that was full of rows on the shipped build.
-        val x = scroll.left + scroll.width / 2
+            val colour = (probe.background as? android.graphics.drawable.ColorDrawable)?.color
+            assertTrue("row 3 must carry a flat colour to be findable on screen", colour != null)
+
+            probeColour = colour!!
+            sweepX = IntArray(2).also { scroll.getLocationOnScreen(it) }[0] + scroll.width / 2
+            sweepTop = scrollBottomOnScreen + 1
+            sweepBottom = rootBottomOnScreen
+        }
+
+        // THE CAPTURE MUST BE THE COMPOSITED SCREEN, NOT A SOFTWARE RE-DRAW.
+        // The first version of this pin rendered widget_root into a Bitmap with
+        // `root.draw(Canvas(bmp))` and stayed RED after the fix. That was the test's
+        // fault, and the lesson is worth the comment: `clipToOutline` is applied by
+        // the view's RenderNode on the HARDWARE-ACCELERATED path — the one the screen
+        // actually uses — and a manual software draw does not reproduce it. A pin that
+        // measures a path no user sees can be red on correct code (and, worse, green on
+        // broken code). uiAutomation.takeScreenshot() returns what was really
+        // composited, which is the only thing this issue was ever about.
+        val shot = InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()
+        assertTrue("uiAutomation returned no screenshot — cannot judge what was painted",
+            shot != null)
+
         var offenders = 0
-        for (y in (scroll.bottom + 1) until root.height) {
-            if (shot.getPixel(x, y) == probeColour) offenders++
+        for (y in sweepTop until minOf(sweepBottom, shot.height)) {
+            if (shot.getPixel(sweepX, y) == probeColour) offenders++
         }
         shot.recycle()
 
