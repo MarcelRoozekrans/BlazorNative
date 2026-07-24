@@ -132,6 +132,15 @@ final class BnCamera {
     /// BnGeolocation/BnBiometrics twin.
     static var lastHostCallCompleteRcForTest: Int32 = Int32.min
 
+    /// #211: whether `presentPicker` — the UIKit toucher — ran on the main thread.
+    /// nil until a capture reaches it.
+    ///
+    /// A recorded BOOL rather than an assertion inside the shell, deliberately. The
+    /// simulator TOLERATES UIKit off-main: it does not reliably trap, which is exactly
+    /// how this shipped. So the property has to be observed and asserted by a test, not
+    /// left to a crash that may never come.
+    static var presentedOnMainThreadForTest: Bool?
+
     static func resetForTest() {
         sourceTypeAvailableOverrideForTest = nil
         cameraAuthorizationStatusOverrideForTest = nil
@@ -139,6 +148,7 @@ final class BnCamera {
         suppressSystemCameraPresentForTest = false
         completeHookForTest = nil
         lastHostCallCompleteRcForTest = Int32.min
+        presentedOnMainThreadForTest = nil
     }
 
     func clearInFlightForTest() {
@@ -265,10 +275,38 @@ final class BnCamera {
     }
 
     private func requestAccess(_ reply: @escaping (Bool) -> Void) {
-        if let override = Self.requestAccessReplyOverrideForTest { override(reply); return }
+        if let override = Self.requestAccessReplyOverrideForTest {
+            // #211: the seam hops too. A test that replied off-main used to reproduce the
+            // production bug exactly — and silently, because the simulator tolerates it.
+            override { granted in self.onMain { reply(granted) } }
+            return
+        }
         AVCaptureDevice.requestAccess(for: .video) { granted in
-            // The completion may arrive off-main; the caller hops to main in presentPicker.
-            reply(granted)
+            // ── #211 — THE HOP IS HERE, AND IT USED NOT TO EXIST ANYWHERE ────────────
+            // This line used to read:
+            //
+            //     // The completion may arrive off-main; the caller hops to main in
+            //     // presentPicker.
+            //     reply(granted)
+            //
+            // presentPicker does no such hop. It constructs a UIImagePickerController and
+            // calls presenter.present(...) directly, so on the FIRST-RUN permission path —
+            // `.notDetermined`, i.e. every new install, the one run you cannot ask a user
+            // to repeat — UIKit was created and presented on whatever queue
+            // AVCaptureDevice.requestAccess chose. That is documented Apple behaviour: the
+            // completion arrives on "an arbitrary dispatch queue", not main.
+            //
+            // The comment was not a small inaccuracy; it was the whole safety argument,
+            // and it described a hop no code performed. Every other arm of ensureAuthorized
+            // is already main-threaded (capture() wraps the switch in onMain and those arms
+            // complete synchronously), so this was the single escaping path.
+            //
+            // Hopping HERE rather than inside presentPicker is deliberate: it makes the
+            // ensureAuthorized completion contract "always main", so every present and
+            // future consumer of it inherits the guarantee instead of each having to
+            // remember. presentPicker is not the only thing that runs on this path —
+            // complete(...) does too.
+            self.onMain { reply(granted) }
         }
     }
 
@@ -277,6 +315,10 @@ final class BnCamera {
     /// the in-flight is recorded and the present is skipped (the sim cannot present a
     /// `.camera` picker); the test fires the delegate.
     private func presentPicker(requestId: Int64, options: BnCaptureOptions) {
+        // #211: recorded FIRST, before any UIKit object exists, so the observation is of
+        // the thread this method was entered on rather than of anything it went on to do.
+        Self.presentedOnMainThreadForTest = Thread.isMainThread
+
         let delegate = BnCameraPickerDelegate(owner: self, requestId: requestId)
         let picker = UIImagePickerController()
         picker.delegate = delegate // held WEAKLY by the picker — retained via inFlightDelegate
