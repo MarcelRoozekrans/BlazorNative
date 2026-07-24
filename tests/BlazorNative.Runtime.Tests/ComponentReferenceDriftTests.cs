@@ -93,6 +93,10 @@ public sealed class ComponentReferenceFixture : IDisposable
     }
 }
 
+// SERIALISED AGAINST ReferenceDriftTests — see that file's collection note. Both
+// fixtures shell out to generate-reference.ps1, which runs `dotnet tool restore`;
+// run in parallel they race on the same file in the NuGet package cache.
+[Collection(ReferenceGeneration.Name)]
 public sealed class ComponentReferenceDriftTests : IClassFixture<ComponentReferenceFixture>
 {
     private readonly ComponentReferenceFixture _fixture;

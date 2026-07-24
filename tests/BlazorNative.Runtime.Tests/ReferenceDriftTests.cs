@@ -85,6 +85,39 @@ public sealed class DeviceReferenceFixture : ReferenceFixtureBase
 /// <c>AddBlazorNativeDevice</c> registration — was already documented, so
 /// <c>BnEnforceDocCoverage</c> could go on with zero CS1591.
 /// </summary>
+/// <summary>
+/// THE COLLECTION THAT SERIALISES REFERENCE GENERATION.
+///
+/// <para>Both this file's <see cref="DeviceReferenceFixture"/> and
+/// ComponentReferenceDriftTests' <c>ComponentReferenceFixture</c> shell out to
+/// <c>scripts/generate-reference.ps1</c>, and that script begins with
+/// <c>dotnet tool restore</c>. xUnit runs distinct test CLASSES in parallel by
+/// default, so the two restores ran concurrently and raced on one file in the
+/// shared NuGet package cache:</para>
+///
+/// <code>
+/// The process cannot access the file
+/// '…\.nuget\packages\xmldoc2markdown\6.0.0\xmldoc2markdown.6.0.0.nupkg'
+/// because it is being used by another process.
+/// </code>
+///
+/// <para>It reds as a fixture-constructor throw taking BOTH of this class's tests
+/// with it, on a REQUIRED lane, with a message that names neither the racing pair
+/// nor the fact that it is a race — so it reads as a real failure of whatever PR
+/// happened to be running. Latent since the generator grew its second package;
+/// surfaced by #204, which is unrelated to reference generation.</para>
+///
+/// <para>A shared collection name is the whole fix: xUnit never runs two classes
+/// in the same collection concurrently, so the restores serialise. Cheaper and
+/// more honest than a retry loop — there is no flakiness to absorb once the two
+/// cannot overlap.</para>
+/// </summary>
+public static class ReferenceGeneration
+{
+    public const string Name = "reference-generation";
+}
+
+[Collection(ReferenceGeneration.Name)]
 public sealed class ReferenceDriftTests : IClassFixture<DeviceReferenceFixture>
 {
     private readonly DeviceReferenceFixture _fixture;
