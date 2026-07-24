@@ -188,4 +188,38 @@ final class BnLogTests: XCTestCase {
         XCTAssertEqual(seen.count, 3, "a bare newline must not become an entry")
         XCTAssertEqual(seen[2].message, "mounted")
     }
+
+    /// #213 item 4 — THE BUFFERED TAIL IS FLUSHED AT EOF, matching the Kotlin twin.
+    ///
+    /// A final line with no trailing newline sits in `pending`: `drain` only emits on
+    /// `\n`. The read handler used to `guard count > 0 else { return }` on EOF, so that
+    /// tail was lost — a last diagnostic (often the most interesting one, at teardown)
+    /// silently dropped, and an Android-vs-iOS parity gap since Kotlin's shared drain
+    /// flushes its tail. `flushPending` is what the EOF branch now calls.
+    func testTheTailIsFlushedAtEof() {
+        var seen: [BnLogRecord] = []
+        let original = BnStderrPump.sink
+        BnStderrPump.sink = { seen.append($0) }
+        defer { BnStderrPump.sink = original }
+
+        var pending = Data()
+        var overflowed = false
+
+        // A complete line, then a partial one with NO trailing newline — the shape a
+        // process leaves behind when fd 2 closes mid-write.
+        BnStderrPump.drain(Data("[BN|E|BnRuntime] first\n[BN|W|BnWidgetMapper] tail-no-newline".utf8),
+                           pending: &pending, overflowed: &overflowed)
+        XCTAssertEqual(seen.count, 1, "the partial tail must NOT emit before EOF")
+
+        // EOF: the tail is a complete line now — flush it, with its level and category.
+        BnStderrPump.flushPending(pending: &pending, overflowed: &overflowed)
+        XCTAssertEqual(seen.count, 2, "EOF must flush the buffered tail")
+        XCTAssertEqual(seen[1], BnLogRecord(level: BnLogLevel.warn,
+                                            category: "BnWidgetMapper", message: "tail-no-newline"))
+
+        // Idempotent: a second flush (double EOF, or a cancel racing a final read) must
+        // not re-emit — the pump would otherwise double-log its last line.
+        BnStderrPump.flushPending(pending: &pending, overflowed: &overflowed)
+        XCTAssertEqual(seen.count, 2, "a second flush must emit nothing")
+    }
 }
