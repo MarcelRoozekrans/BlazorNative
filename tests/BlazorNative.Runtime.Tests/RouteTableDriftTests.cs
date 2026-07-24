@@ -245,6 +245,97 @@ public sealed class RouteTableDriftTests
         return dir!.FullName;
     }
 
+    // ── #212: a duplicate route is refused at BUILD time ─────────────────────
+
+    /// <summary>
+    /// Two rows sharing a route must fail the GENERATOR, not the device.
+    ///
+    /// Before this, the duplicate was appended and ToJson emitted both, producing a JSON
+    /// object with duplicate keys. Android's <c>loadDeepLinkRoutes</c> parses with
+    /// <c>org.json.JSONObject</c>, which throws on duplicate keys, so the catch returned
+    /// an empty map and EVERY deep link fell back to the default component — while
+    /// RouteGen exited 0 and the build stayed green.
+    ///
+    /// <para><c>PageManifest.Validate</c> also rejects duplicate routes at startup, which
+    /// is why this is not severe. It is not the answer either: the point of a build-time
+    /// generator is to fail with the file in front of you, not on a device with a stack
+    /// trace that names JSON parsing.</para>
+    ///
+    /// <para>Written against a TEMP source file rather than the sample app's manifest,
+    /// because the sample must stay valid — a fixture that made the real app illegal would
+    /// red every other test in this file.</para>
+    /// </summary>
+    [Fact]
+    public void TwoPagesSharingARoute_AreRefusedByTheGenerator_NamingBoth()
+    {
+        string dir = Path.Combine(Path.GetTempPath(), "bn-routegen-dupe-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        string file = Path.Combine(dir, "Pages.cs");
+        try
+        {
+            File.WriteAllText(file, """
+                public static class Pages
+                {
+                    public static readonly object[] All =
+                    [
+                        BlazorNativePage.Routed<Home>("/", "Home"),
+                        BlazorNativePage.Routed<Settings>("/settings", "Settings"),
+                        BlazorNativePage.Routed<Imposter>("/settings", "Imposter"),
+                    ];
+                }
+                """);
+
+            var ex = Assert.Throws<DuplicateRouteException>(
+                () => RouteManifest.Extract([file]));
+
+            // The message must name the ROUTE and BOTH pages: a refusal that says only
+            // "duplicate route" sends you hunting through a manifest for the pair.
+            Assert.Contains("/settings", ex.Message, StringComparison.Ordinal);
+            Assert.Contains("Settings", ex.Message, StringComparison.Ordinal);
+            Assert.Contains("Imposter", ex.Message, StringComparison.Ordinal);
+        }
+        finally
+        {
+            try { Directory.Delete(dir, recursive: true); } catch (IOException) { /* temp dir */ }
+        }
+    }
+
+    /// <summary>
+    /// NON-VACUITY: the same fixture WITHOUT the collision extracts cleanly. Without this,
+    /// the test above would pass if <c>Extract</c> threw on every input — the fixture being
+    /// rejected for some unrelated parse reason would read as success.
+    /// </summary>
+    [Fact]
+    public void TheDuplicateRouteFixture_IsOtherwiseValid()
+    {
+        string dir = Path.Combine(Path.GetTempPath(), "bn-routegen-ok-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        string file = Path.Combine(dir, "Pages.cs");
+        try
+        {
+            File.WriteAllText(file, """
+                public static class Pages
+                {
+                    public static readonly object[] All =
+                    [
+                        BlazorNativePage.Routed<Home>("/", "Home"),
+                        BlazorNativePage.Routed<Settings>("/settings", "Settings"),
+                        BlazorNativePage.Routed<Imposter>("/other", "Imposter"),
+                    ];
+                }
+                """);
+
+            IReadOnlyList<RoutedPage> routed = RouteManifest.Extract([file]);
+
+            Assert.Equal(3, routed.Count);
+            Assert.Equal(["/", "/settings", "/other"], routed.Select(r => r.Route));
+        }
+        finally
+        {
+            try { Directory.Delete(dir, recursive: true); } catch (IOException) { /* temp dir */ }
+        }
+    }
+
     private static string JoinPairs(IEnumerable<KeyValuePair<string, string>> pairs)
     {
         var list = pairs
