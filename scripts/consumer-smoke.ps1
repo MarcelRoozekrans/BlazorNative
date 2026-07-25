@@ -126,8 +126,27 @@ $version = $versionNodes[0]
 Write-OK "version source: src/Directory.Build.props → $version"
 
 # ── 1. Pack the seven packages (fresh feed) ────────────────────────────────────
+# THE CLEAN obj/bin BELOW IS THE ZERO-WARNING BAR'S TEETH, not tidiness. The bar
+# greps the pack log for compile warnings — but the compiler only re-runs (and only
+# re-emits a warning like CS1574) when its inputs look stale. In build-test the
+# solution was already compiled in Release by an earlier step, so a plain
+# `dotnet pack` finds every assembly up-to-date and SKIPS the compile: the bar sees
+# ZERO warnings no matter what the code carries. The release `validate` job checks
+# out the tag into an EMPTY tree, so its pack always compiles from scratch and always
+# sees them — and that divergence is exactly how a CS1574 rode #197 past every PR's
+# build-test and only surfaced when it broke the 0.7.0 release. Measured: neither
+# `--no-incremental` nor `-t:Rebuild` re-surfaces it (MSBuild's up-to-date check still
+# short-circuits the doc-warning pass); only a genuinely empty obj/ does. So delete
+# obj/bin for the source packages first, reproducing the release's fresh checkout, and
+# a compile warning fails the PR that introduces it — not a release weeks later.
 Write-Step "packing the seven packages → artifacts/packages ..."
 if (Test-Path $feedDir) { Remove-Item -Recurse -Force $feedDir }
+foreach ($proj in $packages) {
+    foreach ($sub in 'obj', 'bin') {
+        $stale = Join-Path $repoRoot "src\BlazorNative.$proj\$sub"
+        if (Test-Path $stale) { Remove-Item -Recurse -Force $stale }
+    }
+}
 $packLog = @()
 foreach ($proj in $packages) {
     $packLog += & dotnet pack (Join-Path $repoRoot "src\BlazorNative.$proj") -c Release -o $feedDir -tl:off -nologo 2>&1

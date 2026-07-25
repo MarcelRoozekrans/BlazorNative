@@ -15,7 +15,7 @@ namespace BlazorNative.Device;
 /// <summary>Registration for the <c>BlazorNative.Device</c> capability façades. Call
 /// <see cref="AddBlazorNativeDevice"/> from your DI setup so a component doing
 /// <c>[Inject] IGeolocation</c> (and its siblings) resolves the façade over whichever
-/// <see cref="IMobileBridge"/> the host registered.</summary>
+/// <see cref="BlazorNative.Core.IMobileBridge"/> the host registered.</summary>
 public static class ServiceCollectionExtensions
 {
     /// <summary>Registers <see cref="IGeolocation"/>, <see cref="INotifications"/>,
