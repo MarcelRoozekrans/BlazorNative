@@ -16,18 +16,17 @@
          the measurement, and the CS1591 pin paid for it twice). -->
     <BnEnforcePublicApi>true</BnEnforcePublicApi>
 
-    <!-- M11 #173 — DELIBERATELY NOT YET DOC-ENFORCED, and therefore NOT in the
-         generated API reference (scripts/generate-reference.ps1). Runtime, Http
-         and Device turned BnEnforceDocCoverage on because their public surface was
-         already fully `///`-documented; Core is not. Its gap is real and large —
-         IMobileBridge's 27 members, DevHostBridge, and six wire-mirrored enums /
-         records (PlatformKind, GeolocationStatus, NotificationStatus,
-         BiometricStatus, SecureStorageStatus, CameraStatus, BridgeHttpRequest/
-         Response, PlatformInfo, NativeEvent) carry rich `//` block comments but no
-         `///` XML. Converting those to consumer-facing XML is a dedicated pass;
-         until it lands, enforcing here would only produce blank reference stubs,
-         which #173 explicitly forbids. Generation and enforcement advance
-         together, package by package. -->
+    <!-- M11 #173 — DOC-ENFORCED, and therefore IN the generated API reference
+         (scripts/generate-reference.ps1). The gap the earlier note here described —
+         IMobileBridge's 27 members, DevHostBridge, and the wire-mirrored enums /
+         records carrying rich `//` block comments but no `///` XML — was closed by
+         converting them to consumer-facing XML (the enum values lifted from their
+         block-comment tables, DevHostBridge's implementations via <inheritdoc/>).
+         Zero CS1591 with the switch on, so it can join the reference: a page here is
+         a real page, not a blank stub. Generation and enforcement advance together,
+         package by package — Runtime and Http remain deferred (Runtime's ~12 NOT-API
+         interop types, Http's undocumented generator-emitted extension). -->
+    <BnEnforceDocCoverage>true</BnEnforceDocCoverage>
   </PropertyGroup>
 
   <PropertyGroup>

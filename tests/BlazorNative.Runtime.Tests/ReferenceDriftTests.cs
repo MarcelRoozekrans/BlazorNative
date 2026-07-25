@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Reflection;
+using BlazorNative.Core;      // #173: the Core reference drift pin
 using BlazorNative.Device;
 
 namespace BlazorNative.Runtime.Tests;
@@ -197,6 +198,96 @@ public sealed class ReferenceDriftTests : IClassFixture<DeviceReferenceFixture>
             string page = Path.Combine(_fixture.OutputDirectory, PageNameFor(t));
             Assert.True(File.Exists(page),
                 $"the Device reference is missing a page for {t.Name} ({PageNameFor(t)}).\n\n"
+                + _fixture.GeneratorLog);
+        }
+    }
+}
+
+/// <summary>Generates the <c>BlazorNative.Core</c> reference once for the whole class (#173).</summary>
+public sealed class CoreReferenceFixture : ReferenceFixtureBase
+{
+    public CoreReferenceFixture() : base("Core") { }
+}
+
+/// <summary>
+/// PIN — the Core reference documents EXACTLY the package's public types, red in both
+/// directions (#173). Core was the deferred one: its contract surface —
+/// <c>IMobileBridge</c>'s 27 members, <c>DevHostBridge</c>, and the wire-mirrored
+/// enums/records — carried rich <c>//</c> block comments but no <c>///</c> XML, so
+/// <c>BnEnforceDocCoverage</c> could not go on and it could not be generated (a page
+/// for an undocumented member is a blank stub). Those were converted to XML; this pin
+/// holds the generated set equal to the shipped set from here.
+///
+/// <para>In the <see cref="ReferenceGeneration"/> collection deliberately: like the
+/// Device and Components fixtures it shells out to <c>generate-reference.ps1</c>'s
+/// <c>dotnet tool restore</c>, and the shared collection serialises them so they cannot
+/// race on the NuGet cache.</para>
+/// </summary>
+[Collection(ReferenceGeneration.Name)]
+public sealed class CoreReferenceDriftTests : IClassFixture<CoreReferenceFixture>
+{
+    private readonly CoreReferenceFixture _fixture;
+
+    public CoreReferenceDriftTests(CoreReferenceFixture fixture) => _fixture = fixture;
+
+    private static Assembly CoreAssembly => typeof(IMobileBridge).Assembly;
+
+    private static IEnumerable<Type> PublicTypes()
+        => CoreAssembly.GetTypes().Where(t => t.IsPublic);
+
+    private static string PageNameFor(Type t)
+        => t.FullName!.Replace('`', '-').ToLowerInvariant() + ".md";
+
+    /// <summary>The generated page set equals the assembly's public type set, RED IN BOTH
+    /// DIRECTIONS — the Device pin's twin over Core.</summary>
+    [Fact]
+    public void GeneratedReference_DocumentsExactlyThePublicTypes()
+    {
+        var expected = PublicTypes().Select(PageNameFor).ToList();
+
+        var actual = Directory.GetFiles(_fixture.OutputDirectory, "*.md")
+            .Select(Path.GetFileName)
+            .Where(f => !string.Equals(f, "index.md", StringComparison.Ordinal))
+            .Select(f => f!.ToLowerInvariant())
+            .ToList();
+
+        Assert.True(expected.Count > 0,
+            "reflected ZERO public types out of BlazorNative.Core — the completeness pin "
+            + "has no expectation to hold anything against.");
+        Assert.True(actual.Count > 0,
+            $"the generator wrote NO pages into {_fixture.OutputDirectory}.\n\n{_fixture.GeneratorLog}");
+
+        var missing = expected.Except(actual, StringComparer.Ordinal)
+            .OrderBy(f => f, StringComparer.Ordinal).ToList();
+        var unexpected = actual.Except(expected, StringComparer.Ordinal)
+            .OrderBy(f => f, StringComparer.Ordinal).ToList();
+
+        Assert.True(missing.Count == 0 && unexpected.Count == 0,
+            "THE CORE REFERENCE DRIFTED FROM THE ASSEMBLY.\n\n"
+            + $"  MISSING (the assembly publishes it, the reference does not document it — {missing.Count}):\n"
+            + (missing.Count == 0 ? "    (none)\n" : string.Join("\n", missing.Select(f => $"    {f}")) + "\n")
+            + $"  UNEXPECTED (the reference documents it, the assembly does not publish it — {unexpected.Count}):\n"
+            + (unexpected.Count == 0 ? "    (none)\n" : string.Join("\n", unexpected.Select(f => $"    {f}")) + "\n")
+            + $"\n(Assembly: {expected.Count} public types. Generated: {actual.Count} pages.)\n\n"
+            + "Generator output:\n" + _fixture.GeneratorLog);
+    }
+
+    /// <summary>
+    /// The contract types a Core consumer opens first each have a page — named, so the
+    /// completeness pin above cannot be satisfied by an empty set with no missing members.
+    /// </summary>
+    [Fact]
+    public void GeneratedReference_ContainsTheBridgeContractAndNavigation()
+    {
+        foreach (var t in new[]
+                 {
+                     typeof(IMobileBridge), typeof(INavigationManager), typeof(DevHostBridge),
+                     typeof(GeolocationStatus), typeof(CameraStatus), typeof(PlatformKind),
+                 })
+        {
+            string page = Path.Combine(_fixture.OutputDirectory, PageNameFor(t));
+            Assert.True(File.Exists(page),
+                $"the Core reference is missing a page for {t.Name} ({PageNameFor(t)}).\n\n"
                 + _fixture.GeneratorLog);
         }
     }

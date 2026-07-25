@@ -4,7 +4,7 @@
 #
 #   build-test (windows-latest) — the local verification procedure verbatim
 #   (setup.ps1 §1–7 documents the toolchain pins):
-#     build (analyzers ride it) → .NET tests (901 passed / 0 skipped) →
+#     build (analyzers ride it) → .NET tests (903 passed / 0 skipped) →
 #     three NativeAOT publishes of samples/BlazorNative.SampleApp — the
 #     publish head since Phase 8.0: the app owns PublishAot, the exports stay
 #     in Runtime via UnmanagedEntryPointsAssembly, and the artifact is
@@ -1706,7 +1706,27 @@ jobs:
       # The two guards are complementary: the PublicAPI baseline catches REMOVING an
       # existing explicit ctor; this sweep catches ADDING a new trapped type. No ABI change;
       # JVM, Android instrumented and iOS baselines do not move.
-      - name: .NET tests (assert 901 passed / 0 skipped)
+      #
+      # 901 -> 903 (#173, +2 -- Runtime.Tests 734 -> 736): the generated API reference
+      # gains BlazorNative.Core. It covered Components only; #173 added Device earlier,
+      # and Core was the deferred contract package -- IMobileBridge's 27 members,
+      # DevHostBridge and the wire-mirrored enums/records carried rich `//` block
+      # comments but no `///` XML, so BnEnforceDocCoverage could not go on (a page for an
+      # undocumented member is a blank stub). Those were converted to consumer-facing XML
+      # (enum values lifted from their block-comment tables; DevHostBridge's
+      # implementations via <inheritdoc/>), the switch flipped (zero CS1591), and Core
+      # joined the generator manifest + the drift guard:
+      #   +2 CoreReferenceDriftTests -- GeneratedReference_DocumentsExactlyThePublicTypes
+      #      (the generated page set equals Core's reflected public-type set, red both
+      #      ways) + ...ContainsTheBridgeContractAndNavigation (IMobileBridge,
+      #      INavigationManager, DevHostBridge, the enums have named pages, so the
+      #      completeness pin cannot pass on an empty set). In the reference-generation
+      #      collection so it serialises with the Device/Components fixtures (the
+      #      dotnet-tool-restore race).
+      # Doc-comment/generator/sidebar changes add NO tests. Runtime and Http stay
+      # deferred (Runtime's ~12 NOT-API interop types; Http's generator-emitted
+      # extension). No ABI change; JVM/Android/iOS baselines do not move.
+      - name: .NET tests (assert 903 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -1724,8 +1744,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 901 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 901 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 903 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 903 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # ── NativeAOT publishes + nine-export verification ────────────────────
