@@ -34,22 +34,34 @@ namespace BlazorNative.Core;
 public interface IMobileBridge
 {
     // Navigation
+    /// <summary>Navigates the host to <paramref name="route"/>.</summary>
     ValueTask NavigateAsync(string route, CancellationToken ct = default);
+    /// <summary>Returns the host's current route.</summary>
     ValueTask<string> GetCurrentRouteAsync(CancellationToken ct = default);
 
     // Storage  (key/value, maps to SharedPreferences / UserDefaults)
+    /// <summary>Reads a plain (unencrypted) key/value entry — SharedPreferences on
+    /// Android, UserDefaults on iOS. Null if the key is absent. For secrets use
+    /// <see cref="GetSecretAsync"/>.</summary>
     ValueTask<string?> ReadStorageAsync(string key, CancellationToken ct = default);
+    /// <summary>Writes a plain (unencrypted) key/value entry.</summary>
     ValueTask WriteStorageAsync(string key, string value, CancellationToken ct = default);
+    /// <summary>Deletes a plain key/value entry (a no-op if absent).</summary>
     ValueTask DeleteStorageAsync(string key, CancellationToken ct = default);
 
     // Network (thin fetch — TLS handled by native layer)
+    /// <summary>Performs an HTTP request through the host, which owns TLS, proxying
+    /// and permissions. Prefer the <c>HttpClient</c> registered by
+    /// <c>AddBlazorNativeHttp()</c>, which routes through this.</summary>
     ValueTask<BridgeHttpResponse> FetchAsync(BridgeHttpRequest request, CancellationToken ct = default);
 
-    // Clipboard + Share (Phase 5.4 — size-negotiated bridge slots). A host that
-    // predates these slots surfaces NotSupportedException (the null-slot guard);
-    // the dev-host mock and both native shells implement them.
+    // Clipboard + Share
+    /// <summary>Reads the system clipboard's text (empty if none). A host that
+    /// predates this slot raises <see cref="System.NotSupportedException"/>.</summary>
     ValueTask<string> ClipboardReadAsync(CancellationToken ct = default);
+    /// <summary>Writes <paramref name="text"/> to the system clipboard.</summary>
     ValueTask ClipboardWriteAsync(string text, CancellationToken ct = default);
+    /// <summary>Presents the OS share sheet with <paramref name="text"/>.</summary>
     ValueTask ShareAsync(string text, CancellationToken ct = default);
 
     // Geolocation (Phase 9.0 — M9 DoD #2; the permission pattern's worked
@@ -63,7 +75,14 @@ public interface IMobileBridge
     // the pending entry is dropped and the task is cancelled — a cancel, never a
     // leak. A read-only CheckPermissionAsync (no prompt) is provided only so a UI
     // can SHOW the current state without triggering a dialog.
+    /// <summary>Requests-then-fetches the current position in one call: the whole
+    /// permission dance runs host-side, and the terminal outcome is always a
+    /// <see cref="GeolocationResult"/> — a denial is DATA, never an exception or a
+    /// hang. The token abandons a never-completing call (e.g. the app killed during
+    /// the prompt) as a cancel, never a leak.</summary>
     ValueTask<GeolocationResult> GetCurrentPositionAsync(CancellationToken ct = default);
+    /// <summary>Reads the current geolocation permission WITHOUT prompting — for a UI
+    /// that wants to show state before offering to locate.</summary>
     ValueTask<GeolocationStatus> CheckGeolocationPermissionAsync(CancellationToken ct = default);
 
     // Notifications (Phase 9.1 — M9 DoD #3; the FIRST reuse of the 9.0 generic
@@ -80,10 +99,16 @@ public interface IMobileBridge
     // The inbound tap-through half (a notification tap → route) is NOT here: it is
     // an unsolicited host→.NET event, not a host-call completion — it rides the
     // cold deep-link path or the reserved "navigate" host-event name.
+    /// <summary>Schedules a local notification to fire at <see cref="NotificationSpec.When"/>.
+    /// The outcome is a <see cref="NotificationStatus"/> — a denial is DATA, never a throw.</summary>
     ValueTask<NotificationStatus> ScheduleNotificationAsync(NotificationSpec spec, CancellationToken ct = default);
+    /// <summary>Shows a local notification immediately.</summary>
     ValueTask<NotificationStatus> ShowNotificationAsync(NotificationSpec spec, CancellationToken ct = default);
+    /// <summary>Cancels a scheduled/shown notification by its <see cref="NotificationSpec.Id"/>.</summary>
     ValueTask<NotificationStatus> CancelNotificationAsync(int id, CancellationToken ct = default);
+    /// <summary>Requests notification permission (may prompt).</summary>
     ValueTask<NotificationStatus> RequestNotificationPermissionAsync(CancellationToken ct = default);
+    /// <summary>Reads notification permission WITHOUT prompting.</summary>
     ValueTask<NotificationStatus> CheckNotificationPermissionAsync(CancellationToken ct = default);
 
     // Biometrics + Secure storage (Phase 9.2 — M9 DoD #4; the SECOND reuse of the
@@ -113,11 +138,25 @@ public interface IMobileBridge
     // auth-bound write (requireAuth:true) MUST pair with an auth-bound read. A soft
     // 8 KB cap on the value is enforced at THIS .NET boundary (an oversize value
     // RETURNS a status, never crosses, never crashes — SecretResult.MaxValueBytes).
+    /// <summary>Shows an OS biometric prompt with <paramref name="reason"/> and returns
+    /// a <see cref="BiometricStatus"/> — failure / cancellation / lockout / no-hardware
+    /// are all DATA, never a throw.</summary>
     ValueTask<BiometricStatus>     AuthenticateAsync(string reason, CancellationToken ct = default);
+    /// <summary>Checks biometric availability WITHOUT prompting;
+    /// <c>BiometricStatus.Authenticated</c> means "present + enrolled + ready".</summary>
     ValueTask<BiometricStatus>     IsBiometricAvailableAsync(CancellationToken ct = default);
+    /// <summary>Writes an encrypted-at-rest secret. When <paramref name="requireAuth"/>
+    /// is true the secret is bound to biometric auth at the OS-key level, so it can only
+    /// be read back by <see cref="GetSecretWithAuthAsync"/>. Values over
+    /// <see cref="SecretResult.MaxValueBytes"/> are rejected with a status, never crash.</summary>
     ValueTask<SecureStorageStatus> SetSecretAsync(string key, string value, bool requireAuth, CancellationToken ct = default);
+    /// <summary>Reads a secret that is NOT auth-bound. The value rides
+    /// <see cref="SecretResult.Value"/> only on <c>SecureStorageStatus.Ok</c>.</summary>
     ValueTask<SecretResult>        GetSecretAsync(string key, CancellationToken ct = default);
+    /// <summary>Reads an auth-bound secret, presenting a biometric prompt with
+    /// <paramref name="reason"/>. The OS itself refuses the plaintext without a fresh auth.</summary>
     ValueTask<SecretResult>        GetSecretWithAuthAsync(string key, string reason, CancellationToken ct = default);
+    /// <summary>Deletes a secret (a no-op if absent).</summary>
     ValueTask<SecureStorageStatus> DeleteSecretAsync(string key, CancellationToken ct = default);
 
     // Camera photo capture (Phase 9.3 — M9 DoD #5; the THIRD reuse of the 9.0
@@ -148,17 +187,29 @@ public interface IMobileBridge
     // capture subdir on each capture as a leak backstop. On-device NativeShellBridge
     // maps the op into argsJson{action:…} over the generic InvokeHostCallAsync;
     // DevHostBridge mocks every status + a canned test-image path headless.
+    /// <summary>Captures a photo through the system camera. The image crosses back as
+    /// a <c>file://</c> PATH in <see cref="PhotoResult"/> (the bytes stay on disk), which
+    /// is a valid <c>BnImage.Src</c>. A cancel / denied / no-camera outcome is a
+    /// <see cref="CameraStatus"/> value, never a throw. Use <paramref name="options"/> to
+    /// bound the file size; the app owns the temp file after return.</summary>
     ValueTask<PhotoResult>  CapturePhotoAsync(CaptureOptions options, CancellationToken ct = default);
+    /// <summary>Checks camera availability WITHOUT prompting or launching the UI;
+    /// <c>CameraStatus.Captured</c> means "present + usable",
+    /// <c>CameraStatus.Unavailable</c> means no camera.</summary>
     ValueTask<CameraStatus> CheckCameraAvailabilityAsync(CancellationToken ct = default);
 
     // Platform info — sync raw-JSON form + async typed form. (The sync form is
     // a Phase 2.3 WASM-era shape — it read the BLAZOR_PLATFORM_INFO env var on
     // Mono-WASI; today NativeShellBridge builds the JSON from the
     // host-registered PlatformOptions.)
+    /// <summary>Platform info as a raw JSON string (the WASM-era sync shape).
+    /// Prefer <see cref="GetPlatformInfoAsync"/> for the typed form.</summary>
     string PlatformInfo { get; }
+    /// <summary>Returns typed <see cref="Core.PlatformInfo"/> for the running platform.</summary>
     ValueTask<PlatformInfo> GetPlatformInfoAsync(CancellationToken ct = default);
 
-    // Events from the native host → .NET handlers
+    /// <summary>Raised when the native host pushes an event into .NET — a lifecycle
+    /// callback, a notification tap-through, and the like.</summary>
     event Action<NativeEvent> NativeEvents;
 }
 
@@ -166,28 +217,68 @@ public interface IMobileBridge
 // Value types  (zero-alloc friendly — structs where possible)
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// <summary>An HTTP request to route through the host bridge
+/// (<see cref="IMobileBridge.FetchAsync"/>), so the native layer owns TLS,
+/// permissions and proxying. <see cref="Url"/> is required; a
+/// <c>default(BridgeHttpRequest)</c> is not a valid request (null Url/Method).</summary>
+/// <param name="Url">The absolute request URL.</param>
+/// <param name="Method">The HTTP method; defaults to <c>GET</c>.</param>
+/// <param name="Body">The request body, or null for none.</param>
+/// <param name="Headers">Request headers, or null for none.</param>
 public readonly record struct BridgeHttpRequest(
     string Url,
     string Method = "GET",
     string? Body = null,
     IReadOnlyDictionary<string, string>? Headers = null);
 
+/// <summary>An HTTP response returned by <see cref="IMobileBridge.FetchAsync"/>.</summary>
+/// <param name="StatusCode">The HTTP status code.</param>
+/// <param name="Body">The response body as text.</param>
+/// <param name="Headers">The response headers.</param>
 public readonly record struct BridgeHttpResponse(
     int StatusCode,
     string Body,
     IReadOnlyDictionary<string, string> Headers);
 
+/// <summary>Static information about the running platform, served by
+/// <see cref="IMobileBridge.GetPlatformInfoAsync"/>.</summary>
+/// <param name="Platform">Which platform the app is running on.</param>
+/// <param name="OsVersion">The OS version string.</param>
+/// <param name="AppVersion">The app's version string.</param>
+/// <param name="IsDebug">Whether this is a debug build.</param>
 public readonly record struct PlatformInfo(
     PlatformKind Platform,
     string OsVersion,
     string AppVersion,
     bool IsDebug);
 
+/// <summary>An unsolicited event raised by the native host into .NET
+/// (<see cref="IMobileBridge.NativeEvents"/>) — a lifecycle callback, a
+/// notification tap-through, and the like.</summary>
+/// <param name="Name">The event name (e.g. a lifecycle phase or the reserved
+/// <c>navigate</c> name).</param>
+/// <param name="Payload">An optional payload string, or null.</param>
 public readonly record struct NativeEvent(
     string Name,
     string? Payload = null);
 
-public enum PlatformKind { DevHost, Android, iOS, Windows, Mac }
+/// <summary>The platform a running app reports through
+/// <see cref="PlatformInfo.Platform"/>. The ordinal is the ABI contract — the
+/// shell passes it through the init options; do not reorder.</summary>
+public enum PlatformKind
+{
+    /// <summary>The in-process dev host / test harness (<see cref="DevHostBridge"/>) —
+    /// no native shell. The safe default when a shell predates the platform-kind field.</summary>
+    DevHost,
+    /// <summary>The Android shell.</summary>
+    Android,
+    /// <summary>The iOS shell.</summary>
+    iOS,
+    /// <summary>The Windows shell.</summary>
+    Windows,
+    /// <summary>The macOS shell.</summary>
+    Mac,
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Geolocation value types (Phase 9.0 — M9 DoD #2)
@@ -210,24 +301,40 @@ public enum PlatformKind { DevHost, Android, iOS, Windows, Mac }
 // exceptions and never hangs — the awaiting ValueTask always resolves.
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// <summary>The wire-mirrored outcome of a geolocation request. Denial (1/2/3),
+/// unavailability (4) and error (5) are all VALUES — never an exception, never a
+/// hang. The numeric values are the ABI contract; do not reorder.</summary>
 public enum GeolocationStatus
 {
+    /// <summary>Permission held; a fix was obtained (the payload carries it).</summary>
     Granted = 0,
+    /// <summary>Denied THIS time; a later request MAY prompt again.</summary>
     Denied = 1,
+    /// <summary>"Don't ask again" / iOS <c>.denied</c> — only a Settings change lifts it.</summary>
     DeniedPermanently = 2,
+    /// <summary>Parental controls / MDM — the user CANNOT grant it.</summary>
     Restricted = 3,
+    /// <summary>Permission is fine, but location services are off or no fix is available.</summary>
     LocationUnavailable = 4,
+    /// <summary>Unexpected host error (a caught native throw).</summary>
     Error = 5,
 }
 
 /// <summary>The terminal outcome of a <see cref="IMobileBridge.GetCurrentPositionAsync"/>
-/// call: a status and, only when <see cref="GeolocationStatus.Granted"/>, a
+/// call: a status and, only when <c>GeolocationStatus.Granted</c>, a
 /// position. Every non-Granted status carries a null position.</summary>
+/// <param name="Status">The permission/fetch outcome.</param>
+/// <param name="Position">The fix on <c>GeolocationStatus.Granted</c>, else null.</param>
 public readonly record struct GeolocationResult(GeolocationStatus Status, GeolocationPosition? Position);
 
 /// <summary>A single position fix. Crosses the ABI as a flat JSON object of
 /// string→string (numbers string-encoded, reusing the fetch-headers serializer);
 /// .NET parses it into this typed form.</summary>
+/// <param name="Latitude">Latitude in degrees.</param>
+/// <param name="Longitude">Longitude in degrees.</param>
+/// <param name="Accuracy">Horizontal accuracy in metres.</param>
+/// <param name="Altitude">Altitude in metres, or null if unavailable.</param>
+/// <param name="TimestampUnixMs">Fix time as Unix epoch milliseconds.</param>
 public readonly record struct GeolocationPosition(
     double Latitude,
     double Longitude,
@@ -258,12 +365,21 @@ public readonly record struct GeolocationPosition(
 // the awaiting ValueTask always resolves.
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// <summary>The wire-mirrored outcome of a notification op (schedule / show /
+/// cancel / permission). Geolocation's shape minus <c>LocationUnavailable</c>.
+/// Denial (1/2/3) and error (4) are VALUES — never an exception, never a hang.
+/// The numeric values are the ABI contract; do not reorder.</summary>
 public enum NotificationStatus
 {
+    /// <summary>Permission held; the op ran (posted / scheduled / cancelled).</summary>
     Granted = 0,
+    /// <summary>Denied THIS time; a later request MAY prompt again.</summary>
     Denied = 1,
+    /// <summary>"Don't ask again" / iOS <c>.denied</c> — only a Settings change lifts it.</summary>
     DeniedPermanently = 2,
+    /// <summary>Policy / MDM — the user CANNOT grant it.</summary>
     Restricted = 3,
+    /// <summary>Unexpected host error (a caught native throw).</summary>
     Error = 4,
 }
 
@@ -274,6 +390,11 @@ public enum NotificationStatus
 /// <c>notify</c> semantics); <see cref="When"/> null means show immediately, else
 /// it is the fire time (crossing as Unix epoch milliseconds); <see cref="Route"/>
 /// is the tap-through target (a <c>DEEP_LINK_COMPONENTS</c> key) or null.</summary>
+/// <param name="Id">The app-chosen 32-bit key that <c>cancel</c> targets (collisions replace).</param>
+/// <param name="Title">The notification title.</param>
+/// <param name="Body">The notification body.</param>
+/// <param name="When">The fire time, or null to show immediately.</param>
+/// <param name="Route">The tap-through route, or null.</param>
 public readonly record struct NotificationSpec(
     int Id, string Title, string Body, DateTimeOffset? When, string? Route);
 
@@ -306,13 +427,24 @@ public readonly record struct NotificationSpec(
 // resolves. An out-of-range integer maps to Error (still data, never a throw).
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// <summary>The wire-mirrored outcome of a biometric prompt. Failure (1),
+/// cancellation (2), unavailability (3), lockout (4) and error (5) are all VALUES —
+/// never an exception, never a hang; an out-of-range integer maps to
+/// <c>Error</c>. The numeric values are the ABI contract; do not reorder.</summary>
 public enum BiometricStatus
 {
+    /// <summary>The user proved presence. On a read-only availability check it means
+    /// "present + enrolled + ready" — no authentication was performed.</summary>
     Authenticated = 0,
+    /// <summary>A biometric was presented and rejected; a retry is allowed.</summary>
     Failed = 1,
+    /// <summary>The user dismissed the prompt (or the app cancelled it).</summary>
     Cancelled = 2,
+    /// <summary>No biometric hardware, or none enrolled.</summary>
     Unavailable = 3,
+    /// <summary>Too many failures — temporarily (or permanently) locked out.</summary>
     LockedOut = 4,
+    /// <summary>Unexpected host error (a caught native throw).</summary>
     Error = 5,
 }
 
@@ -331,17 +463,27 @@ public enum BiometricStatus
 // never exceptions and never hangs. Out-of-range → Error.
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// <summary>The wire-mirrored outcome of a secure-storage op. The biometric-gate
+/// detail (failed vs cancelled vs lockout) folds into <c>AuthFailed</c> —
+/// a consumer wanting the finer grain uses <c>IBiometrics</c>. Every non-<c>Ok</c>
+/// value is DATA — never an exception, never a hang; out-of-range maps to
+/// <c>Error</c>. The numeric values are the ABI contract; do not reorder.</summary>
 public enum SecureStorageStatus
 {
+    /// <summary>set/delete succeeded; a get FOUND the value (carried in the <c>{"value":…}</c> payload).</summary>
     Ok = 0,
+    /// <summary>A get / getWithAuth of an absent key (no payload).</summary>
     NotFound = 1,
+    /// <summary>The biometric gate on getWithAuth denied / failed / cancelled / locked out.</summary>
     AuthFailed = 2,
+    /// <summary>No secure hardware / Keystore unusable / (getWithAuth) biometrics not enrolled.</summary>
     Unavailable = 3,
+    /// <summary>Unexpected host error (a caught throw, a decrypt failure, malformed/oversize args).</summary>
     Error = 4,
 }
 
 /// <summary>The terminal outcome of a secure <c>get</c> / <c>getWithAuth</c>: a
-/// status and, only when <see cref="SecureStorageStatus.Ok"/>, the stored value.
+/// status and, only when <c>SecureStorageStatus.Ok</c>, the stored value.
 /// Every other status carries a null value (the <see cref="GeolocationResult"/>
 /// twin). The value crosses the intra-process C-ABI as a UTF-8 string in the flat
 /// JSON <c>{"value":…}</c> payload — see the security note in
@@ -349,6 +491,8 @@ public enum SecureStorageStatus
 /// rest, not on the wire); the POC's accepted hazard is the in-memory lifetime of
 /// non-zeroable plaintext copies, a zeroable-buffer hardening pass being M10.
 /// Binary secrets cross base64-encoded.</summary>
+/// <param name="Status">The get outcome.</param>
+/// <param name="Value">The stored value on <c>SecureStorageStatus.Ok</c>, else null.</param>
 public readonly record struct SecretResult(SecureStorageStatus Status, string? Value)
 {
     /// <summary>The soft cap on a secret value, enforced at the .NET boundary (an
@@ -385,12 +529,24 @@ public readonly record struct SecretResult(SecureStorageStatus Status, string? V
 // the demo shows both distinctly.
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// <summary>The wire-mirrored outcome of a photo capture. Cancellation (1),
+/// denial (2), unavailability (3) and error (4) are all VALUES — never an
+/// exception, never a hang; out-of-range maps to <c>Error</c>. Note the
+/// deliberate split between <c>Cancelled</c> (the user chose not to shoot)
+/// and <c>Denied</c> (the OS refused access). The numeric values are the
+/// ABI contract; do not reorder.</summary>
 public enum CameraStatus
 {
+    /// <summary>A photo was taken and written; the payload carries its path.</summary>
     Captured = 0,
+    /// <summary>The user backed out of the camera UI — a NORMAL outcome.</summary>
     Cancelled = 1,
+    /// <summary>The OS refused camera access — a PERMISSION outcome (iOS).</summary>
     Denied = 2,
+    /// <summary>No camera hardware / capture UI unavailable (the honest iOS-simulator
+    /// result); also the read-only check's "no camera" answer.</summary>
     Unavailable = 3,
+    /// <summary>Unexpected host error (a caught throw, a write/encode failure, malformed args).</summary>
     Error = 4,
 }
 
@@ -413,6 +569,9 @@ public enum CameraStatus
 /// zeroing parameterless value for every struct and no ctor can suppress it); a
 /// zeroed value is treated as UNSET at the shell boundary, where a 0 quality maps to
 /// the default rather than the worst-possible encode.</para></summary>
+/// <param name="MaxDimension">Long-edge cap in pixels for the downscale; 0 keeps full
+/// resolution. Default 2048.</param>
+/// <param name="Quality">JPEG quality 1–100 for the re-encode. Default 85.</param>
 public readonly record struct CaptureOptions(int MaxDimension = 2048, int Quality = 85)
 {
     /// <summary>The documented defaults (2048 px long edge, JPEG quality 85). Present
@@ -424,7 +583,7 @@ public readonly record struct CaptureOptions(int MaxDimension = 2048, int Qualit
 }
 
 /// <summary>The terminal outcome of a <see cref="IMobileBridge.CapturePhotoAsync"/>
-/// call: a status and, only when <see cref="CameraStatus.Captured"/>, the captured
+/// call: a status and, only when <c>CameraStatus.Captured</c>, the captured
 /// file's <c>file://</c> path and its FINAL (post-downscale) dimensions + size. Every
 /// other status carries a null path and zeros (the <see cref="GeolocationResult"/> /
 /// <see cref="SecretResult"/> twin). The path points into the app's PRIVATE cache
@@ -437,9 +596,14 @@ public readonly record struct CaptureOptions(int MaxDimension = 2048, int Qualit
 /// it, or handing it to BnImage which decodes asynchronously); the shell prunes its
 /// own capture subdir on each capture as a leak backstop. See
 /// <c>docs/bridge-extension.md §(f).10</c>.</summary>
+/// <param name="Status">The capture outcome.</param>
+/// <param name="Path"><c>file://</c> path in the app cache; null unless <c>CameraStatus.Captured</c>.</param>
+/// <param name="Width">Final (post-downscale) pixel width; 0 unless Captured.</param>
+/// <param name="Height">Final (post-downscale) pixel height; 0 unless Captured.</param>
+/// <param name="SizeBytes">Final file size in bytes; 0 unless Captured.</param>
 public readonly record struct PhotoResult(
     CameraStatus Status,
-    string? Path,      // file:// path in the app cache; null unless Captured
-    int Width,         // final (post-downscale) pixel dimensions; 0 unless Captured
+    string? Path,
+    int Width,
     int Height,
-    long SizeBytes);   // final file size in bytes; 0 unless Captured
+    long SizeBytes);

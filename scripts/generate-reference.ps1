@@ -48,8 +48,11 @@
         BridgeProtocolNative, NativeShellBridge, Exports…) with ~98 undocumented
         public members. CS1591 is all-or-nothing per package.
         (src/BlazorNative.Runtime/BlazorNative.Runtime.csproj)
-      · Core — IMobileBridge (27 members), DevHostBridge and six wire-mirrored
-        enums/records are documented only as `//` block comments, not `///` XML.
+      · Core — DONE (#173). IMobileBridge's 27 members, DevHostBridge and the
+        wire-mirrored enums/records were converted from `//` block comments to `///`
+        XML (enum values lifted from their block-comment tables, DevHostBridge's
+        implementations via <inheritdoc/>); BnEnforceDocCoverage is ON and generation
+        + the ReferenceDriftTests fixture cover it.
         (src/BlazorNative.Core/BlazorNative.Core.csproj)
       · Http — its hand-written surface is documentable, but ZeroAlloc.Inject.Generator
         emits a PUBLIC `AddBlazorNativeHttpServices` extension with no XML doc and no
@@ -136,6 +139,11 @@ $manifest = [ordered]@{
         Csproj  = 'src/BlazorNative.Device/BlazorNative.Device.csproj'
         Dll     = 'BlazorNative.Device.dll'
         Default = { Join-Path $ReferenceRoot 'device' }
+    }
+    Core = @{
+        Csproj  = 'src/BlazorNative.Core/BlazorNative.Core.csproj'
+        Dll     = 'BlazorNative.Core.dll'
+        Default = { Join-Path $ReferenceRoot 'core' }
     }
 }
 

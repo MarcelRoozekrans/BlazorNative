@@ -14,6 +14,11 @@ namespace BlazorNative.Core;
 //     host is gone — tests and harnesses call InjectEvent directly)
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// <summary>A full in-process mock of <see cref="IMobileBridge"/> for local
+/// development and tests — runs as a normal .NET app (no NativeAOT publish), with
+/// an in-memory key/value + secret store, route history, real-network HTTP
+/// passthrough, and settable status properties so every capability's
+/// denial-as-data paths are drivable headless.</summary>
 public sealed class DevHostBridge : IMobileBridge, IDisposable
 {
     private readonly Dictionary<string, string> _storage = new();
@@ -28,6 +33,7 @@ public sealed class DevHostBridge : IMobileBridge, IDisposable
     private readonly List<string> _routeHistory = new();
     private string _currentRoute = "/";
 
+    /// <inheritdoc/>
     public event Action<NativeEvent>? NativeEvents
     {
         add    => _events += value;
@@ -36,6 +42,7 @@ public sealed class DevHostBridge : IMobileBridge, IDisposable
 
     // ── Navigation ────────────────────────────────────────────────────────────
 
+    /// <inheritdoc/>
     public ValueTask NavigateAsync(string route, CancellationToken ct = default)
     {
         _routeHistory.Add(_currentRoute);
@@ -45,11 +52,13 @@ public sealed class DevHostBridge : IMobileBridge, IDisposable
         return ValueTask.CompletedTask;
     }
 
+    /// <inheritdoc/>
     public ValueTask<string> GetCurrentRouteAsync(CancellationToken ct = default)
         => ValueTask.FromResult(_currentRoute);
 
     // ── Storage ───────────────────────────────────────────────────────────────
 
+    /// <inheritdoc/>
     public ValueTask<string?> ReadStorageAsync(string key, CancellationToken ct = default)
     {
         _storage.TryGetValue(key, out var val);
@@ -57,6 +66,7 @@ public sealed class DevHostBridge : IMobileBridge, IDisposable
         return ValueTask.FromResult(val);
     }
 
+    /// <inheritdoc/>
     public ValueTask WriteStorageAsync(string key, string value, CancellationToken ct = default)
     {
         _storage[key] = value;
@@ -64,6 +74,7 @@ public sealed class DevHostBridge : IMobileBridge, IDisposable
         return ValueTask.CompletedTask;
     }
 
+    /// <inheritdoc/>
     public ValueTask DeleteStorageAsync(string key, CancellationToken ct = default)
     {
         _storage.Remove(key);
@@ -73,6 +84,7 @@ public sealed class DevHostBridge : IMobileBridge, IDisposable
 
     // ── Network ───────────────────────────────────────────────────────────────
 
+    /// <inheritdoc/>
     public async ValueTask<BridgeHttpResponse> FetchAsync(BridgeHttpRequest request, CancellationToken ct = default)
     {
         Console.WriteLine($"[DevBridge] Fetch {request.Method} {request.Url}");
@@ -97,12 +109,14 @@ public sealed class DevHostBridge : IMobileBridge, IDisposable
 
     private string _clipboard = "";
 
+    /// <inheritdoc/>
     public ValueTask<string> ClipboardReadAsync(CancellationToken ct = default)
     {
         Console.WriteLine($"[DevBridge] Clipboard.Read → {_clipboard}");
         return ValueTask.FromResult(_clipboard);
     }
 
+    /// <inheritdoc/>
     public ValueTask ClipboardWriteAsync(string text, CancellationToken ct = default)
     {
         _clipboard = text;
@@ -110,6 +124,7 @@ public sealed class DevHostBridge : IMobileBridge, IDisposable
         return ValueTask.CompletedTask;
     }
 
+    /// <inheritdoc/>
     public ValueTask ShareAsync(string text, CancellationToken ct = default)
     {
         Console.WriteLine($"[DevBridge] Share → {text}");
@@ -128,7 +143,7 @@ public sealed class DevHostBridge : IMobileBridge, IDisposable
     // in-process and instant (no prompt, no suspension).
 
     /// <summary>The status the next <see cref="GetCurrentPositionAsync"/> returns
-    /// (default <see cref="GeolocationStatus.Granted"/>). Set it to drive a denial /
+    /// (default <c>GeolocationStatus.Granted</c>). Set it to drive a denial /
     /// restriction / unavailable / error path headless.</summary>
     public GeolocationStatus GeolocationStatus { get; set; } = GeolocationStatus.Granted;
 
@@ -137,6 +152,7 @@ public sealed class DevHostBridge : IMobileBridge, IDisposable
     public GeolocationPosition GeolocationPosition { get; set; } =
         new(Latitude: 52.3702, Longitude: 4.8952, Accuracy: 12.0, Altitude: 3.0, TimestampUnixMs: 0);
 
+    /// <inheritdoc/>
     public ValueTask<GeolocationResult> GetCurrentPositionAsync(CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
@@ -149,6 +165,7 @@ public sealed class DevHostBridge : IMobileBridge, IDisposable
         return ValueTask.FromResult(result);
     }
 
+    /// <inheritdoc/>
     public ValueTask<GeolocationStatus> CheckGeolocationPermissionAsync(CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
@@ -166,7 +183,7 @@ public sealed class DevHostBridge : IMobileBridge, IDisposable
     // without a NotificationManager.
 
     /// <summary>The status the next notification op returns (default
-    /// <see cref="Core.NotificationStatus.Granted"/>). Set it to drive a denial /
+    /// <c>NotificationStatus.Granted</c>). Set it to drive a denial /
     /// restriction / error path headless.</summary>
     public NotificationStatus NotificationStatus { get; set; } = NotificationStatus.Granted;
 
@@ -176,12 +193,14 @@ public sealed class DevHostBridge : IMobileBridge, IDisposable
     public IReadOnlyList<NotificationSpec> Notifications => _notifications;
     private readonly List<NotificationSpec> _notifications = new();
 
+    /// <inheritdoc/>
     public ValueTask<NotificationStatus> ScheduleNotificationAsync(NotificationSpec spec, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
         return RecordNotification(spec, scheduled: true);
     }
 
+    /// <inheritdoc/>
     public ValueTask<NotificationStatus> ShowNotificationAsync(NotificationSpec spec, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
@@ -202,6 +221,7 @@ public sealed class DevHostBridge : IMobileBridge, IDisposable
         return ValueTask.FromResult(NotificationStatus);
     }
 
+    /// <inheritdoc/>
     public ValueTask<NotificationStatus> CancelNotificationAsync(int id, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
@@ -210,12 +230,14 @@ public sealed class DevHostBridge : IMobileBridge, IDisposable
         return ValueTask.FromResult(NotificationStatus);
     }
 
+    /// <inheritdoc/>
     public ValueTask<NotificationStatus> RequestNotificationPermissionAsync(CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
         return ValueTask.FromResult(NotificationStatus);
     }
 
+    /// <inheritdoc/>
     public ValueTask<NotificationStatus> CheckNotificationPermissionAsync(CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
@@ -237,8 +259,8 @@ public sealed class DevHostBridge : IMobileBridge, IDisposable
 
     /// <summary>The status the next <see cref="AuthenticateAsync"/> returns AND the
     /// gate the pairing (<see cref="GetSecretWithAuthAsync"/>) checks: an auth-bound
-    /// secret is released only when this is <see cref="Core.BiometricStatus.Authenticated"/>,
-    /// else the read is <see cref="SecureStorageStatus.AuthFailed"/>. Default
+    /// secret is released only when this is <c>BiometricStatus.Authenticated</c>,
+    /// else the read is <c>SecureStorageStatus.AuthFailed</c>. Default
     /// Authenticated. Set it to drive a failed / cancelled / locked-out / no-hardware
     /// path headless.</summary>
     public BiometricStatus BiometricAuthResult { get; set; } = BiometricStatus.Authenticated;
@@ -248,6 +270,7 @@ public sealed class DevHostBridge : IMobileBridge, IDisposable
     /// <summary>Snapshot of the in-memory secret store — useful in tests.</summary>
     public IReadOnlyDictionary<string, (string Value, bool RequireAuth)> SecretSnapshot => _secrets;
 
+    /// <inheritdoc/>
     public ValueTask<BiometricStatus> AuthenticateAsync(string reason, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
@@ -257,6 +280,7 @@ public sealed class DevHostBridge : IMobileBridge, IDisposable
         return ValueTask.FromResult(BiometricAuthResult);
     }
 
+    /// <inheritdoc/>
     public ValueTask<BiometricStatus> IsBiometricAvailableAsync(CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
@@ -268,6 +292,7 @@ public sealed class DevHostBridge : IMobileBridge, IDisposable
         return ValueTask.FromResult(available);
     }
 
+    /// <inheritdoc/>
     public ValueTask<SecureStorageStatus> SetSecretAsync(string key, string value, bool requireAuth, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
@@ -283,6 +308,7 @@ public sealed class DevHostBridge : IMobileBridge, IDisposable
         return ValueTask.FromResult(SecureStorageStatus.Ok);
     }
 
+    /// <inheritdoc/>
     public ValueTask<SecretResult> GetSecretAsync(string key, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
@@ -295,6 +321,7 @@ public sealed class DevHostBridge : IMobileBridge, IDisposable
         return ValueTask.FromResult(new SecretResult(SecureStorageStatus.Ok, entry.Value));
     }
 
+    /// <inheritdoc/>
     public ValueTask<SecretResult> GetSecretWithAuthAsync(string key, string reason, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
@@ -309,6 +336,7 @@ public sealed class DevHostBridge : IMobileBridge, IDisposable
         return ValueTask.FromResult(new SecretResult(SecureStorageStatus.Ok, entry.Value));
     }
 
+    /// <inheritdoc/>
     public ValueTask<SecureStorageStatus> DeleteSecretAsync(string key, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
@@ -347,7 +375,7 @@ public sealed class DevHostBridge : IMobileBridge, IDisposable
     }
 
     /// <summary>The status the next <see cref="CapturePhotoAsync"/> returns (default
-    /// <see cref="Core.CameraStatus.Captured"/>) AND what
+    /// <c>CameraStatus.Captured</c>) AND what
     /// <see cref="CheckCameraAvailabilityAsync"/> reports (Unavailable → Unavailable,
     /// else Captured = "present + usable"). Set it to drive a cancel / denied /
     /// unavailable / error path headless.</summary>
@@ -360,9 +388,12 @@ public sealed class DevHostBridge : IMobileBridge, IDisposable
     /// <summary>The final dimensions / size a Captured result reports (default the
     /// fixture's). Ignored for every non-Captured status.</summary>
     public int CameraCapturedWidth { get; set; } = 1;
+    /// <inheritdoc cref="CameraCapturedWidth"/>
     public int CameraCapturedHeight { get; set; } = 1;
+    /// <inheritdoc cref="CameraCapturedWidth"/>
     public long CameraCapturedSizeBytes { get; set; } = s_cannedImage.Value.Bytes;
 
+    /// <inheritdoc/>
     public ValueTask<PhotoResult> CapturePhotoAsync(CaptureOptions options, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
@@ -380,6 +411,7 @@ public sealed class DevHostBridge : IMobileBridge, IDisposable
             CameraCapturedWidth, CameraCapturedHeight, CameraCapturedSizeBytes));
     }
 
+    /// <inheritdoc/>
     public ValueTask<CameraStatus> CheckCameraAvailabilityAsync(CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
@@ -393,9 +425,11 @@ public sealed class DevHostBridge : IMobileBridge, IDisposable
 
     // ── Platform info ─────────────────────────────────────────────────────────
 
+    /// <inheritdoc/>
     public string PlatformInfo =>
         $$"""{"kind":"DevHost","os":"{{Environment.OSVersion}}","version":"0.1.0-dev","isDebug":true}""";
 
+    /// <inheritdoc/>
     public ValueTask<PlatformInfo> GetPlatformInfoAsync(CancellationToken ct = default)
         => ValueTask.FromResult(new PlatformInfo(
             PlatformKind.DevHost,
@@ -418,6 +452,7 @@ public sealed class DevHostBridge : IMobileBridge, IDisposable
     /// <summary>Full navigation history.</summary>
     public IReadOnlyList<string> RouteHistory => _routeHistory;
 
+    /// <inheritdoc/>
     public void Dispose() { _http.Dispose(); }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
