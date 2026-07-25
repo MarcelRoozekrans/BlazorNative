@@ -356,6 +356,14 @@ The demo app's pages are declared once, in `samples/BlazorNative.SampleApp/Sampl
 
 Designed to be compatible with [ZeroAlloc-Net](https://github.com/ZeroAlloc-Net) libraries — all core types are AOT-safe, zero-allocation friendly, and use `readonly record struct` throughout.
 
+## Contributing
+
+Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for setup, the
+build/test gate, and the commit/release conventions. Note that a [Contributor License
+Agreement](CLA.md) must be signed before a first contribution can be merged; it keeps
+the framework core MIT for consumers while preserving the maintainer's dual-licensing
+options.
+
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE). Contributions are made under the [CLA](CLA.md).
