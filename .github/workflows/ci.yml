@@ -4,7 +4,7 @@
 #
 #   build-test (windows-latest) — the local verification procedure verbatim
 #   (setup.ps1 §1–7 documents the toolchain pins):
-#     build (analyzers ride it) → .NET tests (905 passed / 0 skipped) →
+#     build (analyzers ride it) → .NET tests (907 passed / 0 skipped) →
 #     three NativeAOT publishes of samples/BlazorNative.SampleApp — the
 #     publish head since Phase 8.0: the app owns PublishAot, the exports stay
 #     in Runtime via UnmanagedEntryPointsAssembly, and the artifact is
@@ -1739,10 +1739,23 @@ jobs:
       #      ...KeepsTheStableTierAndDropsTheInterop (BlazorNativeApp/Page present, Exports/
       #      NativeShellBridge/BlazorNativePatch absent -- the filter's two halves, neither
       #      vacuous). In the reference-generation collection with the other fixtures.
-      # Http is the last consumer package still deferred (its ZeroAlloc-generated public
-      # extension cannot be brought under CS1591 without a breaking API change).
+      #
+      # 905 -> 907 (#173, +2 -- Runtime.Tests 738 -> 740): the reference gains the LAST
+      # consumer package, BlazorNative.Http. Its blocker was UPSTREAM -- ZeroAlloc.Inject's
+      # generator emits a PUBLIC AddBlazorNativeHttpServices with no XML doc and (pre-1.7.2)
+      # no pragma, so CS1591 fired on generated code a consumer cannot annotate and nothing
+      # scopes CS1591 per-file for it. ZeroAlloc.Inject is first-party, so v1.7.2 makes the
+      # generator emit `#pragma warning disable 1591` in its own output (ZeroAlloc-Net/
+      # ZeroAlloc.Inject#70); the hand-written surface was documented and the switch flipped:
+      #   +2 HttpReferenceDriftTests -- GeneratedReference_DocumentsExactlyThePublicTypes
+      #      (page set == reflected public types, red both ways -- and the public set INCLUDES
+      #      the ZeroAlloc-generated extension, so this proves it gets a page instead of
+      #      tripping CS1591) + ...ContainsTheHandlerAndRegistration (BridgeHttpHandler, the
+      #      hand-written ServiceCollectionExtensions, and the generated primitive it wraps
+      #      each named). In the reference-generation collection with the other fixtures.
+      # With Http, EVERY consumer-facing package is now in the generated reference.
       # No ABI change; JVM/Android/iOS baselines do not move.
-      - name: .NET tests (assert 905 passed / 0 skipped)
+      - name: .NET tests (assert 907 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -1760,8 +1773,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 905 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 905 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 907 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 907 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # ── NativeAOT publishes + nine-export verification ────────────────────

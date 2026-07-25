@@ -414,3 +414,99 @@ public sealed class RuntimeReferenceDriftTests : IClassFixture<RuntimeReferenceF
         }
     }
 }
+
+/// <summary>Generates the <c>BlazorNative.Http</c> reference once for the whole class (#173).</summary>
+public sealed class HttpReferenceFixture : ReferenceFixtureBase
+{
+    public HttpReferenceFixture() : base("Http") { }
+}
+
+/// <summary>
+/// PIN — the Http reference documents EXACTLY the package's public types, red in both
+/// directions (#173). Http was the LAST consumer package added, and the only one blocked
+/// UPSTREAM: <c>ZeroAlloc.Inject.Generator</c> emits a PUBLIC
+/// <c>BlazorNativeHttpServicesServiceCollectionExtensions</c> with no XML doc and — before
+/// v1.7.2 — no <c>#pragma warning disable 1591</c>, so CS1591 fired on generated code a
+/// consumer cannot annotate (no per-file lever exists for it). v1.7.2 makes the generator
+/// pragma-suppress 1591 in its own output, which is what let <c>BnEnforceDocCoverage</c> go
+/// on here; the generated extension is a valid signature page, not a stub.
+///
+/// <para>In the <see cref="ReferenceGeneration"/> collection with the other reference
+/// fixtures so their <c>dotnet tool restore</c>s cannot race on the NuGet cache.</para>
+/// </summary>
+[Collection(ReferenceGeneration.Name)]
+public sealed class HttpReferenceDriftTests : IClassFixture<HttpReferenceFixture>
+{
+    private readonly HttpReferenceFixture _fixture;
+
+    public HttpReferenceDriftTests(HttpReferenceFixture fixture) => _fixture = fixture;
+
+    private static Assembly HttpAssembly => typeof(BlazorNative.Http.BridgeHttpHandler).Assembly;
+
+    private static IEnumerable<Type> PublicTypes()
+        => HttpAssembly.GetTypes().Where(t => t.IsPublic);
+
+    private static string PageNameFor(Type t)
+        => t.FullName!.Replace('`', '-').ToLowerInvariant() + ".md";
+
+    /// <summary>The generated page set equals the assembly's public type set, RED IN BOTH
+    /// DIRECTIONS — the Device/Core pin's twin over Http. Note the public set INCLUDES the
+    /// ZeroAlloc-generated <c>BlazorNativeHttpServicesServiceCollectionExtensions</c> (in the
+    /// <c>Microsoft.Extensions.DependencyInjection</c> namespace), so this also proves that
+    /// generated public type gets a page rather than tripping the build on CS1591.</summary>
+    [Fact]
+    public void GeneratedReference_DocumentsExactlyThePublicTypes()
+    {
+        var expected = PublicTypes().Select(PageNameFor).ToList();
+
+        var actual = Directory.GetFiles(_fixture.OutputDirectory, "*.md")
+            .Select(Path.GetFileName)
+            .Where(f => !string.Equals(f, "index.md", StringComparison.Ordinal))
+            .Select(f => f!.ToLowerInvariant())
+            .ToList();
+
+        Assert.True(expected.Count > 0,
+            "reflected ZERO public types out of BlazorNative.Http — the completeness pin "
+            + "has no expectation to hold anything against.");
+        Assert.True(actual.Count > 0,
+            $"the generator wrote NO pages into {_fixture.OutputDirectory}.\n\n{_fixture.GeneratorLog}");
+
+        var missing = expected.Except(actual, StringComparer.Ordinal)
+            .OrderBy(f => f, StringComparer.Ordinal).ToList();
+        var unexpected = actual.Except(expected, StringComparer.Ordinal)
+            .OrderBy(f => f, StringComparer.Ordinal).ToList();
+
+        Assert.True(missing.Count == 0 && unexpected.Count == 0,
+            "THE HTTP REFERENCE DRIFTED FROM THE ASSEMBLY.\n\n"
+            + $"  MISSING (the assembly publishes it, the reference does not document it — {missing.Count}):\n"
+            + (missing.Count == 0 ? "    (none)\n" : string.Join("\n", missing.Select(f => $"    {f}")) + "\n")
+            + $"  UNEXPECTED (the reference documents it, the assembly does not publish it — {unexpected.Count}):\n"
+            + (unexpected.Count == 0 ? "    (none)\n" : string.Join("\n", unexpected.Select(f => $"    {f}")) + "\n")
+            + $"\n(Assembly: {expected.Count} public types. Generated: {actual.Count} pages.)\n\n"
+            + "Generator output:\n" + _fixture.GeneratorLog);
+    }
+
+    /// <summary>
+    /// The types an Http consumer opens first each have a page — the handler, the hand-written
+    /// registration surface, and the ZeroAlloc-generated primitive it wraps — named so the
+    /// completeness pin cannot be satisfied by an empty set with no missing members.
+    /// </summary>
+    [Fact]
+    public void GeneratedReference_ContainsTheHandlerAndRegistration()
+    {
+        var types = new[]
+        {
+            typeof(BlazorNative.Http.BridgeHttpHandler),
+            typeof(BlazorNative.Http.ServiceCollectionExtensions),
+            HttpAssembly.GetType(
+                "Microsoft.Extensions.DependencyInjection.BlazorNativeHttpServicesServiceCollectionExtensions")!,
+        };
+        foreach (var t in types)
+        {
+            string page = Path.Combine(_fixture.OutputDirectory, PageNameFor(t));
+            Assert.True(File.Exists(page),
+                $"the Http reference is missing a page for {t.Name} ({PageNameFor(t)}).\n\n"
+                + _fixture.GeneratorLog);
+        }
+    }
+}

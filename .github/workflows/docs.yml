@@ -78,6 +78,7 @@ on:
       - 'src/BlazorNative.Device/**'
       - 'src/BlazorNative.Core/**'
       - 'src/BlazorNative.Runtime/**'
+      - 'src/BlazorNative.Http/**'
       # …and these decide whether the XML docs exist at all
       # (GenerateDocumentationFile) and whether CS1591 is an error
       # (BnEnforceDocCoverage). They are inputs to the reference exactly as the
@@ -97,6 +98,7 @@ on:
       - 'src/BlazorNative.Device/**'
       - 'src/BlazorNative.Core/**'
       - 'src/BlazorNative.Runtime/**'
+      - 'src/BlazorNative.Http/**'
       - 'src/Directory.Build.props'
       - 'src/Directory.Build.targets'
       - 'scripts/generate-reference.ps1'
