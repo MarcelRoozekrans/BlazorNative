@@ -47,19 +47,25 @@
          table says which is which. -->
     <BnEnforcePublicApi>true</BnEnforcePublicApi>
 
-    <!-- M11 #173 — DEFERRED, not enforced, and therefore not in the generated API
-         reference (scripts/generate-reference.ps1). This package's STABLE consumer
-         types (BlazorNativeApp — ConfigureServices, RegisterPages — and
-         BlazorNativePage) are the highest-value reference target of the four, but
-         the package ALSO exports ~12 NOT-API public types (the tier note above):
-         PatchProtocolNative / BridgeProtocolNative wire structs, NativeShellBridge,
-         Exports and friends carry ~98 undocumented public members. CS1591 is
-         all-or-nothing per package, so enforcing today would either break the build
-         on those interop types or leave them as blank reference stubs — the thing
-         #173 forbids. Runtime joins once that NOT-API surface is documented (or the
-         reference gains a way to scope to the STABLE tier). Device (5 fully
-         documented façades, no NOT-API surface) is the package whose docs already
-         allowed the switch. -->
+    <!-- M11 #173 — DONE, via the SECOND option the old note named: "the reference
+         gains a way to scope to the STABLE tier". This package's STABLE consumer types
+         (BlazorNativeApp — ConfigureServices, RegisterPages — and BlazorNativePage) are
+         the highest-value reference target of the four; the obstacle was the ~12 NOT-API
+         public types (PatchProtocolNative / BridgeProtocolNative wire structs,
+         NativeShellBridge, Exports and friends, ~98 undocumented public members) that the
+         C ABI and AOT exports force public. CS1591 is all-or-nothing per package, so the
+         choice was document interop plumbing (wrong — it is marked NOT-API) or leave blank
+         stubs (#173 forbids).
+
+         The resolution keys on the mark those twelve ALREADY carry — [EditorBrowsable(Never)]:
+           · each NOT-API file opts out of CS1591 with a file-level `#pragma warning disable
+             1591` (they are documented by their C-ABI contract comments, not XML); and
+           · the reference generator drops every [EditorBrowsable(Never)] page + index link
+             (scripts/generate-reference.ps1 → Remove-NotApiPages), so the generated surface
+             is exactly the browsable tier: BlazorNativeApp + BlazorNativePage, no stubs.
+         One attribute, read from both sides — the doc pin and the reference — so the tier
+         table, the API baseline, and the site can never disagree about what is API. -->
+    <BnEnforceDocCoverage>true</BnEnforceDocCoverage>
   </PropertyGroup>
 
   <PropertyGroup>

@@ -4,7 +4,7 @@
 #
 #   build-test (windows-latest) — the local verification procedure verbatim
 #   (setup.ps1 §1–7 documents the toolchain pins):
-#     build (analyzers ride it) → .NET tests (903 passed / 0 skipped) →
+#     build (analyzers ride it) → .NET tests (905 passed / 0 skipped) →
 #     three NativeAOT publishes of samples/BlazorNative.SampleApp — the
 #     publish head since Phase 8.0: the app owns PublishAot, the exports stay
 #     in Runtime via UnmanagedEntryPointsAssembly, and the artifact is
@@ -1723,10 +1723,26 @@ jobs:
       #      completeness pin cannot pass on an empty set). In the reference-generation
       #      collection so it serialises with the Device/Components fixtures (the
       #      dotnet-tool-restore race).
-      # Doc-comment/generator/sidebar changes add NO tests. Runtime and Http stay
-      # deferred (Runtime's ~12 NOT-API interop types; Http's generator-emitted
-      # extension). No ABI change; JVM/Android/iOS baselines do not move.
-      - name: .NET tests (assert 903 passed / 0 skipped)
+      # Doc-comment/generator/sidebar changes add NO tests.
+      #
+      # 903 -> 905 (#173, +2 -- Runtime.Tests 736 -> 738): the reference gains
+      # BlazorNative.Runtime. It mixes tiers -- two STABLE consumer types (BlazorNativeApp,
+      # BlazorNativePage) beside twelve [EditorBrowsable(Never)] interop types the C ABI /
+      # AOT exports force public. Those twelve opt out of CS1591 with a file-level pragma
+      # (documented by their C-ABI contract comments, not XML), and the generator drops
+      # their pages via the same attribute (Remove-NotApiPages), so the reference is the
+      # browsable tier only -- no blank stubs, no leaked plumbing. The switch flipped
+      # (zero CS1591 on the STABLE surface) and Runtime joined the manifest + drift guard:
+      #   +2 RuntimeReferenceDriftTests -- GeneratedReference_DocumentsExactlyTheBrowsableSurface
+      #      (the page set equals the reflected BROWSABLE public-type set -- public MINUS
+      #      [EditorBrowsable(Never)] -- red both ways, so a leaked NOT-API page reds too) +
+      #      ...KeepsTheStableTierAndDropsTheInterop (BlazorNativeApp/Page present, Exports/
+      #      NativeShellBridge/BlazorNativePatch absent -- the filter's two halves, neither
+      #      vacuous). In the reference-generation collection with the other fixtures.
+      # Http is the last consumer package still deferred (its ZeroAlloc-generated public
+      # extension cannot be brought under CS1591 without a breaking API change).
+      # No ABI change; JVM/Android/iOS baselines do not move.
+      - name: .NET tests (assert 905 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -1744,8 +1760,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 903 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 903 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 905 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 905 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # ── NativeAOT publishes + nine-export verification ────────────────────

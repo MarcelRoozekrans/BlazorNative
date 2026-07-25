@@ -55,7 +55,11 @@ namespace BlazorNative.Runtime;
 /// index) rather than failing silently at first mount — see issue #181.</summary>
 public readonly struct BlazorNativePage
 {
+    /// <summary>The navigation route, or <c>null</c> for a mount-by-name-only page
+    /// (a <see cref="Named{T}"/> row that navigation never targets).</summary>
     public string? Route { get; }
+    /// <summary>The mount-registry name — the key shells mount by and the manifest
+    /// requires unique.</summary>
     public string  Name  { get; }
     internal Func<NativeRenderer, int> Mount { get; }
 
@@ -98,6 +102,8 @@ public readonly struct BlazorNativePage
 /// layering for nothing. Core stays pure contracts.</summary>
 public static class BlazorNativeApp
 {
+    /// <summary>The route (<c>"/"</c>) every routed app must register a page for —
+    /// the target of the no-argument default mount and the route-aware initial mount.</summary>
     public const string DefaultRoute = "/";
 
     /// <summary>Called ONCE, at app startup, before the first mount (in a

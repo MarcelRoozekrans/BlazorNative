@@ -3,6 +3,15 @@ using System.Runtime.InteropServices;
 
 namespace BlazorNative.Runtime;
 
+// M11 #173 — CS1591 off for this file. Every public type here is [EditorBrowsable(Never)]
+// NOT-API: public only because the C ABI / AOT exports require it, documented by the
+// C-ABI contract comments below rather than XML docs. BnEnforceDocCoverage makes CS1591
+// an error package-wide (the STABLE surface — BlazorNativeApp, BlazorNativePage — is
+// fully ///-documented); these interop types opt out here, and the reference generator
+// (scripts/generate-reference.ps1) drops their pages via the same [EditorBrowsable(Never)]
+// mark, so they are neither a build break nor a blank stub.
+#pragma warning disable 1591
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Phase 3.0d native wire protocol — typed-struct replacement for the [FRAME]
 // JSON-over-stdout transport (retired with the WASM era in Phase 3.0e; this is

@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Reflection;
 using BlazorNative.Core;      // #173: the Core reference drift pin
@@ -289,6 +290,127 @@ public sealed class CoreReferenceDriftTests : IClassFixture<CoreReferenceFixture
             Assert.True(File.Exists(page),
                 $"the Core reference is missing a page for {t.Name} ({PageNameFor(t)}).\n\n"
                 + _fixture.GeneratorLog);
+        }
+    }
+}
+
+/// <summary>Generates the <c>BlazorNative.Runtime</c> reference once for the whole class (#173).</summary>
+public sealed class RuntimeReferenceFixture : ReferenceFixtureBase
+{
+    public RuntimeReferenceFixture() : base("Runtime") { }
+}
+
+/// <summary>
+/// PIN — the Runtime reference documents EXACTLY the BROWSABLE public surface (#173).
+/// Runtime is the one package that mixes tiers: two STABLE consumer types
+/// (<c>BlazorNativeApp</c>, <c>BlazorNativePage</c>) beside twelve
+/// <c>[EditorBrowsable(Never)]</c> interop types the C ABI / AOT exports force public
+/// (<c>Exports</c>, <c>NativeShellBridge</c>, the wire structs…). The generator drops the
+/// NOT-API pages (scripts/generate-reference.ps1 → Remove-NotApiPages, keyed on that same
+/// attribute), so the reference is the browsable tier only.
+///
+/// <para>This pin therefore expects the page set to equal the public types MINUS the
+/// <c>[EditorBrowsable(Never)]</c> ones, RED IN BOTH DIRECTIONS: a STABLE type without a
+/// page means the reference fell behind; a NOT-API type WITH a page means the filter
+/// stopped working and interop plumbing leaked into the consumer reference. Both the doc
+/// pin and the generator read the one attribute, so this proves they agree.</para>
+///
+/// <para>In the <see cref="ReferenceGeneration"/> collection with the other reference
+/// fixtures so their <c>dotnet tool restore</c>s cannot race on the NuGet cache.</para>
+/// </summary>
+[Collection(ReferenceGeneration.Name)]
+public sealed class RuntimeReferenceDriftTests : IClassFixture<RuntimeReferenceFixture>
+{
+    private readonly RuntimeReferenceFixture _fixture;
+
+    public RuntimeReferenceDriftTests(RuntimeReferenceFixture fixture) => _fixture = fixture;
+
+    private static Assembly RuntimeAssembly => typeof(BlazorNativeApp).Assembly;
+
+    private static bool IsNotApi(Type t)
+        => t.GetCustomAttribute<EditorBrowsableAttribute>()?.State == EditorBrowsableState.Never;
+
+    /// <summary>The BROWSABLE public types — the reference's expected set. Derived from the
+    /// same <c>[EditorBrowsable(Never)]</c> mark the generator filters on, never a roster.</summary>
+    private static IEnumerable<Type> BrowsablePublicTypes()
+        => RuntimeAssembly.GetTypes().Where(t => t.IsPublic && !IsNotApi(t));
+
+    private static IEnumerable<Type> NotApiPublicTypes()
+        => RuntimeAssembly.GetTypes().Where(t => t.IsPublic && IsNotApi(t));
+
+    private static string PageNameFor(Type t)
+        => t.FullName!.Replace('`', '-').ToLowerInvariant() + ".md";
+
+    /// <summary>The generated page set equals the BROWSABLE public type set, RED IN BOTH
+    /// DIRECTIONS. MISSING = a STABLE type with no page. UNEXPECTED = a page the browsable
+    /// set does not name — which, for Runtime, is exactly how a leaked NOT-API page reds.</summary>
+    [Fact]
+    public void GeneratedReference_DocumentsExactlyTheBrowsableSurface()
+    {
+        var expected = BrowsablePublicTypes().Select(PageNameFor).ToList();
+        var notApi   = NotApiPublicTypes().Select(PageNameFor).ToList();
+
+        var actual = Directory.GetFiles(_fixture.OutputDirectory, "*.md")
+            .Select(Path.GetFileName)
+            .Where(f => !string.Equals(f, "index.md", StringComparison.Ordinal))
+            .Select(f => f!.ToLowerInvariant())
+            .ToList();
+
+        // NON-VACUITY on every set the assertions lean on — an empty browsable set (all
+        // types accidentally NOT-API) or an empty NOT-API set (the filter guarding nothing)
+        // would each let a broken generator pass.
+        Assert.True(expected.Count > 0,
+            "reflected ZERO browsable public types out of BlazorNative.Runtime — the STABLE "
+            + "tier vanished, so the completeness pin holds nothing.");
+        Assert.True(notApi.Count > 0,
+            "reflected ZERO [EditorBrowsable(Never)] public types out of BlazorNative.Runtime — "
+            + "the filter this pin exists to guard has nothing to drop, so the test is vacuous.");
+        Assert.True(actual.Count > 0,
+            $"the generator wrote NO pages into {_fixture.OutputDirectory}.\n\n{_fixture.GeneratorLog}");
+
+        var missing = expected.Except(actual, StringComparer.Ordinal)
+            .OrderBy(f => f, StringComparer.Ordinal).ToList();
+        var unexpected = actual.Except(expected, StringComparer.Ordinal)
+            .OrderBy(f => f, StringComparer.Ordinal).ToList();
+        // Of the unexpected pages, the ones that are NOT-API are the filter failing.
+        var leakedNotApi = unexpected.Intersect(notApi, StringComparer.Ordinal).ToList();
+
+        Assert.True(missing.Count == 0 && unexpected.Count == 0,
+            "THE RUNTIME REFERENCE DRIFTED FROM THE BROWSABLE SURFACE.\n\n"
+            + $"  MISSING (a STABLE type with no page — {missing.Count}):\n"
+            + (missing.Count == 0 ? "    (none)\n" : string.Join("\n", missing.Select(f => $"    {f}")) + "\n")
+            + $"  UNEXPECTED (a page the browsable set does not name — {unexpected.Count}):\n"
+            + (unexpected.Count == 0 ? "    (none)\n" : string.Join("\n", unexpected.Select(f => $"    {f}")) + "\n")
+            + $"    …of which LEAKED NOT-API (the [EditorBrowsable(Never)] filter failed — {leakedNotApi.Count}):\n"
+            + (leakedNotApi.Count == 0 ? "      (none)\n" : string.Join("\n", leakedNotApi.Select(f => $"      {f}")) + "\n")
+            + $"\n(Browsable public types: {expected.Count}. NOT-API filtered: {notApi.Count}. Generated pages: {actual.Count}.)\n\n"
+            + "Generator output:\n" + _fixture.GeneratorLog);
+    }
+
+    /// <summary>
+    /// The two STABLE types a Runtime consumer opens first each have a page, AND the interop
+    /// types are ABSENT — the filter's positive and negative halves, named so neither can be
+    /// satisfied vacuously.
+    /// </summary>
+    [Fact]
+    public void GeneratedReference_KeepsTheStableTierAndDropsTheInterop()
+    {
+        foreach (var t in new[] { typeof(BlazorNativeApp), typeof(BlazorNativePage) })
+        {
+            string page = Path.Combine(_fixture.OutputDirectory, PageNameFor(t));
+            Assert.True(File.Exists(page),
+                $"the Runtime reference is missing a STABLE page for {t.Name} ({PageNameFor(t)}).\n\n"
+                + _fixture.GeneratorLog);
+        }
+
+        foreach (var name in new[] { "Exports", "NativeShellBridge", "BlazorNativePatch" })
+        {
+            var t = RuntimeAssembly.GetType($"BlazorNative.Runtime.{name}")!;
+            Assert.True(IsNotApi(t), $"{name} is expected to be [EditorBrowsable(Never)] NOT-API.");
+            string page = Path.Combine(_fixture.OutputDirectory, PageNameFor(t));
+            Assert.False(File.Exists(page),
+                $"the Runtime reference LEAKED an interop page for {name} — the "
+                + $"[EditorBrowsable(Never)] filter did not drop it.\n\n" + _fixture.GeneratorLog);
         }
     }
 }
