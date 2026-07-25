@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.7.0](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.6.0...v0.7.0) (2026-07-25)
+
+
+### Features
+
+* **docs:** generate the Http API reference — completes [#173](https://github.com/MarcelRoozekrans/BlazorNative/issues/173) ([#173](https://github.com/MarcelRoozekrans/BlazorNative/issues/173)) ([37d26c0](https://github.com/MarcelRoozekrans/BlazorNative/commit/37d26c095886d4e2fba991a3f2818c715691f481))
+* **docs:** generate the Http API reference — completes [#173](https://github.com/MarcelRoozekrans/BlazorNative/issues/173) ([#232](https://github.com/MarcelRoozekrans/BlazorNative/issues/232)) ([37d26c0](https://github.com/MarcelRoozekrans/BlazorNative/commit/37d26c095886d4e2fba991a3f2818c715691f481))
+* **docs:** generate the Runtime API reference, STABLE tier only ([#173](https://github.com/MarcelRoozekrans/BlazorNative/issues/173)) ([#230](https://github.com/MarcelRoozekrans/BlazorNative/issues/230)) ([e750404](https://github.com/MarcelRoozekrans/BlazorNative/commit/e750404edf85eec1681443d0fde02c2cce49774a))
+
 ## [0.6.0](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.5.1...v0.6.0) (2026-07-25)
 
 
