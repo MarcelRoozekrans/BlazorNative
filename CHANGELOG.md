@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.8.0](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.7.0...v0.8.0) (2026-07-25)
+
+
+### Features
+
+* **runtime:** developer trace logging on the success paths ([#201](https://github.com/MarcelRoozekrans/BlazorNative/issues/201)) ([#237](https://github.com/MarcelRoozekrans/BlazorNative/issues/237)) ([97373b4](https://github.com/MarcelRoozekrans/BlazorNative/commit/97373b413d5aaceb422039ea5caf87b32e81b875))
+
+
+### Bug Fixes
+
+* **device:** qualify the IMobileBridge cref so pack stays warning-free ([#235](https://github.com/MarcelRoozekrans/BlazorNative/issues/235)) ([6d3cf32](https://github.com/MarcelRoozekrans/BlazorNative/commit/6d3cf32d5afb02417360b7b2f33e22dca1850d33))
+
 ## [0.7.0](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.6.0...v0.7.0) (2026-07-25)
 
 
