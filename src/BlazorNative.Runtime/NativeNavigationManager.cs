@@ -179,6 +179,11 @@ public sealed class NativeNavigationManager : INavigationManager
             _previousRoute = from;
             _currentRoute = route;
             RaiseRouteChanged(route);
+            // #201 developer trace (Debug, IsEnabled-guarded). Inside afterSwap, so it
+            // fires only when the swap SUCCEEDED — it tracks the screen, like the route
+            // state above. Route strings are app-authored, not user data.
+            if (BnLog.IsEnabled(BnLogLevel.Debug))
+                BnLog.Debug("NativeNavigationManager", $"navigated '{from}' → '{route}' (component '{component}')");
         });
         return ValueTask.CompletedTask;
     }

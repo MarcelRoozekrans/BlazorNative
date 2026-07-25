@@ -488,7 +488,13 @@ public sealed class NativeShellBridge : IMobileBridge
                 pending.TrySetCanceled(token);
         }, (id, tcs, ct));
 
-        return await tcs.Task.ConfigureAwait(false);
+        HostCallResult result = await tcs.Task.ConfigureAwait(false);
+        // #201 developer trace (Debug, IsEnabled-guarded) — the capability round-trip.
+        // op + request id + the terminal wire status ONLY; never PayloadJson, which can
+        // carry the fix (e.g. GPS coordinates) or other capability data.
+        if (BnLog.IsEnabled(BnLogLevel.Debug))
+            BnLog.Debug("NativeShellBridge", $"host-call {op} #{id} → status {result.Status}");
+        return result;
     }
 
     /// <summary>Marshals the flat-JSON args and calls the host's HostCallBegin. The

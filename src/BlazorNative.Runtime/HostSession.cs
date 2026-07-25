@@ -240,6 +240,10 @@ internal static unsafe class HostSession
             }
 
             MountRoot(effective, renderer);
+            // #201 developer trace (Debug, IsEnabled-guarded). `effective` is the
+            // resolved registry name — a route-aware initial mount may differ from `name`.
+            if (BnLog.IsEnabled(BnLogLevel.Debug))
+                BnLog.Debug("HostSession", $"mounted '{effective}' → rc 0");
             return 0;
         }
         catch (Exception ex)
