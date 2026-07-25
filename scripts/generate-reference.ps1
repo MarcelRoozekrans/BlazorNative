@@ -35,13 +35,14 @@
         Device      -> website/docs/reference/device        (the five façades + AddBlazorNativeDevice)
         Core        -> website/docs/reference/core          (IMobileBridge, INavigationManager, wire enums)
         Runtime     -> website/docs/reference/runtime        (BlazorNativeApp, BlazorNativePage — STABLE tier only)
+        Http        -> website/docs/reference/http           (BridgeHttpHandler + the AddBlazorNativeHttp extensions)
 
     A PACKAGE IS GENERATED ONLY WHEN ITS DOCS ALLOW IT (#173's coupling, made
     literal: a page for an undocumented member is a blank stub, so a package is
     added ONLY once `BnEnforceDocCoverage` can be turned on for it with zero CS1591).
     Device was the one consumer-facing package whose public surface was already
-    fully `///`-documented; Core and Runtime followed as #173 closed their gaps. Http
-    is the last consumer-facing package still DEFERRED — the reason is recorded at its
+    fully `///`-documented; Core, Runtime and Http followed as #173 closed their gaps —
+    so EVERY consumer-facing package is now generated. The reasons are recorded at each
     csproj switch:
 
       · Runtime — DONE (#173). Its STABLE types (BlazorNativeApp, BlazorNativePage) are
@@ -57,9 +58,13 @@
         implementations via <inheritdoc/>); BnEnforceDocCoverage is ON and generation
         + the ReferenceDriftTests fixture cover it.
         (src/BlazorNative.Core/BlazorNative.Core.csproj)
-      · Http — its hand-written surface is documentable, but ZeroAlloc.Inject.Generator
-        emits a PUBLIC `AddBlazorNativeHttpServices` extension with no XML doc and no
-        `#pragma warning disable 1591`, so CS1591 cannot be cleanly enforced.
+      · Http — DONE (#173), via an UPSTREAM fix. ZeroAlloc.Inject.Generator emitted a
+        PUBLIC `AddBlazorNativeHttpServices` with no XML doc and no pragma, and CS1591
+        fired on generated code a consumer cannot annotate (no per-file lever exists for
+        it). ZeroAlloc.Inject is first-party, so v1.7.2 makes the generator emit
+        `#pragma warning disable 1591` in its own output; the hand-written surface is
+        `///`-documented and BnEnforceDocCoverage is ON. The generated extension renders
+        as a valid signature page, not a stub.
         (src/BlazorNative.Http/BlazorNative.Http.csproj)
 
     When a gap is closed the package's `BnEnforceDocCoverage` flips on and it is added
@@ -157,6 +162,11 @@ $manifest = [ordered]@{
         # interop types the C ABI forces public. Filter drops the interop pages so the
         # reference is the browsable surface only (see Remove-NotApiPages above).
         FilterNotApi = $true
+    }
+    Http = @{
+        Csproj  = 'src/BlazorNative.Http/BlazorNative.Http.csproj'
+        Dll     = 'BlazorNative.Http.dll'
+        Default = { Join-Path $ReferenceRoot 'http' }
     }
 }
 

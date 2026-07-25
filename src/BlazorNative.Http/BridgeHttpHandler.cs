@@ -24,16 +24,26 @@ namespace BlazorNative.Http;
 //   public MyService(HttpClient http) { ... }
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// <summary>An <see cref="HttpMessageHandler"/> that routes every request through
+/// <see cref="IMobileBridge.FetchAsync"/> instead of .NET's socket-based
+/// <c>HttpClientHandler</c>, so the native shell performs the actual HTTP request
+/// (its networking stack, proxies and certificates) and returns the response across
+/// the bridge. Registered as the primary handler by <see cref="ServiceCollectionExtensions.AddBlazorNativeHttp"/>,
+/// so ordinary <c>HttpClient</c> injection works unchanged on NativeAOT.</summary>
 [Transient]
 public sealed class BridgeHttpHandler : HttpMessageHandler
 {
     private readonly IMobileBridge _bridge;
 
+    /// <summary>Creates the handler over the host bridge that performs the fetch.</summary>
+    /// <param name="bridge">The bridge whose <see cref="IMobileBridge.FetchAsync"/> the
+    /// handler dispatches each request through.</param>
     public BridgeHttpHandler(IMobileBridge bridge)
     {
         _bridge = bridge;
     }
 
+    /// <inheritdoc/>
     protected override async Task<HttpResponseMessage> SendAsync(
         HttpRequestMessage request,
         CancellationToken cancellationToken)

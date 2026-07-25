@@ -7,6 +7,11 @@ namespace BlazorNative.Http;
 // ServiceCollectionExtensions
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// <summary>DI registration for BlazorNative's HTTP bridge: extensions that wire
+/// <see cref="BridgeHttpHandler"/> as the primary handler so <c>HttpClient</c> and
+/// <c>IHttpClientFactory</c> route through the native shell (see
+/// <see cref="AddBlazorNativeHttp"/> for the default client, and the
+/// <c>AddBlazorNativeHttpClient</c> overloads for typed/named clients).</summary>
 public static class ServiceCollectionExtensions
 {
     /// <summary>
