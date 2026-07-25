@@ -350,7 +350,7 @@ jobs:
             > ios-out/xcresult.json 2>/dev/null || true
           ls -la ios-out/crash || true
 
-      - name: Assert XCTest baseline (243 passed / 0 failed)
+      - name: Assert XCTest baseline (244 passed / 0 failed)
         if: always()
         run: |
           log=ios-out/xcodebuild-test.log
@@ -1053,6 +1053,17 @@ jobs:
           # system fallback). The resolved-family assertions in BnRenderTests ride existing
           # test methods (no further count move).
           #
+          # 243 -> 244 (#213 item 4, +1) — THE STDERR PUMP FLUSHES ITS TAIL AT EOF.
+          #   BnLogTests.testTheTailIsFlushedAtEof. The DispatchSourceRead handler used to
+          #   `guard count > 0 else { return }`, so on EOF (count == 0) it neither flushed
+          #   the buffered PARTIAL line (a final log with no trailing newline — often the
+          #   most interesting one, at teardown) nor cancelled the source, leaving it to
+          #   re-fire on a readable-but-empty fd. The Kotlin twin's shared drain already
+          #   flushes its tail (BnLogFormat.drain), so this was an Android/iOS parity gap.
+          #   Fixed: emit the tail via the new flushPending, then cancel (its handler
+          #   closes readFd — the correct way to stop a dispatch read source). The test
+          #   drives flushPending through the injected sink and also pins IDEMPOTENCE: a
+          #   second flush (double EOF / cancel racing a final read) emits nothing.
           # 242 -> 243 (#211, +1) — THE FIRST-RUN PERMISSION PATH, which no test drove.
           #   BnCameraTests.testFirstRunPermissionGrantPresentsOnTheMainThread.
           #   `.notDetermined` (a brand-new install — the one run you cannot ask a user to
@@ -1094,9 +1105,9 @@ jobs:
           # existing size assertion is UNCHANGED and gains an offset(of:) line inside the
           # same test method, so it adds no count), the callbacks bridge stays 80 and the
           # nm -gU gate still asserts exactly 10 blazornative_* exports.
-          if [ "$failed" -ne 0 ] || [ "$passed" -ne 243 ]; then
+          if [ "$failed" -ne 0 ] || [ "$passed" -ne 244 ]; then
             grep -E "Test Case '.*' (passed|failed)" "$log" || true
-            echo "iOS XCTest baseline drift: expected 243 passed / 0 failed, got passed=$passed failed=$failed" >&2
+            echo "iOS XCTest baseline drift: expected 244 passed / 0 failed, got passed=$passed failed=$failed" >&2
             exit 1
           fi
 

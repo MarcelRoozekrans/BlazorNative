@@ -282,7 +282,7 @@ Each count is asserted by a workflow — but **not all four gate a pull request,
 and the honest split matters.** Only the `build-test` lane is a required check, so a
 drift in the **.NET (898)** or the **JVM `testDebugUnitTest` (158)** count **fails the
 PR build** — both are load-bearing, and the JVM guard is not a formality: it caught a
-real break in Phase 10.1. The **Android (214)** and **iOS (243)** counts are asserted in
+real break in Phase 10.1. The **Android (214)** and **iOS (244)** counts are asserted in
 the `android-instrumented.yml` (nightly + manual dispatch) and `ios.yml` (on merge to
 `main` + manual dispatch) lanes, which are **advisory, not required** — a drift there reds
 that lane, not your PR. The `Asserted by` column below names which is which.
@@ -292,7 +292,7 @@ that lane, not your PR. The `Asserted by` column below names which is which.
 | .NET | `dotnet test` | 898 passed / 0 skipped | `ci.yml` → `build-test` — **required, gates the PR** |
 | JVM (JNA + win-x64 .dll) | `gradlew testDebugUnitTest` | 158 | `ci.yml` → `build-test` — **required, gates the PR** |
 | Android (instrumented, AVD) | `gradlew connectedAndroidTest` | 214 | `android-instrumented.yml` — advisory (nightly/dispatch) |
-| iOS (XCTest, simulator) | `xcodebuild test` | 243 | `ios.yml` — advisory (on-merge/dispatch) |
+| iOS (XCTest, simulator) | `xcodebuild test` | 244 | `ios.yml` — advisory (on-merge/dispatch) |
 
 ✅ **The Android 214 has been observed green at 214/214**
 ([run 30096820183](https://github.com/MarcelRoozekrans/BlazorNative/actions/runs/30096820183):
