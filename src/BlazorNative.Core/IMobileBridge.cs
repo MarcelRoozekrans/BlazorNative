@@ -143,7 +143,7 @@ public interface IMobileBridge
     /// are all DATA, never a throw.</summary>
     ValueTask<BiometricStatus>     AuthenticateAsync(string reason, CancellationToken ct = default);
     /// <summary>Checks biometric availability WITHOUT prompting;
-    /// <see cref="BiometricStatus.Authenticated"/> means "present + enrolled + ready".</summary>
+    /// <c>BiometricStatus.Authenticated</c> means "present + enrolled + ready".</summary>
     ValueTask<BiometricStatus>     IsBiometricAvailableAsync(CancellationToken ct = default);
     /// <summary>Writes an encrypted-at-rest secret. When <paramref name="requireAuth"/>
     /// is true the secret is bound to biometric auth at the OS-key level, so it can only
@@ -151,7 +151,7 @@ public interface IMobileBridge
     /// <see cref="SecretResult.MaxValueBytes"/> are rejected with a status, never crash.</summary>
     ValueTask<SecureStorageStatus> SetSecretAsync(string key, string value, bool requireAuth, CancellationToken ct = default);
     /// <summary>Reads a secret that is NOT auth-bound. The value rides
-    /// <see cref="SecretResult.Value"/> only on <see cref="SecureStorageStatus.Ok"/>.</summary>
+    /// <see cref="SecretResult.Value"/> only on <c>SecureStorageStatus.Ok</c>.</summary>
     ValueTask<SecretResult>        GetSecretAsync(string key, CancellationToken ct = default);
     /// <summary>Reads an auth-bound secret, presenting a biometric prompt with
     /// <paramref name="reason"/>. The OS itself refuses the plaintext without a fresh auth.</summary>
@@ -194,8 +194,8 @@ public interface IMobileBridge
     /// bound the file size; the app owns the temp file after return.</summary>
     ValueTask<PhotoResult>  CapturePhotoAsync(CaptureOptions options, CancellationToken ct = default);
     /// <summary>Checks camera availability WITHOUT prompting or launching the UI;
-    /// <see cref="CameraStatus.Captured"/> means "present + usable",
-    /// <see cref="CameraStatus.Unavailable"/> means no camera.</summary>
+    /// <c>CameraStatus.Captured</c> means "present + usable",
+    /// <c>CameraStatus.Unavailable</c> means no camera.</summary>
     ValueTask<CameraStatus> CheckCameraAvailabilityAsync(CancellationToken ct = default);
 
     // Platform info — sync raw-JSON form + async typed form. (The sync form is
@@ -321,10 +321,10 @@ public enum GeolocationStatus
 }
 
 /// <summary>The terminal outcome of a <see cref="IMobileBridge.GetCurrentPositionAsync"/>
-/// call: a status and, only when <see cref="GeolocationStatus.Granted"/>, a
+/// call: a status and, only when <c>GeolocationStatus.Granted</c>, a
 /// position. Every non-Granted status carries a null position.</summary>
 /// <param name="Status">The permission/fetch outcome.</param>
-/// <param name="Position">The fix on <see cref="GeolocationStatus.Granted"/>, else null.</param>
+/// <param name="Position">The fix on <c>GeolocationStatus.Granted</c>, else null.</param>
 public readonly record struct GeolocationResult(GeolocationStatus Status, GeolocationPosition? Position);
 
 /// <summary>A single position fix. Crosses the ABI as a flat JSON object of
@@ -430,7 +430,7 @@ public readonly record struct NotificationSpec(
 /// <summary>The wire-mirrored outcome of a biometric prompt. Failure (1),
 /// cancellation (2), unavailability (3), lockout (4) and error (5) are all VALUES —
 /// never an exception, never a hang; an out-of-range integer maps to
-/// <see cref="Error"/>. The numeric values are the ABI contract; do not reorder.</summary>
+/// <c>Error</c>. The numeric values are the ABI contract; do not reorder.</summary>
 public enum BiometricStatus
 {
     /// <summary>The user proved presence. On a read-only availability check it means
@@ -464,10 +464,10 @@ public enum BiometricStatus
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// <summary>The wire-mirrored outcome of a secure-storage op. The biometric-gate
-/// detail (failed vs cancelled vs lockout) folds into <see cref="AuthFailed"/> —
-/// a consumer wanting the finer grain uses <c>IBiometrics</c>. Every non-<see cref="Ok"/>
+/// detail (failed vs cancelled vs lockout) folds into <c>AuthFailed</c> —
+/// a consumer wanting the finer grain uses <c>IBiometrics</c>. Every non-<c>Ok</c>
 /// value is DATA — never an exception, never a hang; out-of-range maps to
-/// <see cref="Error"/>. The numeric values are the ABI contract; do not reorder.</summary>
+/// <c>Error</c>. The numeric values are the ABI contract; do not reorder.</summary>
 public enum SecureStorageStatus
 {
     /// <summary>set/delete succeeded; a get FOUND the value (carried in the <c>{"value":…}</c> payload).</summary>
@@ -483,7 +483,7 @@ public enum SecureStorageStatus
 }
 
 /// <summary>The terminal outcome of a secure <c>get</c> / <c>getWithAuth</c>: a
-/// status and, only when <see cref="SecureStorageStatus.Ok"/>, the stored value.
+/// status and, only when <c>SecureStorageStatus.Ok</c>, the stored value.
 /// Every other status carries a null value (the <see cref="GeolocationResult"/>
 /// twin). The value crosses the intra-process C-ABI as a UTF-8 string in the flat
 /// JSON <c>{"value":…}</c> payload — see the security note in
@@ -492,7 +492,7 @@ public enum SecureStorageStatus
 /// non-zeroable plaintext copies, a zeroable-buffer hardening pass being M10.
 /// Binary secrets cross base64-encoded.</summary>
 /// <param name="Status">The get outcome.</param>
-/// <param name="Value">The stored value on <see cref="SecureStorageStatus.Ok"/>, else null.</param>
+/// <param name="Value">The stored value on <c>SecureStorageStatus.Ok</c>, else null.</param>
 public readonly record struct SecretResult(SecureStorageStatus Status, string? Value)
 {
     /// <summary>The soft cap on a secret value, enforced at the .NET boundary (an
@@ -531,9 +531,9 @@ public readonly record struct SecretResult(SecureStorageStatus Status, string? V
 
 /// <summary>The wire-mirrored outcome of a photo capture. Cancellation (1),
 /// denial (2), unavailability (3) and error (4) are all VALUES — never an
-/// exception, never a hang; out-of-range maps to <see cref="Error"/>. Note the
-/// deliberate split between <see cref="Cancelled"/> (the user chose not to shoot)
-/// and <see cref="Denied"/> (the OS refused access). The numeric values are the
+/// exception, never a hang; out-of-range maps to <c>Error</c>. Note the
+/// deliberate split between <c>Cancelled</c> (the user chose not to shoot)
+/// and <c>Denied</c> (the OS refused access). The numeric values are the
 /// ABI contract; do not reorder.</summary>
 public enum CameraStatus
 {
@@ -583,7 +583,7 @@ public readonly record struct CaptureOptions(int MaxDimension = 2048, int Qualit
 }
 
 /// <summary>The terminal outcome of a <see cref="IMobileBridge.CapturePhotoAsync"/>
-/// call: a status and, only when <see cref="CameraStatus.Captured"/>, the captured
+/// call: a status and, only when <c>CameraStatus.Captured</c>, the captured
 /// file's <c>file://</c> path and its FINAL (post-downscale) dimensions + size. Every
 /// other status carries a null path and zeros (the <see cref="GeolocationResult"/> /
 /// <see cref="SecretResult"/> twin). The path points into the app's PRIVATE cache
@@ -597,7 +597,7 @@ public readonly record struct CaptureOptions(int MaxDimension = 2048, int Qualit
 /// own capture subdir on each capture as a leak backstop. See
 /// <c>docs/bridge-extension.md §(f).10</c>.</summary>
 /// <param name="Status">The capture outcome.</param>
-/// <param name="Path"><c>file://</c> path in the app cache; null unless <see cref="CameraStatus.Captured"/>.</param>
+/// <param name="Path"><c>file://</c> path in the app cache; null unless <c>CameraStatus.Captured</c>.</param>
 /// <param name="Width">Final (post-downscale) pixel width; 0 unless Captured.</param>
 /// <param name="Height">Final (post-downscale) pixel height; 0 unless Captured.</param>
 /// <param name="SizeBytes">Final file size in bytes; 0 unless Captured.</param>

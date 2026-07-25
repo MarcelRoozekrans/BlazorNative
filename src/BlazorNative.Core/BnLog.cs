@@ -36,7 +36,7 @@ namespace BlazorNative.Core;
 // rides the init input at zero byte cost), §5.5 (the format) and §7 (redaction).
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// <summary>The five framework log levels, plus the reserved <see cref="Unset"/>
+/// <summary>The five framework log levels, plus the reserved <c>Unset</c>
 /// ordinal 0.</summary>
 /// <remarks>The ordinals are a WIRE CONTRACT: the shell passes one of them in
 /// <c>BlazorNativeInitOptions.LogLevel</c> (offset 28), exactly as it passes a
@@ -97,7 +97,7 @@ public static class BnLog
     /// touching the shell;</item>
     /// <item>a test, which must restore it in a <c>finally</c>.</item>
     /// </list>
-    /// Assigning <see cref="BnLogLevel.Unset"/> or an out-of-range value resolves
+    /// Assigning <c>BnLogLevel.Unset</c> or an out-of-range value resolves
     /// to <see cref="DefaultLevel"/> — the same safe non-lying rule
     /// <c>Exports.ToPlatformKind</c> applies to the neighbouring ordinal.</remarks>
     public static BnLogLevel Level
@@ -190,7 +190,7 @@ public static class BnLog
         => $"{LinePrefix}{Tag(level)}|{category}] {message}";
 
     /// <summary>The single-character level tag inside <see cref="FormatLine"/>'s
-    /// prefix. <see cref="BnLogLevel.Unset"/> can never reach a line (the gate
+    /// prefix. <c>BnLogLevel.Unset</c> can never reach a line (the gate
     /// rejects it) and maps to <c>W</c> defensively.</summary>
     public static char Tag(BnLogLevel level) => level switch
     {
@@ -210,7 +210,7 @@ public static class BnLog
     /// default this emits the exception TYPE, its MESSAGE and the TOP managed frame:
     /// enough to identify the fault and the component, not a map of the assembly. The
     /// full <c>ToString()</c> — inner chain and stack — requires
-    /// <see cref="BnLogLevel.Debug"/>.
+    /// <c>BnLogLevel.Debug</c>.
     /// <para>One documented exception stays verbatim and is NOT routed here:
     /// <c>blazornative_init</c>'s failure path deliberately returns
     /// <c>ex.ToString()</c> to the shell, because for the real NativeAOT trim failure

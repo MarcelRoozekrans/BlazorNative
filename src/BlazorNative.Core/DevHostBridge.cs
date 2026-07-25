@@ -143,7 +143,7 @@ public sealed class DevHostBridge : IMobileBridge, IDisposable
     // in-process and instant (no prompt, no suspension).
 
     /// <summary>The status the next <see cref="GetCurrentPositionAsync"/> returns
-    /// (default <see cref="GeolocationStatus.Granted"/>). Set it to drive a denial /
+    /// (default <c>GeolocationStatus.Granted</c>). Set it to drive a denial /
     /// restriction / unavailable / error path headless.</summary>
     public GeolocationStatus GeolocationStatus { get; set; } = GeolocationStatus.Granted;
 
@@ -183,7 +183,7 @@ public sealed class DevHostBridge : IMobileBridge, IDisposable
     // without a NotificationManager.
 
     /// <summary>The status the next notification op returns (default
-    /// <see cref="Core.NotificationStatus.Granted"/>). Set it to drive a denial /
+    /// <c>NotificationStatus.Granted</c>). Set it to drive a denial /
     /// restriction / error path headless.</summary>
     public NotificationStatus NotificationStatus { get; set; } = NotificationStatus.Granted;
 
@@ -259,8 +259,8 @@ public sealed class DevHostBridge : IMobileBridge, IDisposable
 
     /// <summary>The status the next <see cref="AuthenticateAsync"/> returns AND the
     /// gate the pairing (<see cref="GetSecretWithAuthAsync"/>) checks: an auth-bound
-    /// secret is released only when this is <see cref="Core.BiometricStatus.Authenticated"/>,
-    /// else the read is <see cref="SecureStorageStatus.AuthFailed"/>. Default
+    /// secret is released only when this is <c>BiometricStatus.Authenticated</c>,
+    /// else the read is <c>SecureStorageStatus.AuthFailed</c>. Default
     /// Authenticated. Set it to drive a failed / cancelled / locked-out / no-hardware
     /// path headless.</summary>
     public BiometricStatus BiometricAuthResult { get; set; } = BiometricStatus.Authenticated;
@@ -375,7 +375,7 @@ public sealed class DevHostBridge : IMobileBridge, IDisposable
     }
 
     /// <summary>The status the next <see cref="CapturePhotoAsync"/> returns (default
-    /// <see cref="Core.CameraStatus.Captured"/>) AND what
+    /// <c>CameraStatus.Captured</c>) AND what
     /// <see cref="CheckCameraAvailabilityAsync"/> reports (Unavailable → Unavailable,
     /// else Captured = "present + usable"). Set it to drive a cancel / denied /
     /// unavailable / error path headless.</summary>
