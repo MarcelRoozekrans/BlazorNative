@@ -497,6 +497,12 @@ public static class Exports
             // was handed back (Phase 2.4 decision).
             renderer.DispatchUiEventAsync(new NativeUiEvent(0, (int)handlerId, name, payload))
                 .GetAwaiter().GetResult();
+            // #201 developer trace — the "I pressed a button and saw it" line. Debug, so
+            // the default (Warn) stays quiet; IsEnabled-guarded so the interpolation never
+            // runs on the hot dispatch path when off. Name only, never `payload` (it can
+            // carry the user's text-field input).
+            if (BnLog.IsEnabled(BnLogLevel.Debug))
+                BnLog.Debug("Exports", $"dispatch_event handler {handlerId} '{name}' → rc 0");
             return 0;
         }
         catch (Exception ex)

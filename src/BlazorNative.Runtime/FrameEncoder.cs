@@ -1,3 +1,4 @@
+using BlazorNative.Core;
 using BlazorNative.Renderer;
 
 namespace BlazorNative.Runtime;
@@ -45,6 +46,12 @@ internal static unsafe class FrameEncoder
     public static BlazorNativeFrame Encode(RenderFrame frame, FrameArena arena)
     {
         RenderPatch[] patches = frame.Patches;
+        // #201 developer trace — frame VOLUME at Verbose: one line per frame with the
+        // patch count, never per-patch (that would drown the log and cost real time on
+        // this hot path). IsEnabled-guarded, and Verbose is the lowest level, so a
+        // working app at the default (Warn) emits nothing here.
+        if (BnLog.IsEnabled(BnLogLevel.Verbose))
+            BnLog.Verbose("FrameEncoder", $"frame {frame.FrameId}: {patches.Length} patches");
         BlazorNativePatch* native = arena.AllocPatches(patches.Length);
 
         for (int i = 0; i < patches.Length; i++)

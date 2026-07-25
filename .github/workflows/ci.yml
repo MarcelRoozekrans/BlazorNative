@@ -4,7 +4,7 @@
 #
 #   build-test (windows-latest) — the local verification procedure verbatim
 #   (setup.ps1 §1–7 documents the toolchain pins):
-#     build (analyzers ride it) → .NET tests (907 passed / 0 skipped) →
+#     build (analyzers ride it) → .NET tests (910 passed / 0 skipped) →
 #     three NativeAOT publishes of samples/BlazorNative.SampleApp — the
 #     publish head since Phase 8.0: the app owns PublishAot, the exports stay
 #     in Runtime via UnmanagedEntryPointsAssembly, and the artifact is
@@ -1754,8 +1754,21 @@ jobs:
       #      hand-written ServiceCollectionExtensions, and the generated primitive it wraps
       #      each named). In the reference-generation collection with the other fixtures.
       # With Http, EVERY consumer-facing package is now in the generated reference.
+      #
+      # 907 -> 910 (#201, +3 -- Runtime.Tests 740 -> 743): developer trace logging on
+      # the SUCCESS paths. Every BnLog call site used to sit on a failure path, so a
+      # working "I pressed a button" produced no output at any level. Added IsEnabled-
+      # guarded trace at Debug (event dispatch, mount, navigation, bridge host-calls)
+      # and Verbose (per-frame patch VOLUME, not per-patch -- the hot path). Nothing new
+      # at Warn or above, so the Release default stays quiet (#200/Q1 do not regress):
+      #   +3 TraceLoggingTests -- SuccessPaths_AreSilentAtTheDefaultWarnLevel (a real
+      #      mount+click narrates nothing at Warn) + MountAndDispatch_TraceAtDebug (the
+      #      dispatch + mount lines appear at Debug, right level/category, no payload) +
+      #      FrameVolume_TracesAtVerbose_NotAtDebug (per-frame count at Verbose only).
+      # Guarded so there is no string-formatting cost when disabled. The paired DEVICE
+      # observation the issue asks for is the owner's final step (like #200's).
       # No ABI change; JVM/Android/iOS baselines do not move.
-      - name: .NET tests (assert 907 passed / 0 skipped)
+      - name: .NET tests (assert 910 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -1773,8 +1786,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 907 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 907 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 910 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 910 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # ── NativeAOT publishes + nine-export verification ────────────────────
