@@ -28,25 +28,28 @@
 
     #173 WIDENED THIS BEYOND COMPONENTS. The generated reference used to cover one
     of the seven shipped packages; a consumer wanting the five device façades or
-    `AddBlazorNativeDevice()` found nothing. The script now generates TWO packages,
-    each from its own dependency-complete publish:
+    `AddBlazorNativeApp()` found nothing. The script now generates the consumer-facing
+    packages, each from its own dependency-complete publish:
 
         Components  -> website/docs/components/reference   (historical home)
         Device      -> website/docs/reference/device        (the five façades + AddBlazorNativeDevice)
+        Core        -> website/docs/reference/core          (IMobileBridge, INavigationManager, wire enums)
+        Runtime     -> website/docs/reference/runtime        (BlazorNativeApp, BlazorNativePage — STABLE tier only)
 
     A PACKAGE IS GENERATED ONLY WHEN ITS DOCS ALLOW IT (#173's coupling, made
     literal: a page for an undocumented member is a blank stub, so a package is
     added ONLY once `BnEnforceDocCoverage` can be turned on for it with zero CS1591).
     Device was the one consumer-facing package whose public surface was already
-    fully `///`-documented (after this change added the five interface + one
-    extension type-level summaries the members already had). The other three
-    consumer-facing packages are DEFERRED, each for a concrete reason recorded at its
+    fully `///`-documented; Core and Runtime followed as #173 closed their gaps. Http
+    is the last consumer-facing package still DEFERRED — the reason is recorded at its
     csproj switch:
 
-      · Runtime — its STABLE types (BlazorNativeApp, BlazorNativePage) are documented,
-        but the package also exports ~12 NOT-API interop types (PatchProtocolNative,
-        BridgeProtocolNative, NativeShellBridge, Exports…) with ~98 undocumented
-        public members. CS1591 is all-or-nothing per package.
+      · Runtime — DONE (#173). Its STABLE types (BlazorNativeApp, BlazorNativePage) are
+        documented; the ~12 NOT-API interop types (PatchProtocolNative, BridgeProtocolNative,
+        NativeShellBridge, Exports…, ~98 undocumented public members) each carry
+        [EditorBrowsable(Never)] and opt out of CS1591 with a file-level pragma, while the
+        manifest's FilterNotApi drops their pages (Remove-NotApiPages) so the reference is
+        the browsable STABLE tier only. BnEnforceDocCoverage is ON.
         (src/BlazorNative.Runtime/BlazorNative.Runtime.csproj)
       · Core — DONE (#173). IMobileBridge's 27 members, DevHostBridge and the
         wire-mirrored enums/records were converted from `//` block comments to `///`
@@ -145,6 +148,16 @@ $manifest = [ordered]@{
         Dll     = 'BlazorNative.Core.dll'
         Default = { Join-Path $ReferenceRoot 'core' }
     }
+    Runtime = @{
+        Csproj  = 'src/BlazorNative.Runtime/BlazorNative.Runtime.csproj'
+        Dll     = 'BlazorNative.Runtime.dll'
+        Default = { Join-Path $ReferenceRoot 'runtime' }
+        # Runtime is the one package that mixes tiers: the two STABLE consumer types
+        # (BlazorNativeApp, BlazorNativePage) plus twelve [EditorBrowsable(Never)]
+        # interop types the C ABI forces public. Filter drops the interop pages so the
+        # reference is the browsable surface only (see Remove-NotApiPages above).
+        FilterNotApi = $true
+    }
 }
 
 if (-not $Package -or $Package.Count -eq 0) { $Package = @($manifest.Keys) }
@@ -205,6 +218,88 @@ function Repair-DocusaurusAnchors([string]$directory) {
     Write-Host "==> generate-reference: normalized heading anchors in $changed file(s) under $directory"
 }
 
+# ── the [EditorBrowsable(Never)] filter (#173, Runtime) ─────────────────────────
+# xmldoc2md emits ONE page per PUBLIC type, and has no way to exclude any — but a
+# package like Runtime is public-by-necessity, not public-as-API: two consumer types
+# (BlazorNativeApp, BlazorNativePage) sit beside twelve interop types (Exports, the
+# wire structs, NativeShellBridge…) that are public only because the C ABI and AOT
+# exports require it. Every one of those twelve carries [EditorBrowsable(Never)] — the
+# same mark that hides them from IntelliSense and the same tier line the API baseline
+# draws. So the reference documents the BROWSABLE public surface: after generation we
+# drop the page (and index link) of every [EditorBrowsable(Never)] type. This is a
+# RULE keyed on an attribute, not a hand roster — the failure class the whole site
+# refuses — and it is the browsability twin of --member-accessibility-level public.
+#
+# The types are read via System.Reflection.Metadata (PE metadata, no assembly LOAD):
+# the generator runs under pwsh, whose runtime (.NET 9 on CI) CANNOT LoadFrom a net10
+# assembly, but CAN read its metadata. `Never` is EditorBrowsableState value 1, encoded
+# in the attribute blob right after the 2-byte prolog as a little-endian Int32.
+function Get-EditorBrowsableNeverType([string]$assembly) {
+    Add-Type -AssemblyName System.Reflection.Metadata -ErrorAction SilentlyContinue
+    $stream = [System.IO.File]::OpenRead($assembly)
+    try {
+        $pe = [System.Reflection.PortableExecutable.PEReader]::new($stream)
+        $mr = [System.Reflection.Metadata.PEReaderExtensions]::GetMetadataReader($pe)
+        $result = [System.Collections.Generic.List[string]]::new()
+        foreach ($th in $mr.TypeDefinitions) {
+            $td = $mr.GetTypeDefinition($th)
+            if (($td.Attributes -band [System.Reflection.TypeAttributes]::Public) -eq 0) { continue }
+            foreach ($cah in $td.GetCustomAttributes()) {
+                $ca = $mr.GetCustomAttribute($cah)
+                if ($ca.Constructor.Kind -ne [System.Reflection.Metadata.HandleKind]::MemberReference) { continue }
+                $mref   = $mr.GetMemberReference([System.Reflection.Metadata.MemberReferenceHandle]$ca.Constructor)
+                if ($mref.Parent.Kind -ne [System.Reflection.Metadata.HandleKind]::TypeReference) { continue }
+                $tr     = $mr.GetTypeReference([System.Reflection.Metadata.TypeReferenceHandle]$mref.Parent)
+                if ($mr.GetString($tr.Name) -ne 'EditorBrowsableAttribute') { continue }
+                $blob = $mr.GetBlobBytes($ca.Value)
+                # prolog(2) + Int32 LE; Never == 1
+                if ($blob.Length -ge 6 -and $blob[2] -eq 1 -and $blob[3] -eq 0 -and $blob[4] -eq 0 -and $blob[5] -eq 0) {
+                    $ns = $mr.GetString($td.Namespace); $nm = $mr.GetString($td.Name)
+                    $result.Add($(if ($ns) { "$ns.$nm" } else { $nm }))
+                }
+            }
+        }
+        return $result
+    } finally { $stream.Dispose() }
+}
+
+function Remove-NotApiPages([string]$directory, [string]$assembly) {
+    $never = Get-EditorBrowsableNeverType $assembly
+    if ($never.Count -eq 0) {
+        Write-Host "==> generate-reference: no [EditorBrowsable(Never)] types in $assembly — nothing filtered"
+        return
+    }
+    # xmldoc2md names a page `<fulltypename lowercased>.md`. Delete each NOT-API page…
+    $dropped = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    foreach ($t in $never) {
+        $page = ($t.ToLowerInvariant()) + '.md'
+        $path = Join-Path $directory $page
+        if (Test-Path $path) { Remove-Item -Force $path; [void]$dropped.Add($page) }
+    }
+    # …and prune its link line from index.md (a `[Name](./<page>)` line). A markdown
+    # blank line follows each link; drop it too so no double-gap is left behind.
+    $indexPath = Join-Path $directory 'index.md'
+    if (Test-Path $indexPath) {
+        $lines = Get-Content -LiteralPath $indexPath
+        $kept  = [System.Collections.Generic.List[string]]::new()
+        for ($i = 0; $i -lt $lines.Count; $i++) {
+            $line = $lines[$i]
+            $isDroppedLink = $false
+            if ($line -match '\]\(\./([^()\s]+\.md)\)') {
+                if ($dropped.Contains($Matches[1])) { $isDroppedLink = $true }
+            }
+            if ($isDroppedLink) {
+                # also swallow a single trailing blank line that separated the links
+                if ($i + 1 -lt $lines.Count -and $lines[$i + 1] -eq '') { $i++ }
+                continue
+            }
+            $kept.Add($line)
+        }
+        Set-Content -LiteralPath $indexPath -Value $kept
+    }
+    Write-Host "==> generate-reference: filtered $($dropped.Count) [EditorBrowsable(Never)] page(s) from $directory"
+}
+
 Write-Host "==> generate-reference: restoring the pinned generator (.config/dotnet-tools.json)"
 dotnet tool restore | Out-Host
 if ($LASTEXITCODE -ne 0) { throw "dotnet tool restore failed (exit $LASTEXITCODE)" }
@@ -246,6 +341,12 @@ foreach ($name in $Package) {
     # Rewrite xmldoc2md's guessed anchors onto the slugs Docusaurus actually emits,
     # before onBrokenAnchors:'throw' sees them (see the functions above / #196).
     Repair-DocusaurusAnchors $outDir
+
+    # Drop [EditorBrowsable(Never)] pages so the reference is the browsable surface
+    # (Runtime only — see the manifest's FilterNotApi and Remove-NotApiPages above).
+    # `.Contains` first: Set-StrictMode -Version Latest THROWS on `$entry.FilterNotApi`
+    # for the entries that do not carry the key, so the presence check cannot be skipped.
+    if ($entry.Contains('FilterNotApi') -and $entry.FilterNotApi) { Remove-NotApiPages $outDir $assembly }
 
     $pages = @(Get-ChildItem -Path $outDir -Filter '*.md' -File)
     Write-Host "==> generate-reference [$name]: $($pages.Count) markdown files in $outDir"

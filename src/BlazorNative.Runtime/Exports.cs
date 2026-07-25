@@ -6,6 +6,15 @@ using BlazorNative.Renderer;
 
 namespace BlazorNative.Runtime;
 
+// M11 #173 — CS1591 off for this file. Every public type here is [EditorBrowsable(Never)]
+// NOT-API: public only because the C ABI / AOT exports require it, documented by the
+// C-ABI contract comments below rather than XML docs. BnEnforceDocCoverage makes CS1591
+// an error package-wide (the STABLE surface — BlazorNativeApp, BlazorNativePage — is
+// fully ///-documented); these interop types opt out here, and the reference generator
+// (scripts/generate-reference.ps1) drops their pages via the same [EditorBrowsable(Never)]
+// mark, so they are neither a build break nor a blank stub.
+#pragma warning disable 1591
+
 // ─────────────────────────────────────────────────────────────────────────────
 // BlazorNative.Runtime C-ABI surface: Phase 3.0b boot + Phase 3.0d wire
 // protocol + Phase 3.1 shell bridge (Phase 3.0e gave the library its final
