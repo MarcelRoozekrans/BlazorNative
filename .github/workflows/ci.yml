@@ -4,7 +4,7 @@
 #
 #   build-test (windows-latest) — the local verification procedure verbatim
 #   (setup.ps1 §1–7 documents the toolchain pins):
-#     build (analyzers ride it) → .NET tests (898 passed / 0 skipped) →
+#     build (analyzers ride it) → .NET tests (901 passed / 0 skipped) →
 #     three NativeAOT publishes of samples/BlazorNative.SampleApp — the
 #     publish head since Phase 8.0: the app owns PublishAot, the exports stay
 #     in Runtime via UnmanagedEntryPointsAssembly, and the artifact is
@@ -1684,7 +1684,29 @@ jobs:
       # proven on the JVM lane: BootSmokeNativeTest calls the new two-arg init against the
       # published dll and gets status=0. No ABI struct grow; Android instrumented and iOS
       # baselines do not move.
-      - name: .NET tests (assert 898 passed / 0 skipped)
+      #
+      # 898 -> 901 (#178/#181 sweep, +3 -- Runtime.Tests 731 -> 734): the STANDING GUARD
+      # for the default(T)-on-a-record-struct trap (criterion Q5). #178 (CaptureOptions
+      # default -> Quality 0, a posterised full-res photo on a real device) and #181
+      # (default(BlazorNativePage) -> null mount thunk) were both fixed by #196 -- code,
+      # docs and per-case pins. #181 asked for the missing third step, "treat as a pattern
+      # ... sweep the remaining public structs", and this is that sweep made permanent.
+      #   +1 EveryAllOptionalRecordStruct_WithAMeaningfulDefault_HasAnExplicitParameterlessCtor
+      #      -- reflects over Core/Runtime/Device public value types; flags a record struct
+      #      whose primary ctor is ALL-OPTIONAL with a non-zero/non-null default but has NO
+      #      explicit parameterless ctor (so new T() silently drops the defaults). Excludes
+      #      required-field structs (BridgeHttpRequest.Url, NotificationSpec.Title) where
+      #      default is invalid input by nature and fails LOUD, not silently. Non-vacuity:
+      #      asserts it examined >= 1 (CaptureOptions qualifies), so a drifted filter cannot
+      #      pass while guarding nothing.
+      #   +1 TheSweepPredicates_Detect_TheTrap_AndClear_TheFix -- fixtures proving the
+      #      detection (a trapped shape CANNOT be added to a product assembly without the
+      #      PublicAPI baseline reding RS0016 first, so the proof is local).
+      #   +1 NewCaptureOptions_CarriesTheDocumentedDefaults_NotZero
+      # The two guards are complementary: the PublicAPI baseline catches REMOVING an
+      # existing explicit ctor; this sweep catches ADDING a new trapped type. No ABI change;
+      # JVM, Android instrumented and iOS baselines do not move.
+      - name: .NET tests (assert 901 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -1702,8 +1724,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 898 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 898 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 901 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 901 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # ── NativeAOT publishes + nine-export verification ────────────────────
