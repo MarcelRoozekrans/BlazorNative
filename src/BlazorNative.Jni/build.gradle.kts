@@ -97,10 +97,10 @@ dependencies {
     implementation(kotlin("stdlib-jdk8", kotlinVersion))
 
     // JVM unit tests (Phase 2.1)
-    testImplementation("org.junit.jupiter:junit-jupiter-api:6.1.2")
-    testImplementation("org.junit.jupiter:junit-jupiter-params:6.1.2")
-    testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine:6.1.2")
-    testRuntimeOnly("org.junit.platform:junit-platform-launcher:6.1.2")
+    testImplementation("org.junit.jupiter:junit-jupiter-api:6.1.3")
+    testImplementation("org.junit.jupiter:junit-jupiter-params:6.1.3")
+    testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine:6.1.3")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher:6.1.3")
 
     // Phase 6.0 Yoga spike: yoga declares soloader (its native-lib loader) at
     // RUNTIME scope, so it's in the APK but off the compile classpath — the Yoga
