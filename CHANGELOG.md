@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.1](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.8.0...v0.8.1) (2026-08-07)
+
+
+### Bug Fixes
+
+* **deps:** update junit-framework monorepo to v6.1.3 ([#248](https://github.com/MarcelRoozekrans/BlazorNative/issues/248)) ([3e4d92b](https://github.com/MarcelRoozekrans/BlazorNative/commit/3e4d92b8909b8ff663dc4185f97ff40ead86eba7))
+
 ## [0.8.0](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.7.0...v0.8.0) (2026-07-25)
 
 
