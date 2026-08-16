@@ -69,8 +69,8 @@
          its output as of 1.7.2 (ZeroAlloc-Net/ZeroAlloc.Inject#70), which is what lets
          BnEnforceDocCoverage go on here — see the #173 note above. The runtime package is
          kept in lockstep with the generator. -->
-    <PackageReference Include="ZeroAlloc.Inject" Version="1.7.2" />
-    <PackageReference Include="ZeroAlloc.Inject.Generator" Version="1.7.2">
+    <PackageReference Include="ZeroAlloc.Inject" Version="1.7.3" />
+    <PackageReference Include="ZeroAlloc.Inject.Generator" Version="1.7.3">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>analyzers;build</IncludeAssets>
     </PackageReference>

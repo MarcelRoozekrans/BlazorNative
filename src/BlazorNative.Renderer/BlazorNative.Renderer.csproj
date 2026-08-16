@@ -70,8 +70,8 @@
     <PackageReference Include="Microsoft.AspNetCore.Components.Web" Version="10.0.1*" />
     <PackageReference Include="ZeroAlloc.AsyncEvents" Version="1.1.2" />
     <PackageReference Include="ZeroAlloc.Collections" Version="1.1.2" />
-    <PackageReference Include="ZeroAlloc.Inject" Version="1.7.2" />
-    <PackageReference Include="ZeroAlloc.Inject.Generator" Version="1.7.2">
+    <PackageReference Include="ZeroAlloc.Inject" Version="1.7.3" />
+    <PackageReference Include="ZeroAlloc.Inject.Generator" Version="1.7.3">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>analyzers;build</IncludeAssets>
     </PackageReference>
