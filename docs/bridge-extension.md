@@ -164,6 +164,15 @@ When you *do* grow the exports, every hard-coded export-count array moves in loc
 (the ~6 gate arrays across the three workflows + the template/consumer scripts + the JVM
 export-resolve test) — red-first, in the same commit.
 
+**The extension policy, in one place.** Which changes are *additive* (append a slot; a new
+`NodeType` / `Kind` / `op` ordinal or string; `BlazorNativePatch.Reserved0`; a new JSON key)
+and which are *breaking* (any existing offset moves; the un-negotiated `FetchRequest` /
+`FetchResponse` / `Frame` structs grow; an ordinal or export is repurposed) is written as a
+table on the docs-site **API stability** page (*"The C-ABI extension policy"*) and in
+`docs/plans/2026-07-21-phase-11.3-api-tiers.md` §5 —
+[#258](https://github.com/MarcelRoozekrans/BlazorNative/issues/258). This section is the
+mechanism; that table is the rule.
+
 ---
 
 ## (c) How to add a new host API — the step list
