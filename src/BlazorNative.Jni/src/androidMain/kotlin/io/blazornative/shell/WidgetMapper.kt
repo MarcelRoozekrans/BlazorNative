@@ -457,6 +457,44 @@ class WidgetMapper(
     private val watchers = mutableMapOf<Int, Pair<EditText, TextWatcher>>()
 
     /**
+     * **THE STALE-ECHO REGISTRY** (M3 ledger, "stale-echo/IME artifact under fast
+     * typing"). Per node, the values this shell has DISPATCHED to .NET and not yet
+     * seen echoed back.
+     *
+     * THE BUG IT FIXES. Every keystroke dispatches, and .NET echoes each one back as
+     * `UpdateProp("value")`. The write-back compares against the EditText's CURRENT
+     * text, so under fast typing an echo carrying an OLDER value lands after the user
+     * has typed further, fails the inequality skip, and overwrites the box + jumps the
+     * caret to the end. Type "abc" quickly and you can land back on "ab".
+     *
+     * WHY A LOCAL REGISTRY AND NOT SEQUENCE IDS ON THE WIRE. The ledger assumed this
+     * was "sequence-stamping territory (frame/sequence ids on the wire)" — an ABI-shaped
+     * change. It is not: the shell already knows every value it sent, so it can tell an
+     * ECHO OF THE USER'S OWN TYPING (a value it dispatched) from a GENUINE PROGRAMMATIC
+     * SET (a value it never dispatched) with no help from .NET at all. That distinction
+     * is the entire content of the fix, and it costs no wire change, no export, and
+     * nothing on the iOS side — which is immune by construction anyway, because UIKit
+     * does not fire `.editingChanged` for a programmatic set.
+     *
+     * WHAT IS DELIBERATELY PRESERVED. "Blazor state is truth" still holds: a value the
+     * shell never dispatched is applied, even mid-typing. Only the shell's own echoes
+     * are reconciled — and dropping one is safe by construction, because the box
+     * already contains that text or something newer.
+     *
+     * Main-thread only, like every other map here (the watcher callbacks and
+     * [applyBatch] both run on the main looper).
+     */
+    private val pendingEchoes = mutableMapOf<Int, ArrayDeque<String>>()
+
+    /** Test-only: echoes recorded but not yet reconciled — a leak here would mean the
+     * registry grows without bound under typing that .NET never answers. */
+    internal val pendingEchoCount: Int get() = pendingEchoes.values.sumOf { it.size }
+
+    /** Test-only: value write-backs dropped as the shell's own stale echo. */
+    internal var staleEchoesDropped: Int = 0
+        private set
+
+    /**
      * Phase 4.2 (M4 DoD #4) — per-view focus/blur handler pair, keyed by
      * nodeId like [watchers]. Android has ONE focus listener slot per view
      * ([View.setOnFocusChangeListener]) and it fires BOTH directions
@@ -830,7 +868,13 @@ class WidgetMapper(
                             if (applyingBatch) return
                             // s is nullable — a null Editable must not stringify
                             // into the literal "null" payload.
-                            dispatchChange(p.handlerId, s?.toString() ?: "")
+                            val text = s?.toString() ?: ""
+                            // RECORD BEFORE DISPATCHING (see [pendingEchoes]): the echo
+                            // can only come back on a later batch, but recording first
+                            // keeps the two in one place and cannot race — both run on
+                            // the main looper.
+                            pendingEchoes.getOrPut(p.nodeId) { ArrayDeque() }.addLast(text)
+                            dispatchChange(p.handlerId, text)
                         }
                     }
                     view.addTextChangedListener(watcher)
@@ -1009,6 +1053,7 @@ class WidgetMapper(
             "change" -> {
                 // Phase 4.2: keyed by nodeId (the stale-watcher fix) — a
                 // genuine detach removes whatever watcher is live on the node.
+                pendingEchoes.remove(p.nodeId) // no watcher, no echoes to reconcile
                 val removed = watchers.remove(p.nodeId)?.also { (editText, watcher) ->
                     editText.removeTextChangedListener(watcher)
                 }
@@ -1604,6 +1649,7 @@ class WidgetMapper(
             // Rides the SUBTREE purge for the 6.3 reason: navigation names the
             // page, never the scroll inside it.
             scrollWires.remove(id)
+            pendingEchoes.remove(id) // #M3 stale-echo registry: purge with the node
             // Phase 7.3 — the form controls' wire state dies with the node, for
             // the same two reasons every other map purges here: ids restart, and
             // an entry outliving its node answers for the next node to inherit
@@ -1772,8 +1818,31 @@ class WidgetMapper(
             // the least-surprising placement for a programmatic overwrite.
             "value" -> when (view) {
                 is EditText -> {
-                    if (view.text.toString() != (p.value ?: "")) {
-                        view.setText(p.value ?: "")
+                    val incoming = p.value ?: ""
+                    // THE STALE-ECHO RECONCILIATION (see [pendingEchoes]). If this value
+                    // is one this shell dispatched, it is the echo of the user's own
+                    // typing — the box already holds it or something newer, so applying
+                    // it can only ever move the caret or undo a later keystroke. Consume
+                    // it (and anything it superseded) and apply nothing.
+                    val queue = pendingEchoes[p.nodeId]
+                    if (queue != null) {
+                        val at = queue.indexOf(incoming)
+                        if (at >= 0) {
+                            // Drop everything up to and including the match: those are
+                            // older keystrokes whose echoes we will never need to
+                            // recognise again, and keeping them would let a much later
+                            // genuine set that happens to equal an ancient keystroke be
+                            // mistaken for an echo.
+                            repeat(at + 1) { queue.removeFirst() }
+                            if (queue.isEmpty()) pendingEchoes.remove(p.nodeId)
+                            staleEchoesDropped++
+                            return
+                        }
+                    }
+                    // Not an echo: a GENUINE programmatic set. "Blazor state is truth" —
+                    // apply it even if the user is mid-word.
+                    if (view.text.toString() != incoming) {
+                        view.setText(incoming)
                         view.setSelection(view.text.length)
                         yoga.markDirty(view) // new content = new intrinsic size
                     }
