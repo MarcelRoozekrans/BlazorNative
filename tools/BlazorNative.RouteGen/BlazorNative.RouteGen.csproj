@@ -71,6 +71,19 @@
          5.6.0, the same version BlazorNative.Analyzers uses, so the toolchain is
          uniform across the repo. -->
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="5.9.0" />
+    <!-- NU1603, and the reason it is pinned HERE rather than left transitive.
+         Microsoft.CodeAnalysis.CSharp 5.9.0 declares a dependency on
+         Microsoft.CodeAnalysis.Analyzers >= 5.9.0-1.26328.17 — a PRERELEASE build
+         that was never published. NuGet resolves 5.9.0 instead and warns; this
+         repo packs at zero warnings, so that warning fails consumer-smoke, which
+         is the same script the RELEASE pipeline's validate job runs. It is what
+         stopped 0.9.0 publishing: the tag and GitHub Release were cut, validate
+         failed, push was skipped, and nothing reached nuget.org.
+         An explicit reference is exactly what NU1603 asks for, and it is what
+         src/BlazorNative.Analyzers/BlazorNative.Analyzers.csproj already does —
+         this project was simply missed when the two were bumped together. Keep
+         the version in step with Microsoft.CodeAnalysis.CSharp above. -->
+    <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" Version="5.9.0" />
   </ItemGroup>
 
 </Project>
