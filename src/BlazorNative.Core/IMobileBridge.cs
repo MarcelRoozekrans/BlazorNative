@@ -53,6 +53,11 @@ public interface IMobileBridge
     /// <summary>Performs an HTTP request through the host, which owns TLS, proxying
     /// and permissions. Prefer the <c>HttpClient</c> registered by
     /// <c>AddBlazorNativeHttp()</c>, which routes through this.</summary>
+    /// <remarks>The response is delivered <b>once, complete</b>: the host buffers the whole
+    /// body and completes the call with a single <see cref="BridgeHttpResponse"/> whose
+    /// <see cref="BridgeHttpResponse.Body"/> is UTF-8 text. There is no incremental delivery
+    /// path, so streaming protocols (SSE, chunked-read, long-poll) degrade to polling and
+    /// binary bodies are unsupported.</remarks>
     ValueTask<BridgeHttpResponse> FetchAsync(BridgeHttpRequest request, CancellationToken ct = default);
 
     // Clipboard + Share
@@ -231,9 +236,11 @@ public readonly record struct BridgeHttpRequest(
     string? Body = null,
     IReadOnlyDictionary<string, string>? Headers = null);
 
-/// <summary>An HTTP response returned by <see cref="IMobileBridge.FetchAsync"/>.</summary>
+/// <summary>An HTTP response returned by <see cref="IMobileBridge.FetchAsync"/>. Always a
+/// <b>complete</b> response: the host buffers the entire body before completing the fetch —
+/// there is no partial or streamed delivery.</summary>
 /// <param name="StatusCode">The HTTP status code.</param>
-/// <param name="Body">The response body as text.</param>
+/// <param name="Body">The complete response body as UTF-8 text (binary bodies are unsupported).</param>
 /// <param name="Headers">The response headers.</param>
 public readonly record struct BridgeHttpResponse(
     int StatusCode,
