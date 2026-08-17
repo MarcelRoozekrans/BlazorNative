@@ -72,8 +72,12 @@ class NativeFrameAdapterTest {
                 "checkbox", "switch", "slider", "modal", "activityindicator",
             ),
             NativeFrameAdapter.nodeTypes.toList(),
-            "the nodeTypes vocabulary drifted — FrameEncoder.MapNodeType (.NET), this array " +
-                "and BnFrameAdapter.swift are THREE MIRRORS that move together"
+            "the nodeTypes vocabulary drifted. Since #255 the array is GENERATED from " +
+                "src/wire-vocabulary.json, so this literal is no longer one of three mirrors — " +
+                "it is the human-readable expectation the generated output is checked against. " +
+                "If the manifest genuinely changed, regenerate (dotnet run --project " +
+                "tools/BlazorNative.WireGen) and update this list deliberately; if it did not, " +
+                "the generated file is stale or was hand-edited."
         )
     }
 

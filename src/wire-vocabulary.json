@@ -1,0 +1,119 @@
+{
+  "$doc": [
+    "THE WIRE VOCABULARY — one manifest, four languages (#255).",
+    "",
+    "Every name below used to live in two, three or four hand-maintained copies:",
+    "C# (NativeRenderer / FrameEncoder), Kotlin (YogaLayout, NativeFrameAdapter),",
+    "Objective-C++ (BnYogaLayout.mm) and Swift (BnFrameAdapter, and a test-side",
+    "list). A drift test parsed the literals back out of those files and asserted",
+    "they agreed — which caught divergence, but only AFTER it was written, and only",
+    "for the pairs somebody remembered to pin.",
+    "",
+    "This file is now the source. tools/BlazorNative.WireGen emits every copy, and",
+    "WireVocabularyCodegenTests re-runs the emitters and byte-compares them against",
+    "the committed output, so a hand-edit of a generated file fails in the required",
+    "build-test lane. Divergence stops being REPRESENTABLE rather than merely",
+    "detected.",
+    "",
+    "TO ADD A STYLE NAME: add it here, run `dotnet run --project",
+    "tools/BlazorNative.WireGen`, and commit the regenerated files. Then implement",
+    "it — a name accepted by the routing table that no shell applies is a style",
+    "SILENTLY DROPPED at runtime, which is the failure mode this whole apparatus",
+    "exists to prevent. AndroidSetStyleDispatch_HasAnArmForEveryYogaStyle is the pin",
+    "that makes that half fail loudly too."
+  ],
+
+  "yogaStyles": {
+    "$doc": [
+      "Style names that are LAYOUT: the shells route these to the node's Yoga node,",
+      "never to the view. `padding`/`margin`/`width`/`height` are LAYOUT even though",
+      "they read as box properties — Yoga lays a container's children out inside its",
+      "padding box, so a shell that ALSO insets the view double-applies them.",
+      "",
+      "NOT here, on purpose (no typed parameter and no producer, so accepting them",
+      "would be three hand-written parsers implementing a name nothing emits):",
+      "alignContent, rowGap, columnGap, display, flex. The wrap demo RELIES on Yoga's",
+      "alignContent default of flex-start — not setting it is precisely how it gets it."
+    ],
+    "groups": [
+      { "name": "Container",   "names": ["flexDirection", "justifyContent", "alignItems", "flexWrap", "gap"] },
+      { "name": "Item",        "names": ["alignSelf", "flexGrow", "flexShrink", "flexBasis"] },
+      { "name": "Box",         "names": ["width", "height", "minWidth", "maxWidth", "minHeight", "maxHeight", "padding", "margin"] },
+      { "name": "Positioning", "names": ["position", "top", "right", "bottom", "left"] }
+    ]
+  },
+
+  "visualStyles": {
+    "$doc": [
+      "Style names that are VISUAL: the shells route these to the View / UIView",
+      "(paint), never to Yoga. Disjoint from yogaStyles by construction, and pinned",
+      "disjoint by StyleAttributePartitionTests."
+    ],
+    "groups": [
+      { "name": "Visual", "names": ["backgroundColor", "color", "fontSize", "fontWeight", "background", "style"] }
+    ]
+  },
+
+  "scrollIgnoredContainerStyles": {
+    "$doc": [
+      "On a node of NodeType `scroll` these CONTAINER-layout names are IGNORED AND",
+      "LOGGED by both shells. A scroll node's only Yoga child is the synthetic content",
+      "node, so each of these fails silently and bafflingly: `gap` spaces one child",
+      "against nothing; `justifyContent` offsets the content to a NEGATIVE y (free",
+      "space on a scrolling viewport is negative) and permanently hides the top of the",
+      "page; `padding` moves every frame in the parity table.",
+      "",
+      "Every name here MUST also be in yogaStyles — the rule is only reached once the",
+      "router has decided the name belongs to Yoga. A name here but not there would",
+      "never reach the rule: it would fall into the visual branch and be dropped.",
+      "The generator enforces that subset relation and refuses to emit otherwise."
+    ],
+    "names": ["flexDirection", "justifyContent", "alignItems", "flexWrap", "gap", "padding"]
+  },
+
+  "measuredNodeTypes": {
+    "$doc": [
+      "Node types whose size is the native widget's business — and the ONLY nodes that",
+      "get a Yoga measure function. NOT 'the nodes with no children': a childless",
+      "`view` is a container, and measuring it would let its intrinsic size override",
+      "Yoga. `modal` is deliberately absent — it materializes as an anchor and an",
+      "overlay, both CONTAINERS, and a measure func on a container is a named",
+      "violation of the layout law."
+    ],
+    "names": ["text", "button", "input", "image", "checkbox", "switch", "slider", "picker", "activityindicator"]
+  },
+
+  "nodeTypes": {
+    "$doc": [
+      "CreateNode's widget class. `id` IS the wire value and is never renumbered or",
+      "reused: the shells index an array by it, so a shift would mean a shell",
+      "compiled against the old ids builds the wrong widget for every node.",
+      "",
+      "id 0 is None — never emitted for a CreateNode. The shells still carry a slot",
+      "for it, holding the `?` fallback their index guard returns for any id past the",
+      "end of their array, which is exactly what a shell that missed a vocabulary",
+      "extension does until it catches up.",
+      "",
+      "`enum` mirrors BlazorNative.Runtime.BlazorNativeNodeType. That enum is public",
+      "API with a PublicAPI baseline, so it is NOT generated — it is PINNED against",
+      "this list by WireVocabularyCodegenTests, which calls FrameEncoder.MapNodeType",
+      "for every wire name here and asserts the ordinal matches."
+    ],
+    "fallbackName": "?",
+    "types": [
+      { "id": 0,  "enum": "None",              "wireName": null },
+      { "id": 1,  "enum": "View",              "wireName": "view" },
+      { "id": 2,  "enum": "Text",              "wireName": "text" },
+      { "id": 3,  "enum": "Button",            "wireName": "button" },
+      { "id": 4,  "enum": "Input",             "wireName": "input" },
+      { "id": 5,  "enum": "Image",             "wireName": "image" },
+      { "id": 6,  "enum": "Scroll",            "wireName": "scroll" },
+      { "id": 7,  "enum": "Picker",            "wireName": "picker" },
+      { "id": 8,  "enum": "Checkbox",          "wireName": "checkbox" },
+      { "id": 9,  "enum": "Switch",            "wireName": "switch" },
+      { "id": 10, "enum": "Slider",            "wireName": "slider" },
+      { "id": 11, "enum": "Modal",             "wireName": "modal" },
+      { "id": 12, "enum": "ActivityIndicator", "wireName": "activityindicator" }
+    ]
+  }
+}

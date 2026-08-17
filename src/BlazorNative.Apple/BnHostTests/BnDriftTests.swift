@@ -57,14 +57,13 @@ final class BnDriftTests: XCTestCase {
         XCTAssertEqual(BnFrameAdapter.frameTimestampMs % 8, 0)
 
         // Index = BlazorNativeNodeType wire value (0=None never emitted for a
-        // CreateNode). Mirror of PatchProtocolNative.cs's enum ordering — and,
-        // since Phase 7.3, of the three-mirror vocabulary (FrameEncoder.MapNodeType /
-        // NativeFrameAdapter.nodeTypes / this array): checkbox=8, switch=9,
-        // slider=10 ride the SAME int32 field, no ABI change; Phase 7.4 extends the
-        // same way — modal=11 (the anchor+overlay pair) and activityindicator=12
-        // (the measured leaf), THIRTEEN entries, mirroring Kotlin's pin move in the
-        // same phase. This literal is the Swift content pin — the twin of Kotlin's
-        // nodeTypes_vocabulary_is_pinned_content_and_length.
+        // CreateNode). SINCE #255 the array itself is GENERATED from
+        // src/wire-vocabulary.json (BnWireVocabulary.g.swift), so this literal is no
+        // longer one of three hand-written mirrors — it is the human-readable
+        // expectation the generated output is checked against, the twin of Kotlin's
+        // nodeTypes_vocabulary_is_pinned_content_and_length. If the manifest genuinely
+        // gained a widget class, regenerate and update this list deliberately; if it
+        // did not, the generated file is stale or was hand-edited.
         XCTAssertEqual(BnFrameAdapter.nodeTypes,
                        ["?", "view", "text", "button", "input", "image", "scroll", "picker",
                         "checkbox", "switch", "slider", "modal", "activityindicator"])

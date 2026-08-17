@@ -127,6 +127,30 @@ baseline in the same PR. Types that are public only for the C ABI / AOT export a
 marked `[EditorBrowsable(Never)]` (the "NOT-API" tier) and are guarded by
 `NotApiEditorBrowsableTests` — don't add public surface without deciding its tier.
 
+### The wire vocabulary is generated — edit the manifest, not the tables
+
+Style names, the scroll-node ignore list and the node-type vocabulary live **once**,
+in [`src/wire-vocabulary.json`](src/wire-vocabulary.json). `tools/BlazorNative.WireGen`
+emits every copy — C#, Kotlin (repo **and** template), Objective-C++ and Swift — into
+files named `BnWireVocabulary.g.*`:
+
+```sh
+dotnet run --project tools/BlazorNative.WireGen            # regenerate
+dotnet run --project tools/BlazorNative.WireGen -- --check # is anything stale?
+```
+
+Never hand-edit a `*.g.*` file. `WireVocabularyCodegenTests` re-runs the emitters
+in-process and byte-compares against what is committed, so a hand-edit — or a manifest
+change without regenerating — fails the required `build-test` lane.
+
+**Adding a style name is two jobs, and the generator only does the first.** It updates
+every routing *table*; it cannot write the *setter* at the other end. A routed name with
+no implementation is silently dropped at runtime on that platform, which is the exact
+failure this apparatus exists to prevent — so
+`AndroidSetStyleDispatch_HasAnArmForEveryYogaStyle` (Kotlin, source-level) and
+`BnYogaStyleParserTests.testEveryRoutedNameReachesASetter` (iOS, runtime) will red until
+you implement it.
+
 ### Documentation
 
 The API reference under `website/docs/reference/` is **generated** from each package's

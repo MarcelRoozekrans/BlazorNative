@@ -38,19 +38,19 @@ final class BnYogaStyleParserTests: BnHostTestCase {
     /// `bn_yoga_is_layout_style` answers 1 for, i.e. the mirror of
     /// `NativeRenderer.YogaStyleAttributes` and of Kotlin's `YOGA_STYLES`.
     ///
-    /// Declared as a plain bracket literal at the start of its line because
-    /// `ShellStyleTableDriftTests` (the .NET suite — the one lane where every mirror
-    /// is checkout-visible) PARSES IT OUT OF THIS FILE and asserts set-equality with
-    /// .NET's set. Without that pin this list is a FOURTH hand-copy, and a test's own
-    /// hand-copy drifting is how a table gets "pinned" by a test that no longer covers
-    /// it.
-    static let routedStyleNames: [String] = [
-        "flexDirection", "justifyContent", "alignItems", "flexWrap", "gap",
-        "alignSelf", "flexGrow", "flexShrink", "flexBasis",
-        "width", "height", "minWidth", "maxWidth", "minHeight", "maxHeight",
-        "padding", "margin",
-        "position", "top", "right", "bottom", "left",
-    ]
+    /// **GENERATED SINCE #255** — it reads the emitted [BnWireVocabulary], so this
+    /// suite tests the names the shell actually routes rather than a fourth hand-copy
+    /// of them. It used to be a bracket literal that `ShellStyleTableDriftTests`
+    /// parsed out of this file to check against .NET's set, which was the honest fix
+    /// available at the time: a test's own hand-copy silently drifting is exactly how
+    /// a table ends up "pinned" by a test that no longer covers it. Now there is only
+    /// one copy to drift from.
+    ///
+    /// Note this deliberately does NOT weaken the suite: the assertions below drive
+    /// the real `bn_yoga_is_layout_style` and the real parser, so a name the manifest
+    /// adds but the `.mm` cannot parse still fails here — see [legalValue], whose
+    /// `default` arm makes an unsampled new name loud rather than skipped.
+    static let routedStyleNames: [String] = BnWireVocabulary.yogaStyles
 
     /// A value each routed name must ACCEPT — the grammar's, per property. The
     /// `default` is the guard: a name added to [routedStyleNames] with no sample value

@@ -85,17 +85,15 @@ object NativeFrameAdapter {
      * `activityindicator = 12` (the measured leaf — ProgressBar /
      * UIActivityIndicatorView). Same extension shape, same three mirrors.
      *
-     * `internal` and PINNED BY CONTENT — `NativeFrameAdapterTest.
-     * nodeTypes_vocabulary_is_pinned_content_and_length`, the Kotlin twin of
-     * Swift's `BnDriftTests` literal pin. Gate 1 recorded that NOTHING here
-     * pinned length or content: a missed entry decoded every new create to "?"
-     * and only a device golden could see it. The pin is what makes the next
-     * vocabulary extension redden on the JVM lane instead.
+     * **GENERATED SINCE #255** — from `src/wire-vocabulary.json`, via
+     * [BnWireVocabulary], as are .NET's and Swift's copies. It used to be a
+     * hand-written array pinned by content against a literal in
+     * `NativeFrameAdapterTest`, because a missed entry decoded every new create
+     * to "?" and only a device golden could see it. One manifest makes a missed
+     * entry impossible; the content pin stays, now guarding the MANIFEST rather
+     * than three hand-written copies of it.
      */
-    internal val nodeTypes = arrayOf(
-        "?", "view", "text", "button", "input", "image", "scroll", "picker",
-        "checkbox", "switch", "slider", "modal", "activityindicator",
-    )
+    internal val nodeTypes = BnWireVocabulary.NODE_TYPES
 
     /** Sanity ceiling on patchCount: real frames are tens of patches; anything
      * beyond this means the frame pointer/layout is corrupted, and we'd rather

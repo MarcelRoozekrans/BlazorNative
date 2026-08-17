@@ -1,0 +1,47 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- ─────────────────────────────────────────────────────────────────────
+       BlazorNative.WireGen — #255. One manifest (src/wire-vocabulary.json),
+       four languages.
+
+       WHY A CONSOLE TOOL AND NOT A ROSLYN SOURCE GENERATOR. Three of the five
+       outputs are Kotlin, Objective-C++ and Swift; a source generator can only
+       emit C#. The repo already has this exact shape working in
+       tools/BlazorNative.RouteGen (Roslyn-parses app source, emits an Android
+       raw resource), so this is the established seam rather than a new one.
+
+       WHY THE OUTPUT IS CHECKED IN. A build-time-only generator would make
+       divergence unrepresentable — but it would also delete the shells' tables
+       from the checkout, leave ShellStyleTableDriftTests without subjects, and
+       red every contributor who has not wired the toolchain. Checked-in output
+       plus a byte-identity test (WireVocabularyCodegenTests re-runs the
+       emitters in-process and compares) gets the same guarantee with none of
+       that, and it is the only shape that is verifiable from Windows — the
+       .mm and .swift halves compile ONLY in ios.yml, on a Mac nobody here has.
+
+       NOT PACKED, unlike RouteGen: this tool serves THIS repo's build-time
+       codegen, not a consumer's. A generated app consumes the emitted tables
+       inside the shell sources it already copies.
+       ───────────────────────────────────────────────────────────────────── -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>BlazorNative.WireGen</RootNamespace>
+    <AssemblyName>BlazorNative.WireGen</AssemblyName>
+    <IsPackable>false</IsPackable>
+    <!-- A build-time host tool: never AOT, never RID-specific (same reasoning
+         as RouteGen's — a consumer's linux-bionic publish must not drag a RID
+         onto it). -->
+    <PublishAot>false</PublishAot>
+    <UseAppHost>false</UseAppHost>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <!-- The emitters are the contract this tool's tests assert against, so the
+         test project references the assembly directly (RouteTableDriftTests
+         does the same with RouteGen). -->
+    <EnforceCodeStyleInBuild>false</EnforceCodeStyleInBuild>
+  </PropertyGroup>
+
+</Project>

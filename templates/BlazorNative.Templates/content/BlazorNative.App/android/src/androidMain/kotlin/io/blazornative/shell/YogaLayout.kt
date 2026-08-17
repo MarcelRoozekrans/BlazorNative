@@ -9,6 +9,7 @@ import android.view.View.MeasureSpec
 import android.view.ViewGroup
 import android.widget.ScrollView
 import com.facebook.soloader.SoLoader
+import io.blazornative.jni.BnWireVocabulary
 import com.facebook.yoga.YogaAlign
 import com.facebook.yoga.YogaConfigFactory
 import com.facebook.yoga.YogaConstants
@@ -1293,12 +1294,12 @@ class YogaLayout(private val context: Context, private val root: ViewGroup) {
          *     "not yet supported" and be **silently dropped** — the very failure the
          *     drift-test file exists to prevent, arrived at from the other side.
          *
-         * Keep the declaration a plain `setOf` of quoted names, declared at the start
-         * of its line — same parser, same reason, as [YOGA_STYLES].
+         * **GENERATED SINCE #255** (`src/wire-vocabulary.json` → [BnWireVocabulary]).
+         * The manifest also ENFORCES the subset rule this list depends on: every
+         * name here must also be a Yoga style, or the ignore rule would never be
+         * reached and the style would be dropped instead. Add names to the manifest.
          */
-        private val SCROLL_IGNORED_CONTAINER_STYLES = setOf(
-            "flexDirection", "justifyContent", "alignItems", "flexWrap", "gap", "padding",
-        )
+        private val SCROLL_IGNORED_CONTAINER_STYLES = BnWireVocabulary.SCROLL_IGNORED_CONTAINER_STYLES
 
         /** `[+-]? ( digit+ ('.' digit*)? | '.' digit+ ) ( [eE] [+-]? digit+ )?` —
          * anchored, so the ENTIRE string must be consumed. See [number]. */
@@ -1324,11 +1325,7 @@ class YogaLayout(private val context: Context, private val root: ViewGroup) {
          * CONTAINERS with shell-fixed styles — a measure func on a container is
          * the 6.1 law's named violation, and there is no widget to ask anyway.
          */
-        private val MEASURED_NODE_TYPES = setOf(
-            "text", "button", "input", "image",
-            "checkbox", "switch", "slider", "picker",
-            "activityindicator",
-        )
+        private val MEASURED_NODE_TYPES = BnWireVocabulary.MEASURED_NODE_TYPES
 
         /**
          * The LAYOUT half of the SetStyle partition — the mirror of
@@ -1337,29 +1334,15 @@ class YogaLayout(private val context: Context, private val root: ViewGroup) {
          * else; in particular `padding`/`margin`/`width`/`height` do NOT also
          * reach the View, which would double-apply them.
          *
-         * **This is a hand-written MIRROR of a .NET set, and it is pinned by a
-         * DRIFT TEST** — `ShellStyleTableDriftTests` (tests/BlazorNative.Renderer.Tests),
-         * which parses this literal out of this file and asserts set-equality with
-         * `NativeRenderer.YogaStyleAttributes` plus disjointness from
-         * `VisualStyleAttributes`. Without it, a name added on the .NET side and
-         * missed here does not fail loudly: it falls into [WidgetMapper]'s visual
-         * branch and is logged as "not yet supported", i.e. the style is SILENTLY
-         * DROPPED. The drift test runs in the required `build-test` lane (the only
-         * one where .NET, Kotlin and — from Gate 3 — the `.mm` are all
-         * checkout-visible), and Gate 3 extends it with `BnYogaLayout.mm`'s name
-         * table rather than adding a third un-pinned copy.
-         *
-         * Keep the declaration a plain `setOf` of quoted names, declared at the start
-         * of its line: the drift test parses that literal out of this file, and a
-         * declaration it cannot find fails it LOUDLY (never silently-empty).
+         * **GENERATED SINCE #255** — from `src/wire-vocabulary.json`, via
+         * [BnWireVocabulary]. It used to be a hand-written mirror of a .NET set,
+         * kept honest by a drift test that parsed this literal back out of this
+         * file; that caught divergence only after somebody wrote it, and only for
+         * the pairs somebody had remembered to pin. Now .NET, this shell and the
+         * `.mm` are emitted from one manifest, so a name in one table and missing
+         * from another is not representable. Add names to the MANIFEST.
          */
-        private val YOGA_STYLES = setOf(
-            "flexDirection", "justifyContent", "alignItems", "flexWrap", "gap",
-            "alignSelf", "flexGrow", "flexShrink", "flexBasis",
-            "width", "height", "minWidth", "maxWidth", "minHeight", "maxHeight",
-            "padding", "margin",
-            "position", "top", "right", "bottom", "left",
-        )
+        private val YOGA_STYLES = BnWireVocabulary.YOGA_STYLES
 
         @Volatile private var soLoaderReady = false
 

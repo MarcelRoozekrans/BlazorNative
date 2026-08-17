@@ -4,7 +4,7 @@
 #
 #   build-test (windows-latest) — the local verification procedure verbatim
 #   (setup.ps1 §1–7 documents the toolchain pins):
-#     build (analyzers ride it) → .NET tests (933 passed / 0 skipped) →
+#     build (analyzers ride it) → .NET tests (930 passed / 0 skipped) →
 #     three NativeAOT publishes of samples/BlazorNative.SampleApp — the
 #     publish head since Phase 8.0: the app owns PublishAot, the exports stay
 #     in Runtime via UnmanagedEntryPointsAssembly, and the artifact is
@@ -1786,7 +1786,33 @@ jobs:
       #   +2 FrameEncoderTests/BnComponentTests deltas absorbed in place (the
       #      round-trip covers 9 kinds now, and BnScroll's parameter table gains
       #      AutoScrollToEnd) -- plus the two NOT-API/parameter drift pins updated.
-      - name: .NET tests (assert 933 passed / 0 skipped)
+      # 933 -> 930 (#255, -8 +5): ONE MANIFEST, FOUR LANGUAGES. The style /
+      # scroll-ignore / node-type vocabularies now live once in
+      # src/wire-vocabulary.json and are EMITTED into C#, Kotlin (repo + template),
+      # Objective-C++ and Swift by tools/BlazorNative.WireGen. The count goes DOWN,
+      # which is the point:
+      #   -8 ShellStyleTableDriftTests (Renderer.Tests 140 -> 132): the seven
+      #      mirror-comparison facts asserted that four HAND-WRITTEN copies agreed,
+      #      by regexing the literals back out of each file. Those literals no
+      #      longer exist, and "two generated files agree" asserts only that the
+      #      generator is deterministic. Deleted rather than re-pointed. The one
+      #      fact kept -- AndroidSetStyleDispatch_HasAnArmForEveryYogaStyle -- pins
+      #      something codegen cannot: that a routed name has a SETTER at the other
+      #      end. (The eighth deletion is the scroll-ignore subset check, now
+      #      enforced by the generator's own validation at the source.)
+      #   +5 WireVocabularyCodegenTests (Runtime.Tests 766 -> 771): the pin that
+      #      makes "generated" mean something -- re-runs the emitters in-process and
+      #      byte-compares all five outputs (so a hand-edited .g file OR a manifest
+      #      change without regenerating reds here), asserts the renderer's sets ARE
+      #      the manifest's, pins BlazorNativeNodeType id-for-id through the real
+      #      FrameEncoder.MapNodeType (that enum is public API with a baseline, so it
+      #      is deliberately NOT generated), and proves the manifest validation
+      #      refuses the three malformed shapes that would otherwise reach four
+      #      languages at once.
+      # JVM / Android / iOS baselines do NOT move: no shell test was added or
+      # removed, only the source of the names they check. (Rebased onto #256, so the
+      # arithmetic is 933 - 8 + 5; the -8/+5 themselves are unchanged.)
+      - name: .NET tests (assert 930 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -1804,8 +1830,9 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 933 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 933 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 930 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 930 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+
           }
 
       # ── NativeAOT publishes + nine-export verification ────────────────────

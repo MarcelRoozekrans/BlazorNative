@@ -1564,27 +1564,27 @@ public sealed class NativeRenderer : BlazorRenderer
     // `display` and `flex`, dropped from the pre-6.1 list: nothing types them
     // and the shells never implemented them.
 
+    // WHERE THE NAMES COME FROM (#255): src/wire-vocabulary.json, via
+    // BnWireVocabulary.g.cs. They used to be written out here and mirrored by
+    // hand into Kotlin, Objective-C++ and Swift, with a drift test parsing the
+    // literals back out of each file to check they agreed. That caught
+    // divergence AFTER it was written; generating every copy from one manifest
+    // means a name present in one table and missing from another is no longer
+    // REPRESENTABLE.
+    //
+    // The sets, the comparer and the reasoning stay HERE, deliberately. Only the
+    // data moved: what "is a style" means to the renderer is renderer policy,
+    // and a generated file is the wrong place to argue it.
+
     /// <summary>Style names that are LAYOUT: the shells route these to the
     /// node's Yoga node, never to the view. See the partition note above.</summary>
-    internal static readonly HashSet<string> YogaStyleAttributes = new(StringComparer.Ordinal)
-    {
-        // Container
-        "flexDirection", "justifyContent", "alignItems", "flexWrap", "gap",
-        // Item
-        "alignSelf", "flexGrow", "flexShrink", "flexBasis",
-        // Box — LAYOUT, even the two that predate 6.1 (padding/margin)
-        "width", "height", "minWidth", "maxWidth", "minHeight", "maxHeight",
-        "padding", "margin",
-        // Positioning
-        "position", "top", "right", "bottom", "left",
-    };
+    internal static readonly HashSet<string> YogaStyleAttributes =
+        new(BnWireVocabulary.YogaStyles, StringComparer.Ordinal);
 
     /// <summary>Style names that are VISUAL: the shells route these to the
     /// View / UIView (paint), never to Yoga. See the partition note above.</summary>
-    internal static readonly HashSet<string> VisualStyleAttributes = new(StringComparer.Ordinal)
-    {
-        "backgroundColor", "color", "fontSize", "fontWeight", "background", "style",
-    };
+    internal static readonly HashSet<string> VisualStyleAttributes =
+        new(BnWireVocabulary.VisualStyles, StringComparer.Ordinal);
 
     /// <summary>The union — what "is a style" MEANS to the renderer. Pinned
     /// equal to (and disjointly partitioned by) the two sets above in

@@ -151,7 +151,11 @@ internal static unsafe class FrameEncoder
     /// <summary>Maps PatchProtocol's string node types to wire enum values.
     /// Throws (message includes the offending string) on unknown types — an
     /// unknown type here means the Renderer and the wire protocol drifted.</summary>
-    private static BlazorNativeNodeType MapNodeType(string nodeType) => nodeType switch
+    /// <remarks>#255 — `internal`, not private, so WireVocabularyCodegenTests can pin this
+    /// switch against src/wire-vocabulary.json. The enum it returns is public API with a
+    /// PublicAPI baseline, so it is deliberately NOT generated; asserting through the real
+    /// mapping function instead catches a drift in EITHER the enum or this switch.</remarks>
+    internal static BlazorNativeNodeType MapNodeType(string nodeType) => nodeType switch
     {
         "view"   => BlazorNativeNodeType.View,
         "text"   => BlazorNativeNodeType.Text,

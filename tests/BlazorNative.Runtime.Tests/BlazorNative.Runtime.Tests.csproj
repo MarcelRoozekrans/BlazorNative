@@ -56,6 +56,11 @@
          map through RouteManifest.Extract to compare it, independently, against
          SampleAppPages.All — the same tool the build target invokes. -->
     <ProjectReference Include="..\..\tools\BlazorNative.RouteGen\BlazorNative.RouteGen.csproj" />
+    <!-- #255: WireVocabularyCodegenTests re-runs the emitters IN-PROCESS and
+         byte-compares against the committed output — the same shape as RouteGen
+         above. A test that shelled out to the tool could only assert that SOME
+         generator ran; this asserts THIS one produces exactly these bytes. -->
+    <ProjectReference Include="..\..\tools\BlazorNative.WireGen\BlazorNative.WireGen.csproj" />
   </ItemGroup>
 
   <ItemGroup>
