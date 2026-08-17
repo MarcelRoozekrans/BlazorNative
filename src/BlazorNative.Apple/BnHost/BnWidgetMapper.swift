@@ -3549,6 +3549,21 @@ final class BnWidgetMapper {
                 return
             }
             view.backgroundColor = color
+        case "color":
+            // TEXT colour — the Kotlin arm's twin, condition for condition. A paint
+            // property with NO measurement consequence, which is why it is safe to add
+            // without touching the font-parity contract (`fontWeight` is not; see the
+            // manifest). Deliberately NO markDirty: colour cannot change an intrinsic
+            // size.
+            guard let label = view as? UILabel else {
+                BnLog.warn("BnWidgetMapper", "SetStyle color ignored: node \(nodeId) is not a UILabel")
+                return
+            }
+            guard let color = value.flatMap(BnColor.parse) else {
+                BnLog.warn("BnWidgetMapper", "SetStyle color ignored: \(value ?? "nil")")
+                return
+            }
+            label.textColor = color
         case "fontSize":
             guard let label = view as? UILabel else {
                 BnLog.warn("BnWidgetMapper", "SetStyle fontSize ignored: node \(nodeId) is not a UILabel")

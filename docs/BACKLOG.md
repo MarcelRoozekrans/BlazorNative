@@ -202,11 +202,15 @@
 - [ ] **wit-bindgen C# output**
   Run `make wit-gen` and commit the generated C# bindings to `src/BlazorNative.Bridge/Generated/`. Currently the folder is referenced in the solution but the files don't exist.
 
-- [ ] **NuGet packaging**
-  Package `BlazorNative.Core`, `BlazorNative.Renderer`, `BlazorNative.Http`, `BlazorNative.Analyzers`, and `BlazorNative.Components` as NuGet packages. Analyzers package requires special `.props`/`.targets` inclusion.
+- [x] **NuGet packaging** — done, and wider than this line: **seven** packages ship (see
+  "NuGet packaging" under P5 for the current list and the three that were never built).
 
-- [ ] **Hot reload protocol for WASI**
-  WASM binaries can't hot-reload. Implement a file-watcher in DevHost that detects source changes, triggers a background `dotnet build -r wasi-wasm`, and sends a `reload` native event to any connected Android shells running in dev mode.
+- [x] **Hot reload protocol** — ~~for WASI~~. **Superseded, and the premise is gone**: there is
+  no `.wasm` (WASI was abandoned at M3 Phase 3.0) and NativeAOT cannot hot-patch either. What
+  shipped instead is a deliberate **fast-restart** dev loop — `scripts/devloop.ps1` watches
+  .NET source, re-publishes, and re-previews on each save (~10 s on the JVM lane, ~14 s on the
+  Android device lane). Recorded as fast-restart, not hot reload, because the difference is
+  real: JNA's `Native.load` is process-lifetime.
 
 ---
 
@@ -267,21 +271,39 @@
   Apple forbids JIT compilation. Validate that the `.wasm` binary compiled via .NET NativeAOT does not trigger App Store rejection. May require `com.apple.security.cs.allow-jit` entitlement review. Document findings.
 
 ### Additional platform APIs
-- [ ] **Geolocation** (`CLLocationManager` / `FusedLocationProviderClient`) → `IBridgeGeolocation`
-- [ ] **Camera** (`AVCaptureSession` / `CameraX`) → `IBridgeCamera` (photo + QR scan)
-- [ ] **Clipboard** → `IBridgeClipboard`
-- [ ] **Share sheet** (native OS share dialog) → `IBridgeShare`
-- [ ] **Haptics** (`UIImpactFeedbackGenerator` / `Vibrator`) → `IBridgeHaptics`
-- [ ] **Biometrics** (`LAContext` / `BiometricPrompt`) → `IBridgeBiometrics`
-- [ ] **In-app purchases** (StoreKit / Google Play Billing) → `IBridgePurchasing`
-- [ ] **Background tasks** (`BGTaskScheduler` / `WorkManager`) → `IBridgeBackgroundWork`
 
-Each platform API follows the same pattern:
-1. Add to `mobile-bridge.wit`
-2. C# interface in `BlazorNative.Core`
-3. `DevHostBridge` mock implementation
-4. Android Kotlin implementation
-5. iOS Swift implementation
+> **This section used to name eight `IBridgeXxx` interfaces and a five-step recipe starting
+> "add to `mobile-bridge.wit`". None of that shipped** — the WASM/WIT era was retired in Phase
+> 3.0e. Capabilities live in the **`BlazorNative.Device`** package as `[Inject]`-able façades —
+> `IGeolocation`, `INotifications`, `IBiometrics`, `ISecureStorage`, `ICamera` — over a
+> generic permission-gated host call. Clipboard and share never got a façade and sit
+> directly on `IMobileBridge`.
+
+- [x] **Geolocation** — `IGeolocation` (M9 Phase 9.0; the permission pattern's worked example)
+- [x] **Camera — photo capture** — `ICamera` (M9 Phase 9.3; the image crosses as a file PATH, not bytes)
+- [ ] **Camera — QR / barcode scan** — needs a *live preview + continuous result* flow, which
+      the one-shot `CapturePhotoAsync` file-path handoff does not model. Its own piece of work
+- [x] **Clipboard** — `IMobileBridge.ClipboardReadAsync` / `ClipboardWriteAsync` (Phase 5.4)
+- [x] **Share sheet** — `IMobileBridge.ShareAsync` (Phase 5.4)
+- [x] **Biometrics** — `IBiometrics` (M9 Phase 9.2)
+- [x] **Secure storage** — `ISecureStorage` (M9 Phase 9.2; AndroidKeyStore / Keychain, with an
+      OS-key-bound `GetSecretWithAuthAsync`)
+- [x] **Notifications** — `INotifications` (M9 Phase 9.1; local only — remote push is below)
+- [ ] **Haptics** — the cheapest remaining capability on the current ABI: a new op value, no
+      permission, fire-and-forget with no completion payload. `VibratorManager` /
+      `UIImpactFeedbackGenerator`
+- [ ] **Background tasks** — `WorkManager` / `BGTaskScheduler`. The real cost is **not** the
+      shell API: it needs a .NET entrypoint invoked with **no live UI host**, and `HostSession`
+      assumes a mounted renderer. Design question before implementation question
+- [ ] **In-app purchases** — StoreKit / Play Billing. Multi-step async flows, and **untestable
+      in CI** (paid accounts, sandbox testers, store products). Accepted as out of scope for 1.0
+- [ ] **Remote push** — FCM (Android) and APNs (iOS). Both blocked on external accounts
+
+**How a capability is actually added** — see [`docs/bridge-extension.md`](bridge-extension.md),
+which is the normative procedure. The short version: a capability rides the **existing** generic
+`HostCallBegin` / `host_call_complete` pair, so it costs **an op-enum value plus wire
+vocabulary — no struct grow, no new export**. Five capabilities have been added this way with
+the ABI unchanged at 10 exports / 80 bytes.
 
 ---
 
@@ -289,20 +311,46 @@ Each platform API follows the same pattern:
 *Required to attract external contributors and users.*
 
 ### Component library (`BlazorNative.Components`)
-- [ ] **Project scaffold** — `src/BlazorNative.Components/BlazorNative.Components.csproj`
+
+> **15 components ship today** and are tier STABLE. What is left is a long tail of NEW
+> components, not the original "grow beyond the quartet" ask, which is done.
+
+- [x] **Project scaffold** — `src/BlazorNative.Components/BlazorNative.Components.csproj`
 - [x] **Layout components** — **`BnView` and `BnScroll` shipped (M6).** `BnView` carries the
   full typed flex surface (`Direction`/`Justify`/`Align`/`Grow`/`Wrap`/`Gap`/sizing/…), with
   `BnRow` and `BnColumn` as thin presets over it; `BnScroll` is a real scrolling viewport (6.2).
   **`BnStack` is a deliberate non-goal** — it would be a synonym for `BnColumn`, and two names
   for one thing is a library smell on day one; `BnRow`/`BnColumn` say which axis they mean.
-  Still open: `BnSafeArea`, `BnGrid`.
-- [ ] **Typography** — `BnText`, `BnHeading`, `BnLabel`, `BnLink`
-- [ ] **Input components** — `BnButton`, `BnInput`, `BnTextArea`, `BnCheckbox`, `BnSwitch`, `BnSlider`, `BnPicker`, `BnDatePicker`
-- [ ] **Media** — `BnImage`, `BnIcon` (SF Symbols / Material Icons mapping)
-- [ ] **Feedback** — `BnActivityIndicator`, `BnProgressBar`, `BnToast`, `BnAlert`
-- [ ] **Navigation components** — `BnTabBar`, `BnNavigationBar`, `BnDrawer`, `BnModal`, `BnBottomSheet`
-- [ ] **List components** — `BnList<TItem>`, `BnVirtualList<TItem>` (windowed rendering for large datasets)
-- [ ] **`BlazorNativeComponentBase`** — base class with pre-injected bridge, `Navigate()`, `ReadStorage()`, `FetchJson<T>()` helpers
+  Still open: **`BnSafeArea`** (needs `WindowInsetsCompat` / `safeAreaInsets` plumbing the
+  shells do not expose yet — the highest-value item on this list, with Android 15 edge-to-edge
+  as a real driver) and **`BnGrid`** (Yoga has no first-class grid, so this needs a design
+  decision first).
+- [ ] **Typography** — `BnText` ✅ shipped (with `FontSize`, `Color`). Still open: `BnHeading`,
+      `BnLabel`, `BnLink` — the first two are thin presets over `BnText` (the `BnRow`/`BnColumn`
+      precedent) and likely need no shell work at all
+- [ ] **Input components** — `BnButton` ✅, `BnInput` ✅, `BnCheckbox` ✅, `BnSwitch` ✅,
+      `BnSlider` ✅, `BnPicker` ✅ (6 of 8). Still open: `BnTextArea` (iOS needs `UITextView`
+      rather than `UITextField`), `BnDatePicker` (the platform pickers diverge sharply, plus
+      date/culture marshalling across the ABI)
+- [ ] **Media** — `BnImage` ✅ shipped (with `ImageContentMode`). Still open: `BnIcon` — the
+      component is cheap; the work is the SF Symbols ⇄ Material Icons **name-mapping table**,
+      which is a one-manifest-many-languages problem (see `src/wire-vocabulary.json`)
+- [ ] **Feedback** — `BnActivityIndicator` ✅ shipped. Still open: `BnProgressBar` (its
+      determinate sibling), `BnToast`, `BnAlert` (both can reuse `BnModal`'s overlay plumbing)
+- [ ] **Navigation components** — `BnModal` ✅ shipped (as a standalone overlay, not really a
+      navigation component). **The other four are not components, they are a navigation
+      architecture** — `BnTabBar`, `BnNavigationBar`, `BnDrawer`, `BnBottomSheet` all need a
+      real back stack and nested stacks, which do not exist (the back stack is a single slot).
+      One epic, never four component tickets
+- [x] **List components** — `BnList<TItem>` ✅ shipped, **and it IS the virtualized list**:
+      Phase 7.2 built windowing into it by construction (a fixed `ItemHeight` + `Height` are
+      required precisely so the window arithmetic is exact). A separate `BnVirtualList<TItem>`
+      is **struck as superseded** — two names for one thing, the same smell that made `BnStack`
+      a non-goal
+- [ ] **`BlazorNativeComponentBase`** — **a design question, not a task.** It would pre-inject
+      `IMobileBridge` and re-expose `Navigate()`/`ReadStorage()`/`FetchJson<T>()` — three thin
+      wrappers over a surface `[Inject]` already gives you, in a package whose stated purpose is
+      to hold no method bodies. Decide whether it should exist before scheduling it
 
 ### Styling system (`BlazorNative.Styling`)
 - [ ] **Typed `NativeStyle` record** — replace string-based style properties with a strongly-typed, AOT-safe style object
@@ -352,22 +400,43 @@ Each platform API follows the same pattern:
 ### Documentation site
 - [ ] **Getting started guide** — scaffold → run → first component on device in under 15 minutes
 - [ ] **Architecture deep-dive** — WASM, WASI, WIT, patch protocol, cooperative scheduler explained
-- [ ] **Component reference** — every `Bn*` component with props, examples, platform notes
-- [ ] **Platform API reference** — every `IBridge*` interface documented
-- [ ] **WIT contract reference** — `mobile-bridge.wit` annotated
+- [x] **Component reference** — every `Bn*` component with props, examples, platform notes.
+      **Generated** from the XML docs (`scripts/generate-reference.ps1`), never hand-written
+- [x] **Platform API reference** — ~~every `IBridge*` interface~~ → the `BlazorNative.Device`
+      façades and `IMobileBridge`, also generated
+- [ ] ~~**WIT contract reference** — `mobile-bridge.wit` annotated~~ — **superseded.** There is
+      no `.wit`. The C-ABI's normative reference is [`docs/bridge-extension.md`](bridge-extension.md),
+      and the extension policy is on the docs-site API-stability page
 - [ ] **Migration guide** — from MAUI Blazor Hybrid to BlazorNative
-- [ ] **WASI compatibility guide** — what works, what doesn't, how analyzers help
+- [ ] ~~**WASI compatibility guide**~~ — **superseded**: WASI was abandoned at M3 Phase 3.0.
+      The analyzers that policed it were retired or rescoped in Phase 4.1
 - [ ] **Troubleshooting** — common AOT trim issues, WASM compile errors, bridge wiring mistakes
 
 ### NuGet packaging
-- [ ] `BlazorNative.Core` — bridge contract + DevHostBridge
-- [ ] `BlazorNative.Renderer` — headless renderer + patch protocol
-- [ ] `BlazorNative.Http` — BridgeHttpHandler + DI extensions
-- [ ] `BlazorNative.Analyzers` — Roslyn analyzers (special `.props`/`.targets` packaging)
-- [ ] `BlazorNative.Components` — component library
-- [ ] `BlazorNative.Styling` — styling system
-- [ ] `BlazorNative.State` — state management
-- [ ] `BlazorNative.Navigation` — navigation system
+
+**Seven packages ship on nuget.org**, pinned by `PackagePurityTests` — nothing else under
+`src/` may grow a csproj without joining that pin, which is how "no 8th package" stays true
+rather than merely intended.
+
+- [x] `BlazorNative.Core` — bridge contract + DevHostBridge
+- [x] `BlazorNative.Renderer` — headless renderer + patch protocol
+- [x] `BlazorNative.Http` — BridgeHttpHandler + DI extensions
+- [x] `BlazorNative.Analyzers` — Roslyn analyzers (special `.props`/`.targets` packaging)
+- [x] `BlazorNative.Components` — component library
+- [x] `BlazorNative.Device` — the five `[Inject]`-able capability façades (added M9; this list
+      never had it)
+- [x] `BlazorNative.Runtime` — the NativeAOT composition root + the C-ABI exports
+
+Plus `BlazorNative.Templates` (the `dotnet new blazornative` pack), which ships separately.
+
+**Three packages on the original list were never built, and two of them should not be:**
+- ~~`BlazorNative.Styling`~~ — the styling system landed *inside* `Components`/`Renderer`
+  instead (typed parameters + a partitioned routing table + one generated vocabulary). A
+  separate package would be a mandatory transitive dependency with no consumer benefit
+- ~~`BlazorNative.State`~~ — Blazor's DI singletons and cascading values already cover it,
+  both proven on device here
+- `BlazorNative.Navigation` — the *lift* is deliberately deferred past 1.0 as criterion S4,
+  mitigated by `[TypeForwardedTo]` so the move stays free whenever it is actually wanted
 
 ---
 
@@ -413,8 +482,12 @@ Each platform API follows the same pattern:
   Replace per-call `byte[]` allocations in `WasiBridge` with an `ArrayPool<byte>` backed pool. Significant GC pressure reduction on the hot path (render frames, frequent fetch calls).
 
 ### Accessibility
-- [ ] **Screen reader bridge interface**
-  Extend `mobile-bridge.wit` with accessibility annotations: `set_accessibility_label`, `set_accessibility_hint`, `set_accessibility_role`. Android: maps to `contentDescription` + `ViewCompat.setAccessibilityDelegate`. iOS: maps to `accessibilityLabel` + `accessibilityTraits`.
+- [ ] **Screen reader support**
+  Accessibility annotations — `accessibilityLabel`, `accessibilityHint`, `accessibilityRole`.
+  Android maps to `contentDescription` + `ViewCompat.setAccessibilityDelegate`; iOS to
+  `accessibilityLabel` + `accessibilityTraits`. **Mechanism note (corrected):** this needs no
+  `.wit` and no ABI change — the names ride the existing **UpdateProp** wire, so it is a wire
+  *vocabulary* addition (`src/wire-vocabulary.json`) plus a dispatch arm in each shell.
 
 - [ ] **`BnAccessibility` component attributes**
   Add `Label`, `Hint`, `Role`, `IsHidden` props to all `Bn*` components that flow through to the native accessibility tree automatically.
@@ -554,7 +627,7 @@ Each platform API follows the same pattern:
   `IBlazorNativeLogger` service available in WASM. Log entries serialised and dispatched to native shell via `shell_log(level, message, structuredData)`. Native shell routes to platform logging (Logcat / OSLog) and optionally to a remote sink.
 
 - [ ] **Analytics bridge interface**
-  `IBridgeAnalytics` with `TrackEvent(name, properties)` and `TrackScreen(name)`. DevHostBridge logs to console. Android: Firebase Analytics. iOS: same. Developers call analytics from Blazor components, platform implementation is swappable.
+  An `IAnalytics` façade in `BlazorNative.Device` (the shipped convention — not the retired `IBridgeXxx` one) with `TrackEvent(name, properties)` and `TrackScreen(name)`. `DevHostBridge` logs to console. Android: Firebase Analytics. iOS: same. Developers call analytics from Blazor components, platform implementation is swappable.
 
 - [ ] **Performance budget enforcement**
   CI pipeline fails if WASM binary exceeds a configurable size budget (default: 10MB compressed). Frame timing regressions (P95 > 16ms in integration tests) fail the build.

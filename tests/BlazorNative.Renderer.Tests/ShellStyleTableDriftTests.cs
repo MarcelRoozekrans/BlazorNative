@@ -57,6 +57,12 @@ public sealed class ShellStyleTableDriftTests
     private const string KotlinYogaLayout =
         "src/BlazorNative.Jni/src/androidMain/kotlin/io/blazornative/shell/YogaLayout.kt";
 
+    /// <summary>The VISUAL dispatch lives in the widget mapper, not the Yoga layout —
+    /// the two halves of the partition are routed in two different files, which is a
+    /// large part of why only one of them had a pin.</summary>
+    private const string KotlinWidgetMapper =
+        "src/BlazorNative.Jni/src/androidMain/kotlin/io/blazornative/shell/WidgetMapper.kt";
+
     /// <summary>Kotlin's `setStyle` body: from the declaration to the first line that
     /// is exactly a 4-space-indented `}` — the function's own closing brace (every
     /// brace inside it is indented deeper).</summary>
@@ -99,19 +105,109 @@ public sealed class ShellStyleTableDriftTests
             + "SETTER for you, and this is the test that says so.");
     }
 
+    /// <summary>iOS routes the visual half in its own widget mapper, exactly as Android
+    /// does — the Swift twin of <see cref="KotlinWidgetMapper"/>.</summary>
+    private const string AppleWidgetMapper =
+        "src/BlazorNative.Apple/BnHost/BnWidgetMapper.swift";
+
+    /// <summary>Kotlin's `handleSetStyle` body — the VISUAL dispatch, which routes
+    /// every name `owns()` did NOT claim.</summary>
+    private const string KotlinHandleSetStyleBody =
+        @"(?ms)^    private fun handleSetStyle\(p: RenderPatch\.SetStyle\) \{(?<body>.*?)^    \}";
+
+    /// <summary>THE VISUAL-HALF DISPATCH PIN — the hole this file did not cover, and
+    /// the reason three names sat in the table for months doing nothing.
+    ///
+    /// The Yoga half has been pinned since Phase 6.1 by the fact above. The VISUAL
+    /// half never was — and an audit found the consequence: `color`, `fontWeight`,
+    /// `background` and `style` were all in `VisualStyleAttributes`, all pinned there
+    /// by StyleAttributePartitionTests as "belonging to the view", and **none of them
+    /// had an arm in either shell**. Every use was accepted by the routing table and
+    /// then dropped on `else -> "not yet supported"`. That is exactly the failure the
+    /// wire-vocabulary manifest's own documentation says the apparatus exists to
+    /// prevent, and it was live the whole time because the assertion covered one half
+    /// of a two-half partition.
+    ///
+    /// So this is the missing symmetry, not a new idea: **every VISUAL name must have
+    /// a dispatch arm too.** A name with no producer is a defensible thing to ledger;
+    /// a name the table *accepts* with no arm is not.</summary>
+    [Fact]
+    public void AndroidSetStyleDispatch_HasAnArmForEveryVisualStyle()
+    {
+        var visual = NativeRenderer.VisualStyleAttributes;
+        var dispatched = ParseNameTable(KotlinWidgetMapper, KotlinHandleSetStyleBody, "handleSetStyle");
+
+        var missing = visual.Except(dispatched).ToList();
+
+        Assert.True(
+            missing.Count == 0,
+            $"WidgetMapper.handleSetStyle has no arm for: {Join(missing)}.\n"
+            + "The name is in VisualStyleAttributes, so the renderer routes it to the SetStyle "
+            + "wire and `owns()` declines it — which lands it on "
+            + "`else -> \"SetStyle … not yet supported\"`. The style is accepted and then DROPPED, "
+            + "silently, on every frame.\n"
+            + "Either implement the arm in BOTH shells, or remove the name from "
+            + "src/wire-vocabulary.json. A name in the table with no arm is the one state that is "
+            + "not allowed.");
+    }
+
+    /// <summary>Swift's `handleSetStyle` body — the same VISUAL dispatch, same shape:
+    /// a `switch property` whose `default:` warns, inside a function whose closing brace
+    /// is the first 4-space-indented `}`.</summary>
+    private const string AppleHandleSetStyleBody =
+        @"(?ms)^    private func handleSetStyle\(nodeId: Int32, property: String, value: String\?\) \{(?<body>.*?)^    \}";
+
+    /// <summary>THE VISUAL-HALF DISPATCH PIN, iOS SIDE — and the reason it is here rather
+    /// than in the iOS suite.
+    ///
+    /// iOS pins its YOGA half at RUNTIME, in its own lane
+    /// (`BnYogaStyleParserTests.testEveryRoutedNameReachesASetter` feeds every routed name
+    /// a legal value and demands rc == 1). That works because `bn_yoga_node_set_style`
+    /// returns an int whose fall-through value is 0. **`BnWidgetMapper.handleSetStyle`
+    /// returns Void**, exactly like Kotlin's `setStyle` — there is no rc to demand, so the
+    /// same trick is unavailable and the dispatch is pinned at the SOURCE instead.
+    ///
+    /// Which puts it in this file by necessity: `build-test` is the one required lane where
+    /// the .NET set and BOTH shells' sources are checkout-visible. The iOS lane cannot see
+    /// `VisualStyleAttributes`, and the Android lane cannot see the `.swift`.
+    ///
+    /// Without this, the fix that closed the visual hole was HALF a fix: Android could no
+    /// longer accept a visual name with no arm, and iOS still could — the same silent drop,
+    /// on one platform, which is the precise shape of every parity bug this repo has
+    /// chased.</summary>
+    [Fact]
+    public void AppleSetStyleDispatch_HasAnArmForEveryVisualStyle()
+    {
+        var visual = NativeRenderer.VisualStyleAttributes;
+        var dispatched = ParseNameTable(AppleWidgetMapper, AppleHandleSetStyleBody, "handleSetStyle");
+
+        var missing = visual.Except(dispatched).ToList();
+
+        Assert.True(
+            missing.Count == 0,
+            $"BnWidgetMapper.handleSetStyle has no `case` for: {Join(missing)}.\n"
+            + "The name is in VisualStyleAttributes, so the renderer routes it to the SetStyle "
+            + "wire and the Yoga router declines it — which lands it on "
+            + "`default: BnLog.warn(\"… not yet supported\")`. The style is accepted and then "
+            + "DROPPED, silently, on iOS alone, while Android honours it: two frame tables that "
+            + "disagree for a reason no frame assertion can see.\n"
+            + "Either implement the arm in BOTH shells, or remove the name from "
+            + "src/wire-vocabulary.json.");
+    }
+
     // ── The parser ───────────────────────────────────────────────────────────
 
     /// <summary>Every quoted name inside the declaration <paramref name="pattern"/>
     /// matches in the shell source at <paramref name="relativePath"/>. Fails loudly
     /// when the declaration cannot be found: a moved function must break this test,
     /// not silently pass it with an empty set.</summary>
-    private static HashSet<string> ParseNameTable(string relativePath, string pattern)
+    private static HashSet<string> ParseNameTable(string relativePath, string pattern, string what = "setStyle")
     {
         var source = ReadShellSource(relativePath);
         var match = Regex.Match(source, pattern, RegexOptions.Singleline);
 
         Assert.True(match.Success,
-            $"could not find `setStyle` in {relativePath} (pattern: {pattern}). It moved or its "
+            $"could not find `{what}` in {relativePath} (pattern: {pattern}). It moved or its "
             + "signature changed — this dispatch pin IS the contract, so re-point it deliberately "
             + "rather than deleting it.");
 

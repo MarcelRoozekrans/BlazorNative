@@ -79,7 +79,6 @@ public sealed class StyleAttributePartitionTests
     [InlineData("backgroundColor")]
     [InlineData("color")]
     [InlineData("fontSize")]
-    [InlineData("fontWeight")]
     public void PaintNames_BelongToTheView(string name)
     {
         Assert.Contains(name, NativeRenderer.VisualStyleAttributes);
@@ -105,6 +104,16 @@ public sealed class StyleAttributePartitionTests
     [InlineData("columnGap")]
     [InlineData("display")]
     [InlineData("flex")]
+    // Removed from the VISUAL half for the same reason the five above were never in
+    // the layout half — the table accepted them and no shell applied them, so every
+    // use was silently dropped. `fontWeight` is the interesting one: it is not a
+    // missing arm but a design question (only Inter Regular is bundled, and synthetic
+    // bold changes text METRICS, which would put the font-parity contract at risk to
+    // add a paint property). `background`/`style` are pre-6.1 HTML leftovers nothing
+    // ever emitted.
+    [InlineData("fontWeight")]
+    [InlineData("background")]
+    [InlineData("style")]
     public async Task LedgeredNames_AreNotStyles_AndFallOntoThePropWire(string name)
     {
         Assert.DoesNotContain(name, NativeRenderer.StyleAttributes);
