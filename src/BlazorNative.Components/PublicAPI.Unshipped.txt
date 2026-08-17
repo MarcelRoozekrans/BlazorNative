@@ -1,5 +1,7 @@
-#nullable enable
+﻿#nullable enable
 BlazorNative.Components.BnScroll.AutoScrollToEnd.get -> bool
 BlazorNative.Components.BnScroll.AutoScrollToEnd.set -> void
 BlazorNative.Components.BnScroll.ScrollToAsync(float offset) -> System.Threading.Tasks.ValueTask
 BlazorNative.Components.BnScroll.ScrollToEndAsync() -> System.Threading.Tasks.ValueTask
+BlazorNative.Components.BnText.Color.get -> string?
+BlazorNative.Components.BnText.Color.set -> void
