@@ -17,7 +17,7 @@
 #   emulator (ubuntu-latest, KVM) — downloads the .so, boots the API 34
 #     google_apis x86_64 Pixel 6 image (mirrors the local AVD
 #     blazornative-pixel6-x86_64), runs connectedAndroidTest with
-#     -PciSoDir pointing at the artifact → asserts 219 passed / 0 failed.
+#     -PciSoDir pointing at the artifact → asserts 224 passed / 0 failed.
 #
 # Baselines are asserted, not observed: count drift fails the job loudly.
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1053,7 +1053,24 @@ jobs:
       # shell that scrolled on decode would land at the OLD end); an offset past
       # the end clamps rather than being rejected; and a command on a non-scroll
       # node is ignored, not fatal (reachable via the raw-element hatch).
-      - name: Assert instrumented baseline (219 passed / 0 failed)
+      # ── M3 LEDGER: THE STALE-ECHO ARTIFACT, FINALLY PINNED (219 -> 224, +5) ──
+      # Every keystroke dispatches and .NET echoes each one back as UpdateProp
+      # ("value"); the write-back compared only against the EditText's CURRENT text,
+      # so an echo carrying an OLDER value landing after further typing failed the
+      # inequality skip and OVERWROTE the box + jumped the caret. Type "abc" fast
+      # and you could land back on "ab".
+      # It sat in the ledger for eight milestones partly because it was filed as
+      # "sequence-stamping territory (frame/sequence ids on the wire)" -- an
+      # ABI-shaped change. It is not: the shell already knows every value it SENT,
+      # so it can tell the user's own echo from a genuine programmatic set with no
+      # help from .NET. Five tests: the fast-typing race itself (red-first -- the box
+      # reads "ab" without the fix), the latest-keystroke echo staying a no-op (so
+      # the common case does not regress into a caret-moving setText), a genuine
+      # programmatic set still winning mid-word ("Blazor state is truth" preserved),
+      # the registry draining, and a detached node dropping its outstanding echoes.
+      # iOS needs none of it: UIKit does not fire .editingChanged for a programmatic
+      # set, so the echo never re-enters the loop there.
+      - name: Assert instrumented baseline (224 passed / 0 failed)
         run: |
           shopt -s globstar nullglob
           xmls=(src/BlazorNative.Jni/build/outputs/androidTest-results/connected/**/*.xml)
@@ -1070,8 +1087,8 @@ jobs:
             s=$(attr skipped "$x");  skipped=$((skipped + ${s:-0}))
           done
           echo "Instrumented totals across ${#xmls[@]} suite(s): tests=$tests failures=$failures errors=$errors skipped=$skipped"
-          if [ "$tests" -ne 219 ] || [ "$failures" -ne 0 ] || [ "$errors" -ne 0 ] || [ "$skipped" -ne 0 ]; then
-            echo "Instrumented test baseline drift: expected 219 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped" >&2
+          if [ "$tests" -ne 224 ] || [ "$failures" -ne 0 ] || [ "$errors" -ne 0 ] || [ "$skipped" -ne 0 ]; then
+            echo "Instrumented test baseline drift: expected 224 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped" >&2
             exit 1
           fi
 
