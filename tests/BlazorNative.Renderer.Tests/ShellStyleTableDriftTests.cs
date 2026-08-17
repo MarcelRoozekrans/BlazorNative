@@ -105,6 +105,11 @@ public sealed class ShellStyleTableDriftTests
             + "SETTER for you, and this is the test that says so.");
     }
 
+    /// <summary>iOS routes the visual half in its own widget mapper, exactly as Android
+    /// does — the Swift twin of <see cref="KotlinWidgetMapper"/>.</summary>
+    private const string AppleWidgetMapper =
+        "src/BlazorNative.Apple/BnHost/BnWidgetMapper.swift";
+
     /// <summary>Kotlin's `handleSetStyle` body — the VISUAL dispatch, which routes
     /// every name `owns()` did NOT claim.</summary>
     private const string KotlinHandleSetStyleBody =
@@ -144,6 +149,50 @@ public sealed class ShellStyleTableDriftTests
             + "Either implement the arm in BOTH shells, or remove the name from "
             + "src/wire-vocabulary.json. A name in the table with no arm is the one state that is "
             + "not allowed.");
+    }
+
+    /// <summary>Swift's `handleSetStyle` body — the same VISUAL dispatch, same shape:
+    /// a `switch property` whose `default:` warns, inside a function whose closing brace
+    /// is the first 4-space-indented `}`.</summary>
+    private const string AppleHandleSetStyleBody =
+        @"(?ms)^    private func handleSetStyle\(nodeId: Int32, property: String, value: String\?\) \{(?<body>.*?)^    \}";
+
+    /// <summary>THE VISUAL-HALF DISPATCH PIN, iOS SIDE — and the reason it is here rather
+    /// than in the iOS suite.
+    ///
+    /// iOS pins its YOGA half at RUNTIME, in its own lane
+    /// (`BnYogaStyleParserTests.testEveryRoutedNameReachesASetter` feeds every routed name
+    /// a legal value and demands rc == 1). That works because `bn_yoga_node_set_style`
+    /// returns an int whose fall-through value is 0. **`BnWidgetMapper.handleSetStyle`
+    /// returns Void**, exactly like Kotlin's `setStyle` — there is no rc to demand, so the
+    /// same trick is unavailable and the dispatch is pinned at the SOURCE instead.
+    ///
+    /// Which puts it in this file by necessity: `build-test` is the one required lane where
+    /// the .NET set and BOTH shells' sources are checkout-visible. The iOS lane cannot see
+    /// `VisualStyleAttributes`, and the Android lane cannot see the `.swift`.
+    ///
+    /// Without this, the fix that closed the visual hole was HALF a fix: Android could no
+    /// longer accept a visual name with no arm, and iOS still could — the same silent drop,
+    /// on one platform, which is the precise shape of every parity bug this repo has
+    /// chased.</summary>
+    [Fact]
+    public void AppleSetStyleDispatch_HasAnArmForEveryVisualStyle()
+    {
+        var visual = NativeRenderer.VisualStyleAttributes;
+        var dispatched = ParseNameTable(AppleWidgetMapper, AppleHandleSetStyleBody, "handleSetStyle");
+
+        var missing = visual.Except(dispatched).ToList();
+
+        Assert.True(
+            missing.Count == 0,
+            $"BnWidgetMapper.handleSetStyle has no `case` for: {Join(missing)}.\n"
+            + "The name is in VisualStyleAttributes, so the renderer routes it to the SetStyle "
+            + "wire and the Yoga router declines it — which lands it on "
+            + "`default: BnLog.warn(\"… not yet supported\")`. The style is accepted and then "
+            + "DROPPED, silently, on iOS alone, while Android honours it: two frame tables that "
+            + "disagree for a reason no frame assertion can see.\n"
+            + "Either implement the arm in BOTH shells, or remove the name from "
+            + "src/wire-vocabulary.json.");
     }
 
     // ── The parser ───────────────────────────────────────────────────────────

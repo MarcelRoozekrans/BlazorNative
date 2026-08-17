@@ -4,7 +4,7 @@
 #
 #   build-test (windows-latest) — the local verification procedure verbatim
 #   (setup.ps1 §1–7 documents the toolchain pins):
-#     build (analyzers ride it) → .NET tests (933 passed / 0 skipped) →
+#     build (analyzers ride it) → .NET tests (934 passed / 0 skipped) →
 #     three NativeAOT publishes of samples/BlazorNative.SampleApp — the
 #     publish head since Phase 8.0: the app owns PublishAot, the exports stay
 #     in Runtime via UnmanagedEntryPointsAssembly, and the artifact is
@@ -1828,7 +1828,14 @@ jobs:
       # `color` is now implemented in both shells and has a producer (BnText.Color) --
       # colour has no measurement consequence, which is why it was the one name safe to
       # add here. JVM/Android/iOS counts do NOT move (no shell test added).
-      - name: .NET tests (assert 933 passed / 0 skipped)
+      #   +1 more: AppleSetStyleDispatch_HasAnArmForEveryVisualStyle -- the SAME pin for
+      #      the OTHER shell. iOS pins its YOGA half at runtime (rc == 1 from
+      #      bn_yoga_node_set_style), but BnWidgetMapper.handleSetStyle returns Void just
+      #      like Kotlin's setStyle, so there is no rc to demand and it is pinned at the
+      #      source too. Without it the fix was HALF a fix: Android could no longer accept
+      #      a visual name with no arm and iOS still could. Mutation-proven by deleting the
+      #      iOS `color` arm ALONE -- the Apple pin reds, the Android one stays green.
+      - name: .NET tests (assert 934 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -1846,8 +1853,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 933 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 933 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 934 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 934 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # ── NativeAOT publishes + nine-export verification ────────────────────
