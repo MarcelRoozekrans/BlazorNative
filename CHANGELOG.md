@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.1](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.9.0...v0.9.1) (2026-08-17)
+
+
+### Bug Fixes
+
+* **build:** pin Microsoft.CodeAnalysis.Analyzers in RouteGen (NU1603) — 0.9.0 did not publish ([#267](https://github.com/MarcelRoozekrans/BlazorNative/issues/267)) ([4494cfc](https://github.com/MarcelRoozekrans/BlazorNative/commit/4494cfc6d1e8597d6d8bf324c979205d04132109))
+
 ## [0.9.0](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.8.1...v0.9.0) (2026-08-17)
 
 
