@@ -1,3 +1,4 @@
+﻿using System.Globalization;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using BlazorNative.Core;
@@ -796,6 +797,16 @@ public sealed class NativeRenderer : BlazorRenderer
                                     _eventHandlers.Remove(slot.NodeId);
                             }
                         }
+                        else if (removedName == ScrollToAttributeName)
+                        {
+                            // #256 — a COMMAND has no "off" state to reset to, so its
+                            // removal emits nothing. Without this arm the else below
+                            // would send UpdateProp(scrollTo, null), which every shell
+                            // would log as an unknown prop — noise describing a command
+                            // that was never state. Reachable whenever a BnScroll goes
+                            // from having issued a scroll to not (AutoScrollToEnd
+                            // switched off, or the first render after a restore).
+                        }
                         else if (StyleAttributes.Contains(removedName))
                         {
                             // Phase 6.1 (the null-reset fix): a removed STYLE
@@ -1250,6 +1261,18 @@ public sealed class NativeRenderer : BlazorRenderer
             RegisterEventHandler(nodeId, eventName, handlerId);
             patches.Add(new AttachEventPatch(nodeId, eventName, handlerId));
         }
+        else if (name == ScrollToAttributeName)
+        {
+            // #256 — the COMMAND arm. See the ScrollTo note below the style
+            // partition for why a command is an attribute at all, and why the
+            // nonce this parses off never reaches the wire.
+            if (TryParseScrollToCommand(value, out bool toEnd, out float offset))
+                patches.Add(new ScrollToPatch(nodeId, toEnd, offset));
+            else
+                BnLog.Warn("NativeRenderer",
+                    $"ignoring malformed {ScrollToAttributeName} command '{value}' on node {nodeId} "
+                    + "(expected \"end#<nonce>\" or \"<offset>#<nonce>\")");
+        }
         else if (StyleAttributes.Contains(name))
         {
             patches.Add(new SetStylePatch(nodeId, name, value));
@@ -1259,6 +1282,72 @@ public sealed class NativeRenderer : BlazorRenderer
             patches.Add(new UpdatePropPatch(nodeId, name, value));
         }
     }
+
+    // ── The ScrollTo command attribute (#256) ─────────────────────────────────
+    //
+    // WHY A COMMAND ARRIVES AS AN ATTRIBUTE. A component has no way to name its
+    // own native node: node ids are the renderer's, allocated during the frame
+    // walk, and Blazor hands a component neither its componentId nor its node.
+    // An attribute is the ONE place where the renderer already holds both halves
+    // — the node id it just resolved, and a value the component authored — so
+    // routing the command through the render tree costs no addressing machinery,
+    // no id registry, and nothing to clean up when the node dies.
+    //
+    // It also gets the ORDERING right for free, which is the whole point of
+    // #256: the attribute rides the same diff as the content change beside it,
+    // so "append rows, then scroll to the end" is one frame in one order. A
+    // side channel (a host call, an out-of-batch queue) would race the frame
+    // that created the rows.
+    //
+    // WHY THE VALUE CARRIES A NONCE. Blazor's diff emits an attribute edit only
+    // when the VALUE CHANGES. That is exactly right for state and exactly wrong
+    // for a command: two ScrollToEndAsync() calls in a row are two commands, and
+    // a bare "end" would be diffed down to one. BnScroll therefore appends a
+    // per-instance counter — "end#7" — so each call is a distinct value.
+    //
+    // The nonce is a RENDERER-SIDE artifact and is stripped here: it never
+    // reaches ScrollToPatch and never crosses the wire. A shell must not be able
+    // to observe, let alone depend on, how .NET makes its own diff fire.
+    //
+    // A malformed value is logged and dropped, never thrown: this attribute is
+    // reachable through the raw-element hatch (OpenElement("scroll") +
+    // AddAttribute("scrollTo", …)), so a typo is an author mistake in app code,
+    // and the un-styled invariant says the wire says only what the author said.
+
+    /// <summary>The attribute name BnScroll uses to issue a scroll command.
+    /// Deliberately NOT a style name — it is checked before
+    /// <see cref="StyleAttributes"/> and is disjoint from both halves of the
+    /// partition (pinned by StyleAttributePartitionTests).</summary>
+    internal const string ScrollToAttributeName = "scrollTo";
+
+    /// <summary>Parses <c>"end#7"</c> / <c>"123.5#7"</c> into the wire's two
+    /// fields, dropping the nonce. Returns false for anything else — including a
+    /// null value, a missing nonce, and a non-numeric offset.</summary>
+    internal static bool TryParseScrollToCommand(string? value, out bool toEnd, out float offset)
+    {
+        toEnd = false;
+        offset = 0f;
+        if (value is null) return false;
+
+        int hash = value.LastIndexOf('#');
+        if (hash <= 0) return false;                 // no nonce, or an empty target
+
+        ReadOnlySpan<char> target = value.AsSpan(0, hash);
+        if (target.SequenceEqual(ScrollToEndTarget))
+        {
+            toEnd = true;
+            return true;
+        }
+        // InvariantCulture on BOTH sides of the wire: the OnScroll payload the
+        // shells send back is parsed the same way (ParseScrollOffset), so a
+        // comma-decimal locale cannot make a round-trip asymmetric.
+        return float.TryParse(target, NumberStyles.Float, CultureInfo.InvariantCulture, out offset);
+    }
+
+    /// <summary>The <see cref="ScrollToAttributeName"/> target meaning "the end of
+    /// the content", whose offset only the shells can compute (content height is
+    /// a Yoga result they hold).</summary>
+    internal const string ScrollToEndTarget = "end";
 
     /// <summary>Emits the ReplaceText for an UpdateText edit. The node was
     /// resolved by the caller through the diff cursor (see

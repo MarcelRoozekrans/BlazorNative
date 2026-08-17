@@ -4,7 +4,7 @@
 #
 #   build-test (windows-latest) — the local verification procedure verbatim
 #   (setup.ps1 §1–7 documents the toolchain pins):
-#     build (analyzers ride it) → .NET tests (910 passed / 0 skipped) →
+#     build (analyzers ride it) → .NET tests (933 passed / 0 skipped) →
 #     three NativeAOT publishes of samples/BlazorNative.SampleApp — the
 #     publish head since Phase 8.0: the app owns PublishAot, the exports stay
 #     in Runtime via UnmanagedEntryPointsAssembly, and the artifact is
@@ -13,7 +13,7 @@
 #     each publish must show exactly the 4 accepted IL2072 trim warnings) →
 #     nine-export verification (dumpbin via vswhere / llvm-readelf from the
 #     pinned NDK) → Gradle testDebugUnitTest against the fresh win-x64 dll
-#     (158 passed / 0 failed — the assertion is the step near the end of this
+#     (161 passed / 0 failed — the assertion is the step near the end of this
 #     job; this header is a copy, and it read 92 for four milestones) →
 #     the instrumented sources COMPILE →
 #     consumer smoke (SIX packages packed at the one props version, nupkg
@@ -1768,7 +1768,25 @@ jobs:
       # Guarded so there is no string-formatting cost when disabled. The paired DEVICE
       # observation the issue asks for is the owner's final step (like #200's).
       # No ABI change; JVM/Android/iOS baselines do not move.
-      - name: .NET tests (assert 910 passed / 0 skipped)
+      # 910 -> 933 (#256, +23 -- Runtime.Tests 743 -> 766): BnScroll programmatic
+      # scroll (ScrollToAsync / ScrollToEndAsync / AutoScrollToEnd) on a new
+      # ScrollTo wire kind. An ADDITIVE wire-vocabulary extension -- the id rides
+      # the existing int32 Kind field, so the ABI stays 10 exports / 80 bytes and
+      # the JVM/iOS struct-layout baselines do not move (the API-stability page's
+      # "consume a new ordinal" row):
+      #   +21 ScrollCommandTests -- the command-vs-state distinction, which is the
+      #      whole correctness argument: a REPEATED command survives the diff (the
+      #      nonce; a bare "end" would collapse two calls into one and fail only on
+      #      the second), the nonce never reaches the wire, the grammar parses
+      #      invariant-culture in both directions (12 theory cases incl. a comma-
+      #      decimal locale), an unscrolled BnScroll still emits nothing at all, and
+      #      the command ships in the SAME FRAME as the content it follows -- frame,
+      #      not patch index, because "the end" is a Yoga result the shells can only
+      #      honour after layout. The out-of-render-cycle caveat is pinned too.
+      #   +2 FrameEncoderTests/BnComponentTests deltas absorbed in place (the
+      #      round-trip covers 9 kinds now, and BnScroll's parameter table gains
+      #      AutoScrollToEnd) -- plus the two NOT-API/parameter drift pins updated.
+      - name: .NET tests (assert 933 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -1786,8 +1804,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 910 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 910 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 933 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 933 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # ── NativeAOT publishes + nine-export verification ────────────────────
@@ -2107,7 +2125,15 @@ jobs:
       #    the paired device observation #200 asks for (silent at Warn, narration
       #    back at Verbose). The SOURCE half — no bare Log.i/d/v survives in the
       #    shell — is AndroidLogDriftTests in the .NET lane above.
-      - name: JVM tests (Gradle testDebugUnitTest — assert 158 passed / 0 failed)
+      # ── #256: 158 → 161, +3 — the ScrollTo command kind decodes on this shell.
+      #    Wire kind 10 in both modes (end / an invariant-culture offset) plus the
+      #    malformed-offset case, which degrades to 0 rather than throwing: this
+      #    decode runs inside the native frame callback, so an exception here
+      #    crosses back into NativeAOT and takes the app down. Written red-first —
+      #    without the arm, kind 10 takes the unknown-kind skip and a programmatic
+      #    scroll silently does nothing on Android while working on iOS, which is
+      #    the exact asymmetry a shared wire exists to prevent.
+      - name: JVM tests (Gradle testDebugUnitTest — assert 161 passed / 0 failed)
         working-directory: src/BlazorNative.Jni
         run: |
           .\gradlew.bat --no-daemon testDebugUnitTest
@@ -2121,8 +2147,8 @@ jobs:
             $errors += [int]$suite.errors; $skipped += [int]$suite.skipped
           }
           Write-Host "JVM test totals across $($xmls.Count) suites: tests=$tests failures=$failures errors=$errors skipped=$skipped"
-          if ($tests -ne 158 -or $failures -ne 0 -or $errors -ne 0 -or $skipped -ne 0) {
-            throw "JVM test baseline drift: expected 158 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped"
+          if ($tests -ne 161 -or $failures -ne 0 -or $errors -ne 0 -or $skipped -ne 0) {
+            throw "JVM test baseline drift: expected 161 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped"
           }
 
       # the instrumented-sources compile gate moved to its own required job

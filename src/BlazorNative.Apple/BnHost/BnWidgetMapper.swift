@@ -1319,6 +1319,14 @@ final class BnWidgetMapper {
                 handleAttachEvent(nodeId: nodeId, eventName: eventName, handlerId: handlerId)
             case .detachEvent(let nodeId, _, let eventName):
                 handleDetachEvent(nodeId: nodeId, eventName: eventName)
+            case .scrollTo(let nodeId, let toEnd, let offsetPt):
+                // #256: QUEUE, do not scroll. `contentSize` is assigned by
+                // applyScrollFrames during CommitFrame's layout pass, so scrolling
+                // here would use the PREVIOUS content's size — precisely the bug
+                // the feature exists to avoid. Last command per node wins: two
+                // scrolls in one frame can only mean the later one, and replaying
+                // both would be a visible double-jump.
+                pendingScrollCommands[nodeId] = (toEnd: toEnd, offsetPt: offsetPt)
             }
         }
     }
@@ -1374,6 +1382,11 @@ final class BnWidgetMapper {
         // assigns. (A dictionary's iteration order is arbitrary — this cannot be folded
         // into it.)
         applyScrollFrames()
+        // #256 — AFTER applyScrollFrames, and the order is load-bearing for the
+        // same reason that pass runs after the frame loop: a command needs the
+        // contentSize and the viewport bounds that applyScrollFrames has just
+        // assigned. Scrolling before them would target the previous layout.
+        applyPendingScrollCommands()
     }
 
     /// Phase 6.2 — **THE CONTENT SIZE COMES FROM YOGA** (non-negotiable #3): the
@@ -1491,6 +1504,69 @@ final class BnWidgetMapper {
         let maxX = max(0, contentSize.width - viewport.width)
         let maxY = max(0, contentSize.height - viewport.height)
         return CGPoint(x: min(max(0, offset.x), maxX), y: min(max(0, offset.y), maxY))
+    }
+
+    // ── #256 — programmatic scroll ────────────────────────────────────────────
+
+    /// Commands queued during this batch, keyed by node. A dictionary rather than
+    /// an array: two commands for one node in one frame can only mean the later
+    /// one. Cleared as it is drained.
+    private var pendingScrollCommands: [Int32: (toEnd: Bool, offsetPt: Float)] = [:]
+
+    /// Test-only (#256): programmatic scrolls actually APPLIED — the pin that
+    /// separates "the command decoded" from "the view moved". The Swift twin of
+    /// Android's `scrollCommandsApplied`.
+    internal private(set) var scrollCommandsApplied = 0
+
+    /// Test-only (#256): the offset the last applied command landed on, AFTER
+    /// clamping — which is what makes it assertable against a known content size.
+    internal private(set) var lastScrollCommandOffset: CGFloat = -1
+
+    /// Applies this batch's queued scroll commands, post-layout.
+    ///
+    /// NOT ANIMATED, deliberately, and the Android twin says the same: an
+    /// append-driven log tail scrolls on every new line, and overlapping
+    /// animations fight each other and never settle. `setContentOffset(_:animated:)`
+    /// with `animated: false` is `contentOffset =` — written the short way.
+    ///
+    /// THE GESTURE GATE APPLIES HERE TOO, and for a sharper reason than it does in
+    /// `applyScrollFrames`. That pass corrects an offset the app invalidated; this
+    /// one is an explicit request from app code — and honouring it mid-drag would
+    /// yank the content out from under a finger that is actively holding it. A
+    /// dropped command is recoverable (the next append re-issues one); a fight with
+    /// a live gesture is not. `UIScrollView` has no Android equivalent of this
+    /// hazard because its overscroll is a moved offset, not a glow.
+    private func applyPendingScrollCommands() {
+        guard !pendingScrollCommands.isEmpty else { return }
+        let commands = pendingScrollCommands
+        pendingScrollCommands.removeAll()
+
+        for (nodeId, command) in commands {
+            guard let scroll = views[nodeId] as? UIScrollView else {
+                // The node died in this very batch, or was never a scroll node —
+                // the raw-element hatch can put `scrollTo` on anything. DATA, not
+                // a crash: the shell's standing rule for a patch it cannot honour.
+                BnLog.warn("BnWidgetMapper", "ScrollTo: node \(nodeId) is not a UIScrollView — ignoring")
+                continue
+            }
+            guard !scroll.isTracking else {
+                BnLog.debug("BnWidgetMapper", "ScrollTo: node \(nodeId) is under the user's finger — dropping")
+                continue
+            }
+
+            // The end is contentSize minus the viewport — the same arithmetic
+            // clampedOffset already owns, so an offset past the end and "the end"
+            // are ONE code path rather than two that can disagree.
+            let targetY: CGFloat = command.toEnd
+                ? .greatestFiniteMagnitude
+                : CGFloat(command.offsetPt)
+            let clamped = Self.clampedOffset(CGPoint(x: scroll.contentOffset.x, y: targetY),
+                                             contentSize: scroll.contentSize,
+                                             viewport: scroll.bounds.size)
+            scroll.contentOffset = clamped
+            scrollCommandsApplied += 1
+            lastScrollCommandOffset = clamped.y
+        }
     }
 
     /// **THE DEFINITE-HEIGHT WARNING** (design §"The constraint this introduces") — the

@@ -117,6 +117,9 @@ assert the *same numbers* on an Android emulator and an iOS simulator, frame for
 - **Yoga owns all placement** — you write typed flex parameters in C#; both shells compute
   identical frames. Native text measurement means a long label wraps and its measured height
   drives its row.
+- **Programmatic scrolling** — `ScrollToAsync` / `ScrollToEndAsync` / `AutoScrollToEnd` on
+  `BnScroll`, for append-driven views (log tails, chat). The command rides the frame that
+  changed the content, so the shells scroll to the *new* end, not the old one.
 - **Host capabilities via one bridge pattern** — geolocation, notifications, biometrics,
   secure storage, and camera, each an `[Inject]`-able façade over a permission-gated async
   host call. Plain `HttpClient` works too (routed through the shell).
@@ -127,7 +130,7 @@ assert the *same numbers* on an Android emulator and an iOS simulator, frame for
 
 - **iOS is simulator-only** — real-device iOS is deferred pending an Apple Developer account.
 - **No density-aware image sources** — one file pixel = one dp/pt, so a `@2x` asset renders at 2× size.
-- **No horizontal scroll, no `scrollTo`, no scroll-offset restore** across navigation.
+- **No horizontal scroll, and no scroll-offset restore** across navigation — `BnScroll` *does* have programmatic scrolling (`ScrollToAsync`, `ScrollToEndAsync`, `AutoScrollToEnd`), but a route change rebuilds the page tree and nothing remembers where you were.
 - **HTTP responses are fully buffered, as UTF-8 text** — the bridge delivers a body once, complete; SSE / chunked / long-poll degrade to polling, and binary bodies are unsupported.
 - **`picker` does not flex its children** — it runs its own internal layout (the node itself is placed correctly).
 - **`alignContent`, `rowGap`, `columnGap`, `display`, `flex`** are not implemented — every accepted style name is a name three parsers must implement.
@@ -179,10 +182,10 @@ re-parses this table against the gates, so these numbers can't quietly go stale.
 
 | Surface | Command | Count | Asserted by |
 |---|---|---|---|
-| .NET | `dotnet test` | 910 passed / 0 skipped | `ci.yml` → `build-test` — **required, gates the PR** |
-| JVM (JNA + win-x64 .dll) | `gradlew testDebugUnitTest` | 158 | `ci.yml` → `build-test` — **required, gates the PR** |
-| Android (instrumented, AVD) | `gradlew connectedAndroidTest` | 214 | `android-instrumented.yml` — advisory (nightly/dispatch) |
-| iOS (XCTest, simulator) | `xcodebuild test` | 244 | `ios.yml` — advisory (on-merge/dispatch) |
+| .NET | `dotnet test` | 933 passed / 0 skipped | `ci.yml` → `build-test` — **required, gates the PR** |
+| JVM (JNA + win-x64 .dll) | `gradlew testDebugUnitTest` | 161 | `ci.yml` → `build-test` — **required, gates the PR** |
+| Android (instrumented, AVD) | `gradlew connectedAndroidTest` | 219 | `android-instrumented.yml` — advisory (nightly/dispatch) |
+| iOS (XCTest, simulator) | `xcodebuild test` | 254 | `ios.yml` — advisory (on-merge/dispatch) |
 
 ## Prerequisites
 

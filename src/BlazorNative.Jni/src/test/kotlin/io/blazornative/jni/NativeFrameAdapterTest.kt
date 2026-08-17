@@ -114,6 +114,85 @@ class NativeFrameAdapterTest {
         return (decoded.patches.single() as RenderPatch.CreateNode).nodeType
     }
 
+    // ── 1b. #256 — the ScrollTo command kind ─────────────────────────────────
+
+    /**
+     * Wire kind 10 decodes into a ScrollTo command, in BOTH modes. Written
+     * red-first: without the arm, kind 10 falls onto the unknown-kind skip and a
+     * programmatic scroll silently does nothing on this shell while working
+     * perfectly on iOS — the exact asymmetry a shared wire is supposed to make
+     * impossible.
+     */
+    @Test
+    fun read_decodes_scrollTo_endMode() {
+        val patches = Memory(NativeFrameAdapter.PATCH_SIZE).apply { clear() }
+        patches.setInt(NativeFrameAdapter.PATCH_KIND, 10)
+        patches.setInt(NativeFrameAdapter.PATCH_NODE_ID, 42)
+        patches.setInt(NativeFrameAdapter.PATCH_AUX, 1)          // 1 = to the end
+        // PROP_VALUE deliberately left NULL: end mode carries no offset.
+
+        val frame = Memory(NativeFrameAdapter.FRAME_SIZE).apply { clear() }
+        frame.setPointer(NativeFrameAdapter.FRAME_PATCHES, patches)
+        frame.setInt(NativeFrameAdapter.FRAME_PATCH_COUNT, 1)
+
+        val decoded = NativeFrameAdapter.read(frame).patches.single() as RenderPatch.ScrollTo
+        assertEquals(42, decoded.nodeId)
+        assertEquals(true, decoded.toEnd)
+        assertEquals(0f, decoded.offsetDp)
+    }
+
+    @Test
+    fun read_decodes_scrollTo_offsetMode_invariantCulture() {
+        val offsetBytes = "123.5".toByteArray(Charsets.UTF_8) + 0
+        val offsetMem = Memory(offsetBytes.size.toLong())
+            .apply { write(0, offsetBytes, 0, offsetBytes.size) }
+
+        val patches = Memory(NativeFrameAdapter.PATCH_SIZE).apply { clear() }
+        patches.setInt(NativeFrameAdapter.PATCH_KIND, 10)
+        patches.setInt(NativeFrameAdapter.PATCH_NODE_ID, 7)
+        patches.setInt(NativeFrameAdapter.PATCH_AUX, 0)          // 0 = to an offset
+        patches.setPointer(NativeFrameAdapter.PATCH_PROP_VALUE, offsetMem)
+
+        val frame = Memory(NativeFrameAdapter.FRAME_SIZE).apply { clear() }
+        frame.setPointer(NativeFrameAdapter.FRAME_PATCHES, patches)
+        frame.setInt(NativeFrameAdapter.FRAME_PATCH_COUNT, 1)
+
+        val decoded = NativeFrameAdapter.read(frame).patches.single() as RenderPatch.ScrollTo
+        assertEquals(7, decoded.nodeId)
+        assertEquals(false, decoded.toEnd)
+        // The dot is the POINT: .NET formats invariantly, so this shell must
+        // parse invariantly. A locale-sensitive parse would read 123.5 as 1235
+        // on a comma-decimal device — a scroll ten times too far, on some
+        // devices only.
+        assertEquals(123.5f, decoded.offsetDp)
+    }
+
+    /**
+     * A malformed offset degrades to 0, it does NOT throw. This decode runs
+     * inside the native frame callback: an exception here crosses back into
+     * NativeAOT and takes the app down, so a future runtime sending something
+     * this shell cannot parse must cost a wrong scroll, never a crash.
+     */
+    @Test
+    fun read_scrollTo_malformedOffset_degradesToZero() {
+        val junkBytes = "not-a-number".toByteArray(Charsets.UTF_8) + 0
+        val junkMem = Memory(junkBytes.size.toLong())
+            .apply { write(0, junkBytes, 0, junkBytes.size) }
+
+        val patches = Memory(NativeFrameAdapter.PATCH_SIZE).apply { clear() }
+        patches.setInt(NativeFrameAdapter.PATCH_KIND, 10)
+        patches.setInt(NativeFrameAdapter.PATCH_NODE_ID, 3)
+        patches.setInt(NativeFrameAdapter.PATCH_AUX, 0)
+        patches.setPointer(NativeFrameAdapter.PATCH_PROP_VALUE, junkMem)
+
+        val frame = Memory(NativeFrameAdapter.FRAME_SIZE).apply { clear() }
+        frame.setPointer(NativeFrameAdapter.FRAME_PATCHES, patches)
+        frame.setInt(NativeFrameAdapter.FRAME_PATCH_COUNT, 1)
+
+        val decoded = NativeFrameAdapter.read(frame).patches.single() as RenderPatch.ScrollTo
+        assertEquals(0f, decoded.offsetDp)
+    }
+
     // ── 2. Synthetic offset-level decode ─────────────────────────────────────
 
     @Test
@@ -324,6 +403,9 @@ class NativeFrameAdapterTest {
                 is RenderPatch.AttachEvent -> p.copy(nodeId = canon(p.nodeId), handlerId = 0)
                 is RenderPatch.DetachEvent -> p.copy(nodeId = canon(p.nodeId), handlerId = 0)
                 is RenderPatch.CommitFrame -> RenderPatch.CommitFrame(0, 0L)
+                // #256 — node id canonicalised like every other patch; toEnd and
+                // the offset stay load-bearing, since they ARE the command.
+                is RenderPatch.ScrollTo    -> p.copy(nodeId = canon(p.nodeId))
             }
         }
     }

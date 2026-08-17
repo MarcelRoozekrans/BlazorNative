@@ -1,2 +1,3 @@
 #nullable enable
 BlazorNative.Runtime.BlazorNativeInitOptions.LogLevel -> int
+BlazorNative.Runtime.BlazorNativePatchKind.ScrollTo = 10 -> BlazorNative.Runtime.BlazorNativePatchKind

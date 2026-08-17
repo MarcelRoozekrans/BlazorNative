@@ -436,6 +436,88 @@ class WidgetMapperScrollTest {
         }
     }
 
+    // ── #256 — programmatic scroll (the command kind) ────────────────────────
+
+    /**
+     * The Android twin of iOS's `BnScrollCommandTests`. On a REAL `ScrollView`,
+     * because that is the only place the two things this feature depends on are
+     * true: `ScrollView.scrollTo` clamps to the real scroll range, and the
+     * content view's laid-out height is what "the end" is computed from.
+     */
+    @Test fun a_scrollTo_command_moves_the_viewport_to_the_requested_offset() {
+        val host = SyntheticHost()
+        host.render(scrollTree())
+        val d = density()
+
+        host.render(listOf(RenderPatch.ScrollTo(1, toEnd = false, offsetDp = 240f)))
+
+        assertEquals("the command scrolled to the requested dp offset",
+            240f, host.read { scrollViewOf(host.root).scrollY } / d, 0.5f)
+    }
+
+    @Test fun a_scrollTo_end_command_lands_at_content_minus_viewport() {
+        val host = SyntheticHost()
+        host.render(scrollTree())
+        val d = density()
+
+        host.render(listOf(RenderPatch.ScrollTo(1, toEnd = true, offsetDp = 0f)))
+
+        assertEquals("end = 800 content − 200 viewport, computed HERE from the content " +
+            "view's laid-out height — .NET cannot compute it without being a frame stale",
+            SCROLL_RANGE, host.read { scrollViewOf(host.root).scrollY } / d, 0.5f)
+    }
+
+    /**
+     * THE REGRESSION THE WHOLE FEATURE IS FOR, and the reason the command is
+     * QUEUED rather than applied where it is decoded: the rows that grow the
+     * content and the command arrive in ONE frame, with the command FIRST (which
+     * is how Blazor's diff necessarily orders it — the attribute belongs to the
+     * scroll element and the rows are its children). A shell that scrolled on
+     * decode would use the pre-append content height and land at the OLD end.
+     */
+    @Test fun a_scrollTo_end_in_the_same_frame_that_appends_rows_uses_the_NEW_content() {
+        val host = SyntheticHost()
+        host.render(scrollTree())
+        val d = density()
+
+        host.render(buildList {
+            add(RenderPatch.ScrollTo(1, toEnd = true, offsetDp = 0f))   // FIRST, deliberately
+            for (i in 0 until 5) {
+                add(create(100 + i, "view", 1))
+                add(style(100 + i, "height", ROW_H.toInt().toString()))
+            }
+        })
+
+        // 15 rows × 80 = 1200 content − 200 viewport = 1000.
+        assertEquals("the command must be honoured against the content the SAME frame created",
+            1000f, host.read { scrollViewOf(host.root).scrollY } / d, 0.5f)
+    }
+
+    @Test fun a_scrollTo_past_the_end_is_clamped_by_the_platform_not_rejected() {
+        val host = SyntheticHost()
+        host.render(scrollTree())
+        val d = density()
+
+        host.render(listOf(RenderPatch.ScrollTo(1, toEnd = false, offsetDp = 99_999f)))
+
+        assertEquals("ScrollView.scrollTo clamps to the scroll range itself — an offset past " +
+            "the end is a no-op AT the end, matching BnScroll's documented contract",
+            SCROLL_RANGE, host.read { scrollViewOf(host.root).scrollY } / d, 0.5f)
+    }
+
+    @Test fun a_scrollTo_command_on_a_node_that_is_not_a_ScrollView_is_ignored_not_fatal() {
+        // Reachable through the raw-element hatch: OpenElement("view") +
+        // AddAttribute("scrollTo", …). DATA, not a crash.
+        val host = SyntheticHost()
+        host.render(listOf(create(50, "view", null), style(50, "height", "100")))
+
+        host.render(listOf(RenderPatch.ScrollTo(50, toEnd = true, offsetDp = 0f)))
+
+        assertEquals("the shell ignored it and applied nothing", 0, host.read {
+            (host.root.getChildAt(0) as ViewGroup).scrollY
+        })
+    }
+
     // ── The two diagnostics ──────────────────────────────────────────────────
 
     /**

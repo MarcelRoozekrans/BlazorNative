@@ -728,7 +728,22 @@ class WidgetMapper(
                 is RenderPatch.CommitFrame -> yoga.calculateAndApply()
                 is RenderPatch.AttachEvent -> handleAttachEvent(patch)
                 is RenderPatch.DetachEvent -> handleDetachEvent(patch)
+                // #256: QUEUE, do not scroll. Content height is a Yoga result
+                // that does not exist until CommitFrame's calculateAndApply has
+                // run, so scrolling here would use the PREVIOUS content's size —
+                // which is precisely the bug the feature exists to avoid. Last
+                // command per node wins: two scrolls in one frame can only mean
+                // the later one.
+                is RenderPatch.ScrollTo    -> pendingScrollCommands[patch.nodeId] = patch
             }
+            // AFTER the loop, so after CommitFrame laid the tree out — and still
+            // INSIDE the applyingBatch guard, deliberately: the scroll fires the
+            // ScrollView's listener synchronously, and inside the guard that
+            // sample CONFLATES into the wire instead of dispatching. The
+            // flushScrollWires() below then sends the final offset, so OnScroll
+            // reports where the programmatic scroll actually LANDED. Exactly the
+            // path Phase 7.2 built for the layout re-clamp.
+            applyPendingScrollCommands()
         } finally {
             applyingBatch = false
         }
@@ -1144,6 +1159,73 @@ class WidgetMapper(
     private fun flushScrollWires() {
         if (scrollWires.isEmpty()) return
         for (nodeId in scrollWires.keys.toList()) maybeDispatchScroll(nodeId)
+    }
+
+    /**
+     * #256 — programmatic scroll commands queued during this batch, keyed by node.
+     * A map rather than a list: two commands for one node in one frame can only
+     * mean the later one, and replaying both would be a visible double-jump.
+     */
+    private val pendingScrollCommands = mutableMapOf<Int, RenderPatch.ScrollTo>()
+
+    /** Test-only (#256): programmatic scrolls actually APPLIED to a ScrollView —
+     * the pin that separates "the command was decoded" from "the view moved". */
+    internal var scrollCommandsApplied: Int = 0
+        private set
+
+    /** Test-only (#256): the last px offset a command scrolled to. */
+    internal var lastScrollCommandPx: Int = -1
+        private set
+
+    /**
+     * Applies this batch's queued scroll commands, post-layout.
+     *
+     * NOT ANIMATED, on purpose. `smoothScrollTo` would look nicer for a
+     * one-off jump and would be wrong for the case this exists to serve: an
+     * append-driven log tail scrolls on every new line, and overlapping
+     * animations fight each other and never settle. It also makes the result
+     * observable in one layout pass, which is what lets the device tests assert
+     * a landing offset instead of polling an animation.
+     *
+     * `ScrollView.scrollTo` clamps to the scroll range itself, so an offset
+     * past the end is a no-op at the end rather than an error — matching the
+     * component's documented "the platform clamps it" contract.
+     */
+    private fun applyPendingScrollCommands() {
+        if (pendingScrollCommands.isEmpty()) return
+        val commands = pendingScrollCommands.toList()
+        pendingScrollCommands.clear()
+
+        for ((nodeId, command) in commands) {
+            val scroll = nodes[nodeId] as? ScrollView
+            if (scroll == null) {
+                // The node died in this very batch, or was never a scroll node
+                // (the raw-element hatch can put `scrollTo` on anything). DATA,
+                // not a crash — the shell's standing rule for a patch it cannot
+                // honour.
+                Log.w(TAG, "ScrollTo: node $nodeId is not a ScrollView — ignoring")
+                continue
+            }
+
+            val targetPx = if (command.toEnd) {
+                // The end is the CONTENT node's height minus the viewport's.
+                // Read from the synthetic content view — the same node Yoga
+                // computed contentSize from — never derived from a union of
+                // child frames, which is where two shells drift apart.
+                val content = scrollContents[nodeId]
+                val range = (content?.height ?: 0) - scroll.height
+                if (range > 0) range else 0
+            } else {
+                // The ONE conversion site, mirroring onScrollSample's px ÷ density
+                // in the other direction (6.1 rule).
+                val px = command.offsetDp * context.resources.displayMetrics.density
+                if (px > 0f) px.roundToInt() else 0
+            }
+
+            scroll.scrollTo(0, targetPx)
+            scrollCommandsApplied++
+            lastScrollCommandPx = targetPx
+        }
     }
 
     private fun handleCreate(p: RenderPatch.CreateNode) {

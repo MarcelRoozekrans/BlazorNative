@@ -1,4 +1,4 @@
-using System.Runtime.InteropServices;
+﻿using System.Runtime.InteropServices;
 using BlazorNative.Runtime;
 using BlazorNative.Renderer;
 
@@ -21,10 +21,11 @@ namespace BlazorNative.Runtime.Tests;
 public sealed class FrameEncoderTests
 {
     [Fact]
-    public void Encode_AllEightKinds_RoundTrips()
+    public void Encode_AllNineKinds_RoundTrips()
     {
-        // AppendChildPatch is DELETED (Phase 3.3, DoD #10) — 8 live kinds; its
-        // wire id stays reserved-dormant (see BlazorNativePatchKind).
+        // AppendChildPatch is DELETED (Phase 3.3, DoD #10) — 9 live kinds; its
+        // wire id stays reserved-dormant (see BlazorNativePatchKind). #256 added
+        // the ninth, ScrollTo = 10.
         var frame = new RenderFrame(
             FrameId: 7,
             TimestampMs: 123456789L,
@@ -37,6 +38,7 @@ public sealed class FrameEncoderTests
                 new SetStylePatch(15, "backgroundColor", "#336699"),
                 new AttachEventPatch(16, "click", HandlerId: 99),
                 new DetachEventPatch(17, HandlerId: 98, EventName: "change"),
+                new ScrollToPatch(18, ToEnd: false, Offset: 123.5f),
                 new CommitFramePatch(FrameId: 7, TimestampMs: 123456789L),
             ]);
 
@@ -45,7 +47,7 @@ public sealed class FrameEncoderTests
 
         // Envelope
         Assert.NotEqual(IntPtr.Zero, native.Patches);
-        Assert.Equal(8, native.PatchCount);
+        Assert.Equal(9, native.PatchCount);
         Assert.Equal(7, native.FrameId);
         Assert.Equal(123456789L, native.TimestampMs);
 
@@ -115,9 +117,20 @@ public sealed class FrameEncoderTests
         Assert.Equal(IntPtr.Zero, p.PropName);
         Assert.Equal(IntPtr.Zero, p.PropValue);
 
-        // 7: CommitFrame — NodeId carries FrameId; the timestamp rides the
-        //    envelope, not the patch.
+        // 7: ScrollTo (#256) — AuxInt is the mode (0 = to an offset), and the
+        //    offset rides PropValue as an INVARIANT-CULTURE number string, the
+        //    same encoding the OnScroll payload uses coming the other way.
         p = Decode(native, 7);
+        Assert.Equal(BlazorNativePatchKind.ScrollTo, p.Kind);
+        Assert.Equal(18, p.NodeId);
+        Assert.Equal(0, p.AuxInt);
+        Assert.Equal("123.5", Marshal.PtrToStringUTF8(p.PropValue));
+        Assert.Equal(IntPtr.Zero, p.Text);
+        Assert.Equal(IntPtr.Zero, p.PropName);
+
+        // 8: CommitFrame — NodeId carries FrameId; the timestamp rides the
+        //    envelope, not the patch.
+        p = Decode(native, 8);
         Assert.Equal(BlazorNativePatchKind.CommitFrame, p.Kind);
         Assert.Equal(7, p.NodeId);
         Assert.Equal(0, p.ParentNodeId);

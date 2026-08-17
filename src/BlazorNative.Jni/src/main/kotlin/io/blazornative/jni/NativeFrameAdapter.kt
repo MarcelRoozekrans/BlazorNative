@@ -57,11 +57,11 @@ object NativeFrameAdapter {
     const val PATCH_NODE_ID = 4L       // CommitFrame: frameId
     const val PATCH_PARENT = 8L        // -1 = none
     const val PATCH_NODE_TYPE = 12L    // CreateNode only
-    const val PATCH_AUX = 16L          // CreateNode: insertIndex (-1 = append); Attach/DetachEvent: handlerId
+    const val PATCH_AUX = 16L          // CreateNode: insertIndex (-1 = append); Attach/DetachEvent: handlerId; ScrollTo: 1 = to end, 0 = to PropValue offset
     // offset 20: Reserved0 padding — pointers below are 8-aligned.
     const val PATCH_TEXT = 24L         // ReplaceText: text; Attach/DetachEvent: eventName
     const val PATCH_PROP_NAME = 32L    // UpdateProp/SetStyle: name
-    const val PATCH_PROP_VALUE = 40L   // UpdateProp/SetStyle: value; NULL = null
+    const val PATCH_PROP_VALUE = 40L   // UpdateProp/SetStyle: value; ScrollTo: invariant-culture offset (NULL in end mode); NULL = null
 
     // BlazorNativeFrame — 24 bytes.
     const val FRAME_SIZE = 24L
@@ -182,6 +182,18 @@ object NativeFrameAdapter {
                     )
                 )
                 9 -> patches.add(RenderPatch.CommitFrame(frameId = frameId, timestampMs = timestampMs))
+                10 -> patches.add( // #256 ScrollTo
+                    RenderPatch.ScrollTo(
+                        nodeId = nodeId,
+                        toEnd = aux == 1,
+                        // PropValue is NULL in end mode -- there is no offset to
+                        // carry -- and an INVARIANT-culture number otherwise. Parsed
+                        // with toFloatOrNull (never toFloat): a malformed value from a
+                        // future runtime must degrade to "scroll to 0", never throw
+                        // out of the frame callback and take the app with it.
+                        offsetDp = readUtf8(patchesPtr, base + PATCH_PROP_VALUE)?.toFloatOrNull() ?: 0f,
+                    )
+                )
                 else ->
                     // Unknown wire id: a newer runtime is talking to an older
                     // shell. Skip (forward compat) but leave a trace.

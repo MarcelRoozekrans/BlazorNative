@@ -1,3 +1,4 @@
+﻿using System.Globalization;
 using BlazorNative.Core;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Rendering;
@@ -255,10 +256,101 @@ public sealed class BnScroll : ComponentBase
     /// </para></summary>
     [Parameter] public EventCallback<BnScrollEventArgs> OnScroll { get; set; }
 
+    /// <summary>Scroll to the end of the content on every render, for
+    /// append-driven views — a log tail, a chat transcript, console output —
+    /// where new content arriving below the fold should bring itself into view.
+    /// Default false.
+    /// <para>
+    /// <b>Every render, not every append.</b> This component cannot see that
+    /// your content grew; it only knows it re-rendered. So a re-render for an
+    /// unrelated reason also scrolls to the end. That is usually what a view
+    /// with this switched on wants, but it is why it is a parameter you choose
+    /// rather than a default — if you need "only when items were added", call
+    /// <see cref="ScrollToEndAsync"/> yourself at the point you add them.
+    /// </para></summary>
+    [Parameter] public bool AutoScrollToEnd { get; set; }
+
     /// <summary>The content to scroll. Wrap it in a <see cref="BnColumn"/> to
     /// give it a gap, a padding or an alignment — this component will not do
     /// that for you.</summary>
     [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    // ── Programmatic scrolling (#256) ─────────────────────────────────────────
+    //
+    // The command reaches the shell as an ATTRIBUTE on this component's own
+    // element, which the renderer routes to a ScrollTo patch. Two consequences
+    // are worth stating where the code is, because both are the reason the API
+    // looks like this:
+    //
+    //  1. ORDERING IS FREE AND IS THE WHOLE POINT. The attribute rides the same
+    //     render as whatever else changed, so "append rows, then scroll to the
+    //     end" is ONE frame the shell applies in order. The rows exist before
+    //     the scroll lands. Nothing here has to wait for anything.
+    //
+    //  2. THE NONCE IS WHY A REPEAT WORKS. Blazor's diff emits an attribute
+    //     edit only when the value CHANGES, which is right for state and wrong
+    //     for a command — two ScrollToEndAsync() calls in a row would collapse
+    //     into one. The counter makes each call a distinct value. It is
+    //     stripped by the renderer and never crosses the wire.
+    //
+    // Both methods are async-shaped and complete as soon as the command is
+    // QUEUED, not when the view has moved: the shell applies the scroll after
+    // its next layout pass, and there is no completion coming back. Observing
+    // the result is what OnScroll is for. Returning ValueTask anyway keeps the
+    // signatures honest for a future in which a completion does exist — the
+    // alternative, a void method that looks synchronous while being anything
+    // but, would be the lie.
+
+    private int _commandNonce;
+    private string? _pendingCommand;
+
+    /// <summary>Scrolls to <paramref name="offset"/> — dp on Android, pt on iOS,
+    /// the same units <see cref="OnScroll"/> reports. An offset outside the
+    /// content is clamped by the platform, not rejected here.</summary>
+    /// <param name="offset">The vertical content offset to scroll to.</param>
+    /// <returns>A task that completes when the command has been QUEUED for the
+    /// next frame — <b>not</b> when the view has finished moving. Use
+    /// <see cref="OnScroll"/> to observe where it actually landed.</returns>
+    public ValueTask ScrollToAsync(float offset)
+        => IssueCommand(offset.ToString(CultureInfo.InvariantCulture));
+
+    /// <summary>Scrolls to the end of the content.</summary>
+    /// <remarks>The end is computed by the shell, not here: content height is a
+    /// layout result the platform holds, so an offset computed on this side
+    /// would be one frame stale — exactly wrong for the append-driven case this
+    /// exists to serve.</remarks>
+    /// <returns>A task that completes when the command has been QUEUED for the
+    /// next frame — <b>not</b> when the view has finished moving.</returns>
+    public ValueTask ScrollToEndAsync() => IssueCommand(ScrollToEndTarget);
+
+    private ValueTask IssueCommand(string target)
+    {
+        _pendingCommand = $"{target}#{++_commandNonce}";
+        StateHasChanged();
+        return ValueTask.CompletedTask;
+    }
+
+    /// <summary>The command target meaning "the end of the content". Mirrors
+    /// <c>NativeRenderer.ScrollToEndTarget</c>; the two are pinned equal by
+    /// BnScrollCommandTests, because a silent disagreement here would be a
+    /// command the renderer logs and drops.</summary>
+    internal const string ScrollToEndTarget = "end";
+
+    /// <summary>The attribute name the command rides. Mirrors
+    /// <c>NativeRenderer.ScrollToAttributeName</c>, pinned equal by the same test.</summary>
+    internal const string ScrollToAttributeName = "scrollTo";
+
+    /// <inheritdoc />
+    protected override void OnParametersSet()
+    {
+        // AutoScrollToEnd re-arms on every parameter set — see the parameter's
+        // own doc for why "every render" is the honest semantic and not a bug.
+        // Deliberately AFTER any explicit ScrollToAsync of this same render:
+        // last writer wins, and an author who asked for a specific offset while
+        // AutoScrollToEnd is on has asked for two contradictory things.
+        if (AutoScrollToEnd)
+            _pendingCommand = $"{ScrollToEndTarget}#{++_commandNonce}";
+    }
 
     /// <inheritdoc />
     protected override void BuildRenderTree(RenderTreeBuilder b)
@@ -300,6 +392,15 @@ public sealed class BnScroll : ComponentBase
         // byte-identical to pre-7.2 — the un-styled invariant, for events.
         if (OnScroll.HasDelegate)
             b.AddAttribute(24, "onscroll", OnScroll);
+
+        // #256 — the command, when one is pending. Null on a render with no
+        // command, so the un-styled invariant holds for commands too: a
+        // BnScroll nobody has scrolled emits the same wire shape it always did.
+        // The value is NOT cleared after emission: clearing it would make the
+        // NEXT render remove the attribute and the one after re-add it, and a
+        // stale-but-unchanged value is diffed away for free (that is exactly
+        // what the nonce makes a repeat immune to).
+        b.AddAttribute(25, ScrollToAttributeName, _pendingCommand);
 
         b.AddContent(100, ChildContent);
 

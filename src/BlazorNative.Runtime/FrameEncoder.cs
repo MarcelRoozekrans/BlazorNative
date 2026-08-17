@@ -1,3 +1,4 @@
+﻿using System.Globalization;
 using BlazorNative.Core;
 using BlazorNative.Renderer;
 
@@ -28,6 +29,10 @@ namespace BlazorNative.Runtime;
 //   DetachEventPatch(NodeId, HandlerId, EventName) → Kind=DetachEvent,
 //       NodeId, AuxInt = HandlerId, Text = EventName (Phase 3.3 — same free
 //       Text field AttachEvent uses; wire layout unchanged)
+//   ScrollToPatch(NodeId, ToEnd, Offset)        → Kind=ScrollTo, NodeId,
+//       AuxInt = ToEnd ? 1 : 0, PropValue = Offset as an invariant-culture
+//       number string when AuxInt = 0, NULL when AuxInt = 1 (#256). The only
+//       patch that COMMANDS a node rather than describing it — see ScrollToPatch.
 //   CommitFramePatch(FrameId, TimestampMs)      → Kind=CommitFrame,
 //       NodeId = FrameId (the timestamp rides the envelope, not the patch)
 //
@@ -104,6 +109,21 @@ internal static unsafe class FrameEncoder
                     dst.NodeId = p.NodeId;
                     dst.AuxInt = p.HandlerId;
                     dst.Text = arena.AllocUtf8(p.EventName);
+                    break;
+
+                case ScrollToPatch p:
+                    // #256. AuxInt is the mode; the offset rides PropValue as an
+                    // INVARIANT-CULTURE number string — the same encoding the shells
+                    // use for the OnScroll payload coming the other way, so the pair
+                    // round-trips symmetrically on a comma-decimal device. NULL when
+                    // scrolling to the end: there is no offset to carry, and a shell
+                    // that reads one anyway gets nothing rather than a stale zero.
+                    dst.Kind = BlazorNativePatchKind.ScrollTo;
+                    dst.NodeId = p.NodeId;
+                    dst.AuxInt = p.ToEnd ? 1 : 0;
+                    dst.PropValue = p.ToEnd
+                        ? IntPtr.Zero
+                        : arena.AllocUtf8(p.Offset.ToString(CultureInfo.InvariantCulture));
                     break;
 
                 case CommitFramePatch p:

@@ -17,7 +17,7 @@
 #   emulator (ubuntu-latest, KVM) — downloads the .so, boots the API 34
 #     google_apis x86_64 Pixel 6 image (mirrors the local AVD
 #     blazornative-pixel6-x86_64), runs connectedAndroidTest with
-#     -PciSoDir pointing at the artifact → asserts 214 passed / 0 failed.
+#     -PciSoDir pointing at the artifact → asserts 219 passed / 0 failed.
 #
 # Baselines are asserted, not observed: count drift fails the job loudly.
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1043,7 +1043,17 @@ jobs:
       #        echo stays blank -> this times out and reds (the no-hang law).
       #      .check_reports_availability_as_data -- Check -> status:Captured (available on the
       #        AVD) without launching the camera UI.
-      - name: Assert instrumented baseline (214 passed / 0 failed)
+      # ── #256 — PROGRAMMATIC SCROLL, ON A REAL ScrollView (214 -> 219, +5) ──
+      # The command kind applied where it can only be proven: a real ScrollView
+      # clamps scrollTo to its real scroll range, and "the end" is computed from
+      # the content view's LAID-OUT height. Five: an offset moves the viewport;
+      # "end" lands at content − viewport (800 − 200); a command in the SAME frame
+      # that appends rows uses the NEW content (the regression the feature is for —
+      # the command is emitted FIRST, as Blazor's diff necessarily orders it, so a
+      # shell that scrolled on decode would land at the OLD end); an offset past
+      # the end clamps rather than being rejected; and a command on a non-scroll
+      # node is ignored, not fatal (reachable via the raw-element hatch).
+      - name: Assert instrumented baseline (219 passed / 0 failed)
         run: |
           shopt -s globstar nullglob
           xmls=(src/BlazorNative.Jni/build/outputs/androidTest-results/connected/**/*.xml)
@@ -1060,8 +1070,8 @@ jobs:
             s=$(attr skipped "$x");  skipped=$((skipped + ${s:-0}))
           done
           echo "Instrumented totals across ${#xmls[@]} suite(s): tests=$tests failures=$failures errors=$errors skipped=$skipped"
-          if [ "$tests" -ne 214 ] || [ "$failures" -ne 0 ] || [ "$errors" -ne 0 ] || [ "$skipped" -ne 0 ]; then
-            echo "Instrumented test baseline drift: expected 214 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped" >&2
+          if [ "$tests" -ne 219 ] || [ "$failures" -ne 0 ] || [ "$errors" -ne 0 ] || [ "$skipped" -ne 0 ]; then
+            echo "Instrumented test baseline drift: expected 219 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped" >&2
             exit 1
           fi
 

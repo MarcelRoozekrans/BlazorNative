@@ -35,8 +35,9 @@ A render cycle yields a list of atomic commands the shell applies to its widget 
 | `SetStylePatch` | Apply one style property to a node |
 | `UpdatePropPatch` | Set or update a property (a `null` value removes it) |
 | `ReplaceTextPatch` | Replace a text node's content |
+| `ScrollToPatch` | Scroll a scroll node to an offset, or to the end of its content |
 
-Two details in there are load-bearing and worth pulling out:
+Three details in there are load-bearing and worth pulling out:
 
 **Creation carries its own placement.** `CreateNodePatch` has an `InsertIndex`: `-1` means
 append (the mount-walk common case), and `≥ 0` inserts at that position for mid-list keyed
@@ -47,6 +48,16 @@ creation carried placement, and moves are remove-plus-insert.
 **The index counts real views only.** Blazor's sibling slots include component slots that
 own no view; the renderer translates its own sibling positions into *host* child indices,
 skipping them. A shell never has to know that a component existed.
+
+**One patch commands rather than describes, and it is applied differently.** Every patch
+above says what the tree *is* — except `ScrollToPatch`, which asks a live view to *do*
+something. Two consequences follow. Because a command is not idempotent, repeating it has to
+be observable, so it rides the frame stream where its position relative to the content
+around it is meaningful. And because "the end of the content" is a Yoga result the *shell*
+holds, a shell must **queue** the command and honour it after that frame's layout — scrolling
+where it decodes the patch would target the previous content's size, which is the bug the
+design exists to avoid. The guarantee the renderer offers is therefore the **frame**, not the
+patch index: the command and the content it follows arrive together.
 
 **Retired wire ids stay reserved.** When a patch kind is deleted, its number is not reused
 and the remaining kinds do not renumber. A wire whose ids shift under a shell that was

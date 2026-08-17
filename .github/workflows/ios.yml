@@ -350,7 +350,7 @@ jobs:
             > ios-out/xcresult.json 2>/dev/null || true
           ls -la ios-out/crash || true
 
-      - name: Assert XCTest baseline (244 passed / 0 failed)
+      - name: Assert XCTest baseline (254 passed / 0 failed)
         if: always()
         run: |
           log=ios-out/xcodebuild-test.log
@@ -1105,9 +1105,22 @@ jobs:
           # existing size assertion is UNCHANGED and gains an offset(of:) line inside the
           # same test method, so it adds no count), the callbacks bridge stays 80 and the
           # nm -gU gate still asserts exactly 10 blazornative_* exports.
-          if [ "$failed" -ne 0 ] || [ "$passed" -ne 244 ]; then
+          # 244 -> 254 (#256, +10) — PROGRAMMATIC SCROLL, the iOS half.
+          # BnScrollCommandTests: the wire kind 10 decode in both modes plus a
+          # malformed offset that degrades to 0 rather than throwing out of the
+          # frame callback (3); and the application half (7) — an offset moves the
+          # viewport, "end" lands at contentSize minus viewport, a command in the
+          # SAME frame that appends rows uses the NEW content (the regression the
+          # feature exists for: a shell that scrolled on decode would use the
+          # pre-append size), out-of-range clamps both ways through the same
+          # clampedOffset the 6.2 shrink path uses, two commands in one frame apply
+          # only the last, and a command on a non-scroll node is ignored not fatal.
+          # The gesture gate (drop a command while isTracking) is deliberately NOT
+          # unit-tested — it needs a real touch sequence; it is on the device
+          # checklist instead, and the test file says so.
+          if [ "$failed" -ne 0 ] || [ "$passed" -ne 254 ]; then
             grep -E "Test Case '.*' (passed|failed)" "$log" || true
-            echo "iOS XCTest baseline drift: expected 244 passed / 0 failed, got passed=$passed failed=$failed" >&2
+            echo "iOS XCTest baseline drift: expected 254 passed / 0 failed, got passed=$passed failed=$failed" >&2
             exit 1
           fi
 
