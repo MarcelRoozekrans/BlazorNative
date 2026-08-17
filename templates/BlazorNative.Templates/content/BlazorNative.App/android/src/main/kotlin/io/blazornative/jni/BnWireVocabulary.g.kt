@@ -30,7 +30,7 @@ internal object BnWireVocabulary {
 
     internal val VISUAL_STYLES = setOf(
         // Visual
-        "backgroundColor", "color", "fontSize", "fontWeight", "background", "style",
+        "backgroundColor", "color", "fontSize",
     )
 
     internal val SCROLL_IGNORED_CONTAINER_STYLES = setOf(

@@ -4,7 +4,7 @@
 #
 #   build-test (windows-latest) — the local verification procedure verbatim
 #   (setup.ps1 §1–7 documents the toolchain pins):
-#     build (analyzers ride it) → .NET tests (930 passed / 0 skipped) →
+#     build (analyzers ride it) → .NET tests (933 passed / 0 skipped) →
 #     three NativeAOT publishes of samples/BlazorNative.SampleApp — the
 #     publish head since Phase 8.0: the app owns PublishAot, the exports stay
 #     in Runtime via UnmanagedEntryPointsAssembly, and the artifact is
@@ -16,7 +16,7 @@
 #     (161 passed / 0 failed — the assertion is the step near the end of this
 #     job; this header is a copy, and it read 92 for four milestones) →
 #     the instrumented sources COMPILE →
-#     consumer smoke (SIX packages packed at the one props version, nupkg
+#     consumer smoke (SEVEN packages packed at the one props version, nupkg
 #     purity interrogated, then a blank consumer mounts a Bn* component,
 #     exercises RegisterPages, and trips the analyzers; Phase 4.5 extended by
 #     Phase 8.1, M4 DoD #7 / M8 DoD #2) → artifacts for the instrumented
@@ -1812,7 +1812,23 @@ jobs:
       # JVM / Android / iOS baselines do NOT move: no shell test was added or
       # removed, only the source of the names they check. (Rebased onto #256, so the
       # arithmetic is 933 - 8 + 5; the -8/+5 themselves are unchanged.)
-      - name: .NET tests (assert 930 passed / 0 skipped)
+      # 930 -> 933 (visual-style hole, +3 net): an audit of #21 found FOUR names in
+      # VisualStyleAttributes -- color, fontWeight, background, style -- that the
+      # routing table ACCEPTED and NO shell implemented. Every use was dropped on
+      # `else -> "not yet supported"`, silently, on every frame. Root cause: the
+      # dispatch pin covered only the YOGA half of a two-half partition.
+      #   +1 ShellStyleTableDriftTests.AndroidSetStyleDispatch_HasAnArmForEveryVisualStyle
+      #      -- the missing symmetry. Mutation-proven: restoring fontWeight to the
+      #      manifest reds it naming that exact name.
+      #   +3 -1 StyleAttributePartitionTests -- fontWeight/background/style move to the
+      #      LEDGERED (not-a-style) theory, color stays a paint name. fontWeight is not
+      #      a missing arm but a design question: only Inter Regular is bundled, and
+      #      synthetic bold changes text METRICS, which would risk the font-parity
+      #      contract to add a paint property. Re-filed.
+      # `color` is now implemented in both shells and has a producer (BnText.Color) --
+      # colour has no measurement consequence, which is why it was the one name safe to
+      # add here. JVM/Android/iOS counts do NOT move (no shell test added).
+      - name: .NET tests (assert 933 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -1830,9 +1846,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 930 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 930 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
-
+          if ($failed -ne 0 -or $passed -ne 933 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 933 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # ── NativeAOT publishes + nine-export verification ────────────────────
@@ -2183,19 +2198,19 @@ jobs:
 
       # ── Consumer smoke (Phase 4.5 Gate 2, extended by Phase 8.1 Gate 1 —
       #    M4 DoD #7 / M8 DoD #2) ────────────────────────────────────────────
-      # Packs the SIX packages at the one version parsed from
-      # src/Directory.Build.props (6 nupkg + 5 snupkg, zero warnings,
+      # Packs the SEVEN packages at the one version parsed from
+      # src/Directory.Build.props (7 nupkg + 6 snupkg, zero warnings,
       # filenames == props version), INTERROGATES every nupkg (type purity
       # off the PE, nuspec truth incl. the SourceLink repository@commit and
       # the dependency allow-list, inventory shape — this step is where
       # nupkg-level purity lives, because the xunit suite above runs before
       # any nupkg exists), restores samples/ConsumerSmoke from the local
       # feed only (+nuget.org transitives) into a clean temp cache with
-      # provenance asserted ×6, asserts the analyzers package is live
+      # provenance asserted ×7, asserts the analyzers package is live
       # (BN0011 trip build + zero-BN clean build), then mounts a Bn*
       # component, asserts the patch set, and exercises the RegisterPages
       # laws from packages alone (the API's first out-of-repo consumer).
-      - name: Consumer smoke (six packages — nupkg purity + mount + RegisterPages + analyzer trip)
+      - name: Consumer smoke (seven packages — nupkg purity + mount + RegisterPages + analyzer trip)
         run: |
           .\scripts\consumer-smoke.ps1
           if ($LASTEXITCODE -ne 0) { throw "consumer-smoke.ps1 failed (exit $LASTEXITCODE)" }

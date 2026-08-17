@@ -25,11 +25,20 @@ public sealed class BnText : ComponentBase
     /// size.</summary>
     [Parameter] public float? FontSize { get; set; }
 
+    /// <summary>Text colour, e.g. <c>"#336699"</c> — the same colour grammar
+    /// <see cref="BnView.BackgroundColor"/> accepts. Null leaves the platform's
+    /// default label colour, which is what makes dark mode work by itself.</summary>
+    /// <remarks>Colour has no effect on layout, so unlike
+    /// <see cref="FontSize"/> it never re-measures anything — the frame tables are
+    /// identical with and without it.</remarks>
+    [Parameter] public string? Color { get; set; }
+
     /// <inheritdoc />
     protected override void BuildRenderTree(RenderTreeBuilder b)
     {
         b.OpenElement(0, "span");
         b.AddAttribute(1, "fontSize", FontSize.ToStyleValue()); // null → omitted
+        b.AddAttribute(2, "color", Color);                      // null → omitted
 
         // Always emit the text frame (empty string included) so the host
         // text node exists from mount and later edits are a ReplaceText on

@@ -47,10 +47,28 @@
     "$doc": [
       "Style names that are VISUAL: the shells route these to the View / UIView",
       "(paint), never to Yoga. Disjoint from yogaStyles by construction, and pinned",
-      "disjoint by StyleAttributePartitionTests."
+      "disjoint by StyleAttributePartitionTests.",
+      "",
+      "EVERY NAME HERE MUST HAVE AN ARM IN BOTH SHELLS. That is not a style rule, it",
+      "is the whole point of the routing table: a name the table accepts and no shell",
+      "applies is a style SILENTLY DROPPED at runtime. The Yoga half has been pinned",
+      "since Phase 6.1; the visual half was NOT, and three names had been sitting here",
+      "unimplemented as a result:",
+      "",
+      "  · fontWeight — REMOVED. Not a missing arm but a DESIGN QUESTION: only Inter",
+      "    Regular is bundled, so bold would be synthetic on one platform or both, and",
+      "    synthetic bold changes text METRICS. That would put the font-parity contract",
+      "    (identical measured frames on both shells) at risk to add a paint property.",
+      "    Re-filed to be done properly, with Inter Bold shipped on both shells and the",
+      "    parity assertions re-run.",
+      "  · background, style — REMOVED. HTML-attribute leftovers from the pre-6.1 list.",
+      "    Nothing in the repo has ever emitted them and neither shell implemented them.",
+      "",
+      "Removing a name is not a regression: it moves from 'accepted, then silently",
+      "dropped' to 'not a style, logged as an unknown prop' — which is visible."
     ],
     "groups": [
-      { "name": "Visual", "names": ["backgroundColor", "color", "fontSize", "fontWeight", "background", "style"] }
+      { "name": "Visual", "names": ["backgroundColor", "color", "fontSize"] }
     ]
   },
 
