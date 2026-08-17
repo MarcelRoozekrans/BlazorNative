@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.Reflection;
 using BlazorNative.Renderer;
 
@@ -17,7 +17,7 @@ namespace BlazorNative.Runtime.Tests;
 //
 // DERIVATION OF THE LIST. The NOT-API tier is the durable record in
 // docs/plans/2026-07-21-phase-11.3-api-tiers.md §7.1 (the marking ledger). Of the
-// 28 marked types it names, 25 live in the two shipped assemblies that this test
+// 29 marked types it names, 26 live in the two shipped assemblies that this test
 // host can reflection-LOAD (Runtime + Renderer). The other 3 are the analyzers
 // (MobilePolicyAnalyzer / InteropBoundaryAnalyzer / BridgeAsyncHandlerAnalyzer):
 // that package targets netstandard2.0 and references Roslyn, so runtime-loading it
@@ -39,7 +39,8 @@ namespace BlazorNative.Runtime.Tests;
 public sealed class NotApiEditorBrowsableTests
 {
     /// <summary>The NOT-API types Gate C marked, in the two runtime-loadable
-    /// shipped assemblies (api-tiers §7.1). 12 in Runtime + 13 in Renderer = 25.</summary>
+    /// shipped assemblies (api-tiers §7.1). 12 in Runtime + 14 in Renderer = 26 —
+    /// #256 added ScrollToPatch, the 14th Renderer NOT-API type.</summary>
     private static readonly string[] ExpectedNotApiMarked =
     [
         // BlazorNative.Runtime — 12 (Exports + the 9 C-ABI structs/enums + the two
@@ -57,7 +58,7 @@ public sealed class NotApiEditorBrowsableTests
         "BlazorNative.Runtime.NativeShellBridge",
         "BlazorNative.Runtime.NativeNavigationManager",
 
-        // BlazorNative.Renderer — 13 (NativeRenderer + the in-memory patch model +
+        // BlazorNative.Renderer — 14 (NativeRenderer + the in-memory patch model +
         // the reflection-over-Blazor-internals exception).
         "BlazorNative.Renderer.NativeRenderer",
         "BlazorNative.Renderer.RenderPatch",
@@ -69,6 +70,7 @@ public sealed class NotApiEditorBrowsableTests
         "BlazorNative.Renderer.AttachEventPatch",
         "BlazorNative.Renderer.DetachEventPatch",
         "BlazorNative.Renderer.CommitFramePatch",
+        "BlazorNative.Renderer.ScrollToPatch",
         "BlazorNative.Renderer.RenderFrame",
         "BlazorNative.Renderer.NativeUiEvent",
         "BlazorNative.Renderer.BlazorVersionMismatchException",
@@ -163,7 +165,7 @@ public sealed class NotApiEditorBrowsableTests
     [Fact]
     public void ExpectedList_IsNonVacuous_AndExcludesKnownStableTypes()
     {
-        Assert.Equal(25, ExpectedNotApiMarked.Length);
+        Assert.Equal(26, ExpectedNotApiMarked.Length);
 
         var expected = new HashSet<string>(ExpectedNotApiMarked, StringComparer.Ordinal);
 

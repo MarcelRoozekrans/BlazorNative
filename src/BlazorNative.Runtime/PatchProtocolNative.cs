@@ -36,6 +36,14 @@ namespace BlazorNative.Runtime;
 /// RESERVED-DORMANT since Phase 3.3 deleted AppendChildPatch (DoD #10 —
 /// CreateNode.AuxInt carries InsertIndex instead): the id is never emitted
 /// and never reused, so wire ids stay stable across hosts (no ABI break).
+///
+/// #256 appends ScrollTo = 10 — an ADDITIVE wire-vocabulary extension, not an
+/// ABI change: the id rides the existing int32 Kind field of the 48-byte patch,
+/// so exports stay 10 and the bridge stays 80 bytes (this is the "consume a new
+/// ordinal" row of the C-ABI extension policy on the API-stability page). A
+/// shell that predates it skips the unknown kind and logs — the same
+/// log-and-continue both adapters already apply to any id they do not know,
+/// which is what makes appending safe rather than merely convenient.
 /// <para>Not part of the supported public API: a wire-protocol enum, public because it is a field
 /// type of the frame structs that cross the C ABI. Its contract is the numeric ids mirrored in
 /// Kotlin and Swift, not the managed enum. Tier NOT-API.</para></summary>
@@ -44,6 +52,7 @@ public enum BlazorNativePatchKind : int
 {
     CreateNode = 1, AppendChild = 2 /* reserved-dormant */, RemoveNode = 3, UpdateProp = 4,
     ReplaceText = 5, SetStyle = 6, AttachEvent = 7, DetachEvent = 8, CommitFrame = 9,
+    ScrollTo = 10,
 }
 
 /// <summary>Wire ids for CreateNode's widget class. Phase 7.3 extends the
@@ -83,11 +92,11 @@ public struct BlazorNativePatch
     public int    NodeId;                 // offset 4  (CommitFrame: FrameId)
     public int    ParentNodeId;           // offset 8  (-1 = none)
     public BlazorNativeNodeType NodeType; // offset 12 (CreateNode only)
-    public int    AuxInt;                 // offset 16 (CreateNode: InsertIndex, -1 = append — explicitly encoded, 0 is a valid front index; Attach/DetachEvent: HandlerId)
+    public int    AuxInt;                 // offset 16 (CreateNode: InsertIndex, -1 = append — explicitly encoded, 0 is a valid front index; Attach/DetachEvent: HandlerId; ScrollTo: 1 = to end, 0 = to PropValue's offset)
     public int    Reserved0;              // offset 20 — explicit pad so the pointers are 8-aligned
     public IntPtr Text;                   // offset 24 (ReplaceText: text; Attach/DetachEvent: eventName; NULL if unused)
     public IntPtr PropName;               // offset 32 (UpdateProp/SetStyle: name)
-    public IntPtr PropValue;              // offset 40 (UpdateProp/SetStyle: value; NULL = null)
+    public IntPtr PropValue;              // offset 40 (UpdateProp/SetStyle: value; ScrollTo: the offset as an invariant-culture number, NULL when AuxInt = 1; NULL = null)
 }                                         // total 48 bytes
 
 /// <summary>The 24-byte native frame envelope handed to the host's frame callback.</summary>

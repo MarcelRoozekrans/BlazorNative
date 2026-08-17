@@ -1,1 +1,18 @@
 #nullable enable
+BlazorNative.Renderer.ScrollToPatch
+BlazorNative.Renderer.ScrollToPatch.Deconstruct(out int NodeId, out bool ToEnd, out float Offset) -> void
+BlazorNative.Renderer.ScrollToPatch.Equals(BlazorNative.Renderer.ScrollToPatch? other) -> bool
+BlazorNative.Renderer.ScrollToPatch.NodeId.get -> int
+BlazorNative.Renderer.ScrollToPatch.NodeId.init -> void
+BlazorNative.Renderer.ScrollToPatch.Offset.get -> float
+BlazorNative.Renderer.ScrollToPatch.Offset.init -> void
+BlazorNative.Renderer.ScrollToPatch.ScrollToPatch(int NodeId, bool ToEnd, float Offset) -> void
+BlazorNative.Renderer.ScrollToPatch.ToEnd.get -> bool
+BlazorNative.Renderer.ScrollToPatch.ToEnd.init -> void
+override BlazorNative.Renderer.ScrollToPatch.<Clone>$() -> BlazorNative.Renderer.ScrollToPatch!
+override BlazorNative.Renderer.ScrollToPatch.Equals(object? obj) -> bool
+override BlazorNative.Renderer.ScrollToPatch.GetHashCode() -> int
+override BlazorNative.Renderer.ScrollToPatch.ToString() -> string!
+override sealed BlazorNative.Renderer.ScrollToPatch.Equals(BlazorNative.Renderer.RenderPatch? other) -> bool
+static BlazorNative.Renderer.ScrollToPatch.operator !=(BlazorNative.Renderer.ScrollToPatch? left, BlazorNative.Renderer.ScrollToPatch? right) -> bool
+static BlazorNative.Renderer.ScrollToPatch.operator ==(BlazorNative.Renderer.ScrollToPatch? left, BlazorNative.Renderer.ScrollToPatch? right) -> bool

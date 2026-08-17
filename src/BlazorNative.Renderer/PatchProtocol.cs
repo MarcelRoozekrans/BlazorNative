@@ -121,6 +121,39 @@ public sealed record DetachEventPatch(
     string EventName        // "click" | "change" | "focus" | "blur" | "scroll"
 ) : RenderPatch;
 
+// ── Imperative commands (#256) ────────────────────────────────────────────────
+
+/// <summary>Scroll a retained scroll node to an offset, or to the end of its content.</summary>
+/// <remarks>
+/// <para>THE FIRST PATCH THAT COMMANDS AN EXISTING NODE rather than describing one, so the
+/// shape is deliberate. Every other patch is a statement about what the tree IS; this one asks a
+/// live view to DO something, and the two differ in exactly one way that matters: a command is
+/// not idempotent, so re-sending it must be observable. That is why it rides the frame stream
+/// and not the host-call bridge — a `ScrollTo` is only ever meaningful RELATIVE to the patches
+/// beside it. "Append three rows, then scroll to the end" is ONE FRAME, so the rows exist by the
+/// time the scroll is honoured. A host call carrying the same request races the frame that
+/// created the rows and would scroll to the OLD end.</para>
+/// <para><b>The guarantee is the FRAME, not the patch index.</b> This patch is emitted from an
+/// attribute of the scroll element, and the content it follows lives in that element's CHILDREN,
+/// so Blazor's diff necessarily orders the command BEFORE the creates. That is harmless, and the
+/// reason is the same one that makes the frame the right unit: a shell cannot honour a ScrollTo
+/// when it decodes it, because "the end" is content height — a Yoga result that does not exist
+/// until the batch is applied and laid out. Both shells therefore QUEUE this and apply it after
+/// layout of the frame it arrived in. A shell that scrolled on decode would scroll to the
+/// previous content's end, which is precisely the bug this design exists to avoid.</para>
+/// <para><paramref name="ToEnd"/> selects the mode because "the end" cannot be computed on this
+/// side: content height is a Yoga result the shells hold, and a .NET-computed offset would be a
+/// frame stale by construction. <paramref name="Offset"/> is ignored when
+/// <paramref name="ToEnd"/> is true.</para>
+/// <para>Not part of the supported public API — see <see cref="RenderPatch"/>. Tier NOT-API.</para>
+/// </remarks>
+[EditorBrowsable(EditorBrowsableState.Never)]
+public sealed record ScrollToPatch(
+    int   NodeId,
+    bool  ToEnd,
+    float Offset            // dp on Android, pt on iOS — the units OnScroll reports
+) : RenderPatch;
+
 // ── Frame boundary ────────────────────────────────────────────────────────────
 
 /// <summary>

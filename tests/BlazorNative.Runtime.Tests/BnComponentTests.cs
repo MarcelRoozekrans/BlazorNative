@@ -1,4 +1,4 @@
-using BlazorNative.Components;
+﻿using BlazorNative.Components;
 using BlazorNative.Renderer;
 using BlazorNative.Runtime;
 using Microsoft.AspNetCore.Components;
@@ -1010,6 +1010,9 @@ public sealed class BnComponentTests : IDisposable
             Parameters(typeof(BnView))
                 .Where(n => !ContainerLayoutParams.Contains(n))
                 .Append(nameof(BnScroll.OnScroll))
+                // #256 — the one parameter BnScroll has that BnView cannot: a
+                // viewport is the only thing that can scroll itself.
+                .Append(nameof(BnScroll.AutoScrollToEnd))
                 .OrderBy(n => n, StringComparer.Ordinal),
             Parameters(typeof(BnScroll)));
 
