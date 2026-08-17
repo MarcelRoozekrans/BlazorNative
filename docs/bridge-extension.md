@@ -58,6 +58,24 @@ of the frame callback: the host implements the operations; the runtime invokes t
   (the first export grow since Phase 3.1). `host_call_complete` is
   `int(long requestId, int status, const char* payloadJsonUtf8)`.
 
+- **Fetch is one-shot and fully buffered — there is no streaming path.** `FetchBegin` starts
+  the request; the host completes it with a single `blazornative_fetch_complete(requestId,
+  BlazorNativeFetchResponse*)` call. `BlazorNativeFetchResponse` (32 bytes) carries the body
+  as one `const char* BodyUtf8` — delivered **once, complete**, and typed **UTF-8**. There is
+  no chunk / continuation / stream field and no incremental export, so:
+  - the shell **buffers the whole body** before calling `fetch_complete`; Server-Sent Events,
+    chunked reads and long-polling degrade to "wait for the whole response" (effectively
+    polling), with no backpressure because nothing is incremental;
+  - **binary / non-UTF-8 bodies are unsupported** in either direction (`FetchRequest.Body` is
+    likewise a `const char*`); large artifacts cross **by reference** — a file path — as the
+    camera capability does (section (f.10)), never inline.
+
+  Streaming, if ever wanted, is an **ABI-shaped change** — an incremental delivery path
+  distinct from the one-shot `fetch_complete` — so it belongs on the roadmap, not in a
+  handler option. Documented at `BridgeHttpHandler` (`src/BlazorNative.Http`) and in the
+  README's limitations ledger; tracked by
+  [#257](https://github.com/MarcelRoozekrans/BlazorNative/issues/257).
+
 - **Register before mount.** `blazornative_register_bridge(int structSize, BlazorNativeBridgeCallbacks*)`
   copies the struct into an immutable holder; components resolving `IMobileBridge`
   (`BlazorNative.Core`) then reach a live host. The function pointers must outlive the

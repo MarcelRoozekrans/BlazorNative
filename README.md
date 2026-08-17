@@ -128,6 +128,7 @@ assert the *same numbers* on an Android emulator and an iOS simulator, frame for
 - **iOS is simulator-only** — real-device iOS is deferred pending an Apple Developer account.
 - **No density-aware image sources** — one file pixel = one dp/pt, so a `@2x` asset renders at 2× size.
 - **No horizontal scroll, no `scrollTo`, no scroll-offset restore** across navigation.
+- **HTTP responses are fully buffered, as UTF-8 text** — the bridge delivers a body once, complete; SSE / chunked / long-poll degrade to polling, and binary bodies are unsupported.
 - **`picker` does not flex its children** — it runs its own internal layout (the node itself is placed correctly).
 - **`alignContent`, `rowGap`, `columnGap`, `display`, `flex`** are not implemented — every accepted style name is a name three parsers must implement.
 

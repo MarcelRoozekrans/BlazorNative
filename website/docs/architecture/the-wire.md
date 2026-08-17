@@ -89,6 +89,14 @@ inside your components on Android. On iOS, the reference shell's fetch is a deli
 stub — see [Shells → iOS](../shells/ios.md), which tells you exactly what to implement and
 why the stub fails loudly instead of hanging.
 
+:::note Fetch is one-shot: fully buffered, UTF-8 text, no streaming
+The shell completes a fetch with a **single** call carrying the **whole** body as a UTF-8
+string. There is no incremental delivery path on the ABI, so Server-Sent Events, chunked
+reads and long-polling all degrade to "wait for the complete response" (effectively polling),
+and binary bodies are unsupported. Streaming would be an ABI-shaped change — a roadmap
+item, not a handler option ([#257](https://github.com/MarcelRoozekrans/BlazorNative/issues/257)).
+:::
+
 Adding a capability to this contract touches the ABI in several places at once. The
 procedure is in the repository, beside the code it changes:
 [`docs/bridge-extension.md`](https://github.com/MarcelRoozekrans/BlazorNative/blob/main/docs/bridge-extension.md).

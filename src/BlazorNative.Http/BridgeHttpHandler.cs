@@ -30,6 +30,23 @@ namespace BlazorNative.Http;
 /// (its networking stack, proxies and certificates) and returns the response across
 /// the bridge. Registered as the primary handler by <see cref="ServiceCollectionExtensions.AddBlazorNativeHttp"/>,
 /// so ordinary <c>HttpClient</c> injection works unchanged on NativeAOT.</summary>
+/// <remarks>
+/// <para><b>Responses are fully buffered — there is no streaming.</b> The bridge delivers a
+/// response as one complete <see cref="BridgeHttpResponse"/> when the request finishes; the
+/// shell buffers the whole body and hands it over once, so this handler never sees a partial
+/// body and cannot expose one. <c>HttpCompletionOption.ResponseHeadersRead</c>,
+/// <c>ReadAsStreamAsync</c> and friends still work, but they yield the already-complete body.
+/// Server-Sent Events, chunked responses read incrementally, and long-polling therefore
+/// degrade to "wait for the whole response" — effectively polling — and there is no
+/// backpressure because nothing is incremental. Streaming would be an ABI-shaped change (an
+/// incremental delivery path beside the one-shot completion), so it is a roadmap item, not a
+/// configuration switch.</para>
+/// <para><b>Bodies are text (UTF-8).</b> The response body crosses the bridge as a UTF-8
+/// string and is exposed as <c>StringContent</c>; the request body is read with
+/// <c>ReadAsStringAsync</c> before dispatch. Binary or non-UTF-8 payloads in either direction
+/// are unsupported — download files or images through a shell capability that returns a
+/// path (the camera pattern), not through this handler.</para>
+/// </remarks>
 [Transient]
 public sealed class BridgeHttpHandler : HttpMessageHandler
 {
