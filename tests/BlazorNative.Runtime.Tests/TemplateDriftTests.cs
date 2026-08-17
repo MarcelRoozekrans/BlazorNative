@@ -378,7 +378,8 @@ public sealed class TemplateDriftTests
     /// <summary>THE COMPLETENESS PIN (Gate 1 review I-1). Every other pin in
     /// this file asserts something about the CONTENT of files it already knows
     /// the names of. This one asserts the NAMES — that the template ships
-    /// exactly these 37 files and no others.
+    /// exactly these 39 files and no others (38 before #255 added the generated
+    /// wire-vocabulary object).
     ///
     /// IT EXISTS BECAUSE THE FILE WAS PROVEN BLIND WITHOUT IT. Gate 1's
     /// reviewer deleted SEVEN template files — gradlew, gradle-wrapper.jar,
@@ -431,7 +432,7 @@ public sealed class TemplateDriftTests
     [Fact]
     public void TemplateContentTree_IsExactlyTheExpectedManifest()
     {
-        // THE EXPECTED MANIFEST — 37 files, the pack's whole inventory.
+        // THE EXPECTED MANIFEST — 39 files, the pack's whole inventory.
         string[] expected =
         [
             // The .NET app the user gets
@@ -499,6 +500,14 @@ public sealed class TemplateDriftTests
             // can pin them. BnStderrLogcatPump (androidMain, above) is the thin
             // syscall wrapper over it, so a template with one and not the other does
             // not compile.
+            // #255 — GENERATED from src/wire-vocabulary.json, into the repo shell AND
+            // here, by tools/BlazorNative.WireGen. It is in the template for the same
+            // reason every other shell source is: a generated app compiles the shell,
+            // and YogaLayout/NativeFrameAdapter now READ this object instead of
+            // carrying their own literals. WireVocabularyCodegenTests byte-compares
+            // BOTH copies against the emitter, so the template's cannot go stale on
+            // its own.
+            "android/src/main/kotlin/io/blazornative/jni/BnWireVocabulary.g.kt",
             "android/src/main/kotlin/io/blazornative/jni/BnLogFormat.kt",
             "android/src/main/kotlin/io/blazornative/jni/ItemsJson.kt",
             "android/src/main/kotlin/io/blazornative/jni/NativeBindings.kt",

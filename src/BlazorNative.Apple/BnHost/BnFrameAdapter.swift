@@ -112,8 +112,7 @@ enum BnFrameAdapter {
     /// create to "?" (a UILabel fallback), and only a device golden could see it;
     /// the pin makes the next vocabulary extension redden on the simulator lane
     /// instead.
-    static let nodeTypes = ["?", "view", "text", "button", "input", "image", "scroll", "picker",
-                            "checkbox", "switch", "slider", "modal", "activityindicator"]
+    static let nodeTypes = BnWireVocabulary.nodeTypes
 
     /// Sanity ceiling on patchCount — a corrupt frame pointer would otherwise
     /// have us chase garbage; take the documented dropped-frame path instead.

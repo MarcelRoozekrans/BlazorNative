@@ -65,6 +65,11 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 #include "BnYogaLayout.h"
+// #255 — the style / scroll-ignore / node-type name tables, emitted from
+// src/wire-vocabulary.json. A header rather than a .inc because XcodeGen globs
+// this whole folder as sources and an unknown extension lands in the build as a
+// resource instead of being ignored.
+#include "BnWireVocabulary.g.h"
 // Phase 11.4 Gate C (#155): the `@_cdecl` bridge to the Swift logging seam. This
 // file is Objective-C++ and CANNOT call Swift — the shell's C++ traffic is plain-C
 // in both directions (see project.yml on why Yoga's headers must never reach
@@ -147,23 +152,17 @@ static void bn_log_ignore(const char* property, const char* detail) {
 // it to the VISUAL branch, which logs "not yet supported" and SILENTLY DROPS the
 // style.
 //
-// Keep the declaration a plain brace-initialised array of quoted names, declared
-// at the start of its line: the drift test parses exactly that shape, and a
-// declaration it cannot find fails it LOUDLY (never silently-empty).
+// GENERATED SINCE #255 — the array now lives in BnWireVocabulary.g.h, emitted from
+// src/wire-vocabulary.json alongside .NET's and Kotlin's copies. It used to be a
+// hand-written mirror kept honest by a drift test that parsed this literal back out
+// of this file; one manifest makes the mirror unnecessary and the divergence
+// unrepresentable. Add names to the MANIFEST, then regenerate.
 //
 // In particular `padding`, `margin`, `width` and `height` are LAYOUT — they belong
 // to the Yoga node and to NOTHING else. Yoga lays a container's children out
 // inside its padding box, so a shell that ALSO insets the view (the old
 // `layoutMargins` / `isLayoutMarginsRelativeArrangement` arm) double-applies it.
 // ─────────────────────────────────────────────────────────────────────────────
-static const char* const kYogaStyles[] = {
-    "flexDirection", "justifyContent", "alignItems", "flexWrap", "gap",
-    "alignSelf", "flexGrow", "flexShrink", "flexBasis",
-    "width", "height", "minWidth", "maxWidth", "minHeight", "maxHeight",
-    "padding", "margin",
-    "position", "top", "right", "bottom", "left",
-};
-
 int32_t bn_yoga_is_layout_style(const char* name) {
     if (name == NULL) return 0;
     const size_t count = sizeof(kYogaStyles) / sizeof(kYogaStyles[0]);
@@ -193,13 +192,11 @@ int32_t bn_yoga_is_layout_style(const char* name) {
 // SILENTLY DROPPED. (Kotlin's half of that pin is
 // `AndroidScrollIgnoredStyles_AreAllRoutedToYoga`.)
 //
-// Keep the declaration a plain brace-initialised array of quoted names, declared at
-// the start of its line — same parser, same reason, as kYogaStyles above.
+// GENERATED SINCE #255 (BnWireVocabulary.g.h). The manifest also ENFORCES the
+// subset rule stated above — every name here must also be a Yoga style — and
+// refuses to emit otherwise, so the invariant is now checked at the source
+// rather than asserted about two hand-written copies.
 // ─────────────────────────────────────────────────────────────────────────────
-static const char* const kScrollIgnoredContainerStyles[] = {
-    "flexDirection", "justifyContent", "alignItems", "flexWrap", "gap", "padding",
-};
-
 int32_t bn_yoga_is_scroll_ignored_container_style(const char* name) {
     if (name == NULL) return 0;
     const size_t count = sizeof(kScrollIgnoredContainerStyles) / sizeof(kScrollIgnoredContainerStyles[0]);
