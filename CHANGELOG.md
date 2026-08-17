@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.9.0](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.8.1...v0.9.0) (2026-08-17)
+
+
+### Features
+
+* **components:** programmatic scroll for BnScroll (ScrollTo/ScrollToEnd + AutoScrollToEnd) ([#261](https://github.com/MarcelRoozekrans/BlazorNative/issues/261)) ([ceeb494](https://github.com/MarcelRoozekrans/BlazorNative/commit/ceeb4948598856829fc9bb0650bc722965b7a4c9))
+* **tooling:** generate the wire vocabulary from one manifest ([#255](https://github.com/MarcelRoozekrans/BlazorNative/issues/255)) ([d86b792](https://github.com/MarcelRoozekrans/BlazorNative/commit/d86b7922ecec6bcc3c64925c46ae65d0c3d37ecf))
+* **tooling:** generate the wire vocabulary from one manifest ([#262](https://github.com/MarcelRoozekrans/BlazorNative/issues/262)) ([d86b792](https://github.com/MarcelRoozekrans/BlazorNative/commit/d86b7922ecec6bcc3c64925c46ae65d0c3d37ecf))
+
+
+### Bug Fixes
+
+* **styling:** close the visual-style hole, pin both shells, fix the M3 stale echo ([#266](https://github.com/MarcelRoozekrans/BlazorNative/issues/266)) ([d774078](https://github.com/MarcelRoozekrans/BlazorNative/commit/d77407838f448faf7b7b9c2883138a2fc39e75d8))
+
 ## [0.8.1](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.8.0...v0.8.1) (2026-08-07)
 
 
