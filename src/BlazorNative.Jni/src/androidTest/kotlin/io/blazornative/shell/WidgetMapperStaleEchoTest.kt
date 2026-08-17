@@ -62,14 +62,20 @@ class WidgetMapperStaleEchoTest {
         ))
     }
 
-    private fun editText(h: SyntheticHost): EditText =
+    /** Resolve the view ONCE, in one `read`. `SyntheticHost.read` is
+     * `runOnMainSync`, and Android throws "This method can not be called from the
+     * main application thread" if one is nested inside another — so every helper
+     * below takes the already-resolved view rather than looking it up again. */
+    private fun editTextOf(h: SyntheticHost): EditText =
         h.read { h.root.getChildAt(0) as EditText }
 
     /** One keystroke, through the REAL TextWatcher — `setText` from the main thread
      * is what a key event reduces to, and it is how the other input tests type. */
-    private fun type(h: SyntheticHost, text: String) {
-        h.read { editText(h).setText(text) }
+    private fun type(h: SyntheticHost, et: EditText, text: String) {
+        h.read { et.setText(text) }
     }
+
+    private fun textOf(h: SyntheticHost, et: EditText): String = h.read { et.text.toString() }
 
     @Test
     fun fast_typing_survives_a_stale_echo_landing_late() {
@@ -77,9 +83,10 @@ class WidgetMapperStaleEchoTest {
         val h = host(sent)
 
         // The user types three characters faster than .NET answers.
-        type(h, "a")
-        type(h, "ab")
-        type(h, "abc")
+        val et = editTextOf(h)
+        type(h, et, "a")
+        type(h, et, "ab")
+        type(h, et, "abc")
         assertEquals("every keystroke dispatched", listOf("a", "ab", "abc"), sent)
 
         // .NET's answer to the FIRST keystroke arrives now — two keystrokes late.
@@ -91,7 +98,7 @@ class WidgetMapperStaleEchoTest {
                 "typing coming back — dropping it is safe by construction because the box " +
                 "already contains that text or something newer. Applying it instead sets the " +
                 "box back to 'a' and jumps the caret, silently, under the user's fingers.",
-            "abc", h.read { editText(h).text.toString() })
+            "abc", textOf(h, et))
     }
 
     @Test
@@ -99,14 +106,15 @@ class WidgetMapperStaleEchoTest {
         val sent = mutableListOf<String>()
         val h = host(sent)
 
-        type(h, "hello")
+        val et = editTextOf(h)
+        type(h, et, "hello")
         h.render(listOf(prop(INPUT, "value", "hello")))
 
         // Nothing to do — the box already agrees. The old code reached the same
         // outcome via the inequality skip; this asserts the NEW path keeps it, so
         // the fix cannot regress the common case into a needless setText (which
         // would move the caret on every single keystroke).
-        assertEquals("hello", h.read { editText(h).text.toString() })
+        assertEquals("hello", textOf(h, et))
         assertEquals("the echo was reconciled, not applied", 1, h.read { h.mapper.staleEchoesDropped })
     }
 
@@ -115,14 +123,15 @@ class WidgetMapperStaleEchoTest {
         val sent = mutableListOf<String>()
         val h = host(sent)
 
-        type(h, "dra")
+        val et = editTextOf(h)
+        type(h, et, "dra")
 
         // The app sets Value itself — a value the user never typed and this shell
         // therefore never dispatched. "Blazor state is truth" is unchanged by the
         // fix: this must land, mid-word or not.
         h.render(listOf(prop(INPUT, "value", "draft-42")))
 
-        assertEquals("draft-42", h.read { editText(h).text.toString() })
+        assertEquals("draft-42", textOf(h, et))
     }
 
     @Test
@@ -130,9 +139,10 @@ class WidgetMapperStaleEchoTest {
         val sent = mutableListOf<String>()
         val h = host(sent)
 
-        type(h, "a")
-        type(h, "ab")
-        type(h, "abc")
+        val et = editTextOf(h)
+        type(h, et, "a")
+        type(h, et, "ab")
+        type(h, et, "abc")
         assertEquals("three keystrokes are outstanding", 3, h.read { h.mapper.pendingEchoCount })
 
         // One echo for the LAST value reconciles all three: the earlier two are
@@ -148,7 +158,7 @@ class WidgetMapperStaleEchoTest {
         val sent = mutableListOf<String>()
         val h = host(sent)
 
-        type(h, "abc")
+        type(h, editTextOf(h), "abc")
         h.render(listOf(RenderPatch.DetachEvent(nodeId = INPUT, handlerId = HANDLER, eventName = "change")))
 
         // No watcher means no echoes are coming: holding them would be a leak that
