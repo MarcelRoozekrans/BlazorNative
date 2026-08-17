@@ -50,5 +50,17 @@ sealed class RenderPatch {
 
     data class DetachEvent(val nodeId: Int, val handlerId: Int, val eventName: String) : RenderPatch()
 
+    /**
+     * #256 — the one patch that COMMANDS an existing node instead of describing
+     * one. [toEnd] selects the mode because the end of the content is a LAYOUT
+     * result only this side holds: .NET cannot compute it without being a frame
+     * stale, which is exactly wrong for the append-driven case this serves.
+     *
+     * The shell must NOT act on this when it decodes it. Content height does not
+     * exist until the batch has been applied and Yoga has run, so WidgetMapper
+     * queues it and applies it after layout of the frame it arrived in.
+     */
+    data class ScrollTo(val nodeId: Int, val toEnd: Boolean, val offsetDp: Float) : RenderPatch()
+
     data class CommitFrame(val frameId: Int, val timestampMs: Long) : RenderPatch()
 }

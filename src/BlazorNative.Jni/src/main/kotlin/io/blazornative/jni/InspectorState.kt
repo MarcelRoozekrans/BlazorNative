@@ -171,5 +171,10 @@ class InspectorState(
         is RenderPatch.AttachEvent -> "AttachEvent #${p.nodeId} ${p.eventName}=#${p.handlerId}"
         is RenderPatch.DetachEvent -> "DetachEvent #${p.nodeId} ${p.eventName} (was #${p.handlerId})"
         is RenderPatch.CommitFrame -> "CommitFrame frame=${p.frameId}"
+        // #256 — worth its own line in the inspector rather than a generic one:
+        // a scroll that "did not happen" is the exact symptom this ring is read
+        // for, and "was the command even sent?" is the first question.
+        is RenderPatch.ScrollTo ->
+            "ScrollTo #${p.nodeId} " + if (p.toEnd) "end" else "offset=${p.offsetDp}"
     }
 }

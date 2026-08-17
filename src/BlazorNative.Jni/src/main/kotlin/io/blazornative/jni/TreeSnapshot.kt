@@ -63,6 +63,11 @@ class TreeSnapshot {
             is RenderPatch.AttachEvent -> nodes[patch.nodeId]?.events?.put(patch.eventName, patch.handlerId)
             is RenderPatch.DetachEvent -> nodes[patch.nodeId]?.events?.remove(patch.eventName)
             is RenderPatch.CommitFrame -> { /* boundary marker; no-op */ }
+            // #256 — a COMMAND, not tree state. This snapshot models what the
+            // tree IS; a scroll changes where a real ScrollView is looking, which
+            // this structure does not represent and must not pretend to. The
+            // preview host has no viewport to scroll.
+            is RenderPatch.ScrollTo -> { /* imperative; no tree state */ }
         }
     }
 

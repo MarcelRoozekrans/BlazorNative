@@ -38,6 +38,13 @@ enum BnPatch {
     case attachEvent(nodeId: Int32, eventName: String, handlerId: Int32)
     case detachEvent(nodeId: Int32, handlerId: Int32, eventName: String)
     case commitFrame(frameId: Int32, timestampMs: Int64)
+    /// #256 — the one patch that COMMANDS an existing node instead of describing
+    /// one. `toEnd` selects the mode because the end of the content is a LAYOUT
+    /// result only this side holds. The shell must NOT act on this when it
+    /// decodes it: content size does not exist until the batch has been applied
+    /// and Yoga has run, so BnWidgetMapper queues it and applies it after layout
+    /// of the frame it arrived in.
+    case scrollTo(nodeId: Int32, toEnd: Bool, offsetPt: Float)
 }
 
 /// A fully decoded, arena-detached frame.
@@ -75,11 +82,11 @@ enum BnFrameAdapter {
     static let patchNodeId = 4
     static let patchParent = 8      // -1 = none
     static let patchNodeType = 12   // CreateNode only
-    static let patchAux = 16        // CreateNode: insertIndex (-1 = append); Attach/Detach: handlerId
+    static let patchAux = 16        // CreateNode: insertIndex (-1 = append); Attach/Detach: handlerId; ScrollTo: 1 = to end, 0 = to PropValue offset
     // offset 20: Reserved0 padding — the pointers below are 8-aligned.
     static let patchText = 24       // ReplaceText: text; Attach/DetachEvent: eventName
     static let patchPropName = 32   // UpdateProp/SetStyle: name
-    static let patchPropValue = 40  // UpdateProp/SetStyle: value; NULL = null
+    static let patchPropValue = 40  // UpdateProp/SetStyle: value; ScrollTo: invariant-culture offset (NULL in end mode); NULL = null
 
     // BlazorNativeFrame — 24 bytes.
     static let frameSize = 24
@@ -179,6 +186,21 @@ enum BnFrameAdapter {
                     patches.append(.detachEvent(nodeId: nodeId, handlerId: aux, eventName: eventName))
                 case 9: // CommitFrame — the envelope carries the truth.
                     patches.append(.commitFrame(frameId: frameId, timestampMs: timestampMs))
+                case 10: // ScrollTo (#256)
+                    // PropValue is NULL in end mode (no offset to carry) and an
+                    // INVARIANT-culture number otherwise. Float(_:) on a Swift
+                    // String is already locale-independent, which is the whole
+                    // reason it is used here rather than a NumberFormatter — a
+                    // formatter would honour the device locale and read "123.5"
+                    // as nil on a comma-decimal phone.
+                    //
+                    // A value this shell cannot parse degrades to 0 rather than
+                    // throwing: unlike the contractual-string fields above, a
+                    // missing offset is not evidence of a corrupt frame, and
+                    // dropping the WHOLE frame over a scroll would be a far worse
+                    // failure than scrolling to the top.
+                    let offset = readUtf8(patchesPtr, base + patchPropValue).flatMap(Float.init) ?? 0
+                    patches.append(.scrollTo(nodeId: nodeId, toEnd: aux == 1, offsetPt: offset))
                 default:
                     // Unknown wire id (incl. dormant 2/AppendChild): a newer
                     // runtime talking to an older shell. Skip, leave a trace.
