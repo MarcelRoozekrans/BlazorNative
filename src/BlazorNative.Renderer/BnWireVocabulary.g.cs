@@ -32,7 +32,7 @@ internal static class BnWireVocabulary
     internal static readonly string[] VisualStyles =
     [
         // Visual
-        "backgroundColor", "color", "fontSize", "fontWeight", "background", "style",
+        "backgroundColor", "color", "fontSize",
     ];
 
     internal static readonly string[] ScrollIgnoredContainerStyles =

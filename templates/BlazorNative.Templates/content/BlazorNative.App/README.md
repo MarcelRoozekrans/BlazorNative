@@ -41,11 +41,15 @@ BlazorNativePage.Routed<BnAboutPage>("/about", "BnAboutPage"),   // route + moun
 BlazorNativePage.Named<SomeScreen>("SomeScreen"),                // mount name only
 ```
 
-**The one exception, and it matters:** Android's `DEEP_LINK_COMPONENTS`
-(`android/src/androidMain/kotlin/io/blazornative/shell/MainActivity.kt`) is a **hand-written
-mirror** of the routed rows. It cannot be derived — it is read at Intent-parse time, before
-the native library loads. Add a routed page, add its pair there. A mirror that drifts fails
-no compile and no test: the deep link just opens the wrong screen, silently.
+**The deep-link map is derived — do not hand-edit it.** Android needs the route→component
+mapping at Intent-parse time, *before* the native library loads, so it cannot ask the runtime
+for it. It is therefore **generated at build time** from the array above into
+`android/src/androidMain/res/raw/blazornative_routes.json`, and `MainActivity` reads that file.
+Add a routed page and the deep link works with no shell edit at all.
+
+*(Earlier versions of this file said the map was a hand-written mirror that you had to keep in
+step by hand. That stopped being true when the generator shipped; editing the generated file
+now means your change is overwritten on the next build.)*
 
 Test a deep link with:
 `adb shell am start -a android.intent.action.VIEW -d "blazornative://about"`

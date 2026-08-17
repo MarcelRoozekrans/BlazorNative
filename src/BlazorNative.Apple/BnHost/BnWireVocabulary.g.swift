@@ -17,7 +17,7 @@ enum BnWireVocabulary {
     ]
 
     static let visualStyles = [
-        "backgroundColor", "color", "fontSize", "fontWeight", "background", "style",
+        "backgroundColor", "color", "fontSize",
     ]
 
     static let scrollIgnoredContainerStyles = [

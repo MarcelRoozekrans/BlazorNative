@@ -2509,6 +2509,18 @@ class WidgetMapper(
                     ?: return logIgnore("backgroundColor", p.value)
                 view.setBackgroundColor(color)
             }
+            "color" -> {
+                // TEXT colour. A paint property with NO measurement consequence — which
+                // is exactly why it is the one visual name safe to add without touching
+                // the font-parity contract (`fontWeight` is not; see the manifest).
+                // Deliberately NO markDirty: colour cannot change an intrinsic size, and
+                // a needless dirty would re-measure the whole subtree on every recolour.
+                val tv = view as? TextView
+                    ?: return logIgnore("color", "${view::class.simpleName} is not TextView")
+                val color = p.value?.let { parseColorOrNull(it) }
+                    ?: return logIgnore("color", p.value)
+                tv.setTextColor(color)
+            }
             "fontSize" -> {
                 val tv = view as? TextView
                     ?: return logIgnore("fontSize", "${view::class.simpleName} is not TextView")

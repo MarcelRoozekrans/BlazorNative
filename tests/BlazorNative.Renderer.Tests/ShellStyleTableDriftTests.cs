@@ -57,6 +57,12 @@ public sealed class ShellStyleTableDriftTests
     private const string KotlinYogaLayout =
         "src/BlazorNative.Jni/src/androidMain/kotlin/io/blazornative/shell/YogaLayout.kt";
 
+    /// <summary>The VISUAL dispatch lives in the widget mapper, not the Yoga layout —
+    /// the two halves of the partition are routed in two different files, which is a
+    /// large part of why only one of them had a pin.</summary>
+    private const string KotlinWidgetMapper =
+        "src/BlazorNative.Jni/src/androidMain/kotlin/io/blazornative/shell/WidgetMapper.kt";
+
     /// <summary>Kotlin's `setStyle` body: from the declaration to the first line that
     /// is exactly a 4-space-indented `}` — the function's own closing brace (every
     /// brace inside it is indented deeper).</summary>
@@ -99,19 +105,60 @@ public sealed class ShellStyleTableDriftTests
             + "SETTER for you, and this is the test that says so.");
     }
 
+    /// <summary>Kotlin's `handleSetStyle` body — the VISUAL dispatch, which routes
+    /// every name `owns()` did NOT claim.</summary>
+    private const string KotlinHandleSetStyleBody =
+        @"(?ms)^    private fun handleSetStyle\(p: RenderPatch\.SetStyle\) \{(?<body>.*?)^    \}";
+
+    /// <summary>THE VISUAL-HALF DISPATCH PIN — the hole this file did not cover, and
+    /// the reason three names sat in the table for months doing nothing.
+    ///
+    /// The Yoga half has been pinned since Phase 6.1 by the fact above. The VISUAL
+    /// half never was — and an audit found the consequence: `color`, `fontWeight`,
+    /// `background` and `style` were all in `VisualStyleAttributes`, all pinned there
+    /// by StyleAttributePartitionTests as "belonging to the view", and **none of them
+    /// had an arm in either shell**. Every use was accepted by the routing table and
+    /// then dropped on `else -> "not yet supported"`. That is exactly the failure the
+    /// wire-vocabulary manifest's own documentation says the apparatus exists to
+    /// prevent, and it was live the whole time because the assertion covered one half
+    /// of a two-half partition.
+    ///
+    /// So this is the missing symmetry, not a new idea: **every VISUAL name must have
+    /// a dispatch arm too.** A name with no producer is a defensible thing to ledger;
+    /// a name the table *accepts* with no arm is not.</summary>
+    [Fact]
+    public void AndroidSetStyleDispatch_HasAnArmForEveryVisualStyle()
+    {
+        var visual = NativeRenderer.VisualStyleAttributes;
+        var dispatched = ParseNameTable(KotlinWidgetMapper, KotlinHandleSetStyleBody, "handleSetStyle");
+
+        var missing = visual.Except(dispatched).ToList();
+
+        Assert.True(
+            missing.Count == 0,
+            $"WidgetMapper.handleSetStyle has no arm for: {Join(missing)}.\n"
+            + "The name is in VisualStyleAttributes, so the renderer routes it to the SetStyle "
+            + "wire and `owns()` declines it — which lands it on "
+            + "`else -> \"SetStyle … not yet supported\"`. The style is accepted and then DROPPED, "
+            + "silently, on every frame.\n"
+            + "Either implement the arm in BOTH shells, or remove the name from "
+            + "src/wire-vocabulary.json. A name in the table with no arm is the one state that is "
+            + "not allowed.");
+    }
+
     // ── The parser ───────────────────────────────────────────────────────────
 
     /// <summary>Every quoted name inside the declaration <paramref name="pattern"/>
     /// matches in the shell source at <paramref name="relativePath"/>. Fails loudly
     /// when the declaration cannot be found: a moved function must break this test,
     /// not silently pass it with an empty set.</summary>
-    private static HashSet<string> ParseNameTable(string relativePath, string pattern)
+    private static HashSet<string> ParseNameTable(string relativePath, string pattern, string what = "setStyle")
     {
         var source = ReadShellSource(relativePath);
         var match = Regex.Match(source, pattern, RegexOptions.Singleline);
 
         Assert.True(match.Success,
-            $"could not find `setStyle` in {relativePath} (pattern: {pattern}). It moved or its "
+            $"could not find `{what}` in {relativePath} (pattern: {pattern}). It moved or its "
             + "signature changed — this dispatch pin IS the contract, so re-point it deliberately "
             + "rather than deleting it.");
 
