@@ -148,6 +148,40 @@ unmarked type is supported: two generated dependency-injection registration clas
 `BlazorNativeHttpServicesServiceCollectionExtensions`) and Razor's `_Imports`. An attribute
 cannot be added to source we do not own.
 
+### The C-ABI extension policy — how a "frozen" ABI grows
+
+"Frozen 10 exports / 80 bytes" describes what the shells bind to today; it does **not** mean
+the ABI cannot grow. It was built to grow **additively**: clipboard + share, geolocation,
+notifications, biometrics + secure storage and camera all landed on it with two struct grows
+and one export grow between them — and the last four with **no ABI change at all**, riding
+`op` values on the `HostCallBegin` slot. The rules that made that safe were
+enforced in code but never written as policy — this is the policy. It binds the framework's
+own contributors (the shells are the only supported callers), and it is what lets the
+`0.x` → `1.0` freeze be a freeze of **layout**, not of **capability**.
+
+| Change | Class | Why |
+|---|---|---|
+| **Append** a trailing callback slot to `BlazorNativeBridgeCallbacks` | **Additive** | `blazornative_register_bridge(structSize, …)` copies `min(structSize, sizeof)` bytes and **zero-fills the tail**. An older shell leaves the new slot `NULL` — the *capability-unsupported* signal, surfaced as `NotSupportedException`, never dereferenced. A newer shell's extra tail is ignored. Same rule for `blazornative_init(structSize, BlazorNativeInitOptions*)`. |
+| **Consume a new ordinal** — a `BlazorNativeNodeType` id, a `BlazorNativePatchKind` id, a `HostCallBegin` `op` value, a `NativeEvent` name, a style / event / prop **string** | **Additive** | Rides an existing `int32` field or `const char*`; no offset moves. A shell that predates the value logs and falls back (`"?"` node type, unknown op → error status) rather than crashing. **This is how M9–M11 added every capability with zero ABI churn.** |
+| **Use `BlazorNativePatch.Reserved0`** (offset 20, `int`) | **Additive** | Alignment padding that the encoder **always zero-fills** (`FrameArena.AllocPatches` clears the block), so `0` is guaranteed to mean *absent* to every shell shipped so far. Spend it once, for a value whose zero is a safe default. |
+| **Add a JSON key** to a `HostCallBegin` args / `host_call_complete` payload / headers blob | **Additive** | Both shells parse JSON by key; unknown keys are ignored. |
+| Reorder, resize, or re-type an existing field; move an existing offset | **Breaking** | The three mirrors read by **offset**. `Marshal.SizeOf`/`OffsetOf` pins in `BridgeProtocolNativeTests` / `PatchProtocolNativeTests` and the Kotlin/Swift drift tests red on it — by design. |
+| Grow `BlazorNativeFetchRequest` / `BlazorNativeFetchResponse` (32 bytes each) or `BlazorNativeFrame` (24) | **Breaking** | These cross **without** a size argument (`fetch_complete(requestId, response*)`, the frame callback), so there is no negotiation to absorb a new field. Growing them needs a new sized export or a v2 struct — see [#257](https://github.com/MarcelRoozekrans/BlazorNative/issues/257) for the first case that will want one. |
+| Repurpose an existing ordinal (incl. the reserved-dormant `AppendChild = 2`), rename or re-sign an export, change a return-code meaning | **Breaking** | Ids and exports are **never reused**; a symbol-count gate on every published binary and the export-resolve tests pin the ten names. |
+
+At 1.0 the *breaking* row becomes a **major**-version conversation; the *additive* rows stay
+free, exactly as an added `IMobileBridge` member does. Where the enforcement lives, so the
+policy points at code rather than at itself:
+
+- size negotiation — `NativeShellBridge.Register` / `Exports.NegotiateInitOptions`
+  (`src/BlazorNative.Runtime`), documented in
+  [`docs/bridge-extension.md` §(b)](https://github.com/MarcelRoozekrans/BlazorNative/blob/main/docs/bridge-extension.md);
+- layout pins — `BridgeProtocolNativeTests.cs`, `PatchProtocolNativeTests.cs`
+  (`tests/BlazorNative.Runtime.Tests`), `ShellBridgeTest.kt` / `NativeFrameAdapterTest.kt`
+  (Android), `BnDriftTests.swift` (iOS);
+- `Reserved0` — `src/BlazorNative.Runtime/PatchProtocolNative.cs`, offset asserted in the
+  same tests.
+
 ---
 
 ## The `BN00xx` and `BN1xxx` id reservations
@@ -209,7 +243,7 @@ The policy is written into the interfaces' own xmldoc, so it reaches you through
 | **PROVISIONAL** | Same visibility, weaker intent — expect movement. Pin your version if the exact shape matters. |
 | **NOT-API** | Nothing. It may move in any release. Changes are still recorded in the baseline, so they are visible if you go looking, but they are not announced as breaks. |
 | **The `BN00xx` ids** | Stable. Your `NoWarn` will keep working. |
-| **The C-ABI** | Not your contract — it is the framework's contract with its own shells. Do not P/Invoke it. |
+| **The C-ABI** | Not your contract — it is the framework's contract with its own shells. Do not P/Invoke it. It grows only by the [extension policy](#the-c-abi-extension-policy--how-a-frozen-abi-grows): appended slots, new ordinals, `Reserved0`; existing offsets and exports never move. |
 
 **Adding a member to an enum** (a new `GeolocationStatus`, say) is source-compatible and
 **behaviourally breaking** — it compiles, then falls through your exhaustive `switch`. We treat
