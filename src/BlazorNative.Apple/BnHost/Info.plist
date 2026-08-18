@@ -109,6 +109,26 @@
 	<array>
 		<string>Inter-Regular.ttf</string>
 	</array>
+	<!-- The blazornative:// deep-link scheme — the iOS twin of Android's
+	     VIEW/BROWSABLE intent-filter. Without this key iOS never delivers the URL
+	     at all, so the handler in AppDelegate would be unreachable code. Test with:
+	       xcrun simctl openurl booted "blazornative://geolocation"
+	     UNIVERSAL LINKS are deliberately NOT here: they need an associated-domains
+	     entitlement, a real domain and an apple-app-site-association file, i.e. the
+	     Apple Developer account that also blocks real-device iOS. -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>io.blazornative.bnhost.deeplink</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>blazornative</string>
+			</array>
+		</dict>
+	</array>
 	<key>UILaunchStoryboardName</key>
 	<string></string>
 	<key>UIRequiredDeviceCapabilities</key>

@@ -156,6 +156,42 @@ let you discover this at runtime would be a bad guide.
 > Images are *not* affected: `BnImage` goes through Kingfisher (`BnImageLoader`), not
 > through this bridge. Android's equivalent path uses Coil.
 
+### Deep links and lifecycle — now real, with one honest gap
+
+Two things that used to be missing on iOS and are not any more:
+
+**The `blazornative://` URL scheme works.** `Info.plist` declares it under
+`CFBundleURLTypes` and `AppDelegate` routes it — warm (the app is alive) dispatches the
+`navigate` host event and lets .NET resolve the route; cold (the link *launched* the app)
+stashes the route so the right page mounts directly rather than flashing the default one.
+Try it against a booted simulator:
+
+```sh
+xcrun simctl openurl booted "blazornative://geolocation"
+```
+
+**Universal links are still not supported.** They need an `associated-domains`
+entitlement, a domain you own, and an `apple-app-site-association` file served from it —
+the same Apple Developer account that gates real-device iOS. The custom scheme needs none
+of that, which is why one shipped and the other did not.
+
+**Lifecycle events fire**, with Android's names so your components branch on one
+vocabulary: `onResume` ← `applicationDidBecomeActive`, `onPause` ←
+`applicationWillResignActive`, `onDestroy` ← `applicationWillTerminate`.
+
+`willResignActive` rather than `didEnterBackground` is deliberate: Android's `onPause`
+fires whenever the Activity leaves the foreground *including partial obscuring*, and
+`willResignActive` is that same moment on iOS (Control Centre, an incoming call).
+`didEnterBackground` would fire only on the full transition, so a timer paused on
+`onPause` would keep running through a phone call on iOS and not on Android.
+
+:::warning `onDestroy` is best-effort, and weaker on iOS
+iOS routinely terminates a suspended app **without** calling
+`applicationWillTerminate`. Android's `onDestroy` is not guaranteed either, but it is far
+more reliable in practice. **Persist on `onPause`** — it fires every time, on both
+platforms.
+:::
+
 ---
 
 ## 5. The staging — the shape of it, and the one thing that will bite you

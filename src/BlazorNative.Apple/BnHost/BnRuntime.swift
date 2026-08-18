@@ -85,6 +85,20 @@ struct BnDispatchError: Error, CustomStringConvertible {
 
 final class BnRuntime {
 
+    /// The live session, for the code that cannot be handed one.
+    ///
+    /// `AppDelegate` owns the app lifecycle and the opened-URL callback, but
+    /// `HostViewController` owns the runtime — on Android both live on the one
+    /// Activity, so the question never arose. WEAK on purpose: this is a lookup,
+    /// not an owner, and a strong static would keep a torn-down session alive past
+    /// the controller that made it.
+    ///
+    /// nil is a MEANINGFUL state, not a defensive one: it is exactly "no session
+    /// yet" (during launch, before boot) and "no session ever" (under XCTest, where
+    /// the app stays inert because the test bundle owns the native session). Both
+    /// callers treat nil as "do nothing", which is Android's `booted` guard.
+    private(set) static weak var current: BnRuntime?
+
     /// Routes the @convention(c) callback to the live instance (last boot wins,
     /// mirroring register_frame_callback's last-wins contract).
     static var shared: BnRuntime?
@@ -282,6 +296,19 @@ final class BnRuntime {
         bridge.notifications.navigateDispatcher = { [weak self] route in
             self?.dispatchHostEvent(name: BnNotifications.navigateEventName, payload: route) ?? 1
         }
+
+        // The deep-link surface gets the SAME dispatcher for the same reason: a URL
+        // arrives on UIKit's main thread and the ABI is only ever called from the
+        // serial lane. Non-nil is likewise its "session is live" signal, so a link
+        // opened from now on re-routes warm instead of stashing.
+        BnDeepLink.shared.navigateDispatcher = { [weak self] route in
+            self?.dispatchHostEvent(name: BnNotifications.navigateEventName, payload: route) ?? 1
+        }
+
+        // Published LAST, after mount: `current` means "a session that can be
+        // dispatched to", and a lifecycle event arriving between init and mount
+        // would reach a runtime that has no root component yet.
+        BnRuntime.current = self
     }
 
     /// Phase 9.1: dispatches a host-INITIATED event over the EXISTING

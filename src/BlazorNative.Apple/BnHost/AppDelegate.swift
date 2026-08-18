@@ -24,10 +24,50 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
         // .a) + a launch smoke that Yoga is callable in-process.
         BnYogaProbe.warmUp()
 
+        // A COLD deep link: the app was LAUNCHED by a blazornative:// URL. There is
+        // no session yet, so this only stashes the route — HostViewController reads
+        // it a moment later to mount the right page directly, instead of showing the
+        // default one for a frame and navigating away from it.
+        if let url = launchOptions?[.url] as? URL {
+            BnDeepLink.shared.handle(url: url)
+        }
+
         let window = UIWindow(frame: UIScreen.main.bounds)
         window.rootViewController = HostViewController()
         window.makeKeyAndVisible()
         self.window = window
         return true
+    }
+
+    // ── Deep links (warm) ────────────────────────────────────────────────────
+
+    /// A blazornative:// URL opened while the app is alive — the twin of Android's
+    /// `onNewIntent` re-route. Returning the handled flag honestly matters: iOS
+    /// hands this callback URLs the app never registered for, and claiming those
+    /// would be claiming to have navigated somewhere.
+    func application(_ app: UIApplication,
+                     open url: URL,
+                     options: [UIApplication.OpenURLOptionsKey: Any] = [:]) -> Bool {
+        BnDeepLink.shared.handle(url: url)
+    }
+
+    // ── Lifecycle ────────────────────────────────────────────────────────────
+    //
+    // The Android twins, name for name — see BnAppLifecycle for why these
+    // particular UIKit callbacks are the honest pairs, and for the one asymmetry
+    // (`willTerminate` is not guaranteed, so persistence belongs on `onPause`).
+    // Each is a no-op until a session exists, which is Android's `booted` guard:
+    // UIKit delivers `didBecomeActive` during launch, before the runtime boots.
+
+    func applicationDidBecomeActive(_ application: UIApplication) {
+        BnAppLifecycle.dispatch(BnAppLifecycle.onResume)
+    }
+
+    func applicationWillResignActive(_ application: UIApplication) {
+        BnAppLifecycle.dispatch(BnAppLifecycle.onPause)
+    }
+
+    func applicationWillTerminate(_ application: UIApplication) {
+        BnAppLifecycle.dispatch(BnAppLifecycle.onDestroy)
     }
 }

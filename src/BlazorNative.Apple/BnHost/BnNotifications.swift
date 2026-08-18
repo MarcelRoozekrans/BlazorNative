@@ -80,10 +80,11 @@ final class BnNotifications: NSObject, UNUserNotificationCenterDelegate {
     /// the `.so` loads / independent of the .NET route table). iOS mounts by NAME, so a
     /// COLD-launch tap route resolves to the component the sim boot mounts. Sample-only
     /// (no iOS template tree — the recorded gap, not a regression).
-    static let deepLinkComponents: [String: String] = [
-        "/notifications": "BnNotificationsDemo",
-        "/geolocation": "BnGeolocationDemo",
-    ]
+    /// MOVED to `BnDeepLink.routeComponents` — it was never a notifications concept,
+    /// it lived here because notifications needed a route→component mirror first, and
+    /// the URL-scheme deep link needs the SAME one. Kept as a forwarding alias so this
+    /// file's own vocabulary still reads, with one table behind both.
+    static var deepLinkComponents: [String: String] { BnDeepLink.routeComponents }
 
     private let lock = NSLock()
 

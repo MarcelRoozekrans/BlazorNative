@@ -77,7 +77,13 @@ final class HostViewController: UIViewController {
         // Boot off the main thread (init/mount are synchronous work); the mapper
         // hops its render batch back to the main queue on CommitFrame.
         DispatchQueue.global(qos: .userInitiated).async {
-            let component = runtime.bridge.notifications.resolvedLaunchComponent() ?? "BnDemo"
+            // The COLD mount seed, now from EITHER launch surface. A deep link wins
+            // over a notification tap because the two cannot both be the reason the
+            // app launched, and a URL is the more explicit request — the user acted
+            // on a link, not on something the app scheduled. Absent both, BnDemo.
+            let component = BnDeepLink.shared.resolvedLaunchComponent()
+                ?? runtime.bridge.notifications.resolvedLaunchComponent()
+                ?? "BnDemo"
             do {
                 try runtime.start(component: component, os: "ios")
             } catch {
