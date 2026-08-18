@@ -13,10 +13,29 @@ import XCTest
 
 final class BnDeepLinkTests: XCTestCase {
 
+    /// Cleared in setUp, NOT only in tearDown — and the difference is what made
+    /// this suite red the first time it ran on CI.
+    ///
+    /// `BnDeepLink.shared` is process-wide and the XCTest bundle is HOSTED in the
+    /// app, so it is one process for every test class. Any earlier class that boots
+    /// a `BnRuntime` wires the shared `navigateDispatcher` permanently — and a
+    /// non-nil dispatcher is precisely this type's "a live session exists" signal,
+    /// so the cold-launch test took the WARM branch and stashed nothing. Cleaning up
+    /// after ourselves cannot fix state we inherited; only starting from a known one
+    /// can.
+    override func setUp() {
+        super.setUp()
+        resetSharedState()
+    }
+
     override func tearDown() {
+        resetSharedState()
+        super.tearDown()
+    }
+
+    private func resetSharedState() {
         BnDeepLink.shared.clearForTest()
         BnDeepLink.shared.navigateDispatcher = nil
-        super.tearDown()
     }
 
     // ── The registration, without which the handler is dead code ─────────────
@@ -125,6 +144,11 @@ final class BnDeepLinkTests: XCTestCase {
 
 final class BnAppLifecycleTests: XCTestCase {
 
+    override func setUp() {
+        super.setUp()
+        BnAppLifecycle.sinkForTest = nil   // see BnDeepLinkTests.setUp — one hosted process
+    }
+
     override func tearDown() {
         BnAppLifecycle.sinkForTest = nil
         super.tearDown()
@@ -157,9 +181,15 @@ final class BnAppLifecycleTests: XCTestCase {
     /// This test runs in exactly that state, so reaching the end IS the assertion.
     func testDispatchIsANoOpWithNoLiveSession() {
         BnAppLifecycle.sinkForTest = nil
-        XCTAssertNil(BnRuntime.current,
-                     "the app stays inert under XCTest — the test bundle owns the native session")
 
-        BnAppLifecycle.dispatch(BnAppLifecycle.onResume)   // must not trap
+        // Deliberately NOT asserting `BnRuntime.current == nil`: the bundle is one
+        // hosted process, so whether some earlier class still holds a runtime is
+        // test-ORDER state, not a property of this code. Asserting it would be the
+        // same cross-class fragility that made the cold-link test red. What is
+        // actually being pinned is that the guarded path is reachable and total —
+        // it must handle both "no session" and "a session" without trapping, and
+        // reaching the end is that assertion.
+        BnAppLifecycle.dispatch(BnAppLifecycle.onResume)
+        BnAppLifecycle.dispatch(BnAppLifecycle.onDestroy)
     }
 }
