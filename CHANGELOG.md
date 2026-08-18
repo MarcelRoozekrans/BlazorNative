@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.10.0](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.9.1...v0.10.0) (2026-08-18)
+
+
+### Features
+
+* **ios:** dispatch lifecycle events and handle blazornative:// deep links ([#269](https://github.com/MarcelRoozekrans/BlazorNative/issues/269)) ([7ddd210](https://github.com/MarcelRoozekrans/BlazorNative/commit/7ddd2106b7ad79c977081a8e62b103e31c9380c7))
+* **testing:** ship BlazorNative.Testing — the consumer test harness ([#271](https://github.com/MarcelRoozekrans/BlazorNative/issues/271)) ([efa4dc9](https://github.com/MarcelRoozekrans/BlazorNative/commit/efa4dc930c4e7cee5b40d1a392efb1335c0e80cd))
+
 ## [0.9.1](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.9.0...v0.9.1) (2026-08-17)
 
 
