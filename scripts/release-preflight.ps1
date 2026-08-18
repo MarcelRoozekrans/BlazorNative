@@ -117,7 +117,7 @@ param(
     # The Release's tag (release.yml passes github.event.release.tag_name).
     [string]$Tag,
 
-    # The nuget.org state preflight — two control arms, then the shipped six.
+    # The nuget.org state preflight — two control arms, then the shipped set.
     [switch]$Preflight,
 
     # The classifier + assertion table (the 9 rows, negative rows included).
@@ -676,7 +676,7 @@ function Invoke-Classify {
 
 <#
 .SYNOPSIS
-    -Preflight: the nuget.org state check — arms first, then the shipped six.
+    -Preflight: the nuget.org state check — arms first, then the shipped set.
 #>
 function Invoke-Preflight {
     $propsVersion = Get-PropsVersion
@@ -711,7 +711,7 @@ function Invoke-Preflight {
     }
 
     Write-Host ""
-    Write-Step "querying the $($queriedIds.Count) publishables (the seven from src/ + the template pack) at $propsVersion ..."
+    Write-Step "querying the $($queriedIds.Count) publishables (everything enumerated from src/ + the template pack) at $propsVersion ..."
     $taken = @()
     foreach ($id in $queriedIds) {
         $state = Test-NugetState -Id $id
@@ -759,7 +759,7 @@ function Invoke-Preflight {
     }
 
     Write-Host ""
-    Write-OK "nuget.org preflight CLEAR: $propsVersion is free for all $($queriedIds.Count) ids (the seven from src/ + the template pack; and the scanner proved it can see — the arms above)"
+    Write-OK "nuget.org preflight CLEAR: $propsVersion is free for all $($queriedIds.Count) ids (everything enumerated from src/ + the template pack; and the scanner proved it can see — the arms above)"
     return 0
 }
 
