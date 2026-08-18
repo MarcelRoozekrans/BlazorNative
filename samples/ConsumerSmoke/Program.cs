@@ -1,5 +1,5 @@
-using BlazorNative.Renderer;
 using BlazorNative.Runtime;
+using BlazorNative.Testing;
 using Microsoft.AspNetCore.Components;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -95,60 +95,55 @@ internal static class Program
             // expected — registered once, at startup.
         }
 
-        var services = new ServiceCollection().AddBlazorNativeRenderer();
-        await using var provider = services.BuildServiceProvider();
-        var renderer = provider.GetRequiredService<NativeRenderer>();
-        renderer.StrictErrors = true;
-
-        var frames = new List<RenderFrame>();
-        renderer.Frames += (f, _) =>
+        // ── The mount, THROUGH THE SHIPPED TEST HARNESS (#25) ────────────────
+        //
+        // This block used to resolve NativeRenderer, subscribe to its Frames event
+        // and assert over raw RenderPatch records — all of which are tier NOT-API,
+        // so the one program proving "a stranger can consume these packages" was
+        // itself doing the thing consumers are told not to do. That was not this
+        // sample's fault: until BlazorNative.Testing shipped there was no other way.
+        //
+        // Driving the harness from a NUPKG is the point of doing it here. A test
+        // harness that has only ever been used through a ProjectReference is a
+        // harness nobody has proven; this is its first out-of-repo consumer, same as
+        // everything else in this file.
+        //
+        // And it is the S3 evidence: with this conversion, nothing in this program
+        // names NativeRenderer, so making the renderer `internal` (1.0 criterion S3)
+        // would no longer break the only consumer-facing mount path.
+        using (var host = BnTestHost.Mount<SmokeRoot>())
         {
-            frames.Add(f);
-            return ValueTask.CompletedTask;
-        };
+            Check(host.FrameCount > 0, "at least one render frame from the mount");
 
-        await renderer.MountAsync<SmokeRoot>(ParameterView.Empty);
+            BnTestNode root = host.Tree.Root;
+            Check(root.NodeType == "view",
+                $"root node type 'view' (BnView's div), got '{root.NodeType}'");
 
-        // The mount is synchronous under the InlineDispatcher, so every frame
-        // captured here belongs to the initial render. Assert over the union.
-        var patches = frames.SelectMany(f => f.Patches).ToList();
-        var creates = patches.OfType<CreateNodePatch>().ToList();
-        var texts = patches.OfType<ReplaceTextPatch>().ToList();
-        var attaches = patches.OfType<AttachEventPatch>().ToList();
+            IReadOnlyList<BnTestNode> texts = host.Tree.FindAll("text");
+            Check(texts.Count > 0, "at least one 'text' node (BnText's span)");
 
-        Check(frames.Count > 0, "at least one render frame from the mount");
+            IReadOnlyList<BnTestNode> buttons = host.Tree.FindAll("button");
+            Check(buttons.Count == 1, $"exactly one 'button' node (BnButton), got {buttons.Count}");
 
-        var roots = creates.Where(p => p.ParentId is null).ToList();
-        Check(roots.Count == 1,
-            $"exactly one root create (BnView's div), got {roots.Count}");
-        Check(roots.Count == 1 && roots[0].NodeType == "view",
-            $"root node type 'view', got '{(roots.Count == 1 ? roots[0].NodeType : "<n/a>")}'");
+            // The text-child collapse the shells do is mirrored by the harness, so
+            // the content reads off the node the author wrote — not a child node
+            // that never becomes a widget.
+            Check(texts.Any(t => t.Text == "Hello from packages"),
+                "text content 'Hello from packages' (BnText.Text)");
+            Check(buttons.Count == 1 && buttons[0].Text == "Tap",
+                "button label 'Tap' (BnButton.Label)");
 
-        Check(creates.Any(p => p.NodeType == "text"),
-            "a 'text' node create (BnText's span)");
+            Check(buttons.Count == 1 && buttons[0].Events.Contains("click"),
+                "the button carries a 'click' handler (BnButton.OnClick)");
 
-        var buttons = creates.Where(p => p.NodeType == "button").ToList();
-        Check(buttons.Count == 1,
-            $"exactly one 'button' node create (BnButton), got {buttons.Count}");
-
-        Check(texts.Any(t => t.Text == "Hello from packages"),
-            "text content 'Hello from packages' (BnText.Text)");
-        Check(texts.Any(t => t.Text == "Tap"),
-            "text content 'Tap' (BnButton.Label)");
-
-        Check(attaches.Count == 1,
-            $"exactly one AttachEvent (the BnButton click), got {attaches.Count}");
-        Check(attaches.Count == 1 && attaches[0].EventName == "click",
-            $"AttachEvent event name 'click', got '{(attaches.Count == 1 ? attaches[0].EventName : "<n/a>")}'");
-        Check(attaches.Count == 1 && buttons.Count == 1 && attaches[0].NodeId == buttons[0].NodeId,
-            "the click AttachEvent targets the button node");
-
-        Console.WriteLine(
-            $"[ConsumerSmoke] frames={frames.Count} patches={patches.Count} " +
-            $"creates={creates.Count} (view={creates.Count(p => p.NodeType == "view")}, " +
-            $"text={creates.Count(p => p.NodeType == "text")}, " +
-            $"button={creates.Count(p => p.NodeType == "button")}) " +
-            $"replaceText={texts.Count} attachEvent={attaches.Count}");
+            // The narration now describes the TREE rather than the patch stream —
+            // which is the point: the patch counts were the shape of an internal
+            // model, and the tree is the shape of the app.
+            Console.WriteLine(
+                $"[ConsumerSmoke] frames={host.FrameCount} root={root.NodeType} " +
+                $"children={root.Children.Count} texts={texts.Count} buttons={buttons.Count} " +
+                $"events={string.Join("+", buttons.SelectMany(b => b.Events))}");
+        }
 
         if (Failures.Count > 0)
         {

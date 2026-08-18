@@ -2,23 +2,23 @@
 <#
 .SYNOPSIS
     BlazorNative — consumer smoke (Phase 4.5 Gate 2, M4 DoD #7; extended by
-    Phase 8.1 Gate 1, M8 DoD #2: seven packages, nupkg-level purity, the first
+    Phase 8.1 Gate 1, M8 DoD #2: eight packages, nupkg-level purity, the first
     out-of-repo RegisterPages consumer).
 
 .DESCRIPTION
     Proves a BLANK consumer project consumes BlazorNative from the SEVEN NuGet
     packages ALONE — no ProjectReferences, no solution membership:
 
-      1.  pack        — the seven packages → artifacts/packages (fresh), at the
+      1.  pack        — the eight packages → artifacts/packages (fresh), at the
                         ONE version parsed from src/Directory.Build.props
                         (the single version truth, 8.1 design decision 4).
-                        Zero pack warnings; exactly 7 .nupkg + 6 .snupkg
+                        Zero pack warnings; exactly 8 .nupkg + 7 .snupkg
                         (Analyzers embeds its pdb — no lib/, no snupkg); every
                         nupkg FILENAME carries the props version (the
                         version-drift tooth — a csproj <Version> override
                         reds here AND in PackageVersionPinTests); and symbols
                         are PAIRED, not merely counted (Phase 8.2 decision 4):
-                        each of the six library nupkgs has its .snupkg
+                        each of the seven library nupkgs has its .snupkg
                         SIBLING and Analyzers has none — the counts alone are
                         blind to WHICH package owns the symbols, and the push
                         matches them by ADJACENCY.
@@ -65,7 +65,7 @@ $feedDir  = Join-Path $repoRoot "artifacts\packages"
 # The shipped set — must agree with PackagePurityTests.ShippedAssemblies, the
 # src/ csproj enumeration, and ConsumerSmoke.csproj's references (8.1
 # normative rule 2). Order: pack respects the dependency arrows.
-$packages = @("Core", "Renderer", "Http", "Components", "Device", "Runtime", "Analyzers")
+$packages = @("Core", "Renderer", "Http", "Components", "Device", "Testing", "Runtime", "Analyzers")
 
 # The 16-row moved roster (PackagePurityTests.MovedTypeRoster verbatim) + the
 # pattern net — the same sin, asserted at the PACKAGING layer.
@@ -94,6 +94,7 @@ $sentinels = @{
     "Http"       = "BridgeHttpHandler"      # the handler Http exists for
     "Components" = "BnView"                 # the component surface's base view
     "Device"     = "IGeolocation"           # the geolocation facade Device exists for (9.0)
+    "Testing"    = "BnTestHost"             # the mount entry point Testing exists for (#25)
     "Runtime"    = "BlazorNativeApp"        # the 8.0 registration API the smoke consumes
     "Analyzers"  = "MobilePolicyAnalyzer"   # the analyzer that owns BN0011 (the trip tooth)
 }
@@ -104,7 +105,7 @@ function Write-Fail([string]$text) { Write-Host "  ✗  $text" -ForegroundColor 
 
 Write-Host ""
 Write-Host "  ──────────────────────────────────────────────────────" -ForegroundColor DarkGray
-Write-Host "  BlazorNative consumer smoke — seven packages, purity + mount (DoD #7 / M8 DoD #2 / M9 DoD #1)" -ForegroundColor White
+Write-Host "  BlazorNative consumer smoke — eight packages, purity + mount (DoD #7 / M8 DoD #2 / M9 DoD #1)" -ForegroundColor White
 Write-Host "  ──────────────────────────────────────────────────────" -ForegroundColor DarkGray
 Write-Host ""
 
@@ -125,7 +126,7 @@ if ($versionNodes.Count -ne 1 -or [string]::IsNullOrWhiteSpace($versionNodes[0])
 $version = $versionNodes[0]
 Write-OK "version source: src/Directory.Build.props → $version"
 
-# ── 1. Pack the seven packages (fresh feed) ────────────────────────────────────
+# ── 1. Pack the eight packages (fresh feed) ────────────────────────────────────
 # THE CLEAN obj/bin BELOW IS THE ZERO-WARNING BAR'S TEETH, not tidiness. The bar
 # greps the pack log for compile warnings — but the compiler only re-runs (and only
 # re-emits a warning like CS1574) when its inputs look stale. In build-test the
@@ -139,7 +140,7 @@ Write-OK "version source: src/Directory.Build.props → $version"
 # short-circuits the doc-warning pass); only a genuinely empty obj/ does. So delete
 # obj/bin for the source packages first, reproducing the release's fresh checkout, and
 # a compile warning fails the PR that introduces it — not a release weeks later.
-Write-Step "packing the seven packages → artifacts/packages ..."
+Write-Step "packing the eight packages → artifacts/packages ..."
 if (Test-Path $feedDir) { Remove-Item -Recurse -Force $feedDir }
 foreach ($proj in $packages) {
     foreach ($sub in 'obj', 'bin') {
@@ -164,12 +165,12 @@ if ($packWarnings.Count -ne 0) {
 }
 $nupkgs  = @(Get-ChildItem $feedDir -Filter "*.nupkg")
 $snupkgs = @(Get-ChildItem $feedDir -Filter "*.snupkg")
-if ($nupkgs.Count -ne 7) {
-    Write-Fail "expected 7 .nupkg in artifacts/packages, found $($nupkgs.Count)"
+if ($nupkgs.Count -ne 8) {
+    Write-Fail "expected 8 .nupkg in artifacts/packages, found $($nupkgs.Count)"
     exit 1
 }
-if ($snupkgs.Count -ne 6) {
-    Write-Fail "expected 6 .snupkg (Analyzers embeds its pdb — no snupkg), found $($snupkgs.Count): $($snupkgs.Name -join ', ')"
+if ($snupkgs.Count -ne 7) {
+    Write-Fail "expected 7 .snupkg (Analyzers embeds its pdb — no snupkg), found $($snupkgs.Count): $($snupkgs.Name -join ', ')"
     exit 1
 }
 # The version-drift tooth: every nupkg filename carries exactly the props
@@ -185,7 +186,7 @@ foreach ($proj in $packages) {
 
 # ── THE PAIRING TOOTH (Phase 8.2, design decision 4) ─────────────────────────
 # PAIRING, NOT COUNTING — and the difference is not academic. The two counts
-# above (7 nupkg, 6 snupkg) are blind to WHICH package the symbols belong to:
+# above (8 nupkg, 7 snupkg) are blind to WHICH package the symbols belong to:
 # a feed holding Core's nupkg with no sibling, while Analyzers wrongly carries
 # one, is 7 and 6 and passes both counts GREEN while BlazorNative.Core ships
 # with no symbols at all. Proven by mutation, quoted in the commit.
@@ -228,10 +229,10 @@ if ($symbolOffenders.Count -ne 0) {
     Write-Fail "SYMBOL PAIRING broken. The 6/5 counts above are blind to this: symbols are matched to packages by ADJACENCY at push time, so a library package without its .snupkg sibling ships unsymbolicated and nothing else in this repo would notice. Feed: $(($nupkgs.Name + $snupkgs.Name | Sort-Object) -join ', ')"
     exit 1
 }
-Write-OK "seven packages packed at $version, zero warnings, filenames agree with the props; symbols PAIRED (6 libs each with its .snupkg sibling; Analyzers embedded, no snupkg)"
+Write-OK "eight packages packed at $version, zero warnings, filenames agree with the props; symbols PAIRED (6 libs each with its .snupkg sibling; Analyzers embedded, no snupkg)"
 
 # ── 1.5 Interrogate the nupkgs (8.1 decision 6 — packaging-layer purity) ─────
-Write-Step "interrogating the seven nupkgs (types off the PE, nuspec truth, inventory shape) ..."
+Write-Step "interrogating the eight nupkgs (types off the PE, nuspec truth, inventory shape) ..."
 
 function Get-TypeNames([string]$dllPath) {
     $stream = [System.IO.File]::OpenRead($dllPath)
@@ -412,7 +413,7 @@ try {
 
         Write-Host "     $id $version — nuspec ✓ (MIT, readme, repository@commit $($repository.GetAttribute('commit').Substring(0,8))…), inventory ✓, $($typeNames.Count) types clean (sentinel $sentinel ✓)" -ForegroundColor DarkGray
     }
-    Write-OK "nupkg interrogation clean: purity, nuspec truth, and inventory shape on all seven"
+    Write-OK "nupkg interrogation clean: purity, nuspec truth, and inventory shape on all eight"
 }
 finally {
     if (Test-Path $interrogateRoot) { Remove-Item -Recurse -Force $interrogateRoot -ErrorAction SilentlyContinue }
@@ -492,7 +493,7 @@ try {
         Write-Fail "ConsumerSmoke exited $LASTEXITCODE"
         exit 1
     }
-    Write-OK "consumer smoke PASS — seven packages: purity interrogated, mount + RegisterPages from packages alone (M4 DoD #7 / M8 DoD #2 / M9 DoD #1)"
+    Write-OK "consumer smoke PASS — eight packages: purity interrogated, mount + RegisterPages from packages alone (M4 DoD #7 / M8 DoD #2 / M9 DoD #1)"
     exit 0
 }
 finally {

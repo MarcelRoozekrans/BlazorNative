@@ -45,6 +45,9 @@
          coverage. -->
     <ProjectReference Include="..\..\src\BlazorNative.Runtime\BlazorNative.Runtime.csproj" />
     <ProjectReference Include="..\..\src\BlazorNative.Components\BlazorNative.Components.csproj" />
+    <!-- #25: the consumer test harness is tested HERE, against real Bn* components,
+         because that is how a consumer uses it. -->
+    <ProjectReference Include="..\..\src\BlazorNative.Testing\BlazorNative.Testing.csproj" />
     <!-- Phase 8.0 (design decision 4, option B): the tests STAY, their
          references re-point. The demo pages, probes and SpikeRazor moved to
          the sample app; referencing it keeps every golden byte-identical
