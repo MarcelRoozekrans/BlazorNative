@@ -65,6 +65,14 @@ public sealed class PackagePurityTests
         // Phase 9.0 (M9 DoD #1): the 7th shipped package — the device-API facades
         // (IGeolocation now; notifications/biometrics/camera in 9.1-9.3).
         "BlazorNative.Device",
+        // #25: the 8th, and the first added AGAINST the "no 8th package"
+        // precedent — deliberately, and joining this pin is how that is made
+        // deliberate rather than accidental. The consumer test harness is a
+        // DEV-TIME-ONLY dependency: an app references it from its test project and
+        // it must never enter the app's own graph, which is exactly why it is not
+        // folded into Core beside DevHostBridge. See the csproj's own note and
+        // docs/plans/2026-08-18-consumer-test-harness-design.md §3.
+        "BlazorNative.Testing",
     ];
 
     private const string SampleAppAssembly = "BlazorNative.SampleApp";

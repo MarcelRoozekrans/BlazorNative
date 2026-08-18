@@ -51,6 +51,13 @@
     <!-- Phase 8.1: Runtime is the package under test for the RegisterPages
          block in Program.cs — an EXPLICIT reference, not a transitive. -->
     <PackageReference Include="BlazorNative.Runtime" Version="$(BlazorNativeVersion)" />
+    <!-- #25: the 8th package — the consumer TEST HARNESS. Referenced here, and
+         USED below, for the reason this smoke exists at all: it is the API's first
+         out-of-repo consumer, and a harness that has never been driven from a nupkg
+         is a harness nobody has proven. It also removes this sample's last reach
+         into NativeRenderer, which is tier NOT-API — i.e. it demonstrates that 1.0
+         criterion S3 (make the renderer internal) is now executable. -->
+    <PackageReference Include="BlazorNative.Testing" Version="$(BlazorNativeVersion)" />
     <PackageReference Include="BlazorNative.Analyzers" Version="$(BlazorNativeVersion)" PrivateAssets="all" />
   </ItemGroup>
 

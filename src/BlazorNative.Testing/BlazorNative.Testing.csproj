@@ -1,0 +1,75 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>BlazorNative.Testing</RootNamespace>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <!-- Same two gates every shipped package carries: the public-API baseline
+         (RS0016/17/37 as ERRORS) and doc coverage (CS1591 as an ERROR). Both
+         switches live in src/Directory.Build.targets, not .props — see the Device
+         csproj's note for why that ordering is load-bearing. -->
+    <BnEnforcePublicApi>true</BnEnforcePublicApi>
+    <BnEnforceDocCoverage>true</BnEnforceDocCoverage>
+
+    <!-- BL0006: "do not use internal Blazor render-tree types". Suppressed
+         project-wide, exactly as BlazorNative.Renderer does and for the same
+         reason: every touch here goes through NativeRenderer — mounting,
+         dispatching an event, disposing — and NativeRenderer derives from Blazor's
+         Renderer, so the warning fires on the package's whole purpose rather than
+         on a slip. ABSORBING that is what this package is FOR: the internals stop
+         here so a consumer's test project never sees them. (Scoped pragmas were
+         tried first on the theory that there was one call site; there are several,
+         and a pragma per member would be noise claiming to be precision.) -->
+    <NoWarn>$(NoWarn);BL0006</NoWarn>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <!-- ─────────────────────────────────────────────────────────────────────
+         THE EIGHTH PACKAGE, and it is the first one added against the
+         "no 8th package" precedent — so the reason is here, not only in the
+         design doc (docs/plans/2026-08-18-consumer-test-harness-design.md §3).
+
+         That precedent is real and recorded four times: phases 9.1/9.2/9.3 each
+         added a CAPABILITY to an existing package rather than splitting one off,
+         and PackagePurityTests pins the shipped set. It does not apply here.
+         Those decisions were about not fragmenting the capability surface —
+         IGeolocation belongs beside ICamera. This is not a capability.
+
+         The positive case decides it: THIS IS A DEV-TIME-ONLY DEPENDENCY. An app
+         references it from its TEST project and it must never enter the app's own
+         reference graph. The alternative — putting the harness beside
+         DevHostBridge in BlazorNative.Core — would ship test-double machinery
+         into every production binary and freeze it as part of Core's public API
+         at 1.0. A test harness is exactly the surface that should stay free to
+         move for longer than the runtime does.
+
+         And the pin's own words are "nothing else under src/ may grow a csproj
+         WITHOUT JOINING THIS PIN" — a process, deliberately joined here.
+
+         TIER: PROVISIONAL at introduction, for the same reason DevHostBridge is —
+         the second end of the contract (real consumer test suites) does not exist
+         yet, so the shape is honest today and may be wrong in one release.
+         ───────────────────────────────────────────────────────────────────── -->
+    <Description>BlazorNative test harness: mount a page in-process and assert the widget tree it rendered — children in real sibling order, styles, props and events — then drive clicks and changes. The supported alternative to reaching into NativeRenderer, which is not public API.</Description>
+    <PackageTags>blazor;native;testing;unit-testing;xunit;nativeaot;android;ios;mobile</PackageTags>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Renderer, because the harness consumes RenderFrame/RenderPatch to build
+         the projection. That dependency is the POINT of the package: it absorbs
+         the NOT-API model here, once, so a consumer never takes it. -->
+    <ProjectReference Include="..\BlazorNative.Renderer\BlazorNative.Renderer.csproj" />
+    <!-- BN rules ride every src build (zero-warning bar, M4 DoD #3). -->
+    <ProjectReference Include="..\BlazorNative.Analyzers\BlazorNative.Analyzers.csproj"
+                      OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.11" />
+  </ItemGroup>
+
+</Project>

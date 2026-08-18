@@ -1,0 +1,24 @@
+#nullable enable
+BlazorNative.Testing.BnTestHost
+BlazorNative.Testing.BnTestHost.ChangeAsync(BlazorNative.Testing.BnTestNode! node, string! value) -> System.Threading.Tasks.Task!
+BlazorNative.Testing.BnTestHost.ClickAsync(BlazorNative.Testing.BnTestNode! node) -> System.Threading.Tasks.Task!
+BlazorNative.Testing.BnTestHost.DispatchAsync(BlazorNative.Testing.BnTestNode! node, string! eventName, string? payload) -> System.Threading.Tasks.Task!
+BlazorNative.Testing.BnTestHost.Dispose() -> void
+BlazorNative.Testing.BnTestHost.FrameCount.get -> int
+BlazorNative.Testing.BnTestHost.Tree.get -> BlazorNative.Testing.BnTestTree!
+BlazorNative.Testing.BnTestNode
+BlazorNative.Testing.BnTestNode.Children.get -> System.Collections.Generic.IReadOnlyList<BlazorNative.Testing.BnTestNode!>!
+BlazorNative.Testing.BnTestNode.Events.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
+BlazorNative.Testing.BnTestNode.Id.get -> int
+BlazorNative.Testing.BnTestNode.NodeType.get -> string!
+BlazorNative.Testing.BnTestNode.Props.get -> System.Collections.Generic.IReadOnlyDictionary<string!, string?>!
+BlazorNative.Testing.BnTestNode.Styles.get -> System.Collections.Generic.IReadOnlyDictionary<string!, string?>!
+BlazorNative.Testing.BnTestNode.Text.get -> string?
+BlazorNative.Testing.BnTestTree
+BlazorNative.Testing.BnTestTree.BnTestTree() -> void
+BlazorNative.Testing.BnTestTree.FindAll(string! nodeType) -> System.Collections.Generic.IReadOnlyList<BlazorNative.Testing.BnTestNode!>!
+BlazorNative.Testing.BnTestTree.FindText(string! text) -> BlazorNative.Testing.BnTestNode!
+BlazorNative.Testing.BnTestTree.Root.get -> BlazorNative.Testing.BnTestNode!
+BlazorNative.Testing.BnTestTree.Roots.get -> System.Collections.Generic.IReadOnlyList<BlazorNative.Testing.BnTestNode!>!
+override BlazorNative.Testing.BnTestNode.ToString() -> string!
+static BlazorNative.Testing.BnTestHost.Mount<TComponent>(System.Collections.Generic.IDictionary<string!, object?>? parameters = null, System.Action<Microsoft.Extensions.DependencyInjection.IServiceCollection!>? configureServices = null) -> BlazorNative.Testing.BnTestHost!
