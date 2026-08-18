@@ -350,7 +350,7 @@ jobs:
             > ios-out/xcresult.json 2>/dev/null || true
           ls -la ios-out/crash || true
 
-      - name: Assert XCTest baseline (254 passed / 0 failed)
+      - name: Assert XCTest baseline (269 passed / 0 failed)
         if: always()
         run: |
           log=ios-out/xcodebuild-test.log
@@ -1118,9 +1118,29 @@ jobs:
           # The gesture gate (drop a command while isTracking) is deliberately NOT
           # unit-tested — it needs a real touch sequence; it is on the device
           # checklist instead, and the test file says so.
-          if [ "$failed" -ne 0 ] || [ "$passed" -ne 254 ]; then
+          # 254 -> 269 (+15) — TWO iOS PARITY GAPS CLOSED. Both were ABSENT, not
+          # broken: Android has fired onResume/onPause/onDestroy since Phase 4.x and
+          # has had a blazornative:// deep link since 3.x, and iOS had NEITHER -- no
+          # CFBundleURLTypes, no openURL handler, and zero lifecycle dispatches. An
+          # app saving state on backgrounding, or opened by a link, worked on one
+          # platform and silently did nothing on the other.
+          #   +12 BnDeepLinkTests -- the URL scheme. The load-bearing one asserts the
+          #      real bundle DECLARES the scheme: iOS never delivers a URL for an
+          #      undeclared scheme, so the handler would be unreachable and every
+          #      other test would still pass. Plus parsing (host is the first path
+          #      segment -- `blazornative://about` has host "about" and an EMPTY
+          #      path), foreign schemes rejected (iOS hands delegates URLs it never
+          #      registered for), warm-vs-cold (dispatch now vs stash for the mount
+          #      seed), and one source for the route map.
+          #   +3 BnAppLifecycleTests -- the names are Android's EXACTLY (they are the
+          #      wire contract an app branches on) and dispatch is a no-op with no
+          #      live session, which is Android's `booted` guard: UIKit delivers
+          #      didBecomeActive during launch, before the runtime boots.
+          # UNIVERSAL LINKS are deliberately NOT here -- associated-domains needs the
+          # Apple Developer account. The scheme half needs none of it.
+          if [ "$failed" -ne 0 ] || [ "$passed" -ne 269 ]; then
             grep -E "Test Case '.*' (passed|failed)" "$log" || true
-            echo "iOS XCTest baseline drift: expected 254 passed / 0 failed, got passed=$passed failed=$failed" >&2
+            echo "iOS XCTest baseline drift: expected 269 passed / 0 failed, got passed=$passed failed=$failed" >&2
             exit 1
           fi
 
