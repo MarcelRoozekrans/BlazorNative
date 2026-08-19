@@ -22,6 +22,19 @@ namespace BlazorNative.Components;
 /// children declares <c>ChildContent</c> itself, at sequence 200.
 /// </para>
 /// <para>Sequence band: this type owns <b>50–54</b>.</para>
+/// <para>
+/// <b>There is deliberately no <c>ContainerAttributes</c> splat</b> — the twin of
+/// <see cref="BnLayoutItem"/>'s <c>ItemAttributes</c>, which exists for components
+/// written as markup, whose generated render tree cannot call an emit helper. No
+/// container in this package is written that way, so the splat would be public
+/// surface with no caller, frozen for good at the first stable release. Add it
+/// with the first markup-authored container, not before.
+/// </para>
+/// <para>
+/// <b>You do not derive from this yourself</b>, for the same reason given on
+/// <see cref="BnLayoutItem"/>: it is public and abstract to serve the components in
+/// this package, not as an extension point.
+/// </para>
 /// </remarks>
 public abstract class BnLayoutContainer : BnLayoutItem
 {

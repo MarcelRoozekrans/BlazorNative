@@ -30,9 +30,22 @@ public sealed class ForwardedParameterNameTests
 {
     // ── Half 1: the target DECLARES every name the base forwards ─────────────
 
+    // BnView is the live forward TARGET: BnFlexPreset renders it through
+    // ForwardItemParameters/ForwardContainerParameters, so every name those
+    // helpers write has to be a parameter on BnView or the value is dropped at
+    // runtime with nothing red.
+    //
+    // BnScroll is NOT a forward target and never has been. BnList renders it,
+    // but from markup (<BnScroll Width="@Width" Height="@HeightStr" …>) and
+    // binds two parameters by hand, not by name at runtime — and BnList does
+    // not derive from BnLayoutItem at all, so it has no Forward* helper to
+    // call. The row is kept because BnScroll is the other multi-child item
+    // component a future wrapper would forward into, and the assertion it
+    // makes — that BnScroll really does carry the whole item surface it
+    // inherits — is worth having on its own.
     [Theory]
-    [InlineData(typeof(BnView))]     // BnFlexPreset renders this
-    [InlineData(typeof(BnScroll))]   // BnList renders this
+    [InlineData(typeof(BnView))]
+    [InlineData(typeof(BnScroll))]
     public void ForwardTarget_DeclaresEveryItemParameter(Type target)
     {
         foreach (string name in LayoutSurfacePinTests.ItemParameters)

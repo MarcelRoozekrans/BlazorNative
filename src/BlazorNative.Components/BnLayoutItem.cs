@@ -29,7 +29,19 @@ namespace BlazorNative.Components;
 /// these seventeen parameters were copy-pasted across eight components and absent
 /// from four more, so a <c>BnText</c> could not take a margin and a <c>BnButton</c>
 /// could take nothing at all. Any component that participates in layout derives
-/// from this type; <c>LayoutSurfacePinTests</c> reds if one does not.
+/// from this type; <c>LayoutSurfacePinTests</c> reds if one does not, and
+/// <c>LayoutSurfaceSequenceBandTests</c> reds if one derives it and then fails to
+/// EMIT it — declaring a parameter and dropping it every frame is the defect this
+/// type exists to make impossible, not a lesser version of it.
+/// </para>
+/// <para>
+/// <b>You do not derive from this yourself.</b> It is public and abstract because
+/// the components in this package derive from it across their own file boundaries,
+/// not as an extension point: the shells map a fixed vocabulary of element names,
+/// so a component of your own opening an element they do not know would produce a
+/// node neither shell can create — and the pins that keep this surface honest scan
+/// only this assembly, so nothing would tell you. Compose the components here
+/// instead.
 /// </para>
 /// <para>
 /// <b>Sequence-number bands are normative, and there are two ways to take this
@@ -38,6 +50,11 @@ namespace BlazorNative.Components;
 /// <see cref="BnLayoutContainer"/> owns 50–99; the component's own attributes
 /// start at 100 and <c>ChildContent</c> is 200. Keeping to those bands matters
 /// because a collision does not throw — it produces a wrong diff, silently.
+/// <c>LayoutSurfaceSequenceBandTests</c> enforces both halves for every
+/// component that writes its own render tree: no two attributes in one region
+/// share a sequence, and each attribute sits in the band its name belongs to.
+/// The splat form described next is exempt from the band half, and necessarily
+/// so — the Razor compiler assigns those numbers, not the author.
 /// </para>
 /// <para>
 /// A component written as markup cannot do that: its render tree is generated
