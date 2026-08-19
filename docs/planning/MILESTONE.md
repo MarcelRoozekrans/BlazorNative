@@ -1,496 +1,109 @@
-# Milestone 11 — Production Readiness
+# Milestone 13: Consumer Ergonomics
 
-> ⚠ **This is NOT the current milestone — there is no current milestone.** M11 closed
-> **2026-07-22**. The work that followed is recorded as **[Milestone 12 in
-> ROADMAP.md](ROADMAP.md)** — *retro-fitted 2026-08-19, never planned, never audited*, so it
-> has **no MILESTONE.md of its own** and never will; writing one now would fabricate a
-> Definition of Done nothing was ever measured against. This file therefore describes the
-> **last milestone that was actually planned**, and it is kept because M11's DoD and owner
-> decisions are still cited. **The next `new-milestone` run overwrites this file** with M13.
+**Status:** active
+**Started:** 2026-08-19
 
-**Status:** ✅ **COMPLETE — closed 2026-07-22** on its
-[final audit](../plans/2026-07-22-milestone-11-final-audit.md) (**PASS WITH FINDINGS**, 7 findings
-recorded; **no tag** — the 8.6 rule, closure is the audit). **6 / 6 DoD closed** (#1 — Phase 11.0;
-#2 — Phase 11.2; #3 — Phase 11.1; #4 — Phase 11.3; **#5 — Phase 11.5**; #6 — Phase 11.4).
-**Predecessor:** Milestone 10 — Consolidation & Hardening, complete 2026-07-19
-([final audit](../plans/2026-07-19-milestone-10-final-audit.md), all 7 DoD PASS; no tag — 8.6 rule).
-**Source:** owner direction (2026-07-20): *"work towards a production-grade framework,"* dogfood
-the published packages, and *test on an actual Android device.* Seeded by a concrete finding —
-the deep-link route map is the last hand-written single-source-of-truth violation.
+**Design:** [`docs/superpowers/specs/2026-08-19-milestone-13-design.md`](../superpowers/specs/2026-08-19-milestone-13-design.md)
+**Predecessor:** Milestone 12 — Post-M11 Maintenance & Consumer Polish (complete; **retro-fitted,
+never audited** — see the note on its ROADMAP block, and do not cite it as audit-backed).
+**Source:** owner direction (2026-08-19): continue on the #21/#22/#24/#25 band while P3 waits on
+an external iOS developer. Scope set by the **2026-08-17 audit of issues #16–#25**, which found
+most of that band obsolete or already delivered and named the one real gap underneath it.
 
 ## Goal
 
-M1–M10 built, published (0.2.0 on nuget.org), and hardened the library — it *works*, and its
-docs are honest. M11 takes it from *works* to **production-grade**: an app author can build a
-real app on the published packages **without footguns**, the capabilities an emulator only
-*pretends* to have are **proven on real Android hardware**, and the public API is understood
-well enough to **commit to it** — with concrete criteria for a 1.0. This is the milestone where
-the project stops being a proof-of-concept and starts being something a stranger can depend on.
+M13 makes BlazorNative **pleasant to write apps in**. Today an app author cannot give a `BnText`
+a margin, a width, or an `AlignSelf`, and cannot give a `BnButton` anything at all — the typed
+layout surface is copy-pasted across **eight** components and **absent from four**. The lengths
+those parameters accept are `string?`, so `Width="12px"` compiles, ships, and is silently
+logged-and-ignored at runtime by both shells. This milestone declares the item surface **once**,
+gives it to every component that can have it, and **types the lengths** so the malformed cases
+become compile errors. It also spends the two remaining audit verdicts that do not need a package
+built (#22's real deliverables) and retires the stale backlog entries that keep re-generating the
+same verdicts.
 
-## Scoping decisions (owner, 2026-07-20)
+## Scoping decisions (owner, 2026-08-19)
 
-1. **All four pillars are in** (owner chose all): deep-link route codegen, real-device Android
-   validation, consumer dogfooding, and API stability + a path to 1.0.
-2. **Real-device Android proves ALL capabilities end-to-end** (owner has the phone): camera,
-   biometrics, geolocation, and notifications, plus an interaction smoke — on the physical
-   device over `adb`/USB, not a CI node. CI stays on the emulator/simulator lanes; the phone is
-   the honesty check, and its results are RECORDED (a device-proof doc), not asserted in CI.
-3. **iOS real-device stays deferred** — still no Apple Developer account. Device proof is
-   **Android-only**; iOS remains simulator-scoped and labeled as such (unchanged since M5).
-4. **Dogfooding consumes the PUBLISHED 0.2.0 packages** from nuget.org (not the in-repo
-   `ProjectReference` sample) — the real "a stranger `dotnet new`s and ships" path.
-5. **1.0 is DEFINED here, not necessarily CUT here.** M11 identifies + marks the stable API
-   surface and writes the concrete 1.0 criteria; whether to actually graduate to 1.0.0 (a
-   `Release-As: 1.0.0` package tag — NOT a milestone tag) is a separate owner go once the
-   criteria are met. The `bump-minor-pre-major` graduation trap is respected.
+1. **Break now, while pre-1.0.** The shared-base extraction and the typed lengths land in one
+   pass, with the `PublicAPI` baselines rewritten and a written migration note. This surface
+   **freezes at 1.0** and 1.0 blocks on a single administrative item, so this is very likely the
+   last cheap window. Moving members to a base is source-compatible but **binary-breaking**;
+   that is accepted deliberately, not avoided.
+2. **No new packages.** Neither `BlazorNative.Styling` (#21) nor `BlazorNative.State` (#22) is
+   built — both premises are obsolete per the audit, and both collide with the four-times-recorded
+   "no 8th package" decision enforced by `PackagePurityTests`.
+3. **The theme system is design-first**, with an explicit go/no-go. Its deliverable is a design
+   and a decision; building it is a separate go and "not now" is an acceptable outcome.
+4. **#25 → 1.0 criterion S3 is OUT**, by owner choice. Recorded because it is the only item that
+   moves the 1.0 scoreboard: if P3 clears while M13 runs, S3 becomes the remaining gap.
+5. **Every phase is independently shippable** and **none of M13 blocks a 1.0 cut** — deliberate,
+   because the external iOS developer may clear P3 at any time.
 
 ## Definition of Done
 
-1. **Deep-link routing derives end-to-end — the hand-written mirror is gone** (the seed
-   finding). `MainActivity.kt`'s `DEEP_LINK_COMPONENTS` map is no longer hand-maintained: a
-   **build-time step generates** the route→component map from the app's registered pages (the
-   same `SampleAppPages.All` the drift test already parses) into a generated Android resource or
-   Kotlin file that `MainActivity` reads at Intent-parse time (still before the .NET runtime
-   loads — the runtime constraint holds; only the *source* changes from hand-written to
-   generated). An app author who adds a routed page gets the deep-link mapping **for free** — no
-   hand-edit, no silent wrong-screen footgun. The drift test flips from *checking* a
-   hand-written map to *verifying the generated one* (or is retired if generation makes it
-   vacuous, with a written rationale). **Plus a footgun audit:** enumerate every other place a
-   consumer must hand-edit a shell file when adding a page/capability, and derive or document
-   each.
+- [ ] All planned phases complete
+- [ ] All tests passing — .NET, JVM, **and both device lanes dispatched** (a green *required* set
+      does not mean the advisory Android/iOS lanes ran; that is how 11.4's pump bug hid)
+- [ ] **The item surface is declared exactly once.** `BnLayoutItem` holds the 17 item parameters;
+      no component re-declares any of them. Pinned by a test that reds if a component declares a
+      parameter name already on the base.
+- [ ] **Every component derives from `BnLayoutItem`**, except those on an explicit allowlist whose
+      entries each carry a written reason. Pinned — without this, component #13 is written against
+      `ComponentBase` and the hole silently reopens. (Membership is decided in 13.0; the DoD
+      requires the pin and the reasons, not a particular list.)
+- [ ] **Every layout length is typed.** `Width="12px"` is a **compile error**, not a runtime log
+      line. `Padding` and `Margin` share one type; the `float?` / `string?` split is gone.
+- [ ] **Frame tables are byte-identical** before and after, on **both** shells, across the whole
+      sample. This is the refactor's correctness claim and its acceptance test.
+- [ ] **The wire is unchanged** — no ABI change, no shell change, no `wire-vocabulary.json`
+      change. Verified by diffing the emitted attribute stream, not asserted.
+- [ ] **Baselines re-shipped with a written migration note** for consumers on 0.10.0, carried in
+      the release notes.
+- [ ] **`CheckAccess()` resolved on measured evidence** — an honest guard or a Debug-only warning,
+      with the measurement recorded (which suites red, and why).
+- [ ] **#21 retitled, #22 closed** with the audit as written rationale; `BlazorNative.Styling` and
+      `BlazorNative.State` deleted from `BACKLOG.md`; the WASM-era APNs / App-Store rows re-worded.
+- [ ] **Theme decision recorded** — the design exists and a go/no-go is written down, either way.
 
-   ✅ **Closed by Phase 11.0** (2026-07-20). **Mechanism:** `MainActivity`'s hand-written
-   `DEEP_LINK_COMPONENTS` map is gone — `BlazorNative.RouteGen` parses the app's C# **source**
-   (Roslyn, so it loads no per-RID dll and is **arch-independent** — the arm64 pivot away from an
-   assembly-load approach that could not survive CI) for `Routed<T>(route, name)` rows and emits
-   `res/raw/blazornative_routes.json` at build time; `MainActivity` reads it at Intent-parse. The
-   generator ships **inside the `BlazorNative.Runtime` package**, so a `dotnet new` app derives its
-   **own** map (template-smoke proves it). `RouteTableDriftTests` flipped from mirroring a
-   hand-written map to **verifying the generated one** pair-for-pair; the Kotlin-text pin is retired
-   (nothing left to drift), the default-fallback + content pins kept. **Audit outcome
-   ([footgun audit](../plans/2026-07-20-phase-11.0-footgun-audit.md)):** the deep-link map was the
-   *only* page-keyed shell hand-edit (no other `when`/map is per-page); every capability's Android
-   manifest surface — permissions, camera `<queries>`, the FileProvider `<provider>` + `file_paths.xml`,
-   the notification `<receiver>` — is **template-supplied (DERIVED)**, so nothing is hand-added to use
-   a capability (the shell is copied source, no manifest-merge needed); the un-derivable rest (app
-   identity, the per-app URI scheme, iOS usage-description *copy*, the iOS root-component source edits +
-   csproj recipe) is **DOCUMENTED** where a consumer looks. Three stale consumer docs (quick-start,
-   shells/android, shells/ios) were corrected.
-   [Conclusion](../plans/2026-07-20-phase-11.0-conclusion.md).
+> **No "release tagged in git" criterion.** `docs/planning/CONVENTIONS.md` records **`Milestone
+> completion tags a release: no`** — release-please owns the `v<semver>` namespace and Phase 8.6
+> retired milestone tags. A checkbox nothing will ever tick is a permanent false gap.
 
-2. **Real-device Android proof — all capabilities, recorded.** The app runs on the owner's
-   physical Android phone; **camera** (real sensor + EXIF, no emulated shutter), **biometrics**
-   (real fingerprint/face + a TEE-backed AndroidKeyStore, not the AVD's software keystore),
-   **geolocation** (real GPS/fused location), and **notifications** (real post + tap-through,
-   cold and warm) are each exercised and **recorded** in a device-proof doc (steps, `adb`
-   invocations, observed results, screenshots/log excerpts). This **discharges the standing
-   physical-phone ledger item** — the two least-emulated (camera, biometrics) get the honest
-   proof the emulator couldn't give.
+## Phases
 
-   ⚠ **AMENDMENT (2026-07-22) — the camera clause's "+ EXIF" is WITHDRAWN as unsatisfiable, and
-   replaced.** The clause as written asks the capture to carry camera EXIF (`Make` / `Model` /
-   `DateTimeOriginal` / exposure) as the anti-emulated-shutter proof. **It cannot be satisfied
-   without a regression**, and the reason is a deliberate framework behaviour rather than a
-   device or session failure: the Android shell **normalises orientation** by baking the EXIF
-   rotation into the pixels *and resetting the tag to identity*, then re-encoding the JPEG —
-   precisely so EXIF-honouring decoders (Coil on Android, Kingfisher on iOS) do not rotate the
-   image a second time (`src/BlazorNative.Jni/.../AndroidShellBridge.kt:1152-1156`, `:1300-1307`,
-   where the shell says so in its own comments). A re-encoded JPEG carries **no camera EXIF at
-   all**; the real capture reported `EXIF present: False`, `JFIF present: True`. Demanding EXIF
-   would be demanding the shell stop doing the thing it is designed to do. **Replaced by — and
-   this is what DoD #2 now requires as real-sensor evidence:** (a) the reported capture
-   **dimensions match a genuine sensor resolution** (the session got **3072×4096**, 12.6 MP — no
-   AVD shutter produces that), (b) the frame is a **real photographed scene**, recognisable, not
-   a synthetic green/checkerboard, and (c) it arrived via **`MediaStore.ACTION_IMAGE_CAPTURE`** —
-   the system camera app that owns the physical sensor — and round-tripped through FileProvider →
-   path → C-ABI → .NET → `BnImage`. The clause is amended rather than waived: the *"no emulated
-   shutter"* burden is unchanged, only the instrument that discharges it.
+1. Phase 13.0 — extract the item surface [pending]
+2. Phase 13.1 — type the lengths [pending]
+3. Phase 13.2 — the dispatcher's honest answer [pending]
+4. Phase 13.3 — state docs + backlog retirement [pending]
+5. Phase 13.4 — theme system design [pending]
+6. Phase 13.5 — audit and close [pending]
 
-   ✅ **Closed by Phase 11.2** (2026-07-22 — the owner's device session, run manually on the
-   phone). **Device:** Xiaomi 24069PC21G (`peridot`), `arm64-v8a`, **Android 16 / SDK 36** —
-   *newer than any CI lane exercises* — reporting `android.hardware.strongbox_keystore=300`.
-   Both bionic publishes held the **4-IL2072 yardstick** exactly; the APK carried both
-   `lib/arm64-v8a/` (5.4 MB) and `lib/x86_64/` (5.2 MB) `.so`s.
-   **Mechanism + evidence, per capability:** **Geolocation** — app echo
-   `fix:‹lat›,‹lon›`, **identical to platform rounding** against `dumpsys location`'s
-   fused *and* network last-known records, so the value round-tripped faithfully rather than
-   merely looking plausible. **Notifications** — `POST_NOTIFICATIONS` genuinely flipped
-   `granted=false` → `granted=true` (the API 33+ runtime prompt, on API 36); a real
-   `NotificationRecord(pkg=io.blazornative.shell … id=7 … channel=blazornative_default …)` posted;
-   it **survived a process kill** and a shade tap **cold-started a new pid (16535)** onto
-   `[BOOT] mounted BnNotificationsDemo` + `arrived:/notifications`. **Camera** — no permission
-   prompt, which is *correct* (`ACTION_IMAGE_CAPTURE` means the system camera owns the sensor —
-   the Phase 11.0 footgun audit's claim, confirmed on hardware); echo
-   `captured:3072x4096:93670`, the photo rendered back into `BnImage`. **Biometrics + secure
-   storage** — **three distinct `keystore2` challenges**, `isStrongBiometric=true`, and a complete
-   positive/negative pair: `Unlock + CANCEL → status:AuthFailed` versus
-   `Unlock + FINGERPRINT → value:hunter2`. That is **the OS refusing to decrypt the auth-bound key
-   without fresh Class-3 authentication and permitting it with** — enforcement, not the app
-   choosing what to display, and a stronger result than the runbook had planned for (it expected
-   to settle for a device self-report plus an AVD negative control, since nothing in the repo
-   surfaces `KeyInfo.getSecurityLevel()`). **Deep link on hardware:** the **cold**
-   `blazornative://notifications` resolved at Intent-parse **before the .NET runtime loaded**, and
-   **all 13 routes** deep-linked in sequence with **pid 16535 unchanged — no crash on any route**,
-   proving Phase 11.0's generated route map end-to-end on a device.
-   **Finding filed:** [#178](https://github.com/MarcelRoozekrans/BlazorNative/issues/178) —
-   `CapturePhotoAsync()`'s `options = default` zero-initialises `CaptureOptions`, bypassing its
-   record primary-constructor defaults, so every consumer silently gets `Quality=0` → `1` and no
-   downscale (`Camera.cs:19`, `IMobileBridge.cs:384`, `AndroidShellBridge.kt:1330`). A defect the
-   DevHost bridge could never have shown.
-   **NOT exercised, recorded rather than rounded off:** the **warm** notification tap-through (the
-   warm re-route path it depends on *was* proven on the same hardware via a warm
-   `blazornative://geolocation`); the **location permission prompt** (pre-granted on this device —
-   the notification prompt *was* exercised); the **interaction smoke is PARTIAL** (the starter
-   page's text-input echo was driven end-to-end; `/list` `/scroll` `/form` `/modal` mounted
-   without crash but were not manually driven); and the **standalone `IBiometrics.AuthenticateAsync`
-   path** (a raw session-log label reading `Authenticate → status:Ok` resolves against the code to
-   **`Set`** — `BiometricStatus` has no `Ok` member, `SecureStorageStatus` does — so the biometrics
-   clause rests **solely** on the `Set` / `Unlock+cancel` / `Unlock+fingerprint` triple, which is
-   the stronger basis anyway since all three are the OS keystore enforcing rather than an app-level
-   status echo). Cause of the interaction gaps: **MIUI blocks `adb shell input` entirely** — no
-   `MotionEvent` reached the app — so **every tap was a human tap** and nothing could be scripted. Also unchanged: the key's security level is a **device report**, not
-   an app observation; geolocation `Accuracy` is still not surfaced
-   ([#169](https://github.com/MarcelRoozekrans/BlazorNative/issues/169)); one device, one OEM
-   skin, one OS version; **iOS real-device remains deferred**. Screenshots and logcat dumps stayed
-   in the session scratchpad **outside the repo** — the verbatim excerpts in the proof doc are the
-   in-repo record.
-   [Device proof](../plans/2026-07-22-phase-11.2-device-proof.md) ·
-   [runbook, amended](../plans/2026-07-21-phase-11.2-device-runbook.md) ·
-   [design](../plans/2026-07-21-phase-11.2-design.md).
+## Risk areas
 
-3. **Consumer dogfooding — a stranger can really ship.** A **fresh app outside this repo**
-   consumes the **published 0.2.0** packages (`dotnet new blazornative` → the 7 `dotnet add
-   package` refs, no `ProjectReference`), builds the Android (and iOS-sim) shell, and runs. The
-   getting-started path is walked as a newcomer would; **every friction point found is fixed**
-   (docs, template defaults, error messages, missing steps) or ledgered with a reason. The
-   result: a written, reproducible "zero-to-running app" that does not touch the repo sources.
-
-   ✅ **Closed by Phase 11.1** (2026-07-21). **Mechanism:** two apps built **outside this repo**
-   from **nuget.org only**, no `ProjectReference` — `bn-baseline` on published **0.3.0** and
-   `bn-zeroalloc-showcase` on published **0.4.0**, the latter scaffolded from the **published**
-   template. **0.4.0 is the milestone release**: it shipped the `ConfigureServices` seam
-   ([#159](https://github.com/MarcelRoozekrans/BlazorNative/pull/159)), the KDoc sweep (#161), a
-   nuget-preflight fix (#163) — and, via [#162](https://github.com/MarcelRoozekrans/BlazorNative/pull/162),
-   it is the **first release ever to publish `BlazorNative.Templates`**, closing the M8 carryover and
-   making the getting-started docs' front-door claim true (verified live: a real
-   `dotnet new install BlazorNative.Templates` resolved `@0.4.0`). **Evidence:** every publish —
-   `win-x64`, `linux-bionic-x64`, `linux-bionic-arm64`, both apps — emitted **exactly the 4 accepted
-   IL2072s** and zero other trim/AOT warnings, *including with 11 ZeroAlloc packages layered on*
-   (no `Microsoft.CodeAnalysis` diamond, no duplicate-generator emit); dual-ABI APKs built from
-   `gradlew assembleDebug`; RouteGen derived the deep-link map **from the packages alone** and
-   regenerated it on an added page with **zero shell hand-edits** (11.0's claim confirmed for a
-   consumer); and the new DI seam was proven **at runtime** — an ABI harness P/Invoked the
-   *published* NativeAOT binary, replayed `blazornative_init` → `register_frame_callback` → `mount`,
-   and the first frame's patches carried the app service's own output (a shared-singleton count
-   proving instance identity), all 6 pages `rc = 0`. One package dropped **with a written reason**
-   (`ZeroAlloc.Cache` 1.1.15 — fails at `csc`, never reached the trim gate; upstream
-   [Cache#87](https://github.com/ZeroAlloc-Net/ZeroAlloc.Cache/issues/87)). **Friction:** 14 items,
-   each fixed / resolved / dismissed-with-investigation / ledgered-with-an-owner / deferred-by-decision
-   — docs fixes in [#157](https://github.com/MarcelRoozekrans/BlazorNative/pull/157) (the "seven
-   packages" line → 3 direct + 4 transitive; the version literal made version-*agnostic*; the
-   desktop-dev-loop claim made honest with **no host invented**; the three env prerequisites), the
-   template DI `using` in flight as **#165**, and the rc-0-on-faulted-render design gap filed as
-   [#164](https://github.com/MarcelRoozekrans/BlazorNative/issues/164) → **Phase 11.4 / DoD #6**.
-   **Boundaries kept explicit:** pages mount and render their *initial frame* (`OnInitialized` /
-   `OnAfterRenderAsync` ran) but **no UI event was dispatched**; capabilities ran on the **DevHost
-   bridge**, the APK was built **but not installed**, so real hardware stays **DoD #2 / Phase 11.2**;
-   **iOS-sim deferred** per scoping decision #3.
-   [Conclusion](../plans/2026-07-21-phase-11.1-conclusion.md) ·
-   [friction ledger](../plans/2026-07-21-phase-11.1-friction-ledger.md) ·
-   [zero-to-running walkthrough](../plans/2026-07-21-phase-11.1-walkthrough.md).
-
-4. **API stability + the 1.0 path.** The **public API surface** of the shipped packages is
-   reviewed and its stable core identified; unstable/experimental surface is **marked** (a
-   public-API baseline — e.g. `Microsoft.CodeAnalysis.PublicApiAnalyzers` `PublicAPI.*.txt` — so
-   an accidental breaking change reds a PR, and/or `[Experimental]` on genuinely-unstable bits).
-   **Concrete 1.0 criteria** are written down (what must be true — API frozen, both shells
-   real-device-proven where possible, docs complete, the deferred ledger resolved-or-accepted).
-   The README's "API changes without notice" claim is updated to reflect the marked-stable
-   surface.
-
-   ✅ **Closed by Phase 11.3** (2026-07-22), across four gates.
-
-   **Mechanism.** **Gate A** ([#176](https://github.com/MarcelRoozekrans/BlazorNative/pull/176))
-   classified all **88** public types into **55 STABLE / 2 PROVISIONAL / 31 NOT-API** in a
-   reviewable [tier table](../plans/2026-07-21-phase-11.3-api-tiers.md), decided the four
-   contentious calls **in writing** (`NativeRenderer` = NOT-API, marked not moved; `DevHostBridge`
-   = PROVISIONAL; `INavigationManager` stays in `.Core` with `[TypeForwardedTo]` as the recorded
-   mitigation), and wrote the **consume-only interface-additions policy** into the shipped xmldoc
-   of `IMobileBridge` and `INavigationManager` — *before* the first post-1.0 addition, which is
-   the only thing that makes it honest. **Gate B**
-   ([#180](https://github.com/MarcelRoozekrans/BlazorNative/pull/180)) landed **six**
-   `PublicAPI.Shipped.txt` baselines (1 166 lines) with `RS0016`/`RS0017`/`RS0037` escalated to
-   **errors** via a per-package `BnEnforcePublicApi` property in `src/Directory.Build.targets` —
-   **`.targets`, not `.props`**, the CS1591 lesson re-applied — plus an analyzer **diagnostic-ID
-   roster** pin (the 7 `BN00xx` ids, both directions) replacing a `.txt` baseline for the
-   Analyzers package, whose real contract a `.txt` cannot express. **Gate C**
-   ([#183](https://github.com/MarcelRoozekrans/BlazorNative/pull/183))
-   marked **28 of 31** NOT-API
-   types `[EditorBrowsable(Never)]` with a per-type reason, ledgered the **3 unmarkable**
-   generated types rather than skipping them, and wrote the
-   [`[Experimental]` policy](../plans/2026-07-21-phase-11.3-experimental-policy.md) — `BN1xxx`
-   reserved, disjoint from `BN0xxx`, never reused — with the argued finding that the current
-   surface warrants **zero** uses. **Gate D** produced the standalone
-   [1.0 criteria](../plans/2026-07-22-phase-11.3-one-point-oh-criteria.md) (**12 blockers**, 8 met
-   / 4 open at the time of writing — **9 / 3 after Phase 11.4 closed Q2**, see the
-   [final audit](../plans/2026-07-22-milestone-11-final-audit.md); each open one owned), the
-   consumer-facing
-   [API-stability page + compatibility statement](../../website/docs/api-stability.md), and the
-   README re-cut.
-
-   **Evidence — the strongest single fact is a mutation, not a green build.** Renaming
-   `BnButton.Label` → `BnButton.Text` produced **`error RS0016` ×2 + `error RS0017` ×2 and exit
-   1**. A green `build-test` would have proven nothing here: CS1591 *"read as ON and was OFF"*
-   **twice** (`src/Directory.Build.targets:51`–`:63`), and this gate was wired specifically to not
-   reproduce that. The `.razor` risk was also closed empirically rather than assumed — `BnSlider`'s
-   23 generator-produced parameters appear in the baseline, so the pin has no hole where the
-   consumer surface is widest.
-
-   **Findings the review produced, which is the point of reading a baseline rather than
-   generating one.** [#181](https://github.com/MarcelRoozekrans/BlazorNative/issues/181) —
-   `default(BlazorNativePage)` yields a page with a **null mount thunk**, because C# guarantees a
-   public parameterless constructor on every struct and the type's xmldoc claims the two factories
-   are *"the only way in."* Its sibling
-   [#178](https://github.com/MarcelRoozekrans/BlazorNative/issues/178) is the same trap on
-   `CaptureOptions`. Neither was found by a test or a bug report; both were found by reading a
-   generated `.txt` file line by line. They are carried as criterion **Q5**.
-
-   **Boundaries kept explicit:** the API is **marked, not frozen** — `bump-minor-pre-major` is
-   still on and a minor may still break the surface *deliberately*; the baseline makes a break
-   **visible**, not impossible. Making `NativeRenderer` + the patch model `internal` is a
-   **breaking** change deliberately **not** made here (criterion S3), so a consumer can still bind
-   to them — `[EditorBrowsable(Never)]` is a signpost, not a barrier. **1.0 is defined here, not
-   cut here** (scoping decision 5).
-
-5. **Hygiene + close.** Every new surface CI-asserted (the codegen output drift-guarded, the
-   public-API baseline gated); a decision log per phase; the device-proof doc; a **final audit**
-   verifying all of the above. **No milestone tag** (8.6 rule — closure is the audit); a 1.0.0
-   *package* release, if the owner cuts it, is a separate release-please tag.
-
-   ✅ **Closed by Phase 11.5** (2026-07-22) — the
-   [**M11 final audit**](../plans/2026-07-22-milestone-11-final-audit.md), verdict **PASS WITH
-   FINDINGS**. **Method:** no criterion accepted because a conclusion doc says so — each DoD checked
-   against live source, the CI gate literals (the `if`/`-ne` lines that DECIDE), the run logs of the
-   three lanes this host cannot execute, `gh issue` read live, and `git tag -l`. **Re-run live:** the
-   .NET suite at the audited tip, and Phase 11.3's `BnButton.Label → Text` baseline mutation, because
-   *the strongest fact available for DoD #4 is a mutation, not a green build.* **CI-observed, cited
-   not re-run:** Android instrumented **213/213** (run 29948996623) and iOS **242** (run 29949367282,
-   on the audited tip `cf80930`). **UNVERIFIED here:** the JVM **148** — `gradlew testDebugUnitTest`
-   fails at `:verifyNativeAssets` without both bionic `.so` publishes, so it rests on gate-literal ↔
-   README reconciliation, the same posture M8–M10 took for their un-runnable lanes.
-   **Seven findings, none blocking**, four of them stale records the audit found **and fixed**: the
-   Android carve-out below (resolved by #193 and still described as red in three docs); the
-   *"210 → 212"* Android delta (the gate says **213**); the README's *"not yet at 213/213"* block;
-   and a **7 met / 5 open** 1.0 tally contradicting the criteria doc's own **8 / 4**. The two
-   substantive ones: **`[EditorBrowsable(Never)]` is a new surface with NO CI guard** — 28 markings
-   asserted by nothing, `PublicAPI.Shipped.txt` records signatures not attributes, so deleting one
-   reds nothing (the single place this DoD's own sentence is not literally true; the natural first
-   follow-up); and the route-map drift test proves the **generator**, not the **build wiring** —
-   that half is covered by the instrumented lane and the device session, i.e. advisory lanes, not the
-   required one. **No tag created.**
-
-6. **Logging discipline — quiet-in-Release, level-gated, unified**
-   ([#155](https://github.com/MarcelRoozekrans/BlazorNative/issues/155)). Diagnostic logging today
-   is **not build-configuration gated** and behaves **differently per shell**: iOS `NSLog` emits
-   normal-path chatter (`native init ok`, `mounted <component>`, the `[BnWidgetMapper] … ignored`
-   volume) in **Release** builds; Android discards the .NET runtime's `Console.Error` to `/dev/null`
-   and only surfaces the shell's explicit `Log.e`; the renderer `ILogger` is hard-coded to
-   `Warning`. M11 gives the framework **one level-gated logging seam** the runtime + both shells
-   route through, **quiet by default in Release** (Info/Debug/Verbose suppressed, Warn/Error only),
-   preferring `os_log`/`Logger` over unconditional `NSLog` on iOS and the `Log` sink on Android — so
-   the two shells log **consistently**, no internal exception detail/paths leak at default Release
-   verbosity, and verbose diagnostics are opt-in. An end user sees none of it either way (no
-   on-screen console); this is about a production binary not shipping developer chatter and about
-   one honest, controllable logging story across platforms.
-
-   ✅ **Closed by Phase 11.4** (2026-07-22), across four gates.
-
-   **Mechanism.** **Gate A** ([#185](https://github.com/MarcelRoozekrans/BlazorNative/pull/185)) —
-   `BnLog` in `BlazorNative.Core`: five levels plus a reserved ordinal 0, a `volatile int`
-   threshold, a pluggable sink, and exception redaction. The default is **`Warn`** and deliberately
-   **not `#if DEBUG`** (`BnLog.cs:78`) — a build-configuration switch cannot be opened by a consumer
-   already shipping Release who needs one verbose session, and it makes the two configurations' code
-   paths differ. The level rides `BlazorNativeInitOptions` at **offset 28 with `SizeOf` still 32**
-   (it lands in tail padding alignment-8 had already reserved; the struct is explicitly *not* the
-   frozen 80-byte callbacks bridge). **All 31** `Console.Error` sites migrated, and
-   `RendererServices`' hard-coded `>= LogLevel.Warning` now delegates to the seam — which is what
-   makes Blazor's own `ILogger` and the framework's diagnostics share **one** throttle. **Gate B**
-   ([#187](https://github.com/MarcelRoozekrans/BlazorNative/pull/187)) — the Android transport:
-   `Os.pipe()` + `Os.dup2()` over fd 2 with a daemon reader into `android.util.Log`, **pure Kotlin,
-   no NDK and no JNI** (both APIs are API 21; the module floor is `minSdk 24`), installed as the
-   **first statement of `MainActivity.onCreate`** — before SoLoader and before the `dlopen`, because
-   `blazornative_init`'s failure path is the one place the framework emits a full `ex.ToString()`
-   for the trim failures whose `Message` hides the offending type. Plus the Kotlin struct mirror's
-   `logLevel`, a `<meta-data>` / Intent-extra level knob, and the **12** KDoc rc contracts that
-   pointed readers at a stderr Android destroys, true for the first time. **Gate C**
-   ([#188](https://github.com/MarcelRoozekrans/BlazorNative/pull/188)) — the iOS transport:
-   `BnLog.swift` on `os_log`/`Logger`, chosen for the **information-disclosure** half of #155 rather
-   than the noise half (`Logger` interpolation is **private by default**; `NSLog` is always public,
-   and level gating cannot fix that because an `Error` ships in Release by design). All **78**
-   shipped `NSLog` sites under `BnHost/` swept — **zero bare `NSLog` calls remain** — with an
-   `@_cdecl BnLogC` shim for the 4 Objective-C++ sites, an iOS-13 `os_log` fallback beneath
-   `Logger`'s iOS-14 floor, and the **same stdio pump in Swift**. **Gate D**
-   ([#189](https://github.com/MarcelRoozekrans/BlazorNative/pull/189)) closed
-   [#164](https://github.com/MarcelRoozekrans/BlazorNative/issues/164): a parameter-binding fault
-   **aborts the mount** via the **already-documented rc 2** — not a new rc, because
-   `BlazorNativeRuntime.kt`'s mount `when` ends in `else -> throw`, so a "non-fatal rc 4" would
-   hard-crash every consumer still on an older **copied** shell. No Kotlin, Swift or template file
-   changed.
-
-   **Evidence.** The struct pin was made **stronger, not merely edited**: it asserts `SizeOf == 32`
-   **and** `OffsetOf(LogLevel) == 28` (`NativeShellBridgeTests.cs:687`, `:707`), because **neither
-   alone distinguishes "free" from "smuggled in at a cost"** — size alone would hold if the field
-   had displaced an offset, offset alone would hold if the struct had grown to 40 — and it was
-   measured before/after rather than deduced. Two drift pins stop the migrations rotting:
-   `ConsoleErrorDriftTests` (zero bare `Console.Error` in `src/**/*.cs`) and `NSLogDriftTests` (zero
-   bare `NSLog` under `BnHost/`), **both asserting their own non-vacuity** and the iOS one carrying a
-   **deletion guard** — *"no bare NSLog"* is trivially satisfiable by deleting every diagnostic, and
-   the mapper's `ignored`/`skipped` lines are the only record that a wire the author asked for was
-   silently dropped. Gate D's classifier keys on **provenance, never message text**: two Blazor
-   method identities in the stack (`ComponentProperties.SetProperties` +
-   `ParameterView.SetParameterProperties`), proven by a test feeding an **impostor carrying #164's
-   message verbatim**. Its **fail direction is safe** — an unrecognised stack → log-and-continue,
-   never a false fatal. Suite **782 → 864** (.NET) · **120 → 148** (JVM) · **210 → 213** (Android
-   instrumented — 212 at Gate B, **213** once #193 landed the pump's honest-install assertion) ·
-   **236 → 242** (iOS).
-
-   **Findings + deliberate divergences.** The mapper's `ignored`/`skipped` diagnostics **stay at
-   `Warn` and ship in Release**, against #155's literal goal text — each records a dropped wire, and
-   Android already levelled them `Log.w`; demoting them would hide the one class of message that
-   reliably indicates a real author bug, in the build where it costs most. Gate D's classifier is
-   **narrower than the design**: `SupplyCombinedParameters` is deliberately excluded, because it
-   encloses a component's own `SetParametersAsync` override — including it would have made a
-   throwing `OnParametersSet` a boot failure. The public level setter landed as `BnLog.Level` in
-   `.Core` rather than a `BlazorNativeApp` property. New public API was declared into
-   **`PublicAPI.Unshipped.txt`** in two packages — Phase 11.3 Gate B's baseline red-flagging it on
-   its **first live encounter**, working exactly as designed.
-
-   **Boundaries kept explicit.** The iOS sweep **is** CI-verified — `ios.yml` ran and passed on
-   `71470db` including `Assert XCTest baseline (242 passed / 0 failed)` — but **no device, no
-   simulator session and no Mac were used by the author**, and CI never watched a Release build's
-   console.
-   ✅ **THE ANDROID CARVE-OUT IS RESOLVED (2026-07-22) — read DoD #6's closure WITHOUT it.** DoD #6
-   was closed while the Android transport's only device-level proof was **unrun**; when dispatched on
-   `f53f74a` it went **red** (211/212), and it took three rounds to establish the cause was a **test**
-   bug, not a transport bug: the probe wrote via `Os.write(FileDescriptor.err, …)`, and on ART
-   `FileDescriptor.err` is a **dup sitting at fd 54**, not literal fd 2 — so the probe bypassed the
-   pipe while the pump was fine (run-2 diagnostics: `dup2Result=2`, reader alive, the explicit-fd-2
-   control write **passed**). [#191](https://github.com/MarcelRoozekrans/BlazorNative/issues/191) is
-   **CLOSED** by #193, which replaced the *instrument* — `ParcelFileDescriptor.fromFd(2)`, a dup of
-   fd 2 that shares the open file description — **without softening the assertion** (still a strict
-   `assertEquals` on the whole `BnLogRecord`). The lane is now **213/213 green**
-   ([run 29948996623](https://github.com/MarcelRoozekrans/BlazorNative/actions/runs/29948996623):
-   `tests=213 failures=0 errors=0 skipped=0`), so `Os.pipe()` + `Os.dup2()` over fd 2 **is**
-   device-proven on a real Android runtime. The instrumented delta for M11 is therefore
-   **210 → 213**, not 212. *(Residual, stated: that run is on the branch tip `c779294`, not on the
-   squash-merge `cf80930` — identical tree, standard advisory-lane posture.)*
-   **"A Release build is actually quiet on a device" is inspection-only and NOT done** — the
-   mechanism is proven, the silence is not observed. **[#155](https://github.com/MarcelRoozekrans/BlazorNative/issues/155)
-   therefore stays OPEN with two named remainders** (the device observation; the level knob absent
-   from `website/docs/**`), per the standing rule not to tidy by closing issues with real remainder —
-   the owner decides. #164 is **closed**.
-   [Conclusion](../plans/2026-07-22-phase-11.4-conclusion.md) ·
-   [design](../plans/2026-07-21-phase-11.4-design.md).
+| Risk | Impact | Mitigation |
+|---|---|---|
+| **Blazor sequence-number collision** — the base emits attributes the derived component also numbers | Severe: a collision does not throw, it produces a **wrong diff, silently** | Reserved bands (item 1–49, container 50–99, component-specific 100+, `ChildContent` 200) plus a pin **mutation-proven by deliberately colliding one** |
+| **Frame tables move** | Severe, and possibly silent on one platform only | Frame tables are the acceptance test, run on **both** shells across the whole sample |
+| **Honest `CheckAccess()` breaks working code** — pool threads demonstrably touch this path (#213 item 2, #9) | Converts working async paths into exceptions | 13.2 is a **spike first**: change, measure across all suites, decide. Debug-only warning is the documented fallback |
+| **Baseline churn hides a real removal** — ~17 × 8 members change declaring type | An API disappears without anyone deciding to | Read the baseline diff as an API review; pin member **names** so a vanishing name reds regardless of declaring type |
+| **Theme design grows into an implementation** | Milestone slips on its least-certain item | 13.4's deliverable is explicitly a design + decision |
 
 ## Out of scope for this milestone
 
-- **Real-device iOS / TestFlight** — still gated on the Apple Developer account (trigger
-  unchanged).
-- **FCM push** — still gated on a Firebase project.
-- **New framework surface** — State (#22), Styling (#21), the Navigation package (#23), the CLI
-  tool (#24), component expansion (#20) are *growth*, not *readiness*; a later milestone.
-- **The inspector channel** (ledgered) — developer tooling, not consumer-facing.
-- **Actually cutting 1.0.0** — M11 defines the criteria and marks the surface; the graduation is
-  a separate owner decision once the criteria are met.
+- **#24 `BlazorNative.Cli`** — the audit's verdict is "keep open, rescope, but it should follow,
+  not lead"; two of its four deliverables are blocked on other work.
+- **#25 → 1.0 criterion S3** — owner choice (decision 4 above). **The only item that moves the 1.0
+  scoreboard**; becomes the remaining gap if P3 clears.
+- **`fontWeight` / Inter Bold** — re-filed out of #21 deliberately: synthetic bold changes text
+  metrics and would risk the font-parity contract to add a paint property.
+- **Responsive breakpoints** — blocked. Nothing surfaces viewport size to .NET; it is an ABI/wire
+  item, not a styling one.
+- **P3 (real-iPhone verification)** — gated on an Apple Developer account and an external iOS
+  developer. Administrative, not technical; `docs/ios-device-verification-handover.md` is the
+  handover.
 
-## Inherited from prior milestones (the ledger M11 consumes or carries)
+## Audit History
 
-- **The physical-phone proof** (M9 owner-owed) — ✅ **DISCHARGED 2026-07-22.** Consumed by DoD #2
-  and now actually *done*: the owner ran the session on a Xiaomi 24069PC21G (Android 16 / SDK 36,
-  `arm64-v8a`) and all four capabilities were exercised against real hardware — a real fused
-  location fix, a real notification post + grant + cold tap-through, a real system-camera capture,
-  and the **OS keystore** enforcing auth-bound decryption against a real enrolled fingerprint. The
-  ledger item is closed; it immediately paid for itself with
-  [#178](https://github.com/MarcelRoozekrans/BlazorNative/issues/178), a defect only a real
-  encoder could have surfaced. [Device proof](../plans/2026-07-22-phase-11.2-device-proof.md).
-- **The KDoc sweep + map extraction** (M8) — trigger was "before the first Release that
-  publishes the template pack"; the map-extraction half is **done** (Phase 11.0 RouteGen retired the
-  inline map + its excision), and the KDoc-correctness half + **publishing the template pack** +
-  the **`ConfigureServices` DI seam** are the three changes bundled into the **0.4.0** release that
-  11.1 Gate C/D depends on — see [0.4.0-prep design](../plans/2026-07-20-phase-0.4.0-prep-design.md).
-  ✅ **DISCHARGED** — **0.4.0 published 2026-07-21** with all three (#161 KDoc, #162 template
-  publish, #159 the seam; #163 the preflight fix). It is the **first release to publish
-  `BlazorNative.Templates`**, verified live by a real `dotnet new install`.
-- **From M5:** FCM push (carried, trigger above).
-- **The P3 perf-hardening ledger** (#8/#9/#12/#13) — deferred with revisit-triggers unfired;
-  M11 may revisit under DoD #4 if a stability review surfaces one, else it stays ledgered.
-- **CI posture:** five required contexts unchanged; advisory device lanes unchanged; the owner's
-  phone is never a CI dependency.
-
-## Initial phase plan
-
-Tracked in `ROADMAP.md`. Approved at milestone-open:
-
-- ✅ **Phase 11.0** — deep-link route codegen + the consumer-footgun audit (DoD #1) — *complete
-  (2026-07-20); the seed finding; a concrete single-source-of-truth fix, first because dogfooding
-  would lean on it.* The generated `res/raw/blazornative_routes.json` is **`.gitignore`d** and
-  untracked, so it cannot rot back into a hand-maintained mirror.
-  [Conclusion](../plans/2026-07-20-phase-11.0-conclusion.md) ·
-  [footgun audit](../plans/2026-07-20-phase-11.0-footgun-audit.md).
-- ✅ **Phase 11.1** — consumer dogfooding on the published packages (DoD #3) — *complete
-  (2026-07-21); walked on 0.3.0 then 0.4.0, not 0.2.0, because both shipped mid-phase.* Dogfooding surfaced the
-  **sealed composition root** as a real gap, so 11.1 also grows one framework `feat` — a public
-  `BlazorNativeApp.ConfigureServices` app-service DI seam — shipping in **0.4.0** (cross-ref
-  DoD #4 / the Phase 11.3 PublicAPI baseline). See
-  [phase-11.1 design](../plans/2026-07-20-phase-11.1-design.md).
-- ✅ **Phase 11.2** — real-device Android validation, all capabilities, recorded (DoD #2) —
-  *complete (2026-07-22); owner-run on the phone, the milestone's honesty check.* All four
-  capabilities exercised on a Xiaomi 24069PC21G (Android 16 / SDK 36); the generated route map
-  proven across **all 13 routes** in one process; **cold** deep link + **cold** notification
-  tap-through both landed on the right page. Two findings: **#178** (`CaptureOptions` defaults
-  never apply) and the **DoD #2 EXIF-clause amendment** above. Runbook amended from the session
-  (MIUI blocks `adb` input injection; `force-stop` clears notifications; `installDebug` fails
-  `INSTALL_FAILED_USER_RESTRICTED`; the JDK/NDK env traps recurred).
-  [Device proof](../plans/2026-07-22-phase-11.2-device-proof.md) ·
-  [design](../plans/2026-07-21-phase-11.2-design.md) ·
-  [device runbook](../plans/2026-07-21-phase-11.2-device-runbook.md).
-- ✅ **Phase 11.3** — API stability review + the 1.0 criteria + public-API baseline (DoD #4) —
-  *complete (2026-07-22).* Four gates, **A before B being the load-bearing ordering** — a baseline
-  generated before the review acquires unearned authority. 88 types classified 55/2/31; six
-  `PublicAPI.Shipped.txt` baselines (1 166 lines) with RS0016/17/37 as **errors** from
-  `Directory.Build.targets`, **proven by mutation**; 28 NOT-API types marked
-  `[EditorBrowsable(Never)]`; the 1.0 criteria as a standalone checkable doc.
-  *(No single `-conclusion.md` — the decisions live across the tier table, the `[Experimental]`
-  policy and the criteria doc; noted as finding **F5** in the M11 audit.)*
-- ✅ **Phase 11.4** — logging discipline (DoD #6, [#155](https://github.com/MarcelRoozekrans/BlazorNative/issues/155))
-  — *complete (2026-07-22).* One level-gated seam (`BnLog`, default **`Warn`**, not `#if DEBUG`),
-  the level riding the init input at **offset 28 with `SizeOf` still 32**, **31** `Console.Error`
-  and **78** `NSLog` sites migrated, and a stderr pump on **both** shells. Gate D also closed
-  [#164](https://github.com/MarcelRoozekrans/BlazorNative/issues/164)'s *other* half — Gates A–C
-  made a faulted render **visible**; Gate D makes a parameter-binding fault **abort the mount**
-  with the already-documented `rc 2` rather than report success over a half-rendered screen. Every
-  other render fault keeps log-and-continue, deliberately
-  ([design](../plans/2026-07-21-phase-11.4-design.md) §6.2). **#155 stays open** on its
-  quiet-in-Release *observation* alone; the Android instrumented lane **has since run green at
-  213/213** (#191 → #193 — the red was a test-side descriptor mismatch, not the transport).
-  [Conclusion](../plans/2026-07-22-phase-11.4-conclusion.md).
-- ✅ **Phase 11.5** — hygiene + the M11 final audit + close (DoD #5) — *complete (2026-07-22).*
-  Verdict **PASS WITH FINDINGS**; the .NET suite and the DoD #4 baseline mutation **re-run live**,
-  Android 213 / iOS 242 **CI-observed and cited**, JVM 148 **UNVERIFIED here** (`:verifyNativeAssets`
-  needs both bionic publishes). Seven findings — four stale records found **and fixed** (the resolved
-  Android carve-out still written as red in three docs; `210 → 212` where the gate says **213**; the
-  README's *"not yet at 213/213"*; a 1.0 tally of 7/5 contradicting the criteria doc's own 8/4), one
-  genuinely un-guarded surface (**`[EditorBrowsable(Never)]`**, 28 markings asserted by nothing), one
-  scope limit on the route-map drift test (it proves the generator, not the build wiring), one
-  missing 11.3 conclusion doc, and the carried residuals. **No tag.**
-  [Final audit](../plans/2026-07-22-milestone-11-final-audit.md).
-
-## Why this milestone exists
-
-The library is published and hardened, but "published" is not "dependable." A consumer today
-hand-edits a Kotlin map when they add a page (and their deep link breaks silently if they slip);
-the two capabilities that most need a real phone have only ever run on an emulator that fakes
-them; nobody has actually built an app from the *published* packages start to finish; and the
-API is officially "changes without notice." M11 closes each of those — the footgun, the
-emulator honesty gap, the untested consumer path, and the unstable-API disclaimer — so the next
-honest sentence about this project is not "it's a proof of concept" but "you can build on it."
+| Date | Verdict | Gaps |
+|---|---|---|
+| — | not yet audited | — |
