@@ -59,6 +59,53 @@ public sealed class LayoutSurfacePinTests
             "BnModalTests.cs for the full citation and the tripwire.",
     };
 
+    /// <summary>
+    /// PIN — the allowlist's own escape hatch, pinned shut. Pin 1
+    /// (<see cref="EveryComponentInThePackage_DerivesFromBnLayoutItem"/>) trusts
+    /// this dictionary; without a check on the dictionary ITSELF, a future
+    /// author who finds Pin 1 inconvenient could add a one-line
+    /// <c>[typeof(Foo)] = "x"</c> and the guard would go quiet for that
+    /// component, with no test reddening and no signal in the diff beyond one
+    /// dictionary entry — the same "documented but enforced by nothing" shape
+    /// this whole phase exists to close.
+    ///
+    /// <para><b>This dictionary is a place to record an ARGUED exception, not
+    /// a place to silence the guard.</b> Growing it past its current size is a
+    /// deliberate act: this pin reds the instant a third entry appears, and
+    /// whoever adds one has to update the expected count here — and say why,
+    /// in the same PR — rather than the allowlist growing by one quiet line.</para>
+    ///
+    /// <para>Only checks what is actually checkable. The exact COUNT (2, as
+    /// of this phase) is a real invariant. Each reason being non-trivially
+    /// long is a weak but real signal against a placeholder like
+    /// <c>"x"</c> or <c>"TODO"</c> — it is NOT a check that the reason is
+    /// GOOD, which no test can verify. A check that every reason cites a real
+    /// test method name by reflection was considered and deliberately
+    /// skipped: both current reasons do cite one
+    /// (<c>BnList_CannotTakeTheItemBase_BecauseItsHeightIsNarrowedToFloat</c>,
+    /// <c>BnModal_DoesNotTakeTheItemSurface_TheModalNodeAcceptsNoStyles</c>),
+    /// but pinning that as a REQUIRED shape would be brittle: a future argued
+    /// exception might legitimately cite only shell source lines (as both
+    /// current reasons also do), and a pattern chasing "must name a method
+    /// that exists in this assembly" is exactly the kind of check that rots
+    /// the first time a reason is phrased differently, not the kind that
+    /// catches a real regression.</para>
+    /// </summary>
+    [Fact]
+    public void AllowedNonLayoutComponents_GrowingItIsADeliberateAct()
+    {
+        Assert.Equal(2, AllowedNonLayoutComponents.Count);
+
+        foreach ((Type type, string reason) in AllowedNonLayoutComponents)
+        {
+            Assert.False(string.IsNullOrWhiteSpace(reason),
+                $"{type.Name}'s allowlist reason is blank.");
+            Assert.True(reason.Trim().Length >= 40,
+                $"{type.Name}'s allowlist reason (\"{reason}\") reads like a placeholder, " +
+                "not an argued exception.");
+        }
+    }
+
     [Fact]
     public void BnLayoutItem_DeclaresExactlyTheItemSurface()
     {
