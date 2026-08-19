@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk.Razor">
 
   <!-- ─────────────────────────────────────────────────────────────────────
        BlazorNative.Runtime.Tests — Phase 3.0b Gate 2
@@ -13,6 +13,12 @@
        verbatim per plan Task 2.1 Step 2.
 
        See docs/plans/2026-05-31-phase-3.0b-implementation-plan.md (Gate 2).
+
+       Phase 13.0 Task 1: SDK swapped Microsoft.NET.Sdk -> Microsoft.NET.Sdk.Razor
+       (StaticWebAssetsEnabled off, same as samples/BlazorNative.SampleApp) so
+       ItemSurfaceProbe.razor compiles here — this project had no .razor files
+       before and Sdk.Razor is a strict superset of Sdk for a non-web class
+       library, so this is behavior-neutral for the existing .cs-only tests.
        ───────────────────────────────────────────────────────────────────── -->
 
   <PropertyGroup>
@@ -22,6 +28,7 @@
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
     <RootNamespace>BlazorNative.Runtime.Tests</RootNamespace>
+    <StaticWebAssetsEnabled>false</StaticWebAssetsEnabled>
     <!-- Phase 3.0d Gate 1: FrameArena/FrameEncoder tests dereference
          BlazorNativePatch* directly. -->
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
