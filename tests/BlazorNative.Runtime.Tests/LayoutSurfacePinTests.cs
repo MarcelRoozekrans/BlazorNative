@@ -31,4 +31,32 @@ public sealed class LayoutSurfacePinTests
             ItemParameters.OrderBy(n => n, StringComparer.Ordinal).ToArray(),
             declared);
     }
+
+    /// <summary>The 5 parameters that constitute the container surface, by name.</summary>
+    internal static readonly string[] ContainerParameters =
+        { "Padding", "Justify", "Align", "Wrap", "Gap" };
+
+    [Fact]
+    public void BnLayoutContainer_DeclaresExactlyTheContainerSurface()
+    {
+        string[] declared = typeof(BnLayoutContainer)
+            .GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
+            .Where(p => p.GetCustomAttribute<ParameterAttribute>() is not null)
+            .Select(p => p.Name)
+            .OrderBy(n => n, StringComparer.Ordinal)
+            .ToArray();
+
+        Assert.Equal(
+            ContainerParameters.OrderBy(n => n, StringComparer.Ordinal).ToArray(),
+            declared);
+    }
+
+    [Fact]
+    public void BnLayoutContainer_ExtendsBnLayoutItem()
+        => Assert.True(typeof(BnLayoutItem).IsAssignableFrom(typeof(BnLayoutContainer)));
+
+    [Fact]
+    public void BnLayoutContainer_DoesNotDeclareChildContent()
+        => Assert.Null(typeof(BnLayoutContainer).GetProperty(
+            "ChildContent", BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly));
 }

@@ -37,6 +37,20 @@ BlazorNative.Components.BnLayoutItem.Top.get -> string?
 BlazorNative.Components.BnLayoutItem.Top.set -> void
 BlazorNative.Components.BnLayoutItem.Width.get -> string?
 BlazorNative.Components.BnLayoutItem.Width.set -> void
+BlazorNative.Components.BnLayoutContainer
+BlazorNative.Components.BnLayoutContainer.Align.get -> BlazorNative.Components.FlexAlign?
+BlazorNative.Components.BnLayoutContainer.Align.set -> void
+BlazorNative.Components.BnLayoutContainer.BnLayoutContainer() -> void
+BlazorNative.Components.BnLayoutContainer.EmitContainerAttributes(Microsoft.AspNetCore.Components.Rendering.RenderTreeBuilder! b) -> void
+BlazorNative.Components.BnLayoutContainer.ForwardContainerParameters(Microsoft.AspNetCore.Components.Rendering.RenderTreeBuilder! b) -> void
+BlazorNative.Components.BnLayoutContainer.Gap.get -> string?
+BlazorNative.Components.BnLayoutContainer.Gap.set -> void
+BlazorNative.Components.BnLayoutContainer.Justify.get -> BlazorNative.Components.FlexJustify?
+BlazorNative.Components.BnLayoutContainer.Justify.set -> void
+BlazorNative.Components.BnLayoutContainer.Padding.get -> float?
+BlazorNative.Components.BnLayoutContainer.Padding.set -> void
+BlazorNative.Components.BnLayoutContainer.Wrap.get -> BlazorNative.Components.FlexWrap?
+BlazorNative.Components.BnLayoutContainer.Wrap.set -> void
 BlazorNative.Components.BnScroll.AutoScrollToEnd.get -> bool
 BlazorNative.Components.BnScroll.AutoScrollToEnd.set -> void
 BlazorNative.Components.BnScroll.ScrollToAsync(float offset) -> System.Threading.Tasks.ValueTask
