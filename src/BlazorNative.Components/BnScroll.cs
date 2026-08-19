@@ -1,4 +1,4 @@
-﻿using System.Globalization;
+using System.Globalization;
 using BlazorNative.Core;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Rendering;
@@ -83,7 +83,11 @@ namespace BlazorNative.Components;
 //
 // What REMAINS is the item surface — how this viewport is placed IN ITS PARENT
 // (Grow/Shrink/Basis/AlignSelf, the box, Margin, Position) — plus BackgroundColor.
-// Those are correct on a scroll node and mean exactly what they mean on a BnView.
+// Those are correct on a scroll node and mean exactly what they mean on a
+// BnView. That is why BnScroll derives from BnLayoutItem rather than
+// BnLayoutContainer: it has children, but no container-layout family of its
+// own — see BnLayoutContainer's own remarks, which name this type as the
+// reason that distinction exists.
 //
 // ── A SCROLL NODE NEEDS A DEFINITE HEIGHT ────────────────────────────────────
 // With no definite height the scroll node is `auto` — it takes its height FROM
@@ -116,18 +120,21 @@ namespace BlazorNative.Components;
 // Asserted on the device: WidgetMapperScrollTest
 // .a_Grow_ONLY_scroll_node_does_NOT_get_a_definite_height_and_is_warned_about.
 //
-// Sequence numbers mirror BnView's exactly, with the gaps (2 `padding`,
-// 4 `flexDirection`, 5-8 the container family) left EMPTY: the two
-// BuildRenderTrees are meant to be read side by side, and the gaps are the
-// decision, visible.
+// ── Sequence numbers (Phase 13.0) ─────────────────────────────────────────────
+// The item surface (1–17) is emitted by BnLayoutItem.EmitItemAttributes — this
+// component no longer declares or numbers any of those 17 itself. This
+// component's own vocabulary (the scroll event and the programmatic-scroll
+// command) rides 100+, clear of the base band so a collision cannot silently
+// mis-diff. ChildContent is 200.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// <summary>
 /// A scrolling viewport. Renders as a native <c>ScrollView</c> on Android and a
-/// <c>UIScrollView</c> on iOS. It <em>is</em> a flex <b>item</b> (<see cref="BnView"/>'s item
-/// parameters: <see cref="Grow"/>, <see cref="Shrink"/>, <see cref="Basis"/>,
-/// <see cref="AlignSelf"/>, the box, <see cref="Margin"/>,
-/// <see cref="Position"/>) that scrolls its content.
+/// <c>UIScrollView</c> on iOS. It <em>is</em> a flex <b>item</b>
+/// (<see cref="BnLayoutItem.Grow"/>, <see cref="BnLayoutItem.Shrink"/>,
+/// <see cref="BnLayoutItem.Basis"/>, <see cref="BnLayoutItem.AlignSelf"/>, the
+/// box, <see cref="BnLayoutItem.Margin"/>, <see cref="BnLayoutItem.Position"/>)
+/// that scrolls its content.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -148,95 +155,40 @@ namespace BlazorNative.Components;
 /// <b>Give it a definite height.</b> An <c>auto</c>-height <c>BnScroll</c> takes
 /// its height <em>from</em> its content, so the viewport equals the content and
 /// nothing scrolls; the shells log one warning when that happens. Use an explicit
-/// <see cref="Height"/>, or — inside a parent with a definite height —
-/// <c>Grow="1" Basis="0"</c> (CSS's <c>flex: 1</c>).
+/// <see cref="BnLayoutItem.Height"/>, or — inside a parent with a definite
+/// height — <c>Grow="1" Basis="0"</c> (CSS's <c>flex: 1</c>).
 /// </para>
 /// <para>
-/// <b><see cref="Grow"/> alone is not enough</b>, and it is the mistake
-/// everybody makes here. With
-/// <see cref="Basis"/> left at <c>auto</c>, the scroll node's flex basis is its
-/// <em>content's</em> height, so the free space against a shorter parent is
-/// <b>negative</b> — and <see cref="Grow"/> only distributes <em>positive</em>
-/// free space. The negative goes to the shrink pass, and Yoga's
-/// <see cref="Shrink"/> default is <b>0</b>, so nothing shrinks: the viewport
-/// keeps its content's full height, overflows its parent, and does not scroll.
-/// <c>Basis="0"</c> (or <c>Shrink="1"</c>) is what fixes it — which is exactly why
-/// CSS's <c>flex: 1</c> shorthand sets the basis to <c>0</c>.
+/// <b><see cref="BnLayoutItem.Grow"/> alone is not enough</b>, and it is the
+/// mistake everybody makes here. With <see cref="BnLayoutItem.Basis"/> left at
+/// <c>auto</c>, the scroll node's flex basis is its <em>content's</em> height,
+/// so the free space against a shorter parent is <b>negative</b> — and
+/// <see cref="BnLayoutItem.Grow"/> only distributes <em>positive</em> free
+/// space. The negative goes to the shrink pass, and Yoga's
+/// <see cref="BnLayoutItem.Shrink"/> default is <b>0</b>, so nothing shrinks:
+/// the viewport keeps its content's full height, overflows its parent, and does
+/// not scroll. <c>Basis="0"</c> (or <c>Shrink="1"</c>) is what fixes it — which
+/// is exactly why CSS's <c>flex: 1</c> shorthand sets the basis to <c>0</c>.
 /// </para>
 /// <para>
 /// Your children are re-parented into a content node inside the viewport, whose
 /// height is the total content height — that is what the platform scrolls.
 /// </para>
 /// </remarks>
-public sealed class BnScroll : ComponentBase
+public sealed class BnScroll : BnLayoutItem
 {
-    /// <inheritdoc cref="BnView.BackgroundColor"/>
-    [Parameter] public string? BackgroundColor { get; set; }
-
-    /// <inheritdoc cref="BnView.Margin"/>
-    [Parameter] public string? Margin { get; set; }
-
     // ── NO container layout ───────────────────────────────────────────────────
     //
     // No Direction, Justify, Align, Wrap, Gap or Padding: a BnScroll is a flex
     // ITEM, and its content's layout belongs to the synthetic content node. Put
-    // a BnColumn inside. See the file header — this absence is the design.
-
-    // ── Item layout (how the viewport behaves INSIDE its parent) ──────────────
-
-    /// <inheritdoc cref="BnView.AlignSelf"/>
-    [Parameter] public FlexAlign? AlignSelf { get; set; }
-
-    /// <inheritdoc cref="BnView.Grow"/>
-    [Parameter] public float? Grow { get; set; }
-
-    /// <inheritdoc cref="BnView.Shrink"/>
-    [Parameter] public float? Shrink { get; set; }
-
-    /// <inheritdoc cref="BnView.Basis"/>
-    [Parameter] public string? Basis { get; set; }
-
-    // ── Box ───────────────────────────────────────────────────────────────────
-
-    /// <inheritdoc cref="BnView.Width"/>
-    [Parameter] public string? Width { get; set; }
-
-    /// <summary>Height of the <b>viewport</b>, e.g. <c>"200"</c>. Null = auto —
-    /// and an auto-height scroll takes its height from its content, so nothing
-    /// scrolls. Either this, or <see cref="Grow"/> <b>plus</b>
-    /// <see cref="Basis"/><c>="0"</c> inside a bounded parent — <see cref="Grow"/>
-    /// on its own does NOT bound a viewport whose content is taller than its
-    /// parent.</summary>
-    [Parameter] public string? Height { get; set; }
-
-    /// <inheritdoc cref="BnView.MinWidth"/>
-    [Parameter] public string? MinWidth { get; set; }
-
-    /// <inheritdoc cref="BnView.MaxWidth"/>
-    [Parameter] public string? MaxWidth { get; set; }
-
-    /// <inheritdoc cref="BnView.MinHeight"/>
-    [Parameter] public string? MinHeight { get; set; }
-
-    /// <inheritdoc cref="BnView.MaxHeight"/>
-    [Parameter] public string? MaxHeight { get; set; }
-
-    // ── Positioning ───────────────────────────────────────────────────────────
-
-    /// <inheritdoc cref="BnView.Position"/>
-    [Parameter] public FlexPosition? Position { get; set; }
-
-    /// <inheritdoc cref="BnView.Top"/>
-    [Parameter] public string? Top { get; set; }
-
-    /// <inheritdoc cref="BnView.Right"/>
-    [Parameter] public string? Right { get; set; }
-
-    /// <inheritdoc cref="BnView.Bottom"/>
-    [Parameter] public string? Bottom { get; set; }
-
-    /// <inheritdoc cref="BnView.Left"/>
-    [Parameter] public string? Left { get; set; }
+    // a BnColumn inside. See the file header — this absence is the design, and
+    // it is also why this type derives from BnLayoutItem rather than
+    // BnLayoutContainer.
+    //
+    // The item surface (BackgroundColor, Margin, AlignSelf, Grow/Shrink/Basis,
+    // the box, Position and its insets) is inherited from BnLayoutItem and
+    // emitted at sequence 1-17 by EmitItemAttributes — see that type for the
+    // parameters.
 
     // ── Events ────────────────────────────────────────────────────────────────
 
@@ -357,41 +309,21 @@ public sealed class BnScroll : ComponentBase
     {
         b.OpenElement(0, "scroll");
 
-        // Null attributes are not appended to the frame array at all — that is
-        // how "unset" reaches the wire as "absent" (BnView's un-styled invariant,
-        // and the reason this component needs no null guards).
-        b.AddAttribute(1, "backgroundColor", BackgroundColor);
-        // 2 ("padding") is deliberately UNUSED — see the file header.
-        b.AddAttribute(3, "margin", Margin);
+        // Sequence 1-17: the shared item surface (BackgroundColor, Margin,
+        // AlignSelf, Grow/Shrink/Basis, the box, Position and its insets) — see
+        // BnLayoutItem.EmitItemAttributes. A null value is not appended to the
+        // frame array at all, which is how "unset" reaches the wire as "absent".
+        EmitItemAttributes(b);
 
-        // 4 ("flexDirection") and 5-8 (justifyContent / alignItems / flexWrap /
-        // gap) are deliberately UNUSED: the container-layout family styles the
-        // SCROLL node, whose only child is the synthetic content node. The gaps
-        // are the decision — see the file header.
-
-        b.AddAttribute(9, "alignSelf", AlignSelf.ToStyleValue());
-        b.AddAttribute(10, "flexGrow", Grow.ToStyleValue());
-        b.AddAttribute(11, "flexShrink", Shrink.ToStyleValue());
-        b.AddAttribute(12, "flexBasis", Basis);
-
-        b.AddAttribute(13, "width", Width);
-        b.AddAttribute(14, "height", Height);
-        b.AddAttribute(15, "minWidth", MinWidth);
-        b.AddAttribute(16, "maxWidth", MaxWidth);
-        b.AddAttribute(17, "minHeight", MinHeight);
-        b.AddAttribute(18, "maxHeight", MaxHeight);
-
-        b.AddAttribute(19, "position", Position.ToStyleValue());
-        b.AddAttribute(20, "top", Top);
-        b.AddAttribute(21, "right", Right);
-        b.AddAttribute(22, "bottom", Bottom);
-        b.AddAttribute(23, "left", Left);
+        // Sequence 100+: this component's own surface, clear of the base's
+        // 1-17 so a collision (which would produce a wrong diff, silently)
+        // cannot happen.
 
         // Attach-only-when-subscribed (the BnInput.OnFocus pattern): an
         // unwired BnScroll emits no `scroll` attach, so its wire shape is
         // byte-identical to pre-7.2 — the un-styled invariant, for events.
         if (OnScroll.HasDelegate)
-            b.AddAttribute(24, "onscroll", OnScroll);
+            b.AddAttribute(100, "onscroll", OnScroll);
 
         // #256 — the command, when one is pending. Null on a render with no
         // command, so the un-styled invariant holds for commands too: a
@@ -400,9 +332,9 @@ public sealed class BnScroll : ComponentBase
         // NEXT render remove the attribute and the one after re-add it, and a
         // stale-but-unchanged value is diffed away for free (that is exactly
         // what the nonce makes a repeat immune to).
-        b.AddAttribute(25, ScrollToAttributeName, _pendingCommand);
+        b.AddAttribute(101, ScrollToAttributeName, _pendingCommand);
 
-        b.AddContent(100, ChildContent);
+        b.AddContent(200, ChildContent);
 
         b.CloseElement();
     }

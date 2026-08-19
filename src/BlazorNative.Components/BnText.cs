@@ -11,8 +11,8 @@ namespace BlazorNative.Components;
 /// The platform measures it, not the layout engine: a label with no explicit
 /// size reports the height its text actually wraps to, and that measured height
 /// is what the surrounding flex layout is given. Constrain the width — with
-/// <see cref="BnView.Width"/> on a wrapper, or by letting a row size it — and
-/// the text wraps inside it.
+/// <see cref="BnLayoutItem.Width"/> on a wrapper, or by letting a row size it —
+/// and the text wraps inside it.
 /// </remarks>
 public sealed class BnText : ComponentBase
 {
@@ -26,7 +26,7 @@ public sealed class BnText : ComponentBase
     [Parameter] public float? FontSize { get; set; }
 
     /// <summary>Text colour, e.g. <c>"#336699"</c> — the same colour grammar
-    /// <see cref="BnView.BackgroundColor"/> accepts. Null leaves the platform's
+    /// <see cref="BnLayoutItem.BackgroundColor"/> accepts. Null leaves the platform's
     /// default label colour, which is what makes dark mode work by itself.</summary>
     /// <remarks>Colour has no effect on layout, so unlike
     /// <see cref="FontSize"/> it never re-measures anything — the frame tables are

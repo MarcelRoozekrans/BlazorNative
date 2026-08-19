@@ -93,4 +93,26 @@ public sealed class LayoutSurfacePinTests
 
         Assert.Empty(redeclared);
     }
+
+    [Fact]
+    public void BnScroll_IsALayoutItem_NotAContainer()
+    {
+        Assert.True(typeof(BnLayoutItem).IsAssignableFrom(typeof(BnScroll)));
+        Assert.False(typeof(BnLayoutContainer).IsAssignableFrom(typeof(BnScroll)));
+    }
+
+    [Fact]
+    public void BnView_IsALayoutContainer_AndKeepsOnlyDirectionAndChildContent()
+    {
+        Assert.True(typeof(BnLayoutContainer).IsAssignableFrom(typeof(BnView)));
+
+        string[] own = typeof(BnView)
+            .GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
+            .Where(p => p.GetCustomAttribute<ParameterAttribute>() is not null)
+            .Select(p => p.Name)
+            .OrderBy(n => n, StringComparer.Ordinal)
+            .ToArray();
+
+        Assert.Equal(new[] { "ChildContent", "Direction" }, own);
+    }
 }

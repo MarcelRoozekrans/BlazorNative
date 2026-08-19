@@ -14,7 +14,7 @@ namespace BlazorNative.Components;
 /// </para>
 /// <para>
 /// The colors are hex strings, the same grammar
-/// <see cref="BnView.BackgroundColor"/> takes.
+/// <see cref="BnLayoutItem.BackgroundColor"/> takes.
 /// </para>
 /// </remarks>
 /// <param name="Background">The background for themed surfaces.</param>

@@ -56,70 +56,70 @@ public abstract class BnFlexPreset : ComponentBase
     /// a parameter — that is what makes the preset a preset.</summary>
     protected abstract FlexDirection PresetDirection { get; }
 
-    /// <inheritdoc cref="BnView.BackgroundColor"/>
+    /// <inheritdoc cref="BnLayoutItem.BackgroundColor"/>
     [Parameter] public string? BackgroundColor { get; set; }
 
-    /// <inheritdoc cref="BnView.Padding"/>
+    /// <inheritdoc cref="BnLayoutContainer.Padding"/>
     [Parameter] public float? Padding { get; set; }
 
-    /// <inheritdoc cref="BnView.Margin"/>
+    /// <inheritdoc cref="BnLayoutItem.Margin"/>
     [Parameter] public string? Margin { get; set; }
 
-    /// <inheritdoc cref="BnView.Justify"/>
+    /// <inheritdoc cref="BnLayoutContainer.Justify"/>
     [Parameter] public FlexJustify? Justify { get; set; }
 
-    /// <inheritdoc cref="BnView.Align"/>
+    /// <inheritdoc cref="BnLayoutContainer.Align"/>
     [Parameter] public FlexAlign? Align { get; set; }
 
-    /// <inheritdoc cref="BnView.Wrap"/>
+    /// <inheritdoc cref="BnLayoutContainer.Wrap"/>
     [Parameter] public FlexWrap? Wrap { get; set; }
 
-    /// <inheritdoc cref="BnView.Gap"/>
+    /// <inheritdoc cref="BnLayoutContainer.Gap"/>
     [Parameter] public string? Gap { get; set; }
 
-    /// <inheritdoc cref="BnView.AlignSelf"/>
+    /// <inheritdoc cref="BnLayoutItem.AlignSelf"/>
     [Parameter] public FlexAlign? AlignSelf { get; set; }
 
-    /// <inheritdoc cref="BnView.Grow"/>
+    /// <inheritdoc cref="BnLayoutItem.Grow"/>
     [Parameter] public float? Grow { get; set; }
 
-    /// <inheritdoc cref="BnView.Shrink"/>
+    /// <inheritdoc cref="BnLayoutItem.Shrink"/>
     [Parameter] public float? Shrink { get; set; }
 
-    /// <inheritdoc cref="BnView.Basis"/>
+    /// <inheritdoc cref="BnLayoutItem.Basis"/>
     [Parameter] public string? Basis { get; set; }
 
-    /// <inheritdoc cref="BnView.Width"/>
+    /// <inheritdoc cref="BnLayoutItem.Width"/>
     [Parameter] public string? Width { get; set; }
 
-    /// <inheritdoc cref="BnView.Height"/>
+    /// <inheritdoc cref="BnLayoutItem.Height"/>
     [Parameter] public string? Height { get; set; }
 
-    /// <inheritdoc cref="BnView.MinWidth"/>
+    /// <inheritdoc cref="BnLayoutItem.MinWidth"/>
     [Parameter] public string? MinWidth { get; set; }
 
-    /// <inheritdoc cref="BnView.MaxWidth"/>
+    /// <inheritdoc cref="BnLayoutItem.MaxWidth"/>
     [Parameter] public string? MaxWidth { get; set; }
 
-    /// <inheritdoc cref="BnView.MinHeight"/>
+    /// <inheritdoc cref="BnLayoutItem.MinHeight"/>
     [Parameter] public string? MinHeight { get; set; }
 
-    /// <inheritdoc cref="BnView.MaxHeight"/>
+    /// <inheritdoc cref="BnLayoutItem.MaxHeight"/>
     [Parameter] public string? MaxHeight { get; set; }
 
-    /// <inheritdoc cref="BnView.Position"/>
+    /// <inheritdoc cref="BnLayoutItem.Position"/>
     [Parameter] public FlexPosition? Position { get; set; }
 
-    /// <inheritdoc cref="BnView.Top"/>
+    /// <inheritdoc cref="BnLayoutItem.Top"/>
     [Parameter] public string? Top { get; set; }
 
-    /// <inheritdoc cref="BnView.Right"/>
+    /// <inheritdoc cref="BnLayoutItem.Right"/>
     [Parameter] public string? Right { get; set; }
 
-    /// <inheritdoc cref="BnView.Bottom"/>
+    /// <inheritdoc cref="BnLayoutItem.Bottom"/>
     [Parameter] public string? Bottom { get; set; }
 
-    /// <inheritdoc cref="BnView.Left"/>
+    /// <inheritdoc cref="BnLayoutItem.Left"/>
     [Parameter] public string? Left { get; set; }
 
     /// <inheritdoc cref="BnView.ChildContent"/>
