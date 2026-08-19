@@ -189,18 +189,17 @@ public sealed class LayoutSurfacePinTests
     /// <summary>
     /// The components that had NO item surface at all before 13.0 Task 8 —
     /// <see cref="BnText"/>, <see cref="BnButton"/> and <see cref="BnInput"/> never
-    /// declared any of the 17 names; <see cref="BnModal"/> declared one
-    /// (<c>BackgroundColor</c>) with no way to set the other sixteen.
-    /// <see cref="BnActivityIndicator"/> joins too: Task 8's Step 1 found it is a
-    /// measured Yoga leaf on both shells — the same node-creation path and
-    /// measured-node-types membership as <c>image</c>/<c>checkbox</c>/<c>switch</c>/
-    /// <c>slider</c>/<c>picker</c>, none of which is exempt — so it is a genuine
-    /// layout participant, not the phase's allowlist exception.
+    /// declared any of the 17 names. <see cref="BnActivityIndicator"/> joins too:
+    /// Task 8's Step 1 found it is a measured Yoga leaf on both shells — the same
+    /// node-creation path and measured-node-types membership as
+    /// <c>image</c>/<c>checkbox</c>/<c>switch</c>/<c>slider</c>/<c>picker</c>, none
+    /// of which is exempt — so it is a genuine layout participant.
+    /// <see cref="BnModal"/> is NOT here: see
+    /// <see cref="BnModal_DoesNotTakeTheItemSurface_TheModalNodeAcceptsNoStyles"/>.
     /// </summary>
     public static TheoryData<Type> NewlyGranted => new()
     {
-        typeof(BnText), typeof(BnButton), typeof(BnInput), typeof(BnModal),
-        typeof(BnActivityIndicator),
+        typeof(BnText), typeof(BnButton), typeof(BnInput), typeof(BnActivityIndicator),
     };
 
     [Theory]
@@ -213,6 +212,32 @@ public sealed class LayoutSurfacePinTests
             Assert.NotNull(component.GetProperty(name,
                 BindingFlags.Public | BindingFlags.Instance | BindingFlags.FlattenHierarchy));
     }
+
+    /// <summary>
+    /// <b>BnModal is the phase's allowlist exception</b> (13.0 Task 8 fix round 1;
+    /// Task 9 records it in <c>AllowedNonLayoutComponents</c> alongside
+    /// <see cref="BnList{TItem}"/>, excluded for the unrelated <c>Height</c>
+    /// collision). It keeps its OWN single <c>BackgroundColor</c> parameter and
+    /// derives from <see cref="ComponentBase"/> — NOT <see cref="BnLayoutItem"/> —
+    /// on purpose: both shells diagnose-and-ignore every SetStyle on a <c>modal</c>
+    /// node (Android's WidgetMapper.kt <c>handleSetStyle</c> "modal" arm; iOS's
+    /// BnWidgetMapper.swift equivalent guard), and <c>modal</c> is deliberately
+    /// absent from <c>measuredNodeTypes</c> — its wire node is a 0-sized,
+    /// shell-fixed anchor that no author-set style can ever reach a pixel through.
+    /// Inheriting <see cref="BnLayoutItem"/> would let <c>&lt;BnModal Width="100"
+    /// Margin="8"&gt;</c> compile, offer IntelliSense, and silently do nothing at
+    /// every layer — the accepted-then-silently-dropped defect class this whole
+    /// phase exists to eliminate, and worse than the original bug, because the
+    /// shells' own diagnostic never even fires for it (that diagnostic guards the
+    /// SetStyle wire; a BnLayoutItem's item attributes ride the CREATE frame's
+    /// element attributes instead, so the ignore-and-log path is never
+    /// exercised). This test is the tripwire: the day <c>BnModal</c> starts
+    /// deriving from <see cref="BnLayoutItem"/>, it reds, and this comment is
+    /// why.
+    /// </summary>
+    [Fact]
+    public void BnModal_DoesNotTakeTheItemSurface_TheModalNodeAcceptsNoStyles()
+        => Assert.False(typeof(BnLayoutItem).IsAssignableFrom(typeof(BnModal)));
 
     [Fact]
     public void BnView_IsALayoutContainer_AndKeepsOnlyDirectionAndChildContent()

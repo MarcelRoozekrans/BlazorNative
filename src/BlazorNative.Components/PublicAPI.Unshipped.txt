@@ -350,5 +350,3 @@ BlazorNative.Components.BnLayoutItem.ItemAttributes.get -> System.Collections.Ge
 *REMOVED*BlazorNative.Components.BnFlexPreset.Width.set -> void
 *REMOVED*BlazorNative.Components.BnFlexPreset.Wrap.get -> BlazorNative.Components.FlexWrap?
 *REMOVED*BlazorNative.Components.BnFlexPreset.Wrap.set -> void
-*REMOVED*BlazorNative.Components.BnModal.BackgroundColor.get -> string?
-*REMOVED*BlazorNative.Components.BnModal.BackgroundColor.set -> void
