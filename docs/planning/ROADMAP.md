@@ -1838,6 +1838,116 @@ real-device still gated on the Apple account). Full scope + owner decisions in
 
 ---
 
+### ✅ Milestone 12 — Post-M11 Maintenance & Consumer Polish  *(complete — worked 2026-07-23 → 2026-08-18; **RETRO-FITTED 2026-08-19 — never planned, never audited**)*
+
+> **Read this before citing anything below.** M12 is **not** a milestone in the sense
+> M1–M11 are. Those were *planned* — brainstormed, given a written Definition of Done,
+> worked as numbered phases with design specs and conclusion docs, and **closed on an
+> `audit-milestone` that checked every DoD line against live evidence.** M12 was none of
+> that. It is a **record written after the fact**, on **2026-08-19**, because ROADMAP.md
+> had gone four weeks without an entry while nine release PRs merged — the file was lying
+> by omission, and a roadmap nobody can navigate from is worse than one that admits a gap.
+>
+> Concretely, what that means for a reader:
+>
+> - **The "phases" below are groupings imposed afterwards**, not units anyone planned or
+>   executed as such. There are **no `docs/plans/` phase conclusions for 12.x** and no
+>   design specs. Numbering them 12.0–12.5 buys navigability, not provenance.
+> - **There is no Definition of Done and no final audit**, so **nothing here is
+>   audit-backed.** Where M11's phase lines cite an audit that verified them, these cite
+>   merged PRs and published artefacts — weaker evidence, honestly labelled.
+> - **The work itself is real and shipped**; only the *planning record* is retrospective.
+>   Every PR number below is merged on `main`, and every published version named here was
+>   verified by HEAD-ing the actual `.nupkg` — not read off the version index, which lags.
+>
+> The work was **issue-driven, not milestone-driven** — a reasonable way to spend a month
+> of maintenance after a large milestone closes, and the reason the roadmap fell silent
+> rather than the work being neglected.
+
+**Shape of the month:** M11 closed on 2026-07-22 leaving a written debt ledger (5 issues) and a
+1.0 scoreboard at **9 met / 3 open**. The four weeks that followed spent that ledger down, fixed
+the live bugs a real device kept surfacing, finished the API-reference programme, took the
+toolchain to .NET SDK 10.0.400, and shipped an **8th package**. Test counts moved **.NET 780 →
+945 · JVM 120 → 161 · Android 214 → 224 · iOS 235 → 269.**
+
+- ✅ **Phase 12.0** — the M11 debt ledger + the live-bug batch — *worked 2026-07-23 → 07-24.*
+  Closed the **`default(T)`-on-struct trap as one bug class** (#196, then a standing sweep in
+  #228) — `CaptureOptions` defaults never applying and a `default(BlazorNativePage)` null mount
+  thunk were the same defect twice, so they were fixed together and pinned. Geolocation accuracy
+  surfaced on its own node (#195, closing the #169 reverted-fix trap). Then the batch the
+  **owner's own Android phone** produced: the `[BOOT]` strip deleted from shell *and* template so
+  Android matches iOS (#207), `BnDemo` wrapped in a `BnScroll` so pages stop truncating (#208), a
+  **capability menu** because the sample was a hub-and-spoke with eight back-buttons and no hub
+  (#217), `← Back` on the four capability pages (#218), and the scroll viewport clipped with
+  `clipToOutline` rather than `clipChildren` (#220). Plus the seam fixes: `ConfigureServices` and
+  the JSON sink made to honour what they promised (#222), the camera picker hopped to main
+  (#223), duplicate routes refused at build time (#224), and **#213 items 2/3/4** — the parked
+  async `Frames` fault, size-negotiated `blazornative_init`, and the iOS stderr pump's EOF tail
+  (#225 / #226 / #227). The 1.0 scoreboard was rewritten after two owner decisions and three live
+  bugs (#221). **The owner accepted Q3** here, converting the P3 hardening ledger (#8 / #9 / #12 /
+  #13) into **accepted debt that stays open**.
+- ✅ **Phase 12.1** — the #173 API reference finished — *worked 2026-07-25.* Generated references
+  for **Core** (#229), **Runtime** (#230, STABLE tier only) and **Http** (#232) completed the
+  programme M11 left at 1 of 7 packages; a `cref` qualification kept pack warning-free (#235).
+  The generator's `[EditorBrowsable(Never)]` filter **partly closes M11 audit finding F4** — the
+  28 NOT-API marks now have *a* consumer, though still no CI guard.
+- ✅ **Phase 12.2** — release recovery, trace logging, contributor on-ramp — *worked 2026-07-25 →
+  08-07.* **0.7.0's publish failed** on a latent CS1574 (a missing `using` in `DeviceServices.cs`),
+  and the fix hardened the PR gate itself: `consumer-smoke.ps1` now cleans `obj/` + `bin/` so
+  `build-test` catches compile warnings rather than letting the *release* discover them (#235).
+  Developer trace logging landed on the success paths (#237, closing #201) — guarded Debug traces
+  on dispatch / mount / nav / bridge, Verbose per-frame. **CONTRIBUTING + an Apache-modeled CLA**
+  (#239, closing #215), and a **README restructured for newcomers** (#242, 287 lines lighter).
+  The **iOS real-device verification handover** was written for an external iOS developer (#243) —
+  this is the documented **P3 path**, the only remaining 1.0 blocker. Shipped **0.8.0** and
+  **0.8.1**.
+- ✅ **Phase 12.3** — toolchain modernization — *worked 2026-08-16.* The .NET monorepo bump (#251)
+  moved `global.json` to **SDK 10.0.400** — a hard environment prerequisite now, not a nicety.
+  ZeroAlloc.Inject to 1.7.3 (#252), test SDK 18.9.0 (#253), xunit runner v4 (#254).
+- ✅ **Phase 12.4** — docs debt, a command seam, codegen, and the styling hole — *worked
+  2026-08-17.* Wrote down two things that were true but unwritten: **HTTP fetch is one-shot,
+  fully buffered, UTF-8, no streaming** (#259) and the **C-ABI extension policy** (#260).
+  **`BnScroll` got programmatic scroll** (#261 — `ScrollTo` / `ScrollToEnd` / `AutoScrollToEnd`),
+  the repo's **first "command an existing node" API** and the design precedent for the next one.
+  The **wire vocabulary now generates from one manifest** (#262) — style, scroll-ignore and
+  node-type names live once in `src/wire-vocabulary.json`, and `tools/BlazorNative.WireGen` emits
+  all five copies. An **audit of issues #16–#25** found a live hole rather than bookkeeping:
+  **four visual-style names were accepted and silently dropped**; fixed and pinned in both shells
+  (#263, replayed as #266 — see the force-push lesson in the notes). **0.9.0's publish failed**
+  (#265 merged with a failing build: `Microsoft.CodeAnalysis` 5.9.0 depended on an unpublished
+  Analyzers prerelease → NU1603 → the zero-warning pack bar failed the release's own `validate`
+  job); pinned in #267.
+- ✅ **Phase 12.5** — iOS parity and the consumer test harness — *worked 2026-08-18.* **iOS
+  dispatches lifecycle events and handles `blazornative://` deep links** (#269), closing a
+  long-standing gap with Android. Then the month's headline: **`BlazorNative.Testing`, an 8th
+  package** (#271, closing #25) — `BnTestHost.Mount<T>()` yields a `Tree` of `BnTestNode`s with
+  `ClickAsync` / `ChangeAsync`. It is **deliberately a separate package**: a dev-time-only
+  dependency an app takes from its *test* project, so folding it into Core would ship test doubles
+  into every production binary and freeze them as Core API at 1.0. **The key design constraint:
+  the patch model is NOT-API, so the harness exposes a *projection*, not patches** — publishing
+  golden-patch assertions would freeze the in-memory model by the back door. That projection must
+  mirror two shell behaviours or it lies: children in **final sibling order** (Blazor's queue does
+  not create them in order), and the **text-child collapse** (`BnText` renders a text child
+  neither shell gives a widget to). `samples/ConsumerSmoke` drives the harness **from a nupkg,
+  naming zero NOT-API types** — that is the evidence **1.0 criterion S3** asks for. Shipped
+  **0.10.0**, verified live (`blazornative.testing 0.10.0` → HTTP 200).
+
+**Releases: nine PRs, two orphans.** Published and verified: **0.5.1, 0.8.0, 0.8.1, 0.9.1,
+0.10.0**. **`v0.6.0` and `v0.9.0` are orphan tags** — tag and GitHub Release exist, the `.nupkg`s
+**404**. Both are the same shape of failure: the release's `validate` job *is*
+`consumer-smoke.ps1`, so a build that cannot pack warning-free **skips the push while still
+tagging**. Cleanup is cosmetic and optional; the *history* is honest, and 0.9.1 shipped 0.9.0's
+whole batch because packages are built from the tree, not from the changelog.
+
+**What M12 did not do: move 1.0.** The scoreboard stood at **9 met / 3 open** when M11 closed.
+A5 (the baseline survives a real release cycle) is now met several times over, Q1 (a Release build
+is quiet on a device) was observed, and **Q3 was accepted by the owner on 2026-07-24**. **1.0 now
+blocks on exactly one thing — P3, verification on a real iPhone** — which is gated on an Apple
+Developer account and is therefore **administrative, not technical**. #243 is the handover
+written for it.
+
+---
+
 ### 🔮 Backlog / Future *(uncommitted — promote to a dated milestone when they approach)*
 
 **Enterprise readiness** (old P7): OTA updates with delta + rollback, MD3 / iOS HIG

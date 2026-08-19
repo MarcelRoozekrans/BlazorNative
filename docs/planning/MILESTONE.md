@@ -1,5 +1,13 @@
 # Milestone 11 — Production Readiness
 
+> ⚠ **This is NOT the current milestone — there is no current milestone.** M11 closed
+> **2026-07-22**. The work that followed is recorded as **[Milestone 12 in
+> ROADMAP.md](ROADMAP.md)** — *retro-fitted 2026-08-19, never planned, never audited*, so it
+> has **no MILESTONE.md of its own** and never will; writing one now would fabricate a
+> Definition of Done nothing was ever measured against. This file therefore describes the
+> **last milestone that was actually planned**, and it is kept because M11's DoD and owner
+> decisions are still cited. **The next `new-milestone` run overwrites this file** with M13.
+
 **Status:** ✅ **COMPLETE — closed 2026-07-22** on its
 [final audit](../plans/2026-07-22-milestone-11-final-audit.md) (**PASS WITH FINDINGS**, 7 findings
 recorded; **no tag** — the 8.6 rule, closure is the audit). **6 / 6 DoD closed** (#1 — Phase 11.0;
