@@ -1858,7 +1858,39 @@ jobs:
       # Also: samples/ConsumerSmoke now DRIVES the harness from a nupkg instead of
       # resolving NativeRenderer -- so nothing in it names a NOT-API type any more,
       # which is the S3 evidence. consumer-smoke packs 8 nupkg / 7 snupkg.
-      - name: .NET tests (assert 945 passed / 0 skipped)
+      # 945 -> 993 (13.0, +48 net: 49 added, 1 renamed away): THE ITEM SURFACE.
+      # 17 layout parameters were copy-pasted across 8 components and ABSENT from
+      # 4 more; they now have exactly ONE declaration on BnLayoutItem, and the 5
+      # child-arranging ones on BnLayoutContainer. Only the Runtime suite moves --
+      # no Kotlin and no Swift changed, so JVM/Android/iOS stay at 161/224/269, and
+      # the shell frame tables are byte-identical (that is the phase's core claim:
+      # a null item attribute is not appended to an ELEMENT, so granting the
+      # surface to a component that never had it cannot move a frame).
+      #   +22 LayoutSurfacePinTests -- the standing pins. Declared EXACTLY once
+      #      (redeclaration reds), every layout component DERIVES (omission reds),
+      #      and the exception ledger has to argue itself in writing: two entries,
+      #      BnList<TItem> (its EditorRequired `float Height` collides with the
+      #      base's `string?` and Blazor THROWS on a shadowed parameter) and
+      #      BnModal (both shells diagnose-and-ignore SetStyle on a modal node).
+      #   +13 LayoutSurfaceSequenceBandTests -- the bands are normative because a
+      #      sequence collision does not throw, it produces a wrong diff silently.
+      #      1-17 item, 50-99 container, 100+ own, 200 ChildContent; the .razor
+      #      splat's shared number is the one documented exception.
+      #    +7 ForwardedParameterNameTests -- the wrappers forward by the same names
+      #      they declare, so a rename cannot half-land.
+      #    +4 BnFormControlTests -- dropping an item attribute emits EXACTLY its
+      #      reset, once per .razor control. This is the splat's removal path, the
+      #      half a "does it render?" test never reaches.
+      #    +1 PatchEquivalenceTests -- the emitted style multiset is stable, pinned
+      #      BEFORE the extraction and unchanged after it.
+      #    +1 BnModalTests -- setting the whole declared surface on a modal still
+      #      produces zero styles, so the allowlist entry stays honest.
+      #   +1/-1 BnActivityIndicatorTests -- DeclaresNoParameters_TheSurfaceIsPresence
+      #      Itself is renamed DeclaresNoOwnParameters_ButInheritsTheFullItemSurface.
+      #      It was investigated as a possible third allowlist entry and is NOT one:
+      #      it is a measured Yoga leaf on both shells, so it correctly gained the
+      #      surface. It still has no CONTROL parameters, which is the design.
+      - name: .NET tests (assert 993 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -1876,8 +1908,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 945 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 945 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 993 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 993 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # ── NativeAOT publishes + nine-export verification ────────────────────

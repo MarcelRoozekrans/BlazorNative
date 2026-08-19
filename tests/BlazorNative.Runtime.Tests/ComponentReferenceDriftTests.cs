@@ -350,11 +350,16 @@ public sealed class ComponentReferenceDriftTests : IClassFixture<ComponentRefere
         // reflection could silently return empty for (wrong assembly, wrong
         // attribute type, a BindingFlags typo). An empty subject set makes every
         // assertion below green while proving nothing at all.
-        Assert.True(parameters.Count > 50,
+        Assert.True(parameters.Count > 60,
             $"reflected only {parameters.Count} [Parameter] properties out of BlazorNative.Components "
-            + "— there were 196 when this pin was written, before the item/container surfaces moved "
-            + "onto shared bases (which lowers this DeclaredOnly count on purpose — see the doc "
-            + "comment above). A pin that cannot see its subject must never pass vacuously.");
+            + "— there were 196 when this pin was written; phase 13.0 moved the 17 item and 5 container "
+            + "parameters onto BnLayoutItem/BnLayoutContainer, which lowers this DeclaredOnly count on "
+            + "purpose (see the doc comment above), and the count MEASURED at the close of 13.0 was 74. "
+            + "The floor sits just under that measurement rather than far below it, so a collapse — a "
+            + "wrong assembly, a BindingFlags typo, or a whole component's surface silently going "
+            + "missing — still reds instead of passing vacuously. If a later phase legitimately moves "
+            + "more declarations onto a base, re-measure and lower this by the amount it actually moved, "
+            + "not by a round number.");
 
         var undocumented = parameters
             .Where(p => !documented.Contains(p.Id))
