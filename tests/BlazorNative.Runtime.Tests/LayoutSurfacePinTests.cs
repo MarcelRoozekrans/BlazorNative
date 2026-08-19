@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using BlazorNative.Components;
@@ -99,6 +100,90 @@ public sealed class LayoutSurfacePinTests
     {
         Assert.True(typeof(BnLayoutItem).IsAssignableFrom(typeof(BnScroll)));
         Assert.False(typeof(BnLayoutContainer).IsAssignableFrom(typeof(BnScroll)));
+    }
+
+    [Fact]
+    public void BnFlexPreset_TakesItsSurfaceFromTheContainerBase()
+    {
+        Assert.True(typeof(BnLayoutContainer).IsAssignableFrom(typeof(BnFlexPreset)));
+
+        string[] redeclared = typeof(BnFlexPreset)
+            .GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
+            .Where(p => p.GetCustomAttribute<ParameterAttribute>() is not null)
+            .Select(p => p.Name)
+            .Intersect(ItemParameters.Concat(ContainerParameters))
+            .ToArray();
+
+        Assert.Empty(redeclared);   // all 22 were declared here before Phase 13.0
+    }
+
+    /// <summary>
+    /// BnList is the one layout wrapper that CANNOT take the shared item base,
+    /// and the reason is a property of Blazor rather than a preference: its
+    /// <c>Height</c> is <c>float</c> (required, and the window arithmetic needs a
+    /// number — a viewport whose height only the layout engine knows cannot be
+    /// turned into a row range), while the shared surface's <c>Height</c> is the
+    /// <c>string?</c> length grammar. Two parameters, one name.
+    ///
+    /// <para>C# would let the derived one shadow the base one with <c>new</c>.
+    /// Blazor would not: parameter binding walks the whole hierarchy and treats a
+    /// shadowed pair as an AMBIGUOUS parameter, throwing on the first render. So
+    /// this is not a migration that was skipped — it is one that does not exist
+    /// until either the narrowing goes away or the name does.</para>
+    ///
+    /// <para>Both halves of that are asserted here rather than written in a
+    /// comment: the collision, and the framework behaviour that makes it fatal.
+    /// The day <c>BnList.Height</c> stops being narrowed, this test reds and the
+    /// migration becomes available.</para>
+    /// </summary>
+    [Fact]
+    public void BnList_CannotTakeTheItemBase_BecauseItsHeightIsNarrowedToFloat()
+    {
+        Assert.Equal(
+            typeof(float),
+            typeof(BnList<string>).GetProperty("Height")!.PropertyType);
+        Assert.Equal(
+            typeof(string),
+            typeof(BnLayoutItem).GetProperty("Height")!.PropertyType);
+
+        // …and a `new`-shadowed [Parameter] is not expressible in Blazor.
+        var ex = Assert.Throws<InvalidOperationException>(
+            () => ParameterView
+                .FromDictionary(new Dictionary<string, object?> { ["Height"] = 12f })
+                .SetParameterProperties(new ShadowingHeightProbe()));
+
+        Assert.Contains("more than one parameter matching the name", ex.Message, StringComparison.Ordinal);
+    }
+
+    private abstract class NarrowableHeightProbe : ComponentBase
+    {
+        [Parameter] public string? Height { get; set; }
+    }
+
+    private sealed class ShadowingHeightProbe : NarrowableHeightProbe
+    {
+        [Parameter] public new float Height { get; set; }
+    }
+
+    /// <summary>The size of what is left behind, pinned so it cannot quietly
+    /// grow. BnList keeps exactly two item-surface names — the narrowed
+    /// <c>Height</c> the test above explains, and the <c>Width</c> that has to
+    /// stay declared alongside it because removing it without the base to supply
+    /// it would delete a parameter authors bind. Every OTHER item parameter is
+    /// still absent from BnList, as it always was; this is the residue of one
+    /// collision, not a component opting out of the shared surface.</summary>
+    [Fact]
+    public void BnList_KeepsExactlyTheTwoItemNamesTheCollisionStrandsThere()
+    {
+        string[] declared = typeof(BnList<string>)
+            .GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
+            .Where(p => p.GetCustomAttribute<ParameterAttribute>() is not null)
+            .Select(p => p.Name)
+            .Intersect(ItemParameters)
+            .OrderBy(n => n, StringComparer.Ordinal)
+            .ToArray();
+
+        Assert.Equal(new[] { "Height", "Width" }, declared);
     }
 
     [Fact]
