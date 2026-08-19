@@ -979,4 +979,110 @@ public sealed class BnFormControlTests : IDisposable
     [Fact]
     public void BnPicker_ForwardsTheWholeItemSurface()
         => AssertForwardsTheWholeItemSurface<BnPicker>("picker", "items", "selectedIndex");
+
+    // ── The splat's REMOVAL path ─────────────────────────────────────────────
+
+    /// <summary>Host for the item-attribute drop: its button cycles ONE layout
+    /// parameter through set → null → set, via state. Nothing else about the
+    /// control changes across those renders, so every patch in the re-render
+    /// frames is attributable to the drop and the restore.</summary>
+    private sealed class ItemSurfaceDropHost<
+        [System.Diagnostics.CodeAnalysis.DynamicallyAccessedMembers(
+            System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.All)] TControl>
+        : ComponentBase where TControl : IComponent
+    {
+        private static readonly string?[] Cycle = ["8", null, "12"];
+        private int _step;
+
+        protected override void BuildRenderTree(RenderTreeBuilder b)
+        {
+            b.OpenComponent<TControl>(0);
+            b.AddComponentParameter(1, nameof(BnCheckbox.Margin), Cycle[_step]);
+            b.CloseComponent();
+            b.OpenElement(2, "button");
+            b.AddAttribute(3, "onclick",
+                EventCallback.Factory.Create<MouseEventArgs>(this, () => _step++));
+            b.CloseElement();
+        }
+    }
+
+    /// <summary>
+    /// THE SPLAT'S REMOVAL PATH — the one thing a mount-shape test cannot see.
+    ///
+    /// The four form controls take the item surface by splatting
+    /// BnLayoutItem.ItemAttributes, which lands all seventeen attributes on a
+    /// SINGLE sequence number instead of spanning 1-17. Repeated sequence
+    /// numbers push the attribute diff off its positional fast path and onto
+    /// name matching, and THAT is the path a dropped value travels: the
+    /// dictionary simply stops carrying the key, and the diff has to notice the
+    /// absence by name and emit the reset.
+    ///
+    /// Every other test in this file asserts a MOUNT shape, where an unset
+    /// attribute and a dropped one look identical. A regression in the removal
+    /// diff — an author "optimising" the null filter out of ItemAttributes, or a
+    /// framework change to how duplicate sequences are matched — would leave a
+    /// stale margin on the widget forever and pass all of them.
+    /// </summary>
+    private static void AssertDroppingAnItemAttribute_EmitsExactlyItsReset<
+        [System.Diagnostics.CodeAnalysis.DynamicallyAccessedMembers(
+            System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.All)] TControl>(
+        string nodeType) where TControl : IComponent
+    {
+        var (renderer, frames) = CreateCapturingSession();
+
+        renderer.Mount<ItemSurfaceDropHost<TControl>>(ParameterView.Empty);
+        var mount = frames[0];
+        var control = Assert.Single(mount.Patches.OfType<CreateNodePatch>(),
+            p => p.NodeType == nodeType);
+        Assert.Equal("8", Assert.Single(mount.Patches.OfType<SetStylePatch>(),
+            p => p.NodeId == control.NodeId && p.Property == "margin").Value);
+
+        var click = Assert.Single(mount.Patches.OfType<AttachEventPatch>(),
+            p => p.EventName == "click");
+
+        // ── set → null: the reset, and NOTHING else ──────────────────────────
+        int before = frames.Count;
+        Assert.Equal(0, Exports.DispatchEventCore(
+            (ulong)click.HandlerId, /*lang=json*/ """{"name":"click"}"""));
+        Assert.True(frames.Count > before, "expected the drop's re-render frame");
+
+        var dropped = Assert.Single(NonCommit(frames[^1]));
+        var reset = Assert.IsType<SetStylePatch>(dropped);
+        Assert.Equal(control.NodeId, reset.NodeId);
+        Assert.Equal("margin", reset.Property);
+        Assert.Null(reset.Value);
+
+        // ── null → set: the round trip, also exactly one patch ───────────────
+        before = frames.Count;
+        Assert.Equal(0, Exports.DispatchEventCore(
+            (ulong)click.HandlerId, /*lang=json*/ """{"name":"click"}"""));
+        Assert.True(frames.Count > before, "expected the restore's re-render frame");
+
+        var restored = Assert.IsType<SetStylePatch>(Assert.Single(NonCommit(frames[^1])));
+        Assert.Equal(control.NodeId, restored.NodeId);
+        Assert.Equal("margin", restored.Property);
+        Assert.Equal("12", restored.Value);
+    }
+
+    /// <summary>Everything in a frame except its commit marker — so "exactly one
+    /// patch" can be asserted without the assertion drifting when the commit
+    /// shape changes.</summary>
+    private static List<RenderPatch> NonCommit(RenderFrame frame)
+        => frame.Patches.Where(p => p is not CommitFramePatch).ToList();
+
+    [Fact]
+    public void BnCheckbox_DroppingAnItemAttribute_EmitsExactlyItsReset()
+        => AssertDroppingAnItemAttribute_EmitsExactlyItsReset<BnCheckbox>("checkbox");
+
+    [Fact]
+    public void BnSwitch_DroppingAnItemAttribute_EmitsExactlyItsReset()
+        => AssertDroppingAnItemAttribute_EmitsExactlyItsReset<BnSwitch>("switch");
+
+    [Fact]
+    public void BnSlider_DroppingAnItemAttribute_EmitsExactlyItsReset()
+        => AssertDroppingAnItemAttribute_EmitsExactlyItsReset<BnSlider>("slider");
+
+    [Fact]
+    public void BnPicker_DroppingAnItemAttribute_EmitsExactlyItsReset()
+        => AssertDroppingAnItemAttribute_EmitsExactlyItsReset<BnPicker>("picker");
 }

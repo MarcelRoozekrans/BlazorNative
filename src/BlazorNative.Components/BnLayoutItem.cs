@@ -17,11 +17,24 @@ namespace BlazorNative.Components;
 /// from this type; <c>LayoutSurfacePinTests</c> reds if one does not.
 /// </para>
 /// <para>
-/// <b>Sequence-number bands are normative.</b> This type owns <b>1–17</b>;
-/// <see cref="BnLayoutContainer"/> owns 50–99; a derived component's own
-/// attributes start at 100 and <c>ChildContent</c> is 200. A collision does not
-/// throw — it produces a wrong diff, silently — so the bands are pinned by
-/// <c>SequenceBandTests</c> rather than merely documented here.
+/// <b>Sequence-number bands are normative, and there are two ways to take this
+/// surface.</b> A component that writes its own render tree calls
+/// <see cref="EmitItemAttributes"/>, which occupies <b>1–17</b>;
+/// <see cref="BnLayoutContainer"/> owns 50–99; the component's own attributes
+/// start at 100 and <c>ChildContent</c> is 200. Keeping to those bands matters
+/// because a collision does not throw — it produces a wrong diff, silently.
+/// </para>
+/// <para>
+/// A component written as markup cannot do that: its render tree is generated
+/// for it and every sequence number is assigned by the compiler, so there is no
+/// point at which <see cref="EmitItemAttributes"/> could run. Those components
+/// splat <see cref="ItemAttributes"/> instead, and all seventeen then share a
+/// <em>single</em> sequence number rather than spanning 1–17. That is still
+/// correct, and not by luck: repeated sequence numbers inside a run of
+/// attributes make the diff match them <b>by name</b> instead of by position, so
+/// a value that changes updates, and a value that goes null still emits its
+/// reset. It costs a dictionary per render, which is why the numbered form
+/// remains the default wherever it is reachable.
 /// </para>
 /// <para>
 /// <b>Lengths are unchanged here.</b> Every length is still a string in
@@ -123,6 +136,17 @@ public abstract class BnLayoutItem : ComponentBase
         get
         {
             var d = new Dictionary<string, object?>(17);
+
+            // The null filter is DEFENSIVE, not load-bearing, and the difference
+            // was measured rather than assumed: AddMultipleAttributes funnels
+            // every pair through AddAttribute(int, string, object?), which
+            // already refuses to append a null-valued attribute to an ELEMENT.
+            // Deleting this guard changes no frame today (mutation-tested — the
+            // whole suite stays green). It is kept because that is an element-
+            // only rule: splatted onto a COMPONENT, a null would be appended as
+            // a real parameter and would overwrite a default. Filtering here
+            // makes the dictionary mean "the attributes the author set" at both
+            // destinations instead of only one.
             void Add(string k, object? v) { if (v is not null) d[k] = v; }
             Add("backgroundColor", BackgroundColor);
             Add("margin",          Margin);
