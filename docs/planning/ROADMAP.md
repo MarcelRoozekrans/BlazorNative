@@ -1948,6 +1948,75 @@ written for it.
 
 ---
 
+### 🔄 Milestone 13 — Consumer Ergonomics  *(active — started 2026-08-19)* [status: active]
+
+**Goal:** Make BlazorNative pleasant to write apps in — declare the typed layout surface **once**,
+give it to every component that can have it, and **type the lengths** so malformed values become
+compile errors instead of silent runtime log lines.
+**Started:** 2026-08-19
+**Design:** [`docs/superpowers/specs/2026-08-19-milestone-13-design.md`](../superpowers/specs/2026-08-19-milestone-13-design.md)
+· full scope, DoD and owner decisions in [MILESTONE.md](MILESTONE.md).
+
+> **Note on format.** M1–M12 above are archival prose. M13 is *active*, so its phases carry the
+> canonical `[status: …]`, `**Surface:**` and `**Plan:**` fields — `start-next-phase` reads
+> `Surface` to route each phase to its specialist skill, and reads the status to decide what runs
+> next. Do not reformat these into prose while the milestone is open.
+
+**The seed, measured rather than recalled:** `BnFlexPreset` is `BnView` minus `Direction` — **23 of
+24 parameters byte-identical**. The item surface is copy-pasted across **eight** components
+(`BnView`, `BnFlexPreset`, `BnImage`, `BnScroll`, `BnCheckbox`, `BnPicker`, `BnSlider`, `BnSwitch`)
+and **absent from four** (`BnText` 3 params, `BnButton` 3, `BnInput` 6, `BnActivityIndicator` 0).
+You cannot give a `BnText` a margin, a width or an `AlignSelf`; a `BnButton` takes nothing at all.
+And every length is `string?`, so **`Width="12px"` compiles, ships, and is silently
+logged-and-ignored** by both shells — the same *accepted-then-dropped* shape as the visual-style
+hole #21 was sitting on.
+
+**Scope set by the [2026-08-17 audit of #16–#25](https://github.com/MarcelRoozekrans/BlazorNative/issues/21):**
+**no `BlazorNative.Styling`** and **no `BlazorNative.State`** — both premises are obsolete and both
+collide with the four-times-recorded "no 8th package" rule. **Owner decision (2026-08-19): break
+now, while pre-1.0** — this surface freezes at 1.0 and 1.0 blocks on one administrative item, so
+this is the last cheap window. The break is binary, not source; a written migration note discharges
+it. **Every phase is independently shippable and none of M13 blocks a 1.0 cut**, deliberately,
+because P3 may clear at any time.
+
+#### Phase 13.0: Extract the item surface [status: pending]
+**Goal:** Declare the 17 item parameters once on `BnLayoutItem` (and the 6 container parameters on
+`BnLayoutContainer`), collapse the eight copies, and give the four bare components the surface they
+never had.
+**Surface:** Refactor
+**HelpWanted:** no
+
+#### Phase 13.1: Type the lengths [status: pending]
+**Goal:** Introduce `BnLength` / `BnAutoLength` and convert every layout length, making malformed
+values a compile error while leaving the wire grammar untouched.
+**Surface:** Refactor
+**HelpWanted:** no
+
+#### Phase 13.2: The dispatcher's honest answer [status: pending]
+**Goal:** Measure what breaks when `InlineDispatcher.CheckAccess()` stops returning an
+unconditional `true`, then ship the guard the evidence supports.
+**Surface:** Backend
+**HelpWanted:** no
+
+#### Phase 13.3: State docs + backlog retirement [status: pending]
+**Goal:** Write the "State in BlazorNative" page that is #22's real deliverable, and retire the
+stale issues and backlog entries the 2026-08-17 audit already adjudicated.
+**Surface:** Docs
+**HelpWanted:** no
+
+#### Phase 13.4: Theme system design [status: pending]
+**Goal:** Produce a written theme design and a go/no-go decision — not an implementation.
+**Surface:** Docs
+**HelpWanted:** no
+
+#### Phase 13.5: Audit and close [status: pending]
+**Goal:** Run `audit-milestone` against the DoD on live evidence and close M13. **No tag** — the
+8.6 rule, and `CONVENTIONS.md` records `Milestone completion tags a release: no`.
+**Surface:** Docs
+**HelpWanted:** no
+
+---
+
 ### 🔮 Backlog / Future *(uncommitted — promote to a dated milestone when they approach)*
 
 **Enterprise readiness** (old P7): OTA updates with delta + rollback, MD3 / iOS HIG
