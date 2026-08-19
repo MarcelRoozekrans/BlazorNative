@@ -3,6 +3,21 @@ using Microsoft.AspNetCore.Components.Rendering;
 
 namespace BlazorNative.Components;
 
+// ─────────────────────────────────────────────────────────────────────────────
+// ⚠ THE PROTECTED HELPERS ARE NAMED IN <c>, NOT <see cref>, AND THAT IS LOAD-
+// BEARING. EmitItemAttributes / ItemAttributes / ForwardItemParameters are
+// protected: they are the component-AUTHOR's surface, not the consumer's. The
+// docs reference runs xmldoc2md with --member-accessibility-level public (a
+// deliberate choice — see scripts/generate-reference.ps1, which explains that
+// the `protected` default would document ComponentBase's web-hosting members on
+// every page of a framework that renders to native widgets). So these members
+// get no heading, and a <see cref> to one from a doc comment that IS emitted —
+// this class-level <remarks> — renders as a link to an anchor no heading has.
+// `onBrokenAnchors: 'throw'` then fails `npm run build`. Naming them in <c>
+// reads identically in an IDE tooltip and cannot rot. Restoring the crefs reds
+// the site build, not the compiler, so nothing local will tell you.
+// ─────────────────────────────────────────────────────────────────────────────
+
 /// <summary>
 /// The parameters every component can carry as an <b>item inside its parent's
 /// layout</b> — how it aligns itself, how it grows and shrinks, its own box, and
@@ -19,7 +34,7 @@ namespace BlazorNative.Components;
 /// <para>
 /// <b>Sequence-number bands are normative, and there are two ways to take this
 /// surface.</b> A component that writes its own render tree calls
-/// <see cref="EmitItemAttributes"/>, which occupies <b>1–17</b>;
+/// <c>EmitItemAttributes</c>, which occupies <b>1–17</b>;
 /// <see cref="BnLayoutContainer"/> owns 50–99; the component's own attributes
 /// start at 100 and <c>ChildContent</c> is 200. Keeping to those bands matters
 /// because a collision does not throw — it produces a wrong diff, silently.
@@ -27,8 +42,8 @@ namespace BlazorNative.Components;
 /// <para>
 /// A component written as markup cannot do that: its render tree is generated
 /// for it and every sequence number is assigned by the compiler, so there is no
-/// point at which <see cref="EmitItemAttributes"/> could run. Those components
-/// splat <see cref="ItemAttributes"/> instead, and all seventeen then share a
+/// point at which <c>EmitItemAttributes</c> could run. Those components
+/// splat <c>ItemAttributes</c> instead, and all seventeen then share a
 /// <em>single</em> sequence number rather than spanning 1–17. That is still
 /// correct, and not by luck: repeated sequence numbers inside a run of
 /// attributes make the diff match them <b>by name</b> instead of by position, so
