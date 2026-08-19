@@ -18,6 +18,47 @@ public sealed class LayoutSurfacePinTests
         "Position", "Top", "Right", "Bottom", "Left",
     };
 
+    /// <summary>
+    /// Components deliberately NOT deriving from BnLayoutItem, each with a reason.
+    ///
+    /// <para>Written as an exception ledger rather than left implicit, so the day
+    /// a 13th component is added, a false-by-omission surface has to be argued in
+    /// writing — exactly how <see cref="BnText"/> ended up with three parameters
+    /// for months before this phase: nothing forced the question.</para>
+    ///
+    /// <para><b>Two entries, both discovered while migrating (13.0 Tasks 7-8),
+    /// not planned in advance</b> — the plan guessed a THIRD exception
+    /// (<see cref="BnActivityIndicator"/>) that turned out not to be one; see
+    /// <see cref="NewlyGranted"/>.</para>
+    /// </summary>
+    internal static readonly Dictionary<Type, string> AllowedNonLayoutComponents = new()
+    {
+        [typeof(BnList<>)] =
+            "Its EditorRequired Height is float (required — the window arithmetic " +
+            "needs a number), while BnLayoutItem.Height is the string? length " +
+            "grammar. Same name, two types: Blazor's ComponentProperties.CreateWriters " +
+            "collects base AND new-shadowed properties (only override pairs dedupe) " +
+            "and throws InvalidOperationException — \"declares more than one " +
+            "parameter matching the name 'height'\" — on the first render of a type " +
+            "that tried it (see BnList_CannotTakeTheItemBase_BecauseItsHeightIsNarrowedToFloat " +
+            "in this file). Renaming or retyping either Height is forbidden this " +
+            "phase; reconciling the collision is Phase 13.1's job (it types the " +
+            "lengths). See also BnList_KeepsExactlyTheTwoItemNamesTheCollisionStrandsThere.",
+
+        [typeof(BnModal)] =
+            "The modal node cannot carry layout styles at all: both shells " +
+            "diagnose-and-ignore every SetStyle on it (Android WidgetMapper.kt's " +
+            "\"modal\" arm; iOS BnWidgetMapper.swift's equivalent guard), and " +
+            "\"modal\" is deliberately absent from measuredNodeTypes on both " +
+            "sides — its wire node is a 0-sized, shell-fixed anchor no author-set " +
+            "style can ever reach a pixel through. Inheriting the surface would " +
+            "advertise 16 parameters that compile, offer IntelliSense, and " +
+            "silently do nothing at every layer — the exact accepted-then-" +
+            "silently-dropped defect class this phase exists to eliminate. See " +
+            "BnModal_DoesNotTakeTheItemSurface_TheModalNodeAcceptsNoStyles in " +
+            "BnModalTests.cs for the full citation and the tripwire.",
+    };
+
     [Fact]
     public void BnLayoutItem_DeclaresExactlyTheItemSurface()
     {
@@ -31,6 +72,66 @@ public sealed class LayoutSurfacePinTests
         Assert.Equal(
             ItemParameters.OrderBy(n => n, StringComparer.Ordinal).ToArray(),
             declared);
+    }
+
+    /// <summary>
+    /// PIN 1 — the package-wide guard against a component being written
+    /// against <see cref="ComponentBase"/> and never gaining the surface at
+    /// all. Scans every non-abstract <see cref="IComponent"/> the package
+    /// exports; anything not deriving from <see cref="BnLayoutItem"/> must be
+    /// named in <see cref="AllowedNonLayoutComponents"/> with a reason, or
+    /// this reds naming it.
+    /// </summary>
+    [Fact]
+    public void EveryComponentInThePackage_DerivesFromBnLayoutItem()
+    {
+        Type[] offenders = typeof(BnLayoutItem).Assembly
+            .GetExportedTypes()
+            .Where(t => typeof(IComponent).IsAssignableFrom(t))
+            .Where(t => !t.IsAbstract)
+            .Where(t => !typeof(BnLayoutItem).IsAssignableFrom(t))
+            .Where(t => !AllowedNonLayoutComponents.ContainsKey(t))
+            .ToArray();
+
+        Assert.Empty(offenders);
+    }
+
+    /// <summary>
+    /// PIN 2 — the package-wide guard against a component that DOES derive
+    /// from <see cref="BnLayoutItem"/> re-declaring one of the inherited
+    /// names with its own <c>[Parameter]</c> (a silent shadow: C# lets a
+    /// <c>new</c> property compile, and the base one keeps binding while the
+    /// derived one sits dead).
+    ///
+    /// <para>Filtered to types that DO derive from <see cref="BnLayoutItem"/>,
+    /// so <see cref="BnList{TItem}"/> and <see cref="BnModal"/> — which
+    /// legitimately declare colliding NAMES precisely because they do NOT
+    /// derive — cannot false-positive here; they are constrained instead by
+    /// their own size-of-what's-left pins:
+    /// <see cref="BnList_KeepsExactlyTheTwoItemNamesTheCollisionStrandsThere"/>
+    /// bounds <see cref="BnList{TItem}"/> to exactly the two names its
+    /// collision strands there, and <c>BnModalTests.DeclaresExactlyTheDesignedSurface</c>
+    /// bounds <see cref="BnModal"/> to its own eight-parameter surface — so
+    /// the redeclaration risk in both non-derived exceptions is already
+    /// pinned shut, just not by this test.</para>
+    /// </summary>
+    [Fact]
+    public void NoComponent_RedeclaresAnInheritedLayoutParameter()
+    {
+        string[] surface = ItemParameters.Concat(ContainerParameters).ToArray();
+
+        var offenders = typeof(BnLayoutItem).Assembly
+            .GetExportedTypes()
+            .Where(t => typeof(BnLayoutItem).IsAssignableFrom(t))
+            .Where(t => t != typeof(BnLayoutItem) && t != typeof(BnLayoutContainer))
+            .SelectMany(t => t
+                .GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
+                .Where(p => p.GetCustomAttribute<ParameterAttribute>() is not null)
+                .Where(p => surface.Contains(p.Name))
+                .Select(p => $"{t.Name}.{p.Name}"))
+            .ToArray();
+
+        Assert.Empty(offenders);
     }
 
     /// <summary>The 5 parameters that constitute the container surface, by name.</summary>
