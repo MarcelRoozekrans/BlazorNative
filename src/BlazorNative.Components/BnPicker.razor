@@ -63,26 +63,11 @@
     int is garbage → FormatException → rc 2 (the 7.2 pattern).
     ─────────────────────────────────────────────────────────────────────────
 *@
+@inherits BnLayoutItem
 <select items="@ItemsJson"
         selectedIndex="@EffectiveIndexWire"
         enabled="@(Enabled ? null : "false")"
-        backgroundColor="@BackgroundColor"
-        margin="@Margin"
-        alignSelf="@AlignSelf.ToStyleValue()"
-        flexGrow="@Grow.ToStyleValue()"
-        flexShrink="@Shrink.ToStyleValue()"
-        flexBasis="@Basis"
-        width="@Width"
-        height="@Height"
-        minWidth="@MinWidth"
-        maxWidth="@MaxWidth"
-        minHeight="@MinHeight"
-        maxHeight="@MaxHeight"
-        position="@Position.ToStyleValue()"
-        top="@Top"
-        right="@Right"
-        bottom="@Bottom"
-        left="@Left"
+        @attributes="ItemAttributes"
         @onchange="HandleChange" />
 
 @code {
@@ -106,59 +91,6 @@
     /// <summary>Set false to show the platform's disabled picker and stop it
     /// responding. Default true.</summary>
     [Parameter] public bool Enabled { get; set; } = true;
-
-    // ── The flex ITEM surface (BnScroll's — how this leaf sits in its parent) ─
-
-    /// <inheritdoc cref="BnView.BackgroundColor"/>
-    [Parameter] public string? BackgroundColor { get; set; }
-
-    /// <inheritdoc cref="BnView.Margin"/>
-    [Parameter] public string? Margin { get; set; }
-
-    /// <inheritdoc cref="BnView.AlignSelf"/>
-    [Parameter] public FlexAlign? AlignSelf { get; set; }
-
-    /// <inheritdoc cref="BnView.Grow"/>
-    [Parameter] public float? Grow { get; set; }
-
-    /// <inheritdoc cref="BnView.Shrink"/>
-    [Parameter] public float? Shrink { get; set; }
-
-    /// <inheritdoc cref="BnView.Basis"/>
-    [Parameter] public string? Basis { get; set; }
-
-    /// <inheritdoc cref="BnView.Width"/>
-    [Parameter] public string? Width { get; set; }
-
-    /// <inheritdoc cref="BnView.Height"/>
-    [Parameter] public string? Height { get; set; }
-
-    /// <inheritdoc cref="BnView.MinWidth"/>
-    [Parameter] public string? MinWidth { get; set; }
-
-    /// <inheritdoc cref="BnView.MaxWidth"/>
-    [Parameter] public string? MaxWidth { get; set; }
-
-    /// <inheritdoc cref="BnView.MinHeight"/>
-    [Parameter] public string? MinHeight { get; set; }
-
-    /// <inheritdoc cref="BnView.MaxHeight"/>
-    [Parameter] public string? MaxHeight { get; set; }
-
-    /// <inheritdoc cref="BnView.Position"/>
-    [Parameter] public FlexPosition? Position { get; set; }
-
-    /// <inheritdoc cref="BnView.Top"/>
-    [Parameter] public string? Top { get; set; }
-
-    /// <inheritdoc cref="BnView.Right"/>
-    [Parameter] public string? Right { get; set; }
-
-    /// <inheritdoc cref="BnView.Bottom"/>
-    [Parameter] public string? Bottom { get; set; }
-
-    /// <inheritdoc cref="BnView.Left"/>
-    [Parameter] public string? Left { get; set; }
 
     private string ItemsJson => BnItemsJson.Write(Items ?? []);
 

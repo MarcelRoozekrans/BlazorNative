@@ -114,6 +114,38 @@ public abstract class BnLayoutItem : ComponentBase
     }
 
     /// <summary>
+    /// The item surface as a splat, for components whose render tree the Razor
+    /// compiler generates. Element emitters use <see cref="EmitItemAttributes"/>
+    /// instead — it gives exact sequence numbers, which a splat cannot.
+    /// </summary>
+    protected IReadOnlyDictionary<string, object?> ItemAttributes
+    {
+        get
+        {
+            var d = new Dictionary<string, object?>(17);
+            void Add(string k, object? v) { if (v is not null) d[k] = v; }
+            Add("backgroundColor", BackgroundColor);
+            Add("margin",          Margin);
+            Add("alignSelf",       AlignSelf.ToStyleValue());
+            Add("flexGrow",        Grow.ToStyleValue());
+            Add("flexShrink",      Shrink.ToStyleValue());
+            Add("flexBasis",       Basis);
+            Add("width",           Width);
+            Add("height",          Height);
+            Add("minWidth",        MinWidth);
+            Add("maxWidth",        MaxWidth);
+            Add("minHeight",       MinHeight);
+            Add("maxHeight",       MaxHeight);
+            Add("position",        Position.ToStyleValue());
+            Add("top",             Top);
+            Add("right",           Right);
+            Add("bottom",          Bottom);
+            Add("left",            Left);
+            return d;
+        }
+    }
+
+    /// <summary>
     /// Forwards the item surface as COMPONENT parameters, for wrappers that render
     /// another <see cref="BnLayoutItem"/> rather than an element. Occupies 1–17.
     /// </summary>

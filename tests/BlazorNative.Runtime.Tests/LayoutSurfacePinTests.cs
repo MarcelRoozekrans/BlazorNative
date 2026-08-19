@@ -74,4 +74,23 @@ public sealed class LayoutSurfacePinTests
 
         Assert.Empty(redeclared);
     }
+
+    public static TheoryData<Type> RazorEmitters => new()
+        { typeof(BnCheckbox), typeof(BnPicker), typeof(BnSlider), typeof(BnSwitch) };
+
+    [Theory]
+    [MemberData(nameof(RazorEmitters))]
+    public void RazorEmitter_TakesTheItemSurfaceFromTheBase(Type component)
+    {
+        Assert.True(typeof(BnLayoutItem).IsAssignableFrom(component));
+
+        string[] redeclared = component
+            .GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
+            .Where(p => p.GetCustomAttribute<ParameterAttribute>() is not null)
+            .Select(p => p.Name)
+            .Intersect(ItemParameters)
+            .ToArray();
+
+        Assert.Empty(redeclared);
+    }
 }
