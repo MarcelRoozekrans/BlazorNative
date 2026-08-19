@@ -186,6 +186,34 @@ public sealed class LayoutSurfacePinTests
         Assert.Equal(new[] { "Height", "Width" }, declared);
     }
 
+    /// <summary>
+    /// The components that had NO item surface at all before 13.0 Task 8 —
+    /// <see cref="BnText"/>, <see cref="BnButton"/> and <see cref="BnInput"/> never
+    /// declared any of the 17 names; <see cref="BnModal"/> declared one
+    /// (<c>BackgroundColor</c>) with no way to set the other sixteen.
+    /// <see cref="BnActivityIndicator"/> joins too: Task 8's Step 1 found it is a
+    /// measured Yoga leaf on both shells — the same node-creation path and
+    /// measured-node-types membership as <c>image</c>/<c>checkbox</c>/<c>switch</c>/
+    /// <c>slider</c>/<c>picker</c>, none of which is exempt — so it is a genuine
+    /// layout participant, not the phase's allowlist exception.
+    /// </summary>
+    public static TheoryData<Type> NewlyGranted => new()
+    {
+        typeof(BnText), typeof(BnButton), typeof(BnInput), typeof(BnModal),
+        typeof(BnActivityIndicator),
+    };
+
+    [Theory]
+    [MemberData(nameof(NewlyGranted))]
+    public void NewlyGranted_HasTheFullItemSurface(Type component)
+    {
+        Assert.True(typeof(BnLayoutItem).IsAssignableFrom(component));
+
+        foreach (string name in ItemParameters)
+            Assert.NotNull(component.GetProperty(name,
+                BindingFlags.Public | BindingFlags.Instance | BindingFlags.FlattenHierarchy));
+    }
+
     [Fact]
     public void BnView_IsALayoutContainer_AndKeepsOnlyDirectionAndChildContent()
     {

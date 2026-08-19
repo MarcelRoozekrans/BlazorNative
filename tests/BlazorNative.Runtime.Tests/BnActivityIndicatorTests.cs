@@ -1,3 +1,4 @@
+using System.Reflection;
 using BlazorNative.Components;
 using BlazorNative.Renderer;
 using BlazorNative.Runtime;
@@ -9,17 +10,22 @@ using static BlazorNative.Runtime.Tests.GoldenAssertions;
 namespace BlazorNative.Runtime.Tests;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// BnActivityIndicatorTests — Phase 7.4 (design decision 5: the parity survey's
-// cheap win). The component is a measured LEAF with NO surface at all ("no
-// props, no new wire surface"), so the whole contract is three claims:
+// BnActivityIndicatorTests — the parity survey's cheap win (design decision 5).
+// The component has NO CONTROL surface of its own ("no props, no new wire
+// surface"), so the whole contract is three claims:
 //
-//   • the wire shape is ONE CreateNodePatch (NodeType "activityindicator" →
-//     wire id 12) and NOTHING else — no props, no styles, no attaches, no
-//     children (a measure func owns the size, the 6.1 law's measured-leaf
-//     shape; the shells add the NodeType to MEASURED_NODE_TYPES in Gates 2/3);
-//   • the parameter surface is EMPTY, pinned reflectively — a param growing
-//     here is a deliberate design change, not drift (the I3 declaration-pin
-//     method, degenerate case);
+//   • the DEFAULT wire shape is ONE CreateNodePatch (NodeType
+//     "activityindicator" → wire id 12) and NOTHING else — no props, no
+//     styles, no attaches, no children (a measure func owns the size when
+//     nothing overrides it — the measured-leaf shape; the shells add the
+//     NodeType to MEASURED_NODE_TYPES);
+//   • it declares NO OWN parameters, pinned reflectively — a param growing
+//     here is a deliberate design change, not drift — but it DOES inherit
+//     the shared item surface from BnLayoutItem (13.0 Task 8: it is a
+//     measured leaf exactly like `image`/`checkbox`/`switch`/`slider`, so it
+//     takes a Margin/Width/Height/etc. the same as any other layout
+//     participant; left unset, none of it is appended to the wire, which is
+//     why the shape above stays a single bare create);
 //   • presence is `@if` (the decision-2 posture): unmount is the ordinary
 //     RemoveNode disposal, which is what "animating while mounted" means —
 //     there is no start/stop prop for a shell to mirror.
@@ -69,14 +75,24 @@ public sealed class BnActivityIndicatorTests : IDisposable
     }
 
     /// <summary>"No props, no new wire surface" (design decision 5), pinned
-    /// reflectively: the parameter surface is EMPTY. Intrinsic size is the
-    /// platform's own (asserted by oracle in Gates 2/3), state does not
-    /// exist, presence is <c>@if</c> — there is nothing to declare.</summary>
+    /// reflectively: BnActivityIndicator declares no parameters OF ITS OWN.
+    /// State does not exist, presence is <c>@if</c> — there is nothing for
+    /// this control to declare. It DOES inherit the 17-parameter item surface
+    /// from <see cref="BnLayoutItem"/> (13.0 Task 8) — asserted here as the
+    /// other half of the same claim, so a future redeclaration of one of
+    /// those names on this type reds this test rather than silently
+    /// shadowing the base.</summary>
     [Fact]
-    public void DeclaresNoParameters_TheSurfaceIsPresenceItself()
+    public void DeclaresNoOwnParameters_ButInheritsTheFullItemSurface()
     {
-        Assert.DoesNotContain(typeof(BnActivityIndicator).GetProperties(),
+        Assert.DoesNotContain(typeof(BnActivityIndicator)
+            .GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly),
             p => p.IsDefined(typeof(ParameterAttribute), inherit: true));
+
+        Assert.True(typeof(BnLayoutItem).IsAssignableFrom(typeof(BnActivityIndicator)));
+        foreach (string name in LayoutSurfacePinTests.ItemParameters)
+            Assert.NotNull(typeof(BnActivityIndicator).GetProperty(name,
+                BindingFlags.Public | BindingFlags.Instance | BindingFlags.FlattenHierarchy));
     }
 
     /// <summary>Host for the presence-is-<c>@if</c> posture: a button whose

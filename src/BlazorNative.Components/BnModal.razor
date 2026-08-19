@@ -43,6 +43,22 @@
         a content tap NOT a dismissal — and that dispatch is real, the
         device counters account for it.
 
+    ── THE ITEM SURFACE (13.0 Task 8) IS ON THIS TYPE, NOT ON THE WIRE ──────
+    BnModal derives from BnLayoutItem, so it carries the same 17 parameters
+    every other layout participant does — that is what makes BackgroundColor
+    below a single declaration instead of two. But this file does NOT splat
+    ItemAttributes onto the `modal` element: BnModalTests.VisibleTrue_
+    MountShape_ModalPlusContentBox and .ContentBox_ForwardsTheDeclaredSurface
+    pin ZERO styles on the modal node, which is the .NET half of the rule two
+    paragraphs up ("this component's surface cannot emit one [style]" onto
+    its own wire node — every style would land on the anchor or the overlay,
+    neither of which the author owns). The inherited BackgroundColor keeps
+    doing exactly what it always did: it paints the CONTENT BOX below, never
+    the modal node itself. The other sixteen inherited parameters are real,
+    settable C# API — satisfying the same surface every layout participant
+    exposes — but have no wire effect on this component today, precisely
+    because the modal node accepts no styles at all.
+
     ── HIDE UNMOUNTS; .NET OWNS VISIBILITY (decision 2) ─────────────────────
     Internally `@if (Visible)`: false means ZERO wire presence, and the whole
     overlay subtree leaves as ONE RemoveNodePatch (the disposal shape 7.2's
@@ -57,6 +73,7 @@
     verbatim (an app that wants it binds it, exactly as on the web).
     ─────────────────────────────────────────────────────────────────────────
 *@
+@inherits BnLayoutItem
 @if (Visible)
 {
     <modal scrimColor="@(ScrimColor ?? DefaultScrimColor)" @onclick="HandleDismissRequest">
@@ -114,8 +131,9 @@
     /// <inheritdoc cref="BnLayoutContainer.Padding"/>
     [Parameter] public float? Padding { get; set; }
 
-    /// <inheritdoc cref="BnLayoutItem.BackgroundColor"/>
-    [Parameter] public string? BackgroundColor { get; set; }
+    // BackgroundColor is inherited from BnLayoutItem — it paints the CONTENT
+    // BOX below, exactly as it always did (see the file header's new note);
+    // it does not become a second, differently-named parameter.
 
     /// <summary>The dismissal REQUEST (decision 2): re-sync the bound state;
     /// change nothing here. Visible flips only if the parent writes it

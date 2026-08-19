@@ -1,3 +1,4 @@
+using System.Reflection;
 using BlazorNative.Components;
 using BlazorNative.Renderer;
 using BlazorNative.Runtime;
@@ -313,18 +314,25 @@ public sealed class BnModalTests : IDisposable
 
     // ── The declared surface, pinned (the I3 declaration-pin method) ──────────
 
-    /// <summary>The parameter surface is EXACTLY the design's (decision 2):
-    /// the bind pair, ChildContent, ScrimColor and the content box's four
-    /// declared-surface params. NO flex item surface — a modal is not IN the
-    /// flex flow (the anchor is 0-sized and absolute; a Width or Margin here
-    /// would style a node the author does not own) — and NO container family
-    /// (the box is a plain view; compose a BnColumn inside for layout).</summary>
+    /// <summary>The parameter surface BnModal declares FOR ITSELF is EXACTLY the
+    /// design's (decision 2): the bind pair, ChildContent, ScrimColor and the
+    /// content box's three remaining declared-surface params (ContentWidth,
+    /// ContentHeight, Padding) — <c>DeclaredOnly</c>, so this does not see the
+    /// 17-parameter item surface it inherits from <see cref="BnLayoutItem"/>
+    /// (13.0 Task 8; that inheritance is pinned separately by
+    /// <see cref="LayoutSurfacePinTests.NewlyGranted_HasTheFullItemSurface"/>).
+    /// <see cref="BnModal.BackgroundColor"/> moved off this list into the base —
+    /// it is still real, it is just no longer a REDECLARATION — and it keeps
+    /// painting only the content box, never the modal node (see the file
+    /// header: the modal node itself accepts no styles at all, so the other
+    /// sixteen inherited names have no wire effect on this component). NO
+    /// container family either way (the box is a plain view; compose a
+    /// BnColumn inside for layout).</summary>
     [Fact]
     public void DeclaresExactlyTheDesignedSurface()
     {
         string[] expected =
         [
-            $"{nameof(BnModal.BackgroundColor)}: {typeof(string)}",
             $"{nameof(BnModal.ChildContent)}: {typeof(RenderFragment)}",
             $"{nameof(BnModal.ContentHeight)}: {typeof(string)}",
             $"{nameof(BnModal.ContentWidth)}: {typeof(string)}",
@@ -334,7 +342,8 @@ public sealed class BnModalTests : IDisposable
             $"{nameof(BnModal.VisibleChanged)}: {typeof(EventCallback<bool>)}",
         ];
 
-        Assert.Equal(expected, typeof(BnModal).GetProperties()
+        Assert.Equal(expected, typeof(BnModal)
+            .GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
             .Where(p => p.IsDefined(typeof(ParameterAttribute), inherit: true))
             .Select(p => $"{p.Name}: {p.PropertyType}")
             .OrderBy(n => n, StringComparer.Ordinal));

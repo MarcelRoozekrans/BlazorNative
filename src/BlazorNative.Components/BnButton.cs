@@ -19,7 +19,7 @@ namespace BlazorNative.Components;
 /// }
 /// </code>
 /// </example>
-public sealed class BnButton : ComponentBase
+public sealed class BnButton : BnLayoutItem
 {
     /// <summary>The button's caption.</summary>
     [Parameter] public string? Label { get; set; }
@@ -32,15 +32,25 @@ public sealed class BnButton : ComponentBase
     /// <see cref="OnClick"/> firing. Default true.</summary>
     [Parameter] public bool Enabled { get; set; } = true;
 
+    // The item surface (BackgroundColor, Margin, AlignSelf, Grow/Shrink/Basis,
+    // the box, Position and its insets) is inherited from BnLayoutItem and
+    // emitted at sequence 1-17 by EmitItemAttributes — see that type for the
+    // parameters.
+
     /// <inheritdoc />
     protected override void BuildRenderTree(RenderTreeBuilder b)
     {
         b.OpenElement(0, "button");
-        b.AddAttribute(1, "onclick", OnClick);
-        if (!Enabled)
-            b.AddAttribute(2, "enabled", "false");
 
-        b.AddContent(10, Label ?? "");
+        // Sequence 1-17: the shared item surface — see BnLayoutItem.EmitItemAttributes.
+        EmitItemAttributes(b);
+
+        // Sequence 100+: this component's own surface, clear of the base's 1-17.
+        b.AddAttribute(100, "onclick", OnClick);
+        if (!Enabled)
+            b.AddAttribute(101, "enabled", "false");
+
+        b.AddContent(109, Label ?? "");
 
         b.CloseElement();
     }

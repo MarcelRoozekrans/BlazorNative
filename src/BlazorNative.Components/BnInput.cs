@@ -27,7 +27,7 @@ namespace BlazorNative.Components;
 /// <see cref="ValueChanged"/> out — when you need to intercept the edit.
 /// </para>
 /// </remarks>
-public sealed class BnInput : ComponentBase
+public sealed class BnInput : BnLayoutItem
 {
     /// <summary>The current text. Null is sent as an empty string, so the text
     /// box always has a definite value.</summary>
@@ -52,20 +52,30 @@ public sealed class BnInput : ComponentBase
     /// <see cref="OnFocus"/>.</summary>
     [Parameter] public EventCallback<FocusEventArgs> OnBlur { get; set; }
 
+    // The item surface (BackgroundColor, Margin, AlignSelf, Grow/Shrink/Basis,
+    // the box, Position and its insets) is inherited from BnLayoutItem and
+    // emitted at sequence 1-17 by EmitItemAttributes — see that type for the
+    // parameters.
+
     /// <inheritdoc />
     protected override void BuildRenderTree(RenderTreeBuilder b)
     {
         b.OpenElement(0, "input");
-        b.AddAttribute(1, "value", Value ?? "");
-        b.AddAttribute(2, "placeholder", Placeholder); // null → omitted
-        b.AddAttribute(3, "onchange",
+
+        // Sequence 1-17: the shared item surface — see BnLayoutItem.EmitItemAttributes.
+        EmitItemAttributes(b);
+
+        // Sequence 100+: this component's own surface, clear of the base's 1-17.
+        b.AddAttribute(100, "value", Value ?? "");
+        b.AddAttribute(101, "placeholder", Placeholder); // null → omitted
+        b.AddAttribute(102, "onchange",
             EventCallback.Factory.Create<ChangeEventArgs>(this, HandleChange));
         if (!Enabled)
-            b.AddAttribute(4, "enabled", "false");
+            b.AddAttribute(103, "enabled", "false");
         if (OnFocus.HasDelegate)
-            b.AddAttribute(5, "onfocus", OnFocus);
+            b.AddAttribute(104, "onfocus", OnFocus);
         if (OnBlur.HasDelegate)
-            b.AddAttribute(6, "onblur", OnBlur);
+            b.AddAttribute(105, "onblur", OnBlur);
         b.CloseElement();
     }
 
