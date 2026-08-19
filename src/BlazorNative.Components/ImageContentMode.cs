@@ -51,14 +51,14 @@ namespace BlazorNative.Components;
 /// image's natural size and the flex parameters you set — and it is identical
 /// under all four modes. Changing the mode repaints; it never reflows, and it
 /// can never move anything else on the page. If you want the image to occupy a
-/// different amount of space, set <see cref="BnImage.Width"/> or
-/// <see cref="BnImage.Height"/>; the mode will not do it for you.
+/// different amount of space, set <see cref="BnLayoutItem.Width"/> or
+/// <see cref="BnLayoutItem.Height"/>; the mode will not do it for you.
 /// </remarks>
 public enum ImageContentMode
 {
     /// <summary>Aspect-fit: the whole image is visible, scaled down to fit the
     /// box with its aspect ratio kept. <b>The default.</b> The leftover bars
-    /// show <see cref="BnImage.BackgroundColor"/>.</summary>
+    /// show <see cref="BnLayoutItem.BackgroundColor"/>.</summary>
     Contain,
     /// <summary>Aspect-fill: the image covers the whole box with its aspect
     /// ratio kept, and the overflow is cropped. The paint never escapes the

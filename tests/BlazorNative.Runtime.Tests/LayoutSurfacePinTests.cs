@@ -59,4 +59,19 @@ public sealed class LayoutSurfacePinTests
     public void BnLayoutContainer_DoesNotDeclareChildContent()
         => Assert.Null(typeof(BnLayoutContainer).GetProperty(
             "ChildContent", BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly));
+
+    [Fact]
+    public void BnImage_TakesTheItemSurfaceFromTheBase_AndRedeclaresNothing()
+    {
+        Assert.True(typeof(BnLayoutItem).IsAssignableFrom(typeof(BnImage)));
+
+        string[] redeclared = typeof(BnImage)
+            .GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
+            .Where(p => p.GetCustomAttribute<ParameterAttribute>() is not null)
+            .Select(p => p.Name)
+            .Intersect(ItemParameters)
+            .ToArray();
+
+        Assert.Empty(redeclared);
+    }
 }

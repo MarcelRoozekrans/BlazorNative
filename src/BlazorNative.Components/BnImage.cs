@@ -156,26 +156,27 @@ namespace BlazorNative.Components;
 // re-runs 6.3's reflow proof WITH the new features present, pinning "one
 // reflow, never two" against the exact feature 6.3 refused for fear of it.
 //
-// Sequence numbers mirror BnView's and BnScroll's exactly, with the same gaps
-// (2 `padding`, 4-8 the container family) left EMPTY, so the three
-// BuildRenderTrees read side by side and the gaps are the decision, visible.
-// `src` is APPENDED at 24, after the style block — the way BnView appended its
-// flex block rather than renumbering what was already there — and the 7.5
-// additions append after `src` (25-27), same rule, no renumbering.
+// The item surface (BackgroundColor, Margin, AlignSelf, Grow/Shrink/Basis, the
+// box, Position and its insets) is inherited from BnLayoutItem and emitted at
+// sequence 1-17 by EmitItemAttributes — no container-layout gaps to carry here,
+// since this component never had that family. `src`, `placeholderColor`,
+// `contentMode` and `onerror` are this component's own surface, at 100+, clear
+// of the base band so a collision cannot silently mis-diff.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// <summary>
 /// An image loaded from a URL. Renders as a native <c>ImageView</c> on Android
 /// and a <c>UIImageView</c> on iOS. The platform fetches, decodes and measures
 /// the bytes — your code only names the source. The rest of its surface is
-/// <see cref="BnView"/>'s flex <b>item</b> surface (<see cref="Grow"/>,
-/// <see cref="Shrink"/>, <see cref="Basis"/>, <see cref="AlignSelf"/>, the box,
-/// <see cref="Margin"/>, <see cref="Position"/>).
+/// <see cref="BnView"/>'s flex <b>item</b> surface (<see cref="BnLayoutItem.Grow"/>,
+/// <see cref="BnLayoutItem.Shrink"/>, <see cref="BnLayoutItem.Basis"/>,
+/// <see cref="BnLayoutItem.AlignSelf"/>, the box, <see cref="BnLayoutItem.Margin"/>,
+/// <see cref="BnLayoutItem.Position"/>).
 /// </summary>
 /// <remarks>
 /// <para>
 /// <b>Sizing is the decision this component's shape makes.</b> Set
-/// <see cref="Width"/> <em>and</em> <see cref="Height"/> and the frame is exactly
+/// <see cref="BnLayoutItem.Width"/> <em>and</em> <see cref="BnLayoutItem.Height"/> and the frame is exactly
 /// those numbers, always — the bytes never move it, so nothing below it ever
 /// reflows. Set NEITHER and the image is <em>intrinsic</em>: it measures
 /// <c>0 × 0</c> until its bytes arrive and its <b>natural pixel size</b> (in dp
@@ -205,14 +206,14 @@ namespace BlazorNative.Components;
 /// set among those three, the frame is the one the two paragraphs above describe.
 /// </para>
 /// </remarks>
-public sealed class BnImage : ComponentBase
+public sealed class BnImage : BnLayoutItem
 {
     /// <summary>The image URL. The platform fetches it — you cannot hand this
     /// component bytes.
     /// <para>Null = no source: nothing is fetched, and the node keeps measuring
-    /// <c>0 × 0</c> unless <see cref="Width"/> and <see cref="Height"/> say
-    /// otherwise. Changing it cancels any request still in flight for this
-    /// image.</para>
+    /// <c>0 × 0</c> unless <see cref="BnLayoutItem.Width"/> and
+    /// <see cref="BnLayoutItem.Height"/> say otherwise. Changing it cancels any
+    /// request still in flight for this image.</para>
     /// <para><b>Setting it back to null is a real change, not a no-op:</b> the
     /// image is cleared, and an intrinsic node collapses to <c>0 × 0</c> so its
     /// siblings move back up.</para>
@@ -226,7 +227,7 @@ public sealed class BnImage : ComponentBase
     /// whatever box the layout already gave the node. That means an
     /// <em>intrinsic</em> image's placeholder is invisible — a <c>0 × 0</c> box
     /// paints nothing — so give the image a size if you want a placeholder to
-    /// show. Letterbox bars show <see cref="BackgroundColor"/>, never
+    /// show. Letterbox bars show <see cref="BnLayoutItem.BackgroundColor"/>, never
     /// this.</para></summary>
     [Parameter] public string? PlaceholderColor { get; set; }
 
@@ -253,132 +254,50 @@ public sealed class BnImage : ComponentBase
     /// is no matching success event.</para></summary>
     [Parameter] public EventCallback<BnImageErrorEventArgs> OnError { get; set; }
 
-    /// <inheritdoc cref="BnView.BackgroundColor"/>
-    [Parameter] public string? BackgroundColor { get; set; }
-
-    /// <inheritdoc cref="BnView.Margin"/>
-    [Parameter] public string? Margin { get; set; }
-
     // ── NO container layout, and NO ChildContent ──────────────────────────────
     //
     // No Direction, Justify, Align, Wrap, Gap or Padding, and no ChildContent: an
     // image is a LEAF — it has no Yoga children for any of them to arrange. See
     // the file header; this absence is the design, not an omission.
-
-    // ── Item layout (how the image behaves INSIDE its parent) ─────────────────
-
-    /// <inheritdoc cref="BnView.AlignSelf"/>
-    [Parameter] public FlexAlign? AlignSelf { get; set; }
-
-    /// <inheritdoc cref="BnView.Grow"/>
-    [Parameter] public float? Grow { get; set; }
-
-    /// <inheritdoc cref="BnView.Shrink"/>
-    [Parameter] public float? Shrink { get; set; }
-
-    /// <inheritdoc cref="BnView.Basis"/>
-    [Parameter] public string? Basis { get; set; }
-
-    // ── Box ───────────────────────────────────────────────────────────────────
-
-    /// <summary>Declared width, e.g. <c>"200"</c>. Null = auto. Set it together
-    /// <em>with</em> <see cref="Height"/> and the image is sized IMMEDIATELY — its
-    /// frame never moves when the bytes land; set NEITHER and the image is
-    /// intrinsic: <c>0 × 0</c> until the bytes, its natural size after (see the
-    /// class remarks).</summary>
-    [Parameter] public string? Width { get; set; }
-
-    /// <summary>Declared height, e.g. <c>"120"</c>. Null = auto. The sizing rule is
-    /// <see cref="Width"/>'s and is stated there: BOTH set → definite, never
-    /// measured; NEITHER set → intrinsic.</summary>
-    [Parameter] public string? Height { get; set; }
-
-    /// <inheritdoc cref="BnView.MinWidth"/>
-    [Parameter] public string? MinWidth { get; set; }
-
-    /// <inheritdoc cref="BnView.MaxWidth"/>
-    [Parameter] public string? MaxWidth { get; set; }
-
-    /// <inheritdoc cref="BnView.MinHeight"/>
-    [Parameter] public string? MinHeight { get; set; }
-
-    /// <inheritdoc cref="BnView.MaxHeight"/>
-    [Parameter] public string? MaxHeight { get; set; }
-
-    // ── Positioning ───────────────────────────────────────────────────────────
-
-    /// <inheritdoc cref="BnView.Position"/>
-    [Parameter] public FlexPosition? Position { get; set; }
-
-    /// <inheritdoc cref="BnView.Top"/>
-    [Parameter] public string? Top { get; set; }
-
-    /// <inheritdoc cref="BnView.Right"/>
-    [Parameter] public string? Right { get; set; }
-
-    /// <inheritdoc cref="BnView.Bottom"/>
-    [Parameter] public string? Bottom { get; set; }
-
-    /// <inheritdoc cref="BnView.Left"/>
-    [Parameter] public string? Left { get; set; }
+    //
+    // The item surface (AlignSelf, Grow, Shrink, Basis, the box, Position and its
+    // insets, BackgroundColor, Margin) is inherited from BnLayoutItem — see that
+    // type for the parameters and EmitItemAttributes for how they reach the wire.
 
     /// <inheritdoc />
     protected override void BuildRenderTree(RenderTreeBuilder b)
     {
         b.OpenElement(0, "img");
 
-        // Null attributes are not appended to the frame array at all — that is how
-        // "unset" reaches the wire as "absent" (BnView's un-styled invariant, and
-        // the reason this component needs no null guards). It holds for `src` too:
-        // a null Src is an image with no source, and the wire says exactly what the
-        // author said.
-        b.AddAttribute(1, "backgroundColor", BackgroundColor);
-        // 2 ("padding") is deliberately UNUSED — a leaf has no children to inset.
-        b.AddAttribute(3, "margin", Margin);
+        // Sequence 1-17: the shared item surface (BackgroundColor, Margin,
+        // AlignSelf, Grow/Shrink/Basis, the box, Position and its insets) — see
+        // BnLayoutItem.EmitItemAttributes. A null value is not appended to the
+        // frame array at all, which is how "unset" reaches the wire as "absent",
+        // and it holds for `src` below too: a null Src is an image with no
+        // source, and the wire says exactly what the author said.
+        EmitItemAttributes(b);
 
-        // 4 ("flexDirection") and 5-8 (justifyContent / alignItems / flexWrap /
-        // gap) are deliberately UNUSED: the container-layout family arranges
-        // CHILDREN, and an image has none. The gaps are the decision — see the
-        // file header.
+        // Sequence 100+: this component's own surface, clear of the base's 1-17
+        // so a collision (which would produce a wrong diff, silently) cannot
+        // happen. THE PROP: `src` is NOT in NativeRenderer's style allow-list, so
+        // ProcessAttribute routes it to UpdatePropPatch — the same wire `value`
+        // and `placeholder` ride.
+        b.AddAttribute(100, "src", Src);
 
-        b.AddAttribute(9, "alignSelf", AlignSelf.ToStyleValue());
-        b.AddAttribute(10, "flexGrow", Grow.ToStyleValue());
-        b.AddAttribute(11, "flexShrink", Shrink.ToStyleValue());
-        b.AddAttribute(12, "flexBasis", Basis);
-
-        b.AddAttribute(13, "width", Width);
-        b.AddAttribute(14, "height", Height);
-        b.AddAttribute(15, "minWidth", MinWidth);
-        b.AddAttribute(16, "maxWidth", MaxWidth);
-        b.AddAttribute(17, "minHeight", MinHeight);
-        b.AddAttribute(18, "maxHeight", MaxHeight);
-
-        b.AddAttribute(19, "position", Position.ToStyleValue());
-        b.AddAttribute(20, "top", Top);
-        b.AddAttribute(21, "right", Right);
-        b.AddAttribute(22, "bottom", Bottom);
-        b.AddAttribute(23, "left", Left);
-
-        // THE PROP. `src` is NOT in NativeRenderer's style allow-list, so
-        // ProcessAttribute routes it to UpdatePropPatch — the same wire `value` and
-        // `placeholder` ride. Appended at 24, after the style block, so the
-        // style sequence numbers stay identical to BnView's and BnScroll's.
-        b.AddAttribute(24, "src", Src);
-
-        // THE 7.5 PROPS — appended after `src` (no renumbering), same wire,
-        // same null-is-absent rule. Image-only vocabulary: neither joins the
-        // style partition (the partition is the routing table for names ANY
-        // node can carry; StyleAttributePartitionTests pins both as props).
-        b.AddAttribute(25, "placeholderColor", PlaceholderColor);
-        b.AddAttribute(26, "contentMode", ContentMode.ToWireValue());
+        // Image-only vocabulary: neither joins the style partition (the
+        // partition is the routing table for names ANY node can carry;
+        // StyleAttributePartitionTests pins both as props).
+        b.AddAttribute(101, "placeholderColor", PlaceholderColor);
+        b.AddAttribute(102, "contentMode", ContentMode.ToWireValue());
 
         // Attach-only-when-subscribed (the BnScroll.OnScroll pattern): an
         // unwired BnImage emits no `error` attach, so its wire shape is
-        // byte-identical to pre-7.5 — the un-styled invariant, for events.
+        // byte-identical to an image with no handler — the un-styled invariant,
+        // for events.
         if (OnError.HasDelegate)
-            b.AddAttribute(27, "onerror", OnError);
+            b.AddAttribute(103, "onerror", OnError);
 
-        // No AddContent: a leaf has no ChildContent (BnView/BnScroll use 100).
+        // No AddContent: a leaf has no ChildContent (BnView/BnScroll use 200).
 
         b.CloseElement();
     }
