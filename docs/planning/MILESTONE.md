@@ -92,7 +92,8 @@ same verdicts.
 
 ## Phases
 
-1. Phase 13.0 — extract the item surface [pending]
+1. Phase 13.0 — extract the item surface [active] — built and locally verified; holding on the
+   DoD's device-lane dispatch (see the ROADMAP block)
 2. Phase 13.1 — type the lengths [pending]
 3. Phase 13.2 — the dispatcher's honest answer [pending]
 4. Phase 13.3 — state docs + backlog retirement [pending]

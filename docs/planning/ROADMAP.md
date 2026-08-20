@@ -1988,12 +1988,26 @@ this is the last cheap window. **Every phase is independently shippable and none
 > Full measurement and its bounds in the
 > [phase conclusion](../plans/2026-08-19-phase-13.0-conclusion.md).
 
-#### Phase 13.0: Extract the item surface [status: pending]
+#### Phase 13.0: Extract the item surface [status: active]
 **Goal:** Declare the 17 item parameters once on `BnLayoutItem` (and the 6 container parameters on
 `BnLayoutContainer`), collapse the eight copies, and give the four bare components the surface they
 never had.
 **Surface:** Refactor
 **HelpWanted:** no
+**Plan:** [`docs/superpowers/plans/2026-08-19-phase-13.0-item-surface.md`](../superpowers/plans/2026-08-19-phase-13.0-item-surface.md)
+· [impact analysis](../plans/2026-08-19-phase-13.0-item-surface-impact-analysis.md)
+· [conclusion](../plans/2026-08-19-phase-13.0-conclusion.md)
+
+> **Still `active`, not `complete`, and the reason is a DoD line — not bookkeeping.** The
+> implementation, the pins and the local verification are done (conclusion §7: 1032 .NET tests,
+> site build, `consumer-smoke.ps1`, the binary-compat A/B swap). What has **not** happened is the
+> DoD's *"both device lanes dispatched"*: the branch was never pushed, so
+> `gh workflow run --ref refactor/13.0-item-surface` had no ref to run against and **the two
+> plan steps that ask for it (Task 6 Step 7, Task 7 Step 7) are the only unticked boxes.**
+> The conclusion argues the lanes cannot red — no Kotlin, no Swift, no `wire-vocabulary.json`
+> changed, and the frame tables are byte-identical — and that argument is probably right. It is
+> still an argument, and this milestone's DoD names the lanes precisely because *"a green required
+> set does not mean the advisory lanes ran; that is how 11.4's pump bug hid."* Dispatch, then flip.
 
 #### Phase 13.1: Type the lengths [status: pending]
 **Goal:** Introduce `BnLength` / `BnAutoLength` and convert every layout length, making malformed
