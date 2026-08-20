@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Reflection;
 using BlazorNative.Components;
+using Microsoft.AspNetCore.Components;
 
 namespace BlazorNative.Runtime.Tests;
 
@@ -112,6 +113,100 @@ public sealed class BnLengthGuardTests
         Assert.Null(((BnAutoLength?)null).ToStyleValue());
         Assert.Equal("100", ((BnLength?)(BnLength)100f).ToStyleValue());
         Assert.Equal("auto", ((BnAutoLength?)BnAutoLength.Auto).ToStyleValue());
+    }
+}
+
+public sealed class LengthParameterNullabilityPinTests
+{
+    // ─────────────────────────────────────────────────────────────────────────
+    // THE PHASE'S OWN #178 ARGUMENT, CHECKED RATHER THAN ARGUED.
+    //
+    // Spec §3.3 spends a page on why every length parameter MUST be declared
+    // `BnLength?` / `BnAutoLength?` and never bare: `default(BnLength)` is a real
+    // zero-POINT length, and `default(BnAutoLength)` reads as `auto` (inner-null
+    // encodes auto), so a parameter nobody assigned would silently mean something
+    // the author never chose -- #178/#181's exact shape, which on Margin
+    // re-centres the node.
+    //
+    // Nothing checked it. `DefaultOfTheNullable_IsNull_MeaningUnset` above asserts
+    // that `default(BnAutoLength?)` is null, which is a C# LANGUAGE AXIOM and
+    // cannot fail -- it never looks at a declaration, so changing
+    // `[Parameter] public BnAutoLength? Width` to a bare `BnAutoLength` left the
+    // whole suite green. That is a vacuous pin guarding the phase's central claim.
+    //
+    // This sweeps the ASSEMBLY by reflection rather than a hand-written list, so a
+    // component added later is covered on the day it is written -- and it is
+    // deliberately strict: a length parameter must be EXACTLY `BnLength?` or
+    // `BnAutoLength?`, so a bare struct, a `List<BnLength>` or any other shape that
+    // merely mentions the type reds and has to be argued for on purpose.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    private static bool IsALength(Type t)
+        => t == typeof(BnLength) || t == typeof(BnAutoLength);
+
+    /// <summary>Does this type MENTION a length anywhere -- itself, or inside a
+    /// generic argument? Deliberately wider than "is a length" so that a parameter
+    /// smuggling one through a wrapper still has to answer to the pin.</summary>
+    private static bool MentionsALength(Type t)
+        => IsALength(t)
+        || (Nullable.GetUnderlyingType(t) is { } u && IsALength(u))
+        || t.GetGenericArguments().Any(MentionsALength);
+
+    private static bool IsTheApprovedShape(Type t)
+        => Nullable.GetUnderlyingType(t) is { } u && IsALength(u);
+
+    /// <summary>Every <c>[Parameter]</c> property in BlazorNative.Components that
+    /// mentions a length type, found by reflection over the whole public surface --
+    /// including <c>BnLayoutItem</c>, <c>BnLayoutContainer</c>, <c>BnModal</c> and
+    /// <c>BnList&lt;TItem&gt;</c>, which are reached, not enumerated.</summary>
+    private static List<PropertyInfo> LengthParameters()
+        => typeof(BnLayoutItem).Assembly.GetTypes()
+            .Where(t => t.IsPublic || t.IsNestedPublic)
+            .SelectMany(t => t.GetProperties(BindingFlags.Public | BindingFlags.Instance))
+            .Where(p => p.IsDefined(typeof(ParameterAttribute), inherit: true))
+            .Where(p => MentionsALength(p.PropertyType))
+            .DistinctBy(p => (p.DeclaringType!.FullName, p.Name))
+            .OrderBy(p => $"{p.DeclaringType!.Name}.{p.Name}", StringComparer.Ordinal)
+            .ToList();
+
+    [Fact]
+    public void EveryLengthParameter_IsDeclaredNullable()
+    {
+        var offenders = LengthParameters()
+            .Where(p => !IsTheApprovedShape(p.PropertyType))
+            .Select(p => $"{p.DeclaringType!.Name}.{p.Name} is declared " +
+                         $"{p.PropertyType.Name} — it must be BnLength? or BnAutoLength?")
+            .ToList();
+
+        Assert.True(offenders.Count == 0,
+            "A length parameter is not nullable, so its `default` is a real value the " +
+            "author never chose (spec §3.3, this repo's #178/#181 bug class):" +
+            Environment.NewLine + string.Join(Environment.NewLine, offenders));
+    }
+
+    // Anti-vacuity, because the pin this one REPLACES was vacuous. A filter that
+    // silently matched nothing would make the theory above pass forever; this
+    // fails if the sweep stops reaching the surface it claims to cover. The
+    // anchors are one property from each of the four declaring types, checked by
+    // membership in the reflected set -- not by enumerating that set.
+    [Fact]
+    public void TheSweep_ActuallyReachesTheLengthSurface()
+    {
+        var found = LengthParameters()
+            .Select(p => $"{p.DeclaringType!.Name}.{p.Name}")
+            .ToHashSet(StringComparer.Ordinal);
+
+        Assert.Contains("BnLayoutItem.MinWidth",     found);
+        Assert.Contains("BnLayoutContainer.Gap",     found);
+        Assert.Contains("BnModal.ContentWidth",      found);
+        Assert.Contains("BnList`1.Width",            found);
+
+        // 12 on BnLayoutItem + 2 on BnLayoutContainer + 3 on BnModal + 1 on
+        // BnList<TItem>. A floor, not an equality: adding a length parameter is
+        // fine and is covered automatically; LOSING the sweep is not.
+        Assert.True(found.Count >= 18,
+            $"The length sweep found only {found.Count} parameters; it should reach at " +
+            "least 18. A sweep that reaches nothing makes the nullability pin vacuous.");
     }
 }
 

@@ -4,7 +4,7 @@
 #
 #   build-test (windows-latest) — the local verification procedure verbatim
 #   (setup.ps1 §1–7 documents the toolchain pins):
-#     build (analyzers ride it) → .NET tests (1049 passed / 0 skipped) →
+#     build (analyzers ride it) → .NET tests (1051 passed / 0 skipped) →
 #     three NativeAOT publishes of samples/BlazorNative.SampleApp — the
 #     publish head since Phase 8.0: the app owns PublishAot, the exports stay
 #     in Runtime via UnmanagedEntryPointsAssembly, and the artifact is
@@ -1949,7 +1949,34 @@ jobs:
       # Also folded in, at zero test cost: DefaultStructTrapSweepTests now sweeps
       # a FOURTH assembly, BlazorNative.Components -- the #178/#181 guard could
       # not see the one product assembly this phase adds public value types to.
-      - name: .NET tests (assert 1049 passed / 0 skipped)
+      # 1049 -> 1051 (13.1 final review, +2): THE PHASE'S OWN #178 ARGUMENT WAS
+      # ARGUED, NOT CHECKED. Spec §3.3 spends a page on why every length parameter
+      # must be declared BnLength?/BnAutoLength? and never bare -- default(BnLength)
+      # is a real ZERO-POINT length and default(BnAutoLength) reads as `auto`, so a
+      # parameter nobody assigned silently means something the author never chose.
+      # The pin that claimed to check it, DefaultOfTheNullable_IsNull_MeaningUnset,
+      # asserts that default(BnAutoLength?) is null: a C# LANGUAGE AXIOM that cannot
+      # fail and never looks at a declaration. Changing
+      # `[Parameter] public BnAutoLength? Width` to a bare BnAutoLength left the whole
+      # suite green -- a vacuous pin guarding the phase's central claim, which is the
+      # [[safety-claims-without-pins]] class one level up: not a comment asserting an
+      # unenforced property, but a TEST asserting the wrong one.
+      #   +1 EveryLengthParameter_IsDeclaredNullable -- sweeps the public surface of
+      #      BlazorNative.Components by reflection (not a list, so component #15 is
+      #      covered on the day it is written) and requires every [Parameter] that
+      #      MENTIONS a length to be exactly BnLength? or BnAutoLength?. Mutation-
+      #      observed RED on BnLayoutItem.MinWidth, naming the property and its
+      #      declared type; note RS0016/RS0017 fire first on that mutation, so the
+      #      public-API baseline is a genuine second line of defence -- but only for
+      #      a PUBLIC parameter, and only if someone reads the diff.
+      #   +1 TheSweep_ActuallyReachesTheLengthSurface -- anti-vacuity for the pin
+      #      that replaces a vacuous one: a filter matching nothing would make the
+      #      theory above pass forever. Anchors one property from each of the four
+      #      declaring types (BnLayoutItem, BnLayoutContainer, BnModal, BnList<TItem>)
+      #      by MEMBERSHIP in the reflected set, plus a floor of 18.
+      # JVM/Android/iOS do NOT move -- no shell test added, and no shell file is in
+      # the branch diff at all, which is still the phase's core claim.
+      - name: .NET tests (assert 1051 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -1967,8 +1994,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 1049 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 1049 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 1051 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 1051 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # ── NativeAOT publishes + nine-export verification ────────────────────
