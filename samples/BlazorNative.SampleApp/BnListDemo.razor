@@ -80,7 +80,7 @@
             Items="@RowItems"
             ItemHeight="@ItemHeightF"
             Height="@ViewportHeightF"
-            Width="@ViewportWidth"
+            Width="@ViewportWidthDp"
             Overscan="@OverscanRows">
         <RowTemplate Context="row">
             @* UNBOUND on purpose — see the header: typed text lives only in
@@ -93,7 +93,7 @@
 
     @* [1] nav parity — OUTSIDE the viewport, so no amount of scrolling can
        take the exit off the screen. The page's only measured leaf, LAST. *@
-    <BnRow Width="@ViewportWidth">
+    <BnRow Width="@ViewportWidthDp">
         <BnButton Label="← Back" OnClick="GoBack" />
     </BnRow>
 </BnColumn>
@@ -143,9 +143,6 @@
     // params; one source of truth, zero transcription).
     private const float ItemHeightF = ItemHeightDp;
     private const float ViewportHeightF = ViewportHeightDp;
-
-    private static readonly string ViewportWidth =
-        ViewportWidthDp.ToString(System.Globalization.CultureInfo.InvariantCulture);
 
     private static readonly int[] RowItems = Enumerable.Range(0, RowCount).ToArray();
 

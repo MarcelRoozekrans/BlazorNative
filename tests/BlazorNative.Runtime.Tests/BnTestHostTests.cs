@@ -33,7 +33,7 @@ public sealed class BnTestHostTests
         protected override void BuildRenderTree(RenderTreeBuilder b)
         {
             b.OpenComponent<BnColumn>(0);
-            b.AddComponentParameter(1, nameof(BnColumn.Gap), "8");   // Gap is string? on the flex surface
+            b.AddComponentParameter(1, nameof(BnColumn.Gap), (BnLength)8f);   // Gap is BnLength? on the flex surface
             b.AddComponentParameter(2, nameof(BnColumn.ChildContent), (RenderFragment)(cb =>
             {
                 cb.OpenComponent<BnText>(0);

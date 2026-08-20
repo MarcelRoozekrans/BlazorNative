@@ -67,6 +67,13 @@ public sealed class BnCameraDemoTests
             p => p.NodeId == buttonNode && p.EventName == "click").HandlerId;
     }
 
+    /// <summary>A dp constant as the renderer puts it on the wire — bare, invariant,
+    /// no unit suffix (the style value grammar, 6.1 non-negotiable). The page's
+    /// constants are typed lengths now, so the expectation is DERIVED from the same
+    /// constant the page declares rather than transcribed beside it.</summary>
+    private static string Dp(int value)
+        => value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
     private static string? StyleOn(RenderFrame frame, int nodeId, string property)
         => frame.Patches.OfType<SetStylePatch>()
             .Where(p => p.NodeId == nodeId && p.Property == property)
@@ -94,8 +101,8 @@ public sealed class BnCameraDemoTests
             // (the M6/M7 ledger discharge). ContentMode is a PROP (contentMode=contain),
             // width/height are STYLES.
             int image = ImageNode(mount);
-            Assert.Equal(BnCameraDemo.DisplayWidthDp, StyleOn(mount, image, "width"));
-            Assert.Equal(BnCameraDemo.DisplayHeightDp, StyleOn(mount, image, "height"));
+            Assert.Equal(Dp(BnCameraDemo.DisplayWidthDp), StyleOn(mount, image, "width"));
+            Assert.Equal(Dp(BnCameraDemo.DisplayHeightDp), StyleOn(mount, image, "height"));
             Assert.Equal("contain", Assert.Single(mount.Patches.OfType<UpdatePropPatch>(),
                 p => p.NodeId == image && p.Name == "contentMode").Value);
             // No source yet — the box is reserved by the declared size, nothing loads.

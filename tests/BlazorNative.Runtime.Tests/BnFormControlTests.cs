@@ -775,10 +775,10 @@ public sealed class BnFormControlTests : IDisposable
 
         renderer.Mount<BnSlider>(ParameterView.FromDictionary(new Dictionary<string, object?>
         {
-            [nameof(BnSlider.Width)] = "240",
+            [nameof(BnSlider.Width)] = (BnAutoLength)240f,
             [nameof(BnSlider.AlignSelf)] = FlexAlign.Center,
             [nameof(BnSlider.Grow)] = 1f,
-            [nameof(BnSlider.Margin)] = "8",
+            [nameof(BnSlider.Margin)] = (BnAutoLength)8f,
         }));
         var mount = frames[0];
         var root = Root(mount);
@@ -891,22 +891,22 @@ public sealed class BnFormControlTests : IDisposable
     private static Dictionary<string, object?> ItemSurfaceParams() => new()
     {
         [nameof(BnCheckbox.BackgroundColor)] = "#112233",
-        [nameof(BnCheckbox.Margin)] = "4",
+        [nameof(BnCheckbox.Margin)] = (BnAutoLength)4f,
         [nameof(BnCheckbox.AlignSelf)] = FlexAlign.FlexEnd,
         [nameof(BnCheckbox.Grow)] = 2f,
         [nameof(BnCheckbox.Shrink)] = 0f,
-        [nameof(BnCheckbox.Basis)] = "auto",
-        [nameof(BnCheckbox.Width)] = "300",
-        [nameof(BnCheckbox.Height)] = "100",
-        [nameof(BnCheckbox.MinWidth)] = "10",
-        [nameof(BnCheckbox.MaxWidth)] = "50%",
-        [nameof(BnCheckbox.MinHeight)] = "20",
-        [nameof(BnCheckbox.MaxHeight)] = "400",
+        [nameof(BnCheckbox.Basis)] = BnAutoLength.Auto,
+        [nameof(BnCheckbox.Width)] = (BnAutoLength)300f,
+        [nameof(BnCheckbox.Height)] = (BnAutoLength)100f,
+        [nameof(BnCheckbox.MinWidth)] = (BnLength)10f,
+        [nameof(BnCheckbox.MaxWidth)] = BnLength.Percent(50),
+        [nameof(BnCheckbox.MinHeight)] = (BnLength)20f,
+        [nameof(BnCheckbox.MaxHeight)] = (BnLength)400f,
         [nameof(BnCheckbox.Position)] = FlexPosition.Absolute,
-        [nameof(BnCheckbox.Top)] = "1",
-        [nameof(BnCheckbox.Right)] = "2",
-        [nameof(BnCheckbox.Bottom)] = "3",
-        [nameof(BnCheckbox.Left)] = "4",
+        [nameof(BnCheckbox.Top)] = (BnLength)1f,
+        [nameof(BnCheckbox.Right)] = (BnLength)2f,
+        [nameof(BnCheckbox.Bottom)] = (BnLength)3f,
+        [nameof(BnCheckbox.Left)] = (BnLength)4f,
     };
 
     /// <summary>What <see cref="ItemSurfaceParams"/> must become on the
@@ -991,7 +991,7 @@ public sealed class BnFormControlTests : IDisposable
             System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.All)] TControl>
         : ComponentBase where TControl : IComponent
     {
-        private static readonly string?[] Cycle = ["8", null, "12"];
+        private static readonly BnAutoLength?[] Cycle = [(BnAutoLength)8f, null, (BnAutoLength)12f];
         private int _step;
 
         protected override void BuildRenderTree(RenderTreeBuilder b)

@@ -497,9 +497,9 @@
        BECAUSE THIS SECTION IS FIRST nothing on the page can move it for an
        unrelated reason. That identity is the "no reflow" half of the
        parity contract. *@
-    <BnColumn Width="@SectionWidth" Align="FlexAlign.FlexStart">
-        <BnImage Src="@FixedSrc" Width="@FixedWidth" Height="@FixedHeight" />
-        <BnView Width="@SectionWidth" Height="@BandHeight" BackgroundColor="@BandUnderFixed" />
+    <BnColumn Width="@SectionWidthDp" Align="FlexAlign.FlexStart">
+        <BnImage Src="@FixedSrc" Width="@FixedWidthDp" Height="@FixedHeightDp" />
+        <BnView Width="@SectionWidthDp" Height="@SiblingHeightDp" BackgroundColor="@BandUnderFixed" />
     </BnColumn>
 
     @* [1] INTRINSIC — THE REFLOW. No Width, no Height (that absence IS the
@@ -509,9 +509,9 @@
        y = 0 to y = Hi. THE BAND'S y IS THE PROOF — the image's own frame
        is not, because a shell could paint the bytes and never re-solve,
        and the image would still look right. *@
-    <BnColumn Width="@SectionWidth" Align="FlexAlign.FlexStart">
+    <BnColumn Width="@SectionWidthDp" Align="FlexAlign.FlexStart">
         <BnImage Src="@IntrinsicSrc" />
-        <BnView Width="@SectionWidth" Height="@BandHeight" BackgroundColor="@BandUnderIntrinsic" />
+        <BnView Width="@SectionWidthDp" Height="@SiblingHeightDp" BackgroundColor="@BandUnderIntrinsic" />
     </BnColumn>
 
     @* [2] FAILING — reserves nothing. Structurally IDENTICAL to [1]'s
@@ -522,16 +522,16 @@
        even though the section itself slides down by Hi when [1] above it
        reflows. (NOT [0]: [0] is the FIXED image, and it provably cannot
        reflow — that is its whole job.) *@
-    <BnColumn Width="@SectionWidth" Align="FlexAlign.FlexStart">
+    <BnColumn Width="@SectionWidthDp" Align="FlexAlign.FlexStart">
         <BnImage Src="@FailingSrc" />
-        <BnView Width="@SectionWidth" Height="@BandHeight" BackgroundColor="@BandUnderFailing" />
+        <BnView Width="@SectionWidthDp" Height="@SiblingHeightDp" BackgroundColor="@BandUnderFailing" />
     </BnColumn>
 
     @* [3] nav parity with the other pages — and the page's only other
        measured leaf (a button sizes itself). Deliberately LAST: a
        font-dependent height must not shift the frames the parity assertion
        is built on. *@
-    <BnRow Width="@SectionWidth">
+    <BnRow Width="@SectionWidthDp">
         <BnButton Label="← Back" OnClick="GoBack" />
     </BnRow>
 </BnColumn>
@@ -665,18 +665,6 @@
     private const string BandUnderFixed = "#42A5F5";     // blue
     private const string BandUnderIntrinsic = "#66BB6A"; // green
     private const string BandUnderFailing = "#EF5350";   // red
-
-    private static readonly string SectionWidth =
-        SectionWidthDp.ToString(System.Globalization.CultureInfo.InvariantCulture);
-
-    private static readonly string BandHeight =
-        SiblingHeightDp.ToString(System.Globalization.CultureInfo.InvariantCulture);
-
-    private static readonly string FixedWidth =
-        FixedWidthDp.ToString(System.Globalization.CultureInfo.InvariantCulture);
-
-    private static readonly string FixedHeight =
-        FixedHeightDp.ToString(System.Globalization.CultureInfo.InvariantCulture);
 
     [Inject] public INavigationManager Navigation { get; set; } = default!;
 

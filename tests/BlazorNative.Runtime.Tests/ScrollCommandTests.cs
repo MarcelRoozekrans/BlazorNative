@@ -117,7 +117,7 @@ public sealed class ScrollCommandTests
         protected override void BuildRenderTree(RenderTreeBuilder b)
         {
             b.OpenComponent<BnScroll>(0);
-            b.AddComponentParameter(1, nameof(BnScroll.Height), "200");
+            b.AddComponentParameter(1, nameof(BnScroll.Height), (BnAutoLength)200f);
             b.AddComponentParameter(2, nameof(BnScroll.AutoScrollToEnd), AutoScroll);
             b.AddComponentParameter(3, nameof(BnScroll.ChildContent), (RenderFragment)(cb =>
             {

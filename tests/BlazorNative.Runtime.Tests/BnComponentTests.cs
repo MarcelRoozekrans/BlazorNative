@@ -74,7 +74,7 @@ public sealed class BnComponentTests : IDisposable
         renderer.Mount<BnView>(ParameterView.FromDictionary(new Dictionary<string, object?>
         {
             [nameof(BnView.BackgroundColor)] = "#112233",
-            [nameof(BnView.Padding)] = 12f, // typed (7.1) — the wire stays "12"
+            [nameof(BnView.Padding)] = (BnLength)12f, // typed (13.1) — the wire stays "12"
             [nameof(BnView.ChildContent)] = (RenderFragment)(b =>
             {
                 b.OpenElement(0, "span");
@@ -348,27 +348,27 @@ public sealed class BnComponentTests : IDisposable
     private static Dictionary<string, object?> FullFlexParams() => new()
     {
         [nameof(BnView.BackgroundColor)] = "#112233",
-        [nameof(BnView.Padding)] = 16f, // typed (7.1) — the wire stays "16"
-        [nameof(BnView.Margin)] = "4",
+        [nameof(BnView.Padding)] = (BnLength)16f, // typed (13.1) — the wire stays "16"
+        [nameof(BnView.Margin)] = (BnAutoLength)4f,
         [nameof(BnView.Justify)] = FlexJustify.SpaceBetween,
         [nameof(BnView.Align)] = FlexAlign.Center,
         [nameof(BnView.AlignSelf)] = FlexAlign.FlexEnd,
         [nameof(BnView.Grow)] = 2f,
         [nameof(BnView.Shrink)] = 0f,
-        [nameof(BnView.Basis)] = "auto",
+        [nameof(BnView.Basis)] = BnAutoLength.Auto,
         [nameof(BnView.Wrap)] = FlexWrap.WrapReverse,
-        [nameof(BnView.Gap)] = "8",
-        [nameof(BnView.Width)] = "300",
-        [nameof(BnView.Height)] = "100",
-        [nameof(BnView.MinWidth)] = "10",
-        [nameof(BnView.MaxWidth)] = "50%",
-        [nameof(BnView.MinHeight)] = "20",
-        [nameof(BnView.MaxHeight)] = "400",
+        [nameof(BnView.Gap)] = (BnLength)8f,
+        [nameof(BnView.Width)] = (BnAutoLength)300f,
+        [nameof(BnView.Height)] = (BnAutoLength)100f,
+        [nameof(BnView.MinWidth)] = (BnLength)10f,
+        [nameof(BnView.MaxWidth)] = BnLength.Percent(50),
+        [nameof(BnView.MinHeight)] = (BnLength)20f,
+        [nameof(BnView.MaxHeight)] = (BnLength)400f,
         [nameof(BnView.Position)] = FlexPosition.Absolute,
-        [nameof(BnView.Top)] = "1",
-        [nameof(BnView.Right)] = "2",
-        [nameof(BnView.Bottom)] = "3",
-        [nameof(BnView.Left)] = "4",
+        [nameof(BnView.Top)] = (BnLength)1f,
+        [nameof(BnView.Right)] = (BnLength)2f,
+        [nameof(BnView.Bottom)] = (BnLength)3f,
+        [nameof(BnView.Left)] = (BnLength)4f,
     };
 
     /// <summary>What <see cref="FullFlexParams"/> must become on the SetStyle
@@ -498,7 +498,7 @@ public sealed class BnComponentTests : IDisposable
             {
                 [nameof(BnView.Grow)] = 1.5f,
                 [nameof(BnView.Shrink)] = 0.25f,
-                [nameof(BnView.Padding)] = 1.5f,
+                [nameof(BnView.Padding)] = (BnLength)1.5f,
             }));
             Assert.NotEmpty(frames);
             var mount = frames[0];
@@ -605,7 +605,7 @@ public sealed class BnComponentTests : IDisposable
 
         renderer.Mount<BnRow>(ParameterView.FromDictionary(new Dictionary<string, object?>
         {
-            [nameof(BnRow.Width)] = "300",
+            [nameof(BnRow.Width)] = (BnAutoLength)300f,
             [nameof(BnRow.Justify)] = FlexJustify.SpaceBetween,
             [nameof(BnRow.ChildContent)] = (RenderFragment)(b =>
             {
@@ -636,7 +636,7 @@ public sealed class BnComponentTests : IDisposable
 
         renderer.Mount<BnColumn>(ParameterView.FromDictionary(new Dictionary<string, object?>
         {
-            [nameof(BnColumn.Height)] = "200",
+            [nameof(BnColumn.Height)] = (BnAutoLength)200f,
         }));
         Assert.NotEmpty(frames);
         var mount = frames[0];
@@ -828,22 +828,22 @@ public sealed class BnComponentTests : IDisposable
     private static Dictionary<string, object?> ScrollItemParams() => new()
     {
         [nameof(BnScroll.BackgroundColor)] = "#112233",
-        [nameof(BnScroll.Margin)] = "4",
+        [nameof(BnScroll.Margin)] = (BnAutoLength)4f,
         [nameof(BnScroll.AlignSelf)] = FlexAlign.FlexEnd,
         [nameof(BnScroll.Grow)] = 2f,
         [nameof(BnScroll.Shrink)] = 0f,
-        [nameof(BnScroll.Basis)] = "auto",
-        [nameof(BnScroll.Width)] = "300",
-        [nameof(BnScroll.Height)] = "100",
-        [nameof(BnScroll.MinWidth)] = "10",
-        [nameof(BnScroll.MaxWidth)] = "50%",
-        [nameof(BnScroll.MinHeight)] = "20",
-        [nameof(BnScroll.MaxHeight)] = "400",
+        [nameof(BnScroll.Basis)] = BnAutoLength.Auto,
+        [nameof(BnScroll.Width)] = (BnAutoLength)300f,
+        [nameof(BnScroll.Height)] = (BnAutoLength)100f,
+        [nameof(BnScroll.MinWidth)] = (BnLength)10f,
+        [nameof(BnScroll.MaxWidth)] = BnLength.Percent(50),
+        [nameof(BnScroll.MinHeight)] = (BnLength)20f,
+        [nameof(BnScroll.MaxHeight)] = (BnLength)400f,
         [nameof(BnScroll.Position)] = FlexPosition.Absolute,
-        [nameof(BnScroll.Top)] = "1",
-        [nameof(BnScroll.Right)] = "2",
-        [nameof(BnScroll.Bottom)] = "3",
-        [nameof(BnScroll.Left)] = "4",
+        [nameof(BnScroll.Top)] = (BnLength)1f,
+        [nameof(BnScroll.Right)] = (BnLength)2f,
+        [nameof(BnScroll.Bottom)] = (BnLength)3f,
+        [nameof(BnScroll.Left)] = (BnLength)4f,
     };
 
     /// <summary>What <see cref="ScrollItemParams"/> must become on the SetStyle
@@ -888,8 +888,8 @@ public sealed class BnComponentTests : IDisposable
 
         renderer.Mount<BnScroll>(ParameterView.FromDictionary(new Dictionary<string, object?>
         {
-            [nameof(BnScroll.Width)] = "300",
-            [nameof(BnScroll.Height)] = "200",
+            [nameof(BnScroll.Width)] = (BnAutoLength)300f,
+            [nameof(BnScroll.Height)] = (BnAutoLength)200f,
             [nameof(BnScroll.ChildContent)] = (RenderFragment)(b =>
             {
                 b.OpenElement(0, "span");
@@ -1087,7 +1087,7 @@ public sealed class BnComponentTests : IDisposable
 
         renderer.Mount<BnScroll>(ParameterView.FromDictionary(new Dictionary<string, object?>
         {
-            [nameof(BnScroll.Height)] = "200",
+            [nameof(BnScroll.Height)] = (BnAutoLength)200f,
             [nameof(BnScroll.OnScroll)] = EventCallback.Factory.Create<BlazorNative.Core.BnScrollEventArgs>(
                 new object(), e => received = e.OffsetY),
         }));
@@ -1126,7 +1126,7 @@ public sealed class BnComponentTests : IDisposable
 
         renderer.Mount<BnScroll>(ParameterView.FromDictionary(new Dictionary<string, object?>
         {
-            [nameof(BnScroll.Height)] = "200",
+            [nameof(BnScroll.Height)] = (BnAutoLength)200f,
         }));
         Assert.NotEmpty(frames);
 
@@ -1147,7 +1147,7 @@ public sealed class BnComponentTests : IDisposable
 
         renderer.Mount<BnScroll>(ParameterView.FromDictionary(new Dictionary<string, object?>
         {
-            [nameof(BnScroll.Height)] = "200",
+            [nameof(BnScroll.Height)] = (BnAutoLength)200f,
             [nameof(BnScroll.OnScroll)] = EventCallback.Factory.Create<BlazorNative.Core.BnScrollEventArgs>(
                 new object(), _ => { }),
         }));
@@ -1208,22 +1208,22 @@ public sealed class BnComponentTests : IDisposable
         [nameof(BnImage.OnError)] = EventCallback.Factory.Create<BlazorNative.Core.BnImageErrorEventArgs>(
             new object(), _ => { }),
         [nameof(BnImage.BackgroundColor)] = "#112233",
-        [nameof(BnImage.Margin)] = "4",
+        [nameof(BnImage.Margin)] = (BnAutoLength)4f,
         [nameof(BnImage.AlignSelf)] = FlexAlign.FlexEnd,
         [nameof(BnImage.Grow)] = 2f,
         [nameof(BnImage.Shrink)] = 0f,
-        [nameof(BnImage.Basis)] = "auto",
-        [nameof(BnImage.Width)] = "300",
-        [nameof(BnImage.Height)] = "100",
-        [nameof(BnImage.MinWidth)] = "10",
-        [nameof(BnImage.MaxWidth)] = "50%",
-        [nameof(BnImage.MinHeight)] = "20",
-        [nameof(BnImage.MaxHeight)] = "400",
+        [nameof(BnImage.Basis)] = BnAutoLength.Auto,
+        [nameof(BnImage.Width)] = (BnAutoLength)300f,
+        [nameof(BnImage.Height)] = (BnAutoLength)100f,
+        [nameof(BnImage.MinWidth)] = (BnLength)10f,
+        [nameof(BnImage.MaxWidth)] = BnLength.Percent(50),
+        [nameof(BnImage.MinHeight)] = (BnLength)20f,
+        [nameof(BnImage.MaxHeight)] = (BnLength)400f,
         [nameof(BnImage.Position)] = FlexPosition.Absolute,
-        [nameof(BnImage.Top)] = "1",
-        [nameof(BnImage.Right)] = "2",
-        [nameof(BnImage.Bottom)] = "3",
-        [nameof(BnImage.Left)] = "4",
+        [nameof(BnImage.Top)] = (BnLength)1f,
+        [nameof(BnImage.Right)] = (BnLength)2f,
+        [nameof(BnImage.Bottom)] = (BnLength)3f,
+        [nameof(BnImage.Left)] = (BnLength)4f,
     };
 
     /// <summary>What <see cref="ImageParams"/> must become on the SETSTYLE wire —
