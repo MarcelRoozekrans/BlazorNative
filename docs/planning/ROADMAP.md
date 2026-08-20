@@ -2011,11 +2011,14 @@ never had.
 > an argument until it was observed. M11.4's pump bug is the standing reason this project does not
 > settle for the argument.
 
-#### Phase 13.1: Type the lengths [status: pending]
+#### Phase 13.1: Type the lengths [status: active]
 **Goal:** Introduce `BnLength` / `BnAutoLength` and convert every layout length, making malformed
 values a compile error while leaving the wire grammar untouched.
 **Surface:** Refactor
 **HelpWanted:** no
+**Design:** [`docs/superpowers/specs/2026-08-20-phase-13.1-design.md`](../superpowers/specs/2026-08-20-phase-13.1-design.md)
+**Plan:** _to be written_
+**Started:** 2026-08-20
 
 #### Phase 13.2: The dispatcher's honest answer [status: pending]
 **Goal:** Measure what breaks when `InlineDispatcher.CheckAccess()` stops returning an
