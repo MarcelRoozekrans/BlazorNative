@@ -564,10 +564,19 @@ public sealed class BnComponentTests : IDisposable
     /// <c>Align</c>/<c>Wrap</c>/<c>Justify</c>/<c>Position</c> collides with
     /// app-side types — free to rename now, a breaking change later. (The
     /// PARAM names on BnView stay short; this is only about the type names.)
-    /// Two prefixes since Phase 7.5: <c>Flex*</c> for the 6.1 style surface,
-    /// <c>Image*</c> for BnImage's (the design names <c>ImageContentMode</c> —
-    /// compound and collision-safe for the same reason a bare
-    /// <c>ContentMode</c>, an app-side name AND a UIKit one, would not be).</summary>
+    /// Three prefixes: <c>Flex*</c> since Phase 7.5 for the 6.1 style surface,
+    /// <c>Image*</c> since Phase 7.5 for BnImage's (the design names
+    /// <c>ImageContentMode</c> — compound and collision-safe for the same
+    /// reason a bare <c>ContentMode</c>, an app-side name AND a UIKit one,
+    /// would not be), and <c>Bn*</c> since Phase 13.1. <c>Bn*</c> is admitted
+    /// on the rule's own logic, not bolted on to it: it is the library's
+    /// universal type prefix — <c>BnView</c>, <c>BnText</c>, <c>BnLength</c> —
+    /// so it is collision-safe by construction, more so than <c>Flex</c> or
+    /// <c>Image</c> ever were. Those two were simply the prefixes that
+    /// happened to exist when this pin was written; they were never a closed
+    /// vocabulary. <c>BnLengthUnit</c> (13.1) takes this branch rather than
+    /// being renamed to <c>FlexLengthUnit</c>, which would divorce it from
+    /// <c>BnLength</c>, the very type it describes.</summary>
     [Fact]
     public void PublicEnumTypes_CarryADomainPrefix_ToNotCollideWithAppTypes()
     {
@@ -576,8 +585,9 @@ public sealed class BnComponentTests : IDisposable
             components.GetExportedTypes().Where(t => t.IsEnum),
             t => Assert.True(
                 t.Name.StartsWith("Flex", StringComparison.Ordinal)
-                    || t.Name.StartsWith("Image", StringComparison.Ordinal),
-                $"public enum {t.Name} carries no domain prefix (Flex*/Image*) — a bare name "
+                    || t.Name.StartsWith("Image", StringComparison.Ordinal)
+                    || t.Name.StartsWith("Bn", StringComparison.Ordinal),
+                $"public enum {t.Name} carries no domain prefix (Flex*/Image*/Bn*) — a bare name "
                 + "in the library's root namespace collides with app-side types"));
     }
 
