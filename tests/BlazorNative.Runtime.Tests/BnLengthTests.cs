@@ -104,4 +104,13 @@ public sealed class BnLengthGuardTests
             $"{t.Name} has a conversion from string. That single member turns every " +
             "malformed length back into a runtime log line and undoes phase 13.1.");
     }
+
+    [Fact]
+    public void NullableExtension_KeepsNullAsNull_SoNoAttributeIsEmitted()
+    {
+        Assert.Null(((BnLength?)null).ToStyleValue());
+        Assert.Null(((BnAutoLength?)null).ToStyleValue());
+        Assert.Equal("100", ((BnLength?)(BnLength)100f).ToStyleValue());
+        Assert.Equal("auto", ((BnAutoLength?)BnAutoLength.Auto).ToStyleValue());
+    }
 }

@@ -389,3 +389,5 @@ static BlazorNative.Components.BnLength.operator ==(BlazorNative.Components.BnLe
 ~override BlazorNative.Components.BnAutoLength.ToString() -> string
 ~override BlazorNative.Components.BnLength.Equals(object obj) -> bool
 ~override BlazorNative.Components.BnLength.ToString() -> string
+static BlazorNative.Components.FlexStyleValues.ToStyleValue(this BlazorNative.Components.BnAutoLength? value) -> string?
+static BlazorNative.Components.FlexStyleValues.ToStyleValue(this BlazorNative.Components.BnLength? value) -> string?

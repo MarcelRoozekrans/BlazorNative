@@ -192,6 +192,18 @@ public static class FlexStyleValues
     public static string? ToStyleValue(this float? value)
         => value?.ToString(System.Globalization.CultureInfo.InvariantCulture);
 
+    /// <summary>Length → wire string. Null stays null — no attribute, no patch.</summary>
+    /// <param name="value">The length, or null for unset.</param>
+    /// <returns>The wire form, or null.</returns>
+    public static string? ToStyleValue(this BnLength? value)
+        => value?.ToStyleValue();
+
+    /// <summary>Auto-capable length → wire string. Null stays null — no attribute, no patch.</summary>
+    /// <param name="value">The length, or null for unset.</param>
+    /// <returns>The wire form, or null.</returns>
+    public static string? ToStyleValue(this BnAutoLength? value)
+        => value?.ToStyleValue();
+
     /// <summary>The "enum value outside the declared set" guard (a cast int).
     /// <paramref name="paramName"/> is captured from the CALL SITE, so the
     /// exception names the caller's parameter rather than this helper's.</summary>
