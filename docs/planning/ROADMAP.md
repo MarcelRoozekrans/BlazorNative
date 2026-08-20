@@ -2017,7 +2017,8 @@ values a compile error while leaving the wire grammar untouched.
 **Surface:** Refactor
 **HelpWanted:** no
 **Design:** [`docs/superpowers/specs/2026-08-20-phase-13.1-design.md`](../superpowers/specs/2026-08-20-phase-13.1-design.md)
-**Plan:** _to be written_
+**Plan:** [`docs/superpowers/plans/2026-08-20-phase-13.1-typed-lengths.md`](../superpowers/plans/2026-08-20-phase-13.1-typed-lengths.md)
+· [impact analysis](../plans/2026-08-20-phase-13.1-typed-lengths-impact-analysis.md)
 **Started:** 2026-08-20
 
 #### Phase 13.2: The dispatcher's honest answer [status: pending]
