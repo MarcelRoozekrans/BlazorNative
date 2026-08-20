@@ -350,3 +350,24 @@ BlazorNative.Components.BnLayoutItem.ItemAttributes.get -> System.Collections.Ge
 *REMOVED*BlazorNative.Components.BnFlexPreset.Width.set -> void
 *REMOVED*BlazorNative.Components.BnFlexPreset.Wrap.get -> BlazorNative.Components.FlexWrap?
 *REMOVED*BlazorNative.Components.BnFlexPreset.Wrap.set -> void
+BlazorNative.Components.BnLength
+BlazorNative.Components.BnLength.BnLength() -> void
+BlazorNative.Components.BnLength.BnLength(float Value, BlazorNative.Components.BnLengthUnit Unit) -> void
+BlazorNative.Components.BnLength.Deconstruct(out float Value, out BlazorNative.Components.BnLengthUnit Unit) -> void
+BlazorNative.Components.BnLength.Equals(BlazorNative.Components.BnLength other) -> bool
+BlazorNative.Components.BnLength.ToStyleValue() -> string!
+BlazorNative.Components.BnLength.Unit.get -> BlazorNative.Components.BnLengthUnit
+BlazorNative.Components.BnLength.Unit.init -> void
+BlazorNative.Components.BnLength.Value.get -> float
+BlazorNative.Components.BnLength.Value.init -> void
+BlazorNative.Components.BnLengthUnit
+BlazorNative.Components.BnLengthUnit.Percent = 1 -> BlazorNative.Components.BnLengthUnit
+BlazorNative.Components.BnLengthUnit.Points = 0 -> BlazorNative.Components.BnLengthUnit
+override BlazorNative.Components.BnLength.GetHashCode() -> int
+static BlazorNative.Components.BnLength.Percent(float value) -> BlazorNative.Components.BnLength
+static BlazorNative.Components.BnLength.implicit operator BlazorNative.Components.BnLength(double points) -> BlazorNative.Components.BnLength
+static BlazorNative.Components.BnLength.implicit operator BlazorNative.Components.BnLength(float points) -> BlazorNative.Components.BnLength
+static BlazorNative.Components.BnLength.operator !=(BlazorNative.Components.BnLength left, BlazorNative.Components.BnLength right) -> bool
+static BlazorNative.Components.BnLength.operator ==(BlazorNative.Components.BnLength left, BlazorNative.Components.BnLength right) -> bool
+~override BlazorNative.Components.BnLength.Equals(object obj) -> bool
+~override BlazorNative.Components.BnLength.ToString() -> string
