@@ -58,7 +58,13 @@ BlazorNative.Components.BnScroll.ScrollToEndAsync() -> System.Threading.Tasks.Va
 BlazorNative.Components.BnText.Color.get -> string?
 BlazorNative.Components.BnText.Color.set -> void
 BlazorNative.Components.BnList<TItem>.Width.get -> BlazorNative.Components.BnLength?
+BlazorNative.Components.BnModal.ContentHeight.get -> BlazorNative.Components.BnAutoLength?
+BlazorNative.Components.BnModal.ContentWidth.get -> BlazorNative.Components.BnAutoLength?
+BlazorNative.Components.BnModal.Padding.get -> BlazorNative.Components.BnLength?
 *REMOVED*BlazorNative.Components.BnList<TItem>.Width.get -> string?
+*REMOVED*BlazorNative.Components.BnModal.ContentHeight.get -> string?
+*REMOVED*BlazorNative.Components.BnModal.ContentWidth.get -> string?
+*REMOVED*BlazorNative.Components.BnModal.Padding.get -> float?
 *REMOVED*BlazorNative.Components.BnImage.AlignSelf.get -> BlazorNative.Components.FlexAlign?
 *REMOVED*BlazorNative.Components.BnImage.AlignSelf.set -> void
 *REMOVED*BlazorNative.Components.BnImage.BackgroundColor.get -> string?
