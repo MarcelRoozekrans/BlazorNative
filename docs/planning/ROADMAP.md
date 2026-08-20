@@ -1975,9 +1975,18 @@ hole #21 was sitting on.
 **no `BlazorNative.Styling`** and **no `BlazorNative.State`** — both premises are obsolete and both
 collide with the four-times-recorded "no 8th package" rule. **Owner decision (2026-08-19): break
 now, while pre-1.0** — this surface freezes at 1.0 and 1.0 blocks on one administrative item, so
-this is the last cheap window. The break is binary, not source; a written migration note discharges
-it. **Every phase is independently shippable and none of M13 blocks a 1.0 cut**, deliberately,
-because P3 may clear at any time.
+this is the last cheap window. **Every phase is independently shippable and none of M13 blocks a
+1.0 cut**, deliberately, because P3 may clear at any time.
+
+> ⚠ **CORRECTED 2026-08-20.** This block originally read *"the break is binary, not source."*
+> **That was asserted without measurement and it is false.** Phase 13.0 measured it — one probe
+> binary, compiled against the pre-refactor assembly and run against both, exits 0 with identical
+> values against each. Moving a member **up** its hierarchy is non-breaking for callers
+> (ECMA-335 II.22.25: a `MemberRef` with a `TypeRef` parent resolves by walking the base chain);
+> moving it **down** is the breaking direction. Only **reflection about declarations** changes.
+> The decision stands and is stronger for it: the benefit is unchanged, the cost was overstated.
+> Full measurement and its bounds in the
+> [phase conclusion](../plans/2026-08-19-phase-13.0-conclusion.md).
 
 #### Phase 13.0: Extract the item surface [status: pending]
 **Goal:** Declare the 17 item parameters once on `BnLayoutItem` (and the 6 container parameters on

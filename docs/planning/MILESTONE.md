@@ -27,8 +27,29 @@ same verdicts.
 1. **Break now, while pre-1.0.** The shared-base extraction and the typed lengths land in one
    pass, with the `PublicAPI` baselines rewritten and a written migration note. This surface
    **freezes at 1.0** and 1.0 blocks on a single administrative item, so this is very likely the
-   last cheap window. Moving members to a base is source-compatible but **binary-breaking**;
-   that is accepted deliberately, not avoided.
+   last cheap window.
+
+   ⚠ **CORRECTED 2026-08-20, after measurement.** This decision was originally recorded as
+   accepting a **binary break** — *"moving members to a base is source-compatible but
+   binary-breaking; anyone compiled against 0.10.0 must recompile."* **That was wrong, and it
+   was asserted without being measured.** Phase 13.0 measured it: a probe was compiled against
+   the pre-refactor assembly, its member references verified in IL, and the *same binary* run
+   against both the old and new assemblies — **both exited 0 with identical, correct values.**
+   A `MemberRef` whose parent is a `TypeRef` is resolved by walking the base chain
+   (ECMA-335 II.22.25), and moving a member **up** its own hierarchy is explicitly a
+   *non-breaking* change in dotnet/runtime's own compatibility rules — moving it **down** is
+   the breaking direction. **Callers are unaffected and need no recompile.**
+
+   What genuinely changes is **reflection about declarations**: `DeclaredOnly` queries see the
+   members on the base instead of the derived type (measured on `BnView`: 24 → 2). This repo
+   observed the same effect internally — its own doc-comment coverage floor moved 196 → 74.
+
+   **The decision itself stands and is stronger for the correction:** the benefit is unchanged
+   and the cost was overstated. The one real consumer-facing effect is narrow — an XML
+   `<see cref>` or `<inheritdoc cref>` naming the *old* declaring type raises **CS1574, a
+   warning**, and only in consumer projects that generate documentation; crefs do not resolve
+   inherited members. See [the phase conclusion](../plans/2026-08-19-phase-13.0-conclusion.md)
+   for the measurement and its bounds.
 2. **No new packages.** Neither `BlazorNative.Styling` (#21) nor `BlazorNative.State` (#22) is
    built — both premises are obsolete per the audit, and both collide with the four-times-recorded
    "no 8th package" decision enforced by `PackagePurityTests`.
