@@ -69,9 +69,10 @@ namespace BlazorNative.Components;
 /// remains the default wherever it is reachable.
 /// </para>
 /// <para>
-/// <b>Lengths are unchanged here.</b> Every length is still a string in
-/// the shells' grammar (a bare number, <c>N%</c>, or <c>auto</c> where allowed).
-/// Giving them a stricter type is a separate, later change.
+/// <b>Lengths are typed.</b> <see cref="BnLength"/> and <see cref="BnAutoLength"/> carry
+/// the shells' grammar (a bare number, <c>N%</c>, or <c>auto</c> where allowed), so a
+/// malformed value is a compile error rather than a log line. They are nullable on every
+/// parameter: <c>null</c> is unset, and a bare <c>default</c> would be a real value.
 /// </para>
 /// </remarks>
 public abstract class BnLayoutItem : ComponentBase
@@ -80,7 +81,8 @@ public abstract class BnLayoutItem : ComponentBase
     [Parameter] public string? BackgroundColor { get; set; }
 
     /// <summary>Space outside the component, between it and its siblings. Null = none.</summary>
-    [Parameter] public string? Margin { get; set; }
+    /// <remarks><c>auto</c> is legal here and absorbs free space, which re-centres the node.</remarks>
+    [Parameter] public BnAutoLength? Margin { get; set; }
 
     /// <summary>Cross-axis alignment for this item alone, overriding the parent's. Null = inherit.</summary>
     [Parameter] public FlexAlign? AlignSelf { get; set; }
@@ -92,40 +94,40 @@ public abstract class BnLayoutItem : ComponentBase
     [Parameter] public float? Shrink { get; set; }
 
     /// <summary>Starting main-axis size before grow/shrink. Null = <c>auto</c>.</summary>
-    [Parameter] public string? Basis { get; set; }
+    [Parameter] public BnAutoLength? Basis { get; set; }
 
     /// <summary>Box width. Null = <c>auto</c>.</summary>
-    [Parameter] public string? Width { get; set; }
+    [Parameter] public BnAutoLength? Width { get; set; }
 
     /// <summary>Box height. Null = <c>auto</c>.</summary>
-    [Parameter] public string? Height { get; set; }
+    [Parameter] public BnAutoLength? Height { get; set; }
 
     /// <summary>Lower bound on width. Null = unset.</summary>
-    [Parameter] public string? MinWidth { get; set; }
+    [Parameter] public BnLength? MinWidth { get; set; }
 
     /// <summary>Upper bound on width. Null = unset.</summary>
-    [Parameter] public string? MaxWidth { get; set; }
+    [Parameter] public BnLength? MaxWidth { get; set; }
 
     /// <summary>Lower bound on height. Null = unset.</summary>
-    [Parameter] public string? MinHeight { get; set; }
+    [Parameter] public BnLength? MinHeight { get; set; }
 
     /// <summary>Upper bound on height. Null = unset.</summary>
-    [Parameter] public string? MaxHeight { get; set; }
+    [Parameter] public BnLength? MaxHeight { get; set; }
 
     /// <summary>Positioning scheme. Null = Yoga's default (relative).</summary>
     [Parameter] public FlexPosition? Position { get; set; }
 
     /// <summary>Top inset. Null = unset.</summary>
-    [Parameter] public string? Top { get; set; }
+    [Parameter] public BnLength? Top { get; set; }
 
     /// <summary>Right inset. Null = unset.</summary>
-    [Parameter] public string? Right { get; set; }
+    [Parameter] public BnLength? Right { get; set; }
 
     /// <summary>Bottom inset. Null = unset.</summary>
-    [Parameter] public string? Bottom { get; set; }
+    [Parameter] public BnLength? Bottom { get; set; }
 
     /// <summary>Left inset. Null = unset.</summary>
-    [Parameter] public string? Left { get; set; }
+    [Parameter] public BnLength? Left { get; set; }
 
     /// <summary>
     /// Emits the item surface as ELEMENT attributes, for components that open
@@ -140,22 +142,22 @@ public abstract class BnLayoutItem : ComponentBase
     protected void EmitItemAttributes(RenderTreeBuilder b)
     {
         b.AddAttribute(1,  "backgroundColor", BackgroundColor);
-        b.AddAttribute(2,  "margin",          Margin);
+        b.AddAttribute(2,  "margin",          Margin.ToStyleValue());
         b.AddAttribute(3,  "alignSelf",       AlignSelf.ToStyleValue());
         b.AddAttribute(4,  "flexGrow",        Grow.ToStyleValue());
         b.AddAttribute(5,  "flexShrink",      Shrink.ToStyleValue());
-        b.AddAttribute(6,  "flexBasis",       Basis);
-        b.AddAttribute(7,  "width",           Width);
-        b.AddAttribute(8,  "height",          Height);
-        b.AddAttribute(9,  "minWidth",        MinWidth);
-        b.AddAttribute(10, "maxWidth",        MaxWidth);
-        b.AddAttribute(11, "minHeight",       MinHeight);
-        b.AddAttribute(12, "maxHeight",       MaxHeight);
+        b.AddAttribute(6,  "flexBasis",       Basis.ToStyleValue());
+        b.AddAttribute(7,  "width",           Width.ToStyleValue());
+        b.AddAttribute(8,  "height",          Height.ToStyleValue());
+        b.AddAttribute(9,  "minWidth",        MinWidth.ToStyleValue());
+        b.AddAttribute(10, "maxWidth",        MaxWidth.ToStyleValue());
+        b.AddAttribute(11, "minHeight",       MinHeight.ToStyleValue());
+        b.AddAttribute(12, "maxHeight",       MaxHeight.ToStyleValue());
         b.AddAttribute(13, "position",        Position.ToStyleValue());
-        b.AddAttribute(14, "top",             Top);
-        b.AddAttribute(15, "right",           Right);
-        b.AddAttribute(16, "bottom",          Bottom);
-        b.AddAttribute(17, "left",            Left);
+        b.AddAttribute(14, "top",             Top.ToStyleValue());
+        b.AddAttribute(15, "right",           Right.ToStyleValue());
+        b.AddAttribute(16, "bottom",          Bottom.ToStyleValue());
+        b.AddAttribute(17, "left",            Left.ToStyleValue());
     }
 
     /// <summary>
@@ -179,24 +181,30 @@ public abstract class BnLayoutItem : ComponentBase
             // a real parameter and would overwrite a default. Filtering here
             // makes the dictionary mean "the attributes the author set" at both
             // destinations instead of only one.
+            // R1 (13.1). Every value in here MUST already be a string. These pairs land
+            // on an ELEMENT and the renderer stringifies whatever it is given -- a boxed
+            // BnLength would go through culture-sensitive ToString(), so a machine with a
+            // comma decimal separator would put "1,5" on the wire and both shells would
+            // reject it as "not a number, a percentage or 'auto'". Invisible on an English
+            // dev box. Pinned by ToStyleValue_IsInvariant_UnderACommaDecimalCulture.
             void Add(string k, object? v) { if (v is not null) d[k] = v; }
             Add("backgroundColor", BackgroundColor);
-            Add("margin",          Margin);
+            Add("margin",          Margin.ToStyleValue());
             Add("alignSelf",       AlignSelf.ToStyleValue());
             Add("flexGrow",        Grow.ToStyleValue());
             Add("flexShrink",      Shrink.ToStyleValue());
-            Add("flexBasis",       Basis);
-            Add("width",           Width);
-            Add("height",          Height);
-            Add("minWidth",        MinWidth);
-            Add("maxWidth",        MaxWidth);
-            Add("minHeight",       MinHeight);
-            Add("maxHeight",       MaxHeight);
+            Add("flexBasis",       Basis.ToStyleValue());
+            Add("width",           Width.ToStyleValue());
+            Add("height",          Height.ToStyleValue());
+            Add("minWidth",        MinWidth.ToStyleValue());
+            Add("maxWidth",        MaxWidth.ToStyleValue());
+            Add("minHeight",       MinHeight.ToStyleValue());
+            Add("maxHeight",       MaxHeight.ToStyleValue());
             Add("position",        Position.ToStyleValue());
-            Add("top",             Top);
-            Add("right",           Right);
-            Add("bottom",          Bottom);
-            Add("left",            Left);
+            Add("top",             Top.ToStyleValue());
+            Add("right",           Right.ToStyleValue());
+            Add("bottom",          Bottom.ToStyleValue());
+            Add("left",            Left.ToStyleValue());
             return d;
         }
     }
@@ -215,6 +223,8 @@ public abstract class BnLayoutItem : ComponentBase
     /// </remarks>
     protected void ForwardItemParameters(RenderTreeBuilder b)
     {
+        // Not formatted, deliberately: these are COMPONENT parameters, so the value stays
+        // typed all the way to the base that emits it. Only the element paths format (R1).
         b.AddComponentParameter(1,  nameof(BackgroundColor), BackgroundColor);
         b.AddComponentParameter(2,  nameof(Margin),          Margin);
         b.AddComponentParameter(3,  nameof(AlignSelf),       AlignSelf);

@@ -4,38 +4,38 @@ BlazorNative.Components.BnLayoutItem.AlignSelf.get -> BlazorNative.Components.Fl
 BlazorNative.Components.BnLayoutItem.AlignSelf.set -> void
 BlazorNative.Components.BnLayoutItem.BackgroundColor.get -> string?
 BlazorNative.Components.BnLayoutItem.BackgroundColor.set -> void
-BlazorNative.Components.BnLayoutItem.Basis.get -> string?
+BlazorNative.Components.BnLayoutItem.Basis.get -> BlazorNative.Components.BnAutoLength?
 BlazorNative.Components.BnLayoutItem.Basis.set -> void
 BlazorNative.Components.BnLayoutItem.BnLayoutItem() -> void
-BlazorNative.Components.BnLayoutItem.Bottom.get -> string?
+BlazorNative.Components.BnLayoutItem.Bottom.get -> BlazorNative.Components.BnLength?
 BlazorNative.Components.BnLayoutItem.Bottom.set -> void
 BlazorNative.Components.BnLayoutItem.EmitItemAttributes(Microsoft.AspNetCore.Components.Rendering.RenderTreeBuilder! b) -> void
 BlazorNative.Components.BnLayoutItem.ForwardItemParameters(Microsoft.AspNetCore.Components.Rendering.RenderTreeBuilder! b) -> void
 BlazorNative.Components.BnLayoutItem.Grow.get -> float?
 BlazorNative.Components.BnLayoutItem.Grow.set -> void
-BlazorNative.Components.BnLayoutItem.Height.get -> string?
+BlazorNative.Components.BnLayoutItem.Height.get -> BlazorNative.Components.BnAutoLength?
 BlazorNative.Components.BnLayoutItem.Height.set -> void
-BlazorNative.Components.BnLayoutItem.Left.get -> string?
+BlazorNative.Components.BnLayoutItem.Left.get -> BlazorNative.Components.BnLength?
 BlazorNative.Components.BnLayoutItem.Left.set -> void
-BlazorNative.Components.BnLayoutItem.Margin.get -> string?
+BlazorNative.Components.BnLayoutItem.Margin.get -> BlazorNative.Components.BnAutoLength?
 BlazorNative.Components.BnLayoutItem.Margin.set -> void
-BlazorNative.Components.BnLayoutItem.MaxHeight.get -> string?
+BlazorNative.Components.BnLayoutItem.MaxHeight.get -> BlazorNative.Components.BnLength?
 BlazorNative.Components.BnLayoutItem.MaxHeight.set -> void
-BlazorNative.Components.BnLayoutItem.MaxWidth.get -> string?
+BlazorNative.Components.BnLayoutItem.MaxWidth.get -> BlazorNative.Components.BnLength?
 BlazorNative.Components.BnLayoutItem.MaxWidth.set -> void
-BlazorNative.Components.BnLayoutItem.MinHeight.get -> string?
+BlazorNative.Components.BnLayoutItem.MinHeight.get -> BlazorNative.Components.BnLength?
 BlazorNative.Components.BnLayoutItem.MinHeight.set -> void
-BlazorNative.Components.BnLayoutItem.MinWidth.get -> string?
+BlazorNative.Components.BnLayoutItem.MinWidth.get -> BlazorNative.Components.BnLength?
 BlazorNative.Components.BnLayoutItem.MinWidth.set -> void
 BlazorNative.Components.BnLayoutItem.Position.get -> BlazorNative.Components.FlexPosition?
 BlazorNative.Components.BnLayoutItem.Position.set -> void
-BlazorNative.Components.BnLayoutItem.Right.get -> string?
+BlazorNative.Components.BnLayoutItem.Right.get -> BlazorNative.Components.BnLength?
 BlazorNative.Components.BnLayoutItem.Right.set -> void
 BlazorNative.Components.BnLayoutItem.Shrink.get -> float?
 BlazorNative.Components.BnLayoutItem.Shrink.set -> void
-BlazorNative.Components.BnLayoutItem.Top.get -> string?
+BlazorNative.Components.BnLayoutItem.Top.get -> BlazorNative.Components.BnLength?
 BlazorNative.Components.BnLayoutItem.Top.set -> void
-BlazorNative.Components.BnLayoutItem.Width.get -> string?
+BlazorNative.Components.BnLayoutItem.Width.get -> BlazorNative.Components.BnAutoLength?
 BlazorNative.Components.BnLayoutItem.Width.set -> void
 BlazorNative.Components.BnLayoutContainer
 BlazorNative.Components.BnLayoutContainer.Align.get -> BlazorNative.Components.FlexAlign?
@@ -43,11 +43,11 @@ BlazorNative.Components.BnLayoutContainer.Align.set -> void
 BlazorNative.Components.BnLayoutContainer.BnLayoutContainer() -> void
 BlazorNative.Components.BnLayoutContainer.EmitContainerAttributes(Microsoft.AspNetCore.Components.Rendering.RenderTreeBuilder! b) -> void
 BlazorNative.Components.BnLayoutContainer.ForwardContainerParameters(Microsoft.AspNetCore.Components.Rendering.RenderTreeBuilder! b) -> void
-BlazorNative.Components.BnLayoutContainer.Gap.get -> string?
+BlazorNative.Components.BnLayoutContainer.Gap.get -> BlazorNative.Components.BnLength?
 BlazorNative.Components.BnLayoutContainer.Gap.set -> void
 BlazorNative.Components.BnLayoutContainer.Justify.get -> BlazorNative.Components.FlexJustify?
 BlazorNative.Components.BnLayoutContainer.Justify.set -> void
-BlazorNative.Components.BnLayoutContainer.Padding.get -> float?
+BlazorNative.Components.BnLayoutContainer.Padding.get -> BlazorNative.Components.BnLength?
 BlazorNative.Components.BnLayoutContainer.Padding.set -> void
 BlazorNative.Components.BnLayoutContainer.Wrap.get -> BlazorNative.Components.FlexWrap?
 BlazorNative.Components.BnLayoutContainer.Wrap.set -> void
