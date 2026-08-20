@@ -73,3 +73,6 @@ src/BlazorNative.Apple/vendor/*.a
 src/BlazorNative.Apple/vendor/*.o
 src/BlazorNative.Apple/DerivedData/
 *.xcresult
+
+# subagent-driven-development scratch (ledger, briefs, review packages)
+.superpowers/
