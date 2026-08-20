@@ -183,10 +183,19 @@ public abstract class BnLayoutItem : ComponentBase
             // destinations instead of only one.
             // R1 (13.1). Every value in here MUST already be a string. These pairs land
             // on an ELEMENT and the renderer stringifies whatever it is given -- a boxed
-            // BnLength would go through culture-sensitive ToString(), so a machine with a
-            // comma decimal separator would put "1,5" on the wire and both shells would
-            // reject it as "not a number, a percentage or 'auto'". Invisible on an English
-            // dev box. Pinned by ToStyleValue_IsInvariant_UnderACommaDecimalCulture.
+            // BnLength would go through the record struct's ToString(), which is both
+            // wrong in shape and culture-sensitive, so both shells would reject it as
+            // "not a number, a percentage or 'auto'".
+            // Pinned by BnFormControlTests.AssertForwardsTheWholeItemSurface (the four
+            // Bn{Checkbox,Switch,Slider,Picker}_ForwardsTheWholeItemSurface facts): it
+            // asserts EXACT dictionary equality against ItemSurfaceWireTable, so dropping
+            // one .ToStyleValue() here fails all four with
+            // margin = "BnAutoLength { Length = BnLength { Value = 4, Unit ...}"
+            // instead of "4" -- mutation-observed, not assumed. That is the pin because
+            // it is the only test that sees THIS property reach a wire; the struct's own
+            // ToStyleValue_IsInvariant_UnderACommaDecimalCulture pins the FORMATTING and
+            // never touches ItemAttributes, so citing it here (as this comment once did)
+            // named an enforcer that does not enforce.
             void Add(string k, object? v) { if (v is not null) d[k] = v; }
             Add("backgroundColor", BackgroundColor);
             Add("margin",          Margin.ToStyleValue());
