@@ -12,28 +12,51 @@ namespace BlazorNative.Components;
 // the preset cannot be silently overridden and there is no "which one wins?"
 // question to answer at runtime.
 //
-// One body, not two copy-pasted ones: a new BnView param that someone forgets
-// to forward is a hole an author falls into. BnComponentTests pins BOTH halves
-// of that, because either test alone is a green light over the other's bug:
+// ── WHERE THE SURFACE COMES FROM (Phase 13.0) ────────────────────────────────
+// This type used to REDECLARE all 22 of those parameters and then forward them
+// one AddComponentParameter at a time — a second copy of BnView's surface
+// wearing different clothes, and the copy an author fell into whenever someone
+// added a BnView parameter and forgot the twin here.
+//
+// Both halves now come from the same place BnView's do: BnFlexPreset derives
+// from BnLayoutContainer, so the 17 item parameters and the 5 container
+// parameters are DECLARED once (in BnLayoutItem / BnLayoutContainer) and
+// FORWARDED once (ForwardItemParameters / ForwardContainerParameters). There is
+// no longer a list on this side that can fall out of step with BnView's,
+// because there is no longer a list on this side at all.
+//
+// BnComponentTests still pins BOTH halves, and both still matter:
 //   • Presets_ForwardEveryBnViewParameterExceptDirection — DECLARATION (the
-//     preset exposes exactly BnView's params minus Direction), reflectively. It
-//     cannot see BuildRenderTree at all.
+//     preset exposes exactly BnView's params minus Direction), reflectively,
+//     comparing NAME AND TYPE. It cannot see BuildRenderTree at all.
 //   • BnRow_/BnColumn_ForwardsTheWholeFlexSurface_* — FORWARDING (mounted with
 //     the full param dictionary, the preset emits BnView's whole SetStyle table
-//     plus its own flexDirection). Delete any one line from BuildRenderTree
-//     below and THAT test goes red; the reflective one stays green while
+//     plus its own flexDirection). Delete a line from either Forward* helper
+//     and THAT test goes red; the reflective one stays green while
 //     <BnRow Grow="1"> silently does nothing.
 //
 // ── DO NOT GUARD THE FORWARDING ON null ──────────────────────────────────────
-// Every AddComponentParameter below fires UNCONDITIONALLY, nulls included, and
-// that is load-bearing. Blazor hands a component a ParameterView containing
-// only the parameters that were SUPPLIED; anything absent is simply not written,
-// so the target keeps whatever it held from the previous render. An
-// `if (Grow is not null)` "optimisation" (saving 23 boxed nulls per render)
-// would therefore leave BnView holding a STALE Grow the moment an author writes
-// `Grow = cond ? 1 : null` — resurrecting, one level up, the exact null-reset
-// bug Task 1.2 fixed in the renderer. Null must travel. (Pinned:
-// BnRow_GrowGoesNull_ForwardsTheNullThroughToTheStyleWire.)
+// Every AddComponentParameter in the Forward* helpers fires UNCONDITIONALLY,
+// nulls included, and that is load-bearing. Blazor hands a component a
+// ParameterView containing only the parameters that were SUPPLIED; anything
+// absent is simply not written, so the target keeps whatever it held from the
+// previous render. An `if (Grow is not null)` "optimisation" (saving 22 boxed
+// nulls per render) would therefore leave BnView holding a STALE Grow the
+// moment an author writes `Grow = cond ? 1 : null` — resurrecting, one level
+// up, the exact null-reset bug Task 1.2 fixed in the renderer. Null must
+// travel. (Pinned: BnRow_GrowGoesNull_ForwardsTheNullThroughToTheStyleWire.)
+//
+// This is the one place the COMPONENT forward and the ELEMENT emit differ, and
+// they differ on purpose: a null ELEMENT attribute is never appended to the
+// frame array at all (absent means unset on the wire), while a null COMPONENT
+// parameter must be appended, because appending it is what resets the target
+// to its default. Two spellings of "unset", implemented oppositely.
+//
+// ── Sequence numbers (Phase 13.0) ────────────────────────────────────────────
+// The bands are the same ones every other component in this library uses:
+// 1-17 the item surface, 50-54 the container surface, 100+ this component's
+// own vocabulary, 200 ChildContent. Keeping to them matters because a
+// collision does not throw — it produces a wrong diff, silently.
 //
 // There is deliberately NO BnStack: it would be a synonym for BnColumn, and two
 // names for one thing is a library smell on day one. (The M6 contract named it;
@@ -44,83 +67,20 @@ namespace BlazorNative.Components;
 /// <see cref="BnColumn"/>.</summary>
 /// <remarks>
 /// It carries every <see cref="BnView"/> parameter except
-/// <see cref="BnView.Direction"/> and forwards them to a <see cref="BnView"/>
-/// whose direction the subclass fixes. That omission is deliberate: a
-/// <see cref="BnRow"/> is a row, so there is no parameter that could contradict
-/// it. Use <see cref="BnView"/> directly when the direction has to be decided at
-/// runtime. You do not derive from this yourself — use the two presets.
+/// <see cref="BnView.Direction"/> — the item surface from
+/// <see cref="BnLayoutItem"/> and the container surface from
+/// <see cref="BnLayoutContainer"/> — and forwards them to a
+/// <see cref="BnView"/> whose direction the subclass fixes. That omission is
+/// deliberate: a <see cref="BnRow"/> is a row, so there is no parameter that
+/// could contradict it. Use <see cref="BnView"/> directly when the direction has
+/// to be decided at runtime. You do not derive from this yourself — use the two
+/// presets.
 /// </remarks>
-public abstract class BnFlexPreset : ComponentBase
+public abstract class BnFlexPreset : BnLayoutContainer
 {
     /// <summary>The direction the concrete preset nails down. Deliberately not
     /// a parameter — that is what makes the preset a preset.</summary>
     protected abstract FlexDirection PresetDirection { get; }
-
-    /// <inheritdoc cref="BnView.BackgroundColor"/>
-    [Parameter] public string? BackgroundColor { get; set; }
-
-    /// <inheritdoc cref="BnView.Padding"/>
-    [Parameter] public float? Padding { get; set; }
-
-    /// <inheritdoc cref="BnView.Margin"/>
-    [Parameter] public string? Margin { get; set; }
-
-    /// <inheritdoc cref="BnView.Justify"/>
-    [Parameter] public FlexJustify? Justify { get; set; }
-
-    /// <inheritdoc cref="BnView.Align"/>
-    [Parameter] public FlexAlign? Align { get; set; }
-
-    /// <inheritdoc cref="BnView.Wrap"/>
-    [Parameter] public FlexWrap? Wrap { get; set; }
-
-    /// <inheritdoc cref="BnView.Gap"/>
-    [Parameter] public string? Gap { get; set; }
-
-    /// <inheritdoc cref="BnView.AlignSelf"/>
-    [Parameter] public FlexAlign? AlignSelf { get; set; }
-
-    /// <inheritdoc cref="BnView.Grow"/>
-    [Parameter] public float? Grow { get; set; }
-
-    /// <inheritdoc cref="BnView.Shrink"/>
-    [Parameter] public float? Shrink { get; set; }
-
-    /// <inheritdoc cref="BnView.Basis"/>
-    [Parameter] public string? Basis { get; set; }
-
-    /// <inheritdoc cref="BnView.Width"/>
-    [Parameter] public string? Width { get; set; }
-
-    /// <inheritdoc cref="BnView.Height"/>
-    [Parameter] public string? Height { get; set; }
-
-    /// <inheritdoc cref="BnView.MinWidth"/>
-    [Parameter] public string? MinWidth { get; set; }
-
-    /// <inheritdoc cref="BnView.MaxWidth"/>
-    [Parameter] public string? MaxWidth { get; set; }
-
-    /// <inheritdoc cref="BnView.MinHeight"/>
-    [Parameter] public string? MinHeight { get; set; }
-
-    /// <inheritdoc cref="BnView.MaxHeight"/>
-    [Parameter] public string? MaxHeight { get; set; }
-
-    /// <inheritdoc cref="BnView.Position"/>
-    [Parameter] public FlexPosition? Position { get; set; }
-
-    /// <inheritdoc cref="BnView.Top"/>
-    [Parameter] public string? Top { get; set; }
-
-    /// <inheritdoc cref="BnView.Right"/>
-    [Parameter] public string? Right { get; set; }
-
-    /// <inheritdoc cref="BnView.Bottom"/>
-    [Parameter] public string? Bottom { get; set; }
-
-    /// <inheritdoc cref="BnView.Left"/>
-    [Parameter] public string? Left { get; set; }
 
     /// <inheritdoc cref="BnView.ChildContent"/>
     [Parameter] public RenderFragment? ChildContent { get; set; }
@@ -129,36 +89,19 @@ public abstract class BnFlexPreset : ComponentBase
     protected override void BuildRenderTree(RenderTreeBuilder b)
     {
         b.OpenComponent<BnView>(0);
-        b.AddComponentParameter(1, nameof(BnView.Direction), PresetDirection);
 
-        b.AddComponentParameter(2, nameof(BnView.BackgroundColor), BackgroundColor);
-        b.AddComponentParameter(3, nameof(BnView.Padding), Padding);
-        b.AddComponentParameter(4, nameof(BnView.Margin), Margin);
+        // Sequence 1-17 and 50-54: the shared surfaces, forwarded by the same
+        // two helpers BnView itself emits from. Nulls included — see the file
+        // header for why that is load-bearing rather than wasteful.
+        ForwardItemParameters(b);
+        ForwardContainerParameters(b);
 
-        b.AddComponentParameter(5, nameof(BnView.Justify), Justify);
-        b.AddComponentParameter(6, nameof(BnView.Align), Align);
-        b.AddComponentParameter(7, nameof(BnView.Wrap), Wrap);
-        b.AddComponentParameter(8, nameof(BnView.Gap), Gap);
+        // Sequence 100+: this component's own contribution, clear of both base
+        // bands. The preset's whole reason to exist is this one parameter.
+        b.AddComponentParameter(100, nameof(BnView.Direction), PresetDirection);
 
-        b.AddComponentParameter(9, nameof(BnView.AlignSelf), AlignSelf);
-        b.AddComponentParameter(10, nameof(BnView.Grow), Grow);
-        b.AddComponentParameter(11, nameof(BnView.Shrink), Shrink);
-        b.AddComponentParameter(12, nameof(BnView.Basis), Basis);
+        b.AddComponentParameter(200, nameof(BnView.ChildContent), ChildContent);
 
-        b.AddComponentParameter(13, nameof(BnView.Width), Width);
-        b.AddComponentParameter(14, nameof(BnView.Height), Height);
-        b.AddComponentParameter(15, nameof(BnView.MinWidth), MinWidth);
-        b.AddComponentParameter(16, nameof(BnView.MaxWidth), MaxWidth);
-        b.AddComponentParameter(17, nameof(BnView.MinHeight), MinHeight);
-        b.AddComponentParameter(18, nameof(BnView.MaxHeight), MaxHeight);
-
-        b.AddComponentParameter(19, nameof(BnView.Position), Position);
-        b.AddComponentParameter(20, nameof(BnView.Top), Top);
-        b.AddComponentParameter(21, nameof(BnView.Right), Right);
-        b.AddComponentParameter(22, nameof(BnView.Bottom), Bottom);
-        b.AddComponentParameter(23, nameof(BnView.Left), Left);
-
-        b.AddComponentParameter(24, nameof(BnView.ChildContent), ChildContent);
         b.CloseComponent();
     }
 }

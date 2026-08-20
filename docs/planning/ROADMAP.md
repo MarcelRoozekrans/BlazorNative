@@ -1988,12 +1988,28 @@ this is the last cheap window. **Every phase is independently shippable and none
 > Full measurement and its bounds in the
 > [phase conclusion](../plans/2026-08-19-phase-13.0-conclusion.md).
 
-#### Phase 13.0: Extract the item surface [status: pending]
+#### Phase 13.0: Extract the item surface [status: complete]
 **Goal:** Declare the 17 item parameters once on `BnLayoutItem` (and the 6 container parameters on
 `BnLayoutContainer`), collapse the eight copies, and give the four bare components the surface they
 never had.
 **Surface:** Refactor
 **HelpWanted:** no
+**Plan:** [`docs/superpowers/plans/2026-08-19-phase-13.0-item-surface.md`](../superpowers/plans/2026-08-19-phase-13.0-item-surface.md)
+· [impact analysis](../plans/2026-08-19-phase-13.0-item-surface-impact-analysis.md)
+· [conclusion](../plans/2026-08-19-phase-13.0-conclusion.md)
+
+**Completed:** 2026-08-20 · [PR #287](https://github.com/MarcelRoozekrans/BlazorNative/pull/287)
+
+> **The device lanes were dispatched, and that is why this line is dated 08-20 and not 08-19.**
+> The build finished on 2026-08-19 with a conclusion doc reading COMPLETE, but the DoD's *"both
+> device lanes dispatched"* had not happened and **could not have**: the branch was never pushed,
+> so `gh workflow run --ref refactor/13.0-item-surface` had no remote ref to target. Two plan
+> steps (Task 6 Step 7, Task 7 Step 7) sat unticked with no visible reason. Pushed and dispatched
+> on 08-20 — **`android-instrumented` and `ios` both green, with no frame-table file in the diff**,
+> which is the acceptance condition, not merely a green tick. The conclusion's argument that the
+> lanes could not red (no `.kt`, no `.swift`, no `wire-vocabulary.json`) was correct — and it was
+> an argument until it was observed. M11.4's pump bug is the standing reason this project does not
+> settle for the argument.
 
 #### Phase 13.1: Type the lengths [status: pending]
 **Goal:** Introduce `BnLength` / `BnAutoLength` and convert every layout length, making malformed

@@ -43,6 +43,30 @@
         a content tap NOT a dismissal — and that dispatch is real, the
         device counters account for it.
 
+    ── 13.0 TASK 8: BnModal DOES NOT TAKE THE SHARED ITEM SURFACE ───────────
+    Every other component this task touches (BnText, BnButton, BnInput,
+    BnActivityIndicator) derives from BnLayoutItem. BnModal deliberately does
+    NOT: both shells diagnose-and-ignore every SetStyle on a `modal` node
+    (WidgetMapper.kt's handleSetStyle "modal" arm; BnWidgetMapper.swift's
+    equivalent guard) and `modal` is deliberately absent from
+    measuredNodeTypes — the modal's WIRE node is a 0-sized, shell-fixed
+    anchor, and nothing an author sets on it can ever reach a pixel. Making
+    BnModal a BnLayoutItem would let `<BnModal Width="100" Margin="8">`
+    COMPILE, offer IntelliSense, and silently do nothing at every layer — the
+    accepted-then-silently-dropped defect class this whole phase exists to
+    eliminate, and worse than the original bug because not even the shells'
+    own diagnostic fires for it (that diagnostic exists for the SetStyle
+    wire; this component's surface would never reach it, since a
+    BnLayoutItem's item attributes are ELEMENT attributes on the CREATE
+    frame, not a later SetStyle — the ignore-and-log path is never even
+    exercised). So BnModal stays `: ComponentBase`, keeps its own single
+    `BackgroundColor` parameter (which paints the CONTENT BOX below, never
+    the modal node), and is pinned by
+    LayoutSurfacePinTests.BnModal_DoesNotTakeTheItemSurface_TheModalNodeAcceptsNoStyles
+    as the phase's allowlist exception (13.0 Task 9 records it there
+    alongside BnList<TItem>, excluded for the unrelated Height-collision
+    reason).
+
     ── HIDE UNMOUNTS; .NET OWNS VISIBILITY (decision 2) ─────────────────────
     Internally `@if (Visible)`: false means ZERO wire presence, and the whole
     overlay subtree leaves as ONE RemoveNodePatch (the disposal shape 7.2's
@@ -111,10 +135,14 @@
     /// Null = auto.</summary>
     [Parameter] public string? ContentHeight { get; set; }
 
-    /// <inheritdoc cref="BnView.Padding"/>
+    /// <inheritdoc cref="BnLayoutContainer.Padding"/>
     [Parameter] public float? Padding { get; set; }
 
-    /// <inheritdoc cref="BnView.BackgroundColor"/>
+    /// <summary>The content box's fill colour, e.g. <c>"#FFFFFF"</c> — the same
+    /// colour grammar <see cref="BnLayoutItem.BackgroundColor"/> uses elsewhere.
+    /// It paints the CONTENT BOX only, never the modal node itself (see the file
+    /// header: the modal node accepts no styles on either shell). Null = no
+    /// fill.</summary>
     [Parameter] public string? BackgroundColor { get; set; }
 
     /// <summary>The dismissal REQUEST (decision 2): re-sync the bound state;

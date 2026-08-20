@@ -1,3 +1,4 @@
+using System.Reflection;
 using BlazorNative.Components;
 using BlazorNative.Renderer;
 using BlazorNative.Runtime;
@@ -315,10 +316,18 @@ public sealed class BnModalTests : IDisposable
 
     /// <summary>The parameter surface is EXACTLY the design's (decision 2):
     /// the bind pair, ChildContent, ScrimColor and the content box's four
-    /// declared-surface params. NO flex item surface — a modal is not IN the
-    /// flex flow (the anchor is 0-sized and absolute; a Width or Margin here
+    /// declared-surface params. <b>NO flex item surface</b> — a modal is not IN
+    /// the flex flow (the anchor is 0-sized and absolute; a Width or Margin here
     /// would style a node the author does not own) — and NO container family
-    /// (the box is a plain view; compose a BnColumn inside for layout).</summary>
+    /// (the box is a plain view; compose a BnColumn inside for layout).
+    /// <see cref="BnModal"/> is 13.0's allowlist exception (fix round 1,
+    /// Finding 1): it deliberately stays <see cref="ComponentBase"/> rather than
+    /// <see cref="BnLayoutItem"/>, because both shells diagnose-and-ignore every
+    /// SetStyle on a <c>modal</c> node — see
+    /// <see cref="LayoutSurfacePinTests.BnModal_DoesNotTakeTheItemSurface_TheModalNodeAcceptsNoStyles"/>
+    /// for the shell citation and full reasoning. The non-derivation assertion
+    /// below restates that pin here, next to the surface it protects, so a
+    /// future splat attempt reds in two places rather than one.</summary>
     [Fact]
     public void DeclaresExactlyTheDesignedSurface()
     {
@@ -338,5 +347,29 @@ public sealed class BnModalTests : IDisposable
             .Where(p => p.IsDefined(typeof(ParameterAttribute), inherit: true))
             .Select(p => $"{p.Name}: {p.PropertyType}")
             .OrderBy(n => n, StringComparer.Ordinal));
+
+        Assert.False(typeof(BnLayoutItem).IsAssignableFrom(typeof(BnModal)));
+    }
+
+    /// <summary>The Minor gap fix-round-1 closed: only
+    /// <see cref="BnModal.BackgroundColor"/>'s path to the content box was
+    /// covered before. This proves the OTHER sixteen item-surface names are not
+    /// silently accepted either — <see cref="BnModal"/> has no <c>Width</c> or
+    /// <c>Margin</c> parameter at all (it is not a <see cref="BnLayoutItem"/>,
+    /// pinned above), so this is a compile-time guarantee exercised at
+    /// runtime: mount with the declared surface set and assert the modal node
+    /// still carries zero styles.</summary>
+    [Fact]
+    public void MountedWithFullDeclaredSurfaceSet_ModalNodeStillCarriesZeroStyles()
+    {
+        var (mount, _, modal, _) = MountVisibleModal(new()
+        {
+            [nameof(BnModal.ContentWidth)] = "280",
+            [nameof(BnModal.ContentHeight)] = "180",
+            [nameof(BnModal.Padding)] = 12f,
+            [nameof(BnModal.BackgroundColor)] = "#FFFFFF",
+        });
+
+        Assert.Empty(StylesOf(mount, modal.NodeId));
     }
 }

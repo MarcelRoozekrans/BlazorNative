@@ -284,6 +284,16 @@ public sealed class ComponentReferenceDriftTests : IClassFixture<ComponentRefere
     /// XML. That is the property `@bind-Value` targets. Its reference row goes
     /// blank, its IDE tooltip goes empty, and nothing anywhere turns red.
     ///
+    /// THE COUNT MOVES, ON PURPOSE, DURING A REFACTOR THAT SHARES DECLARATIONS.
+    /// This pin is DeclaredOnly by design (an inherited parameter is attributed
+    /// to the type that declares it, where its XML id actually lives) — so
+    /// consolidating a parameter that used to be copy-pasted across N
+    /// components into one shared base LOWERS the reflected count by (N-1),
+    /// even though the number of parameters an author can bind is unchanged.
+    /// That is a feature of the count, not drift to chase back up: the
+    /// threshold below exists only to catch reflection returning an empty set,
+    /// not to pin an exact figure.
+    ///
     /// EveryPublicComponent_CarriesATypeLevelSummary above does not cover this:
     /// it asserts TYPE-level summaries. A component can carry a perfect class
     /// summary and document not one of its parameters.
@@ -340,10 +350,16 @@ public sealed class ComponentReferenceDriftTests : IClassFixture<ComponentRefere
         // reflection could silently return empty for (wrong assembly, wrong
         // attribute type, a BindingFlags typo). An empty subject set makes every
         // assertion below green while proving nothing at all.
-        Assert.True(parameters.Count > 100,
+        Assert.True(parameters.Count > 60,
             $"reflected only {parameters.Count} [Parameter] properties out of BlazorNative.Components "
-            + "— there were 196 when this pin was written. A pin that cannot see its subject must "
-            + "never pass vacuously.");
+            + "— there were 196 when this pin was written; phase 13.0 moved the 17 item and 5 container "
+            + "parameters onto BnLayoutItem/BnLayoutContainer, which lowers this DeclaredOnly count on "
+            + "purpose (see the doc comment above), and the count MEASURED at the close of 13.0 was 74. "
+            + "The floor sits just under that measurement rather than far below it, so a collapse — a "
+            + "wrong assembly, a BindingFlags typo, or a whole component's surface silently going "
+            + "missing — still reds instead of passing vacuously. If a later phase legitimately moves "
+            + "more declarations onto a base, re-measure and lower this by the amount it actually moved, "
+            + "not by a round number.");
 
         var undocumented = parameters
             .Where(p => !documented.Contains(p.Id))
@@ -394,7 +410,7 @@ public sealed class ComponentReferenceDriftTests : IClassFixture<ComponentRefere
             $"the shipped XML has only {members.Count} members — this pin's silence would "
             + "mean nothing. A pin that cannot see its subject must never pass vacuously.");
         Assert.Contains(members, m =>
-            m.Attribute("name")?.Value == "P:BlazorNative.Components.BnView.BackgroundColor");
+            m.Attribute("name")?.Value == "P:BlazorNative.Components.BnLayoutItem.BackgroundColor");
 
         var published = PublicSurfaceDocs(xml);
         Assert.True(published.Count > 50,
