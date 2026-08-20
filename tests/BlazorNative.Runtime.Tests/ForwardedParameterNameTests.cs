@@ -36,7 +36,7 @@ public sealed class ForwardedParameterNameTests
     // runtime with nothing red.
     //
     // BnScroll is NOT a forward target and never has been. BnList renders it,
-    // but from markup (<BnScroll Width="@Width" Height="@HeightStr" …>) and
+    // but from markup (<BnScroll Width="@…" Height="@…" …>) and
     // binds two parameters by hand, not by name at runtime — and BnList does
     // not derive from BnLayoutItem at all, so it has no Forward* helper to
     // call. The row is kept because BnScroll is the other multi-child item
@@ -85,30 +85,34 @@ public sealed class ForwardedParameterNameTests
     /// see, instead of landing a value indistinguishable from the right one.</summary>
     private static readonly (string Name, object Value)[] FullSurface =
     {
+        // Phase 13.1: the twelve lengths are BnLength/BnAutoLength, not strings.
+        // The values are BOXED into an object here and Blazor's parameter writer
+        // unboxes with a cast, so a plain "5" (or a bare 15f for Padding) would
+        // not merely read oddly — it would throw at the first render.
         // BnLayoutItem — 17
         ("BackgroundColor", "#010203"),
-        ("Margin",          "1"),
+        ("Margin",          (BnAutoLength)1f),
         ("AlignSelf",       FlexAlign.Center),
         ("Grow",            2f),
         ("Shrink",          3f),
-        ("Basis",           "4"),
-        ("Width",           "5"),
-        ("Height",          "6"),
-        ("MinWidth",        "7"),
-        ("MaxWidth",        "8"),
-        ("MinHeight",       "9"),
-        ("MaxHeight",       "10"),
+        ("Basis",           (BnAutoLength)4f),
+        ("Width",           (BnAutoLength)5f),
+        ("Height",          (BnAutoLength)6f),
+        ("MinWidth",        (BnLength)7f),
+        ("MaxWidth",        (BnLength)8f),
+        ("MinHeight",       (BnLength)9f),
+        ("MaxHeight",       (BnLength)10f),
         ("Position",        FlexPosition.Absolute),
-        ("Top",             "11"),
-        ("Right",           "12"),
-        ("Bottom",          "13"),
-        ("Left",            "14"),
+        ("Top",             (BnLength)11f),
+        ("Right",           (BnLength)12f),
+        ("Bottom",          (BnLength)13f),
+        ("Left",            (BnLength)14f),
         // BnLayoutContainer — 5
-        ("Padding",         15f),
+        ("Padding",         (BnLength)15f),
         ("Justify",         FlexJustify.SpaceEvenly),
         ("Align",           FlexAlign.Baseline),
         ("Wrap",            FlexWrap.WrapReverse),
-        ("Gap",             "16"),
+        ("Gap",             (BnLength)16f),
     };
 
     [Fact]
@@ -169,7 +173,7 @@ public sealed class ForwardedParameterNameTests
         var probe = new SplatProbe();
         Assert.Empty(probe.Attributes);
 
-        probe.SetWidth("5");
+        probe.SetWidth((BnAutoLength)5f);
         Assert.Equal(new[] { "width" }, probe.Attributes.Keys);
     }
 
@@ -203,7 +207,7 @@ public sealed class ForwardedParameterNameTests
         // Set from inside the component: assigning a [Parameter] from the test
         // body would be BL0005, and the analyzer is right — this probe is
         // standing in for the framework, so it does the framework's job here.
-        public void SetWidth(string? width) => Width = width;
+        public void SetWidth(BnAutoLength? width) => Width = width;
     }
 
     /// <summary>Supplies the whole surface, then supplies it again as nulls.

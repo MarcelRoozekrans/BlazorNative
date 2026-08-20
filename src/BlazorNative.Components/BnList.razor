@@ -52,19 +52,19 @@
 *@
 @typeparam TItem
 
-<BnScroll Width="@Width" Height="@HeightStr" OnScroll="HandleScroll">
-    <BnView @key="LeadSpacerKey" Height="@LeadSpacerHeightStr" />
+<BnScroll Width="@(Width is { } w ? (BnAutoLength?)w : null)" Height="@((BnAutoLength?)Height)" OnScroll="HandleScroll">
+    <BnView @key="LeadSpacerKey" Height="@((BnAutoLength?)(_windowStart * ItemHeight))" />
     @for (var i = _windowStart; i < _windowEnd; i++)
     {
         @* The 7.1 rule: copy the loop variable per iteration — the row
            fragment runs later, and fragments closing over `i` would all see
            _windowEnd. `item` is the @key: state travels with the ITEM. *@
         var item = Items[i];
-        <BnView @key="item" Height="@ItemHeightStr">
+        <BnView @key="item" Height="@((BnAutoLength?)ItemHeight)">
             @RowTemplate?.Invoke(item)
         </BnView>
     }
-    <BnView @key="TrailSpacerKey" Height="@TrailSpacerHeightStr" />
+    <BnView @key="TrailSpacerKey" Height="@((BnAutoLength?)((Items.Count - _windowEnd) * ItemHeight))" />
 </BnScroll>
 
 @code {
@@ -95,21 +95,13 @@
     /// They absorb the latency of a fast fling. Default 4.</summary>
     [Parameter] public int Overscan { get; set; } = 4;
 
-    /// <summary>Viewport width, in the same grammar as
-    /// <see cref="BnLayoutItem.Width"/>. Null = auto.</summary>
-    [Parameter] public string? Width { get; set; }
+    /// <summary>Viewport width. Null = auto. See <c>BnLayoutItem.Width</c> for the grammar.</summary>
+    [Parameter] public BnLength? Width { get; set; }
 
     /// <summary>The content of one row. The list owns the row box itself — a
     /// container exactly <see cref="ItemHeight"/> tall — and this fragment fills
     /// it. The item is available as <c>@context</c>.</summary>
     [Parameter, EditorRequired] public RenderFragment<TItem>? RowTemplate { get; set; }
-
-    private string HeightStr => ((float?)Height).ToStyleValue()!;
-    private string ItemHeightStr => ((float?)ItemHeight).ToStyleValue()!;
-    private string LeadSpacerHeightStr
-        => ((float?)(_windowStart * ItemHeight)).ToStyleValue()!;
-    private string TrailSpacerHeightStr
-        => ((float?)((Items.Count - _windowEnd) * ItemHeight)).ToStyleValue()!;
 
     protected override void OnParametersSet()
         // Re-clamp against the CURRENT items: the 6.2 shrink case — content

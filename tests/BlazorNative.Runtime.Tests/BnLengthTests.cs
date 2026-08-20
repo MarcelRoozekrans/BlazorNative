@@ -114,3 +114,19 @@ public sealed class BnLengthGuardTests
         Assert.Equal("auto", ((BnAutoLength?)BnAutoLength.Auto).ToStyleValue());
     }
 }
+
+public sealed class BnListSurfaceTests
+{
+    // Spec 3.4. BnList stays allowlisted because Height is BnListWindow.Compute's
+    // divisor and must be a point value -- BnAutoLength cannot promise one. Width
+    // has no such constraint and IS typed. This pins both halves so a later reader
+    // does not "finish the job" and break the virtualization arithmetic.
+    [Fact]
+    public void Width_IsTyped_ButHeightAndItemHeightStayFloat()
+    {
+        var t = typeof(BnList<string>);
+        Assert.Equal(typeof(BnLength?), t.GetProperty("Width")!.PropertyType);
+        Assert.Equal(typeof(float),     t.GetProperty("Height")!.PropertyType);
+        Assert.Equal(typeof(float),     t.GetProperty("ItemHeight")!.PropertyType);
+    }
+}
