@@ -350,6 +350,14 @@ BlazorNative.Components.BnLayoutItem.ItemAttributes.get -> System.Collections.Ge
 *REMOVED*BlazorNative.Components.BnFlexPreset.Width.set -> void
 *REMOVED*BlazorNative.Components.BnFlexPreset.Wrap.get -> BlazorNative.Components.FlexWrap?
 *REMOVED*BlazorNative.Components.BnFlexPreset.Wrap.set -> void
+BlazorNative.Components.BnAutoLength
+BlazorNative.Components.BnAutoLength.BnAutoLength() -> void
+BlazorNative.Components.BnAutoLength.BnAutoLength(BlazorNative.Components.BnLength? Length) -> void
+BlazorNative.Components.BnAutoLength.Deconstruct(out BlazorNative.Components.BnLength? Length) -> void
+BlazorNative.Components.BnAutoLength.Equals(BlazorNative.Components.BnAutoLength other) -> bool
+BlazorNative.Components.BnAutoLength.Length.get -> BlazorNative.Components.BnLength?
+BlazorNative.Components.BnAutoLength.Length.init -> void
+BlazorNative.Components.BnAutoLength.ToStyleValue() -> string!
 BlazorNative.Components.BnLength
 BlazorNative.Components.BnLength.BnLength() -> void
 BlazorNative.Components.BnLength.BnLength(float Value, BlazorNative.Components.BnLengthUnit Unit) -> void
@@ -363,11 +371,21 @@ BlazorNative.Components.BnLength.Value.init -> void
 BlazorNative.Components.BnLengthUnit
 BlazorNative.Components.BnLengthUnit.Percent = 1 -> BlazorNative.Components.BnLengthUnit
 BlazorNative.Components.BnLengthUnit.Points = 0 -> BlazorNative.Components.BnLengthUnit
+override BlazorNative.Components.BnAutoLength.GetHashCode() -> int
 override BlazorNative.Components.BnLength.GetHashCode() -> int
+static BlazorNative.Components.BnAutoLength.Auto.get -> BlazorNative.Components.BnAutoLength
+static BlazorNative.Components.BnAutoLength.Percent(float value) -> BlazorNative.Components.BnAutoLength
+static BlazorNative.Components.BnAutoLength.implicit operator BlazorNative.Components.BnAutoLength(BlazorNative.Components.BnLength length) -> BlazorNative.Components.BnAutoLength
+static BlazorNative.Components.BnAutoLength.implicit operator BlazorNative.Components.BnAutoLength(double points) -> BlazorNative.Components.BnAutoLength
+static BlazorNative.Components.BnAutoLength.implicit operator BlazorNative.Components.BnAutoLength(float points) -> BlazorNative.Components.BnAutoLength
+static BlazorNative.Components.BnAutoLength.operator !=(BlazorNative.Components.BnAutoLength left, BlazorNative.Components.BnAutoLength right) -> bool
+static BlazorNative.Components.BnAutoLength.operator ==(BlazorNative.Components.BnAutoLength left, BlazorNative.Components.BnAutoLength right) -> bool
 static BlazorNative.Components.BnLength.Percent(float value) -> BlazorNative.Components.BnLength
 static BlazorNative.Components.BnLength.implicit operator BlazorNative.Components.BnLength(double points) -> BlazorNative.Components.BnLength
 static BlazorNative.Components.BnLength.implicit operator BlazorNative.Components.BnLength(float points) -> BlazorNative.Components.BnLength
 static BlazorNative.Components.BnLength.operator !=(BlazorNative.Components.BnLength left, BlazorNative.Components.BnLength right) -> bool
 static BlazorNative.Components.BnLength.operator ==(BlazorNative.Components.BnLength left, BlazorNative.Components.BnLength right) -> bool
+~override BlazorNative.Components.BnAutoLength.Equals(object obj) -> bool
+~override BlazorNative.Components.BnAutoLength.ToString() -> string
 ~override BlazorNative.Components.BnLength.Equals(object obj) -> bool
 ~override BlazorNative.Components.BnLength.ToString() -> string
