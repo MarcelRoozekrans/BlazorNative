@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Reflection;
 using BlazorNative.Components;
 
 namespace BlazorNative.Runtime.Tests;
@@ -54,5 +55,53 @@ public sealed class BnAutoLengthTests
     {
         Assert.Null(default(BnAutoLength?));
         Assert.Null(default(BnLength?));
+    }
+}
+
+public sealed class BnLengthGuardTests
+{
+    // R1. The shells parse with a C/Java float parser. A comma decimal separator
+    // on the wire is rejected as "not a number, a percentage or 'auto'" -- and it
+    // is invisible on any English dev machine, which is why this is a test and not
+    // a comment.
+    [Theory]
+    [InlineData("nl-NL")]
+    [InlineData("de-DE")]
+    [InlineData("fr-FR")]
+    public void ToStyleValue_IsInvariant_UnderACommaDecimalCulture(string culture)
+    {
+        var previous = CultureInfo.CurrentCulture;
+        try
+        {
+            CultureInfo.CurrentCulture = new CultureInfo(culture);
+            Assert.Equal("1.5", ((BnLength)1.5f).ToStyleValue());
+            Assert.Equal("1.5%", BnLength.Percent(1.5f).ToStyleValue());
+            Assert.Equal("1.5", ((BnAutoLength)1.5f).ToStyleValue());
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = previous;
+        }
+    }
+
+    // THE MECHANISM, pinned. Width="12px" is a compile error because no conversion
+    // from string exists -- not because anything checks the text. Add one and the
+    // whole phase silently reverts to runtime log-and-ignore, with every other test
+    // still green. Proven by compiling a probe during design (spec 6.1); this guards
+    // the regression.
+    [Theory]
+    [InlineData(typeof(BnLength))]
+    [InlineData(typeof(BnAutoLength))]
+    public void NoConversionFromString_Exists(Type t)
+    {
+        var fromString = t
+            .GetMethods(BindingFlags.Public | BindingFlags.Static)
+            .Where(m => m.Name is "op_Implicit" or "op_Explicit")
+            .Where(m => m.GetParameters() is [{ ParameterType: var p }] && p == typeof(string))
+            .ToList();
+
+        Assert.True(fromString.Count == 0,
+            $"{t.Name} has a conversion from string. That single member turns every " +
+            "malformed length back into a runtime log line and undoes phase 13.1.");
     }
 }

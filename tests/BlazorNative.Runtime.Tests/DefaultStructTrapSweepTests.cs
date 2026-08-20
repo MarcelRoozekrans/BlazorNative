@@ -1,4 +1,5 @@
 using System.Reflection;
+using BlazorNative.Components;
 using BlazorNative.Core;
 using BlazorNative.Device;
 
@@ -44,12 +45,13 @@ namespace BlazorNative.Runtime.Tests;
 
 public sealed class DefaultStructTrapSweepTests
 {
-    /// <summary>The three product assemblies whose public value types face app code.</summary>
+    /// <summary>The four product assemblies whose public value types face app code.</summary>
     private static IEnumerable<Assembly> ApiAssemblies =>
     [
         typeof(IMobileBridge).Assembly,        // BlazorNative.Core
         typeof(BlazorNativePage).Assembly,     // BlazorNative.Runtime
         typeof(IGeolocation).Assembly,         // BlazorNative.Device
+        typeof(BnLength).Assembly,             // BlazorNative.Components (13.1)
     ];
 
     private static IEnumerable<Type> PublicValueTypes =>
