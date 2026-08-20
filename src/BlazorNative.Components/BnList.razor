@@ -52,7 +52,18 @@
 *@
 @typeparam TItem
 
-<BnScroll Width="@(Width is { } w ? (BnAutoLength?)w : null)" Height="@((BnAutoLength?)Height)" OnScroll="HandleScroll">
+@* 13.1 final review. Width was written `@(Width is { } w ? (BnAutoLength?)w : null)`
+   and needs none of that: C# LIFTS the user-defined BnLength -> BnAutoLength
+   conversion to its nullable form, so BnLength? -> BnAutoLength? is implicit and
+   maps null to null -- which is exactly what the ternary spelled out by hand.
+   Verified by compiling it, not by reasoning about it.
+   The remaining `(BnAutoLength?)` casts below are likewise not REQUIRED (a bare
+   float chains float -> BnAutoLength -> BnAutoLength? through the standard
+   nullable conversion; that was compiled too). They are kept only because at
+   those sites the source is a bare float or an arithmetic expression, where
+   naming the target type is worth a few characters. Width's ternary was not
+   that: it read as a null-check that mattered, and it did not. *@
+<BnScroll Width="@Width" Height="@((BnAutoLength?)Height)" OnScroll="HandleScroll">
     <BnView @key="LeadSpacerKey" Height="@((BnAutoLength?)(_windowStart * ItemHeight))" />
     @for (var i = _windowStart; i < _windowEnd; i++)
     {
