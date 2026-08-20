@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.0](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.10.0...v0.11.0) (2026-08-20)
+
+
+### Features
+
+* **components:** give every component the item surface, declared once on BnLayoutItem ([#287](https://github.com/MarcelRoozekrans/BlazorNative/issues/287)) ([f7aa1b7](https://github.com/MarcelRoozekrans/BlazorNative/commit/f7aa1b7b70287b267e14de549f11baf7643400c6))
+
 ## [0.10.0](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.9.1...v0.10.0) (2026-08-18)
 
 
