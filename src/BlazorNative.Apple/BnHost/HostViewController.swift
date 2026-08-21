@@ -76,8 +76,11 @@ final class HostViewController: UIViewController {
         // map DID resolve. The right page was mounted and the router disagreed with
         // the screen, which is the quieter half of the same defect.
         //
-        // The twin is MainActivity's `AndroidShellBridge(this, initialRoute =
-        // deepLinkRoute ?: "/")` — the same expression, seeded from the same parse.
+        // The twin is `AndroidShellBridge`'s construction in MainActivity.onCreate,
+        // whose route argument is `initialRoute = deepLinkRoute ?: "/"` — the same
+        // expression, seeded from the same parse. (Quoted as the argument, not the
+        // whole call: the Kotlin line also carries `onError`, and a reader grepping a
+        // half-remembered full call would not find it.)
         //
         // Read HERE, synchronously, and not from the background boot below: AppDelegate
         // stashes a cold-launch URL inside `didFinishLaunchingWithOptions` BEFORE
