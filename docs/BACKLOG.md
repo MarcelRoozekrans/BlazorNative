@@ -259,7 +259,7 @@
   | `picker` | `UIPickerView` *(does not flex its children)* |
 
 - [ ] **iOS push notifications (APNs)**
-  `UNUserNotificationCenter` integration. APNs token surfaced via bridge. Incoming notification → `NativeEvent("push", payload)`.
+  `UNUserNotificationCenter` integration. APNs token surfaced via bridge. Incoming notification → `NativeEvent("push", payload)`. **2026-08-21:** superseded in shape by **#284**, which designs push as a *provider-agnostic bridge capability* covering FCM and APNs together rather than one shell at a time, and which carries the background-delivery design question this line never raised.
 
 - [ ] **iOS secure storage**
   Keychain integration behind `ISecureStorage`. Replaces plain bridge storage for sensitive data.
@@ -268,7 +268,7 @@
   `application(_:continue:restorationHandler:)` → `NativeEvent("deeplink", url)`.
 
 - [ ] **iOS App Store compliance**
-  Apple forbids JIT compilation. Validate that the `.wasm` binary compiled via .NET NativeAOT does not trigger App Store rejection. May require `com.apple.security.cs.allow-jit` entitlement review. Document findings.
+  Apple forbids JIT compilation. **Re-worded 2026-08-21 — the original text was WASM-era and incoherent:** it spoke of "the `.wasm` binary compiled via .NET NativeAOT", and there is no `.wasm` since the Mono-WASI runtime was retired. NativeAOT compiles ahead of time to a native static library, so the JIT prohibition is **satisfied by construction** and no `allow-jit` entitlement is wanted — asking for one would be the risk. What remains genuinely open is ordinary submission review: bundle layout, entitlements actually used, and export-compliance answers. Blocked on an Apple Developer account (P3).
 
 ### Additional platform APIs
 
@@ -297,7 +297,7 @@
       assumes a mounted renderer. Design question before implementation question
 - [ ] **In-app purchases** — StoreKit / Play Billing. Multi-step async flows, and **untestable
       in CI** (paid accounts, sandbox testers, store products). Accepted as out of scope for 1.0
-- [ ] **Remote push** — FCM (Android) and APNs (iOS). Both blocked on external accounts
+- [ ] **Remote push** — FCM (Android) and APNs (iOS). Both blocked on external accounts. **Designed as one capability in #284 (2026-08-21).**
 
 **How a capability is actually added** — see [`docs/bridge-extension.md`](bridge-extension.md),
 which is the normative procedure. The short version: a capability rides the **existing** generic
@@ -352,80 +352,38 @@ the ABI unchanged at 10 exports / 80 bytes.
       wrappers over a surface `[Inject]` already gives you, in a package whose stated purpose is
       to hold no method bodies. Decide whether it should exist before scheduling it
 
-### Styling system (`BlazorNative.Styling`)
-- [ ] **Typed `NativeStyle` record** — replace string-based style properties with a strongly-typed, AOT-safe style object
-- [ ] **`StyleSheet` — define-once, reference-by-name** — React Native StyleSheet pattern
-- [ ] **Theme system** — `IBlazorNativeTheme`, `ThemeProvider`, dark/light mode detection via `NativeEvent("themeChanged")`
-- [ ] **Platform style overrides** — `[AndroidStyle(backgroundColor: "#fff")]` / `[iOSStyle(...)]` attributes on components
-- [ ] **Responsive layout** — screen size breakpoints (`Compact`, `Regular`, `Large`) mapped to device classes
+### Styling system (`BlazorNative.Styling`) — RETIRED 2026-08-21
 
-### State management (`BlazorNative.State`)
-- [ ] **`BlazorNativeStore<TState>`** — minimal built-in Redux-like store for small apps. AOT-compatible, source-generated reducers.
-- [ ] **ZeroFlux/StaticFlux integration** — wire up the existing AOT-compatible Flux library (already explored) as the recommended state solution for larger apps
-- [ ] **`ZeroAlloc.EventSourcing` integration** — event-sourced state that survives app backgrounding via bridge storage
+**Not being built.** The styling system landed *inside* `Components`/`Renderer` — typed parameters,
+a partitioned routing table, and one generated vocabulary (`src/wire-vocabulary.json`). A separate
+package would be a mandatory transitive dependency with no consumer benefit. Issue #21 is retitled
+to the parts that remain real; see the "never built" list further down, which has said this since
+the M12 sweep while these bullets went on contradicting it.
 
-### Navigation system (`BlazorNative.Navigation`)
-- [ ] **`INativeNavigator`** — typed route service
-- [ ] **Route definitions** — `[Route("/product/{id}")]` attribute on page components, source-generated route table
-- [ ] **Back stack** — `GoBackAsync()`, `GoToRootAsync()`, `CanGoBack` property
-- [ ] **Transition hints** — `NavigationTransition.Slide`, `.Fade`, `.Modal`, `.None`
-- [ ] **Deep link → route mapping** — incoming `NativeEvent("deeplink")` parsed and resolved to typed route
-- [ ] **Tab bar navigation** — `BnTabBar` with declarative tab definitions and nested navigation stacks
+### State management (`BlazorNative.State`) — RETIRED 2026-08-21
 
-### CLI tool (`BlazorNative.Cli`)
-- [ ] **`dotnet tool install -g BlazorNative.Cli`** — published as a .NET global tool
-- [ ] **`blazornative new <AppName>`** — scaffold new project from template
-- [ ] **`blazornative run --platform devhost`** — start DevHost with hot reload
-- [ ] **`blazornative run --platform android`** — build WASM + package APK + deploy to emulator/device
-- [ ] **`blazornative run --platform ios`** — build WASM + package IPA + deploy to simulator/device (Mac only)
-- [ ] **`blazornative build wasi`** — compile to WASM and validate
-- [ ] **`blazornative inspect`** — open DevTools browser UI
-- [ ] **`blazornative wit-gen`** — regenerate bridge bindings from `.wit` file
-- [ ] **`blazornative add platform android`** — add Android shell to existing project
+**Not being built.** Blazor's DI singletons and cascading values already cover every ask, both
+proven on device here, and the framework shipping a store would make it a mandatory dependency for
+consumers who want none of it. Documented instead: **[State in BlazorNative](../website/docs/guides/state.md)**.
+Issue #22 is closed with the 2026-08-17 audit as its written rationale.
 
-### Testing infrastructure
-- [ ] **`BlazorNative.Analyzers.Tests`** — `Microsoft.CodeAnalysis.Testing` unit tests for all BN0001–BN0013 diagnostics
-- [ ] **`BlazorNative.Renderer.Tests`** — mount a component, assert `RenderPatch[]` output matches expected. No native shell needed.
-  - Currently includes one [Fact(Skip)] test `RenderWalk_IsAllocationFree_OnSteadyState` (`tests/BlazorNative.Renderer.Tests/RendererSpike.cs`). When this milestone enables StateHasChanged-on-mounted-root, un-skip and set a realistic ~512 B/iteration budget.
-- [ ] **`BlazorNative.Integration.Tests`** — run compiled `.wasm` module via wasmtime, assert bridge call round-trips
-- [ ] **`BlazorNative.Components.Tests`** — bunit-style tests for component library
-- [ ] **`.editorconfig` analyzer scoping** — suppress WASI analyzers in DevHost and test projects
+### Navigation system (`BlazorNative.Navigation`) — RETIRED 2026-08-21
 
-### CI/CD pipeline
-- [ ] **GitHub Actions — `ci.yml`** — build, analyze, test, WASM compile + validate on every PR
-- [ ] **GitHub Actions — `release.yml`** — NuGet publish on tag, GitHub Release with CHANGELOG
-- [ ] **Android emulator in CI** — run integration tests against Android emulator (GitHub Actions macOS runner)
-- [ ] **iOS simulator in CI** — macOS runner, Xcode, iOS simulator integration tests
+**The package is not being built**, and the three bullets this section used to list were one
+declined item, one delivered by a different mechanism, and one partly built — presented as three
+units of pending work. Checked against the code rather than left to age:
 
-### Documentation site
-- [ ] **Getting started guide** — scaffold → run → first component on device in under 15 minutes
-- [ ] **Architecture deep-dive** — WASM, WASI, WIT, patch protocol, cooperative scheduler explained
-- [x] **Component reference** — every `Bn*` component with props, examples, platform notes.
-      **Generated** from the XML docs (`scripts/generate-reference.ps1`), never hand-written
-- [x] **Platform API reference** — ~~every `IBridge*` interface~~ → the `BlazorNative.Device`
-      façades and `IMobileBridge`, also generated
-- [ ] ~~**WIT contract reference** — `mobile-bridge.wit` annotated~~ — **superseded.** There is
-      no `.wit`. The C-ABI's normative reference is [`docs/bridge-extension.md`](bridge-extension.md),
-      and the extension policy is on the docs-site API-stability page
-- [ ] **Migration guide** — from MAUI Blazor Hybrid to BlazorNative
-- [ ] ~~**WASI compatibility guide**~~ — **superseded**: WASI was abandoned at M3 Phase 3.0.
-      The analyzers that policed it were retired or rescoped in Phase 4.1
-- [ ] **Troubleshooting** — common AOT trim issues, WASM compile errors, bridge wiring mistakes
-
-### NuGet packaging
-
-**Seven packages ship on nuget.org**, pinned by `PackagePurityTests` — nothing else under
-`src/` may grow a csproj without joining that pin, which is how "no 8th package" stays true
-rather than merely intended.
-
-- [x] `BlazorNative.Core` — bridge contract + DevHostBridge
-- [x] `BlazorNative.Renderer` — headless renderer + patch protocol
-- [x] `BlazorNative.Http` — BridgeHttpHandler + DI extensions
-- [x] `BlazorNative.Analyzers` — Roslyn analyzers (special `.props`/`.targets` packaging)
-- [x] `BlazorNative.Components` — component library
-- [x] `BlazorNative.Device` — the five `[Inject]`-able capability façades (added M9; this list
-      never had it)
-- [x] `BlazorNative.Runtime` — the NativeAOT composition root + the C-ABI exports
+- ~~**`INativeNavigator`** — typed route service~~ — **declined.** This is the package-lift flavour;
+  issue #23 closed NOT-PLANNED on 2026-08-18 and the lift is deferred past 1.0 as criterion S4,
+  mitigated by `[TypeForwardedTo]` so the move stays free if it is ever wanted.
+- ~~**Route definitions** — source-generated route table~~ — **delivered, by a different
+  mechanism.** Routes are declared with `BlazorNativePage.Routed<T>()` and `tools/BlazorNative.RouteGen`
+  parses them from source into the shells' deep-link map; duplicate routes are refused at build time
+  (#224). The `[Route("/product/{id}")]` *attribute* this line described is not the mechanism, and
+  parameterised routes are not part of it.
+- **Back stack** — *partly built.* `INavigationManager.NavigateBackAsync()` exists and the Android
+  predictive-back gesture routes through it. `GoToRootAsync()` and `CanGoBack` do **not** exist; if
+  they are wanted, they are ordinary additions to the existing contract, not a package.
 
 Plus `BlazorNative.Templates` (the `dotnet new blazornative` pack), which ships separately.
 

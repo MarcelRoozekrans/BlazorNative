@@ -6,9 +6,9 @@ namespace BlazorNative.Core;
 // THIS; each runtime provides the implementation (NativeNavigationManager in
 // BlazorNative.Runtime does the root swap + host notification on Android).
 // This header once read "M6 lifts it into a dedicated BlazorNative.Navigation
-// package." It did not: M6 closed without the lift and the lift is now issue #23,
-// explicitly out of M11's scope (docs/planning/MILESTONE.md). The contract's home
-// is BlazorNative.Core and stays there for the foreseeable future — see the
+// package." It did not: M6 closed without the lift, and issue #23 was closed
+// NOT-PLANNED on 2026-08-18 — the lift is declined, not pending. The contract's
+// home is BlazorNative.Core and stays there — see the
 // <remarks> on the interface and docs/plans/2026-07-21-phase-11.3-api-tiers.md.
 //
 // Phase 5.1 (M5 DoD #5) adds NavigateBackAsync — host-INITIATED back (the
@@ -27,11 +27,12 @@ namespace BlazorNative.Core;
 /// unsupported</b> — an addition will break an external implementer at compile
 /// time, in a minor version. Default (<c>virtual</c>) interface members were
 /// considered and rejected: the contracts package holds no bodies.</para>
-/// <para><b>Location.</b> This type lives in <c>BlazorNative.Core</c>. Moving it to
-/// a dedicated <c>BlazorNative.Navigation</c> package is tracked as issue #23 and
-/// is <i>not</i> planned for 1.0; if it ever happens, it ships with a
+/// <para><b>Location.</b> This type lives in <c>BlazorNative.Core</c> and stays there.
+/// Moving it to a dedicated <c>BlazorNative.Navigation</c> package was <b>declined</b>
+/// (issue #23, closed not-planned on 2026-08-18) and is deferred past 1.0 as criterion
+/// S4 — not merely unscheduled. If it is ever wanted, it ships with a
 /// <c>[TypeForwardedTo]</c> from <c>BlazorNative.Core</c>, which makes the move
-/// non-breaking for both source and binary consumers.</para>
+/// non-breaking for both source and binary consumers, so nothing is lost by the wait.</para>
 /// <para>See <c>docs/plans/2026-07-21-phase-11.3-api-tiers.md</c> (tier: STABLE).</para>
 /// </remarks>
 public interface INavigationManager

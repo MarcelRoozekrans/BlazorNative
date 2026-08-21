@@ -127,9 +127,18 @@ public sealed class RenderThreadWarningTests
         lock (lines) { return [.. lines]; }
     }
 
+    /// <summary>The reports THIS test's renderer produced, identified by its owner thread.
+    ///
+    /// <para>Filtering on the log category alone is not enough, and that is not a theoretical
+    /// worry: BnLog is process-wide, xUnit runs classes in parallel, and any other class driving
+    /// a render batch off its own thread emits the same category. `Assert.Single` then sees two
+    /// and the test fails for something another class did. Every report names its owner thread,
+    /// so that is the discriminator.</para></summary>
     private static List<(BnLogLevel Level, string Message)> Reports(
-        List<(BnLogLevel Level, string Message)> lines)
-        => [.. lines.Where(l => l.Message.Contains("render batch", StringComparison.Ordinal))];
+        List<(BnLogLevel Level, string Message)> lines, int ownerThreadId)
+        => [.. lines.Where(l =>
+               l.Message.Contains("render batch", StringComparison.Ordinal)
+               && l.Message.Contains($"owned by thread {ownerThreadId}", StringComparison.Ordinal))];
 
     /// <summary>A batch driven from a thread that did not drive the first one is a WARNING
     /// under StrictErrors, and it must name BOTH threads — a report that says only "wrong
@@ -153,7 +162,7 @@ public sealed class RenderThreadWarningTests
 
         Assert.NotEqual(ownerThreadId, otherThreadId);
 
-        (BnLogLevel Level, string Message) warning = Assert.Single(Reports(lines));
+        (BnLogLevel Level, string Message) warning = Assert.Single(Reports(lines, ownerThreadId));
         Assert.Equal(BnLogLevel.Warn, warning.Level);
         Assert.Contains(otherThreadId.ToString(), warning.Message, StringComparison.Ordinal);
         Assert.Contains(ownerThreadId.ToString(), warning.Message, StringComparison.Ordinal);
@@ -167,6 +176,7 @@ public sealed class RenderThreadWarningTests
     public void TheOrdinarySingleThreadedPath_IsSilent()
     {
         using var renderer = BuildRenderer(strict: true);
+        int ownerThreadId = Environment.CurrentManagedThreadId;
 
         var lines = Capture(() =>
         {
@@ -175,7 +185,7 @@ public sealed class RenderThreadWarningTests
             renderer.TriggerRootRenderForTests(rootId);
         });
 
-        Assert.Empty(Reports(lines));
+        Assert.Empty(Reports(lines, ownerThreadId));
     }
 
     /// <summary>Without StrictErrors the same condition still reports, at Debug level — it ships
@@ -185,6 +195,7 @@ public sealed class RenderThreadWarningTests
     public void WithoutStrictErrors_TheSameConditionReportsAtDebugLevel()
     {
         using var renderer = BuildRenderer(strict: false);
+        int ownerThreadId = Environment.CurrentManagedThreadId;
 
         var lines = Capture(() =>
         {
@@ -192,6 +203,6 @@ public sealed class RenderThreadWarningTests
             OnAnotherThread(() => renderer.TriggerRootRenderForTests(rootId));
         });
 
-        Assert.Equal(BnLogLevel.Debug, Assert.Single(Reports(lines)).Level);
+        Assert.Equal(BnLogLevel.Debug, Assert.Single(Reports(lines, ownerThreadId)).Level);
     }
 }

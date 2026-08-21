@@ -2055,7 +2055,7 @@ unconditional `true`, then ship the guard the evidence supports.
 > including one that the ordinary path stays **silent**. .NET 1051 → 1054. **#9 remains open** —
 > single-lane starvation is a scheduling problem, not a which-thread problem.
 
-#### Phase 13.3: State docs + backlog retirement [status: pending]
+#### Phase 13.3: State docs + backlog retirement [status: complete]
 **Goal:** Write the "State in BlazorNative" page that is #22's real deliverable, retire the stale
 issues and backlog entries the 2026-08-17 audit already adjudicated, and — added 2026-08-21 —
 document that Firebase's REST-accessible services work today via `HttpClient` (**#286**).
@@ -2064,6 +2064,16 @@ shape as the state page: *document what already works instead of building a pack
 one argument, one more section.
 **Surface:** Docs
 **HelpWanted:** no
+**Conclusion:** [`docs/plans/2026-08-21-phase-13.3-conclusion.md`](../plans/2026-08-21-phase-13.3-conclusion.md)
+**Completed:** 2026-08-21 · #22 closed · #21 retitled · #286 delivered
+
+> **`BACKLOG.md` was contradicting itself**, which is worse than being stale: live
+> `BlazorNative.Styling`/`BlazorNative.State` sections that the same file struck through 70 lines
+> later. Both retired. Also corrected a line claiming a live, load-bearing allocation test was
+> `[Fact(Skip)]`, and a WASM-era App Store row asking to validate a `.wasm` binary that has not
+> existed since the Mono-WASI retirement. **The phase also corrected the issue it implemented:**
+> #286 lists Cloud Storage as working today, but bridge bodies are UTF-8 text in both directions,
+> so the JSON control plane works and moving object bytes does not — the page says so.
 
 #### Phase 13.4: Parity and harness fidelity [status: pending]
 **Goal:** Close the six defects a fresh review of 0.10.0 found — four of which are **one bug
