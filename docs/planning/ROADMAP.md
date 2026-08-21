@@ -2056,17 +2056,51 @@ unconditional `true`, then ship the guard the evidence supports.
 > single-lane starvation is a scheduling problem, not a which-thread problem.
 
 #### Phase 13.3: State docs + backlog retirement [status: pending]
-**Goal:** Write the "State in BlazorNative" page that is #22's real deliverable, and retire the
-stale issues and backlog entries the 2026-08-17 audit already adjudicated.
+**Goal:** Write the "State in BlazorNative" page that is #22's real deliverable, retire the stale
+issues and backlog entries the 2026-08-17 audit already adjudicated, and — added 2026-08-21 —
+document that Firebase's REST-accessible services work today via `HttpClient` (**#286**).
+**Note (2026-08-21):** #286 was folded in rather than filed separately because it is the same
+shape as the state page: *document what already works instead of building a package*. One phase,
+one argument, one more section.
 **Surface:** Docs
 **HelpWanted:** no
 
-#### Phase 13.4: Theme system design [status: pending]
+#### Phase 13.4: Parity and harness fidelity [status: pending]
+**Goal:** Close the six defects a fresh review of 0.10.0 found — four of which are **one bug
+class**: a hand-written twin that diverged from its counterpart, unpinned. Fix the class, not six
+instances.
+**Surface:** Backend
+**HelpWanted:** no
+**Issues:** #278 · #279 · #280 · #281 · #282 · #283
+**Inserted:** 2026-08-21 (owner decision — these are shipped defects in 0.10.0/0.11.0 and should
+not wait behind a paper design phase; 13.4 and 13.5 renumbered to 13.5 and 13.6)
+
+> **Why one phase and not six issues worked separately.** #278 (Android deep-link parser drops
+> path segments while iOS keeps them), #282 (iOS cold deep-link does not seed .NET's route while
+> Android does), #279 (iOS `measuredNodeTypes` is a hardcoded Swift `Set` that **escaped the #262
+> codegen** which eliminated drift for four of five vocabularies) and #280 (the test harness
+> bypasses the C-ABI encode, so an unmapped node type **passes the harness and aborts rc 2 on
+> device**) are all the same defect wearing four costumes: *two copies of one truth, one of them
+> unpinned.* That is the shape of the visual-style hole (#263/#266) and of the wire-vocabulary
+> drift (#262). Six independent patches leave the seventh instance free to appear; a mechanical
+> fix — generate the twin, or pin it — does not.
+>
+> **#278 is a parity bug inside the feature #269 shipped "for parity."** That is the argument for
+> doing this as a class: the doctrine existed and the instance still shipped.
+>
+> **#280 and #281 are the harness's own fidelity** — 0.10.0's headline feature has a
+> false-negative and a `ServiceProvider`/renderer leak on its designed-for `StrictErrors` path. A
+> testing product that passes when the device fails is worse than no testing product, because it
+> converts "untested" into "tested and fine".
+>
+> #283 is the grouped low-severity remainder from the same review; it rides along or is split out.
+
+#### Phase 13.5: Theme system design [status: pending]
 **Goal:** Produce a written theme design and a go/no-go decision — not an implementation.
 **Surface:** Docs
 **HelpWanted:** no
 
-#### Phase 13.5: Audit and close [status: pending]
+#### Phase 13.6: Audit and close [status: pending]
 **Goal:** Run `audit-milestone` against the DoD on live evidence and close M13. **No tag** — the
 8.6 rule, and `CONVENTIONS.md` records `Milestone completion tags a release: no`.
 **Surface:** Docs

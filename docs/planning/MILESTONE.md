@@ -85,6 +85,15 @@ same verdicts.
 - [ ] **#21 retitled, #22 closed** with the audit as written rationale; `BlazorNative.Styling` and
       `BlazorNative.State` deleted from `BACKLOG.md`; the WASM-era APNs / App-Store rows re-worded.
 - [ ] **Theme decision recorded** — the design exists and a go/no-go is written down, either way.
+- [ ] **The twin-divergence class is closed MECHANICALLY, not instance by instance** (added
+      2026-08-21 with phase 13.4). #278/#282 (deep-link parsers), #279 (iOS `measuredNodeTypes`
+      escaping the #262 codegen) and #280 (the harness bypassing the C-ABI encode) are one defect
+      in four places: two copies of one truth, one unpinned. The criterion is that a NEW instance
+      of the shape reds — a generated twin, or a pin that compares the two copies — not that these
+      four are patched. Six patches leave the seventh free to appear.
+- [ ] **The test harness cannot pass what the device rejects** (#280) and does not leak on its
+      own `StrictErrors` path (#281). A testing product that passes when the device fails converts
+      "untested" into "tested and fine", which is worse than shipping no harness.
 
 > **No "release tagged in git" criterion.** `docs/planning/CONVENTIONS.md` records **`Milestone
 > completion tags a release: no`** — release-please owns the `v<semver>` namespace and Phase 8.6
@@ -101,9 +110,11 @@ same verdicts.
 3. Phase 13.2 — the dispatcher's honest answer [complete] — closed 2026-08-21; the premise was
    overturned by measurement (an honest CheckAccess() stack-overflows the process), so the phase
    shipped detection rather than an assertion
-4. Phase 13.3 — state docs + backlog retirement [pending]
-5. Phase 13.4 — theme system design [pending]
-6. Phase 13.5 — audit and close [pending]
+4. Phase 13.3 — state docs + backlog retirement (+ #286 Firebase REST docs) [pending]
+5. Phase 13.4 — parity and harness fidelity [pending] — INSERTED 2026-08-21; #278 #279 #280 #281
+   #282 #283, four of which are one bug class (an unpinned hand-written twin)
+6. Phase 13.5 — theme system design [pending] — was 13.4
+7. Phase 13.6 — audit and close [pending] — was 13.5
 
 ## Risk areas
 
@@ -113,7 +124,8 @@ same verdicts.
 | **Frame tables move** | Severe, and possibly silent on one platform only | Frame tables are the acceptance test, run on **both** shells across the whole sample |
 | **Honest `CheckAccess()` breaks working code** — pool threads demonstrably touch this path (#213 item 2, #9) | Converts working async paths into exceptions | 13.2 is a **spike first**: change, measure across all suites, decide. Debug-only warning is the documented fallback |
 | **Baseline churn hides a real removal** — ~17 × 8 members change declaring type | An API disappears without anyone deciding to | Read the baseline diff as an API review; pin member **names** so a vanishing name reds regardless of declaring type |
-| **Theme design grows into an implementation** | Milestone slips on its least-certain item | 13.4's deliverable is explicitly a design + decision |
+| **Theme design grows into an implementation** | Milestone slips on its least-certain item | **13.5's** (was 13.4's) deliverable is explicitly a design + decision |
+| **13.4 is worked as six issues rather than one bug class** (added 2026-08-21) | Six patches land, the seventh instance of the same shape ships later, and the milestone's DoD reads as met | The DoD criterion is a **mechanical** guard — a generated twin or a pin comparing the two copies — not four fixed instances. The precedent is #262, which retired four of five vocabularies and left the fifth (#279) to prove the point |
 
 ## Out of scope for this milestone
 
