@@ -2084,6 +2084,7 @@ instances.
 **Issues:** #278 · #279 · #280 · #281 · #282 · #283
 **Design:** [`docs/superpowers/specs/2026-08-21-phase-13.4-design.md`](../superpowers/specs/2026-08-21-phase-13.4-design.md)
 **Plan:** [`docs/superpowers/plans/2026-08-21-phase-13.4-parity-harness.md`](../superpowers/plans/2026-08-21-phase-13.4-parity-harness.md)
+**Migration note:** [`website/docs/migrating/testing-harness.md`](../../website/docs/migrating/testing-harness.md) *(published at `/docs/migrating/testing-harness`; it documents a break in a published package, so it lives where a consumer can find it — the 13.1 precedent)*
 **Started:** 2026-08-21
 **Inserted:** 2026-08-21 (owner decision — these are shipped defects in 0.10.0/0.11.0 and should
 not wait behind a paper design phase; 13.4 and 13.5 renumbered to 13.5 and 13.6)

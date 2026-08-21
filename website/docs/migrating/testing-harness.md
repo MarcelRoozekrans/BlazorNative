@@ -1,9 +1,18 @@
-# Phase 13.4 — migration note
+---
+id: testing-harness
+title: Testing harness
+sidebar_label: Testing harness
+---
 
-**Scope of the break:** `BlazorNative.Testing` only. No other package's public surface moved. Two
-runtime behaviours changed in the shells (Android deep-link parsing, iOS cold-launch route seeding);
-neither is a compile-time break, and both are described below because a consumer with nested routes
-can observe them.
+# Migrating the testing harness
+
+**Applies to:** consumers on **0.11.0 or earlier**, upgrading to the first release that contains
+this change.
+**Package:** `BlazorNative.Testing` — no other package's public surface moved.
+**Kind of change:** one source-compatible signature change and one public-constructor removal, plus
+two shell **runtime** behaviour changes (Android deep-link parsing, iOS cold-launch route seeding).
+Neither runtime change is a compile-time break; both are described below because a consumer with
+nested routes can observe them.
 
 Phase 13.4 closed one bug class: **two copies of one truth, one of them unpinned.** Every item here
 is a place where the second copy was wrong and nothing said so.
@@ -56,7 +65,7 @@ reaches a test author:
 | | text-bearing (absorbs a lone `text` child) |
 |---|---|
 | iOS (`BnWidgetMapper`) | `text`, `button`, `input` |
-| Android (`WidgetMapper`) | `text`, `button`, `input`, **`checkbox`**, **`switch`** — the rule is "a `TextView` that is not a `ViewGroup`", and `CheckBox`/`SwitchMaterial` are both |
+| Android (`WidgetMapper`) | `text`, `button`, `input`, **`checkbox`**, **`switch`** — the rule is "a `TextView` that is not a `ViewGroup`", and the framework `CheckBox`/`Switch` this shell builds are both |
 
 Before 13.4 the harness hard-coded **iOS's** set and presented it as *the shells'*. So a test
 asserting the label of a `BnCheckbox` or `BnSwitch` was asserting one platform's behaviour while
@@ -159,17 +168,3 @@ pinning the bug.
   sees such a URL). Written up as its own issue rather than left as a comment.
 - The low-severity items grouped in **#283**, triaged in writing on that issue.
 
----
-
-## Count baselines moved with this phase
-
-| Lane | Before | After | Lane status |
-|---|---|---|---|
-| .NET | 1054 | **1070** (+16) | required |
-| JVM (`testDebugUnitTest`) | 161 | **161** (unchanged) | required |
-| Android instrumented | 224 | **225** (+1) | advisory |
-| iOS XCTest | 269 | **270** (+1) | advisory |
-
-The JVM count does **not** move: the new Kotlin deep-link vector test lives in
-`src/BlazorNative.Jni/src/androidTest/` — the instrumented source set — which `testDebugUnitTest`
-does not compile.
