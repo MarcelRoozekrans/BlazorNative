@@ -2075,13 +2075,16 @@ one argument, one more section.
 > #286 lists Cloud Storage as working today, but bridge bodies are UTF-8 text in both directions,
 > so the JSON control plane works and moving object bytes does not — the page says so.
 
-#### Phase 13.4: Parity and harness fidelity [status: pending]
+#### Phase 13.4: Parity and harness fidelity [status: active]
 **Goal:** Close the six defects a fresh review of 0.10.0 found — four of which are **one bug
 class**: a hand-written twin that diverged from its counterpart, unpinned. Fix the class, not six
 instances.
 **Surface:** Backend
 **HelpWanted:** no
 **Issues:** #278 · #279 · #280 · #281 · #282 · #283
+**Design:** [`docs/superpowers/specs/2026-08-21-phase-13.4-design.md`](../superpowers/specs/2026-08-21-phase-13.4-design.md)
+**Plan:** [`docs/superpowers/plans/2026-08-21-phase-13.4-parity-harness.md`](../superpowers/plans/2026-08-21-phase-13.4-parity-harness.md)
+**Started:** 2026-08-21
 **Inserted:** 2026-08-21 (owner decision — these are shipped defects in 0.10.0/0.11.0 and should
 not wait behind a paper design phase; 13.4 and 13.5 renumbered to 13.5 and 13.6)
 
