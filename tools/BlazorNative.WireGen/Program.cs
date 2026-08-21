@@ -38,6 +38,33 @@ catch (Exception ex)
     return 2;
 }
 
+string vectorsPath = Path.Combine(repoRoot, Emitters.VectorsManifestPath.Replace('/', Path.DirectorySeparatorChar));
+
+if (!File.Exists(vectorsPath))
+{
+    Console.Error.WriteLine($"deeplink-vectors: manifest not found at {vectorsPath}");
+    return 2;
+}
+
+DeepLinkVectors vectors;
+try
+{
+    vectors = System.Text.Json.JsonSerializer.Deserialize<DeepLinkVectors>(
+        File.ReadAllText(vectorsPath),
+        new System.Text.Json.JsonSerializerOptions
+        {
+            ReadCommentHandling = System.Text.Json.JsonCommentHandling.Skip,
+        })
+        ?? throw new InvalidOperationException("manifest deserialized to null");
+}
+catch (Exception ex)
+{
+    // Same reasoning as the vocabulary above: this table is the ONLY place these
+    // cases live, and a bad one would propagate into three test suites at once.
+    Console.Error.WriteLine($"deeplink-vectors: {Emitters.VectorsManifestPath} is invalid — {ex.Message}");
+    return 2;
+}
+
 var stale = new List<string>();
 foreach ((string relative, string content) in Emitters.EmitAll(vocabulary))
 {
@@ -56,6 +83,24 @@ foreach ((string relative, string content) in Emitters.EmitAll(vocabulary))
     Directory.CreateDirectory(Path.GetDirectoryName(path)!);
     File.WriteAllText(path, content);
     Console.WriteLine($"wire-vocabulary: wrote {relative}");
+}
+
+// The vector tables, through the SAME staleness rule and the SAME normalization
+// — one `stale` list, so --check and the summary below already cover both.
+foreach ((string relative, string content) in Emitters.EmitAllVectors(vectors))
+{
+    string path = Path.Combine(repoRoot, relative.Replace('/', Path.DirectorySeparatorChar));
+    string? existing = File.Exists(path) ? File.ReadAllText(path) : null;
+
+    if (existing is not null && Normalize(existing) == Normalize(content))
+        continue;
+
+    stale.Add(relative);
+    if (check) continue;
+
+    Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+    File.WriteAllText(path, content);
+    Console.WriteLine($"deeplink-vectors: wrote {relative}");
 }
 
 if (check)

@@ -22,29 +22,53 @@ public static class Emitters
 {
     public const string ManifestPath = "src/wire-vocabulary.json";
 
-    /// <summary>The banner every generated file carries. Named files, not vague
-    /// advice: the reader who lands here needs to know where the names live and
-    /// which command rewrites this one.</summary>
-    private static string Banner(string commentPrefix)
+    /// <summary>The deep-link vector manifest — the second table this tool owns.</summary>
+    public const string VectorsManifestPath = "src/deeplink-vectors.json";
+
+    /// <summary>A comment block in the target language's line-comment syntax.
+    /// Every generated file opens with one; only the prose differs.</summary>
+    private static string CommentBlock(string commentPrefix, string[] lines)
     {
-        string[] lines =
-        [
-            "GENERATED FILE — DO NOT EDIT (#255).",
-            "",
-            $"Source of truth: {ManifestPath}",
-            "Regenerate:      dotnet run --project tools/BlazorNative.WireGen",
-            "",
-            "These names used to be hand-maintained in four languages, agreeing only",
-            "because a drift test parsed them back out and said so. Editing this file",
-            "by hand puts that back: WireVocabularyCodegenTests re-runs the emitter and",
-            "byte-compares, so the edit fails the required build-test lane rather than",
-            "reaching a device.",
-        ];
         var sb = new StringBuilder();
         foreach (string line in lines)
             sb.Append(commentPrefix).Append(line.Length == 0 ? "" : " ").Append(line).Append('\n');
         return sb.ToString();
     }
+
+    /// <summary>The banner every generated file carries. Named files, not vague
+    /// advice: the reader who lands here needs to know where the names live and
+    /// which command rewrites this one.</summary>
+    private static string Banner(string commentPrefix) => CommentBlock(commentPrefix,
+    [
+        "GENERATED FILE — DO NOT EDIT (#255).",
+        "",
+        $"Source of truth: {ManifestPath}",
+        "Regenerate:      dotnet run --project tools/BlazorNative.WireGen",
+        "",
+        "These names used to be hand-maintained in four languages, agreeing only",
+        "because a drift test parsed them back out and said so. Editing this file",
+        "by hand puts that back: WireVocabularyCodegenTests re-runs the emitter and",
+        "byte-compares, so the edit fails the required build-test lane rather than",
+        "reaching a device.",
+    ]);
+
+    /// <summary>The banner the three vector tables carry — same shape as
+    /// <see cref="Banner"/>, naming the vector manifest instead.</summary>
+    private static string VectorsBanner(string commentPrefix) => CommentBlock(commentPrefix,
+    [
+        "GENERATED FILE — DO NOT EDIT (#278).",
+        "",
+        $"Source of truth: {VectorsManifestPath}",
+        "Regenerate:      dotnet run --project tools/BlazorNative.WireGen",
+        "",
+        "One URL → route case, written ONCE in the manifest and asserted by all",
+        "three suites. You cannot generate a deep-link parser; you CAN generate the",
+        "table it must satisfy, which is the whole point — the two hand-written",
+        "parsers disagreed for months because nothing compared them. Editing this",
+        "file by hand puts one suite's expectations out of step with the others';",
+        "WireVocabularyCodegenTests re-runs the emitter and byte-compares, so the",
+        "edit fails the required build-test lane rather than reaching a device.",
+    ]);
 
     // ── C# — BlazorNative.Renderer ───────────────────────────────────────────
 
@@ -239,6 +263,103 @@ public static class Emitters
         sb.Append("    ]\n");
     }
 
+    // ── The deep-link vector tables — one manifest, three test suites ────────
+    //
+    // NOT a vocabulary but a TABLE OF CASES. The shells' URL parsers are
+    // hand-written and cannot be generated; what CAN be generated is the set of
+    // (url, route) pairs each of them must satisfy. A case added to the manifest
+    // reaches .NET, the Android instrumented suite and BnHostTests at once —
+    // which is the fix for #278, where the two parsers disagreed about a
+    // multi-segment URL and no single place asserted otherwise.
+
+    /// <summary>The C# vector table, for BlazorNative.Runtime.Tests.</summary>
+    public static string EmitCSharpVectors(DeepLinkVectors v)
+    {
+        var sb = new StringBuilder();
+        sb.Append(VectorsBanner("//"));
+        sb.Append("""
+
+            namespace BlazorNative.Runtime.Tests;
+
+            /// <summary>The deep-link URL → route cases, generated from the manifest. The DATA
+            /// only: each suite keeps its own parser and its own assertion loop — this table
+            /// exists so the three cannot disagree about what a URL means.</summary>
+            public static class BnDeepLinkVectors
+            {
+                /// <summary>Every case. <c>Route</c> is null when the URL must produce NO
+                /// route — rejected, never coerced into some other route.</summary>
+                public static readonly (string Url, string? Route)[] All =
+                [
+
+            """);
+
+        foreach (DeepLinkVector c in v.Vectors)
+        {
+            sb.Append($"        // {c.Why}\n");
+            sb.Append($"        (\"{c.Url}\", {(c.Route is null ? "null" : $"\"{c.Route}\"")}),\n");
+        }
+
+        sb.Append("    ];\n");
+        sb.Append("}\n");
+        return sb.ToString();
+    }
+
+    /// <summary>The Kotlin vector table, for the Android instrumented suite.</summary>
+    public static string EmitKotlinVectors(DeepLinkVectors v)
+    {
+        var sb = new StringBuilder();
+        sb.Append(VectorsBanner("//"));
+        sb.Append("""
+
+            package io.blazornative.shell
+
+            /**
+             * The deep-link URL → route cases, generated from the manifest. The DATA only —
+             * the shell keeps its own parser and this suite its own assertion loop.
+             */
+            object BnDeepLinkVectors {
+                /** Every case. The second element is null when the URL must produce NO route. */
+                val ALL: List<Pair<String, String?>> = listOf(
+
+            """);
+
+        foreach (DeepLinkVector c in v.Vectors)
+        {
+            sb.Append($"        // {c.Why}\n");
+            sb.Append($"        Pair(\"{c.Url}\", {(c.Route is null ? "null" : $"\"{c.Route}\"")}),\n");
+        }
+
+        sb.Append("    )\n");
+        sb.Append("}\n");
+        return sb.ToString();
+    }
+
+    /// <summary>The Swift vector table, for BnHostTests.</summary>
+    public static string EmitSwiftVectors(DeepLinkVectors v)
+    {
+        var sb = new StringBuilder();
+        sb.Append(VectorsBanner("//"));
+        sb.Append("""
+
+            /// The deep-link URL → route cases, generated from the manifest. The DATA only —
+            /// BnDeepLink keeps its own parser and this suite its own assertion loop.
+            enum BnDeepLinkVectors {
+                /// Every case. `route` is nil when the URL must produce NO route.
+                static let all: [(url: String, route: String?)] = [
+
+            """);
+
+        foreach (DeepLinkVector c in v.Vectors)
+        {
+            sb.Append($"        // {c.Why}\n");
+            sb.Append($"        (\"{c.Url}\", {(c.Route is null ? "nil" : $"\"{c.Route}\"")}),\n");
+        }
+
+        sb.Append("    ]\n");
+        sb.Append("}\n");
+        return sb.ToString();
+    }
+
     /// <summary>Every output this tool owns: repo-relative path → emitted content.
     /// The single list both the CLI and the byte-identity test drive, so a new
     /// output cannot be added to one and forgotten in the other.</summary>
@@ -249,5 +370,15 @@ public static class Emitters
         ["templates/BlazorNative.Templates/content/BlazorNative.App/android/src/main/kotlin/io/blazornative/jni/BnWireVocabulary.g.kt"] = EmitKotlin(v),
         ["src/BlazorNative.Apple/BnHost/BnWireVocabulary.g.h"] = EmitObjCHeader(v),
         ["src/BlazorNative.Apple/BnHost/BnWireVocabulary.g.swift"] = EmitSwift(v),
+    };
+
+    /// <summary>Every vector-table output, repo-relative path → emitted content —
+    /// the twin of <see cref="EmitAll"/>, and driven by the same two callers so a
+    /// new suite cannot be wired into the CLI and forgotten in the pin.</summary>
+    public static IReadOnlyDictionary<string, string> EmitAllVectors(DeepLinkVectors v) => new Dictionary<string, string>
+    {
+        ["tests/BlazorNative.Runtime.Tests/BnDeepLinkVectors.g.cs"] = EmitCSharpVectors(v),
+        ["src/BlazorNative.Jni/src/androidTest/kotlin/io/blazornative/shell/BnDeepLinkVectors.g.kt"] = EmitKotlinVectors(v),
+        ["src/BlazorNative.Apple/BnHostTests/BnDeepLinkVectors.g.swift"] = EmitSwiftVectors(v),
     };
 }

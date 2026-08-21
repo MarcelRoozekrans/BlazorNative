@@ -1,3 +1,4 @@
+using System.Text.Json;
 using BlazorNative.Renderer;
 using BlazorNative.Runtime;
 using BlazorNative.WireGen;
@@ -41,6 +42,15 @@ public sealed class WireVocabularyCodegenTests
 
     private static WireVocabulary LoadManifest()
         => WireVocabulary.Load(File.ReadAllText(Path.Combine(RepoRoot(), Emitters.ManifestPath)));
+
+    private static DeepLinkVectors LoadVectors(string root)
+    {
+        string json = File.ReadAllText(Path.Combine(root, "src", "deeplink-vectors.json"));
+        DeepLinkVectors? v = JsonSerializer.Deserialize<DeepLinkVectors>(
+            json, new JsonSerializerOptions { ReadCommentHandling = JsonCommentHandling.Skip });
+        Assert.NotNull(v);
+        return v!;
+    }
 
     /// <summary>Line endings are normalized before comparing, and that is not a
     /// weakening of the pin. Both the emitted string and the committed file are
@@ -87,6 +97,33 @@ public sealed class WireVocabularyCodegenTests
             + "src/wire-vocabulary.json changed without regenerating. Run:\n\n"
             + "    dotnet run --project tools/BlazorNative.WireGen\n\n"
             + "…and commit the result. Offenders:\n  " + string.Join("\n  ", stale));
+    }
+
+    /// <summary>The deep-link vector tables are exactly what the manifest produces —
+    /// the same byte-comparison the wire vocabulary gets, extended to the vectors.
+    /// Three copies of one table is the shape this phase exists to make safe.</summary>
+    [Fact]
+    public void EveryGeneratedVectorFile_IsExactlyWhatTheManifestProduces()
+    {
+        string root = RepoRoot();
+        DeepLinkVectors vectors = LoadVectors(root);
+
+        // NON-VACUITY, and it bites before anything else does: an empty `vectors`
+        // array deserializes perfectly well and would emit three EMPTY tables —
+        // three shells asserting nothing while every suite reports green. That is
+        // the exact failure class this phase exists to close.
+        Assert.True(vectors.Vectors.Length >= 7,
+            $"the deep-link vector table has {vectors.Vectors.Length} cases. An empty or gutted "
+            + "table emits three empty test tables and every suite passes while asserting NOTHING — "
+            + "the vacuity this phase exists to remove. If a case was deliberately removed, lower "
+            + "this floor in the same commit so the removal is a decision on the record.");
+
+        foreach ((string relative, string expected) in Emitters.EmitAllVectors(vectors))
+        {
+            string path = Path.Combine(root, relative.Replace('/', Path.DirectorySeparatorChar));
+            Assert.True(File.Exists(path), $"generated vector file missing: {relative}");
+            Assert.Equal(Normalize(expected), Normalize(File.ReadAllText(path)));
+        }
     }
 
     [Fact]
