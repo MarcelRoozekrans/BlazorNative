@@ -1,0 +1,170 @@
+---
+id: testing-harness
+title: Testing harness
+sidebar_label: Testing harness
+---
+
+# Migrating the testing harness
+
+**Applies to:** consumers on **0.11.0 or earlier**, upgrading to the first release that contains
+this change.
+**Package:** `BlazorNative.Testing` — no other package's public surface moved.
+**Kind of change:** one source-compatible signature change and one public-constructor removal, plus
+two shell **runtime** behaviour changes (Android deep-link parsing, iOS cold-launch route seeding).
+Neither runtime change is a compile-time break; both are described below because a consumer with
+nested routes can observe them.
+
+Phase 13.4 closed one bug class: **two copies of one truth, one of them unpinned.** Every item here
+is a place where the second copy was wrong and nothing said so.
+
+---
+
+## 1. `BnTestHost.Mount` gained a `BnShell shell = BnShell.Ios` parameter
+
+```csharp
+public static BnTestHost Mount<TComponent>(
+    IDictionary<string, object?>? parameters = null,
+    Action<IServiceCollection>? configureServices = null,
+    BnShell shell = BnShell.Ios)          // ← new, defaulted
+```
+
+**Source-compatible.** The parameter is optional and trails the existing two, so every existing call
+compiles unchanged and keeps the projection it already had — iOS's, which is what the harness
+modelled before it could name a shell at all.
+
+**Binary-compatible? No.** Adding a parameter changes the method's signature, so a pre-13.4 assembly
+compiled against `BlazorNative.Testing` 0.10.0/0.11.0 and dropped next to a 13.4 build without
+recompiling will throw `MissingMethodException`. This is a test-only, dev-time-only package — the
+normal consumption path is a package reference from a test project that recompiles — so in practice
+this affects nobody. It is stated rather than assumed.
+
+## 2. `BnTestTree`'s public parameterless constructor is **gone**
+
+`BnTestTree` now declares `internal BnTestTree(BnShell shell)`. Declaring any constructor removes
+the compiler-supplied `public BnTestTree()`, so this is a **removal from the published surface**:
+
+```diff
+-BlazorNative.Testing.BnTestTree.BnTestTree() -> void
+```
+
+**Why it is named here rather than left to a baseline diff.** `BlazorNative.Testing`'s
+`PublicAPI.Shipped.txt` is empty — the package shipped in 0.10.0 before its surface was ever
+promoted to the shipped baseline — so this removal appears in the analyzer's *Unshipped* file and
+produces no RS0017. Nothing in CI would have told a reader that a public constructor disappeared.
+
+**Harmless in practice.** A `BnTestTree` a consumer constructed was never populated: only
+`BnTestHost` subscribes to `NativeRenderer.Frames` and drives `Apply`, and the only reachable
+instance is `BnTestHost.Tree`. `new BnTestTree()` produced an object on which `Root` throws. If your
+test does construct one, delete the line — you were not testing anything.
+
+## 3. Why the shell is now named: `node.Text` on `BnCheckbox` / `BnSwitch`
+
+The two shells **genuinely differ** on the text-collapse rule — the one projection decision that
+reaches a test author:
+
+| | text-bearing (absorbs a lone `text` child) |
+|---|---|
+| iOS (`BnWidgetMapper`) | `text`, `button`, `input` |
+| Android (`WidgetMapper`) | `text`, `button`, `input`, **`checkbox`**, **`switch`** — the rule is "a `TextView` that is not a `ViewGroup`", and the framework `CheckBox`/`Switch` this shell builds are both |
+
+Before 13.4 the harness hard-coded **iOS's** set and presented it as *the shells'*. So a test
+asserting the label of a `BnCheckbox` or `BnSwitch` was asserting one platform's behaviour while
+reading as though it asserted both — on Android the text is the widget's own content and
+`node.Text` should carry it; the harness reported `null` and put a separate `text` child in
+`Children`.
+
+**Both spellings, and they are both correct — of different platforms.** The shape at issue is a
+`checkbox` (or `switch`) element carrying a lone text child. `BnCheckbox` and `BnSwitch` are
+childless leaves today, so this shape is reachable only through the **raw-element hatch** — a page
+that writes the wire element directly:
+
+```razor
+@* SettingsPage.razor — the raw-element hatch, not BnCheckbox *@
+<checkbox value="true">Enable audio</checkbox>
+```
+
+```csharp
+// iOS's projection (unchanged, and still the default).
+// checkbox is NOT text-bearing there, so the text stays a child node.
+using BnTestHost ios = BnTestHost.Mount<SettingsPage>();
+BnTestNode iosBox = ios.Tree.FindAll("checkbox")[0];
+Assert.Null(iosBox.Text);
+Assert.Equal("Enable audio", iosBox.Children[0].Text);
+
+// Android's projection — pass the shell.
+// checkbox IS text-bearing there, so it absorbs the child.
+using BnTestHost android = BnTestHost.Mount<SettingsPage>(shell: BnShell.Android);
+BnTestNode droidBox = android.Tree.FindAll("checkbox")[0];
+Assert.Equal("Enable audio", droidBox.Text);
+Assert.Empty(droidBox.Children);
+```
+
+`shell:` is a named argument here because the two preceding parameters are optional; positionally it
+is the third.
+
+**What to do.** Nothing, unless a test asserts `Text` or child structure on a `checkbox` or `switch`
+node. If it does, decide which platform the test is about and say so — and note that the *answer it
+was getting* only ever described iOS. If it is about both, mount twice. `BnTestHost` is cheap: it
+builds a `ServiceCollection` and mounts synchronously.
+
+## 4. `BnTestHost.Mount` now disposes its `ServiceProvider` when the mount throws
+
+`Mount` sets `renderer.StrictErrors = true` precisely so a render fault surfaces as an exception at
+the mount call instead of a green test that rendered nothing. Until 13.4 that throw escaped with the
+`ServiceProvider` — and the `NativeRenderer` it owns — already constructed and never disposed, so a
+suite full of `Assert.Throws(() => BnTestHost.Mount<Broken>())` leaked one container per assertion
+(#281).
+
+**No action needed.** Noted only because a test that reached into the leaked provider after the
+throw (there is no supported way to do so — `Mount` never returned it) would now observe a disposed
+one.
+
+## 5. Android deep links now keep path segments
+
+The Android parser read `intent.data.host` and **dropped everything after it**. iOS has always used
+host *plus* path.
+
+| Link | Android before | Android now | iOS (unchanged) |
+|---|---|---|---|
+| `blazornative://settings` | `/settings` | `/settings` | `/settings` |
+| `blazornative://settings/audio` | `/settings` ❌ | `/settings/audio` | `/settings/audio` |
+| `blazornative://about/` | `/about` | `/about` | `/about` |
+| `blazornative:///settings` | `null` ❌ | `/settings` | `/settings` |
+
+.NET's route table is an **exact-string** lookup, so the new answer is a route your app must
+actually declare. **No shipped route is multi-segment**, so no shipped app changes behaviour — but
+an app with its own nested routes should re-check: a link that used to land on `/settings` will now
+ask for `/settings/audio`, and will miss the table unless that route exists.
+
+The rule now lives once, in `src/deeplink-vectors.json`, and `tools/BlazorNative.WireGen` emits the
+.NET, Kotlin and Swift assertion tables from it. All three suites assert the same seven cases. Do
+not hand-edit a `BnDeepLinkVectors.g.*`.
+
+**Known residual, deliberately deferred:** scheme comparison is case-sensitive on Android and
+case-insensitive on iOS. Filed separately; see §7.
+
+## 6. iOS cold deep links now seed .NET's router unconditionally
+
+On a cold launch from a `blazornative://` URL, iOS constructed the default `AppleShellBridge()` —
+whose route is `"/"` — and nothing on that path replaced it. The *right page mounted*, from a
+separate component lookup, while `IMobileBridge.GetCurrentRouteAsync` reported `"/"`. A page reading
+its own route, or any navigation computed relative to it, disagreed with what was on screen (#282).
+
+The route is now seeded from the pending launch URL whether or not the shell's component map
+resolves it — which routes exist is **.NET's** question, and the shell must not answer it by
+discarding the link. Android has behaved this way since the deep link was added.
+
+**Unchanged, deliberately:** which view goes on screen first still falls back to `BnDemo` for an
+unmapped route. That is a decision the shell genuinely has to make before .NET exists.
+
+**No action needed.** A test that pinned the old behaviour — asserting `"/"` after a cold link — was
+pinning the bug.
+
+## 7. Not fixed here
+
+- **Deep-link scheme case-sensitivity** (Android case-sensitive, iOS case-insensitive) — a residual
+  instance of this phase's own bug class, deferred on a reachability argument (Android's manifest
+  intent-filter matching is itself case-sensitive against a lowercase value, so the parser never
+  sees such a URL). Written up as its own issue rather than left as a comment.
+- The low-severity items grouped in **#283**, triaged in writing on that issue.
+

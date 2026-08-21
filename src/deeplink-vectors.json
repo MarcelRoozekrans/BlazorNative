@@ -1,0 +1,28 @@
+{
+  "$doc": [
+    "DEEP-LINK VECTORS — one table, three test suites (Phase 13.4, #278/#282).",
+    "",
+    "The deep-link ROUTE TABLE is already generated (RouteGen). What was not was the",
+    "URL -> route PARSE, hand-written twice: MainActivity.parseDeepLinkRoute in Kotlin",
+    "and BnDeepLink.route(from:) in Swift. They disagreed on multi-segment routes —",
+    "Android returned host only and dropped the path — and nothing compared them.",
+    "",
+    "You cannot generate a parser from a manifest. You CAN generate the table it must",
+    "satisfy. tools/BlazorNative.WireGen emits a test table per language from this",
+    "file; a case is written ONCE and all three suites assert it.",
+    "",
+    "route: null means the URL must produce NO route (rejected, not coerced).",
+    "",
+    "TO ADD A CASE: add it here, run `dotnet run --project tools/BlazorNative.WireGen`,",
+    "and commit the regenerated files. Never hand-edit a .g.* file."
+  ],
+  "vectors": [
+    { "url": "blazornative://settings",             "route": "/settings",             "why": "the common case — both shells already agree" },
+    { "url": "blazornative://settings/audio",       "route": "/settings/audio",       "why": "THE DIVERGENCE (#278): Android returned /settings and dropped /audio" },
+    { "url": "blazornative://settings/audio/input", "route": "/settings/audio/input", "why": "more than one extra segment" },
+    { "url": "blazornative://about/",               "route": "/about",                "why": "trailing slash trimmed — two spellings of one route would be a silent table miss" },
+    { "url": "blazornative://",                     "route": "/",                     "why": "degenerate: no host, no path" },
+    { "url": "blazornative:///settings",            "route": "/settings",             "why": "empty authority, explicit path — Android reads data.host (null here), iOS reads url.host (empty); the two APIs disagree about where the first segment lives" },
+    { "url": "https://example.com/settings",        "route": null,                    "why": "wrong scheme is REJECTED, never coerced into a route" }
+  ]
+}

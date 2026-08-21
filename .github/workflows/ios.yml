@@ -350,7 +350,7 @@ jobs:
             > ios-out/xcresult.json 2>/dev/null || true
           ls -la ios-out/crash || true
 
-      - name: Assert XCTest baseline (269 passed / 0 failed)
+      - name: Assert XCTest baseline (270 passed / 0 failed)
         if: always()
         run: |
           log=ios-out/xcodebuild-test.log
@@ -1138,9 +1138,21 @@ jobs:
           #      didBecomeActive during launch, before the runtime boots.
           # UNIVERSAL LINKS are deliberately NOT here -- associated-domains needs the
           # Apple Developer account. The scheme half needs none of it.
-          if [ "$failed" -ne 0 ] || [ "$passed" -ne 269 ]; then
+          # 269 -> 270 (13.4, +1) — THE DEEP-LINK PARSE TABLE, GENERATED, NOT COPIED.
+          # #278 was an Android bug (host only, path segments dropped), but the shape of
+          # it is this phase's whole subject: two shells each carrying their own copy of
+          # one parse rule, and nothing comparing them. The rule now lives once in
+          # src/deeplink-vectors.json and WireGen emits a table per suite.
+          #   +1 BnDeepLinkVectorTests — runs the shipping Swift parse over the
+          #      generated BnDeepLinkVectors.g.swift, the same seven cases the Kotlin
+          #      instrumented lane (224 -> 225) and the .NET lane assert.
+          # #282's cold-launch route seed adds NO iOS case: it is pinned from the
+          # REQUIRED .NET lane (DeepLinkSeedDriftTests reads the Swift source), because
+          # this lane is advisory and can be many commits stale — which is precisely how
+          # a Swift-only regression would hide.
+          if [ "$failed" -ne 0 ] || [ "$passed" -ne 270 ]; then
             grep -E "Test Case '.*' (passed|failed)" "$log" || true
-            echo "iOS XCTest baseline drift: expected 269 passed / 0 failed, got passed=$passed failed=$failed" >&2
+            echo "iOS XCTest baseline drift: expected 270 passed / 0 failed, got passed=$passed failed=$failed" >&2
             exit 1
           fi
 

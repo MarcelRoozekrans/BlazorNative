@@ -41,6 +41,7 @@ const sidebars = {
       label: 'Migrating',
       items: [
         'migrating/typed-lengths',
+        'migrating/testing-harness',
       ],
     },
     {

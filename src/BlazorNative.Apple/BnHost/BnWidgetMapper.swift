@@ -531,9 +531,15 @@ final class BnWidgetMapper {
     /// 5), same oracle discipline. `modal` is deliberately NOT here: its anchor
     /// and overlay are CONTAINERS with shell-fixed styles, and a measure func on
     /// a container is the 6.1 law's named violation.
-    private static let measuredNodeTypes: Set<String> =
-        ["text", "button", "input", "image", "checkbox", "switch", "slider", "picker",
-         "activityindicator"]
+    /// The measured-node-type set, FROM THE MANIFEST (src/wire-vocabulary.json).
+    ///
+    /// This was a hand-written literal until Phase 13.4. It shadowed the generated
+    /// `BnWireVocabulary.measuredNodeTypes`, which had zero qualified references —
+    /// so adding a measured node type to the manifest updated Kotlin and every
+    /// generated file, left this literal untouched, and the two shells' frame
+    /// tables diverged silently on the one-command path the manifest exists to make
+    /// safe. `GeneratedSymbolShadowTests` now refuses that shape.
+    private static let measuredNodeTypes = Set(BnWireVocabulary.measuredNodeTypes)
 
     /// The one nodeType that is a VIEWPORT and owns a synthetic content node — and it
     /// is deliberately NOT in [measuredNodeTypes]: the measure func attaches BY

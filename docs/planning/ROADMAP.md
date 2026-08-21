@@ -2075,13 +2075,30 @@ one argument, one more section.
 > #286 lists Cloud Storage as working today, but bridge bodies are UTF-8 text in both directions,
 > so the JSON control plane works and moving object bytes does not — the page says so.
 
-#### Phase 13.4: Parity and harness fidelity [status: pending]
+#### Phase 13.4: Parity and harness fidelity [status: complete]
 **Goal:** Close the six defects a fresh review of 0.10.0 found — four of which are **one bug
 class**: a hand-written twin that diverged from its counterpart, unpinned. Fix the class, not six
 instances.
 **Surface:** Backend
 **HelpWanted:** no
 **Issues:** #278 · #279 · #280 · #281 · #282 · #283
+**Design:** [`docs/superpowers/specs/2026-08-21-phase-13.4-design.md`](../superpowers/specs/2026-08-21-phase-13.4-design.md)
+**Plan:** [`docs/superpowers/plans/2026-08-21-phase-13.4-parity-harness.md`](../superpowers/plans/2026-08-21-phase-13.4-parity-harness.md)
+**Migration note:** [`website/docs/migrating/testing-harness.md`](../../website/docs/migrating/testing-harness.md) *(published at `/docs/migrating/testing-harness`; it documents a break in a published package, so it lives where a consumer can find it — the 13.1 precedent)*
+**Started:** 2026-08-21
+**Completed:** 2026-08-21 · [PR #299](https://github.com/MarcelRoozekrans/BlazorNative/pull/299)
+**Conclusion:** [`docs/plans/2026-08-21-phase-13.4-conclusion.md`](../plans/2026-08-21-phase-13.4-conclusion.md)
+
+> **The class is closed by mechanism, not by patching four instances** — nine guards, every one
+> mutation-proven. Both device lanes green, with no frame-table file in the diff (`.kt`/`.swift`
+> DO appear this phase, on purpose). **#280's stated bug does not exist:** the renderer coerces an
+> unknown element to `view` upstream of both the harness and the encoder, and the briefed fix would
+> have needed a new edge in the shipped package dependency graph. Re-scoped to pinning the two
+> node-type maps EQUAL, which catches a dropped arm the briefed gate never could.
+> **Both parity bugs were latent** — every route today is single-segment, and #279's two lists
+> matched — which is why neither was caught and why the answer had to be a guard.
+> .NET 1054 → 1070 · instrumented 224 → 225 · iOS 269 → 270 · **JVM unchanged at 161**.
+> Follow-ups: #296 #297 #298.
 **Inserted:** 2026-08-21 (owner decision — these are shipped defects in 0.10.0/0.11.0 and should
 not wait behind a paper design phase; 13.4 and 13.5 renumbered to 13.5 and 13.6)
 

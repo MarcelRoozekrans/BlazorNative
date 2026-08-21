@@ -232,4 +232,96 @@ public sealed class BnTestHostTests
     {
         protected override void BuildRenderTree(RenderTreeBuilder b) { }
     }
+
+    // ── Phase 13.4: the harness must not be WEAKER than the device ───────────
+    //
+    // Both cases below are the same failure shape — the harness answered where a
+    // real shell would have answered differently, so a test went green over an app
+    // that does not work. The third case of that shape (#280's headline, the
+    // encoder gate) is NOT here; the block above the collapse tests says why.
+
+    /// <summary>A `checkbox` element with a lone text child — the wire shape the two
+    /// shells project DIFFERENTLY. Written as a raw element rather than through
+    /// BnCheckbox because BnCheckbox is a childless leaf: the divergence is about the
+    /// wire, and the wire is what a shell sees.</summary>
+    private sealed class CheckboxWithTextProbe : ComponentBase
+    {
+        protected override void BuildRenderTree(RenderTreeBuilder b)
+        {
+            b.OpenElement(0, "checkbox");
+            b.AddContent(1, "hello");
+            b.CloseElement();
+        }
+    }
+
+    /// <summary>#280 sub-case. TextBearing matched iOS's collapse predicate only;
+    /// Android's is broader (TextView &amp;&amp; !ViewGroup), so checkbox and switch
+    /// absorb a text child there. The harness must not encode one shell's rule as
+    /// the contract — a consumer asserting <c>node.Text</c> on a checkbox was being
+    /// told something true of iOS and silently wrong for Android.</summary>
+    [Fact]
+    public void TheTextCollapse_FollowsTheNamedShell_NotIosAlways()
+    {
+        using BnTestHost ios = BnTestHost.Mount<CheckboxWithTextProbe>(shell: BnShell.Ios);
+        using BnTestHost android = BnTestHost.Mount<CheckboxWithTextProbe>(shell: BnShell.Android);
+
+        // iOS: checkbox is NOT text-bearing, so the text child stays a node.
+        Assert.NotEmpty(ios.Tree.Root.Children);
+        Assert.Null(ios.Tree.Root.Text);
+
+        // Android: checkbox IS text-bearing, so it absorbs the child.
+        Assert.Empty(android.Tree.Root.Children);
+        Assert.Equal("hello", android.Tree.Root.Text);
+    }
+
+    /// <summary>The default is iOS, so every call written before the shell could be
+    /// named keeps the answer it already had. Naming a shell is an ADDITION.</summary>
+    [Fact]
+    public void TheDefaultShell_IsIos_SoExistingCallsAreUnchanged()
+    {
+        using BnTestHost implicitShell = BnTestHost.Mount<CheckboxWithTextProbe>();
+        using BnTestHost explicitIos = BnTestHost.Mount<CheckboxWithTextProbe>(shell: BnShell.Ios);
+
+        Assert.Equal(explicitIos.Tree.Root.Children.Count, implicitShell.Tree.Root.Children.Count);
+        Assert.Equal(explicitIos.Tree.Root.Text, implicitShell.Tree.Root.Text);
+    }
+
+    /// <summary>Throws from BuildRenderTree — the fault class StrictErrors = true
+    /// exists to surface, and the one a consumer's expected-throw test produces.</summary>
+    /// <remarks>The sentinel is [Inject]ed so the CONTAINER constructs it during the
+    /// mount: a factory-registered singleton is tracked by the provider as a
+    /// disposable it owns, so its flag answers "was the container torn down?"
+    /// without the test needing a handle on the provider BnTestHost hides.</remarks>
+    private sealed class ThrowingProbe : ComponentBase
+    {
+        [Inject] public DisposalSentinel Sentinel { get; set; } = default!;
+
+        protected override void BuildRenderTree(RenderTreeBuilder b)
+            => throw new InvalidOperationException("the mount threw, deliberately");
+    }
+
+    private sealed class DisposalSentinel : IDisposable
+    {
+        public bool Disposed { get; private set; }
+
+        public void Dispose() => Disposed = true;
+    }
+
+    /// <summary>#281. Mount builds a ServiceProvider and a renderer before mounting.
+    /// If the mount throws — the path StrictErrors = true exists to produce — both
+    /// leaked, and a suite full of expected-throw mounts leaked one container per
+    /// assertion.</summary>
+    [Fact]
+    public void AThrowingMount_DisposesTheProvider_RatherThanLeakingIt()
+    {
+        DisposalSentinel? sentinel = null;
+
+        Assert.Throws<InvalidOperationException>(
+            () => BnTestHost.Mount<ThrowingProbe>(
+                configureServices: s => s.AddSingleton(_ => sentinel = new DisposalSentinel())));
+
+        Assert.NotNull(sentinel);
+        Assert.True(sentinel.Disposed,
+            "BnTestHost.Mount leaked its ServiceProvider when the mount threw.");
+    }
 }

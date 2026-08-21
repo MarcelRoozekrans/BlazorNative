@@ -21,8 +21,19 @@ namespace BlazorNative.Testing;
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// <summary>One node of the rendered widget tree, as a test sees it.</summary>
-/// <remarks>A value snapshot, not a live view: re-read <see cref="BnTestHost.Tree"/>
-/// after driving an event rather than holding a node across a re-render.</remarks>
+/// <remarks>
+/// <para><b>A node is live, not a snapshot.</b> The tree keeps node identity across
+/// frames and updates each node <em>in place</em> as frames arrive, so <c>Text</c>,
+/// <c>Styles</c>, <c>Props</c>, <c>Events</c> and <c>Children</c> on a reference you
+/// already hold all track the latest frame. A node captured before an interaction
+/// therefore describes the state <em>after</em> it.</para>
+/// <para>That is deliberate — it is what lets you drive an event against a node you
+/// looked up beforehand — but it means a captured node is not a record of what the
+/// screen used to say. Re-read from <see cref="BnTestHost.Tree"/> after driving an
+/// event rather than asserting on a node you held across it: a <c>FindText</c> result
+/// cached before a re-render still points at the same node, whose text has since
+/// changed, so the old text is gone from the tree and looking it up again throws.</para>
+/// </remarks>
 public sealed class BnTestNode
 {
     internal BnTestNode(int id, string nodeType)
@@ -109,10 +120,27 @@ public sealed class BnTestTree
     /// </remarks>
     private readonly Dictionary<int, int> _collapsed = [];
 
-    /// <summary>Node types that ABSORB a lone text child, mirroring the shells:
+    /// <summary>Which shell's projection the tree models.</summary>
+    /// <remarks>The two shells' text-collapse predicates GENUINELY DIFFER — iOS collapses
+    /// a lone text child into text/button/input; Android's rule is broader (any TextView
+    /// that is not a ViewGroup), so checkbox and switch absorb one too. Until Phase 13.4
+    /// the harness hard-coded iOS's set and presented it as the contract, which made
+    /// <c>node.Text</c> silently wrong for Android on two component types.</remarks>
+    private static HashSet<string> TextBearingFor(BnShell shell) => shell switch
+    {
+        BnShell.Ios     => new(StringComparer.Ordinal) { "text", "button", "input" },
+        BnShell.Android => new(StringComparer.Ordinal) { "text", "button", "input", "checkbox", "switch" },
+        _ => throw new ArgumentOutOfRangeException(nameof(shell), shell, "unknown shell"),
+    };
+
+    /// <summary>Node types that ABSORB a lone text child on the SELECTED shell:
     /// a container keeps its children, a text-bearing leaf swallows them.</summary>
-    private static readonly HashSet<string> TextBearing =
-        new(StringComparer.Ordinal) { "text", "button", "input" };
+    private readonly HashSet<string> _textBearing;
+
+    /// <summary>Builds a tree that projects <paramref name="shell"/>'s behaviour.</summary>
+    /// <remarks><c>internal</c>: a tree a consumer constructed is never populated —
+    /// <see cref="BnTestHost"/> owns the only one that means anything.</remarks>
+    internal BnTestTree(BnShell shell) => _textBearing = TextBearingFor(shell);
 
     /// <summary>The single root node the mounted component produced.</summary>
     /// <exception cref="InvalidOperationException">If the component produced no
@@ -195,7 +223,7 @@ public sealed class BnTestTree
                     if (p.NodeType == "text"
                         && p.ParentId is int owner
                         && _byId.TryGetValue(Resolve(owner), out BnTestNode? host)
-                        && TextBearing.Contains(host.NodeType))
+                        && _textBearing.Contains(host.NodeType))
                     {
                         _collapsed[p.NodeId] = host.Id;
                         break;

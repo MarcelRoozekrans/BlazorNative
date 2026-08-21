@@ -122,6 +122,46 @@ class MainActivity : FragmentActivity() {
          * Release default (Warn), never to silence.
          */
         const val LOG_LEVEL_META_DATA = "io.blazornative.logLevel"
+
+        /** Parses a VIEW-intent deep link `blazornative://<route>` into a nav route
+         * ("blazornative://settings" → "/settings"). Null for a normal (LAUNCHER)
+         * launch or a foreign scheme.
+         *
+         * A COMPANION member, not an instance one: it reads nothing but its
+         * argument, and BnDeepLinkVectorTest must exercise the REAL parser rather
+         * than a copy — the same reason [lastNavigateHostEventRcForTest] is static.
+         * Both in-class call sites ([onCreate]'s launch parse and [onNewIntent]'s
+         * warm re-route) still call it unqualified, so nothing else moved. */
+        private fun parseDeepLinkRoute(intent: Intent): String? {
+            if (intent.action != Intent.ACTION_VIEW) return null
+            val data = intent.data ?: return null
+            if (data.scheme != DEEP_LINK_SCHEME) return null
+
+            // HOST + PATH, matching iOS (BnDeepLink.route(from:)). The host is the first
+            // path segment because `blazornative://settings` parses with host "settings"
+            // and an empty path — the shape a person actually types. Until Phase 13.4 this
+            // returned "/$host" and DROPPED the path, so every nested route silently
+            // resolved to its first segment and missed .NET's exact-string table.
+            //
+            // `data.host` is null (not "") for `blazornative:///settings` — an empty
+            // authority with an explicit path, where iOS's `url.host` is "". Coercing
+            // both to "" is what makes the two shells agree on that shape.
+            val host = data.host ?: ""
+            val path = data.path ?: ""
+            if (host.isEmpty() && path.isEmpty()) return "/"
+
+            val joined = if (host.isEmpty()) path else "/$host$path"
+            // Trim a trailing slash so `blazornative://about/` and `blazornative://about`
+            // are one route — .NET's table is an exact-string lookup, so two spellings
+            // would be a silent miss.
+            return if (joined.length > 1 && joined.endsWith("/")) joined.dropLast(1) else joined
+        }
+
+        /** Test seam for BnDeepLinkVectorTest — [parseDeepLinkRoute] is private and
+         * the shared vector table (src/deeplink-vectors.json) must be asserted
+         * against the shipping parser, not a re-implementation of it. */
+        @JvmStatic
+        internal fun parseDeepLinkRouteForTest(intent: Intent): String? = parseDeepLinkRoute(intent)
     }
 
     private val tag = "BlazorNative"
@@ -576,17 +616,5 @@ class MainActivity : FragmentActivity() {
             Log.w(tag, "could not read $LOG_LEVEL_META_DATA — using the runtime default", t)
             BnLogLevel.UNSET
         }
-    }
-
-    /** Parses a VIEW-intent deep link `blazornative://<route>` into a nav route
-     * ("blazornative://settings" → "/settings"). Null for a normal (LAUNCHER)
-     * launch or a foreign scheme. onNewIntent (already-running) is out of scope
-     * — launch-time only (design §4). */
-    private fun parseDeepLinkRoute(intent: Intent): String? {
-        if (intent.action != Intent.ACTION_VIEW) return null
-        val data = intent.data ?: return null
-        if (data.scheme != DEEP_LINK_SCHEME) return null
-        val host = data.host ?: return null // blazornative://settings → "settings"
-        return "/$host"                      // → "/settings"
     }
 }
