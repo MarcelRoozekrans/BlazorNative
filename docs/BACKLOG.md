@@ -367,68 +367,23 @@ proven on device here, and the framework shipping a store would make it a mandat
 consumers who want none of it. Documented instead: **[State in BlazorNative](../website/docs/guides/state.md)**.
 Issue #22 is closed with the 2026-08-17 audit as its written rationale.
 
-### Navigation system (`BlazorNative.Navigation`)
-- [ ] **`INativeNavigator`** — typed route service
-- [ ] **Route definitions** — `[Route("/product/{id}")]` attribute on page components, source-generated route table
-- [ ] **Back stack** — `GoBackAsync()`, `GoToRootAsync()`, `CanGoBack` property
-- [ ] **Transition hints** — `NavigationTransition.Slide`, `.Fade`, `.Modal`, `.None`
-- [ ] **Deep link → route mapping** — incoming `NativeEvent("deeplink")` parsed and resolved to typed route
-- [ ] **Tab bar navigation** — `BnTabBar` with declarative tab definitions and nested navigation stacks
+### Navigation system (`BlazorNative.Navigation`) — RETIRED 2026-08-21
 
-### CLI tool (`BlazorNative.Cli`)
-- [ ] **`dotnet tool install -g BlazorNative.Cli`** — published as a .NET global tool
-- [ ] **`blazornative new <AppName>`** — scaffold new project from template
-- [ ] **`blazornative run --platform devhost`** — start DevHost with hot reload
-- [ ] **`blazornative run --platform android`** — build WASM + package APK + deploy to emulator/device
-- [ ] **`blazornative run --platform ios`** — build WASM + package IPA + deploy to simulator/device (Mac only)
-- [ ] **`blazornative build wasi`** — compile to WASM and validate
-- [ ] **`blazornative inspect`** — open DevTools browser UI
-- [ ] **`blazornative wit-gen`** — regenerate bridge bindings from `.wit` file
-- [ ] **`blazornative add platform android`** — add Android shell to existing project
+**The package is not being built**, and the three bullets this section used to list were one
+declined item, one delivered by a different mechanism, and one partly built — presented as three
+units of pending work. Checked against the code rather than left to age:
 
-### Testing infrastructure
-- [ ] **`BlazorNative.Analyzers.Tests`** — `Microsoft.CodeAnalysis.Testing` unit tests for all BN0001–BN0013 diagnostics
-- [ ] **`BlazorNative.Renderer.Tests`** — mount a component, assert `RenderPatch[]` output matches expected. No native shell needed.
-  - ~~Currently includes one [Fact(Skip)] test `RenderWalk_IsAllocationFree_OnSteadyState`~~ — **stale, corrected 2026-08-21.** That test has been a live `[Fact]` since Phase 4.2 closed the M1 deferral, and it carries a measured budget (295,200 B / 900 re-renders, bound 600 KB) rather than the "~512 B/iteration" guess this line proposed. It is load-bearing: it caught a phantom allocation regression during phase 13.2.
-- [ ] **`BlazorNative.Integration.Tests`** — run compiled `.wasm` module via wasmtime, assert bridge call round-trips
-- [ ] **`BlazorNative.Components.Tests`** — bunit-style tests for component library
-- [ ] **`.editorconfig` analyzer scoping** — suppress WASI analyzers in DevHost and test projects
-
-### CI/CD pipeline
-- [ ] **GitHub Actions — `ci.yml`** — build, analyze, test, WASM compile + validate on every PR
-- [ ] **GitHub Actions — `release.yml`** — NuGet publish on tag, GitHub Release with CHANGELOG
-- [ ] **Android emulator in CI** — run integration tests against Android emulator (GitHub Actions macOS runner)
-- [ ] **iOS simulator in CI** — macOS runner, Xcode, iOS simulator integration tests
-
-### Documentation site
-- [ ] **Getting started guide** — scaffold → run → first component on device in under 15 minutes
-- [ ] **Architecture deep-dive** — WASM, WASI, WIT, patch protocol, cooperative scheduler explained
-- [x] **Component reference** — every `Bn*` component with props, examples, platform notes.
-      **Generated** from the XML docs (`scripts/generate-reference.ps1`), never hand-written
-- [x] **Platform API reference** — ~~every `IBridge*` interface~~ → the `BlazorNative.Device`
-      façades and `IMobileBridge`, also generated
-- [ ] ~~**WIT contract reference** — `mobile-bridge.wit` annotated~~ — **superseded.** There is
-      no `.wit`. The C-ABI's normative reference is [`docs/bridge-extension.md`](bridge-extension.md),
-      and the extension policy is on the docs-site API-stability page
-- [ ] **Migration guide** — from MAUI Blazor Hybrid to BlazorNative
-- [ ] ~~**WASI compatibility guide**~~ — **superseded**: WASI was abandoned at M3 Phase 3.0.
-      The analyzers that policed it were retired or rescoped in Phase 4.1
-- [ ] **Troubleshooting** — common AOT trim issues, WASM compile errors, bridge wiring mistakes
-
-### NuGet packaging
-
-**Seven packages ship on nuget.org**, pinned by `PackagePurityTests` — nothing else under
-`src/` may grow a csproj without joining that pin, which is how "no 8th package" stays true
-rather than merely intended.
-
-- [x] `BlazorNative.Core` — bridge contract + DevHostBridge
-- [x] `BlazorNative.Renderer` — headless renderer + patch protocol
-- [x] `BlazorNative.Http` — BridgeHttpHandler + DI extensions
-- [x] `BlazorNative.Analyzers` — Roslyn analyzers (special `.props`/`.targets` packaging)
-- [x] `BlazorNative.Components` — component library
-- [x] `BlazorNative.Device` — the five `[Inject]`-able capability façades (added M9; this list
-      never had it)
-- [x] `BlazorNative.Runtime` — the NativeAOT composition root + the C-ABI exports
+- ~~**`INativeNavigator`** — typed route service~~ — **declined.** This is the package-lift flavour;
+  issue #23 closed NOT-PLANNED on 2026-08-18 and the lift is deferred past 1.0 as criterion S4,
+  mitigated by `[TypeForwardedTo]` so the move stays free if it is ever wanted.
+- ~~**Route definitions** — source-generated route table~~ — **delivered, by a different
+  mechanism.** Routes are declared with `BlazorNativePage.Routed<T>()` and `tools/BlazorNative.RouteGen`
+  parses them from source into the shells' deep-link map; duplicate routes are refused at build time
+  (#224). The `[Route("/product/{id}")]` *attribute* this line described is not the mechanism, and
+  parameterised routes are not part of it.
+- **Back stack** — *partly built.* `INavigationManager.NavigateBackAsync()` exists and the Android
+  predictive-back gesture routes through it. `GoToRootAsync()` and `CanGoBack` do **not** exist; if
+  they are wanted, they are ordinary additions to the existing contract, not a package.
 
 Plus `BlazorNative.Templates` (the `dotnet new blazornative` pack), which ships separately.
 
