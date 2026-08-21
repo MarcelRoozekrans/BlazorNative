@@ -98,7 +98,9 @@ same verdicts.
 2. Phase 13.1 — type the lengths [complete] — closed 2026-08-21 on
    [PR #289](https://github.com/MarcelRoozekrans/BlazorNative/pull/289); both device lanes
    dispatched and green; .NET 1032 → 1051
-3. Phase 13.2 — the dispatcher's honest answer [pending]
+3. Phase 13.2 — the dispatcher's honest answer [complete] — closed 2026-08-21; the premise was
+   overturned by measurement (an honest CheckAccess() stack-overflows the process), so the phase
+   shipped detection rather than an assertion
 4. Phase 13.3 — state docs + backlog retirement [pending]
 5. Phase 13.4 — theme system design [pending]
 6. Phase 13.5 — audit and close [pending]
