@@ -46,13 +46,14 @@ public sealed class BnTestHost : IDisposable
 {
     private readonly ServiceProvider _provider;
     private readonly NativeRenderer _renderer;
-    private readonly BnTestTree _tree = new();
+    private readonly BnTestTree _tree;
     private int _frames;
 
-    private BnTestHost(ServiceProvider provider, NativeRenderer renderer)
+    private BnTestHost(ServiceProvider provider, NativeRenderer renderer, BnShell shell)
     {
         _provider = provider;
         _renderer = renderer;
+        _tree = new BnTestTree(shell);
     }
 
     /// <summary>The widget tree as it stands after every frame so far.</summary>
@@ -71,9 +72,14 @@ public sealed class BnTestHost : IDisposable
     /// <param name="configureServices">Adds to the DI container the component is
     /// rendered against — register your own services, or a
     /// <c>DevHostBridge</c> when the page injects <c>IMobileBridge</c>.</param>
+    /// <param name="shell">Which shell's projection to model. The shells agree on the
+    /// wire and differ in how they project it — see <see cref="BnShell"/>. Defaults to
+    /// <see cref="BnShell.Ios"/>, which is what the harness modelled before it could
+    /// name a shell at all.</param>
     public static BnTestHost Mount<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.All)] TComponent>(
         IDictionary<string, object?>? parameters = null,
-        Action<IServiceCollection>? configureServices = null)
+        Action<IServiceCollection>? configureServices = null,
+        BnShell shell = BnShell.Ios)
         where TComponent : IComponent
     {
         var services = new ServiceCollection();
@@ -81,26 +87,39 @@ public sealed class BnTestHost : IDisposable
         configureServices?.Invoke(services);
 
         ServiceProvider provider = services.BuildServiceProvider();
-        var renderer = provider.GetRequiredService<NativeRenderer>();
+        try
+        {
+            var renderer = provider.GetRequiredService<NativeRenderer>();
 
-        // STRICT, and not negotiable for a test host: the renderer's production
-        // posture is log-and-continue, which is right for a running app and wrong
-        // for a test — a swallowed render fault would make a green test that
-        // rendered nothing. Strict mode surfaces it at the mount call.
-        renderer.StrictErrors = true;
+            // STRICT, and not negotiable for a test host: the renderer's production
+            // posture is log-and-continue, which is right for a running app and wrong
+            // for a test — a swallowed render fault would make a green test that
+            // rendered nothing. Strict mode surfaces it at the mount call.
+            renderer.StrictErrors = true;
 
-        var host = new BnTestHost(provider, renderer);
-        renderer.Frames += host.OnFrame;
+            var host = new BnTestHost(provider, renderer, shell);
+            renderer.Frames += host.OnFrame;
 
-        ParameterView view = parameters is null
-            ? ParameterView.Empty
-            : ParameterView.FromDictionary(parameters);
+            ParameterView view = parameters is null
+                ? ParameterView.Empty
+                : ParameterView.FromDictionary(parameters);
 
-        // Mount is synchronous under the renderer's inline dispatcher (the
-        // sync-mount contract the C-ABI host depends on), so by the time this
-        // returns the tree is populated — no awaiting, no polling for a shape.
-        renderer.Mount<TComponent>(view);
-        return host;
+            // Mount is synchronous under the renderer's inline dispatcher (the
+            // sync-mount contract the C-ABI host depends on), so by the time this
+            // returns the tree is populated — no awaiting, no polling for a shape.
+            renderer.Mount<TComponent>(view);
+            return host;
+        }
+        catch
+        {
+            // #281: Mount is the path StrictErrors = true exists to produce a throw
+            // on. Everything above is already built by then, so without this the
+            // provider and the renderer it owns leak on exactly the case the harness
+            // is designed for — and a test suite full of expected-throw mounts leaks
+            // one container per assertion.
+            provider.Dispose();
+            throw;
+        }
     }
 
     private ValueTask OnFrame(RenderFrame frame, CancellationToken ct)
