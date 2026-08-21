@@ -150,9 +150,13 @@ public sealed class BnModalTests : IDisposable
     {
         var (mount, _, modal, contentBox) = MountVisibleModal(new()
         {
-            [nameof(BnModal.ContentWidth)] = "280",
-            [nameof(BnModal.ContentHeight)] = "180",
-            [nameof(BnModal.Padding)] = 12f,
+            // Phase 13.1: typed lengths, boxed into object here — Blazor's
+            // parameter writer unboxes with a cast, so "280" or a bare 12f
+            // would throw at the first render. The WIRE values below are
+            // unchanged: "280", "180", "12".
+            [nameof(BnModal.ContentWidth)] = (BnAutoLength)280f,
+            [nameof(BnModal.ContentHeight)] = (BnAutoLength)180f,
+            [nameof(BnModal.Padding)] = (BnLength)12f,
             [nameof(BnModal.BackgroundColor)] = "#FFFFFF",
         });
 
@@ -335,9 +339,9 @@ public sealed class BnModalTests : IDisposable
         [
             $"{nameof(BnModal.BackgroundColor)}: {typeof(string)}",
             $"{nameof(BnModal.ChildContent)}: {typeof(RenderFragment)}",
-            $"{nameof(BnModal.ContentHeight)}: {typeof(string)}",
-            $"{nameof(BnModal.ContentWidth)}: {typeof(string)}",
-            $"{nameof(BnModal.Padding)}: {typeof(float?)}",
+            $"{nameof(BnModal.ContentHeight)}: {typeof(BnAutoLength?)}",
+            $"{nameof(BnModal.ContentWidth)}: {typeof(BnAutoLength?)}",
+            $"{nameof(BnModal.Padding)}: {typeof(BnLength?)}",
             $"{nameof(BnModal.ScrimColor)}: {typeof(string)}",
             $"{nameof(BnModal.Visible)}: {typeof(bool)}",
             $"{nameof(BnModal.VisibleChanged)}: {typeof(EventCallback<bool>)}",
@@ -364,9 +368,13 @@ public sealed class BnModalTests : IDisposable
     {
         var (mount, _, modal, _) = MountVisibleModal(new()
         {
-            [nameof(BnModal.ContentWidth)] = "280",
-            [nameof(BnModal.ContentHeight)] = "180",
-            [nameof(BnModal.Padding)] = 12f,
+            // Phase 13.1: typed lengths, boxed into object here — Blazor's
+            // parameter writer unboxes with a cast, so "280" or a bare 12f
+            // would throw at the first render. The WIRE values below are
+            // unchanged: "280", "180", "12".
+            [nameof(BnModal.ContentWidth)] = (BnAutoLength)280f,
+            [nameof(BnModal.ContentHeight)] = (BnAutoLength)180f,
+            [nameof(BnModal.Padding)] = (BnLength)12f,
             [nameof(BnModal.BackgroundColor)] = "#FFFFFF",
         });
 

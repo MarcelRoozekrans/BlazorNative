@@ -205,11 +205,11 @@
        viewport and Yoga's default alignItems is stretch, so each row
        computes to 300 wide — setting it here would hide whether the content
        node actually spans the viewport. *@
-    <BnScroll Width="@ViewportWidth" Height="@ViewportHeight">
+    <BnScroll Width="@ViewportWidthDp" Height="@ViewportHeightDp">
         @for (var i = 0; i < RowCount; i++)
         {
             var row = i;
-            <BnView Height="@RowHeight" BackgroundColor="@RowColors[row]">
+            <BnView Height="@RowHeightDp" BackgroundColor="@RowColors[row]">
                 @if (row == ImageRowIndex)
                 {
                     @* The 6.3 image, nested INSIDE the scroll (design §"The
@@ -231,7 +231,7 @@
                        as part of the subtree purge — a completion painting
                        into a removed row is 6.2's dangling-pointer lesson in
                        a new costume. *@
-                    <BnImage Src="@RowImageSrc" Width="@RowImageWidth" Height="@RowImageHeight" />
+                    <BnImage Src="@RowImageSrc" Width="@RowImageWidthDp" Height="@RowImageHeightDp" />
                 }
                 else if (row == FlexRowIndex)
                 {
@@ -360,21 +360,6 @@
     /// needs on each platform is in BnImageDemo's header, and it applies to THIS
     /// page's image too.</summary>
     internal const string RowImageSrc = BnImageDemo.FixedSrc;
-
-    private static readonly string RowImageWidth =
-        RowImageWidthDp.ToString(System.Globalization.CultureInfo.InvariantCulture);
-
-    private static readonly string RowImageHeight =
-        RowImageHeightDp.ToString(System.Globalization.CultureInfo.InvariantCulture);
-
-    private static readonly string RowHeight =
-        RowHeightDp.ToString(System.Globalization.CultureInfo.InvariantCulture);
-
-    private static readonly string ViewportWidth =
-        ViewportWidthDp.ToString(System.Globalization.CultureInfo.InvariantCulture);
-
-    private static readonly string ViewportHeight =
-        ViewportHeightDp.ToString(System.Globalization.CultureInfo.InvariantCulture);
 
     [Inject] public INavigationManager Navigation { get; set; } = default!;
 

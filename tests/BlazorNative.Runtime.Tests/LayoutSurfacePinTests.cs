@@ -33,17 +33,26 @@ public sealed class LayoutSurfacePinTests
     /// </summary>
     internal static readonly Dictionary<Type, string> AllowedNonLayoutComponents = new()
     {
+        // BnList<TItem> -- SETTLED in 13.1, not deferred any further. Its Height is
+        // BnListWindow.Compute's divisor and must be a POINT value; BnAutoLength can
+        // hold `auto` or a percentage and cannot promise one, and nothing surfaces
+        // viewport size back to .NET to recover it. Renaming Height to ViewportHeight
+        // would leave the component carrying two nearly-identical height parameters
+        // that can silently disagree. So the collision is a real constraint, not a
+        // defect awaiting a fix. Width IS typed (BnListSurfaceTests pins both halves).
         [typeof(BnList<>)] =
-            "Its EditorRequired Height is float (required — the window arithmetic " +
-            "needs a number), while BnLayoutItem.Height is the string? length " +
-            "grammar. Same name, two types: Blazor's ComponentProperties.CreateWriters " +
-            "collects base AND new-shadowed properties (only override pairs dedupe) " +
-            "and throws InvalidOperationException — \"declares more than one " +
-            "parameter matching the name 'height'\" — on the first render of a type " +
-            "that tried it (see BnList_CannotTakeTheItemBase_BecauseItsHeightIsNarrowedToFloat " +
-            "in this file). Renaming or retyping either Height is forbidden this " +
-            "phase; reconciling the collision is Phase 13.1's job (it types the " +
-            "lengths). See also BnList_KeepsExactlyTheTwoItemNamesTheCollisionStrandsThere.",
+            "SETTLED in Phase 13.1 (see the comment above for the argument): its " +
+            "EditorRequired Height is float — BnListWindow.Compute's divisor, which " +
+            "must be a POINT value — while BnLayoutItem.Height is BnAutoLength?, " +
+            "which cannot promise one. Same name, two types: Blazor's " +
+            "ComponentProperties.CreateWriters collects base AND new-shadowed " +
+            "properties (only override pairs dedupe) and throws " +
+            "InvalidOperationException — \"declares more than one parameter " +
+            "matching the name 'height'\" — on the first render of a type that " +
+            "tried it (see BnList_CannotTakeTheItemBase_BecauseItsHeightIsNarrowedToFloat " +
+            "in this file). Width IS typed (BnLength?); BnListSurfaceTests pins " +
+            "both halves. See also " +
+            "BnList_KeepsExactlyTheTwoItemNamesTheCollisionStrandsThere.",
 
         [typeof(BnModal)] =
             "The modal node cannot carry layout styles at all: both shells " +
@@ -270,8 +279,9 @@ public sealed class LayoutSurfacePinTests
     /// and the reason is a property of Blazor rather than a preference: its
     /// <c>Height</c> is <c>float</c> (required, and the window arithmetic needs a
     /// number — a viewport whose height only the layout engine knows cannot be
-    /// turned into a row range), while the shared surface's <c>Height</c> is the
-    /// <c>string?</c> length grammar. Two parameters, one name.
+    /// turned into a row range), while the shared surface's <c>Height</c> is
+    /// <see cref="BnAutoLength"/>, which can hold <c>auto</c> or a percentage and
+    /// so cannot promise a point value. Two parameters, one name.
     ///
     /// <para>C# would let the derived one shadow the base one with <c>new</c>.
     /// Blazor would not: parameter binding walks the whole hierarchy and treats a
@@ -281,6 +291,8 @@ public sealed class LayoutSurfacePinTests
     ///
     /// <para>Both halves of that are asserted here rather than written in a
     /// comment: the collision, and the framework behaviour that makes it fatal.
+    /// Phase 13.1 typed the shared surface and SETTLED this one as a constraint
+    /// rather than a deferral — see the allowlist entry at the top of this file.
     /// The day <c>BnList.Height</c> stops being narrowed, this test reds and the
     /// migration becomes available.</para>
     /// </summary>
@@ -291,7 +303,7 @@ public sealed class LayoutSurfacePinTests
             typeof(float),
             typeof(BnList<string>).GetProperty("Height")!.PropertyType);
         Assert.Equal(
-            typeof(string),
+            typeof(BnAutoLength?),
             typeof(BnLayoutItem).GetProperty("Height")!.PropertyType);
 
         // …and a `new`-shadowed [Parameter] is not expressible in Blazor.
@@ -305,7 +317,10 @@ public sealed class LayoutSurfacePinTests
 
     private abstract class NarrowableHeightProbe : ComponentBase
     {
-        [Parameter] public string? Height { get; set; }
+        // Mirrors BnLayoutItem.Height's real type so the probe stays an accurate
+        // stand-in for the base half of the collision. The framework behaviour it
+        // demonstrates is type-agnostic; the fidelity is for the reader.
+        [Parameter] public BnAutoLength? Height { get; set; }
     }
 
     private sealed class ShadowingHeightProbe : NarrowableHeightProbe

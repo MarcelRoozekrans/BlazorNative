@@ -72,15 +72,15 @@
        is asserted cross-platform. The bound one is stepped (5), the disabled
        one continuous — both prop shapes on one page. *@
     <BnSlider @bind-Value="_slider" Min="@SliderMin" Max="@SliderMax" Step="@SliderStep"
-              Width="@ControlWidth" />
+              Width="@ControlWidthDp" />
     <BnSlider Value="@DisabledSliderValue" Min="@SliderMin" Max="@SliderMax"
-              Enabled="false" Width="@ControlWidth" />
+              Enabled="false" Width="@ControlWidthDp" />
 
     @* [6]/[7] the picker pair — the SAME three items on both (one items JSON
        literal for every surface to pin), selection 0 bound / 1 disabled. *@
-    <BnPicker Items="@PickerItems" @bind-SelectedIndex="_selected" Width="@ControlWidth" />
+    <BnPicker Items="@PickerItems" @bind-SelectedIndex="_selected" Width="@ControlWidthDp" />
     <BnPicker Items="@PickerItems" SelectedIndex="@DisabledPickerIndex" Enabled="false"
-              Width="@ControlWidth" />
+              Width="@ControlWidthDp" />
 
     @* [8] the echo — the multi-control bind proof. Its text is the page's
        bound state, formatted by ONE function all surfaces read. *@
@@ -88,7 +88,7 @@
 
     @* [9] nav parity — the page's only measured leaf, LAST (a font-dependent
        height must not sit above anything a frame assertion depends on). *@
-    <BnRow Width="@BackRowWidth">
+    <BnRow Width="@BackRowWidthDp">
         <BnButton Label="← Back" OnClick="GoBack" />
     </BnRow>
 </BnColumn>
@@ -164,12 +164,6 @@
     private int _selected = InitialSelectedIndex;
 
     private string EchoText => Echo(_checked, _switched, _slider, _selected);
-
-    private static readonly string ControlWidth =
-        ControlWidthDp.ToString(System.Globalization.CultureInfo.InvariantCulture);
-
-    private static readonly string BackRowWidth =
-        BackRowWidthDp.ToString(System.Globalization.CultureInfo.InvariantCulture);
 
     [Inject] public INavigationManager Navigation { get; set; } = default!;
 

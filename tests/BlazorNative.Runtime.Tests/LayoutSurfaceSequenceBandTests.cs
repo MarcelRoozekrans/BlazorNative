@@ -157,7 +157,7 @@ public sealed class LayoutSurfaceSequenceBandTests : IDisposable
     /// therefore leaves most of the surface — including a mutated, wrongly-
     /// numbered one — entirely ABSENT from the frames this test inspects, so
     /// the collision it exists to catch would never appear. Every
-    /// string/float/enum-typed parameter (which is what the whole item and
+    /// string/float/enum/length-typed parameter (which is what the whole item and
     /// container surface, and most components' own optional attributes, are
     /// typed as) needs a real value for its frame to exist to collide.</para>
     /// </summary>
@@ -166,6 +166,14 @@ public sealed class LayoutSurfaceSequenceBandTests : IDisposable
         Type t = Nullable.GetUnderlyingType(propertyType) ?? propertyType;
         if (t == typeof(string)) return "x";
         if (t == typeof(float)) return 1f;
+        // Phase 13.1: twelve of the twenty-two shared parameters are these two
+        // types now. Without these two arms they would fall through to `null`
+        // below and be left UNSET — and an unset element attribute is never
+        // appended to the frame array at all, so more than half the surface this
+        // pin exists to check would silently stop being checked, with the pin
+        // still green. That is the failure mode the paragraph above describes.
+        if (t == typeof(BnLength)) return (BnLength)1f;
+        if (t == typeof(BnAutoLength)) return (BnAutoLength)1f;
         if (t.IsEnum) return Enum.GetValues(t).GetValue(0);
         return null; // bool/int/EventCallback*/RenderFragment*/IReadOnlyList<> etc. — left at default, not part of the item/container surface or any collision this pin checks for.
     }

@@ -62,8 +62,8 @@ internal sealed class BnCameraDemo : ComponentBase
     /// <summary>The display BnImage's DEFINITE box — Width+Height so Yoga never calls
     /// the measure func and a multi-megapixel photo cannot reflow the layout (the
     /// M6/M7 ledger discharge). Contain aspect-fits the photo inside it, paint-only.</summary>
-    internal const string DisplayWidthDp = "240";
-    internal const string DisplayHeightDp = "320";
+    internal const int DisplayWidthDp = 240;
+    internal const int DisplayHeightDp = 320;
 
     /// <summary>Echo prefixes — distinctive so a stale echo is obvious and a denial is
     /// provably DATA. Captured echoes the FINAL dims + size (the composition's proof
@@ -102,8 +102,8 @@ internal sealed class BnCameraDemo : ComponentBase
         // reflow (the M6/M7 ledger discharge); Contain → aspect-fit, paint-only. Before
         // a capture Src is null (no source, the box still reserved by the declared size).
         b.OpenComponent<BnImage>(30);
-        b.AddComponentParameter(31, nameof(BnImage.Width), DisplayWidthDp);
-        b.AddComponentParameter(32, nameof(BnImage.Height), DisplayHeightDp);
+        b.AddComponentParameter(31, nameof(BnImage.Width), (BnAutoLength)DisplayWidthDp);
+        b.AddComponentParameter(32, nameof(BnImage.Height), (BnAutoLength)DisplayHeightDp);
         b.AddComponentParameter(33, nameof(BnImage.ContentMode), ImageContentMode.Contain);
         b.AddComponentParameter(34, nameof(BnImage.Src), _src);
         b.CloseComponent();

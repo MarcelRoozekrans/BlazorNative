@@ -95,7 +95,9 @@ same verdicts.
 1. Phase 13.0 — extract the item surface [complete] — closed 2026-08-20 on
    [PR #287](https://github.com/MarcelRoozekrans/BlazorNative/pull/287); both device lanes
    dispatched and green
-2. Phase 13.1 — type the lengths [pending]
+2. Phase 13.1 — type the lengths [complete] — closed 2026-08-21 on
+   [PR #289](https://github.com/MarcelRoozekrans/BlazorNative/pull/289); both device lanes
+   dispatched and green; .NET 1032 → 1051
 3. Phase 13.2 — the dispatcher's honest answer [pending]
 4. Phase 13.3 — state docs + backlog retirement [pending]
 5. Phase 13.4 — theme system design [pending]

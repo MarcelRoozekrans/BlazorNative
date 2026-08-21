@@ -2011,11 +2011,26 @@ never had.
 > an argument until it was observed. M11.4's pump bug is the standing reason this project does not
 > settle for the argument.
 
-#### Phase 13.1: Type the lengths [status: pending]
+#### Phase 13.1: Type the lengths [status: complete]
 **Goal:** Introduce `BnLength` / `BnAutoLength` and convert every layout length, making malformed
 values a compile error while leaving the wire grammar untouched.
 **Surface:** Refactor
 **HelpWanted:** no
+**Design:** [`docs/superpowers/specs/2026-08-20-phase-13.1-design.md`](../superpowers/specs/2026-08-20-phase-13.1-design.md)
+**Plan:** [`docs/superpowers/plans/2026-08-20-phase-13.1-typed-lengths.md`](../superpowers/plans/2026-08-20-phase-13.1-typed-lengths.md)
+· [impact analysis](../plans/2026-08-20-phase-13.1-typed-lengths-impact-analysis.md)
+· [conclusion](../plans/2026-08-21-phase-13.1-conclusion.md)
+· [migration note](../plans/2026-08-20-phase-13.1-migration-note.md)
+**Started:** 2026-08-20
+**Completed:** 2026-08-21 · [PR #289](https://github.com/MarcelRoozekrans/BlazorNative/pull/289)
+
+> **Both device lanes dispatched and green** — `android-instrumented`
+> [32422529858](https://github.com/MarcelRoozekrans/BlazorNative/actions/runs/32422529858), `ios`
+> [32422532073](https://github.com/MarcelRoozekrans/BlazorNative/actions/runs/32422532073) — with
+> no shell, frame-table or `wire-vocabulary.json` file in the diff. That pair is the acceptance
+> condition; a green tick alone is not. .NET 1032 → 1051. Executed with subagent-driven
+> development; the plan's [execution record](../superpowers/plans/2026-08-20-phase-13.1-typed-lengths.md)
+> lists the five steps satisfied differently from how they were written.
 
 #### Phase 13.2: The dispatcher's honest answer [status: pending]
 **Goal:** Measure what breaks when `InlineDispatcher.CheckAccess()` stops returning an

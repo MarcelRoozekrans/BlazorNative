@@ -86,8 +86,8 @@
     <modal scrimColor="@(ScrimColor ?? DefaultScrimColor)" @onclick="HandleDismissRequest">
         <div backgroundColor="@BackgroundColor"
              padding="@Padding.ToStyleValue()"
-             width="@ContentWidth"
-             height="@ContentHeight"
+             width="@ContentWidth.ToStyleValue()"
+             height="@ContentHeight.ToStyleValue()"
              @onclick="SwallowContentBoxTap">
             @ChildContent
         </div>
@@ -127,16 +127,18 @@
     //    precedent — these style the BOX, which the author owns; the modal
     //    node itself carries NO styles, by design) ──────────────────────────
 
-    /// <summary>The content box's declared width, e.g. <c>"280"</c>.
-    /// Null = auto (the box sizes to its content).</summary>
-    [Parameter] public string? ContentWidth { get; set; }
+    /// <summary>The content box's declared width, e.g. <c>280</c>. Null leaves it
+    /// unset, so the box sizes to its content; <see cref="BnAutoLength.Auto"/> is
+    /// the explicit <c>auto</c> — see <see cref="BnAutoLength"/> for why those two
+    /// are not the same value.</summary>
+    [Parameter] public BnAutoLength? ContentWidth { get; set; }
 
-    /// <summary>The content box's declared height, e.g. <c>"180"</c>.
-    /// Null = auto.</summary>
-    [Parameter] public string? ContentHeight { get; set; }
+    /// <summary>The content box's declared height, e.g. <c>180</c>. Null leaves it
+    /// unset; <see cref="BnAutoLength.Auto"/> is the explicit <c>auto</c>.</summary>
+    [Parameter] public BnAutoLength? ContentHeight { get; set; }
 
     /// <inheritdoc cref="BnLayoutContainer.Padding"/>
-    [Parameter] public float? Padding { get; set; }
+    [Parameter] public BnLength? Padding { get; set; }
 
     /// <summary>The content box's fill colour, e.g. <c>"#FFFFFF"</c> — the same
     /// colour grammar <see cref="BnLayoutItem.BackgroundColor"/> uses elsewhere.

@@ -39,8 +39,9 @@ namespace BlazorNative.Components;
 public abstract class BnLayoutContainer : BnLayoutItem
 {
     /// <summary>Space inside the box, between its edge and its children. Null = none.</summary>
-    /// <remarks>A bare number only — percentage and <c>auto</c> paddings are not expressible.</remarks>
-    [Parameter] public float? Padding { get; set; }
+    /// <remarks>Percentages are legal; <c>auto</c> is not, which is why this is
+    /// <see cref="BnLength"/> and not <see cref="BnAutoLength"/>.</remarks>
+    [Parameter] public BnLength? Padding { get; set; }
 
     /// <summary>Main-axis distribution of children. Null = Yoga's default (flex-start).</summary>
     [Parameter] public FlexJustify? Justify { get; set; }
@@ -52,7 +53,7 @@ public abstract class BnLayoutContainer : BnLayoutItem
     [Parameter] public FlexWrap? Wrap { get; set; }
 
     /// <summary>Space between children. Null = none.</summary>
-    [Parameter] public string? Gap { get; set; }
+    [Parameter] public BnLength? Gap { get; set; }
 
     /// <summary>Emits the container surface as ELEMENT attributes. Occupies 50–54.</summary>
     protected void EmitContainerAttributes(RenderTreeBuilder b)
@@ -61,12 +62,14 @@ public abstract class BnLayoutContainer : BnLayoutItem
         b.AddAttribute(51, "justifyContent", Justify.ToStyleValue());
         b.AddAttribute(52, "alignItems",     Align.ToStyleValue());
         b.AddAttribute(53, "flexWrap",       Wrap.ToStyleValue());
-        b.AddAttribute(54, "gap",            Gap);
+        b.AddAttribute(54, "gap",            Gap.ToStyleValue());
     }
 
     /// <summary>Forwards the container surface as COMPONENT parameters. Occupies 50–54.</summary>
     protected void ForwardContainerParameters(RenderTreeBuilder b)
     {
+        // Not formatted, deliberately: these are COMPONENT parameters, so the value stays
+        // typed all the way to the base that emits it. Only the element paths format (R1).
         b.AddComponentParameter(50, nameof(Padding), Padding);
         b.AddComponentParameter(51, nameof(Justify), Justify);
         b.AddComponentParameter(52, nameof(Align),   Align);

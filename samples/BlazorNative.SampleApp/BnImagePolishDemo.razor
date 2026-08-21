@@ -97,21 +97,21 @@
 <BnColumn>
     @* [0] PLACEHOLDER-WHILE-LOADING — declared box, held source. Band L's
        y = 120 in BOTH states; the placeholder is paint, never size. *@
-    <BnColumn Width="@SectionWidth" Align="FlexAlign.FlexStart">
-        <BnImage Src="@SlowSrc" Width="@DeclaredWidth" Height="@DeclaredHeight"
+    <BnColumn Width="@SectionWidthDp" Align="FlexAlign.FlexStart">
+        <BnImage Src="@SlowSrc" Width="@DeclaredWidthDp" Height="@DeclaredHeightDp"
                  PlaceholderColor="@PlaceholderHex" />
-        <BnView Width="@SectionWidth" Height="@BandHeight" BackgroundColor="@BandUnderLoading" />
+        <BnView Width="@SectionWidthDp" Height="@BandHeightDp" BackgroundColor="@BandUnderLoading" />
     </BnColumn>
 
     @* [1] ERROR, SPACE KEPT — declared box, 404 source, OnError bound. Band
        E's y = 120 forever (the box was DECLARED into its space); the echo
        row is FIXED-height so the dispatch round-trip re-renders text and
        moves nothing. *@
-    <BnColumn Width="@SectionWidth" Align="FlexAlign.FlexStart">
-        <BnImage Src="@ErrorSrc" Width="@DeclaredWidth" Height="@DeclaredHeight"
+    <BnColumn Width="@SectionWidthDp" Align="FlexAlign.FlexStart">
+        <BnImage Src="@ErrorSrc" Width="@DeclaredWidthDp" Height="@DeclaredHeightDp"
                  PlaceholderColor="@PlaceholderHex" OnError="OnImageError" />
-        <BnView Width="@SectionWidth" Height="@BandHeight" BackgroundColor="@BandUnderError" />
-        <BnView Width="@SectionWidth" Height="@EchoRowHeight">
+        <BnView Width="@SectionWidthDp" Height="@BandHeightDp" BackgroundColor="@BandUnderError" />
+        <BnView Width="@SectionWidthDp" Height="@EchoRowHeightDp">
             <BnText Text="@EchoText" />
         </BnView>
     </BnColumn>
@@ -120,39 +120,39 @@
        in wire order. Four IDENTICAL frames (mode is paint-only); the shared
        backdrop makes contain's bars / cover's crop / stretch's distortion /
        center's clipped natural size visible on a screenshot. *@
-    <BnColumn Width="@SectionWidth" Align="FlexAlign.FlexStart">
-        <BnImage Src="@ModeSrc" Width="@ModeBoxWidth" Height="@ModeBoxHeight"
+    <BnColumn Width="@SectionWidthDp" Align="FlexAlign.FlexStart">
+        <BnImage Src="@ModeSrc" Width="@ModeBoxWidthDp" Height="@ModeBoxHeightDp"
                  ContentMode="ImageContentMode.Contain" BackgroundColor="@ModeBackdrop" />
-        <BnView Width="@SectionWidth" Height="@BandHeight" BackgroundColor="@BandUnderModes" />
-        <BnImage Src="@ModeSrc" Width="@ModeBoxWidth" Height="@ModeBoxHeight"
+        <BnView Width="@SectionWidthDp" Height="@BandHeightDp" BackgroundColor="@BandUnderModes" />
+        <BnImage Src="@ModeSrc" Width="@ModeBoxWidthDp" Height="@ModeBoxHeightDp"
                  ContentMode="ImageContentMode.Cover" BackgroundColor="@ModeBackdrop" />
-        <BnView Width="@SectionWidth" Height="@BandHeight" BackgroundColor="@BandUnderModes" />
-        <BnImage Src="@ModeSrc" Width="@ModeBoxWidth" Height="@ModeBoxHeight"
+        <BnView Width="@SectionWidthDp" Height="@BandHeightDp" BackgroundColor="@BandUnderModes" />
+        <BnImage Src="@ModeSrc" Width="@ModeBoxWidthDp" Height="@ModeBoxHeightDp"
                  ContentMode="ImageContentMode.Stretch" BackgroundColor="@ModeBackdrop" />
-        <BnView Width="@SectionWidth" Height="@BandHeight" BackgroundColor="@BandUnderModes" />
-        <BnImage Src="@ModeSrc" Width="@ModeBoxWidth" Height="@ModeBoxHeight"
+        <BnView Width="@SectionWidthDp" Height="@BandHeightDp" BackgroundColor="@BandUnderModes" />
+        <BnImage Src="@ModeSrc" Width="@ModeBoxWidthDp" Height="@ModeBoxHeightDp"
                  ContentMode="ImageContentMode.Center" BackgroundColor="@ModeBackdrop" />
-        <BnView Width="@SectionWidth" Height="@BandHeight" BackgroundColor="@BandUnderModes" />
+        <BnView Width="@SectionWidthDp" Height="@BandHeightDp" BackgroundColor="@BandUnderModes" />
     </BnColumn>
 
     @* [3] PLACEHOLDER NEVER MEASURES, failing side — intrinsic + placeholder
        + 404. Band X at y = 0 in its parent, forever: the decision-1 red
        line. No OnError — this failure dispatches nothing (attach iff
        HasDelegate, on a device). *@
-    <BnColumn Width="@SectionWidth" Align="FlexAlign.FlexStart">
+    <BnColumn Width="@SectionWidthDp" Align="FlexAlign.FlexStart">
         <BnImage Src="@ErrorSrc" PlaceholderColor="@PlaceholderHex" />
-        <BnView Width="@SectionWidth" Height="@BandHeight" BackgroundColor="@BandUnderIntrinsicFailing" />
+        <BnView Width="@SectionWidthDp" Height="@BandHeightDp" BackgroundColor="@BandUnderIntrinsicFailing" />
     </BnColumn>
 
     @* [4] PLACEHOLDER NEVER MEASURES, loading side — THE REFLOW, re-run with
        a placeholder present. Band I: y 0 → Hi (90), exactly ONCE. *@
-    <BnColumn Width="@SectionWidth" Align="FlexAlign.FlexStart">
+    <BnColumn Width="@SectionWidthDp" Align="FlexAlign.FlexStart">
         <BnImage Src="@IntrinsicSrc" PlaceholderColor="@PlaceholderHex" />
-        <BnView Width="@SectionWidth" Height="@BandHeight" BackgroundColor="@BandUnderIntrinsicLoading" />
+        <BnView Width="@SectionWidthDp" Height="@BandHeightDp" BackgroundColor="@BandUnderIntrinsicLoading" />
     </BnColumn>
 
     @* [5] nav parity — the page's only font-measured leaf, LAST. *@
-    <BnRow Width="@SectionWidth">
+    <BnRow Width="@SectionWidthDp">
         <BnButton Label="← Back" OnClick="GoBack" />
     </BnRow>
 </BnColumn>
@@ -306,27 +306,6 @@
         _errorCount++;
         _lastErrorSrc = e.Src;
     }
-
-    private static readonly string SectionWidth =
-        SectionWidthDp.ToString(System.Globalization.CultureInfo.InvariantCulture);
-
-    private static readonly string BandHeight =
-        BandHeightDp.ToString(System.Globalization.CultureInfo.InvariantCulture);
-
-    private static readonly string DeclaredWidth =
-        DeclaredWidthDp.ToString(System.Globalization.CultureInfo.InvariantCulture);
-
-    private static readonly string DeclaredHeight =
-        DeclaredHeightDp.ToString(System.Globalization.CultureInfo.InvariantCulture);
-
-    private static readonly string EchoRowHeight =
-        EchoRowHeightDp.ToString(System.Globalization.CultureInfo.InvariantCulture);
-
-    private static readonly string ModeBoxWidth =
-        ModeBoxWidthDp.ToString(System.Globalization.CultureInfo.InvariantCulture);
-
-    private static readonly string ModeBoxHeight =
-        ModeBoxHeightDp.ToString(System.Globalization.CultureInfo.InvariantCulture);
 
     [Inject] public INavigationManager Navigation { get; set; } = default!;
 

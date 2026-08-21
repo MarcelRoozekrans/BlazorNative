@@ -4,7 +4,7 @@
 #
 #   build-test (windows-latest) — the local verification procedure verbatim
 #   (setup.ps1 §1–7 documents the toolchain pins):
-#     build (analyzers ride it) → .NET tests (1032 passed / 0 skipped) →
+#     build (analyzers ride it) → .NET tests (1051 passed / 0 skipped) →
 #     three NativeAOT publishes of samples/BlazorNative.SampleApp — the
 #     publish head since Phase 8.0: the app owns PublishAot, the exports stay
 #     in Runtime via UnmanagedEntryPointsAssembly, and the artifact is
@@ -1912,7 +1912,71 @@ jobs:
       #      attributes to 1-2 broke no test while making the documented layout a
       #      lie. Scoped to hand-written emitters; the .razor four are exempt
       #      because the Razor compiler assigns their numbers, not their author.
-      - name: .NET tests (assert 1032 passed / 0 skipped)
+      # 1032 -> 1049 (13.1, +17): TYPED LENGTHS. Every layout length moved from
+      # `string?`/`float?` to `BnLength?`/`BnAutoLength?`, so Width="12px" is a
+      # compile error instead of a value both shells log and ignore. The whole
+      # delta is one new file, BnLengthTests.cs -- the migration itself retyped
+      # 76 call sites and added no test, and nothing outside .NET moved, so
+      # JVM/Android/iOS stay at 161/224/269. No .kt, .swift, .mm, frame table or
+      # wire-vocabulary.json is in the branch diff -- which is the phase's core
+      # claim made checkable: only the C# TYPE of a length changed, never its
+      # wire form, which ToStyleValue() still emits verbatim (and invariantly).
+      #   +4 BnLengthTests -- points, percent, the double literal (Razor compiles
+      #      Width="12.5" as a double, and double->float is narrowing, so without
+      #      that operator every decimal literal in markup fails CS1503), and the
+      #      negative, which is REPRESENTABLE and stays shell-enforced. Negative
+      #      legality is per-property (legal on margin and the insets) and is a
+      #      recorded limitation, not an oversight.
+      #   +6 BnAutoLengthTests -- auto, points, percent, the widening from
+      #      BnLength, and THE TRAP: default(BnAutoLength) is `auto`, not unset,
+      #      because inner-null encodes auto. That is #178's shape -- a struct's
+      #      zero value silently meaning something the author never chose, and on
+      #      Margin it re-centres the node. Pinned alongside the guarantee that
+      #      rescues it: parameters are nullable, so `default` is the OUTER null.
+      #   +6 BnLengthGuardTests -- 3 locale cases (the shells parse with a
+      #      C/Java float parser, so "1,5" is rejected as not-a-number and is
+      #      invisible on an English dev machine), 2 cases asserting NO
+      #      conversion from string exists on either type (that single member
+      #      would revert the phase to runtime log-and-ignore with every other
+      #      test still green -- it IS the mechanism), and the nullable
+      #      ToStyleValue extension keeping null as null so no attribute is
+      #      emitted and the shell's reset path still fires.
+      #   +1 BnListSurfaceTests -- BnList.Width IS typed while Height/ItemHeight
+      #      stay float, because they are BnListWindow.Compute's arithmetic
+      #      inputs and its divisor; BnAutoLength cannot promise a point value
+      #      and nothing surfaces viewport size back to .NET. Both halves pinned
+      #      so a later reader does not "finish the job" and break virtualization.
+      # Also folded in, at zero test cost: DefaultStructTrapSweepTests now sweeps
+      # a FOURTH assembly, BlazorNative.Components -- the #178/#181 guard could
+      # not see the one product assembly this phase adds public value types to.
+      # 1049 -> 1051 (13.1 final review, +2): THE PHASE'S OWN #178 ARGUMENT WAS
+      # ARGUED, NOT CHECKED. Spec §3.3 spends a page on why every length parameter
+      # must be declared BnLength?/BnAutoLength? and never bare -- default(BnLength)
+      # is a real ZERO-POINT length and default(BnAutoLength) reads as `auto`, so a
+      # parameter nobody assigned silently means something the author never chose.
+      # The pin that claimed to check it, DefaultOfTheNullable_IsNull_MeaningUnset,
+      # asserts that default(BnAutoLength?) is null: a C# LANGUAGE AXIOM that cannot
+      # fail and never looks at a declaration. Changing
+      # `[Parameter] public BnAutoLength? Width` to a bare BnAutoLength left the whole
+      # suite green -- a vacuous pin guarding the phase's central claim, which is the
+      # [[safety-claims-without-pins]] class one level up: not a comment asserting an
+      # unenforced property, but a TEST asserting the wrong one.
+      #   +1 EveryLengthParameter_IsDeclaredNullable -- sweeps the public surface of
+      #      BlazorNative.Components by reflection (not a list, so component #15 is
+      #      covered on the day it is written) and requires every [Parameter] that
+      #      MENTIONS a length to be exactly BnLength? or BnAutoLength?. Mutation-
+      #      observed RED on BnLayoutItem.MinWidth, naming the property and its
+      #      declared type; note RS0016/RS0017 fire first on that mutation, so the
+      #      public-API baseline is a genuine second line of defence -- but only for
+      #      a PUBLIC parameter, and only if someone reads the diff.
+      #   +1 TheSweep_ActuallyReachesTheLengthSurface -- anti-vacuity for the pin
+      #      that replaces a vacuous one: a filter matching nothing would make the
+      #      theory above pass forever. Anchors one property from each of the four
+      #      declaring types (BnLayoutItem, BnLayoutContainer, BnModal, BnList<TItem>)
+      #      by MEMBERSHIP in the reflected set, plus a floor of 18.
+      # JVM/Android/iOS do NOT move -- no shell test added, and no shell file is in
+      # the branch diff at all, which is still the phase's core claim.
+      - name: .NET tests (assert 1051 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -1930,8 +1994,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 1032 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 1032 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 1051 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 1051 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # ── NativeAOT publishes + nine-export verification ────────────────────
