@@ -17,7 +17,7 @@
 #   emulator (ubuntu-latest, KVM) — downloads the .so, boots the API 34
 #     google_apis x86_64 Pixel 6 image (mirrors the local AVD
 #     blazornative-pixel6-x86_64), runs connectedAndroidTest with
-#     -PciSoDir pointing at the artifact → asserts 224 passed / 0 failed.
+#     -PciSoDir pointing at the artifact → asserts 225 passed / 0 failed.
 #
 # Baselines are asserted, not observed: count drift fails the job loudly.
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1070,7 +1070,24 @@ jobs:
       # the registry draining, and a detached node dropping its outstanding echoes.
       # iOS needs none of it: UIKit does not fire .editingChanged for a programmatic
       # set, so the echo never re-enters the loop there.
-      - name: Assert instrumented baseline (224 passed / 0 failed)
+      # ── 13.4: THE DEEP-LINK PARSE TABLE, ON THE ONLY LANE THAT RUNS IT (224 -> 225, +1) ──
+      # #278: MainActivity's parser took `data.host` and DROPPED every following path
+      # segment, so `blazornative://settings/audio` resolved to `/settings` on Android
+      # and `/settings/audio` on iOS — one wire, two answers, and neither shell's copy
+      # of the rule was pinned against the other. The rule now lives once in
+      # src/deeplink-vectors.json and WireGen emits a table per suite (.NET, Kotlin,
+      # Swift), so all three assert the SAME seven cases.
+      #   +1 BnDeepLinkVectorTest — drives the shipping MainActivity.parseDeepLinkRoute
+      #      over the generated BnDeepLinkVectors.g.kt.
+      # WHY IT LANDS HERE AND NOT ON THE JVM LANE: the test is in src/androidTest —
+      # the INSTRUMENTED source set (build.gradle.kts maps androidTest -> that dir),
+      # which testDebugUnitTest does not compile. The JVM count stays at 161.
+      # Scheme-case parity is a KNOWN residual and deliberately NOT fixed here: Swift
+      # lowercases the scheme, Kotlin compares it raw. The Android intent filter's own
+      # matching is case-sensitive against a lowercase value, so the parser never sees
+      # an uppercase-scheme URL on the platform — the reachability argument is filed as
+      # its own issue rather than left as a comment.
+      - name: Assert instrumented baseline (225 passed / 0 failed)
         run: |
           shopt -s globstar nullglob
           xmls=(src/BlazorNative.Jni/build/outputs/androidTest-results/connected/**/*.xml)
@@ -1087,8 +1104,8 @@ jobs:
             s=$(attr skipped "$x");  skipped=$((skipped + ${s:-0}))
           done
           echo "Instrumented totals across ${#xmls[@]} suite(s): tests=$tests failures=$failures errors=$errors skipped=$skipped"
-          if [ "$tests" -ne 224 ] || [ "$failures" -ne 0 ] || [ "$errors" -ne 0 ] || [ "$skipped" -ne 0 ]; then
-            echo "Instrumented test baseline drift: expected 224 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped" >&2
+          if [ "$tests" -ne 225 ] || [ "$failures" -ne 0 ] || [ "$errors" -ne 0 ] || [ "$skipped" -ne 0 ]; then
+            echo "Instrumented test baseline drift: expected 225 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped" >&2
             exit 1
           fi
 
