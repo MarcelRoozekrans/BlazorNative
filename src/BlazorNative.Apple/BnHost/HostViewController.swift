@@ -61,8 +61,39 @@ final class HostViewController: UIViewController {
         // BnStderrPump.swift's header.
         BnStderrPump.install()
 
+        // Phase 13.4 (#282) — THE COLD-LAUNCH ROUTE SEED, and it is a DIFFERENT
+        // question from the mount component chosen further down.
+        //
+        // The route seeds .NET's router UNCONDITIONALLY, even when the component map
+        // cannot resolve it. Android has always done this; iOS dropped unmapped routes
+        // until Phase 13.4 (#282), so a cold deep link to a route the map did not know
+        // left .NET believing it was at "/". Which routes exist is .NET's question, and
+        // the shell must not answer it by silently discarding the link.
+        //
+        // It was in fact worse than "unmapped routes": iOS took the default
+        // `AppleShellBridge()`, whose route is "/", and nothing on this path ever
+        // replaced it — so `IMobileBridge.GetCurrentRouteAsync` read "/" even for a link the
+        // map DID resolve. The right page was mounted and the router disagreed with
+        // the screen, which is the quieter half of the same defect.
+        //
+        // The twin is MainActivity's `AndroidShellBridge(this, initialRoute =
+        // deepLinkRoute ?: "/")` — the same expression, seeded from the same parse.
+        //
+        // Read HERE, synchronously, and not from the background boot below: AppDelegate
+        // stashes a cold-launch URL inside `didFinishLaunchingWithOptions` BEFORE
+        // `makeKeyAndVisible()`, and it is that call which drives this method — so the
+        // stash is already in place, and the bridge must carry the route from the moment
+        // it is constructed (it is registered with the runtime before mount).
+        //
+        // Only a DEEP LINK seeds the route, matching Android. A cold notification tap
+        // still seeds only the mount: its stash lives on `runtime.bridge.notifications`,
+        // which does not exist yet at this point, and Android's notification path seeds
+        // no route either — closing that asymmetry would be a change to both shells, not
+        // to this one.
+        let launchRoute = BnDeepLink.shared.pendingLaunchRouteForTest() ?? "/"
+
         let mapper = BnWidgetMapper(root: view)
-        let runtime = BnRuntime(mapper: mapper)
+        let runtime = BnRuntime(mapper: mapper, bridge: AppleShellBridge(initialRoute: launchRoute))
         self.mapper = mapper
         self.runtime = runtime
 
@@ -81,6 +112,13 @@ final class HostViewController: UIViewController {
             // over a notification tap because the two cannot both be the reason the
             // app launched, and a URL is the more explicit request — the user acted
             // on a link, not on something the app scheduled. Absent both, BnDemo.
+            //
+            // UNCHANGED by #282, deliberately: this lookup answers "which view do we
+            // put on screen first?", which the shell genuinely has to decide before
+            // .NET exists, and falling back to BnDemo for an unmapped route is the
+            // right answer to THAT question. What #282 changed is the route seed
+            // above — the shell no longer lets this map's silence overwrite the route
+            // the user asked for.
             let component = BnDeepLink.shared.resolvedLaunchComponent()
                 ?? runtime.bridge.notifications.resolvedLaunchComponent()
                 ?? "BnDemo"
