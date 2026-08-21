@@ -2032,11 +2032,28 @@ values a compile error while leaving the wire grammar untouched.
 > development; the plan's [execution record](../superpowers/plans/2026-08-20-phase-13.1-typed-lengths.md)
 > lists the five steps satisfied differently from how they were written.
 
-#### Phase 13.2: The dispatcher's honest answer [status: pending]
+#### Phase 13.2: The dispatcher's honest answer [status: complete]
 **Goal:** Measure what breaks when `InlineDispatcher.CheckAccess()` stops returning an
 unconditional `true`, then ship the guard the evidence supports.
 **Surface:** Backend
 **HelpWanted:** no
+**Conclusion:** [`docs/plans/2026-08-21-phase-13.2-conclusion.md`](../plans/2026-08-21-phase-13.2-conclusion.md)
+**Started:** 2026-08-21 · **Completed:** 2026-08-21
+
+> **The premise was overturned by measurement, and that is the phase's product.** An honest
+> `CheckAccess()` does not fail tests — it **kills the process** with a stack overflow,
+> reproducibly. Blazor calls `CheckAccess()` to decide whether to **marshal**, not merely to
+> assert, and an inline dispatcher runs work on the *calling* thread, so it has nowhere to marshal
+> to: `Renderer.Dispose()` → `CheckAccess()` false → `InvokeAsync(Dispose)` → runs inline on the
+> same thread → forever. The unconditional `true` is **load-bearing**, not an oversight. An honest
+> answer needs a real queue and a real owner thread, which breaks the C-ABI sync-mount contract
+> (`MountSyncTests`). **The door stays closed until the dispatcher changes.**
+>
+> What shipped is therefore **detection, not assertion**: a report when a batch is driven from a
+> thread other than the one that drove the first batch — `Warn` under `StrictErrors`, `Debug`
+> otherwise, never throwing. Three pins, each mutation-proven against a different mutation,
+> including one that the ordinary path stays **silent**. .NET 1051 → 1054. **#9 remains open** —
+> single-lane starvation is a scheduling problem, not a which-thread problem.
 
 #### Phase 13.3: State docs + backlog retirement [status: pending]
 **Goal:** Write the "State in BlazorNative" page that is #22's real deliverable, and retire the
