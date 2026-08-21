@@ -71,8 +71,35 @@ public sealed class RenderThreadWarningTests
         return renderer;
     }
 
-    /// <summary>Captures every BnLog line for the duration of the delegate.</summary>
-    private static async Task<List<(BnLogLevel Level, string Message)>> Capture(Func<Task> body)
+    /// <summary>Runs <paramref name="work"/> on a DEDICATED thread and waits for it.
+    ///
+    /// <para>NOT <c>Task.Run</c>, and the difference is not stylistic — it is two CI
+    /// failures. First, the pool may INLINE the work onto the calling thread when cores
+    /// are scarce, so `Task.Run` does not guarantee a different thread and the
+    /// cross-thread assertion failed on a 2-core runner with both ids equal to 12.
+    /// Second, pool continuations land on arbitrary pool threads — including the one
+    /// running <c>RendererSpike.RenderWalk_IsAllocationFree_OnSteadyState</c>, whose
+    /// <c>GC.GetAllocatedBytesForCurrentThread()</c> then measures THIS test's
+    /// allocations and reports a phantom regression. A dedicated thread has neither
+    /// problem: it is provably distinct and it never borrows anyone else's.</para></summary>
+    private static void OnAnotherThread(Action work)
+    {
+        Exception? escaped = null;
+        var t = new Thread(() => { try { work(); } catch (Exception ex) { escaped = ex; } })
+        {
+            IsBackground = true,
+            Name = "bn-test-non-owner",
+        };
+        t.Start();
+        Assert.True(t.Join(TimeSpan.FromSeconds(30)), "the non-owner thread did not finish");
+        if (escaped is not null)
+            throw escaped;
+    }
+
+    /// <summary>Captures BnLog lines for the duration of <paramref name="body"/>.
+    /// Synchronous throughout: no await, so no continuation can escape onto a pool
+    /// thread and outlive the capture.</summary>
+    private static List<(BnLogLevel Level, string Message)> Capture(Action body)
     {
         var lines = new List<(BnLogLevel, string)>();
         Action<BnLogLevel, string, string>? originalSink = BnLog.Sink;
@@ -80,16 +107,16 @@ public sealed class RenderThreadWarningTests
         try
         {
             BnLog.Level = BnLogLevel.Verbose;   // so Debug-level lines are not filtered out
-            // FORWARDS to whatever was installed. A sink that only captures is a sink
-            // that SWALLOWS, and anything relying on the default stderr writer while
-            // this is installed would silently see nothing.
+            // FORWARDS to whatever was installed. A sink that only captures is a sink that
+            // SWALLOWS, and anything relying on the default stderr writer while this is
+            // installed would silently see nothing.
             BnLog.Sink = (level, category, message) =>
             {
                 if (category == Category)
                     lock (lines) { lines.Add((level, message)); }
                 originalSink?.Invoke(level, category, message);
             };
-            await body();
+            body();
         }
         finally
         {
@@ -100,23 +127,24 @@ public sealed class RenderThreadWarningTests
         lock (lines) { return [.. lines]; }
     }
 
-    /// <summary>Drives a render from a thread that did not drive the first one. Under
-    /// StrictErrors that is a WARNING, and it must name both threads — a report that
-    /// says only "wrong thread" cannot be acted on.</summary>
+    private static List<(BnLogLevel Level, string Message)> Reports(
+        List<(BnLogLevel Level, string Message)> lines)
+        => [.. lines.Where(l => l.Message.Contains("render batch", StringComparison.Ordinal))];
+
+    /// <summary>A batch driven from a thread that did not drive the first one is a WARNING
+    /// under StrictErrors, and it must name BOTH threads — a report that says only "wrong
+    /// thread" cannot be acted on.</summary>
     [Fact]
-    public async Task ARenderFromANonOwnerThread_WarnsUnderStrictErrors_AndNamesBothThreads()
+    public void ARenderFromANonOwnerThread_WarnsUnderStrictErrors_AndNamesBothThreads()
     {
         using var renderer = BuildRenderer(strict: true);
         int ownerThreadId = Environment.CurrentManagedThreadId;
         int otherThreadId = 0;
 
-        var lines = await Capture(async () =>
+        var lines = Capture(() =>
         {
-            // The first batch establishes the owner: this thread.
-            int rootId = await renderer.MountAsync<Probe>(ParameterView.Empty);
-
-            // A second batch, driven from somewhere else entirely.
-            await Task.Run(() =>
+            int rootId = renderer.Mount<Probe>();          // this thread becomes the owner
+            OnAnotherThread(() =>
             {
                 otherThreadId = Environment.CurrentManagedThreadId;
                 renderer.TriggerRootRenderForTests(rootId);
@@ -125,49 +153,45 @@ public sealed class RenderThreadWarningTests
 
         Assert.NotEqual(ownerThreadId, otherThreadId);
 
-        (BnLogLevel Level, string Message) warning = Assert.Single(
-            lines.Where(l => l.Message.Contains("render batch", StringComparison.Ordinal)));
-
+        (BnLogLevel Level, string Message) warning = Assert.Single(Reports(lines));
         Assert.Equal(BnLogLevel.Warn, warning.Level);
         Assert.Contains(otherThreadId.ToString(), warning.Message, StringComparison.Ordinal);
         Assert.Contains(ownerThreadId.ToString(), warning.Message, StringComparison.Ordinal);
     }
 
-    /// <summary>The ordinary single-threaded path must be SILENT. A guard that fires on
-    /// every batch is noise, and noise is not read — which would make this worse than
-    /// having no guard, because it would look like coverage.</summary>
+    /// <summary>The ordinary single-threaded path must be SILENT. A guard that fires on every
+    /// batch is noise, and noise is not read — which would make this worse than no guard,
+    /// because it would look like coverage. It would also allocate a message per frame, which
+    /// the renderer's allocation budget pins against.</summary>
     [Fact]
-    public async Task TheOrdinarySingleThreadedPath_IsSilent()
+    public void TheOrdinarySingleThreadedPath_IsSilent()
     {
         using var renderer = BuildRenderer(strict: true);
 
-        var lines = await Capture(async () =>
+        var lines = Capture(() =>
         {
-            int rootId = await renderer.MountAsync<Probe>(ParameterView.Empty);
+            int rootId = renderer.Mount<Probe>();
             renderer.TriggerRootRenderForTests(rootId);
             renderer.TriggerRootRenderForTests(rootId);
         });
 
-        Assert.DoesNotContain(lines, l => l.Message.Contains("render batch", StringComparison.Ordinal));
+        Assert.Empty(Reports(lines));
     }
 
-    /// <summary>Without StrictErrors the same condition still reports, at Debug level.
-    /// It ships either way — a consumer who turns Debug logging on gets it without
-    /// having to discover StrictErrors first.</summary>
+    /// <summary>Without StrictErrors the same condition still reports, at Debug level — it ships
+    /// either way, so a consumer running ordinary trace logging gets it without having to
+    /// discover StrictErrors first.</summary>
     [Fact]
-    public async Task WithoutStrictErrors_TheSameConditionReportsAtDebugLevel()
+    public void WithoutStrictErrors_TheSameConditionReportsAtDebugLevel()
     {
         using var renderer = BuildRenderer(strict: false);
 
-        var lines = await Capture(async () =>
+        var lines = Capture(() =>
         {
-            int rootId = await renderer.MountAsync<Probe>(ParameterView.Empty);
-            await Task.Run(() => renderer.TriggerRootRenderForTests(rootId));
+            int rootId = renderer.Mount<Probe>();
+            OnAnotherThread(() => renderer.TriggerRootRenderForTests(rootId));
         });
 
-        (BnLogLevel Level, string Message) report = Assert.Single(
-            lines.Where(l => l.Message.Contains("render batch", StringComparison.Ordinal)));
-
-        Assert.Equal(BnLogLevel.Debug, report.Level);
+        Assert.Equal(BnLogLevel.Debug, Assert.Single(Reports(lines)).Level);
     }
 }
