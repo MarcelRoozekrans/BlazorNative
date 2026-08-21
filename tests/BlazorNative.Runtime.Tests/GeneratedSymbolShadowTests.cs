@@ -138,4 +138,52 @@ public sealed class GeneratedSymbolShadowTests
             + "generated files to the manifest and never look at a hand-written twin. Consume the "
             + "generated symbol instead.\n  " + string.Join("\n  ", offenders));
     }
+
+    /// <summary>Generated symbols that nothing consumes, each with a written reason.
+    ///
+    /// <para>Being on this list is not an accusation — a generated symbol with no
+    /// consumer and no hand-written twin is harmless. It is here so that ADDING one
+    /// is a decision somebody wrote down, rather than a file quietly growing a dead
+    /// symbol that a future hand-written twin can then shadow. That progression is
+    /// exactly how #279 happened.</para></summary>
+    private static readonly Dictionary<string, string> UnconsumedByDesign = new(StringComparer.Ordinal)
+    {
+        ["visualStyles"] =
+            "Swift has no visual-style routing of its own — BnWidgetMapper switches on style names "
+            + "directly. Emitted for symmetry with Kotlin and byte-pinned by the codegen tests.",
+        ["scrollIgnoredContainerStyles"] =
+            "Same: the Swift scroll path checks the names inline. Emitted for symmetry, byte-pinned.",
+        ["VISUAL_STYLES"] =
+            "Kotlin's WidgetMapper.kt switches on style-name literals directly (\"backgroundColor\" ->, "
+            + "\"color\" ->, \"fontSize\" ->) rather than checking membership in this set — the same "
+            + "pattern as Swift's visualStyles. Verified no hand-written twin exists (not a #279 shadow). "
+            + "Emitted for symmetry, byte-pinned by the codegen tests.",
+    };
+
+    /// <summary>Advisory pin: a generated symbol is consumed, or it is on the list above
+    /// with a reason. Catches the state that PRECEDES a shadow — a dead generated symbol
+    /// is what a hand-written twin later shadows without anyone noticing.</summary>
+    [Fact]
+    public void EveryGeneratedSymbol_IsConsumed_OrAllowlistedWithAReason()
+    {
+        var dead = new List<string>();
+
+        foreach ((string file, string symbol) in GeneratedSymbols())
+        {
+            if (UnconsumedByDesign.ContainsKey(symbol))
+                continue;
+
+            bool referenced = ShellSources(file)
+                .Any(src => File.ReadAllText(src).Contains($"BnWireVocabulary.{symbol}", StringComparison.Ordinal));
+
+            if (!referenced)
+                dead.Add($"{symbol} (generated into {Path.GetFileName(file)})");
+        }
+
+        Assert.True(dead.Count == 0,
+            "A generated symbol has no consumer and no written reason. It is harmless TODAY — but a "
+            + "dead generated symbol is what a hand-written twin later shadows, which is how #279 "
+            + "happened. Either consume it, or add it to UnconsumedByDesign with a reason.\n  "
+            + string.Join("\n  ", dead));
+    }
 }
