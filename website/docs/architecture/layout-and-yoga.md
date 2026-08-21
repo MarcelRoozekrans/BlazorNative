@@ -38,19 +38,26 @@ that height drives its row.
 
 ## The flex surface
 
-`BnView` carries it:
+It is declared **once**, on two abstract bases, and nearly every component inherits it:
 
-| | Parameters |
-|---|---|
-| **Container** | `Direction` · `Justify` · `Align` · `Wrap` · `Gap` · `Padding` |
-| **Item** | `AlignSelf` · `Grow` · `Shrink` · `Basis` · `Margin` |
-| **Size** | `Width` · `Height` · `MinWidth` · `MaxWidth` · `MinHeight` · `MaxHeight` |
-| **Position** | `Position` · `Top` · `Right` · `Bottom` · `Left` |
-| **Visual** | `BackgroundColor` |
+| | Parameters | Declared on |
+|---|---|---|
+| **Item** | `AlignSelf` · `Grow` · `Shrink` · `Basis` · `Margin` | `BnLayoutItem` |
+| **Size** | `Width` · `Height` · `MinWidth` · `MaxWidth` · `MinHeight` · `MaxHeight` | `BnLayoutItem` |
+| **Position** | `Position` · `Top` · `Right` · `Bottom` · `Left` | `BnLayoutItem` |
+| **Visual** | `BackgroundColor` | `BnLayoutItem` |
+| **Container** | `Justify` · `Align` · `Wrap` · `Gap` · `Padding` | `BnLayoutContainer` |
 
-`BnRow` and `BnColumn` are thin presets over it: they forward every parameter *except*
-`Direction`, because a `BnRow` **is** a row. Reach for `BnView` when the direction is
-dynamic.
+`BnLayoutContainer` derives from `BnLayoutItem`, so a container is also an item — a `BnColumn`
+can be given a `Margin` by its own parent.
+
+**This means the size and position parameters are not a `BnView` privilege.** `<BnText Width="100"
+Margin="8" />` works, and so does `<BnButton MaxWidth="200" />`. Thirteen components inherit one of
+the two bases; the exceptions are `BnList<TItem>` and `BnModal`, and both are on an explicit
+allowlist with a written reason.
+
+`BnRow` and `BnColumn` are thin presets over `BnView`: they forward every parameter *except*
+`Direction`, because a `BnRow` **is** a row. Reach for `BnView` when the direction is dynamic.
 
 **There is deliberately no `BnStack`** — it would be a synonym for `BnColumn`, and two names
 for one thing is a library smell on day one.
@@ -77,6 +84,63 @@ for one thing is a library smell on day one.
 
 </BnColumn>
 ```
+
+## Lengths are typed
+
+Every length is a `BnLength` or a `BnAutoLength`, not a string. `Width="12px"` does not compile.
+
+That matters because the grammar has **no units**. A length is a bare number of density-independent
+points, a percentage, or — where the property allows it — `auto`. `12px` is CSS muscle memory, and
+before these types it compiled, shipped, and was logged-and-ignored by both shells at runtime.
+
+```razor
+<BnView Width="200"                     @* points — a plain number, unchanged *@
+        Height="12.5"                   @* decimals are fine too *@
+        MinWidth="@BnLength.Percent(50)"     @* percentages *@
+        Margin="@BnAutoLength.Auto" />       @* auto, where it is legal *@
+```
+
+**Plain numbers need no ceremony** — they convert implicitly, and they are the overwhelming
+majority of real markup. Only percentages and `auto` need the explicit spelling.
+
+The two types differ by exactly one case:
+
+| Type | Points | Percent | `auto` | Used by |
+|---|---|---|---|---|
+| `BnLength` | ✅ | ✅ | ❌ | `MinWidth` · `MaxWidth` · `MinHeight` · `MaxHeight` · `Top` · `Right` · `Bottom` · `Left` · `Padding` · `Gap` |
+| `BnAutoLength` | ✅ | ✅ | ✅ | `Width` · `Height` · `Basis` · `Margin` |
+
+The split is not cosmetic: `Margin` accepts `auto` and `Padding` does not, because that is what the
+shells enforce. `auto` on a margin absorbs free space and re-centres the node.
+
+### The errors do not mention lengths
+
+When a component parameter is not a `string`, Razor compiles the attribute's literal text as a **C#
+expression**. So `12px` never reaches a length parser at all — it is `12` followed by `px`, and you
+get a syntax error:
+
+| Markup | Error |
+|---|---|
+| `Width="12px"` | CS1003 — *"syntax error, ',' expected"* |
+| `Width="50%"` | CS1525 — a binary `%` missing its right operand |
+| `Width="auto"` · `Width="abc"` | CS0103 — undefined identifier |
+
+Cryptic, but early: these are compile errors, not runtime log lines nobody reads.
+
+### One trap worth knowing
+
+The conversions from `float` are **implicit operators, which exist only at compile time**. If a
+layout value passes through `object` — a `ParameterView`, a `Dictionary<string, object?>`, a
+hand-written `AddComponentParameter` — the compiler never gets to apply them, and Blazor casts
+rather than converts. That **compiles and throws at first render**:
+
+```csharp
+["Width"] = 200f                    // ✗ throws — boxed float, no runtime conversion
+["Width"] = (BnAutoLength)200f      // ✓ box the constructed type
+```
+
+Ordinary markup is unaffected. See [Migrating to typed layout lengths](../migrating/typed-lengths.md)
+for the full upgrade path.
 
 ## BnScroll — the rule that catches everybody
 

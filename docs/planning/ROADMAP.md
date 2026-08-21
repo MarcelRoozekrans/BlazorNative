@@ -2020,7 +2020,7 @@ values a compile error while leaving the wire grammar untouched.
 **Plan:** [`docs/superpowers/plans/2026-08-20-phase-13.1-typed-lengths.md`](../superpowers/plans/2026-08-20-phase-13.1-typed-lengths.md)
 · [impact analysis](../plans/2026-08-20-phase-13.1-typed-lengths-impact-analysis.md)
 · [conclusion](../plans/2026-08-21-phase-13.1-conclusion.md)
-· [migration note](../plans/2026-08-20-phase-13.1-migration-note.md)
+· [migration note](../../website/docs/migrating/typed-lengths.md) *(published at `/docs/migrating/typed-lengths`)*
 **Started:** 2026-08-20
 **Completed:** 2026-08-21 · [PR #289](https://github.com/MarcelRoozekrans/BlazorNative/pull/289)
 

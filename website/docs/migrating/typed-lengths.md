@@ -1,9 +1,24 @@
-# Migration note — Phase 13.1: typed layout lengths
+---
+id: typed-lengths
+title: Typed layout lengths
+sidebar_label: Typed layout lengths
+---
 
-**Applies to:** consumers on **0.10.0** upgrading to the next release.
+# Migrating to typed layout lengths
+
+**Applies to:** consumers on **0.11.0 or earlier**, upgrading to the first release that contains
+this change.
 **Package:** `BlazorNative.Components`.
 **Kind of change:** source-breaking, compile-time only. Nothing about the wire, the shells or the
 ABI changed, so a mixed-version *runtime* is not a concern — only your markup and your C#.
+
+:::tip The short version
+**Plain numbers still work.** `Width="200"`, `Padding="16"`, `Height="12.5"` all compile exactly
+as before — in this repository's own migration, 44 of the call sites needed no edit at all.
+
+Only two spellings change: percentages become `@BnLength.Percent(50)`, and `auto` becomes
+`@BnAutoLength.Auto`. Everything else the compiler finds for you.
+:::
 
 ---
 
@@ -218,8 +233,9 @@ down.
 ## 9. `BnModal` — also typed
 
 `BnModal.ContentWidth`, `BnModal.ContentHeight` (`BnAutoLength?`) and `BnModal.Padding`
-(`BnLength?`) were **missed by the original plan and added during the phase**. They are part of
-this change; a consumer setting them from a string will get the same compile errors as above.
+(`BnLength?`) are typed too. They sit on the modal's content box rather than on the modal node
+itself, which is why they carry their own names — but they are ordinary layout lengths, and a
+consumer setting them from a string gets the same compile errors as above.
 
 ---
 
