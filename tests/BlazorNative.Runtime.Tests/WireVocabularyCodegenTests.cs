@@ -118,12 +118,26 @@ public sealed class WireVocabularyCodegenTests
             + "the vacuity this phase exists to remove. If a case was deliberately removed, lower "
             + "this floor in the same commit so the removal is a decision on the record.");
 
+        int compared = 0;
         foreach ((string relative, string expected) in Emitters.EmitAllVectors(vectors))
         {
             string path = Path.Combine(root, relative.Replace('/', Path.DirectorySeparatorChar));
             Assert.True(File.Exists(path), $"generated vector file missing: {relative}");
+            compared++;
             Assert.Equal(Normalize(expected), Normalize(File.ReadAllText(path)));
         }
+
+        // THE SAME REFUSAL ONE LEVEL UP, and the floor above cannot stand in for
+        // it: that one guards the MANIFEST, this one guards the EMITTED SET.
+        // Dropping a language from EmitAllVectors shrinks the CLI's write set and
+        // this loop's coverage TOGETHER — the dropped file goes stale on disk,
+        // nothing reds, and that shell keeps asserting an out-of-date table
+        // forever. Three, because there are three target languages; if one is
+        // ever genuinely dropped, lowering this floor in the same commit makes it
+        // a decision on the record rather than a silent loss of coverage.
+        Assert.True(compared >= 3,
+            $"compared only {compared} generated vector files — expected at least 3 (the C#, "
+            + "Kotlin and Swift tables). A pin that cannot see its subject must never pass.");
     }
 
     [Fact]
