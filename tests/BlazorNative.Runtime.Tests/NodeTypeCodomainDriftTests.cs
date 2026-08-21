@@ -228,6 +228,38 @@ public sealed class NodeTypeCodomainDriftTests
             + "arm to FrameEncoder.MapNodeType (plus the two shells' node-type arrays), or by "
             + "removing the arm from MapElementToNodeType. The encoder's accepted set is: "
             + $"{string.Join(", ", accepted)}.");
+
+        // ── THE OTHER DIRECTION: A DROPPED ARM MUST BE LOUD ──────────────────
+        //
+        // Containment alone is one-directional, and that leaves a SILENT-NARROWING
+        // channel. The switch holds 29 element literals but the floor above only
+        // demands 12, so a reformat that stopped the parse seeing up to 17 of them
+        // would still clear it — and one-directional containment gets EASIER as the
+        // domain shrinks, so the pin would go quietly weaker while staying green.
+        // The companion test below keeps it from degrading to nothing (it pins two
+        // arms and the catch-all by name), but "not a vacuum" is a lower bar than
+        // this phase should accept.
+        //
+        // Covering the accepted set closes it. Every node type the encoder accepts
+        // is reachable from some element today, so equality is the true and
+        // therefore the assertable state — and it is the strongest available form:
+        // with the containment above, the two sets are now pinned EQUAL, and a
+        // dropped arm removes a node type from the codomain and reds here.
+        //
+        // It also pins something real in its own right: a wire node type no element
+        // can produce is a widget class the framework can encode and no component
+        // can ever render.
+        var unreachable = accepted.Except(codomain, StringComparer.Ordinal).ToList();
+
+        Assert.True(unreachable.Count == 0,
+            "FrameEncoder accepts node type(s) NativeRenderer can no longer produce: "
+            + $"{string.Join(", ", unreachable.Select(u => $"'{u}'"))}. "
+            + "Either an arm was dropped from MapElementToNodeType — in which case the "
+            + "component that used to emit it now renders as a plain `view`, silently — or "
+            + "the scan above stopped seeing part of the switch, in which case THIS PIN IS "
+            + "NARROWING and the containment it asserts is getting easier rather than "
+            + "truer. Check the parse before changing this assertion. "
+            + $"The renderer's codomain is: {string.Join(", ", codomain)}.");
     }
 
     /// <summary>Non-vacuity, positively: the mechanism still classifies things it is
