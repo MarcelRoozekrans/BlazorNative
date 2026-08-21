@@ -110,7 +110,9 @@ same verdicts.
 3. Phase 13.2 — the dispatcher's honest answer [complete] — closed 2026-08-21; the premise was
    overturned by measurement (an honest CheckAccess() stack-overflows the process), so the phase
    shipped detection rather than an assertion
-4. Phase 13.3 — state docs + backlog retirement (+ #286 Firebase REST docs) [pending]
+4. Phase 13.3 — state docs + backlog retirement (+ #286 Firebase REST docs) [complete] — closed
+   2026-08-21; #22 closed with the audit as rationale, #21 retitled, THREE self-contradicting
+   BACKLOG sections retired (Styling, State, Navigation), a new Guides category on the site
 5. Phase 13.4 — parity and harness fidelity [pending] — INSERTED 2026-08-21; #278 #279 #280 #281
    #282 #283, four of which are one bug class (an unpinned hand-written twin)
 6. Phase 13.5 — theme system design [pending] — was 13.4

@@ -21,6 +21,17 @@ const sidebars = {
       ],
     },
     {
+      // Task-shaped pages: "how do I do X here". Distinct from Architecture, which
+      // explains how the framework works, and from the generated API reference, which
+      // lists what exists. A reader with a question arrives here.
+      type: 'category',
+      label: 'Guides',
+      items: [
+        'guides/state',
+        'guides/rest-backends',
+      ],
+    },
+    {
       // Consumer upgrade paths for source-breaking changes. This project is
       // pre-1.0 and breaks deliberately rather than accreting compatibility
       // shims, so a consumer needs somewhere to LOOK — a migration note that

@@ -23,4 +23,14 @@
     </PackageReference>
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Phase 13.3: this assembly runs test classes SERIALLY. BnLog.Level/Sink are
+         process-wide, and RenderThreadWarningTests captures them; with parallel classes
+         a concurrent renderer's report lands in that capture. Filtering by thread id does
+         not save it either, because pooled test threads REUSE ids, so two classes can
+         legitimately share an owner id. The suite runs in well under a second, so
+         serializing it costs nothing measurable and removes the whole interference class. -->
+    <Content Include="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

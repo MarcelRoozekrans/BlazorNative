@@ -259,7 +259,7 @@
   | `picker` | `UIPickerView` *(does not flex its children)* |
 
 - [ ] **iOS push notifications (APNs)**
-  `UNUserNotificationCenter` integration. APNs token surfaced via bridge. Incoming notification → `NativeEvent("push", payload)`.
+  `UNUserNotificationCenter` integration. APNs token surfaced via bridge. Incoming notification → `NativeEvent("push", payload)`. **2026-08-21:** superseded in shape by **#284**, which designs push as a *provider-agnostic bridge capability* covering FCM and APNs together rather than one shell at a time, and which carries the background-delivery design question this line never raised.
 
 - [ ] **iOS secure storage**
   Keychain integration behind `ISecureStorage`. Replaces plain bridge storage for sensitive data.
@@ -268,7 +268,7 @@
   `application(_:continue:restorationHandler:)` → `NativeEvent("deeplink", url)`.
 
 - [ ] **iOS App Store compliance**
-  Apple forbids JIT compilation. Validate that the `.wasm` binary compiled via .NET NativeAOT does not trigger App Store rejection. May require `com.apple.security.cs.allow-jit` entitlement review. Document findings.
+  Apple forbids JIT compilation. **Re-worded 2026-08-21 — the original text was WASM-era and incoherent:** it spoke of "the `.wasm` binary compiled via .NET NativeAOT", and there is no `.wasm` since the Mono-WASI runtime was retired. NativeAOT compiles ahead of time to a native static library, so the JIT prohibition is **satisfied by construction** and no `allow-jit` entitlement is wanted — asking for one would be the risk. What remains genuinely open is ordinary submission review: bundle layout, entitlements actually used, and export-compliance answers. Blocked on an Apple Developer account (P3).
 
 ### Additional platform APIs
 
@@ -297,7 +297,7 @@
       assumes a mounted renderer. Design question before implementation question
 - [ ] **In-app purchases** — StoreKit / Play Billing. Multi-step async flows, and **untestable
       in CI** (paid accounts, sandbox testers, store products). Accepted as out of scope for 1.0
-- [ ] **Remote push** — FCM (Android) and APNs (iOS). Both blocked on external accounts
+- [ ] **Remote push** — FCM (Android) and APNs (iOS). Both blocked on external accounts. **Designed as one capability in #284 (2026-08-21).**
 
 **How a capability is actually added** — see [`docs/bridge-extension.md`](bridge-extension.md),
 which is the normative procedure. The short version: a capability rides the **existing** generic
@@ -352,17 +352,20 @@ the ABI unchanged at 10 exports / 80 bytes.
       wrappers over a surface `[Inject]` already gives you, in a package whose stated purpose is
       to hold no method bodies. Decide whether it should exist before scheduling it
 
-### Styling system (`BlazorNative.Styling`)
-- [ ] **Typed `NativeStyle` record** — replace string-based style properties with a strongly-typed, AOT-safe style object
-- [ ] **`StyleSheet` — define-once, reference-by-name** — React Native StyleSheet pattern
-- [ ] **Theme system** — `IBlazorNativeTheme`, `ThemeProvider`, dark/light mode detection via `NativeEvent("themeChanged")`
-- [ ] **Platform style overrides** — `[AndroidStyle(backgroundColor: "#fff")]` / `[iOSStyle(...)]` attributes on components
-- [ ] **Responsive layout** — screen size breakpoints (`Compact`, `Regular`, `Large`) mapped to device classes
+### Styling system (`BlazorNative.Styling`) — RETIRED 2026-08-21
 
-### State management (`BlazorNative.State`)
-- [ ] **`BlazorNativeStore<TState>`** — minimal built-in Redux-like store for small apps. AOT-compatible, source-generated reducers.
-- [ ] **ZeroFlux/StaticFlux integration** — wire up the existing AOT-compatible Flux library (already explored) as the recommended state solution for larger apps
-- [ ] **`ZeroAlloc.EventSourcing` integration** — event-sourced state that survives app backgrounding via bridge storage
+**Not being built.** The styling system landed *inside* `Components`/`Renderer` — typed parameters,
+a partitioned routing table, and one generated vocabulary (`src/wire-vocabulary.json`). A separate
+package would be a mandatory transitive dependency with no consumer benefit. Issue #21 is retitled
+to the parts that remain real; see the "never built" list further down, which has said this since
+the M12 sweep while these bullets went on contradicting it.
+
+### State management (`BlazorNative.State`) — RETIRED 2026-08-21
+
+**Not being built.** Blazor's DI singletons and cascading values already cover every ask, both
+proven on device here, and the framework shipping a store would make it a mandatory dependency for
+consumers who want none of it. Documented instead: **[State in BlazorNative](../website/docs/guides/state.md)**.
+Issue #22 is closed with the 2026-08-17 audit as its written rationale.
 
 ### Navigation system (`BlazorNative.Navigation`)
 - [ ] **`INativeNavigator`** — typed route service
@@ -386,7 +389,7 @@ the ABI unchanged at 10 exports / 80 bytes.
 ### Testing infrastructure
 - [ ] **`BlazorNative.Analyzers.Tests`** — `Microsoft.CodeAnalysis.Testing` unit tests for all BN0001–BN0013 diagnostics
 - [ ] **`BlazorNative.Renderer.Tests`** — mount a component, assert `RenderPatch[]` output matches expected. No native shell needed.
-  - Currently includes one [Fact(Skip)] test `RenderWalk_IsAllocationFree_OnSteadyState` (`tests/BlazorNative.Renderer.Tests/RendererSpike.cs`). When this milestone enables StateHasChanged-on-mounted-root, un-skip and set a realistic ~512 B/iteration budget.
+  - ~~Currently includes one [Fact(Skip)] test `RenderWalk_IsAllocationFree_OnSteadyState`~~ — **stale, corrected 2026-08-21.** That test has been a live `[Fact]` since Phase 4.2 closed the M1 deferral, and it carries a measured budget (295,200 B / 900 re-renders, bound 600 KB) rather than the "~512 B/iteration" guess this line proposed. It is load-bearing: it caught a phantom allocation regression during phase 13.2.
 - [ ] **`BlazorNative.Integration.Tests`** — run compiled `.wasm` module via wasmtime, assert bridge call round-trips
 - [ ] **`BlazorNative.Components.Tests`** — bunit-style tests for component library
 - [ ] **`.editorconfig` analyzer scoping** — suppress WASI analyzers in DevHost and test projects
