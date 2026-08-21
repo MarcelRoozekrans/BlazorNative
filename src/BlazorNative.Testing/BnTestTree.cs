@@ -21,8 +21,19 @@ namespace BlazorNative.Testing;
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// <summary>One node of the rendered widget tree, as a test sees it.</summary>
-/// <remarks>A value snapshot, not a live view: re-read <see cref="BnTestHost.Tree"/>
-/// after driving an event rather than holding a node across a re-render.</remarks>
+/// <remarks>
+/// <para><b>A node is live, not a snapshot.</b> The tree keeps node identity across
+/// frames and updates each node <em>in place</em> as frames arrive, so <c>Text</c>,
+/// <c>Styles</c>, <c>Props</c>, <c>Events</c> and <c>Children</c> on a reference you
+/// already hold all track the latest frame. A node captured before an interaction
+/// therefore describes the state <em>after</em> it.</para>
+/// <para>That is deliberate — it is what lets you drive an event against a node you
+/// looked up beforehand — but it means a captured node is not a record of what the
+/// screen used to say. Re-read from <see cref="BnTestHost.Tree"/> after driving an
+/// event rather than asserting on a node you held across it: a <c>FindText</c> result
+/// cached before a re-render still points at the same node, whose text has since
+/// changed, so the old text is gone from the tree and looking it up again throws.</para>
+/// </remarks>
 public sealed class BnTestNode
 {
     internal BnTestNode(int id, string nodeType)
