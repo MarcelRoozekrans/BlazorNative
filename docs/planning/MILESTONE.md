@@ -1,7 +1,8 @@
 # Milestone 13: Consumer Ergonomics
 
-**Status:** active
+**Status:** complete
 **Started:** 2026-08-19
+**Completed:** 2026-08-22
 
 **Design:** [`docs/superpowers/specs/2026-08-19-milestone-13-design.md`](../superpowers/specs/2026-08-19-milestone-13-design.md)
 **Predecessor:** Milestone 12 — Post-M11 Maintenance & Consumer Polish (complete; **retro-fitted,
@@ -62,36 +63,36 @@ same verdicts.
 
 ## Definition of Done
 
-- [ ] All planned phases complete
-- [ ] All tests passing — .NET, JVM, **and both device lanes dispatched** (a green *required* set
+- [x] All planned phases complete
+- [x] All tests passing — .NET, JVM, **and both device lanes dispatched** (a green *required* set
       does not mean the advisory Android/iOS lanes ran; that is how 11.4's pump bug hid)
-- [ ] **The item surface is declared exactly once.** `BnLayoutItem` holds the 17 item parameters;
+- [x] **The item surface is declared exactly once.** `BnLayoutItem` holds the 17 item parameters;
       no component re-declares any of them. Pinned by a test that reds if a component declares a
       parameter name already on the base.
-- [ ] **Every component derives from `BnLayoutItem`**, except those on an explicit allowlist whose
+- [x] **Every component derives from `BnLayoutItem`**, except those on an explicit allowlist whose
       entries each carry a written reason. Pinned — without this, component #13 is written against
       `ComponentBase` and the hole silently reopens. (Membership is decided in 13.0; the DoD
       requires the pin and the reasons, not a particular list.)
-- [ ] **Every layout length is typed.** `Width="12px"` is a **compile error**, not a runtime log
+- [x] **Every layout length is typed.** `Width="12px"` is a **compile error**, not a runtime log
       line. `Padding` and `Margin` share one type; the `float?` / `string?` split is gone.
-- [ ] **Frame tables are byte-identical** before and after, on **both** shells, across the whole
+- [x] **Frame tables are byte-identical** before and after, on **both** shells, across the whole
       sample. This is the refactor's correctness claim and its acceptance test.
-- [ ] **The wire is unchanged** — no ABI change, no shell change, no `wire-vocabulary.json`
+- [x] **The wire is unchanged** — no ABI change, no shell change, no `wire-vocabulary.json`
       change. Verified by diffing the emitted attribute stream, not asserted.
-- [ ] **Baselines re-shipped with a written migration note** for consumers on 0.10.0, carried in
+- [x] **Baselines re-shipped with a written migration note** for consumers on 0.10.0, carried in
       the release notes.
-- [ ] **`CheckAccess()` resolved on measured evidence** — an honest guard or a Debug-only warning,
+- [x] **`CheckAccess()` resolved on measured evidence** — an honest guard or a Debug-only warning,
       with the measurement recorded (which suites red, and why).
-- [ ] **#21 retitled, #22 closed** with the audit as written rationale; `BlazorNative.Styling` and
+- [x] **#21 retitled, #22 closed** with the audit as written rationale; `BlazorNative.Styling` and
       `BlazorNative.State` deleted from `BACKLOG.md`; the WASM-era APNs / App-Store rows re-worded.
-- [ ] **Theme decision recorded** — the design exists and a go/no-go is written down, either way.
-- [ ] **The twin-divergence class is closed MECHANICALLY, not instance by instance** (added
+- [x] **Theme decision recorded** — the design exists and a go/no-go is written down, either way.
+- [x] **The twin-divergence class is closed MECHANICALLY, not instance by instance** (added
       2026-08-21 with phase 13.4). #278/#282 (deep-link parsers), #279 (iOS `measuredNodeTypes`
       escaping the #262 codegen) and #280 (the harness bypassing the C-ABI encode) are one defect
       in four places: two copies of one truth, one unpinned. The criterion is that a NEW instance
       of the shape reds — a generated twin, or a pin that compares the two copies — not that these
       four are patched. Six patches leave the seventh free to appear.
-- [ ] **The test harness cannot pass what the device rejects** (#280) and does not leak on its
+- [x] **The test harness cannot pass what the device rejects** (#280) and does not leak on its
       own `StrictErrors` path (#281). A testing product that passes when the device fails converts
       "untested" into "tested and fine", which is worse than shipping no harness.
 
@@ -121,7 +122,9 @@ same verdicts.
    `BnColor`, **no-go before 1.0** on a prescribed colour-role vocabulary, remove `BnTheme`.
    Found that `themeChanged` needs no ABI *or* .NET change, and that host-event names are an
    unpinned three-language vocabulary — a live instance of 13.4's class, now a prerequisite
-7. Phase 13.6 — audit and close [pending] — was 13.5
+7. Phase 13.6 — audit and close [complete] — was 13.5 — closed 2026-08-22, verdict **PASS WITH
+   FINDINGS**; all three findings remediated the same day (changelog entry restored + #302 filed;
+   #278/#280/#281/#282 closed with evidence; F3 accepted as debt)
 
 ## Risk areas
 
