@@ -2122,10 +2122,32 @@ not wait behind a paper design phase; 13.4 and 13.5 renumbered to 13.5 and 13.6)
 >
 > #283 is the grouped low-severity remainder from the same review; it rides along or is split out.
 
-#### Phase 13.5: Theme system design [status: pending]
+#### Phase 13.5: Theme system design [status: complete]
 **Goal:** Produce a written theme design and a go/no-go decision — not an implementation.
 **Surface:** Docs
 **HelpWanted:** no
+**Spec:** `docs/superpowers/specs/2026-08-22-phase-13.5-theme-design.md`
+
+> **Verdict: SPLIT.** GO on OS dark/light **detection** and on **`BnColor`**; **NO-GO before 1.0**
+> on a prescribed colour-**role** vocabulary; **REMOVE** the shipped `BnTheme`.
+>
+> Two findings drove it. First, the risk register was wrong about cost: `blazornative_host_event`
+> passes any unreserved name straight to `NativeShellBridge.NativeEvents`, which is *shipped public
+> API* — so `themeChanged` is **not an ABI change and not even a .NET change**. The whole cost is
+> the two shells.
+>
+> Second, and unplanned: **host-event names are not in the wire manifest.** They are hand-written
+> literals in three languages — C# consts, *inline* Kotlin literals, Swift constants — with nothing
+> comparing them, and .NET does not even declare the three lifecycle names. That is a live,
+> unpinned instance of the class 13.4 closed, sitting inside the mechanism this phase depends on.
+> So a `hostEvents` section in `src/wire-vocabulary.json` is a **prerequisite**, not a nicety.
+>
+> The no-go is the load-bearing half: role names are a design-system opinion (MD3 and HIG disagree,
+> and neither contains the other), this phase excludes platform compliance, and an app can already
+> cascade its own theme record today. Prescribing a third vocabulary would freeze it at 1.0. The
+> gap only the framework can close is detection — so that is what ships.
+>
+> Implementation, if taken, is a separate phase; §9 of the spec gives the order it must respect.
 
 #### Phase 13.6: Audit and close [status: pending]
 **Goal:** Run `audit-milestone` against the DoD on live evidence and close M13. **No tag** — the

@@ -117,7 +117,10 @@ same verdicts.
    [PR #299](https://github.com/MarcelRoozekrans/BlazorNative/pull/299); nine mutation-proven
    guards, both device lanes green; #280's stated bug proved unreachable and re-scoped;
    .NET 1054 → 1070
-6. Phase 13.5 — theme system design [pending] — was 13.4
+6. Phase 13.5 — theme system design [complete] — was 13.4 — verdict SPLIT: go on detection +
+   `BnColor`, **no-go before 1.0** on a prescribed colour-role vocabulary, remove `BnTheme`.
+   Found that `themeChanged` needs no ABI *or* .NET change, and that host-event names are an
+   unpinned three-language vocabulary — a live instance of 13.4's class, now a prerequisite
 7. Phase 13.6 — audit and close [pending] — was 13.5
 
 ## Risk areas
