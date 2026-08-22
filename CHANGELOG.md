@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.12.0](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.11.0...v0.12.0) (2026-08-21)
+
+
+### Features
+
+* **renderer:** report a render batch driven from a non-owner thread ([#292](https://github.com/MarcelRoozekrans/BlazorNative/issues/292)) ([e345bca](https://github.com/MarcelRoozekrans/BlazorNative/commit/e345bcaa6d6d1adad1b15447edb7874ad4bfdad5))
+
+
+### Bug Fixes
+
+* **shells,testing:** close the twin-divergence class ([#278](https://github.com/MarcelRoozekrans/BlazorNative/issues/278)-[#283](https://github.com/MarcelRoozekrans/BlazorNative/issues/283)) ([#299](https://github.com/MarcelRoozekrans/BlazorNative/issues/299)) ([cf2a4e7](https://github.com/MarcelRoozekrans/BlazorNative/commit/cf2a4e7ffd809462566a1dc8669ea62d78a1c204))
+
 ## [0.11.0](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.10.0...v0.11.0) (2026-08-20)
 
 
