@@ -152,4 +152,4 @@ same verdicts.
 
 | Date | Verdict | Gaps |
 |---|---|---|
-| — | not yet audited | — |
+| 2026-08-22 | **PASS WITH FINDINGS** — [`docs/plans/2026-08-22-milestone-13-audit.md`](../plans/2026-08-22-milestone-13-audit.md) | **F1** typed lengths (`feat(components)!` #289) is **absent from CHANGELOG 0.12.0** — release-please omitted it at generation time; one DoD line partially met · **F2** #278/#280/#281/#282 delivered but still open (PR #299 carried no closing keywords) · **F3** no `pre-push-review` report on file (warning, not a fail) |
