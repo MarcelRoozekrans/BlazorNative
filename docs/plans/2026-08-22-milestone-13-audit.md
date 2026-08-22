@@ -147,6 +147,19 @@ shipping the plan as written — 13.2 (an honest `CheckAccess()` kills the proce
 stated bug is unreachable). Both are recorded with the measurement, which is the milestone's most
 reusable output.
 
+## 5a. Remediation log (2026-08-22, same day)
+
+All three findings were closed out before `complete-milestone`, on owner direction.
+
+| Finding | Action |
+|---|---|
+| **F1** | The typed-lengths breaking entry was added to `CHANGELOG.md` under 0.12.0, in a `⚠ BREAKING CHANGES` section, linking the migration guide — with an inline note saying it was added by hand and why, so it does not read as release-please output. Cause tracked in [#302](https://github.com/MarcelRoozekrans/BlazorNative/issues/302), whose DoD requires a mechanical check that a `!` commit in a release range reaches that release's notes |
+| **F2** | #278, #280, #281, #282 closed with evidence comments naming the pin that closes each. **#280's comment states plainly that it closes by a different mechanism than it asked for** — its stated scenario is unreachable, and the node-type map equality pin catches a dropped `MapElementToNodeType` arm that the briefed encoder-gate never could |
+| **F3** | Accepted as debt. M13 used per-phase task review plus a whole-branch final review inside subagent-driven-development; no `pre-push-review` report exists and none is being back-filled |
+
+The verdict above is **unchanged** — it records the state at audit time, which is what an audit is
+for. The remediations are separate commits, not edits to the finding.
+
 ## 6. Audit trail
 
 | Check | Command |
