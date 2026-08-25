@@ -3,8 +3,25 @@
 ## [0.12.0](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.11.0...v0.12.0) (2026-08-21)
 
 
+### ⚠ BREAKING CHANGES
+
+> **Added by hand 2026-08-22.** Release-please omitted this entry when it generated the 0.12.0
+> notes — the commit is marked `!` and shipped in this version, but neither it nor any
+> `BREAKING CHANGES` section reached the changelog. Found by the Milestone 13 audit
+> ([`docs/plans/2026-08-22-milestone-13-audit.md`](docs/plans/2026-08-22-milestone-13-audit.md),
+> finding F1); the cause is tracked in
+> [#302](https://github.com/MarcelRoozekrans/BlazorNative/issues/302).
+
+* **components:** layout lengths are typed. `Width`, `Height`, `Padding`, `Margin` and the rest now
+  take `BnLength?` / `BnAutoLength?` instead of `string?` / `float?`. **`Width="12px"` no longer
+  compiles** — it previously compiled, shipped, and was silently logged-and-ignored by both shells
+  at runtime. Numeric literals (`Width="200"`, `Width="12.5"`) are unaffected. Migration guide:
+  [Typed lengths](https://marcelroozekrans.github.io/BlazorNative/docs/migrating/typed-lengths) ([#289](https://github.com/MarcelRoozekrans/BlazorNative/issues/289)) ([cf8e956](https://github.com/MarcelRoozekrans/BlazorNative/commit/cf8e956))
+
+
 ### Features
 
+* **components:** type the layout lengths ([#289](https://github.com/MarcelRoozekrans/BlazorNative/issues/289)) ([cf8e956](https://github.com/MarcelRoozekrans/BlazorNative/commit/cf8e956))
 * **renderer:** report a render batch driven from a non-owner thread ([#292](https://github.com/MarcelRoozekrans/BlazorNative/issues/292)) ([e345bca](https://github.com/MarcelRoozekrans/BlazorNative/commit/e345bcaa6d6d1adad1b15447edb7874ad4bfdad5))
 
 

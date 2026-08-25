@@ -1948,12 +1948,17 @@ written for it.
 
 ---
 
-### 🔄 Milestone 13 — Consumer Ergonomics  *(active — started 2026-08-19)* [status: active]
+### ✅ Milestone 13 — Consumer Ergonomics  *(complete — 2026-08-19 → 2026-08-22)* [status: complete]
 
 **Goal:** Make BlazorNative pleasant to write apps in — declare the typed layout surface **once**,
 give it to every component that can have it, and **type the lengths** so malformed values become
 compile errors instead of silent runtime log lines.
 **Started:** 2026-08-19
+**Completed:** 2026-08-22
+**Audit:** [`docs/plans/2026-08-22-milestone-13-audit.md`](../plans/2026-08-22-milestone-13-audit.md)
+— **PASS WITH FINDINGS**, 12 of 13 DoD criteria met on live evidence; all three findings remediated
+the same day. **No tag** — `CONVENTIONS.md` records `Milestone completion tags a release: no`;
+release-please owns the `v<semver>` namespace and Phase 8.6 retired milestone tags.
 **Design:** [`docs/superpowers/specs/2026-08-19-milestone-13-design.md`](../superpowers/specs/2026-08-19-milestone-13-design.md)
 · full scope, DoD and owner decisions in [MILESTONE.md](MILESTONE.md).
 
@@ -2149,7 +2154,7 @@ not wait behind a paper design phase; 13.4 and 13.5 renumbered to 13.5 and 13.6)
 >
 > Implementation, if taken, is a separate phase; §9 of the spec gives the order it must respect.
 
-#### Phase 13.6: Audit and close [status: pending]
+#### Phase 13.6: Audit and close [status: complete]
 **Goal:** Run `audit-milestone` against the DoD on live evidence and close M13. **No tag** — the
 8.6 rule, and `CONVENTIONS.md` records `Milestone completion tags a release: no`.
 **Surface:** Docs
