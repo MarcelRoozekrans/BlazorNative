@@ -61,7 +61,7 @@ jobs:
         uses: actions/setup-java@v6
         with:
           distribution: temurin
-          java-version: '21'
+          java-version: '25'
 
       - name: Resolve toolchain paths (NDK root)
         run: |
@@ -182,7 +182,7 @@ jobs:
         uses: actions/setup-java@v6
         with:
           distribution: temurin
-          java-version: '21'
+          java-version: '25'
 
       # Hardware acceleration for the emulator — the documented
       # reactivecircus/android-emulator-runner KVM setup for Linux runners.
