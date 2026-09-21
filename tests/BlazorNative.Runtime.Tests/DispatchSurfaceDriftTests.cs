@@ -46,6 +46,7 @@ namespace BlazorNative.Runtime.Tests;
 public sealed class DispatchSurfaceDriftTests
 {
     private sealed record Method(string Name, string Semantics, string[]? Platforms, string? Reason);
+    private sealed record IgnoredMethod(string Name, string[]? Platforms, string? Reason);
 
     private static string RepoRoot()
     {
@@ -82,6 +83,50 @@ public sealed class DispatchSurfaceDriftTests
             + "stopped seeing them");
         return [.. methods];
     }
+
+    /// <summary>The manifest's OTHER half (fix round 2, Important #2): every method
+    /// name here is a <c>dispatch*</c>-prefixed declaration that exists in one or
+    /// both runtime sources but is deliberately NOT part of the guarded dispatch
+    /// surface — a private helper or a test seam. Optional; an absent <c>ignored</c>
+    /// key reads as an empty list rather than failing the manifest parse, so a
+    /// manifest predating this guard still loads (and then reds honestly, naming
+    /// every unmentioned method, the first time this test runs against it).</summary>
+    private static IgnoredMethod[] Ignored()
+    {
+        string json = File.ReadAllText(Path.Combine(RepoRoot(), "src", "dispatch-surface.json"));
+        using JsonDocument doc = JsonDocument.Parse(json,
+            new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Skip });
+
+        if (!doc.RootElement.TryGetProperty("ignored", out JsonElement arr))
+            return [];
+
+        var ignored = new List<IgnoredMethod>();
+        foreach (JsonElement m in arr.EnumerateArray())
+        {
+            string[]? platforms = m.TryGetProperty("platforms", out JsonElement p)
+                ? [.. p.EnumerateArray().Select(x => x.GetString()!)]
+                : null;
+            ignored.Add(new IgnoredMethod(
+                m.GetProperty("name").GetString()!,
+                platforms,
+                m.TryGetProperty("reason", out JsonElement r) ? r.GetString() : null));
+        }
+        return [.. ignored];
+    }
+
+    /// <summary>Every <c>dispatch*</c>-named function/fun DECLARATION in
+    /// <paramref name="source"/> (a comment-stripped runtime source), by distinct
+    /// name — a method declared twice (an overload) counts once. This is a raw
+    /// scan for the NAME only; it does not classify the lane call the way
+    /// <see cref="ClassifyLane"/> does; that is <see cref="EveryMethodsLaneCall_MatchesItsDeclaredSemantics"/>'s
+    /// job for methods the manifest already knows about. This one exists to find
+    /// what the manifest does NOT yet know about.</summary>
+    private static readonly Regex DispatchNamedDeclaration = new(@"\b(?:fun|func)\s+(dispatch\w*)\s*\(");
+
+    private static IEnumerable<string> DispatchNamedDeclarations(string source) =>
+        DispatchNamedDeclaration.Matches(source)
+            .Select(m => m.Groups[1].Value)
+            .Distinct(StringComparer.Ordinal);
 
     /// <summary>Strips comments via the shared <see cref="CommentStrippedSource"/> (fix
     /// round 1, Important #1: this method used to carry its own copy of the stripper,
@@ -273,6 +318,62 @@ public sealed class DispatchSurfaceDriftTests
                     $"Swift '{m.Name}' is declared {m.Semantics} but uses "
                     + $"dispatchLane.{(laneBlocks ? "sync" : "async")}. This is #339's exact "
                     + "shape: a method whose name matches its twin and whose behaviour does not.");
+            }
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Fix round 2 (final whole-branch review), Important #2 — THE COMPLETENESS
+    // GUARD. Both facts above only ever look at methods THIS MANIFEST ALREADY
+    // NAMES. A new dispatch method added to one shell and never declared here is
+    // simply never looked at — the most plausible route to a false green, and
+    // less than what this phase's own header claims the pin does. This fact
+    // closes that gap: it scans both runtime sources directly for `dispatch*`
+    // declarations and asserts every one is accounted for, either in `methods`
+    // (guarded) or in `ignored` (deliberately exempt, with a written reason).
+    //
+    // What it does NOT do: classify lane-call semantics for ignored methods (they
+    // are, by definition, not part of the guarded surface) or catch a SECOND
+    // overload of an already-declared name diverging from the first (see the
+    // manifest's own `$doc` note — `ClassifyLane`/`FindOtherDeclaration` share
+    // that limit).
+    // ─────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void EveryDispatchNamedDeclaration_IsDeclaredOrIgnored()
+    {
+        HashSet<string> declared = Surface().Select(m => m.Name).ToHashSet(StringComparer.Ordinal);
+        IgnoredMethod[] ignored = Ignored();
+
+        CheckShell("Kotlin", KotlinRuntime(), "kotlin", declared, ignored);
+        CheckShell("Swift", SwiftRuntime(), "swift", declared, ignored);
+
+        static void CheckShell(string shellLabel, string source, string platform,
+            HashSet<string> declared, IgnoredMethod[] ignored)
+        {
+            foreach (string name in DispatchNamedDeclarations(source))
+            {
+                if (declared.Contains(name))
+                    continue;
+
+                IgnoredMethod? entry = ignored.SingleOrDefault(i => i.Name == name);
+                Assert.True(entry is not null,
+                    $"{shellLabel} declares '{name}' (a dispatch*-named method) that is NEITHER in "
+                    + "src/dispatch-surface.json's 'methods' list NOR on its 'ignored' list. A new "
+                    + "dispatch method nobody declared is invisible to the drift pin by construction — "
+                    + "exactly the false-green route #339's review found. Add it to 'methods' (so its "
+                    + "lane call gets checked) or to 'ignored' (with a written reason) — never leave "
+                    + "it unmentioned.");
+
+                bool appliesHere = entry!.Platforms is null || entry.Platforms.Contains(platform);
+                Assert.True(appliesHere,
+                    $"{shellLabel} declares '{name}', which IS on the ignored list but restricted to "
+                    + $"platforms [{string.Join(", ", entry.Platforms ?? [])}] that do not include "
+                    + $"'{platform}' — either widen its platforms or add a {shellLabel}-specific entry.");
+
+                Assert.False(string.IsNullOrWhiteSpace(entry.Reason),
+                    $"'{name}' is on the ignored list without a written reason. Asymmetry/omission is "
+                    + "allowed; silence is not.");
             }
         }
     }

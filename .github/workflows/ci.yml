@@ -4,7 +4,7 @@
 #
 #   build-test (windows-latest) — the local verification procedure verbatim
 #   (setup.ps1 §1–7 documents the toolchain pins):
-#     build (analyzers ride it) → .NET tests (1079 passed / 0 skipped) →
+#     build (analyzers ride it) → .NET tests (1080 passed / 0 skipped) →
 #     three NativeAOT publishes of samples/BlazorNative.SampleApp — the
 #     publish head since Phase 8.0: the app owns PublishAot, the exports stay
 #     in Runtime via UnmanagedEntryPointsAssembly, and the artifact is
@@ -2066,7 +2066,29 @@ jobs:
       # this one. JVM moves separately (161 -> 162, see that step's history) for
       # the Android measurement; Android instrumented and iOS's XCTest counts
       # move in their own (advisory) lanes -- see ios.yml's comment history.
-      - name: .NET tests (assert 1079 passed / 0 skipped)
+      # 1079 -> 1080 (14.1 final whole-branch review, +1): four pre-merge fixes.
+      # Important #1 fixed DispatchLaneBlockingTests' teardown -- it was
+      # returning while its worker thread was still parked inside
+      # Exports.DispatchEventCore, then resetting HostSession/NativeShellBridge
+      # out from under it; the cancellation TCS's RunContinuationsAsynchronously
+      # continuation could resume on the thread pool after the test method had
+      # already returned, racing the next test in [Collection("host-session")].
+      # Fixed by completing the held host call and joining the worker, bounded,
+      # before resetting -- mirroring the JVM twin's own cleanup step. No count
+      # change (a fix to an existing test, not a new one). Important #2 is the
+      # +1: DispatchSurfaceDriftTests.EveryDispatchNamedDeclaration_IsDeclaredOrIgnored
+      # closes the gap the review found in the guard THIS PHASE ADDED -- the pin
+      # only ever checked methods src/dispatch-surface.json already named, so a
+      # NEW dispatch method added to one shell and left undeclared was invisible
+      # to it by construction. The new fact scans both runtime sources directly
+      # for dispatch*-named declarations and asserts each is either in the
+      # manifest's `methods` (guarded) or its new `ignored` list (exempt, with a
+      # written reason) -- mutation-proven red on an undeclared method added to
+      # BlazorNativeRuntime.kt, naming it, then green again once removed.
+      # Important #3 (BnAppLifecycle.swift's header, stating the fire-and-forget
+      # delivery contract) and Important #4 (the conclusion doc's timing claim)
+      # touch no test code -- no further count movement.
+      - name: .NET tests (assert 1080 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -2084,8 +2106,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 1079 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 1079 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 1080 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 1080 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # ── NativeAOT publishes + nine-export verification ────────────────────
