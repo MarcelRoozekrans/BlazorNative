@@ -127,26 +127,6 @@ public sealed class WireVocabulary
         RequireNoDuplicates(ScrollIgnoredContainerStyles.Names, "scrollIgnoredContainerStyles");
         RequireNoDuplicates(MeasuredNodeTypes.Names, "measuredNodeTypes");
 
-        RequireNonEmpty(HostEvents.Events, "hostEvents");
-        RequireNoDuplicates(HostEvents.Names, "hostEvents");
-
-        // THE TIER IS A ROUTING DECISION, not a label. An unknown tier would make
-        // "does .NET intercept this?" unanswerable, and the dispatch-arm pin reads
-        // this field to decide what it must assert.
-        foreach (HostEvent e in HostEvents.Events)
-        {
-            if (e.Tier is not (HostEventTable.ReservedTier or HostEventTable.PassthroughTier))
-                throw new InvalidDataException(
-                    $"hostEvent '{e.Name}' has tier '{e.Tier}' — expected "
-                    + $"'{HostEventTable.ReservedTier}' or '{HostEventTable.PassthroughTier}'. "
-                    + "The tier decides whether DispatchHostEventCore must route the name or "
-                    + "let it fall through to the app multicast; an unknown value makes that "
-                    + "unanswerable and leaves the dispatch-arm pin with nothing to assert.");
-
-            if (string.IsNullOrWhiteSpace(e.Name))
-                throw new InvalidDataException("a hostEvent has an empty name");
-        }
-
         // THE PARTITION. Both shells route a style name to exactly one of two
         // places, and "which one?" must not be answerable twice.
         string[] both = yoga.Intersect(visual, StringComparer.Ordinal).ToArray();
@@ -191,6 +171,26 @@ public sealed class WireVocabulary
             throw new InvalidDataException(
                 $"measuredNodeTypes {string.Join(", ", unknownMeasured)} are not node types. "
                 + "A measure function keyed on a name nothing emits is dead code that looks live.");
+
+        RequireNonEmpty(HostEvents.Events, "hostEvents");
+        RequireNoDuplicates(HostEvents.Names, "hostEvents");
+
+        // THE TIER IS A ROUTING DECISION, not a label. An unknown tier would make
+        // "does .NET intercept this?" unanswerable, and the dispatch-arm pin reads
+        // this field to decide what it must assert.
+        foreach (HostEvent e in HostEvents.Events)
+        {
+            if (e.Tier is not (HostEventTable.ReservedTier or HostEventTable.PassthroughTier))
+                throw new InvalidDataException(
+                    $"hostEvent '{e.Name}' has tier '{e.Tier}' — expected "
+                    + $"'{HostEventTable.ReservedTier}' or '{HostEventTable.PassthroughTier}'. "
+                    + "The tier decides whether DispatchHostEventCore must route the name or "
+                    + "let it fall through to the app multicast; an unknown value makes that "
+                    + "unanswerable and leaves the dispatch-arm pin with nothing to assert.");
+
+            if (string.IsNullOrWhiteSpace(e.Name))
+                throw new InvalidDataException("a hostEvent has an empty name");
+        }
     }
 
     private static void RequireNonEmpty<T>(IReadOnlyCollection<T> items, string what)
