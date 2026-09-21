@@ -124,10 +124,10 @@ jobs:
           global-json-file: global.json
 
       - name: Setup JDK 21 (Temurin — Gradle daemon + sdkmanager)
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
-          java-version: '21'
+          java-version: '25'
 
       - name: Resolve toolchain paths (NDK root + vswhere on PATH)
         run: |
@@ -2561,10 +2561,10 @@ jobs:
           global-json-file: global.json
 
       - name: Setup JDK 21 (Temurin — Gradle daemon + sdkmanager)
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
-          java-version: '21'
+          java-version: '25'
 
       # ── NDK (the bionic publish links with the pinned NDK's clang) ─────────
       # Mirrors build-test / publish-so verbatim: resolve the root, use the

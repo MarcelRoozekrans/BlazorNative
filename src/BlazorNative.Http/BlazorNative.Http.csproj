@@ -63,14 +63,14 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.11" />
-    <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.11" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.12" />
+    <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.12" />
     <!-- 1.7.2 floor: ZeroAlloc.Inject.Generator emits `#pragma warning disable 1591` in
          its output as of 1.7.2 (ZeroAlloc-Net/ZeroAlloc.Inject#70), which is what lets
          BnEnforceDocCoverage go on here — see the #173 note above. The runtime package is
          kept in lockstep with the generator. -->
-    <PackageReference Include="ZeroAlloc.Inject" Version="1.7.3" />
-    <PackageReference Include="ZeroAlloc.Inject.Generator" Version="1.7.3">
+    <PackageReference Include="ZeroAlloc.Inject" Version="1.7.6" />
+    <PackageReference Include="ZeroAlloc.Inject.Generator" Version="1.7.6">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>analyzers;build</IncludeAssets>
     </PackageReference>
