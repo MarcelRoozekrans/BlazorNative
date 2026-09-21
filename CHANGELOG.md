@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.13.1](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.13.0...v0.13.1) (2026-09-21)
+
+
+### Bug Fixes
+
+* **14.1:** apply final whole-branch review fixes -- dispatch twins ([b32cdbe](https://github.com/MarcelRoozekrans/BlazorNative/commit/b32cdbe4535f5eecaf98292802311c2f46bd8661))
+* **14.1:** apply the final review wave that missed the merge ([#349](https://github.com/MarcelRoozekrans/BlazorNative/issues/349)) ([b32cdbe](https://github.com/MarcelRoozekrans/BlazorNative/commit/b32cdbe4535f5eecaf98292802311c2f46bd8661))
+* **ios:** split the dispatch twins — lifecycle stops blocking the lane ([#339](https://github.com/MarcelRoozekrans/BlazorNative/issues/339)) ([#347](https://github.com/MarcelRoozekrans/BlazorNative/issues/347)) ([31057e9](https://github.com/MarcelRoozekrans/BlazorNative/commit/31057e99220da34ed7830709956653aeae0e25d8))
+
 ## [0.13.0](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.12.0...v0.13.0) (2026-09-21)
 
 
