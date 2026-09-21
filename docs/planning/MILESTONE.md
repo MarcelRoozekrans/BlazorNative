@@ -1,99 +1,91 @@
-# Milestone 13: Consumer Ergonomics
+# Milestone 14: Twin Divergence, Closed Mechanically
 
 **Status:** active
-**Started:** 2026-08-19
+**Started:** 2026-09-21
 
-**Design:** [`docs/superpowers/specs/2026-08-19-milestone-13-design.md`](../superpowers/specs/2026-08-19-milestone-13-design.md)
-**Predecessor:** Milestone 12 — Post-M11 Maintenance & Consumer Polish (complete; **retro-fitted,
-never audited** — see the note on its ROADMAP block, and do not cite it as audit-backed).
-**Source:** owner direction (2026-08-19): continue on the #21/#22/#24/#25 band while P3 waits on
-an external iOS developer. Scope set by the **2026-08-17 audit of issues #16–#25**, which found
-most of that band obsolete or already delivered and named the one real gap underneath it.
+**Design:** [`docs/superpowers/specs/2026-09-21-milestone-14-design.md`](../superpowers/specs/2026-09-21-milestone-14-design.md)
+**Predecessor:** Milestone 13 — Consumer Ergonomics (complete 2026-08-22, verdict **PASS WITH
+FINDINGS**, [audit](../plans/2026-08-22-milestone-13-audit.md)).
+**Source:** the **P3 real-device verification run** by @ceesalberts on 2026-09-20 — iPhone 17 Pro
+Max, iOS 26, Release `ios-arm64`, signed — reported on [#17][i17] and [#213][i213] and split into
+[#338][i338] and [#339][i339]. P3 had been the repo's **single remaining 1.0 blocker** and was
+administrative, not technical; it has now reported, and it converted one external blocker into
+three concrete engineering ones.
+
+[i17]: https://github.com/MarcelRoozekrans/BlazorNative/issues/17
+[i213]: https://github.com/MarcelRoozekrans/BlazorNative/issues/213
+[i338]: https://github.com/MarcelRoozekrans/BlazorNative/issues/338
+[i339]: https://github.com/MarcelRoozekrans/BlazorNative/issues/339
 
 ## Goal
 
-M13 makes BlazorNative **pleasant to write apps in**. Today an app author cannot give a `BnText`
-a margin, a width, or an `AlignSelf`, and cannot give a `BnButton` anything at all — the typed
-layout surface is copy-pasted across **eight** components and **absent from four**. The lengths
-those parameters accept are `string?`, so `Width="12px"` compiles, ships, and is silently
-logged-and-ignored at runtime by both shells. This milestone declares the item surface **once**,
-gives it to every component that can have it, and **types the lengths** so the malformed cases
-become compile errors. It also spends the two remaining audit verdicts that do not need a package
-built (#22's real deliverables) and retires the stale backlog entries that keep re-generating the
-same verdicts.
+M14 closes the **twin-divergence class** mechanically. The thesis is one sentence: *wherever the
+framework holds one truth in two places, either generate the second copy or pin the two against
+each other.* M13 named this class, closed four instances by hand, and set a DoD criterion saying a
+**new** instance must red — but the mechanism it built covers only half the class, and the P3
+device run found the other half by killing a process on real hardware. This milestone builds the
+missing half, fixes the three live instances that motivated it, and leaves behind guards that make
+the next instance fail in CI rather than on someone's phone.
 
-## Scoping decisions (owner, 2026-08-19)
+## The class, stated precisely
 
-1. **Break now, while pre-1.0.** The shared-base extraction and the typed lengths land in one
-   pass, with the `PublicAPI` baselines rewritten and a written migration note. This surface
-   **freezes at 1.0** and 1.0 blocks on a single administrative item, so this is very likely the
-   last cheap window.
+| sub-shape | what diverges | mechanism | live instances |
+|---|---|---|---|
+| **Vocabulary** | the same *names*, hand-copied into three languages | **codegen** from one source — the #262 precedent | **#300** host-event names |
+| **Semantics** | the same *name*, different *behaviour* | a **differential pin** comparing the two sides | **#339** `dispatchHostEvent` blocks on iOS, not Android · **#213 item 1** the stored ACL and the read policy disagree |
 
-   ⚠ **CORRECTED 2026-08-20, after measurement.** This decision was originally recorded as
-   accepting a **binary break** — *"moving members to a base is source-compatible but
-   binary-breaking; anyone compiled against 0.10.0 must recompile."* **That was wrong, and it
-   was asserted without being measured.** Phase 13.0 measured it: a probe was compiled against
-   the pre-refactor assembly, its member references verified in IL, and the *same binary* run
-   against both the old and new assemblies — **both exited 0 with identical, correct values.**
-   A `MemberRef` whose parent is a `TypeRef` is resolved by walking the base chain
-   (ECMA-335 II.22.25), and moving a member **up** its own hierarchy is explicitly a
-   *non-breaking* change in dotnet/runtime's own compatibility rules — moving it **down** is
-   the breaking direction. **Callers are unaffected and need no recompile.**
+M13's criterion read *"a generated twin, **or** a pin that compares the two copies"*. **Only the
+first clause was ever built.** #339 is the proof the second was load-bearing: no name generator
+could have caught it, because the names match perfectly and the behaviour does not.
 
-   What genuinely changes is **reflection about declarations**: `DeclaredOnly` queries see the
-   members on the base instead of the derived type (measured on `BnView`: 24 → 2). This repo
-   observed the same effect internally — its own doc-comment coverage floor moved 196 → 74.
+**#213 is intra-shell** — `BnSecureStorage` disagrees with itself and with `BnBiometrics`, all
+inside the Apple shell. The class is therefore not "Android vs iOS"; it is *one truth, two copies,
+unpinned*, wherever that occurs.
 
-   **The decision itself stands and is stronger for the correction:** the benefit is unchanged
-   and the cost was overstated. The one real consumer-facing effect is narrow — an XML
-   `<see cref>` or `<inheritdoc cref>` naming the *old* declaring type raises **CS1574, a
-   warning**, and only in consumer projects that generate documentation; crefs do not resolve
-   inherited members. See [the phase conclusion](../plans/2026-08-19-phase-13.0-conclusion.md)
-   for the measurement and its bounds.
-2. **No new packages.** Neither `BlazorNative.Styling` (#21) nor `BlazorNative.State` (#22) is
-   built — both premises are obsolete per the audit, and both collide with the four-times-recorded
-   "no 8th package" decision enforced by `PackagePurityTests`.
-3. **The theme system is design-first**, with an explicit go/no-go. Its deliverable is a design
-   and a decision; building it is a separate go and "not now" is an acceptable outcome.
-4. **#25 → 1.0 criterion S3 is OUT**, by owner choice. Recorded because it is the only item that
-   moves the 1.0 scoreboard: if P3 clears while M13 runs, S3 becomes the remaining gap.
-5. **Every phase is independently shippable** and **none of M13 blocks a 1.0 cut** — deliberate,
-   because the external iOS developer may clear P3 at any time.
+## Scoping decisions (owner, 2026-09-21)
+
+1. **1.0 is NOT this milestone's DoD.** M14 clears the two P3 blockers and verifies them; whether
+   that suffices for 1.0 is a separate owner call afterwards, evidenced by a re-run device
+   checklist. Recorded because folding 1.0 in would make the DoD depend on a second device run
+   nobody here controls.
+2. **#338 surfaces insets to .NET** rather than each shell insetting its own root — so frame parity
+   survives as *"same (layout, insets) → same frames"* instead of *"same numbers"*. The only option
+   where neither shell has to lie about where `y=0` is.
+3. **No ABI change is expected.** Insets are dynamic, so they cannot be an init-time slot; they ride
+   the **existing** `blazornative_host_event` export with a generated name — the shape 13.5 already
+   found for `themeChanged`. If this proves false it is an explicit scoping decision, not a silent
+   one.
+4. **#338 is not itself a divergence.** Both shells have *zero* inset handling and are identically
+   wrong. It is here as a 1.0 blocker and as the consumer that proves 14.0's generator.
+5. **Every phase is independently shippable** and none blocks a 1.0 cut — carried forward from M13,
+   because P3's remaining items may clear at any time.
 
 ## Definition of Done
 
 - [ ] All planned phases complete
 - [ ] All tests passing — .NET, JVM, **and both device lanes dispatched** (a green *required* set
       does not mean the advisory Android/iOS lanes ran; that is how 11.4's pump bug hid)
-- [ ] **The item surface is declared exactly once.** `BnLayoutItem` holds the 17 item parameters;
-      no component re-declares any of them. Pinned by a test that reds if a component declares a
-      parameter name already on the base.
-- [ ] **Every component derives from `BnLayoutItem`**, except those on an explicit allowlist whose
-      entries each carry a written reason. Pinned — without this, component #13 is written against
-      `ComponentBase` and the hole silently reopens. (Membership is decided in 13.0; the DoD
-      requires the pin and the reasons, not a particular list.)
-- [ ] **Every layout length is typed.** `Width="12px"` is a **compile error**, not a runtime log
-      line. `Padding` and `Margin` share one type; the `float?` / `string?` split is gone.
-- [ ] **Frame tables are byte-identical** before and after, on **both** shells, across the whole
-      sample. This is the refactor's correctness claim and its acceptance test.
-- [ ] **The wire is unchanged** — no ABI change, no shell change, no `wire-vocabulary.json`
-      change. Verified by diffing the emitted attribute stream, not asserted.
-- [ ] **Baselines re-shipped with a written migration note** for consumers on 0.10.0, carried in
-      the release notes.
-- [ ] **`CheckAccess()` resolved on measured evidence** — an honest guard or a Debug-only warning,
-      with the measurement recorded (which suites red, and why).
-- [ ] **#21 retitled, #22 closed** with the audit as written rationale; `BlazorNative.Styling` and
-      `BlazorNative.State` deleted from `BACKLOG.md`; the WASM-era APNs / App-Store rows re-worded.
-- [ ] **Theme decision recorded** — the design exists and a go/no-go is written down, either way.
-- [ ] **The twin-divergence class is closed MECHANICALLY, not instance by instance** (added
-      2026-08-21 with phase 13.4). #278/#282 (deep-link parsers), #279 (iOS `measuredNodeTypes`
-      escaping the #262 codegen) and #280 (the harness bypassing the C-ABI encode) are one defect
-      in four places: two copies of one truth, one unpinned. The criterion is that a NEW instance
-      of the shape reds — a generated twin, or a pin that compares the two copies — not that these
-      four are patched. Six patches leave the seventh free to appear.
-- [ ] **The test harness cannot pass what the device rejects** (#280) and does not leak on its
-      own `StrictErrors` path (#281). A testing product that passes when the device fails converts
-      "untested" into "tested and fine", which is worse than shipping no harness.
+- [ ] **The vocabulary sub-shape is closed by generation.** Host-event names emit from
+      `src/wire-vocabulary.json` into all three languages; adding a name by hand to one shell reds.
+      #300 closed.
+- [ ] **The semantic sub-shape is closed by a pin.** A differential guard asserts the two shells'
+      dispatch entry points agree on blocking semantics, and **a NEW divergence reds** — not merely
+      the two instances already known. This is the milestone's central claim; if no mechanical form
+      exists, that is a finding to record explicitly, never a line to quietly drop.
+- [ ] **#339 is fixed, and its invisibility is fixed too.** The deadlock is gone *and* at least one
+      of the three seams that hid it — `BnAppLifecycle.sinkForTest`'s early return, the camera
+      XCTest's `suppressSystemCameraPresentForTest` plus auth overrides, and `BnCamera`'s
+      inline-on-main test capture — no longer does.
+- [ ] **#338 is fixed on BOTH shells.** Insets reported over `host_event`; Android's identical gap
+      closed in the same pass. Frame parity re-expressed as *(layout, insets) → frames* and still
+      asserted across shells.
+- [ ] **The auth semantics agree and are pinned.** One answer to what `requireAuth` means, the
+      stored ACL and the read policy pinned against each other, and the **read-side contract**
+      covered — a plain get of an auth-bound item refused with no value leaking. That half was never
+      exercised on device, because the demo page exposes no plain-get button.
+- [ ] **`Debug` and `Verbose` are observable on a real device**, with the method recorded.
+- [ ] **The four documentation landmines are fixed**, `$(AppIdentifierPrefix)` explicitly among them.
+- [ ] **No ABI change** — verified by diffing the export surface, not asserted.
 
 > **No "release tagged in git" criterion.** `docs/planning/CONVENTIONS.md` records **`Milestone
 > completion tags a release: no`** — release-please owns the `v<semver>` namespace and Phase 8.6
@@ -101,55 +93,52 @@ same verdicts.
 
 ## Phases
 
-1. Phase 13.0 — extract the item surface [complete] — closed 2026-08-20 on
-   [PR #287](https://github.com/MarcelRoozekrans/BlazorNative/pull/287); both device lanes
-   dispatched and green
-2. Phase 13.1 — type the lengths [complete] — closed 2026-08-21 on
-   [PR #289](https://github.com/MarcelRoozekrans/BlazorNative/pull/289); both device lanes
-   dispatched and green; .NET 1032 → 1051
-3. Phase 13.2 — the dispatcher's honest answer [complete] — closed 2026-08-21; the premise was
-   overturned by measurement (an honest CheckAccess() stack-overflows the process), so the phase
-   shipped detection rather than an assertion
-4. Phase 13.3 — state docs + backlog retirement (+ #286 Firebase REST docs) [complete] — closed
-   2026-08-21; #22 closed with the audit as rationale, #21 retitled, THREE self-contradicting
-   BACKLOG sections retired (Styling, State, Navigation), a new Guides category on the site
-5. Phase 13.4 — parity and harness fidelity [complete] — closed 2026-08-21 on
-   [PR #299](https://github.com/MarcelRoozekrans/BlazorNative/pull/299); nine mutation-proven
-   guards, both device lanes green; #280's stated bug proved unreachable and re-scoped;
-   .NET 1054 → 1070
-6. Phase 13.5 — theme system design [complete] — was 13.4 — verdict SPLIT: go on detection +
-   `BnColor`, **no-go before 1.0** on a prescribed colour-role vocabulary, remove `BnTheme`.
-   Found that `themeChanged` needs no ABI *or* .NET change, and that host-event names are an
-   unpinned three-language vocabulary — a live instance of 13.4's class, now a prerequisite
-7. Phase 13.6 — audit and close [pending] — was 13.5
+1. Phase 14.0 — pin the host-event vocabulary [pending]
+2. Phase 14.1 — the dispatch twins [pending]
+3. Phase 14.2 — safe-area insets to .NET [pending]
+4. Phase 14.3 — auth semantics [pending]
+5. Phase 14.4 — device observability, docs, and the device lane [pending]
+6. Phase 14.5 — audit and close [pending]
+
+**Ordering rationale.** Exactly one hard dependency: **14.0 → 14.2**, because the inset event needs
+a generated name and hand-adding a third name to an unpinned vocabulary is the thing this milestone
+exists to stop. 14.1, 14.3 and 14.4 are mutually independent. 14.1 is early despite that because it
+carries the riskiest claim — the differential pin — and an early failure there is a cheap re-scope,
+whereas a late one invalidates the DoD.
 
 ## Risk areas
 
 | Risk | Impact | Mitigation |
 |---|---|---|
-| **Blazor sequence-number collision** — the base emits attributes the derived component also numbers | Severe: a collision does not throw, it produces a **wrong diff, silently** | Reserved bands (item 1–49, container 50–99, component-specific 100+, `ChildContent` 200) plus a pin **mutation-proven by deliberately colliding one** |
-| **Frame tables move** | Severe, and possibly silent on one platform only | Frame tables are the acceptance test, run on **both** shells across the whole sample |
-| **Honest `CheckAccess()` breaks working code** — pool threads demonstrably touch this path (#213 item 2, #9) | Converts working async paths into exceptions | 13.2 is a **spike first**: change, measure across all suites, decide. Debug-only warning is the documented fallback |
-| **Baseline churn hides a real removal** — ~17 × 8 members change declaring type | An API disappears without anyone deciding to | Read the baseline diff as an API review; pin member **names** so a vanishing name reds regardless of declaring type |
-| **Theme design grows into an implementation** | Milestone slips on its least-certain item | **13.5's** (was 13.4's) deliverable is explicitly a design + decision |
-| **13.4 is worked as six issues rather than one bug class** (added 2026-08-21) | Six patches land, the seventh instance of the same shape ships later, and the milestone's DoD reads as met | The DoD criterion is a **mechanical** guard — a generated twin or a pin comparing the two copies — not four fixed instances. The precedent is #262, which retired four of five vocabularies and left the fifth (#279) to prove the point |
+| **The differential pin has no cheap mechanical form** | The DoD's central claim degrades into two hand-patches — precisely M13's failure, repeated | 14.1 attempts it **first** and is early enough to re-scope from. A negative result is recorded as a finding with its evidence, never dropped silently |
+| **Insets churn every asserted frame table** | Both shells' parity suites re-baseline; a genuine regression hides in the noise | Land 14.2 **after** 14.1 so the tables move once; read the re-baseline as a reviewed diff, as M13 read its PublicAPI diff as an API review |
+| **The auth fix changes behaviour for existing consumers** | An app relying on passcode fallback breaks on upgrade | Pre-1.0 and the surface freezes at 1.0 — the cheap window. Ships with a written migration note whichever way it goes |
+| **14.4 stalls on an external contributor** | The device lane slips | The lane is the only externally-dependent item; split the phase rather than block it |
+| **#338 needs an ABI change after all** | Scoping decision 3 is wrong and M13's frozen-wire property breaks | The extension policy permits additive growth. Escalate as an explicit decision, and record it |
+| **The class is bigger than three instances** | M14 closes what it knows; the fourth ships later | Accepted. The DoD says "a NEW divergence reds", not "these three are fixed" — the mechanism is the deliverable, the instances are its proof |
 
 ## Out of scope for this milestone
 
-- **#24 `BlazorNative.Cli`** — the audit's verdict is "keep open, rescope, but it should follow,
-  not lead"; two of its four deliverables are blocked on other work.
-- **#25 → 1.0 criterion S3** — owner choice (decision 4 above). **The only item that moves the 1.0
-  scoreboard**; becomes the remaining gap if P3 clears.
-- **`fontWeight` / Inter Bold** — re-filed out of #21 deliberately: synthetic bold changes text
-  metrics and would risk the font-parity contract to add a paint property.
-- **Responsive breakpoints** — blocked. Nothing surfaces viewport size to .NET; it is an ABI/wire
-  item, not a styling one.
-- **P3 (real-iPhone verification)** — gated on an Apple Developer account and an external iOS
-  developer. Administrative, not technical; `docs/ios-device-verification-handover.md` is the
-  handover.
+- **APNs and universal links** — the Apple-account cluster on #17. The device run confirms remote
+  push is not testable as shipped and universal links are not implemented.
+- **Frame parity for `/layout`, `/scroll`, `/image`** — named in the handover, not compared on
+  device for time. Needs hardware.
+- **#25 → 1.0 criterion S3** — out of M13 by owner choice; unchanged here.
+- **#24 `BlazorNative.Cli`** — the 2026-08-17 audit's verdict stands: it should follow, not lead.
+- **A 1.0 cut** — scoping decision 1.
+
+## Open questions
+
+- **14.3's decision is not pre-made.** Align the read to the stored ACL
+  (`.deviceOwnerAuthenticationWithBiometrics`, which `BnBiometrics` already uses); relax the ACL to
+  `.userPresence`; or keep the behaviour and document that `requireAuth: true` means device-owner
+  authentication, passcode included. The hardware result removes the "spurious refusal" argument
+  for the first but does not pick between them. **Resolve at the start of 14.3.**
+- **What shape should the device CI lane take?** @ceesalberts offered a staging script plus an
+  `ios-build`-on-device lane and awaits a preferred shape. **Needs an answer before 14.4 can plan.**
 
 ## Audit History
 
 | Date | Verdict | Gaps |
 |---|---|---|
-| — | not yet audited | — |
+| — | *(not yet audited)* | — |

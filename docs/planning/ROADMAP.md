@@ -1948,12 +1948,17 @@ written for it.
 
 ---
 
-### 🔄 Milestone 13 — Consumer Ergonomics  *(active — started 2026-08-19)* [status: active]
+### ✅ Milestone 13 — Consumer Ergonomics  *(complete — 2026-08-19 → 2026-08-22)* [status: complete]
 
 **Goal:** Make BlazorNative pleasant to write apps in — declare the typed layout surface **once**,
 give it to every component that can have it, and **type the lengths** so malformed values become
 compile errors instead of silent runtime log lines.
 **Started:** 2026-08-19
+**Completed:** 2026-08-22
+**Audit:** [`docs/plans/2026-08-22-milestone-13-audit.md`](../plans/2026-08-22-milestone-13-audit.md)
+— **PASS WITH FINDINGS**, 12 of 13 DoD criteria met on live evidence; all three findings remediated
+the same day. **No tag** — `CONVENTIONS.md` records `Milestone completion tags a release: no`;
+release-please owns the `v<semver>` namespace and Phase 8.6 retired milestone tags.
 **Design:** [`docs/superpowers/specs/2026-08-19-milestone-13-design.md`](../superpowers/specs/2026-08-19-milestone-13-design.md)
 · full scope, DoD and owner decisions in [MILESTONE.md](MILESTONE.md).
 
@@ -2149,8 +2154,86 @@ not wait behind a paper design phase; 13.4 and 13.5 renumbered to 13.5 and 13.6)
 >
 > Implementation, if taken, is a separate phase; §9 of the spec gives the order it must respect.
 
-#### Phase 13.6: Audit and close [status: pending]
+#### Phase 13.6: Audit and close [status: complete]
 **Goal:** Run `audit-milestone` against the DoD on live evidence and close M13. **No tag** — the
+8.6 rule, and `CONVENTIONS.md` records `Milestone completion tags a release: no`.
+**Surface:** Docs
+**HelpWanted:** no
+
+---
+
+### 🔄 Milestone 14 — Twin Divergence, Closed Mechanically  *(active — started 2026-09-21)* [status: active]
+
+**Goal:** Close the twin-divergence class **mechanically** — wherever the framework holds one truth
+in two places, either generate the second copy or pin the two against each other. M13 named this
+class and closed four instances by hand, but built only half the mechanism its own DoD called for;
+the P3 device run found the other half by killing a process on real hardware.
+**Started:** 2026-09-21
+**Design:** [`docs/superpowers/specs/2026-09-21-milestone-14-design.md`](../superpowers/specs/2026-09-21-milestone-14-design.md)
+· full scope, DoD and owner decisions in [MILESTONE.md](MILESTONE.md).
+**Source:** the **P3 real-device verification run** by @ceesalberts on 2026-09-20 — iPhone 17 Pro
+Max, iOS 26, Release `ios-arm64`, signed — reported on [#17][m14-i17] and [#213][m14-i213], split
+into [#338][m14-i338] and [#339][m14-i339].
+
+[m14-i17]: https://github.com/MarcelRoozekrans/BlazorNative/issues/17
+[m14-i213]: https://github.com/MarcelRoozekrans/BlazorNative/issues/213
+[m14-i338]: https://github.com/MarcelRoozekrans/BlazorNative/issues/338
+[m14-i339]: https://github.com/MarcelRoozekrans/BlazorNative/issues/339
+
+> **P3 has reported, and 1.0 no longer blocks on "a real iPhone".** From 2026-07-24 to 2026-09-20
+> this repo's stated position was that 1.0 blocked on exactly one administrative item. That item is
+> now spent: the device build needed **zero source changes**, and everything exercised on hardware
+> passed — including the two things a simulator can never prove, a real sensor and the Secure
+> Enclave. **P3 is still not MET**, because Phase B found two device-only defects, and items 4
+> (APNs), 5 (universal links) and 7 (thermal/background) were not completed. But the blocker
+> changed *kind*: it is engineering now, not an Apple Developer account.
+>
+> **M14 is explicitly NOT the 1.0 cut** — see scoping decision 1 in MILESTONE.md. It clears the two
+> blockers and verifies them; whether that suffices is a separate owner call afterwards, evidenced
+> by a re-run device checklist.
+
+#### Phase 14.0: Pin the host-event vocabulary [status: pending]
+**Goal:** Extend `tools/BlazorNative.WireGen` to emit host-event names into all three languages
+from `src/wire-vocabulary.json`, closing **#300** and unblocking 14.2's inset event. This
+vocabulary has now blocked two features in a row — theming in 13.5, insets here — which is the
+argument for generating it rather than hand-adding a third name.
+**Surface:** Backend
+**HelpWanted:** no
+
+#### Phase 14.1: The dispatch twins [status: pending]
+**Goal:** Close **#339**. Enumerate the runtime's cross-shell dispatch method pairs, restore
+Kotlin's fire-and-forget / and-wait split in Swift, repoint the lifecycle caller, build the
+**differential pin**, and close at least one of the three test seams that made the deadlock
+unreachable. Placed early despite being independent: it carries the milestone's riskiest claim, and
+an early failure is a cheap re-scope.
+**Surface:** Backend
+**HelpWanted:** no
+
+#### Phase 14.2: Safe-area insets to .NET [status: pending]
+**Goal:** Close **#338** on **both** shells. Each shell reports safe-area insets over the existing
+`blazornative_host_event` export using 14.0's generated name; .NET consumes them; layout decides.
+Frame parity re-baselined as *(layout, insets) → frames*. **Depends on 14.0** — the milestone's
+only hard ordering constraint.
+**Surface:** Mixed
+**HelpWanted:** no
+
+#### Phase 14.3: Auth semantics [status: pending]
+**Goal:** Close **#213 item 1**. Decide one answer to what `requireAuth` means, pin the stored
+keychain ACL against the read policy, and cover the read-side contract that the device run could
+not exercise. The decision is **open** — see MILESTONE.md.
+**Surface:** Backend
+**HelpWanted:** no
+
+#### Phase 14.4: Device observability, docs, and the device lane [status: pending]
+**Goal:** Make `Debug` and `Verbose` observable on real hardware, land the four documentation
+landmines the device run found, and integrate the externally-offered staging script and
+`ios-arm64` CI lane. The lane is the only externally-dependent item in M14; the rest of the phase
+lands regardless.
+**Surface:** Mixed
+**HelpWanted:** yes
+
+#### Phase 14.5: Audit and close [status: pending]
+**Goal:** Run `audit-milestone` against the DoD on live evidence and close M14. **No tag** — the
 8.6 rule, and `CONVENTIONS.md` records `Milestone completion tags a release: no`.
 **Surface:** Docs
 **HelpWanted:** no
