@@ -1,4 +1,6 @@
+using System.Reflection;
 using System.Text.Json;
+using BlazorNative.Core;
 using BlazorNative.Renderer;
 using BlazorNative.Runtime;
 using BlazorNative.WireGen;
@@ -291,5 +293,34 @@ public sealed class WireVocabularyCodegenTests
             """;
         Assert.Contains("dense and ordered", Assert.Throws<InvalidDataException>(
             () => WireVocabulary.Load(renumberedIds)).Message);
+    }
+
+    [Fact]
+    public void TheHostEventConstants_MatchTheManifest_BothWays()
+    {
+        // THE MIRROR CODEGEN DOES NOT OWN. BnHostEvents is public API with a
+        // PublicAPI baseline, so it is hand-written and pinned — the same trade
+        // TheNodeTypeEnum_MatchesTheManifest_IdForId makes, for the same reason.
+        WireVocabulary v = LoadManifest();
+
+        Dictionary<string, string> declared = typeof(BnHostEvents)
+            .GetFields(BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy)
+            .Where(f => f.IsLiteral && f.FieldType == typeof(string))
+            .ToDictionary(f => f.Name, f => (string)f.GetRawConstantValue()!, StringComparer.Ordinal);
+
+        // Direction 1: every manifest name has a constant, spelled correctly.
+        foreach (HostEvent e in v.HostEvents.Events)
+        {
+            Assert.True(declared.TryGetValue(e.EnumCase, out string? value),
+                $"manifest hostEvent '{e.Name}' has no BnHostEvents.{e.EnumCase} constant — "
+                + "apps cannot name an event the shells send");
+            Assert.Equal(e.Name, value);
+        }
+
+        // Direction 2: no constant without a manifest entry. Without this the class
+        // could grow a name no shell sends and the pin would still be green.
+        Assert.Equal(
+            v.HostEvents.Names.OrderBy(n => n, StringComparer.Ordinal),
+            declared.Values.OrderBy(n => n, StringComparer.Ordinal));
     }
 }

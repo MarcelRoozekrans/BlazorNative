@@ -641,35 +641,34 @@ public static class Exports
         }
     }
 
-    /// <summary>The reserved host-event name (Phase 5.1) that routes to
-    /// navigation-back instead of the <see cref="NativeShellBridge.NativeEvents"/>
-    /// multicast. The SAME ingress Android's predictive-back
-    /// (OnBackInvokedCallback, Gate 3) and the JVM test both drive: the
-    /// back→NavigateBack mapping lives HERE, in .NET, so every shell gets
-    /// identical back semantics (a Kotlin-side mapping would fork Android from
-    /// the headless/JVM path). Kotlin's dispatchHostEvent("back") must use this
-    /// exact literal.</summary>
-    internal const string BackEventName = "back";
+    // The reserved host-event name (Phase 5.1) that routes to navigation-back
+    // instead of the NativeShellBridge.NativeEvents multicast. The SAME ingress
+    // Android's predictive-back (OnBackInvokedCallback, Gate 3) and the JVM test
+    // both drive: the back→NavigateBack mapping lives HERE, in .NET, so every
+    // shell gets identical back semantics (a Kotlin-side mapping would fork
+    // Android from the headless/JVM path). Kotlin's dispatchHostEvent("back")
+    // must use this exact literal. As of Phase 14.0 this is BnHostEvents.Back
+    // (BlazorNative.Core) — the app-facing copy of the same manifest entry —
+    // rather than a private constant, so the shells and the app share one name.
 
-    /// <summary>The reserved host-event name (Phase 9.1) that routes to
-    /// forward-navigation instead of the <see cref="NativeShellBridge.NativeEvents"/>
-    /// multicast — the WARM half of notification tap-through. When a notification is
-    /// tapped over a LIVE app, the shell delivers the tap to
-    /// <c>Activity.onNewIntent</c> (Android) / the UNUC delegate (iOS), parses the
-    /// <c>blazornative://&lt;route&gt;</c>, and — instead of a cold mount — dispatches
-    /// <c>host_event("navigate", route)</c>. Like "back", the name→verb mapping lives
-    /// HERE, in .NET, so every shell gets identical semantics: the payload is the bare
-    /// route string, mapped to <see cref="NativeNavigationManager.NavigateToAsync"/>.
-    /// This is wire vocabulary + a .NET branch over the EXISTING
-    /// blazornative_host_event export — NOT an ABI change (the exact shape 5.1 used to
-    /// add "back"). The Kotlin/Swift shells (Gates 2/3) must use this exact
-    /// literal.</summary>
-    internal const string NavigateEventName = "navigate";
+    // The reserved host-event name (Phase 9.1) that routes to forward-navigation
+    // instead of the NativeShellBridge.NativeEvents multicast — the WARM half of
+    // notification tap-through. When a notification is tapped over a LIVE app,
+    // the shell delivers the tap to Activity.onNewIntent (Android) / the UNUC
+    // delegate (iOS), parses the blazornative://<route>, and — instead of a cold
+    // mount — dispatches host_event("navigate", route). Like "back", the
+    // name→verb mapping lives HERE, in .NET, so every shell gets identical
+    // semantics: the payload is the bare route string, mapped to
+    // NativeNavigationManager.NavigateToAsync. This is wire vocabulary + a .NET
+    // branch over the EXISTING blazornative_host_event export — NOT an ABI
+    // change (the exact shape 5.1 used to add "back"). The Kotlin/Swift shells
+    // (Gates 2/3) must use this exact literal. As of Phase 14.0 this is
+    // BnHostEvents.Navigate (BlazorNative.Core), for the same reason as above.
 
     /// <summary>
     /// Managed core of blazornative_host_event (testable without the ABI
     /// crossing). Two routes on ONE ingress:
-    ///   • the reserved name "back" (<see cref="BackEventName"/>) → the nav
+    ///   • the reserved name "back" (<see cref="BlazorNative.Core.BnHostEvents.Back"/>) → the nav
     ///     manager's NavigateBackAsync (the predictive-back production path);
     ///   • anything else → the real <see cref="NativeShellBridge.RaiseNativeEvent"/>
     ///     lifecycle multicast (the 3.2 no-op is gone). "back" is INTERCEPTED
@@ -706,10 +705,10 @@ public static class Exports
         if (string.IsNullOrEmpty(name))
             return 3; // an unnamed host event is not dispatchable
 
-        if (name == BackEventName)
+        if (name == BnHostEvents.Back)
             return DispatchHostBack();
 
-        if (name == NavigateEventName)
+        if (name == BnHostEvents.Navigate)
             return DispatchHostNavigate(payload);
 
         try
