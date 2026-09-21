@@ -55,6 +55,10 @@ enum BnAppLifecycle {
     /// ABI then would be a call into a session that does not exist. Android skips
     /// its first `onResume` for the identical reason — the initial mount IS the
     /// first resume.
+    ///
+    /// #339: this MUST stay on the fire-and-forget overload. Blocking here deadlocks
+    /// the app whenever an async host call holds the lane — which is exactly when a
+    /// permission sheet is up, because the sheet is what raises this event.
     static func dispatch(_ event: BnHostEvent) {
         if let sink = sinkForTest { sink(event.rawValue); return }
         guard let runtime = BnRuntime.current else { return }

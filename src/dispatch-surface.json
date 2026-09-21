@@ -1,0 +1,50 @@
+{
+  "$doc": [
+    "THE DISPATCH SURFACE — one declaration, two shells (#339).",
+    "",
+    "Both shells marshal every post-boot .NET entry through a single serial lane.",
+    "Each method below declares whether it RETURNS IMMEDIATELY after queueing work",
+    "(fire-and-forget) or BLOCKS the caller until the work completes (blocking).",
+    "",
+    "WHY THIS FILE EXISTS: dispatchHostEvent existed in both shells, spelled",
+    "identically, and blocked in one. The Swift body was written for the deep-link",
+    "caller, where Android uses dispatchHostEventAndWait; the LIFECYCLE caller was",
+    "later pointed at the same method. On a device the permission sheet raises a",
+    "lifecycle event while an async host call holds the lane, and the app dies.",
+    "No name generator could have caught it -- the names match perfectly and the",
+    "BEHAVIOUR does not.",
+    "",
+    "WHAT THE PIN CHECKS, AND WHAT IT DOES NOT: DispatchSurfaceDriftTests asserts",
+    "each shell declares the methods listed here and that each method's LANE CALL",
+    "matches its declared semantics. It reads SOURCE. It does not observe blocking",
+    "at runtime -- a genuinely behavioural cross-shell pin would need a JVM test and",
+    "an XCTest that agree with each other, which is itself an unpinned twin.",
+    "",
+    "TO ADD A METHOD: add it here, implement it in both shells, and run the pin. If",
+    "it genuinely belongs to one shell only, give it a `platforms` list AND a",
+    "`reason` -- asymmetry is allowed, silence is not."
+  ],
+  "methods": [
+    {
+      "name": "dispatchEvent",
+      "semantics": "fire-and-forget",
+      "doc": "A UI event from a control target. Non-zero rc routes to onError."
+    },
+    {
+      "name": "dispatchEventAndWait",
+      "semantics": "blocking",
+      "platforms": ["kotlin"],
+      "reason": "Consumed only by InspectorHost, a JVM-only developer tool with no iOS counterpart. Requiring a Swift twin would manufacture dead code to satisfy a guard."
+    },
+    {
+      "name": "dispatchHostEvent",
+      "semantics": "fire-and-forget",
+      "doc": "A host-initiated event. LIFECYCLE uses this. #339 is what happens when it blocks."
+    },
+    {
+      "name": "dispatchHostEventAndWait",
+      "semantics": "blocking",
+      "doc": "Deep-link and back: the caller needs the rc and needs frames applied before it returns."
+    }
+  ]
+}

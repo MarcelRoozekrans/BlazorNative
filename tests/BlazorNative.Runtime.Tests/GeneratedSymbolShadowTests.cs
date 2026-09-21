@@ -171,39 +171,12 @@ public sealed class GeneratedSymbolShadowTests
     /// scanned raw, a shadowing declaration followed within two lines by a comment
     /// that merely MENTIONS `BnWireVocabulary.&lt;symbol&gt;` would be waved through —
     /// the exemption-too-broad direction, which leaves the pin green while the class
-    /// stays open. `///` and `//!` are covered by the `//` rule.</para></summary>
-    private static string[] CodeLines(string file)
-    {
-        var code = new List<string>();
-        bool inBlockComment = false;
-
-        foreach (string raw in File.ReadLines(file))
-        {
-            string line = raw;
-
-            if (inBlockComment)
-            {
-                int close = line.IndexOf("*/", StringComparison.Ordinal);
-                if (close < 0) { code.Add(string.Empty); continue; }
-                inBlockComment = false;
-                line = line[(close + 2)..];
-            }
-
-            int open = line.IndexOf("/*", StringComparison.Ordinal);
-            if (open >= 0)
-            {
-                inBlockComment = line.IndexOf("*/", open, StringComparison.Ordinal) < 0;
-                line = line[..open];
-            }
-
-            int slashes = line.IndexOf("//", StringComparison.Ordinal);
-            if (slashes >= 0) line = line[..slashes];
-
-            code.Add(line);
-        }
-
-        return [.. code];
-    }
+    /// stays open. `///` and `//!` are covered by the `//` rule.</para>
+    ///
+    /// <para>Phase 14.1: the stripper itself moved to <see cref="CommentStrippedSource"/> so
+    /// DispatchSurfaceDriftTests shares this exact logic instead of maintaining a second,
+    /// driftable copy — the second copy is what had the single-line-block-comment bug.</para></summary>
+    private static string[] CodeLines(string file) => CommentStrippedSource.Lines(file);
 
     /// <summary>THE PIN. A hand-written declaration of a generated symbol's name
     /// shadows it: the generated value goes dead and the manifest stops governing
