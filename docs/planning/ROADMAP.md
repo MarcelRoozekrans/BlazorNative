@@ -2192,13 +2192,36 @@ into [#338][m14-i338] and [#339][m14-i339].
 > blockers and verifies them; whether that suffices is a separate owner call afterwards, evidenced
 > by a re-run device checklist.
 
-#### Phase 14.0: Pin the host-event vocabulary [status: pending]
+#### Phase 14.0: Pin the host-event vocabulary [status: complete]
 **Goal:** Extend `tools/BlazorNative.WireGen` to emit host-event names into all three languages
 from `src/wire-vocabulary.json`, closing **#300** and unblocking 14.2's inset event. This
 vocabulary has now blocked two features in a row — theming in 13.5, insets here — which is the
 argument for generating it rather than hand-adding a third name.
 **Surface:** Backend
 **HelpWanted:** no
+**Design:** [`docs/superpowers/specs/2026-09-21-phase-14.0-design.md`](../superpowers/specs/2026-09-21-phase-14.0-design.md)
+**Plan:** [`docs/superpowers/plans/2026-09-21-phase-14.0-host-event-vocabulary.md`](../superpowers/plans/2026-09-21-phase-14.0-host-event-vocabulary.md)
+**Completed:** 2026-09-21 · [PR #341](https://github.com/MarcelRoozekrans/BlazorNative/pull/341) ·
+**#300 closed**. Counts .NET 1070 → **1076**, iOS 270 → **269** (two vacuous asserts deleted, one
+of them a whole method), JVM 161 unchanged, `GeneratedSymbolFloor` 13 → **14**. Both device lanes
+dispatched and green. **No ABI change, no wire-byte change** — the enum is a shell-side surface and
+the wire still carries a raw string.
+
+> **What shipped beyond the plan, and why it matters to 14.2.** Enforcement is a **generated enum**,
+> so production code cannot name a host event with a bare literal; the public `BnHostEvents` is
+> **hand-written and pinned** rather than generated, following the `BlazorNativeNodeType` precedent
+> that a generator able to rewrite public API is a generator able to move a frozen surface. Four
+> guards now stand behind the vocabulary: the manifest tier check, the two-direction `BnHostEvents`
+> pin, the dispatch-arm pin (every *reserved* name must reach a real routing arm rather than falling
+> silently through to the app multicast), and a source-scan pin added by the final review because the
+> code had asserted a bypass was impossible when three seams could still reach the raw name.
+>
+> **For whoever implements 14.2:** adding the insets event means adding it to the manifest,
+> regenerating, adding the matching public constant, and — if it is `reserved` — giving
+> `DispatchHostEventCore` an arm. Each of those four has a pin that reds if you skip it. The
+> dispatch-arm pin encodes **rc 1** as the signature of "routed but idle"; a reserved arm that
+> legitimately returns 0 with no session mounted would red falsely, so re-derive that assumption
+> rather than trusting it.
 
 #### Phase 14.1: The dispatch twins [status: pending]
 **Goal:** Close **#339**. Enumerate the runtime's cross-shell dispatch method pairs, restore
