@@ -353,6 +353,20 @@ public sealed class WireVocabularyCodegenTests
             // (rc 1) because the nav manager is null. An UNROUTED name reaches the
             // multicast, which has no subscribers, and reports success (rc 0).
             // The two are distinguishable precisely because routing happens first.
+            //
+            // ASSUMPTION, NOT A DERIVED PROPERTY (14.0 final review, item 4): this
+            // pin treats rc 1 as the universal signature of "routed but idle with no
+            // session mounted". That holds for every reserved arm TODAY (Back routes
+            // to a null nav manager, Navigate the same), but a future reserved arm
+            // could legitimately report rc 0 with no session mounted — e.g. one that
+            // only touches shell-local state and has nothing that needs a mounted
+            // session to be "handled". Such an arm would red HERE even though it is
+            // correct, because this assertion cannot distinguish "correctly routed,
+            // rc 0" from "fell through to the multicast, rc 0". It fails LOUD, so it
+            // is safe (nobody ships a silent miss) — but whoever adds the next
+            // reserved event (phase 14.2's insets event looks like the next one)
+            // should re-derive rc 1 for that arm rather than assume this pin already
+            // covers it, and add a session-independent assertion if it does not.
             int rc = Exports.DispatchHostEventCore(reserved, payload: null);
 
             Assert.True(rc == 1,

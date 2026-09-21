@@ -336,9 +336,13 @@ public sealed class GeneratedSymbolShadowTests
     /// (`event.wireName`), and no `BnWireVocabulary.wireName` will ever exist for it
     /// to match. Without this third shape the detector reports every enum property
     /// dead regardless of real use, which is what happened here: `wireName` is
-    /// consumed as `event.wireName` in `BlazorNativeRuntime.kt` (both the
-    /// `BlazorNative.Jni` and `templates` trees), and the old two-shape check could
-    /// not see it. The new pattern is scoped to symbols <see cref="GeneratedSymbols"/>
+    /// consumed as `event.wireName` in `BlazorNativeRuntime.kt`. <see cref="ShellSources"/>
+    /// itself only walks `src/BlazorNative.Jni` — the `templates/` mirror is NOT
+    /// independently scanned here; it is held byte-identical to that file by
+    /// TemplateDriftTests instead, which is how consumption in the template copy
+    /// is actually guaranteed, not by this test reaching it directly. The old
+    /// two-shape check could not see even the `src/BlazorNative.Jni` copy. The
+    /// new pattern is scoped to symbols <see cref="GeneratedSymbols"/>
     /// tagged as enum members — it does not widen matching for
     /// `BnWireVocabulary`-object symbols, which would accept a bare name occurring
     /// anywhere and defeat the guard's purpose.</para></summary>
@@ -373,5 +377,114 @@ public sealed class GeneratedSymbolShadowTests
             + "dead generated symbol is what a hand-written twin later shadows, which is how #279 "
             + "happened. Either consume it, or add it to UnconsumedByDesign with a reason.\n  "
             + string.Join("\n  ", dead));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // NoProductionShellSource_CallsTheHostEventSeamsDirectly — Phase 14.0 final
+    // review, item 1(a) (PR #341).
+    //
+    // BlazorNativeRuntime.kt's KDoc on dispatchHostEventUnchecked claimed the
+    // BnHostEvent enum overload "makes that rc unreachable from production code
+    // by construction" — false in the strong sense. dispatchHostEventUnchecked
+    // (name: String) and dispatchHostEventBlocking(name: String) are both
+    // `internal`, both take a bare String, and nothing in Kotlin stops a
+    // production file in the SAME module from calling either with an arbitrary
+    // literal. Zero production call sites exist today (verified by grep across
+    // src/, templates/ and samples/ before this pin existed) — but "nothing does
+    // today" is not a mechanism, and an unenforced safety claim in a comment is
+    // exactly the bug class this repo treats as most dangerous (three separate
+    // incidents in one week were each a comment asserting a safety property
+    // nothing enforced). This pin IS the mechanism the KDoc claims.
+    //
+    // It reuses this file's own CodeLines (comment-stripped source) rather than
+    // a second comment-stripper, so a KDoc cross-reference like
+    // `[dispatchHostEventUnchecked]` can never count as an offending call.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// <summary>The two Kotlin seam names this pin forbids outside their own home
+    /// file and outside test source sets. (Swift has no equivalent named seam —
+    /// its bypass door is the imported C symbol `blazornative_host_event` called
+    /// bare, which is a different shape this pin does not cover.)</summary>
+    private static readonly string[] HostEventSeamNames =
+        ["dispatchHostEventUnchecked", "dispatchHostEventBlocking"];
+
+    /// <summary>PRODUCTION Kotlin only: the `main` + `androidMain` source sets
+    /// (see build.gradle.kts: <c>java.srcDirs("src/main/kotlin",
+    /// "src/androidMain/kotlin")</c>) — never `test` or `androidTest`, which
+    /// legitimately call these seams directly (that is what they are FOR: the
+    /// rc 3 malformed-name path is only reachable through a bare String, and the
+    /// lane/onError routing has to be provable with an arbitrary name).
+    ///
+    /// <para>Scanned in BOTH `src/BlazorNative.Jni` and its `templates/`
+    /// mirror: TemplateDriftTests pins the template's copy of
+    /// BlazorNativeRuntime.kt byte-identical to the repo's, but a hypothetical
+    /// OTHER template-only file calling the seam directly would be exactly as
+    /// reachable from a consumer's compiled app as one in the repo's own shell,
+    /// and nothing else scans the template tree for this.</para>
+    ///
+    /// <para><c>BlazorNativeRuntime.kt</c> itself (and its template mirror) is
+    /// EXCLUDED: it is the seam's own home file, declares both functions, and
+    /// legitimately calls <c>dispatchHostEventUnchecked</c> once — from
+    /// <c>dispatchHostEvent(event: BnHostEvent, ...)</c>, passing
+    /// <c>event.wireName</c>. That is the enum overload's own implementation,
+    /// not a bypass of it.</para></summary>
+    private static string[] ProductionHostEventSources()
+    {
+        string root = RepoRoot();
+        string[] roots =
+        [
+            Path.Combine(root, "src", "BlazorNative.Jni", "src", "main", "kotlin"),
+            Path.Combine(root, "src", "BlazorNative.Jni", "src", "androidMain", "kotlin"),
+            Path.Combine(root, "templates", "BlazorNative.Templates", "content", "BlazorNative.App", "android", "src", "main", "kotlin"),
+            Path.Combine(root, "templates", "BlazorNative.Templates", "content", "BlazorNative.App", "android", "src", "androidMain", "kotlin"),
+        ];
+
+        return [.. roots
+            .Where(Directory.Exists)
+            .SelectMany(dir => Directory.EnumerateFiles(dir, "*.kt", SearchOption.AllDirectories))
+            .Where(f => !f.Contains(".g.", StringComparison.Ordinal))
+            .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}build{Path.DirectorySeparatorChar}", StringComparison.Ordinal))
+            .Where(f => Path.GetFileName(f) != "BlazorNativeRuntime.kt")];
+    }
+
+    /// <summary>THE PIN. See the section header above for the false claim this
+    /// closes. A production call to either seam is caught as a call SITE
+    /// (`name(` — a word boundary plus an open paren), not a bare mention, so a
+    /// KDoc `[dispatchHostEventBlocking]` cross-reference elsewhere in a
+    /// production file — of which this codebase has several, forwarding to it
+    /// from doc comments on `dispatchHostEvent` and `dispatchHostEventAndWait`
+    /// — does not false-positive; CodeLines already strips those, but the
+    /// call-site shape is the real reason a bare identifier mention is safe.</summary>
+    [Fact]
+    public void NoProductionShellSource_CallsTheHostEventSeamsDirectly()
+    {
+        string[] sources = ProductionHostEventSources();
+        Assert.True(sources.Length > 0,
+            "ProductionHostEventSources() found zero Kotlin files — the Android source-set layout "
+            + "moved and this pin can no longer see its subject, which would leave it green while "
+            + "checking nothing. Fix the scan.");
+
+        var offenders = new List<string>();
+        foreach (string source in sources)
+        {
+            string[] lines = CodeLines(source);
+            for (int i = 0; i < lines.Length; i++)
+            {
+                foreach (string seam in HostEventSeamNames)
+                {
+                    if (Regex.IsMatch(lines[i], $@"\b{seam}\s*\("))
+                        offenders.Add($"{Path.GetFileName(source)}:{i + 1} calls {seam}(...)");
+                }
+            }
+        }
+
+        Assert.True(offenders.Count == 0,
+            "Production shell code calls a host-event seam that exists for tests only. Dispatch "
+            + "through the BnHostEvent overload instead (dispatchHostEvent for fire-and-forget, "
+            + "dispatchHostEventAndWait for the blocking rc) — that is the only sanctioned "
+            + "production entry point, and it is how the manifest actually governs what a shell "
+            + "can send. If a genuinely new raw-string production need exists, that is a design "
+            + "decision requiring a recorded reason, not a quiet call to dispatchHostEventUnchecked "
+            + "or dispatchHostEventBlocking.\n  " + string.Join("\n  ", offenders));
     }
 }

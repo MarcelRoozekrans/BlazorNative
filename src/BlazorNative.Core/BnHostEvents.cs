@@ -1,8 +1,11 @@
 namespace BlazorNative.Core;
 
 /// <summary>
-/// The host-event names an app can subscribe to, so app code names an event
-/// rather than spelling it.
+/// The host-event names the shells send, so app code names an event rather than
+/// spelling it. Two tiers: RESERVED names (<see cref="Back"/>, <see cref="Navigate"/>)
+/// are intercepted by the runtime and never reach subscribers; the rest are the
+/// names an app can actually subscribe to. See each constant's remarks for which
+/// tier it is in.
 /// </summary>
 /// <remarks>
 /// <para>HAND-WRITTEN AND PINNED, NOT GENERATED. This is public API with a

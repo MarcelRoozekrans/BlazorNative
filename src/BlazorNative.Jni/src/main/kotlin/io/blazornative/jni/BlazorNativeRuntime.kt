@@ -232,10 +232,14 @@ class BlazorNativeRuntime(
 
     /**
      * Test seam: [dispatchHostEvent]'s lane + onError routing, reachable with an
-     * ARBITRARY name so the rc 3 (malformed name) path stays testable. The enum
-     * overload makes that rc unreachable from production code by construction —
-     * which is the point — but the lane's error routing still has to be provable.
-     * Production callers use [dispatchHostEvent] (the enum overload).
+     * ARBITRARY name so the rc 3 (malformed name) path stays testable. Production
+     * code dispatches through [dispatchHostEvent] (the enum overload) instead —
+     * that is the only production entry point, and
+     * NoProductionShellSource_CallsTheHostEventSeamsDirectly
+     * (BlazorNative.Runtime.Tests) enforces it by scanning production shell
+     * sources for a direct call here. Kotlin itself does not stop this seam's
+     * bare `String` parameter from compiling at a production call site — the
+     * test is the mechanism, not the type.
      */
     internal fun dispatchHostEventUnchecked(name: String, payload: String? = null) {
         dispatchLane.execute {

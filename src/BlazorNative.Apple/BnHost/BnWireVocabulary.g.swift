@@ -47,7 +47,11 @@ enum BnWireVocabulary {
 }
 
 /// The host-event vocabulary. `dispatchHostEvent` takes THIS, not a String —
-/// a bare literal at a call site does not compile.
+/// passing an enum member is how production Swift code dispatches a host
+/// event, and that parameter type is what stops a bare literal there. The
+/// underlying C ABI (`blazornative_host_event`) is a separate, lower-level
+/// door that stays directly callable regardless of this enum — BnNotifications
+/// uses it for one reserved event today, deliberately, not as a bypass.
 ///
 /// `.back` is present and unused on this shell: iOS has no system back. The
 /// vocabulary is the union of what the WIRE admits, not what one shell sends.
