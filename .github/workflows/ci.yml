@@ -4,7 +4,7 @@
 #
 #   build-test (windows-latest) — the local verification procedure verbatim
 #   (setup.ps1 §1–7 documents the toolchain pins):
-#     build (analyzers ride it) → .NET tests (1076 passed / 0 skipped) →
+#     build (analyzers ride it) → .NET tests (1079 passed / 0 skipped) →
 #     three NativeAOT publishes of samples/BlazorNative.SampleApp — the
 #     publish head since Phase 8.0: the app owns PublishAot, the exports stay
 #     in Runtime via UnmanagedEntryPointsAssembly, and the artifact is
@@ -13,7 +13,7 @@
 #     each publish must show exactly the 4 accepted IL2072 trim warnings) →
 #     nine-export verification (dumpbin via vswhere / llvm-readelf from the
 #     pinned NDK) → Gradle testDebugUnitTest against the fresh win-x64 dll
-#     (161 passed / 0 failed — the assertion is the step near the end of this
+#     (162 passed / 0 failed — the assertion is the step near the end of this
 #     job; this header is a copy, and it read 92 for four milestones) →
 #     the instrumented sources COMPILE →
 #     consumer smoke (EIGHT packages packed at the one props version, nupkg
@@ -2039,7 +2039,34 @@ jobs:
       # do NOT move -- no shell behaviour changed, only a .NET-side source scan
       # and prose in two KDoc/doc comments (softened to describe what the pin
       # enforces rather than overstate what the type system does).
-      - name: .NET tests (assert 1076 passed / 0 skipped)
+      # 1076 -> 1079 (14.1, +3): THE DISPATCH TWINS (#339). dispatchHostEvent
+      # existed in both shells, spelled identically, and blocked in one -- Swift's
+      # lifecycle caller froze the app whenever a permission sheet appeared,
+      # because it shared a queue with the dispatch lane instead of getting its
+      # own. The fix is Swift-only (dispatchHostEvent/dispatchHostEventAndWait
+      # split -- see ios.yml's comment history), so .NET moves only for the
+      # harness and the guard that made the fix provable and durable:
+      #   +1 DispatchLaneBlockingTests -- reproduces the underlying .NET root
+      #      cause without a device: an async handler awaiting an open host call
+      #      leaves Exports.DispatchEventCore's GetAwaiter().GetResult() blocked
+      #      on the serial dispatch lane. That root cause is NOT fixed by this
+      #      phase (Exports.cs is untouched -- see the ABI note below) and stays
+      #      out of scope on purpose (#345), so this test DELIBERATELY PINS it:
+      #      AnAsyncHandlerAwaitingAnOpenHostCall_STILL_BlocksTheDispatchLane
+      #      passes on today's behaviour and is written to flip, not delete,
+      #      the day #345 lands a fix.
+      #   +2 DispatchSurfaceDriftTests -- declares the dispatch surface once in
+      #      src/dispatch-surface.json and pins both shells to it (Kotlin's
+      #      dispatchHostEvent/dispatchHostEventAndWait two-method split now
+      #      mirrors Swift's), so the two spellings cannot drift apart the way
+      #      they did before #339 without a red test naming which shell moved.
+      # No ABI change, no wire-byte change: `git diff main -- src/BlazorNative.
+      # Runtime/Exports.cs` is empty for this phase by construction (Step 7's
+      # gate) -- the .NET-side root cause is real but is its own follow-up, not
+      # this one. JVM moves separately (161 -> 162, see that step's history) for
+      # the Android measurement; Android instrumented and iOS's XCTest counts
+      # move in their own (advisory) lanes -- see ios.yml's comment history.
+      - name: .NET tests (assert 1079 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -2057,8 +2084,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 1076 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 1076 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 1079 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 1079 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # ── NativeAOT publishes + nine-export verification ────────────────────
@@ -2386,7 +2413,27 @@ jobs:
       #    without the arm, kind 10 takes the unknown-kind skip and a programmatic
       #    scroll silently does nothing on Android while working on iOS, which is
       #    the exact asymmetry a shared wire exists to prevent.
-      - name: JVM tests (Gradle testDebugUnitTest — assert 161 passed / 0 failed)
+      # ── #339/#345/#346 (14.1): 161 → 162, +1 — the Android measurement (Step 3
+      #    of the phase). dispatchHostEventAndWait_still_deadlocks_behind_a_held_
+      #    dispatch_lane occupies BlazorNativeRuntime's single dispatch lane with
+      #    an async handler awaiting an open host call (the JVM/Android twin of
+      #    the .NET-side FakeShellHost.AutoCompleteHostCall = false condition),
+      #    then calls dispatchHostEventAndWait from another thread — the EXACT
+      #    call MainActivity's predictive-back callback makes (handleBack) — and
+      #    measures whether it returns within a bounded 10s wait. MEASURED, not
+      #    reasoned: it does not. dispatchHostEventAndWait's future.get() queues
+      #    strictly behind the held Callable on the single-thread lane, so
+      #    Android's predictive back is exposed to the SAME shared .NET root
+      #    cause (#345) that #339's Swift fix did not touch. Filed separately as
+      #    #346 (Android's own exposure) rather than fixed here — same posture
+      #    as #345, this phase does not touch Exports.cs. THIS TEST DELIBERATELY
+      #    PINS THE DEFECT: it asserts the probe thread is STILL not back, i.e.
+      #    it passes on today's broken behaviour and is written to flip, not
+      #    delete, once #346/#345 land a fix. The test completes the held host
+      #    call itself after measuring (not during) so it does not corrupt the
+      #    ONE process-global native session every other JVM test class in this
+      #    run shares.
+      - name: JVM tests (Gradle testDebugUnitTest — assert 162 passed / 0 failed)
         working-directory: src/BlazorNative.Jni
         run: |
           .\gradlew.bat --no-daemon testDebugUnitTest
@@ -2400,8 +2447,8 @@ jobs:
             $errors += [int]$suite.errors; $skipped += [int]$suite.skipped
           }
           Write-Host "JVM test totals across $($xmls.Count) suites: tests=$tests failures=$failures errors=$errors skipped=$skipped"
-          if ($tests -ne 161 -or $failures -ne 0 -or $errors -ne 0 -or $skipped -ne 0) {
-            throw "JVM test baseline drift: expected 161 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped"
+          if ($tests -ne 162 -or $failures -ne 0 -or $errors -ne 0 -or $skipped -ne 0) {
+            throw "JVM test baseline drift: expected 162 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped"
           }
 
       # the instrumented-sources compile gate moved to its own required job
