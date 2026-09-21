@@ -99,7 +99,15 @@ unpinned*, wherever that occurs.
    Enforcement is a generated enum plus four pins — the fourth added by the final review, which
    caught the code asserting a bypass was impossible while three seams could still reach the raw
    name (the repo's own "safety claim without a pin" class, inside the milestone about exactly that)
-2. Phase 14.1 — the dispatch twins [pending]
+2. Phase 14.1 — the dispatch twins [complete] — closed 2026-09-21 on
+   [PR #347](https://github.com/MarcelRoozekrans/BlazorNative/pull/347) +
+   [PR #349](https://github.com/MarcelRoozekrans/BlazorNative/pull/349); **#339 closed**; .NET
+   1076 → 1080, JVM 161 → 162, iOS 269 unchanged; `Exports.cs` zero diff. The divergence was
+   **structural** — Swift lacked *both* `AndWait` methods, so one method did two jobs. Ships two
+   tests that **assert bugs still exist** (**#345** .NET root cause, **#346** Android predictive
+   back — *measured and confirmed*, not merely suspected), because a spike proved the root-cause
+   fix viable but not yet safe. The differential pin is **structural, not behavioural** — it reads
+   source and never observes blocking
 3. Phase 14.2 — safe-area insets to .NET [pending]
 4. Phase 14.3 — auth semantics [pending]
 5. Phase 14.4 — device observability, docs, and the device lane [pending]
