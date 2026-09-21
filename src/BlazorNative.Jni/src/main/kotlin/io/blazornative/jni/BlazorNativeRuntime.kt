@@ -227,7 +227,17 @@ class BlazorNativeRuntime(
      * "not handled → finish" is DATA, not an error — Gate 3's MainActivity wires
      * that. [payload] is optional (omitted/NULL — most host events carry none).
      */
-    fun dispatchHostEvent(name: String, payload: String? = null) {
+    internal fun dispatchHostEvent(event: BnHostEvent, payload: String? = null) =
+        dispatchHostEventUnchecked(event.wireName, payload)
+
+    /**
+     * Test seam: [dispatchHostEvent]'s lane + onError routing, reachable with an
+     * ARBITRARY name so the rc 3 (malformed name) path stays testable. The enum
+     * overload makes that rc unreachable from production code by construction —
+     * which is the point — but the lane's error routing still has to be provable.
+     * Production callers use [dispatchHostEvent] (the enum overload).
+     */
+    internal fun dispatchHostEventUnchecked(name: String, payload: String? = null) {
         dispatchLane.execute {
             try {
                 val rc = hostEventCore(name, payload)
@@ -261,9 +271,9 @@ class BlazorNativeRuntime(
      * [dispatchEventAndWait]). A throw from the dispatch core is rethrown
      * unwrapped.
      */
-    fun dispatchHostEventAndWait(name: String, payload: String? = null): Int {
+    internal fun dispatchHostEventAndWait(event: BnHostEvent, payload: String? = null): Int {
         val future = dispatchLane.submit(java.util.concurrent.Callable {
-            hostEventCore(name, payload)
+            hostEventCore(event.wireName, payload)
         })
         return try {
             future.get()
