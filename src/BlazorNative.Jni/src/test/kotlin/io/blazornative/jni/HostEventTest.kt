@@ -233,7 +233,7 @@ class HostEventTest {
         )
         runtime.start(componentName = "BnDemo", platformOs = "test-host", bridge = host)
 
-        runtime.dispatchHostEvent("") // empty name → rc 3 → onError, on the lane
+        runtime.dispatchHostEventUnchecked("") // empty name → rc 3 → onError, on the lane
 
         assertTrue(
             latch.await(5, TimeUnit.SECONDS),

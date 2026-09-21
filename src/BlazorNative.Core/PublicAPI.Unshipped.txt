@@ -26,3 +26,9 @@ static BlazorNative.Core.BnLog.Verbose(string! category, string! message) -> voi
 static BlazorNative.Core.BnLog.Warn(string! category, string! message) -> void
 static BlazorNative.Core.BnLog.Warn(string! category, string! message, System.Exception! exception) -> void
 static BlazorNative.Core.BnLog.Write(BlazorNative.Core.BnLogLevel level, string! category, string! message) -> void
+BlazorNative.Core.BnHostEvents
+const BlazorNative.Core.BnHostEvents.Back = "back" -> string!
+const BlazorNative.Core.BnHostEvents.Navigate = "navigate" -> string!
+const BlazorNative.Core.BnHostEvents.OnDestroy = "onDestroy" -> string!
+const BlazorNative.Core.BnHostEvents.OnPause = "onPause" -> string!
+const BlazorNative.Core.BnHostEvents.OnResume = "onResume" -> string!

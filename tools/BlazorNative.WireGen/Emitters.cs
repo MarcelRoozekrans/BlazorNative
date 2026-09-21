@@ -162,6 +162,22 @@ public static class Emitters
         sb.Append("    )\n");
 
         sb.Append("}\n");
+        sb.Append('\n');
+        sb.Append("""
+            /**
+             * The host-event vocabulary. `dispatchHostEvent` takes THIS, not a String —
+             * the enum member is how production code dispatches a host event, and a
+             * source-scan test (NoProductionShellSource_CallsTheHostEventSeamsDirectly,
+             * BlazorNative.Runtime.Tests) enforces that production code goes through it
+             * rather than the raw-String test seams, so the Kotlin and Swift spellings
+             * cannot drift the way they did before #300.
+             */
+            internal enum class BnHostEvent(val wireName: String) {
+
+            """);
+        foreach (HostEvent e in v.HostEvents.Events)
+            sb.Append($"    {e.EnumCase}(\"{e.Name}\"), // {e.Tier}\n");
+        sb.Append("}\n");
         return sb.ToString();
     }
 
@@ -252,6 +268,24 @@ public static class Emitters
             sb.Append($"        \"{t.WireName ?? v.NodeTypes.FallbackName}\", // {t.Id} = {t.Enum}\n");
         sb.Append("    ]\n");
 
+        sb.Append("}\n");
+        sb.Append('\n');
+        sb.Append("""
+            /// The host-event vocabulary. `dispatchHostEvent` takes THIS, not a String —
+            /// passing an enum member is how production Swift code dispatches a host
+            /// event, and that parameter type is what stops a bare literal there. The
+            /// underlying C ABI (`blazornative_host_event`) is a separate, lower-level
+            /// door that stays directly callable regardless of this enum — BnNotifications
+            /// uses it for one reserved event today, deliberately, not as a bypass.
+            ///
+            /// `.back` is present and unused on this shell: iOS has no system back. The
+            /// vocabulary is the union of what the WIRE admits, not what one shell sends.
+            /// Do not prune it to a per-shell subset — that is a divergence by another name.
+            enum BnHostEvent: String {
+
+            """);
+        foreach (HostEvent e in v.HostEvents.Events)
+            sb.Append($"    case {char.ToLowerInvariant(e.EnumCase[0])}{e.EnumCase[1..]} = \"{e.Name}\" // {e.Tier}\n");
         sb.Append("}\n");
         return sb.ToString();
     }

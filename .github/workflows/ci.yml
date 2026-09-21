@@ -4,7 +4,7 @@
 #
 #   build-test (windows-latest) — the local verification procedure verbatim
 #   (setup.ps1 §1–7 documents the toolchain pins):
-#     build (analyzers ride it) → .NET tests (1070 passed / 0 skipped) →
+#     build (analyzers ride it) → .NET tests (1076 passed / 0 skipped) →
 #     three NativeAOT publishes of samples/BlazorNative.SampleApp — the
 #     publish head since Phase 8.0: the app owns PublishAot, the exports stay
 #     in Runtime via UnmanagedEntryPointsAssembly, and the artifact is
@@ -2015,7 +2015,31 @@ jobs:
       # JVM does NOT move: the new Kotlin deep-link vector test lives in
       # src/androidTest, which testDebugUnitTest cannot see. Android instrumented
       # 224 -> 225 and iOS 269 -> 270 in their own (advisory) lanes.
-      - name: .NET tests (assert 1070 passed / 0 skipped)
+      # 1070 -> 1075 (14.0, +5): THE HOST-EVENT VOCABULARY. Two manifest tests
+      # (the five names and their tiers; an unknown tier is rejected at the
+      # source), one that the emitted Kotlin and Swift enums carry every name,
+      # one pinning the hand-written public BnHostEvents both ways against the
+      # manifest, and one asserting every RESERVED name reaches a real routing
+      # arm rather than falling silently through to the app multicast.
+      # JVM does NOT move (161). Android instrumented does NOT move (225).
+      # iOS goes DOWN by one -- 270 -> 269 -- in its own (advisory) lane: see
+      # ios.yml's comment history for why.
+      # 1075 -> 1076 (14.0 final review, +1): the pre-merge review on PR #341
+      # found a safety claim with no mechanism behind it -- BlazorNativeRuntime.kt's
+      # KDoc said the BnHostEvent enum overload "makes that rc unreachable from
+      # production code by construction", but dispatchHostEventUnchecked(name:
+      # String) and dispatchHostEventBlocking(name: String) are both internal,
+      # both take a bare String, and nothing stopped a production shell file from
+      # calling either directly -- the exact "safety claim without a pin" class
+      # this repo treats as its most dangerous bug. +1
+      # NoProductionShellSource_CallsTheHostEventSeamsDirectly scans the
+      # production (main + androidMain) Kotlin source sets in BOTH
+      # src/BlazorNative.Jni and templates/ for a direct call to either seam,
+      # mutation-proven red on a call added to MainActivity.kt. JVM/Android/iOS
+      # do NOT move -- no shell behaviour changed, only a .NET-side source scan
+      # and prose in two KDoc/doc comments (softened to describe what the pin
+      # enforces rather than overstate what the type system does).
+      - name: .NET tests (assert 1076 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -2033,8 +2057,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 1070 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 1070 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 1076 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 1076 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # ── NativeAOT publishes + nine-export verification ────────────────────

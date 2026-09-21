@@ -10,6 +10,7 @@ import android.window.OnBackInvokedCallback
 import android.window.OnBackInvokedDispatcher
 import androidx.fragment.app.FragmentActivity
 import io.blazornative.jni.BlazorNativeRuntime
+import io.blazornative.jni.BnHostEvent
 import io.blazornative.jni.BnLogLevel
 import io.blazornative.jni.BnPlatformKind
 import kotlin.concurrent.thread
@@ -73,13 +74,6 @@ class MainActivity : FragmentActivity() {
          * A custom scheme (no domain verification) is the simplest honest proof
          * of the launch-time deep-link mechanism; https App Links are later work. */
         const val DEEP_LINK_SCHEME = "blazornative"
-
-        /** Phase 9.1 — the reserved host-event name for WARM notification
-         * tap-through. [onNewIntent] dispatches it with the route as the payload;
-         * .NET's DispatchHostEventCore maps it to NavigateToAsync (the "back"
-         * precedent — the name→verb mapping lives in .NET so every shell gets
-         * identical semantics). Must equal Exports.NavigateEventName. */
-        internal const val NAVIGATE_EVENT = "navigate"
 
         /** Test seam (instrumented BnNotificationsAndroidTest): the rc of the most
          * recent warm-tap "navigate" host_event — 0 = the live session re-routed,
@@ -357,12 +351,12 @@ class MainActivity : FragmentActivity() {
 
     override fun onResume() {
         super.onResume()
-        if (booted) runtime.dispatchHostEvent("onResume")
+        if (booted) runtime.dispatchHostEvent(BnHostEvent.OnResume)
     }
 
     override fun onPause() {
         super.onPause()
-        if (booted) runtime.dispatchHostEvent("onPause")
+        if (booted) runtime.dispatchHostEvent(BnHostEvent.OnPause)
     }
 
     override fun onDestroy() {
@@ -372,7 +366,7 @@ class MainActivity : FragmentActivity() {
         // here would clear the frame callback + tear down the session the
         // recreated Activity expects. shutdown() is reserved for genuine
         // process-exit paths, which Android does not give an Activity.
-        if (booted) runtime.dispatchHostEvent("onDestroy")
+        if (booted) runtime.dispatchHostEvent(BnHostEvent.OnDestroy)
         // Phase 6.1: the view tree and the Yoga tree die with the Activity. The
         // mapper is reachable from the runtime's frame callback (process-global
         // session), so without this every recreation would leak a complete view
@@ -450,7 +444,13 @@ class MainActivity : FragmentActivity() {
         // ship in Release.
         BnShellLog.info(tag, "[deep-link] warm re-route → $route")
         val rc = try {
-            runtime.dispatchHostEventAndWait(NAVIGATE_EVENT, route)
+            // Phase 9.1 — BnHostEvent.Navigate is the reserved host event for WARM
+            // notification tap-through, dispatched here with the route as the
+            // payload; .NET's DispatchHostEventCore maps it to NavigateToAsync (the
+            // "back" precedent — the name→verb mapping lives in .NET so every shell
+            // gets identical semantics). Its wire name must equal BnHostEvents.Navigate
+            // (BlazorNative.Core).
+            runtime.dispatchHostEventAndWait(BnHostEvent.Navigate, route)
         } catch (t: Throwable) {
             Log.e(tag, "navigate dispatch threw", t)
             2
@@ -519,7 +519,7 @@ class MainActivity : FragmentActivity() {
         if (!booted) return false
         if (mapper.requestTopmostModalDismissal()) return true
         return try {
-            runtime.dispatchHostEventAndWait("back") == 0
+            runtime.dispatchHostEventAndWait(BnHostEvent.Back) == 0
         } catch (t: Throwable) {
             Log.e(tag, "back dispatch threw", t)
             false

@@ -58,3 +58,19 @@ internal object BnWireVocabulary {
         "activityindicator", // 12 = ActivityIndicator
     )
 }
+
+/**
+ * The host-event vocabulary. `dispatchHostEvent` takes THIS, not a String —
+ * the enum member is how production code dispatches a host event, and a
+ * source-scan test (NoProductionShellSource_CallsTheHostEventSeamsDirectly,
+ * BlazorNative.Runtime.Tests) enforces that production code goes through it
+ * rather than the raw-String test seams, so the Kotlin and Swift spellings
+ * cannot drift the way they did before #300.
+ */
+internal enum class BnHostEvent(val wireName: String) {
+    Back("back"), // reserved
+    Navigate("navigate"), // reserved
+    OnResume("onResume"), // passthrough
+    OnPause("onPause"), // passthrough
+    OnDestroy("onDestroy"), // passthrough
+}

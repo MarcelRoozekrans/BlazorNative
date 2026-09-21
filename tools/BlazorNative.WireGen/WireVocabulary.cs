@@ -54,12 +54,46 @@ public sealed class NodeTypeTable
     public IEnumerable<string> ShellNames => Types.Select(t => t.WireName ?? FallbackName);
 }
 
+public sealed class HostEvent
+{
+    /// <summary>The name as it crosses the wire. This exact string is what
+    /// blazornative_host_event receives and what DispatchHostEventCore matches.</summary>
+    [JsonPropertyName("name")] public string Name { get; init; } = "";
+
+    /// <summary>"reserved" — .NET intercepts it in DispatchHostEventCore and routes
+    /// it. "passthrough" — .NET never names it; it reaches the app multicast as an
+    /// opaque string. Both misspelling failure modes are SILENT, which is why the
+    /// tier is data rather than a comment.</summary>
+    [JsonPropertyName("tier")] public string Tier { get; init; } = "";
+
+    /// <summary>The PascalCase spelling the emitters use for an enum case or a
+    /// constant. Derived, never authored: a second spelling in the manifest would
+    /// be a second copy of the same truth, which is the defect this phase closes.</summary>
+    public string EnumCase => char.ToUpperInvariant(Name[0]) + Name[1..];
+}
+
+public sealed class HostEventTable
+{
+    [JsonPropertyName("events")] public HostEvent[] Events { get; init; } = [];
+
+    /// <summary>Every name, in declaration order — the order the emitters use.</summary>
+    public IEnumerable<string> Names => Events.Select(e => e.Name);
+
+    /// <summary>The names DispatchHostEventCore must have a routing arm for.</summary>
+    public IEnumerable<string> Reserved =>
+        Events.Where(e => e.Tier == ReservedTier).Select(e => e.Name);
+
+    public const string ReservedTier = "reserved";
+    public const string PassthroughTier = "passthrough";
+}
+
 public sealed class WireVocabulary
 {
     [JsonPropertyName("yogaStyles")]                   public StyleTable YogaStyles { get; init; } = new();
     [JsonPropertyName("visualStyles")]                 public StyleTable VisualStyles { get; init; } = new();
     [JsonPropertyName("scrollIgnoredContainerStyles")] public NameList ScrollIgnoredContainerStyles { get; init; } = new();
     [JsonPropertyName("measuredNodeTypes")]            public NameList MeasuredNodeTypes { get; init; } = new();
+    [JsonPropertyName("hostEvents")]                   public HostEventTable HostEvents { get; init; } = new();
     [JsonPropertyName("nodeTypes")]                    public NodeTypeTable NodeTypes { get; init; } = new();
 
     private static readonly JsonSerializerOptions Options = new()
@@ -137,6 +171,26 @@ public sealed class WireVocabulary
             throw new InvalidDataException(
                 $"measuredNodeTypes {string.Join(", ", unknownMeasured)} are not node types. "
                 + "A measure function keyed on a name nothing emits is dead code that looks live.");
+
+        RequireNonEmpty(HostEvents.Events, "hostEvents");
+        RequireNoDuplicates(HostEvents.Names, "hostEvents");
+
+        // THE TIER IS A ROUTING DECISION, not a label. An unknown tier would make
+        // "does .NET intercept this?" unanswerable, and the dispatch-arm pin reads
+        // this field to decide what it must assert.
+        foreach (HostEvent e in HostEvents.Events)
+        {
+            if (e.Tier is not (HostEventTable.ReservedTier or HostEventTable.PassthroughTier))
+                throw new InvalidDataException(
+                    $"hostEvent '{e.Name}' has tier '{e.Tier}' — expected "
+                    + $"'{HostEventTable.ReservedTier}' or '{HostEventTable.PassthroughTier}'. "
+                    + "The tier decides whether DispatchHostEventCore must route the name or "
+                    + "let it fall through to the app multicast; an unknown value makes that "
+                    + "unanswerable and leaves the dispatch-arm pin with nothing to assert.");
+
+            if (string.IsNullOrWhiteSpace(e.Name))
+                throw new InvalidDataException("a hostEvent has an empty name");
+        }
     }
 
     private static void RequireNonEmpty<T>(IReadOnlyCollection<T> items, string what)

@@ -101,6 +101,42 @@
     "names": ["text", "button", "input", "image", "checkbox", "switch", "slider", "picker", "activityindicator"]
   },
 
+  "hostEvents": {
+    "$doc": [
+      "HOST-INITIATED event names — the vocabulary blazornative_host_event carries.",
+      "",
+      "TWO TIERS, and the difference is load-bearing:",
+      "  reserved     — Exports.DispatchHostEventCore INTERCEPTS the name and routes",
+      "                 it. A shell that misspells one gets SILENT fall-through to",
+      "                 the app multicast: no error, navigation simply never happens.",
+      "  passthrough  — .NET never names it; it reaches the app's subscribers as an",
+      "                 opaque string. A misspelling means the app's handler silently",
+      "                 never fires.",
+      "",
+      "Both failure modes are silent. That is why these names were hand-copied into",
+      "five homes across three languages for a year without anyone noticing (#300).",
+      "",
+      "The Kotlin and Swift BnHostEvent enums are GENERATED from this list, so a bare",
+      "string literal at a call site does not compile. The .NET BnHostEvents constants",
+      "are deliberately NOT generated — they are public API with a PublicAPI baseline,",
+      "and a generator able to move a frozen public surface is worse than the drift it",
+      "prevents. They are ASSERTED against this list instead, exactly as",
+      "BlazorNativeNodeType is.",
+      "",
+      "TO ADD A NAME: add it here, run `dotnet run --project tools/BlazorNative.WireGen`,",
+      "add the matching public constant to BlazorNative.Core/BnHostEvents.cs, and — if",
+      "the tier is reserved — give DispatchHostEventCore an arm for it. Each of those",
+      "three has a pin that reds if you skip it."
+    ],
+    "events": [
+      { "name": "back",      "tier": "reserved" },
+      { "name": "navigate",  "tier": "reserved" },
+      { "name": "onResume",  "tier": "passthrough" },
+      { "name": "onPause",   "tier": "passthrough" },
+      { "name": "onDestroy", "tier": "passthrough" }
+    ]
+  },
+
   "nodeTypes": {
     "$doc": [
       "CreateNode's widget class. `id` IS the wire value and is never renumbered or",

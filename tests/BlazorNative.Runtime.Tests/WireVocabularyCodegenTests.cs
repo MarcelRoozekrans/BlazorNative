@@ -1,4 +1,6 @@
+using System.Reflection;
 using System.Text.Json;
+using BlazorNative.Core;
 using BlazorNative.Renderer;
 using BlazorNative.Runtime;
 using BlazorNative.WireGen;
@@ -27,6 +29,17 @@ namespace BlazorNative.Runtime.Tests;
 // deliberately NOT generated — it is asserted against the manifest instead.
 // ─────────────────────────────────────────────────────────────────────────────
 
+// This class joins the "host-session" collection solely for
+// EveryReservedHostEvent_IsRoutedRatherThanFallingThrough below: that test
+// drives Exports.DispatchHostEventCore and asserts on HostSession's
+// process-wide static CurrentNavigationManager being null (no session
+// mounted). Every other class that mounts a session already serializes on
+// this collection (see HostSessionTestCollection); without joining it too,
+// this test would be free to run in a different collection IN PARALLEL with
+// one of those, and a routed name could observe a live session and return 0
+// instead of 1 — a pin that is flaky depending on test scheduling, not one
+// that is wrong. None of the other tests in this file touch HostSession.
+[Collection("host-session")]
 public sealed class WireVocabularyCodegenTests
 {
     private static string RepoRoot()
@@ -199,6 +212,55 @@ public sealed class WireVocabularyCodegenTests
     }
 
     [Fact]
+    public void TheEmittedEnums_CarryEveryManifestHostEvent()
+    {
+        WireVocabulary v = LoadManifest();
+        string kotlin = Emitters.EmitKotlin(v);
+        string swift = Emitters.EmitSwift(v);
+
+        foreach (HostEvent e in v.HostEvents.Events)
+        {
+            Assert.Contains($"{e.EnumCase}(\"{e.Name}\")", kotlin);
+            Assert.Contains($"case {char.ToLowerInvariant(e.EnumCase[0])}{e.EnumCase[1..]} = \"{e.Name}\"", swift);
+        }
+
+        Assert.Contains("enum class BnHostEvent", kotlin);
+        Assert.Contains("enum BnHostEvent: String", swift);
+    }
+
+    [Fact]
+    public void TheManifest_DeclaresTheFiveHostEvents_WithTiers()
+    {
+        WireVocabulary v = LoadManifest();
+
+        Assert.Equal(
+            ["back", "navigate", "onResume", "onPause", "onDestroy"],
+            v.HostEvents.Names.ToArray());
+
+        // The reserved tier is the one .NET intercepts in DispatchHostEventCore.
+        // Everything else falls through to the app multicast as an opaque string.
+        Assert.Equal(["back", "navigate"], v.HostEvents.Reserved.ToArray());
+    }
+
+    [Fact]
+    public void TheManifest_RejectsAnUnknownTier()
+    {
+        // Validation happens at the SOURCE: a bad manifest must not be emittable,
+        // because emitting it propagates the mistake into three languages at once.
+        const string bad = """
+            {
+              "yogaStyles":   { "groups": [ { "name": "G", "names": ["width"] } ] },
+              "visualStyles": { "groups": [ { "name": "G", "names": ["color"] } ] },
+              "nodeTypes":    { "fallbackName": "?", "types": [ { "id": 0, "enum": "None" } ] },
+              "hostEvents":   { "events": [ { "name": "onPause", "tier": "sometimes" } ] }
+            }
+            """;
+
+        var ex = Assert.Throws<InvalidDataException>(() => WireVocabulary.Load(bad));
+        Assert.Contains("sometimes", ex.Message);
+    }
+
+    [Fact]
     public void AMalformedManifest_IsRefused_NotEmitted()
     {
         // The generator's validation is the thing standing between a typo and four
@@ -242,5 +304,80 @@ public sealed class WireVocabularyCodegenTests
             """;
         Assert.Contains("dense and ordered", Assert.Throws<InvalidDataException>(
             () => WireVocabulary.Load(renumberedIds)).Message);
+    }
+
+    [Fact]
+    public void TheHostEventConstants_MatchTheManifest_BothWays()
+    {
+        // THE MIRROR CODEGEN DOES NOT OWN. BnHostEvents is public API with a
+        // PublicAPI baseline, so it is hand-written and pinned — the same trade
+        // TheNodeTypeEnum_MatchesTheManifest_IdForId makes, for the same reason.
+        WireVocabulary v = LoadManifest();
+
+        Dictionary<string, string> declared = typeof(BnHostEvents)
+            .GetFields(BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy)
+            .Where(f => f.IsLiteral && f.FieldType == typeof(string))
+            .ToDictionary(f => f.Name, f => (string)f.GetRawConstantValue()!, StringComparer.Ordinal);
+
+        // Direction 1: every manifest name has a constant, spelled correctly.
+        foreach (HostEvent e in v.HostEvents.Events)
+        {
+            Assert.True(declared.TryGetValue(e.EnumCase, out string? value),
+                $"manifest hostEvent '{e.Name}' has no BnHostEvents.{e.EnumCase} constant — "
+                + "apps cannot name an event the shells send");
+            Assert.Equal(e.Name, value);
+        }
+
+        // Direction 2: no constant without a manifest entry. Without this the class
+        // could grow a name no shell sends and the pin would still be green.
+        Assert.Equal(
+            v.HostEvents.Names.OrderBy(n => n, StringComparer.Ordinal),
+            declared.Values.OrderBy(n => n, StringComparer.Ordinal));
+    }
+
+    [Fact]
+    public void EveryReservedHostEvent_IsRoutedRatherThanFallingThrough()
+    {
+        // A reserved name with no arm in DispatchHostEventCore does not throw — it
+        // falls through to the app multicast and is SILENTLY IGNORED. That is the
+        // failure this pin exists for: the direct analogue of a style name the
+        // routing table accepts that no shell applies.
+        WireVocabulary v = LoadManifest();
+
+        int checkedNames = 0;
+        foreach (string reserved in v.HostEvents.Reserved)
+        {
+            checkedNames++;
+
+            // With no session mounted, a ROUTED name reports "nothing to route to"
+            // (rc 1) because the nav manager is null. An UNROUTED name reaches the
+            // multicast, which has no subscribers, and reports success (rc 0).
+            // The two are distinguishable precisely because routing happens first.
+            //
+            // ASSUMPTION, NOT A DERIVED PROPERTY (14.0 final review, item 4): this
+            // pin treats rc 1 as the universal signature of "routed but idle with no
+            // session mounted". That holds for every reserved arm TODAY (Back routes
+            // to a null nav manager, Navigate the same), but a future reserved arm
+            // could legitimately report rc 0 with no session mounted — e.g. one that
+            // only touches shell-local state and has nothing that needs a mounted
+            // session to be "handled". Such an arm would red HERE even though it is
+            // correct, because this assertion cannot distinguish "correctly routed,
+            // rc 0" from "fell through to the multicast, rc 0". It fails LOUD, so it
+            // is safe (nobody ships a silent miss) — but whoever adds the next
+            // reserved event (phase 14.2's insets event looks like the next one)
+            // should re-derive rc 1 for that arm rather than assume this pin already
+            // covers it, and add a session-independent assertion if it does not.
+            int rc = Exports.DispatchHostEventCore(reserved, payload: null);
+
+            Assert.True(rc == 1,
+                $"reserved host event '{reserved}' returned rc {rc} with no session mounted — "
+                + "expected 1 (routed, but nothing to route to). rc 0 means it fell through "
+                + "to the app multicast, i.e. DispatchHostEventCore has no arm for it and the "
+                + "name is silently ignored on every device.");
+        }
+
+        Assert.True(checkedNames >= 2,
+            $"only {checkedNames} reserved names checked — the manifest lost entries, or this "
+            + "loop stopped seeing them");
     }
 }
