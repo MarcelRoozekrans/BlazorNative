@@ -13,7 +13,7 @@
 #define BN_WIRE_VOCABULARY_G_H
 
 static const char* const kYogaStyles[] = {
-    "flexDirection", "justifyContent", "alignItems", "flexWrap", "gap", "alignSelf", "flexGrow", "flexShrink", "flexBasis", "width", "height", "minWidth", "maxWidth", "minHeight", "maxHeight", "padding", "margin", "position", "top", "right", "bottom", "left",
+    "flexDirection", "justifyContent", "alignItems", "flexWrap", "gap", "alignSelf", "flexGrow", "flexShrink", "flexBasis", "width", "height", "minWidth", "maxWidth", "minHeight", "maxHeight", "padding", "paddingTop", "paddingRight", "paddingBottom", "paddingLeft", "margin", "position", "top", "right", "bottom", "left",
 };
 
 static const char* const kScrollIgnoredContainerStyles[] = {

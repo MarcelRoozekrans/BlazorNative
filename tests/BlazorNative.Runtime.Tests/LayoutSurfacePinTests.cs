@@ -190,9 +190,9 @@ public sealed class LayoutSurfacePinTests
         Assert.Empty(offenders);
     }
 
-    /// <summary>The 5 parameters that constitute the container surface, by name.</summary>
+    /// <summary>The 9 parameters that constitute the container surface, by name.</summary>
     internal static readonly string[] ContainerParameters =
-        { "Padding", "Justify", "Align", "Wrap", "Gap" };
+        { "Padding", "Justify", "Align", "Wrap", "Gap", "PaddingTop", "PaddingRight", "PaddingBottom", "PaddingLeft" };
 
     [Fact]
     public void BnLayoutContainer_DeclaresExactlyTheContainerSurface()

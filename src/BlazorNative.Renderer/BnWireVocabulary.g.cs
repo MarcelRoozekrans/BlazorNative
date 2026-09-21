@@ -24,7 +24,7 @@ internal static class BnWireVocabulary
         // Item
         "alignSelf", "flexGrow", "flexShrink", "flexBasis",
         // Box
-        "width", "height", "minWidth", "maxWidth", "minHeight", "maxHeight", "padding", "margin",
+        "width", "height", "minWidth", "maxWidth", "minHeight", "maxHeight", "padding", "paddingTop", "paddingRight", "paddingBottom", "paddingLeft", "margin",
         // Positioning
         "position", "top", "right", "bottom", "left",
     ];

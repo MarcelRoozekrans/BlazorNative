@@ -49,6 +49,14 @@ BlazorNative.Components.BnLayoutContainer.Justify.get -> BlazorNative.Components
 BlazorNative.Components.BnLayoutContainer.Justify.set -> void
 BlazorNative.Components.BnLayoutContainer.Padding.get -> BlazorNative.Components.BnLength?
 BlazorNative.Components.BnLayoutContainer.Padding.set -> void
+BlazorNative.Components.BnLayoutContainer.PaddingBottom.get -> BlazorNative.Components.BnLength?
+BlazorNative.Components.BnLayoutContainer.PaddingBottom.set -> void
+BlazorNative.Components.BnLayoutContainer.PaddingLeft.get -> BlazorNative.Components.BnLength?
+BlazorNative.Components.BnLayoutContainer.PaddingLeft.set -> void
+BlazorNative.Components.BnLayoutContainer.PaddingRight.get -> BlazorNative.Components.BnLength?
+BlazorNative.Components.BnLayoutContainer.PaddingRight.set -> void
+BlazorNative.Components.BnLayoutContainer.PaddingTop.get -> BlazorNative.Components.BnLength?
+BlazorNative.Components.BnLayoutContainer.PaddingTop.set -> void
 BlazorNative.Components.BnLayoutContainer.Wrap.get -> BlazorNative.Components.FlexWrap?
 BlazorNative.Components.BnLayoutContainer.Wrap.set -> void
 BlazorNative.Components.BnScroll.AutoScrollToEnd.get -> bool

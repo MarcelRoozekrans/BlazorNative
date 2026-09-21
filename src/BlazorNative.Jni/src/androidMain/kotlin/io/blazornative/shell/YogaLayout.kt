@@ -1059,6 +1059,18 @@ class YogaLayout(private val context: Context, private val root: ViewGroup) {
             "padding" -> length(property, value)
                 ?.applyTo({ node.setPadding(YogaEdge.ALL, it) }, { node.setPaddingPercent(YogaEdge.ALL, it) })
                 ?: return
+            "paddingTop" -> length(property, value)
+                ?.applyTo({ node.setPadding(YogaEdge.TOP, it) }, { node.setPaddingPercent(YogaEdge.TOP, it) })
+                ?: return
+            "paddingRight" -> length(property, value)
+                ?.applyTo({ node.setPadding(YogaEdge.RIGHT, it) }, { node.setPaddingPercent(YogaEdge.RIGHT, it) })
+                ?: return
+            "paddingBottom" -> length(property, value)
+                ?.applyTo({ node.setPadding(YogaEdge.BOTTOM, it) }, { node.setPaddingPercent(YogaEdge.BOTTOM, it) })
+                ?: return
+            "paddingLeft" -> length(property, value)
+                ?.applyTo({ node.setPadding(YogaEdge.LEFT, it) }, { node.setPaddingPercent(YogaEdge.LEFT, it) })
+                ?: return
             "gap" -> length(property, value)
                 ?.applyTo({ node.setGap(YogaGutter.ALL, it) }, { node.setGapPercent(YogaGutter.ALL, it) })
                 ?: return

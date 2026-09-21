@@ -13,7 +13,7 @@
 /// and BnWidgetMapper keep their own decode and routing code.
 enum BnWireVocabulary {
     static let yogaStyles = [
-        "flexDirection", "justifyContent", "alignItems", "flexWrap", "gap", "alignSelf", "flexGrow", "flexShrink", "flexBasis", "width", "height", "minWidth", "maxWidth", "minHeight", "maxHeight", "padding", "margin", "position", "top", "right", "bottom", "left",
+        "flexDirection", "justifyContent", "alignItems", "flexWrap", "gap", "alignSelf", "flexGrow", "flexShrink", "flexBasis", "width", "height", "minWidth", "maxWidth", "minHeight", "maxHeight", "padding", "paddingTop", "paddingRight", "paddingBottom", "paddingLeft", "margin", "position", "top", "right", "bottom", "left",
     ]
 
     static let visualStyles = [
