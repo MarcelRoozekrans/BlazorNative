@@ -129,11 +129,12 @@
       "three has a pin that reds if you skip it."
     ],
     "events": [
-      { "name": "back",      "tier": "reserved" },
-      { "name": "navigate",  "tier": "reserved" },
-      { "name": "onResume",  "tier": "passthrough" },
-      { "name": "onPause",   "tier": "passthrough" },
-      { "name": "onDestroy", "tier": "passthrough" }
+      { "name": "back",            "tier": "reserved" },
+      { "name": "navigate",        "tier": "reserved" },
+      { "name": "safeAreaChanged", "tier": "reserved" },
+      { "name": "onResume",        "tier": "passthrough" },
+      { "name": "onPause",         "tier": "passthrough" },
+      { "name": "onDestroy",       "tier": "passthrough" }
     ]
   },
 

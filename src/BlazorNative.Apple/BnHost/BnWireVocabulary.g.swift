@@ -59,6 +59,7 @@ enum BnWireVocabulary {
 enum BnHostEvent: String {
     case back = "back" // reserved
     case navigate = "navigate" // reserved
+    case safeAreaChanged = "safeAreaChanged" // reserved
     case onResume = "onResume" // passthrough
     case onPause = "onPause" // passthrough
     case onDestroy = "onDestroy" // passthrough

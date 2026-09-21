@@ -70,6 +70,7 @@ internal object BnWireVocabulary {
 internal enum class BnHostEvent(val wireName: String) {
     Back("back"), // reserved
     Navigate("navigate"), // reserved
+    SafeAreaChanged("safeAreaChanged"), // reserved
     OnResume("onResume"), // passthrough
     OnPause("onPause"), // passthrough
     OnDestroy("onDestroy"), // passthrough

@@ -32,3 +32,28 @@ const BlazorNative.Core.BnHostEvents.Navigate = "navigate" -> string!
 const BlazorNative.Core.BnHostEvents.OnDestroy = "onDestroy" -> string!
 const BlazorNative.Core.BnHostEvents.OnPause = "onPause" -> string!
 const BlazorNative.Core.BnHostEvents.OnResume = "onResume" -> string!
+const BlazorNative.Core.BnHostEvents.SafeAreaChanged = "safeAreaChanged" -> string!
+BlazorNative.Core.BnSafeAreaInsets
+BlazorNative.Core.BnSafeAreaInsets.BnSafeAreaInsets() -> void
+BlazorNative.Core.BnSafeAreaInsets.BnSafeAreaInsets(double Top, double Right, double Bottom, double Left) -> void
+BlazorNative.Core.BnSafeAreaInsets.Bottom.get -> double
+BlazorNative.Core.BnSafeAreaInsets.Bottom.init -> void
+BlazorNative.Core.BnSafeAreaInsets.Deconstruct(out double Top, out double Right, out double Bottom, out double Left) -> void
+BlazorNative.Core.BnSafeAreaInsets.Equals(BlazorNative.Core.BnSafeAreaInsets other) -> bool
+BlazorNative.Core.BnSafeAreaInsets.Left.get -> double
+BlazorNative.Core.BnSafeAreaInsets.Left.init -> void
+BlazorNative.Core.BnSafeAreaInsets.Right.get -> double
+BlazorNative.Core.BnSafeAreaInsets.Right.init -> void
+BlazorNative.Core.BnSafeAreaInsets.Top.get -> double
+BlazorNative.Core.BnSafeAreaInsets.Top.init -> void
+override BlazorNative.Core.BnSafeAreaInsets.GetHashCode() -> int
+static BlazorNative.Core.BnSafeAreaInsets.Changed -> System.Action<BlazorNative.Core.BnSafeAreaInsets>?
+static BlazorNative.Core.BnSafeAreaInsets.Current.get -> BlazorNative.Core.BnSafeAreaInsets
+static BlazorNative.Core.BnSafeAreaInsets.Report(BlazorNative.Core.BnSafeAreaInsets insets) -> void
+static BlazorNative.Core.BnSafeAreaInsets.ResetForTests() -> void
+static BlazorNative.Core.BnSafeAreaInsets.SetForTests(BlazorNative.Core.BnSafeAreaInsets insets) -> void
+static BlazorNative.Core.BnSafeAreaInsets.operator !=(BlazorNative.Core.BnSafeAreaInsets left, BlazorNative.Core.BnSafeAreaInsets right) -> bool
+static BlazorNative.Core.BnSafeAreaInsets.operator ==(BlazorNative.Core.BnSafeAreaInsets left, BlazorNative.Core.BnSafeAreaInsets right) -> bool
+static readonly BlazorNative.Core.BnSafeAreaInsets.Zero -> BlazorNative.Core.BnSafeAreaInsets
+~override BlazorNative.Core.BnSafeAreaInsets.Equals(object obj) -> bool
+~override BlazorNative.Core.BnSafeAreaInsets.ToString() -> string
