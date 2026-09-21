@@ -199,6 +199,38 @@ public sealed class WireVocabularyCodegenTests
     }
 
     [Fact]
+    public void TheManifest_DeclaresTheFiveHostEvents_WithTiers()
+    {
+        WireVocabulary v = LoadManifest();
+
+        Assert.Equal(
+            ["back", "navigate", "onResume", "onPause", "onDestroy"],
+            v.HostEvents.Names.ToArray());
+
+        // The reserved tier is the one .NET intercepts in DispatchHostEventCore.
+        // Everything else falls through to the app multicast as an opaque string.
+        Assert.Equal(["back", "navigate"], v.HostEvents.Reserved.ToArray());
+    }
+
+    [Fact]
+    public void TheManifest_RejectsAnUnknownTier()
+    {
+        // Validation happens at the SOURCE: a bad manifest must not be emittable,
+        // because emitting it propagates the mistake into three languages at once.
+        const string bad = """
+            {
+              "yogaStyles":   { "groups": [ { "name": "G", "names": ["width"] } ] },
+              "visualStyles": { "groups": [ { "name": "G", "names": ["color"] } ] },
+              "nodeTypes":    { "fallbackName": "?", "types": [ { "id": 0, "enum": "None" } ] },
+              "hostEvents":   { "events": [ { "name": "onPause", "tier": "sometimes" } ] }
+            }
+            """;
+
+        var ex = Assert.Throws<InvalidDataException>(() => WireVocabulary.Load(bad));
+        Assert.Contains("sometimes", ex.Message);
+    }
+
+    [Fact]
     public void AMalformedManifest_IsRefused_NotEmitted()
     {
         // The generator's validation is the thing standing between a typo and four
