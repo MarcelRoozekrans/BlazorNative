@@ -2015,7 +2015,16 @@ jobs:
       # JVM does NOT move: the new Kotlin deep-link vector test lives in
       # src/androidTest, which testDebugUnitTest cannot see. Android instrumented
       # 224 -> 225 and iOS 269 -> 270 in their own (advisory) lanes.
-      - name: .NET tests (assert 1070 passed / 0 skipped)
+      # 1070 -> 1075 (14.0, +5): THE HOST-EVENT VOCABULARY. Two manifest tests
+      # (the five names and their tiers; an unknown tier is rejected at the
+      # source), one that the emitted Kotlin and Swift enums carry every name,
+      # one pinning the hand-written public BnHostEvents both ways against the
+      # manifest, and one asserting every RESERVED name reaches a real routing
+      # arm rather than falling silently through to the app multicast.
+      # JVM does NOT move (161). Android instrumented does NOT move (225).
+      # iOS goes DOWN by one -- 270 -> 269 -- in its own (advisory) lane: see
+      # ios.yml's comment history for why.
+      - name: .NET tests (assert 1075 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -2033,8 +2042,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 1070 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 1070 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 1075 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 1075 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # ── NativeAOT publishes + nine-export verification ────────────────────

@@ -179,6 +179,21 @@ of that, which is why one shipped and the other did not.
 vocabulary: `onResume` ← `applicationDidBecomeActive`, `onPause` ←
 `applicationWillResignActive`, `onDestroy` ← `applicationWillTerminate`.
 
+**Name them with `BnHostEvents`, not string literals.** Both shells and `BnHostEvents`
+(`BlazorNative.Core`) are pinned against the same `src/wire-vocabulary.json` manifest, so
+`e.Name == BnHostEvents.OnPause` cannot drift from what a shell actually sends the way
+`e.Name == "onPause"` can:
+
+```csharp
+bridge.NativeEvents += e =>
+{
+    if (e.Name == BnHostEvents.OnPause)
+    {
+        // PERSIST HERE — see the warning below.
+    }
+};
+```
+
 `willResignActive` rather than `didEnterBackground` is deliberate: Android's `onPause`
 fires whenever the Activity leaves the foreground *including partial obscuring*, and
 `willResignActive` is that same moment on iOS (Control Centre, an incoming call).
@@ -188,8 +203,9 @@ fires whenever the Activity leaves the foreground *including partial obscuring*,
 :::warning `onDestroy` is best-effort, and weaker on iOS
 iOS routinely terminates a suspended app **without** calling
 `applicationWillTerminate`. Android's `onDestroy` is not guaranteed either, but it is far
-more reliable in practice. **Persist on `onPause`** — it fires every time, on both
-platforms.
+more reliable in practice. **Persist on `BnHostEvents.OnPause`** — it fires every time, on
+both platforms; `BnHostEvents.OnDestroy` is best-effort and must not be where persistence
+lives.
 :::
 
 ---
