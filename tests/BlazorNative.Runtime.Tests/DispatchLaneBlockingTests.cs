@@ -6,7 +6,13 @@ using Xunit;
 namespace BlazorNative.Runtime.Tests;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// #339 — THE DEADLOCK, REPRODUCED WITHOUT A DEVICE.
+// #339 — THE TRIGGER IS FIXED. THE ROOT CAUSE IS NOT. THIS TEST PINS THE GAP.
+//
+// Phase 14.1 fixed the SHELL-SIDE trigger: Swift's dispatchHostEvent no longer
+// blocks its own lifecycle caller (see the ios split in this phase). It did NOT
+// touch Exports.DispatchEventCore, which is the .NET-side root cause shared by
+// BOTH shells and is explicitly out of scope here — see the "Do not touch"
+// note in this phase's brief and docs/plans/2026-09-21-phase-14.1-conclusion.md.
 //
 // An async handler awaiting an OPEN host call leaves DispatchUiEventAsync's Task
 // incomplete, so Exports.DispatchEventCore's GetAwaiter().GetResult() blocks the
@@ -26,8 +32,18 @@ namespace BlazorNative.Runtime.Tests;
 // but every one of them calls the bridge DIRECTLY. None goes through dispatch.
 // One flag separated the suite from this bug.
 //
-// THIS TEST MUST FAIL, NEVER HANG. It runs the dispatch on a worker thread and
-// asserts on a bounded wait, because a guard that hangs CI is worse than no
+// THIS TEST DELIBERATELY PINS A KNOWN DEFECT. It asserts that the dispatch
+// lane STILL blocks under this condition — i.e. it PASSES on today's (broken)
+// behaviour and will FAIL the day someone fixes Exports.DispatchEventCore.
+// That is intentional: a fix changes the shape of this test (see #345, the
+// follow-up issue filed for the root cause), it does not delete it. When the redesign
+// lands, this test FLIPS — the assertion inverts back to "does not block" —
+// it is not removed. Until then it is honest bookkeeping, not a passing green
+// light: BlazorNative apps still freeze on a device when a permission sheet
+// interrupts an async handler.
+//
+// THIS TEST MUST FAIL FAST, NEVER HANG. It runs the dispatch on a worker thread
+// and asserts on a bounded wait, because a guard that hangs CI is worse than no
 // guard at all.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -48,7 +64,7 @@ public sealed class DispatchLaneBlockingTests
     }
 
     [Fact]
-    public void AnAsyncHandlerAwaitingAnOpenHostCall_DoesNotBlockTheDispatchLane()
+    public void AnAsyncHandlerAwaitingAnOpenHostCall_STILL_BlocksTheDispatchLane()
     {
         FakeShellHost.Reset();
         NativeShellBridge.Register(FakeShellHost.BuildCallbacks());
@@ -80,15 +96,19 @@ public sealed class DispatchLaneBlockingTests
             { IsBackground = true, Name = "dispatch-probe" };
             worker.Start();
 
-            Assert.True(returned.Wait(Budget),
-                $"dispatch_event did NOT return within {Budget.TotalSeconds:0}s while the host call "
-                + $"was open (requestId={FakeShellHost.LastHostCallRequestId}). That is #339: the "
-                + "handler went async, GetAwaiter().GetResult() blocked the serial lane, and on a "
-                + "device the lifecycle event raised by the permission sheet can never run — so the "
-                + "app is dead until force-quit. Do NOT 'fix' this by completing the host call in "
-                + "the test; the open call IS the condition under test.");
-
-            Assert.Equal(0, rc);
+            // KNOWN DEFECT, PINNED ON PURPOSE: this assertion is inverted from what a
+            // healthy dispatch lane should do. It asserts the lane is STILL blocked —
+            // i.e. it passes on today's broken behaviour. See the root-cause issue
+            // filed alongside this phase (#345) and docs/plans/2026-09-21-phase-14.1-conclusion.md.
+            // rc is left at its sentinel (-1): DispatchEventCore never returns while
+            // the host call stays open, so there is no return code to assert on.
+            Assert.False(returned.Wait(Budget),
+                $"dispatch_event RETURNED within {Budget.TotalSeconds:0}s while the host call was "
+                + $"still open (requestId={FakeShellHost.LastHostCallRequestId}, rc={rc}). That is "
+                + "unexpected: this test pins the KNOWN #339 root-cause defect that "
+                + "Exports.DispatchEventCore's GetAwaiter().GetResult() blocks the dispatch lane on "
+                + "an async handler. If this test now fails, the root cause has been fixed — invert "
+                + "this assertion back (Assert.True) instead of deleting the test, and close #345.");
         }
         finally
         {
