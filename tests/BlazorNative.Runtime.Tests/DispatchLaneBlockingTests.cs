@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Components;
+using BlazorNative.Core;
 using BlazorNative.Renderer;
 using BlazorNative.Runtime;
 using Xunit;
@@ -70,6 +71,12 @@ public sealed class DispatchLaneBlockingTests
         NativeShellBridge.Register(FakeShellHost.BuildCallbacks());
         HostSession.ResetForTests();
 
+        // Declared here (not inside the try) so the finally block below can
+        // complete the still-running worker instead of tearing state out from
+        // under it — see the finally block's comment.
+        var returned = new ManualResetEventSlim(false);
+        Thread? worker = null;
+
         try
         {
             NativeRenderer renderer = HostSession.EnsureSession();
@@ -86,9 +93,8 @@ public sealed class DispatchLaneBlockingTests
 
             // Run the dispatch OFF the test thread so a regression is a timeout we
             // can assert on, not a hung test host.
-            var returned = new ManualResetEventSlim(false);
             int rc = -1;
-            var worker = new Thread(() =>
+            worker = new Thread(() =>
             {
                 rc = Exports.DispatchEventCore((ulong)take, """{"name":"click"}""");
                 returned.Set();
@@ -113,6 +119,31 @@ public sealed class DispatchLaneBlockingTests
         finally
         {
             FakeShellHost.AutoCompleteHostCall = true;
+
+            // CLEANUP, NOT PART OF THE MEASUREMENT (fix round 2, Important #1 — mirrors
+            // the JVM twin's cleanup, HostEventTest.kt's
+            // dispatchHostEventAndWait_still_deadlocks_behind_a_held_dispatch_lane): the
+            // worker thread above is STILL parked inside DispatchEventCore's
+            // GetAwaiter().GetResult() when the assertion above returns — that is the
+            // whole point of the pin. Resetting HostSession/NativeShellBridge out from
+            // under a dispatch that is still in flight disposes the renderer mid-call
+            // and TrySetCanceled's the TCS the worker is awaiting; because that TCS is
+            // built with RunContinuationsAsynchronously, the cancellation continuation
+            // resumes on the THREAD POOL AFTER THIS METHOD HAS RETURNED, racing the next
+            // test in this [Collection("host-session")] and liable to emit a stray
+            // BnLog.Error out of DispatchEventCore's catch block. So: complete the held
+            // host call explicitly (exactly as the shell would once the user answers the
+            // permission sheet), wait for the worker to actually return, and only THEN
+            // reset. Bounded throughout — a hanging teardown is worse than no guard.
+            if (FakeShellHost.LastHostCallRequestId >= 0)
+            {
+                NativeShellBridge.CompleteHostCall(
+                    FakeShellHost.LastHostCallRequestId, (int)CameraStatus.Cancelled, null);
+            }
+
+            returned.Wait(Budget);
+            worker?.Join(Budget);
+
             HostSession.ResetForTests();
             NativeShellBridge.ResetForTests();
         }
