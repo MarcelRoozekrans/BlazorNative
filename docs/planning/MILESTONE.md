@@ -93,7 +93,12 @@ unpinned*, wherever that occurs.
 
 ## Phases
 
-1. Phase 14.0 — pin the host-event vocabulary [pending]
+1. Phase 14.0 — pin the host-event vocabulary [complete] — closed 2026-09-21 on
+   [PR #341](https://github.com/MarcelRoozekrans/BlazorNative/pull/341); **#300 closed**; both
+   device lanes dispatched and green; .NET 1070 → 1076, iOS 270 → 269; no ABI or wire change.
+   Enforcement is a generated enum plus four pins — the fourth added by the final review, which
+   caught the code asserting a bypass was impossible while three seams could still reach the raw
+   name (the repo's own "safety claim without a pin" class, inside the milestone about exactly that)
 2. Phase 14.1 — the dispatch twins [pending]
 3. Phase 14.2 — safe-area insets to .NET [pending]
 4. Phase 14.3 — auth semantics [pending]
