@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test
 import java.util.Collections
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Phase 5.1 Gate 2 — host-INITIATED events driven through the published
@@ -244,5 +245,128 @@ class HostEventTest {
             "onError message must describe the non-zero rc; got $errors"
         )
         assertTrue(runtime.retire(), "the lane must drain after the dispatch")
+    }
+
+    // ── Android measurement (phase 14.1, Step 3): does dispatchHostEventAndWait ──
+    // ── deadlock behind a held dispatch lane, mirroring #339 on predictive-back? ─
+
+    /** Host whose hostCallBegin (Camera op) records the request and NEVER completes
+     * it — the JVM/Android twin of FakeShellHost.AutoCompleteHostCall = false in
+     * tests/BlazorNative.Runtime.Tests/DispatchLaneBlockingTests.cs: the call stays
+     * open exactly as it does while an OS permission sheet is up, unanswered. */
+    private class StallingCameraHost : ShellBridgeHandlers {
+        @Volatile private var route: String = "/"
+        val callReceived = CountDownLatch(1)
+        @Volatile var heldRequestId: Long = -1
+        override fun navigate(route: String) { this.route = route }
+        override fun currentRoute(): String = route
+        override fun storageRead(key: String): String? = null
+        override fun storageWrite(key: String, value: String) {}
+        override fun storageDelete(key: String) {}
+        override fun fetchBegin(requestId: Long, request: BridgeFetchRequest) {
+            BridgeFetchCompleter.completeFailure(requestId, "HostEventTest performs no fetch")
+        }
+        override fun clipboardRead(): String = ""
+        override fun clipboardWrite(text: String) {}
+        override fun share(text: String) {}
+        override fun hostCallBegin(requestId: Long, op: Int, argsJson: String) {
+            heldRequestId = requestId
+            callReceived.countDown() // NOT completed here — the call stays open for the
+            // measurement window; the test completes it explicitly afterwards (see below).
+        }
+    }
+
+    /**
+     * KNOWN DEFECT, PINNED ON PURPOSE (#346 — split out of #339 alongside #345).
+     *
+     * MainActivity:522 (`handleBack`) calls [BlazorNativeRuntime.dispatchHostEventAndWait]
+     * from the main thread inside the predictive-back callback, and that method does an
+     * UNTIMED `future.get()` against the single `BlazorNative-Dispatch` lane
+     * (BlazorNativeRuntime.kt), a single-thread ExecutorService. #339's condition is a
+     * PRIOR async handler stuck mid-flight on an open host call — the unanswered-
+     * permission-sheet state — which already occupies that lane's one worker thread. A
+     * later dispatchHostEventAndWait Callable is queued strictly behind it (FIFO, one
+     * worker) and cannot start until the stuck call finishes, so future.get() blocks
+     * indefinitely. MEASURED, not reasoned: this test occupies the lane the same way
+     * DispatchLaneBlockingTests.cs (.NET) does, and the probe thread genuinely does not
+     * return within a bounded 10s wait — see docs/plans/2026-09-21-phase-14.1-conclusion.md
+     * for the recorded result.
+     *
+     * THIS TEST DELIBERATELY PINS THAT DEFECT: it asserts the probe thread STILL has not
+     * returned — i.e. it PASSES on today's (broken) behaviour and will FAIL the day #346
+     * (or its shared root cause, #345) is fixed. That is intentional — a fix changes the
+     * shape of this test, it does not delete it: flip the assertion back to
+     * `assertTrue(backReturned.get(), …)` when that lands, and close #346.
+     *
+     * Bounded throughout, per Task 1's rule that a hanging measurement is worse than no
+     * measurement: every wait here carries an explicit timeout, including the probe
+     * thread join (dispatchHostEventAndWait's own future.get() is untimed production
+     * code and is NOT modified by this task — the timeout lives entirely in the test).
+     */
+    @Test
+    fun dispatchHostEventAndWait_still_deadlocks_behind_a_held_dispatch_lane() {
+        val host = StallingCameraHost()
+        val frames = mutableListOf<RenderFrame>()
+        val runtime = BlazorNativeRuntime(onFrame = { frames.add(it) })
+        runtime.start(componentName = "BnCameraDemo", platformOs = "test-host", bridge = host)
+        assertTrue(frames.isNotEmpty(), "mount must deliver the first frame synchronously")
+
+        val mount = frames.first()
+        val takePhoto = clickHandlerOn(mount, containerOfText(mount, "Take Photo"))
+
+        // Occupy the lane: fire-and-forget dispatch of Take Photo. Its handler awaits the
+        // host call StallingCameraHost never completes, so the lane thread blocks inside
+        // Exports.DispatchEventCore's GetAwaiter().GetResult() — the #345 root cause,
+        // reached here through the SAME published dll as DispatchLaneBlockingTests.cs.
+        runtime.dispatchEvent(takePhoto, "click")
+        assertTrue(
+            host.callReceived.await(10, TimeUnit.SECONDS),
+            "the camera host call never arrived — the lane never even started the dispatch, " +
+                "so this run cannot measure anything"
+        )
+
+        // From another thread — standing in for Android's main thread inside
+        // OnBackInvokedCallback — make the EXACT call MainActivity:522 makes.
+        val backReturned = AtomicBoolean(false)
+        var backRc = Int.MIN_VALUE
+        var backThrew: Throwable? = null
+        val backThread = Thread({
+            try {
+                backRc = runtime.dispatchHostEventAndWait(BnHostEvent.Back)
+            } catch (t: Throwable) {
+                backThrew = t
+            } finally {
+                backReturned.set(true)
+            }
+        }, "back-probe")
+        backThread.isDaemon = true
+        backThread.start()
+        backThread.join(10_000) // BOUNDED — never Thread.join() with no timeout
+
+        // KNOWN DEFECT, PINNED ON PURPOSE: inverted from what a healthy predictive-back
+        // path should do. Asserts the probe thread is STILL not back — i.e. passes on
+        // today's broken behaviour. rc/throwable are left at their sentinels: the probe
+        // never returns while the lane stays held, so there is nothing to assert on them.
+        assertFalse(
+            backReturned.get(),
+            "dispatchHostEventAndWait RETURNED within 10s (rc=$backRc, threw=$backThrew) " +
+                "while the dispatch lane was still held open by an async handler awaiting a " +
+                "host call. That is unexpected: this test pins the KNOWN #346 defect that " +
+                "Android's predictive back (MainActivity:522) deadlocks behind a held " +
+                "dispatch lane. If this test now fails, the defect has been fixed — invert " +
+                "this assertion back (assertTrue) instead of deleting the test, and close #346."
+        )
+
+        // CLEANUP, NOT PART OF THE MEASUREMENT: the blocked native call sits on the ONE
+        // process-global .NET session every JVM test class in this run shares (the
+        // InlineDispatcher/HostSession singleton the .NET-side [Collection("host-session")]
+        // tests also serialize against) — this instance's dispatchLane only serializes
+        // LOCAL submission, the actual block lives in the shared native runtime. Leaving
+        // it open would corrupt every test class that runs after this one in the same
+        // JVM, so complete it now (after the measurement, not during it) and let the
+        // queued "back" Callable — and this runtime's lane — drain normally.
+        BridgeHostCallCompleter.complete(host.heldRequestId, CameraStatus.CANCELLED, null)
+        backThread.join(10_000) // bounded — the lane should now free promptly
+        assertTrue(runtime.retire(), "the lane must drain once the held call is released")
     }
 }

@@ -294,7 +294,7 @@ final class BnRuntime {
         // is never called from the delegate's main thread directly). The non-nil dispatcher
         // is also BnNotifications' "session is live" signal (warm re-route vs cold stash).
         bridge.notifications.navigateDispatcher = { [weak self] route in
-            self?.dispatchHostEvent(.navigate, payload: route) ?? 1
+            self?.dispatchHostEventAndWait(.navigate, payload: route) ?? 1
         }
 
         // The deep-link surface gets the SAME dispatcher for the same reason: a URL
@@ -302,7 +302,7 @@ final class BnRuntime {
         // serial lane. Non-nil is likewise its "session is live" signal, so a link
         // opened from now on re-routes warm instead of stashing.
         BnDeepLink.shared.navigateDispatcher = { [weak self] route in
-            self?.dispatchHostEvent(.navigate, payload: route) ?? 1
+            self?.dispatchHostEventAndWait(.navigate, payload: route) ?? 1
         }
 
         // Published LAST, after mount: `current` means "a session that can be
@@ -311,13 +311,39 @@ final class BnRuntime {
         BnRuntime.current = self
     }
 
-    /// Phase 9.1: dispatches a host-INITIATED event over the EXISTING
-    /// `blazornative_host_event` export — the iOS shell's FIRST call of it (the 9.0
-    /// host_call_complete precedent). Runs on the serial dispatch lane (the threading
-    /// contract; a warm tap arrives on main, so this hops), synchronous so the re-route
-    /// swap's frames are applied before it returns. Returns the rc (0 = navigated).
+    /// Phase 9.1 / 14.1: dispatches a host-INITIATED event over the EXISTING
+    /// `blazornative_host_event` export. FIRE-AND-FORGET — the Swift twin of Kotlin's
+    /// `BlazorNativeRuntime.dispatchHostEvent`, and the overload LIFECYCLE uses.
+    ///
+    /// #339: this used to be the blocking one, and `BnAppLifecycle` called it from
+    /// main. When an async host call already held the lane — a camera or geolocation
+    /// capture waiting on the user — `willResignActive` blocked main on a lane that
+    /// could not drain, and the app was dead until force-quit. Android never had the
+    /// bug because its lifecycle path has always called the non-blocking overload.
+    /// Callers that need the rc use `dispatchHostEventAndWait`.
+    func dispatchHostEvent(_ event: BnHostEvent, payload: String?) {
+        dispatchLane.async {
+            _ = event.rawValue.withCString { n -> Int32 in
+                if let payload = payload {
+                    return payload.withCString { p in blazornative_host_event(n, p) }
+                }
+                return blazornative_host_event(n, nil)
+            }
+        }
+    }
+
+    /// Phase 14.1: the BLOCKING host-event dispatch — the Swift twin of Kotlin's
+    /// `dispatchHostEventAndWait`. Marshals through the SAME serial lane but blocks
+    /// the caller until the dispatch has completed, so the re-route swap's frames are
+    /// applied before it returns, and returns the rc (0 = navigated).
+    ///
+    /// Safe from any thread EXCEPT the dispatch lane itself — a call FROM the lane
+    /// would self-deadlock, exactly as Kotlin's KDoc warns of its twin. It also
+    /// blocks if an async host call currently holds the lane; that exposure is the
+    /// subject of a separate phase, and #339's fix was to stop LIFECYCLE from
+    /// taking this path, not to make this path non-blocking.
     @discardableResult
-    func dispatchHostEvent(_ event: BnHostEvent, payload: String?) -> Int32 {
+    func dispatchHostEventAndWait(_ event: BnHostEvent, payload: String?) -> Int32 {
         dispatchLane.sync {
             event.rawValue.withCString { n in
                 if let payload = payload {

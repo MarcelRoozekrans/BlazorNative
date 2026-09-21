@@ -1,0 +1,80 @@
+{
+  "$doc": [
+    "THE DISPATCH SURFACE — one declaration, two shells (#339).",
+    "",
+    "Both shells marshal every post-boot .NET entry through a single serial lane.",
+    "Each method below declares whether it RETURNS IMMEDIATELY after queueing work",
+    "(fire-and-forget) or BLOCKS the caller until the work completes (blocking).",
+    "",
+    "WHY THIS FILE EXISTS: dispatchHostEvent existed in both shells, spelled",
+    "identically, and blocked in one. The Swift body was written for the deep-link",
+    "caller, where Android uses dispatchHostEventAndWait; the LIFECYCLE caller was",
+    "later pointed at the same method. On a device the permission sheet raises a",
+    "lifecycle event while an async host call holds the lane, and the app dies.",
+    "No name generator could have caught it -- the names match perfectly and the",
+    "BEHAVIOUR does not.",
+    "",
+    "WHAT THE PIN CHECKS, AND WHAT IT DOES NOT: DispatchSurfaceDriftTests asserts",
+    "each shell declares the methods listed here and that each method's LANE CALL",
+    "matches its declared semantics. It reads SOURCE. It does not observe blocking",
+    "at runtime -- a genuinely behavioural cross-shell pin would need a JVM test and",
+    "an XCTest that agree with each other, which is itself an unpinned twin.",
+    "",
+    "TO ADD A METHOD: add it here, implement it in both shells, and run the pin. If",
+    "it genuinely belongs to one shell only, give it a `platforms` list AND a",
+    "`reason` -- asymmetry is allowed, silence is not.",
+    "",
+    "COVERAGE LIMIT: the drift pin classifies the FIRST declaration of a name it",
+    "finds in each runtime source -- a diverging SECOND overload of an",
+    "already-declared name is not compared.",
+    "",
+    "COMPLETENESS: `ignored` below is the OTHER half of the guard. Any method",
+    "whose name starts with `dispatch` and is declared in either runtime source",
+    "must appear either in `methods` above or in `ignored` below, each entry",
+    "carrying a `reason` -- a `dispatch*` method nobody mentions is invisible to",
+    "the pin by construction, which is the exact false-green route #339 exposed."
+  ],
+  "methods": [
+    {
+      "name": "dispatchEvent",
+      "semantics": "fire-and-forget",
+      "doc": "A UI event from a control target. Non-zero rc routes to onError."
+    },
+    {
+      "name": "dispatchEventAndWait",
+      "semantics": "blocking",
+      "platforms": ["kotlin"],
+      "reason": "Consumed only by InspectorHost, a JVM-only developer tool with no iOS counterpart. Requiring a Swift twin would manufacture dead code to satisfy a guard."
+    },
+    {
+      "name": "dispatchHostEvent",
+      "semantics": "fire-and-forget",
+      "doc": "A host-initiated event. LIFECYCLE uses this. #339 is what happens when it blocks."
+    },
+    {
+      "name": "dispatchHostEventAndWait",
+      "semantics": "blocking",
+      "doc": "Deep-link and back: the caller needs the rc and needs frames applied before it returns."
+    }
+  ],
+  "ignored": [
+    {
+      "name": "dispatchCore",
+      "reason": "Private ABI-marshalling helper shared by each shell's dispatchEvent overloads (builds the FlatJson args and crosses blazornative_dispatch_event) -- not itself a dispatch-surface entry point. The drift pin's own one-hop delegate resolver already follows into it when classifying a delegating declaration."
+    },
+    {
+      "name": "dispatchEventBlocking",
+      "reason": "Test seam: runs dispatchEvent's marshalling INLINE on the calling thread and returns the raw rc, so JVM/XCTest assertions can read it directly. Production always dispatches through the async dispatchEvent -- the lane is the threading contract, not this seam."
+    },
+    {
+      "name": "dispatchHostEventUnchecked",
+      "platforms": ["kotlin"],
+      "reason": "Test seam reachable with an ARBITRARY (possibly malformed) name so the rc-3 path stays testable; dispatchHostEvent (the enum overload) delegates to it for every production call, and NoProductionShellSource_CallsTheHostEventSeamsDirectly enforces that no other production code calls it directly. Swift's fire-and-forget path has no equivalent unchecked seam -- Swift's dispatchHostEvent has no delegate to hide behind."
+    },
+    {
+      "name": "dispatchHostEventBlocking",
+      "platforms": ["kotlin"],
+      "reason": "Test seam: runs dispatchHostEvent's marshalling INLINE on the calling thread and returns the raw rc (HostEventTest.kt asserts the 0/1/2/3 contract directly). Production uses the fire-and-forget dispatchHostEvent (lifecycle) or the blocking dispatchHostEventAndWait (back) -- never this seam."
+    }
+  ]
+}

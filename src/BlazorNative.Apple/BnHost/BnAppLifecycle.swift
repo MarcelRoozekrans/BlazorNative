@@ -34,6 +34,15 @@
 // must hang off `onPause`, which fires every time. That sentence is the whole
 // reason this comment exists — an app author who learns it from a lost draft
 // has learned it the expensive way.
+//
+// ── DELIVERY IS QUEUED, NOT SYNCHRONOUS (#339, phase 14.1) ───────────────────
+// `dispatch(_:)` below hands the event to the fire-and-forget dispatch lane and
+// returns immediately — it does NOT wait for the app's handler to run before
+// this UIKit callback returns. An `onPause` subscriber's persistence work is
+// therefore best-effort: queued promptly, but not guaranteed applied before
+// the OS callback that raised it completes. This matches Android's
+// long-standing behaviour, where `onPause`/`onDestroy` have always been
+// dispatched the same way; it is not a new weaker guarantee introduced here.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import UIKit
@@ -55,6 +64,10 @@ enum BnAppLifecycle {
     /// ABI then would be a call into a session that does not exist. Android skips
     /// its first `onResume` for the identical reason — the initial mount IS the
     /// first resume.
+    ///
+    /// #339: this MUST stay on the fire-and-forget overload. Blocking here deadlocks
+    /// the app whenever an async host call holds the lane — which is exactly when a
+    /// permission sheet is up, because the sheet is what raises this event.
     static func dispatch(_ event: BnHostEvent) {
         if let sink = sinkForTest { sink(event.rawValue); return }
         guard let runtime = BnRuntime.current else { return }
