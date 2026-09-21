@@ -43,8 +43,11 @@ public sealed class GeneratedSymbolShadowTests
     }
 
     /// <summary>How many symbols the three generated shell files hold TODAY (5 Swift,
-    /// 5 Kotlin, 3 C). The floor below is measured, not guessed; if the manifest
-    /// legitimately loses a name, lower it in the same commit.</summary>
+    /// 6 Kotlin — the 5 BnWireVocabulary members plus BnHostEvent's constructor
+    /// property `wireName`, which Swift has no equivalent of because Swift's
+    /// BnHostEvent consumes the built-in `.rawValue` instead — and 3 C). The floor
+    /// below is measured, not guessed; if the manifest legitimately loses a name,
+    /// lower it in the same commit.</summary>
     private const int GeneratedSymbolFloor = 13;
 
     /// <summary>Swift `static let NAME` / Kotlin `val NAME` / `@JvmField val NAME`.</summary>
@@ -55,14 +58,34 @@ public sealed class GeneratedSymbolShadowTests
     /// something (`kYogaStyles[i]`, `sizeof(kYogaStyles[0])`).</summary>
     private const string CArrayDeclaration = @"\b([A-Za-z_][A-Za-z0-9_]*)\s*\[\s*\]\s*=\s*\{";
 
-    /// <summary>Every symbol WireGen emits into a shell, by generated-file path.
+    /// <summary>A top-level `enum ... BnHostEvent` opening — Kotlin's
+    /// `internal enum class BnHostEvent(val wireName: String) {` and Swift's
+    /// `enum BnHostEvent: String {` both match. Everything declared from this line
+    /// to the block's closing brace is a member of that enum, not of the
+    /// `BnWireVocabulary` object — see the note on <see cref="GeneratedSymbols"/>.</summary>
+    private const string HostEventEnumOpen = @"\benum\s+(?:class\s+)?BnHostEvent\b";
+
+    /// <summary>Every symbol WireGen emits into a shell, by generated-file path, plus
+    /// whether it was declared inside the <c>BnHostEvent</c> enum rather than the
+    /// <c>BnWireVocabulary</c> object.
+    ///
+    /// <para>THE ENUM IS A DIFFERENT NAMESPACE. Kotlin's
+    /// <c>enum class BnHostEvent(val wireName: String)</c> declares `wireName` as a
+    /// per-case constructor property, consumed as `event.wireName` — never as
+    /// `BnWireVocabulary.wireName`, because it is not a `BnWireVocabulary` member at
+    /// all. The two generated types share this file only because WireGen emits them
+    /// together; a symbol's enclosing block, not its file, decides how it is
+    /// referenced. Swift's `BnHostEvent: String` has no equivalent property (Swift
+    /// consumes the built-in `.rawValue` instead), so this only ever tags Kotlin
+    /// symbols today — tracked by block rather than hard-coded to `wireName` so a
+    /// future manifest-driven enum property is covered the same way.</para>
     ///
     /// <para>MATERIALISED, AND FLOORED, DELIBERATELY. Both pins below iterate this
     /// one helper, so a parse that silently stopped matching would green BOTH of
     /// them over an empty set — the exact silent-degradation shape this phase
     /// exists to remove, sitting inside its own flagship guard. `File.Exists`
     /// guards the file MOVING; only a count guards the parse FAILING.</para></summary>
-    private static IReadOnlyList<(string File, string Symbol)> GeneratedSymbols()
+    private static IReadOnlyList<(string File, string Symbol, bool InHostEventEnum)> GeneratedSymbols()
     {
         string root = RepoRoot();
         (string Path, string Pattern)[] generated =
@@ -72,15 +95,28 @@ public sealed class GeneratedSymbolShadowTests
             (Path.Combine(root, "src", "BlazorNative.Apple", "BnHost", "BnWireVocabulary.g.h"), CArrayDeclaration),
         ];
 
-        var symbols = new List<(string File, string Symbol)>();
+        var symbols = new List<(string File, string Symbol, bool InHostEventEnum)>();
         foreach ((string path, string pattern) in generated)
         {
             Assert.True(File.Exists(path), $"generated file missing: {path}");
+
+            bool inHostEventEnum = false;
             foreach (string line in File.ReadAllLines(path))
             {
+                // Entering counts on the SAME line: Kotlin declares the enum and its
+                // `wireName` property in one statement (`BnHostEvent(val wireName: ...)`).
+                if (!inHostEventEnum && Regex.IsMatch(line, HostEventEnumOpen))
+                    inHostEventEnum = true;
+
                 Match m = Regex.Match(line, pattern);
                 if (m.Success)
-                    symbols.Add((path, m.Groups[1].Value));
+                    symbols.Add((path, m.Groups[1].Value, inHostEventEnum));
+
+                // Both generated files close their last top-level type with an
+                // unindented `}` and declare nothing after BnHostEvent, so this is
+                // sufficient without a full brace-depth parser.
+                if (inHostEventEnum && line.Trim() == "}")
+                    inHostEventEnum = false;
             }
         }
 
@@ -205,7 +241,7 @@ public sealed class GeneratedSymbolShadowTests
     {
         var offenders = new List<string>();
 
-        foreach ((string file, string symbol) in GeneratedSymbols())
+        foreach ((string file, string symbol, _) in GeneratedSymbols())
         {
             bool c = IsCHeader(file);
 
@@ -291,22 +327,39 @@ public sealed class GeneratedSymbolShadowTests
     ///
     /// <para>Consumption is read from CODE, not raw text: a symbol named only in a
     /// comment is not a consumer, and this file's own shells discuss these names at
-    /// length (`BnYogaLayout.h` explains both C arrays in prose).</para></summary>
+    /// length (`BnYogaLayout.h` explains both C arrays in prose).</para>
+    ///
+    /// <para>THREE REFERENCE SHAPES, NOT TWO. `BnWireVocabulary` members are named
+    /// through that object (`BnWireVocabulary.nodeTypes`); C's `#include`d arrays are
+    /// named bare. A `BnHostEvent` enum member — `wireName` today — is neither: it is
+    /// a per-case property, referenced by property access on an enum INSTANCE
+    /// (`event.wireName`), and no `BnWireVocabulary.wireName` will ever exist for it
+    /// to match. Without this third shape the detector reports every enum property
+    /// dead regardless of real use, which is what happened here: `wireName` is
+    /// consumed as `event.wireName` in `BlazorNativeRuntime.kt` (both the
+    /// `BlazorNative.Jni` and `templates` trees), and the old two-shape check could
+    /// not see it. The new pattern is scoped to symbols <see cref="GeneratedSymbols"/>
+    /// tagged as enum members — it does not widen matching for
+    /// `BnWireVocabulary`-object symbols, which would accept a bare name occurring
+    /// anywhere and defeat the guard's purpose.</para></summary>
     [Fact]
     public void EveryGeneratedSymbol_IsConsumed_OrAllowlistedWithAReason()
     {
         var dead = new List<string>();
 
-        foreach ((string file, string symbol) in GeneratedSymbols())
+        foreach ((string file, string symbol, bool inHostEventEnum) in GeneratedSymbols())
         {
             if (UnconsumedByDesign.ContainsKey(symbol))
                 continue;
 
-            // Swift/Kotlin name the symbol through its enum/object; C `#include`s the
-            // header and names it bare.
+            // BnWireVocabulary members are named through that object; a BnHostEvent
+            // enum member is named through property access on an enum instance
+            // instead; C `#include`s the header and names its arrays bare.
             string reference = IsCHeader(file)
                 ? $@"\b{Regex.Escape(symbol)}\b"
-                : $@"BnWireVocabulary\.{Regex.Escape(symbol)}\b";
+                : inHostEventEnum
+                    ? $@"\.{Regex.Escape(symbol)}\b"
+                    : $@"BnWireVocabulary\.{Regex.Escape(symbol)}\b";
 
             bool referenced = ShellSources(file)
                 .Any(src => CodeLines(src).Any(line => Regex.IsMatch(line, reference)));
