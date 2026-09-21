@@ -48,7 +48,7 @@ public sealed class GeneratedSymbolShadowTests
     /// BnHostEvent consumes the built-in `.rawValue` instead — and 3 C). The floor
     /// below is measured, not guessed; if the manifest legitimately loses a name,
     /// lower it in the same commit.</summary>
-    private const int GeneratedSymbolFloor = 13;
+    private const int GeneratedSymbolFloor = 14;
 
     /// <summary>Swift `static let NAME` / Kotlin `val NAME` / `@JvmField val NAME`.</summary>
     private const string SwiftKotlinDeclaration = @"\b(?:static\s+let|val)\s+([A-Za-z_][A-Za-z0-9_]*)\b";

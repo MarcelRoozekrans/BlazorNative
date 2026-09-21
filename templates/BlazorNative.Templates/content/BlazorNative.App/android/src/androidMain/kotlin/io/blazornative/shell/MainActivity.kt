@@ -461,7 +461,8 @@ class MainActivity : FragmentActivity() {
             // notification tap-through, dispatched here with the route as the
             // payload; .NET's DispatchHostEventCore maps it to NavigateToAsync (the
             // "back" precedent — the name→verb mapping lives in .NET so every shell
-            // gets identical semantics). Its wire name must equal Exports.NavigateEventName.
+            // gets identical semantics). Its wire name must equal BnHostEvents.Navigate
+            // (BlazorNative.Core).
             runtime.dispatchHostEventAndWait(BnHostEvent.Navigate, route)
         } catch (t: Throwable) {
             Log.e(tag, "navigate dispatch threw", t)
