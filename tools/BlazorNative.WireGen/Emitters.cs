@@ -162,6 +162,19 @@ public static class Emitters
         sb.Append("    )\n");
 
         sb.Append("}\n");
+        sb.Append('\n');
+        sb.Append("""
+            /**
+             * The host-event vocabulary. `dispatchHostEvent` takes THIS, not a String —
+             * a bare literal at a call site does not compile, so the Kotlin and Swift
+             * spellings cannot drift the way they did before #300.
+             */
+            internal enum class BnHostEvent(val wireName: String) {
+
+            """);
+        foreach (HostEvent e in v.HostEvents.Events)
+            sb.Append($"    {e.EnumCase}(\"{e.Name}\"), // {e.Tier}\n");
+        sb.Append("}\n");
         return sb.ToString();
     }
 
@@ -252,6 +265,20 @@ public static class Emitters
             sb.Append($"        \"{t.WireName ?? v.NodeTypes.FallbackName}\", // {t.Id} = {t.Enum}\n");
         sb.Append("    ]\n");
 
+        sb.Append("}\n");
+        sb.Append('\n');
+        sb.Append("""
+            /// The host-event vocabulary. `dispatchHostEvent` takes THIS, not a String —
+            /// a bare literal at a call site does not compile.
+            ///
+            /// `.back` is present and unused on this shell: iOS has no system back. The
+            /// vocabulary is the union of what the WIRE admits, not what one shell sends.
+            /// Do not prune it to a per-shell subset — that is a divergence by another name.
+            enum BnHostEvent: String {
+
+            """);
+        foreach (HostEvent e in v.HostEvents.Events)
+            sb.Append($"    case {char.ToLowerInvariant(e.EnumCase[0])}{e.EnumCase[1..]} = \"{e.Name}\" // {e.Tier}\n");
         sb.Append("}\n");
         return sb.ToString();
     }

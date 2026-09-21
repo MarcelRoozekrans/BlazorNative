@@ -58,3 +58,16 @@ internal object BnWireVocabulary {
         "activityindicator", // 12 = ActivityIndicator
     )
 }
+
+/**
+ * The host-event vocabulary. `dispatchHostEvent` takes THIS, not a String —
+ * a bare literal at a call site does not compile, so the Kotlin and Swift
+ * spellings cannot drift the way they did before #300.
+ */
+internal enum class BnHostEvent(val wireName: String) {
+    Back("back"), // reserved
+    Navigate("navigate"), // reserved
+    OnResume("onResume"), // passthrough
+    OnPause("onPause"), // passthrough
+    OnDestroy("onDestroy"), // passthrough
+}

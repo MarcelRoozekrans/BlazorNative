@@ -199,6 +199,23 @@ public sealed class WireVocabularyCodegenTests
     }
 
     [Fact]
+    public void TheEmittedEnums_CarryEveryManifestHostEvent()
+    {
+        WireVocabulary v = LoadManifest();
+        string kotlin = Emitters.EmitKotlin(v);
+        string swift = Emitters.EmitSwift(v);
+
+        foreach (HostEvent e in v.HostEvents.Events)
+        {
+            Assert.Contains($"{e.EnumCase}(\"{e.Name}\")", kotlin);
+            Assert.Contains($"case {char.ToLowerInvariant(e.EnumCase[0])}{e.EnumCase[1..]} = \"{e.Name}\"", swift);
+        }
+
+        Assert.Contains("enum class BnHostEvent", kotlin);
+        Assert.Contains("enum BnHostEvent: String", swift);
+    }
+
+    [Fact]
     public void TheManifest_DeclaresTheFiveHostEvents_WithTiers()
     {
         WireVocabulary v = LoadManifest();

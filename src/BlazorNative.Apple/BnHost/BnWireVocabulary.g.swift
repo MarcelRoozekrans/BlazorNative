@@ -45,3 +45,17 @@ enum BnWireVocabulary {
         "activityindicator", // 12 = ActivityIndicator
     ]
 }
+
+/// The host-event vocabulary. `dispatchHostEvent` takes THIS, not a String —
+/// a bare literal at a call site does not compile.
+///
+/// `.back` is present and unused on this shell: iOS has no system back. The
+/// vocabulary is the union of what the WIRE admits, not what one shell sends.
+/// Do not prune it to a per-shell subset — that is a divergence by another name.
+enum BnHostEvent: String {
+    case back = "back" // reserved
+    case navigate = "navigate" // reserved
+    case onResume = "onResume" // passthrough
+    case onPause = "onPause" // passthrough
+    case onDestroy = "onDestroy" // passthrough
+}
