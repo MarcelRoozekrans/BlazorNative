@@ -29,6 +29,17 @@ namespace BlazorNative.Runtime.Tests;
 // deliberately NOT generated — it is asserted against the manifest instead.
 // ─────────────────────────────────────────────────────────────────────────────
 
+// This class joins the "host-session" collection solely for
+// EveryReservedHostEvent_IsRoutedRatherThanFallingThrough below: that test
+// drives Exports.DispatchHostEventCore and asserts on HostSession's
+// process-wide static CurrentNavigationManager being null (no session
+// mounted). Every other class that mounts a session already serializes on
+// this collection (see HostSessionTestCollection); without joining it too,
+// this test would be free to run in a different collection IN PARALLEL with
+// one of those, and a routed name could observe a live session and return 0
+// instead of 1 — a pin that is flaky depending on test scheduling, not one
+// that is wrong. None of the other tests in this file touch HostSession.
+[Collection("host-session")]
 public sealed class WireVocabularyCodegenTests
 {
     private static string RepoRoot()
@@ -322,5 +333,37 @@ public sealed class WireVocabularyCodegenTests
         Assert.Equal(
             v.HostEvents.Names.OrderBy(n => n, StringComparer.Ordinal),
             declared.Values.OrderBy(n => n, StringComparer.Ordinal));
+    }
+
+    [Fact]
+    public void EveryReservedHostEvent_IsRoutedRatherThanFallingThrough()
+    {
+        // A reserved name with no arm in DispatchHostEventCore does not throw — it
+        // falls through to the app multicast and is SILENTLY IGNORED. That is the
+        // failure this pin exists for: the direct analogue of a style name the
+        // routing table accepts that no shell applies.
+        WireVocabulary v = LoadManifest();
+
+        int checkedNames = 0;
+        foreach (string reserved in v.HostEvents.Reserved)
+        {
+            checkedNames++;
+
+            // With no session mounted, a ROUTED name reports "nothing to route to"
+            // (rc 1) because the nav manager is null. An UNROUTED name reaches the
+            // multicast, which has no subscribers, and reports success (rc 0).
+            // The two are distinguishable precisely because routing happens first.
+            int rc = Exports.DispatchHostEventCore(reserved, payload: null);
+
+            Assert.True(rc == 1,
+                $"reserved host event '{reserved}' returned rc {rc} with no session mounted — "
+                + "expected 1 (routed, but nothing to route to). rc 0 means it fell through "
+                + "to the app multicast, i.e. DispatchHostEventCore has no arm for it and the "
+                + "name is silently ignored on every device.");
+        }
+
+        Assert.True(checkedNames >= 2,
+            $"only {checkedNames} reserved names checked — the manifest lost entries, or this "
+            + "loop stopped seeing them");
     }
 }
