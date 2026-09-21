@@ -8,6 +8,8 @@ import android.util.Log
 import android.widget.FrameLayout
 import android.window.OnBackInvokedCallback
 import android.window.OnBackInvokedDispatcher
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.fragment.app.FragmentActivity
 // LOAD-BEARING, and it is the one import the reference shell does NOT have.
 //
@@ -188,6 +190,15 @@ class MainActivity : FragmentActivity() {
      */
     @Volatile private var booted = false
 
+    /** Phase 14.2 (#338): the last safe-area report SENT (dp, post-conversion),
+     * so [reportSafeAreaIfChanged] can dedup on the VALUE rather than on some
+     * other signal — insets change independently of view size (a rotation, a
+     * keyboard, a call banner can all move them without a layout-size change),
+     * so the dedup has to compare the insets themselves, the same shape iOS's
+     * `lastReportedInsets` (HostViewController.swift) uses. Null before the
+     * first report. */
+    private var lastReportedInsets: androidx.core.graphics.Insets? = null
+
     /** The predictive-back callback (API 33+); null on lower APIs (they use the
      * deprecated [onBackPressed] fallback). Held so it could be unregistered. */
     private var backCallback: OnBackInvokedCallback? = null
@@ -264,6 +275,18 @@ class MainActivity : FragmentActivity() {
         setContentView(R.layout.main)
 
         val widgetRoot = findViewById<FrameLayout>(R.id.widget_root)
+
+        // Phase 14.2 (#338): the safe-area report, the twin of iOS's
+        // viewDidLayoutSubviews hook. systemBars() alone is NOT enough — a display
+        // cutout is reported separately, and the cutout is precisely what made the
+        // iPhone's Take Photo button untappable.
+        ViewCompat.setOnApplyWindowInsetsListener(widgetRoot) { _, windowInsets ->
+            val bars = windowInsets.getInsets(
+                WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
+            reportSafeAreaIfChanged(bars)
+            windowInsets
+        }
+
         // Phase 3.2: UI listeners forward into the dispatch lane. The lambda
         // captures the lateinit `runtime` field (constructed just below) —
         // safe: onUiEvent only fires from listeners that AttachEvent installs,
@@ -389,6 +412,40 @@ class MainActivity : FragmentActivity() {
         // (isInitialized: a throw in onCreate before the assignment still destroys.)
         if (::mapper.isInitialized) mapper.destroy()
         super.onDestroy()
+    }
+
+    // ── Safe-area insets → dispatch (Phase 14.2, #338) ───────────────────────
+
+    /**
+     * Converts a reported inset from PIXELS (what [android.view.WindowInsets]
+     * always carries) to DP (what the Yoga tree consumes), then dispatches the
+     * reserved "safeAreaChanged" host event — but only when the value actually
+     * changed, mirroring iOS's `reportSafeAreaIfChanged` (HostViewController.swift):
+     * insets change independently of view size, so the dedup compares the
+     * insets themselves rather than riding some other signal.
+     *
+     * The payload is flat JSON with STRING-valued numbers, all four edge keys
+     * always present — the exact shape DispatchHostSafeArea/TryParseEdge
+     * (Exports.cs) parses with `double.TryParse(..., InvariantCulture)`. Kotlin
+     * string-templating a Float uses `Float.toString()`, which — unlike
+     * `String.format` — is locale-INVARIANT, so a device in a comma-decimal
+     * locale still emits "47.5", not "47,5" (a value the parser would reject as
+     * rc 3, malformed — silently, only in the field, never in a test here).
+     *
+     * Guarded by [booted], same as the lifecycle events above: nothing enters
+     * .NET before the mount. Dispatched with [BlazorNativeRuntime.dispatchHostEvent]
+     * (fire-and-forget) — NOT the blocking `…AndWait` overload: that one blocks
+     * the calling thread on `future.get()`, and this listener fires from a UI
+     * callback (`setOnApplyWindowInsetsListener`), which would deadlock the
+     * serial dispatch lane against the main thread (#346).
+     */
+    private fun reportSafeAreaIfChanged(insets: androidx.core.graphics.Insets) {
+        if (lastReportedInsets == insets) return
+        lastReportedInsets = insets
+
+        val d = resources.displayMetrics.density
+        val payload = """{"top":"${insets.top / d}","right":"${insets.right / d}","bottom":"${insets.bottom / d}","left":"${insets.left / d}"}"""
+        if (booted) runtime.dispatchHostEvent(BnHostEvent.SafeAreaChanged, payload)
     }
 
     // ── Permission results → the shell bridge (Phase 9.0, M9 DoD #1) ──────────

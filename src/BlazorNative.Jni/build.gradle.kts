@@ -93,6 +93,15 @@ dependencies {
     // is why MainActivity can extend FragmentActivity (BiometricPrompt's required host).
     implementation("androidx.biometric:biometric:1.1.0")
 
+    // Phase 14.2 (#338): androidx.core, pinned EXPLICITLY. Biometric/fragment pull
+    // it in transitively, but only at 1.3.2 — which predates WindowInsetsCompat.Type
+    // (added 1.5.0) entirely, so MainActivity's `windowInsets.getInsets(…Type.systemBars()
+    // or …Type.displayCutout())` fails to resolve against the transitive version. An
+    // explicit `implementation` wins Gradle's version resolution over a lower transitive
+    // request, the same reason jna-platform's jna exclusion exists above. 1.13.1 is the
+    // latest stable release compatible with this project's compileSdk 34.
+    implementation("androidx.core:core:1.13.1")
+
     // Kotlin stdlib
     implementation(kotlin("stdlib-jdk8", kotlinVersion))
 
