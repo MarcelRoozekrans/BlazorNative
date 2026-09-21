@@ -30,6 +30,26 @@ final class HostViewController: UIViewController {
     /// [viewDidLayoutSubviews]. `nil` until the first pass.
     private var lastSolvedSize: CGSize?
 
+    /// Phase 14.2 (#338): the safe-area report. Insets can change independently of
+    /// `bounds.size`, which is why this report sits outside the size guard in
+    /// `viewDidLayoutSubviews` rather than behind it.
+    ///
+    /// Sent ONLY when the value changes: an unchanged report would re-render the tree
+    /// on every layout pass, and the dispatch is fire-and-forget so nothing downstream
+    /// would notice the waste.
+    private var lastReportedInsets: UIEdgeInsets?
+
+    private func reportSafeAreaIfChanged() {
+        let insets = view.safeAreaInsets
+        if let last = lastReportedInsets, last == insets { return }
+        lastReportedInsets = insets
+
+        let payload = """
+            {"top":"\(insets.top)","right":"\(insets.right)","bottom":"\(insets.bottom)","left":"\(insets.left)"}
+            """
+        BnRuntime.current?.dispatchHostEvent(.safeAreaChanged, payload: payload)
+    }
+
     deinit {
         // DETERMINISTIC teardown, on the main thread — the twin of Android's
         // `MainActivity.onDestroy → mapper.destroy()`. Leaving it to the mapper's own
@@ -151,6 +171,12 @@ final class HostViewController: UIViewController {
     /// re-solve (the tree changed, the bounds did not).
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
+
+        // Insets first, and OUTSIDE the size guard: they change independently of
+        // bounds.size, so a pass that moves the safe area without resizing the view
+        // must still report. Its own dedup makes the unchanged case free.
+        reportSafeAreaIfChanged()
+
         let size = view.bounds.size
         guard size != lastSolvedSize else { return }
         lastSolvedSize = size
