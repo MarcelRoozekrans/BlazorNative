@@ -83,31 +83,14 @@ public sealed class DispatchSurfaceDriftTests
         return [.. methods];
     }
 
-    /// <summary>Strips line and block comments so a KDoc mention of a method name
-    /// never counts as a declaration — the same reason
-    /// <c>GeneratedSymbolShadowTests.CodeLines</c> exists.</summary>
-    private static string CodeText(string file)
-    {
-        var code = new List<string>();
-        bool inBlock = false;
-        foreach (string raw in File.ReadLines(file))
-        {
-            string line = raw;
-            if (inBlock)
-            {
-                int end = line.IndexOf("*/", StringComparison.Ordinal);
-                if (end < 0) continue;
-                line = line[(end + 2)..];
-                inBlock = false;
-            }
-            int start = line.IndexOf("/*", StringComparison.Ordinal);
-            if (start >= 0) { line = line[..start]; inBlock = true; }
-            int slash = line.IndexOf("//", StringComparison.Ordinal);
-            if (slash >= 0) line = line[..slash];
-            if (line.Trim().Length > 0) code.Add(line);
-        }
-        return string.Join("\n", code);
-    }
+    /// <summary>Strips comments via the shared <see cref="CommentStrippedSource"/> (fix
+    /// round 1, Important #1: this method used to carry its own copy of the stripper,
+    /// which dropped the same-line-block-comment check the shared one has — a divergent
+    /// copy of one truth sitting inside the twin-divergence pin itself, and the same reason
+    /// <c>GeneratedSymbolShadowTests.CodeLines</c> uses it too), then joins the non-blank
+    /// lines so a KDoc mention of a method name never counts as a declaration.</summary>
+    private static string CodeText(string file) =>
+        string.Join("\n", CommentStrippedSource.Lines(file).Where(l => l.Trim().Length > 0));
 
     private static string KotlinRuntime() => CodeText(Path.Combine(RepoRoot(),
         "src", "BlazorNative.Jni", "src", "main", "kotlin", "io", "blazornative", "jni",
@@ -152,16 +135,32 @@ public sealed class DispatchSurfaceDriftTests
     /// <summary>Finds a declaration of <paramref name="name"/> other than the one at
     /// <paramref name="excludeIndex"/> — used to resolve a same-named-overload delegate
     /// (Kotlin's two-arg <c>dispatchEvent</c> calls the four-arg <c>dispatchEvent</c>)
-    /// without matching the delegating declaration itself.</summary>
+    /// without matching the delegating declaration itself.
+    ///
+    /// <para>UNASSERTED PRECONDITION, NOW ASSERTED (fix round 1, Important #2): this picks
+    /// "the other declaration" by ELIMINATION — every same-named match that is not the
+    /// original — which is unambiguous only when exactly ONE such match remains. That holds
+    /// today only because every delegate this resolver has ever seen has exactly two
+    /// same-file declarations (the caller and its single overload/callee), not because the
+    /// resolver checks it. A third same-named overload would make elimination pick between
+    /// two candidates silently — the "safety claim with no mechanism" shape this repo treats
+    /// as its most dangerous bug class. So this asserts the count instead of assuming it: more
+    /// than one remaining candidate reds naming the assumption, rather than resolving to
+    /// whichever the regex happened to find first.</para></summary>
     private static Match FindOtherDeclaration(string source, string funcKeyword, string name, int excludeIndex)
     {
         var regex = new Regex($@"\b{funcKeyword}\s+{Regex.Escape(name)}\s*\(");
-        foreach (Match m in regex.Matches(source))
-        {
-            if (m.Index != excludeIndex)
-                return m;
-        }
-        return Match.Empty;
+        List<Match> candidates = [.. regex.Matches(source).Where(m => m.Index != excludeIndex)];
+
+        Assert.True(candidates.Count <= 1,
+            $"resolving the delegate '{name}' found {candidates.Count} same-file declarations "
+            + "other than the one delegating to it. This resolver picks \"the other declaration\" "
+            + "by elimination, which is unambiguous only when exactly one candidate remains — a "
+            + $"third same-named overload of '{name}' makes elimination meaningless (it could "
+            + "silently resolve to the wrong twin). Extend the resolver deliberately (arity or "
+            + "signature matching) instead of trusting the count.");
+
+        return candidates.Count == 1 ? candidates[0] : Match.Empty;
     }
 
     private static (bool Blocks, bool Forgets) LaneEvidence(string body, bool kotlin)
