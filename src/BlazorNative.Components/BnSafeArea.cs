@@ -124,16 +124,16 @@ public sealed class BnSafeArea : BnLayoutContainer, IDisposable
     private const string InsetsConsumedCascadingName =
         "BlazorNative.Components.BnSafeArea.InsetsAlreadyConsumed";
 
-    /// <summary>How the top edge reacts to the reported inset. Default <see cref="BnSafeAreaEdge.Additive"/>.</summary>
+    /// <summary>How the top edge reacts to the reported inset. Default <c>Additive</c>.</summary>
     [Parameter] public BnSafeAreaEdge TopEdge { get; set; } = BnSafeAreaEdge.Additive;
 
-    /// <summary>How the right edge reacts to the reported inset. Default <see cref="BnSafeAreaEdge.Additive"/>.</summary>
+    /// <summary>How the right edge reacts to the reported inset. Default <c>Additive</c>.</summary>
     [Parameter] public BnSafeAreaEdge RightEdge { get; set; } = BnSafeAreaEdge.Additive;
 
-    /// <summary>How the bottom edge reacts to the reported inset. Default <see cref="BnSafeAreaEdge.Additive"/>.</summary>
+    /// <summary>How the bottom edge reacts to the reported inset. Default <c>Additive</c>.</summary>
     [Parameter] public BnSafeAreaEdge BottomEdge { get; set; } = BnSafeAreaEdge.Additive;
 
-    /// <summary>How the left edge reacts to the reported inset. Default <see cref="BnSafeAreaEdge.Additive"/>.</summary>
+    /// <summary>How the left edge reacts to the reported inset. Default <c>Additive</c>.</summary>
     [Parameter] public BnSafeAreaEdge LeftEdge { get; set; } = BnSafeAreaEdge.Additive;
 
     /// <inheritdoc cref="BnView.ChildContent"/>
@@ -212,9 +212,9 @@ public sealed class BnSafeArea : BnLayoutContainer, IDisposable
     }
 
     /// <summary>
-    /// The combination rule for one edge. <see cref="BnSafeAreaEdge.Off"/> uses only the
-    /// author's own padding for that edge (zero if unset); <see cref="BnSafeAreaEdge.Additive"/>
-    /// (the default) sums it with the reported inset; <see cref="BnSafeAreaEdge.Maximum"/>
+    /// The combination rule for one edge. <c>Off</c> uses only the
+    /// author's own padding for that edge (zero if unset); <c>Additive</c>
+    /// (the default) sums it with the reported inset; <c>Maximum</c>
     /// takes whichever of the two is larger — React Native's rule.
     /// </summary>
     private static BnLength Resolve(BnSafeAreaEdge mode, BnLength? authorPadding, double inset)
