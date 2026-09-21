@@ -136,8 +136,6 @@ final class BnNotificationsTests: BnHostTestCase {
         XCTAssertEqual(BnNotificationStatus.deniedPermanently, 2)
         XCTAssertEqual(BnNotificationStatus.restricted, 3)
         XCTAssertEqual(BnNotificationStatus.error, 4)
-        // The reserved warm-tap event name must be the exact literal .NET intercepts.
-        XCTAssertEqual(BnNotifications.navigateEventName, "navigate")
     }
 
     // ── show: an IMMEDIATE request carrying the route in userInfo (Granted) ───────

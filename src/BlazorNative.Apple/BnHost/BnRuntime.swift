@@ -294,7 +294,7 @@ final class BnRuntime {
         // is never called from the delegate's main thread directly). The non-nil dispatcher
         // is also BnNotifications' "session is live" signal (warm re-route vs cold stash).
         bridge.notifications.navigateDispatcher = { [weak self] route in
-            self?.dispatchHostEvent(name: BnNotifications.navigateEventName, payload: route) ?? 1
+            self?.dispatchHostEvent(.navigate, payload: route) ?? 1
         }
 
         // The deep-link surface gets the SAME dispatcher for the same reason: a URL
@@ -302,7 +302,7 @@ final class BnRuntime {
         // serial lane. Non-nil is likewise its "session is live" signal, so a link
         // opened from now on re-routes warm instead of stashing.
         BnDeepLink.shared.navigateDispatcher = { [weak self] route in
-            self?.dispatchHostEvent(name: BnNotifications.navigateEventName, payload: route) ?? 1
+            self?.dispatchHostEvent(.navigate, payload: route) ?? 1
         }
 
         // Published LAST, after mount: `current` means "a session that can be
@@ -317,9 +317,9 @@ final class BnRuntime {
     /// contract; a warm tap arrives on main, so this hops), synchronous so the re-route
     /// swap's frames are applied before it returns. Returns the rc (0 = navigated).
     @discardableResult
-    func dispatchHostEvent(name: String, payload: String?) -> Int32 {
+    func dispatchHostEvent(_ event: BnHostEvent, payload: String?) -> Int32 {
         dispatchLane.sync {
-            name.withCString { n in
+            event.rawValue.withCString { n in
                 if let payload = payload {
                     return payload.withCString { p in blazornative_host_event(n, p) }
                 }
