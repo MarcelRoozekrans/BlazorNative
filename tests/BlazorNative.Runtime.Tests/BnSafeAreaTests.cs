@@ -113,6 +113,27 @@ public sealed class BnSafeAreaTests : IDisposable
     }
 
     [Fact]
+    public void AdditiveMode_AddsTheInsetToTheAuthorsOwnPadding()
+    {
+        // ADDITIVE IS THE DEFAULT, so this pins the behaviour most apps get without
+        // choosing it. "Additive" means SUM, not replace: an author who asks for 16
+        // and sits under a 34pt home indicator wants clearance from BOTH, not the
+        // larger of the two -- that is what Maximum is for.
+        var (renderer, frames) = CreateCapturingSession();
+        BnSafeAreaInsets.SetForTests(new BnSafeAreaInsets(0, 0, 34, 0));
+
+        renderer.Mount<BnSafeArea>(ParameterView.FromDictionary(new Dictionary<string, object?>
+        {
+            [nameof(BnSafeArea.BottomEdge)] = BnSafeAreaEdge.Additive,
+            [nameof(BnSafeArea.PaddingBottom)] = (BnLength)16f,
+        }));
+        var mount = frames[0];
+        var root = Assert.Single(mount.Patches.OfType<CreateNodePatch>(), p => p.ParentId is null);
+
+        Assert.Equal("50", StyleOn(mount, root.NodeId, "paddingBottom").Value);
+    }
+
+    [Fact]
     public void MaximumMode_UsesTheAuthorsPadding_WhenItExceedsTheInset()
     {
         // REACT NATIVE'S RULE: "my padding, or the inset, whichever is larger".
