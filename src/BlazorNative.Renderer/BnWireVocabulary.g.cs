@@ -37,7 +37,7 @@ internal static class BnWireVocabulary
 
     internal static readonly string[] ScrollIgnoredContainerStyles =
     [
-        "flexDirection", "justifyContent", "alignItems", "flexWrap", "gap", "padding",
+        "flexDirection", "justifyContent", "alignItems", "flexWrap", "gap", "padding", "paddingTop", "paddingRight", "paddingBottom", "paddingLeft",
     ];
 
     internal static readonly string[] MeasuredNodeTypes =

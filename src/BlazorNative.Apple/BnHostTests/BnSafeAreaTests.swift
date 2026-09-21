@@ -60,28 +60,71 @@ final class BnSafeAreaTests: BnHostTestCase {
         try runtime.start(component: "BnSafeAreaDemo", os: "ios")
     }
 
-    /// Dispatches the fixed insets, waits for the resulting re-render (the
-    /// `…AndWait` overload blocks until it has landed), then asserts the padded
-    /// child's frame against the canonical table — proving TopEdge/RightEdge/
-    /// BottomEdge/LeftEdge all wired correctly in one frame, since the child's
-    /// width depends on left+right and its height on top+bottom (see
+    /// Dispatches the fixed insets, waits for the resulting re-render, then asserts
+    /// the padded child's frame against the canonical table — proving TopEdge/
+    /// RightEdge/BottomEdge/LeftEdge all wired correctly in one frame, since the
+    /// child's width depends on left+right and its height on top+bottom (see
     /// BnDemoFrameTables.swift's header for the Grow="1" derivation).
+    ///
+    /// **Why this polls AFTER `dispatchHostEventAndWait`, not just before it (fix
+    /// round 2, CRITICAL 1(a) of the whole-branch review):** the "wait" only covers
+    /// .NET's side of the dispatch — `dispatchLane.sync` blocks until
+    /// `blazornative_host_event` returns, and that return happens once
+    /// `DispatchHostEventCore` has stored the insets and driven `BnSafeArea`'s
+    /// `StateHasChanged` synchronously. But the resulting PATCH BATCH still has to
+    /// reach UIKit, and `BnWidgetMapper.apply(_:)` hands every batch to
+    /// `DispatchQueue.main.async` UNCONDITIONALLY (its own header: "Buffer on the
+    /// callback thread; flush atomically on the main queue") — never `.sync`, even
+    /// when the caller already IS the main thread, which this test's caller is. So
+    /// by the time `dispatchHostEventAndWait` returns, the new frame is merely
+    /// QUEUED on the main run loop, not yet applied: asserting immediately reads the
+    /// STALE pre-dispatch frame, which is exactly what CI run 35645603753 caught
+    /// (measured `(0,0) 300×200` — the pre-dispatch box, not `(13,47) 266×119`).
+    /// `BnSafeAreaAndroidTest.kt`'s twin already has this exact step
+    /// (`pollForPadding`, dispatching through Android's OWN fire-and-forget path)
+    /// for the identical reason; this test just never had it because it was the
+    /// first XCTest to call `…AndWait` and then assert synchronously in the same
+    /// breath. Spinning the run loop here does not weaken the assertion below in
+    /// any way — the expected numbers are unchanged — it only gives the already-
+    /// queued main-thread work a chance to run before they are checked.
     func testSafeAreaDemoPadsByTheDispatchedInsetsOnAllFourEdges() throws {
         let safeAreaView = try pollForDemo()
+        let content = try XCTUnwrap(safeAreaView.subviews.first,
+                                     "the SafeArea's own view must have exactly one child: "
+                                     + "the Grow=1 content box")
+        let preDispatchFrame = content.frame
 
         let payload = """
             {"top":"\(topDp)","right":"\(rightDp)","bottom":"\(bottomDp)","left":"\(leftDp)"}
             """
         _ = runtime!.dispatchHostEventAndWait(.safeAreaChanged, payload: payload)
 
-        let content = try XCTUnwrap(safeAreaView.subviews.first,
-                                     "the SafeArea's own view must have exactly one child: "
-                                     + "the Grow=1 content box")
+        let landed = pollUntil(deadline: 10) { content.frame != preDispatchFrame }
+        XCTAssertTrue(landed, "the safe-area padding never reached the content box within 10s of "
+                      + "dispatching safeAreaChanged — the wire (dispatchHostEventAndWait → "
+                      + "DispatchHostSafeArea → BnSafeAreaInsets.Current → BnSafeArea → "
+                      + "BnWidgetMapper.apply's queued main-thread batch) never landed")
+
         let f = bnSafeAreaDemoFrames
         assertFrame(f, "content", content,
                     "left=\(leftDp) top=\(topDp) right=\(rightDp) bottom=\(bottomDp), dispatched "
                     + "through the real safeAreaChanged wire; width/height PROVE right/bottom "
                     + "because the child is Grow=1 inside a fixed 300×200 box")
+    }
+
+    /// Spins the run loop until `cond` is true or `seconds` elapses — the same
+    /// `pollUntil` idiom used throughout this test target (e.g.
+    /// `BnModalDemoTests.pollForOpen`), needed here because
+    /// `dispatchHostEventAndWait` only guarantees .NET's half of the dispatch is
+    /// done; see this method's caller for why.
+    @discardableResult
+    private func pollUntil(deadline seconds: TimeInterval = 10, _ cond: () -> Bool) -> Bool {
+        let end = Date().addingTimeInterval(seconds)
+        while Date() < end {
+            if cond() { return true }
+            RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.05))
+        }
+        return cond()
     }
 
     /// Polls until the mount frame has been applied and laid out: `host`'s first

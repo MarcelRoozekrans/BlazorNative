@@ -94,6 +94,29 @@ public sealed class HostSafeAreaTests
     }
 
     [Fact]
+    public void SafeAreaChanged_NaNInfinityOrNegativeEdge_IsMalformed()
+    {
+        // Whole-branch review MINOR 2: `NumberStyles.Float` + InvariantCulture parses
+        // "NaN"/"-Infinity" as legal .NET float LITERALS, and a bare negative sign
+        // parses to a legal-looking but physically nonsensical negative inset. All
+        // three are NUMERIC-but-nonsensical on a wire contract this milestone froze
+        // -- none of them may reach BnSafeAreaInsets.Current, and each must report
+        // the SAME rc 3 a non-numeric edge already does (TryParseEdge's contract:
+        // "the shell disagreeing with the contract", not a value the renderer acts
+        // on).
+        HostSession.ResetForTests();
+        BnSafeAreaInsets.ResetForTests();
+
+        foreach (string garbage in new[] { "NaN", "Infinity", "-Infinity", "-1" })
+        {
+            Assert.Equal(3, Exports.DispatchHostEventCore(
+                BnHostEvents.SafeAreaChanged,
+                $$"""{"top":"{{garbage}}","right":"0","bottom":"34","left":"0"}"""));
+            Assert.Equal(BnSafeAreaInsets.Zero, BnSafeAreaInsets.Current);
+        }
+    }
+
+    [Fact]
     public void SafeAreaChanged_NullPayload_IsNotMalformed_ReportsNothingToRerender()
     {
         // No payload at all (as opposed to a payload missing a key) is "nothing

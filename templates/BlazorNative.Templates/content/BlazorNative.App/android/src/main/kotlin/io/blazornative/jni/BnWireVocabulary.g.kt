@@ -34,7 +34,7 @@ internal object BnWireVocabulary {
     )
 
     internal val SCROLL_IGNORED_CONTAINER_STYLES = setOf(
-        "flexDirection", "justifyContent", "alignItems", "flexWrap", "gap", "padding",
+        "flexDirection", "justifyContent", "alignItems", "flexWrap", "gap", "padding", "paddingTop", "paddingRight", "paddingBottom", "paddingLeft",
     )
 
     internal val MEASURED_NODE_TYPES = setOf(

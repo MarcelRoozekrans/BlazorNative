@@ -4,7 +4,7 @@
 #
 #   build-test (windows-latest) — the local verification procedure verbatim
 #   (setup.ps1 §1–7 documents the toolchain pins):
-#     build (analyzers ride it) → .NET tests (1098 passed / 0 skipped) →
+#     build (analyzers ride it) → .NET tests (1106 passed / 0 skipped) →
 #     three NativeAOT publishes of samples/BlazorNative.SampleApp — the
 #     publish head since Phase 8.0: the app owns PublishAot, the exports stay
 #     in Runtime via UnmanagedEntryPointsAssembly, and the artifact is
@@ -2107,7 +2107,23 @@ jobs:
       # are UNCHANGED -- ShellFrameTableDriftTests still passes, and the new
       # bnSafeAreaDemoFrames table is a fifth ONE ROW table asserted the same
       # way. No ABI change (Exports.cs moves only by Task 2's routing arm).
-      - name: .NET tests (assert 1098 passed / 0 skipped)
+      # 1098 -> 1106 (14.2 whole-branch review fix wave, +8): IMPORTANT 1's
+      # fix (BnSafeArea's `Padding` shorthand now falls back per edge instead
+      # of being silently clobbered by the always-present per-edge 0) is
+      # pinned by two new BnSafeAreaTests facts (+2): the shorthand reaching
+      # all four edges with nothing more specific set, and an explicit
+      # per-edge value still winning on its own edge. MINOR 2's fix
+      # (TryParseEdge now rejects NaN/Infinity/negative edges, not just
+      # non-numeric ones) is pinned by one new HostSafeAreaTests fact (+1).
+      # IMPORTANT 2's guard — a text pin asserting BnSafeArea still appears in
+      # the five files the design's safety argument depends on (the `dotnet
+      # new` starter page + the four #338-named capability pages) — is one
+      # new Theory over five MemberData rows, so FIVE test cases (+5), not
+      # one: `dotnet test`'s Passed count is per CASE, and this is the one
+      # place in this phase a Theory (not a Fact) is the right shape, because
+      # the five files are independent claims that must each fail loudly and
+      # by name rather than being folded into one pass/fail Fact.
+      - name: .NET tests (assert 1106 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -2125,8 +2141,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 1098 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 1098 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 1106 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 1106 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # ── NativeAOT publishes + nine-export verification ────────────────────

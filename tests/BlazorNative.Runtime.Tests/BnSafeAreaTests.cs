@@ -173,6 +173,55 @@ public sealed class BnSafeAreaTests : IDisposable
     }
 
     [Fact]
+    public void BnSafeArea_PaddingShorthand_IsNotSilentlyDropped()
+    {
+        // Whole-branch review IMPORTANT 1: BnSafeArea always emits a concrete (never
+        // null) BnLength for all four per-edge paddings, and Yoga resolves an
+        // edge-specific value over YGEdgeAll -- so before the fix, the shorthand
+        // `Padding` was clobbered by the always-present per-edge 0 on EVERY edge,
+        // regardless of mode. `<BnSafeArea Padding="16">` rendered zero padding
+        // everywhere. This pins the fix: with no insets and no per-edge override,
+        // Padding must reach all four edges.
+        var (renderer, frames) = CreateCapturingSession();
+        BnSafeAreaInsets.SetForTests(BnSafeAreaInsets.Zero);
+
+        renderer.Mount<BnSafeArea>(ParameterView.FromDictionary(new Dictionary<string, object?>
+        {
+            [nameof(BnSafeArea.Padding)] = (BnLength)16f,
+        }));
+        var mount = frames[0];
+        var root = Assert.Single(mount.Patches.OfType<CreateNodePatch>(), p => p.ParentId is null);
+
+        Assert.Equal("16", StyleOn(mount, root.NodeId, "paddingTop").Value);
+        Assert.Equal("16", StyleOn(mount, root.NodeId, "paddingRight").Value);
+        Assert.Equal("16", StyleOn(mount, root.NodeId, "paddingBottom").Value);
+        Assert.Equal("16", StyleOn(mount, root.NodeId, "paddingLeft").Value);
+    }
+
+    [Fact]
+    public void BnSafeArea_PerEdgePadding_OverridesTheShorthandOnThatEdgeOnly()
+    {
+        // The other half of the same fix: an explicit per-edge value still wins over
+        // the shorthand on ITS edge -- the fallback (`PaddingTop ?? Padding`) must not
+        // let Padding overwrite an edge the author was specific about.
+        var (renderer, frames) = CreateCapturingSession();
+        BnSafeAreaInsets.SetForTests(BnSafeAreaInsets.Zero);
+
+        renderer.Mount<BnSafeArea>(ParameterView.FromDictionary(new Dictionary<string, object?>
+        {
+            [nameof(BnSafeArea.Padding)] = (BnLength)16f,
+            [nameof(BnSafeArea.PaddingTop)] = (BnLength)40f,
+        }));
+        var mount = frames[0];
+        var root = Assert.Single(mount.Patches.OfType<CreateNodePatch>(), p => p.ParentId is null);
+
+        Assert.Equal("40", StyleOn(mount, root.NodeId, "paddingTop").Value);
+        Assert.Equal("16", StyleOn(mount, root.NodeId, "paddingRight").Value);
+        Assert.Equal("16", StyleOn(mount, root.NodeId, "paddingBottom").Value);
+        Assert.Equal("16", StyleOn(mount, root.NodeId, "paddingLeft").Value);
+    }
+
+    [Fact]
     public void WhenTheInsetsChange_TheComponentRelaysOut()
     {
         // Rotation, a keyboard, a call banner. Without this the component is correct

@@ -864,11 +864,40 @@ public static class Exports
         return HostSession.CurrentRenderer is null ? 1 : 0;
     }
 
+    /// <summary>Parses one edge's value out of the flat-JSON payload. Rejects — as a
+    /// PARSE failure (rc 3 in <see cref="DispatchHostSafeArea"/>), same as a missing
+    /// key — three shapes <see cref="double.TryParse(string?, System.Globalization.NumberStyles, IFormatProvider?, out double)"/>
+    /// with <see cref="System.Globalization.NumberStyles.Float"/> would otherwise
+    /// accept without complaint:
+    ///   • <c>NaN</c> — a legal .NET float LITERAL, but not a legal inset;
+    ///   • <c>Infinity</c>/<c>-Infinity</c> — likewise legal float text, nonsensical
+    ///     as an obscured-area measurement;
+    ///   • a NEGATIVE value — an inset is, physically, an area obscured from an
+    ///     edge; there is no such thing as a negative one, and Yoga's own padding
+    ///     setter already rejects negative padding (<c>BnYogaStyleParserTests</c>'
+    ///     "negatives accepted ONLY for margin and the offsets" rule) — a negative
+    ///     inset stored here would either surface as a silently-dropped Yoga style
+    ///     downstream or, combined additively with author padding, produce a
+    ///     smaller-than-intended pad that LOOKS like a rounding error rather than a
+    ///     malformed wire payload.
+    /// All three are numeric-but-nonsensical, on a wire contract the rc-3 doc
+    /// comment already calls a shell disagreeing with the contract — this closes
+    /// that door for the safe-area edges specifically (whole-branch review MINOR 2).
+    /// </summary>
     private static bool TryParseEdge(Dictionary<string, string> fields, string key, out double value)
     {
         value = 0;
-        return fields.TryGetValue(key, out string? raw)
-            && double.TryParse(raw, System.Globalization.NumberStyles.Float,
-                System.Globalization.CultureInfo.InvariantCulture, out value);
+        if (!fields.TryGetValue(key, out string? raw)
+            || !double.TryParse(raw, System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture, out double parsed))
+        {
+            return false;
+        }
+
+        if (double.IsNaN(parsed) || double.IsInfinity(parsed) || parsed < 0)
+            return false;
+
+        value = parsed;
+        return true;
     }
 }

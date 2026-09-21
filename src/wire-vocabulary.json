@@ -81,12 +81,24 @@
       "space on a scrolling viewport is negative) and permanently hides the top of the",
       "page; `padding` moves every frame in the parity table.",
       "",
+      "`paddingTop`/`paddingRight`/`paddingBottom`/`paddingLeft` (Phase 14.2, #338) are",
+      "here for the SAME reason as `padding`: the scroll node's own padding box is what",
+      "the content node lays out inside, so a per-edge value would ALSO move every",
+      "frame in the parity table — `padding` alone being listed here (and the four",
+      "per-edge names not) was a coherence gap the whole-branch review caught: once",
+      "Phase 14.2 gave the four per-edge names live shell arms, a scroll node fed",
+      "`paddingTop` would apply it instead of ignore-and-log it, the exact failure mode",
+      "this list exists to prevent — unreachable today (nothing routes a per-edge",
+      "padding onto a `scroll` node), but the manifest is the coherence source, not",
+      "just today's call sites.",
+      "",
       "Every name here MUST also be in yogaStyles — the rule is only reached once the",
       "router has decided the name belongs to Yoga. A name here but not there would",
       "never reach the rule: it would fall into the visual branch and be dropped.",
       "The generator enforces that subset relation and refuses to emit otherwise."
     ],
-    "names": ["flexDirection", "justifyContent", "alignItems", "flexWrap", "gap", "padding"]
+    "names": ["flexDirection", "justifyContent", "alignItems", "flexWrap", "gap", "padding",
+              "paddingTop", "paddingRight", "paddingBottom", "paddingLeft"]
   },
 
   "measuredNodeTypes": {

@@ -21,7 +21,7 @@ enum BnWireVocabulary {
     ]
 
     static let scrollIgnoredContainerStyles = [
-        "flexDirection", "justifyContent", "alignItems", "flexWrap", "gap", "padding",
+        "flexDirection", "justifyContent", "alignItems", "flexWrap", "gap", "padding", "paddingTop", "paddingRight", "paddingBottom", "paddingLeft",
     ]
 
     static let measuredNodeTypes = [

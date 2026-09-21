@@ -433,10 +433,21 @@ class MainActivity : FragmentActivity() {
      * callback (`setOnApplyWindowInsetsListener`), which would deadlock the
      * serial dispatch lane against the main thread (#346).
      *
-     * ── THE BOOT-RACE FIX (fix round 1, #338) ──────────────────────────────
-     * iOS's twin is safe recording-before-booted because `BnRuntime.start()`
-     * runs SYNCHRONOUSLY inside `viewDidLoad` — by the time layout can fire,
-     * boot has already completed. Android boots on a BACKGROUND thread
+     * ── THE BOOT-RACE FIX (fix round 1, #338; corrected in fix round 2 of the
+     *    whole-branch review — see below) ─────────────────────────────────
+     * iOS has the SAME class of boot race, not a different one: its
+     * twin — `HostViewController.reportSafeAreaIfChanged` — used to claim safety
+     * here on the grounds that `BnRuntime.start()` runs synchronously inside
+     * `viewDidLoad`. That claim was FALSE. `viewDidLoad` boots on
+     * `DispatchQueue.global(qos: .userInitiated).async`, and `BnRuntime.current`
+     * is published LAST, after mount (`BnRuntime.swift`'s own comment: "Published
+     * LAST, after mount") — so on an ordinary launch, `viewDidLayoutSubviews` can
+     * fire, and `reportSafeAreaIfChanged` run, WHILE boot is still in flight and
+     * `BnRuntime.current` is nil. iOS's fix now mirrors this method's two halves
+     * exactly: it does not record `lastReportedInsets` while `BnRuntime.current`
+     * is nil, and its boot block forces one re-report on the main queue right
+     * after `runtime.start` returns — the analogue of `requestApplyInsets`
+     * below. Android boots on a BACKGROUND thread
      * (`thread(name = "BlazorNative-Runtime-Boot")` in [onCreate]), so the
      * FIRST `onApplyWindowInsets` callback on an ordinary launch fires BEFORE
      * `booted` flips true. Two changes, and EITHER ALONE is still broken:

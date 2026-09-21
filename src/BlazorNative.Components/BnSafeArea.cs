@@ -181,10 +181,21 @@ public sealed class BnSafeArea : BnLayoutContainer, IDisposable
         // Sequence 55-58: still the container band by NAME (LayoutSurfaceSequenceBandTests
         // classifies PaddingTop/Right/Bottom/Left as container regardless of who computed
         // the value) — this is the component's whole reason to exist.
-        b.AddComponentParameter(55, nameof(BnView.PaddingTop),    Resolve(TopEdge,    PaddingTop,    insets.Top));
-        b.AddComponentParameter(56, nameof(BnView.PaddingRight),  Resolve(RightEdge,  PaddingRight,  insets.Right));
-        b.AddComponentParameter(57, nameof(BnView.PaddingBottom), Resolve(BottomEdge, PaddingBottom, insets.Bottom));
-        b.AddComponentParameter(58, nameof(BnView.PaddingLeft),   Resolve(LeftEdge,   PaddingLeft,   insets.Left));
+        //
+        // `?? Padding`: the per-edge parameter falls back to the shorthand `Padding` when
+        // the author did not set that edge explicitly — the SAME "more specific edge wins"
+        // rule BnLayoutContainer's own doc comments state for PaddingTop/Right/Bottom/Left
+        // vs Padding. Without this fallback, `<BnSafeArea Padding="16">` silently rendered
+        // ZERO padding on every edge: this method ALWAYS emits a concrete BnLength for all
+        // four edges (never null, even when the resolved value is exactly 0), and Yoga
+        // resolves an edge-specific value over YGEdgeAll — so the always-present per-edge 0
+        // clobbered `Padding`'s YGEdgeAll=16 on every edge, every time, regardless of mode
+        // (a whole-branch review finding, IMPORTANT 1; pinned by
+        // BnSafeArea_PaddingShorthand_IsNotSilentlyDropped in BnSafeAreaTests.cs).
+        b.AddComponentParameter(55, nameof(BnView.PaddingTop),    Resolve(TopEdge,    PaddingTop    ?? Padding, insets.Top));
+        b.AddComponentParameter(56, nameof(BnView.PaddingRight),  Resolve(RightEdge,  PaddingRight  ?? Padding, insets.Right));
+        b.AddComponentParameter(57, nameof(BnView.PaddingBottom), Resolve(BottomEdge, PaddingBottom ?? Padding, insets.Bottom));
+        b.AddComponentParameter(58, nameof(BnView.PaddingLeft),   Resolve(LeftEdge,   PaddingLeft   ?? Padding, insets.Left));
 
         // Sequence 200: ChildContent, wrapped in the cascading value that tells any
         // nested BnSafeArea the insets were already consumed here.

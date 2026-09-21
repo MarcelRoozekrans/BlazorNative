@@ -17,7 +17,7 @@ static const char* const kYogaStyles[] = {
 };
 
 static const char* const kScrollIgnoredContainerStyles[] = {
-    "flexDirection", "justifyContent", "alignItems", "flexWrap", "gap", "padding",
+    "flexDirection", "justifyContent", "alignItems", "flexWrap", "gap", "padding", "paddingTop", "paddingRight", "paddingBottom", "paddingLeft",
 };
 
 // Index IS the wire id.
