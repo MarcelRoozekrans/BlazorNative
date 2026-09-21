@@ -2223,7 +2223,7 @@ the wire still carries a raw string.
 > legitimately returns 0 with no session mounted would red falsely, so re-derive that assumption
 > rather than trusting it.
 
-#### Phase 14.1: The dispatch twins [status: pending]
+#### Phase 14.1: The dispatch twins [status: complete]
 **Goal:** Close **#339**. Enumerate the runtime's cross-shell dispatch method pairs, restore
 Kotlin's fire-and-forget / and-wait split in Swift, repoint the lifecycle caller, build the
 **differential pin**, and close at least one of the three test seams that made the deadlock
@@ -2231,6 +2231,34 @@ unreachable. Placed early despite being independent: it carries the milestone's 
 an early failure is a cheap re-scope.
 **Surface:** Backend
 **HelpWanted:** no
+**Design:** [`docs/superpowers/specs/2026-09-21-phase-14.1-design.md`](../superpowers/specs/2026-09-21-phase-14.1-design.md)
+**Plan:** [`docs/superpowers/plans/2026-09-21-phase-14.1-dispatch-twins.md`](../superpowers/plans/2026-09-21-phase-14.1-dispatch-twins.md)
+**Conclusion:** [`docs/plans/2026-09-21-phase-14.1-conclusion.md`](../plans/2026-09-21-phase-14.1-conclusion.md)
+**Completed:** 2026-09-21 · [PR #347](https://github.com/MarcelRoozekrans/BlazorNative/pull/347)
++ [PR #349](https://github.com/MarcelRoozekrans/BlazorNative/pull/349) · **#339 closed**. Counts
+.NET 1076 → **1080**, JVM 161 → **162**, iOS 269 unchanged. `Exports.cs` **zero diff** — no ABI or
+wire change.
+
+> **The divergence was STRUCTURAL before it was semantic.** Swift was missing *both* of Kotlin's
+> `AndWait` methods, so its single `dispatchHostEvent` did the job of Kotlin's two — which is how
+> the lifecycle caller ended up on a blocking path. The fix mirrors the split; `dispatchLane.sync`
+> survives byte-identical under `dispatchHostEventAndWait`, deliberately, as the known-bad baseline.
+>
+> **This phase deliberately ships TWO TESTS THAT ASSERT BUGS STILL EXIST**, because a spike measured
+> that the root-cause fix is viable but not yet safe — an early return frees the lane in 42 ms, but
+> claims *"handled"* while the handler runs, and Android's back needs a verdict
+> `OnBackInvokedCallback` cannot wait for. **#345** is the .NET root cause; **#346** is Android's
+> predictive back, which this phase *measured and confirmed* rather than merely suspecting. Both
+> tests name their issue, explain that they pin a known defect, and flip cleanly when it is fixed.
+>
+> **What the pin proves, and what it does not.** `DispatchSurfaceDriftTests` reads source and
+> asserts each shell's declared methods and their lane-call shape against `src/dispatch-surface.json`.
+> **It never observes blocking at runtime** — a behavioural cross-shell pin would need a JVM test
+> and an XCTest agreeing with each other, an unpinned twin in its own right. Say *structural*.
+>
+> **Known residual:** the completeness check `EveryDispatchNamedDeclaration_IsDeclaredOrIgnored` has
+> no anti-vacuity assertion, so a regex that stops matching would make it pass while scanning
+> nothing. Its siblings in the same file guard this; it does not. One assertion closes it.
 
 #### Phase 14.2: Safe-area insets to .NET [status: pending]
 **Goal:** Close **#338** on **both** shells. Each shell reports safe-area insets over the existing
