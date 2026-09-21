@@ -4,7 +4,7 @@
 #
 #   build-test (windows-latest) — the local verification procedure verbatim
 #   (setup.ps1 §1–7 documents the toolchain pins):
-#     build (analyzers ride it) → .NET tests (1080 passed / 0 skipped) →
+#     build (analyzers ride it) → .NET tests (1098 passed / 0 skipped) →
 #     three NativeAOT publishes of samples/BlazorNative.SampleApp — the
 #     publish head since Phase 8.0: the app owns PublishAot, the exports stay
 #     in Runtime via UnmanagedEntryPointsAssembly, and the artifact is
@@ -2088,7 +2088,26 @@ jobs:
       # Important #3 (BnAppLifecycle.swift's header, stating the fire-and-forget
       # delivery contract) and Important #4 (the conclusion doc's timing claim)
       # touch no test code -- no further count movement.
-      - name: .NET tests (assert 1080 passed / 0 skipped)
+      # 1080 -> 1086 (14.2 Task 2, +6): HostSafeAreaTests -- the reserved
+      # "safeAreaChanged" arm's rc contract (no session / malformed payload /
+      # the two ResetForTests/SetForTests seams F3 required). No ABI change.
+      # 1086 -> 1096 (14.2 Task 5, +10): BnSafeAreaTests -- the component's
+      # per-edge modes (Off/Additive/Maximum), the nesting-does-not-double-pad
+      # proof, and the live re-layout-on-change test. Tasks 3/4 (Swift/Kotlin
+      # reporting) move no .NET count.
+      # 1096 -> 1097 (14.2 Task 5 fix round, +1): the Additive DEFAULT mode had
+      # no test pairing it with non-zero author padding -- sum and replace were
+      # indistinguishable to the suite until this one landed.
+      # 1097 -> 1098 (14.2 Task 6, +1): BnSafeAreaDemoTests -- mounts the new
+      # `/safearea` page and dispatches the SAME four inset values the two
+      # device suites dispatch on-device, pinning the wire between the page's
+      # explicit 300x200 box and bnSafeAreaDemoFrames' declared numbers. The
+      # four existing declared frame tables (bnLayoutDemoFrames,
+      # bnScrollDemoFrames, bnScrollDemoImageFrames, bnImageDemoBeforeFrames)
+      # are UNCHANGED -- ShellFrameTableDriftTests still passes, and the new
+      # bnSafeAreaDemoFrames table is a fifth ONE ROW table asserted the same
+      # way. No ABI change (Exports.cs moves only by Task 2's routing arm).
+      - name: .NET tests (assert 1098 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -2106,8 +2125,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 1080 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 1080 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 1098 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 1098 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # ── NativeAOT publishes + nine-export verification ────────────────────

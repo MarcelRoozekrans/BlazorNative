@@ -81,48 +81,52 @@ internal sealed class BnCameraDemo : ComponentBase
     /// explicit [Inject] public property every other page uses.</summary>
     [Inject] public INavigationManager Navigation { get; set; } = default!;
 
+    // #338 (phase 14.2 task 6): wrapped in BnSafeArea (opt-in — decision 2 of the
+    // design) so "Take Photo" is not drawn under the Dynamic Island / a display
+    // cutout and physically untappable, as this page originally was.
     protected override void BuildRenderTree(RenderTreeBuilder b)
     {
-        b.OpenElement(0, "div");
+        b.OpenComponent<BnSafeArea>(0);
+        b.AddComponentParameter(200, nameof(BnSafeArea.ChildContent), (RenderFragment)(b2 =>
+        {
+            b2.OpenComponent<BnButton>(10);
+            b2.AddComponentParameter(11, nameof(BnButton.Label), "Take Photo");
+            b2.AddComponentParameter(12, nameof(BnButton.OnClick),
+                EventCallback.Factory.Create<MouseEventArgs>(this, TakePhotoAsync));
+            b2.CloseComponent();
 
-        b.OpenComponent<BnButton>(10);
-        b.AddComponentParameter(11, nameof(BnButton.Label), "Take Photo");
-        b.AddComponentParameter(12, nameof(BnButton.OnClick),
-            EventCallback.Factory.Create<MouseEventArgs>(this, TakePhotoAsync));
+            b2.OpenComponent<BnButton>(20);
+            b2.AddComponentParameter(21, nameof(BnButton.Label), "Check");
+            b2.AddComponentParameter(22, nameof(BnButton.OnClick),
+                EventCallback.Factory.Create<MouseEventArgs>(this, CheckAsync));
+            b2.CloseComponent();
+
+            // THE COMPOSITION: a DEFINITE (Width+Height) BnImage with ContentMode=Contain,
+            // whose Src is the captured file:// path. Definite → never measured → no
+            // reflow (the M6/M7 ledger discharge); Contain → aspect-fit, paint-only. Before
+            // a capture Src is null (no source, the box still reserved by the declared size).
+            b2.OpenComponent<BnImage>(30);
+            b2.AddComponentParameter(31, nameof(BnImage.Width), (BnAutoLength)DisplayWidthDp);
+            b2.AddComponentParameter(32, nameof(BnImage.Height), (BnAutoLength)DisplayHeightDp);
+            b2.AddComponentParameter(33, nameof(BnImage.ContentMode), ImageContentMode.Contain);
+            b2.AddComponentParameter(34, nameof(BnImage.Src), _src);
+            b2.CloseComponent();
+
+            b2.OpenComponent<BnText>(40);                             // the echo
+            b2.AddComponentParameter(41, nameof(BnText.Text), _echo);
+            b2.CloseComponent();
+
+            // "← Back" (#204) — nav parity with the eight pages that already carry one.
+            // LAST, after the echo: both device suites select the echo as "the first
+            // TextView/UILabel that is not a Button", so a TRAILING button leaves those
+            // selectors resolving to exactly what they did before.
+            b2.OpenComponent<BnButton>(90);
+            b2.AddComponentParameter(91, nameof(BnButton.Label), "← Back");
+            b2.AddComponentParameter(92, nameof(BnButton.OnClick),
+                EventCallback.Factory.Create<MouseEventArgs>(this, GoBack));
+            b2.CloseComponent();
+        }));
         b.CloseComponent();
-
-        b.OpenComponent<BnButton>(20);
-        b.AddComponentParameter(21, nameof(BnButton.Label), "Check");
-        b.AddComponentParameter(22, nameof(BnButton.OnClick),
-            EventCallback.Factory.Create<MouseEventArgs>(this, CheckAsync));
-        b.CloseComponent();
-
-        // THE COMPOSITION: a DEFINITE (Width+Height) BnImage with ContentMode=Contain,
-        // whose Src is the captured file:// path. Definite → never measured → no
-        // reflow (the M6/M7 ledger discharge); Contain → aspect-fit, paint-only. Before
-        // a capture Src is null (no source, the box still reserved by the declared size).
-        b.OpenComponent<BnImage>(30);
-        b.AddComponentParameter(31, nameof(BnImage.Width), (BnAutoLength)DisplayWidthDp);
-        b.AddComponentParameter(32, nameof(BnImage.Height), (BnAutoLength)DisplayHeightDp);
-        b.AddComponentParameter(33, nameof(BnImage.ContentMode), ImageContentMode.Contain);
-        b.AddComponentParameter(34, nameof(BnImage.Src), _src);
-        b.CloseComponent();
-
-        b.OpenComponent<BnText>(40);                             // the echo
-        b.AddComponentParameter(41, nameof(BnText.Text), _echo);
-        b.CloseComponent();
-
-        // "← Back" (#204) — nav parity with the eight pages that already carry one.
-        // LAST, after the echo: both device suites select the echo as "the first
-        // TextView/UILabel that is not a Button", so a TRAILING button leaves those
-        // selectors resolving to exactly what they did before.
-        b.OpenComponent<BnButton>(90);
-        b.AddComponentParameter(91, nameof(BnButton.Label), "← Back");
-        b.AddComponentParameter(92, nameof(BnButton.OnClick),
-            EventCallback.Factory.Create<MouseEventArgs>(this, GoBack));
-        b.CloseComponent();
-
-        b.CloseElement();
     }
 
     // Sync-completing (inline dispatcher), like every other page's GoBack.

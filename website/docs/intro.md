@@ -27,13 +27,15 @@ this project asserts with a test rather than prose. See
 [the parity contract](./architecture/parity.md).
 
 ```razor
-<BnColumn Gap="16" Padding="16">
-  <BnRow Justify="FlexJustify.SpaceBetween" Align="FlexAlign.Center">
-    <BnText Text="Left" />
-    <BnText Text="Right" />
-  </BnRow>
-  <BnButton Label="@($"Tapped {taps} time(s)")" OnClick="OnTap" />
-</BnColumn>
+<BnSafeArea>
+  <BnColumn Gap="16" Padding="16">
+    <BnRow Justify="FlexJustify.SpaceBetween" Align="FlexAlign.Center">
+      <BnText Text="Left" />
+      <BnText Text="Right" />
+    </BnRow>
+    <BnButton Label="@($"Tapped {taps} time(s)")" OnClick="OnTap" />
+  </BnColumn>
+</BnSafeArea>
 
 @code {
     private int taps;

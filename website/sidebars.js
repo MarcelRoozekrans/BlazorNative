@@ -29,6 +29,7 @@ const sidebars = {
       items: [
         'guides/state',
         'guides/rest-backends',
+        'guides/safe-area',
       ],
     },
     {

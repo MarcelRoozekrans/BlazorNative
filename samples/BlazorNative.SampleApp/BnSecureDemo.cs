@@ -73,49 +73,53 @@ internal sealed class BnSecureDemo : ComponentBase
     /// explicit [Inject] public property every other page uses.</summary>
     [Inject] public INavigationManager Navigation { get; set; } = default!;
 
+    // #338 (phase 14.2 task 6): wrapped in BnSafeArea (opt-in — decision 2 of the
+    // design) so this page's buttons are not drawn under the Dynamic Island / a
+    // display cutout and physically untappable, as this page originally was.
     protected override void BuildRenderTree(RenderTreeBuilder b)
     {
-        b.OpenElement(0, "div");
+        b.OpenComponent<BnSafeArea>(0);
+        b.AddComponentParameter(200, nameof(BnSafeArea.ChildContent), (RenderFragment)(b2 =>
+        {
+            b2.OpenComponent<BnButton>(10);
+            b2.AddComponentParameter(11, nameof(BnButton.Label), "Authenticate");
+            b2.AddComponentParameter(12, nameof(BnButton.OnClick),
+                EventCallback.Factory.Create<MouseEventArgs>(this, AuthenticateAsync));
+            b2.CloseComponent();
 
-        b.OpenComponent<BnButton>(10);
-        b.AddComponentParameter(11, nameof(BnButton.Label), "Authenticate");
-        b.AddComponentParameter(12, nameof(BnButton.OnClick),
-            EventCallback.Factory.Create<MouseEventArgs>(this, AuthenticateAsync));
+            b2.OpenComponent<BnButton>(20);
+            b2.AddComponentParameter(21, nameof(BnButton.Label), "Set");
+            b2.AddComponentParameter(22, nameof(BnButton.OnClick),
+                EventCallback.Factory.Create<MouseEventArgs>(this, SetAsync));
+            b2.CloseComponent();
+
+            b2.OpenComponent<BnButton>(30);
+            b2.AddComponentParameter(31, nameof(BnButton.Label), "Unlock");
+            b2.AddComponentParameter(32, nameof(BnButton.OnClick),
+                EventCallback.Factory.Create<MouseEventArgs>(this, UnlockAsync));
+            b2.CloseComponent();
+
+            b2.OpenComponent<BnButton>(40);
+            b2.AddComponentParameter(41, nameof(BnButton.Label), "Delete");
+            b2.AddComponentParameter(42, nameof(BnButton.OnClick),
+                EventCallback.Factory.Create<MouseEventArgs>(this, DeleteAsync));
+            b2.CloseComponent();
+
+            b2.OpenComponent<BnText>(50);                             // the echo
+            b2.AddComponentParameter(51, nameof(BnText.Text), _echo);
+            b2.CloseComponent();
+
+            // "← Back" (#204) — nav parity with the eight pages that already carry one.
+            // LAST, after the echo: both device suites select the echo as "the first
+            // TextView/UILabel that is not a Button", so a TRAILING button leaves those
+            // selectors resolving to exactly what they did before.
+            b2.OpenComponent<BnButton>(90);
+            b2.AddComponentParameter(91, nameof(BnButton.Label), "← Back");
+            b2.AddComponentParameter(92, nameof(BnButton.OnClick),
+                EventCallback.Factory.Create<MouseEventArgs>(this, GoBack));
+            b2.CloseComponent();
+        }));
         b.CloseComponent();
-
-        b.OpenComponent<BnButton>(20);
-        b.AddComponentParameter(21, nameof(BnButton.Label), "Set");
-        b.AddComponentParameter(22, nameof(BnButton.OnClick),
-            EventCallback.Factory.Create<MouseEventArgs>(this, SetAsync));
-        b.CloseComponent();
-
-        b.OpenComponent<BnButton>(30);
-        b.AddComponentParameter(31, nameof(BnButton.Label), "Unlock");
-        b.AddComponentParameter(32, nameof(BnButton.OnClick),
-            EventCallback.Factory.Create<MouseEventArgs>(this, UnlockAsync));
-        b.CloseComponent();
-
-        b.OpenComponent<BnButton>(40);
-        b.AddComponentParameter(41, nameof(BnButton.Label), "Delete");
-        b.AddComponentParameter(42, nameof(BnButton.OnClick),
-            EventCallback.Factory.Create<MouseEventArgs>(this, DeleteAsync));
-        b.CloseComponent();
-
-        b.OpenComponent<BnText>(50);                             // the echo
-        b.AddComponentParameter(51, nameof(BnText.Text), _echo);
-        b.CloseComponent();
-
-        // "← Back" (#204) — nav parity with the eight pages that already carry one.
-        // LAST, after the echo: both device suites select the echo as "the first
-        // TextView/UILabel that is not a Button", so a TRAILING button leaves those
-        // selectors resolving to exactly what they did before.
-        b.OpenComponent<BnButton>(90);
-        b.AddComponentParameter(91, nameof(BnButton.Label), "← Back");
-        b.AddComponentParameter(92, nameof(BnButton.OnClick),
-            EventCallback.Factory.Create<MouseEventArgs>(this, GoBack));
-        b.CloseComponent();
-
-        b.CloseElement();
     }
 
     // Sync-completing (inline dispatcher), like every other page's GoBack.
