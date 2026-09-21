@@ -60,14 +60,14 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
     // UIKit delivers `didBecomeActive` during launch, before the runtime boots.
 
     func applicationDidBecomeActive(_ application: UIApplication) {
-        BnAppLifecycle.dispatch(BnAppLifecycle.onResume)
+        BnAppLifecycle.dispatch(.onResume)
     }
 
     func applicationWillResignActive(_ application: UIApplication) {
-        BnAppLifecycle.dispatch(BnAppLifecycle.onPause)
+        BnAppLifecycle.dispatch(.onPause)
     }
 
     func applicationWillTerminate(_ application: UIApplication) {
-        BnAppLifecycle.dispatch(BnAppLifecycle.onDestroy)
+        BnAppLifecycle.dispatch(.onDestroy)
     }
 }

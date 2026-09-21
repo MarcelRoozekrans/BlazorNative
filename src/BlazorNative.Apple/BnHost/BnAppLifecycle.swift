@@ -40,16 +40,11 @@ import UIKit
 
 enum BnAppLifecycle {
 
-    /// The wire names, shared with Android. Not an enum of iOS concepts: these
-    /// are the strings that cross `blazornative_host_event`, and the Kotlin side
-    /// spells them exactly this way.
-    static let onResume  = "onResume"
-    static let onPause   = "onPause"
-    static let onDestroy = "onDestroy"
-
     /// Test seam: receives the event name instead of the runtime, so a hosted
     /// test can assert the mapping without a live native session (the app stays
-    /// inert under XCTest, so there is no runtime to dispatch to).
+    /// inert under XCTest, so there is no runtime to dispatch to). Still takes
+    /// the wire NAME (not the enum) — the seam observes what would cross the
+    /// ABI, and `BnHostEvent.rawValue` is that name.
     static var sinkForTest: ((String) -> Void)?
 
     /// Dispatches one lifecycle event, or does nothing if no session is live.
@@ -60,9 +55,9 @@ enum BnAppLifecycle {
     /// ABI then would be a call into a session that does not exist. Android skips
     /// its first `onResume` for the identical reason — the initial mount IS the
     /// first resume.
-    static func dispatch(_ name: String) {
-        if let sink = sinkForTest { sink(name); return }
+    static func dispatch(_ event: BnHostEvent) {
+        if let sink = sinkForTest { sink(event.rawValue); return }
         guard let runtime = BnRuntime.current else { return }
-        runtime.dispatchHostEvent(name: name, payload: nil)
+        runtime.dispatchHostEvent(event, payload: nil)
     }
 }

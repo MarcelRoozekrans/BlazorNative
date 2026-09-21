@@ -227,7 +227,21 @@ class BlazorNativeRuntime(
      * "not handled → finish" is DATA, not an error — Gate 3's MainActivity wires
      * that. [payload] is optional (omitted/NULL — most host events carry none).
      */
-    fun dispatchHostEvent(name: String, payload: String? = null) {
+    internal fun dispatchHostEvent(event: BnHostEvent, payload: String? = null) =
+        dispatchHostEventUnchecked(event.wireName, payload)
+
+    /**
+     * Test seam: [dispatchHostEvent]'s lane + onError routing, reachable with an
+     * ARBITRARY name so the rc 3 (malformed name) path stays testable. Production
+     * code dispatches through [dispatchHostEvent] (the enum overload) instead —
+     * that is the only production entry point, and
+     * NoProductionShellSource_CallsTheHostEventSeamsDirectly
+     * (BlazorNative.Runtime.Tests) enforces it by scanning production shell
+     * sources for a direct call here. Kotlin itself does not stop this seam's
+     * bare `String` parameter from compiling at a production call site — the
+     * test is the mechanism, not the type.
+     */
+    internal fun dispatchHostEventUnchecked(name: String, payload: String? = null) {
         dispatchLane.execute {
             try {
                 val rc = hostEventCore(name, payload)
@@ -261,9 +275,9 @@ class BlazorNativeRuntime(
      * [dispatchEventAndWait]). A throw from the dispatch core is rethrown
      * unwrapped.
      */
-    fun dispatchHostEventAndWait(name: String, payload: String? = null): Int {
+    internal fun dispatchHostEventAndWait(event: BnHostEvent, payload: String? = null): Int {
         val future = dispatchLane.submit(java.util.concurrent.Callable {
-            hostEventCore(name, payload)
+            hostEventCore(event.wireName, payload)
         })
         return try {
             future.get()

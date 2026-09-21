@@ -350,7 +350,7 @@ jobs:
             > ios-out/xcresult.json 2>/dev/null || true
           ls -la ios-out/crash || true
 
-      - name: Assert XCTest baseline (270 passed / 0 failed)
+      - name: Assert XCTest baseline (269 passed / 0 failed)
         if: always()
         run: |
           log=ios-out/xcodebuild-test.log
@@ -1150,9 +1150,15 @@ jobs:
           # REQUIRED .NET lane (DeepLinkSeedDriftTests reads the Swift source), because
           # this lane is advisory and can be many commits stale — which is precisely how
           # a Swift-only regression would hide.
-          if [ "$failed" -ne 0 ] || [ "$passed" -ne 270 ]; then
+          # 270 -> 269 (14.0, -1): the deleted test asserted that a Swift constant
+          # equalled its own spelling, in one language -- true by construction, and
+          # green even if Kotlin disagreed. Its NAME claimed cross-shell parity
+          # ("...AreAndroidsExactly") that its body never checked. That property is
+          # now real: both shells' enums are emitted from one manifest section, and
+          # WireVocabularyCodegenTests byte-compares the emitted output.
+          if [ "$failed" -ne 0 ] || [ "$passed" -ne 269 ]; then
             grep -E "Test Case '.*' (passed|failed)" "$log" || true
-            echo "iOS XCTest baseline drift: expected 270 passed / 0 failed, got passed=$passed failed=$failed" >&2
+            echo "iOS XCTest baseline drift: expected 269 passed / 0 failed, got passed=$passed failed=$failed" >&2
             exit 1
           fi
 

@@ -154,22 +154,12 @@ final class BnAppLifecycleTests: XCTestCase {
         super.tearDown()
     }
 
-    /// The names are the WIRE CONTRACT, shared with Android — an app subscribing to
-    /// `NativeEvents` branches on these strings, so a well-meaning iOS-flavoured
-    /// rename ("didBecomeActive") would break cross-platform code that reads
-    /// correctly on both.
-    func testTheEventNamesAreAndroidsExactly() {
-        XCTAssertEqual(BnAppLifecycle.onResume, "onResume")
-        XCTAssertEqual(BnAppLifecycle.onPause, "onPause")
-        XCTAssertEqual(BnAppLifecycle.onDestroy, "onDestroy")
-    }
-
     func testDispatchReachesTheSink() {
         var seen: [String] = []
         BnAppLifecycle.sinkForTest = { seen.append($0) }
 
-        BnAppLifecycle.dispatch(BnAppLifecycle.onResume)
-        BnAppLifecycle.dispatch(BnAppLifecycle.onPause)
+        BnAppLifecycle.dispatch(.onResume)
+        BnAppLifecycle.dispatch(.onPause)
 
         XCTAssertEqual(seen, ["onResume", "onPause"])
     }
@@ -189,7 +179,7 @@ final class BnAppLifecycleTests: XCTestCase {
         // actually being pinned is that the guarded path is reachable and total —
         // it must handle both "no session" and "a session" without trapping, and
         // reaching the end is that assertion.
-        BnAppLifecycle.dispatch(BnAppLifecycle.onResume)
-        BnAppLifecycle.dispatch(BnAppLifecycle.onDestroy)
+        BnAppLifecycle.dispatch(.onResume)
+        BnAppLifecycle.dispatch(.onDestroy)
     }
 }

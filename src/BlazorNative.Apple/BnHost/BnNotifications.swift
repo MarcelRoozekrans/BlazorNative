@@ -70,11 +70,6 @@ enum BnNotificationStatus {
 
 final class BnNotifications: NSObject, UNUserNotificationCenterDelegate {
 
-    /// The reserved host-event name the WARM tap-through fires — the EXACT literal
-    /// .NET's DispatchHostEventCore intercepts (Exports.NavigateEventName) and Kotlin's
-    /// MainActivity.NAVIGATE_EVENT uses. A drift here reds the warm tap-through.
-    static let navigateEventName = "navigate"
-
     /// The iOS route→mount-component mirror — the Swift twin of Android's
     /// MainActivity.DEEP_LINK_COMPONENTS (a hand-written PINNED mirror, resolved before
     /// the `.so` loads / independent of the .NET route table). iOS mounts by NAME, so a
@@ -282,7 +277,7 @@ final class BnNotifications: NSObject, UNUserNotificationCenterDelegate {
         } else if let dispatcher = navigateDispatcher {
             rc = dispatcher(route)
         } else {
-            rc = BnNotifications.navigateEventName.withCString { n in
+            rc = BnHostEvent.navigate.rawValue.withCString { n in
                 route.withCString { p in blazornative_host_event(n, p) }
             }
         }
