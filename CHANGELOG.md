@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.0](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.12.0...v0.13.0) (2026-09-21)
+
+
+### Features
+
+* **wire:** pin the host-event vocabulary — one manifest, three languages ([#341](https://github.com/MarcelRoozekrans/BlazorNative/issues/341)) ([fd7913b](https://github.com/MarcelRoozekrans/BlazorNative/commit/fd7913b3be012a30117bde414f38cbc1a3f9177c))
+
 ## [0.12.0](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.11.0...v0.12.0) (2026-08-21)
 
 
