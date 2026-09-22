@@ -46,6 +46,21 @@ namespace BlazorNative.Renderer.Tests;
 // manifest now updates four tables in one command, and the one thing it cannot
 // write for you is the implementation. This test is what makes that half loud.
 //
+// ── PHASE 15.1 — THE EXTRACTOR WAS COLLECTING THE WRONG THING ────────────────
+// Census §5.1 found the one demonstrated false-green channel in the pin
+// population, and it was here. `ParseNameTable` collected EVERY quoted string in
+// the dispatch body, so value keywords (`row`, `center`, `nowrap`, `absolute`),
+// comment text and log-message prose sat in the same bag as arm labels — 48
+// strings for a dispatch with 26 arms. A manifest style whose arm was never
+// written READ AS DISPATCHED whenever an unrelated string matched its name.
+//
+// Two things changed, and neither is sufficient alone. The extractor now anchors
+// on ARM-LABEL POSITION and outermost depth; and
+// TheNameExtractor_CollectsArmLabelsOnly_NotEveryQuotedString is the negative
+// control that reds if it is ever widened back. The third change is smaller and
+// separate: the three facts now floor the set they ITERATE, not only the set they
+// subtract — see FloorTheIteratedSet.
+//
 // iOS's equivalent is pinned at RUNTIME, in its own lane, by
 // BnYogaStyleParserTests.testEveryRoutedNameReachesASetter — which feeds every
 // routed name a legal value and demands rc == 1. Since #255 that suite reads the
@@ -91,6 +106,7 @@ public sealed class ShellStyleTableDriftTests
         // there is no literal left in that file to parse. Reading .NET's set is the
         // same question asked of the same source of truth.
         var routed = NativeRenderer.YogaStyleAttributes;
+        FloorTheIteratedSet(routed, MinimumYogaStyles, nameof(NativeRenderer.YogaStyleAttributes));
         var dispatched = ParseNameTable(KotlinYogaLayout, KotlinSetStyleBody);
 
         var missing = routed.Except(dispatched).ToList();
@@ -136,6 +152,7 @@ public sealed class ShellStyleTableDriftTests
     public void AndroidSetStyleDispatch_HasAnArmForEveryVisualStyle()
     {
         var visual = NativeRenderer.VisualStyleAttributes;
+        FloorTheIteratedSet(visual, MinimumVisualStyles, nameof(NativeRenderer.VisualStyleAttributes));
         var dispatched = ParseNameTable(KotlinWidgetMapper, KotlinHandleSetStyleBody, "handleSetStyle");
 
         var missing = visual.Except(dispatched).ToList();
@@ -180,6 +197,7 @@ public sealed class ShellStyleTableDriftTests
     public void AppleSetStyleDispatch_HasAnArmForEveryVisualStyle()
     {
         var visual = NativeRenderer.VisualStyleAttributes;
+        FloorTheIteratedSet(visual, MinimumVisualStyles, nameof(NativeRenderer.VisualStyleAttributes));
         var dispatched = ParseNameTable(AppleWidgetMapper, AppleHandleSetStyleBody, "handleSetStyle");
 
         var missing = visual.Except(dispatched).ToList();
@@ -198,10 +216,72 @@ public sealed class ShellStyleTableDriftTests
 
     // ── The parser ───────────────────────────────────────────────────────────
 
-    /// <summary>Every quoted name inside the declaration <paramref name="pattern"/>
-    /// matches in the shell source at <paramref name="relativePath"/>. Fails loudly
-    /// when the declaration cannot be found: a moved function must break this test,
-    /// not silently pass it with an empty set.</summary>
+    /// <summary>Kotlin's arm-label shape, read off both dispatch bodies: a line whose
+    /// first non-space text is one or more comma-separated quoted names followed by
+    /// <c>-&gt;</c> (`"flexDirection" -&gt;`, `"top", "right", "bottom", "left" -&gt; {`).
+    /// The indentation is captured because it is what separates a TOP-LEVEL arm of
+    /// `when (property)` from a nested arm of `when (value)` — see
+    /// <see cref="ParseNameTable"/>.</summary>
+    private const string KotlinArmLabel =
+        @"^(?<indent>[ ]*)(?<labels>""[^""\r\n]+""(?:[ ]*,[ ]*""[^""\r\n]+"")*)[ ]*->";
+
+    /// <summary>Swift's case-label shape, read off `BnWidgetMapper.handleSetStyle`:
+    /// `case "backgroundColor":`. Same capture, same reason.</summary>
+    private const string SwiftCaseLabel =
+        @"^(?<indent>[ ]*)case[ ]+(?<labels>""[^""\r\n]+""(?:[ ]*,[ ]*""[^""\r\n]+"")*)[ ]*:";
+
+    /// <summary>Every name in ARM-LABEL POSITION inside the declaration
+    /// <paramref name="pattern"/> matches in the shell source at
+    /// <paramref name="relativePath"/>.
+    ///
+    /// **NOT every quoted string in the body, which is what this used to collect and
+    /// is the defect phase 15.1 closed** (census §5.1). Yoga's VALUE vocabulary
+    /// overlaps its PROPERTY vocabulary — `row`, `column`, `center`, `nowrap`,
+    /// `absolute` are all value literals of a `when (value)` arm — and comments carry
+    /// quoted names too: the Swift body's `OpenElement("scroll") + AddAttribute("gap",
+    /// …)` example put **`gap`, a real manifest Yoga style name**, into the bag with
+    /// no arm behind it. A manifest style whose arm was never written READ AS
+    /// DISPATCHED whenever any unrelated quoted string happened to match its name.
+    ///
+    /// Two anchors do the narrowing, and both are derived from the shell sources
+    /// rather than assumed:
+    ///
+    ///  1. **Shape** — the label must sit in arm position for the file's language
+    ///     (<see cref="KotlinArmLabel"/>, <see cref="SwiftCaseLabel"/>). Prose,
+    ///     log-message text and call arguments cannot reach that position.
+    ///  2. **Depth** — of the arm lines found, only the SHALLOWEST-indented ones are
+    ///     kept. The top-level arms of `when (property)` sit one level inside the
+    ///     function; the nested arms of `when (value)` sit deeper. Nothing else
+    ///     separates the two, because a nested arm has the identical shape.
+    ///
+    /// Fails loudly when the declaration cannot be found, and now also when the body
+    /// contains no arm at all: either failure means the pin has lost its subject.
+    ///
+    /// **What this does NOT cover** (Rule 5), all four measured rather than guessed:
+    ///
+    ///  - **Depth is read from LEADING SPACES.** A shell reformatted to tabs, or one
+    ///    that indented a nested arm more shallowly than a top-level one, would be
+    ///    misread. No Kotlin or Swift formatter produces either; all three bodies were
+    ///    checked and contain no tab. Both misreadings push NESTED value keywords back
+    ///    into the set, which is precisely what
+    ///    <see cref="TheNameExtractor_CollectsArmLabelsOnly_NotEveryQuotedString"/>
+    ///    reds on — so they fail LOUD.
+    ///  - **A LINE-commented arm is correctly excluded** — `// "flexGrow" -> …` does
+    ///    not start with a quote, so the anchor misses it and the fact reds naming
+    ///    `flexGrow`. Mutation-verified. The old every-quoted-string extractor passed
+    ///    that mutation; this is one of the holes the narrowing closed.
+    ///  - **A BLOCK-commented arm is NOT.** An arm inside `/* … */` keeps its
+    ///    indentation and its shape, so it is collected and the pin stays green over a
+    ///    dispatch that no longer exists. Mutation-verified, and it is a false GREEN —
+    ///    Rule 5's defect direction, not its footnote direction. It is **bounded by
+    ///    inspection, not by the parser**: none of the three bodies contains a `/*` at
+    ///    all, verified by count. The real fix is Rule 8 consolidation — route this
+    ///    through `CommentStrippedSource`, which is string-literal-aware and already
+    ///    handles Kotlin and Swift — and that is blocked on the helper living in
+    ///    `BlazorNative.Runtime.Tests` rather than in `tests/Shared`. **This limit
+    ///    predates 15.1 and the narrowing did not widen it**: the old extractor
+    ///    collected block-commented arms too, along with everything else.
+    ///  - **It does not understand `#if`.** None of the three bodies has one.</summary>
     private static HashSet<string> ParseNameTable(string relativePath, string pattern, string what = "setStyle")
     {
         var source = ReadShellSource(relativePath);
@@ -212,13 +292,182 @@ public sealed class ShellStyleTableDriftTests
             + "signature changed — this dispatch pin IS the contract, so re-point it deliberately "
             + "rather than deleting it.");
 
+        var body = match.Groups["body"].Value;
+        var armPattern = ArmLabelPatternFor(relativePath);
+        var arms = Regex.Matches(body, armPattern, RegexOptions.Multiline).Cast<Match>().ToList();
+
+        Assert.True(arms.Count > 0,
+            $"found `{what}` in {relativePath} but not one arm label inside it "
+            + $"(pattern: {armPattern}). The dispatch was rewritten into some other shape, or it "
+            + "was re-indented with tabs — either way this pin can no longer see the thing it "
+            + "guards, so it reds instead of passing over an empty set. Re-point it deliberately.");
+
+        var outermost = arms.Min(a => a.Groups["indent"].Value.Length);
+
         var names = new HashSet<string>(StringComparer.Ordinal);
-        foreach (Match name in Regex.Matches(match.Groups["body"].Value, "\"([^\"]+)\""))
-            names.Add(name.Groups[1].Value);
+        foreach (var arm in arms.Where(a => a.Groups["indent"].Value.Length == outermost))
+            foreach (Match label in Regex.Matches(arm.Groups["labels"].Value, "\"([^\"]+)\""))
+                names.Add(label.Groups[1].Value);
 
         Assert.NotEmpty(names);
         return names;
     }
+
+    /// <summary>The arm-label pattern for the shell source's language. An unknown
+    /// extension throws rather than defaulting: a third shell would otherwise be
+    /// parsed with the wrong grammar and come back empty.</summary>
+    private static string ArmLabelPatternFor(string relativePath) => relativePath switch
+    {
+        var p when p.EndsWith(".kt", StringComparison.Ordinal) => KotlinArmLabel,
+        var p when p.EndsWith(".swift", StringComparison.Ordinal) => SwiftCaseLabel,
+        _ => throw new InvalidOperationException(
+            $"no arm-label grammar for {relativePath} — add one rather than letting this pin "
+            + "parse a language it does not know and return an empty set"),
+    };
+
+    /// <summary>The OLD extractor, kept ONLY as the thing the negative control rules
+    /// out: every quoted string in the body, arm or not. Nothing else may call it.</summary>
+    private static HashSet<string> EveryQuotedString(string relativePath, string pattern)
+    {
+        var match = Regex.Match(ReadShellSource(relativePath), pattern, RegexOptions.Singleline);
+        Assert.True(match.Success, $"could not find the declaration in {relativePath}");
+
+        var names = new HashSet<string>(StringComparer.Ordinal);
+        foreach (Match name in Regex.Matches(match.Groups["body"].Value, "\"([^\"]+)\""))
+            names.Add(name.Groups[1].Value);
+        return names;
+    }
+
+    /// <summary>THE NEGATIVE CONTROL for the extractor's over-match direction
+    /// (census §5.1, pin standard Rule 3's second form — *a known-mismatching subject
+    /// the detector must still reject*).
+    ///
+    /// Before phase 15.1 <see cref="ParseNameTable"/> collected EVERY quoted string in
+    /// the dispatch body — value keywords, comment text and log-message prose landed
+    /// in the same bag as arm labels. Yoga's VALUE vocabulary overlaps its PROPERTY
+    /// vocabulary, so a manifest style whose arm was never written READ AS DISPATCHED
+    /// whenever an unrelated string matched its name. The narrowing that closed it is
+    /// only safe for as long as something notices it being undone, and this is that
+    /// something.
+    ///
+    /// The names below were MEASURED out of the three bodies, not assumed, and each is
+    /// asserted twice: it must still be PRESENT as a quoted string in the body — so a
+    /// fixed point that has been reworded away reds instead of silently becoming
+    /// vacuous — and it must be ABSENT from the parsed set. Widen the extractor back
+    /// and the second half fails, naming the name.
+    ///
+    /// **The headline is `gap` in the Swift body.** It is a real
+    /// `yogaStyles` entry, and it reaches that body only through a comment's
+    /// `AddAttribute("gap", …)` example. Under the old extractor it was in the bag.
+    ///
+    /// Limits (Rule 5): this controls the OVER-match direction only. Under-matching —
+    /// an arm shape the grammar misses — is caught by the three facts above going red,
+    /// and by <see cref="ParseNameTable"/>'s own no-arms-found guard.</summary>
+    [Fact]
+    public void TheNameExtractor_CollectsArmLabelsOnly_NotEveryQuotedString()
+    {
+        (string File, string Body, string What, string[] NonArms)[] tables =
+        {
+            (KotlinYogaLayout, KotlinSetStyleBody, "setStyle", new[]
+            {
+                // `when (value)` arms of the enum-word properties. Every one of these
+                // is a VALUE, and every one sat in `dispatched` before 15.1.
+                "row", "column", "row-reverse", "column-reverse",
+                "flex-start", "center", "flex-end",
+                "space-between", "space-around", "space-evenly",
+                "nowrap", "wrap", "wrap-reverse",
+                "relative", "absolute",
+            }),
+            (KotlinWidgetMapper, KotlinHandleSetStyleBody, "handleSetStyle", new[]
+            {
+                // Log-message prose. The visual body has no value keywords, so its
+                // fixed points are the two strings the old extractor swallowed.
+                "SetStyle for unknown nodeId ${p.nodeId}: ignored",
+                "SetStyle '${p.property}' not yet supported (Phase 3+ extends)",
+            }),
+            (AppleWidgetMapper, AppleHandleSetStyleBody, "handleSetStyle", new[]
+            {
+                // `gap` and `scroll` come from a COMMENT's worked example
+                // (`OpenElement("scroll") + AddAttribute("gap", …)`) and `gap` is a
+                // live manifest style name; `BnWidgetMapper` is the BnLog subsystem
+                // tag; `a modal node` is comment prose.
+                "gap", "scroll", "BnWidgetMapper", "a modal node",
+            }),
+        };
+
+        foreach (var (file, body, what, nonArms) in tables)
+        {
+            var bag = EveryQuotedString(file, body);
+            var parsed = ParseNameTable(file, body, what);
+
+            Assert.True(parsed.IsSubsetOf(bag),
+                $"{file}: the arm-label extractor produced names that are not quoted strings in "
+                + $"`{what}`'s body at all: {Join(parsed.Except(bag))}. The parse is wrong in a "
+                + "way neither direction of this control anticipated.");
+
+            foreach (var name in nonArms)
+            {
+                Assert.True(bag.Contains(name),
+                    $"{file}: `{name}` is no longer a quoted string inside `{what}` at all, so it "
+                    + "has stopped being a fixed point for this control. It was reworded or "
+                    + "removed — re-measure the body and re-point this list deliberately rather "
+                    + "than deleting the entry, because a control naming nothing proves nothing.");
+
+                Assert.False(parsed.Contains(name),
+                    $"{file}: `{name}` is NOT a dispatch arm of `{what}` — it is a value keyword, "
+                    + "comment text or log prose — and the extractor collected it anyway. The "
+                    + "arm-label narrowing has been widened back, and with it the false green "
+                    + "census §5.1 records: a manifest style with no arm written now reads as "
+                    + "dispatched on the strength of an unrelated string. The three facts above "
+                    + "are checking less than they claim until this is put back.");
+            }
+
+            // The generic form of the same rule, for prose nobody thought to name: a
+            // style name never contains a space, and a log message always does.
+            var prose = parsed.Where(n => n.Any(char.IsWhiteSpace)).ToList();
+            Assert.True(prose.Count == 0,
+                $"{file}: the extractor collected names containing whitespace: {Join(prose)}. "
+                + "Those are log messages or comment text, not arm labels.");
+
+            // Last, and deliberately last: the named fixed points above are the
+            // informative failure, so this catch-all only speaks when none of them did.
+            Assert.True(bag.Count > parsed.Count,
+                $"{file}: every quoted string in `{what}`'s body is now an arm label "
+                + $"({bag.Count} == {parsed.Count}). That is not a state this body has ever been "
+                + "in — each of the three carries log prose or comment text — so the likelier "
+                + "explanation is that the narrowing was undone and this control has nothing "
+                + "left to rule out.");
+        }
+    }
+
+    /// <summary>`src/wire-vocabulary.json` carries 26 yogaStyles today; the floor is
+    /// set at 20, leaving six names of headroom so that legitimately retiring a style
+    /// is not a CI event while a collapse to empty is.</summary>
+    private const int MinimumYogaStyles = 20;
+
+    /// <summary>3 visualStyles today — backgroundColor, color, fontSize — and the
+    /// floor is the measured count because there is no headroom to leave in a set that
+    /// small. Removing one is a deliberate act; re-point this with it.</summary>
+    private const int MinimumVisualStyles = 3;
+
+    /// <summary>THE FLOOR ON THE ITERATED SET (pin standard Rule 2, census §5.1's
+    /// first finding).
+    ///
+    /// Every fact in this file has the shape `routed.Except(dispatched)`, and until
+    /// phase 15.1 the only anti-vacuity assertion was <see cref="ParseNameTable"/>'s
+    /// `Assert.NotEmpty` — which floors `dispatched`, the set being SUBTRACTED. The
+    /// set being ITERATED was unfloored, so an empty `routed` made `missing` empty and
+    /// all three facts went green over nothing. Both style sets are built from
+    /// `src/wire-vocabulary.json` through the generated `BnWireVocabulary`, so a
+    /// manifest that failed to parse, or an emitter that wrote an empty table, is the
+    /// realistic route to that state.</summary>
+    private static void FloorTheIteratedSet(IReadOnlyCollection<string> routed, int minimum, string what)
+        => Assert.True(routed.Count >= minimum,
+            $"{what} holds {routed.Count} names, and at least {minimum} were expected. This is "
+            + "the set the dispatch check ITERATES: empty it and `routed.Except(dispatched)` is "
+            + "empty too, so this fact passes while checking nothing. Either the wire-vocabulary "
+            + "manifest stopped being read, or names were retired — in which case lower this "
+            + "floor deliberately.");
 
     private static string ReadShellSource(string relativePath)
     {
