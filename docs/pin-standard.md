@@ -442,6 +442,18 @@ assertion is a Rule 4 subject-moved guard — it proves the file is still the re
 nothing about the `VersionOverride` regex that is the actual detector. A grep for the phrase would
 score it as done.
 
+### This verdict is a judgement about cost, and nothing pins it
+
+**Stated plainly, because Rule 5 applies to this section as much as to a pin.** The conclusion above
+is a judgement about cost and collateral measured against the population as it stands today — 4 true
+positives, 98 facts flooring through shared helpers, one root reaching across an assembly boundary.
+Change that population and the arithmetic can change with it. A future contributor is entitled to
+revisit it, and the honest form of that is to **rewrite this section rather than leave it standing**:
+if a mechanical anti-vacuity check ever lands, the sentences above become false and **nothing in CI
+will red to say so.** A document asserting a safety property that nothing enforces is this repo's
+most expensive bug class, and the only defence available here is that the section names the exact
+check it rejects, so a reviewer has something specific to match the new one against.
+
 ### What this reshapes
 
 15.1 is not *build the mechanism*. **It is nine fixed-point assertions**, six of them copyable from
