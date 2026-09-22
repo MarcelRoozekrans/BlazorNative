@@ -25,6 +25,13 @@
 //     refuses; on the simulator the shell refuses off the ACL/marker.)
 //   • getWithAuth(key,reason) → the OS Face ID evaluation unlocks the item and the
 //     plaintext returns in {"value":…}; a non-auth item is read directly (no prompt).
+//   • the authorized read evaluates `.deviceOwnerAuthenticationWithBiometrics` —
+//     BIOMETRY, matching the `.biometryCurrentSet` ACL the set attached. It used
+//     to evaluate `.deviceOwnerAuthentication`, which is passcode OR biometry, so
+//     the effective gate was WEAKER than the stored ACL declared (#213 item 1,
+//     confirmed on device). There is deliberately no passcode fallback: Android
+//     has none either, and lockout is recoverable by unlocking the device, which
+//     resets biometry.
 //   • delete(key) → SecItemDelete (idempotent — a missing item is still Ok).
 //
 // THE OS-KEY BINDING — PROVEN vs UNPROVEN (the honest split, mirroring biometrics and
@@ -298,7 +305,7 @@ final class BnSecureStorage {
             // Production: the OS Face ID evaluation. On success the freshly-evaluated
             // context unlocks the `.biometryCurrentSet` item (finishAuthorizedRead reads
             // it); on failure/cancel/lockout the denial is AuthFailed, DATA.
-            context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason) { success, _ in
+            context.evaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, localizedReason: reason) { success, _ in
                 if success { gate.authenticate() } else { gate.deny() }
             }
         }
