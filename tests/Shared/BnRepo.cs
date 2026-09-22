@@ -37,4 +37,15 @@ internal static class BnRepo
 
         return dir.FullName;
     }
+
+    /// <summary>The directory the test binary was loaded from — the test's OWN
+    /// build output, not the repository tree.
+    ///
+    /// This is a genuinely different job from <see cref="Root"/> and it lives here
+    /// for one reason: <c>AppContext.BaseDirectory</c> is a bypass marker, and a
+    /// legitimate use of it sitting loose in a test file is indistinguishable, to
+    /// a text scan, from a hand-rolled walk to the solution file. Routing the one
+    /// real caller through here keeps PinPopulationTests' marker list at its
+    /// original width -- no exemption was added to accommodate this.</summary>
+    public static string TestBinaryDirectory() => AppContext.BaseDirectory;
 }

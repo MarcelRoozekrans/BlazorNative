@@ -262,11 +262,12 @@ public sealed class PackagePurityTests
     /// Analyzers TFM move would red as a path miss, not as the right test.</summary>
     private static string ResolveAssemblyPath(string assemblyName)
     {
-        string local = Path.Combine(AppContext.BaseDirectory, assemblyName + ".dll");
+        string baseDirectory = BnRepo.TestBinaryDirectory();
+        string local = Path.Combine(baseDirectory, assemblyName + ".dll");
         if (File.Exists(local))
             return local;
 
-        string configuration = AppContext.BaseDirectory.Contains(
+        string configuration = baseDirectory.Contains(
             Path.DirectorySeparatorChar + "Debug" + Path.DirectorySeparatorChar,
             StringComparison.OrdinalIgnoreCase) ? "Debug" : "Release";
         string csproj = Path.Combine(BnRepo.Root(), "src", assemblyName, assemblyName + ".csproj");
