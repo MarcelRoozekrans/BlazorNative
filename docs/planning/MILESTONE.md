@@ -99,7 +99,19 @@ verdict** — the number is not to be trusted until it is.
 
 ## Phases
 
-1. Phase 15.0 — the pin standard [pending]
+1. Phase 15.0 — the pin standard [complete] — closed 2026-09-22 on
+   [PR #372](https://github.com/MarcelRoozekrans/BlazorNative/pull/372) +
+   [PR #373](https://github.com/MarcelRoozekrans/BlazorNative/pull/373); .NET 1111 → **1112**;
+   no production source change. **The population is enumerable by BEHAVIOUR** — 24 copy-pasted
+   `RepoRoot()` walks became one, and **callers of the shared helper are the pin population,
+   exactly**. The count had been wrong **four** times, every time by counting a name. It found
+   **six unhardened comment strippers**, one of them letting a bare undeclared `NSLog` hide
+   behind an ordinary URL and leaving a **PII guard green** over a tree that contained it — now
+   one stripper, eight callers. Census judges **per fact**: 118 facts, 102 pins,
+   **93 conforms / 9 gap / 16 exempt**. **The enforcement verdict is NEGATIVE** and is the
+   phase's most useful output: a presence-style convention test scores **0 of 4** against the
+   known defects, because all four already execute a count assertion on the **wrong set** — so
+   it would hand out a green under a name claiming coverage. 15.1 re-scoped accordingly
 2. Phase 15.1 — enforce the standard [pending]
 3. Phase 15.2 — define the auth pin's coverage [pending]
 4. Phase 15.3 — the first live test: deep-link scheme [pending]
