@@ -118,7 +118,20 @@ unpinned*, wherever that occurs.
    a **boot race present on both shells** — an inset callback arriving before the async runtime
    boot, recording a value it cannot deliver, leaves .NET at `Zero` forever on a static-orientation
    launch. It needs two halves: don't record when skipping, and force one re-report at boot
-4. Phase 14.3 — auth semantics [pending]
+4. Phase 14.3 — auth semantics [complete] — closed 2026-09-22 on
+   [PR #355](https://github.com/MarcelRoozekrans/BlazorNative/pull/355); **#213 item 1 closed**;
+   both device lanes dispatched and green **on the PR head**, iOS 270, Android 226; .NET
+   1106 → 1109; no ABI, wire or public-API change. `requireAuth: true` now means **biometry**, one
+   answer on both shells. The milestone recorded this as an open three-way choice; reading the code
+   collapsed it, because **seven** sites answer the question and the split was **6-to-1** — only
+   the Apple storage *read* disagreed, and it was the one that weakened the guarantee. The
+   alternatives were widenings dressed as consistency. Lockout trade-off accepted explicitly;
+   device floors checked rather than assumed. **The deliverable is the pin** —
+   `src/auth-semantics.json` + `AuthSemanticsDriftTests`, whose completeness half makes a NEW
+   undeclared authenticator red, with the anti-vacuity assertion 14.1's twin still lacks. A review
+   **defeated that claim once**, via a same-line co-occurrence of the exact pair #213 was about
+   that six mutations had missed; fixed to match by span. Two residuals filed rather than
+   ledgered: **#356** and **#357**
 5. Phase 14.4 — device observability, docs, and the device lane [pending]
 6. Phase 14.5 — audit and close [pending]
 
