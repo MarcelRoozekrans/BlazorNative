@@ -2309,7 +2309,7 @@ scoping decision 3 predicted.
 > tell a live `BnSafeArea` wrap from a commented-out one; and it covers the five sample and
 > template files but not `intro.md` or `guides/safe-area.md`.
 
-#### Phase 14.3: Auth semantics [status: pending]
+#### Phase 14.3: Auth semantics [status: active]
 **Goal:** Close **#213 item 1**. Decide one answer to what `requireAuth` means, pin the stored
 keychain ACL against the read policy, and cover the read-side contract that the device run could
 not exercise. The decision is **open** — see MILESTONE.md.

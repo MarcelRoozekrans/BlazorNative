@@ -43,6 +43,7 @@ const sidebars = {
       items: [
         'migrating/typed-lengths',
         'migrating/testing-harness',
+        'migrating/auth-biometry',
       ],
     },
     {
