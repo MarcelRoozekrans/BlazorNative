@@ -1,7 +1,9 @@
 # Milestone 14: Twin Divergence, Closed Mechanically
 
-**Status:** active
+**Status:** complete
 **Started:** 2026-09-21
+**Completed:** 2026-09-22 — verdict **PASS WITH FINDINGS**
+([audit](../plans/2026-09-22-milestone-14-audit.md))
 
 **Design:** [`docs/superpowers/specs/2026-09-21-milestone-14-design.md`](../superpowers/specs/2026-09-21-milestone-14-design.md)
 **Predecessor:** Milestone 13 — Consumer Ergonomics (complete 2026-08-22, verdict **PASS WITH
@@ -62,30 +64,37 @@ unpinned*, wherever that occurs.
 
 ## Definition of Done
 
-- [ ] All planned phases complete
-- [ ] All tests passing — .NET, JVM, **and both device lanes dispatched** (a green *required* set
+- [x] All planned phases complete
+- [x] All tests passing — .NET, JVM, **and both device lanes dispatched** (a green *required* set
       does not mean the advisory Android/iOS lanes ran; that is how 11.4's pump bug hid)
-- [ ] **The vocabulary sub-shape is closed by generation.** Host-event names emit from
+- [x] **The vocabulary sub-shape is closed by generation.** Host-event names emit from
       `src/wire-vocabulary.json` into all three languages; adding a name by hand to one shell reds.
       #300 closed.
-- [ ] **The semantic sub-shape is closed by a pin.** A differential guard asserts the two shells'
+- [x] **The semantic sub-shape is closed by a pin.** A differential guard asserts the two shells'
       dispatch entry points agree on blocking semantics, and **a NEW divergence reds** — not merely
       the two instances already known. This is the milestone's central claim; if no mechanical form
       exists, that is a finding to record explicitly, never a line to quietly drop.
-- [ ] **#339 is fixed, and its invisibility is fixed too.** The deadlock is gone *and* at least one
+      **MET NARROWLY — see the [audit](../plans/2026-09-22-milestone-14-audit.md).** The mechanical
+      form exists and works: a new divergence reds for **eight shapes**, each reproduced before the
+      fix and red after. It **fails for four more**, all reproduced as live green mutations and
+      filed as **#364** — the largest being that the scan never reads
+      `src/BlazorNative.Jni/src/main/kotlin`, twelve shipped shell files. This criterion's own last
+      sentence demanded that such a result be recorded rather than dropped, so the tick is
+      qualified here rather than left to read as full coverage.
+- [x] **#339 is fixed, and its invisibility is fixed too.** The deadlock is gone *and* at least one
       of the three seams that hid it — `BnAppLifecycle.sinkForTest`'s early return, the camera
       XCTest's `suppressSystemCameraPresentForTest` plus auth overrides, and `BnCamera`'s
       inline-on-main test capture — no longer does.
-- [ ] **#338 is fixed on BOTH shells.** Insets reported over `host_event`; Android's identical gap
+- [x] **#338 is fixed on BOTH shells.** Insets reported over `host_event`; Android's identical gap
       closed in the same pass. Frame parity re-expressed as *(layout, insets) → frames* and still
       asserted across shells.
-- [ ] **The auth semantics agree and are pinned.** One answer to what `requireAuth` means, the
+- [x] **The auth semantics agree and are pinned.** One answer to what `requireAuth` means, the
       stored ACL and the read policy pinned against each other, and the **read-side contract**
       covered — a plain get of an auth-bound item refused with no value leaking. That half was never
       exercised on device, because the demo page exposes no plain-get button.
-- [ ] **`Debug` and `Verbose` are observable on a real device**, with the method recorded.
-- [ ] **The four documentation landmines are fixed**, `$(AppIdentifierPrefix)` explicitly among them.
-- [ ] **No ABI change** — verified by diffing the export surface, not asserted.
+- [x] **`Debug` and `Verbose` are observable on a real device**, with the method recorded.
+- [x] **The four documentation landmines are fixed**, `$(AppIdentifierPrefix)` explicitly among them.
+- [x] **No ABI change** — verified by diffing the export surface, not asserted.
 
 > **No "release tagged in git" criterion.** `docs/planning/CONVENTIONS.md` records **`Milestone
 > completion tags a release: no`** — release-please owns the `v<semver>` namespace and Phase 8.6
