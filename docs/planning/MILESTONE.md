@@ -145,7 +145,12 @@ unpinned*, wherever that occurs.
    last one was closed by our own `dup2`. **#360 closed**, making M14's central claim unconditional
    rather than true-for-the-shapes-tested. Fourteen documentation landmines fixed, including a
    handover that told a device tester to exercise a passcode fallback 14.3 had deleted
-6. Phase 14.5 — audit and close [pending]
+6. Phase 14.5 — audit and close [complete] — closed 2026-09-22, verdict **PASS WITH
+   FINDINGS**, [audit](../plans/2026-09-22-milestone-14-audit.md). Ten criteria checked
+   against live evidence: the ABI **diffed** rather than asserted, 10 exports before and
+   after; the wire compared by **name set**, 0 removed and 15 added. Nine met; the central
+   claim met **narrowly** — the semantic pin reds for eight proven shapes and fails for four
+   more, all reproduced, filed as **#364**
 
 **Ordering rationale.** Exactly one hard dependency: **14.0 → 14.2**, because the inset event needs
 a generated name and hand-adding a third name to an unpinned vocabulary is the thing this milestone
@@ -188,4 +193,4 @@ whereas a late one invalidates the DoD.
 
 | Date | Verdict | Gaps |
 |---|---|---|
-| — | *(not yet audited)* | — |
+| 2026-09-22 | **PASS WITH FINDINGS** — [full audit](../plans/2026-09-22-milestone-14-audit.md) | **The central claim is met NARROWLY.** The semantic pin makes a new divergence red for **eight proven shapes** and demonstrably fails for **four more**, all reproduced as live green mutations — **#364**. The DoD said such a result must be *"recorded explicitly, never a line to quietly drop"*; it is. Also: residual overclaims **#365**; no `pre-push-review` artifact exists, though every task got a fresh-agent spec-and-quality review plus a per-phase whole-branch review; and `android-instrumented`'s newest run is at 14.4's head rather than main's docs-only close commit, which cannot reach Android |
