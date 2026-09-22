@@ -2164,13 +2164,15 @@ not wait behind a paper design phase; 13.4 and 13.5 renumbered to 13.5 and 13.6)
 
 ---
 
-### 🔄 Milestone 14 — Twin Divergence, Closed Mechanically  *(active — started 2026-09-21)* [status: active]
+### ✅ Milestone 14 — Twin Divergence, Closed Mechanically  *(complete — 2026-09-21 → 2026-09-22)* [status: complete]
 
 **Goal:** Close the twin-divergence class **mechanically** — wherever the framework holds one truth
 in two places, either generate the second copy or pin the two against each other. M13 named this
 class and closed four instances by hand, but built only half the mechanism its own DoD called for;
 the P3 device run found the other half by killing a process on real hardware.
 **Started:** 2026-09-21
+**Completed:** 2026-09-22 · verdict **PASS WITH FINDINGS**
+· [audit](../plans/2026-09-22-milestone-14-audit.md)
 **Design:** [`docs/superpowers/specs/2026-09-21-milestone-14-design.md`](../superpowers/specs/2026-09-21-milestone-14-design.md)
 · full scope, DoD and owner decisions in [MILESTONE.md](MILESTONE.md).
 **Source:** the **P3 real-device verification run** by @ceesalberts on 2026-09-20 — iPhone 17 Pro
