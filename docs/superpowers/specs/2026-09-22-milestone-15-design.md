@@ -11,7 +11,7 @@
 ## Goal
 
 This repo defends its invariants with **drift pins** — tests that read source or config and assert
-two copies of one truth agree. There are **sixteen** of them and **four** manifests, accumulated
+two copies of one truth agree. There are **at least nineteen** of them and **four** manifests, accumulated
 across many milestones, each written to catch the bug in front of it. They have no shared standard,
 and it shows: M14's newest pin was defeated by **five successive reviews**, each with a shape the
 previous round had not tried, and every fix was local to the instance. M15 establishes what a pin
@@ -31,7 +31,7 @@ directory walk, or a collection comparison. `RouteMenuDriftTests` performs **no 
 all**, and `EveryRoutedPage_ExceptTheTwoExemptions_HasAMenuRow` still passes over an empty page
 list.
 
-A first measurement — heuristic, and Phase 15.0's job to make exact — suggests **6 of 16 pins carry
+A first measurement — heuristic, and Phase 15.0's job to make exact — suggests **6 of the 16 in `Runtime.Tests` carry
 no anti-vacuity assertion**. Some may not need one; that has to be established per pin rather than
 assumed either way.
 
@@ -47,7 +47,7 @@ twin divergence have drifted from each other.**
 - [ ] **A written pin standard exists**, in the repo rather than in a milestone doc, stating what
       every drift pin must do — at minimum: it must fail when it scans nothing, it must fail when
       its subject moves, and it must state what it does **not** cover.
-- [ ] **Every one of the sixteen existing pins is assessed against that standard**, and the
+- [ ] **Every one of the existing pins is assessed against that standard**, and the
       assessment is recorded per pin — *conforms*, *fixed*, or *exempt with a written reason*.
       An unassessed pin is a gap; "exempt" is an acceptable outcome, silence is not.
 - [ ] **The standard is enforced mechanically, not by review.** A new pin that can pass while
@@ -70,9 +70,9 @@ twin divergence have drifted from each other.**
 ## Phases
 
 1. **Phase 15.0: The pin standard** — `Surface: Docs`
-   - **Goal:** Write down what a pin must do to be trusted, and take an exact census of the sixteen
-     existing pins against it — replacing this design's heuristic 6-of-16 with a measured per-pin
-     verdict.
+   - **Goal:** Answer **what makes a test a pin** — the population is not enumerable by name — then
+     write down what a pin must do to be trusted, and take an exact census against it, replacing
+     this design's heuristic with a measured per-pin verdict.
 
 2. **Phase 15.1: Enforce the standard** — `Surface: Backend`
    - **Goal:** Make the standard mechanical — a new pin that can pass while checking nothing reds —
@@ -130,7 +130,7 @@ definition was any good. 15.4 and 15.5 are independent of each other and of 15.3
 | **No mechanical enforcement exists** for "a pin must not be able to pass while checking nothing" | The standard degrades into a review checklist, which is what M14 already had | The DoD says to record that explicitly with evidence rather than drop it. A partial mechanism — e.g. enforcing only the anti-vacuity half — is an acceptable honest outcome |
 | **Coverage is defined too narrowly in 15.2**, and 15.3 exposes it immediately | Rework, and the definition loses credibility | That is the *point* of the 15.2 → 15.3 adjacency. An early failure there is cheap and informative; discovering it in 15.6's audit is not |
 | **Prose pinning proves not worth its cost** | #291 goes unanswered again, having already been deferred once | The DoD accepts "attempted and judged not worth it" **with reasoning** as a pass. What it does not accept is silence |
-| **Sixteen pins is a lot of surface for one milestone** | 15.1 balloons and crowds out 15.2-15.5 | The census in 15.0 sizes it before 15.1 commits. If the non-conforming set is large, split 15.1 by pin family and say which were deferred |
+| **The pin population is a lot of surface for one milestone** | 15.1 balloons and crowds out 15.2-15.5 | The census in 15.0 sizes it before 15.1 commits. If the non-conforming set is large, split 15.1 by pin family and say which were deferred |
 | **The milestone fixes pins while the things they guard rot** | A perfectly standardised pin population guarding stale truths | 15.3 and 15.4 are real bugs, not pin work. They are in the milestone deliberately so it ships behaviour, not only mechanism |
 
 ## Open Questions
