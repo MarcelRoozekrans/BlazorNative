@@ -1,0 +1,336 @@
+# The pin standard
+
+**What a drift pin must do to be trusted.**
+
+This repo defends most of its invariants with **drift pins** — tests that read the repository tree
+at runtime and assert that two copies of one truth still agree. The C ABI is frozen by them; the
+wire vocabulary, the dispatch surface, the auth semantics, the logging seams and the README's own
+count table are all held in place by them. They are the reason a green CI run means anything at
+all.
+
+They accumulated across a dozen milestones with **no shared standard**, each written to catch the
+bug in front of its author, and the cost is on record. Milestone 14's newest pin was defeated by
+**five successive reviews**, every round finding a shape the previous round had not tried, and
+every fix was local to the instance. A comment stripper with a live hole was duplicated into
+**six** copies; they were found by **three different people looking at three different things**,
+and one of them was quietly defeating a security guard.
+
+This document is the standard those pins lacked. It lives in the repo rather than in a milestone
+doc on purpose — milestone docs get archived, and this has to outlive the milestone that wrote it.
+
+Several of the rules below were **discovered by being wrong**, and each one keeps its scar
+attached. A rule with its scar attached is one people follow.
+
+---
+
+## Rule 1 — A pin is defined by what it DOES, not by what it is called
+
+**A pin is a test that reads the repository tree at runtime and asserts on its contents.** That is
+the whole definition. It is not a naming convention, and any process that treats it as one will
+undercount.
+
+`Drift`, `Pin`, `Sweep` and `Roster` are all in use as class suffixes in this repo, so a
+convention test keyed on one of them misses roughly a quarter of the population.
+
+### Enumerate a population by behaviour, never by a naming convention
+
+This is the rule that has been proven most expensively, and it is **four-for-four in a single
+milestone**:
+
+| The count | Counted by | The truth |
+|---|---|---|
+| "sixteen pins" | class-name suffix | four suffixes are in use; the count was short |
+| "23 copies of `RepoRoot()`" | method name | `BnImageDemoTests.ShellSource` did the identical walk under another name — it was **24** |
+| "25 callers" | prediction from the design | the call graph had **26** |
+| "the comment stripper" | the names `Strip` and `CodeLines` | **six** copies, found by three people looking at three different things |
+
+Every one of those counts was wrong in the same direction, for the same reason, and every one was
+corrected by counting **what the code does** instead: the walk expression, the call graph, the
+behaviour of the helper. Counting by behaviour is the only method that has held up.
+
+The practical consequence: when you write a guard over a population, define the population by an
+expression the code must contain or a method it must call — never by a suffix, a prefix, or a
+directory that authors are merely expected to use.
+
+---
+
+## Rule 2 — It must fail when it scans nothing
+
+**Vacuity is a property of the assertion shape, not of the input.** An assertion of the form *for
+every X, assert Y* passes trivially when there are no X — and it does not matter whether X came
+from a regex over source, a directory walk, a manifest parse, or an in-memory collection.
+
+`RouteMenuDriftTests` scans **no files at all** and still has the shape:
+`EveryRoutedPage_ExceptTheTwoExemptions_HasAMenuRow` passes over an empty page list. "It doesn't
+read files" is not an exemption from this rule.
+
+So every pin needs an assertion that its subject was actually present:
+
+```csharp
+Assert.True(scanned >= 100,
+    $"scanned only {scanned} test files, and there are roughly 129 — the walk has stopped "
+    + "seeing its subject, so the assertion below is checking almost nothing");
+```
+
+This is not a formality. It was **demonstrated**, not argued: `PinPopulationTests` was mutated to
+scan for `*.nonsense` instead of `*.cs` with the anti-vacuity assertion removed, and it went
+**green** — the offender list was empty because the loop never ran. The floor is the only thing
+standing between that state and a passing suite.
+
+### Corollary — a floor must be measured, and must not argue with build state
+
+Two ways to get the number wrong, both committed in this repo within a week of each other:
+
+**A floor set against a wrong denominator is theatre.** A plan specified `scanned >= 20` for a
+population of ~131 files: a guard that passes while seeing **13%** of its subject. It would never
+have fired for any realistic breakage. Measure the true denominator first — print it from a
+deliberately-failing run if you have to — then set the floor with stated headroom.
+
+**A floor that moves for irrelevant reasons gets argued down rather than fixed.** The same scan
+initially counted `bin/` and `obj/`, so its number was 129 on a clean checkout and 151 after a
+build. A guard whose value depends on whether someone ran `dotnet build` is a guard that the next
+person to hit it will weaken. Exclude build output, generated trees, and anything else that moves
+without a source change.
+
+---
+
+## Rule 3 — It must ALSO have a positive control
+
+**This is the rule we nearly missed, and it is the one most existing pins fail.**
+
+A count-based anti-vacuity floor proves that the **walk** works — that the pin found files. It
+proves nothing at all about whether the **detector** works. A regex that no longer matches its
+subject, a manifest key that was renamed, a marker list that silently narrowed: all of these leave
+the file count untouched and the pin green forever.
+
+**The two properties are different and a trusted pin asserts both.**
+
+`NSLogDriftTests` is the worked example and the best pin design in the repo. It has two halves:
+`BnHost/` must contain **zero** bare `NSLog` calls, and the exempt test bundle `BnHostTests/` must
+still contain **some** — a fixed point that the detector is required to hit:
+
+> *A non-empty file set proves the walk works; it does not prove the REGEX does. The exempt test
+> bundle is the fixed point that proves the detector detects — it is the one place under
+> `BnHostTests/` that MUST still contain live `NSLog` calls. Reword the pattern past its subject
+> and this reds, instead of the pin quietly going green forever.*
+
+A positive control does not need a second tree. Any of these work, in rough order of strength:
+
+- **A known-matching subject** the detector must still hit — a sibling directory, an exempt file, a
+  fixture the pin ships alongside itself.
+- **A known-mismatching subject** the detector must still reject, if the pin's failure mode is
+  over-matching rather than under-matching.
+- **A structural assertion about the parse** — the manifest must yield exactly these keys, the
+  regex must capture this many groups, the roster must contain this named entry.
+
+`DeepLinkSeedDriftTests` is a positive-match pin by construction: it asserts a match exists rather
+than that none does, so its detector is exercised on every run.
+
+**Be honest about where we are.** Every anti-vacuity assertion added during the milestone that
+wrote this standard — including its author's own floor of 100 — proves only the walk. That is a
+real gap across the existing population, and closing it is part of why this document exists.
+
+---
+
+## Rule 4 — It must fail when its subject moves
+
+A pin whose subject has been renamed, restructured or deleted must **red**, not shrug.
+
+The failure modes are ordinary rather than exotic: a file gets renamed in a refactor, a manifest
+grows a nesting level, a method signature the regex anchors on is reformatted onto two lines, a
+directory the walk depends on is moved into a subproject. In every case the honest answer is *this
+pin no longer knows what it is guarding*, and the honest response is to fail and be re-pointed
+deliberately.
+
+The pattern the repo already uses:
+
+```csharp
+Assert.True(match.Success,
+    $"could not find the {name} pin in {file} (pattern: {pattern}). It moved or was "
+    + "rewritten — a pin that cannot see its subject must never pass vacuously, so this "
+    + "reds. Re-point it deliberately.");
+```
+
+`BnRepo.Root()` throws rather than returning a plausible-but-wrong directory for the same reason.
+So does `NSLogDriftTests` when `BnHostTests/` is absent: *"either the test bundle moved — then
+re-point the exemption deliberately — or it is gone, in which case delete the exemption rather
+than keeping it as folklore."*
+
+Note the shape of a good message: it names the subject, names the pattern, says what probably
+happened, and tells the reader to re-point rather than to delete. A pin that reds with
+`Assert.NotNull(dir)` and no message teaches the next person to reach for the delete key.
+
+---
+
+## Rule 5 — It must state what it does NOT cover
+
+**A pin that implies completeness it lacks is worse than one that admits a gap**, because the gap
+then gets treated as covered ground by everyone downstream.
+
+Write the limit in the pin's own doc comment, in the terms a future reader will need: which trees,
+which spellings, which file kinds, which failure shapes are out of reach. `PinPopulationTests`
+catches the **accidental** bypass — the copy-pasted walk — and not a determined one; a bypass built
+by string concatenation, or one reaching `tests/` through
+`Assembly.GetExecutingAssembly().Location` and a fixed path climb, contains neither marker and
+stays invisible. That is written down where the pin is, with a worked demonstration, rather than
+inferred.
+
+### The subtle half — re-draw the limit when a demonstration moves it
+
+Disclosing a limit is not a one-time act. **When someone shows you the boundary was optimistic,
+move the boundary — do not defend where you drew it.**
+
+The scar: an author disclosed that markers inside string literals could evade the scan and filed
+that under *adversarial*. A reviewer then produced a marker in **live code** made invisible by an
+ordinary URL in an unrelated literal on the same line. The author's own correction is the rule:
+
+> *"I filed markers-inside-string-literals under 'adversarial'. The reviewer's line puts that
+> boundary in the wrong place — a marker in **live code** was invisible because of a URL in an
+> unrelated literal on the same line. **Ordinary, not adversarial. The stripper was the weak part,
+> not the marker list.**"*
+
+The limit was real; its placement was wrong; and the disclosure had made the wrong placement look
+considered.
+
+### A disclosed safe limit is not the same thing as an undisclosed unsafe one
+
+Not every unhardened helper is a defect, and this distinction matters more than a blanket rule.
+
+`TemplateDriftTests.StripLineComments` is a deliberately simple stripper with no string-literal
+awareness, and it is **fine**, for three reasons that must all hold together:
+
+1. **It is disclosed in its own doc comment**, with the conditions under which it would need
+   revisiting — *"if that body ever grows either, this stripper is the thing to revisit"*.
+2. **Its scope is bounded by inspection, not by luck** — it is applied to a four-statement method
+   body that contains no string literal and no block comment in either copy.
+3. **It fails safe.** Over-stripping costs the pin text and reds on a missing call. It can produce
+   a false red. It cannot produce a false green.
+
+Change any one of those and it becomes the other thing. Six copies of a *different* stripper were
+undisclosed, unbounded, and failed **unsafe** — a false green over a tree that genuinely contained
+a bare undeclared `NSLog` in the biometrics file, on a guard whose own header notes it has been
+handed keychain keys.
+
+**The direction of the failure is the question.** A limit that can only cost you a red is a
+footnote. A limit that can hand you a green is a defect, whether or not it is written down.
+
+---
+
+## Rule 6 — It must reach the tree through `BnRepo.Root()`
+
+Any pin that reaches the checkout must go through `tests/Shared/BnRepo.cs`:
+
+```csharp
+string root = BnRepo.Root();
+```
+
+This is not style. **Callers of that method are the pin population, exactly**, and that is what
+makes the population enumerable at all — Rule 1 having established that the names cannot be. A
+test that walks to `BlazorNative.sln` by hand is invisible to enforcement: it will not appear in a
+census, a conformance sweep, or any future guard written over the population.
+
+`PinPopulationTests` enforces this. It scans every hand-written `.cs` file under `tests/` for the
+two ways a test could reach the tree unaided — the `BlazorNative.sln` sentinel and
+`AppContext.BaseDirectory` — and reds naming the offender. Two files are excluded **by name, never
+by pattern**: `BnRepo.cs`, which is the one permitted implementation, and `PinPopulationTests.cs`
+itself, because nothing can scan for a string it is forbidden to contain.
+
+If you have a legitimate need for one of those markers, **give it a home in `BnRepo` rather than
+an exemption**. `BnRepo.TestBinaryDirectory()` exists because `PackagePurityTests` genuinely needed
+its own build output rather than the repo tree; routing it through the helper kept the marker list
+at its original width and added no exemption. That is the shape to copy.
+
+Two consequences worth stating, since both have surprised someone:
+
+- **Borrowing a neighbour's helper is no longer possible**, and that is deliberate.
+  `ComponentReferenceFixture` and `RendererNodeTypeMap` no longer expose a repo-root accessor.
+  `BnRepo.Root()` is the only door.
+- **Reaching the tree does not by itself make a test a pin.** `BnImageDemoTests` and
+  `TextCollapseParityDriftTests` read the checkout in support of golden assertions rather than to
+  compare two copies of one truth. The caller list is a complete *population*, not a finished
+  *classification* — judge per file.
+
+---
+
+## Rule 7 — Its mutations must exercise the PIN's own code paths, not only its subject
+
+A pin is only as trustworthy as the mutations that were run against it, and a mutation set built
+from *plausible subject behaviours* tests the wrong thing. **Reason about the pin's coverage, not
+its assertions.**
+
+The scar, from milestone 14: **six mutations missed a real hole because every single one placed its
+token alone on its own line**, and so never entered the branch where the bug lived. Each mutation
+was a perfectly reasonable thing for the subject to do. Collectively they exercised one path
+through the pin.
+
+**The suppression path matters most**, because that is where a pin is *designed* to go quiet and so
+where it can go quiet by accident. Comment stripping, allow-lists, exemption filters, `#if`
+handling, ignore manifests — every one of those is a branch whose job is to return "nothing to see
+here", and every one of them needs a mutation that lands inside it rather than beside it.
+
+A mutation set that earns trust covers, at minimum:
+
+- **The plain case** — the bug alone, where the pin obviously should red.
+- **Each suppression branch, entered** — the token *inside* a comment, *after* a string literal on
+  the same line, inside an allow-listed entry, adjacent to an ignore marker. Not on its own line.
+- **The negative** — something the pin must *not* flag, so the suppression still works and you have
+  not just made it red at everything.
+- **The vacuity contrast** — break the walk or the pattern, remove the anti-vacuity assertion, and
+  confirm the pin goes green. This is the one that turns "it has a floor" into "the floor is
+  load-bearing", and it has to be observed rather than asserted.
+
+### The protocol
+
+Run mutations **one at a time and revert between them**, so each red names one cause. When fixing a
+pin that was demonstrated broken, **reproduce the green first against the unfixed code**, then show
+the red after — a fix claimed without the before is a fix nobody can check. When a mutation reds,
+check the reported `file:line` is the one a human would open; line-number fidelity through a
+stripper is exactly the kind of thing that breaks silently during a refactor.
+
+---
+
+## Rule 8 — Consolidate, do not port
+
+When you find a second copy of a pin's machinery — a walk, a stripper, a parser, a roster — the fix
+is to **merge the copies**, not to carry the patch across.
+
+Two copies that agree today are the *precondition* for the twin-divergence class, not evidence of
+its absence. This is the entire lesson of milestone 14 applied to the tooling that was supposed to
+prevent it: 14.4 hardened the comment stripper in front of it, which had **one** caller, and never
+knew the shared copy with **three** callers existed. The fix landed on the less-used copy while the
+widely-used one kept the bug, and four more copies were still undiscovered.
+
+One `BnRepo.Root()`, twenty-six callers. One `CommentStrippedSource`, eight callers. That is the
+target shape.
+
+---
+
+## A checklist for a new pin
+
+- [ ] It reaches the tree through `BnRepo.Root()`. *(Rule 6)*
+- [ ] It asserts its subject was found — a measured floor with stated headroom, not a round number,
+      and not one that moves with build state. *(Rules 2, 2-corollary)*
+- [ ] It asserts its **detector** still detects — a positive control, a fixed point, or a
+      structural assertion about the parse. *(Rule 3)*
+- [ ] It reds, with a message naming the subject and the pattern, when its subject moves.
+      *(Rule 4)*
+- [ ] Its doc comment states what it does **not** cover, and whether an uncovered case fails safe
+      or fails green. *(Rule 5)*
+- [ ] Its mutation set enters every suppression branch, includes a negative, and includes the
+      vacuity contrast — run one at a time, reverted between. *(Rule 7)*
+- [ ] It reuses the shared machinery rather than growing a private copy of it. *(Rule 8)*
+
+---
+
+## Where the machinery lives
+
+| Helper | Job |
+|---|---|
+| `tests/Shared/BnRepo.cs` | `Root()` — the one walk to the checkout. `TestBinaryDirectory()` — the test's own build output, which is a different job |
+| `CommentStrippedSource` | `Strip`, `Lines`, `NumberedCodeLines` — string-literal-aware comment removal for C#, Kotlin and Swift, with nesting block comments and one-based line numbers against the original file |
+| `PinPopulationTests` | enforces Rule 6, and is therefore the thing that keeps the population enumerable |
+
+Known limits of the shared stripper, restated here because Rule 5 applies to it too: a raw or
+multiline string literal, and a C# `'"'` char literal, toggle its string state wrongly until the
+next newline resets it. No file currently holding a scanned marker contains either — but that is a
+fact about today, and nothing pins it.
