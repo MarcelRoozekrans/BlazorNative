@@ -41,7 +41,7 @@ milestone**:
 |---|---|---|
 | "sixteen pins" | class-name suffix | four suffixes are in use; the count was short |
 | "23 copies of `RepoRoot()`" | method name | `BnImageDemoTests.ShellSource` did the identical walk under another name — it was **24** |
-| "25 callers" | prediction from the design | the call graph had **26** |
+| "25 callers" | prediction from the design | the call graph had **26** at the time of the migration |
 | "the comment stripper" | the names `Strip` and `CodeLines` | **six** copies, found by three people looking at three different things |
 
 Every one of those counts was wrong in the same direction, for the same reason, and every one was
@@ -79,18 +79,27 @@ standing between that state and a passing suite.
 
 ### Corollary — a floor must be measured, and must not argue with build state
 
-Two ways to get the number wrong, both committed in this repo within a week of each other:
+Two ways to get the number wrong. In this repo they turned out to be **the same incident**, which
+is why the rule has two halves rather than one.
 
-**A floor set against a wrong denominator is theatre.** A plan specified `scanned >= 20` for a
-population of ~131 files: a guard that passes while seeing **13%** of its subject. It would never
-have fired for any realistic breakage. Measure the true denominator first — print it from a
-deliberately-failing run if you have to — then set the floor with stated headroom.
+**A floor set against a wrong denominator is theatre.** A plan specified `scanned >= 20` believing
+the population was ~151 files. That denominator was itself wrong: it counted `bin/` and `obj/`, so
+it was never a count of test files at all — it read 129 on a clean checkout and 151 after a build,
+moving with nothing more meaningful than whether someone had run `dotnet build`. Against the true
+figure of ~131 hand-written files, `>= 20` is a guard that passes while seeing about **15%** of its
+subject, and it would never have fired for any realistic breakage.
 
-**A floor that moves for irrelevant reasons gets argued down rather than fixed.** The same scan
-initially counted `bin/` and `obj/`, so its number was 129 on a clean checkout and 151 after a
-build. A guard whose value depends on whether someone ran `dotnet build` is a guard that the next
-person to hit it will weaken. Exclude build output, generated trees, and anything else that moves
-without a source change.
+So the floor was **both** far too low **and** judged against a number that could not hold still.
+Measure the true denominator first — print it from a deliberately-failing run if you have to —
+then set the floor against *that*, and state the headroom you left.
+
+**And a floor that moves for irrelevant reasons gets argued down rather than fixed.** Had the
+`bin/`-polluted count survived into the pin, the guard's value would have depended on build state,
+and a number that changes for a reason nobody can connect to a source change is one the next person
+to hit it will weaken rather than investigate. Exclude build output, generated trees, and anything
+else that moves without a source change. `PinPopulationTests` skips `/bin/` and `/obj/` for exactly
+this reason, and was measured at **129** both before and after a full solution build — verified,
+not assumed.
 
 ---
 
@@ -300,8 +309,10 @@ prevent it: 14.4 hardened the comment stripper in front of it, which had **one**
 knew the shared copy with **three** callers existed. The fix landed on the less-used copy while the
 widely-used one kept the bug, and four more copies were still undiscovered.
 
-One `BnRepo.Root()`, twenty-six callers. One `CommentStrippedSource`, eight callers. That is the
-target shape.
+One `BnRepo.Root()`, called by every test that reaches the checkout — 27 files at the time of
+writing. One `CommentStrippedSource`, 8 callers. **That is the target shape, and note which number
+is allowed to move:** the caller count grows with the suite and should. The count of
+*implementations* is the one that must stay at one.
 
 ---
 
