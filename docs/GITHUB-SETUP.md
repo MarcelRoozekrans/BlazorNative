@@ -295,8 +295,15 @@ archive (the runtime-pack bypass + `NativeLib=Static`; 4 IL2072 + ten-export
 (`bootstrapperdll.o` direct-link + the merged support archive). The
 **`iossimulator-arm64`** leg then runs the hosted XCTest suite via
 `xcodebuild test` on a runner-selected simulator, asserting the count pinned in
-`ios.yml`'s own provenance block. The **`ios-arm64`** leg stops at
-`xcodebuild build -sdk iphoneos`: it compiles and links the slice that actually
+`ios.yml`'s own provenance block. That suite covers the render pin and the
+wire-drift guard; the interactive demo (bind/echo, Clear, Theme, Settings⇄Back,
+clipboard); the Yoga layer (style parsing, node lifecycle, dirty-on-change,
+resize); and — the point of M6 — the **computed-frame assertions** for
+`BnLayoutDemo`, `BnScrollDemo` and `BnImageDemo`, which pin *the same numbers* the
+Android instrumented lane asserts. (That "same numbers" is itself pinned, in the
+required lane, by `ShellFrameTableDriftTests` — see below.)
+
+The **`ios-arm64`** leg stops at `xcodebuild build -sdk iphoneos`: it compiles and links the slice that actually
 ships, and runs **nothing** — a device is needed to run, and CI has none.
 
 > **Promotion criteria — and they are now PER LEG, because the two legs have
@@ -324,13 +331,7 @@ ships, and runs **nothing** — a device is needed to run, and CI has none.
 > "both slices compiled" now instead of "the simulator slice compiled". Adding
 > `ios-build-slice`'s two leg contexts to the required set is **optional** and can
 > happen later or never — `ios-build` already fails if either leg does, including
-> if the matrix is skipped entirely. The suite covers the render pin and the wire-drift guard; the
-interactive demo (bind/echo, Clear, Theme, Settings⇄Back, clipboard); the Yoga
-layer (style parsing, node lifecycle, dirty-on-change, resize); and — the point of
-M6 — the **computed-frame assertions** for `BnLayoutDemo`, `BnScrollDemo` and
-`BnImageDemo`, which pin *the same numbers* the Android instrumented lane asserts.
-(That "same numbers" is itself pinned, in the required lane, by
-`ShellFrameTableDriftTests` — see below.)
+> if the matrix is skipped entirely.
 
 > **`ios.yml` had no `push` trigger and a `paths:` filter until the M6-audit fix.**
 > It therefore never ran on `main` at all, and a PR that broke the Swift shell from

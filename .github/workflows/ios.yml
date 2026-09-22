@@ -4,17 +4,45 @@
 #
 # INFORMATIONAL — this workflow is NOT a required check, mirroring the
 # android-instrumented lane's posture: simulator-on-CI has flake modes (sim boot,
-# test-host launch) and the lane is young, so it stays advisory. PROMOTION
-# CRITERIA: after a stability baseline (e.g. ~10 consecutive green runs on main
-# with no sim-flake reds) it is promotable to a required check (documented in
-# docs/GITHUB-SETUP.md → "Branch protection", alongside the emulator lane).
+# test-host launch) and the lane is young, so it stays advisory.
 #
-# **But the iOS shell's COMPILE is no longer advisory.** `ci.yml`'s `ios-build` job
-# (macos-latest, REQUIRED) publishes the same archive, builds the same libyoga.a at
-# the same pinned version, and runs `xcodebuild build-for-testing` — Swift and
-# Objective-C++ compiled, app and XCTest bundle LINKED — without booting a simulator
-# or running a test. A device is needed to RUN, not to COMPILE. This lane is what
-# adds EXECUTION on top of that, and execution is where the flake is.
+# PROMOTION CRITERIA — PER LEG since Phase 14.4, because the two legs do not share
+# a flake profile. The stated reason this lane is advisory is SIMULATOR flake, and
+# the device leg has none of it: it boots nothing, attaches nothing, runs no test.
+#   · SIMULATOR leg — the ~10-consecutive-green-runs baseline was always about this
+#     one. Count runs OF THE LEG on main with no sim-flake reds, not runs of the
+#     workflow: a workflow-level count would be satisfied by a device leg that
+#     cannot flake, which is the bar this criterion is trying not to be.
+#   · DEVICE leg — DO NOT promote it. It duplicates what `ci.yml`'s already-required
+#     `ios-build-slice device ios-arm64` leg proves on every PR, so promoting it
+#     would add a required check that says nothing new. It stays the merge-time
+#     re-run.
+# Promoting a leg means adding its LEG check name, `${{ matrix.leg }} ${{ matrix.rid }}`
+# as declared below, to the required set — never the workflow name. Documented in
+# docs/GITHUB-SETUP.md → "Branch protection", alongside the emulator lane.
+#
+# **But the iOS shell's COMPILE is no longer advisory, and since Phase 14.4 that is
+# true of BOTH slices.** In `ci.yml`, `ios-build-slice` (macos-latest) is a two-leg
+# matrix over the same RIDs this lane uses. Each leg publishes the same archive,
+# builds the same libyoga.a at the same pinned version against that leg's SDK, runs
+# `xcodebuild build-for-testing` — Swift and Objective-C++ compiled, app and XCTest
+# bundle LINKED — and asserts the linked binary's LC_BUILD_VERSION really names the
+# platform it was meant for. No simulator is booted and no test is run there.
+#
+# `ios-build` is the REQUIRED check, and it is no longer the job that compiles: it
+# is a one-step aggregator on ubuntu-latest with no checkout and no toolchain, which
+# reads `needs.ios-build-slice.result` and fails on anything that is not `success`,
+# including a skip. A matrix reports one check PER LEG, so it cannot itself carry a
+# required context name; the aggregator keeps that name alive with its meaning
+# STRENGTHENED, from "the simulator slice compiled" to "BOTH slices compiled".
+# Which slices those are is pinned by IosSliceMatrixDriftTests in the required .NET
+# suite, not claimed by the aggregator.
+#
+# So the division of labour between the two workflows is: a device is needed to RUN,
+# not to COMPILE. `ci.yml` COMPILES BOTH SLICES ON EVERY PR. This lane adds
+# EXECUTION — the XCTest suite on a booted simulator, at merge and on dispatch — and
+# execution is where the flake is. The device leg here re-runs the compile at merge;
+# it is not this lane's reason to exist.
 #
 # Unlike Android (which splits publish-on-Windows from test-on-Linux), iOS both
 # PUBLISHES and TESTS on macOS, so each leg is one job:
@@ -27,8 +55,11 @@
 #      STATIC-EMBED link inputs: libbootstrapperdll.o (direct-linked so its
 #      constructor initialises the runtime) + a merged libBnRuntimeSupport.a (the
 #      runtime pack's native/*.a minus the non-default GC/eventpipe variants)
-#   3. XcodeGen materialises BnHost.xcodeproj; xcodebuild test runs the hosted
-#      XCTest on the simulator; the DoD #2 render pins + the wire-drift guard pass
+#   3. XcodeGen materialises BnHost.xcodeproj. On the SIMULATOR leg `xcodebuild
+#      test` runs the hosted XCTest — the DoD #2 render pins + the wire-drift guard
+#      pass. On the DEVICE leg there is nothing to run, so it ends at `xcodebuild
+#      build -sdk iphoneos` plus the LC_BUILD_VERSION slice gate; `matrix.runs_tests`
+#      is the field that tells the two apart.
 # Artifact-upload heavy: every publish log, nm dump, xcodebuild log, crash report,
 # and the .xcresult bundle is uploaded each run (CI-only iteration — upload all).
 #
@@ -46,7 +77,8 @@
 # **Phase 7.6 removed `pull_request:`** (owner cost request). What that trigger bought
 # was a full simulator run on EVERY push to EVERY open PR — the single largest macOS
 # consumer — duplicating coverage this project already has three ways: the REQUIRED
-# `ios-build` compile gate runs unfiltered on every PR event; the phase-gate process
+# `ios-build` compile gate — since Phase 14.4 the two-leg `ios-build-slice` matrix
+# behind it, so BOTH slices — runs unfiltered on every PR event; the phase-gate process
 # dispatches THIS lane (workflow_dispatch) at every iOS gate, fix pass, and mutation
 # run; and every merge runs it on main via the push trigger. A PR that skips the
 # process (e.g. Renovate) is compile-gated on the PR and execution-covered at merge.
@@ -75,9 +107,10 @@
 # BOTH legs against DIFFERENT expected platforms, so it is visibly discriminating
 # rather than a constant that happens to hold, and it has been observed RED.
 #
-# The lane's POSTURE is unchanged: INFORMATIONAL. What it adds over `ios-build` is
+# The lane's POSTURE is unchanged: INFORMATIONAL. What it adds over `ci.yml` is
 # EXECUTION on a simulator, and that is where the flake lives. Compilation — which
-# cannot flake that way — is behind the required `ios-build` check in `ci.yml`.
+# cannot flake that way — is done by `ios-build-slice` in `ci.yml`, behind the
+# required `ios-build` check, for BOTH slices, on every PR.
 # ─────────────────────────────────────────────────────────────────────────────
 name: ios
 
