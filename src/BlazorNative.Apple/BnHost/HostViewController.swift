@@ -30,6 +30,64 @@ final class HostViewController: UIViewController {
     /// [viewDidLayoutSubviews]. `nil` until the first pass.
     private var lastSolvedSize: CGSize?
 
+    /// Phase 14.2 (#338): the safe-area report. Insets can change independently of
+    /// `bounds.size`, which is why this report sits outside the size guard in
+    /// `viewDidLayoutSubviews` rather than behind it.
+    ///
+    /// Sent ONLY when the value changes: an unchanged report would re-render the tree
+    /// on every layout pass, and the dispatch is fire-and-forget so nothing downstream
+    /// would notice the waste.
+    private var lastReportedInsets: UIEdgeInsets?
+
+    /// ── THE BOOT-RACE FIX (fix round 2, CRITICAL 2 of the whole-branch review) ──
+    ///
+    /// iOS has the SAME boot race Android's `reportSafeAreaIfChanged` KDoc names and
+    /// fixes — a claim that it did not (recorded on this method, and on
+    /// `MainActivity.kt`'s KDoc, until this fix round) was FALSE. `viewDidLoad`
+    /// boots on `DispatchQueue.global(qos: .userInitiated).async` below, and
+    /// `BnRuntime.current` is published LAST, after mount (`BnRuntime.swift`'s
+    /// `start(component:os:)`: "Published LAST, after mount"). On an ordinary,
+    /// static-orientation launch, `viewDidLayoutSubviews` fires — and this method
+    /// runs — WHILE that background boot is still in flight, so `BnRuntime.current`
+    /// is `nil`. The two changes, and EITHER ALONE is still broken, exactly
+    /// mirroring Android's two halves:
+    ///
+    ///   1. `lastReportedInsets` is recorded ONLY when a dispatch actually fires
+    ///      (the `guard` below) — recording it unconditionally (the original
+    ///      shape) let a pre-boot pass "consume" the real value, and because
+    ///      `viewDidLayoutSubviews` only re-fires on an actual layout pass, a
+    ///      static-orientation launch then has nothing left to trigger a second
+    ///      report: .NET never learns the real insets, silently — reproducing
+    ///      #338 on the iPhone it was filed for, behind a green build.
+    ///   2. `viewDidLoad`'s boot block forces one re-report on the main queue once
+    ///      boot completes (`DispatchQueue.main.async { self?.reportSafeAreaIfChanged() }`),
+    ///      the analogue of Android's `requestApplyInsets`. Without this, fix #1
+    ///      alone leaves the pre-boot pass correctly un-recorded but nothing ever
+    ///      asks for a second delivery — the same silent no-report outcome.
+    ///
+    /// Ordering, all three cases (Android's KDoc proof, unchanged here): (a) only a
+    /// pre-boot pass fires → `BnRuntime.current` is nil, so it returns WITHOUT
+    /// recording; the forced post-boot report then records and dispatches —
+    /// correct. (b) only a post-boot pass fires (e.g. a genuine rotation, no forced
+    /// re-report needed) → records and dispatches immediately, unchanged from
+    /// before this fix. (c) both fire (the ordinary case) → the pre-boot pass
+    /// returns unrecorded, the forced post-boot report records and dispatches
+    /// exactly once — correct, and the dedup contract stays intact because only
+    /// ONE recorded value exists at any time.
+    private func reportSafeAreaIfChanged() {
+        guard BnRuntime.current != nil else { return } // NOT recorded — see above; a
+                                                         // later identical value (forced
+                                                         // post-boot) must still fire
+        let insets = view.safeAreaInsets
+        if let last = lastReportedInsets, last == insets { return }
+        lastReportedInsets = insets
+
+        let payload = """
+            {"top":"\(insets.top)","right":"\(insets.right)","bottom":"\(insets.bottom)","left":"\(insets.left)"}
+            """
+        BnRuntime.current?.dispatchHostEvent(.safeAreaChanged, payload: payload)
+    }
+
     deinit {
         // DETERMINISTIC teardown, on the main thread — the twin of Android's
         // `MainActivity.onDestroy → mapper.destroy()`. Leaving it to the mapper's own
@@ -127,6 +185,18 @@ final class HostViewController: UIViewController {
                 ?? "BnDemo"
             do {
                 try runtime.start(component: component, os: "ios")
+
+                // THE BOOT-RACE FIX, half 2 (see `reportSafeAreaIfChanged`'s KDoc):
+                // `BnRuntime.current` only just became non-nil, inside `start` above,
+                // on THIS background thread. Any `viewDidLayoutSubviews` pass that ran
+                // while boot was still in flight returned without recording — force
+                // one more report now that a session exists, the analogue of
+                // Android's `ViewCompat.requestApplyInsets(widgetRoot)`. Hopped to
+                // main because `view.safeAreaInsets` and `UIViewController` state are
+                // main-thread-only, like every other UIKit read in this class.
+                DispatchQueue.main.async { [weak self] in
+                    self?.reportSafeAreaIfChanged()
+                }
             } catch {
                 // A boot fault. Redacted by default: the error's description carries
                 // the runtime's own detail (design §7's information-disclosure rule).
@@ -151,6 +221,12 @@ final class HostViewController: UIViewController {
     /// re-solve (the tree changed, the bounds did not).
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
+
+        // Insets first, and OUTSIDE the size guard: they change independently of
+        // bounds.size, so a pass that moves the safe area without resizing the view
+        // must still report. Its own dedup makes the unchanged case free.
+        reportSafeAreaIfChanged()
+
         let size = view.bounds.size
         guard size != lastSolvedSize else { return }
         lastSolvedSize = size

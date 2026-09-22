@@ -299,3 +299,29 @@ func bnImageDemoAfterFrames(wi: CGFloat, hi: CGFloat) -> [String: BnRect] {
     ])
 }
 // BN-FRAME-TABLE-END
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BnSafeAreaDemo — `/safearea` (Phase 14.2, #338). The table in
+// BnSafeAreaDemo.razor's file header.
+//
+// Real device insets differ between the AVD and the iOS simulator, so this table
+// cannot be built from whatever the device actually reports — the two device
+// suites DISPATCH "safeAreaChanged" themselves, with these SAME four numbers,
+// before reading the laid-out frame. That exercises the real wire path
+// (WindowInsets listener / viewDidLayoutSubviews → DispatchHostSafeArea →
+// BnSafeAreaInsets.Current → BnSafeArea) end to end, rather than a test-only
+// override seam.
+//
+// The insets are four DISTINCT nonzero numbers on purpose — (47, 0, 34, 0), the
+// pair BnSafeAreaTests.cs already uses, would leave RightEdge and LeftEdge
+// unexercised at the frame level. BnSafeAreaDemo gives its BnSafeArea an
+// EXPLICIT 300×200 box and a single Grow="1" child, so Yoga's default column
+// stretch sizes that child to the FULL padding box — width = 300 − left − right,
+// height = 200 − top − bottom — making one child's frame a function of all four
+// edges at once: (13, 47, 266, 119).
+// ─────────────────────────────────────────────────────────────────────────────
+// BN-FRAME-TABLE BnSafeAreaDemo
+let bnSafeAreaDemoFrames: [String: BnRect] = bnFrameTable([
+    "content": bnRect(13, 47, 266, 119),
+])
+// BN-FRAME-TABLE-END

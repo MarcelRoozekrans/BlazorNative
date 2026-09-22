@@ -32,6 +32,7 @@ looks native nowhere.
 | **Input** | `BnButton`, `BnInput`, `BnCheckbox`, `BnSwitch`, `BnSlider`, `BnPicker` | Real platform controls, `@bind`-able. |
 | **Collections** | `BnList` | A virtualized, generic list. |
 | **Overlay** | `BnModal` | An overlay inside the existing root — not a native dialog window. |
+| **Safe area** | `BnSafeArea` | Opt-in padding for notches, status bars, cutouts and home indicators. Wrap the content that needs to stay clear of system UI — see [Safe area insets](../guides/safe-area.md). |
 | **Theming** | `BnTheme` | A cascaded record. Toggling produces a new instance, so consumers re-render. |
 
 The flex enums — `FlexDirection`, `FlexJustify`, `FlexAlign`, `FlexWrap`, `FlexPosition` —

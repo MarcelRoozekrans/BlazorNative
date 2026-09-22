@@ -18,21 +18,31 @@
         a green build, silently dead on a native shell.
 
     Shape:
-      BnView          the root — padding + a background colour
-       ├─ BnText      the title
-       ├─ BnText      the live echo of `name`
-       ├─ BnInput     two-way bound to `name`
-       └─ BnButton    a counter, proving the event wire round-trips
+      BnSafeArea      keeps content clear of notches, status bars, camera
+       └─ BnView      cutouts and home indicators (#338) — padding + a
+           ├─ BnText  background colour
+           │            the title
+           ├─ BnText  the live echo of `name`
+           ├─ BnInput two-way bound to `name`
+           └─ BnButton
+                      a counter, proving the event wire round-trips
+
+    BnSafeArea is opt-in, like every other component — wrap what should stay
+    clear of system UI. It appears here, on the very first screen an app
+    author sees, because that visibility is what makes opt-in safe: the
+    correct thing is the thing you copy.
     ─────────────────────────────────────────────────────────────────────────
 *@
-<BnView BackgroundColor="#FFFFFF" Padding="16">
-    <BnText Text="Hello from BlazorNative" FontSize="24" />
+<BnSafeArea>
+    <BnView BackgroundColor="#FFFFFF" Padding="16">
+        <BnText Text="Hello from BlazorNative" FontSize="24" />
 
-    <BnText Text="@Greeting" FontSize="16" />
-    <BnInput @bind-Value="name" />
+        <BnText Text="@Greeting" FontSize="16" />
+        <BnInput @bind-Value="name" />
 
-    <BnButton Label="@($"Tapped {taps} time(s)")" OnClick="OnTap" />
-</BnView>
+        <BnButton Label="@($"Tapped {taps} time(s)")" OnClick="OnTap" />
+    </BnView>
+</BnSafeArea>
 
 @code {
     private string name = "world";

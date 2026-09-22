@@ -803,12 +803,14 @@ public sealed class BnFormControlTests : IDisposable
 
     /// <summary>The container-layout family + ChildContent — everything BnView
     /// declares that a LEAF control must NOT. (BnComponentTests holds BnScroll
-    /// to the same six container names; ChildContent joins the exclusion here
+    /// to the same container names; ChildContent joins the exclusion here
     /// because these are leaves, where BnScroll is a viewport.)</summary>
     private static readonly string[] NotOnALeafControl =
     [
         nameof(BnView.Direction), nameof(BnView.Justify), nameof(BnView.Align),
         nameof(BnView.Wrap), nameof(BnView.Gap), nameof(BnView.Padding),
+        nameof(BnView.PaddingTop), nameof(BnView.PaddingRight),
+        nameof(BnView.PaddingBottom), nameof(BnView.PaddingLeft),
         nameof(BnView.ChildContent),
     ];
 

@@ -871,14 +871,17 @@ public sealed class BnComponentTests : IDisposable
         ["left"] = "4",
     };
 
-    /// <summary>The container-layout family: the six style names that are NOT
+    /// <summary>The container-layout family: the style names that are NOT
     /// BnScroll parameters, and that the shells must IGNORE-AND-LOG on a node of
     /// type `scroll` (6.2 design, "Container styles on a scroll node"). Stated
-    /// once here, in the same order the design states it.</summary>
+    /// once here, in the same order the design states it (the per-edge padding
+    /// names appended at the end, added in Phase 14.2).</summary>
     private static readonly string[] ContainerLayoutParams =
     [
         nameof(BnView.Direction), nameof(BnView.Justify), nameof(BnView.Align),
         nameof(BnView.Wrap), nameof(BnView.Gap), nameof(BnView.Padding),
+        nameof(BnView.PaddingTop), nameof(BnView.PaddingRight),
+        nameof(BnView.PaddingBottom), nameof(BnView.PaddingLeft),
     ];
 
     [Fact]

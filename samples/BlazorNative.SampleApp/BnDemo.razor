@@ -39,8 +39,8 @@
             ├─ BnButton "Theme"                      button + click
             ├─ BnButton "Settings →"                 button + click → NavigateToAsync("/settings")
             ├─ BnText  "Explore"                     span, fontSize 20   ← the menu heading
-            └─ BnButton × 11 (Destinations)          button + click → NavigateToAsync(route)
-      (15 event attaches: change + Clear + Theme + Settings → + 11 menu)
+            └─ BnButton × 12 (Destinations)          button + click → NavigateToAsync(route)
+      (16 event attaches: change + Clear + Theme + Settings → + 12 menu)
 
     The bind loop (DoD #5): change dispatch → BnInput.ValueChanged → _text
     mutates → re-render → echo ReplaceText + input value UpdateProp.
@@ -145,6 +145,11 @@
         ("Geolocation", "/geolocation"),
         ("Notifications", "/notifications"),
         ("Secure storage", "/secure"),
+        // Phase 14.2 (#338): the safe-area proof page. Inserted BEFORE "Camera"
+        // deliberately — BnRenderTests.swift pins "Camera" as the capability
+        // menu's LAST row (the tail-truncation check), so a new row appends
+        // here rather than after it, and that Swift pin needs no edit.
+        ("Safe area", "/safearea"),
         ("Camera", "/camera"),
     ];
 

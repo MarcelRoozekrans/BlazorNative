@@ -107,12 +107,17 @@ public sealed class ForwardedParameterNameTests
         ("Right",           (BnLength)12f),
         ("Bottom",          (BnLength)13f),
         ("Left",            (BnLength)14f),
-        // BnLayoutContainer — 5
+        // BnLayoutContainer — 9
         ("Padding",         (BnLength)15f),
         ("Justify",         FlexJustify.SpaceEvenly),
         ("Align",           FlexAlign.Baseline),
         ("Wrap",            FlexWrap.WrapReverse),
         ("Gap",             (BnLength)16f),
+        // Phase 14.2: the four per-edge padding parameters.
+        ("PaddingTop",      (BnLength)17f),
+        ("PaddingRight",    (BnLength)18f),
+        ("PaddingBottom",   (BnLength)19f),
+        ("PaddingLeft",     (BnLength)20f),
     };
 
     [Fact]

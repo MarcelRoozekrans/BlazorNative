@@ -665,33 +665,53 @@ public static class Exports
     // (Gates 2/3) must use this exact literal. As of Phase 14.0 this is
     // BnHostEvents.Navigate (BlazorNative.Core), for the same reason as above.
 
+    // The reserved host-event name (Phase 14.2) that routes to
+    // BnSafeAreaInsets.Report instead of the NativeShellBridge.NativeEvents
+    // multicast. Both shells send this whenever the obscured-area geometry
+    // changes (rotation, a keyboard, a call banner) — content sitting under a
+    // notch or a home indicator is the motivating bug (design §14.2). Like
+    // "back"/"navigate", the name→verb mapping lives HERE so every shell gets
+    // identical semantics. Wire vocabulary + a .NET branch over the EXISTING
+    // blazornative_host_event export — NOT an ABI change. This is
+    // BnHostEvents.SafeAreaChanged (BlazorNative.Core).
+
     /// <summary>
     /// Managed core of blazornative_host_event (testable without the ABI
-    /// crossing). Two routes on ONE ingress:
+    /// crossing). Three routes on ONE ingress:
     ///   • the reserved name "back" (<see cref="BlazorNative.Core.BnHostEvents.Back"/>) → the nav
     ///     manager's NavigateBackAsync (the predictive-back production path);
+    ///   • the reserved name "safeAreaChanged" (<see cref="BlazorNative.Core.BnHostEvents.SafeAreaChanged"/>)
+    ///     → <see cref="DispatchHostSafeArea"/>, which stores the reported insets
+    ///     and re-renders a live session;
     ///   • anything else → the real <see cref="NativeShellBridge.RaiseNativeEvent"/>
-    ///     lifecycle multicast (the 3.2 no-op is gone). "back" is INTERCEPTED
-    ///     before the multicast, so it never reaches NativeEvents subscribers —
-    ///     back is a navigation command, not a lifecycle notification.
+    ///     lifecycle multicast (the 3.2 no-op is gone). Reserved names are
+    ///     INTERCEPTED before the multicast, so they never reach NativeEvents
+    ///     subscribers — each is a command/state report, not a lifecycle
+    ///     notification.
     ///
     /// Return codes:
     ///   0 = delivered / handled — a lifecycle event reached every subscriber
     ///       (or none: an unheard signal is not an error, so there is no
     ///       "no session" rc for the multicast path, unlike dispatch_event); OR
-    ///       "back" navigated to the previous route;
-    ///   1 = "back" NOT handled — at the origin (no previous route, or no
+    ///       "back" navigated to the previous route; OR "safeAreaChanged"
+    ///       stored a valid payload AND a live session was told to re-render;
+    ///   1 = NOT handled — for "back", at the origin (no previous route, or no
     ///       session): the shell falls through to its default back (Android
-    ///       finishes the Activity). rc 1 occurs ONLY for the "back" route
-    ///       (the multicast path never returns it — a "nothing to act on"
-    ///       semantic parallel to dispatch_event's rc 1);
+    ///       finishes the Activity). For "safeAreaChanged", a valid payload
+    ///       with no session mounted (stored anyway — see
+    ///       <see cref="DispatchHostSafeArea"/>), or no payload at all. rc 1
+    ///       never occurs on the multicast path — a "nothing to act on"
+    ///       semantic parallel to dispatch_event's rc 1;
     ///   2 = a subscriber (or the re-render its StateHasChanged drove, when
     ///       strict rethrows it) faulted — CONTAINED (isolation: every other
     ///       subscriber still ran) but surfaced so the host logs loudly; OR
     ///       the back swap faulted; detail ex.ToString() on stderr;
     ///   3 = malformed input: a NULL or empty event name (an unnamed event is
-    ///       undispatchable — mirrors dispatch_event's rc 3). A NULL payload is
-    ///       LEGAL (most lifecycle events, and "back", carry none).
+    ///       undispatchable — mirrors dispatch_event's rc 3); OR, for
+    ///       "safeAreaChanged" only, a non-empty payload that fails to parse —
+    ///       bad JSON, a missing edge key, or a non-numeric edge value. A NULL
+    ///       payload is otherwise LEGAL (most lifecycle events, and "back",
+    ///       carry none).
     ///
     /// SYNCHRONOUS by contract, like dispatch_event: raised on the calling
     /// (dispatch-lane) thread, so a subscriber's StateHasChanged re-render — or
@@ -710,6 +730,9 @@ public static class Exports
 
         if (name == BnHostEvents.Navigate)
             return DispatchHostNavigate(payload);
+
+        if (name == BnHostEvents.SafeAreaChanged)
+            return DispatchHostSafeArea(payload);
 
         try
         {
@@ -783,5 +806,98 @@ public static class Exports
             BnLog.Error("Exports", "host_event 'navigate' faulted", ex);
             return 2;
         }
+    }
+
+    /// <summary>Routes the reserved "safeAreaChanged" host event (Phase 14.2) to
+    /// <see cref="BnSafeAreaInsets.Report"/>. The rc contract, spelled out because
+    /// 14.0's <c>EveryReservedHostEvent_IsRoutedRatherThanFallingThrough</c> pin
+    /// depends on it (rc 1 with no session is the pin's signature for "routed,
+    /// idle"):
+    ///   0 = the payload parsed AND a live session was told to re-render
+    ///       (<see cref="HostSession.CurrentRenderer"/> is non-null);
+    ///   1 = no payload at all (NULL/empty — "nothing sent", the same convention
+    ///       <see cref="DispatchHostNavigate"/> uses for a missing route; this is
+    ///       also exactly what the 14.0 pin drives every reserved arm with), OR
+    ///       the payload parsed but no session is mounted — stored anyway, so
+    ///       the NEXT mount starts with the right values instead of rendering at
+    ///       zero a second time;
+    ///   3 = a non-empty payload that fails to parse: bad JSON, a missing edge
+    ///       key, or a non-numeric edge value. NEVER defaulted to zero — a
+    ///       missing/bad edge is the shell disagreeing with the wire contract,
+    ///       and defaulting it would hide that disagreement, exactly the
+    ///       silent-divergence class this milestone exists to close. The insets
+    ///       are left untouched on rc 3 (nothing is stored).
+    ///
+    /// The payload is flat JSON with STRING-valued numbers — the same shape
+    /// NativeShellBridge already hand-parses for HTTP headers, reused here rather
+    /// than duplicated:
+    /// <c>{"top":"47","right":"0","bottom":"34","left":"0"}</c>. All four edge
+    /// keys are required; extra keys are ignored.</summary>
+    private static int DispatchHostSafeArea(string? payload)
+    {
+        if (string.IsNullOrEmpty(payload))
+            return 1; // nothing sent — nothing to act on (not malformed)
+
+        Dictionary<string, string> fields;
+        try
+        {
+            fields = NativeShellBridge.ParseFlatJsonObject(payload);
+        }
+        catch (FormatException)
+        {
+            return 3; // bad JSON — a shell bug, must never fault the dispatch lane
+        }
+
+        if (!TryParseEdge(fields, "top", out double top)
+            || !TryParseEdge(fields, "right", out double right)
+            || !TryParseEdge(fields, "bottom", out double bottom)
+            || !TryParseEdge(fields, "left", out double left))
+        {
+            return 3; // a missing/non-numeric edge — the shell disagreeing with the contract
+        }
+
+        // Store unconditionally, even when nothing is mounted to re-render, so a
+        // later mount starts with the right values instead of rendering at zero
+        // a second time.
+        BnSafeAreaInsets.Report(new BnSafeAreaInsets(top, right, bottom, left));
+
+        return HostSession.CurrentRenderer is null ? 1 : 0;
+    }
+
+    /// <summary>Parses one edge's value out of the flat-JSON payload. Rejects — as a
+    /// PARSE failure (rc 3 in <see cref="DispatchHostSafeArea"/>), same as a missing
+    /// key — three shapes <see cref="double.TryParse(string?, System.Globalization.NumberStyles, IFormatProvider?, out double)"/>
+    /// with <see cref="System.Globalization.NumberStyles.Float"/> would otherwise
+    /// accept without complaint:
+    ///   • <c>NaN</c> — a legal .NET float LITERAL, but not a legal inset;
+    ///   • <c>Infinity</c>/<c>-Infinity</c> — likewise legal float text, nonsensical
+    ///     as an obscured-area measurement;
+    ///   • a NEGATIVE value — an inset is, physically, an area obscured from an
+    ///     edge; there is no such thing as a negative one, and Yoga's own padding
+    ///     setter already rejects negative padding (<c>BnYogaStyleParserTests</c>'
+    ///     "negatives accepted ONLY for margin and the offsets" rule) — a negative
+    ///     inset stored here would either surface as a silently-dropped Yoga style
+    ///     downstream or, combined additively with author padding, produce a
+    ///     smaller-than-intended pad that LOOKS like a rounding error rather than a
+    ///     malformed wire payload.
+    /// All three are numeric-but-nonsensical, on a wire contract the rc-3 doc
+    /// comment already calls a shell disagreeing with the contract — this closes
+    /// that door for the safe-area edges specifically (whole-branch review MINOR 2).
+    /// </summary>
+    private static bool TryParseEdge(Dictionary<string, string> fields, string key, out double value)
+    {
+        value = 0;
+        if (!fields.TryGetValue(key, out string? raw)
+            || !double.TryParse(raw, System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture, out double parsed))
+        {
+            return false;
+        }
+
+        if (double.IsNaN(parsed) || double.IsInfinity(parsed) || parsed < 0)
+            return false;
+
+        value = parsed;
+        return true;
     }
 }
