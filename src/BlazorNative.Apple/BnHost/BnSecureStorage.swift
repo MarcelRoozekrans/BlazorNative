@@ -210,8 +210,14 @@ final class BnSecureStorage {
     /// set: idempotent (drop any existing item, then add). auth=1 attaches a
     /// SecAccessControl `.biometryCurrentSet` (retrieval is biometric-gated; the add does
     /// NOT prompt — the iOS asymmetry). auth=0 uses kSecAttrAccessibleWhenUnlockedThis-
-    /// DeviceOnly. Ok on success; Unavailable when the ACL cannot be created (no secure
-    /// hardware / none enrolled); Error on any other add failure — all DATA.
+    /// DeviceOnly. Ok on success; Unavailable when SecAccessControlCreateWithFlags
+    /// returns nil; Error on any other add failure — all DATA.
+    ///
+    /// NOT ESTABLISHED: whether a device with NO enrolled biometric fails here at ACL
+    /// creation, the way Android refuses at provisionKey, or succeeds and fails later
+    /// at SecItemAdd. The simulator cannot answer it — it has no Secure Enclave and
+    /// does not enforce a SecAccessControl at all. Do not restate this as a guarantee
+    /// until a device has shown it (#213 item 1, phase 14.3).
     @discardableResult
     func secureSet(key: String, value: String, requireAuth: Bool) -> Int32 {
         _ = secureDelete(key: key) // idempotent overwrite

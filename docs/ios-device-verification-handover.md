@@ -193,6 +193,17 @@ the extra checks below them are the specific traps this project already knows ab
   the intended fallback), or prove it doesn't and record why. File findings on
   [#213](https://github.com/MarcelRoozekrans/BlazorNative/issues/213).
 
+- [ ] **Secure storage on a device with NO enrolled biometric.** Disable Face ID
+      enrolment, then `Set` with `requireAuth: true` on the `/secure` page. Record
+      whether the status is `Unavailable` — meaning the ACL creation refused, matching
+      Android — or `Ok`, meaning the item was stored and only a later read will fail.
+      `BnSecureStorage.swift` documents this as unestablished; this answers it.
+      Apple's own reference does not state which call enforces the enrolment
+      requirement, so **either result is a valid finding — record what you see, do not
+      assume.** For what it is worth, the published Security sources build the access
+      control as a pure policy dictionary with no enrolment query, which points at `Ok`;
+      that is a prediction to test, not a fact to confirm.
+
 ### Q1 — is a Release build actually quiet on the device?
 
 Build/run **Release**. The default log level is `Warn` (a runtime default, not `#if DEBUG`).
