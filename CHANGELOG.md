@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.0](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.13.1...v0.14.0) (2026-09-22)
+
+
+### Features
+
+* **layout:** safe-area insets on both shells — BnSafeArea ([#338](https://github.com/MarcelRoozekrans/BlazorNative/issues/338)) ([#351](https://github.com/MarcelRoozekrans/BlazorNative/issues/351)) ([8e98e85](https://github.com/MarcelRoozekrans/BlazorNative/commit/8e98e850784934ee8bb9424cf3ef20a1231582fa))
+
 ## [0.13.1](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.13.0...v0.13.1) (2026-09-21)
 
 
