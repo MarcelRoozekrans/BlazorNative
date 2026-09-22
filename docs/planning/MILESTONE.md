@@ -23,7 +23,7 @@ the thing to reason about is a pin's **coverage**, not its assertions.
 ## Goal
 
 This repo defends its invariants with **drift pins** — tests that read source or config and assert
-that two copies of one truth agree. There are **sixteen** of them and **four** manifests,
+that two copies of one truth agree. There are **at least nineteen** of them and **four** manifests,
 accumulated across many milestones, each written to catch the bug in front of it. They have no
 shared standard, and it shows: M14's newest pin was defeated by **five successive reviews**, each
 with a shape the previous round had not tried, and every fix was local to the instance.
@@ -43,9 +43,24 @@ directory walk, or a collection comparison. `RouteMenuDriftTests` performs **no 
 all**, and `EveryRoutedPage_ExceptTheTwoExemptions_HasAMenuRow` still passes over an empty page
 list.
 
-A first heuristic measurement suggests **6 of 16 pins carry no anti-vacuity assertion**. Some may
-not need one. **Phase 15.0 replaces that guess with a measured per-pin verdict** — the number is
-not to be trusted until it is.
+A first heuristic measurement suggested **6 of the 16 in `Runtime.Tests`** carry no anti-vacuity
+assertion. Some may not need one. **Phase 15.0 replaces that guess with a measured per-pin
+verdict** — the number is not to be trusted until it is.
+
+> **Correction, found in 15.0's first minutes and kept here as evidence rather than tidied away.**
+> That heuristic counted **one test project**. The real population is **19 `*DriftTests` across
+> three projects**, plus at least five more pins that do not carry that suffix at all —
+> `LayoutSurfacePinTests`, `PackageVersionPinTests`, `ReleaseWorkflowPinTests`,
+> `DefaultStructTrapSweepTests`, `AnalyzerDiagnosticRosterTests`.
+>
+> **You cannot enumerate this population by name.** `Drift`, `Pin`, `Sweep` and `Roster` are all in
+> use. That is not cosmetic: it directly threatens the DoD's enforcement criterion, because a
+> convention test reflecting over `*DriftTests` would **silently miss a quarter of the pins** —
+> this milestone's own bug class, reproduced inside the mechanism meant to close it.
+>
+> **So 15.0 has a prior question: *what makes a test a pin?*** The naming is evidence that the
+> answer is not currently obvious, and enforcement cannot key on a suffix a quarter of the
+> population does not use.
 
 > **[#357][i357] is the thesis in miniature.** 14.1's completeness pin lacks an assertion that
 > 14.3's structurally identical twin has. **The guards built to catch twin divergence have drifted
@@ -59,7 +74,7 @@ not to be trusted until it is.
 - [ ] **A written pin standard exists**, in the repo rather than in a milestone doc, stating what
       every drift pin must do — at minimum: it must fail when it scans nothing, it must fail when
       its subject moves, and it must state what it does **not** cover.
-- [ ] **Every one of the sixteen existing pins is assessed against that standard**, recorded per
+- [ ] **Every one of the existing pins is assessed against that standard**, recorded per
       pin as *conforms*, *fixed*, or *exempt with a written reason*. An unassessed pin is a gap;
       "exempt" is an acceptable outcome, **silence is not**.
 - [ ] **The standard is enforced mechanically, not by review.** A new pin that can pass while
@@ -102,11 +117,11 @@ definition was any good. 15.4 and 15.5 are independent of each other and of 15.3
 
 | Risk | Impact | Mitigation |
 |---|---|---|
-| **The standard describes what we already do**, so every pin "conforms" and nothing changes | The milestone documents the status quo, and the sixth review finds a seventh shape | 15.0's census is **measured per pin, not asserted**, and must replace the heuristic 6-of-16 with a real number. If it finds every pin conforming, that is a finding to challenge — the evidence says otherwise |
+| **The standard describes what we already do**, so every pin "conforms" and nothing changes | The milestone documents the status quo, and the sixth review finds a seventh shape | 15.0's census is **measured per pin, not asserted**, and must replace the heuristic 6-of-16-in-one-project with a real number. If it finds every pin conforming, that is a finding to challenge — the evidence says otherwise |
 | **No mechanical enforcement exists** for "a pin must not pass while checking nothing" | The standard degrades into a review checklist, which is what M14 already had | Record it explicitly with evidence rather than dropping it. A partial mechanism — enforcing only the anti-vacuity half — is an acceptable honest outcome |
 | **15.2 defines coverage too narrowly** and 15.3 exposes it immediately | Rework, and the definition loses credibility | That is the *point* of the adjacency. An early failure there is cheap and informative; finding it in 15.6's audit is not |
 | **Prose pinning proves not worth its cost** | #291 goes unanswered again, having been deferred once already | "Attempted and judged not worth it, with reasoning" is an acceptable pass. **Silence is not** |
-| **Sixteen pins is a lot of surface for one milestone** | 15.1 balloons and crowds out 15.2-15.5 | 15.0's census sizes it before 15.1 commits. If the non-conforming set is large, split 15.1 by pin family and say which were deferred |
+| **The pin population is a lot of surface for one milestone** | 15.1 balloons and crowds out 15.2-15.5 | 15.0's census sizes it before 15.1 commits. If the non-conforming set is large, split 15.1 by pin family and say which were deferred |
 | **The milestone polishes pins while the truths they guard rot** | A perfectly standardised population guarding stale facts | 15.3 and 15.4 are **real bugs**, not pin work. They are here deliberately so the milestone ships behaviour, not only mechanism |
 
 ## Out of scope

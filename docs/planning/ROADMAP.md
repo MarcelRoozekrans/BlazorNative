@@ -2458,7 +2458,7 @@ public-API change.** Four workstreams, grown from three by a review finding and 
 ### 🔄 Milestone 15 — A Standard for Pins  *(active — started 2026-09-22)* [status: active]
 
 **Goal:** This repo defends its invariants with **drift pins** — tests that read source or config
-and assert two copies of one truth agree. There are **sixteen** of them and **four** manifests,
+and assert two copies of one truth agree. There are **at least nineteen** of them and **four** manifests,
 accumulated across many milestones, each written to catch the bug in front of it. They have no
 shared standard, and it shows. M15 establishes what a pin must do to be trusted, applies that
 standard to every existing pin, and closes the backlog of missing and broken ones as
