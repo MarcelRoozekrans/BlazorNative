@@ -124,7 +124,16 @@ public struct BlazorNativeInitResult
 /// exported methods to be public static, so the containing class is public purely as a
 /// consequence of the export mechanism. No app author calls <c>Exports.Init</c> — the callers are
 /// the Kotlin/JNA and Swift/ObjC++ shells in this repo, and the exported set is separately gated
-/// by a symbol-count check on every published binary. Tier NOT-API.</remarks>
+/// by a symbol-count check on every published binary. Tier NOT-API.
+/// <para>TEN — and do not count it with a grep. A text search for
+/// <c>UnmanagedCallersOnly</c> over this file returns more hits than there are exports,
+/// because the name also appears in prose: in this remark, in the summary above it, and in
+/// the remarks on <see cref="BlazorNativeInitOptions"/>. Only the lines that actually APPLY
+/// the attribute are entry points, and there are exactly ten of them. There is no unexported
+/// eleventh, and no callback is declared this way. The authoritative roster is the explicit
+/// name list asserted against every published binary — <c>ci.yml</c> via dumpbin and
+/// llvm-readelf, <c>ci.yml</c>'s <c>ios-build-slice</c> and <c>ios.yml</c> via <c>nm</c> — so
+/// count those NAMES, never these lines.</para></remarks>
 [EditorBrowsable(EditorBrowsableState.Never)]
 public static class Exports
 {
@@ -140,7 +149,7 @@ public static class Exports
     /// <summary>Single source of truth for the runtime version — the
     /// JNA-visible version cstring and NativeShellBridge.PlatformInfo both
     /// derive from it.</summary>
-    internal const string VersionNumber = "0.15.0"; // x-release-please-version
+    internal const string VersionNumber = "0.16.0"; // x-release-please-version
 
     static Exports()
     {

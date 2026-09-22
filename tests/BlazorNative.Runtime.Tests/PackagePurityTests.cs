@@ -2,6 +2,7 @@ using System.Reflection.Metadata;
 using System.Reflection.PortableExecutable;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
+using BlazorNative.Tests.Shared;
 
 namespace BlazorNative.Runtime.Tests;
 
@@ -209,7 +210,7 @@ public sealed class PackagePurityTests
     /// caller above, which is TypeNamesOf's rule applied to the filesystem.</summary>
     private static List<string> SrcCsprojNames()
     {
-        string src = Path.Combine(RepoRoot(), "src");
+        string src = Path.Combine(BnRepo.Root(), "src");
         var names = Directory.EnumerateFiles(src, "*.csproj", SearchOption.AllDirectories)
             .Select(Path.GetFileNameWithoutExtension)
             .OrderBy(n => n, StringComparer.Ordinal)
@@ -222,7 +223,7 @@ public sealed class PackagePurityTests
     }
 
     private static string CheckoutPath(string relativePath)
-        => Path.Combine(RepoRoot(), relativePath.Replace('/', Path.DirectorySeparatorChar));
+        => Path.Combine(BnRepo.Root(), relativePath.Replace('/', Path.DirectorySeparatorChar));
 
     private static string ReadCheckoutFile(string relativePath)
     {
@@ -261,14 +262,15 @@ public sealed class PackagePurityTests
     /// Analyzers TFM move would red as a path miss, not as the right test.</summary>
     private static string ResolveAssemblyPath(string assemblyName)
     {
-        string local = Path.Combine(AppContext.BaseDirectory, assemblyName + ".dll");
+        string baseDirectory = BnRepo.TestBinaryDirectory();
+        string local = Path.Combine(baseDirectory, assemblyName + ".dll");
         if (File.Exists(local))
             return local;
 
-        string configuration = AppContext.BaseDirectory.Contains(
+        string configuration = baseDirectory.Contains(
             Path.DirectorySeparatorChar + "Debug" + Path.DirectorySeparatorChar,
             StringComparison.OrdinalIgnoreCase) ? "Debug" : "Release";
-        string csproj = Path.Combine(RepoRoot(), "src", assemblyName, assemblyName + ".csproj");
+        string csproj = Path.Combine(BnRepo.Root(), "src", assemblyName, assemblyName + ".csproj");
         string? tfm = XDocument.Load(csproj).Root!
             .Elements("PropertyGroup").Elements("TargetFramework")
             .Select(e => e.Value)
@@ -277,25 +279,12 @@ public sealed class PackagePurityTests
             $"could not read a single <TargetFramework> from {csproj} — the purity pin "
             + "resolves checkout build output by the csproj's OWN TFM (8.0 review M-3).");
         string built = Path.Combine(
-            RepoRoot(), "src", assemblyName, "bin", configuration, tfm!,
+            BnRepo.Root(), "src", assemblyName, "bin", configuration, tfm!,
             assemblyName + ".dll");
         Assert.True(File.Exists(built),
             $"could not resolve {assemblyName}.dll — looked in the test output "
             + $"({local}) and the checkout build output ({built}). The purity pin must "
             + "SEE every shipped assembly; fix the path, do not skip the assembly.");
         return built;
-    }
-
-    /// <summary>The repo root — the nearest ancestor holding BlazorNative.sln
-    /// (RouteTableDriftTests' rule: build-test is the one required lane where
-    /// the whole checkout is visible).</summary>
-    private static string RepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "BlazorNative.sln")))
-            dir = dir.Parent;
-
-        Assert.True(dir is not null, "BlazorNative.sln not found above " + AppContext.BaseDirectory);
-        return dir!.FullName;
     }
 }

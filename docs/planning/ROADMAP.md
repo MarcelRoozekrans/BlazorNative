@@ -206,7 +206,9 @@ Phases:
 
 10 phases (3.0a–3.0e runtime re-platform, 3.1–3.5 application layer) shipped.
 A real two-page app runs on the AVD through a NativeAOT `.so` with a typed
-eight-export C-ABI: `Bn*` components, `@bind` mechanics, cascading values,
+eight-export C-ABI — **eight as of M3; the frozen surface is TEN today**, the
+count every lane asserts, after `blazornative_host_event` and
+`blazornative_host_call_complete` were added later: `Bn*` components, `@bind` mechanics, cascading values,
 bidirectional events, the six shell-bridge operations, multi-component
 composition, strict mode, and `INavigationManager` root-component navigation.
 wasmtime + `.wasm` deleted entirely (3.0e). Audit verdict: **PASS — all 11 DoD
@@ -2162,13 +2164,15 @@ not wait behind a paper design phase; 13.4 and 13.5 renumbered to 13.5 and 13.6)
 
 ---
 
-### 🔄 Milestone 14 — Twin Divergence, Closed Mechanically  *(active — started 2026-09-21)* [status: active]
+### ✅ Milestone 14 — Twin Divergence, Closed Mechanically  *(complete — 2026-09-21 → 2026-09-22)* [status: complete]
 
 **Goal:** Close the twin-divergence class **mechanically** — wherever the framework holds one truth
 in two places, either generate the second copy or pin the two against each other. M13 named this
 class and closed four instances by hand, but built only half the mechanism its own DoD called for;
 the P3 device run found the other half by killing a process on real hardware.
 **Started:** 2026-09-21
+**Completed:** 2026-09-22 · verdict **PASS WITH FINDINGS**
+· [audit](../plans/2026-09-22-milestone-14-audit.md)
 **Design:** [`docs/superpowers/specs/2026-09-21-milestone-14-design.md`](../superpowers/specs/2026-09-21-milestone-14-design.md)
 · full scope, DoD and owner decisions in [MILESTONE.md](MILESTONE.md).
 **Source:** the **P3 real-device verification run** by @ceesalberts on 2026-09-20 — iPhone 17 Pro
@@ -2363,16 +2367,228 @@ phase added no test to any shell suite. **No ABI, wire, or public-API change.**
 > iOS returns `Ok` where Android returns `Unavailable`: a new instance of M14's own target class,
 > found by this phase. Filed as #356.**
 
-#### Phase 14.4: Device observability, docs, and the device lane [status: pending]
+#### Phase 14.4: Device observability, docs, and the device lane [status: complete]
 **Goal:** Make `Debug` and `Verbose` observable on real hardware, land the four documentation
 landmines the device run found, and integrate the externally-offered staging script and
 `ios-arm64` CI lane. The lane is the only externally-dependent item in M14; the rest of the phase
 lands regardless.
 **Surface:** Mixed
 **HelpWanted:** yes
+**Design:** [`docs/superpowers/specs/2026-09-22-phase-14.4-design.md`](../superpowers/specs/2026-09-22-phase-14.4-design.md)
+**Plan:** [`docs/superpowers/plans/2026-09-22-phase-14.4-device-observability.md`](../superpowers/plans/2026-09-22-phase-14.4-device-observability.md)
+**Completed:** 2026-09-22 · [PR #361](https://github.com/MarcelRoozekrans/BlazorNative/pull/361)
+· .NET 1109 → **1111**, iOS 270 → **271**, Android 226 and JVM 162 unchanged. **No ABI, wire or
+public-API change.** Four workstreams, grown from three by a review finding and an owner decision.
 
-#### Phase 14.5: Audit and close [status: pending]
+> **THE DEVICE SLICE IS NOW BUILT IN CI, AND GATED ON EVERY PR.** It had never been built by CI at
+> all — an external developer's September run was the first time anyone compiled `ios-arm64`. It
+> now builds on both `ios.yml` and, per-PR, on `ci.yml`, behind a **`vtool` `LC_BUILD_VERSION`
+> gate** — because `lipo -info` reports `arm64` for **both** slices and cannot discriminate. **The
+> gate was proven to red** on a deliberately staged simulator slice, observing `IOSSIMULATOR` while
+> `lipo` said `arm64` on the same binary. A gate never observed failing is a gate nobody has
+> tested, and this one's untested failure mode was *certifying the thing it exists to check*.
+>
+> **`ios-build` became an aggregator so a required context would not vanish.** Splitting it into a
+> matrix would have destroyed a check that is required on `main` — blocking every PR, **including
+> the one that renames it**. Caught before merge; branch protection needed **no** change. Adding
+> the two leg contexts is optional.
+>
+> **`Debug` and `Verbose` are observable on a device for the first time.** Every route was closed —
+> `log config` has no `--device` flag, macOS 26's `log stream` lost device support,
+> `devicectl --console` carries only fd 1 and 2 — and the last one, `OS_ACTIVITY_DT_MODE`'s mirror
+> to fd 2, **was closed by our own `dup2`.** The pump now stands aside when the mirror is on, and
+> the recipe is recorded at `website/docs/shells/ios.md` §8, because a fix nobody can find is not
+> observability.
+>
+> **#360's pin holes are closed**, so M14's central claim is unconditional rather than true-for-the
+> -shapes-we-tested: the scanner sees tokens wrapped across lines, stops reading string literals as
+> comments, **counts** what an `ignored` entry excuses, and pins the test-only guard that entry
+> rests on — because **a token scanner cannot see a guard**. The source issue's own proposed fix,
+> keying by line, would have caught none of it.
+>
+> **Every task's review found something real, and four changed the design.** A same-line ternary
+> that defeated the dedup. A *new caller* that defeated both guards at once. The required-context
+> destruction above. And a Yoga cache key with no RID in it, under which both legs wrote different
+> slices to the same path — the `vtool` gate's own failure mode, reappearing one layer down where
+> no gate was looking.
+>
+> **Two instructions of mine were wrong and were refused.** `ROADMAP:209`'s "eight-export C-ABI" is
+> **historically correct** — the ABI genuinely was eight at M3 close — so it was annotated rather
+> than falsified. And there is no 13-versus-10 export discrepancy: grep returns 13, but only 10
+> apply the attribute.
+>
+> **Accepted debt, recorded rather than implied:** the caller count covers one spelling — a
+> positional call, a no-spaces `=`, or a `"""` string still slips past; the device leg is
+> compile-and-link only, so real-device *execution* remains #17's external dependency; and
+> `IosSliceMatrixDriftTests` is what makes the aggregator's claim true, a load-bearing cross-file
+> dependency worth naming at audit.
+
+#### Phase 14.5: Audit and close [status: complete]
 **Goal:** Run `audit-milestone` against the DoD on live evidence and close M14. **No tag** — the
+8.6 rule, and `CONVENTIONS.md` records `Milestone completion tags a release: no`.
+**Surface:** Docs
+**HelpWanted:** no
+**Audit:** [`docs/plans/2026-09-22-milestone-14-audit.md`](../plans/2026-09-22-milestone-14-audit.md)
+**Completed:** 2026-09-22 · verdict **PASS WITH FINDINGS**
+
+> **Ten criteria audited against live evidence, not against the phase reports.** The ABI was
+> **diffed** — `Exports.cs`'s `EntryPoint` set at M14's opening commit versus `main`: 10 before, 10
+> after, identical — because the DoD said *verified by diffing, not asserted*. The wire vocabulary
+> was compared **by name set** rather than by line count: **0 removed, 15 added**, purely additive
+> as scoping decision 3 predicted.
+>
+> **Nine criteria met; one met narrowly, and that one is the milestone's central claim.** The
+> semantic pin makes a new divergence red for **eight shapes**, each reproduced before the fix and
+> red after — and **fails for four more**, all reproduced as live green mutations, filed as
+> **#364**. The DoD anticipated exactly this and said it must be *"recorded explicitly, never a
+> line to quietly drop"*.
+>
+> **The pattern is the finding, not the four instances.** Five reviews across two phases each
+> defeated this pin with a shape the previous round had not tried. That argues for reasoning about
+> the pin's **coverage** — which trees, which spellings, which file kinds — rather than fixing four
+> more instances and awaiting a sixth review.
+>
+> **Gap recorded rather than hidden:** no `pre-push-review` artifact exists for this milestone. The
+> substance was covered by a different process — every task got a fresh-agent spec-and-quality
+> review plus a per-phase whole-branch review, and five of those changed a design rather than
+> polishing one — but the artifact the criterion names is absent, so the owner decides.
+
+---
+
+### 🔄 Milestone 15 — A Standard for Pins  *(active — started 2026-09-22)* [status: active]
+
+**Goal:** This repo defends its invariants with **drift pins** — tests that read source or config
+and assert two copies of one truth agree. There are **at least nineteen** of them and **four** manifests,
+accumulated across many milestones, each written to catch the bug in front of it. They have no
+shared standard, and it shows. M15 establishes what a pin must do to be trusted, applies that
+standard to every existing pin, and closes the backlog of missing and broken ones as
+**consequences rather than as nine separate errands**.
+**Started:** 2026-09-22
+**Design:** [`docs/superpowers/specs/2026-09-22-milestone-15-design.md`](../superpowers/specs/2026-09-22-milestone-15-design.md)
+· full scope, DoD and risks in [MILESTONE.md](MILESTONE.md).
+**Source:** M14's own audit. Its central criterion — *a NEW divergence reds* — was met **narrowly**,
+and the four reproduced holes filed as [#364][m15-i364] carried an argument larger than themselves:
+**the thing to reason about is a pin's coverage, not its assertions.**
+
+[m15-i364]: https://github.com/MarcelRoozekrans/BlazorNative/issues/364
+
+> **The thesis: a pin that can pass while checking nothing is not a pin — and today we cannot say
+> which of ours can.** Vacuity is more general than "the scan stopped matching": any assertion of
+> the form *for every X, assert Y* passes trivially when there are no X, whether X came from a
+> regex, a directory walk, or a collection. `RouteMenuDriftTests` scans no files at all and still
+> has the shape.
+>
+> **#357 is the thesis in miniature:** 14.1's completeness pin lacks an assertion its structurally
+> identical 14.3 twin has. **The guards built to catch twin divergence have drifted from each
+> other.**
+
+**Phases:** 15.0 the pin standard `Mixed` · 15.1 close the nine gaps `Backend` · 15.2 define the
+auth pin's coverage `Backend` · 15.3 the first live test, deep-link scheme `Backend` · 15.4 the
+missing guards `Mixed` · 15.5 prose and the small corrections `Docs` · 15.6 audit and close `Docs`.
+
+**Closes:** #364 · #357 · #296 · #297 · #302 · #291 · #298 · #356 · #365.
+**No external dependency** — unlike M14, no phase needs a device, an Apple account, or an outside
+contributor. That is deliberate.
+
+#### Phase 15.0: The pin standard [status: complete]
+**Goal:** Answer **what makes a test a pin** — the population is not enumerable by name — then
+write down what a pin must do to be trusted, consolidate the 23 copy-pasted `RepoRoot()` helpers
+into one so the population becomes *exactly* enumerable, and take a measured per-pin census.
+**Surface:** Mixed
+**HelpWanted:** no
+**Design:** [`docs/superpowers/specs/2026-09-22-phase-15.0-design.md`](../superpowers/specs/2026-09-22-phase-15.0-design.md)
+**Plan:** [`docs/superpowers/plans/2026-09-22-phase-15.0-pin-standard.md`](../superpowers/plans/2026-09-22-phase-15.0-pin-standard.md)
+**Standard:** [`docs/pin-standard.md`](../pin-standard.md) · **Census:** [`docs/plans/2026-09-22-phase-15.0-census.md`](../plans/2026-09-22-phase-15.0-census.md)
+**Completed:** 2026-09-22 · [PR #372](https://github.com/MarcelRoozekrans/BlazorNative/pull/372)
++ [PR #373](https://github.com/MarcelRoozekrans/BlazorNative/pull/373) · .NET 1111 → **1112**; JVM,
+Android and iOS unchanged. **No production source change** — `tests/**` and `docs/**` only.
+
+> **The population is enumerable by BEHAVIOUR, and that is the phase's deliverable.** `RepoRoot()`
+> was copy-pasted into **24** test files. Consolidating it was not cleanup: **callers of the one
+> shared helper are the pin population, exactly**, where no naming convention can enumerate them.
+> The count had been wrong **four** times — `sixteen` by class suffix, `23` by method name, `25` by
+> prediction, `26` after a commit in this very phase moved it. **Counting by what the code does is
+> the only count that has held.**
+>
+> **It found a live, exploitable hole in a security guard.** Six unhardened comment strippers
+> existed. One let a bare undeclared `NSLog` hide behind an ordinary URL on the same line, leaving
+> all four `NSLogDriftTests` **green** over a tree that contained it — a pin whose own header calls
+> it *"the sole pre-CI signal"* and notes `NSLog` is handed **keychain keys**. Now **one stripper,
+> eight callers**. A raw scan confirmed the shipped shell never held a bare `NSLog`, so the
+> blindness cost nothing — **checked rather than hoped**.
+>
+> **The census judges per FACT, not per file:** 27 files, 118 facts, **102 pins** —
+> **93 conforms · 9 gap · 16 exempt**. Eight files are mixed, in two kinds, and one of those kinds
+> was not predicted.
+>
+> **THE ENFORCEMENT VERDICT IS NEGATIVE, and that is the phase's most useful output.** Rule 2
+> cannot be mechanically checked at acceptable cost. A convention test asserting every pin carries a
+> count-style assertion scores **0 of 4** against the known defects, because all four **already
+> execute** one — they floor the *manifest* or the *subtracted set* while the scanned set stays
+> bare. Such a check would hand out a green over the only demonstrated false-green channel in the
+> repo, **under a name claiming coverage**. A binding-aware analyzer would catch them, so the
+> verdict is **cost, not impossibility** — and it is disclosed as revisable, with nothing pinning it.
+>
+> **Shipped open, by design:** `ShellStyleTableDriftTests`' name extractor collects every quoted
+> string in the dispatch body, so a manifest name colliding with a Yoga value keyword reads as
+> dispatched with **no arm written**. Item 1 for 15.1.
+>
+> **A hole in the milestone's own foundation, recorded rather than smoothed:** `RouteMenuDriftTests`
+> is vacuous-capable and **invisible to every mechanism this phase built** — it compares two
+> in-memory collections, so it never calls `BnRepo.Root()` and never enters the population.
+
+#### Phase 15.1: Close the nine gaps [status: pending]
+**Goal:** Bring every non-conforming pin up to the standard, **#357**'s asymmetry among them.
+**Re-scoped by 15.0's enforcement verdict** — see *The enforcement verdict* in `docs/pin-standard.md`.
+The original goal, *"make the standard mechanical — a new pin that can pass while checking nothing
+reds"*, is **not achievable at acceptable cost** and is withdrawn: the cheap check scores **0 of 4**
+against the known defects, because all four already execute an anti-vacuity assertion and the defect
+is which side of the comparison it guards. **Rule 2 is a review obligation, not a mechanical one.**
+What the census actually sized, in order:
+1. The **live false green** in `ShellStyleTableDriftTests` — its extractor collects every quoted
+   string in the dispatch body, so a manifest name colliding with a Yoga *value* keyword reads as
+   dispatched with no arm written. A floor on the iterated set plus a negative control; 3 of the 9
+   gap facts.
+2. **Nine fixed-point assertions**, six of them copyable from `ConsoleErrorDriftTests`,
+   `NSLogDriftTests` and `AndroidLogDriftTests` — every uncontrolled detector in the repo is an
+   absence assertion, and the fix for one is a fixed point it must still hit.
+3. **Optional: an inventory guard** — enumeration, never shape. A pin that reds when the population
+   changes without the census being updated is decidable; *this pin is floored* is not. Build it only
+   if it proves cheap.
+4. **Decide the population's own limit**, `docs/plans/2026-09-22-phase-15.0-census.md` §9: the key is
+   *callers of `BnRepo.Root()`*, so a vacuous-capable pin over two in-memory collections is invisible
+   to it.
+**Surface:** Backend
+**HelpWanted:** no
+
+#### Phase 15.2: Define the auth pin's coverage [status: pending]
+**Goal:** Answer **#364** by stating what the auth-semantics scan must cover — which trees, which
+spellings, which file kinds — and closing its four reproduced holes as consequences of that
+statement rather than as four patches.
+**Surface:** Backend
+**HelpWanted:** no
+
+#### Phase 15.3: The first live test — deep-link scheme [status: pending]
+**Goal:** Close **#296** using the mechanism rather than around it. Establish which behaviour is
+correct, align the outlier, and pin it so the third copy in `AndroidManifest.xml` and its template
+mirror cannot drift either. **It must red before it is fixed.**
+**Surface:** Backend
+**HelpWanted:** no
+
+#### Phase 15.4: The missing guards [status: pending]
+**Goal:** Close **#297** and **#302** — a pin that does not exist, and a release-notes guard that
+does not exist — each written to the 15.0 standard.
+**Surface:** Mixed
+**HelpWanted:** no
+
+#### Phase 15.5: Prose, and the small corrections [status: pending]
+**Goal:** Answer **#291** for the three unpinned documentation transcription pairs M14 found, and
+land **#298**, **#356**, **#365**.
+**Surface:** Docs
+**HelpWanted:** no
+
+#### Phase 15.6: Audit and close [status: pending]
+**Goal:** Run `audit-milestone` against the DoD on live evidence and close M15. **No tag** — the
 8.6 rule, and `CONVENTIONS.md` records `Milestone completion tags a release: no`.
 **Surface:** Docs
 **HelpWanted:** no

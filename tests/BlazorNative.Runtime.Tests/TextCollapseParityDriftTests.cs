@@ -3,6 +3,7 @@ using BlazorNative.Renderer;
 using BlazorNative.Testing;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Rendering;
+using BlazorNative.Tests.Shared;
 
 namespace BlazorNative.Runtime.Tests;
 
@@ -59,7 +60,7 @@ namespace BlazorNative.Runtime.Tests;
 // A pin that honestly covers part of the invariant beats a comment covering none.
 //
 // ⚠ WHY THIS LIVES IN THE .NET SUITE. Same three reasons AndroidLogDriftTests gives:
-// the RepoRoot scan mechanism already lives here, it covers the template mirror in
+// the BnRepo.Root scan mechanism already lives here, it covers the template mirror in
 // the same pass, and it needs no Android toolchain (the JVM lane cannot start
 // without two NativeAOT bionic publishes). The subject is a .NET type's fidelity to
 // a Kotlin file, so the .NET side is also where the failure belongs.
@@ -380,7 +381,7 @@ public sealed class TextCollapseParityDriftTests
 
     private static string ReadCheckoutFile(string relativePath)
     {
-        string full = Path.Combine(RendererNodeTypeMap.RepoRoot(), relativePath.Replace('/', Path.DirectorySeparatorChar));
+        string full = Path.Combine(BnRepo.Root(), relativePath.Replace('/', Path.DirectorySeparatorChar));
         Assert.True(File.Exists(full), $"checkout file not found: {full}");
         return File.ReadAllText(full);
     }

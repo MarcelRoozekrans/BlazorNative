@@ -2,6 +2,7 @@ using System.Text.RegularExpressions;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.Diagnostics;
 using Xunit;
+using BlazorNative.Tests.Shared;
 
 namespace BlazorNative.Analyzers.Tests;
 
@@ -213,21 +214,8 @@ public sealed class AnalyzerHelpLinkDriftTests
 
     private static string ReadCheckoutFile(string relativePath)
     {
-        string file = Path.Combine(RepoRoot(), relativePath.Replace('/', Path.DirectorySeparatorChar));
+        string file = Path.Combine(BnRepo.Root(), relativePath.Replace('/', Path.DirectorySeparatorChar));
         Assert.True(File.Exists(file), $"checkout file not found: {file}");
         return File.ReadAllText(file);
-    }
-
-    /// <summary>The repo root — the nearest ancestor holding BlazorNative.sln
-    /// (RouteTableDriftTests' rule: build-test is the one required lane where the
-    /// whole checkout is visible).</summary>
-    private static string RepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "BlazorNative.sln")))
-            dir = dir.Parent;
-
-        Assert.True(dir is not null, "BlazorNative.sln not found above " + AppContext.BaseDirectory);
-        return dir!.FullName;
     }
 }

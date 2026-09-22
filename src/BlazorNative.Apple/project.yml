@@ -9,7 +9,8 @@
 #   BnHost       (iOS app) — the Swift shell (BnFrameAdapter/BnWidgetMapper/
 #                BnRuntime) + the minimal host (AppDelegate/HostViewController).
 #                Links the NativeAOT static archive vendor/libBlazorNative.Runtime.a
-#                (copied there by ios.yml from the iossimulator-arm64 publish) with
+#                (copied there by ios.yml or ci.yml from the publish of whichever
+#                slice is being built - iossimulator-arm64 or ios-arm64) with
 #                the 5.0 spike's proven flag set (recorded in the Phase 5.2
 #                conclusion: docs/plans/2026-07-12-phase-5.2-conclusion.md).
 #   BnHostTests  (hosted unit-test bundle) — the DoD #2 render proof; TEST_HOST is
@@ -64,8 +65,14 @@ packages:
 settings:
   base:
     SWIFT_VERSION: "5.0"
-    # The static archive is simulator-arm64 only (that is the CI target); do not
-    # let a stray x86_64 slice request break the link.
+    # The vendored static archive carries ONE arm64 slice, and WHICH one depends on
+    # what was staged into vendor/: iossimulator-arm64 for a simulator build,
+    # ios-arm64 for a device build. Since Phase 14.4 CI builds both, one per matrix
+    # leg, each staging its own archive and its own libyoga.a before xcodebuild
+    # runs. ONLY_ACTIVE_ARCH keeps a stray x86_64 slice request from breaking the
+    # link either way; it is not a claim that the archive is simulator-only.
+    # Mixing the two is a SILENT failure - see ios-build-slice's LC_BUILD_VERSION
+    # gate, which is what catches a simulator archive linked into a device app.
     ONLY_ACTIVE_ARCH: YES
     CODE_SIGNING_ALLOWED: NO
     CODE_SIGNING_REQUIRED: NO

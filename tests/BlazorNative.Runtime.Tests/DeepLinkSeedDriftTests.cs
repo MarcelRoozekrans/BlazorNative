@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using BlazorNative.Tests.Shared;
 
 namespace BlazorNative.Runtime.Tests;
 
@@ -68,7 +69,7 @@ public sealed class DeepLinkSeedDriftTests
     [Fact]
     public void TheColdLaunchRouteSeed_IsStillWiredIntoTheBridge()
     {
-        string path = Path.Combine(RepoRoot(), HostViewController.Replace('/', Path.DirectorySeparatorChar));
+        string path = Path.Combine(BnRepo.Root(), HostViewController.Replace('/', Path.DirectorySeparatorChar));
         Assert.True(File.Exists(path),
             $"{HostViewController} not found. This pin scans a checkout path; if the Apple shell moved, "
             + "move this constant with it — a scan that cannot find its subject must fail, not pass.");
@@ -76,7 +77,7 @@ public sealed class DeepLinkSeedDriftTests
         // COMMENTS STRIPPED. HostViewController's own justification for the fix names
         // `initialRoute` four times, and a scanner that cannot tell prose from a call
         // would pass on the DOCUMENTATION of a fix that had been reverted.
-        string code = string.Join("\n", CodeLines(path).Select(l => l.Text));
+        string code = string.Join("\n", CommentStrippedSource.NumberedCodeLines(path).Select(l => l.Text));
 
         // THE ANCHOR, and it is the vacuity guard: everything below asserts that a
         // pattern is PRESENT, which is also what a scan of the wrong file reports.
@@ -113,53 +114,4 @@ public sealed class DeepLinkSeedDriftTests
 
     // ── The scan (the NSLogDriftTests helpers, same shapes) ──────────────────
 
-    /// <summary>The file's lines that are CODE. Line and block comments are dropped,
-    /// for the reason given at the call site. Same shape as
-    /// <c>NSLogDriftTests.CodeLines</c>; <c>///</c> is covered by the <c>//</c> rule.</summary>
-    private static IEnumerable<(int Number, string Text)> CodeLines(string file)
-    {
-        bool inBlockComment = false;
-        int number = 0;
-
-        foreach (string raw in File.ReadLines(file))
-        {
-            number++;
-            string line = raw;
-
-            if (inBlockComment)
-            {
-                int close = line.IndexOf("*/", StringComparison.Ordinal);
-                if (close < 0) continue;
-                inBlockComment = false;
-                line = line[(close + 2)..];
-            }
-
-            int open = line.IndexOf("/*", StringComparison.Ordinal);
-            if (open >= 0)
-            {
-                inBlockComment = line.IndexOf("*/", open, StringComparison.Ordinal) < 0;
-                line = line[..open];
-            }
-
-            int slashes = line.IndexOf("//", StringComparison.Ordinal);
-            if (slashes >= 0) line = line[..slashes];
-
-            if (line.Trim().Length == 0) continue;
-            yield return (number, line);
-        }
-    }
-
-    /// <summary>The repo root — the nearest ancestor of the test binary holding
-    /// BlazorNative.sln. The Swift sources are not a build input of this project,
-    /// which is what makes <c>build-test</c> the one lane that can host this pin.
-    /// Same walk as <c>NSLogDriftTests</c> and <c>GeneratedSymbolShadowTests</c>.</summary>
-    private static string RepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "BlazorNative.sln")))
-            dir = dir.Parent;
-
-        Assert.True(dir is not null, "BlazorNative.sln not found above " + AppContext.BaseDirectory);
-        return dir!.FullName;
-    }
 }

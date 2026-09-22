@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
+using BlazorNative.Tests.Shared;
 
 namespace BlazorNative.Runtime.Tests;
 
@@ -1277,7 +1278,7 @@ public sealed class TemplateDriftTests
         {
             StartInfo = new ProcessStartInfo("git", arguments)
             {
-                WorkingDirectory = RepoRoot(),
+                WorkingDirectory = BnRepo.Root(),
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,
@@ -1578,25 +1579,12 @@ public sealed class TemplateDriftTests
             .ToList();
 
     private static string CheckoutPath(string relativePath)
-        => Path.Combine(RepoRoot(), relativePath.Replace('/', Path.DirectorySeparatorChar));
+        => Path.Combine(BnRepo.Root(), relativePath.Replace('/', Path.DirectorySeparatorChar));
 
     private static string ReadCheckoutFile(string relativePath)
     {
         string file = CheckoutPath(relativePath);
         Assert.True(File.Exists(file), $"checkout file not found: {file}");
         return File.ReadAllText(file);
-    }
-
-    /// <summary>The repo root — the nearest ancestor holding BlazorNative.sln
-    /// (RouteTableDriftTests' rule: build-test is the one required lane where the
-    /// whole checkout is visible).</summary>
-    private static string RepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "BlazorNative.sln")))
-            dir = dir.Parent;
-
-        Assert.True(dir is not null, "BlazorNative.sln not found above " + AppContext.BaseDirectory);
-        return dir!.FullName;
     }
 }

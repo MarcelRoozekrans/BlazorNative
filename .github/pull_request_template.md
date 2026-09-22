@@ -10,7 +10,7 @@ Closes #
 
 - [ ] JVM dev loop (`testDebugUnitTest`)
 - [ ] Android emulator (`connectedAndroidTest`)
-- [ ] iOS simulator (`ios` lane — `xcodebuild test`)
+- [ ] iOS (`ios` lane — `xcodebuild test` on the simulator leg; the device leg compiles only)
 
 ## Checklist
 

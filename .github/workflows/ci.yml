@@ -4,14 +4,14 @@
 #
 #   build-test (windows-latest) — the local verification procedure verbatim
 #   (setup.ps1 §1–7 documents the toolchain pins):
-#     build (analyzers ride it) → .NET tests (1109 passed / 0 skipped) →
+#     build (analyzers ride it) → .NET tests (1112 passed / 0 skipped) →
 #     three NativeAOT publishes of samples/BlazorNative.SampleApp — the
 #     publish head since Phase 8.0: the app owns PublishAot, the exports stay
 #     in Runtime via UnmanagedEntryPointsAssembly, and the artifact is
 #     canonicalized to the frozen BlazorNative.Runtime.* names inside the
 #     publish folder — (win-x64, linux-bionic-x64, linux-bionic-arm64;
 #     each publish must show exactly the 4 accepted IL2072 trim warnings) →
-#     nine-export verification (dumpbin via vswhere / llvm-readelf from the
+#     ten-export verification (dumpbin via vswhere / llvm-readelf from the
 #     pinned NDK) → Gradle testDebugUnitTest against the fresh win-x64 dll
 #     (162 passed / 0 failed — the assertion is the step near the end of this
 #     job; this header is a copy, and it read 92 for four milestones) →
@@ -25,7 +25,13 @@
 #   ios-build (macos-latest) — THE iOS SHELL MUST COMPILE. Publish +
 #     `xcodebuild build-for-testing`: Swift + Objective-C++ compiled, the app
 #     and the XCTest bundle LINKED. No simulator is booted and no test is run.
-#     See the job's own header for why this exists and why it stops here.
+#     Since Phase 14.4 the work is a TWO-LEG MATRIX — `iossimulator-arm64` and
+#     the SHIPPING slice `ios-arm64` — carried by the job `ios-build-slice`,
+#     which reports `ios-build-slice simulator iossimulator-arm64` and
+#     `ios-build-slice device ios-arm64`. `ios-build` itself is now a one-step
+#     AGGREGATOR over those legs, so the required context of that name survives
+#     the split and means "BOTH slices compiled".
+#     See the jobs' own headers for why this exists and why it stops here.
 #
 # Baselines are asserted, not observed: count drift fails the job loudly.
 # ─────────────────────────────────────────────────────────────────────────────
@@ -48,8 +54,9 @@ env:
   DOTNET_CLI_TELEMETRY_OPTOUT: true
   NDK_PIN: 26.3.11579264
   # Yoga is ONE engine used by TWO shells, and now by FOUR files: Android's
-  # Gradle pin, ios.yml's YOGA_VERSION, this one — the version the `ios-build`
-  # job below compiles from source — and, since Phase 8.3, the TEMPLATE's Gradle
+  # Gradle pin, ios.yml's YOGA_VERSION, this one — the version the
+  # `ios-build-slice` job below compiles from source, once per matrix leg — and,
+  # since Phase 8.3, the TEMPLATE's Gradle
   # pin (the one a `dotnet new blazornative` app actually builds against). Each
   # copy is a thing that can drift, so all four are asserted against each other in
   # build-test's very first step (see "Assert Yoga version parity"). It lives here
@@ -79,13 +86,13 @@ jobs:
       # Yoga means bumping ALL FOUR files in one commit. (Baselines are asserted,
       # not observed — the same house rule as the export/test-count checks below.)
       #
-      # THREE files, since the `ios-build` job below: this workflow's own
+      # THREE files, since the `ios-build-slice` job below: this workflow's own
       # YOGA_VERSION is the version the REQUIRED compile lane builds from source,
-      # and it must be the one the ADVISORY simulator lane runs against — otherwise
+      # and it must be the one the ADVISORY execution lane runs against — otherwise
       # "the iOS shell compiles" and "the iOS shell lays out correctly" would be
       # statements about two different engines. `$env:YOGA_VERSION` IS ci.yml's pin
-      # (it is what ios-build consumes), so it is read straight from the environment
-      # rather than regexed back out of the file it came from.
+      # (it is what `ios-build-slice` consumes, on every leg), so it is read straight
+      # from the environment rather than regexed back out of the file it came from.
       #
       # FOUR files, since Phase 8.3 (M8 DoD #4): the `dotnet new blazornative`
       # template ships its OWN build.gradle.kts, and that is the one a generated
@@ -111,10 +118,10 @@ jobs:
           $apple    = $im.Groups[1].Value.Trim()
           $here     = "$env:YOGA_VERSION".Trim()
           $generated = $tm.Groups[1].Value.Trim()
-          if (-not $here) { throw "ci.yml's own YOGA_VERSION is empty — the ios-build job would compile an unpinned Yoga." }
-          Write-Host "Yoga pins: android(build.gradle.kts)=$android  ios(ios.yml)=$apple  ci(ios-build)=$here  template(blazornative)=$generated"
+          if (-not $here) { throw "ci.yml's own YOGA_VERSION is empty — the ios-build-slice job would compile an unpinned Yoga." }
+          Write-Host "Yoga pins: android(build.gradle.kts)=$android  ios(ios.yml)=$apple  ci(ios-build-slice)=$here  template(blazornative)=$generated"
           if ($android -ne $apple -or $android -ne $here -or $android -ne $generated) {
-            throw "Yoga version drift: Android pins $android, the iOS simulator lane builds $apple, the required ios-build lane builds $here, a generated app builds $generated. One engine, FOUR files — bump them together."
+            throw "Yoga version drift: Android pins $android, the iOS execution lane builds $apple, the required ios-build-slice lane builds $here, a generated app builds $generated. One engine, FOUR files — bump them together."
           }
 
       # ── Toolchain ──────────────────────────────────────────────────────────
@@ -2136,7 +2143,25 @@ jobs:
       # open residual closed here rather than repeated. Tasks 3 and 4 move no
       # count: the demo's plain-Get button corrected an existing stale literal
       # in BnSecureDemoTests, and the `Unavailable` correction is comment-only.
-      - name: .NET tests (assert 1109 passed / 0 skipped)
+      # 1111 -> 1112 (15.0 the pin standard, +1): PinPopulationTests — a test that
+      # reaches the repo tree without BnRepo.Root is invisible to pin enforcement.
+      # 1109 -> 1111 (14.4 device observability, +2): ONE fact per workstream,
+      # and both exist because a scanner cannot see what it does not scan.
+      # Task 2 adds AuthSemanticsDriftTests.TheTestOnlyCredentialBranch_IsStill
+      # Guarded: an `ignored` entry in src/auth-semantics.json is now COUNTED,
+      # not merely excused, and the test-only guard that entry rests on is
+      # pinned on its own line -- a token scanner reads tokens, so it can see
+      # the AUTH_DEVICE_CREDENTIAL literal but never the
+      # `if (allowDeviceCredentialForTest)` branch and default-false parameter
+      # that make it safe. Task 4b adds IosSliceMatrixDriftTests.
+      # IosBuildSliceMatrix_DeclaresEveryRequiredSlice_Unconditionally: with
+      # ios-build split into a matrix plus an aggregator, `needs.<job>.result`
+      # reports success on a mix of success AND skipped, so the roster of RIDs
+      # is pinned externally from ios.yml rather than trusted to the gate.
+      # Task 1 moves no count -- it widens the existing scanner to see tokens
+      # wrapped across lines and stops it reading string literals as comments,
+      # both reproduced first as live undeclared occurrences under a green pin.
+      - name: .NET tests (assert 1112 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -2154,11 +2179,11 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 1109 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 1109 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 1112 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 1112 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
-      # ── NativeAOT publishes + nine-export verification ────────────────────
+      # ── NativeAOT publishes + ten-export verification ─────────────────────
       # Phase 8.0: the publish head is samples/BlazorNative.SampleApp (the app
       # owns PublishAot; Runtime is a plain packable library). The exports are
       # emitted from Runtime via UnmanagedEntryPointsAssembly and the native
@@ -2634,7 +2659,9 @@ jobs:
   # landed on `main` green and sat there. PR #81 closed the hole by compiling the
   # instrumented sources inside `build-test`.
   #
-  # That gate now lives HERE, in its own job, mirroring `ios-build`. The reason is
+  # That gate now lives HERE, in its own job, mirroring the iOS compile lane
+  # (`ios-build` when this was written; `ios-build-slice` since Phase 14.4 split it
+  # into a two-leg matrix). The reason is
   # LEGIBILITY, not behaviour: when the compile lived inside `build-test`, an Android
   # shell that stopped compiling reddened a check named `build-test` — the same check
   # that fails for a .NET build error, a broken .NET test, or a JVM unit-test failure.
@@ -2643,7 +2670,8 @@ jobs:
   #
   # ── WHY IT STOPS AT COMPILE, AND WHY THAT IS NOT TIMIDITY ──────────────────
   # A device is needed to RUN the instrumented tests, not to COMPILE them — the same
-  # sentence `ios-build`'s `build-for-testing` is justified by. `compileDebugAndroidTestKotlin`
+  # sentence `ios-build-slice`'s `build-for-testing` is justified by, on both legs.
+  # `compileDebugAndroidTestKotlin`
   # is a pure compile: it resolves and type-checks `src/androidMain/kotlin` AND the
   # instrumented `androidTest` source set (so a whole source set silently vanishing,
   # the AGP 9 incident, fails HERE) without booting an emulator and without running a
@@ -2651,20 +2679,41 @@ jobs:
   # ADVISORY, on purpose: emulator-on-CI has real flake modes (boot timeouts, adb
   # drops) that a required check must not import. Compiling has none of them.
   #
-  # ── WHY IT IS SELF-CONTAINED (no `needs`), MIRRORING ios-build ─────────────
+  # ── WHY IT IS SELF-CONTAINED (no `needs`), MIRRORING ios-build-slice ──────
   # This job produces its OWN runtime — it does not depend on `build-test`. That
   # is not a style choice; a `needs`-gated job cannot be a trustworthy REQUIRED
   # check:
   #   · GitHub does not surface a `needs`-gated job as a check until its dependency
   #     finishes, so it is INVISIBLE on the PR checks list while `build-test` runs
   #     and only appears afterward — you cannot see at a glance that the Android
-  #     shell is being gated at all.
+  #     shell is being gated at all. (This half DOES apply to the `ios-build`
+  #     aggregator, and it is accepted there rather than denied: a REQUIRED context
+  #     shows as "Expected" in the merge box whether or not its job has surfaced, so
+  #     the gate is still visible where it matters, and the two `ios-build-slice`
+  #     legs are visible in the checks list the whole time. The cost is cosmetic
+  #     latency in one list; the bullet below is the one that would have been
+  #     disqualifying, and it is answered.)
   #   · Worse, as a required check it is a TRAP: if `build-test` ever fails or is
   #     skipped, this job never runs, never reports, and the PR wedges permanently
   #     on "Expected — waiting for android-build".
-  # `ios-build` (below) is the template: no `needs`, it does its own
-  # `dotnet publish -r iossimulator-arm64` and then links. This job mirrors that —
-  # it self-publishes the bionic `.so` and then compiles.
+  # `ios-build-slice` (below) is the template: no `needs`, it does its own
+  # `dotnet publish -r "$RID"` and then links. This job mirrors that — it
+  # self-publishes the bionic `.so` and then compiles. (The heading above names
+  # `ios-build-slice`, not `ios-build`, for exactly this reason: since Phase 14.4
+  # it is the SLICE job that is the self-contained compiling template, while
+  # `ios-build` is the aggregator over it.)
+  #
+  # (Phase 14.4 correction, and read it before copying the rule above: the
+  # REQUIRED `ios-build` check IS now `needs`-gated — it aggregates the two
+  # `ios-build-slice` matrix legs. That does not contradict the trap described
+  # here, it is the one documented way out of it. The trap is a `needs`-gated job
+  # that never RUNS, and therefore never REPORTS, when its dependency fails or is
+  # skipped. `ios-build` carries `if: ${{ always() }}` and fails on any dependency
+  # result that is not `success`, INCLUDING `skipped`, so it always runs and always
+  # reports — there is no state in which the PR wedges on "Expected — waiting for
+  # ios-build". A `needs`-gated required check is a trap WITHOUT `if: always()` and
+  # an explicit result assertion; with both, it is how a required context survives
+  # being split into a matrix. Anything copying this rule needs both halves.)
   #
   # `compileDebugAndroidTestKotlin`'s task graph runs `... → copyRuntimeSo →
   # verifyNativeAssets`, which only insists `BlazorNative.Runtime.so` EXISTS at the
@@ -2851,13 +2900,94 @@ jobs:
   # real flake modes (sim boot, test-host launch) that a required check must not
   # import. Compiling has none of them. This job is the honest intersection: the
   # part that cannot flake, made required.
+  #
+  # ── AND WHY IT NOW BUILDS THE DEVICE SLICE TOO (Phase 14.4) ─────────────
+  # For its whole life this job built `iossimulator-arm64` and nothing else. The
+  # slice that actually ships — `ios-arm64` — was first compiled by an external
+  # developer in September 2026 and had never been built by CI. Phase 14.4 put it
+  # in `ios.yml`, but `ios.yml` has no `pull_request:` trigger, so a PR that broke
+  # the shipping slice still earned a green tick and the breakage surfaced after
+  # merge. This is the only iOS job that runs on every PR, so this is where the
+  # per-PR device gate has to live.
   # ═══════════════════════════════════════════════════════════════════════════
-  ios-build:
+  ios-build-slice:
+    # -- PHASE 14.4: THE DEVICE SLICE IS NOW GATED ON EVERY PR ----------------
+    # `ios.yml` learned to build `ios-arm64` in Phase 14.4, but that lane has no
+    # `pull_request:` trigger - it runs on merge-to-main and on dispatch. So a PR
+    # that broke the shipping slice still got a green tick, and the breakage
+    # surfaced AFTER merge. The shape agreed on issue #17 says "in CI, every PR,
+    # no secrets", and this job is the only iOS thing that runs on every PR.
+    #
+    # So this job is a two-leg matrix over the same axes `ios.yml` uses, with the
+    # SAME FIELD NAMES - `leg` / `rid` / `sdk` / `min_flag` / `expected_platform`
+    # / `expected_platform_num`. Two workflows that spelled the same matrix
+    # differently would be a twin divergence inside the milestone about twin
+    # divergence.
+    #
+    # `destination` is the one field `ios.yml` does not have: that lane's device
+    # leg ends at `xcodebuild build -sdk iphoneos`, while THIS job runs
+    # `build-for-testing`, which is destination-driven. Simulator resolves to
+    # `generic/platform=iOS Simulator`, device to `generic/platform=iOS`; neither
+    # boots nor attaches anything.
+    #
+    # `fail-fast: false` for the reason `ios.yml` gives: the legs answer different
+    # questions, and a broken device leg must not discard the simulator's answer.
+    #
+    # -- WHY THIS JOB IS NO LONGER CALLED `ios-build` -------------------------
+    # A matrix job reports one check PER LEG, so a matrix named `ios-build` would
+    # DESTROY the required context of that name: nothing would ever report it,
+    # and a required context that never reports blocks EVERY pull request -
+    # including the one that renames it. `ios-build` is required on `main` today,
+    # alongside `build-test`, `android-build`, `pr-title` and `footer-check`.
+    #
+    # So the matrix is `ios-build-slice`, and a tiny aggregating job below keeps
+    # the name `ios-build` alive with its meaning STRENGTHENED: it used to mean
+    # "the simulator slice compiled" and now means "BOTH slices compiled".
+    # Branch protection needs no change for this to merge. Adding the two leg
+    # names to the required set is optional, and can happen later or never.
+    #
+    # The leg names are PREFIXED with the job id rather than copied byte-for-byte
+    # from `ios.yml` - which names its legs `${{ matrix.leg }} ${{ matrix.rid }}`
+    # - on purpose: a status context is matched by job NAME, and `ios.yml`'s
+    # advisory legs would otherwise carry the very same two names as these.
+    # Distinct contexts, identical matrix vocabulary.
+    name: ios-build-slice ${{ matrix.leg }} ${{ matrix.rid }}
     runs-on: macos-latest
     timeout-minutes: 45
     defaults:
       run:
         shell: bash
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - leg: simulator
+            rid: iossimulator-arm64
+            sdk: iphonesimulator
+            min_flag: -mios-simulator-version-min=13.0
+            destination: generic/platform=iOS Simulator
+            expected_platform: IOSSIMULATOR
+            expected_platform_num: "7"
+          - leg: device
+            rid: ios-arm64
+            sdk: iphoneos
+            min_flag: -miphoneos-version-min=13.0
+            destination: generic/platform=iOS
+            expected_platform: IOS
+            expected_platform_num: "2"
+
+    # The matrix drives a job-level env block so the shell bodies stay quoted and
+    # readable. There is deliberately NO workflow-level RID default: a default is
+    # a silent fallback for any step that forgot to be parameterised, which is
+    # exactly the failure the slice gate at the end of this job exists to catch.
+    env:
+      RID: ${{ matrix.rid }}
+      IOS_SDK: ${{ matrix.sdk }}
+      IOS_MIN_FLAG: ${{ matrix.min_flag }}
+      IOS_DESTINATION: ${{ matrix.destination }}
+      EXPECTED_PLATFORM: ${{ matrix.expected_platform }}
+      EXPECTED_PLATFORM_NUM: ${{ matrix.expected_platform_num }}
 
     steps:
       - uses: actions/checkout@v7
@@ -2875,7 +3005,7 @@ jobs:
       # one must not be silently reused. (`${{ env.ImageOS }}` cannot do this job —
       # the `env` context holds only workflow-declared variables, so a runner-set
       # variable evaluates to the empty string and the key degrades to a constant.)
-      - name: Record toolchain (dotnet + Xcode + clang + sim SDK)
+      - name: Record toolchain (dotnet + Xcode + clang + ${{ matrix.sdk }} SDK)
         id: toolchain
         run: |
           set -euo pipefail
@@ -2884,8 +3014,9 @@ jobs:
             echo "=== dotnet ==="; dotnet --version
             echo "=== runner ==="; uname -a; sw_vers || true
             echo "=== Xcode ==="; xcode-select -p; xcodebuild -version || true
-            echo "=== sim SDK ==="; xcrun --sdk iphonesimulator --show-sdk-version || true
-            echo "=== clang ==="; xcrun -sdk iphonesimulator clang --version || true
+            echo "=== leg ==="; echo "rid=$RID sdk=$IOS_SDK min=$IOS_MIN_FLAG destination=$IOS_DESTINATION expected_platform=$EXPECTED_PLATFORM"
+            echo "=== $IOS_SDK SDK ==="; xcrun --sdk "$IOS_SDK" --show-sdk-version || true
+            echo "=== clang ==="; xcrun -sdk "$IOS_SDK" clang --version || true
           } 2>&1 | tee ios-build-out/toolchain.txt
           xcode=$(xcodebuild -version | tr '\n' '-' | tr -cd '[:alnum:].-')
           [ -n "$xcode" ] || { echo "could not read the Xcode version" >&2; exit 1; }
@@ -2907,14 +3038,18 @@ jobs:
       # and the .a it produced under the old one must not be reused silently. No
       # `restore-keys`: a partial-match restore is exactly the silent reuse this key
       # exists to prevent.
-      - name: Cache libyoga.a (v${{ env.YOGA_VERSION }})
+      # Phase 14.4: the RID is now part of the key. Both legs build libyoga.a to
+      # the SAME PATH with DIFFERENT slices, so a key without the RID would let
+      # whichever leg saved first hand the other a wrong-slice archive - silently,
+      # because `lipo -info` reports `arm64` for both.
+      - name: Cache libyoga.a (v${{ env.YOGA_VERSION }}, ${{ matrix.rid }})
         id: yoga-cache
         uses: actions/cache@v6
         with:
           path: |
             src/BlazorNative.Apple/vendor/libyoga.a
             src/BlazorNative.Apple/vendor/yoga-include
-          key: yoga-${{ runner.os }}-${{ steps.toolchain.outputs.xcode }}-${{ env.YOGA_VERSION }}
+          key: yoga-${{ runner.os }}-${{ matrix.rid }}-${{ steps.toolchain.outputs.xcode }}-${{ env.YOGA_VERSION }}
 
       - name: Cache SwiftPM (Kingfisher)
         uses: actions/cache@v6
@@ -2925,7 +3060,7 @@ jobs:
             spm-${{ runner.os }}-
 
       # ── Publish the static NativeAOT archive ────────────────────────────────
-      - name: Publish iossimulator-arm64 (NativeLib=Static; assert exactly 4 IL2072)
+      - name: Publish ${{ matrix.rid }} (NativeLib=Static; assert exactly 4 IL2072)
         run: |
           set -o pipefail
           # PublishAot is NOT passed on the CLI (the Phase 5.2 rule): it lives in the
@@ -2935,13 +3070,13 @@ jobs:
           # (Runtime/Core/Renderer/Http/Components), which lack the runtime-pack
           # bypass → NETSDK1203. Same invocation as ios.yml's and as ci.yml's three
           # publishes.
-          dotnet publish samples/BlazorNative.SampleApp -c Release -r iossimulator-arm64 \
+          dotnet publish samples/BlazorNative.SampleApp -c Release -r "$RID" \
             -tl:off -nologo 2>&1 | tee ios-build-out/publish.log
           il2072=$(grep -c 'warning IL2072' ios-build-out/publish.log || true)
           echo "IL2072 count: $il2072"
           if [ "$il2072" -ne 4 ]; then
             grep 'warning IL2072' ios-build-out/publish.log || true
-            echo "iossimulator-arm64 publish IL2072 drift: expected exactly 4, got $il2072" >&2
+            echo "$RID publish IL2072 drift: expected exactly 4, got $il2072" >&2
             exit 1
           fi
 
@@ -2952,7 +3087,7 @@ jobs:
       - name: Stage the link inputs (runtime .a + bootstrapperdll.o + support archive)
         run: |
           set -euo pipefail
-          tree_root="samples/BlazorNative.SampleApp/bin/Release/net10.0/iossimulator-arm64"
+          tree_root="samples/BlazorNative.SampleApp/bin/Release/net10.0/$RID"
           archive="$tree_root/publish/BlazorNative.Runtime.a"
           [ -f "$archive" ] || archive="$tree_root/native/BlazorNative.Runtime.a"
           if [ ! -f "$archive" ]; then
@@ -2993,11 +3128,17 @@ jobs:
           fi
           echo "SYMBOLS: all 10 blazornative_* present and externally visible in the staged archive."
 
-          pack_native=$(find "$HOME/.nuget/packages/microsoft.netcore.app.runtime.nativeaot.iossimulator-arm64" \
-            -type d -path '*runtimes/iossimulator-arm64/native' 2>/dev/null | sort | tail -1)
+          # Phase 14.4: BOTH halves carry the RID - the package id AND the
+          # `runtimes/<rid>/native` segment. This is where a missed
+          # parameterisation does the most damage: it feeds SIMULATOR
+          # libbootstrapperdll.o and simulator support archives into a DEVICE
+          # link. The slice gate at the end of this job is what would catch it.
+          pack_native=$(find "$HOME/.nuget/packages/microsoft.netcore.app.runtime.nativeaot.$RID" \
+            -type d -path "*runtimes/$RID/native" 2>/dev/null | sort | tail -1)
           if [ -z "$pack_native" ] || [ ! -d "$pack_native" ]; then
-            echo "NativeAOT iossimulator runtime pack native dir not found" >&2; exit 1
+            echo "NativeAOT $RID runtime pack native dir not found" >&2; exit 1
           fi
+          echo "Runtime pack: $pack_native"
           # libbootstrapperdll.o is DIRECT-linked (not merged): its
           # __attribute__((constructor)) must land in the app's init_array. As an
           # archive member it would be on-demand and never pulled → RuntimeInstance
@@ -3028,7 +3169,7 @@ jobs:
       # asserted equal to ios.yml's and to build.gradle.kts's in build-test's first
       # step, so the required compile lane and the advisory behaviour lane can never
       # be talking about different engines.
-      - name: "Yoga: build libyoga.a (v${{ env.YOGA_VERSION }}) for iossimulator-arm64"
+      - name: "Yoga: build libyoga.a (v${{ env.YOGA_VERSION }}) for ${{ matrix.rid }}"
         if: steps.yoga-cache.outputs.cache-hit != 'true'
         run: |
           set -euo pipefail
@@ -3036,13 +3177,13 @@ jobs:
           tar xzf yoga-src.tgz
           yroot="yoga-${YOGA_VERSION}"
           [ -f "$yroot/yoga/Yoga.h" ] || { echo "Yoga.h not found under $yroot/yoga" >&2; exit 1; }
-          sdk=$(xcrun --sdk iphonesimulator --show-sdk-path)
+          sdk=$(xcrun --sdk "$IOS_SDK" --show-sdk-path)
           mkdir -p yoga-obj src/BlazorNative.Apple/vendor
           count=0
           while IFS= read -r cpp; do
             obj="yoga-obj/$(echo "$cpp" | tr '/.' '__').o"
-            xcrun -sdk iphonesimulator clang++ -arch arm64 -isysroot "$sdk" \
-              -mios-simulator-version-min=13.0 -std=c++20 -O2 -fPIC \
+            xcrun -sdk "$IOS_SDK" clang++ -arch arm64 -isysroot "$sdk" \
+              "$IOS_MIN_FLAG" -std=c++20 -O2 -fPIC \
               -I"$yroot" -c "$cpp" -o "$obj"
             count=$((count+1))
           done < <(find "$yroot/yoga" -name '*.cpp' | sort)
@@ -3090,19 +3231,28 @@ jobs:
       # BnHostTests, resolves Kingfisher through SwiftPM, and LINKS both products
       # against the NativeAOT archive, the merged support archive and libyoga.a.
       #
-      # `generic/platform=iOS Simulator` resolves a destination WITHOUT booting one.
-      # ARCHS=arm64 is explicit because a *generic* simulator destination would
-      # otherwise build every valid slice, and the three vendored archives
-      # (runtime, support, yoga) are simulator-arm64 ONLY — an x86_64 slice would
-      # fail to link for a reason that has nothing to do with the code under test.
-      - name: xcodebuild build-for-testing (Swift + ObjC++ compile AND link — no simulator)
+      # A `generic/` destination resolves WITHOUT booting a simulator or attaching
+      # a device: `generic/platform=iOS Simulator` on the simulator leg,
+      # `generic/platform=iOS` on the device leg.
+      #
+      # ARCHS=arm64 is explicit because a *generic* destination would otherwise
+      # build every valid slice, and the three vendored archives (runtime,
+      # support, yoga) are ONE slice only — whichever the leg staged. A second
+      # slice would fail to link for a reason that has nothing to do with the code
+      # under test.
+      #
+      # CODE_SIGNING_ALLOWED=NO is what makes the DEVICE leg possible with no
+      # secrets: signing and installing stay external, exactly as `ios.yml`'s
+      # device leg has them. A fork PR cannot read secrets, and this is a required
+      # per-PR check, so it must never need one.
+      - name: xcodebuild build-for-testing (${{ matrix.rid }} — Swift + ObjC++ compile AND link, nothing booted)
         working-directory: src/BlazorNative.Apple
         run: |
           set -o pipefail
           if ! xcodebuild build-for-testing \
                  -project BnHost.xcodeproj \
                  -scheme BnHost \
-                 -destination 'generic/platform=iOS Simulator' \
+                 -destination "$IOS_DESTINATION" \
                  -derivedDataPath "$RUNNER_TEMP/DerivedData" \
                  -clonedSourcePackagesDirPath "$RUNNER_TEMP/SPM" \
                  ARCHS=arm64 \
@@ -3214,10 +3364,169 @@ jobs:
           fi
           echo "LINKED: BnHost.app + BnHostTests.xctest + the run plan; blazornative_init is defined in $(basename "$found")."
 
-      - name: Upload — ios-build logs
+      # ── THE SLICE GATE ─ the point of the device leg ──────────────────────
+      # Mirrors `ios.yml`'s gate, parameterised off the same two matrix fields.
+      #
+      # `lipo -info` reports `arm64` for BOTH slices, so it cannot tell them
+      # apart and cannot catch a wrong-slice stage. LC_BUILD_VERSION's platform
+      # field is the only thing that can. That matters more than it sounds: a
+      # device leg that silently built a simulator slice would be WORSE than no
+      # leg, because it would certify the exact thing it exists to check.
+      #
+      # Asserted on the LINKED APP BINARY, not on the NativeAOT archive, because
+      # the binary is TRANSITIVE evidence: a simulator .a cannot link into a
+      # device app at all — ld rejects it outright — so a binary whose platform is
+      # IOS proves the runtime archive, the merged support objects and libyoga.a
+      # were the device slice too. One assertion, whole-leg coverage. This job
+      # DOES link an app: the step above already found BnHost.app and asserted
+      # blazornative_init is defined inside it.
+      #
+      # BOTH legs assert, against DIFFERENT expected values, so the gate is
+      # visibly discriminating rather than a constant that happens to hold.
+      - name: Assert the linked binary really targets ${{ matrix.expected_platform }}
+        run: |
+          set -euo pipefail
+          bin=$(find "$RUNNER_TEMP/DerivedData/Build/Products" \
+            -type f -path '*/BnHost.app/BnHost' 2>/dev/null | head -1)
+          if [ -z "$bin" ]; then
+            echo "::error::no BnHost binary under DerivedData/Build/Products" >&2
+            find "$RUNNER_TEMP/DerivedData/Build/Products" -maxdepth 3 2>/dev/null || true
+            exit 1
+          fi
+          echo "Binary: $bin"
+          {
+            echo "=== file ==="; file "$bin"
+            echo "=== lipo -info — recorded to SHOW that it cannot tell the slices apart ==="
+            lipo -info "$bin" || true
+            echo "=== vtool -show-build-version ==="
+            vtool -show-build-version "$bin" || true
+          } 2>&1 | tee ios-build-out/slice.txt
+          # vtool's spelling of the platform varies by Xcode version — ` platform
+          # IOS` on current Xcode, ` platform 2` on older ones — so BOTH the name
+          # and the number are accepted instead of pinning one and calling a
+          # toolchain bump a slice regression. An empty parse is its own hard
+          # failure, so the gate cannot pass by extracting nothing.
+          platform=$(vtool -show-build-version "$bin" | awk '$1=="platform"{print $2; exit}')
+          echo "LC_BUILD_VERSION platform: '$platform' (expected '$EXPECTED_PLATFORM' or '$EXPECTED_PLATFORM_NUM')"
+          if [ -z "$platform" ]; then
+            echo "::error::could not read an LC_BUILD_VERSION platform from $bin" >&2
+            exit 1
+          fi
+          if [ "$platform" != "$EXPECTED_PLATFORM" ] && [ "$platform" != "$EXPECTED_PLATFORM_NUM" ]; then
+            echo "::error::the $RID leg produced a '$platform' slice, not $EXPECTED_PLATFORM" >&2
+            exit 1
+          fi
+          echo "SLICE: the $RID leg really is an $EXPECTED_PLATFORM build."
+
+      # The artifact name carries the leg: upload-artifact@v7 rejects a duplicate
+      # name outright, so two matrix legs uploading `ios-build-out` would fail the
+      # second one on a bookkeeping error rather than on anything real.
+      - name: Upload — ios-build logs (${{ matrix.rid }})
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: ios-build-out
+          name: ios-build-out-${{ matrix.leg }}
           path: ios-build-out
           if-no-files-found: warn
+
+  # ═════════════════════════════════════════════════════════════════════════════
+  # ios-build — THE REQUIRED CONTEXT, CARRIED ACROSS THE MATRIX SPLIT
+  #
+  # `ios-build` is a REQUIRED status check on `main`. Phase 14.4 turned the work
+  # it names into a two-leg matrix, and a matrix job reports one check PER LEG —
+  # so had the matrix kept the name, the context `ios-build` would simply have
+  # stopped existing. A required context that never reports does not fail: it
+  # WAITS, forever, on every pull request, including the one that renamed it.
+  # Fixing that needs a settings change landing in the same minute as a merge,
+  # which is a process step nobody remembers the next time.
+  #
+  # This job is the alternative. It is one bash step on ubuntu-latest, it has no
+  # checkout and no toolchain, and it exists so that:
+  #   · the required context `ios-build` keeps existing, unchanged, with its
+  #     meaning STRENGTHENED — it used to mean "the simulator slice compiled",
+  #     it now means "BOTH slices compiled";
+  #   · branch protection needs NO change for this phase to merge;
+  #   · both legs stay individually visible in the checks list, so a red one
+  #     still names itself.
+  # Adding `ios-build-slice simulator iossimulator-arm64` and `ios-build-slice
+  # device ios-arm64` to the required set is an OPTIONAL later improvement, not
+  # a prerequisite.
+  #
+  # ── WHY `if: always()` AND AN EXPLICIT RESULT CHECK, NOT BARE `needs:` ────
+  # `needs:` alone is NOT a gate. Without `if: always()` this job is SKIPPED when
+  # a dependency fails, and a skipped job reports no conclusion — which is the
+  # fail-OPEN shape all over again, one layer up. So it always runs, and it
+  # asserts the dependency's result explicitly.
+  #
+  # And it fails on ANYTHING that is not `success`, deliberately including
+  # `skipped`. If the WHOLE matrix job is ever conditioned out — a `paths:` filter,
+  # a leg-independent `if:` that evaluates false, a typo that empties the matrix —
+  # this check goes RED rather than green-on-nothing. That is the AGP-9 failure
+  # mode this whole section of the file exists to prevent, and the aggregator must
+  # not reintroduce it by being skippable.
+  #
+  # ── THE ONE SKIP THIS JOB CANNOT SEE, AND WHERE IT IS ACTUALLY HELD ───────
+  # The sentence above is about the matrix as a WHOLE, and the distinction is
+  # load-bearing. A job-level `if:` on a matrix is evaluated PER LEG, and GitHub
+  # reports the aggregate `result` as `success` when some legs succeed and the
+  # rest are SKIPPED. So `if: matrix.leg != 'device'` — or deleting an entry from
+  # `include:` — leaves THIS CHECK GREEN over a single compiled slice.
+  # `continue-on-error` on the matrix job is the same hole spelled differently.
+  #
+  # This job cannot close that without counting legs at runtime, which means an
+  # Actions API call ON THE VERDICT PATH, which is exactly what it must not have.
+  # So the roster is pinned OUTSIDE the workflow instead, by
+  # `IosSliceMatrixDriftTests` in the required .NET suite: it asserts that
+  # `ios-build-slice` declares both `iossimulator-arm64` and `ios-arm64`, and that
+  # the job carries no `if:` and no `continue-on-error`. With those two facts held,
+  # "every leg the matrix declared succeeded" — all this job can honestly claim —
+  # is equivalent to "both slices compiled", by construction rather than by
+  # assertion. If you need a conditional leg, that pin reds and says so; decide the
+  # trade out loud rather than editing it away.
+  #
+  # `needs.<job>.result` on a matrix is the AGGREGATE of every leg, so one red leg
+  # is one red aggregate. It does not say WHICH leg, so the failure path asks the
+  # Actions API for the leg names — for the MESSAGE only. The verdict is taken
+  # from `needs` before that call and never depends on it, so an API hiccup can
+  # make the message less useful but can never make the gate pass.
+  # ═════════════════════════════════════════════════════════════════════════════
+  #
+  # NOTE: this job deliberately declares NO `name:`. Its status context is then
+  # exactly its job id, `ios-build` — which is the whole point.
+  ios-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [ios-build-slice]
+    if: ${{ always() }}
+    permissions:
+      contents: read
+      # Only so the failure message can name the failing leg. The verdict does
+      # not use it.
+      actions: read
+    steps:
+      - name: Assert every ios-build-slice leg succeeded
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SLICE_RESULT: ${{ needs.ios-build-slice.result }}
+        run: |
+          set -uo pipefail
+          echo "ios-build-slice aggregate result: '$SLICE_RESULT'"
+          if [ "$SLICE_RESULT" = "success" ]; then
+            echo "EVERY DECLARED SLICE COMPILED: all ios-build-slice legs published, linked, and passed their LC_BUILD_VERSION slice gate. This job reads the matrix's aggregate result and does not inspect the legs, so WHICH slices those are is held by IosSliceMatrixDriftTests in the required .NET suite, not claimed here."
+            exit 0
+          fi
+
+          # The verdict is already taken. Everything below only enriches the
+          # message, and every call is allowed to fail without changing it.
+          echo "=== ios-build-slice legs, as the Actions API sees them ==="
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs?per_page=100" \
+            --jq '.jobs[] | select(.name | startswith("ios-build-slice")) | "\(.name): \(.status)/\(.conclusion // "no conclusion")"' \
+            2>/dev/null || echo "(could not read the job list; the verdict above does not depend on it)"
+
+          if [ "$SLICE_RESULT" = "skipped" ]; then
+            echo "::error::ios-build-slice was SKIPPED, so no iOS slice was compiled at all. This check fails on a skip ON PURPOSE: a required gate that goes green because its work did not run is the AGP-9 failure mode, where an assertion was structurally unreachable and landed on main green." >&2
+            exit 1
+          fi
+          echo "::error::the iOS slice matrix did not succeed - aggregate result '$SLICE_RESULT'. One or both of the ios-build-slice legs is red; the leg list above names which, and each leg reports its own check so it can be opened directly." >&2
+          exit 1

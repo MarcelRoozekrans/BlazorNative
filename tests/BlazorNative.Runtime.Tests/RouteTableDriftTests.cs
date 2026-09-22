@@ -1,6 +1,7 @@
 using System.Text.RegularExpressions;
 using BlazorNative.RouteGen;
 using BlazorNative.SampleApp;
+using BlazorNative.Tests.Shared;
 
 namespace BlazorNative.Runtime.Tests;
 
@@ -212,7 +213,7 @@ public sealed class RouteTableDriftTests
     /// compiled SampleAppPages.All in-process.</summary>
     private static string[] SampleAppSourceFiles()
     {
-        string projectDir = Path.Combine(RepoRoot(), "samples", "BlazorNative.SampleApp");
+        string projectDir = Path.Combine(BnRepo.Root(), "samples", "BlazorNative.SampleApp");
         Assert.True(Directory.Exists(projectDir), $"SampleApp project dir not found: {projectDir}");
         return Directory.EnumerateFiles(projectDir, "*.cs", SearchOption.AllDirectories)
             .Where(f => !IsUnderIntermediateDir(f))
@@ -230,21 +231,9 @@ public sealed class RouteTableDriftTests
 
     private static string ReadShellSource(string relativePath)
     {
-        string file = Path.Combine(RepoRoot(), relativePath.Replace('/', Path.DirectorySeparatorChar));
+        string file = Path.Combine(BnRepo.Root(), relativePath.Replace('/', Path.DirectorySeparatorChar));
         Assert.True(File.Exists(file), $"shell source not found: {file}");
         return File.ReadAllText(file);
-    }
-
-    /// <summary>The repo root — the nearest ancestor of the test binary holding
-    /// BlazorNative.sln.</summary>
-    private static string RepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "BlazorNative.sln")))
-            dir = dir.Parent;
-
-        Assert.True(dir is not null, "BlazorNative.sln not found above " + AppContext.BaseDirectory);
-        return dir!.FullName;
     }
 
     // ── #212: a duplicate route is refused at BUILD time ─────────────────────
