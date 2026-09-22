@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Xunit;
 
 namespace BlazorNative.Runtime.Tests;
@@ -84,18 +85,57 @@ public sealed class AuthSemanticsDriftTests
     /// stripped block are preserved so reported line numbers stay true. An
     /// UNTERMINATED opener is left in place rather than swallowing the rest of the
     /// file: over-stripping hides live call sites, which is a false green.
-    /// KNOWN LIMIT, not a claim: string literals are not parsed, so a `//` or `/*`
-    /// inside a string is treated as a comment. Neither shell's source has one near
-    /// an authenticator token; if that changes, occurrences after it go unseen and the
-    /// anti-vacuity count is the only thing standing between that and a silent green.
+    /// String literals ARE parsed, simply: an unescaped `"` toggles in/out of a string
+    /// and the state RESETS AT EVERY NEWLINE, so a `//` or `/*` inside a literal is no
+    /// longer read as a comment — `://` already appears in both shells' literals, so
+    /// this is a live shape, not a hypothetical. REMAINING BOUNDED LIMIT, not a claim:
+    /// a `"""` multiline or raw string toggles three times and lands inside-string, and
+    /// only the newline reset clears it. The reset is the point — it confines any
+    /// mis-parse to a single line rather than letting one stray quote blind the rest of
+    /// the file.
     /// </summary>
     internal static string StripComments(string source)
     {
         var sb = new StringBuilder(source.Length);
         int i = 0;
+        bool inString = false;
 
         while (i < source.Length)
         {
+            // STRING LITERALS (F2). A `//` inside a string is not a comment — the
+            // shells already contain `://` in literals, at BnDeepLink.swift and
+            // BnCamera.swift, so this is a live shape and not a hypothetical.
+            // Tracking is deliberately simple: toggle on an unescaped `"`, and RESET
+            // AT EVERY NEWLINE. Neither Swift nor Kotlin lets an ordinary string span
+            // lines, and the reset is what BOUNDS a mis-parse to one line rather than
+            // letting one stray quote blind the rest of the file. A `"""` multiline or
+            // raw string toggles three times and lands `true`, which the newline reset
+            // then clears — imperfect, and bounded, which is the trade being made.
+            if (source[i] == '"')
+            {
+                bool escaped = i > 0 && source[i - 1] == '\\'
+                               && !(i > 1 && source[i - 2] == '\\');
+                if (!escaped) inString = !inString;
+                sb.Append(source[i]);
+                i++;
+                continue;
+            }
+
+            if (source[i] == '\n')
+            {
+                inString = false;
+                sb.Append(source[i]);
+                i++;
+                continue;
+            }
+
+            if (inString)
+            {
+                sb.Append(source[i]);
+                i++;
+                continue;
+            }
+
             if (source[i] == '/' && i + 1 < source.Length && source[i + 1] == '*')
             {
                 int depth = 0;
@@ -197,7 +237,12 @@ public sealed class AuthSemanticsDriftTests
 
     /// <summary>Scans both shells' non-test source for every vocabulary token,
     /// comments stripped. Shared by the completeness and anti-vacuity tests so the
-    /// second genuinely measures what the first scanned.</summary>
+    /// second genuinely measures what the first scanned. Matching is over the WHOLE
+    /// stripped text with whitespace tolerated around each `.`, so a token wrapped
+    /// across a line break is still seen — a Kotlin `Authenticators` / `.BIOMETRIC_WEAK`
+    /// split over two lines is one occurrence, not none. The reported line is the one
+    /// the token's first non-whitespace character sits on, so a wrapped token names the
+    /// line it starts on rather than the line before it.</summary>
     private static Occurrence[] ScanOccurrences()
     {
         string root = RepoRoot();
@@ -215,38 +260,59 @@ public sealed class AuthSemanticsDriftTests
                                   || p.EndsWith(".kt", StringComparison.Ordinal)))
             {
                 string file = Path.GetRelativePath(root, path).Replace('\\', '/');
-                string[] lines = StripComments(File.ReadAllText(path)).Split('\n');
-                for (int i = 0; i < lines.Length; i++)
+                string stripped = StripComments(File.ReadAllText(path));
+
+                // WHOLE-TEXT MATCHING (F1). The old scan split on '\n' first, so a
+                // token wrapped across lines was invisible — and every dotted KOTLIN
+                // token can wrap, because the dot leads the continuation. Swift is
+                // immune only by accident: its tokens BEGIN with the dot, so a wrap
+                // carries it intact. Matching whole-text with `\s*` around each dot
+                // closes the Kotlin half without special-casing a language.
+                //
+                // Each occurrence carries the MATCH's own geometry — offset AND length
+                // — never the token's. A dot-leading token like `.userPresence` yields
+                // a pattern that opens with `\s*`, so a wrapped match both STARTS
+                // earlier than the token and RUNS LONGER than it; token arithmetic
+                // would then mis-report the line and mis-describe the span.
+                var matches = new List<(string Token, int Start, int Length)>();
+                foreach (string token in AuthenticatorVocabulary)
                 {
-                    // Every occurrence of every token on this line, with the index it
-                    // actually starts at. Indices, not line containment — see below.
-                    var matches = new List<(string Token, int Start)>();
-                    foreach (string token in AuthenticatorVocabulary)
-                        for (int at = lines[i].IndexOf(token, StringComparison.Ordinal);
-                             at >= 0;
-                             at = lines[i].IndexOf(token, at + 1, StringComparison.Ordinal))
-                            matches.Add((token, at));
+                    string pattern = string.Join(@"\s*\.\s*",
+                        token.Split('.').Select(Regex.Escape));
+                    foreach (Match m in Regex.Matches(stripped, pattern))
+                        matches.Add((token, m.Index, m.Length));
+                }
 
-                    foreach ((string token, int start) in matches)
-                    {
-                        // `.deviceOwnerAuthentication` is a prefix of
-                        // `.deviceOwnerAuthenticationWithBiometrics`, so the short token also
-                        // matches INSIDE the long one and would otherwise report a
-                        // device-owner call at every biometrics site. Suppress by SPAN, never
-                        // by line: an occurrence is a false echo only when it lies within a
-                        // LONGER token's matched span. Asking merely whether some longer token
-                        // appears SOMEWHERE on the line loses a real occurrence whenever both
-                        // appear separately — a ternary or a ratchet between the weak and the
-                        // strong LAPolicy on one line, which is exactly the #213 pair — and
-                        // this pin would stay green through a reintroduction of the defect.
-                        if (matches.Any(other =>
-                                other.Token.Length > token.Length
-                                && other.Start <= start
-                                && start + token.Length <= other.Start + other.Token.Length))
-                            continue;
+                foreach ((string token, int start, int length) in matches)
+                {
+                    // `.deviceOwnerAuthentication` is a prefix of
+                    // `.deviceOwnerAuthenticationWithBiometrics`, so the short token also
+                    // matches INSIDE the long one and would otherwise report a
+                    // device-owner call at every biometrics site. Suppress by SPAN, never
+                    // by line: an occurrence is a false echo only when its MATCHED SPAN
+                    // lies within a LONGER token's MATCHED SPAN. Asking merely whether
+                    // some longer token appears SOMEWHERE nearby loses a real occurrence
+                    // whenever both appear separately — a ternary or a ratchet between the
+                    // weak and the strong LAPolicy on one line, which is exactly the #213
+                    // pair — and this pin would stay green through a reintroduction of the
+                    // defect. Both sides compare matched spans: a wrapped match is longer
+                    // than its token, so `token.Length` no longer describes it.
+                    if (matches.Any(other =>
+                            other.Token.Length > token.Length
+                            && other.Start <= start
+                            && start + length <= other.Start + other.Length))
+                        continue;
 
-                        found.Add(new Occurrence(token, file, i + 1));
-                    }
+                    // Report the line the TOKEN starts on, not the line the match starts
+                    // on: a leading `\s*` can pull the match back across a newline, which
+                    // would otherwise blame the previous line for a wrapped token.
+                    int at = start;
+                    while (at < start + length && char.IsWhiteSpace(stripped[at])) at++;
+
+                    int line = 1;
+                    for (int k = 0; k < at; k++) if (stripped[k] == '\n') line++;
+
+                    found.Add(new Occurrence(token, file, line));
                 }
             }
         }
