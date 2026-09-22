@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using BlazorNative.Tests.Shared;
 
 namespace BlazorNative.Runtime.Tests;
 
@@ -68,7 +69,7 @@ public sealed class DeepLinkSeedDriftTests
     [Fact]
     public void TheColdLaunchRouteSeed_IsStillWiredIntoTheBridge()
     {
-        string path = Path.Combine(RepoRoot(), HostViewController.Replace('/', Path.DirectorySeparatorChar));
+        string path = Path.Combine(BnRepo.Root(), HostViewController.Replace('/', Path.DirectorySeparatorChar));
         Assert.True(File.Exists(path),
             $"{HostViewController} not found. This pin scans a checkout path; if the Apple shell moved, "
             + "move this constant with it — a scan that cannot find its subject must fail, not pass.");
@@ -147,19 +148,5 @@ public sealed class DeepLinkSeedDriftTests
             if (line.Trim().Length == 0) continue;
             yield return (number, line);
         }
-    }
-
-    /// <summary>The repo root — the nearest ancestor of the test binary holding
-    /// BlazorNative.sln. The Swift sources are not a build input of this project,
-    /// which is what makes <c>build-test</c> the one lane that can host this pin.
-    /// Same walk as <c>NSLogDriftTests</c> and <c>GeneratedSymbolShadowTests</c>.</summary>
-    private static string RepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "BlazorNative.sln")))
-            dir = dir.Parent;
-
-        Assert.True(dir is not null, "BlazorNative.sln not found above " + AppContext.BaseDirectory);
-        return dir!.FullName;
     }
 }

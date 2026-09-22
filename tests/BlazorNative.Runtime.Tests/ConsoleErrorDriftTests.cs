@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using BlazorNative.Tests.Shared;
 
 namespace BlazorNative.Runtime.Tests;
 
@@ -170,7 +171,7 @@ public sealed class ConsoleErrorDriftTests
     /// silently pass it with an empty set.</summary>
     private static IEnumerable<string> SourceFiles()
     {
-        string src = Path.Combine(RepoRoot(), "src");
+        string src = Path.Combine(BnRepo.Root(), "src");
         Assert.True(Directory.Exists(src), $"src/ not found under the repo root: {src}");
 
         return Directory.EnumerateFiles(src, "*.cs", SearchOption.AllDirectories)
@@ -219,20 +220,5 @@ public sealed class ConsoleErrorDriftTests
     }
 
     private static string Relative(string file)
-        => Path.GetRelativePath(RepoRoot(), file).Replace(Path.DirectorySeparatorChar, '/');
-
-    /// <summary>The repo root — the nearest ancestor of the test binary holding
-    /// BlazorNative.sln. `src/` is not a build input of this project, so it is read
-    /// from the checkout (which is what makes `build-test` the only lane that can
-    /// host this test). Same walk as `ShellStyleTableDriftTests` and
-    /// `ReadmeDriftTests`.</summary>
-    private static string RepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "BlazorNative.sln")))
-            dir = dir.Parent;
-
-        Assert.True(dir is not null, "BlazorNative.sln not found above " + AppContext.BaseDirectory);
-        return dir!.FullName;
-    }
+        => Path.GetRelativePath(BnRepo.Root(), file).Replace(Path.DirectorySeparatorChar, '/');
 }

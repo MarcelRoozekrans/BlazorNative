@@ -1,6 +1,7 @@
 using System.Reflection;
 using System.Text.RegularExpressions;
 using BlazorNative.Renderer;
+using BlazorNative.Tests.Shared;
 
 namespace BlazorNative.Runtime.Tests;
 
@@ -123,7 +124,7 @@ internal static class RendererNodeTypeMap
     internal static IReadOnlyCollection<string> ElementNamesInTheSwitch()
     {
         string source = File.ReadAllText(Path.Combine(
-            RepoRoot(), "src", "BlazorNative.Renderer", "NativeRenderer.cs"));
+            BnRepo.Root(), "src", "BlazorNative.Renderer", "NativeRenderer.cs"));
 
         Match block = Regex.Match(
             source,
@@ -147,16 +148,6 @@ internal static class RendererNodeTypeMap
         }
 
         return names;
-    }
-
-    internal static string RepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "BlazorNative.sln")))
-            dir = dir.Parent;
-
-        Assert.True(dir is not null, "BlazorNative.sln not found above " + AppContext.BaseDirectory);
-        return dir!.FullName;
     }
 }
 

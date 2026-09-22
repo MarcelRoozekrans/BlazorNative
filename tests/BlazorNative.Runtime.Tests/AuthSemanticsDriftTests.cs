@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Xunit;
+using BlazorNative.Tests.Shared;
 
 namespace BlazorNative.Runtime.Tests;
 
@@ -25,20 +26,9 @@ public sealed class AuthSemanticsDriftTests
     private sealed record Site(
         string Name, string File, string Language, string Kind, string Token, string Reason);
 
-    private static string RepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "BlazorNative.sln")))
-            dir = dir.Parent;
-        Assert.True(dir is not null,
-            "could not find BlazorNative.sln above the test binary — a pin that cannot find its "
-            + "subject must fail loudly, never vacuously");
-        return dir!.FullName;
-    }
-
     private static JsonDocument Manifest() =>
         JsonDocument.Parse(
-            File.ReadAllText(Path.Combine(RepoRoot(), "src", "auth-semantics.json")),
+            File.ReadAllText(Path.Combine(BnRepo.Root(), "src", "auth-semantics.json")),
             new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Skip });
 
     /// <summary>Reads a required string field, failing with the field's name rather
@@ -193,7 +183,7 @@ public sealed class AuthSemanticsDriftTests
     {
         foreach (Site site in Sites())
         {
-            string path = Path.Combine(RepoRoot(), site.File.Replace('/', Path.DirectorySeparatorChar));
+            string path = Path.Combine(BnRepo.Root(), site.File.Replace('/', Path.DirectorySeparatorChar));
             Assert.True(File.Exists(path),
                 $"site '{site.Name}' names {site.File}, which does not exist — the manifest and "
                 + "the tree have drifted");
@@ -245,7 +235,7 @@ public sealed class AuthSemanticsDriftTests
     /// line it starts on rather than the line before it.</summary>
     private static Occurrence[] ScanOccurrences()
     {
-        string root = RepoRoot();
+        string root = BnRepo.Root();
         var found = new List<Occurrence>();
 
         foreach (string rel in ShellSourceRoots)
@@ -422,7 +412,7 @@ public sealed class AuthSemanticsDriftTests
         // slip past. Closing those needs a Kotlin parser, not a scanner, and this pin
         // does not have one. The cheap spellings are pinned; the rest is a reviewer's
         // job, and saying so here is the point.
-        string path = Path.Combine(RepoRoot(),
+        string path = Path.Combine(BnRepo.Root(),
             "src", "BlazorNative.Jni", "src", "androidMain", "kotlin", "io",
             "blazornative", "shell", "AndroidShellBridge.kt");
         Assert.True(File.Exists(path),

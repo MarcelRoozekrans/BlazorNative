@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Reflection;
 using BlazorNative.Core;      // #173: the Core reference drift pin
 using BlazorNative.Device;
+using BlazorNative.Tests.Shared;
 
 namespace BlazorNative.Runtime.Tests;
 
@@ -38,7 +39,7 @@ public abstract class ReferenceFixtureBase : IDisposable
             Path.GetTempPath(), $"bn-docs-reference-{package}-" + Guid.NewGuid().ToString("N"));
 
         string script = Path.Combine(
-            ComponentReferenceFixture.RepoRoot(), "scripts", "generate-reference.ps1");
+            BnRepo.Root(), "scripts", "generate-reference.ps1");
         Assert.True(File.Exists(script), $"generator script not found: {script}");
 
         var psi = new ProcessStartInfo("pwsh")
@@ -46,7 +47,7 @@ public abstract class ReferenceFixtureBase : IDisposable
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
-            WorkingDirectory = ComponentReferenceFixture.RepoRoot(),
+            WorkingDirectory = BnRepo.Root(),
         };
         psi.ArgumentList.Add("-NoProfile");
         psi.ArgumentList.Add("-File");

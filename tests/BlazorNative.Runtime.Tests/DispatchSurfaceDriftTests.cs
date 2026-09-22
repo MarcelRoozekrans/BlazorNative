@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Xunit;
+using BlazorNative.Tests.Shared;
 
 namespace BlazorNative.Runtime.Tests;
 
@@ -48,20 +49,9 @@ public sealed class DispatchSurfaceDriftTests
     private sealed record Method(string Name, string Semantics, string[]? Platforms, string? Reason);
     private sealed record IgnoredMethod(string Name, string[]? Platforms, string? Reason);
 
-    private static string RepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "BlazorNative.sln")))
-            dir = dir.Parent;
-        Assert.True(dir is not null,
-            "could not find BlazorNative.sln above the test binary — a pin that cannot find its "
-            + "subject must fail loudly, never vacuously");
-        return dir!.FullName;
-    }
-
     private static Method[] Surface()
     {
-        string json = File.ReadAllText(Path.Combine(RepoRoot(), "src", "dispatch-surface.json"));
+        string json = File.ReadAllText(Path.Combine(BnRepo.Root(), "src", "dispatch-surface.json"));
         using JsonDocument doc = JsonDocument.Parse(json,
             new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Skip });
 
@@ -93,7 +83,7 @@ public sealed class DispatchSurfaceDriftTests
     /// every unmentioned method, the first time this test runs against it).</summary>
     private static IgnoredMethod[] Ignored()
     {
-        string json = File.ReadAllText(Path.Combine(RepoRoot(), "src", "dispatch-surface.json"));
+        string json = File.ReadAllText(Path.Combine(BnRepo.Root(), "src", "dispatch-surface.json"));
         using JsonDocument doc = JsonDocument.Parse(json,
             new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Skip });
 
@@ -137,11 +127,11 @@ public sealed class DispatchSurfaceDriftTests
     private static string CodeText(string file) =>
         string.Join("\n", CommentStrippedSource.Lines(file).Where(l => l.Trim().Length > 0));
 
-    private static string KotlinRuntime() => CodeText(Path.Combine(RepoRoot(),
+    private static string KotlinRuntime() => CodeText(Path.Combine(BnRepo.Root(),
         "src", "BlazorNative.Jni", "src", "main", "kotlin", "io", "blazornative", "jni",
         "BlazorNativeRuntime.kt"));
 
-    private static string SwiftRuntime() => CodeText(Path.Combine(RepoRoot(),
+    private static string SwiftRuntime() => CodeText(Path.Combine(BnRepo.Root(),
         "src", "BlazorNative.Apple", "BnHost", "BnRuntime.swift"));
 
     /// <summary>The body from a method's declaration to the next declaration — enough

@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using BlazorNative.Tests.Shared;
 
 namespace BlazorNative.Runtime.Tests;
 
@@ -154,7 +155,7 @@ public sealed class NSLogDriftTests
     [Fact]
     public void TheTestBundleExemption_IsRealAndStillHoldsNSLog()
     {
-        string tests = Path.Combine(RepoRoot(), BnHostTests.Replace('/', Path.DirectorySeparatorChar));
+        string tests = Path.Combine(BnRepo.Root(), BnHostTests.Replace('/', Path.DirectorySeparatorChar));
         Assert.True(Directory.Exists(tests),
             $"{BnHostTests} is missing, so the exemption this pin names protects nothing. Either "
             + "the test bundle moved — then re-point the exemption deliberately — or it is gone, "
@@ -213,7 +214,7 @@ public sealed class NSLogDriftTests
     /// not a filter that could be edited away by accident.</summary>
     private static IEnumerable<string> ShellFiles()
     {
-        string root = Path.Combine(RepoRoot(), BnHost.Replace('/', Path.DirectorySeparatorChar));
+        string root = Path.Combine(BnRepo.Root(), BnHost.Replace('/', Path.DirectorySeparatorChar));
         Assert.True(Directory.Exists(root), $"{BnHost} not found under the repo root: {root}");
 
         string[] extensions = [".swift", ".m", ".mm", ".h"];
@@ -261,20 +262,5 @@ public sealed class NSLogDriftTests
     }
 
     private static string Relative(string file)
-        => Path.GetRelativePath(RepoRoot(), file).Replace(Path.DirectorySeparatorChar, '/');
-
-    /// <summary>The repo root — the nearest ancestor of the test binary holding
-    /// BlazorNative.sln. The Swift sources are not a build input of this project,
-    /// which is what makes `build-test` the one lane that can host this pin. Same
-    /// walk as `ConsoleErrorDriftTests`, `BnLogFormatDriftTests` and
-    /// `ShellStyleTableDriftTests`.</summary>
-    private static string RepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "BlazorNative.sln")))
-            dir = dir.Parent;
-
-        Assert.True(dir is not null, "BlazorNative.sln not found above " + AppContext.BaseDirectory);
-        return dir!.FullName;
-    }
+        => Path.GetRelativePath(BnRepo.Root(), file).Replace(Path.DirectorySeparatorChar, '/');
 }

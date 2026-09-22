@@ -5,6 +5,7 @@ using BlazorNative.Renderer;
 using BlazorNative.Runtime;
 using BlazorNative.WireGen;
 using Xunit;
+using BlazorNative.Tests.Shared;
 
 namespace BlazorNative.Runtime.Tests;
 
@@ -42,19 +43,8 @@ namespace BlazorNative.Runtime.Tests;
 [Collection("host-session")]
 public sealed class WireVocabularyCodegenTests
 {
-    private static string RepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "BlazorNative.sln")))
-            dir = dir.Parent;
-        Assert.True(dir is not null,
-            "could not find BlazorNative.sln above the test binary — this suite reads repo source "
-            + "off disk, and a pin that cannot find its subject must fail loudly, never vacuously");
-        return dir!.FullName;
-    }
-
     private static WireVocabulary LoadManifest()
-        => WireVocabulary.Load(File.ReadAllText(Path.Combine(RepoRoot(), Emitters.ManifestPath)));
+        => WireVocabulary.Load(File.ReadAllText(Path.Combine(BnRepo.Root(), Emitters.ManifestPath)));
 
     private static DeepLinkVectors LoadVectors(string root)
     {
@@ -76,7 +66,7 @@ public sealed class WireVocabularyCodegenTests
     [Fact]
     public void EveryGeneratedFile_IsExactlyWhatTheManifestProduces()
     {
-        string root = RepoRoot();
+        string root = BnRepo.Root();
         WireVocabulary vocabulary = LoadManifest();
 
         var stale = new List<string>();
@@ -118,7 +108,7 @@ public sealed class WireVocabularyCodegenTests
     [Fact]
     public void EveryGeneratedVectorFile_IsExactlyWhatTheManifestProduces()
     {
-        string root = RepoRoot();
+        string root = BnRepo.Root();
         DeepLinkVectors vectors = LoadVectors(root);
 
         // NON-VACUITY, and it bites before anything else does: an empty `vectors`

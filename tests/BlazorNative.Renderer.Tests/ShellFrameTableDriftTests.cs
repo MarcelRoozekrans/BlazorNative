@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
 using Xunit;
+using BlazorNative.Tests.Shared;
 
 namespace BlazorNative.Renderer.Tests;
 
@@ -392,21 +393,7 @@ public sealed class ShellFrameTableDriftTests
     }
 
     private static string Absolute(string relativePath) =>
-        Path.Combine(RepoRoot(), relativePath.Replace('/', Path.DirectorySeparatorChar));
-
-    /// <summary>The repo root — the nearest ancestor of the test binary holding
-    /// BlazorNative.sln. The shells' sources are not build inputs of this project, so they are
-    /// read from the checkout (which is what makes `build-test` the only lane that can host
-    /// this test).</summary>
-    private static string RepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "BlazorNative.sln")))
-            dir = dir.Parent;
-
-        Assert.True(dir is not null, "BlazorNative.sln not found above " + AppContext.BaseDirectory);
-        return dir!.FullName;
-    }
+        Path.Combine(BnRepo.Root(), relativePath.Replace('/', Path.DirectorySeparatorChar));
 
     private static string Join(IEnumerable<string> names)
     {

@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using BlazorNative.Tests.Shared;
 
 namespace BlazorNative.Runtime.Tests;
 
@@ -33,15 +34,6 @@ namespace BlazorNative.Runtime.Tests;
 
 public sealed class GeneratedSymbolShadowTests
 {
-    private static string RepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "BlazorNative.sln")))
-            dir = dir.Parent;
-        Assert.NotNull(dir);
-        return dir!.FullName;
-    }
-
     /// <summary>How many symbols the three generated shell files hold TODAY (5 Swift,
     /// 6 Kotlin — the 5 BnWireVocabulary members plus BnHostEvent's constructor
     /// property `wireName`, which Swift has no equivalent of because Swift's
@@ -87,7 +79,7 @@ public sealed class GeneratedSymbolShadowTests
     /// guards the file MOVING; only a count guards the parse FAILING.</para></summary>
     private static IReadOnlyList<(string File, string Symbol, bool InHostEventEnum)> GeneratedSymbols()
     {
-        string root = RepoRoot();
+        string root = BnRepo.Root();
         (string Path, string Pattern)[] generated =
         [
             (Path.Combine(root, "src", "BlazorNative.Apple", "BnHost", "BnWireVocabulary.g.swift"), SwiftKotlinDeclaration),
@@ -144,7 +136,7 @@ public sealed class GeneratedSymbolShadowTests
     /// C twin could equally be declared in a `.h`.</para></summary>
     private static string[] ShellSources(string generatedFile)
     {
-        string root = RepoRoot();
+        string root = BnRepo.Root();
         bool apple = generatedFile.Contains($"{Path.DirectorySeparatorChar}BlazorNative.Apple{Path.DirectorySeparatorChar}", StringComparison.Ordinal);
 
         string dir = apple
@@ -403,7 +395,7 @@ public sealed class GeneratedSymbolShadowTests
     /// not a bypass of it.</para></summary>
     private static string[] ProductionHostEventSources()
     {
-        string root = RepoRoot();
+        string root = BnRepo.Root();
         string[] roots =
         [
             Path.Combine(root, "src", "BlazorNative.Jni", "src", "main", "kotlin"),

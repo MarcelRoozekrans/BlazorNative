@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using BlazorNative.Core;
+using BlazorNative.Tests.Shared;
 
 namespace BlazorNative.Runtime.Tests;
 
@@ -36,7 +37,7 @@ namespace BlazorNative.Runtime.Tests;
 // are:
 //   1. THE MECHANISM ALREADY LIVES HERE. ConsoleErrorDriftTests, NSLogDriftTests,
 //      ShellStyleTableDriftTests, BnLogFormatDriftTests and TemplateDriftTests all
-//      scan checkout source from this suite, with the same RepoRoot() walk. A
+//      scan checkout source from this suite, with the same BnRepo.Root() walk. A
 //      fourth copy of it in Kotlin would be a second mechanism to maintain.
 //   2. IT COVERS THE TEMPLATE MIRROR IN THE SAME PASS. The generated app's shell
 //      is a byte-identical copy under templates/**; a JVM test rooted in the
@@ -362,23 +363,8 @@ public sealed class AndroidLogDriftTests
     }
 
     private static string CheckoutPath(string relativePath)
-        => Path.Combine(RepoRoot(), relativePath.Replace('/', Path.DirectorySeparatorChar));
+        => Path.Combine(BnRepo.Root(), relativePath.Replace('/', Path.DirectorySeparatorChar));
 
     private static string Relative(string file)
-        => Path.GetRelativePath(RepoRoot(), file).Replace(Path.DirectorySeparatorChar, '/');
-
-    /// <summary>The repo root — the nearest ancestor of the test binary holding
-    /// BlazorNative.sln. The Kotlin sources are not a build input of this project,
-    /// which is what makes `build-test` the one lane that can host this pin. Same
-    /// walk as `ConsoleErrorDriftTests`, `NSLogDriftTests` and
-    /// `BnLogFormatDriftTests`.</summary>
-    private static string RepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "BlazorNative.sln")))
-            dir = dir.Parent;
-
-        Assert.True(dir is not null, "BlazorNative.sln not found above " + AppContext.BaseDirectory);
-        return dir!.FullName;
-    }
+        => Path.GetRelativePath(BnRepo.Root(), file).Replace(Path.DirectorySeparatorChar, '/');
 }
