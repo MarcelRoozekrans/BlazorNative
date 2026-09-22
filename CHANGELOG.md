@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.16.0](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.15.0...v0.16.0) (2026-09-22)
+
+
+### Features
+
+* **14.4:** device observability on hardware, and a device slice gated on every PR ([#17](https://github.com/MarcelRoozekrans/BlazorNative/issues/17)) ([#361](https://github.com/MarcelRoozekrans/BlazorNative/issues/361)) ([44d2a3d](https://github.com/MarcelRoozekrans/BlazorNative/commit/44d2a3d372b7f0c2e26f418ee05ebcac81308498))
+* **15.0:** one repo-root walk, one comment stripper, and the pin that finds bypasses ([#372](https://github.com/MarcelRoozekrans/BlazorNative/issues/372)) ([c45b5d8](https://github.com/MarcelRoozekrans/BlazorNative/commit/c45b5d82567b4e25a2d6680cf5984aea19e4053d))
+
 ## [0.15.0](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.14.0...v0.15.0) (2026-09-22)
 
 
