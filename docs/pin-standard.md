@@ -56,6 +56,10 @@ directory that authors are merely expected to use.
 
 ## Rule 2 — It must fail when it scans nothing
 
+**Nothing in CI checks this rule. It is on you, at review time** — see *The enforcement verdict*
+below for why a mechanical check was considered, costed and rejected, and why the four facts in this
+repo that can pass while scanning nothing all already carry an anti-vacuity assertion.
+
 **Vacuity is a property of the assertion shape, not of the input.** An assertion of the form *for
 every X, assert Y* passes trivially when there are no X — and it does not matter whether X came
 from a regex over source, a directory walk, a manifest parse, or an in-memory collection.
@@ -238,7 +242,10 @@ makes the population enumerable at all — Rule 1 having established that the na
 test that walks to `BlazorNative.sln` by hand is invisible to enforcement: it will not appear in a
 census, a conformance sweep, or any future guard written over the population.
 
-`PinPopulationTests` enforces this. It scans every hand-written `.cs` file under `tests/` for the
+`PinPopulationTests` enforces this — and **this rule is the only one in this document that a machine
+checks.** It enforces *reachability*, which is not anti-vacuity: a pin can route through
+`BnRepo.Root()`, pass `PinPopulationTests`, and still scan nothing. It scans every hand-written
+`.cs` file under `tests/` for the
 two ways a test could reach the tree unaided — the `BlazorNative.sln` sentinel and
 `AppContext.BaseDirectory` — and reds naming the offender. Two files are excluded **by name, never
 by pattern**: `BnRepo.cs`, which is the one permitted implementation, and `PinPopulationTests.cs`
@@ -333,9 +340,123 @@ is allowed to move:** the caller count grows with the suite and should. The coun
 
 ---
 
+## The enforcement verdict — Rule 2 is NOT enforced mechanically, and will not be
+
+**The open question milestone 15 was opened to answer: can *"a pin cannot pass while checking
+nothing"* be enforced by a machine?**
+
+**Answer: no, and not for want of trying to find a way.** Rule 2 is a review obligation carried by
+the checklist below. Nothing in CI checks it, nothing is planned to, and this section exists so that
+nobody downstream mistakes the guard that *does* exist for the one that does not.
+
+### What IS enforced, precisely
+
+`PinPopulationTests` enforces **reachability** — Rule 6. Every test that reaches the checkout must do
+so through `BnRepo.Root()`, so the population stays enumerable. That is a genuinely mechanical
+property and it is genuinely enforced.
+
+**Reachability is not anti-vacuity.** A pin can route through `BnRepo.Root()`, appear in every
+census, satisfy the one enforced rule in this document, and still pass while scanning nothing. Four
+facts in the population do exactly that today. Enumerability is what makes the population *countable*
+so a human can judge it; it does not do the judging.
+
+### Why the cheap mechanism fails, measured rather than argued
+
+The obvious convention test is *"every pin fact must contain a count-style assertion"* — an
+`Assert.NotEmpty`, a `Count >= n`, a floor of some shape. It is a few dozen lines and it would run in
+milliseconds.
+
+**Run against the four known defects, it scores zero.**
+
+| The defect | Does the fact execute a floor? | A presence check says |
+|---|---|---|
+| `ShellStyleTableDriftTests`, all 3 facts | **yes** — `ParseNameTable` ends `Assert.NotEmpty(names)` | conforms |
+| `DispatchSurfaceDriftTests.EveryDispatchNamedDeclaration_IsDeclaredOrIgnored` | **yes** — `Surface()` asserts `methods.Count >= 4` | conforms |
+
+Every one of the four facts that can pass while scanning nothing **already has an anti-vacuity
+assertion, and executes it**. The census found this and it is the sharpest thing it found: the useful
+distinction is not *has a floor* but **which side of the comparison the floor guards**.
+
+- `ShellStyleTableDriftTests` computes `routed.Except(dispatched)` and floors `dispatched` — the set
+  being **subtracted**. `routed`, the set being **iterated**, is unfloored; empty it and all three
+  facts go green.
+- `DispatchSurfaceDriftTests`' bare fact floors the **manifest** it compares against. The **scanned**
+  set — the `dispatch`-prefixed declarations the `foreach` walks — has no floor at all.
+
+A mechanism that detects the presence of a count assertion would score both as conforming and hand
+out a green over the only demonstrated false-green channel in the repo. By this document's own Rule 5
+test — *a limit that can only cost you a red is a footnote; a limit that can hand you a green is a
+defect* — such a check is not a weak guard. It is the forbidden shape, with the extra harm that its
+name would tell readers the property was covered.
+
+It would also be the **fifth** instance of Rule 1's four-for-four scar: a population judged by a
+proxy for the thing rather than by the thing, wrong in the same direction as all four before it.
+
+### Why the expensive mechanism is not worth building either
+
+The version that *would* catch all four is binding-aware: for each iterated expression inside a fact,
+resolve the roots of that expression and require a floor dominating **each root**, in the same method.
+`routed` is a root with no floor; `DispatchNamedDeclarations(source)` is a root with no floor. Both
+are flagged. A Roslyn analyzer over test method bodies can do this. So the property is decidable in
+principle, and the honest verdict is about cost and collateral rather than impossibility.
+
+Three things sink it:
+
+1. **Tractability requires the duplication Rule 8 bans.** In-method dominance is checkable; the
+   floors in this repo are not in-method. `ParseNameTable` and `Surface()` floor inside a shared
+   helper *on purpose* — one implementation, several callers, which is the target shape Rule 8
+   demands. An analyzer that only sees the method body forces every caller to grow its own copy of a
+   floor the helper already performs. Making the analyzer interprocedural instead means resolving
+   floors across helpers, across partial classes, and in one live case across an assembly boundary:
+   `routed` is `NativeRenderer.YogaStyleAttributes`, a **generated** product-assembly static, and
+   whether it can be empty is a fact about the generator, not about the test.
+
+2. **The false-positive surface is 98 facts against 4 true positives.** Most conforming pins floor
+   through a shared helper or a structural assertion that no dominance rule recognises. A check that
+   reds 98 correct tests is suppressed within a week, and a suppressed analyzer is worse than no
+   analyzer, because the suppressions look like considered exemptions.
+
+3. **The population it can see is the wrong population.** Rule 2 is about assertion shape, not file
+   access — `RouteMenuDriftTests` reads no files, is vacuous-capable, and is outside Rule 6's
+   population by construction. Any mechanism keyed on callers of `BnRepo.Root()` cannot see it. The
+   set Task 1 made enumerable and the set Rule 2 governs are not the same set, and the gap is
+   invisible from inside the mechanism.
+
+### What replaces it
+
+Nothing that claims to be enforcement. Three honest things instead:
+
+- **The checklist, at review time.** Rule 2 and Rule 3 are the two lines a reviewer must actually
+  check by reading. That is the cost of the property, and it is now written down rather than assumed.
+- **Rule 7's vacuity contrast, performed and recorded.** Break the walk, remove the floor, confirm the
+  pin goes green, put it back. It is **observed, not asserted**, and no static check substitutes for
+  running it. What can be mechanised is the *recording*, never the observation.
+- **An inventory guard rather than a judgement guard, if 15.1 wants one.** The population is
+  enumerable, so a pin that reds when the caller list changes without the census being updated is
+  decidable and honest: it catches *a new pin arrived and nobody judged it*, which is a different and
+  achievable claim from *this pin is floored*.
+
+And one trap for whatever sweep looks for the gaps: **read the assertion, never the comment above
+it.** `ReleaseWorkflowPinTests` labels an assertion **"THE POSITIVE CONTROL, first"** and that
+assertion is a Rule 4 subject-moved guard — it proves the file is still the release path and proves
+nothing about the `VersionOverride` regex that is the actual detector. A grep for the phrase would
+score it as done.
+
+### What this reshapes
+
+15.1 is not *build the mechanism*. **It is nine fixed-point assertions**, six of them copyable from
+`ConsoleErrorDriftTests`, `NSLogDriftTests` and `AndroidLogDriftTests`, plus a floor moved to the
+iterated set in two files. One lesson, four worked examples already in the tree, nine places to apply
+it. See `docs/plans/2026-09-22-phase-15.0-census.md` §7 for the sizing.
+
+---
+
 ## A checklist for a new pin
 
-- [ ] It reaches the tree through `BnRepo.Root()`. *(Rule 6)*
+**Only the first box is checked by CI.** Every other line is a human reading the assertion, for the
+reasons set out directly above.
+
+- [ ] It reaches the tree through `BnRepo.Root()`. *(Rule 6 — enforced by `PinPopulationTests`)*
 - [ ] It asserts its subject was found — a measured floor with stated headroom, not a round number,
       and not one that moves with build state. *(Rules 2, 2-corollary)*
 - [ ] It asserts its **detector** still detects — a positive control, a fixed point, or a
@@ -356,7 +477,7 @@ is allowed to move:** the caller count grows with the suite and should. The coun
 |---|---|
 | `tests/Shared/BnRepo.cs` | `Root()` — the one walk to the checkout. `TestBinaryDirectory()` — the test's own build output, which is a different job |
 | `CommentStrippedSource` | `Strip`, `Lines`, `NumberedCodeLines` — string-literal-aware comment removal for C#, Kotlin and Swift, with nesting block comments and one-based line numbers against the original file |
-| `PinPopulationTests` | enforces Rule 6, and is therefore the thing that keeps the population enumerable |
+| `PinPopulationTests` | enforces Rule 6 — reachability only — and is therefore the thing that keeps the population enumerable. It does **not** enforce Rule 2 |
 
 Known limits of the shared stripper, restated here because Rule 5 applies to it too: a raw or
 multiline string literal, and a C# `'"'` char literal, toggle its string state wrongly until the

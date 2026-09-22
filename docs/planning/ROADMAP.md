@@ -2490,7 +2490,7 @@ missing guards `Mixed` · 15.5 prose and the small corrections `Docs` · 15.6 au
 **No external dependency** — unlike M14, no phase needs a device, an Apple account, or an outside
 contributor. That is deliberate.
 
-#### Phase 15.0: The pin standard [status: pending]
+#### Phase 15.0: The pin standard [status: active]
 **Goal:** Answer **what makes a test a pin** — the population is not enumerable by name — then
 write down what a pin must do to be trusted, consolidate the 23 copy-pasted `RepoRoot()` helpers
 into one so the population becomes *exactly* enumerable, and take a measured per-pin census.
