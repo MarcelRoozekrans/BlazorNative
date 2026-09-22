@@ -1,4 +1,3 @@
-using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Xunit;
@@ -66,118 +65,6 @@ public sealed class AuthSemanticsDriftTests
         return [.. sites];
     }
 
-    /// <summary>Removes both comment forms Swift and Kotlin share, so a token merely
-    /// DESCRIBED in prose is never mistaken for a live call site: `//` to end of line,
-    /// AND `/* … */` blocks, which includes KDoc `/** … */` — AndroidShellBridge.kt
-    /// carries 284 block openers, and the completeness scan reads the same stripped
-    /// text, so an unstripped KDoc token would demand an `ignored` entry documenting
-    /// nothing real. Blocks nest, as both languages define them. Newlines inside a
-    /// stripped block are preserved so reported line numbers stay true. An
-    /// UNTERMINATED opener is left in place rather than swallowing the rest of the
-    /// file: over-stripping hides live call sites, which is a false green.
-    /// String literals ARE parsed, simply: an unescaped `"` toggles in/out of a string
-    /// and the state RESETS AT EVERY NEWLINE, so a `//` or `/*` inside a literal is no
-    /// longer read as a comment — `://` already appears in both shells' literals, so
-    /// this is a live shape, not a hypothetical. REMAINING BOUNDED LIMIT, not a claim:
-    /// a `"""` multiline or raw string toggles three times and lands inside-string, and
-    /// only the newline reset clears it. The reset is the point — it confines any
-    /// mis-parse to a single line rather than letting one stray quote blind the rest of
-    /// the file.
-    /// </summary>
-    internal static string StripComments(string source)
-    {
-        var sb = new StringBuilder(source.Length);
-        int i = 0;
-        bool inString = false;
-
-        while (i < source.Length)
-        {
-            // STRING LITERALS (F2). A `//` inside a string is not a comment — the
-            // shells already contain `://` in literals, at BnDeepLink.swift and
-            // BnCamera.swift, so this is a live shape and not a hypothetical.
-            // Tracking is deliberately simple: toggle on an unescaped `"`, and RESET
-            // AT EVERY NEWLINE. Neither Swift nor Kotlin lets an ordinary string span
-            // lines, and the reset is what BOUNDS a mis-parse to one line rather than
-            // letting one stray quote blind the rest of the file. A `"""` multiline or
-            // raw string toggles three times and lands `true`, which the newline reset
-            // then clears — imperfect, and bounded, which is the trade being made.
-            if (source[i] == '"')
-            {
-                bool escaped = i > 0 && source[i - 1] == '\\'
-                               && !(i > 1 && source[i - 2] == '\\');
-                if (!escaped) inString = !inString;
-                sb.Append(source[i]);
-                i++;
-                continue;
-            }
-
-            if (source[i] == '\n')
-            {
-                inString = false;
-                sb.Append(source[i]);
-                i++;
-                continue;
-            }
-
-            if (inString)
-            {
-                sb.Append(source[i]);
-                i++;
-                continue;
-            }
-
-            if (source[i] == '/' && i + 1 < source.Length && source[i + 1] == '*')
-            {
-                int depth = 0;
-                int j = i;
-                while (j < source.Length)
-                {
-                    if (source[j] == '/' && j + 1 < source.Length && source[j + 1] == '*')
-                    {
-                        depth++;
-                        j += 2;
-                    }
-                    else if (source[j] == '*' && j + 1 < source.Length && source[j + 1] == '/')
-                    {
-                        depth--;
-                        j += 2;
-                        if (depth == 0) break;
-                    }
-                    else
-                    {
-                        j++;
-                    }
-                }
-
-                if (depth != 0)
-                {
-                    // Unterminated — emit the '/' verbatim and resume one character on.
-                    // Swallowing to EOF would blind the scan to everything below it.
-                    sb.Append(source[i]);
-                    i++;
-                    continue;
-                }
-
-                // Keep the block's newlines so line numbers survive the strip.
-                for (int k = i; k < j; k++)
-                    if (source[k] == '\n') sb.Append('\n');
-                i = j;
-                continue;
-            }
-
-            if (source[i] == '/' && i + 1 < source.Length && source[i + 1] == '/')
-            {
-                while (i < source.Length && source[i] != '\n') i++;
-                continue;
-            }
-
-            sb.Append(source[i]);
-            i++;
-        }
-
-        return sb.ToString();
-    }
-
     [Fact]
     public void EveryDeclaredSite_StillCarriesItsDeclaredToken()
     {
@@ -188,7 +75,7 @@ public sealed class AuthSemanticsDriftTests
                 $"site '{site.Name}' names {site.File}, which does not exist — the manifest and "
                 + "the tree have drifted");
 
-            string code = StripComments(File.ReadAllText(path));
+            string code = CommentStrippedSource.Strip(File.ReadAllText(path));
             Assert.True(code.Contains(site.Token, StringComparison.Ordinal),
                 $"site '{site.Name}' ({site.Kind}) must use '{site.Token}' in {site.File}, and no "
                 + $"live occurrence was found. Reason on record: {site.Reason}");
@@ -250,7 +137,7 @@ public sealed class AuthSemanticsDriftTests
                                   || p.EndsWith(".kt", StringComparison.Ordinal)))
             {
                 string file = Path.GetRelativePath(root, path).Replace('\\', '/');
-                string stripped = StripComments(File.ReadAllText(path));
+                string stripped = CommentStrippedSource.Strip(File.ReadAllText(path));
 
                 // WHOLE-TEXT MATCHING (F1). The old scan split on '\n' first, so a
                 // token wrapped across lines was invisible — and every dotted KOTLIN
@@ -419,7 +306,7 @@ public sealed class AuthSemanticsDriftTests
             $"{path} does not exist — a pin that cannot find its subject must fail loudly, "
             + "never vacuously");
 
-        string code = StripComments(File.ReadAllText(path));
+        string code = CommentStrippedSource.Strip(File.ReadAllText(path));
 
         Assert.Contains("if (allowDeviceCredentialForTest)", code, StringComparison.Ordinal);
 
