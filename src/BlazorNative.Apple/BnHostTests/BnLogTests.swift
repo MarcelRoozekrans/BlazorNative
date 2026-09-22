@@ -18,7 +18,11 @@
 //    here would redirect the test runner's own output. So the pump's pure half is
 //    driven directly, which is exactly the "assert against the injected sink, not
 //    against the platform log" posture design §8.1 pin 5 demands of the Android
-//    twin.
+//    twin. ONE test calls `install()`, and it is the exception that proves the
+//    rule: `testThePumpStandsAsideWhenTheOsLogMirrorIsOn` calls it on a path that
+//    returns BEFORE the pipe and the `dup2`, and asserts `isInstalled` is false on
+//    BOTH sides of that call — so if the early return ever moved below the flag,
+//    this file would red rather than quietly hijack the runner's fd 2.
 //
 // The C# twins live in BnLogTests / BnLogFormatDriftTests (tests/BlazorNative.Runtime.Tests);
 // the drift pins there READ THIS SHELL'S SOURCE and hold the three copies of the
@@ -221,5 +225,31 @@ final class BnLogTests: XCTestCase {
         // not re-emit — the pump would otherwise double-log its last line.
         BnStderrPump.flushPending(pending: &pending, overflowed: &overflowed)
         XCTAssertEqual(seen.count, 2, "a second flush must emit nothing")
+    }
+
+    /// #17 — THE PUMP STANDS ASIDE WHEN THE `os_log` MIRROR IS ON, AND DOES NOT
+    /// MARK ITSELF INSTALLED WHILE DOING SO.
+    ///
+    /// `OS_ACTIVITY_DT_MODE` asks the OS to mirror `os_log` to fd 2, which is the
+    /// only remaining way to read `Debug` and `Verbose` off a real device. A pump
+    /// that installed anyway would swallow that mirror into its own pipe.
+    ///
+    /// THE PRECONDITION ASSERTION IS THE POINT. `install()` returns false for three
+    /// different reasons — already installed, this environment check, and a failed
+    /// install — so a test that only asserted `install() == false` would pass for
+    /// the wrong reason the moment anything installed the pump first. Asserting the
+    /// STATE on both sides tells the three apart, and the second assertion holds
+    /// only because the check runs before `installedFlag` is set.
+    func testThePumpStandsAsideWhenTheOsLogMirrorIsOn() {
+        XCTAssertFalse(BnStderrPump.isInstalled,
+                       "precondition: nothing has installed the pump in this process — "
+                       + "without this the assertion below passes for the wrong reason")
+        setenv("OS_ACTIVITY_DT_MODE", "YES", 1)
+        defer { unsetenv("OS_ACTIVITY_DT_MODE") }
+
+        XCTAssertFalse(BnStderrPump.install(), "the mirror is on, so the pump must stand aside")
+        XCTAssertFalse(BnStderrPump.isInstalled,
+                       "standing aside must not mark the pump installed — isInstalled would "
+                       + "then report a pump that does not exist")
     }
 }

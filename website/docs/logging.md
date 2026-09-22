@@ -116,6 +116,13 @@ the whole framework from a terminal:
 log stream --predicate 'subsystem == "io.blazornative"'
 ```
 
+:::warning On a real device, `Debug` and `Verbose` need one more switch
+Both map onto `OSLogType.debug`, which the unified log drops unless the subsystem is
+enabled — and `log config` has no `--device` flag. The one route that works needs
+`OS_ACTIVITY_DT_MODE=YES` and `devicectl --console`; the recipe is on the
+[iOS shell page](./shells/ios.md). Everything above is simulator-accurate as written.
+:::
+
 Note that iOS **redacts message payloads by default** in logs collected off-device
 (`<private>`); only compile-time-constant text (and the framework version) is written in
 the clear. This is deliberate — it keeps app, user and exception data out of the unified

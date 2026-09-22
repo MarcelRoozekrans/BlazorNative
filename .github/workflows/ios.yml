@@ -1168,9 +1168,22 @@ jobs:
           # frame against bnSafeAreaDemoFrames, which BnSafeAreaAndroidTest asserts
           # identically via ShellFrameTableDriftTests in the required build-test
           # lane. The four existing declared frame tables are UNCHANGED.
-          if [ "$failed" -ne 0 ] || [ "$passed" -ne 270 ]; then
+          # 270 -> 271 (14.4 Task 3, +1): testThePumpStandsAsideWhenTheOsLogMirrorIsOn
+          # — BnStderrPump.install() must return early, and WITHOUT setting its
+          # installed flag, when OS_ACTIVITY_DT_MODE is set. That variable asks the OS
+          # to mirror os_log onto fd 2, which is the only remaining route to Debug and
+          # Verbose on a REAL device: both map to OSLogType.debug, the unified log drops
+          # that unless the subsystem is enabled, and `log config` has no --device flag.
+          # The pump's dup2 used to swallow the mirror. This is also the ONE test in the
+          # suite that calls install() at all, and it is safe precisely because the path
+          # it takes returns before the pipe and the dup2 — so it asserts isInstalled is
+          # false on BOTH sides of the call. That precondition is the anti-vacuity guard:
+          # install() returns false for three different reasons, and without it the test
+          # would pass for the wrong one. If the early return ever moved below the flag,
+          # this test reds here rather than hijacking the test runner's fd 2.
+          if [ "$failed" -ne 0 ] || [ "$passed" -ne 271 ]; then
             grep -E "Test Case '.*' (passed|failed)" "$log" || true
-            echo "iOS XCTest baseline drift: expected 270 passed / 0 failed, got passed=$passed failed=$failed" >&2
+            echo "iOS XCTest baseline drift: expected 271 passed / 0 failed, got passed=$passed failed=$failed" >&2
             exit 1
           fi
 

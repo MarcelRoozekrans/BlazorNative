@@ -314,6 +314,60 @@ inventory shape, which is why it has not happened yet.
 
 ---
 
+## 8. Seeing `Debug` and `Verbose` on a real device
+
+**Without the one environment variable below, you cannot.** That is not a figure of
+speech — it was measured during the device-verification run on an iPhone 17 Pro Max, and
+it cost that run real time before anyone worked out why.
+
+Here is the whole chain. `BnLog` maps both `Debug` and `Verbose` onto `OSLogType.debug`,
+which the unified log **drops** unless the subsystem has been enabled for capture — and
+`log config`, the command that enables one, has no `--device` flag. On macOS 26
+`log stream` lost device support, so you cannot watch the log live either. That leaves
+stdio: `devicectl device process launch --console` carries fd 1 and fd 2, and setting
+`OS_ACTIVITY_DT_MODE=YES` asks the OS to **mirror** `os_log` output onto fd 2 so it
+arrives there too.
+
+Except the shell's `BnStderrPump` claims fd 2 with `dup2` as the first statement in
+`HostViewController.viewDidLoad`, so the mirror used to land in the pump's own pipe. One
+UIKit line arrived before the install, and then nothing, even at Verbose.
+
+**The shell now stands aside.** When `OS_ACTIVITY_DT_MODE` is set in the environment,
+`BnStderrPump.install()` returns immediately without creating the pipe or touching fd 2,
+and the mirror reaches your console.
+
+The recipe, then:
+
+1. Set `OS_ACTIVITY_DT_MODE=YES` in the scheme's *Run → Arguments → Environment
+   Variables* — or pass it at launch. Set `BN_LOG_LEVEL` too, or the threshold is
+   `warn` and there is nothing at these levels to see ([Logging](../logging.md)).
+2. Launch with the console attached:
+
+   ```bash
+   xcrun devicectl device process launch \
+     --device <udid> --console \
+     --environment '{"OS_ACTIVITY_DT_MODE":"YES","BN_LOG_LEVEL":"Verbose"}' \
+     com.example.myapp
+   ```
+
+3. Expect two kinds of line interleaved: the mirrored `os_log` entries — the shell's own
+   `io.blazornative` categories, at every level including Debug and Verbose — and
+   whatever the process writes to stdout and stderr directly.
+
+**What it costs.** With the pump standing aside, the .NET runtime's `Console.Error`
+output is no longer parsed into levelled, categorised unified-log entries; it arrives as
+plain console text. That is a fair trade for one debugging launch and a bad default,
+which is why it is opt-in.
+
+:::warning Without the variable, these two levels are invisible on a device
+The pump is installed, it owns fd 2, and `Debug`/`Verbose` reach neither the console nor
+a log collected off-device. `error`, `warn` and `info` are unaffected — they map onto
+`OSLogType` levels the unified log keeps. This applies to a real device only; on the
+simulator `xcrun simctl launch --console` and `log stream` both still work.
+:::
+
+---
+
 ## Reference: the files that matter
 
 | Path | What it is |
