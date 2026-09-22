@@ -119,6 +119,23 @@ and the README's Test surface table). If your change adds or removes tests, upda
 those counts **in the same PR**, with a one-line ledger note explaining the delta —
 CI will red otherwise, on purpose: a silent count move is how a dropped test hides.
 
+### Drift pins have a written standard — read it before you add one
+
+Most of this repo's invariants are held by **drift pins**: tests that read the repository tree at
+runtime and assert two copies of one truth still agree. If your change adds a pin — or touches one
+— read [`docs/pin-standard.md`](docs/pin-standard.md) first. It states what a pin must do to be
+trusted, and every rule in it was earned by a pin that looked fine and wasn't:
+
+- it must **fail when it scans nothing** — *for every X, assert Y* passes trivially when there are
+  no X;
+- it must **also prove its detector still detects**, not only that its walk found files;
+- it must **fail when its subject moves**, and **state what it does not cover**;
+- it must reach the checkout through `BnRepo.Root()`, or it is invisible to `PinPopulationTests`
+  and to every future sweep over the population.
+
+The document ends with a checklist. The shortest useful summary: a pin that can pass while checking
+nothing is not a pin.
+
 ### Public API + the API-tier baselines
 
 Every shipped package carries a `PublicAPI.Shipped.txt` baseline; `RS0016`/`RS0017`/

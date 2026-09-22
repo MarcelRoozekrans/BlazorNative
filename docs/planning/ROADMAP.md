@@ -2482,7 +2482,7 @@ and the four reproduced holes filed as [#364][m15-i364] carried an argument larg
 > identical 14.3 twin has. **The guards built to catch twin divergence have drifted from each
 > other.**
 
-**Phases:** 15.0 the pin standard `Mixed` · 15.1 enforce the standard `Backend` · 15.2 define the
+**Phases:** 15.0 the pin standard `Mixed` · 15.1 close the nine gaps `Backend` · 15.2 define the
 auth pin's coverage `Backend` · 15.3 the first live test, deep-link scheme `Backend` · 15.4 the
 missing guards `Mixed` · 15.5 prose and the small corrections `Docs` · 15.6 audit and close `Docs`.
 
@@ -2490,16 +2490,34 @@ missing guards `Mixed` · 15.5 prose and the small corrections `Docs` · 15.6 au
 **No external dependency** — unlike M14, no phase needs a device, an Apple account, or an outside
 contributor. That is deliberate.
 
-#### Phase 15.0: The pin standard [status: pending]
+#### Phase 15.0: The pin standard [status: active]
 **Goal:** Answer **what makes a test a pin** — the population is not enumerable by name — then
 write down what a pin must do to be trusted, consolidate the 23 copy-pasted `RepoRoot()` helpers
 into one so the population becomes *exactly* enumerable, and take a measured per-pin census.
 **Surface:** Mixed
 **HelpWanted:** no
 
-#### Phase 15.1: Enforce the standard [status: pending]
-**Goal:** Make the standard mechanical — a new pin that can pass while checking nothing reds — and
-bring every non-conforming pin up to it, **#357**'s asymmetry among them.
+#### Phase 15.1: Close the nine gaps [status: pending]
+**Goal:** Bring every non-conforming pin up to the standard, **#357**'s asymmetry among them.
+**Re-scoped by 15.0's enforcement verdict** — see *The enforcement verdict* in `docs/pin-standard.md`.
+The original goal, *"make the standard mechanical — a new pin that can pass while checking nothing
+reds"*, is **not achievable at acceptable cost** and is withdrawn: the cheap check scores **0 of 4**
+against the known defects, because all four already execute an anti-vacuity assertion and the defect
+is which side of the comparison it guards. **Rule 2 is a review obligation, not a mechanical one.**
+What the census actually sized, in order:
+1. The **live false green** in `ShellStyleTableDriftTests` — its extractor collects every quoted
+   string in the dispatch body, so a manifest name colliding with a Yoga *value* keyword reads as
+   dispatched with no arm written. A floor on the iterated set plus a negative control; 3 of the 9
+   gap facts.
+2. **Nine fixed-point assertions**, six of them copyable from `ConsoleErrorDriftTests`,
+   `NSLogDriftTests` and `AndroidLogDriftTests` — every uncontrolled detector in the repo is an
+   absence assertion, and the fix for one is a fixed point it must still hit.
+3. **Optional: an inventory guard** — enumeration, never shape. A pin that reds when the population
+   changes without the census being updated is decidable; *this pin is floored* is not. Build it only
+   if it proves cheap.
+4. **Decide the population's own limit**, `docs/plans/2026-09-22-phase-15.0-census.md` §9: the key is
+   *callers of `BnRepo.Root()`*, so a vacuous-capable pin over two in-memory collections is invisible
+   to it.
 **Surface:** Backend
 **HelpWanted:** no
 
