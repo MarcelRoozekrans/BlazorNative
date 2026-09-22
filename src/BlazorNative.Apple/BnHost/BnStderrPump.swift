@@ -131,7 +131,27 @@ enum BnStderrPump {
         // BEFORE the lock and BEFORE the idempotence guard, deliberately: checking
         // after `installedFlag = true` would leave the flag — and the public
         // [isInstalled] — asserting a pump that has no pipe and no dup2 behind it.
-        if ProcessInfo.processInfo.environment["OS_ACTIVITY_DT_MODE"] != nil {
+        //
+        // `getenv` and not `ProcessInfo.processInfo.environment`: this reads live
+        // `environ`, which is what ProcessInfo reads underneath anyway, and it is the
+        // honest shape for a variable that can change after launch. ProcessInfo is
+        // documented as the environment the process was LAUNCHED from, and if that
+        // dictionary is ever snapshotted then a `setenv` after start is invisible to
+        // it -- which would red this file's XCTest in the iOS lane, the one place
+        // nobody can check locally.
+        if getenv("OS_ACTIVITY_DT_MODE") != nil {
+            // NOT VISIBLE AT THE DEFAULT LEVEL, and that is recorded rather than
+            // fixed. [install] runs before `BnRuntime.resolveLogLevel`, so the
+            // threshold here is always [BnLog.defaultLevel] -- `warn` -- and even
+            // `BN_LOG_LEVEL=Debug` does not rescue this line, because the level that
+            // env var names has not been applied yet.
+            //
+            // It stays at `info` ON PURPOSE. Standing aside is REQUESTED behaviour,
+            // not a fault, and borrowing `warn` to make a line discoverable is crying
+            // wolf in a repo that spent this whole milestone making levels mean what
+            // they say. It stays at all because it becomes correct the moment anything
+            // reorders boot. What a developer actually needs is in this file's header
+            // and on the website's iOS shell page.
             BnLog.info("native", "stderr pump: standing aside — OS_ACTIVITY_DT_MODE is "
                 + "set, so os_log is mirrored to fd 2 and the pump would capture it",
                 privacy: .safe)
