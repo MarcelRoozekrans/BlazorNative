@@ -2365,13 +2365,61 @@ phase added no test to any shell suite. **No ABI, wire, or public-API change.**
 > iOS returns `Ok` where Android returns `Unavailable`: a new instance of M14's own target class,
 > found by this phase. Filed as #356.**
 
-#### Phase 14.4: Device observability, docs, and the device lane [status: active]
+#### Phase 14.4: Device observability, docs, and the device lane [status: complete]
 **Goal:** Make `Debug` and `Verbose` observable on real hardware, land the four documentation
 landmines the device run found, and integrate the externally-offered staging script and
 `ios-arm64` CI lane. The lane is the only externally-dependent item in M14; the rest of the phase
 lands regardless.
 **Surface:** Mixed
 **HelpWanted:** yes
+**Design:** [`docs/superpowers/specs/2026-09-22-phase-14.4-design.md`](../superpowers/specs/2026-09-22-phase-14.4-design.md)
+**Plan:** [`docs/superpowers/plans/2026-09-22-phase-14.4-device-observability.md`](../superpowers/plans/2026-09-22-phase-14.4-device-observability.md)
+**Completed:** 2026-09-22 · [PR #361](https://github.com/MarcelRoozekrans/BlazorNative/pull/361)
+· .NET 1109 → **1111**, iOS 270 → **271**, Android 226 and JVM 162 unchanged. **No ABI, wire or
+public-API change.** Four workstreams, grown from three by a review finding and an owner decision.
+
+> **THE DEVICE SLICE IS NOW BUILT IN CI, AND GATED ON EVERY PR.** It had never been built by CI at
+> all — an external developer's September run was the first time anyone compiled `ios-arm64`. It
+> now builds on both `ios.yml` and, per-PR, on `ci.yml`, behind a **`vtool` `LC_BUILD_VERSION`
+> gate** — because `lipo -info` reports `arm64` for **both** slices and cannot discriminate. **The
+> gate was proven to red** on a deliberately staged simulator slice, observing `IOSSIMULATOR` while
+> `lipo` said `arm64` on the same binary. A gate never observed failing is a gate nobody has
+> tested, and this one's untested failure mode was *certifying the thing it exists to check*.
+>
+> **`ios-build` became an aggregator so a required context would not vanish.** Splitting it into a
+> matrix would have destroyed a check that is required on `main` — blocking every PR, **including
+> the one that renames it**. Caught before merge; branch protection needed **no** change. Adding
+> the two leg contexts is optional.
+>
+> **`Debug` and `Verbose` are observable on a device for the first time.** Every route was closed —
+> `log config` has no `--device` flag, macOS 26's `log stream` lost device support,
+> `devicectl --console` carries only fd 1 and 2 — and the last one, `OS_ACTIVITY_DT_MODE`'s mirror
+> to fd 2, **was closed by our own `dup2`.** The pump now stands aside when the mirror is on, and
+> the recipe is recorded at `website/docs/shells/ios.md` §8, because a fix nobody can find is not
+> observability.
+>
+> **#360's pin holes are closed**, so M14's central claim is unconditional rather than true-for-the
+> -shapes-we-tested: the scanner sees tokens wrapped across lines, stops reading string literals as
+> comments, **counts** what an `ignored` entry excuses, and pins the test-only guard that entry
+> rests on — because **a token scanner cannot see a guard**. The source issue's own proposed fix,
+> keying by line, would have caught none of it.
+>
+> **Every task's review found something real, and four changed the design.** A same-line ternary
+> that defeated the dedup. A *new caller* that defeated both guards at once. The required-context
+> destruction above. And a Yoga cache key with no RID in it, under which both legs wrote different
+> slices to the same path — the `vtool` gate's own failure mode, reappearing one layer down where
+> no gate was looking.
+>
+> **Two instructions of mine were wrong and were refused.** `ROADMAP:209`'s "eight-export C-ABI" is
+> **historically correct** — the ABI genuinely was eight at M3 close — so it was annotated rather
+> than falsified. And there is no 13-versus-10 export discrepancy: grep returns 13, but only 10
+> apply the attribute.
+>
+> **Accepted debt, recorded rather than implied:** the caller count covers one spelling — a
+> positional call, a no-spaces `=`, or a `"""` string still slips past; the device leg is
+> compile-and-link only, so real-device *execution* remains #17's external dependency; and
+> `IosSliceMatrixDriftTests` is what makes the aggregator's claim true, a load-bearing cross-file
+> dependency worth naming at audit.
 
 #### Phase 14.5: Audit and close [status: pending]
 **Goal:** Run `audit-milestone` against the DoD on live evidence and close M14. **No tag** — the
