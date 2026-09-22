@@ -326,26 +326,46 @@ public sealed class AuthSemanticsDriftTests
         Site[] sites = Sites();
         using JsonDocument doc = Manifest();
 
-        var ignored = new HashSet<string>(StringComparer.Ordinal);
+        // An ignore is COUNTED, not open-ended. An uncounted `file::token` pair excuses
+        // every occurrence of that token in that file for ever, which is indistinguishable
+        // from switching the scan off for the pair — so a SECOND call site could be added
+        // beside the excused one and this pin would stay green.
+        var ignoredCounts = new Dictionary<string, int>(StringComparer.Ordinal);
+        var ignoredSeen = new Dictionary<string, int>(StringComparer.Ordinal);
         if (doc.RootElement.TryGetProperty("ignored", out JsonElement arr))
         {
             foreach (JsonElement ig in arr.EnumerateArray())
             {
                 string file = Required(ig, "file", "an ignored occurrence");
                 string token = Required(ig, "token", $"the ignored occurrence in '{file}'");
+                string key = $"{file}::{token}";
                 Assert.False(
                     string.IsNullOrWhiteSpace(
                         Required(ig, "reason", $"ignored occurrence '{token}' in '{file}'")),
                     $"ignored occurrence '{token}' in '{file}' carries no reason — asymmetry is "
                     + "allowed, silence is not");
-                ignored.Add($"{file}::{token}");
+                Assert.True(
+                    ig.TryGetProperty("count", out JsonElement c)
+                    && c.TryGetInt32(out int n) && n > 0,
+                    $"ignored entry '{key}' has no positive integer `count` — an uncounted ignore "
+                    + "excuses every occurrence of that token in that file, which is the same as "
+                    + "disabling the scan for the pair");
+                ignoredCounts[key] = c.GetInt32();
+                ignoredSeen[key] = 0;
             }
         }
 
         foreach (Occurrence occ in ScanOccurrences())
         {
             bool declared = sites.Any(s => s.File == occ.File && s.Token == occ.Token);
-            bool excused = ignored.Contains($"{occ.File}::{occ.Token}");
+
+            string ignoreKey = $"{occ.File}::{occ.Token}";
+            bool excused = false;
+            if (ignoredCounts.TryGetValue(ignoreKey, out int allowed))
+            {
+                ignoredSeen[ignoreKey]++;
+                excused = ignoredSeen[ignoreKey] <= allowed;
+            }
 
             Assert.True(declared || excused,
                 $"UNDECLARED AUTHENTICATOR: '{occ.Token}' at {occ.File}:{occ.Line} appears in "
@@ -354,6 +374,42 @@ public sealed class AuthSemanticsDriftTests
                 + "Apple shell came to disagree with itself. Declare it with a reason, or "
                 + "ignore it with a reason.");
         }
+
+        // EXACT, not at-most. A count left behind after its occurrence is deleted is a
+        // stale excuse, and a stale excuse is a licence for the next occurrence to
+        // arrive unreviewed.
+        foreach ((string key, int allowed) in ignoredCounts)
+            Assert.True(ignoredSeen[key] == allowed,
+                $"ignored entry '{key}' declares count {allowed}, but the scan found "
+                + $"{ignoredSeen[key]}. If the occurrence moved or was deleted, delete the "
+                + "entry too — a count that outlives its occurrence is a standing licence "
+                + "for the next one to arrive unreviewed.");
+    }
+
+    [Fact]
+    public void TheTestOnlyCredentialBranch_IsStillGuarded()
+    {
+        // src/auth-semantics.json excuses one AUTH_DEVICE_CREDENTIAL occurrence on the
+        // grounds that it is reachable only through `allowDeviceCredentialForTest`.
+        // A token scanner cannot see a guard — widening `if (allowDeviceCredentialForTest)`
+        // to `if (true)` leaves the token on the same line, in the same file, exactly
+        // once, so neither the completeness scan nor its `count` changes by one
+        // character. That excuse therefore rests on this assertion and nothing else.
+        string path = Path.Combine(RepoRoot(),
+            "src", "BlazorNative.Jni", "src", "androidMain", "kotlin", "io",
+            "blazornative", "shell", "AndroidShellBridge.kt");
+        Assert.True(File.Exists(path),
+            $"{path} does not exist — a pin that cannot find its subject must fail loudly, "
+            + "never vacuously");
+
+        string code = StripComments(File.ReadAllText(path));
+
+        Assert.Contains("if (allowDeviceCredentialForTest)", code, StringComparison.Ordinal);
+
+        // And the parameter must still default to false, or every caller gets the
+        // credential path without asking for it.
+        Assert.Contains("allowDeviceCredentialForTest: Boolean = false", code,
+            StringComparison.Ordinal);
     }
 
     [Fact]

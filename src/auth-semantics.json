@@ -22,11 +22,10 @@
     "the authenticator class, or `check` reports on one authenticator while the gate",
     "demands another.",
     "",
-    "KIND IS DESCRIPTIVE ONLY: the `kind` field above is metadata for reviewers, telling",
-    "them which sites decide access and which merely report a capability. NO TEST reads",
-    "or asserts it -- AuthSemanticsDriftTests checks `token` and `reason` only. Do not",
-    "treat `kind`'s presence in this schema as an enforced guarantee; a field that looks",
-    "checked but isn't is exactly the bug class this milestone exists to close.",
+    "KIND IS DESCRIPTIVE. The FIELD is required -- the manifest fails to load without",
+    "it -- but its VALUE is never checked: `\"kind\": \"banana\"` on every site passes.",
+    "It exists so a reviewer knows whether a site gates access or merely reports",
+    "capability. Do not infer a guarantee from its presence.",
     "",
     "WHAT THE PIN CHECKS, AND WHAT IT DOES NOT: AuthSemanticsDriftTests reads SOURCE.",
     "It asserts each site below still carries its declared token, and that no token",
@@ -113,7 +112,8 @@
     {
       "file": "src/BlazorNative.Jni/src/androidMain/kotlin/io/blazornative/shell/AndroidShellBridge.kt",
       "token": "AUTH_DEVICE_CREDENTIAL",
-      "reason": "provisionKey's allowDeviceCredentialForTest branch. An auth-bound key cannot be provisioned on a CI emulator that has a lock-screen PIN but no scriptable fingerprint, so the instrumented binding test asks for the credential explicitly. It is unreachable from production: the parameter defaults to false and no shipping caller passes true. If a production caller ever does, this entry is a lie and should red -- which is why it names the token and the file rather than disabling the scan."
+      "count": 1,
+      "reason": "provisionKey's allowDeviceCredentialForTest branch. An auth-bound key cannot be provisioned on a CI emulator that has a lock-screen PIN and no scriptable fingerprint, so the instrumented binding test asks for the credential explicitly. WHAT THIS ENTRY ENFORCES, precisely: `count` pins the number of occurrences, so a SECOND production call site using this token in this file reds. WHAT IT CANNOT ENFORCE: a token scanner cannot see a guard, so widening the existing branch -- changing the condition to something always true -- leaves the token where it is and this entry silent. That case is covered by TheTestOnlyCredentialBranch_IsStillGuarded, not by this entry. Said plainly because an earlier version of this reason promised enforcement it did not have."
     }
   ]
 }
