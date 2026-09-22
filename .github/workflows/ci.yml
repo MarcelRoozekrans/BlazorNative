@@ -3428,11 +3428,30 @@ jobs:
   # asserts the dependency's result explicitly.
   #
   # And it fails on ANYTHING that is not `success`, deliberately including
-  # `skipped`. If the matrix legs are ever conditioned out — a `paths:` filter, an
-  # `if:` on the matrix job, a typo that empties the matrix — this check goes RED
-  # rather than green-on-nothing. That is the AGP-9 failure mode this whole
-  # section of the file exists to prevent, and the aggregator must not reintroduce
-  # it by being skippable.
+  # `skipped`. If the WHOLE matrix job is ever conditioned out — a `paths:` filter,
+  # a leg-independent `if:` that evaluates false, a typo that empties the matrix —
+  # this check goes RED rather than green-on-nothing. That is the AGP-9 failure
+  # mode this whole section of the file exists to prevent, and the aggregator must
+  # not reintroduce it by being skippable.
+  #
+  # ── THE ONE SKIP THIS JOB CANNOT SEE, AND WHERE IT IS ACTUALLY HELD ───────
+  # The sentence above is about the matrix as a WHOLE, and the distinction is
+  # load-bearing. A job-level `if:` on a matrix is evaluated PER LEG, and GitHub
+  # reports the aggregate `result` as `success` when some legs succeed and the
+  # rest are SKIPPED. So `if: matrix.leg != 'device'` — or deleting an entry from
+  # `include:` — leaves THIS CHECK GREEN over a single compiled slice.
+  # `continue-on-error` on the matrix job is the same hole spelled differently.
+  #
+  # This job cannot close that without counting legs at runtime, which means an
+  # Actions API call ON THE VERDICT PATH, which is exactly what it must not have.
+  # So the roster is pinned OUTSIDE the workflow instead, by
+  # `IosSliceMatrixDriftTests` in the required .NET suite: it asserts that
+  # `ios-build-slice` declares both `iossimulator-arm64` and `ios-arm64`, and that
+  # the job carries no `if:` and no `continue-on-error`. With those two facts held,
+  # "every leg the matrix declared succeeded" — all this job can honestly claim —
+  # is equivalent to "both slices compiled", by construction rather than by
+  # assertion. If you need a conditional leg, that pin reds and says so; decide the
+  # trade out loud rather than editing it away.
   #
   # `needs.<job>.result` on a matrix is the AGGREGATE of every leg, so one red leg
   # is one red aggregate. It does not say WHICH leg, so the failure path asks the
@@ -3463,7 +3482,7 @@ jobs:
           set -uo pipefail
           echo "ios-build-slice aggregate result: '$SLICE_RESULT'"
           if [ "$SLICE_RESULT" = "success" ]; then
-            echo "BOTH SLICES COMPILED: iossimulator-arm64 and ios-arm64 published, linked, and passed their LC_BUILD_VERSION slice gate."
+            echo "EVERY DECLARED SLICE COMPILED: all ios-build-slice legs published, linked, and passed their LC_BUILD_VERSION slice gate. This job reads the matrix's aggregate result and does not inspect the legs, so WHICH slices those are is held by IosSliceMatrixDriftTests in the required .NET suite, not claimed here."
             exit 0
           fi
 
