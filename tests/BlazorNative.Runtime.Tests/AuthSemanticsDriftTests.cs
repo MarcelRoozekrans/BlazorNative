@@ -350,6 +350,16 @@ public sealed class AuthSemanticsDriftTests
                     $"ignored entry '{key}' has no positive integer `count` — an uncounted ignore "
                     + "excuses every occurrence of that token in that file, which is the same as "
                     + "disabling the scan for the pair");
+                // A duplicate pair would LAST-WRITE-WIN into the dictionary, so a second
+                // entry carrying a larger count would silently raise the excuse ceiling
+                // while the first entry's reason — the one a reviewer reads — stayed on
+                // the page describing a narrower permission than is actually granted.
+                Assert.False(ignoredCounts.ContainsKey(key),
+                    $"duplicate ignored entry '{key}' in src/auth-semantics.json — two entries "
+                    + "for one file and token silently collapse to whichever is listed last, "
+                    + "so the reason a reviewer reads need not be the count that is enforced. "
+                    + "Merge them into one entry with one count and one reason.");
+
                 ignoredCounts[key] = c.GetInt32();
                 ignoredSeen[key] = 0;
             }
@@ -394,7 +404,24 @@ public sealed class AuthSemanticsDriftTests
         // A token scanner cannot see a guard — widening `if (allowDeviceCredentialForTest)`
         // to `if (true)` leaves the token on the same line, in the same file, exactly
         // once, so neither the completeness scan nor its `count` changes by one
-        // character. That excuse therefore rests on this assertion and nothing else.
+        // character. That is what the first two assertions below are for.
+        //
+        // THE THIRD ASSERTION EXISTS BECAUSE THE GUARD IS NOT THE ONLY WAY IN. A new
+        // caller passing the flag widens the credential path in production exactly as
+        // `if (true)` does, while writing neither the AUTH_DEVICE_CREDENTIAL token nor
+        // either guard literal — so the count does not move and the guard still reads
+        // as written. Demonstrated, not imagined: a two-line
+        // `provisionKeyForRecovery` forwarding `allowDeviceCredentialForTest = true`
+        // passed every other assertion in this file. The argument literal is countable
+        // the same way the token is, so it is counted.
+        //
+        // WHAT IS STILL NOT COVERED, stated plainly rather than hedged: the count is
+        // over ONE SPELLING of the argument. A POSITIONAL call —
+        // `provisionKey(key, true, true)` — carries no parameter name at all, and a
+        // named call written without spaces around the `=` is a different string. Both
+        // slip past. Closing those needs a Kotlin parser, not a scanner, and this pin
+        // does not have one. The cheap spellings are pinned; the rest is a reviewer's
+        // job, and saying so here is the point.
         string path = Path.Combine(RepoRoot(),
             "src", "BlazorNative.Jni", "src", "androidMain", "kotlin", "io",
             "blazornative", "shell", "AndroidShellBridge.kt");
@@ -410,6 +437,27 @@ public sealed class AuthSemanticsDriftTests
         // credential path without asking for it.
         Assert.Contains("allowDeviceCredentialForTest: Boolean = false", code,
             StringComparison.Ordinal);
+
+        // EXACTLY ONE caller may ask for the credential path: writeAuthBoundSecretForTest,
+        // the instrumented test seam the ignore entry is written about. Counted over the
+        // COMMENT-STRIPPED text, because the KDoc above provisionKey names the parameter
+        // in prose and a raw-file count would score it. Exactly-one, not at-most-one:
+        // if the seam is deleted, this entry and its manifest reason describe a caller
+        // that no longer exists, and a stale excuse is a licence for the next one.
+        const string CallerLiteral = "allowDeviceCredentialForTest = true";
+        int callers = 0;
+        for (int i = code.IndexOf(CallerLiteral, StringComparison.Ordinal); i >= 0;
+             i = code.IndexOf(CallerLiteral, i + CallerLiteral.Length, StringComparison.Ordinal))
+            callers++;
+
+        Assert.True(callers == 1,
+            $"expected exactly one caller passing `{CallerLiteral}` in AndroidShellBridge.kt, "
+            + $"found {callers}. The ignore entry for AUTH_DEVICE_CREDENTIAL in "
+            + "src/auth-semantics.json rests on there being ONE, writeAuthBoundSecretForTest, "
+            + "reachable only from the instrumented suite. A second caller widens the "
+            + "credential path in production without writing the token or touching the "
+            + "guard, so nothing else in this file would notice. Zero means the seam was "
+            + "deleted and the manifest reason now describes code that is gone.");
     }
 
     [Fact]
