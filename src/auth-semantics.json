@@ -109,5 +109,11 @@
       "reason": "backs the `check` capability report, the Apple twin of androidCanAuthenticate."
     }
   ],
-  "ignored": []
+  "ignored": [
+    {
+      "file": "src/BlazorNative.Jni/src/androidMain/kotlin/io/blazornative/shell/AndroidShellBridge.kt",
+      "token": "AUTH_DEVICE_CREDENTIAL",
+      "reason": "provisionKey's allowDeviceCredentialForTest branch. An auth-bound key cannot be provisioned on a CI emulator that has a lock-screen PIN but no scriptable fingerprint, so the instrumented binding test asks for the credential explicitly. It is unreachable from production: the parameter defaults to false and no shipping caller passes true. If a production caller ever does, this entry is a lie and should red -- which is why it names the token and the file rather than disabling the scan."
+    }
+  ]
 }

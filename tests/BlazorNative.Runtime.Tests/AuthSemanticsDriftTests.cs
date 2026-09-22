@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 using Xunit;
 
@@ -39,19 +40,33 @@ public sealed class AuthSemanticsDriftTests
             File.ReadAllText(Path.Combine(RepoRoot(), "src", "auth-semantics.json")),
             new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Skip });
 
+    /// <summary>Reads a required string field, failing with the field's name rather
+    /// than a bare KeyNotFoundException. A missing `reason` and a blank one are the
+    /// same defect — an undocumented entry — so they must produce the same legible
+    /// failure, not an opaque throw for one and a named assertion for the other.
+    /// </summary>
+    private static string Required(JsonElement element, string field, string what)
+    {
+        Assert.True(element.TryGetProperty(field, out JsonElement value),
+            $"{what} has no '{field}' field in src/auth-semantics.json — every entry must "
+            + "carry one, and a missing field is the same defect as a blank one");
+        return value.GetString() ?? string.Empty;
+    }
+
     private static Site[] Sites()
     {
         using JsonDocument doc = Manifest();
         var sites = new List<Site>();
         foreach (JsonElement s in doc.RootElement.GetProperty("sites").EnumerateArray())
         {
+            string name = Required(s, "name", "a site");
             sites.Add(new Site(
-                s.GetProperty("name").GetString()!,
-                s.GetProperty("file").GetString()!,
-                s.GetProperty("language").GetString()!,
-                s.GetProperty("kind").GetString()!,
-                s.GetProperty("token").GetString()!,
-                s.GetProperty("reason").GetString()!));
+                name,
+                Required(s, "file", $"site '{name}'"),
+                Required(s, "language", $"site '{name}'"),
+                Required(s, "kind", $"site '{name}'"),
+                Required(s, "token", $"site '{name}'"),
+                Required(s, "reason", $"site '{name}'")));
         }
 
         Assert.True(sites.Count >= 7,
@@ -60,15 +75,78 @@ public sealed class AuthSemanticsDriftTests
         return [.. sites];
     }
 
-    /// <summary>Strips line comments so a token merely DESCRIBED in prose is never
-    /// mistaken for a live call site. BnSecureStorage.swift alone mentions
-    /// `.biometryCurrentSet` nine times in doc comments and twice in code.</summary>
-    internal static string StripLineComments(string source) =>
-        string.Join('\n', source.Split('\n').Select(line =>
+    /// <summary>Removes both comment forms Swift and Kotlin share, so a token merely
+    /// DESCRIBED in prose is never mistaken for a live call site: `//` to end of line,
+    /// AND `/* … */` blocks, which includes KDoc `/** … */` — AndroidShellBridge.kt
+    /// carries 284 block openers, and the completeness scan reads the same stripped
+    /// text, so an unstripped KDoc token would demand an `ignored` entry documenting
+    /// nothing real. Blocks nest, as both languages define them. Newlines inside a
+    /// stripped block are preserved so reported line numbers stay true. An
+    /// UNTERMINATED opener is left in place rather than swallowing the rest of the
+    /// file: over-stripping hides live call sites, which is a false green.
+    /// KNOWN LIMIT, not a claim: string literals are not parsed, so a `//` or `/*`
+    /// inside a string is treated as a comment. Neither shell's source has one near
+    /// an authenticator token; if that changes, occurrences after it go unseen and the
+    /// anti-vacuity count is the only thing standing between that and a silent green.
+    /// </summary>
+    internal static string StripComments(string source)
+    {
+        var sb = new StringBuilder(source.Length);
+        int i = 0;
+
+        while (i < source.Length)
         {
-            int i = line.IndexOf("//", StringComparison.Ordinal);
-            return i >= 0 ? line[..i] : line;
-        }));
+            if (source[i] == '/' && i + 1 < source.Length && source[i + 1] == '*')
+            {
+                int depth = 0;
+                int j = i;
+                while (j < source.Length)
+                {
+                    if (source[j] == '/' && j + 1 < source.Length && source[j + 1] == '*')
+                    {
+                        depth++;
+                        j += 2;
+                    }
+                    else if (source[j] == '*' && j + 1 < source.Length && source[j + 1] == '/')
+                    {
+                        depth--;
+                        j += 2;
+                        if (depth == 0) break;
+                    }
+                    else
+                    {
+                        j++;
+                    }
+                }
+
+                if (depth != 0)
+                {
+                    // Unterminated — emit the '/' verbatim and resume one character on.
+                    // Swallowing to EOF would blind the scan to everything below it.
+                    sb.Append(source[i]);
+                    i++;
+                    continue;
+                }
+
+                // Keep the block's newlines so line numbers survive the strip.
+                for (int k = i; k < j; k++)
+                    if (source[k] == '\n') sb.Append('\n');
+                i = j;
+                continue;
+            }
+
+            if (source[i] == '/' && i + 1 < source.Length && source[i + 1] == '/')
+            {
+                while (i < source.Length && source[i] != '\n') i++;
+                continue;
+            }
+
+            sb.Append(source[i]);
+            i++;
+        }
+
+        return sb.ToString();
+    }
 
     [Fact]
     public void EveryDeclaredSite_StillCarriesItsDeclaredToken()
@@ -80,7 +158,7 @@ public sealed class AuthSemanticsDriftTests
                 $"site '{site.Name}' names {site.File}, which does not exist — the manifest and "
                 + "the tree have drifted");
 
-            string code = StripLineComments(File.ReadAllText(path));
+            string code = StripComments(File.ReadAllText(path));
             Assert.True(code.Contains(site.Token, StringComparison.Ordinal),
                 $"site '{site.Name}' ({site.Kind}) must use '{site.Token}' in {site.File}, and no "
                 + $"live occurrence was found. Reason on record: {site.Reason}");
@@ -89,5 +167,133 @@ public sealed class AuthSemanticsDriftTests
                 $"site '{site.Name}' carries no reason — an undocumented site is one nobody can "
                 + "review");
         }
+    }
+
+    /// <summary>Every authenticator token either platform offers. A token NOT in this
+    /// list is invisible to the completeness scan, so adding a platform authenticator
+    /// means adding it here — that is the one manual step this pin cannot remove.</summary>
+    private static readonly string[] AuthenticatorVocabulary =
+    [
+        ".deviceOwnerAuthenticationWithBiometrics",
+        ".deviceOwnerAuthentication",
+        ".biometryCurrentSet",
+        ".biometryAny",
+        ".userPresence",
+        "AUTH_BIOMETRIC_STRONG",
+        "AUTH_BIOMETRIC_WEAK",
+        "AUTH_DEVICE_CREDENTIAL",
+        "Authenticators.BIOMETRIC_STRONG",
+        "Authenticators.BIOMETRIC_WEAK",
+        "Authenticators.DEVICE_CREDENTIAL",
+    ];
+
+    private static readonly string[] ShellSourceRoots =
+    [
+        Path.Combine("src", "BlazorNative.Apple", "BnHost"),
+        Path.Combine("src", "BlazorNative.Jni", "src", "androidMain"),
+    ];
+
+    private sealed record Occurrence(string Token, string File, int Line);
+
+    /// <summary>Scans both shells' non-test source for every vocabulary token,
+    /// comments stripped. Shared by the completeness and anti-vacuity tests so the
+    /// second genuinely measures what the first scanned.</summary>
+    private static Occurrence[] ScanOccurrences()
+    {
+        string root = RepoRoot();
+        var found = new List<Occurrence>();
+
+        foreach (string rel in ShellSourceRoots)
+        {
+            string dir = Path.Combine(root, rel);
+            Assert.True(Directory.Exists(dir),
+                $"shell source root '{rel}' does not exist — the scan would silently cover "
+                + "nothing");
+
+            foreach (string path in Directory.EnumerateFiles(dir, "*.*", SearchOption.AllDirectories)
+                         .Where(p => p.EndsWith(".swift", StringComparison.Ordinal)
+                                  || p.EndsWith(".kt", StringComparison.Ordinal)))
+            {
+                string[] lines = StripComments(File.ReadAllText(path)).Split('\n');
+                for (int i = 0; i < lines.Length; i++)
+                {
+                    foreach (string token in AuthenticatorVocabulary)
+                    {
+                        // `.deviceOwnerAuthentication` is a prefix of
+                        // `.deviceOwnerAuthenticationWithBiometrics`. Attribute each line to
+                        // the LONGEST matching token only, or every biometrics call also
+                        // reports as a device-owner call and the pin accuses itself.
+                        if (!lines[i].Contains(token, StringComparison.Ordinal)) continue;
+                        if (AuthenticatorVocabulary.Any(other =>
+                                other.Length > token.Length
+                                && other.StartsWith(token, StringComparison.Ordinal)
+                                && lines[i].Contains(other, StringComparison.Ordinal)))
+                            continue;
+
+                        found.Add(new Occurrence(
+                            token,
+                            Path.GetRelativePath(root, path).Replace('\\', '/'),
+                            i + 1));
+                    }
+                }
+            }
+        }
+
+        return [.. found];
+    }
+
+    [Fact]
+    public void EveryAuthenticatorOccurrence_IsDeclaredOrIgnored()
+    {
+        Site[] sites = Sites();
+        using JsonDocument doc = Manifest();
+
+        var ignored = new HashSet<string>(StringComparer.Ordinal);
+        if (doc.RootElement.TryGetProperty("ignored", out JsonElement arr))
+        {
+            foreach (JsonElement ig in arr.EnumerateArray())
+            {
+                string file = Required(ig, "file", "an ignored occurrence");
+                string token = Required(ig, "token", $"the ignored occurrence in '{file}'");
+                Assert.False(
+                    string.IsNullOrWhiteSpace(
+                        Required(ig, "reason", $"ignored occurrence '{token}' in '{file}'")),
+                    $"ignored occurrence '{token}' in '{file}' carries no reason — asymmetry is "
+                    + "allowed, silence is not");
+                ignored.Add($"{file}::{token}");
+            }
+        }
+
+        foreach (Occurrence occ in ScanOccurrences())
+        {
+            bool declared = sites.Any(s => s.File == occ.File && s.Token == occ.Token);
+            bool excused = ignored.Contains($"{occ.File}::{occ.Token}");
+
+            Assert.True(declared || excused,
+                $"UNDECLARED AUTHENTICATOR: '{occ.Token}' at {occ.File}:{occ.Line} appears in "
+                + "neither `sites` nor `ignored` in src/auth-semantics.json. An authenticator "
+                + "nobody declared is an opinion nobody reviewed — which is exactly how the "
+                + "Apple shell came to disagree with itself. Declare it with a reason, or "
+                + "ignore it with a reason.");
+        }
+    }
+
+    [Fact]
+    public void TheCompletenessScan_IsNotVacuous()
+    {
+        Occurrence[] occurrences = ScanOccurrences();
+
+        // The sibling test above passes trivially if the scan finds nothing — a regex or
+        // a path that stops matching turns the guard into a no-op that still reports
+        // green. 14.1's equivalent completeness check shipped WITHOUT this assertion and
+        // is a known open residual on main; this phase does not reproduce that hole.
+        Assert.True(occurrences.Length >= 7,
+            $"the authenticator scan found only {occurrences.Length} occurrences across both "
+            + "shells, and there are at least 7 known live sites. The scan has stopped seeing "
+            + "its subject — the completeness test above is now passing while checking "
+            + "nothing.");
+
+        Assert.Contains(occurrences, o => o.File.EndsWith(".swift", StringComparison.Ordinal));
+        Assert.Contains(occurrences, o => o.File.EndsWith(".kt", StringComparison.Ordinal));
     }
 }
