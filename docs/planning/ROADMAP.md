@@ -2260,13 +2260,54 @@ wire change.
 > no anti-vacuity assertion, so a regex that stops matching would make it pass while scanning
 > nothing. Its siblings in the same file guard this; it does not. One assertion closes it.
 
-#### Phase 14.2: Safe-area insets to .NET [status: pending]
+#### Phase 14.2: Safe-area insets to .NET [status: complete]
 **Goal:** Close **#338** on **both** shells. Each shell reports safe-area insets over the existing
 `blazornative_host_event` export using 14.0's generated name; .NET consumes them; layout decides.
 Frame parity re-baselined as *(layout, insets) → frames*. **Depends on 14.0** — the milestone's
 only hard ordering constraint.
 **Surface:** Mixed
 **HelpWanted:** no
+**Design:** [`docs/superpowers/specs/2026-09-21-phase-14.2-design.md`](../superpowers/specs/2026-09-21-phase-14.2-design.md)
+**Plan:** [`docs/superpowers/plans/2026-09-21-phase-14.2-safe-area-insets.md`](../superpowers/plans/2026-09-21-phase-14.2-safe-area-insets.md)
+**Conclusion:** [`docs/plans/2026-09-21-phase-14.2-conclusion.md`](../plans/2026-09-21-phase-14.2-conclusion.md)
+**Completed:** 2026-09-22 · [PR #351](https://github.com/MarcelRoozekrans/BlazorNative/pull/351)
+· **#338 closed**. Counts .NET 1080 → **1106**, Android 225 → **226**, iOS 269 → **270**, JVM 162
+unchanged. **No ABI change** — insets ride the existing `blazornative_host_event` export, as
+scoping decision 3 predicted.
+
+> **`BnSafeArea` is opt-in, and that was the hard call.** The owner's instinct was automatic — a
+> framework that silently lets content sit under a notch has a bug, not a preference. Research
+> settled it the other way: SwiftUI is the *only* major framework that insets automatically, and
+> every peer this repo could be compared against — Flutter's `SafeArea`, React Native's
+> `SafeAreaView`, MAUI, Compose's `windowInsetsPadding` — is opt-in. The cost of automatic is that
+> a full-bleed background becomes impossible to express. So the standard is followed, and the
+> ergonomics problem is solved where it actually lives: **`BnSafeArea` appears in every snippet a
+> user would copy** — the four capability pages, the `dotnet new` starter, the intro example, and
+> a new guide — with a guard that reds if a sample loses its wrap.
+>
+> **THE BOOT RACE IS THIS PHASE'S REAL LESSON, AND IT WAS FOUND TWICE.** Both shells boot the
+> runtime asynchronously, and both inset listeners only re-fire on an actual value *change*. So a
+> first callback arriving before boot, that *records* the value it could not deliver, leaves .NET
+> at `BnSafeAreaInsets.Zero` **forever on an ordinary static-orientation launch** — reproducing
+> #338 behind a green build. The fix needs **both halves**: do not record when the dispatch is
+> skipped, *and* force one re-report the moment boot completes. Neither half alone is sufficient.
+>
+> **The iOS half shipped only because a review caught a claim I had asserted without checking.**
+> The conclusion doc, `MainActivity.kt`, and its template mirror all stated that iOS boots
+> synchronously in `viewDidLoad` and therefore had no such race. That was false —
+> `viewDidLoad` boots on `DispatchQueue.global(...).async` and publishes `BnRuntime.current` last,
+> after mount. A reviewer repeated the claim from my own text, and it became the stated *reason
+> iOS was safe*. iOS has the identical race; it does not have a different, safer one. The false
+> sentence now survives only inside explicit corrections.
+>
+> **Known coverage boundary, recorded rather than papered over.** Neither shell's *reporting* path
+> has automated coverage — `HostViewController` is inert under XCTest, and the device frame-table
+> tests dispatch the event themselves instead of waiting for a real inset. Closing it would mean a
+> new test-only seam, and 14.1 spent a whole phase on the damage those do.
+>
+> **Two residuals for the owner.** The sample-adoption guard is a literal text match, so it cannot
+> tell a live `BnSafeArea` wrap from a commented-out one; and it covers the five sample and
+> template files but not `intro.md` or `guides/safe-area.md`.
 
 #### Phase 14.3: Auth semantics [status: pending]
 **Goal:** Close **#213 item 1**. Decide one answer to what `requireAuth` means, pin the stored
