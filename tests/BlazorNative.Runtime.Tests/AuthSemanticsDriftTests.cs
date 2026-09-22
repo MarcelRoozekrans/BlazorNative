@@ -214,26 +214,38 @@ public sealed class AuthSemanticsDriftTests
                          .Where(p => p.EndsWith(".swift", StringComparison.Ordinal)
                                   || p.EndsWith(".kt", StringComparison.Ordinal)))
             {
+                string file = Path.GetRelativePath(root, path).Replace('\\', '/');
                 string[] lines = StripComments(File.ReadAllText(path)).Split('\n');
                 for (int i = 0; i < lines.Length; i++)
                 {
+                    // Every occurrence of every token on this line, with the index it
+                    // actually starts at. Indices, not line containment — see below.
+                    var matches = new List<(string Token, int Start)>();
                     foreach (string token in AuthenticatorVocabulary)
+                        for (int at = lines[i].IndexOf(token, StringComparison.Ordinal);
+                             at >= 0;
+                             at = lines[i].IndexOf(token, at + 1, StringComparison.Ordinal))
+                            matches.Add((token, at));
+
+                    foreach ((string token, int start) in matches)
                     {
                         // `.deviceOwnerAuthentication` is a prefix of
-                        // `.deviceOwnerAuthenticationWithBiometrics`. Attribute each line to
-                        // the LONGEST matching token only, or every biometrics call also
-                        // reports as a device-owner call and the pin accuses itself.
-                        if (!lines[i].Contains(token, StringComparison.Ordinal)) continue;
-                        if (AuthenticatorVocabulary.Any(other =>
-                                other.Length > token.Length
-                                && other.StartsWith(token, StringComparison.Ordinal)
-                                && lines[i].Contains(other, StringComparison.Ordinal)))
+                        // `.deviceOwnerAuthenticationWithBiometrics`, so the short token also
+                        // matches INSIDE the long one and would otherwise report a
+                        // device-owner call at every biometrics site. Suppress by SPAN, never
+                        // by line: an occurrence is a false echo only when it lies within a
+                        // LONGER token's matched span. Asking merely whether some longer token
+                        // appears SOMEWHERE on the line loses a real occurrence whenever both
+                        // appear separately — a ternary or a ratchet between the weak and the
+                        // strong LAPolicy on one line, which is exactly the #213 pair — and
+                        // this pin would stay green through a reintroduction of the defect.
+                        if (matches.Any(other =>
+                                other.Token.Length > token.Length
+                                && other.Start <= start
+                                && start + token.Length <= other.Start + other.Token.Length))
                             continue;
 
-                        found.Add(new Occurrence(
-                            token,
-                            Path.GetRelativePath(root, path).Replace('\\', '/'),
-                            i + 1));
+                        found.Add(new Occurrence(token, file, i + 1));
                     }
                 }
             }
