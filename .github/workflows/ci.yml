@@ -4,7 +4,7 @@
 #
 #   build-test (windows-latest) — the local verification procedure verbatim
 #   (setup.ps1 §1–7 documents the toolchain pins):
-#     build (analyzers ride it) → .NET tests (1111 passed / 0 skipped) →
+#     build (analyzers ride it) → .NET tests (1112 passed / 0 skipped) →
 #     three NativeAOT publishes of samples/BlazorNative.SampleApp — the
 #     publish head since Phase 8.0: the app owns PublishAot, the exports stay
 #     in Runtime via UnmanagedEntryPointsAssembly, and the artifact is
@@ -2143,6 +2143,8 @@ jobs:
       # open residual closed here rather than repeated. Tasks 3 and 4 move no
       # count: the demo's plain-Get button corrected an existing stale literal
       # in BnSecureDemoTests, and the `Unavailable` correction is comment-only.
+      # 1111 -> 1112 (15.0 the pin standard, +1): PinPopulationTests — a test that
+      # reaches the repo tree without BnRepo.Root is invisible to pin enforcement.
       # 1109 -> 1111 (14.4 device observability, +2): ONE fact per workstream,
       # and both exist because a scanner cannot see what it does not scan.
       # Task 2 adds AuthSemanticsDriftTests.TheTestOnlyCredentialBranch_IsStill
@@ -2159,7 +2161,7 @@ jobs:
       # Task 1 moves no count -- it widens the existing scanner to see tokens
       # wrapped across lines and stops it reading string literals as comments,
       # both reproduced first as live undeclared occurrences under a green pin.
-      - name: .NET tests (assert 1111 passed / 0 skipped)
+      - name: .NET tests (assert 1112 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -2177,8 +2179,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 1111 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 1111 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 1112 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 1112 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # ── NativeAOT publishes + ten-export verification ─────────────────────
