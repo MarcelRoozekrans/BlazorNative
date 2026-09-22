@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.15.0](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.14.0...v0.15.0) (2026-09-22)
+
+
+### Features
+
+* **14.3:** requireAuth means biometry on both shells, pinned by a differential check ([#213](https://github.com/MarcelRoozekrans/BlazorNative/issues/213)) ([#355](https://github.com/MarcelRoozekrans/BlazorNative/issues/355)) ([eb8957f](https://github.com/MarcelRoozekrans/BlazorNative/commit/eb8957f2f16c9d4de72f88287baa3d92296cd183))
+
 ## [0.14.0](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.13.1...v0.14.0) (2026-09-22)
 
 
