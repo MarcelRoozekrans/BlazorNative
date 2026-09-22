@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using BlazorNative.Tests.Shared;
 
 namespace BlazorNative.Runtime.Tests;
 
@@ -152,18 +153,8 @@ public sealed class IosSliceMatrixDriftTests
     /// (ShellStyleTableDriftTests' rule, and ReadmeDriftTests' too).</summary>
     private static string ReadCheckoutFile(string relativePath)
     {
-        string file = Path.Combine(RepoRoot(), relativePath);
+        string file = Path.Combine(BnRepo.Root(), relativePath);
         Assert.True(File.Exists(file), $"checkout file not found: {file}");
         return File.ReadAllText(file);
-    }
-
-    private static string RepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "BlazorNative.sln")))
-            dir = dir.Parent;
-
-        Assert.True(dir is not null, "BlazorNative.sln not found above " + AppContext.BaseDirectory);
-        return dir!.FullName;
     }
 }

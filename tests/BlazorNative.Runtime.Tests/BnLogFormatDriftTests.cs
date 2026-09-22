@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using BlazorNative.Core;
+using BlazorNative.Tests.Shared;
 
 namespace BlazorNative.Runtime.Tests;
 
@@ -683,26 +684,12 @@ public sealed class BnLogFormatDriftTests
     // ── the checkout ─────────────────────────────────────────────────────────
 
     private static string CheckoutPath(string relativePath)
-        => Path.Combine(RepoRoot(), relativePath.Replace('/', Path.DirectorySeparatorChar));
+        => Path.Combine(BnRepo.Root(), relativePath.Replace('/', Path.DirectorySeparatorChar));
 
     private static string ReadCheckoutFile(string relativePath)
     {
         string path = CheckoutPath(relativePath);
         Assert.True(File.Exists(path), $"checkout file not found: {path}");
         return File.ReadAllText(path);
-    }
-
-    /// <summary>The nearest ancestor of the test binary holding BlazorNative.sln —
-    /// the same walk `ConsoleErrorDriftTests` and `ReadmeDriftTests` use. The
-    /// Kotlin sources are not a build input of this project, which is what makes
-    /// `build-test` the one lane that can host this pin.</summary>
-    private static string RepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "BlazorNative.sln")))
-            dir = dir.Parent;
-
-        Assert.True(dir is not null, "BlazorNative.sln not found above " + AppContext.BaseDirectory);
-        return dir!.FullName;
     }
 }

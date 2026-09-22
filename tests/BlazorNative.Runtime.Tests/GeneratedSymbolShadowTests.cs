@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using BlazorNative.Tests.Shared;
 
 namespace BlazorNative.Runtime.Tests;
 
@@ -33,15 +34,6 @@ namespace BlazorNative.Runtime.Tests;
 
 public sealed class GeneratedSymbolShadowTests
 {
-    private static string RepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "BlazorNative.sln")))
-            dir = dir.Parent;
-        Assert.NotNull(dir);
-        return dir!.FullName;
-    }
-
     /// <summary>How many symbols the three generated shell files hold TODAY (5 Swift,
     /// 6 Kotlin — the 5 BnWireVocabulary members plus BnHostEvent's constructor
     /// property `wireName`, which Swift has no equivalent of because Swift's
@@ -87,7 +79,7 @@ public sealed class GeneratedSymbolShadowTests
     /// guards the file MOVING; only a count guards the parse FAILING.</para></summary>
     private static IReadOnlyList<(string File, string Symbol, bool InHostEventEnum)> GeneratedSymbols()
     {
-        string root = RepoRoot();
+        string root = BnRepo.Root();
         (string Path, string Pattern)[] generated =
         [
             (Path.Combine(root, "src", "BlazorNative.Apple", "BnHost", "BnWireVocabulary.g.swift"), SwiftKotlinDeclaration),
@@ -144,7 +136,7 @@ public sealed class GeneratedSymbolShadowTests
     /// C twin could equally be declared in a `.h`.</para></summary>
     private static string[] ShellSources(string generatedFile)
     {
-        string root = RepoRoot();
+        string root = BnRepo.Root();
         bool apple = generatedFile.Contains($"{Path.DirectorySeparatorChar}BlazorNative.Apple{Path.DirectorySeparatorChar}", StringComparison.Ordinal);
 
         string dir = apple
@@ -164,9 +156,9 @@ public sealed class GeneratedSymbolShadowTests
     /// <summary>Every line of the file with COMMENT TEXT REMOVED, one entry per source
     /// line so line numbers and the forwarding window still line up.
     ///
-    /// <para>The same shape as <c>ConsoleErrorDriftTests.CodeLines</c> and
-    /// <c>NSLogDriftTests.CodeLines</c>, and it exists here for the mirror-image
-    /// reason: those scans must not count PROSE as an offence, this one must not
+    /// <para>The mirror image of what the four `file:line` drift pins want from
+    /// <see cref="CommentStrippedSource.NumberedCodeLines"/>: those scans must not
+    /// count PROSE as an offence, this one must not
     /// count prose as an EXEMPTION. The forwarding window is three lines of source;
     /// scanned raw, a shadowing declaration followed within two lines by a comment
     /// that merely MENTIONS `BnWireVocabulary.&lt;symbol&gt;` would be waved through —
@@ -175,7 +167,9 @@ public sealed class GeneratedSymbolShadowTests
     ///
     /// <para>Phase 14.1: the stripper itself moved to <see cref="CommentStrippedSource"/> so
     /// DispatchSurfaceDriftTests shares this exact logic instead of maintaining a second,
-    /// driftable copy — the second copy is what had the single-line-block-comment bug.</para></summary>
+    /// driftable copy — the second copy is what had the single-line-block-comment bug.
+    /// Phase 15.0 finished the job: five more copies were still out there, one of them
+    /// hiding a bare NSLog behind a URL in a string literal.</para></summary>
     private static string[] CodeLines(string file) => CommentStrippedSource.Lines(file);
 
     /// <summary>THE PIN. A hand-written declaration of a generated symbol's name
@@ -403,7 +397,7 @@ public sealed class GeneratedSymbolShadowTests
     /// not a bypass of it.</para></summary>
     private static string[] ProductionHostEventSources()
     {
-        string root = RepoRoot();
+        string root = BnRepo.Root();
         string[] roots =
         [
             Path.Combine(root, "src", "BlazorNative.Jni", "src", "main", "kotlin"),

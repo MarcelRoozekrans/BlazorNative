@@ -4,6 +4,7 @@ using BlazorNative.Renderer;
 using BlazorNative.Runtime;
 using static BlazorNative.Runtime.Tests.GoldenAssertions;
 using BlazorNative.SampleApp;
+using BlazorNative.Tests.Shared;
 
 namespace BlazorNative.Runtime.Tests;
 
@@ -312,13 +313,8 @@ public sealed class BnImageDemoTests
     /// (Same mechanism as <c>ShellStyleTableDriftTests</c>.)</summary>
     private static string ShellSource(string relativePath)
     {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "BlazorNative.sln")))
-            dir = dir.Parent;
-
-        Assert.True(dir is not null, "BlazorNative.sln not found above " + AppContext.BaseDirectory);
-
-        var file = Path.Combine(dir!.FullName, relativePath.Replace('/', Path.DirectorySeparatorChar));
+        var file = Path.Combine(
+            BnRepo.Root(), relativePath.Replace('/', Path.DirectorySeparatorChar));
         Assert.True(File.Exists(file), $"shell source not found: {file}");
         return File.ReadAllText(file);
     }

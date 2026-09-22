@@ -1,0 +1,12 @@
+<Project>
+
+  <!-- Links the shared test helper into EVERY project under tests/, so a future
+       test project cannot forget it. That matters beyond convenience:
+       PinPopulationTests enumerates the pin population by finding callers of
+       BnRepo.Root, and a project that reached the tree its own way would have
+       pins invisible to enforcement. -->
+  <ItemGroup>
+    <Compile Include="$(MSBuildThisFileDirectory)Shared\BnRepo.cs" Link="Shared\BnRepo.cs" />
+  </ItemGroup>
+
+</Project>

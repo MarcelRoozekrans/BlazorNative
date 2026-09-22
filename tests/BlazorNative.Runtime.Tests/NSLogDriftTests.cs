@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using BlazorNative.Tests.Shared;
 
 namespace BlazorNative.Runtime.Tests;
 
@@ -62,7 +63,7 @@ public sealed class NSLogDriftTests
     private const string BnHostTests = "src/BlazorNative.Apple/BnHostTests";
 
     /// <summary>Matches an `NSLog` CALL. Comments are excluded by
-    /// <see cref="CodeLines"/> — this phase's own sources discuss `NSLog` at
+    /// <see cref="CommentStrippedSource.NumberedCodeLines"/> — this phase's own sources discuss `NSLog` at
     /// length (BnLog.swift's header explains for eight lines why it is not one),
     /// and a pattern that cannot tell prose from a call reports the wrong number.
     /// The trailing `\s*\(` is what makes it a call rather than a mention.</summary>
@@ -102,7 +103,7 @@ public sealed class NSLogDriftTests
 
         foreach (string file in ShellFiles())
         {
-            offenders.AddRange(CodeLines(file)
+            offenders.AddRange(CommentStrippedSource.NumberedCodeLines(file)
                 .Where(l => Regex.IsMatch(l.Text, NSLogCall))
                 .Select(l => $"  {Relative(file)}:{l.Number}  {l.Text.Trim()}"));
         }
@@ -154,14 +155,14 @@ public sealed class NSLogDriftTests
     [Fact]
     public void TheTestBundleExemption_IsRealAndStillHoldsNSLog()
     {
-        string tests = Path.Combine(RepoRoot(), BnHostTests.Replace('/', Path.DirectorySeparatorChar));
+        string tests = Path.Combine(BnRepo.Root(), BnHostTests.Replace('/', Path.DirectorySeparatorChar));
         Assert.True(Directory.Exists(tests),
             $"{BnHostTests} is missing, so the exemption this pin names protects nothing. Either "
             + "the test bundle moved — then re-point the exemption deliberately — or it is gone, "
             + "in which case delete the exemption rather than keeping it as folklore.");
 
         int hits = Directory.EnumerateFiles(tests, "*.swift", SearchOption.AllDirectories)
-            .SelectMany(CodeLines)
+            .SelectMany(CommentStrippedSource.NumberedCodeLines)
             .Count(l => Regex.IsMatch(l.Text, NSLogCall));
 
         Assert.True(hits > 0,
@@ -189,7 +190,7 @@ public sealed class NSLogDriftTests
         foreach (string name in SweptFiles)
         {
             string file = ShellFiles().Single(f => Path.GetFileName(f) == name);
-            bool routed = CodeLines(file)
+            bool routed = CommentStrippedSource.NumberedCodeLines(file)
                 .Any(l => Regex.IsMatch(l.Text, @"\bBnLog\.\w+\s*\(|\bBnLogC\s*\(|\bbn_log_\w+\s*\("));
 
             if (!routed) offenders.Add($"  {name}");
@@ -213,7 +214,7 @@ public sealed class NSLogDriftTests
     /// not a filter that could be edited away by accident.</summary>
     private static IEnumerable<string> ShellFiles()
     {
-        string root = Path.Combine(RepoRoot(), BnHost.Replace('/', Path.DirectorySeparatorChar));
+        string root = Path.Combine(BnRepo.Root(), BnHost.Replace('/', Path.DirectorySeparatorChar));
         Assert.True(Directory.Exists(root), $"{BnHost} not found under the repo root: {root}");
 
         string[] extensions = [".swift", ".m", ".mm", ".h"];
@@ -222,59 +223,6 @@ public sealed class NSLogDriftTests
             .OrderBy(f => f, StringComparer.Ordinal);
     }
 
-    /// <summary>The file's lines that are CODE. Line and block comments are
-    /// dropped, because this phase's own sources discuss `NSLog` at length and a
-    /// scanner that cannot tell prose from a call counts the documentation as
-    /// offences. Same shape as <c>ConsoleErrorDriftTests.CodeLines</c>; `///` is
-    /// covered by the `//` rule.</summary>
-    private static IEnumerable<(int Number, string Text)> CodeLines(string file)
-    {
-        bool inBlockComment = false;
-        int number = 0;
-
-        foreach (string raw in File.ReadLines(file))
-        {
-            number++;
-            string line = raw;
-
-            if (inBlockComment)
-            {
-                int close = line.IndexOf("*/", StringComparison.Ordinal);
-                if (close < 0) continue;
-                inBlockComment = false;
-                line = line[(close + 2)..];
-            }
-
-            int open = line.IndexOf("/*", StringComparison.Ordinal);
-            if (open >= 0)
-            {
-                inBlockComment = line.IndexOf("*/", open, StringComparison.Ordinal) < 0;
-                line = line[..open];
-            }
-
-            int slashes = line.IndexOf("//", StringComparison.Ordinal);
-            if (slashes >= 0) line = line[..slashes];
-
-            if (line.Trim().Length == 0) continue;
-            yield return (number, line);
-        }
-    }
-
     private static string Relative(string file)
-        => Path.GetRelativePath(RepoRoot(), file).Replace(Path.DirectorySeparatorChar, '/');
-
-    /// <summary>The repo root — the nearest ancestor of the test binary holding
-    /// BlazorNative.sln. The Swift sources are not a build input of this project,
-    /// which is what makes `build-test` the one lane that can host this pin. Same
-    /// walk as `ConsoleErrorDriftTests`, `BnLogFormatDriftTests` and
-    /// `ShellStyleTableDriftTests`.</summary>
-    private static string RepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "BlazorNative.sln")))
-            dir = dir.Parent;
-
-        Assert.True(dir is not null, "BlazorNative.sln not found above " + AppContext.BaseDirectory);
-        return dir!.FullName;
-    }
+        => Path.GetRelativePath(BnRepo.Root(), file).Replace(Path.DirectorySeparatorChar, '/');
 }

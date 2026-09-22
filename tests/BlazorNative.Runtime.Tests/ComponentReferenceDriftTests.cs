@@ -4,6 +4,7 @@ using System.Text.RegularExpressions;
 using System.Xml.Linq;
 using BlazorNative.Components;
 using Microsoft.AspNetCore.Components;
+using BlazorNative.Tests.Shared;
 
 namespace BlazorNative.Runtime.Tests;
 
@@ -43,7 +44,7 @@ public sealed class ComponentReferenceFixture : IDisposable
         // generate steps here would be measuring ITSELF: it could pass forever
         // while the lane pointed at bin/ and shipped a reference with no
         // components in it. One home, two callers.
-        string script = Path.Combine(RepoRoot(), "scripts", "generate-reference.ps1");
+        string script = Path.Combine(BnRepo.Root(), "scripts", "generate-reference.ps1");
         Assert.True(File.Exists(script), $"generator script not found: {script}");
 
         var psi = new ProcessStartInfo("pwsh")
@@ -51,7 +52,7 @@ public sealed class ComponentReferenceFixture : IDisposable
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
-            WorkingDirectory = RepoRoot(),
+            WorkingDirectory = BnRepo.Root(),
         };
         psi.ArgumentList.Add("-NoProfile");
         psi.ArgumentList.Add("-File");
@@ -80,16 +81,6 @@ public sealed class ComponentReferenceFixture : IDisposable
     {
         try { if (Directory.Exists(OutputDirectory)) Directory.Delete(OutputDirectory, true); }
         catch (IOException) { /* a temp dir that outlives the run is not a failure */ }
-    }
-
-    internal static string RepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "BlazorNative.sln")))
-            dir = dir.Parent;
-
-        Assert.True(dir is not null, "BlazorNative.sln not found above " + AppContext.BaseDirectory);
-        return dir!.FullName;
     }
 }
 

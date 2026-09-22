@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using BlazorNative.Core;
+using BlazorNative.Tests.Shared;
 
 namespace BlazorNative.Runtime.Tests;
 
@@ -36,7 +37,7 @@ namespace BlazorNative.Runtime.Tests;
 // are:
 //   1. THE MECHANISM ALREADY LIVES HERE. ConsoleErrorDriftTests, NSLogDriftTests,
 //      ShellStyleTableDriftTests, BnLogFormatDriftTests and TemplateDriftTests all
-//      scan checkout source from this suite, with the same RepoRoot() walk. A
+//      scan checkout source from this suite, with the same BnRepo.Root() walk. A
 //      fourth copy of it in Kotlin would be a second mechanism to maintain.
 //   2. IT COVERS THE TEMPLATE MIRROR IN THE SAME PASS. The generated app's shell
 //      is a byte-identical copy under templates/**; a JVM test rooted in the
@@ -113,7 +114,7 @@ public sealed class AndroidLogDriftTests
     ///
     /// The leading boundary keeps `BnShellLog.info` and `BnLogFormat`-qualified
     /// mentions out; the trailing `\s*\(` is what makes it a CALL rather than a
-    /// mention. Comments are excluded by <see cref="CodeLines"/> — this fix's own
+    /// mention. Comments are excluded by <see cref="CommentStrippedSource.NumberedCodeLines"/> — this fix's own
     /// sources quote the offending lines at length.</summary>
     private const string BareLogCall = @"(?<![\w.])Log\s*\.\s*[idv]\s*\(";
 
@@ -144,7 +145,7 @@ public sealed class AndroidLogDriftTests
 
         foreach (string file in ShellFiles())
         {
-            offenders.AddRange(CodeLines(file)
+            offenders.AddRange(CommentStrippedSource.NumberedCodeLines(file)
                 .Where(l => Regex.IsMatch(l.Text, BareLogCall))
                 .Select(l => $"  {Relative(file)}:{l.Number}  {l.Text.Trim()}"));
         }
@@ -211,7 +212,7 @@ public sealed class AndroidLogDriftTests
             + "it is gone, in which case delete the exemption rather than keeping it as folklore.");
 
         int hits = Directory.EnumerateFiles(tests, "*.kt", SearchOption.AllDirectories)
-            .SelectMany(CodeLines)
+            .SelectMany(CommentStrippedSource.NumberedCodeLines)
             .Count(l => Regex.IsMatch(l.Text, BareLogCall));
 
         Assert.True(hits > 0,
@@ -238,7 +239,7 @@ public sealed class AndroidLogDriftTests
         {
             foreach (string file in ShellFiles().Where(f => Path.GetFileName(f) == name))
             {
-                bool routed = CodeLines(file)
+                bool routed = CommentStrippedSource.NumberedCodeLines(file)
                     .Any(l => Regex.IsMatch(l.Text, @"\bBnShellLog\s*\.\s*(info|debug|verbose)\s*\("));
 
                 if (!routed) offenders.Add($"  {Relative(file)}");
@@ -322,63 +323,9 @@ public sealed class AndroidLogDriftTests
         }
     }
 
-    /// <summary>The file's lines that are CODE. Line and block comments are
-    /// dropped, because this fix's own sources quote the offending `Log.i` lines
-    /// at length and a scanner that cannot tell prose from a call counts the
-    /// documentation as offences. Same shape as
-    /// <c>ConsoleErrorDriftTests.CodeLines</c>; KDoc's `/** … */` is covered by
-    /// the block-comment rule and `///` by the `//` one.</summary>
-    private static IEnumerable<(int Number, string Text)> CodeLines(string file)
-    {
-        bool inBlockComment = false;
-        int number = 0;
-
-        foreach (string raw in File.ReadLines(file))
-        {
-            number++;
-            string line = raw;
-
-            if (inBlockComment)
-            {
-                int close = line.IndexOf("*/", StringComparison.Ordinal);
-                if (close < 0) continue;
-                inBlockComment = false;
-                line = line[(close + 2)..];
-            }
-
-            int open = line.IndexOf("/*", StringComparison.Ordinal);
-            if (open >= 0)
-            {
-                inBlockComment = line.IndexOf("*/", open, StringComparison.Ordinal) < 0;
-                line = line[..open];
-            }
-
-            int slashes = line.IndexOf("//", StringComparison.Ordinal);
-            if (slashes >= 0) line = line[..slashes];
-
-            if (line.Trim().Length == 0) continue;
-            yield return (number, line);
-        }
-    }
-
     private static string CheckoutPath(string relativePath)
-        => Path.Combine(RepoRoot(), relativePath.Replace('/', Path.DirectorySeparatorChar));
+        => Path.Combine(BnRepo.Root(), relativePath.Replace('/', Path.DirectorySeparatorChar));
 
     private static string Relative(string file)
-        => Path.GetRelativePath(RepoRoot(), file).Replace(Path.DirectorySeparatorChar, '/');
-
-    /// <summary>The repo root — the nearest ancestor of the test binary holding
-    /// BlazorNative.sln. The Kotlin sources are not a build input of this project,
-    /// which is what makes `build-test` the one lane that can host this pin. Same
-    /// walk as `ConsoleErrorDriftTests`, `NSLogDriftTests` and
-    /// `BnLogFormatDriftTests`.</summary>
-    private static string RepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "BlazorNative.sln")))
-            dir = dir.Parent;
-
-        Assert.True(dir is not null, "BlazorNative.sln not found above " + AppContext.BaseDirectory);
-        return dir!.FullName;
-    }
+        => Path.GetRelativePath(BnRepo.Root(), file).Replace(Path.DirectorySeparatorChar, '/');
 }

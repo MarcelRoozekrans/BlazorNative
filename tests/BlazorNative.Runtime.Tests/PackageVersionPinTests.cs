@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
+using BlazorNative.Tests.Shared;
 
 namespace BlazorNative.Runtime.Tests;
 
@@ -46,8 +47,8 @@ namespace BlazorNative.Runtime.Tests;
 //      Found by a real --dry-run at Gate 2, not by reading. See its docstring.
 //
 // Enumerated from the checkout (build-test is the one required lane where
-// every file is checkout-visible — the drift-test house rule; RepoRoot is
-// PackagePurityTests' rule verbatim).
+// every file is checkout-visible — the drift-test house rule; the walk itself
+// is BnRepo.Root, the one shared helper every pin reaches the tree through).
 // ─────────────────────────────────────────────────────────────────────────────
 
 public sealed class PackageVersionPinTests
@@ -73,12 +74,12 @@ public sealed class PackageVersionPinTests
     private static List<string> ShippedCsprojs()
     {
         var csprojs = Directory.EnumerateFiles(
-                Path.Combine(RepoRoot(), "src"), "*.csproj", SearchOption.AllDirectories)
+                Path.Combine(BnRepo.Root(), "src"), "*.csproj", SearchOption.AllDirectories)
             .OrderBy(p => p, StringComparer.Ordinal)
             .ToList();
 
         Assert.True(csprojs.Count > 0,
-            $"enumerated ZERO csprojs under {Path.Combine(RepoRoot(), "src")} — the version pin "
+            $"enumerated ZERO csprojs under {Path.Combine(BnRepo.Root(), "src")} — the version pin "
             + "would pass over an empty set, which is a pin that cannot see its subject. Fix the "
             + "enumeration; do not let it green vacuously.");
         return csprojs;
@@ -87,7 +88,7 @@ public sealed class PackageVersionPinTests
     [Fact]
     public void TheSharedProps_CarriesExactlyOneVersionLiteral()
     {
-        string props = Path.Combine(RepoRoot(), "src", "Directory.Build.props");
+        string props = Path.Combine(BnRepo.Root(), "src", "Directory.Build.props");
         Assert.True(File.Exists(props),
             "src/Directory.Build.props is the ONE version source (8.1 design decision 4) — "
             + "it must exist; consumer-smoke.ps1 parses it for the pack/restore version.");
@@ -209,7 +210,7 @@ public sealed class PackageVersionPinTests
     [Fact]
     public void TheManifest_AgreesWithTheProps()
     {
-        string manifestPath = Path.Combine(RepoRoot(), ".release-please-manifest.json");
+        string manifestPath = Path.Combine(BnRepo.Root(), ".release-please-manifest.json");
         Assert.True(File.Exists(manifestPath),
             $".release-please-manifest.json not found at {manifestPath} — it is the version's AUTHOR "
             + "(8.6 normative rule 2). Its absence must be a RED, not a vacuous pass over a missing "
@@ -307,7 +308,7 @@ public sealed class PackageVersionPinTests
     [Fact]
     public void EveryExtraFile_NamesTheGenericUpdaterOutright()
     {
-        string configPath = Path.Combine(RepoRoot(), "release-please-config.json");
+        string configPath = Path.Combine(BnRepo.Root(), "release-please-config.json");
         Assert.True(File.Exists(configPath),
             $"release-please-config.json not found at {configPath} — it is where the version's "
             + "AUTHOR is told which files to write. Its absence must be a RED, not a vacuous pass: "
@@ -458,8 +459,8 @@ public sealed class PackageVersionPinTests
     {
         string[] files =
         [
-            Path.Combine(RepoRoot(), "samples", "BlazorNative.SampleApp", "BlazorNative.SampleApp.csproj"),
-            Path.Combine(RepoRoot(), "templates", "BlazorNative.Templates", "content",
+            Path.Combine(BnRepo.Root(), "samples", "BlazorNative.SampleApp", "BlazorNative.SampleApp.csproj"),
+            Path.Combine(BnRepo.Root(), "templates", "BlazorNative.Templates", "content",
                 "BlazorNative.App", "MyBlazorNativeApp.csproj"),
         ];
 
@@ -514,7 +515,7 @@ public sealed class PackageVersionPinTests
     /// loudly if it is not.</summary>
     private static string PropsVersion()
     {
-        string props = Path.Combine(RepoRoot(), "src", "Directory.Build.props");
+        string props = Path.Combine(BnRepo.Root(), "src", "Directory.Build.props");
         Assert.True(File.Exists(props),
             "src/Directory.Build.props is the version's FIRST MIRROR and the build's source of "
             + "truth — it must exist.");
@@ -529,17 +530,5 @@ public sealed class PackageVersionPinTests
             + "TheSharedProps_CarriesExactlyOneVersionLiteral owns that claim and is redding too. "
             + "This pin cannot compare against an ambiguous props.");
         return versions[0];
-    }
-
-    /// <summary>The repo root — PackagePurityTests' rule: the nearest ancestor
-    /// holding BlazorNative.sln.</summary>
-    private static string RepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "BlazorNative.sln")))
-            dir = dir.Parent;
-
-        Assert.True(dir is not null, "BlazorNative.sln not found above " + AppContext.BaseDirectory);
-        return dir!.FullName;
     }
 }

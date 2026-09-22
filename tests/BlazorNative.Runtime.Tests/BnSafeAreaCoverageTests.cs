@@ -1,4 +1,5 @@
 using System.IO;
+using BlazorNative.Tests.Shared;
 
 namespace BlazorNative.Runtime.Tests;
 
@@ -66,18 +67,5 @@ public sealed class BnSafeAreaCoverageTests
     }
 
     private static string CheckoutPath(string relativePath)
-        => Path.Combine(RepoRoot(), relativePath.Replace('/', Path.DirectorySeparatorChar));
-
-    /// <summary>The repo root — the nearest ancestor holding BlazorNative.sln, the
-    /// same rule <c>TemplateDriftTests.RepoRoot</c> uses (build-test is the one
-    /// required lane where the whole checkout is visible).</summary>
-    private static string RepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "BlazorNative.sln")))
-            dir = dir.Parent;
-
-        Assert.True(dir is not null, "BlazorNative.sln not found above " + AppContext.BaseDirectory);
-        return dir!.FullName;
-    }
+        => Path.Combine(BnRepo.Root(), relativePath.Replace('/', Path.DirectorySeparatorChar));
 }
