@@ -5,8 +5,10 @@ namespace BlazorNative.Runtime.Tests;
 // ─────────────────────────────────────────────────────────────────────────────
 // CommentStrippedSource — THE single "remove comments before scanning" for every
 // pin in this repo. Swift, Kotlin and C# share both comment forms, so one
-// implementation serves all four callers: GeneratedSymbolShadowTests,
-// DispatchSurfaceDriftTests, AuthSemanticsDriftTests and PinPopulationTests.
+// implementation serves all eight callers: GeneratedSymbolShadowTests,
+// DispatchSurfaceDriftTests, AuthSemanticsDriftTests, PinPopulationTests,
+// NSLogDriftTests, ConsoleErrorDriftTests, AndroidLogDriftTests and
+// DeepLinkSeedDriftTests.
 //
 // WHY IT IS ONE TYPE, TWICE OVER.
 //
@@ -29,8 +31,22 @@ namespace BlazorNative.Runtime.Tests;
 // verbatim, unobfuscated bypass. The fix for a bug that exists in two copies is
 // never to patch the second copy: two strippers agreeing today is the
 // PRECONDITION for the divergence class, not its absence. So the hardened
-// algorithm moved here and the private copy was deleted -- one stripper, four
-// callers.
+// algorithm moved here and the private copy was deleted.
+//
+// Round three, same phase: there were FOUR MORE, one per `file:line` drift pin,
+// each a byte-identical private `CodeLines`. One of them was exploitable against
+// a real security guard rather than merely untidy. `NSLogDriftTests` calls itself
+// the sole pre-CI signal for the iOS shell on a non-Mac machine, and NSLog is
+// unconditional and always public -- it has printed keychain keys. A bare,
+// undeclared `NSLog` added to BnBiometrics.swift behind a URL in a string literal
+// passed all four of its facts. That is the cost of a copy nobody could enumerate,
+// and it is why the population, not just the algorithm, has to be pinned.
+//
+// NOTE FOR THE NEXT READER: `TemplateDriftTests.StripLineComments` is deliberately
+// NOT here. It is unhardened, but it DISCLOSES that in its own doc comment, it is
+// scoped to a four-statement body with no string literals, and it FAILS SAFE --
+// over-stripping there yields a false red, never a false green. A guard against a
+// ninth copy is phase 15.1's job, not a fifth hand-migration.
 // ─────────────────────────────────────────────────────────────────────────────
 
 internal static class CommentStrippedSource
@@ -145,6 +161,20 @@ internal static class CommentStrippedSource
         }
 
         return sb.ToString();
+    }
+
+    /// <summary>The file's lines that are CODE, numbered from 1 against the ORIGINAL
+    /// file, with blank and comment-only lines dropped. This is the shape four drift
+    /// pins scan with -- NSLog, ConsoleError, AndroidLog and DeepLinkSeed -- each of
+    /// which carried a private byte-identical copy of the pre-15.0 line walk until this
+    /// phase. They report `file:line` at a human, so the number must be the line the
+    /// reader will open, not an index into the surviving lines.</summary>
+    public static IEnumerable<(int Number, string Text)> NumberedCodeLines(string file)
+    {
+        string[] lines = Lines(file);
+        for (int i = 0; i < lines.Length; i++)
+            if (lines[i].Trim().Length > 0)
+                yield return (i + 1, lines[i]);
     }
 
     /// <summary>Every line of <paramref name="file"/> with comment text removed, one entry

@@ -74,7 +74,7 @@ public sealed class ConsoleErrorDriftTests
             string name = Path.GetFileName(file);
             if (string.Equals(name, TheSeam, StringComparison.Ordinal)) continue;
 
-            var hits = CodeLines(file)
+            var hits = CommentStrippedSource.NumberedCodeLines(file)
                 .Where(l => Regex.IsMatch(l.Text, ConsoleErrorReference))
                 .Select(l => $"  {Relative(file)}:{l.Number}  {l.Text.Trim()}")
                 .ToList();
@@ -131,7 +131,7 @@ public sealed class ConsoleErrorDriftTests
     {
         string seam = SourceFiles().Single(f => Path.GetFileName(f) == TheSeam);
 
-        var hits = CodeLines(seam)
+        var hits = CommentStrippedSource.NumberedCodeLines(seam)
             .Where(l => Regex.IsMatch(l.Text, ConsoleErrorReference))
             .ToList();
 
@@ -154,7 +154,7 @@ public sealed class ConsoleErrorDriftTests
     public void TheDevHostStdoutExemption_IsRealAndScopedToStdout()
     {
         string file = SourceFiles().Single(f => Path.GetFileName(f) == DevHostBridge);
-        List<(int Number, string Text)> code = CodeLines(file).ToList();
+        List<(int Number, string Text)> code = CommentStrippedSource.NumberedCodeLines(file).ToList();
 
         int stdout = code.Count(l => Regex.IsMatch(l.Text, @"Console\s*\.\s*(Write|Out)"));
         Assert.True(stdout > 0,
@@ -180,43 +180,6 @@ public sealed class ConsoleErrorDriftTests
                      && !f.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}",
                                     StringComparison.Ordinal))
             .OrderBy(f => f, StringComparer.Ordinal);
-    }
-
-    /// <summary>The file's lines that are CODE — line comments and the file's
-    /// banner blocks are dropped, because this phase's own sources discuss
-    /// `Console.Error` at length and a scanner that cannot tell prose from a call
-    /// counts the documentation as offences.</summary>
-    private static IEnumerable<(int Number, string Text)> CodeLines(string file)
-    {
-        bool inBlockComment = false;
-        int number = 0;
-
-        foreach (string raw in File.ReadLines(file))
-        {
-            number++;
-            string line = raw;
-
-            if (inBlockComment)
-            {
-                int close = line.IndexOf("*/", StringComparison.Ordinal);
-                if (close < 0) continue;
-                inBlockComment = false;
-                line = line[(close + 2)..];
-            }
-
-            int open = line.IndexOf("/*", StringComparison.Ordinal);
-            if (open >= 0)
-            {
-                inBlockComment = line.IndexOf("*/", open, StringComparison.Ordinal) < 0;
-                line = line[..open];
-            }
-
-            int slashes = line.IndexOf("//", StringComparison.Ordinal);
-            if (slashes >= 0) line = line[..slashes];
-
-            if (line.Trim().Length == 0) continue;
-            yield return (number, line);
-        }
     }
 
     private static string Relative(string file)

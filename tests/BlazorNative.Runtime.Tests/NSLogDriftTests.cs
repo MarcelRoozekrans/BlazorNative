@@ -63,7 +63,7 @@ public sealed class NSLogDriftTests
     private const string BnHostTests = "src/BlazorNative.Apple/BnHostTests";
 
     /// <summary>Matches an `NSLog` CALL. Comments are excluded by
-    /// <see cref="CodeLines"/> — this phase's own sources discuss `NSLog` at
+    /// <see cref="CommentStrippedSource.NumberedCodeLines"/> — this phase's own sources discuss `NSLog` at
     /// length (BnLog.swift's header explains for eight lines why it is not one),
     /// and a pattern that cannot tell prose from a call reports the wrong number.
     /// The trailing `\s*\(` is what makes it a call rather than a mention.</summary>
@@ -103,7 +103,7 @@ public sealed class NSLogDriftTests
 
         foreach (string file in ShellFiles())
         {
-            offenders.AddRange(CodeLines(file)
+            offenders.AddRange(CommentStrippedSource.NumberedCodeLines(file)
                 .Where(l => Regex.IsMatch(l.Text, NSLogCall))
                 .Select(l => $"  {Relative(file)}:{l.Number}  {l.Text.Trim()}"));
         }
@@ -162,7 +162,7 @@ public sealed class NSLogDriftTests
             + "in which case delete the exemption rather than keeping it as folklore.");
 
         int hits = Directory.EnumerateFiles(tests, "*.swift", SearchOption.AllDirectories)
-            .SelectMany(CodeLines)
+            .SelectMany(CommentStrippedSource.NumberedCodeLines)
             .Count(l => Regex.IsMatch(l.Text, NSLogCall));
 
         Assert.True(hits > 0,
@@ -190,7 +190,7 @@ public sealed class NSLogDriftTests
         foreach (string name in SweptFiles)
         {
             string file = ShellFiles().Single(f => Path.GetFileName(f) == name);
-            bool routed = CodeLines(file)
+            bool routed = CommentStrippedSource.NumberedCodeLines(file)
                 .Any(l => Regex.IsMatch(l.Text, @"\bBnLog\.\w+\s*\(|\bBnLogC\s*\(|\bbn_log_\w+\s*\("));
 
             if (!routed) offenders.Add($"  {name}");
@@ -221,44 +221,6 @@ public sealed class NSLogDriftTests
         return Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)
             .Where(f => extensions.Contains(Path.GetExtension(f), StringComparer.OrdinalIgnoreCase))
             .OrderBy(f => f, StringComparer.Ordinal);
-    }
-
-    /// <summary>The file's lines that are CODE. Line and block comments are
-    /// dropped, because this phase's own sources discuss `NSLog` at length and a
-    /// scanner that cannot tell prose from a call counts the documentation as
-    /// offences. Same shape as <c>ConsoleErrorDriftTests.CodeLines</c>; `///` is
-    /// covered by the `//` rule.</summary>
-    private static IEnumerable<(int Number, string Text)> CodeLines(string file)
-    {
-        bool inBlockComment = false;
-        int number = 0;
-
-        foreach (string raw in File.ReadLines(file))
-        {
-            number++;
-            string line = raw;
-
-            if (inBlockComment)
-            {
-                int close = line.IndexOf("*/", StringComparison.Ordinal);
-                if (close < 0) continue;
-                inBlockComment = false;
-                line = line[(close + 2)..];
-            }
-
-            int open = line.IndexOf("/*", StringComparison.Ordinal);
-            if (open >= 0)
-            {
-                inBlockComment = line.IndexOf("*/", open, StringComparison.Ordinal) < 0;
-                line = line[..open];
-            }
-
-            int slashes = line.IndexOf("//", StringComparison.Ordinal);
-            if (slashes >= 0) line = line[..slashes];
-
-            if (line.Trim().Length == 0) continue;
-            yield return (number, line);
-        }
     }
 
     private static string Relative(string file)

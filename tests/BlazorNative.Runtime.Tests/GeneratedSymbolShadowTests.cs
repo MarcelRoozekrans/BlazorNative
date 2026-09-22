@@ -156,9 +156,9 @@ public sealed class GeneratedSymbolShadowTests
     /// <summary>Every line of the file with COMMENT TEXT REMOVED, one entry per source
     /// line so line numbers and the forwarding window still line up.
     ///
-    /// <para>The same shape as <c>ConsoleErrorDriftTests.CodeLines</c> and
-    /// <c>NSLogDriftTests.CodeLines</c>, and it exists here for the mirror-image
-    /// reason: those scans must not count PROSE as an offence, this one must not
+    /// <para>The mirror image of what the four `file:line` drift pins want from
+    /// <see cref="CommentStrippedSource.NumberedCodeLines"/>: those scans must not
+    /// count PROSE as an offence, this one must not
     /// count prose as an EXEMPTION. The forwarding window is three lines of source;
     /// scanned raw, a shadowing declaration followed within two lines by a comment
     /// that merely MENTIONS `BnWireVocabulary.&lt;symbol&gt;` would be waved through —
@@ -167,7 +167,9 @@ public sealed class GeneratedSymbolShadowTests
     ///
     /// <para>Phase 14.1: the stripper itself moved to <see cref="CommentStrippedSource"/> so
     /// DispatchSurfaceDriftTests shares this exact logic instead of maintaining a second,
-    /// driftable copy — the second copy is what had the single-line-block-comment bug.</para></summary>
+    /// driftable copy — the second copy is what had the single-line-block-comment bug.
+    /// Phase 15.0 finished the job: five more copies were still out there, one of them
+    /// hiding a bare NSLog behind a URL in a string literal.</para></summary>
     private static string[] CodeLines(string file) => CommentStrippedSource.Lines(file);
 
     /// <summary>THE PIN. A hand-written declaration of a generated symbol's name
