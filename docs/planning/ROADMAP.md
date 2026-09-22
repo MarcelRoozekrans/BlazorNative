@@ -206,7 +206,9 @@ Phases:
 
 10 phases (3.0a–3.0e runtime re-platform, 3.1–3.5 application layer) shipped.
 A real two-page app runs on the AVD through a NativeAOT `.so` with a typed
-eight-export C-ABI: `Bn*` components, `@bind` mechanics, cascading values,
+eight-export C-ABI — **eight as of M3; the frozen surface is TEN today**, the
+count every lane asserts, after `blazornative_host_event` and
+`blazornative_host_call_complete` were added later: `Bn*` components, `@bind` mechanics, cascading values,
 bidirectional events, the six shell-bridge operations, multi-component
 composition, strict mode, and `INavigationManager` root-component navigation.
 wasmtime + `.wasm` deleted entirely (3.0e). Audit verdict: **PASS — all 11 DoD
@@ -2363,7 +2365,7 @@ phase added no test to any shell suite. **No ABI, wire, or public-API change.**
 > iOS returns `Ok` where Android returns `Unavailable`: a new instance of M14's own target class,
 > found by this phase. Filed as #356.**
 
-#### Phase 14.4: Device observability, docs, and the device lane [status: pending]
+#### Phase 14.4: Device observability, docs, and the device lane [status: active]
 **Goal:** Make `Debug` and `Verbose` observable on real hardware, land the four documentation
 landmines the device run found, and integrate the externally-offered staging script and
 `ios-arm64` CI lane. The lane is the only externally-dependent item in M14; the rest of the phase

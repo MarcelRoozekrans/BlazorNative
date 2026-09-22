@@ -117,6 +117,33 @@ This is the part the simulator skips entirely.
   group must be **`$(AppIdentifierPrefix)io.blazornative.bnhost`** (the team prefix), or
   every `SecItem*` call fails with `errSecMissingEntitlement (-34018)` and the secure store
   reports `Error`. This is the first thing that will break on device; fix it here.
+
+  :::danger `$(AppIdentifierPrefix)` is a LITERAL. Do not substitute your Team ID.
+  Type those 23 characters exactly as written, `$(` and `)` included, into the
+  entitlements file. It is an Xcode **build variable**, expanded at build time from the
+  app identifier prefix in your provisioning profile — and that prefix is **not always
+  equal to your Team ID**. They coincide for most modern teams and differ for others,
+  most commonly where an App ID predates the team it now lives under.
+
+  Hand-substituting is therefore a coin flip, and when it loses, the symptom is
+  indistinguishable from a code bug: **every** `SecItem*` call returns
+  **`errSecMissingEntitlement (-34018)`**, the secure-storage page reports `Error` on
+  every operation, and nothing anywhere names the entitlement. The September 2026 device
+  run lost about an hour to this, debugging `BnSecureStorage.swift` — the wrong layer
+  entirely.
+
+  **Confirm the expansion rather than guessing it.** After a build, read the entitlements
+  actually embedded in the signed app:
+
+  ```bash
+  codesign -d --entitlements :- /path/to/BnHost.app
+  ```
+
+  The `keychain-access-groups` array there must read
+  `<PREFIX>.io.blazornative.bnhost` with a real prefix. If it still shows the literal
+  `$(AppIdentifierPrefix)`, the variable did not expand — that is a project/profile
+  problem, not something to fix by typing a value in.
+  :::
 - Bundle id / app id must match your provisioning profile.
 
 ### A4. Materialise the Xcode project and deploy
@@ -150,8 +177,10 @@ the extra checks below them are the specific traps this project already knows ab
 2. **Face ID / Touch ID against the Secure Enclave.** Trigger a biometric-gated action.
    Check: the **real** Face ID / Touch ID prompt appears; success returns a value; a
    cancel and a failed match each come back as a **status** (`AuthFailed`), never a hang.
-   *(The simulator has no Secure Enclave — this is the first thing that has never truly
-   run. See the ACL check below, which is the sharp edge here.)*
+   *(The simulator has no Secure Enclave — this was the first thing that had never truly
+   run. It PASSED on hardware in September 2026. The sharp edge it exposed, the
+   auth-bound-keychain mismatch, was fixed in Phase 14.3 — see the superseded ACL section
+   below and `website/docs/migrating/auth-biometry.md`.)*
 3. **Real-GPS geolocation.** Open the geolocation page. Check: the OS location-permission
    dialog appears; a real fix returns with plausible coordinates and accuracy; denial
    returns a *status*, not an exception or a hang. **Redact the coordinates** from anything
@@ -170,7 +199,34 @@ the extra checks below them are the specific traps this project already knows ab
 
 ### The specific correctness bug to confirm — #213 item 1 (secure-storage ACL)
 
-**This is the highest-value single check, because the simulator provably cannot catch it.**
+:::danger SUPERSEDED — this section describes behaviour that no longer exists
+**Everything from here to the end of this subsection is a record of what was checked in
+September 2026, kept for its history. Do not follow its instructions on a new device run.**
+
+The mismatch it describes was **real, was confirmed on hardware, and was fixed in Phase
+14.3**. Three things below are now false:
+
+- **"Get, and choose passcode fallback at the prompt" cannot be done.** There is no
+  passcode option at the prompt any more. The authorized read evaluates
+  `.deviceOwnerAuthenticationWithBiometrics`, and LocalAuthentication offers no passcode
+  fallback for that policy. A tester following that step will look for a control that was
+  deleted.
+- **The direction of the bug was the opposite of the prediction below.** The prediction
+  was a spurious `AuthFailed` after a passcode unlock. What iOS 26 actually did was
+  **permit** the read: a biometry-bound secret came back after a passcode entry. The gate
+  was *weaker* than the stored access control declared, not stricter.
+- **`requireAuth: true` now means biometry on BOTH shells** — Face ID / Touch ID on Apple,
+  a Class 3 biometric on Android — and `AuthSemanticsDriftTests` holds the two shells to
+  that one sentence.
+
+**Read [`website/docs/migrating/auth-biometry.md`](../website/docs/migrating/auth-biometry.md)
+before testing anything in this area.** What is still worth doing on a device is the
+*read-side contract* — a plain get of an auth-bound item is refused as `AuthFailed` with no
+value leaked, a cancel is `AuthFailed`, and neither hangs — plus the no-enrolled-biometric
+checkbox that follows this subsection, which 14.3 did **not** answer.
+:::
+
+**This was the highest-value single check, because the simulator provably cannot catch it.**
 
 - **The mechanism.** `BnSecureStorage` stores an auth-bound item with a `SecAccessControl`
   created **`.biometryCurrentSet`** (biometry-only, Secure-Enclave-bound). But
@@ -233,6 +289,17 @@ difference, a measurement path, a scale/point-vs-pixel error) — capture it.
   missing its team prefix (A3).
 - **fd 2 is process-global and one-way.** If you add Crashlytics/Sentry NDK handlers, last
   writer of stderr wins; the `BnStderrPump` install order decides whose output survives.
+- **The loser of that fight is usually YOUR CONSOLE.** The consequence the line above
+  leaves out is the one that costs a device run time: `BnStderrPump` claims fd 2 with
+  `dup2` as the first statement in `HostViewController.viewDidLoad`, so anything the OS
+  mirrors onto fd 2 lands in the pump's pipe instead of your terminal. On a real device
+  that mirror is the **only** remaining route to `Debug` and `Verbose` — both map to
+  `OSLogType.debug`, the unified log drops that unless the subsystem is enabled for
+  capture, and `log config` has no `--device` flag. The escape is the environment variable
+  **`OS_ACTIVITY_DT_MODE`**: when it is set, the pump now **stands aside** and returns
+  without touching fd 2. The full recipe, including what you give up by doing it, is
+  §8 of [`website/docs/shells/ios.md`](../website/docs/shells/ios.md) — do not re-derive
+  it here.
 - **Simulator vs device slices.** A simulator-arch static lib linked into a device app is a
   silent failure — verify arch with `lipo`/`nm` (A1).
 - **Yoga version is pinned (3.2.1) and drift-tested.** Rebuild it for the device SDK; do
@@ -246,8 +313,11 @@ difference, a measurement path, a scale/point-vs-pixel error) — capture it.
 - **Per item:** PASS / FAIL / caveat, with evidence (recording or screenshots + log lines).
 - **Where:** P3 overall is [#17](https://github.com/MarcelRoozekrans/BlazorNative/issues/17);
   the secure-storage ACL is [#213](https://github.com/MarcelRoozekrans/BlazorNative/issues/213).
-  If Phase A produced a working device-build recipe, that belongs in a PR that adds the
-  `ios-build`-on-device lane (the maintainer will guide the shape). File one issue per
+  The device-build **lane** now exists — Phase 14.4 added an `ios-arm64` leg to both
+  `ci.yml`'s `ios-build-slice` matrix and `ios.yml` — so a Phase A recipe no longer needs a
+  PR to create one. What it should still produce is the **signing** half, which CI cannot
+  hold: the team, profile and entitlement steps that turn a compiling slice into a running
+  signed app. File one issue per
   genuine device bug you find, with a minimal repro.
 - **Privacy — redact before anything public:** the geolocation page shows **real
   coordinates**; biometrics involve a real face/fingerprint; secure storage holds real
@@ -267,6 +337,9 @@ P3 can be called **met** when:
    down (ideally as a PR adding the device build lane).
 2. All **seven acceptance items** have been exercised with evidence and a PASS/caveat note.
 3. The **secure-storage ACL** (#213 item 1) is confirmed-and-filed or proven-not-a-problem.
+   **Met, and closed: confirmed on hardware in September 2026 and fixed in Phase 14.3.**
+   What remains open in this area is only the no-enrolled-biometric question, the
+   checkbox under the superseded ACL section.
 4. **Q1** has a paired observation (Release quiet at `Warn`, trace at `Verbose`).
 5. **Frame parity** on the demo layout pages is confirmed (or a difference is filed).
 
@@ -284,5 +357,6 @@ At that point the last 1.0 blocker is cleared and the maintainer can cut 1.0.
 | `src/BlazorNative.Apple/BnHost/BnHost.entitlements` | keychain group — needs the team prefix on device (A3) |
 | `src/BlazorNative.Apple/BnHost/BnSecureStorage.swift` | the ACL bug's home; its header explains the simulator no-op |
 | `samples/BlazorNative.SampleApp` | the publish head — what you publish for `ios-arm64` |
-| `.github/workflows/ios.yml` | the simulator lane (compile + XCTest); the model for a device lane |
+| `.github/workflows/ios.yml` | the iOS execution lane. Since Phase 14.4 a two-leg matrix: the simulator leg compiles and runs the XCTests, the device leg compiles `ios-arm64` and runs nothing |
+| `.github/workflows/ci.yml` → `ios-build-slice` | the REQUIRED compile gate — both slices, every PR. `ios-build` aggregates it |
 | `docs/plans/2026-07-22-phase-11.3-one-point-oh-criteria.md` | the 1.0 criteria; P3 and the seven items |

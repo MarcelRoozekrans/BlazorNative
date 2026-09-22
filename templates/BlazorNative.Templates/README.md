@@ -36,6 +36,13 @@ MyApp/
 └── android/                a runnable Android/Gradle shell
 ```
 
+> **This template ships an Android shell only — there is no iOS tree in it, and there is no
+> iOS template.** `dotnet new blazornative` gives you `android/` and nothing else; the iOS
+> shell is a manual procedure against the reference implementation in
+> `src/BlazorNative.Apple/`, written up in the docs under **Shells → iOS**. Your .NET app —
+> pages, manifest, publish head — is the same on both platforms; it is only the shell tree
+> that the template cannot give you.
+
 Then:
 
 ```bash

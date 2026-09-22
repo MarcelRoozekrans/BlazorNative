@@ -31,6 +31,26 @@
 // "do not boot under tests" guard, which is also the only path that boots the
 // runtime at all — so the transport covers exactly the process it exists for.
 //
+// ⚠ NOT INSTALLED WHEN `OS_ACTIVITY_DT_MODE` IS SET, AND THAT ABSENCE IS THE
+// TRANSPORT (#17). A developer who sets that variable is asking the OS to MIRROR
+// `os_log` output to fd 2 so a device console can show it — which is the ONLY
+// remaining way to see [BnLog] `Debug` and `Verbose` on a real iPhone. Both
+// levels map onto `OSLogType.debug`, which the unified log drops unless the
+// subsystem is enabled, and `log config` has no `--device` flag; on macOS 26
+// `log stream` lost device support, and `devicectl --console` carries fd 1 and
+// fd 2 only. Installing the pump points fd 2 at ourselves, so the mirror lands
+// in our own pipe and that last route closes — BY US. Measured on an iPhone 17
+// Pro Max: exactly one UIKit line arrives before install, then nothing, even at
+// Verbose.
+//
+// WHAT TO DO, THEN. To see `Debug`/`Verbose` on a device, set
+// `OS_ACTIVITY_DT_MODE=YES` in the scheme's environment and read the console
+// with `devicectl device process launch --console`. The pump stands aside for
+// that launch, and the price is the pump's own value: the runtime's fd 2 output
+// arrives as plain console text rather than tagged unified-log entries. WITHOUT
+// the variable the pump IS installed and those two levels are not visible on a
+// device at all. Recorded on the website's iOS shell page.
+//
 // ⚠ IRREVERSIBLE AND PROCESS-GLOBAL (design R2). `dup2` over fd 2 cannot be
 // meaningfully undone and captures the descriptor for the WHOLE process,
 // including any third-party native library. That is mostly the point. It is a
@@ -78,9 +98,12 @@ enum BnStderrPump {
 
     /// Creates the pipe, points fd 2 at it, and starts the reader.
     ///
-    /// - Returns: true if THIS call installed the pump; false if it was already
-    ///   installed (idempotent — the second caller is a no-op, not a second
-    ///   `dup2`) or if the install failed.
+    /// - Returns: true if THIS call installed the pump; false for any of THREE
+    ///   distinct reasons — `OS_ACTIVITY_DT_MODE` is set, so the pump stands
+    ///   aside and leaves the `os_log`-to-fd-2 mirror intact; the pump was
+    ///   already installed (idempotent — the second caller is a no-op, not a
+    ///   second `dup2`); or the install failed. A caller that needs to tell them
+    ///   apart reads [isInstalled], which is false for the first and the third.
     ///
     /// NEVER THROWS AND NEVER TRAPS. A shell whose logging transport could abort
     /// launch would be strictly worse than a shell with no transport: the failure
@@ -89,6 +112,52 @@ enum BnStderrPump {
     /// [BnLog] at warn and swallowed.
     @discardableResult
     static func install() -> Bool {
+        // OS_ACTIVITY_DT_MODE (#17). A developer who sets this is asking the OS to
+        // MIRROR os_log to fd 2 so a device console can show it. Installing the pump
+        // then points fd 2 at ourselves and the mirror lands in our own pipe -- so the
+        // one documented route to seeing Debug and Verbose on a device is closed BY
+        // US. Measured on an iPhone 17 Pro Max: exactly one UIKit line arrives before
+        // install, then nothing, even at Verbose.
+        //
+        // Every other route is already shut: BnLog maps both levels onto
+        // OSLogType.debug, which the unified log drops unless the subsystem is
+        // enabled, and `log config` has no --device flag. On macOS 26 `log stream`
+        // lost device support and `devicectl --console` carries only fd 1 and fd 2.
+        //
+        // So when the mirror is on, standing aside IS the transport. It also avoids a
+        // cycle nobody should have to reason about: mirror writes fd 2, pump reads
+        // fd 2, BnLog writes os_log, mirror writes fd 2.
+        //
+        // BEFORE the lock and BEFORE the idempotence guard, deliberately: checking
+        // after `installedFlag = true` would leave the flag — and the public
+        // [isInstalled] — asserting a pump that has no pipe and no dup2 behind it.
+        //
+        // `getenv` and not `ProcessInfo.processInfo.environment`: this reads live
+        // `environ`, which is what ProcessInfo reads underneath anyway, and it is the
+        // honest shape for a variable that can change after launch. ProcessInfo is
+        // documented as the environment the process was LAUNCHED from, and if that
+        // dictionary is ever snapshotted then a `setenv` after start is invisible to
+        // it -- which would red this file's XCTest in the iOS lane, the one place
+        // nobody can check locally.
+        if getenv("OS_ACTIVITY_DT_MODE") != nil {
+            // NOT VISIBLE AT THE DEFAULT LEVEL, and that is recorded rather than
+            // fixed. [install] runs before `BnRuntime.resolveLogLevel`, so the
+            // threshold here is always [BnLog.defaultLevel] -- `warn` -- and even
+            // `BN_LOG_LEVEL=Debug` does not rescue this line, because the level that
+            // env var names has not been applied yet.
+            //
+            // It stays at `info` ON PURPOSE. Standing aside is REQUESTED behaviour,
+            // not a fault, and borrowing `warn` to make a line discoverable is crying
+            // wolf in a repo that spent this whole milestone making levels mean what
+            // they say. It stays at all because it becomes correct the moment anything
+            // reorders boot. What a developer actually needs is in this file's header
+            // and on the website's iOS shell page.
+            BnLog.info("native", "stderr pump: standing aside — OS_ACTIVITY_DT_MODE is "
+                + "set, so os_log is mirrored to fd 2 and the pump would capture it",
+                privacy: .safe)
+            return false
+        }
+
         lock.lock()
         if installedFlag { lock.unlock(); return false }
         // Set BEFORE the syscalls: a partial install must not leave the guard open

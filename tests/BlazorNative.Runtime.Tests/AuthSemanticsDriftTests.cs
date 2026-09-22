@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Xunit;
 
 namespace BlazorNative.Runtime.Tests;
@@ -84,18 +85,57 @@ public sealed class AuthSemanticsDriftTests
     /// stripped block are preserved so reported line numbers stay true. An
     /// UNTERMINATED opener is left in place rather than swallowing the rest of the
     /// file: over-stripping hides live call sites, which is a false green.
-    /// KNOWN LIMIT, not a claim: string literals are not parsed, so a `//` or `/*`
-    /// inside a string is treated as a comment. Neither shell's source has one near
-    /// an authenticator token; if that changes, occurrences after it go unseen and the
-    /// anti-vacuity count is the only thing standing between that and a silent green.
+    /// String literals ARE parsed, simply: an unescaped `"` toggles in/out of a string
+    /// and the state RESETS AT EVERY NEWLINE, so a `//` or `/*` inside a literal is no
+    /// longer read as a comment — `://` already appears in both shells' literals, so
+    /// this is a live shape, not a hypothetical. REMAINING BOUNDED LIMIT, not a claim:
+    /// a `"""` multiline or raw string toggles three times and lands inside-string, and
+    /// only the newline reset clears it. The reset is the point — it confines any
+    /// mis-parse to a single line rather than letting one stray quote blind the rest of
+    /// the file.
     /// </summary>
     internal static string StripComments(string source)
     {
         var sb = new StringBuilder(source.Length);
         int i = 0;
+        bool inString = false;
 
         while (i < source.Length)
         {
+            // STRING LITERALS (F2). A `//` inside a string is not a comment — the
+            // shells already contain `://` in literals, at BnDeepLink.swift and
+            // BnCamera.swift, so this is a live shape and not a hypothetical.
+            // Tracking is deliberately simple: toggle on an unescaped `"`, and RESET
+            // AT EVERY NEWLINE. Neither Swift nor Kotlin lets an ordinary string span
+            // lines, and the reset is what BOUNDS a mis-parse to one line rather than
+            // letting one stray quote blind the rest of the file. A `"""` multiline or
+            // raw string toggles three times and lands `true`, which the newline reset
+            // then clears — imperfect, and bounded, which is the trade being made.
+            if (source[i] == '"')
+            {
+                bool escaped = i > 0 && source[i - 1] == '\\'
+                               && !(i > 1 && source[i - 2] == '\\');
+                if (!escaped) inString = !inString;
+                sb.Append(source[i]);
+                i++;
+                continue;
+            }
+
+            if (source[i] == '\n')
+            {
+                inString = false;
+                sb.Append(source[i]);
+                i++;
+                continue;
+            }
+
+            if (inString)
+            {
+                sb.Append(source[i]);
+                i++;
+                continue;
+            }
+
             if (source[i] == '/' && i + 1 < source.Length && source[i + 1] == '*')
             {
                 int depth = 0;
@@ -197,7 +237,12 @@ public sealed class AuthSemanticsDriftTests
 
     /// <summary>Scans both shells' non-test source for every vocabulary token,
     /// comments stripped. Shared by the completeness and anti-vacuity tests so the
-    /// second genuinely measures what the first scanned.</summary>
+    /// second genuinely measures what the first scanned. Matching is over the WHOLE
+    /// stripped text with whitespace tolerated around each `.`, so a token wrapped
+    /// across a line break is still seen — a Kotlin `Authenticators` / `.BIOMETRIC_WEAK`
+    /// split over two lines is one occurrence, not none. The reported line is the one
+    /// the token's first non-whitespace character sits on, so a wrapped token names the
+    /// line it starts on rather than the line before it.</summary>
     private static Occurrence[] ScanOccurrences()
     {
         string root = RepoRoot();
@@ -215,38 +260,59 @@ public sealed class AuthSemanticsDriftTests
                                   || p.EndsWith(".kt", StringComparison.Ordinal)))
             {
                 string file = Path.GetRelativePath(root, path).Replace('\\', '/');
-                string[] lines = StripComments(File.ReadAllText(path)).Split('\n');
-                for (int i = 0; i < lines.Length; i++)
+                string stripped = StripComments(File.ReadAllText(path));
+
+                // WHOLE-TEXT MATCHING (F1). The old scan split on '\n' first, so a
+                // token wrapped across lines was invisible — and every dotted KOTLIN
+                // token can wrap, because the dot leads the continuation. Swift is
+                // immune only by accident: its tokens BEGIN with the dot, so a wrap
+                // carries it intact. Matching whole-text with `\s*` around each dot
+                // closes the Kotlin half without special-casing a language.
+                //
+                // Each occurrence carries the MATCH's own geometry — offset AND length
+                // — never the token's. A dot-leading token like `.userPresence` yields
+                // a pattern that opens with `\s*`, so a wrapped match both STARTS
+                // earlier than the token and RUNS LONGER than it; token arithmetic
+                // would then mis-report the line and mis-describe the span.
+                var matches = new List<(string Token, int Start, int Length)>();
+                foreach (string token in AuthenticatorVocabulary)
                 {
-                    // Every occurrence of every token on this line, with the index it
-                    // actually starts at. Indices, not line containment — see below.
-                    var matches = new List<(string Token, int Start)>();
-                    foreach (string token in AuthenticatorVocabulary)
-                        for (int at = lines[i].IndexOf(token, StringComparison.Ordinal);
-                             at >= 0;
-                             at = lines[i].IndexOf(token, at + 1, StringComparison.Ordinal))
-                            matches.Add((token, at));
+                    string pattern = string.Join(@"\s*\.\s*",
+                        token.Split('.').Select(Regex.Escape));
+                    foreach (Match m in Regex.Matches(stripped, pattern))
+                        matches.Add((token, m.Index, m.Length));
+                }
 
-                    foreach ((string token, int start) in matches)
-                    {
-                        // `.deviceOwnerAuthentication` is a prefix of
-                        // `.deviceOwnerAuthenticationWithBiometrics`, so the short token also
-                        // matches INSIDE the long one and would otherwise report a
-                        // device-owner call at every biometrics site. Suppress by SPAN, never
-                        // by line: an occurrence is a false echo only when it lies within a
-                        // LONGER token's matched span. Asking merely whether some longer token
-                        // appears SOMEWHERE on the line loses a real occurrence whenever both
-                        // appear separately — a ternary or a ratchet between the weak and the
-                        // strong LAPolicy on one line, which is exactly the #213 pair — and
-                        // this pin would stay green through a reintroduction of the defect.
-                        if (matches.Any(other =>
-                                other.Token.Length > token.Length
-                                && other.Start <= start
-                                && start + token.Length <= other.Start + other.Token.Length))
-                            continue;
+                foreach ((string token, int start, int length) in matches)
+                {
+                    // `.deviceOwnerAuthentication` is a prefix of
+                    // `.deviceOwnerAuthenticationWithBiometrics`, so the short token also
+                    // matches INSIDE the long one and would otherwise report a
+                    // device-owner call at every biometrics site. Suppress by SPAN, never
+                    // by line: an occurrence is a false echo only when its MATCHED SPAN
+                    // lies within a LONGER token's MATCHED SPAN. Asking merely whether
+                    // some longer token appears SOMEWHERE nearby loses a real occurrence
+                    // whenever both appear separately — a ternary or a ratchet between the
+                    // weak and the strong LAPolicy on one line, which is exactly the #213
+                    // pair — and this pin would stay green through a reintroduction of the
+                    // defect. Both sides compare matched spans: a wrapped match is longer
+                    // than its token, so `token.Length` no longer describes it.
+                    if (matches.Any(other =>
+                            other.Token.Length > token.Length
+                            && other.Start <= start
+                            && start + length <= other.Start + other.Length))
+                        continue;
 
-                        found.Add(new Occurrence(token, file, i + 1));
-                    }
+                    // Report the line the TOKEN starts on, not the line the match starts
+                    // on: a leading `\s*` can pull the match back across a newline, which
+                    // would otherwise blame the previous line for a wrapped token.
+                    int at = start;
+                    while (at < start + length && char.IsWhiteSpace(stripped[at])) at++;
+
+                    int line = 1;
+                    for (int k = 0; k < at; k++) if (stripped[k] == '\n') line++;
+
+                    found.Add(new Occurrence(token, file, line));
                 }
             }
         }
@@ -260,26 +326,56 @@ public sealed class AuthSemanticsDriftTests
         Site[] sites = Sites();
         using JsonDocument doc = Manifest();
 
-        var ignored = new HashSet<string>(StringComparer.Ordinal);
+        // An ignore is COUNTED, not open-ended. An uncounted `file::token` pair excuses
+        // every occurrence of that token in that file for ever, which is indistinguishable
+        // from switching the scan off for the pair — so a SECOND call site could be added
+        // beside the excused one and this pin would stay green.
+        var ignoredCounts = new Dictionary<string, int>(StringComparer.Ordinal);
+        var ignoredSeen = new Dictionary<string, int>(StringComparer.Ordinal);
         if (doc.RootElement.TryGetProperty("ignored", out JsonElement arr))
         {
             foreach (JsonElement ig in arr.EnumerateArray())
             {
                 string file = Required(ig, "file", "an ignored occurrence");
                 string token = Required(ig, "token", $"the ignored occurrence in '{file}'");
+                string key = $"{file}::{token}";
                 Assert.False(
                     string.IsNullOrWhiteSpace(
                         Required(ig, "reason", $"ignored occurrence '{token}' in '{file}'")),
                     $"ignored occurrence '{token}' in '{file}' carries no reason — asymmetry is "
                     + "allowed, silence is not");
-                ignored.Add($"{file}::{token}");
+                Assert.True(
+                    ig.TryGetProperty("count", out JsonElement c)
+                    && c.TryGetInt32(out int n) && n > 0,
+                    $"ignored entry '{key}' has no positive integer `count` — an uncounted ignore "
+                    + "excuses every occurrence of that token in that file, which is the same as "
+                    + "disabling the scan for the pair");
+                // A duplicate pair would LAST-WRITE-WIN into the dictionary, so a second
+                // entry carrying a larger count would silently raise the excuse ceiling
+                // while the first entry's reason — the one a reviewer reads — stayed on
+                // the page describing a narrower permission than is actually granted.
+                Assert.False(ignoredCounts.ContainsKey(key),
+                    $"duplicate ignored entry '{key}' in src/auth-semantics.json — two entries "
+                    + "for one file and token silently collapse to whichever is listed last, "
+                    + "so the reason a reviewer reads need not be the count that is enforced. "
+                    + "Merge them into one entry with one count and one reason.");
+
+                ignoredCounts[key] = c.GetInt32();
+                ignoredSeen[key] = 0;
             }
         }
 
         foreach (Occurrence occ in ScanOccurrences())
         {
             bool declared = sites.Any(s => s.File == occ.File && s.Token == occ.Token);
-            bool excused = ignored.Contains($"{occ.File}::{occ.Token}");
+
+            string ignoreKey = $"{occ.File}::{occ.Token}";
+            bool excused = false;
+            if (ignoredCounts.TryGetValue(ignoreKey, out int allowed))
+            {
+                ignoredSeen[ignoreKey]++;
+                excused = ignoredSeen[ignoreKey] <= allowed;
+            }
 
             Assert.True(declared || excused,
                 $"UNDECLARED AUTHENTICATOR: '{occ.Token}' at {occ.File}:{occ.Line} appears in "
@@ -288,6 +384,80 @@ public sealed class AuthSemanticsDriftTests
                 + "Apple shell came to disagree with itself. Declare it with a reason, or "
                 + "ignore it with a reason.");
         }
+
+        // EXACT, not at-most. A count left behind after its occurrence is deleted is a
+        // stale excuse, and a stale excuse is a licence for the next occurrence to
+        // arrive unreviewed.
+        foreach ((string key, int allowed) in ignoredCounts)
+            Assert.True(ignoredSeen[key] == allowed,
+                $"ignored entry '{key}' declares count {allowed}, but the scan found "
+                + $"{ignoredSeen[key]}. If the occurrence moved or was deleted, delete the "
+                + "entry too — a count that outlives its occurrence is a standing licence "
+                + "for the next one to arrive unreviewed.");
+    }
+
+    [Fact]
+    public void TheTestOnlyCredentialBranch_IsStillGuarded()
+    {
+        // src/auth-semantics.json excuses one AUTH_DEVICE_CREDENTIAL occurrence on the
+        // grounds that it is reachable only through `allowDeviceCredentialForTest`.
+        // A token scanner cannot see a guard — widening `if (allowDeviceCredentialForTest)`
+        // to `if (true)` leaves the token on the same line, in the same file, exactly
+        // once, so neither the completeness scan nor its `count` changes by one
+        // character. That is what the first two assertions below are for.
+        //
+        // THE THIRD ASSERTION EXISTS BECAUSE THE GUARD IS NOT THE ONLY WAY IN. A new
+        // caller passing the flag widens the credential path in production exactly as
+        // `if (true)` does, while writing neither the AUTH_DEVICE_CREDENTIAL token nor
+        // either guard literal — so the count does not move and the guard still reads
+        // as written. Demonstrated, not imagined: a two-line
+        // `provisionKeyForRecovery` forwarding `allowDeviceCredentialForTest = true`
+        // passed every other assertion in this file. The argument literal is countable
+        // the same way the token is, so it is counted.
+        //
+        // WHAT IS STILL NOT COVERED, stated plainly rather than hedged: the count is
+        // over ONE SPELLING of the argument. A POSITIONAL call —
+        // `provisionKey(key, true, true)` — carries no parameter name at all, and a
+        // named call written without spaces around the `=` is a different string. Both
+        // slip past. Closing those needs a Kotlin parser, not a scanner, and this pin
+        // does not have one. The cheap spellings are pinned; the rest is a reviewer's
+        // job, and saying so here is the point.
+        string path = Path.Combine(RepoRoot(),
+            "src", "BlazorNative.Jni", "src", "androidMain", "kotlin", "io",
+            "blazornative", "shell", "AndroidShellBridge.kt");
+        Assert.True(File.Exists(path),
+            $"{path} does not exist — a pin that cannot find its subject must fail loudly, "
+            + "never vacuously");
+
+        string code = StripComments(File.ReadAllText(path));
+
+        Assert.Contains("if (allowDeviceCredentialForTest)", code, StringComparison.Ordinal);
+
+        // And the parameter must still default to false, or every caller gets the
+        // credential path without asking for it.
+        Assert.Contains("allowDeviceCredentialForTest: Boolean = false", code,
+            StringComparison.Ordinal);
+
+        // EXACTLY ONE caller may ask for the credential path: writeAuthBoundSecretForTest,
+        // the instrumented test seam the ignore entry is written about. Counted over the
+        // COMMENT-STRIPPED text, because the KDoc above provisionKey names the parameter
+        // in prose and a raw-file count would score it. Exactly-one, not at-most-one:
+        // if the seam is deleted, this entry and its manifest reason describe a caller
+        // that no longer exists, and a stale excuse is a licence for the next one.
+        const string CallerLiteral = "allowDeviceCredentialForTest = true";
+        int callers = 0;
+        for (int i = code.IndexOf(CallerLiteral, StringComparison.Ordinal); i >= 0;
+             i = code.IndexOf(CallerLiteral, i + CallerLiteral.Length, StringComparison.Ordinal))
+            callers++;
+
+        Assert.True(callers == 1,
+            $"expected exactly one caller passing `{CallerLiteral}` in AndroidShellBridge.kt, "
+            + $"found {callers}. The ignore entry for AUTH_DEVICE_CREDENTIAL in "
+            + "src/auth-semantics.json rests on there being ONE, writeAuthBoundSecretForTest, "
+            + "reachable only from the instrumented suite. A second caller widens the "
+            + "credential path in production without writing the token or touching the "
+            + "guard, so nothing else in this file would notice. Zero means the seam was "
+            + "deleted and the manifest reason now describes code that is gone.");
     }
 
     [Fact]
