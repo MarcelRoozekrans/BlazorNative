@@ -108,7 +108,16 @@ unpinned*, wherever that occurs.
    back — *measured and confirmed*, not merely suspected), because a spike proved the root-cause
    fix viable but not yet safe. The differential pin is **structural, not behavioural** — it reads
    source and never observes blocking
-3. Phase 14.2 — safe-area insets to .NET [pending]
+3. Phase 14.2 — safe-area insets to .NET [complete] — closed 2026-09-22 on
+   [PR #351](https://github.com/MarcelRoozekrans/BlazorNative/pull/351); **#338 closed on BOTH
+   shells**; both device lanes dispatched and green on the head commit; .NET 1080 → 1106,
+   Android 225 → 226, iOS 269 → 270; **no ABI change** — insets ride the existing
+   `blazornative_host_event` export, confirming scoping decision 3. `BnSafeArea` is **opt-in**,
+   following every peer framework except SwiftUI, with the ergonomics closed by putting it in
+   every snippet a user would copy rather than by insetting silently. The phase's real finding is
+   a **boot race present on both shells** — an inset callback arriving before the async runtime
+   boot, recording a value it cannot deliver, leaves .NET at `Zero` forever on a static-orientation
+   launch. It needs two halves: don't record when skipping, and force one re-report at boot
 4. Phase 14.3 — auth semantics [pending]
 5. Phase 14.4 — device observability, docs, and the device lane [pending]
 6. Phase 14.5 — audit and close [pending]
