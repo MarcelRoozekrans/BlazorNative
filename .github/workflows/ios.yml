@@ -23,7 +23,7 @@
 #      propagate globally → NETSDK1203 on the P2P refs; the runtime-pack bypass +
 #      NativeLib=Static → the static archive, canonicalized to the frozen
 #      libBlazorNative.Runtime.a name; assert exactly the 4 accepted IL2072s)
-#   2. nm -gU asserts the NINE blazornative_* exports in the .a; then assemble the
+#   2. nm -gU asserts the TEN blazornative_* exports in the .a; then assemble the
 #      STATIC-EMBED link inputs: libbootstrapperdll.o (direct-linked so its
 #      constructor initialises the runtime) + a merged libBnRuntimeSupport.a (the
 #      runtime pack's native/*.a minus the non-default GC/eventpipe variants)
@@ -347,7 +347,7 @@ jobs:
           rm -f src/BlazorNative.Apple/vendor/yoga-include/yoga/module.modulemap
           ls -la src/BlazorNative.Apple/vendor/libyoga.a | tee -a ios-out/yoga-build.txt
           file src/BlazorNative.Apple/vendor/libyoga.a | tee -a ios-out/yoga-build.txt
-          # ASSERT (not just observe — house style, same shape as the 9-export check
+          # ASSERT (not just observe — house style, same shape as the 10-export check
           # above): the Yoga C-API symbols the probe calls must be defined in the
           # archive. A silent `|| true` here would let a header-only/empty libyoga.a
           # sail through and only fail later at link time, far from the cause.
@@ -510,7 +510,7 @@ jobs:
             > ios-out/xcresult.json 2>/dev/null || true
           ls -la ios-out/crash || true
 
-      - name: Assert XCTest baseline (270 passed / 0 failed)
+      - name: Assert XCTest baseline (271 passed / 0 failed)
         if: ${{ always() && matrix.runs_tests }}
         run: |
           log=ios-out/xcodebuild-test.log

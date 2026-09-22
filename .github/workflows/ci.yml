@@ -11,7 +11,7 @@
 #     canonicalized to the frozen BlazorNative.Runtime.* names inside the
 #     publish folder — (win-x64, linux-bionic-x64, linux-bionic-arm64;
 #     each publish must show exactly the 4 accepted IL2072 trim warnings) →
-#     nine-export verification (dumpbin via vswhere / llvm-readelf from the
+#     ten-export verification (dumpbin via vswhere / llvm-readelf from the
 #     pinned NDK) → Gradle testDebugUnitTest against the fresh win-x64 dll
 #     (162 passed / 0 failed — the assertion is the step near the end of this
 #     job; this header is a copy, and it read 92 for four milestones) →
@@ -54,8 +54,9 @@ env:
   DOTNET_CLI_TELEMETRY_OPTOUT: true
   NDK_PIN: 26.3.11579264
   # Yoga is ONE engine used by TWO shells, and now by FOUR files: Android's
-  # Gradle pin, ios.yml's YOGA_VERSION, this one — the version the `ios-build`
-  # job below compiles from source — and, since Phase 8.3, the TEMPLATE's Gradle
+  # Gradle pin, ios.yml's YOGA_VERSION, this one — the version the
+  # `ios-build-slice` job below compiles from source, once per matrix leg — and,
+  # since Phase 8.3, the TEMPLATE's Gradle
   # pin (the one a `dotnet new blazornative` app actually builds against). Each
   # copy is a thing that can drift, so all four are asserted against each other in
   # build-test's very first step (see "Assert Yoga version parity"). It lives here
@@ -85,13 +86,13 @@ jobs:
       # Yoga means bumping ALL FOUR files in one commit. (Baselines are asserted,
       # not observed — the same house rule as the export/test-count checks below.)
       #
-      # THREE files, since the `ios-build` job below: this workflow's own
+      # THREE files, since the `ios-build-slice` job below: this workflow's own
       # YOGA_VERSION is the version the REQUIRED compile lane builds from source,
-      # and it must be the one the ADVISORY simulator lane runs against — otherwise
+      # and it must be the one the ADVISORY execution lane runs against — otherwise
       # "the iOS shell compiles" and "the iOS shell lays out correctly" would be
       # statements about two different engines. `$env:YOGA_VERSION` IS ci.yml's pin
-      # (it is what ios-build consumes), so it is read straight from the environment
-      # rather than regexed back out of the file it came from.
+      # (it is what `ios-build-slice` consumes, on every leg), so it is read straight
+      # from the environment rather than regexed back out of the file it came from.
       #
       # FOUR files, since Phase 8.3 (M8 DoD #4): the `dotnet new blazornative`
       # template ships its OWN build.gradle.kts, and that is the one a generated
@@ -117,10 +118,10 @@ jobs:
           $apple    = $im.Groups[1].Value.Trim()
           $here     = "$env:YOGA_VERSION".Trim()
           $generated = $tm.Groups[1].Value.Trim()
-          if (-not $here) { throw "ci.yml's own YOGA_VERSION is empty — the ios-build job would compile an unpinned Yoga." }
-          Write-Host "Yoga pins: android(build.gradle.kts)=$android  ios(ios.yml)=$apple  ci(ios-build)=$here  template(blazornative)=$generated"
+          if (-not $here) { throw "ci.yml's own YOGA_VERSION is empty — the ios-build-slice job would compile an unpinned Yoga." }
+          Write-Host "Yoga pins: android(build.gradle.kts)=$android  ios(ios.yml)=$apple  ci(ios-build-slice)=$here  template(blazornative)=$generated"
           if ($android -ne $apple -or $android -ne $here -or $android -ne $generated) {
-            throw "Yoga version drift: Android pins $android, the iOS simulator lane builds $apple, the required ios-build lane builds $here, a generated app builds $generated. One engine, FOUR files — bump them together."
+            throw "Yoga version drift: Android pins $android, the iOS execution lane builds $apple, the required ios-build-slice lane builds $here, a generated app builds $generated. One engine, FOUR files — bump them together."
           }
 
       # ── Toolchain ──────────────────────────────────────────────────────────
@@ -2164,7 +2165,7 @@ jobs:
             throw ".NET test baseline drift: expected 1109 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
-      # ── NativeAOT publishes + nine-export verification ────────────────────
+      # ── NativeAOT publishes + ten-export verification ─────────────────────
       # Phase 8.0: the publish head is samples/BlazorNative.SampleApp (the app
       # owns PublishAot; Runtime is a plain packable library). The exports are
       # emitted from Runtime via UnmanagedEntryPointsAssembly and the native
@@ -2640,7 +2641,9 @@ jobs:
   # landed on `main` green and sat there. PR #81 closed the hole by compiling the
   # instrumented sources inside `build-test`.
   #
-  # That gate now lives HERE, in its own job, mirroring `ios-build`. The reason is
+  # That gate now lives HERE, in its own job, mirroring the iOS compile lane
+  # (`ios-build` when this was written; `ios-build-slice` since Phase 14.4 split it
+  # into a two-leg matrix). The reason is
   # LEGIBILITY, not behaviour: when the compile lived inside `build-test`, an Android
   # shell that stopped compiling reddened a check named `build-test` — the same check
   # that fails for a .NET build error, a broken .NET test, or a JVM unit-test failure.
@@ -2649,7 +2652,8 @@ jobs:
   #
   # ── WHY IT STOPS AT COMPILE, AND WHY THAT IS NOT TIMIDITY ──────────────────
   # A device is needed to RUN the instrumented tests, not to COMPILE them — the same
-  # sentence `ios-build`'s `build-for-testing` is justified by. `compileDebugAndroidTestKotlin`
+  # sentence `ios-build-slice`'s `build-for-testing` is justified by, on both legs.
+  # `compileDebugAndroidTestKotlin`
   # is a pure compile: it resolves and type-checks `src/androidMain/kotlin` AND the
   # instrumented `androidTest` source set (so a whole source set silently vanishing,
   # the AGP 9 incident, fails HERE) without booting an emulator and without running a
@@ -2657,20 +2661,29 @@ jobs:
   # ADVISORY, on purpose: emulator-on-CI has real flake modes (boot timeouts, adb
   # drops) that a required check must not import. Compiling has none of them.
   #
-  # ── WHY IT IS SELF-CONTAINED (no `needs`), MIRRORING ios-build ─────────────
+  # ── WHY IT IS SELF-CONTAINED (no `needs`), MIRRORING ios-build-slice ──────
   # This job produces its OWN runtime — it does not depend on `build-test`. That
   # is not a style choice; a `needs`-gated job cannot be a trustworthy REQUIRED
   # check:
   #   · GitHub does not surface a `needs`-gated job as a check until its dependency
   #     finishes, so it is INVISIBLE on the PR checks list while `build-test` runs
   #     and only appears afterward — you cannot see at a glance that the Android
-  #     shell is being gated at all.
+  #     shell is being gated at all. (This half DOES apply to the `ios-build`
+  #     aggregator, and it is accepted there rather than denied: a REQUIRED context
+  #     shows as "Expected" in the merge box whether or not its job has surfaced, so
+  #     the gate is still visible where it matters, and the two `ios-build-slice`
+  #     legs are visible in the checks list the whole time. The cost is cosmetic
+  #     latency in one list; the bullet below is the one that would have been
+  #     disqualifying, and it is answered.)
   #   · Worse, as a required check it is a TRAP: if `build-test` ever fails or is
   #     skipped, this job never runs, never reports, and the PR wedges permanently
   #     on "Expected — waiting for android-build".
   # `ios-build-slice` (below) is the template: no `needs`, it does its own
   # `dotnet publish -r "$RID"` and then links. This job mirrors that — it
-  # self-publishes the bionic `.so` and then compiles.
+  # self-publishes the bionic `.so` and then compiles. (The heading above names
+  # `ios-build-slice`, not `ios-build`, for exactly this reason: since Phase 14.4
+  # it is the SLICE job that is the self-contained compiling template, while
+  # `ios-build` is the aggregator over it.)
   #
   # (Phase 14.4 correction, and read it before copying the rule above: the
   # REQUIRED `ios-build` check IS now `needs`-gated — it aggregates the two

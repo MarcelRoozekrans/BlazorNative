@@ -206,7 +206,9 @@ Phases:
 
 10 phases (3.0a–3.0e runtime re-platform, 3.1–3.5 application layer) shipped.
 A real two-page app runs on the AVD through a NativeAOT `.so` with a typed
-eight-export C-ABI: `Bn*` components, `@bind` mechanics, cascading values,
+eight-export C-ABI — **eight as of M3; the frozen surface is TEN today**, the
+count every lane asserts, after `blazornative_host_event` and
+`blazornative_host_call_complete` were added later: `Bn*` components, `@bind` mechanics, cascading values,
 bidirectional events, the six shell-bridge operations, multi-component
 composition, strict mode, and `INavigationManager` root-component navigation.
 wasmtime + `.wasm` deleted entirely (3.0e). Audit verdict: **PASS — all 11 DoD

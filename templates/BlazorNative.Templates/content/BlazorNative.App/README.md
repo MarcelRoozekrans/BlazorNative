@@ -3,6 +3,13 @@
 A [BlazorNative](https://github.com/MarcelRoozekrans/BlazorNative) app: Blazor components
 compiled with NativeAOT and rendered as **real native widgets**. No WebView.
 
+> **This template ships an Android shell only — there is no iOS tree in it, and there is no
+> iOS template.** `dotnet new blazornative` gives you `android/` and nothing else; the iOS
+> shell is a manual procedure against the reference implementation in
+> `src/BlazorNative.Apple/`, written up in the docs under **Shells → iOS**. Your .NET app —
+> pages, manifest, publish head — is the same on both platforms; it is only the shell tree
+> that the template cannot give you.
+
 ## The loop
 
 Your .NET app compiles to a native library; the Android shell in `android/` loads it and

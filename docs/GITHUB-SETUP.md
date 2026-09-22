@@ -154,9 +154,9 @@ only for public repos. Protection therefore lands right after the repo goes
 public, before the phase closes.)
 
 - Require PR before merging (no direct pushes to `main`, admins included)
-- Required status checks — **all three jobs of `.github/workflows/ci.yml`**:
+- Required status checks — **the three required contexts of `.github/workflows/ci.yml`**:
   - **`build-test`** (windows-latest) — build + analyzers, the .NET test suite,
-    the three NativeAOT publishes with nine-export verification, JVM
+    the three NativeAOT publishes with ten-export verification, JVM
     `testDebugUnitTest`, consumer smoke, and the `.so` artifact uploads (kept so
     a **human** can download and inspect a build's binaries — **no job consumes
     them**; see the note under the three bullets).
@@ -175,16 +175,32 @@ public, before the phase closes.)
     compileDebugAndroidTestKotlin`, type-checking `src/androidMain/kotlin`
     (MainActivity, WidgetMapper, YogaLayout) **and** the instrumented
     `androidTest` source set. No emulator is booted; no test is run.
-  - **`ios-build`** (macos-latest) — the **iOS shell's compile**: publish
-    `iossimulator-arm64`, build the pinned Yoga from source, then `xcodebuild
+  - **`ios-build`** (ubuntu-latest, **`needs: [ios-build-slice]`**) — since
+    Phase 14.4 an **aggregator**, not a compiler. The compiling lives in
+    **`ios-build-slice`** (macos-latest), a two-leg matrix over
+    `iossimulator-arm64` and `ios-arm64`: each leg publishes its RID, builds the
+    pinned Yoga from source **against that leg's SDK**, then runs `xcodebuild
     build-for-testing` (Swift + Objective-C++ compiled, app **and** XCTest bundle
-    linked). No simulator is booted; no test is run.
+    linked) and asserts the linked binary's `LC_BUILD_VERSION` really names the
+    expected platform. No simulator is booted; no test is run. `ios-build` then
+    reads the matrix's aggregate result and fails on anything that is not
+    `success`, **including a skip**. The check name therefore means what it always
+    meant, only stronger: it used to say "the simulator slice compiled" and now
+    says "**both** slices compiled". *Which* slices those are is not claimed by the
+    aggregator — it is pinned by `IosSliceMatrixDriftTests` inside `build-test`.
 - Require conversation resolution before merging
 - No force pushes
 
-> **The three required jobs are INDEPENDENT — `ci.yml` declares no `needs:` edges
-> at all.** They run in parallel, and each does its own checkout and its own
-> publish. Nothing in `ci.yml` downloads an artifact: `build-test`'s `.so`
+> **The three required contexts run in parallel, and each does its own checkout
+> and its own publish.** `ci.yml` has exactly **one** `needs:` edge, added in Phase
+> 14.4: the `ios-build` aggregator on the `ios-build-slice` matrix. It is not an
+> artifact hand-off — the aggregator reads a *result*, not a file — and it is safe
+> as a required check only because it carries `if: ${{ always() }}` plus an explicit
+> result assertion, so it always runs and always reports. (A `needs:`-gated required
+> check **without** both of those is a trap: if its dependency fails or is skipped it
+> never reports, and the PR wedges forever on "Expected". The `android-build` header
+> in `ci.yml` states both halves of that rule.) Nothing in `ci.yml` downloads an
+> artifact: `build-test`'s `.so`
 > uploads are there to be downloaded by a *person*, not by a job. The repo's one
 > long-standing cross-job artifact hand-off is in `android-instrumented.yml`
 > (`publish-so` → `emulator`, the **advisory nightly** lane); `release-please.yml`'s
@@ -193,9 +209,13 @@ public, before the phase closes.)
 > compiling against a `.so` `build-test` uploads. It has never been any of those
 > things, and the same false belief is what produced review finding I-3.)*
 
-> **All three check names are exactly the job ids** — `build-test`,
-> `android-build` and `ios-build` — because no job declares a `name:` and none is
-> a matrix.
+> **All three REQUIRED check names are exactly the job ids** — `build-test`,
+> `android-build` and `ios-build` — because none of those three declares a `name:`
+> and none of them is a matrix. `ios-build-slice` is **both**: it declares
+> `name: ios-build-slice ${{ matrix.leg }} ${{ matrix.rid }}` and reports one check
+> per leg, which is exactly why it could not be called `ios-build` — a required
+> context that nothing ever reports under that exact name blocks every pull request,
+> including the one that renamed it. Its two leg contexts are **not** required.
 
 > **`release.yml` adds no fourth required check, by design (Phase 8.2).** Its
 > `validate` job runs on PRs that touch the release machinery or bump
@@ -230,8 +250,16 @@ The M6 final audit (finding F1) found the iOS shell in the same hole and deeper:
 check compiled a single line of Swift or Objective-C++**, and `ios.yml` is
 advisory. `ios-build` is the mirror of #81's fix — *a device is needed to RUN the
 tests, not to COMPILE them* — and it is deliberately the **honest intersection**:
-the part with no simulator flake modes, made required. Simulator **execution**
-stays in `ios.yml` and stays advisory.
+the part with no simulator flake modes, made required. **Execution** stays in
+`ios.yml` and stays advisory.
+
+Phase 14.4 widened that intersection rather than changing its shape. The same
+argument that made the simulator compile required applies verbatim to the slice
+that actually ships: for its whole life until then, `ios-arm64` had **never been
+compiled by CI at all** — the first machine to build it was an external
+developer's laptop during the September 2026 device run. The compile gate is now
+a two-leg matrix, `ios-build-slice`, and `ios-build` aggregates it. Still no
+simulator booted, still no test run, still no flake imported.
 
 #### The two advisory lanes, and what promotes them
 
@@ -241,32 +269,62 @@ emulator-on-CI has known flake modes; it stays advisory until a stability
 baseline exists (several consecutive green nightly runs), at which point it
 can be promoted to a required check. Only the device **execution** is advisory:
 the Android shell's **compile** is required, in `android-build` (above), exactly
-as the iOS shell's compile is required in `ios-build` while its simulator
-execution stays advisory in `ios.yml`. Shape: a `publish-so` job on
+as the iOS shell's compile is required in `ios-build` — which since Phase 14.4
+aggregates the `ios-build-slice` matrix — while its simulator **execution** stays
+advisory in `ios.yml`. Shape: a `publish-so` job on
 windows-latest publishes the linux-bionic-x64 `.so` (same pinned-NDK,
-IL2072 and nine-export assertions as `ci.yml`) and hands it as an artifact
+IL2072 and ten-export assertions as `ci.yml`) and hands it as an artifact
 to an `emulator` job on ubuntu-latest (KVM), which runs
 `connectedAndroidTest -PciSoDir=<artifact dir>` on an API 34 google_apis
 x86_64 Pixel 6 image — mirroring the local AVD `blazornative-pixel6-x86_64`
 — and asserts the count pinned in the workflow itself (see the provenance
 block in `android-instrumented.yml` for the current bar and its history).
 
-The iOS-simulator workflow (`ios.yml`, `macos-latest`, on `push` to `main` +
+The iOS execution workflow (`ios.yml`, `macos-latest`, on `push` to `main` +
 manual dispatch — **the `pull_request` trigger was removed in Phase 7.6** on an
 owner cost request; PRs keep the REQUIRED `ios-build` compile gate, the phase
 process dispatches this lane at every iOS gate, and every merge runs it on
 `main`; the workflow header records the condition for restoring the PR trigger)
 is likewise **informational, not a required check** — simulator-on-CI has flake
-modes (sim boot, test-host launch), so it stays advisory. Promotion mirrors the
-emulator lane: after a stability baseline (≈10 consecutive green runs on `main`
-with no sim-flake reds) it can be promoted to a required check. Shape: a
-**single** job (iOS both publishes and tests on macOS) publishes the
-`iossimulator-arm64` NativeAOT **static** archive (the runtime-pack bypass +
-`NativeLib=Static`; 4 IL2072 + nine-export `nm -gU` assertions), assembles the
-static-embed link inputs (`bootstrapperdll.o` direct-link + the merged support
-archive), then runs the hosted XCTest suite via `xcodebuild test` on a
-runner-selected simulator — asserting the count pinned in `ios.yml`'s own
-provenance block. The suite covers the render pin and the wire-drift guard; the
+modes (sim boot, test-host launch), so it stays advisory.
+
+Shape, since Phase 14.4: a **two-leg matrix** over the same axes `ci.yml` uses,
+with the same field names. Each leg publishes its RID's NativeAOT **static**
+archive (the runtime-pack bypass + `NativeLib=Static`; 4 IL2072 + ten-export
+`nm -gU` assertions) and assembles the static-embed link inputs
+(`bootstrapperdll.o` direct-link + the merged support archive). The
+**`iossimulator-arm64`** leg then runs the hosted XCTest suite via
+`xcodebuild test` on a runner-selected simulator, asserting the count pinned in
+`ios.yml`'s own provenance block. The **`ios-arm64`** leg stops at
+`xcodebuild build -sdk iphoneos`: it compiles and links the slice that actually
+ships, and runs **nothing** — a device is needed to run, and CI has none.
+
+> **Promotion criteria — and they are now PER LEG, because the two legs have
+> different flake profiles.** The stated reason this lane is advisory is
+> *simulator* flake: sim boot and test-host launch. **The device leg has none of
+> it** — it boots nothing, attaches nothing and runs no test, so the baseline that
+> would justify promoting it is a different, and much shorter, bar than the
+> simulator leg's.
+>
+> - **`ios.yml`'s device leg** — it duplicates what `ci.yml`'s already-required
+>   `ios-build-slice device ios-arm64` leg proves on every PR. Promoting it would
+>   add a required check that says nothing new, so the answer is **do not promote
+>   it**; keep it as the merge-time re-run.
+> - **`ios.yml`'s simulator leg** — this is the one the ≈10-consecutive-green-runs
+>   baseline was always about: ~10 consecutive green runs **of that leg** on `main`
+>   with no sim-flake reds. Count the leg, not the workflow — a workflow-level
+>   count would be satisfied by a device leg that cannot flake, which is exactly
+>   the bar this criterion is trying not to be.
+>
+> Mechanically, promoting a leg means adding its **leg check name** — `${{ matrix.leg }} ${{ matrix.rid }}`
+> as `ios.yml` declares it — to the required set, not the workflow name.
+
+> **Phase 14.4 changed no branch-protection setting, and none is pending.** The
+> required context `ios-build` still exists and still reports; it simply means
+> "both slices compiled" now instead of "the simulator slice compiled". Adding
+> `ios-build-slice`'s two leg contexts to the required set is **optional** and can
+> happen later or never — `ios-build` already fails if either leg does, including
+> if the matrix is skipped entirely. The suite covers the render pin and the wire-drift guard; the
 interactive demo (bind/echo, Clear, Theme, Settings⇄Back, clipboard); the Yoga
 layer (style parsing, node lifecycle, dirty-on-change, resize); and — the point of
 M6 — the **computed-frame assertions** for `BnLayoutDemo`, `BnScrollDemo` and
@@ -299,7 +357,8 @@ text:
 - `BnImageDemoTests` — the image fixtures' natural pixel sizes, across .NET, the
   Kotlin fixture server and the Swift one.
 - The Yoga version pin — asserted equal across `build.gradle.kts`, `ios.yml` and
-  `ci.yml`'s own `YOGA_VERSION` (which is what `ios-build` compiles).
+  `ci.yml`'s own `YOGA_VERSION` (which is what `ios-build-slice` compiles, once
+  per leg, against that leg's SDK) and the template's `build.gradle.kts`.
 
 ### Secrets — `NUGET_API_KEY`, the one secret
 
@@ -664,7 +723,7 @@ shell landed (render in Phase 5.2, interactivity in Phase 5.3):
 ## Platform tested
 - [ ] JVM dev loop (`testDebugUnitTest`)
 - [ ] Android emulator (`connectedAndroidTest`)
-- [ ] iOS simulator (`ios.yml` — `xcodebuild test`)
+- [ ] iOS (`ios` lane — `xcodebuild test` on the simulator leg; the device leg compiles only)
 ```
 
 ---

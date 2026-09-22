@@ -12,9 +12,17 @@ reference implementation, and it is more work than the Android path — where `d
 blazornative` gives you a runnable Gradle tree with the shell already in it. Budget an
 afternoon.
 
-**Simulator only.** The reference shell is built and tested for `iossimulator-arm64`. Real
-devices need a signing story, a device RID and an `ios-build` lane that has none of those
-today; it is not in this milestone.
+**Both slices compile; only the simulator slice is *executed* by CI.** Since Phase 14.4 the
+required lane builds `iossimulator-arm64` **and** `ios-arm64` — the slice that actually ships
+— so a change that breaks the device build reds a pull request. What CI still cannot do is
+*run* anything on real hardware: the XCTest suite executes on a booted simulator only.
+
+A real device has been exercised once, by hand — an iPhone 17 Pro Max in September 2026 — and
+the shell needed no source change to build and run there. **Signing is still yours to
+arrange:** this repo builds unsigned, so a device build needs a Development Team, a
+provisioning profile and the team-prefixed keychain group. `docs/ios-device-verification-handover.md`
+is the written recipe. §8 below covers the one device-only thing that is not obvious: seeing
+`Debug` and `Verbose` output at all.
 
 ---
 
@@ -29,27 +37,36 @@ There is no script and no Makefile target. (That absence is a known gap:
 executable and testable instead of prose.)
 
 So this document **points at the live files** and tells you what to change in them. Those
-files are compiled by the **`ios-build` job on every pull request, and `ios-build` is a
-required check** — which means the material this guide sends you to is kept true by a gate
-rather than by someone remembering to update a document. A transcription here would be a
-fourth copy of a recipe that already exists twice in YAML, and it would rot the day
-`ci.yml` moved.
+files are compiled by the **`ios-build-slice` matrix on every pull request, and its
+aggregate is the required check `ios-build`** — which means the material this guide sends
+you to is kept true by a gate rather than by someone remembering to update a document. A
+transcription here would be a fourth copy of a recipe that already exists twice in YAML, and
+it would rot the day `ci.yml` moved.
 
-**The executable truth is `.github/workflows/ci.yml`, job `ios-build`.** When this prose and
-that job disagree, the job is right. Read its steps in order — they are commented heavily,
-and they are the procedure:
+**The executable truth is `.github/workflows/ci.yml`, job `ios-build-slice`.** When this
+prose and that job disagree, the job is right. Read its steps in order — they are commented
+heavily, and they are the procedure:
 
 | Step | What it does |
 |---|---|
-| `Publish iossimulator-arm64 (NativeLib=Static; assert exactly 4 IL2072)` | your app → a static archive |
+| `Publish ${{ matrix.rid }} (NativeLib=Static; assert exactly 4 IL2072)` | your app → a static archive |
 | `Stage the link inputs (runtime .a + bootstrapperdll.o + support archive)` | the `vendor/` recipe |
-| `Yoga: build libyoga.a` | the flexbox engine, from source |
-| `Generate BnHost.xcodeproj` / `xcodebuild build-for-testing` | the Xcode side |
+| `Yoga: build libyoga.a (…) for ${{ matrix.rid }}` | the flexbox engine, from source |
+| `Generate BnHost.xcodeproj` / `xcodebuild build-for-testing (${{ matrix.rid }} …)` | the Xcode side |
+
+> **Why looking up `ios-build` shows you one line of bash.** `ios-build-slice` is a two-leg
+> matrix — simulator and device — and a matrix reports one check *per leg*, so it cannot
+> itself carry the required context name. `ios-build` is therefore a tiny **aggregator**: it
+> `needs:` the matrix, asserts its aggregate result is `success`, and fails on anything else
+> including a skip. The name still means what it always meant, only stronger — it used to say
+> "the simulator slice compiled" and now says "**both** slices compiled". Which slices those
+> are is pinned in the required .NET suite by `IosSliceMatrixDriftTests`, not by the
+> aggregator.
 
 > **One honest warning about this guide as a whole.** No lane executes *this procedure*.
-> `ios-build` proves the reference shell compiles and links; it does not prove that a reader
-> following these steps arrives at a running app. Every file and line referenced below was
-> verified against the tree when this was written, but line numbers drift — each citation
+> `ios-build-slice` proves the reference shell compiles and links; it does not prove that a
+> reader following these steps arrives at a running app. Every file and line referenced below
+> was verified against the tree when this was written, but line numbers drift — each citation
 > names the code to search for, so use the text, not the number.
 
 ---
@@ -170,6 +187,13 @@ Try it against a booted simulator:
 xcrun simctl openurl booted "blazornative://geolocation"
 ```
 
+:::caution On iOS 26 this recipe needs a tap
+`simctl openurl` used to hand the URL straight to the app when it was already in the
+foreground. On iOS 26 it always raises an **`Open in "BnHost"?`** confirmation sheet first,
+whatever the foreground app is. The link still routes correctly once you confirm — but the
+command no longer completes unattended, so do not put it in a script and expect a result.
+:::
+
 **Universal links are still not supported.** They need an `associated-domains`
 entitlement, a domain you own, and an `apple-app-site-association` file served from it —
 the same Apple Developer account that gates real-device iOS. The custom scheme needs none
@@ -212,7 +236,7 @@ lives.
 
 ## 5. The staging — the shape of it, and the one thing that will bite you
 
-The recipe lives in `ios-build`'s **`Stage the link inputs`** step. Its shape:
+The recipe lives in `ios-build-slice`'s **`Stage the link inputs`** step. Its shape:
 
 1. **Publish** your app for `iossimulator-arm64`. The static archive lands under
    `bin/Release/net10.0/iossimulator-arm64/` — **`publish/` *or* `native/`**, depending on
@@ -261,9 +285,11 @@ runtime objects without dragging in the exe bootstrapper or the Network-framewor
 ## 6. Yoga, from source
 
 The Android shell gets Yoga from Maven (`com.facebook.yoga:yoga`). **iOS builds it from
-source** — C++20, against the simulator SDK, merged with `libtool -static` into
-`libyoga.a`, headers copied to `vendor/yoga-include/`. See `ios-build`'s
-**`Yoga: build libyoga.a`** step.
+source** — C++20, against **the SDK of the slice being built**, merged with `libtool -static`
+into `libyoga.a`, headers copied to `vendor/yoga-include/`. See `ios-build-slice`'s
+**`Yoga: build libyoga.a`** step, which compiles once per leg: `iphonesimulator` for the
+simulator slice, `iphoneos` for the device slice. A simulator-SDK `libyoga.a` linked into a
+device app is a silent failure, so the two builds are cached under separate keys.
 
 **Then delete `vendor/yoga-include/yoga/module.modulemap`:**
 
@@ -376,8 +402,8 @@ simulator `xcrun simctl launch --console` and `log stream` both still work.
 | `src/BlazorNative.Apple/project.yml` | XcodeGen spec: targets, link flags, SwiftPM deps. Heavily commented; read it |
 | `src/BlazorNative.Apple/BnHostTests/` | the reference's tests — 30 files, delete them |
 | `src/BlazorNative.Apple/vendor/` | the frozen-name link inputs, produced by the staging step: `bootstrapperdll.o`, `libBlazorNative.Runtime.a`, `libBnRuntimeSupport.a`, `libyoga.a` + `yoga-include/`. The `.a`/`.o` are git-ignored — they are build outputs, never committed |
-| `.github/workflows/ci.yml` → `ios-build` | **the executable truth.** Required on every PR |
-| `.github/workflows/ios.yml` | the advisory simulator-execution lane — runs the XCTests on a booted simulator |
+| `.github/workflows/ci.yml` → `ios-build-slice` | **the executable truth.** A two-leg matrix, simulator + device, run on every PR; the required check `ios-build` aggregates it |
+| `.github/workflows/ios.yml` | the advisory execution lane — runs the XCTests on a booted simulator, and compiles the device slice alongside |
 
 **Third-party dependencies** (from `project.yml`): **Kingfisher** (`from: 8.10.0`) via
 SwiftPM — the iOS twin of Android's Coil, driving `BnImage`. Exactly one file in the shell
