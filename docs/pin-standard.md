@@ -254,10 +254,27 @@ Two consequences worth stating, since both have surprised someone:
 - **Borrowing a neighbour's helper is no longer possible**, and that is deliberate.
   `ComponentReferenceFixture` and `RendererNodeTypeMap` no longer expose a repo-root accessor.
   `BnRepo.Root()` is the only door.
-- **Reaching the tree does not by itself make a test a pin.** `BnImageDemoTests` and
-  `TextCollapseParityDriftTests` read the checkout in support of golden assertions rather than to
-  compare two copies of one truth. The caller list is a complete *population*, not a finished
-  *classification* — judge per file.
+- **Reaching the tree does not by itself make a test a pin, and the unit of classification is the
+  FACT, not the file.** A pin compares two copies of one truth. A golden assertion checks a value
+  against a recorded expectation. Both are worth having and they are not the same thing, so the
+  caller list is a complete *population* and not a finished *classification*.
+
+  `BnImageDemoTests` is the case that proves the unit. It is named as a golden and mostly is one —
+  its mount golden, its frame-table arithmetic and its fixture-contract facts assert against
+  `BnImageDemo`'s own constants and **never touch the checkout at all**. But two of its facts,
+  `TheAndroidFixtureServer_ServesExactlyBnImageDemosNaturalPixelSizes` and its iOS twin, compare
+  four C# constants against the Kotlin and Swift fixture servers' own declarations — in the file's
+  own words, *"three copies of four numbers, pinned rather than trusted"*. Those two are drift
+  pins by every rule here, down to `KotlinIntConst` and `SwiftIntConst` failing loudly when a
+  constant is renamed rather than passing over the miss. **Classifying that file as one thing, in
+  either direction, gets it wrong.**
+
+  The contrast is `TextCollapseParityDriftTests`, which is a pin end to end and one of the
+  strongest in the repo: it derives the Android shell's text-bearing node types by parsing the
+  Kotlin widget factory, derives the harness's answer **behaviourally** by mounting a probe rather
+  than reading a private field, carries two named vacuity guards and a separate anchor fact holding
+  the Kotlin predicate to the shape the derivation assumes, checks the template mirror in the same
+  pass, and writes down the three things it cannot cover.
 
 ---
 
