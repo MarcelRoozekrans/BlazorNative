@@ -36,6 +36,7 @@ namespace BlazorNative.SampleApp;
 //     ├─ BnButton "Authenticate" → IBiometrics.AuthenticateAsync        → echo status
 //     ├─ BnButton "Set"          → ISecureStorage.SetAsync(auth:true)   → echo status
 //     ├─ BnButton "Unlock"       → ISecureStorage.GetWithAuthAsync      → echo value / status
+//     ├─ BnButton "Get (plain)"  → ISecureStorage.GetAsync              → echo status
 //     ├─ BnButton "Delete"       → ISecureStorage.DeleteAsync           → echo status
 //     ├─ BnText echo (mount-pinned text node — the ClipboardProbe echo contract)
 //     └─ BnButton "← Back" → INavigationManager.NavigateToAsync("/")   (#204 — nav
@@ -99,6 +100,12 @@ internal sealed class BnSecureDemo : ComponentBase
                 EventCallback.Factory.Create<MouseEventArgs>(this, UnlockAsync));
             b2.CloseComponent();
 
+            b2.OpenComponent<BnButton>(35);
+            b2.AddComponentParameter(36, nameof(BnButton.Label), "Get (plain)");
+            b2.AddComponentParameter(37, nameof(BnButton.OnClick),
+                EventCallback.Factory.Create<MouseEventArgs>(this, PlainGetAsync));
+            b2.CloseComponent();
+
             b2.OpenComponent<BnButton>(40);
             b2.AddComponentParameter(41, nameof(BnButton.Label), "Delete");
             b2.AddComponentParameter(42, nameof(BnButton.OnClick),
@@ -148,6 +155,22 @@ internal sealed class BnSecureDemo : ComponentBase
         _echo = result.Status == SecureStorageStatus.Ok
             ? $"{ValuePrefix}{result.Value}"
             : $"{StatusPrefix}{result.Status}";
+    }
+
+    private async Task PlainGetAsync()
+    {
+        // THE READ-SIDE CONTRACT, made reachable by hand (#213 item 1). A plain get of
+        // the auth-bound secret must be refused WITHOUT a prompt and WITHOUT handing
+        // back the plaintext. Both shells already assert this in their own suites
+        // (BnSecureStorageTests.swift, BnSecureAndroidTest.kt); this button exists so
+        // the same contract can be exercised on real HARDWARE — the half the P3 device
+        // run could not reach, because the page described this refusal and offered no
+        // way to perform it. Echoing the value on the non-Ok path is deliberate: if a
+        // refusal ever leaked a value, it would be visible on screen rather than silent.
+        SecretResult result = await Secrets.GetAsync(Key);
+        _echo = result.Status == SecureStorageStatus.Ok
+            ? $"{ValuePrefix}{result.Value}"
+            : $"{StatusPrefix}{result.Status} {ValuePrefix}{result.Value ?? "(none)"}";
     }
 
     private async Task DeleteAsync()
