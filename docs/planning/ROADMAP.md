@@ -2490,12 +2490,52 @@ missing guards `Mixed` · 15.5 prose and the small corrections `Docs` · 15.6 au
 **No external dependency** — unlike M14, no phase needs a device, an Apple account, or an outside
 contributor. That is deliberate.
 
-#### Phase 15.0: The pin standard [status: active]
+#### Phase 15.0: The pin standard [status: complete]
 **Goal:** Answer **what makes a test a pin** — the population is not enumerable by name — then
 write down what a pin must do to be trusted, consolidate the 23 copy-pasted `RepoRoot()` helpers
 into one so the population becomes *exactly* enumerable, and take a measured per-pin census.
 **Surface:** Mixed
 **HelpWanted:** no
+**Design:** [`docs/superpowers/specs/2026-09-22-phase-15.0-design.md`](../superpowers/specs/2026-09-22-phase-15.0-design.md)
+**Plan:** [`docs/superpowers/plans/2026-09-22-phase-15.0-pin-standard.md`](../superpowers/plans/2026-09-22-phase-15.0-pin-standard.md)
+**Standard:** [`docs/pin-standard.md`](../pin-standard.md) · **Census:** [`docs/plans/2026-09-22-phase-15.0-census.md`](../plans/2026-09-22-phase-15.0-census.md)
+**Completed:** 2026-09-22 · [PR #372](https://github.com/MarcelRoozekrans/BlazorNative/pull/372)
++ [PR #373](https://github.com/MarcelRoozekrans/BlazorNative/pull/373) · .NET 1111 → **1112**; JVM,
+Android and iOS unchanged. **No production source change** — `tests/**` and `docs/**` only.
+
+> **The population is enumerable by BEHAVIOUR, and that is the phase's deliverable.** `RepoRoot()`
+> was copy-pasted into **24** test files. Consolidating it was not cleanup: **callers of the one
+> shared helper are the pin population, exactly**, where no naming convention can enumerate them.
+> The count had been wrong **four** times — `sixteen` by class suffix, `23` by method name, `25` by
+> prediction, `26` after a commit in this very phase moved it. **Counting by what the code does is
+> the only count that has held.**
+>
+> **It found a live, exploitable hole in a security guard.** Six unhardened comment strippers
+> existed. One let a bare undeclared `NSLog` hide behind an ordinary URL on the same line, leaving
+> all four `NSLogDriftTests` **green** over a tree that contained it — a pin whose own header calls
+> it *"the sole pre-CI signal"* and notes `NSLog` is handed **keychain keys**. Now **one stripper,
+> eight callers**. A raw scan confirmed the shipped shell never held a bare `NSLog`, so the
+> blindness cost nothing — **checked rather than hoped**.
+>
+> **The census judges per FACT, not per file:** 27 files, 118 facts, **102 pins** —
+> **93 conforms · 9 gap · 16 exempt**. Eight files are mixed, in two kinds, and one of those kinds
+> was not predicted.
+>
+> **THE ENFORCEMENT VERDICT IS NEGATIVE, and that is the phase's most useful output.** Rule 2
+> cannot be mechanically checked at acceptable cost. A convention test asserting every pin carries a
+> count-style assertion scores **0 of 4** against the known defects, because all four **already
+> execute** one — they floor the *manifest* or the *subtracted set* while the scanned set stays
+> bare. Such a check would hand out a green over the only demonstrated false-green channel in the
+> repo, **under a name claiming coverage**. A binding-aware analyzer would catch them, so the
+> verdict is **cost, not impossibility** — and it is disclosed as revisable, with nothing pinning it.
+>
+> **Shipped open, by design:** `ShellStyleTableDriftTests`' name extractor collects every quoted
+> string in the dispatch body, so a manifest name colliding with a Yoga value keyword reads as
+> dispatched with **no arm written**. Item 1 for 15.1.
+>
+> **A hole in the milestone's own foundation, recorded rather than smoothed:** `RouteMenuDriftTests`
+> is vacuous-capable and **invisible to every mechanism this phase built** — it compares two
+> in-memory collections, so it never calls `BnRepo.Root()` and never enters the population.
 
 #### Phase 15.1: Close the nine gaps [status: pending]
 **Goal:** Bring every non-conforming pin up to the standard, **#357**'s asymmetry among them.
