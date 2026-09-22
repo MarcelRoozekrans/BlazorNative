@@ -2668,9 +2668,21 @@ jobs:
   #   · Worse, as a required check it is a TRAP: if `build-test` ever fails or is
   #     skipped, this job never runs, never reports, and the PR wedges permanently
   #     on "Expected — waiting for android-build".
-  # `ios-build` (below) is the template: no `needs`, it does its own
-  # `dotnet publish -r iossimulator-arm64` and then links. This job mirrors that —
-  # it self-publishes the bionic `.so` and then compiles.
+  # `ios-build-slice` (below) is the template: no `needs`, it does its own
+  # `dotnet publish -r "$RID"` and then links. This job mirrors that — it
+  # self-publishes the bionic `.so` and then compiles.
+  #
+  # (Phase 14.4 correction, and read it before copying the rule above: the
+  # REQUIRED `ios-build` check IS now `needs`-gated — it aggregates the two
+  # `ios-build-slice` matrix legs. That does not contradict the trap described
+  # here, it is the one documented way out of it. The trap is a `needs`-gated job
+  # that never RUNS, and therefore never REPORTS, when its dependency fails or is
+  # skipped. `ios-build` carries `if: ${{ always() }}` and fails on any dependency
+  # result that is not `success`, INCLUDING `skipped`, so it always runs and always
+  # reports — there is no state in which the PR wedges on "Expected — waiting for
+  # ios-build". A `needs`-gated required check is a trap WITHOUT `if: always()` and
+  # an explicit result assertion; with both, it is how a required context survives
+  # being split into a matrix. Anything copying this rule needs both halves.)
   #
   # `compileDebugAndroidTestKotlin`'s task graph runs `... → copyRuntimeSo →
   # verifyNativeAssets`, which only insists `BlazorNative.Runtime.so` EXISTS at the
