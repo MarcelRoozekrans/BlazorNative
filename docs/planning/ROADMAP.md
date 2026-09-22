@@ -2421,11 +2421,35 @@ public-API change.** Four workstreams, grown from three by a review finding and 
 > `IosSliceMatrixDriftTests` is what makes the aggregator's claim true, a load-bearing cross-file
 > dependency worth naming at audit.
 
-#### Phase 14.5: Audit and close [status: pending]
+#### Phase 14.5: Audit and close [status: complete]
 **Goal:** Run `audit-milestone` against the DoD on live evidence and close M14. **No tag** — the
 8.6 rule, and `CONVENTIONS.md` records `Milestone completion tags a release: no`.
 **Surface:** Docs
 **HelpWanted:** no
+**Audit:** [`docs/plans/2026-09-22-milestone-14-audit.md`](../plans/2026-09-22-milestone-14-audit.md)
+**Completed:** 2026-09-22 · verdict **PASS WITH FINDINGS**
+
+> **Ten criteria audited against live evidence, not against the phase reports.** The ABI was
+> **diffed** — `Exports.cs`'s `EntryPoint` set at M14's opening commit versus `main`: 10 before, 10
+> after, identical — because the DoD said *verified by diffing, not asserted*. The wire vocabulary
+> was compared **by name set** rather than by line count: **0 removed, 15 added**, purely additive
+> as scoping decision 3 predicted.
+>
+> **Nine criteria met; one met narrowly, and that one is the milestone's central claim.** The
+> semantic pin makes a new divergence red for **eight shapes**, each reproduced before the fix and
+> red after — and **fails for four more**, all reproduced as live green mutations, filed as
+> **#364**. The DoD anticipated exactly this and said it must be *"recorded explicitly, never a
+> line to quietly drop"*.
+>
+> **The pattern is the finding, not the four instances.** Five reviews across two phases each
+> defeated this pin with a shape the previous round had not tried. That argues for reasoning about
+> the pin's **coverage** — which trees, which spellings, which file kinds — rather than fixing four
+> more instances and awaiting a sixth review.
+>
+> **Gap recorded rather than hidden:** no `pre-push-review` artifact exists for this milestone. The
+> substance was covered by a different process — every task got a fresh-agent spec-and-quality
+> review plus a per-phase whole-branch review, and five of those changed a design rather than
+> polishing one — but the artifact the criterion names is absent, so the owner decides.
 
 ---
 
