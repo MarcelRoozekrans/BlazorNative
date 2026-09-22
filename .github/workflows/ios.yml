@@ -1,5 +1,6 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# BlazorNative iOS lane (Phase 5.2, M5 DoD #2 + #4) — macos-latest, single job.
+# BlazorNative iOS lane (Phase 5.2, M5 DoD #2 + #4) — macos-latest. Since Phase
+# 14.4 it is a TWO-LEG MATRIX: the simulator slice and the DEVICE slice.
 #
 # INFORMATIONAL — this workflow is NOT a required check, mirroring the
 # android-instrumented lane's posture: simulator-on-CI has flake modes (sim boot,
@@ -16,8 +17,8 @@
 # adds EXECUTION on top of that, and execution is where the flake is.
 #
 # Unlike Android (which splits publish-on-Windows from test-on-Linux), iOS both
-# PUBLISHES and TESTS on macOS, so this is one job:
-#   1. publish samples/BlazorNative.SampleApp -r iossimulator-arm64 (the Phase 8.0
+# PUBLISHES and TESTS on macOS, so each leg is one job:
+#   1. publish samples/BlazorNative.SampleApp -r <the leg's RID> (the Phase 8.0
 #      publish head; PublishAot lives in the csproj — NOT on the CLI, which would
 #      propagate globally → NETSDK1203 on the P2P refs; the runtime-pack bypass +
 #      NativeLib=Static → the static archive, canonicalized to the frozen
@@ -53,6 +54,27 @@
 # BEFORE relaxing anything else — main-only execution coverage plus a broken process
 # is exactly the AGP-9 shape again.
 #
+# ── PHASE 14.4: THE DEVICE SLICE JOINS THE LANE ─────────────────────────────
+# For its whole life this lane built ONLY `iossimulator-arm64`. `ios-arm64` — the
+# slice that actually ships — had never been built by CI at all; the first time
+# anyone compiled it was an external developer's device run in September 2026.
+# A framework whose shipping slice is only ever compiled by hand is one refactor
+# away from not compiling at all, and nobody would find out from a green tick.
+#
+# So the job is a matrix of two legs that differ in exactly four things: the RID,
+# the Xcode SDK, the clang min-version flag, and whether there is anything to RUN.
+# The device leg ends at `xcodebuild build` — there is no device attached to a
+# GitHub runner, so there is no XCTest to run. SIGNING AND INSTALLING STAY
+# EXTERNAL: they need an Apple Developer account, and a fork PR cannot read
+# secrets. What CI owns is compile-and-link plus one assertion, below.
+#
+# That assertion is the reason the leg exists. `lipo -info` says `arm64` for BOTH
+# slices, so it cannot tell them apart; LC_BUILD_VERSION's platform field can. A
+# device lane that silently built a simulator slice would be WORSE than no lane,
+# because it would certify the exact thing it exists to check. The gate runs on
+# BOTH legs against DIFFERENT expected platforms, so it is visibly discriminating
+# rather than a constant that happens to hold, and it has been observed RED.
+#
 # The lane's POSTURE is unchanged: INFORMATIONAL. What it adds over `ios-build` is
 # EXECUTION on a simulator, and that is where the flake lives. Compilation — which
 # cannot flake that way — is behind the required `ios-build` check in `ci.yml`.
@@ -74,17 +96,66 @@ concurrency:
 env:
   DOTNET_NOLOGO: true
   DOTNET_CLI_TELEMETRY_OPTOUT: true
-  RID: iossimulator-arm64
-  # Phase 6.0 Yoga spike: the pinned Yoga version (built from source for the sim).
+  # RID is NO LONGER a workflow-level env — see the matrix below. It was a single
+  # workflow-level value for as long as this lane built one slice; a workflow-level
+  # default would now be a silent fallback for any step that forgot to be
+  # parameterised, which is exactly the failure the slice gate exists to catch.
+  # Phase 6.0 Yoga spike: the pinned Yoga version (built from source per slice).
   YOGA_VERSION: 3.2.1
 
 jobs:
   ios:
+    # The RID is in the job name because the two legs are otherwise identical in
+    # the checks list, and because branch protection and the phase-gate dispatch
+    # both have to be able to NAME one of them.
+    name: ${{ matrix.leg }} ${{ matrix.rid }}
     runs-on: macos-latest
     timeout-minutes: 60
     defaults:
       run:
         shell: bash
+
+    # ── Phase 14.4: the DEVICE slice joins the lane ──────────────────────────
+    # Until now this lane only ever built `iossimulator-arm64`. The slice that
+    # actually ships — `ios-arm64` — was first compiled by an external developer
+    # in September 2026, on their own machine, and had never been built by CI at
+    # all. The two legs differ in four things and nothing else: the RID, the Xcode
+    # SDK, the clang min-version flag, and whether there is anything to RUN.
+    #
+    # `fail-fast: false` on purpose: a broken device leg must not cancel the
+    # simulator leg's result. The legs answer different questions and one
+    # answer is not worth discarding to save a few runner-minutes.
+    #
+    # The `IL2072 == 4` assert and the `nm -gU` export gate are DELIBERATELY
+    # SHARED — one constant, both legs. The device run confirmed the same four
+    # IL2072 hold on `ios-arm64`, and a shared assert means a device-only
+    # trimming or export regression reds here instead of being absorbed into a
+    # second number nobody maintains.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - leg: simulator
+            rid: iossimulator-arm64
+            sdk: iphonesimulator
+            min_flag: -mios-simulator-version-min=13.0
+            expected_platform: IOSSIMULATOR
+            expected_platform_num: "7"
+            runs_tests: true
+          - leg: device
+            rid: ios-arm64
+            sdk: iphoneos
+            min_flag: -miphoneos-version-min=13.0
+            expected_platform: IOS
+            expected_platform_num: "2"
+            runs_tests: false
+
+    env:
+      RID: ${{ matrix.rid }}
+      IOS_SDK: ${{ matrix.sdk }}
+      IOS_MIN_FLAG: ${{ matrix.min_flag }}
+      EXPECTED_PLATFORM: ${{ matrix.expected_platform }}
+      EXPECTED_PLATFORM_NUM: ${{ matrix.expected_platform_num }}
 
     steps:
       - uses: actions/checkout@v7
@@ -95,7 +166,7 @@ jobs:
           global-json-file: global.json
 
       # ── Toolchain fingerprint (macos-latest drifts — record, assert nothing) ─
-      - name: Record toolchain (dotnet + Xcode + clang + sim SDK)
+      - name: Record toolchain (dotnet + Xcode + clang + ${{ matrix.sdk }} SDK)
         continue-on-error: true
         run: |
           mkdir -p ios-out
@@ -103,12 +174,13 @@ jobs:
             echo "=== dotnet ==="; dotnet --version
             echo "=== runner ==="; uname -a; sw_vers || true
             echo "=== Xcode ==="; xcode-select -p; xcodebuild -version || true
-            echo "=== sim SDK ==="; xcrun --sdk iphonesimulator --show-sdk-version || true
-            echo "=== clang ==="; xcrun -sdk iphonesimulator clang --version || true
+            echo "=== leg ==="; echo "rid=$RID sdk=$IOS_SDK min=$IOS_MIN_FLAG expected_platform=$EXPECTED_PLATFORM"
+            echo "=== $IOS_SDK SDK ==="; xcrun --sdk "$IOS_SDK" --show-sdk-version || true
+            echo "=== clang ==="; xcrun -sdk "$IOS_SDK" clang --version || true
           } 2>&1 | tee ios-out/toolchain.txt
 
       # ── Publish the static NativeAOT archive (assert 4 IL2072) ───────────────
-      - name: Publish iossimulator-arm64 (NativeLib=Static; assert exactly 4 IL2072)
+      - name: Publish ${{ matrix.rid }} (NativeLib=Static; assert exactly 4 IL2072)
         run: |
           set -o pipefail
           # NOTE: PublishAot is NOT passed on the CLI. It lives in the SampleApp
@@ -124,7 +196,7 @@ jobs:
           echo "IL2072 count: $il2072"
           if [ "$il2072" -ne 4 ]; then
             grep 'warning IL2072' ios-out/publish.log || true
-            echo "iossimulator-arm64 publish IL2072 drift: expected exactly 4, got $il2072" >&2
+            echo "$RID publish IL2072 drift: expected exactly 4, got $il2072" >&2
             exit 1
           fi
 
@@ -132,7 +204,7 @@ jobs:
       - name: Locate libBlazorNative.Runtime.a + verify 10 exports
         run: |
           set -uo pipefail
-          # Evidence first: dump the whole iossimulator native output tree so a
+          # Evidence first: dump the whole $RID native output tree so a
           # missing/renamed/shared artifact is diagnosable from one run.
           tree_root="samples/BlazorNative.SampleApp/bin/Release/net10.0/$RID"
           echo "=== native output tree ($tree_root) ===" | tee ios-out/native-tree.txt
@@ -186,10 +258,16 @@ jobs:
           # platform native libs (_AppleCryptoNative_*, System.Native, ...). Those
           # live in the runtime pack's native/ dir; merge them into ONE on-demand
           # support archive the app links alongside the app archive.
-          pack_native=$(find "$HOME/.nuget/packages/microsoft.netcore.app.runtime.nativeaot.iossimulator-arm64" \
-            -type d -path '*runtimes/iossimulator-arm64/native' 2>/dev/null | sort | tail -1)
+          #
+          # BOTH the package id and the runtimes/ segment carry the RID. This is
+          # the site the brief did not name, and it is the dangerous one: it
+          # supplies libbootstrapperdll.o and the merged libBnRuntimeSupport.a,
+          # so a hardcoded simulator path here would link SIMULATOR runtime
+          # objects into a DEVICE app.
+          pack_native=$(find "$HOME/.nuget/packages/microsoft.netcore.app.runtime.nativeaot.$RID" \
+            -type d -path "*runtimes/$RID/native" 2>/dev/null | sort | tail -1)
           if [ -z "$pack_native" ] || [ ! -d "$pack_native" ]; then
-            echo "NativeAOT iossimulator runtime pack native dir not found" >&2
+            echo "NativeAOT $RID runtime pack native dir not found" >&2
             find "$HOME/.nuget/packages" -maxdepth 1 -iname '*nativeaot*ios*' 2>/dev/null || true
             exit 1
           fi
@@ -230,28 +308,28 @@ jobs:
           xcrun libtool -static -o src/BlazorNative.Apple/vendor/libBnRuntimeSupport.a "${support[@]}"
           echo "Staged → vendor/libBnRuntimeSupport.a"
 
-      # ── Phase 6.0 Yoga spike: build libyoga.a from source for the simulator ────
+      # ── Phase 6.0 Yoga spike: build libyoga.a from source for this leg's slice ─
       # Yoga is C++/C-API. Build its static lib the same way the runtime .a is
-      # embedded (the M5 recipe): compile every yoga/**/*.cpp with the simulator
+      # embedded (the M5 recipe): compile every yoga/**/*.cpp with THIS LEG's
       # SDK clang++ (C++20 — Yoga 3.x requires it), then libtool -static. Stage the
       # headers so <yoga/Yoga.h> resolves for the two .mm files that see them —
       # BnYogaProbe.mm (the 6.0 spike) and BnYogaLayout.mm (the 6.1 engine). Swift must
       # not: its module scanner cannot resolve them; see project.yml.
       # The app links libyoga.a alongside the runtime .a — the coexistence proof.
-      - name: "Yoga: build libyoga.a (v${{ env.YOGA_VERSION }}) for iossimulator-arm64"
+      - name: "Yoga: build libyoga.a (v${{ env.YOGA_VERSION }}) for ${{ matrix.rid }}"
         run: |
           set -euo pipefail
           curl -sSL "https://github.com/facebook/yoga/archive/refs/tags/v${YOGA_VERSION}.tar.gz" -o yoga-src.tgz
           tar xzf yoga-src.tgz
           yroot="yoga-${YOGA_VERSION}"
           [ -f "$yroot/yoga/Yoga.h" ] || { echo "Yoga.h not found under $yroot/yoga" >&2; ls -la "$yroot" || true; exit 1; }
-          sdk=$(xcrun --sdk iphonesimulator --show-sdk-path)
+          sdk=$(xcrun --sdk "$IOS_SDK" --show-sdk-path)
           mkdir -p yoga-obj
           count=0
           while IFS= read -r cpp; do
             obj="yoga-obj/$(echo "$cpp" | tr '/.' '__').o"
-            xcrun -sdk iphonesimulator clang++ -arch arm64 -isysroot "$sdk" \
-              -mios-simulator-version-min=13.0 -std=c++20 -O2 -fPIC \
+            xcrun -sdk "$IOS_SDK" clang++ -arch arm64 -isysroot "$sdk" \
+              "$IOS_MIN_FLAG" -std=c++20 -O2 -fPIC \
               -I"$yroot" -c "$cpp" -o "$obj"
             count=$((count+1))
           done < <(find "$yroot/yoga" -name '*.cpp' | sort)
@@ -297,8 +375,36 @@ jobs:
         working-directory: src/BlazorNative.Apple
         run: xcodegen generate --spec project.yml 2>&1 | tee ../../ios-out/xcodegen.log
 
+      # ── DEVICE leg: build only. There is no device to run XCTest on ──────────
+      # The lane's job on `ios-arm64` is to prove the slice COMPILES and LINKS —
+      # NativeAOT archive, merged runtime support, Yoga, Swift, ObjC++, all of it
+      # against the device SDK. Signing and installing stay external: they need an
+      # Apple account, and a fork PR cannot read secrets. project.yml already sets
+      # CODE_SIGNING_ALLOWED=NO at `settings.base`, so an unsigned device build
+      # needs no provisioning profile and no team.
+      #
+      # The scheme builds BnHost `all` and BnHostTests only for `test`, so a plain
+      # `build` action compiles the app target alone — which is the target the
+      # device slice ships.
+      - name: xcodebuild build (${{ matrix.rid }} — compile+link only, no device to run on)
+        if: ${{ !matrix.runs_tests }}
+        working-directory: src/BlazorNative.Apple
+        run: |
+          set -o pipefail
+          xcodebuild build \
+            -project BnHost.xcodeproj \
+            -scheme BnHost \
+            -sdk "$IOS_SDK" \
+            -arch arm64 \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            2>&1 | tee ../../ios-out/xcodebuild-build.log
+
       # ── Run the hosted XCTest on a simulator ─────────────────────────────────
       - name: Select an available iPhone simulator
+        if: ${{ matrix.runs_tests }}
         id: sim
         run: |
           set -euo pipefail
@@ -315,6 +421,7 @@ jobs:
           echo "udid=$udid" >> "$GITHUB_OUTPUT"
 
       - name: xcodebuild test (hosted XCTest — the DoD #2 render proof)
+        if: ${{ matrix.runs_tests }}
         working-directory: src/BlazorNative.Apple
         run: |
           set -o pipefail
@@ -336,8 +443,61 @@ jobs:
           # provisioning profile is needed for an ad-hoc simulator build. The render/wire
           # tests are unaffected — signing is a post-link step, not a behaviour change.
 
+      # ── THE SLICE GATE — the point of the device leg ─────────────────────────
+      - name: Assert the linked binary really targets ${{ matrix.expected_platform }}
+        run: |
+          set -euo pipefail
+          # `lipo -info` reports `arm64` for BOTH the simulator and the device
+          # slice, so it cannot tell them apart and cannot catch a wrong-slice
+          # stage. LC_BUILD_VERSION's platform field is the only thing that can.
+          #
+          # That matters more than it sounds: a device lane that silently built a
+          # simulator slice would be WORSE than no lane, because it would certify
+          # the exact thing it exists to check. Everything else in this leg is
+          # plumbing around this one assertion.
+          #
+          # Asserted on the LINKED APP BINARY rather than on the NativeAOT
+          # archive, because the binary is TRANSITIVE evidence: a simulator .a
+          # cannot link into a device app at all — ld rejects it outright — so a
+          # binary whose platform is IOS proves the runtime archive, the merged
+          # runtime support objects and libyoga.a were the device slice too. One
+          # assertion, whole-leg coverage.
+          #
+          # BOTH legs assert, with DIFFERENT expected values, so the gate is
+          # demonstrably discriminating rather than a constant that happens to hold.
+          bin=$(find "$RUNNER_TEMP/DerivedData/Build/Products" \
+            -type f -path '*/BnHost.app/BnHost' 2>/dev/null | head -1)
+          if [ -z "$bin" ]; then
+            echo "::error::no BnHost binary under DerivedData/Build/Products" >&2
+            find "$RUNNER_TEMP/DerivedData/Build/Products" -maxdepth 3 2>/dev/null || true
+            exit 1
+          fi
+          echo "Binary: $bin"
+          {
+            echo "=== file ==="; file "$bin"
+            echo "=== lipo -info — recorded to SHOW that it cannot tell the slices apart ==="
+            lipo -info "$bin" || true
+            echo "=== vtool -show-build-version ==="
+            vtool -show-build-version "$bin" || true
+          } 2>&1 | tee ios-out/slice.txt
+          # vtool's spelling of the platform varies by Xcode version — ` platform
+          # IOS` on current Xcode, ` platform 2` on older ones — so BOTH the name
+          # and the number are accepted instead of pinning one and calling a
+          # toolchain bump a slice regression.
+          platform=$(vtool -show-build-version "$bin" | awk '$1=="platform"{print $2; exit}')
+          echo "LC_BUILD_VERSION platform: '$platform' (expected '$EXPECTED_PLATFORM' or '$EXPECTED_PLATFORM_NUM')"
+          if [ -z "$platform" ]; then
+            echo "::error::could not read an LC_BUILD_VERSION platform from $bin" >&2
+            exit 1
+          fi
+          if [ "$platform" != "$EXPECTED_PLATFORM" ] && [ "$platform" != "$EXPECTED_PLATFORM_NUM" ]; then
+            echo "::error::the $RID leg produced a '$platform' slice, not $EXPECTED_PLATFORM" >&2
+            exit 1
+          fi
+          echo "SLICE: the $RID leg really is an $EXPECTED_PLATFORM build."
+
       - name: Collect crash reports + test console (on crash/failure)
-        if: always()
+        if: ${{ always() && matrix.runs_tests }}
         run: |
           mkdir -p ios-out/crash
           # Simulator app crashes land in the host's DiagnosticReports.
@@ -351,7 +511,7 @@ jobs:
           ls -la ios-out/crash || true
 
       - name: Assert XCTest baseline (270 passed / 0 failed)
-        if: always()
+        if: ${{ always() && matrix.runs_tests }}
         run: |
           log=ios-out/xcodebuild-test.log
           [ -f "$log" ] || { echo "no xcodebuild log" >&2; exit 1; }
@@ -1188,11 +1348,16 @@ jobs:
           fi
 
       # ── Uploads (always — evidence regardless of outcome) ────────────────────
-      - name: Upload — ios-out (logs, nm dump, xcresult, DerivedData)
+      # Both artifact names carry the LEG as well as the RID. The leg is what
+      # keeps them distinct even while the two legs are deliberately pointed at
+      # the same RID (which is how the slice gate above is mutation-tested);
+      # upload-artifact rejects a duplicate name outright, and a failed upload on
+      # the simulator leg would muddy a device-leg proof.
+      - name: Upload — ios-out (logs, nm dump, slice, xcresult, DerivedData)
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: ios-out
+          name: ios-out-${{ matrix.leg }}
           path: ios-out
           if-no-files-found: warn
 
@@ -1200,6 +1365,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: BlazorNative.Runtime-iossimulator-arm64
+          name: BlazorNative.Runtime-${{ matrix.leg }}-${{ matrix.rid }}
           path: src/BlazorNative.Apple/vendor/libBlazorNative.Runtime.a
           if-no-files-found: warn
