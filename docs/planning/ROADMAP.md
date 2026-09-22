@@ -2482,13 +2482,58 @@ and the four reproduced holes filed as [#364][m15-i364] carried an argument larg
 > identical 14.3 twin has. **The guards built to catch twin divergence have drifted from each
 > other.**
 
-**Phases:** 15.0 the pin standard `Docs` · 15.1 enforce the standard `Backend` · 15.2 define the
+**Phases:** 15.0 the pin standard `Mixed` · 15.1 enforce the standard `Backend` · 15.2 define the
 auth pin's coverage `Backend` · 15.3 the first live test, deep-link scheme `Backend` · 15.4 the
 missing guards `Mixed` · 15.5 prose and the small corrections `Docs` · 15.6 audit and close `Docs`.
 
 **Closes:** #364 · #357 · #296 · #297 · #302 · #291 · #298 · #356 · #365.
 **No external dependency** — unlike M14, no phase needs a device, an Apple account, or an outside
 contributor. That is deliberate.
+
+#### Phase 15.0: The pin standard [status: pending]
+**Goal:** Answer **what makes a test a pin** — the population is not enumerable by name — then
+write down what a pin must do to be trusted, consolidate the 23 copy-pasted `RepoRoot()` helpers
+into one so the population becomes *exactly* enumerable, and take a measured per-pin census.
+**Surface:** Mixed
+**HelpWanted:** no
+
+#### Phase 15.1: Enforce the standard [status: pending]
+**Goal:** Make the standard mechanical — a new pin that can pass while checking nothing reds — and
+bring every non-conforming pin up to it, **#357**'s asymmetry among them.
+**Surface:** Backend
+**HelpWanted:** no
+
+#### Phase 15.2: Define the auth pin's coverage [status: pending]
+**Goal:** Answer **#364** by stating what the auth-semantics scan must cover — which trees, which
+spellings, which file kinds — and closing its four reproduced holes as consequences of that
+statement rather than as four patches.
+**Surface:** Backend
+**HelpWanted:** no
+
+#### Phase 15.3: The first live test — deep-link scheme [status: pending]
+**Goal:** Close **#296** using the mechanism rather than around it. Establish which behaviour is
+correct, align the outlier, and pin it so the third copy in `AndroidManifest.xml` and its template
+mirror cannot drift either. **It must red before it is fixed.**
+**Surface:** Backend
+**HelpWanted:** no
+
+#### Phase 15.4: The missing guards [status: pending]
+**Goal:** Close **#297** and **#302** — a pin that does not exist, and a release-notes guard that
+does not exist — each written to the 15.0 standard.
+**Surface:** Mixed
+**HelpWanted:** no
+
+#### Phase 15.5: Prose, and the small corrections [status: pending]
+**Goal:** Answer **#291** for the three unpinned documentation transcription pairs M14 found, and
+land **#298**, **#356**, **#365**.
+**Surface:** Docs
+**HelpWanted:** no
+
+#### Phase 15.6: Audit and close [status: pending]
+**Goal:** Run `audit-milestone` against the DoD on live evidence and close M15. **No tag** — the
+8.6 rule, and `CONVENTIONS.md` records `Milestone completion tags a release: no`.
+**Surface:** Docs
+**HelpWanted:** no
 
 ---
 

@@ -69,7 +69,7 @@ twin divergence have drifted from each other.**
 
 ## Phases
 
-1. **Phase 15.0: The pin standard** — `Surface: Docs`
+1. **Phase 15.0: The pin standard** — `Surface: Mixed`
    - **Goal:** Answer **what makes a test a pin** — the population is not enumerable by name — then
      write down what a pin must do to be trusted, and take an exact census against it, replacing
      this design's heuristic with a measured per-pin verdict.
