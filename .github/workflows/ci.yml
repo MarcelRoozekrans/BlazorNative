@@ -25,10 +25,13 @@
 #   ios-build (macos-latest) — THE iOS SHELL MUST COMPILE. Publish +
 #     `xcodebuild build-for-testing`: Swift + Objective-C++ compiled, the app
 #     and the XCTest bundle LINKED. No simulator is booted and no test is run.
-#     Since Phase 14.4 it is a TWO-LEG MATRIX — `iossimulator-arm64` and the
-#     SHIPPING slice `ios-arm64` — so it reports TWO checks, `ios-build
-#     simulator iossimulator-arm64` and `ios-build device ios-arm64`.
-#     See the job's own header for why this exists and why it stops here.
+#     Since Phase 14.4 the work is a TWO-LEG MATRIX — `iossimulator-arm64` and
+#     the SHIPPING slice `ios-arm64` — carried by the job `ios-build-slice`,
+#     which reports `ios-build-slice simulator iossimulator-arm64` and
+#     `ios-build-slice device ios-arm64`. `ios-build` itself is now a one-step
+#     AGGREGATOR over those legs, so the required context of that name survives
+#     the split and means "BOTH slices compiled".
+#     See the jobs' own headers for why this exists and why it stops here.
 #
 # Baselines are asserted, not observed: count drift fails the job loudly.
 # ─────────────────────────────────────────────────────────────────────────────
@@ -2864,7 +2867,7 @@ jobs:
   # merge. This is the only iOS job that runs on every PR, so this is where the
   # per-PR device gate has to live.
   # ═══════════════════════════════════════════════════════════════════════════
-  ios-build:
+  ios-build-slice:
     # -- PHASE 14.4: THE DEVICE SLICE IS NOW GATED ON EVERY PR ----------------
     # `ios.yml` learned to build `ios-arm64` in Phase 14.4, but that lane has no
     # `pull_request:` trigger - it runs on merge-to-main and on dispatch. So a PR
@@ -2887,23 +2890,25 @@ jobs:
     # `fail-fast: false` for the reason `ios.yml` gives: the legs answer different
     # questions, and a broken device leg must not discard the simulator's answer.
     #
-    # -- THE CHECK NAMES CHANGE, AND BRANCH PROTECTION MUST FOLLOW ------------
-    # A matrix job reports one check PER LEG, so the single required context
-    # `ios-build` no longer exists. It is replaced by TWO:
-    #     ios-build simulator iossimulator-arm64
-    #     ios-build device ios-arm64
-    # Branch protection has to require both, or every PR waits forever on a
-    # context nothing reports. `docs/GITHUB-SETUP.md` still states "all three
-    # check names are exactly the job ids ... because no job declares a `name:`
-    # and none is a matrix" - that sentence is now false and is owed an update in
-    # whatever change moves branch protection.
+    # -- WHY THIS JOB IS NO LONGER CALLED `ios-build` -------------------------
+    # A matrix job reports one check PER LEG, so a matrix named `ios-build` would
+    # DESTROY the required context of that name: nothing would ever report it,
+    # and a required context that never reports blocks EVERY pull request -
+    # including the one that renames it. `ios-build` is required on `main` today,
+    # alongside `build-test`, `android-build`, `pr-title` and `footer-check`.
     #
-    # The name is PREFIXED with the job id rather than copied byte-for-byte from
-    # `ios.yml` - which names its legs `${{ matrix.leg }} ${{ matrix.rid }}` - on
-    # purpose: a required context is matched by job name, and `ios.yml`'s
-    # advisory legs would otherwise carry the very same two names as these
-    # REQUIRED ones. Distinct contexts, identical matrix vocabulary.
-    name: ios-build ${{ matrix.leg }} ${{ matrix.rid }}
+    # So the matrix is `ios-build-slice`, and a tiny aggregating job below keeps
+    # the name `ios-build` alive with its meaning STRENGTHENED: it used to mean
+    # "the simulator slice compiled" and now means "BOTH slices compiled".
+    # Branch protection needs no change for this to merge. Adding the two leg
+    # names to the required set is optional, and can happen later or never.
+    #
+    # The leg names are PREFIXED with the job id rather than copied byte-for-byte
+    # from `ios.yml` - which names its legs `${{ matrix.leg }} ${{ matrix.rid }}`
+    # - on purpose: a status context is matched by job NAME, and `ios.yml`'s
+    # advisory legs would otherwise carry the very same two names as these.
+    # Distinct contexts, identical matrix vocabulary.
+    name: ios-build-slice ${{ matrix.leg }} ${{ matrix.rid }}
     runs-on: macos-latest
     timeout-minutes: 45
     defaults:
@@ -3380,3 +3385,86 @@ jobs:
           name: ios-build-out-${{ matrix.leg }}
           path: ios-build-out
           if-no-files-found: warn
+
+  # ═════════════════════════════════════════════════════════════════════════════
+  # ios-build — THE REQUIRED CONTEXT, CARRIED ACROSS THE MATRIX SPLIT
+  #
+  # `ios-build` is a REQUIRED status check on `main`. Phase 14.4 turned the work
+  # it names into a two-leg matrix, and a matrix job reports one check PER LEG —
+  # so had the matrix kept the name, the context `ios-build` would simply have
+  # stopped existing. A required context that never reports does not fail: it
+  # WAITS, forever, on every pull request, including the one that renamed it.
+  # Fixing that needs a settings change landing in the same minute as a merge,
+  # which is a process step nobody remembers the next time.
+  #
+  # This job is the alternative. It is one bash step on ubuntu-latest, it has no
+  # checkout and no toolchain, and it exists so that:
+  #   · the required context `ios-build` keeps existing, unchanged, with its
+  #     meaning STRENGTHENED — it used to mean "the simulator slice compiled",
+  #     it now means "BOTH slices compiled";
+  #   · branch protection needs NO change for this phase to merge;
+  #   · both legs stay individually visible in the checks list, so a red one
+  #     still names itself.
+  # Adding `ios-build-slice simulator iossimulator-arm64` and `ios-build-slice
+  # device ios-arm64` to the required set is an OPTIONAL later improvement, not
+  # a prerequisite.
+  #
+  # ── WHY `if: always()` AND AN EXPLICIT RESULT CHECK, NOT BARE `needs:` ────
+  # `needs:` alone is NOT a gate. Without `if: always()` this job is SKIPPED when
+  # a dependency fails, and a skipped job reports no conclusion — which is the
+  # fail-OPEN shape all over again, one layer up. So it always runs, and it
+  # asserts the dependency's result explicitly.
+  #
+  # And it fails on ANYTHING that is not `success`, deliberately including
+  # `skipped`. If the matrix legs are ever conditioned out — a `paths:` filter, an
+  # `if:` on the matrix job, a typo that empties the matrix — this check goes RED
+  # rather than green-on-nothing. That is the AGP-9 failure mode this whole
+  # section of the file exists to prevent, and the aggregator must not reintroduce
+  # it by being skippable.
+  #
+  # `needs.<job>.result` on a matrix is the AGGREGATE of every leg, so one red leg
+  # is one red aggregate. It does not say WHICH leg, so the failure path asks the
+  # Actions API for the leg names — for the MESSAGE only. The verdict is taken
+  # from `needs` before that call and never depends on it, so an API hiccup can
+  # make the message less useful but can never make the gate pass.
+  # ═════════════════════════════════════════════════════════════════════════════
+  #
+  # NOTE: this job deliberately declares NO `name:`. Its status context is then
+  # exactly its job id, `ios-build` — which is the whole point.
+  ios-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [ios-build-slice]
+    if: ${{ always() }}
+    permissions:
+      contents: read
+      # Only so the failure message can name the failing leg. The verdict does
+      # not use it.
+      actions: read
+    steps:
+      - name: Assert every ios-build-slice leg succeeded
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SLICE_RESULT: ${{ needs.ios-build-slice.result }}
+        run: |
+          set -uo pipefail
+          echo "ios-build-slice aggregate result: '$SLICE_RESULT'"
+          if [ "$SLICE_RESULT" = "success" ]; then
+            echo "BOTH SLICES COMPILED: iossimulator-arm64 and ios-arm64 published, linked, and passed their LC_BUILD_VERSION slice gate."
+            exit 0
+          fi
+
+          # The verdict is already taken. Everything below only enriches the
+          # message, and every call is allowed to fail without changing it.
+          echo "=== ios-build-slice legs, as the Actions API sees them ==="
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs?per_page=100" \
+            --jq '.jobs[] | select(.name | startswith("ios-build-slice")) | "\(.name): \(.status)/\(.conclusion // "no conclusion")"' \
+            2>/dev/null || echo "(could not read the job list; the verdict above does not depend on it)"
+
+          if [ "$SLICE_RESULT" = "skipped" ]; then
+            echo "::error::ios-build-slice was SKIPPED, so no iOS slice was compiled at all. This check fails on a skip ON PURPOSE: a required gate that goes green because its work did not run is the AGP-9 failure mode, where an assertion was structurally unreachable and landed on main green." >&2
+            exit 1
+          fi
+          echo "::error::the iOS slice matrix did not succeed - aggregate result '$SLICE_RESULT'. One or both of the ios-build-slice legs is red; the leg list above names which, and each leg reports its own check so it can be opened directly." >&2
+          exit 1
