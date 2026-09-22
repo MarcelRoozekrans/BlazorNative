@@ -1,0 +1,119 @@
+{
+  "$doc": [
+    "AUTH SEMANTICS — one meaning for requireAuth, seven sites, two shells (#213 item 1).",
+    "",
+    "`requireAuth: true` means BIOMETRY. Not biometry-or-passcode. Every site below",
+    "that gates or probes access must say so in its own platform's vocabulary.",
+    "",
+    "WHY THIS FILE EXISTS: the Apple shell disagreed WITH ITSELF. It stored secrets",
+    "under a `.biometryCurrentSet` ACL -- biometry only, invalidated if the enrolment",
+    "changes -- and then read them back under `.deviceOwnerAuthentication`, which is",
+    "passcode OR biometry. The device run's coreauthd trace showed the OS honouring",
+    "the read exactly as written: MechanismKofN(k:1) over {Passcode, Pearl}. So a",
+    "secret stored under a biometry-only ACL was in practice readable with the device",
+    "passcode, and nothing in the API surface, the returned status or the demo echo",
+    "said so. A WEAKER GATE THAN THE STORED ACL DECLARES.",
+    "",
+    "No name generator could have caught it. The names are fine; the MEANINGS differ.",
+    "That is the semantic sub-shape of twin divergence, and this file is its pin.",
+    "",
+    "KIND: a `gate` decides whether access is granted. A `probe` only reports what the",
+    "device is capable of -- canAuthenticate / canEvaluatePolicy. Both must agree on",
+    "the authenticator class, or `check` reports on one authenticator while the gate",
+    "demands another.",
+    "",
+    "KIND IS DESCRIPTIVE ONLY: the `kind` field above is metadata for reviewers, telling",
+    "them which sites decide access and which merely report a capability. NO TEST reads",
+    "or asserts it -- AuthSemanticsDriftTests checks `token` and `reason` only. Do not",
+    "treat `kind`'s presence in this schema as an enforced guarantee; a field that looks",
+    "checked but isn't is exactly the bug class this milestone exists to close.",
+    "",
+    "WHAT THE PIN CHECKS, AND WHAT IT DOES NOT: AuthSemanticsDriftTests reads SOURCE.",
+    "It asserts each site below still carries its declared token, and that no token",
+    "from the authenticator vocabulary appears anywhere undeclared. It NEVER observes",
+    "an authentication at runtime. A behavioural cross-shell pin would need a JVM test",
+    "and an XCTest agreeing with each other, which is an unpinned twin in its own",
+    "right. Do not describe this pin as proving the shells behave identically; it",
+    "proves they SAY the same thing, which is the strongest claim a single-host test",
+    "can make.",
+    "",
+    "COVERAGE LIMITS, on record: (1) two sites can share one file AND one token --",
+    "`androidPromptInfo` and `androidCanAuthenticate` both use",
+    "`Authenticators.BIOMETRIC_STRONG` in the same file -- so the pin cannot tell the",
+    "two call sites apart from each other, and deleting one of them would not turn the",
+    "pin red. (2) the scan covers the two shells' own source trees only --",
+    "`templates/` is out of scope and unpinned by this file.",
+    "",
+    "COMPLETENESS is the other half. Any occurrence of an authenticator token in",
+    "either shell's non-test source must appear in `sites` or in `ignored` with a",
+    "written reason. A site nobody mentions is invisible to the pin by construction,",
+    "which is the exact false-green route this whole milestone exists to close.",
+    "",
+    "TO ADD A SITE: add it here with a reason, implement it, and run the pin."
+  ],
+  "sites": [
+    {
+      "name": "androidKeySpec",
+      "file": "src/BlazorNative.Jni/src/androidMain/kotlin/io/blazornative/shell/AndroidShellBridge.kt",
+      "language": "kotlin",
+      "kind": "gate",
+      "token": "AUTH_BIOMETRIC_STRONG",
+      "reason": "provisionKey binds the keystore key at the OS key level. AUTH_DEVICE_CREDENTIAL also appears in this method but only behind allowDeviceCredentialForTest, which exists so an auth-bound key can be provisioned on a CI emulator with a PIN and no scriptable fingerprint. Production is biometric-only."
+    },
+    {
+      "name": "androidPromptInfo",
+      "file": "src/BlazorNative.Jni/src/androidMain/kotlin/io/blazornative/shell/AndroidShellBridge.kt",
+      "language": "kotlin",
+      "kind": "gate",
+      "token": "Authenticators.BIOMETRIC_STRONG",
+      "reason": "the BiometricPrompt the user actually sees. If this offered DEVICE_CREDENTIAL while the key demanded biometry, the prompt would present an option the key then refuses."
+    },
+    {
+      "name": "androidCanAuthenticate",
+      "file": "src/BlazorNative.Jni/src/androidMain/kotlin/io/blazornative/shell/AndroidShellBridge.kt",
+      "language": "kotlin",
+      "kind": "probe",
+      "token": "Authenticators.BIOMETRIC_STRONG",
+      "reason": "backs the `check` capability report. Probing a different authenticator than the gate demands makes `check` say Available on a device the gate then refuses."
+    },
+    {
+      "name": "appleStorageWriteAcl",
+      "file": "src/BlazorNative.Apple/BnHost/BnSecureStorage.swift",
+      "language": "swift",
+      "kind": "gate",
+      "token": ".biometryCurrentSet",
+      "reason": "the SecAccessControl attached to an auth-bound item. Current-enrolment-bound: changing the enrolled biometric set invalidates the item, which is the strongest binding the platform offers."
+    },
+    {
+      "name": "appleStorageReadPolicy",
+      "file": "src/BlazorNative.Apple/BnHost/BnSecureStorage.swift",
+      "language": "swift",
+      "kind": "gate",
+      "token": ".deviceOwnerAuthenticationWithBiometrics",
+      "reason": "THE SITE #213 ITEM 1 IS ABOUT. This read must demand the same authenticator class the write ACL declares. It previously used .deviceOwnerAuthentication, which is passcode OR biometry, so the effective gate was weaker than the stored ACL."
+    },
+    {
+      "name": "appleBiometricsEvaluate",
+      "file": "src/BlazorNative.Apple/BnHost/BnBiometrics.swift",
+      "language": "swift",
+      "kind": "gate",
+      "token": ".deviceOwnerAuthenticationWithBiometrics",
+      "reason": "the standalone authenticate API. Already biometry-only; declared here so a future edit cannot quietly widen it."
+    },
+    {
+      "name": "appleBiometricsCanEvaluate",
+      "file": "src/BlazorNative.Apple/BnHost/BnBiometrics.swift",
+      "language": "swift",
+      "kind": "probe",
+      "token": ".deviceOwnerAuthenticationWithBiometrics",
+      "reason": "backs the `check` capability report, the Apple twin of androidCanAuthenticate."
+    }
+  ],
+  "ignored": [
+    {
+      "file": "src/BlazorNative.Jni/src/androidMain/kotlin/io/blazornative/shell/AndroidShellBridge.kt",
+      "token": "AUTH_DEVICE_CREDENTIAL",
+      "reason": "provisionKey's allowDeviceCredentialForTest branch. An auth-bound key cannot be provisioned on a CI emulator that has a lock-screen PIN but no scriptable fingerprint, so the instrumented binding test asks for the credential explicitly. It is unreachable from production: the parameter defaults to false and no shipping caller passes true. If a production caller ever does, this entry is a lie and should red -- which is why it names the token and the file rather than disabling the scan."
+    }
+  ]
+}

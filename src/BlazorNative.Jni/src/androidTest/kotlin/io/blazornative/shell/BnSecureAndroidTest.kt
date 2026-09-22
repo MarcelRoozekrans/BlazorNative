@@ -298,7 +298,9 @@ private object SecureHarness {
         return out.get()
     }
 
-    /** Polls until the demo's mount shape is on screen (4 buttons + echo). */
+    /** Polls until the demo's mount shape is on screen (6 buttons + echo). The
+     *  childCount check is deliberately a LOWER BOUND, not an equality — it is a
+     *  "has the page mounted yet" probe, so adding a button must not red it. */
     fun pollForProbe(scenario: ActivityScenario<MainActivity>, deadlineMs: Long = 60_000): View? {
         val deadline = System.currentTimeMillis() + deadlineMs
         val found = AtomicReference<View?>(null)

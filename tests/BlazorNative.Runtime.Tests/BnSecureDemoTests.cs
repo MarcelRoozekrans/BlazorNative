@@ -60,17 +60,18 @@ public sealed class BnSecureDemoTests
             p => p.NodeId == buttonNode && p.EventName == "click").HandlerId;
     }
 
-    // ── The mount shape: four buttons + the ready echo ────────────────────────
+    // ── The mount shape: five buttons + the ready echo ─────────────────────────
 
     [Fact]
-    public void Mount_Shape_FourButtons_ReadyEcho()
+    public void Mount_Shape_FiveButtons_ReadyEcho()
     {
         var (mount, _) = MountDemo();
         try
         {
-            // 5 buttons: the 4 action buttons (Authenticate, Set, Unlock, Delete) plus the trailing
-            // "← Back" (#204 — nav parity with the eight pages that already had one).
-            Assert.Equal(5, mount.Patches.OfType<CreateNodePatch>().Count(p => p.NodeType == "button"));
+            // 6 buttons: the 5 action buttons (Authenticate, Set, Unlock, Get (plain),
+            // Delete) plus the trailing "← Back" (#204 — nav parity with the eight
+            // pages that already had one).
+            Assert.Equal(6, mount.Patches.OfType<CreateNodePatch>().Count(p => p.NodeType == "button"));
             // …and it is WIRED, not just drawn: a back button with no handler is a
             // dead end that looks like an exit, which is worse than no button at all.
             Assert.True(ClickHandlerForLabel(mount, "← Back") > 0,

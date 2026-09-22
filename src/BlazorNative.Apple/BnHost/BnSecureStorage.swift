@@ -25,6 +25,13 @@
 //     refuses; on the simulator the shell refuses off the ACL/marker.)
 //   • getWithAuth(key,reason) → the OS Face ID evaluation unlocks the item and the
 //     plaintext returns in {"value":…}; a non-auth item is read directly (no prompt).
+//   • the authorized read evaluates `.deviceOwnerAuthenticationWithBiometrics` —
+//     BIOMETRY, matching the `.biometryCurrentSet` ACL the set attached. It used
+//     to evaluate `.deviceOwnerAuthentication`, which is passcode OR biometry, so
+//     the effective gate was WEAKER than the stored ACL declared (#213 item 1,
+//     confirmed on device). There is deliberately no passcode fallback: Android
+//     has none either, and lockout is recoverable by unlocking the device, which
+//     resets biometry.
 //   • delete(key) → SecItemDelete (idempotent — a missing item is still Ok).
 //
 // THE OS-KEY BINDING — PROVEN vs UNPROVEN (the honest split, mirroring biometrics and
@@ -203,8 +210,14 @@ final class BnSecureStorage {
     /// set: idempotent (drop any existing item, then add). auth=1 attaches a
     /// SecAccessControl `.biometryCurrentSet` (retrieval is biometric-gated; the add does
     /// NOT prompt — the iOS asymmetry). auth=0 uses kSecAttrAccessibleWhenUnlockedThis-
-    /// DeviceOnly. Ok on success; Unavailable when the ACL cannot be created (no secure
-    /// hardware / none enrolled); Error on any other add failure — all DATA.
+    /// DeviceOnly. Ok on success; Unavailable when SecAccessControlCreateWithFlags
+    /// returns nil; Error on any other add failure — all DATA.
+    ///
+    /// NOT ESTABLISHED: whether a device with NO enrolled biometric fails here at ACL
+    /// creation, the way Android refuses at provisionKey, or succeeds and fails later
+    /// at SecItemAdd. The simulator cannot answer it — it has no Secure Enclave and
+    /// does not enforce a SecAccessControl at all. Do not restate this as a guarantee
+    /// until a device has shown it (#213 item 1, phase 14.3).
     @discardableResult
     func secureSet(key: String, value: String, requireAuth: Bool) -> Int32 {
         _ = secureDelete(key: key) // idempotent overwrite
@@ -298,7 +311,7 @@ final class BnSecureStorage {
             // Production: the OS Face ID evaluation. On success the freshly-evaluated
             // context unlocks the `.biometryCurrentSet` item (finishAuthorizedRead reads
             // it); on failure/cancel/lockout the denial is AuthFailed, DATA.
-            context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason) { success, _ in
+            context.evaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, localizedReason: reason) { success, _ in
                 if success { gate.authenticate() } else { gate.deny() }
             }
         }

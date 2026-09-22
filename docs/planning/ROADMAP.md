@@ -2309,12 +2309,59 @@ scoping decision 3 predicted.
 > tell a live `BnSafeArea` wrap from a commented-out one; and it covers the five sample and
 > template files but not `intro.md` or `guides/safe-area.md`.
 
-#### Phase 14.3: Auth semantics [status: pending]
+#### Phase 14.3: Auth semantics [status: complete]
 **Goal:** Close **#213 item 1**. Decide one answer to what `requireAuth` means, pin the stored
 keychain ACL against the read policy, and cover the read-side contract that the device run could
 not exercise. The decision is **open** — see MILESTONE.md.
 **Surface:** Backend
 **HelpWanted:** no
+**Design:** [`docs/superpowers/specs/2026-09-22-phase-14.3-design.md`](../superpowers/specs/2026-09-22-phase-14.3-design.md)
+**Plan:** [`docs/superpowers/plans/2026-09-22-phase-14.3-auth-semantics.md`](../superpowers/plans/2026-09-22-phase-14.3-auth-semantics.md)
+**Completed:** 2026-09-22 · [PR #355](https://github.com/MarcelRoozekrans/BlazorNative/pull/355)
+· **#213 item 1 closed**. .NET 1106 → **1109**; JVM 162, Android 226, iOS 270 all unchanged — this
+phase added no test to any shell suite. **No ABI, wire, or public-API change.**
+
+> **The decision was NOT a three-way toss-up, and reading the code is what showed it.** The
+> milestone recorded three live options. In fact **seven** sites across the two shells answer "what
+> counts as authentication", and the split was **6-to-1**: Android means biometry on both its gate
+> and its probe, the Apple write ACL means biometry, `BnBiometrics` means biometry. Only the
+> storage *read* disagreed — and it was the one that **weakened** the guarantee. The device trace
+> showed the OS honouring it exactly as written: `MechanismKofN(k:1)` over `{Passcode, Pearl}`, so
+> a secret stored under a biometry-only ACL was readable with the passcode. The two alternatives
+> were widenings dressed as consistency; adopting the permissive reading would have meant adding
+> `AUTH_DEVICE_CREDENTIAL` to Android's key spec *and* prompt, weakening the shell that was right.
+>
+> **The lockout trade-off was accepted explicitly, not overlooked.** iOS loses the passcode rescue
+> during biometric lockout. Android never had it, the secret is never permanently unreachable —
+> unlocking the device resets biometry — and no new status ships. Device floors were **checked**:
+> the policy exists since iOS 8 against a target of 13.0, covers Touch ID as well as Face ID, and
+> Android below API 30 was already biometry-only. The change narrows *authenticators*, not device
+> age.
+>
+> **The deliverable is the pin, not the one-token fix.** `src/auth-semantics.json` plus
+> `AuthSemanticsDriftTests` assert each declared site still carries its token, that **no
+> authenticator token appears anywhere undeclared**, and that the scan is **not vacuous** — the
+> assertion 14.1's structurally identical pin still lacks, now filed as **#357**.
+>
+> **A review defeated the central claim once, and that is the phase's real lesson.** The dedup
+> suppressed a shorter token whenever a longer one appeared *anywhere on the same line*, so
+> `false ? .deviceOwnerAuthenticationWithBiometrics : .deviceOwnerAuthentication` — exactly the
+> pair #213 was about — introduced an undeclared weak policy and the pin stayed **green**. Six
+> mutations had missed it because every one placed its token alone on its own line and never
+> entered the suppression branch. Fixed to match by span. *A mutation set needs coverage of the
+> pin's **code paths**, not just the subject's behaviours — and the suppression path most of all,
+> since that is where a pin is designed to go quiet and can go quiet by accident.*
+>
+> **Read-side contract: no test was added, deliberately.** Both shells already assert the refusal
+> *and* the absent value. What was missing was the ability to perform it on hardware — the page
+> described a refusal it had no button for. That button now exists.
+>
+> **One claim was corrected by admitting ignorance.** `secureSet` was documented as failing early
+> when nothing is enrolled. Apple's docs do not say whether the ACL constructor or the later
+> `SecItemAdd` fails, so it is now marked NOT ESTABLISHED with a falsifiable device-checklist item
+> — rather than replaced by its inverse, which would be the same bug. **If the prediction holds,
+> iOS returns `Ok` where Android returns `Unavailable`: a new instance of M14's own target class,
+> found by this phase. Filed as #356.**
 
 #### Phase 14.4: Device observability, docs, and the device lane [status: pending]
 **Goal:** Make `Debug` and `Verbose` observable on real hardware, land the four documentation
