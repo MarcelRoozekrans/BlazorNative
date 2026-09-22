@@ -132,7 +132,19 @@ unpinned*, wherever that occurs.
    **defeated that claim once**, via a same-line co-occurrence of the exact pair #213 was about
    that six mutations had missed; fixed to match by span. Two residuals filed rather than
    ledgered: **#356** and **#357**
-5. Phase 14.4 — device observability, docs, and the device lane [pending]
+5. Phase 14.4 — device observability, docs, and the device lane [complete] — closed 2026-09-22 on
+   [PR #361](https://github.com/MarcelRoozekrans/BlazorNative/pull/361); both device lanes green
+   **on the PR head**; .NET 1109 → **1111**, iOS 270 → **271**, Android 226 and JVM 162 unchanged;
+   **no ABI, wire or public-API change**. Four workstreams, grown from three mid-phase.
+   **The device slice `ios-arm64` is now built in CI and gated on EVERY PR** — it had never been
+   built by CI at all — behind a **`vtool` `LC_BUILD_VERSION`** gate, because `lipo -info` says
+   `arm64` for both slices and cannot discriminate. The gate was **proven to red** on a staged
+   simulator slice. `ios-build` became an aggregator so a required context would not vanish and
+   block every PR including its own; **branch protection needed no change**. **`Debug` and
+   `Verbose` are observable on a device for the first time** — every OS route was closed, and the
+   last one was closed by our own `dup2`. **#360 closed**, making M14's central claim unconditional
+   rather than true-for-the-shapes-tested. Fourteen documentation landmines fixed, including a
+   handover that told a device tester to exercise a passcode fallback 14.3 had deleted
 6. Phase 14.5 — audit and close [pending]
 
 **Ordering rationale.** Exactly one hard dependency: **14.0 → 14.2**, because the inset event needs
