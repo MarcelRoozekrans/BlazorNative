@@ -2455,6 +2455,43 @@ public-API change.** Four workstreams, grown from three by a review finding and 
 
 ---
 
+### 🔄 Milestone 15 — A Standard for Pins  *(active — started 2026-09-22)* [status: active]
+
+**Goal:** This repo defends its invariants with **drift pins** — tests that read source or config
+and assert two copies of one truth agree. There are **sixteen** of them and **four** manifests,
+accumulated across many milestones, each written to catch the bug in front of it. They have no
+shared standard, and it shows. M15 establishes what a pin must do to be trusted, applies that
+standard to every existing pin, and closes the backlog of missing and broken ones as
+**consequences rather than as nine separate errands**.
+**Started:** 2026-09-22
+**Design:** [`docs/superpowers/specs/2026-09-22-milestone-15-design.md`](../superpowers/specs/2026-09-22-milestone-15-design.md)
+· full scope, DoD and risks in [MILESTONE.md](MILESTONE.md).
+**Source:** M14's own audit. Its central criterion — *a NEW divergence reds* — was met **narrowly**,
+and the four reproduced holes filed as [#364][m15-i364] carried an argument larger than themselves:
+**the thing to reason about is a pin's coverage, not its assertions.**
+
+[m15-i364]: https://github.com/MarcelRoozekrans/BlazorNative/issues/364
+
+> **The thesis: a pin that can pass while checking nothing is not a pin — and today we cannot say
+> which of ours can.** Vacuity is more general than "the scan stopped matching": any assertion of
+> the form *for every X, assert Y* passes trivially when there are no X, whether X came from a
+> regex, a directory walk, or a collection. `RouteMenuDriftTests` scans no files at all and still
+> has the shape.
+>
+> **#357 is the thesis in miniature:** 14.1's completeness pin lacks an assertion its structurally
+> identical 14.3 twin has. **The guards built to catch twin divergence have drifted from each
+> other.**
+
+**Phases:** 15.0 the pin standard `Docs` · 15.1 enforce the standard `Backend` · 15.2 define the
+auth pin's coverage `Backend` · 15.3 the first live test, deep-link scheme `Backend` · 15.4 the
+missing guards `Mixed` · 15.5 prose and the small corrections `Docs` · 15.6 audit and close `Docs`.
+
+**Closes:** #364 · #357 · #296 · #297 · #302 · #291 · #298 · #356 · #365.
+**No external dependency** — unlike M14, no phase needs a device, an Apple account, or an outside
+contributor. That is deliberate.
+
+---
+
 ### 🔮 Backlog / Future *(uncommitted — promote to a dated milestone when they approach)*
 
 **Enterprise readiness** (old P7): OTA updates with delta + rollback, MD3 / iOS HIG

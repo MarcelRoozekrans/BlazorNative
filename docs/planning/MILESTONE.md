@@ -1,205 +1,136 @@
-# Milestone 14: Twin Divergence, Closed Mechanically
+# Milestone 15: A Standard for Pins
 
-**Status:** complete
-**Started:** 2026-09-21
-**Completed:** 2026-09-22 — verdict **PASS WITH FINDINGS**
-([audit](../plans/2026-09-22-milestone-14-audit.md))
+**Status:** active
+**Started:** 2026-09-22
 
-**Design:** [`docs/superpowers/specs/2026-09-21-milestone-14-design.md`](../superpowers/specs/2026-09-21-milestone-14-design.md)
-**Predecessor:** Milestone 13 — Consumer Ergonomics (complete 2026-08-22, verdict **PASS WITH
-FINDINGS**, [audit](../plans/2026-08-22-milestone-13-audit.md)).
-**Source:** the **P3 real-device verification run** by @ceesalberts on 2026-09-20 — iPhone 17 Pro
-Max, iOS 26, Release `ios-arm64`, signed — reported on [#17][i17] and [#213][i213] and split into
-[#338][i338] and [#339][i339]. P3 had been the repo's **single remaining 1.0 blocker** and was
-administrative, not technical; it has now reported, and it converted one external blocker into
-three concrete engineering ones.
+**Design:** [`docs/superpowers/specs/2026-09-22-milestone-15-design.md`](../superpowers/specs/2026-09-22-milestone-15-design.md)
+**Predecessor:** Milestone 14 — Twin Divergence, Closed Mechanically (complete 2026-09-22, verdict
+**PASS WITH FINDINGS**, [audit](../plans/2026-09-22-milestone-14-audit.md)).
+**Source:** M14's own audit. Its central criterion — *a NEW divergence reds* — was met **narrowly**,
+and the four reproduced holes filed as [#364][i364] carried an argument larger than themselves:
+the thing to reason about is a pin's **coverage**, not its assertions.
 
-[i17]: https://github.com/MarcelRoozekrans/BlazorNative/issues/17
-[i213]: https://github.com/MarcelRoozekrans/BlazorNative/issues/213
-[i338]: https://github.com/MarcelRoozekrans/BlazorNative/issues/338
-[i339]: https://github.com/MarcelRoozekrans/BlazorNative/issues/339
+[i296]: https://github.com/MarcelRoozekrans/BlazorNative/issues/296
+[i297]: https://github.com/MarcelRoozekrans/BlazorNative/issues/297
+[i298]: https://github.com/MarcelRoozekrans/BlazorNative/issues/298
+[i302]: https://github.com/MarcelRoozekrans/BlazorNative/issues/302
+[i356]: https://github.com/MarcelRoozekrans/BlazorNative/issues/356
+[i357]: https://github.com/MarcelRoozekrans/BlazorNative/issues/357
+[i364]: https://github.com/MarcelRoozekrans/BlazorNative/issues/364
+[i365]: https://github.com/MarcelRoozekrans/BlazorNative/issues/365
+[i291]: https://github.com/MarcelRoozekrans/BlazorNative/issues/291
 
 ## Goal
 
-M14 closes the **twin-divergence class** mechanically. The thesis is one sentence: *wherever the
-framework holds one truth in two places, either generate the second copy or pin the two against
-each other.* M13 named this class, closed four instances by hand, and set a DoD criterion saying a
-**new** instance must red — but the mechanism it built covers only half the class, and the P3
-device run found the other half by killing a process on real hardware. This milestone builds the
-missing half, fixes the three live instances that motivated it, and leaves behind guards that make
-the next instance fail in CI rather than on someone's phone.
+This repo defends its invariants with **drift pins** — tests that read source or config and assert
+that two copies of one truth agree. There are **sixteen** of them and **four** manifests,
+accumulated across many milestones, each written to catch the bug in front of it. They have no
+shared standard, and it shows: M14's newest pin was defeated by **five successive reviews**, each
+with a shape the previous round had not tried, and every fix was local to the instance.
 
-## The class, stated precisely
+M15 establishes what a pin must do to be trusted, applies that standard to every existing pin, and
+closes the backlog of missing and broken ones as **consequences rather than as nine separate
+errands**. The user-visible outcome is narrow but real: **a green CI run means more afterwards than
+it does today.**
 
-| sub-shape | what diverges | mechanism | live instances |
-|---|---|---|---|
-| **Vocabulary** | the same *names*, hand-copied into three languages | **codegen** from one source — the #262 precedent | **#300** host-event names |
-| **Semantics** | the same *name*, different *behaviour* | a **differential pin** comparing the two sides | **#339** `dispatchHostEvent` blocks on iOS, not Android · **#213 item 1** the stored ACL and the read policy disagree |
+## The thesis, stated precisely
 
-M13's criterion read *"a generated twin, **or** a pin that compares the two copies"*. **Only the
-first clause was ever built.** #339 is the proof the second was load-bearing: no name generator
-could have caught it, because the names match perfectly and the behaviour does not.
+**A pin that can pass while checking nothing is not a pin.** Today we cannot say which of ours can.
 
-**#213 is intra-shell** — `BnSecureStorage` disagrees with itself and with `BnBiometrics`, all
-inside the Apple shell. The class is therefore not "Android vs iOS"; it is *one truth, two copies,
-unpinned*, wherever that occurs.
+Vacuity is more general than "the scan stopped matching". Any assertion of the form *for every X,
+assert Y* passes trivially when there are no X — whether X came from a regex over source, a
+directory walk, or a collection comparison. `RouteMenuDriftTests` performs **no file scanning at
+all**, and `EveryRoutedPage_ExceptTheTwoExemptions_HasAMenuRow` still passes over an empty page
+list.
 
-## Scoping decisions (owner, 2026-09-21)
+A first heuristic measurement suggests **6 of 16 pins carry no anti-vacuity assertion**. Some may
+not need one. **Phase 15.0 replaces that guess with a measured per-pin verdict** — the number is
+not to be trusted until it is.
 
-1. **1.0 is NOT this milestone's DoD.** M14 clears the two P3 blockers and verifies them; whether
-   that suffices for 1.0 is a separate owner call afterwards, evidenced by a re-run device
-   checklist. Recorded because folding 1.0 in would make the DoD depend on a second device run
-   nobody here controls.
-2. **#338 surfaces insets to .NET** rather than each shell insetting its own root — so frame parity
-   survives as *"same (layout, insets) → same frames"* instead of *"same numbers"*. The only option
-   where neither shell has to lie about where `y=0` is.
-3. **No ABI change is expected.** Insets are dynamic, so they cannot be an init-time slot; they ride
-   the **existing** `blazornative_host_event` export with a generated name — the shape 13.5 already
-   found for `themeChanged`. If this proves false it is an explicit scoping decision, not a silent
-   one.
-4. **#338 is not itself a divergence.** Both shells have *zero* inset handling and are identically
-   wrong. It is here as a 1.0 blocker and as the consumer that proves 14.0's generator.
-5. **Every phase is independently shippable** and none blocks a 1.0 cut — carried forward from M13,
-   because P3's remaining items may clear at any time.
+> **[#357][i357] is the thesis in miniature.** 14.1's completeness pin lacks an assertion that
+> 14.3's structurally identical twin has. **The guards built to catch twin divergence have drifted
+> from each other.**
 
 ## Definition of Done
 
-- [x] All planned phases complete
-- [x] All tests passing — .NET, JVM, **and both device lanes dispatched** (a green *required* set
-      does not mean the advisory Android/iOS lanes ran; that is how 11.4's pump bug hid)
-- [x] **The vocabulary sub-shape is closed by generation.** Host-event names emit from
-      `src/wire-vocabulary.json` into all three languages; adding a name by hand to one shell reds.
-      #300 closed.
-- [x] **The semantic sub-shape is closed by a pin.** A differential guard asserts the two shells'
-      dispatch entry points agree on blocking semantics, and **a NEW divergence reds** — not merely
-      the two instances already known. This is the milestone's central claim; if no mechanical form
-      exists, that is a finding to record explicitly, never a line to quietly drop.
-      **MET NARROWLY — see the [audit](../plans/2026-09-22-milestone-14-audit.md).** The mechanical
-      form exists and works: a new divergence reds for **eight shapes**, each reproduced before the
-      fix and red after. It **fails for four more**, all reproduced as live green mutations and
-      filed as **#364** — the largest being that the scan never reads
-      `src/BlazorNative.Jni/src/main/kotlin`, twelve shipped shell files. This criterion's own last
-      sentence demanded that such a result be recorded rather than dropped, so the tick is
-      qualified here rather than left to read as full coverage.
-- [x] **#339 is fixed, and its invisibility is fixed too.** The deadlock is gone *and* at least one
-      of the three seams that hid it — `BnAppLifecycle.sinkForTest`'s early return, the camera
-      XCTest's `suppressSystemCameraPresentForTest` plus auth overrides, and `BnCamera`'s
-      inline-on-main test capture — no longer does.
-- [x] **#338 is fixed on BOTH shells.** Insets reported over `host_event`; Android's identical gap
-      closed in the same pass. Frame parity re-expressed as *(layout, insets) → frames* and still
-      asserted across shells.
-- [x] **The auth semantics agree and are pinned.** One answer to what `requireAuth` means, the
-      stored ACL and the read policy pinned against each other, and the **read-side contract**
-      covered — a plain get of an auth-bound item refused with no value leaking. That half was never
-      exercised on device, because the demo page exposes no plain-get button.
-- [x] **`Debug` and `Verbose` are observable on a real device**, with the method recorded.
-- [x] **The four documentation landmines are fixed**, `$(AppIdentifierPrefix)` explicitly among them.
-- [x] **No ABI change** — verified by diffing the export surface, not asserted.
+- [ ] All planned phases complete
+- [ ] All tests passing — .NET, JVM, **and both device lanes dispatched**, with each lane's
+      `headSha` compared against the PR head rather than its conclusion read alone
+- [ ] **A written pin standard exists**, in the repo rather than in a milestone doc, stating what
+      every drift pin must do — at minimum: it must fail when it scans nothing, it must fail when
+      its subject moves, and it must state what it does **not** cover.
+- [ ] **Every one of the sixteen existing pins is assessed against that standard**, recorded per
+      pin as *conforms*, *fixed*, or *exempt with a written reason*. An unassessed pin is a gap;
+      "exempt" is an acceptable outcome, **silence is not**.
+- [ ] **The standard is enforced mechanically, not by review.** A new pin that can pass while
+      checking nothing must red. If no mechanical form exists, that is a finding to record
+      explicitly with its evidence — never a line to quietly drop.
+- [ ] **[#364][i364] is answered, not merely fixed.** The auth-semantics pin's *coverage* is
+      written down — which trees, which spellings, which file kinds — and its four known holes
+      close as consequences of that definition rather than as four patches.
+- [ ] **[#296][i296] is closed by the standard rather than around it.** It is the first live
+      divergence to meet the new mechanism, and **it must red before it is fixed**.
+- [ ] **[#357][i357], [#297][i297] and [#302][i302] are closed** — an asymmetry between twins, a
+      missing pin, and a missing guard.
+- [ ] **[#291][i291] is answered for prose.** M14 found **three** unpinned documentation
+      transcription pairs. Either they are pinned, or the milestone records that prose pinning was
+      attempted and judged not worth its cost — **with the reasoning, not the conclusion alone**.
+- [ ] **The small corrections land:** [#298][i298], [#356][i356], [#365][i365].
+- [ ] **No new public API, wire or ABI change** — verified by diffing, not asserted.
 
 > **No "release tagged in git" criterion.** `docs/planning/CONVENTIONS.md` records **`Milestone
-> completion tags a release: no`** — release-please owns the `v<semver>` namespace and Phase 8.6
-> retired milestone tags. A checkbox nothing will ever tick is a permanent false gap.
+> completion tags a release: no`** — release-please owns the `v<semver>` namespace. A checkbox
+> nothing will ever tick is a permanent false gap.
 
 ## Phases
 
-1. Phase 14.0 — pin the host-event vocabulary [complete] — closed 2026-09-21 on
-   [PR #341](https://github.com/MarcelRoozekrans/BlazorNative/pull/341); **#300 closed**; both
-   device lanes dispatched and green; .NET 1070 → 1076, iOS 270 → 269; no ABI or wire change.
-   Enforcement is a generated enum plus four pins — the fourth added by the final review, which
-   caught the code asserting a bypass was impossible while three seams could still reach the raw
-   name (the repo's own "safety claim without a pin" class, inside the milestone about exactly that)
-2. Phase 14.1 — the dispatch twins [complete] — closed 2026-09-21 on
-   [PR #347](https://github.com/MarcelRoozekrans/BlazorNative/pull/347) +
-   [PR #349](https://github.com/MarcelRoozekrans/BlazorNative/pull/349); **#339 closed**; .NET
-   1076 → 1080, JVM 161 → 162, iOS 269 unchanged; `Exports.cs` zero diff. The divergence was
-   **structural** — Swift lacked *both* `AndWait` methods, so one method did two jobs. Ships two
-   tests that **assert bugs still exist** (**#345** .NET root cause, **#346** Android predictive
-   back — *measured and confirmed*, not merely suspected), because a spike proved the root-cause
-   fix viable but not yet safe. The differential pin is **structural, not behavioural** — it reads
-   source and never observes blocking
-3. Phase 14.2 — safe-area insets to .NET [complete] — closed 2026-09-22 on
-   [PR #351](https://github.com/MarcelRoozekrans/BlazorNative/pull/351); **#338 closed on BOTH
-   shells**; both device lanes dispatched and green on the head commit; .NET 1080 → 1106,
-   Android 225 → 226, iOS 269 → 270; **no ABI change** — insets ride the existing
-   `blazornative_host_event` export, confirming scoping decision 3. `BnSafeArea` is **opt-in**,
-   following every peer framework except SwiftUI, with the ergonomics closed by putting it in
-   every snippet a user would copy rather than by insetting silently. The phase's real finding is
-   a **boot race present on both shells** — an inset callback arriving before the async runtime
-   boot, recording a value it cannot deliver, leaves .NET at `Zero` forever on a static-orientation
-   launch. It needs two halves: don't record when skipping, and force one re-report at boot
-4. Phase 14.3 — auth semantics [complete] — closed 2026-09-22 on
-   [PR #355](https://github.com/MarcelRoozekrans/BlazorNative/pull/355); **#213 item 1 closed**;
-   both device lanes dispatched and green **on the PR head**, iOS 270, Android 226; .NET
-   1106 → 1109; no ABI, wire or public-API change. `requireAuth: true` now means **biometry**, one
-   answer on both shells. The milestone recorded this as an open three-way choice; reading the code
-   collapsed it, because **seven** sites answer the question and the split was **6-to-1** — only
-   the Apple storage *read* disagreed, and it was the one that weakened the guarantee. The
-   alternatives were widenings dressed as consistency. Lockout trade-off accepted explicitly;
-   device floors checked rather than assumed. **The deliverable is the pin** —
-   `src/auth-semantics.json` + `AuthSemanticsDriftTests`, whose completeness half makes a NEW
-   undeclared authenticator red, with the anti-vacuity assertion 14.1's twin still lacks. A review
-   **defeated that claim once**, via a same-line co-occurrence of the exact pair #213 was about
-   that six mutations had missed; fixed to match by span. Two residuals filed rather than
-   ledgered: **#356** and **#357**
-5. Phase 14.4 — device observability, docs, and the device lane [complete] — closed 2026-09-22 on
-   [PR #361](https://github.com/MarcelRoozekrans/BlazorNative/pull/361); both device lanes green
-   **on the PR head**; .NET 1109 → **1111**, iOS 270 → **271**, Android 226 and JVM 162 unchanged;
-   **no ABI, wire or public-API change**. Four workstreams, grown from three mid-phase.
-   **The device slice `ios-arm64` is now built in CI and gated on EVERY PR** — it had never been
-   built by CI at all — behind a **`vtool` `LC_BUILD_VERSION`** gate, because `lipo -info` says
-   `arm64` for both slices and cannot discriminate. The gate was **proven to red** on a staged
-   simulator slice. `ios-build` became an aggregator so a required context would not vanish and
-   block every PR including its own; **branch protection needed no change**. **`Debug` and
-   `Verbose` are observable on a device for the first time** — every OS route was closed, and the
-   last one was closed by our own `dup2`. **#360 closed**, making M14's central claim unconditional
-   rather than true-for-the-shapes-tested. Fourteen documentation landmines fixed, including a
-   handover that told a device tester to exercise a passcode fallback 14.3 had deleted
-6. Phase 14.5 — audit and close [complete] — closed 2026-09-22, verdict **PASS WITH
-   FINDINGS**, [audit](../plans/2026-09-22-milestone-14-audit.md). Ten criteria checked
-   against live evidence: the ABI **diffed** rather than asserted, 10 exports before and
-   after; the wire compared by **name set**, 0 removed and 15 added. Nine met; the central
-   claim met **narrowly** — the semantic pin reds for eight proven shapes and fails for four
-   more, all reproduced, filed as **#364**
+1. Phase 15.0 — the pin standard [pending]
+2. Phase 15.1 — enforce the standard [pending]
+3. Phase 15.2 — define the auth pin's coverage [pending]
+4. Phase 15.3 — the first live test: deep-link scheme [pending]
+5. Phase 15.4 — the missing guards [pending]
+6. Phase 15.5 — prose, and the small corrections [pending]
+7. Phase 15.6 — audit and close [pending]
 
-**Ordering rationale.** Exactly one hard dependency: **14.0 → 14.2**, because the inset event needs
-a generated name and hand-adding a third name to an unpinned vocabulary is the thing this milestone
-exists to stop. 14.1, 14.3 and 14.4 are mutually independent. 14.1 is early despite that because it
-carries the riskiest claim — the differential pin — and an early failure there is a cheap re-scope,
-whereas a late one invalidates the DoD.
+**Ordering rationale.** 15.0 comes first because the standard is what everything else applies;
+writing it afterwards would make it a description of whatever we happened to do. **15.2 and 15.3
+are adjacent deliberately** — 15.2 defines coverage for the pin that has been defeated five times,
+and 15.3 is the first live divergence to meet it, which is the cheapest honest test of whether the
+definition was any good. 15.4 and 15.5 are independent of each other and of 15.3.
 
 ## Risk areas
 
 | Risk | Impact | Mitigation |
 |---|---|---|
-| **The differential pin has no cheap mechanical form** | The DoD's central claim degrades into two hand-patches — precisely M13's failure, repeated | 14.1 attempts it **first** and is early enough to re-scope from. A negative result is recorded as a finding with its evidence, never dropped silently |
-| **Insets churn every asserted frame table** | Both shells' parity suites re-baseline; a genuine regression hides in the noise | Land 14.2 **after** 14.1 so the tables move once; read the re-baseline as a reviewed diff, as M13 read its PublicAPI diff as an API review |
-| **The auth fix changes behaviour for existing consumers** | An app relying on passcode fallback breaks on upgrade | Pre-1.0 and the surface freezes at 1.0 — the cheap window. Ships with a written migration note whichever way it goes |
-| **14.4 stalls on an external contributor** | The device lane slips | The lane is the only externally-dependent item; split the phase rather than block it |
-| **#338 needs an ABI change after all** | Scoping decision 3 is wrong and M13's frozen-wire property breaks | The extension policy permits additive growth. Escalate as an explicit decision, and record it |
-| **The class is bigger than three instances** | M14 closes what it knows; the fourth ships later | Accepted. The DoD says "a NEW divergence reds", not "these three are fixed" — the mechanism is the deliverable, the instances are its proof |
+| **The standard describes what we already do**, so every pin "conforms" and nothing changes | The milestone documents the status quo, and the sixth review finds a seventh shape | 15.0's census is **measured per pin, not asserted**, and must replace the heuristic 6-of-16 with a real number. If it finds every pin conforming, that is a finding to challenge — the evidence says otherwise |
+| **No mechanical enforcement exists** for "a pin must not pass while checking nothing" | The standard degrades into a review checklist, which is what M14 already had | Record it explicitly with evidence rather than dropping it. A partial mechanism — enforcing only the anti-vacuity half — is an acceptable honest outcome |
+| **15.2 defines coverage too narrowly** and 15.3 exposes it immediately | Rework, and the definition loses credibility | That is the *point* of the adjacency. An early failure there is cheap and informative; finding it in 15.6's audit is not |
+| **Prose pinning proves not worth its cost** | #291 goes unanswered again, having been deferred once already | "Attempted and judged not worth it, with reasoning" is an acceptable pass. **Silence is not** |
+| **Sixteen pins is a lot of surface for one milestone** | 15.1 balloons and crowds out 15.2-15.5 | 15.0's census sizes it before 15.1 commits. If the non-conforming set is large, split 15.1 by pin family and say which were deferred |
+| **The milestone polishes pins while the truths they guard rot** | A perfectly standardised population guarding stale facts | 15.3 and 15.4 are **real bugs**, not pin work. They are here deliberately so the milestone ships behaviour, not only mechanism |
 
-## Out of scope for this milestone
+## Out of scope
 
-- **APNs and universal links** — the Apple-account cluster on #17. The device run confirms remote
-  push is not testable as shipped and universal links are not implemented.
-- **Frame parity for `/layout`, `/scroll`, `/image`** — named in the handover, not compared on
-  device for time. Needs hardware.
-- **#25 → 1.0 criterion S3** — out of M13 by owner choice; unchanged here.
-- **#24 `BlazorNative.Cli`** — the 2026-08-17 audit's verdict stands: it should follow, not lead.
-- **A 1.0 cut** — scoping decision 1.
+- **1.0** — carried forward from M14's scoping decision 1. Whether the pin standard is a 1.0
+  requirement is a separate owner call.
+- **#17's Apple-account cluster and real-device execution** — externally dependent, untouched here.
+  **No phase in this milestone needs a device, an Apple account, or an external contributor**, and
+  that is deliberate.
+- **The feature backlog** — #18, #21, #24, #284, #285, #286. Each is its own milestone.
+- **The accepted hardening debt** — #8, #9, #12, #13, owner-accepted as Q3.
 
 ## Open questions
 
-- **14.3's decision is not pre-made.** Align the read to the stored ACL
-  (`.deviceOwnerAuthenticationWithBiometrics`, which `BnBiometrics` already uses); relax the ACL to
-  `.userPresence`; or keep the behaviour and document that `requireAuth: true` means device-owner
-  authentication, passcode included. The hardware result removes the "spurious refusal" argument
-  for the first but does not pick between them. **Resolve at the start of 14.3.**
-- **What shape should the device CI lane take?** @ceesalberts offered a staging script plus an
-  `ios-build`-on-device lane and awaits a preferred shape. **Needs an answer before 14.4 can plan.**
+- **Does a mechanical form exist for "this pin cannot pass while checking nothing"?** A Roslyn
+  analyzer over test methods, a convention test reflecting over pin classes, or something cheaper.
+  **15.0 must answer this**, because the DoD's enforcement criterion depends on it — and a negative
+  answer reshapes 15.1 rather than failing it.
+- **Is set-comparison in scope for the standard?** `RouteMenuDriftTests` scans nothing and can
+  still go vacuous. The design says yes — vacuity is about the *assertion shape*, not the input —
+  but it widens the census. **Confirm in 15.0.**
 
 ## Audit History
 
 | Date | Verdict | Gaps |
 |---|---|---|
-| 2026-09-22 | **PASS WITH FINDINGS** — [full audit](../plans/2026-09-22-milestone-14-audit.md) | **The central claim is met NARROWLY.** The semantic pin makes a new divergence red for **eight proven shapes** and demonstrably fails for **four more**, all reproduced as live green mutations — **#364**. The DoD said such a result must be *"recorded explicitly, never a line to quietly drop"*; it is. Also: residual overclaims **#365**; no `pre-push-review` artifact exists, though every task got a fresh-agent spec-and-quality review plus a per-phase whole-branch review; and `android-instrumented`'s newest run is at 14.4's head rather than main's docs-only close commit, which cannot reach Android |
+| — | *(not yet audited)* | — |
