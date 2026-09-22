@@ -105,6 +105,11 @@ public sealed class ShellFrameTableDriftTests
             ["BnScrollDemo/Image"] = ("bnScrollDemoImageFrames", 1),
             ["BnImageDemo/Before"] = ("bnImageDemoBeforeFrames", 10),
             ["BnImageDemo/After"] = ("bnImageDemoAfterFrames", 10),
+            // Phase 14.2 Task 6 (#338): BnSafeAreaDemo's table. ONE row on purpose — a
+            // Grow="1" child inside an explicit 300×200 box makes that single child's
+            // frame a function of all four edges at once (see BnDemoFrameTables.kt's
+            // header for the derivation), so one row is enough to catch a wrong edge.
+            ["BnSafeAreaDemo"] = ("bnSafeAreaDemoFrames", 1),
         };
 
     [Fact]

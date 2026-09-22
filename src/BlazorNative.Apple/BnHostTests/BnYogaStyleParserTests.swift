@@ -65,7 +65,8 @@ final class BnYogaStyleParserTests: BnHostTestCase {
         case "flexGrow", "flexShrink": return "1"
         case "gap", "padding", "margin", "flexBasis",
              "width", "height", "minWidth", "maxWidth", "minHeight", "maxHeight",
-             "top", "right", "bottom", "left":
+             "top", "right", "bottom", "left",
+             "paddingTop", "paddingRight", "paddingBottom", "paddingLeft":
             return "8"
         default:
             XCTFail("'\(name)' is routed to Yoga but this test has no legal sample value for it "

@@ -21,7 +21,7 @@ namespace BlazorNative.Components;
 /// <c>BnScroll</c> a meaningless <c>Justify</c>. Each component that accepts
 /// children declares <c>ChildContent</c> itself, at sequence 200.
 /// </para>
-/// <para>Sequence band: this type owns <b>50–54</b>.</para>
+/// <para>Sequence band: this type owns <b>50–58</b>.</para>
 /// <para>
 /// <b>There is deliberately no <c>ContainerAttributes</c> splat</b> — the twin of
 /// <see cref="BnLayoutItem"/>'s <c>ItemAttributes</c>, which exists for components
@@ -55,7 +55,20 @@ public abstract class BnLayoutContainer : BnLayoutItem
     /// <summary>Space between children. Null = none.</summary>
     [Parameter] public BnLength? Gap { get; set; }
 
-    /// <summary>Emits the container surface as ELEMENT attributes. Occupies 50–54.</summary>
+    /// <summary>Padding on the top edge only. Overrides <see cref="Padding"/> for that
+    /// edge when both are set — Yoga resolves the more specific edge last.</summary>
+    [Parameter] public BnLength? PaddingTop { get; set; }
+
+    /// <summary>Padding on the right edge only. Overrides <see cref="Padding"/> for that edge.</summary>
+    [Parameter] public BnLength? PaddingRight { get; set; }
+
+    /// <summary>Padding on the bottom edge only. Overrides <see cref="Padding"/> for that edge.</summary>
+    [Parameter] public BnLength? PaddingBottom { get; set; }
+
+    /// <summary>Padding on the left edge only. Overrides <see cref="Padding"/> for that edge.</summary>
+    [Parameter] public BnLength? PaddingLeft { get; set; }
+
+    /// <summary>Emits the container surface as ELEMENT attributes. Occupies 50–58.</summary>
     protected void EmitContainerAttributes(RenderTreeBuilder b)
     {
         b.AddAttribute(50, "padding",        Padding.ToStyleValue());
@@ -63,9 +76,13 @@ public abstract class BnLayoutContainer : BnLayoutItem
         b.AddAttribute(52, "alignItems",     Align.ToStyleValue());
         b.AddAttribute(53, "flexWrap",       Wrap.ToStyleValue());
         b.AddAttribute(54, "gap",            Gap.ToStyleValue());
+        b.AddAttribute(55, "paddingTop",     PaddingTop.ToStyleValue());
+        b.AddAttribute(56, "paddingRight",   PaddingRight.ToStyleValue());
+        b.AddAttribute(57, "paddingBottom",  PaddingBottom.ToStyleValue());
+        b.AddAttribute(58, "paddingLeft",    PaddingLeft.ToStyleValue());
     }
 
-    /// <summary>Forwards the container surface as COMPONENT parameters. Occupies 50–54.</summary>
+    /// <summary>Forwards the container surface as COMPONENT parameters. Occupies 50–58.</summary>
     protected void ForwardContainerParameters(RenderTreeBuilder b)
     {
         // Not formatted, deliberately: these are COMPONENT parameters, so the value stays
@@ -75,5 +92,9 @@ public abstract class BnLayoutContainer : BnLayoutItem
         b.AddComponentParameter(52, nameof(Align),   Align);
         b.AddComponentParameter(53, nameof(Wrap),    Wrap);
         b.AddComponentParameter(54, nameof(Gap),     Gap);
+        b.AddComponentParameter(55, nameof(PaddingTop),    PaddingTop);
+        b.AddComponentParameter(56, nameof(PaddingRight),  PaddingRight);
+        b.AddComponentParameter(57, nameof(PaddingBottom), PaddingBottom);
+        b.AddComponentParameter(58, nameof(PaddingLeft),   PaddingLeft);
     }
 }

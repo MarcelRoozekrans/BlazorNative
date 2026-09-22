@@ -350,7 +350,7 @@ jobs:
             > ios-out/xcresult.json 2>/dev/null || true
           ls -la ios-out/crash || true
 
-      - name: Assert XCTest baseline (269 passed / 0 failed)
+      - name: Assert XCTest baseline (270 passed / 0 failed)
         if: always()
         run: |
           log=ios-out/xcodebuild-test.log
@@ -1156,9 +1156,21 @@ jobs:
           # ("...AreAndroidsExactly") that its body never checked. That property is
           # now real: both shells' enums are emitted from one manifest section, and
           # WireVocabularyCodegenTests byte-compares the emitted output.
-          if [ "$failed" -ne 0 ] || [ "$passed" -ne 269 ]; then
+          # 269 -> 270 (14.2 Task 6, +1): BnSafeAreaTests — mounts BnSafeAreaDemo and
+          # calls BnRuntime.dispatchHostEventAndWait(.safeAreaChanged, payload:) with
+          # the SAME four fixed insets (top 47 / right 21 / bottom 34 / left 13)
+          # BnSafeAreaAndroidTest dispatches on the AVD, through a synthetic
+          # WindowInsets instead. HostViewController is INERT under XCTest (every
+          # class in this suite already bypasses it), so calling the dispatch
+          # primitive directly — the SAME method HostViewController.
+          # reportSafeAreaIfChanged calls — is the furthest this harness can reach
+          # into the real wire path; not a test-only seam. Asserts the content box's
+          # frame against bnSafeAreaDemoFrames, which BnSafeAreaAndroidTest asserts
+          # identically via ShellFrameTableDriftTests in the required build-test
+          # lane. The four existing declared frame tables are UNCHANGED.
+          if [ "$failed" -ne 0 ] || [ "$passed" -ne 270 ]; then
             grep -E "Test Case '.*' (passed|failed)" "$log" || true
-            echo "iOS XCTest baseline drift: expected 269 passed / 0 failed, got passed=$passed failed=$failed" >&2
+            echo "iOS XCTest baseline drift: expected 270 passed / 0 failed, got passed=$passed failed=$failed" >&2
             exit 1
           fi
 

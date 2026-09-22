@@ -13,7 +13,7 @@
 /// and BnWidgetMapper keep their own decode and routing code.
 enum BnWireVocabulary {
     static let yogaStyles = [
-        "flexDirection", "justifyContent", "alignItems", "flexWrap", "gap", "alignSelf", "flexGrow", "flexShrink", "flexBasis", "width", "height", "minWidth", "maxWidth", "minHeight", "maxHeight", "padding", "margin", "position", "top", "right", "bottom", "left",
+        "flexDirection", "justifyContent", "alignItems", "flexWrap", "gap", "alignSelf", "flexGrow", "flexShrink", "flexBasis", "width", "height", "minWidth", "maxWidth", "minHeight", "maxHeight", "padding", "paddingTop", "paddingRight", "paddingBottom", "paddingLeft", "margin", "position", "top", "right", "bottom", "left",
     ]
 
     static let visualStyles = [
@@ -21,7 +21,7 @@ enum BnWireVocabulary {
     ]
 
     static let scrollIgnoredContainerStyles = [
-        "flexDirection", "justifyContent", "alignItems", "flexWrap", "gap", "padding",
+        "flexDirection", "justifyContent", "alignItems", "flexWrap", "gap", "padding", "paddingTop", "paddingRight", "paddingBottom", "paddingLeft",
     ]
 
     static let measuredNodeTypes = [
@@ -59,6 +59,7 @@ enum BnWireVocabulary {
 enum BnHostEvent: String {
     case back = "back" // reserved
     case navigate = "navigate" // reserved
+    case safeAreaChanged = "safeAreaChanged" // reserved
     case onResume = "onResume" // passthrough
     case onPause = "onPause" // passthrough
     case onDestroy = "onDestroy" // passthrough

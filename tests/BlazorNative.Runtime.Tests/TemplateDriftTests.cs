@@ -822,6 +822,11 @@ public sealed class TemplateDriftTests
             // absent from either file, so dropping the dep from the template gradle now
             // reds this pin (it did not before — the gap Gate 2 flagged).
             ["androidx.biometric"] = @"implementation\(""androidx\.biometric:biometric:([^""]+)""\)",
+            // Phase 14.2 (#338): androidx.core, pinned explicitly — the transitive
+            // version biometric/fragment pull in (1.3.2) predates
+            // WindowInsetsCompat.Type (added 1.5.0), which MainActivity's safe-area
+            // listener needs. Same drift risk as every other gradle pin above.
+            ["androidx.core"] = @"implementation\(""androidx\.core:core:([^""]+)""\)",
             ["compileSdk"] = @"(?m)^\s*compileSdk = (\d+)",
             ["minSdk"] = @"(?m)^\s*minSdk = (\d+)",
             ["targetSdk"] = @"(?m)^\s*targetSdk = (\d+)",

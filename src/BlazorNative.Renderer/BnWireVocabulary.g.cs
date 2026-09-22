@@ -24,7 +24,7 @@ internal static class BnWireVocabulary
         // Item
         "alignSelf", "flexGrow", "flexShrink", "flexBasis",
         // Box
-        "width", "height", "minWidth", "maxWidth", "minHeight", "maxHeight", "padding", "margin",
+        "width", "height", "minWidth", "maxWidth", "minHeight", "maxHeight", "padding", "paddingTop", "paddingRight", "paddingBottom", "paddingLeft", "margin",
         // Positioning
         "position", "top", "right", "bottom", "left",
     ];
@@ -37,7 +37,7 @@ internal static class BnWireVocabulary
 
     internal static readonly string[] ScrollIgnoredContainerStyles =
     [
-        "flexDirection", "justifyContent", "alignItems", "flexWrap", "gap", "padding",
+        "flexDirection", "justifyContent", "alignItems", "flexWrap", "gap", "padding", "paddingTop", "paddingRight", "paddingBottom", "paddingLeft",
     ];
 
     internal static readonly string[] MeasuredNodeTypes =

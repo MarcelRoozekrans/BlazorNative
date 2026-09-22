@@ -156,6 +156,15 @@ public static class SampleAppPages
         // lives here; Gates 2/3 wire the shells (AVD ACTION_IMAGE_CAPTURE + FileProvider;
         // iOS UIImagePickerController). Sample-only (template-minimal).
         BlazorNativePage.Routed<BnCameraDemo>("/camera", "BnCameraDemo"),
+        // Phase 14.2 (#338): the safe-area proof page (route "/safearea"). The
+        // FOURTEENTH routed page, and a DIFFERENT kind again — like 9.0's
+        // permission pattern, a golden frame table (bnSafeAreaDemoFrames),
+        // not a permission dance. BnSafeArea (BnLayoutContainer, opt-in —
+        // decision 1) pads its content by the reported insets; the device
+        // tests dispatch "safeAreaChanged" with fixed values themselves so
+        // both shells produce identical frames despite real devices
+        // differing. See BnSafeAreaDemo.razor's header.
+        BlazorNativePage.Routed<BnSafeAreaDemo>("/safearea", "BnSafeAreaDemo"),
         // Phase 4.2: the focus/blur proof app (BnInput OnFocus/OnBlur →
         // echo BnText — M4 DoD #4). Scaffolding, like CompositionProbe.
         BlazorNativePage.Named<FocusProbe>("FocusProbe"),

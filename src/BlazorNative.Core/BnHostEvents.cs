@@ -2,10 +2,10 @@ namespace BlazorNative.Core;
 
 /// <summary>
 /// The host-event names the shells send, so app code names an event rather than
-/// spelling it. Two tiers: RESERVED names (<see cref="Back"/>, <see cref="Navigate"/>)
-/// are intercepted by the runtime and never reach subscribers; the rest are the
-/// names an app can actually subscribe to. See each constant's remarks for which
-/// tier it is in.
+/// spelling it. Two tiers: RESERVED names (<see cref="Back"/>, <see cref="Navigate"/>,
+/// <see cref="SafeAreaChanged"/>) are intercepted by the runtime and never reach
+/// subscribers; the rest are the names an app can actually subscribe to. See each
+/// constant's remarks for which tier it is in.
 /// </summary>
 /// <remarks>
 /// <para>HAND-WRITTEN AND PINNED, NOT GENERATED. This is public API with a
@@ -25,6 +25,14 @@ public static class BnHostEvents
     /// <summary>A deep link or notification tap asks for a route, carried as the
     /// payload. RESERVED — the runtime intercepts this and navigates.</summary>
     public const string Navigate = "navigate";
+
+    /// <summary>The area of the display obscured by system UI changed — rotation, a
+    /// keyboard, a call banner. RESERVED — the runtime intercepts this, stores it as
+    /// <see cref="BnSafeAreaInsets.Current"/>, and re-renders a live session; it does
+    /// not reach subscribers. The payload is flat JSON with string-valued numbers:
+    /// <c>{"top":"47","right":"0","bottom":"34","left":"0"}</c> — all four edge keys
+    /// are required.</summary>
+    public const string SafeAreaChanged = "safeAreaChanged";
 
     /// <summary>The app returned to the foreground. Android <c>onResume</c>,
     /// iOS <c>didBecomeActive</c>.</summary>

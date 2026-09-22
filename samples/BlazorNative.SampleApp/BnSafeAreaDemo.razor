@@ -1,0 +1,50 @@
+@*
+    ─────────────────────────────────────────────────────────────────────────
+    BnSafeAreaDemo — Phase 14.2 Task 6 (#338), route "/safearea", mount-registry
+    key "BnSafeAreaDemo". The cross-shell parity proof for BnSafeArea, on the
+    same footing as BnLayoutDemo/BnScrollDemo/BnImageDemo: its frame table
+    (bnSafeAreaDemoFrames) is asserted identically on the AVD and the iOS
+    simulator by ShellFrameTableDriftTests.
+
+    UNLIKE those three pages, real device insets differ between an AVD and a
+    simulator (and between devices), so a table built from WHATEVER the device
+    reports could never agree number-for-number. The device tests dispatch
+    "safeAreaChanged" themselves, with the SAME fixed values on both shells,
+    before reading this page's laid-out frame — exercising the real wire path
+    (MainActivity's WindowInsets listener / HostViewController's layout hook →
+    DispatchHostSafeArea → BnSafeAreaInsets.Current → this component) rather
+    than a test-only override seam.
+
+    ── WHY THE CONTENT BOX PROVES ALL FOUR EDGES, NOT JUST TWO ───────────────
+    A naive "one fixed box, read its x/y" proves TopEdge and LeftEdge (the
+    box's own origin) but says nothing about RightEdge/BottomEdge — nothing
+    in that shape reacts to them. This page instead gives BnSafeArea an
+    EXPLICIT Width/Height (300×200, so the assertion never depends on the
+    test device's actual screen size) and fills it with a SINGLE Grow="1"
+    child: Yoga's default column stretch sizes that child to the padding
+    box's full extent, i.e. width = 300 − left − right and
+    height = 200 − top − bottom. So one child's frame —
+    (left, top, 300−left−right, 200−top−bottom) — is a function of all four
+    edges at once, and a wrong edge (an off-by-one in TryParseEdge, an
+    "additive" that silently replaced instead of summed, a transposed
+    left/right) moves a number this table would catch.
+
+    "← Back" sits OUTSIDE the BnSafeArea (a second root-level node) rather
+    than sharing its fixed 200dp height with a Grow="1" box that already
+    claims all of it — this page is a geometry proof, not a capability demo,
+    and the nav control does not need to be inset-aware to be tappable, since
+    it never has to compete with system UI on the pages that actually house
+    real content (the four capability pages already wrap it correctly).
+    ─────────────────────────────────────────────────────────────────────────
+*@
+<BnSafeArea Width="300" Height="200">
+    <BnView Grow="1" BackgroundColor="#F44336" />
+</BnSafeArea>
+<BnButton Label="← Back" OnClick="GoBack" />
+
+@code {
+    [Inject] public INavigationManager Navigation { get; set; } = default!;
+
+    // Sync-completing (inline dispatcher), like every other page's GoBack.
+    private Task GoBack() => Navigation.NavigateToAsync("/").AsTask();
+}

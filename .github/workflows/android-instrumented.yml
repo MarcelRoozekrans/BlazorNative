@@ -17,7 +17,7 @@
 #   emulator (ubuntu-latest, KVM) — downloads the .so, boots the API 34
 #     google_apis x86_64 Pixel 6 image (mirrors the local AVD
 #     blazornative-pixel6-x86_64), runs connectedAndroidTest with
-#     -PciSoDir pointing at the artifact → asserts 225 passed / 0 failed.
+#     -PciSoDir pointing at the artifact → asserts 226 passed / 0 failed.
 #
 # Baselines are asserted, not observed: count drift fails the job loudly.
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1087,7 +1087,18 @@ jobs:
       # matching is case-sensitive against a lowercase value, so the parser never sees
       # an uppercase-scheme URL on the platform — the reachability argument is filed as
       # its own issue rather than left as a comment.
-      - name: Assert instrumented baseline (225 passed / 0 failed)
+      # ── 14.2 TASK 6: BnSafeAreaAndroidTest, THE CROSS-SHELL SAFE-AREA TABLE (225 -> 226, +1) ──
+      # #338: BnSafeAreaDemo ("/safearea") wraps a Grow="1" content box in a
+      # BnSafeArea with an explicit 300x200 box. The test feeds a SYNTHETIC
+      # WindowInsetsCompat (top 47 / right 21 / bottom 34 / left 13 dp) to
+      # widget_root through ViewCompat.dispatchApplyWindowInsets — invoking
+      # MainActivity's REAL OnApplyWindowInsetsListener, not a test-only seam —
+      # then asserts the content box's frame against bnSafeAreaDemoFrames,
+      # which BnSafeAreaTests.swift asserts identically on the simulator via
+      # ShellFrameTableDriftTests in the required build-test lane. The four
+      # existing declared frame tables (bnLayoutDemoFrames, bnScrollDemoFrames,
+      # bnScrollDemoImageFrames, bnImageDemoBeforeFrames) are UNCHANGED.
+      - name: Assert instrumented baseline (226 passed / 0 failed)
         run: |
           shopt -s globstar nullglob
           xmls=(src/BlazorNative.Jni/build/outputs/androidTest-results/connected/**/*.xml)
@@ -1104,8 +1115,8 @@ jobs:
             s=$(attr skipped "$x");  skipped=$((skipped + ${s:-0}))
           done
           echo "Instrumented totals across ${#xmls[@]} suite(s): tests=$tests failures=$failures errors=$errors skipped=$skipped"
-          if [ "$tests" -ne 225 ] || [ "$failures" -ne 0 ] || [ "$errors" -ne 0 ] || [ "$skipped" -ne 0 ]; then
-            echo "Instrumented test baseline drift: expected 225 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped" >&2
+          if [ "$tests" -ne 226 ] || [ "$failures" -ne 0 ] || [ "$errors" -ne 0 ] || [ "$skipped" -ne 0 ]; then
+            echo "Instrumented test baseline drift: expected 226 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped" >&2
             exit 1
           fi
 

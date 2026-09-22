@@ -8,6 +8,8 @@ import android.util.Log
 import android.widget.FrameLayout
 import android.window.OnBackInvokedCallback
 import android.window.OnBackInvokedDispatcher
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.fragment.app.FragmentActivity
 import io.blazornative.jni.BlazorNativeRuntime
 import io.blazornative.jni.BnHostEvent
@@ -175,6 +177,15 @@ class MainActivity : FragmentActivity() {
      */
     @Volatile private var booted = false
 
+    /** Phase 14.2 (#338): the last safe-area report SENT (dp, post-conversion),
+     * so [reportSafeAreaIfChanged] can dedup on the VALUE rather than on some
+     * other signal — insets change independently of view size (a rotation, a
+     * keyboard, a call banner can all move them without a layout-size change),
+     * so the dedup has to compare the insets themselves, the same shape iOS's
+     * `lastReportedInsets` (HostViewController.swift) uses. Null before the
+     * first report. */
+    private var lastReportedInsets: androidx.core.graphics.Insets? = null
+
     /** The predictive-back callback (API 33+); null on lower APIs (they use the
      * deprecated [onBackPressed] fallback). Held so it could be unregistered. */
     private var backCallback: OnBackInvokedCallback? = null
@@ -251,6 +262,18 @@ class MainActivity : FragmentActivity() {
         setContentView(R.layout.main)
 
         val widgetRoot = findViewById<FrameLayout>(R.id.widget_root)
+
+        // Phase 14.2 (#338): the safe-area report, the twin of iOS's
+        // viewDidLayoutSubviews hook. systemBars() alone is NOT enough — a display
+        // cutout is reported separately, and the cutout is precisely what made the
+        // iPhone's Take Photo button untappable.
+        ViewCompat.setOnApplyWindowInsetsListener(widgetRoot) { _, windowInsets ->
+            val bars = windowInsets.getInsets(
+                WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
+            reportSafeAreaIfChanged(bars)
+            windowInsets
+        }
+
         // Phase 3.2: UI listeners forward into the dispatch lane. The lambda
         // captures the lateinit `runtime` field (constructed just below) —
         // safe: onUiEvent only fires from listeners that AttachEvent installs,
@@ -318,6 +341,13 @@ class MainActivity : FragmentActivity() {
                     bridge = bridge,
                 )
                 booted = true // host→.NET entry (lifecycle/back) is safe only now
+                // Phase 14.2 fix round 1 (#338): the FIRST onApplyWindowInsets callback
+                // almost certainly fired before boot completed (this thread is
+                // asynchronous — see reportSafeAreaIfChanged's "THE BOOT-RACE FIX" KDoc)
+                // and returned WITHOUT recording. Insets only re-fire on CHANGE, so a
+                // static-orientation launch has nothing left to deliver on its own —
+                // force one. requestApplyInsets is a View call; hop to the main thread.
+                runOnUiThread { ViewCompat.requestApplyInsets(widgetRoot) }
                 // Emit each line as one gated Info call so logcat shows them as
                 // atomic lines (filter via `adb logcat -s BlazorNative`).
                 //
@@ -376,6 +406,85 @@ class MainActivity : FragmentActivity() {
         // (isInitialized: a throw in onCreate before the assignment still destroys.)
         if (::mapper.isInitialized) mapper.destroy()
         super.onDestroy()
+    }
+
+    // ── Safe-area insets → dispatch (Phase 14.2, #338) ───────────────────────
+
+    /**
+     * Converts a reported inset from PIXELS (what [android.view.WindowInsets]
+     * always carries) to DP (what the Yoga tree consumes), then dispatches the
+     * reserved "safeAreaChanged" host event — but only when the value actually
+     * changed, mirroring iOS's `reportSafeAreaIfChanged` (HostViewController.swift):
+     * insets change independently of view size, so the dedup compares the
+     * insets themselves rather than riding some other signal.
+     *
+     * The payload is flat JSON with STRING-valued numbers, all four edge keys
+     * always present — the exact shape DispatchHostSafeArea/TryParseEdge
+     * (Exports.cs) parses with `double.TryParse(..., InvariantCulture)`. Kotlin
+     * string-templating a Float uses `Float.toString()`, which — unlike
+     * `String.format` — is locale-INVARIANT, so a device in a comma-decimal
+     * locale still emits "47.5", not "47,5" (a value the parser would reject as
+     * rc 3, malformed — silently, only in the field, never in a test here).
+     *
+     * Guarded by [booted], same as the lifecycle events above: nothing enters
+     * .NET before the mount. Dispatched with [BlazorNativeRuntime.dispatchHostEvent]
+     * (fire-and-forget) — NOT the blocking `…AndWait` overload: that one blocks
+     * the calling thread on `future.get()`, and this listener fires from a UI
+     * callback (`setOnApplyWindowInsetsListener`), which would deadlock the
+     * serial dispatch lane against the main thread (#346).
+     *
+     * ── THE BOOT-RACE FIX (fix round 1, #338; corrected in fix round 2 of the
+     *    whole-branch review — see below) ─────────────────────────────────
+     * iOS has the SAME class of boot race, not a different one: its
+     * twin — `HostViewController.reportSafeAreaIfChanged` — used to claim safety
+     * here on the grounds that `BnRuntime.start()` runs synchronously inside
+     * `viewDidLoad`. That claim was FALSE. `viewDidLoad` boots on
+     * `DispatchQueue.global(qos: .userInitiated).async`, and `BnRuntime.current`
+     * is published LAST, after mount (`BnRuntime.swift`'s own comment: "Published
+     * LAST, after mount") — so on an ordinary launch, `viewDidLayoutSubviews` can
+     * fire, and `reportSafeAreaIfChanged` run, WHILE boot is still in flight and
+     * `BnRuntime.current` is nil. iOS's fix now mirrors this method's two halves
+     * exactly: it does not record `lastReportedInsets` while `BnRuntime.current`
+     * is nil, and its boot block forces one re-report on the main queue right
+     * after `runtime.start` returns — the analogue of `requestApplyInsets`
+     * below. Android boots on a BACKGROUND thread
+     * (`thread(name = "BlazorNative-Runtime-Boot")` in [onCreate]), so the
+     * FIRST `onApplyWindowInsets` callback on an ordinary launch fires BEFORE
+     * `booted` flips true. Two changes, and EITHER ALONE is still broken:
+     *   1. [lastReportedInsets] is recorded ONLY when the dispatch actually
+     *      fires (below) — recording it unconditionally (the original shape)
+     *      would let a pre-boot callback "consume" the real value, and
+     *      because insets only re-fire ON CHANGE, a static-orientation launch
+     *      then has nothing left to deliver: .NET never learns the real
+     *      insets, silently, which is the exact untappable-content defect
+     *      this phase exists to fix.
+     *   2. [onCreate]'s boot thread calls `ViewCompat.requestApplyInsets`
+     *      the instant `booted` flips true, so the listener is FORCED to
+     *      re-fire post-boot even when nothing on screen actually changed.
+     *      Without this, fix #1 alone leaves the pre-boot callback silently
+     *      dropped (correctly, un-recorded) but nothing ever asks for a
+     *      SECOND delivery — same silent no-report outcome.
+     * Ordering, all three cases: (a) callback fires ONLY before boot → not
+     * booted, so it returns WITHOUT recording; requestApplyInsets then forces
+     * a second callback once booted, which records and dispatches — correct.
+     * (b) callback fires ONLY after boot (e.g. a genuine rotation, no forced
+     * re-request needed) → booted, records and dispatches immediately —
+     * correct, unchanged from before this fix. (c) callback fires BOTH before
+     * and after boot (the ordinary case: once pre-boot, once from the forced
+     * re-request) → the pre-boot call returns unrecorded, the post-boot call
+     * records and dispatches exactly once — correct, and the dedup contract
+     * ("do not re-render an unchanged inset") is intact because only ONE
+     * recorded value exists at any time.
+     */
+    private fun reportSafeAreaIfChanged(insets: androidx.core.graphics.Insets) {
+        if (lastReportedInsets == insets) return
+        if (!booted) return // NOT recorded — see "THE BOOT-RACE FIX" above; a later
+                             // identical value (forced by requestApplyInsets) must still fire
+        lastReportedInsets = insets
+
+        val d = resources.displayMetrics.density
+        val payload = """{"top":"${insets.top / d}","right":"${insets.right / d}","bottom":"${insets.bottom / d}","left":"${insets.left / d}"}"""
+        runtime.dispatchHostEvent(BnHostEvent.SafeAreaChanged, payload)
     }
 
     // ── Permission results → the shell bridge (Phase 9.0, M9 DoD #1) ──────────

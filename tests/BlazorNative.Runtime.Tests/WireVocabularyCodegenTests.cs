@@ -229,17 +229,20 @@ public sealed class WireVocabularyCodegenTests
     }
 
     [Fact]
-    public void TheManifest_DeclaresTheFiveHostEvents_WithTiers()
+    public void TheManifest_DeclaresTheSixHostEvents_WithTiers()
     {
         WireVocabulary v = LoadManifest();
 
+        // Phase 14.2 added "safeAreaChanged" (reserved) between "navigate" and the
+        // passthrough tier — insertion order is preserved, not sorted, so it lands
+        // exactly where the manifest places it.
         Assert.Equal(
-            ["back", "navigate", "onResume", "onPause", "onDestroy"],
+            ["back", "navigate", "safeAreaChanged", "onResume", "onPause", "onDestroy"],
             v.HostEvents.Names.ToArray());
 
         // The reserved tier is the one .NET intercepts in DispatchHostEventCore.
         // Everything else falls through to the app multicast as an opaque string.
-        Assert.Equal(["back", "navigate"], v.HostEvents.Reserved.ToArray());
+        Assert.Equal(["back", "navigate", "safeAreaChanged"], v.HostEvents.Reserved.ToArray());
     }
 
     [Fact]

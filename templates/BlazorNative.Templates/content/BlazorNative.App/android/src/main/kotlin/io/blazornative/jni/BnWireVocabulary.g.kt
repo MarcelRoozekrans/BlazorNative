@@ -23,7 +23,7 @@ internal object BnWireVocabulary {
         // Item
         "alignSelf", "flexGrow", "flexShrink", "flexBasis",
         // Box
-        "width", "height", "minWidth", "maxWidth", "minHeight", "maxHeight", "padding", "margin",
+        "width", "height", "minWidth", "maxWidth", "minHeight", "maxHeight", "padding", "paddingTop", "paddingRight", "paddingBottom", "paddingLeft", "margin",
         // Positioning
         "position", "top", "right", "bottom", "left",
     )
@@ -34,7 +34,7 @@ internal object BnWireVocabulary {
     )
 
     internal val SCROLL_IGNORED_CONTAINER_STYLES = setOf(
-        "flexDirection", "justifyContent", "alignItems", "flexWrap", "gap", "padding",
+        "flexDirection", "justifyContent", "alignItems", "flexWrap", "gap", "padding", "paddingTop", "paddingRight", "paddingBottom", "paddingLeft",
     )
 
     internal val MEASURED_NODE_TYPES = setOf(
@@ -70,6 +70,7 @@ internal object BnWireVocabulary {
 internal enum class BnHostEvent(val wireName: String) {
     Back("back"), // reserved
     Navigate("navigate"), // reserved
+    SafeAreaChanged("safeAreaChanged"), // reserved
     OnResume("onResume"), // passthrough
     OnPause("onPause"), // passthrough
     OnDestroy("onDestroy"), // passthrough

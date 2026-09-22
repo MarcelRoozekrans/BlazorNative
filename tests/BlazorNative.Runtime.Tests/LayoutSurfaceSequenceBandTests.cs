@@ -80,11 +80,15 @@ public sealed class LayoutSurfaceSequenceBandTests : IDisposable
     /// <c>ForwardContainerParameters</c> the parameter name.</summary>
     internal static readonly (string Parameter, string Wire)[] ContainerNames =
     {
-        ("Padding", "padding"),
-        ("Justify", "justifyContent"),
-        ("Align",   "alignItems"),
-        ("Wrap",    "flexWrap"),
-        ("Gap",     "gap"),
+        ("Padding",       "padding"),
+        ("Justify",       "justifyContent"),
+        ("Align",         "alignItems"),
+        ("Wrap",          "flexWrap"),
+        ("Gap",           "gap"),
+        ("PaddingTop",    "paddingTop"),
+        ("PaddingRight",  "paddingRight"),
+        ("PaddingBottom", "paddingBottom"),
+        ("PaddingLeft",   "paddingLeft"),
     };
 
     /// <summary>The wire names <see cref="BnLayoutItem.EmitItemAttributes"/> and

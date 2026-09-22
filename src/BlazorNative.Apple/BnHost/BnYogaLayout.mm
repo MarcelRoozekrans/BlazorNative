@@ -567,6 +567,14 @@ static int bn_apply_length(YGNodeRef node,
 
 static void bn_set_padding(YGNodeRef n, float v) { YGNodeStyleSetPadding(n, YGEdgeAll, v); }
 static void bn_set_padding_percent(YGNodeRef n, float v) { YGNodeStyleSetPaddingPercent(n, YGEdgeAll, v); }
+static void bn_set_padding_top(YGNodeRef n, float v)             { YGNodeStyleSetPadding(n, YGEdgeTop, v); }
+static void bn_set_padding_top_percent(YGNodeRef n, float v)     { YGNodeStyleSetPaddingPercent(n, YGEdgeTop, v); }
+static void bn_set_padding_right(YGNodeRef n, float v)           { YGNodeStyleSetPadding(n, YGEdgeRight, v); }
+static void bn_set_padding_right_percent(YGNodeRef n, float v)   { YGNodeStyleSetPaddingPercent(n, YGEdgeRight, v); }
+static void bn_set_padding_bottom(YGNodeRef n, float v)          { YGNodeStyleSetPadding(n, YGEdgeBottom, v); }
+static void bn_set_padding_bottom_percent(YGNodeRef n, float v)  { YGNodeStyleSetPaddingPercent(n, YGEdgeBottom, v); }
+static void bn_set_padding_left(YGNodeRef n, float v)            { YGNodeStyleSetPadding(n, YGEdgeLeft, v); }
+static void bn_set_padding_left_percent(YGNodeRef n, float v)    { YGNodeStyleSetPaddingPercent(n, YGEdgeLeft, v); }
 static void bn_set_gap(YGNodeRef n, float v) { YGNodeStyleSetGap(n, YGGutterAll, v); }
 static void bn_set_gap_percent(YGNodeRef n, float v) { YGNodeStyleSetGapPercent(n, YGGutterAll, v); }
 static void bn_set_margin(YGNodeRef n, float v) { YGNodeStyleSetMargin(n, YGEdgeAll, v); }
@@ -703,6 +711,22 @@ int32_t bn_yoga_node_set_style(bn_yoga_node handle, const char* name, const char
     if (strcmp(name, "padding") == 0) {
         return bn_apply_length(node, bn_parse_length(name, value, 0, 0, 0),
                                bn_set_padding, bn_set_padding_percent, NULL);
+    }
+    if (strcmp(name, "paddingTop") == 0) {
+        return bn_apply_length(node, bn_parse_length(name, value, 0, 0, 0),
+                               bn_set_padding_top, bn_set_padding_top_percent, NULL);
+    }
+    if (strcmp(name, "paddingRight") == 0) {
+        return bn_apply_length(node, bn_parse_length(name, value, 0, 0, 0),
+                               bn_set_padding_right, bn_set_padding_right_percent, NULL);
+    }
+    if (strcmp(name, "paddingBottom") == 0) {
+        return bn_apply_length(node, bn_parse_length(name, value, 0, 0, 0),
+                               bn_set_padding_bottom, bn_set_padding_bottom_percent, NULL);
+    }
+    if (strcmp(name, "paddingLeft") == 0) {
+        return bn_apply_length(node, bn_parse_length(name, value, 0, 0, 0),
+                               bn_set_padding_left, bn_set_padding_left_percent, NULL);
     }
     if (strcmp(name, "gap") == 0) {
         return bn_apply_length(node, bn_parse_length(name, value, 0, 0, 0),
