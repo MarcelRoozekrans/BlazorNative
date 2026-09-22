@@ -2365,7 +2365,7 @@ phase added no test to any shell suite. **No ABI, wire, or public-API change.**
 > iOS returns `Ok` where Android returns `Unavailable`: a new instance of M14's own target class,
 > found by this phase. Filed as #356.**
 
-#### Phase 14.4: Device observability, docs, and the device lane [status: pending]
+#### Phase 14.4: Device observability, docs, and the device lane [status: active]
 **Goal:** Make `Debug` and `Verbose` observable on real hardware, land the four documentation
 landmines the device run found, and integrate the externally-offered staging script and
 `ios-arm64` CI lane. The lane is the only externally-dependent item in M14; the rest of the phase
