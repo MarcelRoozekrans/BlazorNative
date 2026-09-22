@@ -164,13 +164,27 @@ whereas a late one invalidates the DoD.
 
 ## Open questions
 
-- **14.3's decision is not pre-made.** Align the read to the stored ACL
-  (`.deviceOwnerAuthenticationWithBiometrics`, which `BnBiometrics` already uses); relax the ACL to
-  `.userPresence`; or keep the behaviour and document that `requireAuth: true` means device-owner
-  authentication, passcode included. The hardware result removes the "spurious refusal" argument
-  for the first but does not pick between them. **Resolve at the start of 14.3.**
-- **What shape should the device CI lane take?** @ceesalberts offered a staging script plus an
-  `ios-build`-on-device lane and awaits a preferred shape. **Needs an answer before 14.4 can plan.**
+*Both questions this milestone opened with are now answered. Kept with their resolutions rather
+than deleted, so the audit can see what was decided and on what evidence.*
+
+- ~~**14.3's decision is not pre-made.**~~ **RESOLVED 2026-09-22 — align the read to the stored
+  ACL.** Reading the code collapsed the three-way choice: **seven** sites answer "what counts as
+  authentication" and the split was **6-to-1**, with only the Apple storage *read* disagreeing —
+  and it was the one that weakened the guarantee. Both alternatives were widenings dressed as
+  consistency. The biometric-lockout trade-off was accepted explicitly; no new status ships. See
+  the 14.3 close block in ROADMAP.md.
+- ~~**What shape should the device CI lane take?**~~ **RESOLVED — answered on
+  [#17](https://github.com/MarcelRoozekrans/BlazorNative/issues/17) before 14.4 planning began.**
+  Split at the **secrets boundary**: the unsigned, deterministic half — RID, runtime pack, Yoga
+  flags, link, slice verification — runs in CI on every PR as a **matrix over RID** in `ios.yml`,
+  reusing the publish step, the `IL2072`-is-exactly-4 assert and the `nm -gU` export gate. The
+  signing, provisioning and install half **cannot** live in CI for a public repo, because fork PRs
+  cannot read secrets, so it ships as a committed human-run script. The device leg ends at
+  `xcodebuild build`, not `test` — there is no device to run XCTest on. It **gates on `vtool`
+  `LC_BUILD_VERSION`**, because `lipo -info` reports `arm64` for *both* slices and so cannot catch
+  a wrong-slice stage; a lane that silently built a simulator slice would certify the very thing it
+  exists to check. **14.4 builds the CI half in-repo** (owner decision, 2026-09-22) rather than
+  waiting on the external contribution; the human-run script stays with @ceesalberts.
 
 ## Audit History
 

@@ -2312,7 +2312,8 @@ scoping decision 3 predicted.
 #### Phase 14.3: Auth semantics [status: complete]
 **Goal:** Close **#213 item 1**. Decide one answer to what `requireAuth` means, pin the stored
 keychain ACL against the read policy, and cover the read-side contract that the device run could
-not exercise. The decision is **open** — see MILESTONE.md.
+not exercise. ~~The decision is **open**~~ — **decided 2026-09-22: biometry.** See the close block
+below.
 **Surface:** Backend
 **HelpWanted:** no
 **Design:** [`docs/superpowers/specs/2026-09-22-phase-14.3-design.md`](../superpowers/specs/2026-09-22-phase-14.3-design.md)
