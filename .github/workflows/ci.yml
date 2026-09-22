@@ -4,7 +4,7 @@
 #
 #   build-test (windows-latest) — the local verification procedure verbatim
 #   (setup.ps1 §1–7 documents the toolchain pins):
-#     build (analyzers ride it) → .NET tests (1106 passed / 0 skipped) →
+#     build (analyzers ride it) → .NET tests (1109 passed / 0 skipped) →
 #     three NativeAOT publishes of samples/BlazorNative.SampleApp — the
 #     publish head since Phase 8.0: the app owns PublishAot, the exports stay
 #     in Runtime via UnmanagedEntryPointsAssembly, and the artifact is
@@ -2123,7 +2123,20 @@ jobs:
       # place in this phase a Theory (not a Fact) is the right shape, because
       # the five files are independent claims that must each fail loudly and
       # by name rather than being folded into one pass/fail Fact.
-      - name: .NET tests (assert 1106 passed / 0 skipped)
+      # 1106 -> 1109 (14.3 auth semantics, +3): the Apple authorized read now
+      # demands biometry, matching the `.biometryCurrentSet` ACL its write
+      # attaches, and the change is held by a differential pin rather than by
+      # the one-token fix. AuthSemanticsDriftTests adds THREE facts over
+      # `src/auth-semantics.json`: every declared site still carries its
+      # declared authenticator token; every authenticator token occurring in
+      # either shell's non-test source is declared or explicitly ignored with a
+      # written reason, so an eighth opinion about what counts as
+      # authentication reds the build; and the completeness scan is not
+      # vacuous -- it saw both shells and found occurrences, which is 14.1's
+      # open residual closed here rather than repeated. Tasks 3 and 4 move no
+      # count: the demo's plain-Get button corrected an existing stale literal
+      # in BnSecureDemoTests, and the `Unavailable` correction is comment-only.
+      - name: .NET tests (assert 1109 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -2141,8 +2154,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 1106 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 1106 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 1109 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 1109 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # ── NativeAOT publishes + nine-export verification ────────────────────
