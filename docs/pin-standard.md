@@ -342,8 +342,10 @@ count of *implementations* is the one that must stay at one.
 
 The tenth caller is the one that makes the point. `CommentStrippedSource` lived in
 `tests/BlazorNative.Runtime.Tests`, and neither of the other two test projects referenced it, so
-there was exactly one implementation and two thirds of the suite could not call it. That is not a
-tidiness problem. `ShellStyleTableDriftTests` in `BlazorNative.Renderer.Tests` carried a
+there was exactly one implementation and **two of the three test projects could not call it**.
+By test count that is the smaller share -- 167 of 1132 -- and the count is the wrong measure: what
+was out of reach was not a fraction of the assertions but every pin either of those projects will
+ever carry. That is not a tidiness problem. `ShellStyleTableDriftTests` in `BlazorNative.Renderer.Tests` carried a
 **disclosed false green** over block-commented dispatch arms whose own comment named the fix and
 named the blocker: the helper was in the wrong project. It cost nothing to move it to
 `tests/Shared` and link it through `tests/Directory.Build.props` the way `BnRepo.cs` is linked, and

@@ -541,9 +541,32 @@ public sealed class ComponentReferenceDriftTests : IClassFixture<ComponentRefere
             (@"awaits \.razor compilation", "The typed overload awaits .razor compilation."),
         ];
 
-        Assert.Equal(
-            BannedProse.Select(b => b.Pattern).OrderBy(p => p, StringComparer.Ordinal),
-            fixtures.Select(f => f.Pattern).Distinct().OrderBy(p => p, StringComparer.Ordinal));
+        // THE COUPLING between the fixture rows and the pattern list. Set equality,
+        // spelled out as two differences so the failure can say WHICH way it broke:
+        // an xUnit sequence diff names the strings and says nothing about the repair,
+        // which is the state that teaches the next author to edit the fixture instead
+        // of the pattern. This is the shape PackagePurityTests' alternation coupling
+        // mirrors; 15.1 task 4b brought the exemplar up to the same bar.
+        List<string> unfixtured = BannedProse.Select(b => b.Pattern)
+            .Except(fixtures.Select(f => f.Pattern)).ToList();
+        List<string> orphaned = fixtures.Select(f => f.Pattern)
+            .Except(BannedProse.Select(b => b.Pattern)).Distinct().ToList();
+
+        Assert.True(unfixtured.Count == 0 && orphaned.Count == 0,
+            "The fixture rows are no longer set-equal to BannedProse.\n"
+            + $"    unfixtured: {DescribePatterns(unfixtured)}  <- banned patterns with NO fixture row\n"
+            + $"    orphaned:   {DescribePatterns(orphaned)}  <- fixture rows matching no live pattern\n"
+            + "An UNFIXTURED pattern is what this equality exists for: it is a live banned "
+            + "pattern that nothing below ever runs the detector against, so it can be reworded "
+            + "past its subject and PublishedDocs_SpeakToConsumers_NotToTheRepo will report zero "
+            + "violations forever while the published docs fill up with repo-speak. That is "
+            + "exactly how the /\\bgolden\\b/ plural was lost once already. Add a row carrying a "
+            + "phrase in the shape the shipped XML really wrote.\n"
+            + "An ORPHANED row means a pattern was removed or respelled and the fixture was not "
+            + "moved with it. Re-point the row at the pattern's new spelling, or -- if the "
+            + "pattern is genuinely gone -- delete both together and say so. Deleting the row "
+            + "alone, or this assertion, silently narrows what the control covers, which is the "
+            + "defect census item 8 recorded.");
 
         foreach (var (pattern, phrase) in fixtures)
         {
@@ -608,6 +631,12 @@ public sealed class ComponentReferenceDriftTests : IClassFixture<ComponentRefere
         (@"\bfile header\b", "the reader is looking at a web page, not your source file"),
         (@"awaits \.razor compilation", "it does not — Razor components compile today"),
     ];
+
+    /// <summary>Pattern lists for a failure message: `/…/` per entry, `(none)` when
+    /// empty, so an empty side reads as an answer rather than as a missing value.</summary>
+    private static string DescribePatterns(IReadOnlyCollection<string> patterns)
+        => patterns.Count == 0 ? "(none)" : string.Join(" ", patterns.Select(p => $"/{p}/"));
+
 
     /// <summary>THE DETECTOR, factored out so the pin and both of its positive
     /// controls run the same code. A control that re-implemented this loop would

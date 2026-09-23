@@ -348,7 +348,17 @@ public sealed class ShellStyleTableDriftTests
     };
 
     /// <summary>The OLD extractor, kept ONLY as the thing the negative control rules
-    /// out: every quoted string in the body, arm or not. Nothing else may call it.</summary>
+    /// out: every quoted string in the body, arm or not. Nothing else may call it.
+    ///
+    /// IT READS RAW SOURCE AND MUST KEEP DOING SO. <see cref="ParseNameTable"/> strips
+    /// comments as of 15.1 task 4b; this deliberately does not, and the asymmetry is
+    /// load-bearing rather than an oversight nobody got to. Three of the negative
+    /// control's Apple fixed points -- `gap`, `scroll`, `a modal node` -- are comment
+    /// text, and its `bag.Contains` half asserts they are STILL PRESENT in the body.
+    /// Route this through the shared stripper and those three vanish from the bag, so
+    /// the control reds naming fixed points that were never the problem, and the next
+    /// author deletes the rows. Do not consolidate this onto CommentStrippedSource on
+    /// a Rule 8 tidy-up pass: same file, two extractors, on purpose.</summary>
     private static HashSet<string> EveryQuotedString(string relativePath, string pattern)
     {
         var match = Regex.Match(ReadShellSource(relativePath), pattern, RegexOptions.Singleline);
@@ -389,9 +399,21 @@ public sealed class ShellStyleTableDriftTests
     /// existed — it shows the collection defect operating on a genuine manifest name
     /// instead of a name invented to prove a point.
     ///
+    /// **That demonstration is now HISTORICAL rather than live**: since 15.1 task 4b
+    /// the stripper removes `gap` before the parse, so this row records what the old
+    /// extractor did rather than standing guard against its return. The Apple row's
+    /// own comment states the consequence in full.
+    ///
     /// Limits (Rule 5): this controls the OVER-match direction only. Under-matching —
     /// an arm shape the grammar misses — is caught by the three facts above going red,
-    /// and by <see cref="ParseNameTable"/>'s own no-arms-found guard.</summary>
+    /// and by <see cref="ParseNameTable"/>'s own no-arms-found guard.
+    ///
+    /// AND THE APPLE ROW IS WEAKER THAN THE OTHER TWO SINCE 15.1 TASK 4B: three of its
+    /// four fixed points are comment-derived, and <see cref="ParseNameTable"/> now
+    /// strips comments, so their absence half is trivially satisfied. A full widening
+    /// is still caught; a depth-preserving one is not. The full statement, the
+    /// measurement behind it, and why no same-depth replacement exists are written at
+    /// that row rather than summarised here.</summary>
     [Fact]
     public void TheNameExtractor_CollectsArmLabelsOnly_NotEveryQuotedString()
     {
@@ -414,6 +436,41 @@ public sealed class ShellStyleTableDriftTests
                 "SetStyle for unknown nodeId ${p.nodeId}: ignored",
                 "SetStyle '${p.property}' not yet supported (Phase 3+ extends)",
             }),
+            // THIS ROW IS WEAKER THAN THE OTHER TWO SINCE 15.1 TASK 4B. Routing
+            // ParseNameTable through CommentStrippedSource.Strip closed a false green
+            // in the three facts above and, in the same edit, took the teeth out of
+            // three of this row's four fixed points. The disclosure belongs here,
+            // where the rows are, and not in a phase document.
+            //
+            // WHICH WENT TRIVIAL: `gap`, `scroll` and `a modal node` are all COMMENT
+            // text. Their `bag.Contains` half still bites -- EveryQuotedString reads
+            // RAW source, deliberately, and that asymmetry is load-bearing -- but the
+            // stripper removes them before ParseNameTable ever sees them, so their
+            // `Assert.False(parsed.Contains(...))` half is now trivially true and can
+            // never fire. The fourth, `BnWidgetMapper`, is live code, but it sits one
+            // indent level below the `case` labels, so the outermost-depth filter
+            // drops it whatever the grammar does.
+            //
+            // WHAT THIS ROW STILL BUYS, measured rather than asserted. A FULL revert
+            // to the old every-quoted-string extractor is still caught: it reds on
+            // Kotlin's `row`. What it no longer catches is a DEPTH-PRESERVING widening
+            // -- any quoted string on a line at the arms' own depth -- which is green
+            // across all four facts. So this row rules out a comment-collecting
+            // extractor, and no longer rules out a widened arm grammar.
+            //
+            // NO SAME-DEPTH LIVE-CODE REPLACEMENT EXISTS, and that was measured, not
+            // assumed. At the depth of the `case` labels this body contains the three
+            // arms and nothing else. The cause is structural and survives any
+            // rewording: Swift puts `case` at `switch` depth, so every live quoted
+            // string in the body is at least one level deeper, while Kotlin puts its
+            // `when` arms one level in -- level with the guard's `Log.w` and the
+            // `else ->` fallback, which is exactly why the Kotlin visual row above
+            // keeps full teeth. Widen ITS grammar the same way and it reds naming
+            // `SetStyle for unknown nodeId ...`. Both directions verified.
+            //
+            // Restoring full strength needs a FIXTURE the detector can be run against,
+            // the way ComponentReferenceDriftTests controls its patterns -- not another
+            // name mined out of this body. Recorded rather than papered over.
             (AppleWidgetMapper, AppleHandleSetStyleBody, "handleSetStyle", new[]
             {
                 // `gap` and `scroll` come from a COMMENT's worked example
