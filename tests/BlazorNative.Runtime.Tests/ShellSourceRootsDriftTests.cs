@@ -598,37 +598,36 @@ internal static class ShellSourceRoots
 //       - `TheTestBundleExemption_IsRealAndStillHoldsNSLog` runs through here,
 //         so a filter broad enough to blind it reds — but a filter keyed on one
 //         package is not broad enough, and that control lives in another package.
-//       - `AuthSemanticsDriftTests.TheAliasDetector_StillMatchesTheShapeItWasWrittenFor`
-//         drives `PatternHits` over AndroidShellBridge.kt's OWN text, so a filter
-//         keyed on THAT file's content reds it. MEASURED, both directions: a
-//         `text.Contains("package io.blazornative.shell") ? [] : …` inside
-//         `PatternHits`, with an authenticator-namespace binding planted in that
-//         file, reds 4 facts INCLUDING that control — while the ban itself stays
-//         green. The SAME filter keyed on `package io.blazornative.jni`, with the
-//         binding planted in `src/main/kotlin` instead, is **31 of 31 GREEN** over
-//         the four `ShellSourceScan` consumers — the filter is named because the
-//         figure was twice written without one and twice read as derived rather
-//         than run. A control's fixture only covers the tree its fixture comes
-//         from. The SHAPE has now survived three re-measurements across three
-//         rounds; only the denominator moved, and it moved because facts were
-//         added.
+//       - `AuthSemanticsDriftTests`' two ban controls drive `PatternHitsAcrossLines`
+//         over AndroidShellBridge.kt's OWN text, so a filter keyed on THAT file's
+//         content reds them. MEASURED, both directions, over the four
+//         `ShellSourceScan` consumers: a
+//         `text.Contains("package io.blazornative.shell")` short-circuit inside
+//         `PatternHitsAcrossLines`, with a binding planted in that file, reds **1**
+//         — the control — while the ban itself stays green. The SAME filter keyed
+//         on `package io.blazornative.jni`, with the binding in `src/main/kotlin`
+//         instead, is **31 of 31 GREEN**. A control's fixture only covers the tree
+//         its fixture comes from. The SHAPE has now survived four re-measurements
+//         across four rounds; the denominators moved with the fact count, which is
+//         why every one of them names its filter.
 //       - `TheInstrumentedTestExemption_IsRealAndStillHoldsBareLogI` does NOT
 //         run through here at all: its tree is roster-EXCLUDED, so it walks
 //         itself and only shares the PATTERN. An earlier draft named it as cover,
 //         which overstated it by exactly one control — measured: a total blind of
 //         `ForPattern` reds 5 facts and that one is not among them.
 //
-//     AND `ForPattern` ITSELF IS A SECOND SITE, which is new in 15.2 and is
-//     disclosed rather than discovered later. Splitting `PatternHits` out so a
-//     fixture could drive the production matcher left `ForPattern`'s lambda as
-//     one expression OUTSIDE it. MEASURED: the same content filter placed there
-//     instead — `text => text.Contains(…) ? [] : PatternHits(text, pattern)` —
-//     blinds the alias ban with a live alias planted, and its control does NOT
-//     notice, because the control calls `PatternHits` directly. Three unrelated
-//     facts reddened on that tree's other contents; the alias fact was not one
-//     of them. The split did not create the class — limit A already was this
-//     class — but it did widen it by one expression, and that is the honest
-//     accounting.
+//     AND THE `ForPattern*` LAMBDAS ARE A SECOND SITE, disclosed in the commits
+//     that created them rather than discovered later. Splitting the matcher out so
+//     a fixture could drive it left each door's lambda as one expression OUTSIDE
+//     the matcher. MEASURED on the across-lines twin: `text =>
+//     text.Contains(…) ? [] : PatternHitsAcrossLines(text, pattern)` inside
+//     `ForPatternAcrossLines` is **31 of 31 GREEN** with a live binding planted,
+//     and neither ban control notices, because both call the matcher directly.
+//     `AssertTheBanIsWiredToTheAcrossLinesMatcher` holds the chain's first two
+//     links — the ban names this door, the door names that matcher — and cannot
+//     see a condition added INSIDE this body. The splits did not create the class;
+//     limit A already was this class. They widened it by one expression each, and
+//     that is the honest accounting.
 //     Direction: FAILS GREEN.
 //
 //  B. REWRITING A FACT'S BODY. MEASURED GREEN, twice: reassigning the hit array
@@ -893,6 +892,62 @@ internal static class ShellSourceScan
         => CommentStrippedSource.NumberedCodeLinesOf(text)
             .SelectMany(l => Regex.Matches(l.Text, pattern)
                 .Select(m => new RawHit(l.Number, l.Text.Trim(), m.Value)));
+
+    /// <summary>THE SAME MATCH, WITHOUT THE LINE BOUNDARY — for a pattern whose
+    /// subject is a CALL rather than a declaration, because a call wraps.
+    ///
+    /// <para>WHY IT EXISTS, measured: <see cref="PatternHits"/> matches per line, so
+    /// <c>.setDeviceCredentialAllowed(\n true \n)</c> — a device-credential-accepting
+    /// prompt — was <b>31 of 31 GREEN</b> in the shipped shell and its template
+    /// mirror, while the identical defect on one line reds. That is not an exotic
+    /// formatting: the shell's own Kotlin opens a paren at end of line <b>96</b>
+    /// times. A detector whose whole job is to refuse a call cannot be defeated by
+    /// pressing Enter.</para>
+    ///
+    /// <para>A SIBLING ENTRY POINT, NOT A FLAG ON <see cref="PatternHits"/>, and that
+    /// is the pin standard's own Rule 8 corollary rather than a preference. A
+    /// <c>acrossLines: true</c> parameter would need a default for the callers who
+    /// must NOT get this behaviour — <c>NSLogDriftTests</c>, <c>AndroidLogDriftTests</c>
+    /// and the auth pin's credential-caller count all report the LINE TEXT in their
+    /// failure messages, which does not exist for a match spanning lines. A sibling
+    /// leaves those unchanged BY CONSTRUCTION instead of by re-verification.</para>
+    ///
+    /// <para>THE LINE REPORTED is the one the match's first non-whitespace character
+    /// sits on, never the line the match STARTS on: a pattern opening with
+    /// <c>\s*</c> can pull the match back across a newline and would otherwise blame
+    /// the line above. <c>Text</c> is the match with its internal whitespace
+    /// collapsed, so a wrapped call prints as one readable line in a failure
+    /// message.</para>
+    ///
+    /// <para>WHAT IT DOES NOT CHANGE: everything limit A says. It is the same shared
+    /// matcher, reachable by the same content-keyed filter, and it shares
+    /// <c>Over</c>'s walk and coverage record.</para></summary>
+    internal static IEnumerable<RawHit> PatternHitsAcrossLines(string text, string pattern)
+    {
+        string stripped = CommentStrippedSource.Strip(text);
+
+        foreach (Match m in Regex.Matches(stripped, pattern))
+        {
+            int at = m.Index;
+            int end = m.Index + m.Length;
+            while (at < end && char.IsWhiteSpace(stripped[at])) at++;
+
+            int line = 1;
+            for (int k = 0; k < at; k++) if (stripped[k] == '\n') line++;
+
+            yield return new RawHit(line, Collapse(m.Value), Collapse(m.Value));
+        }
+    }
+
+    /// <summary>A multi-line match, on one line, for a failure message.</summary>
+    private static string Collapse(string s) => Regex.Replace(s, @"\s+", " ").Trim();
+
+    /// <summary><see cref="ForPattern"/>'s twin over
+    /// <see cref="PatternHitsAcrossLines"/>. Same walk, same roster resolution, same
+    /// coverage record — only the line boundary is gone.</summary>
+    internal static Result ForPatternAcrossLines(
+        string consumer, string? set, string[] extensions, string pattern)
+        => Over(consumer, set, extensions, text => PatternHitsAcrossLines(text, pattern));
 
     /// <summary>READS <paramref name="path"/>, and records the file it read —
     /// naming it from THAT SAME PATH.

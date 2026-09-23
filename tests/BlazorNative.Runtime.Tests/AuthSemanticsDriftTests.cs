@@ -724,17 +724,26 @@ public sealed class AuthSemanticsDriftTests
     /// as an example.</description></item>
     /// <item><description>A CONTENT-KEYED FILTER INSIDE THE SHARED MATCHER blinds
     /// this fact, and its own control only notices when the filter also blinds the
-    /// control's fixture. MEASURED both ways: keyed on
-    /// <c>package io.blazornative.shell</c> — the file the fixture is spliced from
-    /// — it reds 4 facts including the control; keyed on
-    /// <c>package io.blazornative.jni</c>, with the binding planted under
-    /// <c>src/main/kotlin</c> instead, the set is <b>31 of 31 GREEN</b>. FAILS GREEN.
-    /// This is limit A at <c>ShellSourceScan</c>, not a new one, and it is repeated
-    /// here because a pin's limits belong where the pin is. THE DENOMINATOR NAMES ITS
-    /// FILTER — the four <c>ShellSourceScan</c> consumers, AuthSemantics,
-    /// ShellSourceRoots, NSLog and AndroidLog — because the previous figure was
-    /// written from a run over a different filter and read as derived. A count with
-    /// no filter beside it cannot be reproduced and will drift again.</description></item>
+    /// control's FIXTURE. MEASURED both ways, inside
+    /// <c>PatternHitsAcrossLines</c> with a live binding planted: keyed on
+    /// <c>package io.blazornative.shell</c> — the file the fixture is spliced from —
+    /// it reds <b>1</b>, the control, while the ban itself stays green; keyed on
+    /// <c>package io.blazornative.jni</c>, with the binding under
+    /// <c>src/main/kotlin</c> instead, the set is <b>31 of 31 GREEN</b>. A control's
+    /// fixture only covers the tree its fixture comes from. FAILS GREEN. This is
+    /// limit A at <c>ShellSourceScan</c>, not a new one, and it is repeated here
+    /// because a pin's limits belong where the pin is.</description></item>
+    /// <item><description>A FILTER IN <c>ForPatternAcrossLines</c>'S OWN LAMBDA —
+    /// outside the matcher, so no control that calls the matcher directly can see it.
+    /// <b>31 of 31 GREEN</b> with a live binding. The two text assertions in
+    /// <see cref="AssertTheBanIsWiredToTheAcrossLinesMatcher"/> hold the chain's first
+    /// two links; this shape adds a condition INSIDE a body they only check the
+    /// delegation of. FAILS GREEN.</description></item>
+    /// <item><description>EVERY DENOMINATOR HERE NAMES ITS FILTER — the four
+    /// <c>ShellSourceScan</c> consumers, AuthSemantics, ShellSourceRoots, NSLog and
+    /// AndroidLog. An earlier figure was written from a run over a different filter
+    /// and read as derived; a count with no filter beside it cannot be reproduced and
+    /// will drift again.</description></item>
     /// </list></summary>
     [Fact]
     public void NoShellSource_AliasesAnAuthenticatorNamespace()
@@ -743,8 +752,8 @@ public sealed class AuthSemanticsDriftTests
         // here to put a one-line filter in, and the call that proves coverage
         // returns the very array the assertion below consumes.
         ShellSourceScan.Hit[] aliases = ShellSourceScan
-            .ForPattern(nameof(AuthSemanticsDriftTests), null, ShellSource,
-                        AuthenticatorNamespaceAlias)
+            .ForPatternAcrossLines(nameof(AuthSemanticsDriftTests), null, ShellSource,
+                                   AuthenticatorNamespaceAlias)
             .HitsCoveringEveryDeclaredRoot();
 
         Assert.True(aliases.Length == 0,
@@ -796,7 +805,7 @@ public sealed class AuthSemanticsDriftTests
     /// <c>import androidx.biometric.BiometricManager</c> in the real
     /// AndroidShellBridge.kt, and the finding's own aliased call replaces the real
     /// <c>setAllowedAuthenticators</c> line. It is then driven through
-    /// <see cref="ShellSourceScan.PatternHits"/> — THE PRODUCTION MATCHER, the one
+    /// <see cref="ShellSourceScan.PatternHitsAcrossLines"/> — THE PRODUCTION MATCHER, the one
     /// <see cref="ShellSourceScan.ForPattern"/> itself calls — so this controls the
     /// path the pin uses rather than a restatement of it. Exactly one hit is
     /// demanded, AT THE LINE THE SPLICE LANDED ON, so line fidelity through the
@@ -811,6 +820,9 @@ public sealed class AuthSemanticsDriftTests
     [Fact]
     public void TheAliasDetector_StillMatchesTheShapeItWasWrittenFor()
     {
+        AssertTheBanIsWiredToTheAcrossLinesMatcher(
+            nameof(NoShellSource_AliasesAnAuthenticatorNamespace));
+
         string[] lines = File.ReadAllText(AuthBearingShellFile())
             .Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
 
@@ -843,7 +855,7 @@ public sealed class AuthSemanticsDriftTests
 
         // The call sits BELOW the import, so the insert shifts it down one line.
         var found = ShellSourceScan
-            .PatternHits(string.Join("\n", spliced), AuthenticatorNamespaceAlias)
+            .PatternHitsAcrossLines(string.Join("\n", spliced), AuthenticatorNamespaceAlias)
             .ToList();
 
         // SCOPED TO THE SPLICED LINE, NOT TO THE WHOLE FIXTURE, and that is a
@@ -896,13 +908,20 @@ public sealed class AuthSemanticsDriftTests
                      // `[\w.]*` cannot cross the space after `static`.
                      ("import static androidx.biometric.BiometricManager.Authenticators.*;",
                       "star-imports its members, so every constant is reachable unqualified"),
+                     // A TYPEALIAS WRAPS TOO. Before the matcher lost its line
+                     // boundary this shape reached the ban's own detector as
+                     // nothing; only the vocabulary at the use site reddened, and
+                     // the vocabulary is exactly the backstop a constant nobody has
+                     // listed does not have.
+                     ("private typealias Auth =\n    BiometricManager.Authenticators",
+                      "binds `Auth`"),
                  })
         {
             var armed = lines.ToList();
             armed.Insert(importAt + 1, construct);
 
             var armHits = ShellSourceScan
-                .PatternHits(string.Join("\n", armed), AuthenticatorNamespaceAlias)
+                .PatternHitsAcrossLines(string.Join("\n", armed), AuthenticatorNamespaceAlias)
                 .Where(h => h.Line == importAt + 2)
                 .ToList();
 
@@ -924,7 +943,7 @@ public sealed class AuthSemanticsDriftTests
         // ── the negative: shapes the ban must NOT claim ──────────────────────
         // A ban that reds on ordinary imports is one the next author weakens rather
         // than obeys, so the narrowness is pinned and not merely promised.
-        var benign = ShellSourceScan.PatternHits(
+        var benign = ShellSourceScan.PatternHitsAcrossLines(
             "import io.blazornative.jni.FlatJson as Json\n"
             + "import androidx.biometric.BiometricPrompt as BP\n"
             + "import kotlinx.coroutines.flow.Flow as KFlow\n"
@@ -1190,7 +1209,8 @@ public sealed class AuthSemanticsDriftTests
     public void NoShellSource_WidensTheGateThroughAPlatformApi()
     {
         ShellSourceScan.Hit[] calls = ShellSourceScan
-            .ForPattern(nameof(AuthSemanticsDriftTests), null, ShellSource, GateWideningApi)
+            .ForPatternAcrossLines(nameof(AuthSemanticsDriftTests), null, ShellSource,
+                                   GateWideningApi)
             .HitsCoveringEveryDeclaredRoot();
 
         Assert.True(calls.Length == 0,
@@ -1215,6 +1235,98 @@ public sealed class AuthSemanticsDriftTests
             + "deliberately as the ignore entries are.");
     }
 
+    /// <summary>THE WIRING, WHICH A FIXTURE CONTROL CANNOT REACH — and this exists
+    /// because a mutation showed the gap rather than because it was designed in.
+    ///
+    /// <para>Both ban controls drive <c>PatternHitsAcrossLines</c> DIRECTLY, because
+    /// their subject tree is required to be empty and a fixture is the only anchor
+    /// available. That proves the MATCHER matches across lines. It proves nothing
+    /// about whether the BAN is wired to that matcher. MEASURED: re-pointing
+    /// <c>ForPatternAcrossLines</c> back at the per-line <c>PatternHits</c> — one
+    /// token — is <b>11 of 11 GREEN</b>, and with a wrapped
+    /// <c>setDeviceCredentialAllowed(\n true \n)</c> live in the shipped shell it is
+    /// <b>31 of 31 GREEN</b>. The controls notice nothing, because they never go
+    /// through the door they are vouching for.</para>
+    ///
+    /// <para>That is the "guard watches producer A, assertion consumes producer B"
+    /// shape this pin family spent three review rounds removing from the ROOT list,
+    /// reappearing one level down in the MATCHER. So the wiring is asserted directly,
+    /// as text, over this file's own source.</para>
+    ///
+    /// <para>WHAT A TEXT ASSERTION BUYS AND WHAT IT DOES NOT. It closes the cheap
+    /// version — the one-token re-point measured above — and it is the same shape as
+    /// <c>EveryConsumer_ReadsItsRootsFromTheRoster</c>, which this repo already
+    /// accepts for exactly this job. It does NOT survive a determined rewiring: a new
+    /// helper named <c>ForPatternAcrossLines</c> that delegates to the per-line
+    /// matcher would satisfy it. FAILS GREEN for that shape, and it is listed as a
+    /// residual rather than described as coverage.</para></summary>
+    private static void AssertTheBanIsWiredToTheAcrossLinesMatcher(string fact)
+    {
+        string source = CommentStrippedSource.Strip(File.ReadAllText(Path.Combine(
+            BnRepo.Root(), "tests", "BlazorNative.Runtime.Tests", "AuthSemanticsDriftTests.cs")));
+
+        int at = source.IndexOf($"public void {fact}()", StringComparison.Ordinal);
+        Assert.True(at >= 0,
+            $"could not find `public void {fact}()` in AuthSemanticsDriftTests.cs. The fact was "
+            + "renamed or restructured, so this wiring check cannot see its subject and must red "
+            + "rather than vouch for a method it did not read. Re-point it deliberately.");
+
+        int end = source.IndexOf("\n    }", at, StringComparison.Ordinal);
+        Assert.True(end > at,
+            $"could not find the end of `{fact}` — no `}}` at method indentation after it. The "
+            + "file's formatting changed under this check; re-point it rather than widening it.");
+
+        string body = source[at..end];
+
+        Assert.True(body.Contains("ForPatternAcrossLines", StringComparison.Ordinal),
+            $"`{fact}` no longer scans through ShellSourceScan.ForPatternAcrossLines.\n"
+            + "  Its detector's whole subject is a CALL, and a call wraps: the shell's own Kotlin "
+            + "opens a paren at end of line 96 times. Through the per-line door, "
+            + "`setDeviceCredentialAllowed(` with `true` on the next line is 31 of 31 GREEN with "
+            + "the weakened prompt live. The fixture controls cannot see this, because they drive "
+            + "the matcher directly — which is why this assertion reads the wiring as text.");
+
+        Assert.False(body.Contains(".ForPattern(", StringComparison.Ordinal),
+            $"`{fact}` calls the PER-LINE ShellSourceScan.ForPattern. That door is correct for "
+            + "NSLogDriftTests, AndroidLogDriftTests and this pin's credential-caller count, whose "
+            + "subjects are single-line declarations and whose failure messages print the line "
+            + "text. It is wrong for a ban on a CALL. Use ForPatternAcrossLines.");
+
+        // ── THE SECOND LINK, AND IT IS WHERE THE MEASUREMENT LANDED ──────────
+        //
+        // Naming the door is not enough, because the DOOR can be re-pointed. The
+        // mutation that exposed this changed `ForPatternAcrossLines`'s own body to
+        // delegate to the per-line `PatternHits` — one token, in the other file —
+        // and the ban kept naming the right door while going through the wrong
+        // matcher. 11 of 11 green, and 31 of 31 with a wrapped offender live.
+        string scan = CommentStrippedSource.Strip(File.ReadAllText(Path.Combine(
+            BnRepo.Root(), "tests", "BlazorNative.Runtime.Tests", "ShellSourceRootsDriftTests.cs")));
+
+        int door = scan.IndexOf("internal static Result ForPatternAcrossLines(", StringComparison.Ordinal);
+        Assert.True(door >= 0,
+            "could not find `ForPatternAcrossLines` in ShellSourceRootsDriftTests.cs. The door "
+            + "this pin's bans walk through was renamed or removed; re-point this check "
+            + "deliberately rather than letting it vouch for a method it did not read.");
+
+        int doorEnd = scan.IndexOf(";", door, StringComparison.Ordinal);
+        Assert.True(doorEnd > door, "ForPatternAcrossLines' expression body has no terminator.");
+
+        Assert.True(
+            scan[door..doorEnd].Contains("PatternHitsAcrossLines", StringComparison.Ordinal),
+            "ShellSourceScan.ForPatternAcrossLines no longer delegates to "
+            + "PatternHitsAcrossLines.\n"
+            + "  MEASURED: pointing it at the per-line `PatternHits` instead is 11 of 11 GREEN on "
+            + "a clean tree and 31 of 31 GREEN with `setDeviceCredentialAllowed(` wrapped onto two "
+            + "lines in the shipped shell. Both ban controls stayed green through it, because "
+            + "they drive the matcher DIRECTLY and never walk through this door.\n"
+            + "  THE CHAIN IS THREE LINKS AND EACH HAS ITS OWN INSTRUMENT: the ban names the door "
+            + "(asserted above), the door names the matcher (asserted here), and the matcher's "
+            + "behaviour across lines is held by the wrapped fixtures in this fact. A fourth "
+            + "shape — a NEW helper called ForPatternAcrossLines that delegates to the per-line "
+            + "matcher — satisfies both text assertions and is listed as a residual rather than "
+            + "described as covered.");
+    }
+
     /// <summary>THE POSITIVE CONTROL FOR <see cref="GateWideningApi"/> (pin standard,
     /// Rule 3). Subject empty by construction, so it is a fixture driven through the
     /// production matcher — the same shape as
@@ -1233,15 +1345,26 @@ public sealed class AuthSemanticsDriftTests
     [Fact]
     public void TheGateWideningDetector_StillMatchesTheShapesItWasWrittenFor()
     {
+        AssertTheBanIsWiredToTheAcrossLinesMatcher(
+            nameof(NoShellSource_WidensTheGateThroughAPlatformApi));
+
         foreach (string offender in new[]
                  {
                      "                .setDeviceCredentialAllowed(true)",
                      "            spec.setUserAuthenticationValidityDurationSeconds(30)",
                      "            spec.setUserAuthenticationValidityDurationSeconds(0)",
                      "            km.createConfirmDeviceCredentialIntent(null, null)",
+                     // WRAPPED, because a call wraps and the detector used to match
+                     // per line. Both of these were 31 of 31 GREEN with a
+                     // device-credential-accepting prompt live in the shipped shell;
+                     // the shell's own Kotlin opens a paren at end of line 96 times,
+                     // so this is the ordinary formatting of the codebase rather
+                     // than an evasion anybody had to invent.
+                     "                .setDeviceCredentialAllowed(\n                    true\n                )",
+                     "            spec.setUserAuthenticationValidityDurationSeconds(\n                30\n            )",
                  })
         {
-            var hit = ShellSourceScan.PatternHits(offender + "\n", GateWideningApi).ToList();
+            var hit = ShellSourceScan.PatternHitsAcrossLines(offender + "\n", GateWideningApi).ToList();
             Assert.True(hit.Count == 1,
                 $"THE GATE-WIDENING DETECTOR NO LONGER MATCHES `{offender.Trim()}` — it reported "
                 + (hit.Count == 0 ? "(nothing)" : string.Join("; ", hit.Select(h => h.Token)))
@@ -1251,12 +1374,20 @@ public sealed class AuthSemanticsDriftTests
                 + "with a live weakened prompt.");
         }
 
-        var safe = ShellSourceScan.PatternHits(
+        var safe = ShellSourceScan.PatternHitsAcrossLines(
             "                .setDeviceCredentialAllowed(false)\n"
             + "            spec.setUserAuthenticationValidityDurationSeconds(-1)\n"
             + "            spec.setUserAuthenticationValidityDurationSeconds( -1 )\n"
             + "            spec.setUserAuthenticationParameters(0, types)\n"
-            + "            spec.setUserAuthenticationRequired(true)\n",
+            + "            spec.setUserAuthenticationRequired(true)\n"
+            // THE SAFE CALLS, WRAPPED. Removing the line boundary is what makes the
+            // offenders above reachable, and the same change is what could have made
+            // these collateral. The reviewed alternative — an arm matching a call
+            // opened and not closed on the line — would have reddened BOTH of these,
+            // which is a false red on the correct call and the thing that teaches a
+            // reader the safe spelling and the unsafe one are the same.
+            + "                .setDeviceCredentialAllowed(\n                    false\n                )\n"
+            + "            spec.setUserAuthenticationValidityDurationSeconds(\n                -1\n            )\n",
             GateWideningApi).ToList();
 
         Assert.True(safe.Count == 0,
@@ -1270,9 +1401,19 @@ public sealed class AuthSemanticsDriftTests
     }
 
     /// <summary>THE EXTENSION LIST ANSWERS TO THE BUILD, the way the roster already
-    /// makes ROOT lists answer to it. This is the repair for #364's fourth route, and
-    /// it is a repair rather than a patch because adding <c>".java"</c> to
-    /// <see cref="ShellSource"/> closes one language and this closes the class.
+    /// makes ROOT lists answer to it. This is the repair for #364's fourth route: it
+    /// is what makes <c>ShellSource</c> stop being a free literal, and it reaches
+    /// exactly the spelling <c>&lt;lang&gt;.srcDirs(…)</c> — no further. The residual
+    /// list below is not a formality; two other spellings of the same Gradle
+    /// declaration are measured green in it.
+    ///
+    /// <para>⚠ THE SENTENCE THAT STOOD HERE — <i>"and this closes the class"</i> — IS
+    /// DELETED. It was a new universal, written six hundred lines below this file's
+    /// own instruction not to write one, and review measured it false three ways
+    /// before the commit was a day old. That is the phase's signature defect
+    /// committed by the person warning about it, so the warning is repeated here
+    /// where the next author will be standing: <b>state the spelling the mechanism
+    /// reaches, and put everything else in the residual list.</b></para>
     ///
     /// <para>THE DEFECT IT ANSWERS. <c>build.gradle.kts</c> declares the Gradle `main`
     /// source set with BOTH <c>java.srcDirs(…)</c> and <c>kotlin.srcDirs(…)</c> over
@@ -1296,12 +1437,27 @@ public sealed class AuthSemanticsDriftTests
     /// <c>java</c> stayed invisible. Classify it into one of the two lists below
     /// deliberately.</para>
     ///
-    /// <para>WHAT IT DOES NOT COVER: the Apple side. <c>project.yml</c> lists target
-    /// PATHS, not languages, so there is no declaration to read — an Objective-C or C
-    /// file inside <c>BnHost</c> would compile and go unscanned, and nothing here would
-    /// say so. FAILS GREEN, and it is named rather than left to be found. The Android
-    /// half is the half where the build states the languages, so it is the half that
-    /// can be pinned.</para></summary>
+    /// <para>WHAT IT DOES NOT COVER, each measured, each FAILS GREEN (pin standard,
+    /// Rule 5):</para>
+    /// <list type="bullet">
+    /// <item><description><c>groovy.srcDir("…")</c> — Gradle's <b>singular</b>
+    /// <c>srcDir</c>, which is a real API and not a typo. <b>31 of 31 GREEN.</b> The
+    /// dotted plural is the control and reds.</description></item>
+    /// <item><description><c>groovy { srcDirs("…") }</c> — the configuration-block
+    /// form, where the language name is not a receiver at all. <b>31 of 31
+    /// GREEN.</b></description></item>
+    /// <item><description>NOT CLOSED BY WIDENING, DELIBERATELY. <c>srcDirs?</c> plus a
+    /// block-form scan would catch these two and the third spelling would arrive with
+    /// the next Gradle release. Four rounds of this pin have been spent chasing
+    /// spellings; the cost of the gap is that a NEW LANGUAGE declared in an unusual
+    /// form goes unscanned, and the cost of chasing is a reader who believes the
+    /// list is complete. Both are disclosed here so the choice is visible.</description></item>
+    /// <item><description>THE APPLE SIDE HAS NO DECLARATION TO READ. <c>project.yml</c>
+    /// lists target PATHS, not languages, so an Objective-C or C file inside
+    /// <c>BnHost</c> would compile and go unscanned and nothing here would say so. The
+    /// Android half is the half where the build states its languages, so it is the
+    /// half that can be pinned at all.</description></item>
+    /// </list></summary>
     [Fact]
     public void TheScannedExtensions_CoverEveryLanguageTheBuildCompiles()
     {
@@ -1348,14 +1504,29 @@ public sealed class AuthSemanticsDriftTests
             .OrderBy(x => x, StringComparer.Ordinal)
             .ToList();
 
-        // ANTI-VACUITY. Two members are declared today, java and kotlin, and both are
-        // load-bearing: if this parse stops matching, every assertion below passes
-        // over an empty list and the fact reports green while checking nothing.
-        Assert.True(declared.Count >= 2,
-            $"parsed only {declared.Count} `<member>.srcDirs(` declarations out of the `main` "
-            + "source set, and there are at least 2 — java and kotlin, both over the shell's two "
-            + "source directories. The parse has stopped seeing its subject, so the coverage "
-            + "assertions below are checking nothing.");
+        // ANTI-VACUITY, AS AN IDENTITY RATHER THAN A COUNT — and that distinction was
+        // measured, not preferred. The floor used to read `declared.Count >= 2` while
+        // its own message named java and kotlin, and `kotlin`, `res`, `assets` and
+        // `jniLibs` satisfy a count of two on their own: DELETING
+        // `java.srcDirs(...)` FROM `main` OUTRIGHT WAS 11 OF 11 GREEN. A message that
+        // names two members while the assertion counts any four is a message
+        // describing a file rather than an assertion.
+        string[] required = ["java", "kotlin"];
+        var absent = required.Where(r => !declared.Contains(r, StringComparer.Ordinal)).ToList();
+
+        Assert.True(absent.Count == 0,
+            "src/BlazorNative.Jni/build.gradle.kts no longer declares "
+            + string.Join(" or ", absent) + " in the `main` source set — parsed ["
+            + string.Join(", ", declared) + "].\n"
+            + "  BOTH are load-bearing and neither is bookkeeping. `kotlin.srcDirs` is the line "
+            + "whose ABSENCE once stopped the entire Android shell from being compiled at the "
+            + "AGP 9 migration, unnoticed on main — the build file's own comment tells that "
+            + "story. `java.srcDirs` is what makes .java a compiled language in a declared root, "
+            + "which is #364's fourth route.\n"
+            + "  If a language genuinely stopped being compiled here, remove its extension from "
+            + "ShellSource and its entry from the map above in the same edit, deliberately. Do "
+            + "not weaken this assertion back into a count: a count is what let the java "
+            + "declaration be deleted with every test green.");
 
         var unclassified = declared
             .Where(d => !compiled.ContainsKey(d) && !notSource.Contains(d, StringComparer.Ordinal))
@@ -1388,6 +1559,48 @@ public sealed class AuthSemanticsDriftTests
             + "its candidates from this same list. Add the extension to ShellSource. Narrowing "
             + "this map instead makes the pin agree with itself about a tree it no longer reads, "
             + "which is the #364 F1 shape one level down.");
+
+        // ── THE ROSTER'S OWN EXTENSION LIST, WHICH IS THE SECOND COPY ────────
+        //
+        // `ShellSource` is not the only unpinned extension literal. Each
+        // `scanRoots[]` entry in src/shell-source-roots.json carries its own, and
+        // that list is what EveryShellSourceFile_IsInsideADeclaredRoot uses to ask
+        // the OTHER question — is there a source file here that no declared root
+        // contains? MEASURED: with a compiled `AuthFlags2.java` under AGP's default
+        // `src/main/java` — a directory no `sets` entry declares — that fact reds and
+        // names the file; narrow the two Android scanRoots back to `[".kt"]` and the
+        // same tree is 31 of 31 GREEN. Two literals, one truth, and only one of them
+        // was answering to the build.
+        //
+        // KEYED ON `.kt` RATHER THAN ON A NEW ROSTER FIELD, on purpose. A container
+        // that scans Kotlin is an Android source container, and the Gradle source set
+        // that compiles its Kotlin compiles its Java from the same directories. That
+        // keeps the roster unchanged — it is a manifest of trees, not of languages,
+        // and giving it a language field to satisfy this fact would be redesigning
+        // the roster to please a test.
+        var thin = ShellSourceRoots.ScanRoots()
+            .Where(r => r.Extensions.Contains(".kt", StringComparer.OrdinalIgnoreCase))
+            .Select(r => (r.Path, Missing: declared
+                .Where(d => compiled.ContainsKey(d))
+                .Select(d => compiled[d])
+                .Where(ext => !r.Extensions.Contains(ext, StringComparer.OrdinalIgnoreCase))
+                .ToList()))
+            .Where(x => x.Missing.Count > 0)
+            .ToList();
+
+        Assert.True(thin.Count == 0,
+            "A scanRoots ENTRY IN " + ShellSourceRoots.ManifestPath + " DOES NOT LIST EVERY "
+            + "LANGUAGE THE BUILD COMPILES:\n"
+            + string.Join("\n", thin.Select(x => $"  {x.Path} — missing {string.Join(", ", x.Missing)}"))
+            + "\n\nThese containers are how EveryShellSourceFile_IsInsideADeclaredRoot finds a "
+            + "source file that no declared root contains — the AGP-default `src/main/java` case, "
+            + "which is compiled and which no `sets` entry names. An extension missing here makes "
+            + "that whole question unaskable for that language, silently: measured, a live "
+            + "Authenticators.DEVICE_CREDENTIAL in such a file is 31 of 31 GREEN with these lists "
+            + "narrowed to `.kt`.\n"
+            + "  Add the extension to the scanRoots entry. If a language genuinely stopped being "
+            + "compiled, take it out of the map above in the same edit — there is one truth here "
+            + "and three places that have to agree with it.");
     }
 
     /// <summary>The Android shell file the auth surface lives in, repo-relative.
