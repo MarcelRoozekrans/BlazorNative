@@ -373,8 +373,11 @@ milliseconds.
 | `ShellStyleTableDriftTests`, all 3 facts | **yes** — `ParseNameTable` ends `Assert.NotEmpty(names)` | conforms |
 | `DispatchSurfaceDriftTests.EveryDispatchNamedDeclaration_IsDeclaredOrIgnored` | **yes** — `Surface()` asserts `methods.Count >= 4` | conforms |
 
-Every one of the four facts that can pass while scanning nothing **already has an anti-vacuity
-assertion, and executes it**. The census found this and it is the sharpest thing it found: the useful
+Every one of the four facts that could pass while scanning nothing **already had an anti-vacuity
+assertion, and executed it**. *(All four were closed by phase 15.1, tasks 1 and 2. The figures in
+this section — 4 true positives against 98 facts flooring through shared helpers — are the
+population as 15.0 censused it, and the cost argument below is made against that population. See
+the closing note on why this verdict is revisitable rather than settled.)* The census found this and it is the sharpest thing it found: the useful
 distinction is not *has a floor* but **which side of the comparison the floor guards**.
 
 - `ShellStyleTableDriftTests` computes `routed.Except(dispatched)` and floors `dispatched` — the set
@@ -437,10 +440,12 @@ Nothing that claims to be enforcement. Three honest things instead:
   achievable claim from *this pin is floored*.
 
 And one trap for whatever sweep looks for the gaps: **read the assertion, never the comment above
-it.** `ReleaseWorkflowPinTests` labels an assertion **"THE POSITIVE CONTROL, first"** and that
+it.** `ReleaseWorkflowPinTests` labelled an assertion **"THE POSITIVE CONTROL, first"** and that
 assertion is a Rule 4 subject-moved guard — it proves the file is still the release path and proves
 nothing about the `VersionOverride` regex that is the actual detector. A grep for the phrase would
-score it as done.
+have scored it as done. *(Phase 15.1 corrected the label and gave that detector a real control. The
+lesson outlives the instance, which is why it stays: the mislabel was found by reading the
+assertion, and nothing mechanical would have found it.)*
 
 ### This verdict is a judgement about cost, and nothing pins it
 

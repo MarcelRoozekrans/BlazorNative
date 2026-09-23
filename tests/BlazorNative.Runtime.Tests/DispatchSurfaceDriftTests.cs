@@ -329,6 +329,79 @@ public sealed class DispatchSurfaceDriftTests
     // that limit).
     // ─────────────────────────────────────────────────────────────────────────
 
+    /// <summary>MEASURED, NOT GUESSED (pin standard Rule 2's corollary). The Kotlin
+    /// runtime declares EIGHT distinct <c>dispatch*</c> names today — the four the
+    /// manifest guards minus Swift-only asymmetry (<c>dispatchEvent</c>,
+    /// <c>dispatchEventAndWait</c>, <c>dispatchHostEvent</c>,
+    /// <c>dispatchHostEventAndWait</c>) plus the four it ignores (<c>dispatchCore</c>,
+    /// <c>dispatchEventBlocking</c>, <c>dispatchHostEventUnchecked</c>,
+    /// <c>dispatchHostEventBlocking</c>). The floor is SIX: two names of headroom, which
+    /// is enough for the two Kotlin-only test seams to be retired without an argument
+    /// about this number, and not enough for the scan to lose the guarded surface
+    /// silently.</summary>
+    private const int MinimumKotlinDispatchDeclarations = 6;
+
+    /// <summary>FIVE distinct <c>dispatch*</c> names in the Swift runtime today —
+    /// <c>dispatchEvent</c>, <c>dispatchEventBlocking</c>, <c>dispatchCore</c>,
+    /// <c>dispatchHostEvent</c>, <c>dispatchHostEventAndWait</c>. The floor is FOUR: one
+    /// name of headroom, because Swift carries one test seam rather than Kotlin's three
+    /// and a smaller set has less slack to give away. Retiring a second is a deliberate
+    /// act; re-point this with it.</summary>
+    private const int MinimumSwiftDispatchDeclarations = 4;
+
+    /// <summary>THE FLOOR ON THE SCANNED SET — issue #357, open since 14.1, and the last
+    /// instance of census §4.2's shape in the pin population.
+    ///
+    /// <para><see cref="EveryDispatchNamedDeclaration_IsDeclaredOrIgnored"/> iterates
+    /// <see cref="DispatchNamedDeclarations"/>, and the only anti-vacuity assertion it
+    /// executed was <see cref="Surface()"/>'s <c>methods.Count &gt;= 4</c>. That floors
+    /// the MANIFEST — the set the completeness check compares AGAINST — and leaves the
+    /// SCANNED set, the one it walks, unfloored. Reword
+    /// <see cref="DispatchNamedDeclaration"/> past its subject (a reformat putting a
+    /// newline between the name and its paren would do it) and the <c>foreach</c> runs
+    /// zero times with the manifest floor perfectly satisfied: a completeness guard,
+    /// green over nothing. That is the failure mode this file's own header names — <i>a
+    /// pin that goes quiet on what it cannot see</i> — sitting inside the pin written to
+    /// close it.</para>
+    ///
+    /// <para>WHAT IT DOES NOT DO, stated rather than implied: the floor lives in THIS
+    /// fact, not inside the completeness fact, which is
+    /// <c>AuthSemanticsDriftTests.TheCompletenessScan_IsNotVacuous</c>' shape. So a
+    /// broken scan still leaves <see cref="EveryDispatchNamedDeclaration_IsDeclaredOrIgnored"/>
+    /// itself passing — the SUITE reds, that fact does not. The contrast is the evidence
+    /// and it is deliberate: the completeness check cannot floor its own walk without
+    /// asserting the thing it is trying to discover, so a sibling fact says what the walk
+    /// must have seen and the two are read together.</para>
+    ///
+    /// <para>It floors the two shells SEPARATELY rather than summing them. A combined
+    /// floor is satisfiable by one healthy shell: Kotlin's eight names alone would clear
+    /// any total low enough for Swift's five to matter, so an emptied Swift scan would
+    /// pass. Per shell, an emptied scan reds naming the shell.</para></summary>
+    [Fact]
+    public void TheDispatchDeclarationScan_IsNotVacuous()
+    {
+        FloorTheScannedSet("Kotlin", KotlinRuntime(), MinimumKotlinDispatchDeclarations);
+        FloorTheScannedSet("Swift", SwiftRuntime(), MinimumSwiftDispatchDeclarations);
+
+        static void FloorTheScannedSet(string shellLabel, string source, int minimum)
+        {
+            string[] found = [.. DispatchNamedDeclarations(source).OrderBy(n => n, StringComparer.Ordinal)];
+
+            Assert.True(found.Length >= minimum,
+                $"the {shellLabel} runtime scan found only {found.Length} distinct dispatch*-named "
+                + $"declarations and at least {minimum} were expected — found: "
+                + (found.Length == 0 ? "(none)" : string.Join(", ", found)) + ".\n"
+                + "This is the set EveryDispatchNamedDeclaration_IsDeclaredOrIgnored ITERATES. Empty "
+                + "it and that completeness guard runs its loop zero times and reports green, with "
+                + "Surface()'s `methods.Count >= 4` — which floors the MANIFEST, not this scan — "
+                + "still perfectly satisfied. A low count means the declaration pattern "
+                + $"({DispatchNamedDeclaration}) has stopped seeing its subject: the runtime source "
+                + "moved, was reformatted past the pattern, or the comment stripper ate it. Re-point "
+                + "the scan; only lower this floor if dispatch methods were genuinely retired, and "
+                + "then say so in the doc comment above.");
+        }
+    }
+
     [Fact]
     public void EveryDispatchNamedDeclaration_IsDeclaredOrIgnored()
     {
