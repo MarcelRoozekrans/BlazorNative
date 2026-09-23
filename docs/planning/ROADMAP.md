@@ -2557,7 +2557,9 @@ What the census actually sized, in order:
    if it proves cheap.
 4. **Decide the population's own limit**, `docs/plans/2026-09-22-phase-15.0-census.md` §9: the key is
    *callers of `BnRepo.Root()`*, so a vacuous-capable pin over two in-memory collections is invisible
-   to it.
+   to it. **Deferred to 15.4 with #375**, ruled by the phase design before 15.1 began — the wrong
+   second key reintroduces the name-based enumeration M15 spent a phase removing, and that is not a
+   call to rush inside a fix phase. §9 records it as open rather than answered.
 **Surface:** Backend
 **HelpWanted:** no
 **Design:** [`docs/superpowers/specs/2026-09-23-phase-15.1-design.md`](../superpowers/specs/2026-09-23-phase-15.1-design.md)
@@ -2605,7 +2607,10 @@ mirror cannot drift either. **It must red before it is fixed.**
 
 #### Phase 15.4: The missing guards [status: pending]
 **Goal:** Close **#297** and **#302** — a pin that does not exist, and a release-notes guard that
-does not exist — each written to the 15.0 standard.
+does not exist — each written to the 15.0 standard. Also **#375**, and with it the population-key
+decision 15.1 deferred here: `docs/plans/2026-09-22-phase-15.0-census.md` §9 asks whether the Rule 6
+population is the population M15 wants, and #375 is the vacuous-capable pin the current key cannot
+see. Decide the key first; #375 follows from it rather than the other way round.
 **Surface:** Mixed
 **HelpWanted:** no
 
