@@ -128,56 +128,76 @@ namespace BlazorNative.Runtime.Tests;
 //     SO THE RULE IS NOT "CLASSIFY EVERY FLOOR". IT IS: ASK WHETHER THE
 //     NUMBER CAN BE DERIVED FROM THE MANIFEST, AND IF IT CAN, DERIVE IT. A
 //     derived number needs no classification, because there is nothing left
-//     to misclassify. Applied here, that emptied two of the four buckets:
+//     to misclassify.
 //
-//       DERIVED, so not classifiable and not arguable --
-//       `scanned >= expected`, the sum of the per-container `minFiles`; and
-//       `checkedRoots >= declaredRoots`, the sum of the per-set root counts,
-//       which used to be the literal 9.
+//     AND THE LIST BELOW IS ITSELF CHECKED, because the round that wrote the
+//     first one omitted the floor that same commit added, and the round after
+//     it omitted three more. An enumeration nobody enforces decays exactly as
+//     fast as a comment. `EveryFloorInThisFile_IsNamedInTheInventory` scans
+//     this file for every `Assert.True` whose condition contains `>=` or
+//     `> 0` and requires the condition text to appear between the markers
+//     below. Add a floor without naming it here and the suite reds.
 //
-//       CONSTRAINED BY A RELATION between numbers the manifest already holds
-//       -- `sr.MinFiles >= 1 && sr.MinFiles <= sr.Measured`. Without it,
-//       `minFiles: 0` plus a re-point defused the whole fact in two JSON
-//       tokens, measured.
+//     THE INVENTORY. Each entry is the condition verbatim, and what makes the
+//     property hold. An `== 0` assertion is a SUBJECT check, not a floor, and
+//     is deliberately out of scope.
 //
-//       PER MEMBER, inside the loop -- `s.Roots.Length > 0` and
-//       `contributed >= sr.MinFiles`. These deliver a property about every
-//       member; no aggregate can.
+// ── FLOOR INVENTORY ─────────────────────────────────────────────────────────
 //
-//       EXTERNALLY DERIVED ROOT LISTS, which is what stops a root MOVING
-//       between sets where no count can see it -- the Gradle derivation for
-//       `androidShell`, `mirrorOf` for `androidTemplateMirror`. Those are the
-//       roster's only two multi-root sets, and a root leaving a single-root
-//       set hits zero and reds per set, so the cover is complete TODAY. A
-//       third multi-root set would arrive uncovered: give it a derivation,
-//       not a count.
+//       CARDINALITY OVER THE PARTITION, exact by necessity -- there is no
+//       second record of how many there ought to be, so the number IS the
+//       record, which is why none of these may be `> 0`:
+//         `sets.Count >= DeclaredSetCount`
+//         `consumers.Count >= DeclaredConsumerCount`   -- twice, two facts
+//         `scanRoots.Length >= ScanRootCount`
+//         `floors.Count >= FloorCount`                 -- this inventory's own
 //
-//     WHAT IS STILL AN INDEPENDENT LITERAL, which is the honest residual and
-//     is now a short list rather than four buckets:
+//       DERIVED, so not classifiable and not arguable:
+//         `checkedRoots >= declaredRoots`   -- the sum of the per-set root counts
+//         `scanned >= expected`             -- the sum of the per-container floors
 //
-//       `DeclaredSetCount` 7, `DeclaredConsumerCount` 3, `ScanRootCount` 3.
-//       These CANNOT be derived: there is no second record of how many sets,
-//       consumers or containers there ought to be -- the number IS the
-//       record, which is exactly why it has to be exact rather than `> 0`.
+//       A RELATION between two numbers the manifest already holds:
+//         `sr.MinFiles >= 1 && sr.MinFiles <= sr.Measured`
 //
-//       The six manifest numbers -- three `minFiles`, three `measured`. Not
-//       derivable either, because they are observations about the disk. They
-//       are mutually constrained by the relation above, which is the most a
-//       recorded observation can be given.
+//       PER MEMBER, inside the loop that finds the member:
+//         `s.Roots.Length > 0`
+//         `contributed >= sr.MinFiles`
+//         `hits.Count > 0`              -- twice: the derivation pattern, and
+//                                          RegionAt's anchor search
+//         `declaredByBuild.Count > 0`
 //
-//       `sources.Length >= 100` and `names.Count >= 500` in
-//       DeclaredTestMethods. One walk over tests/, no manifest behind it.
-//       Both fail LOUD: a narrowed index makes a real citation unresolvable.
+//       ONE WALK, NO PARTITION BELOW. Both fail LOUD: a narrowed index makes a
+//       real citation unresolvable rather than forgiving an unreal one:
+//         `sources.Length >= 100`
+//         `names.Count >= 500`
 //
-//       `delegations >= 1`, `cited.Count >= 1`, `derived.Count >= 1`,
-//       `authFiles.Count >= 1`. Each population is single-member today, so
-//       `>= 1` IS its exact cardinality, and every member the loop finds is
-//       asserted as it is found. Each carries its own note saying what a
-//       second member would cost.
+//       TOTALS OVER A POPULATION WHOSE MEMBERS ARE EACH ASSERTED AS THE LOOP
+//       FINDS THEM. Single-member today except `derived.Count`, which is six --
+//       and that one is backed by `EveryRootList_IsExternallyDerived`, which
+//       reds if any set loses its derivation, so the total is not carrying it:
+//         `delegations >= 1`
+//         `cited.Count >= 1`
+//         `derived.Count >= 1`
+//         `mirrors.Count >= 1`
+//         `authFiles.Count >= 1`
 //
-//       `entries.Count > 0` in QuotedEntries. NOT per-member and NOT in a
-//       loop -- the earlier taxonomy put it in the per-member bucket and
-//       that was wrong. See limit 6.
+//       NOT A VACUITY FLOOR AT ALL, and listed anyway because the scan is
+//       mechanical and the concept is not. This is a Rule 4 subject-moved
+//       guard that happens to spell itself with `>=`; the inventory names
+//       what the scan finds, never what a reader thinks ought to count:
+//         `from >= 0 && to > from`  -- the inventory markers were found
+//
+//       THE ONE WITH SOMETHING FAILS-GREEN RESTING ON IT:
+//         `entries.Count > 0`  -- NOT per-member and NOT in a loop; an earlier
+//         taxonomy put it in the per-member bucket and that was wrong. Limit 6
+//         has the measurement and the assigned repair.
+//
+// ── END FLOOR INVENTORY ─────────────────────────────────────────────────────
+//
+//     WHAT IS STILL AN INDEPENDENT LITERAL, after all of that: the four
+//     cardinalities, the six manifest observations, and the two walk floors.
+//     Nothing in the repository can derive "how many sets there ought to be",
+//     so that residual is real and is where it stops.
 //  6. THE DELEGATION GUARD READS ANOTHER TEST'S SOURCE WITH A REGEX, AND
 //     THAT REGEX SEES ONLY THE COLLECTION INITIALISER. `QuotedEntries`
 //     captures the text between `{` and `};`, so entries added to
@@ -185,8 +205,8 @@ namespace BlazorNative.Runtime.Tests;
 //     `Add(...)` call after the initialiser, a loop, a second collection
 //     unioned in -- are invisible. MEASURED in review: an `Add` of the
 //     auth-bearing file immediately below the initialiser removed it from
-//     the byte comparison and all nineteen facts across both pins passed,
-//     with this guard's entire job bypassed. Adding the same file INSIDE
+//     the byte comparison and EVERY fact across both pins passed, with a
+//     real byte divergence in place. Adding the same file INSIDE
 //     the initialiser reds, so the detector works; its subject is too
 //     narrow.
 //
@@ -220,7 +240,7 @@ internal static class ShellSourceRoots
     /// declares -- see <see cref="GradleSource"/>.</summary>
     internal sealed record SetDef(
         string Name, string Language, string Purpose, string[] Roots,
-        GradleSource? DerivedFrom, MirrorSource? MirrorOf);
+        ExternalRecord? DerivedFrom, MirrorSource? MirrorOf);
 
     /// <summary>A set whose roots are another set's roots with the path prefix
     /// swapped. It is how a root list stops being a free literal: the template
@@ -228,10 +248,19 @@ internal static class ShellSourceRoots
     /// transitively, instead of being a pair of strings nothing compares.</summary>
     internal sealed record MirrorSource(string Set, string PathPrefix);
 
-    /// <summary>Where a set's roots really come from: a call in a build script
-    /// whose quoted arguments, prefixed with <paramref name="PathPrefix"/>, must
-    /// equal the set's roots.</summary>
-    internal sealed record GradleSource(string File, string Call, string PathPrefix);
+    /// <summary>Where a set's roots really come from: a build file, a nest of
+    /// anchors locating the block inside it, and a pattern whose group 1 captures
+    /// the region holding the paths. Prefixed with <paramref name="PathPrefix"/>,
+    /// those paths must equal the set's roots.
+    ///
+    /// ONE SHAPE FOR TWO LANGUAGES. Gradle spells a source set
+    /// <c>kotlin.srcDirs("a", "b")</c> and XcodeGen spells one <c>- path: BnHost</c>,
+    /// so the extractor takes group 1 as a REGION: quoted strings inside it if
+    /// there are any, otherwise the region itself. That covers both without a
+    /// per-language branch, and it is why <c>pattern</c> lives in the manifest
+    /// rather than in the test.</summary>
+    internal sealed record ExternalRecord(
+        string File, string[] Within, string Describes, string Pattern, string PathPrefix);
 
     /// <summary>A tree a consumer does not scan itself because another test
     /// already covers it. <paramref name="Guard"/> is the test that asserts the
@@ -324,11 +353,13 @@ internal static class ShellSourceRoots
         var sets = new Dictionary<string, SetDef>(StringComparer.Ordinal);
         foreach (JsonProperty p in TopLevel(doc, "sets").EnumerateObject())
         {
-            GradleSource? derived = null;
+            ExternalRecord? derived = null;
             if (p.Value.TryGetProperty("derivedFrom", out JsonElement d))
-                derived = new GradleSource(
+                derived = new ExternalRecord(
                     d.GetProperty("file").GetString()!,
-                    d.GetProperty("call").GetString()!,
+                    [.. d.GetProperty("within").EnumerateArray().Select(x => x.GetString()!)],
+                    d.GetProperty("describes").GetString()!,
+                    d.GetProperty("pattern").GetString()!,
                     d.GetProperty("pathPrefix").GetString()!);
 
             sets[p.Name] = new SetDef(
@@ -417,6 +448,11 @@ public sealed class ShellSourceRootsDriftTests
     /// trees. Same shape, same reason — and this is the one the re-review caught:
     /// deleting the template container left all seven facts green.</summary>
     private const int ScanRootCount = 3;
+
+    /// <summary>The number of distinct floor conditions limit 5's inventory was
+    /// written against. A cardinality, for the reason the inventory gives: there
+    /// is no second record of how many floors this file ought to have.</summary>
+    private const int FloorCount = 20;
 
     /// <summary>THE ANTI-VACUITY FLOOR, ON THE ITERATED SET. Three facts read the
     /// roster through here rather than through <c>ShellSourceRoots.Sets()</c>
@@ -645,6 +681,126 @@ public sealed class ShellSourceRootsDriftTests
             + "parse stopped seeing them.");
     }
 
+    /// <summary>THE INVENTORY OF FLOORS IS ITSELF ENFORCED. Limit 5 lists every
+    /// floor in this file and what makes its property hold. Two successive rounds
+    /// shipped that list incomplete — the first omitted the floor its own commit
+    /// added, the second omitted three more — which is the same failure as an
+    /// unclassified floor, one level up. A list nobody checks decays exactly as
+    /// fast as any other comment.
+    ///
+    /// So a floor must name itself. This scans this file for every
+    /// <c>Assert.True</c> whose condition contains <c>&gt;=</c> or <c>&gt; 0</c>,
+    /// and requires that condition, verbatim, between the inventory markers.
+    ///
+    /// AN `== 0` ASSERTION IS OUT OF SCOPE ON PURPOSE. Those are SUBJECT checks —
+    /// "no consumer is unaccounted for", "no file is an orphan" — and they are
+    /// what the floors exist to protect. Pulling them in would double the list
+    /// with entries that have nothing to say about vacuity.
+    ///
+    /// THE EXTRACTOR IS A SCANNER, NOT A LINE REGEX, and that was a live hole
+    /// rather than a preference. The first cut matched a condition only when the
+    /// line ENDED after it, so a floor written
+    /// <c>Assert.True(x &gt;= 1, "msg");</c> — condition and message on one line,
+    /// the ordinary way to write a short assertion — was invisible. Adding
+    /// exactly that was MEASURED green against this very fact. It now reads to
+    /// the first comma at paren depth one, through strings and char literals,
+    /// wherever the line breaks fall.
+    ///
+    /// LIMITS, both FALSE RED. A condition WRAPPED across lines reds asking to be
+    /// unwrapped, because the inventory quotes conditions verbatim and a
+    /// re-indented one would never match its entry. And it matches TEXT, so
+    /// renaming a local reds until the inventory is updated — which is the
+    /// point.</summary>
+    [Fact]
+    public void EveryFloorInThisFile_IsNamedInTheInventory()
+    {
+        string source = File.ReadAllText(Path.Combine(
+            BnRepo.Root(), "tests", "BlazorNative.Runtime.Tests",
+            "ShellSourceRootsDriftTests.cs"));
+
+        const string open = "── FLOOR INVENTORY ";
+        const string close = "── END FLOOR INVENTORY ";
+        int from = source.IndexOf(open, StringComparison.Ordinal);
+        int to = source.IndexOf(close, StringComparison.Ordinal);
+
+        Assert.True(from >= 0 && to > from,
+            $"could not find the inventory markers `{open}` and `{close}` in this file. They "
+            + "bound the list limit 5 tells the next reader to trust, so without them this fact "
+            + "would approve every floor by finding them all in the whole file. Restore the "
+            + "markers; do not delete this fact.");
+
+        string inventory = source[from..to];
+
+        // Comment-stripped, so a commented-out assertion is not counted and the
+        // inventory's own backticked copies cannot satisfy the scan. The
+        // lookbehind keeps this fact's own `"Assert.True("` search token, which
+        // survives stripping as a string literal, out of its own population.
+        string code = CommentStrippedSource.Strip(source);
+
+        var floors = Regex.Matches(code, @"(?<![\w""])Assert\.True\(")
+            .Select(m => FirstArgument(code, m.Index + m.Length))
+            .Where(c => c.Contains(">=", StringComparison.Ordinal)
+                        || c.Contains("> 0", StringComparison.Ordinal))
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(c => c, StringComparer.Ordinal)
+            .ToList();
+
+        var wrapped = floors.Where(c => c.Contains('\n')).ToList();
+        Assert.True(wrapped.Count == 0,
+            "FLOOR CONDITIONS WRAPPED ACROSS LINES:\n"
+            + string.Join("\n", wrapped.Select(c => "  " + c.Replace("\n", " / ")))
+            + "\n\nThe inventory quotes conditions verbatim, so a wrapped one can never match "
+            + "its entry and would be reported as unnamed forever. Put the condition on one "
+            + "line; if it is too long for that, it is too complicated to be a floor.");
+
+        Assert.True(floors.Count >= FloorCount,
+            $"found only {floors.Count} distinct floor conditions in this file and the inventory "
+            + $"is written against {FloorCount}. Either a floor was deleted — then delete its "
+            + "inventory entry and edit FloorCount in the same commit — or the scan has stopped "
+            + "seeing its subject, in which case every remaining floor is being approved without "
+            + "being read.");
+
+        var unnamed = floors
+            .Where(c => !inventory.Contains("`" + c + "`", StringComparison.Ordinal))
+            .ToList();
+
+        Assert.True(unnamed.Count == 0,
+            "FLOORS THAT NAME THEMSELVES NOWHERE IN THE INVENTORY:\n"
+            + string.Join("\n", unnamed.Select(c => "  " + c))
+            + "\n\nEvery floor in this file must appear in limit 5's inventory, in backticks, "
+            + "with what makes its property hold — a cardinality over the partition, a derivation, "
+            + "a relation, a per-member assertion, or a total whose members are each asserted as "
+            + "the loop finds them. This fact exists because two rounds shipped that list "
+            + "incomplete, one of them omitting the floor the same commit introduced. Write the "
+            + "entry; do not widen the markers.");
+    }
+
+    /// <summary>The first argument of a call whose open paren is at
+    /// <paramref name="start"/>: everything up to the first comma at depth one,
+    /// skipping over nested parens, string literals and char literals. A regex
+    /// cannot do this — the first cut used one, anchored to end-of-line, and a
+    /// floor with its message on the same line was invisible to it.</summary>
+    private static string FirstArgument(string code, int start)
+    {
+        int depth = 1;
+        for (int i = start; i < code.Length; i++)
+        {
+            char c = code[i];
+            if (c == '"' || c == '\'')
+            {
+                char quote = c;
+                i++;
+                while (i < code.Length && code[i] != quote)
+                    i += code[i] == '\\' ? 2 : 1;
+                continue;
+            }
+            if (c == '(') depth++;
+            else if (c == ')' && --depth == 0) return code[start..i].Trim();
+            else if (c == ',' && depth == 1) return code[start..i].Trim();
+        }
+        return code[start..].Trim();
+    }
+
     /// <summary>THE `excluded` REASONS MAKE THE SAME CLAIM `delegated` DOES, and
     /// until this fact existed nothing checked them. AuthSemanticsDriftTests
     /// excludes `androidInstrumentedTests` on the written ground that the seam it
@@ -758,6 +914,31 @@ public sealed class ShellSourceRootsDriftTests
             + "longer iterated. If a container was genuinely consolidated, edit ScanRootCount "
             + "in the same commit and say why.");
 
+        // THE DUAL OF THE WALK BELOW, and it needs no number at all. The orphan
+        // half asks whether every FILE under a container sits inside a declared
+        // root. This asks the other direction: whether every declared ROOT sits
+        // inside a container. Without it a container can be re-pointed one level
+        // deeper and the roots it used to hold simply stop being looked at —
+        // measured green with `minFiles: 1` and `measured: 1`, which is the edit
+        // the per-container floor cannot refuse because both of its numbers are
+        // free. This refuses it on structure instead.
+        var uncontained = TheWholeRoster().Values
+            .SelectMany(x => x.Roots.Select(r => (Set: x.Name, Root: r)))
+            .Where(x => !scanRoots.Any(sr =>
+                x.Root.Equals(sr.Path, StringComparison.OrdinalIgnoreCase)
+                || x.Root.StartsWith(sr.Path + "/", StringComparison.OrdinalIgnoreCase)))
+            .Select(x => $"  {x.Set} declares {x.Root}")
+            .ToList();
+
+        Assert.True(uncontained.Count == 0,
+            "DECLARED ROOTS LIE OUTSIDE EVERY scanRoot:\n"
+            + string.Join("\n", uncontained)
+            + "\n\nThe orphan check below only sees files UNDER a container, so a root outside "
+            + "every container is a tree this fact never reads — it can neither confirm that "
+            + "root is covered nor report anything living beside it. Either widen a `scanRoots` "
+            + "entry to contain the root, or add a container for it with a `minFiles` from a real "
+            + "count. Do not narrow the root to fit.");
+
         string repo = BnRepo.Root();
         var orphans = new List<string>();
         int scanned = 0;
@@ -830,8 +1011,8 @@ public sealed class ShellSourceRootsDriftTests
         // loop not running at all, which the per-container arm cannot report.
         Assert.True(scanned >= expected,
             $"scanned {scanned} shell source files across {scanRoots.Length} scanRoots against "
-            + $"a summed floor of {expected}; 184 were counted when those floors were set, 118 "
-            + "Kotlin and 66 Swift. This is a floor on a TOTAL, and the per-container "
+            + $"a summed floor of {expected}; {scanRoots.Sum(x => x.Measured)} were counted "
+            + "when those floors were set. This is a floor on a TOTAL, and the per-container "
             + "assertions above are what rule out a single container going quiet — read it as "
             + "arithmetic over them, not as a guarantee of its own.");
 
@@ -910,14 +1091,14 @@ public sealed class ShellSourceRootsDriftTests
             Assert.True(disclaimerPresent,
                 $"{string.Join(", ", unrepointed)} still {(unrepointed.Count == 1 ? "reads" : "read")} "
                 + $"{(unrepointed.Count == 1 ? "its" : "their")} own roots rather than calling "
-                + $"ShellSourceRoots.SetsFor, and the `{marker}` paragraph is gone from "
+                + $"{SetsForMarker}, and the `{marker}` paragraph is gone from "
                 + $"{ShellSourceRoots.ManifestPath}. The roster now reads as if it binds those "
                 + "pins. It does not: a consumer can declare that it consumes a set while scanning "
                 + "somewhere else entirely and everything stays green. Restore the paragraph, or "
                 + "repoint the pins.");
         else
             Assert.False(disclaimerPresent,
-                $"every consumer now calls ShellSourceRoots.SetsFor, so the `{marker}` paragraph "
+                $"every consumer now calls {SetsForMarker}, so the `{marker}` paragraph "
                 + $"in {ShellSourceRoots.ManifestPath} is false: it tells the reader these entries "
                 + "record what a pin claims rather than what it scans, and they now record both. "
                 + "Delete the paragraph — that is the instruction it ends with — and delete this "
@@ -942,10 +1123,13 @@ public sealed class ShellSourceRootsDriftTests
             .ToArray();
 
         Assert.True(sources.Length >= 100,
-            $"found only {sources.Length} hand-written .cs files under tests/, and there were "
-            + "133 when this floor was measured — the walk has stopped seeing its subject, so "
-            + "every cited test name would resolve against a short index and red for the wrong "
-            + "reason. bin/ and obj/ are excluded so the count cannot move with build state.");
+            $"found only {sources.Length} hand-written .cs files under tests/ — the walk has "
+            + "stopped seeing most of its subject, so every cited test name would resolve against "
+            + "a short index and red for the wrong reason. No total is quoted here for the same "
+            + "reason none is quoted at the name floor below: a denominator in a message is a "
+            + "number the next commit invalidates, and this one was kept for a round after its "
+            + "sibling was deleted for exactly that. bin/ and obj/ are excluded so the count "
+            + "cannot move with build state.");
 
         var names = new HashSet<string>(StringComparer.Ordinal);
         foreach (string f in sources)
@@ -986,7 +1170,14 @@ public sealed class ShellSourceRootsDriftTests
     /// decays the moment anyone adds a test — the first version quoted one and
     /// the same commit invalidated it. This shape matches EVERY declared test
     /// name that contains an underscore. The ones it cannot see are exactly the
-    /// ones with no underscore at all, and that sentence stays true.
+    /// ones with no underscore at all.
+    ///
+    /// THAT IS A CLAIM ABOUT THIS SUITE, NOT ABOUT C#, and the first draft called
+    /// it structural. Five legal test-name shapes carry an underscore and are
+    /// still invisible: a lower-case head `mount_returns_x`, a double underscore
+    /// `Foo__Bar`, a trailing one `Foo_`, a leading one `_Leading`, and anything
+    /// with no lower-case letter at all — `ABI_SIZE_80` — which is the
+    /// deliberate ALL_CAPS refusal. Zero occur today; all five fail GREEN.
     ///
     /// THE ALL_CAPS REFUSAL MOVED, it did not go. It is now carried by the
     /// lower-case requirement over the whole identifier rather than by the head
@@ -999,100 +1190,197 @@ public sealed class ShellSourceRootsDriftTests
              .Select(m => m.Value)
              .Where(v => v.Any(char.IsLower));
 
-    /// <summary>THE ROSTER ANSWERS TO THE BUILD, NOT TO ITSELF. `androidShell`
-    /// must name exactly the directories the Gradle `main` source set feeds the
-    /// Kotlin compiler. This repo has already paid for that silence once: the
-    /// AGP 9 migration left `src/androidMain/kotlin` UNCOMPILED while the
-    /// instrumented suite reported 111 passing tests, and it merged and sat
-    /// there. A roster that only agreed with itself would have been just as
-    /// quiet.
+    /// <summary>NO ROOT LIST IN THE ROSTER IS A FREE LITERAL. Every set's roots
+    /// are read out of a file the BUILD reads — `src/BlazorNative.Jni/build.gradle.kts`
+    /// for the five Kotlin source sets, `src/BlazorNative.Apple/project.yml` for
+    /// the two Swift targets — and the seventh, `androidTemplateMirror`, inherits
+    /// `androidShell`'s through `mirrorOf`.
     ///
-    /// The call and the file are read from the set's own `derivedFrom` block, so
-    /// nothing here restates them as a second literal.
+    /// WHY IT REACHES ALL SEVEN AND NOT ONE. It derived only `androidShell` for
+    /// three rounds, and the file claimed that covered the roster because a root
+    /// leaving a single-root set takes it to zero. That is true of REMOVAL and
+    /// false of REARRANGEMENT, and three edits to the manifest alone proved it,
+    /// every one nine facts green: swap `appleShell` and `appleTestBundle`, and
+    /// the shipped iOS shell lands in the set the auth pin EXCLUDES; swap
+    /// `appleShell` and `androidJvmHost`, and it lands in the set all three
+    /// consumers exclude, with `language` asserted nowhere to stop a Swift tree
+    /// posing as a Kotlin one; narrow `appleShell` to `BnHost/Fonts` and copy
+    /// `BnHost` into `androidJvmHost`, and the consumed iOS set is a font folder.
+    /// None hits zero. Deriving every list retires the class instead of naming it.
     ///
-    /// LIMIT, stated — AND MEASURED, because the obvious guess about it is wrong.
-    /// This reads `kotlin.srcDirs(...)` with a REGEX, not a Kotlin parser, so the
-    /// first draft of this paragraph said a multi-line reformat reds. It does
-    /// not: the capture is `[^)]*`, which matches newlines, and splitting the
-    /// argument list over four lines was run and PASSED. That is the likeliest
-    /// reformat by far and it costs nothing.
+    /// THE GRAMMAR IS ONE RULE FOR BOTH LANGUAGES, deliberately. `within` is a
+    /// nest of anchors: at each level the OUTERMOST line whose trimmed text
+    /// matches, unique at that depth, and its region runs to the next non-blank
+    /// line indented no deeper. Kotlin braces and YAML blocks both obey that, so
+    /// there is no per-language branch to get wrong. `pattern`'s group 1 is a
+    /// region: quoted strings inside it if there are any, otherwise the region
+    /// itself — which is `srcDirs("a", "b")` and `- path: BnHost` under one rule.
     ///
-    /// The three shapes that do red, each verified: the call RENAMED — to
-    /// `setSrcDirs(listOf(…))`, say — reds on `calls.Count > 0`; the call
-    /// COMMENTED OUT reds on the same arm, because the comment-stripping pass
-    /// runs first; the directory list moved into a VARIABLE reds on
-    /// `declared.Count > 0`. All three are FALSE REDS — Rule 5's footnote
-    /// direction, not its defect direction — and each message says how to
-    /// re-point. A nested `)` inside the arguments truncates the capture at the
-    /// first one; in every plausible spelling the quoted strings still come out
-    /// right, so that is a note rather than a hole.</summary>
+    /// LIMITS, and the direction of each. It is REGEX AND INDENTATION over build
+    /// files, not a parser: a reformat that changes indentation, renames a block,
+    /// or moves a path list into a variable reds. FALSE RED, Rule 5's footnote
+    /// direction, and every message says how to re-point. The YAML side is not
+    /// comment-stripped and does not need to be — its pattern is line-anchored,
+    /// so a commented `#  - path: x` cannot match; the Kotlin side goes through
+    /// the shared stripper, so a commented-out call cannot either. An anchor that
+    /// matches twice at the same depth reds rather than picking one.
+    ///
+    /// WHAT IT STILL DOES NOT CHECK: that a set's `language` matches the tree it
+    /// names. Nothing does. With every list derived, a Swift tree can no longer
+    /// arrive under a Kotlin set by rearrangement — but if the two build files
+    /// ever agree on a path, this would not notice. FAILS GREEN, disclosed.</summary>
     [Fact]
-    public void TheAndroidRoster_MatchesTheGradleMainSourceSet()
+    public void EveryDerivedRootList_MatchesItsExternalRecord()
     {
-        var derived = TheWholeRoster().Values.Where(s => s.DerivedFrom is not null).ToList();
+        var derived = TheWholeRoster().Values.Where(x => x.DerivedFrom is not null).ToList();
 
         Assert.True(derived.Count >= 1,
-            $"no set in {ShellSourceRoots.ManifestPath} carries a `derivedFrom` block, so this "
-            + "fact compares nothing and the roster answers only to itself. The one build-derived "
-            + "set is `androidShell`; if it was renamed, re-point this deliberately.");
+            $"no set in {ShellSourceRoots.ManifestPath} carries a `derivedFrom` block, so every "
+            + "root list in the roster is a free literal again and the rearrangement class is "
+            + "back. Restore the blocks, or re-point this fact deliberately.");
 
-        foreach (ShellSourceRoots.SetDef s in derived)
+        foreach (ShellSourceRoots.SetDef set in derived)
         {
-            ShellSourceRoots.GradleSource g = s.DerivedFrom!;
+            ShellSourceRoots.ExternalRecord g = set.DerivedFrom!;
             string file = Path.Combine(
                 BnRepo.Root(), g.File.Replace('/', Path.DirectorySeparatorChar));
 
             Assert.True(File.Exists(file),
-                $"set '{s.Name}' derives its roots from {g.File}, which does not exist. The build "
-                + "script moved — re-point `derivedFrom.file` deliberately rather than deleting "
-                + "the block, or the roster stops answering to the build.");
+                $"set '{set.Name}' derives its roots from {g.File}, which does not exist. The "
+                + "build file moved — re-point `derivedFrom.file` deliberately rather than "
+                + "deleting the block, or that root list goes back to answering only to itself.");
 
-            string code = CommentStrippedSource.Strip(File.ReadAllText(file));
-            string pattern = Regex.Escape(g.Call) + @"\s*\(([^)]*)\)";
-            MatchCollection calls = Regex.Matches(code, pattern);
+            // Kotlin goes through the shared stripper so a commented-out call
+            // cannot satisfy the pattern. YAML does not need it: its patterns are
+            // line-anchored, and a `#` comment cannot start with `- path:`.
+            string text = File.ReadAllText(file);
+            string code = g.File.EndsWith(".yml", StringComparison.Ordinal)
+                ? text
+                : CommentStrippedSource.Strip(text);
 
-            // THE REGEX MUST HIT SOMETHING FIRST. Without this, a call that was
-            // renamed or commented out yields an empty extracted set, and an empty
-            // set compared to an empty roster would be "equal" — two nothings
-            // agreeing. Assert the subject was found before comparing it.
-            //
-            // NOT "reformatted", which is what this comment and the message below
-            // used to say. Splitting the argument list across lines PASSES — the
-            // capture is `[^)]*` and that matches newlines. The claim was corrected
-            // in the doc comment and left standing here, which is the worse half:
-            // this text is read at the failure, by someone deciding what broke.
-            Assert.True(calls.Count > 0,
-                $"could not find a `{g.Call}(` call in {g.File} (pattern: {pattern}). Three "
-                + "things do this, all verified: the call was RENAMED, it was COMMENTED OUT — "
-                + "the comment-stripping pass runs first — or the directory list moved into a "
-                + "VARIABLE, which reds on the next assertion instead. Splitting the argument "
-                + "list across lines does NOT do it and is not worth checking; the capture "
-                + "matches newlines, measured. A pin that cannot see its subject must never "
-                + "pass vacuously, so this reds. Re-point the regex, or change "
-                + "`derivedFrom.call` to whatever the build now spells.");
+            string region = RegionAt(code, g.Within, set.Name, g.File);
 
-            var declared = new SortedSet<string>(StringComparer.Ordinal);
-            foreach (Match call in calls)
-                foreach (Match quoted in Regex.Matches(call.Groups[1].Value, "\"([^\"]*)\""))
-                    declared.Add(g.PathPrefix + quoted.Groups[1].Value);
+            MatchCollection hits = Regex.Matches(region, g.Pattern, RegexOptions.Multiline);
 
-            Assert.True(declared.Count > 0,
-                $"`{g.Call}(` matched in {g.File} but carried no quoted directory. The arguments "
-                + "are built some other way now — a variable, a list, a spread — so this pin can "
-                + "no longer derive the source set and must be re-pointed rather than believed.");
+            // THE PATTERN MUST HIT SOMETHING FIRST. Without this, a renamed call
+            // yields an empty extracted set, and an empty set compared to an empty
+            // roster would be "equal" — two nothings agreeing.
+            Assert.True(hits.Count > 0,
+                $"set '{set.Name}': found {g.Describes} block in {g.File} but the pattern "
+                + $"{g.Pattern} matched nothing inside it. The call was renamed, or the paths are "
+                + "written some other way now — a pin that cannot see its subject must never pass "
+                + "vacuously, so this reds. Re-point `derivedFrom.pattern`.");
 
-            var rostered = new SortedSet<string>(s.Roots, StringComparer.Ordinal);
-            Assert.True(declared.SetEquals(rostered),
-                $"set '{s.Name}' in {ShellSourceRoots.ManifestPath} and the `{g.Call}` call in "
-                + $"{g.File} disagree about what the shell's source tree IS.\n"
-                + $"  gradle says: {string.Join(", ", declared)}\n"
-                + $"  roster says: {string.Join(", ", rostered)}\n"
-                + "The build wins. A directory Gradle compiles and the roster omits is a tree "
-                + "every consuming pin is blind to — #364 F1 exactly — and a directory the roster "
-                + "names and Gradle does not is the AGP 9 incident: source in the tree that "
-                + "nothing builds, with pins reporting green over it.");
+            var declaredByBuild = new SortedSet<string>(StringComparer.Ordinal);
+            foreach (Match hit in hits)
+            {
+                string captured = hit.Groups[1].Value;
+                MatchCollection quoted = Regex.Matches(captured, "\"([^\"]*)\"");
+                if (quoted.Count > 0)
+                    foreach (Match qm in quoted)
+                        declaredByBuild.Add(g.PathPrefix + qm.Groups[1].Value);
+                else if (captured.Trim().Length > 0)
+                    declaredByBuild.Add(g.PathPrefix + captured.Trim());
+            }
+
+            Assert.True(declaredByBuild.Count > 0,
+                $"set '{set.Name}': {g.Describes} matched in {g.File} but yielded no path. The "
+                + "arguments are built some other way now — a variable, a list, a spread — so "
+                + "this cannot derive the source set and must be re-pointed rather than believed.");
+
+            var rostered = new SortedSet<string>(set.Roots, StringComparer.Ordinal);
+            Assert.True(declaredByBuild.SetEquals(rostered),
+                $"set '{set.Name}' in {ShellSourceRoots.ManifestPath} and {g.Describes} in "
+                + $"{g.File} disagree about what that source tree IS.\n"
+                + $"  the build says: {string.Join(", ", declaredByBuild)}\n"
+                + $"  the roster says: {string.Join(", ", rostered)}\n"
+                + "The build wins. A directory the build compiles and the roster omits is a tree "
+                + "every consuming pin is blind to — #364 F1 exactly. A directory the roster names "
+                + "and the build does not is the AGP 9 incident: source in the tree that nothing "
+                + "builds, with pins reporting green over it. And a root that has MOVED from one "
+                + "set to another is why this reaches every set rather than one: no count can see "
+                + "a move, and a move can put a consumed tree inside an excluded set.");
         }
     }
+
+    /// <summary>THE EVERY-LIST GUARD. `derivedFrom` and `mirrorOf` only close the
+    /// rearrangement class while EVERY set has one. An eighth set arriving with a
+    /// hand-written `roots` array would reopen it in one commit and nothing would
+    /// say so — which is the exact shape of every defect this file has shipped.
+    ///
+    /// So the requirement is mechanical rather than remembered. A new set must
+    /// name the build file that already knows its source tree, or mirror a set
+    /// that does.</summary>
+    [Fact]
+    public void EveryRootList_IsExternallyDerived()
+    {
+        var free = TheWholeRoster().Values
+            .Where(x => x.DerivedFrom is null && x.MirrorOf is null)
+            .Select(x => x.Name)
+            .OrderBy(x => x, StringComparer.Ordinal)
+            .ToList();
+
+        Assert.True(free.Count == 0,
+            $"{string.Join(", ", free)} declare `roots` with no `derivedFrom` and no `mirrorOf`, "
+            + "so those lists answer only to themselves. A free root list can be rearranged — a "
+            + "root moved from a consumed set into an excluded one, a set narrowed to a "
+            + "subdirectory — with every other fact here green, because no count and no existence "
+            + "check can see a move. Three such edits were measured green before every list was "
+            + "derived.\n\nGive the set the build file that already knows its source tree: "
+            + "src/BlazorNative.Jni/build.gradle.kts for a Gradle source set, "
+            + "src/BlazorNative.Apple/project.yml for an XcodeGen target, or `mirrorOf` a set "
+            + "that has one.");
+    }
+
+    /// <summary>The text of one nested, indentation-delimited block. At each level
+    /// the anchor is matched against the trimmed line, the OUTERMOST depth holding
+    /// a match wins, that depth must hold exactly one, and the block runs to the
+    /// next non-blank line indented no deeper.
+    ///
+    /// Blank lines are skipped rather than ending the block, which matters because
+    /// the Kotlin side arrives comment-stripped and a stripped comment line is
+    /// blank.</summary>
+    private static string RegionAt(string code, string[] within, string setName, string file)
+    {
+        string[] lines = code.Replace("\r\n", "\n").Split('\n');
+        int from = 0, to = lines.Length;
+
+        foreach (string anchor in within)
+        {
+            var hits = Enumerable.Range(from, to - from)
+                .Where(i => lines[i].Trim() == anchor)
+                .ToList();
+
+            Assert.True(hits.Count > 0,
+                $"set '{setName}': could not find the line `{anchor}` in {file}"
+                + (from == 0 ? "" : $" inside the block found for the previous anchor")
+                + ". The block was renamed or reformatted — a derivation that cannot find its "
+                + "subject must never fall back to a wider region, so this reds. Re-point "
+                + "`derivedFrom.within`.");
+
+            int depth = hits.Min(i => Indent(lines[i]));
+            var outermost = hits.Where(i => Indent(lines[i]) == depth).ToList();
+
+            Assert.True(outermost.Count == 1,
+                $"set '{setName}': the line `{anchor}` appears {outermost.Count} times at the "
+                + $"same depth in {file}, so which block this derivation reads is arbitrary. "
+                + "Ambiguity here silently re-points a root list at a sibling block, so it reds "
+                + "instead of picking one. Add an enclosing anchor to `derivedFrom.within`.");
+
+            int start = outermost[0];
+            int end = start + 1;
+            while (end < to && (lines[end].Trim().Length == 0 || Indent(lines[end]) > depth))
+                end++;
+
+            from = start + 1;
+            to = end;
+        }
+
+        return string.Join("\n", lines[from..to]);
+    }
+
+    private static int Indent(string line) => line.Length - line.TrimStart().Length;
+
 
     /// <summary>THE TEMPLATE'S ROOT LIST IS NOT A FREE LITERAL EITHER. It used to
     /// be two strings nothing compared. `androidShell` answers to the Gradle
@@ -1109,12 +1397,15 @@ public sealed class ShellSourceRootsDriftTests
     /// eight facts green, with the tree that ships to every `dotnet new
     /// blazornative` consumer declaring one of its two source directories.
     ///
-    /// THE COVER IS COMPLETE, and that is worth stating because it is why no
-    /// aggregate is needed here. A root leaving a SINGLE-root set takes it to
-    /// zero, which `EveryRoot_ExistsOnDisk` reds on per set. The roster has
-    /// exactly two multi-root sets: `androidShell`, held by the Gradle
-    /// derivation, and `androidTemplateMirror`, held here. A third would arrive
-    /// uncovered — so if one does, give it a derivation rather than a count.
+    /// WHAT COVERS THE REST, now that this no longer has to carry it. The
+    /// sentence that stood here said the cover was complete because a root
+    /// leaving a single-root set takes it to zero. That is true of REMOVAL and
+    /// false of REARRANGEMENT, and it was measured false three ways.
+    /// `EveryDerivedRootList_MatchesItsExternalRecord` now derives every other
+    /// root list from the build file that already knows it, and
+    /// `EveryRootList_IsExternallyDerived` stops an eighth set arriving with a
+    /// free one. This fact covers `androidTemplateMirror`, whose source tree no
+    /// build file in this repository declares independently of the shell's.
     ///
     /// LIMIT: it compares root LISTS, not the trees behind them. The template
     /// genuinely having those directories is `EveryRoot_ExistsOnDisk`; their

@@ -51,10 +51,21 @@
     "NO NUMBER HERE IS FREE. `minFiles` must be at least 1 and at most `measured`, asserted, so",
     "the floor cannot be lowered past the observation it was set from -- setting it to 0 and",
     "re-pointing the container one level deeper was MEASURED green before that relation existed,",
-    "which is two JSON tokens defusing the whole mechanism. And `androidTemplateMirror` carries",
-    "`mirrorOf` rather than a free root list: its roots must be `androidShell`'s with the prefix",
-    "swapped, so the template's source sets answer to the same Gradle call the repo's do. Moving",
-    "one of its two roots into another set was MEASURED green before that too.",
+    "which is two JSON tokens defusing the whole mechanism.",
+    "",
+    "AND NO `roots` LIST IS FREE EITHER. Every set carries `derivedFrom` -- the build file that",
+    "already knows that source tree, with the anchors locating the block and a pattern reading the",
+    "paths out of it -- except `androidTemplateMirror`, which carries `mirrorOf` and inherits",
+    "`androidShell`'s. Five Kotlin source sets come from build.gradle.kts, two Swift targets from",
+    "project.yml. EveryRootList_IsExternallyDerived reds if an eighth set arrives with a hand",
+    "written list.",
+    "",
+    "WHY IT IS EVERY SET AND NOT THE ONE MULTI-ROOT SET IT STARTED AS: a root can MOVE. The file",
+    "claimed for three rounds that single-root sets were covered because removing their only root",
+    "takes them to zero. True of removal, false of rearrangement -- swapping `appleShell` and",
+    "`appleTestBundle` puts the shipped iOS shell in a set the auth pin EXCLUDES, and it was",
+    "MEASURED green, as were two more shapes. Every root list answering to a build file retires",
+    "the class; naming it would only have described it.",
     "",
     "EACH scanRoot CARRIES ITS OWN `minFiles`, AND THAT IS NOT BOOKKEEPING. A single global",
     "floor over these three containers is an aggregate over a partition, and it cannot see a",
@@ -84,34 +95,88 @@
       ],
       "derivedFrom": {
         "file": "src/BlazorNative.Jni/build.gradle.kts",
-        "call": "kotlin.srcDirs",
+        "within": [
+          "sourceSets {",
+          "getByName(\"main\") {"
+        ],
+        "describes": "the Gradle `main` source set's kotlin.srcDirs call",
+        "pattern": "kotlin\\.srcDirs\\s*\\(([^)]*)\\)",
         "pathPrefix": "src/BlazorNative.Jni/"
       }
     },
     "appleShell": {
       "language": "swift",
       "purpose": "the shipped iOS shell -- the BnHost target's whole source tree",
-      "roots": ["src/BlazorNative.Apple/BnHost"]
+      "roots": ["src/BlazorNative.Apple/BnHost"],
+      "derivedFrom": {
+        "file": "src/BlazorNative.Apple/project.yml",
+        "within": [
+          "targets:",
+          "BnHost:"
+        ],
+        "describes": "XcodeGen's BnHost target source list",
+        "pattern": "^\\s*-\\s*path:\\s*([^\\s#]+)",
+        "pathPrefix": "src/BlazorNative.Apple/"
+      }
     },
     "appleTestBundle": {
       "language": "swift",
       "purpose": "the XCTest bundle. NOT shipped output. NSLogDriftTests consumes it deliberately as its positive-control anchor -- it MUST still hold live NSLog calls -- which is exactly why this roster has named sets rather than one flat list",
-      "roots": ["src/BlazorNative.Apple/BnHostTests"]
+      "roots": ["src/BlazorNative.Apple/BnHostTests"],
+      "derivedFrom": {
+        "file": "src/BlazorNative.Apple/project.yml",
+        "within": [
+          "targets:",
+          "BnHostTests:"
+        ],
+        "describes": "XcodeGen's BnHostTests target source list",
+        "pattern": "^\\s*-\\s*path:\\s*([^\\s#]+)",
+        "pathPrefix": "src/BlazorNative.Apple/"
+      }
     },
     "androidInstrumentedTests": {
       "language": "kotlin",
       "purpose": "the instrumented suite. Not shipped.",
-      "roots": ["src/BlazorNative.Jni/src/androidTest/kotlin"]
+      "roots": ["src/BlazorNative.Jni/src/androidTest/kotlin"],
+      "derivedFrom": {
+        "file": "src/BlazorNative.Jni/build.gradle.kts",
+        "within": [
+          "sourceSets {",
+          "getByName(\"androidTest\") {"
+        ],
+        "describes": "the Gradle `androidTest` source set's java.srcDirs call",
+        "pattern": "java\\.srcDirs\\s*\\(([^)]*)\\)",
+        "pathPrefix": "src/BlazorNative.Jni/"
+      }
     },
     "androidJvmTests": {
       "language": "kotlin",
       "purpose": "the JVM unit-test source set. Not shipped.",
-      "roots": ["src/BlazorNative.Jni/src/test/kotlin"]
+      "roots": ["src/BlazorNative.Jni/src/test/kotlin"],
+      "derivedFrom": {
+        "file": "src/BlazorNative.Jni/build.gradle.kts",
+        "within": [
+          "sourceSets {",
+          "getByName(\"test\") {"
+        ],
+        "describes": "the Gradle `test` source set's java.srcDirs call",
+        "pattern": "java\\.srcDirs\\s*\\(([^)]*)\\)",
+        "pathPrefix": "src/BlazorNative.Jni/"
+      }
     },
     "androidJvmHost": {
       "language": "kotlin",
       "purpose": "the desktop JVM inspector host -- InspectorHost.kt, InspectorPage.kt, InspectorServer.kt. A separate source set, not part of the Gradle `main` compilation, and it never runs on a device.",
-      "roots": ["src/BlazorNative.Jni/src/jvmHost/kotlin"]
+      "roots": ["src/BlazorNative.Jni/src/jvmHost/kotlin"],
+      "derivedFrom": {
+        "file": "src/BlazorNative.Jni/build.gradle.kts",
+        "within": [
+          "compileJvmHostKotlin.configure {"
+        ],
+        "describes": "the compileJvmHostKotlin task's source() call",
+        "pattern": "layout\\.projectDirectory\\.dir\\s*\\(([^)]*)\\)",
+        "pathPrefix": "src/BlazorNative.Jni/"
+      }
     },
     "androidTemplateMirror": {
       "language": "kotlin",
