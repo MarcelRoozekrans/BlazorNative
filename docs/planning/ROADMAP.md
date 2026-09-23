@@ -2537,7 +2537,7 @@ Android and iOS unchanged. **No production source change** — `tests/**` and `d
 > is vacuous-capable and **invisible to every mechanism this phase built** — it compares two
 > in-memory collections, so it never calls `BnRepo.Root()` and never enters the population.
 
-#### Phase 15.1: Close the nine gaps [status: active]
+#### Phase 15.1: Close the nine gaps [status: complete]
 **Goal:** Bring every non-conforming pin up to the standard, **#357**'s asymmetry among them.
 **Re-scoped by 15.0's enforcement verdict** — see *The enforcement verdict* in `docs/pin-standard.md`.
 The original goal, *"make the standard mechanical — a new pin that can pass while checking nothing
@@ -2564,6 +2564,33 @@ What the census actually sized, in order:
 **HelpWanted:** no
 **Design:** [`docs/superpowers/specs/2026-09-23-phase-15.1-design.md`](../superpowers/specs/2026-09-23-phase-15.1-design.md)
 **Plan:** [`docs/superpowers/plans/2026-09-23-phase-15.1-close-the-nine-gaps.md`](../superpowers/plans/2026-09-23-phase-15.1-close-the-nine-gaps.md)
+**Merged:** PR **#377**, 2026-09-23. Suite **1112 → 1132** — Analyzers 27 · Renderer 140 · Runtime 965.
+
+> **Outcome: all nine gap facts closed, plus the live defect and the two non-pin detectors.** The
+> mechanism held across all nine: every uncontrolled detector here is an **absence assertion**, and
+> the fix for one is **a fixed point it must still hit**. The phase produced four anchor models, and
+> the fourth is the one worth remembering — an **exempt subtree** that must keep holding live
+> violations, a **spliced fixture** for a subject empty by construction, **the exclusion list itself**
+> as a source of anchors, and the case where **no anchor is structurally available**, which ends in
+> disclosure plus a named repair rather than a fix.
+>
+> **The census was wrong about item 6, and wider than recorded.** It read as a *commented-out*
+> `BnSafeArea` wrap satisfying a raw-text match. The pin was in fact green over a wrap **simply
+> deleted**, in all five files, because each file *documents* the mechanism it uses and the prose
+> kept matching after the code was gone. Demonstrated before any code was written.
+>
+> **The whole-branch review found two fresh instances of the defect inside this branch** — absence
+> loops with the iterated set unfloored, one of them in a fact this phase had just added, both
+> mutation-proven rather than argued. Closed before the PR opened. The census rows that scored them
+> as conforming now record why the overstatement survived three reads: **the assertion each one
+> needed was present, and about the wrong set.**
+>
+> **Two decisions recorded.** §6.1: `BnRepo.cs`' by-name exemption needs no guard of its own, with
+> the revisit trigger named — that file growing a third member. §6.3: resolved **by experiment**,
+> not argument — the stale-dll channel is real but unreachable, because the same
+> `ReferenceOutputAssembly` flag that forces the checkout fallback sits on the reference that keeps
+> the analyzer freshly built.
+
 
 > **Two residuals carried past this phase, and neither of them is this phase's work.** Both are
 > disclosed at the pin that carries them; they are ledgered here so the disclosure is not the only
