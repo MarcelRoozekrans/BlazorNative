@@ -77,19 +77,22 @@ namespace BlazorNative.Runtime.Tests;
 //     reopened #364 F1 at 15 passed / 0 failed, and the coverage assertion is
 //     what reds on it.
 //
-//     SO WHAT BINDS THE ROSTER IS BEHAVIOURAL AND LIVES IN EACH CONSUMER: every
-//     root the roster declares must have contributed at least one file to what
-//     that pin's walk ACTUALLY OPENED, with `SetsFor` called at the assertion
-//     rather than through a helper the walk shares — otherwise one edit moves
-//     both. `EveryConsumer_ReadsItsRootsFromTheRoster` is the cheap first line
-//     that catches the blunt revert; the per-consumer coverage assertions are
-//     what make the claim true.
+//     SO WHAT BINDS THE ROSTER IS BEHAVIOURAL AND LIVES IN `ShellSourceScan`:
+//     every file the roster puts in a pin's scope must have been READ by the walk
+//     that pin's assertion consumes, and the code that records the read is the
+//     code that performs it. A pin cannot hold a root list at all — the doors
+//     take a consumer name and an optional set name, so the round-1 and round-2
+//     defeats are a COMPILE ERROR rather than a red.
+//     `EveryConsumer_ReadsItsRootsFromTheRoster` is the cheap first line that
+//     catches the blunt revert; the coverage proof inside the scan is what makes
+//     the claim true.
 //
-//     WHAT REMAINS is narrower and is stated where each assertion is: coverage
-//     demands ONE file per root rather than the whole root, and a walk over a
-//     strict SUPERSET of the declared roots is not detected. The superset
-//     direction fails SAFE for these three pins, all of which assert an absence
-//     — an extra tree can only add offenders.
+//     THIS PARAGRAPH HAS BEEN WRONG IN EVERY ROUND IT WAS WRITTEN, which is the
+//     most useful thing about it. It described naming the door, then calling it
+//     per site, then "at least one file per root" — each true when written and
+//     each superseded by a measurement a round later. The residuals that survive
+//     measurement are at `ShellSourceScan`, beside the code, and are the only
+//     ones to trust.
 //
 //  4. A NAMED TEST IS CHECKED ONLY TO THE DEPTH OF "IT EXISTS". Both
 //     `EveryDelegation_NamesAGuardThatExists` and
@@ -272,7 +275,7 @@ internal static class ShellSourceRoots
 
     /// <summary>A named shell source tree. <paramref name="DerivedFrom"/> is
     /// present only on sets whose roots are a copy of something the BUILD
-    /// declares -- see <see cref="GradleSource"/>.</summary>
+    /// declares -- see <see cref="ExternalRecord"/>.</summary>
     internal sealed record SetDef(
         string Name, string Language, string Purpose, string[] Roots,
         ExternalRecord? DerivedFrom, MirrorSource? MirrorOf);
@@ -531,33 +534,46 @@ internal static class ShellSourceRoots
 //   round 3 — the walk RECORDS what it enumerated → defeated by a one-line
 //             content filter between the listing and the read, and by a second
 //             walk inside the fact that asserts the absence
+//   round 4 — the record was written in the ARGUMENT carrying the bytes →
+//             defeated by a one-line filter INSIDE that argument, because a
+//             record handed a value cannot say where the value came from
 //
 // The common cause was always the same: the guard was bound to a FILE-LIST
 // PRODUCER while the absence assertion consumed something else. So this type
 // stops moving along the chain and binds to its end. Three properties, and each
 // one closed a demonstrated one-line defeat:
 //
-//  1. THE COVERAGE RECORD IS WRITTEN WHERE THE FILE IS READ. `Recorded` is
-//     called in the ARGUMENT that carries the bytes to the extractor, so there
-//     is no statement between the read and the record into which a filter can be
-//     inserted. If the bytes never reached the matcher, the file is not covered.
+//  1. THE COVERAGE RECORD IS WRITTEN BY THE CODE THAT PERFORMS THE READ.
+//     `Recorded` takes a PATH and opens the file itself. A guard that RECEIVES a
+//     value cannot verify how that value was obtained; it can only verify what it
+//     obtains itself.
+//
+//     THE PREVIOUS VERSION LOOKED IDENTICAL AND WAS NOT. It took the content as
+//     an argument, and its comment claimed there was "no statement between the
+//     read and the record into which a filter can be inserted". True, and
+//     irrelevant: the filter does not need a statement, it needs an expression.
+//     `Recorded(read, file, file.Contains("/main/kotlin/") ? "" :
+//     File.ReadAllText(path))` is one line, sits INSIDE the fused argument, and
+//     was MEASURED at 24 passed / 0 failed with two planted defects live in the
+//     exact tree #364 F1 is about. That sentence is deleted rather than softened.
 //
 //  2. THE FACT THAT ASSERTS AN ABSENCE OBSERVES THE RECORD ITS OWN CALL
-//     PRODUCED. Every fact calls this itself and asserts coverage on the
-//     <see cref="Result"/> it got back — never on a sibling's walk and never on a
-//     second walk of its own.
+//     PRODUCED. Every fact calls this itself, and the call that proves coverage
+//     RETURNS the value the assertion consumes, so proving one thing and
+//     asserting on another needs new code rather than a different variable.
 //
 //  3. NO PIN HOLDS A ROOT LIST. Callers name a CONSUMER, and the roots are
 //     resolved here from the roster. There is no array in a pin to re-point, so
 //     the round-1 and round-2 defeats are not expressible rather than merely
 //     detected.
 //
-// And one hardening that is not on the reviewer's list but closes the obvious
-// next move: THE EXTRACTOR IS NEVER TOLD WHICH FILE IT IS LOOKING AT. It
-// receives content and returns <see cref="RawHit"/>s carrying a line number;
-// this type stamps the path on afterwards. A path-keyed filter inside a matcher
-// — the shape every one of the defeats above took — is therefore not
-// expressible either.
+// And one hardening that closes the obvious next move PARTLY, which is all it
+// does: THE EXTRACTOR IS NEVER TOLD WHICH FILE IT IS LOOKING AT. It receives
+// content and returns RawHits carrying a line number; this type stamps the path
+// on afterwards. That removes the PATH-keyed filter from a matcher. It does NOT
+// remove a CONTENT-keyed one, because content is a proxy for path — see limit A,
+// which is measured. An earlier draft said a filter inside a matcher was "not
+// expressible either"; it is expressible, and the word was wrong.
 //
 // ── WHAT THIS STILL DOES NOT COVER (pin standard, Rule 5) ───────────────────
 //
@@ -575,11 +591,15 @@ internal static class ShellSourceRoots
 //     but CONTENT IS A PROXY FOR PATH: a Kotlin package declaration or a Swift
 //     import names the tree just as well.
 //
-//     AND THE POSITIVE CONTROLS DO NOT SAVE IT. `TheTestBundleExemption_…` and
-//     `TheInstrumentedTestExemption_…` run through this same matcher, so a filter
-//     broad enough to blind THEM reds — but a filter keyed on one package is not
-//     broad enough, and both controls live in other packages. That was the
-//     specific sentence the draft got wrong.
+//     AND THE POSITIVE CONTROL DOES NOT SAVE IT, AND THERE IS ONLY ONE.
+//     `TheTestBundleExemption_IsRealAndStillHoldsNSLog` runs through this
+//     matcher, so a filter broad enough to blind it reds — but a filter keyed
+//     on one package is not broad enough, and that control lives in another
+//     package. `TheInstrumentedTestExemption_IsRealAndStillHoldsBareLogI` does
+//     NOT run through here at all: its tree is roster-EXCLUDED, so it walks
+//     itself and only shares the PATTERN. An earlier draft named both, which
+//     overstated the cover by exactly one control — measured: a total blind of
+//     `ForPattern` reds 5 facts and that one is not among them.
 //     Direction: FAILS GREEN.
 //
 //  B. REWRITING A FACT'S BODY. MEASURED GREEN, twice: reassigning the hit array
@@ -601,6 +621,8 @@ internal static class ShellSourceRoots
 //         a pin can call takes roots; they take a consumer name and an optional
 //         set name, both checked against the roster.
 //       - a content filter between the listing and the read — REDS, 7 facts.
+//       - a filter INSIDE the fused record argument — REDS, and it is what
+//         forced `Recorded` to perform the read rather than be handed bytes.
 //       - a filter narrowed to exactly ONE file — REDS, 7 facts. This is what
 //         forced coverage from "at least one file per root" to SET EQUALITY: the
 //         loose form was measured green on a package-wide filter, with a planted
@@ -757,14 +779,21 @@ internal static class ShellSourceScan
                 string file = Path.GetRelativePath(repo, path).Replace('\\', '/');
 
                 // ── PROPERTY 1, AND IT IS THIS LINE ──────────────────────────
-                // `Recorded` runs inside the ARGUMENT that carries the bytes, so
-                // the file is marked covered by the act of delivering its content
-                // and by nothing else. There is no statement between the read and
-                // the record to put a filter in. An earlier version recorded the
-                // ENUMERATION one line before the read, and a one-line content
-                // filter in between left the whole repository green with a live
-                // planted defect.
-                foreach (RawHit h in extract(Recorded(read, file, File.ReadAllText(path))))
+                // `Recorded` PERFORMS THE READ. It is handed a PATH, never bytes,
+                // and that distinction is the whole of the property rather than a
+                // detail of it: A GUARD THAT RECEIVES A VALUE CANNOT VERIFY HOW
+                // THAT VALUE WAS OBTAINED -- it can only verify what it obtains
+                // itself.
+                //
+                // The previous version took the content as an argument, which
+                // looked identical and was not. MEASURED: one line, inside the
+                // fused expression rather than before it --
+                // `Recorded(read, file, file.Contains("/main/kotlin/") ? "" :
+                // File.ReadAllText(path))` -- left all 24 facts green with two
+                // planted defects live in the exact tree #364 F1 is about. The
+                // filter did not need to sit between the read and the record; it
+                // sat inside the argument, where the record could not see it.
+                foreach (RawHit h in extract(Recorded(read, repo, path)))
                     hits.Add(new Hit(file, h.Line, h.Text, h.Token));
             }
         }
@@ -785,12 +814,25 @@ internal static class ShellSourceScan
                 .SelectMany(l => Regex.Matches(l.Text, pattern)
                     .Select(m => new RawHit(l.Number, l.Text.Trim(), m.Value))));
 
-    /// <summary>Marks <paramref name="file"/> as READ and returns the content it
-    /// was handed. Exists only so that the record and the delivery of the bytes
-    /// are one expression — see property 1.</summary>
-    private static string Recorded(List<string> read, string file, string text)
+    /// <summary>READS <paramref name="path"/>, and records the file it read —
+    /// naming it from THAT SAME PATH.
+    ///
+    /// Two things are deliberate and both were forced by a measurement rather
+    /// than chosen. It takes a PATH rather than CONTENT, because a version handed
+    /// the bytes could be handed any bytes at all: one line inside the argument,
+    /// `… ? "" : File.ReadAllText(path)`, left all 24 facts green with two live
+    /// planted defects. And it derives the recorded NAME from the path it opened
+    /// rather than taking the name as a second argument, because two arguments
+    /// can be desynchronised: substitute the path and keep the name and the
+    /// record says a file was covered while different bytes were scanned.
+    ///
+    /// Both collapse to one rule. THE RECORD MUST BE A STATEMENT ABOUT WHAT THIS
+    /// METHOD DID, derived from the single value it was given, never a report
+    /// about what its caller says it did.</summary>
+    private static string Recorded(List<string> read, string repo, string path)
     {
-        read.Add(file);
+        string text = File.ReadAllText(path);
+        read.Add(Path.GetRelativePath(repo, path).Replace('\\', '/'));
         return text;
     }
 }
@@ -1423,7 +1465,7 @@ public sealed class ShellSourceRootsDriftTests
     /// ANALYSIS. It does not, and the counterexample was already in the same
     /// commit: each consuming pin now asserts that every root the roster declares
     /// contributed at least one file to what its walk ACTUALLY OPENED, reading
-    /// the roster at the assertion rather than through a helper the walk shares.
+    /// the roster inside the scan, where the code that records a read performs it.
     /// That is two lines per pin. What this fact still adds is a legible red for
     /// the blunt revert — a private array and no roster call at all — naming the
     /// consumer rather than reporting an unvisited root.

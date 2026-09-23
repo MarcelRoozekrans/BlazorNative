@@ -339,18 +339,6 @@ public sealed class AuthSemanticsDriftTests
             StringComparison.Ordinal);
 
         // EXACTLY ONE caller may ask for the credential path: writeAuthBoundSecretForTest,
-        // the instrumented test seam the ignore entry is written about. Counted over the
-        // COMMENT-STRIPPED text, because the KDoc above provisionKey names the parameter
-        // in prose and a raw-file count would score it. Exactly-one, not at-most-one:
-        // if the seam is deleted, this entry and its manifest reason describe a caller
-        // that no longer exists, and a stale excuse is a licence for the next one.
-        //
-        // EXACTLY-ONE IS ITS OWN NON-VACUITY FLOOR, which is why no separate file count
-        // is asserted here: a walk that stops seeing its tree reports ZERO callers and
-        // reds on the same line, with a message that says what zero means. A Swift root
-        // in the same roster contributes nothing to a Kotlin spelling, by construction
-        // and not by accident — it cannot take the count DOWN.
-        // EXACTLY ONE caller may ask for the credential path: writeAuthBoundSecretForTest,
         // the instrumented test seam the ignore entry is written about. Counted over
         // COMMENT-STRIPPED text, because the KDoc above provisionKey names the parameter
         // in prose and a raw count would score it. Exactly-one, not at-most-one: if the
