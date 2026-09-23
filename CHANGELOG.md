@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.1](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.16.0...v0.16.1) (2026-09-23)
+
+
+### Bug Fixes
+
+* **ios:** pin Kingfisher exactly — a minor release raised the deployment floor ([#378](https://github.com/MarcelRoozekrans/BlazorNative/issues/378)) ([a5704e3](https://github.com/MarcelRoozekrans/BlazorNative/commit/a5704e3b9250f122686d85e5474e7a1a08e991b3))
+
 ## [0.16.0](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.15.0...v0.16.0) (2026-09-22)
 
 
