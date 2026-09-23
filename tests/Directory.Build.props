@@ -1,12 +1,18 @@
 <Project>
 
-  <!-- Links the shared test helper into EVERY project under tests/, so a future
-       test project cannot forget it. That matters beyond convenience:
+  <!-- Links BnRepo into EVERY project under tests/, so a future test project
+       cannot forget it. That matters beyond convenience:
        PinPopulationTests enumerates the pin population by finding callers of
        BnRepo.Root, and a project that reached the tree its own way would have
        pins invisible to enforcement. -->
+  <!-- CommentStrippedSource rides the same mechanism, and for the second half of
+       the same reason. Phase 15.1: it lived in BlazorNative.Runtime.Tests, and
+       neither of the other two test projects referenced it, so "one stripper" held
+       inside one project only. ShellStyleTableDriftTests in Renderer.Tests carried
+       a disclosed false green it could not fix for exactly that reason. -->
   <ItemGroup>
     <Compile Include="$(MSBuildThisFileDirectory)Shared\BnRepo.cs" Link="Shared\BnRepo.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Shared\CommentStrippedSource.cs" Link="Shared\CommentStrippedSource.cs" />
   </ItemGroup>
 
 </Project>

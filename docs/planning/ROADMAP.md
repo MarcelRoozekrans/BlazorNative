@@ -2537,7 +2537,7 @@ Android and iOS unchanged. **No production source change** — `tests/**` and `d
 > is vacuous-capable and **invisible to every mechanism this phase built** — it compares two
 > in-memory collections, so it never calls `BnRepo.Root()` and never enters the population.
 
-#### Phase 15.1: Close the nine gaps [status: pending]
+#### Phase 15.1: Close the nine gaps [status: complete]
 **Goal:** Bring every non-conforming pin up to the standard, **#357**'s asymmetry among them.
 **Re-scoped by 15.0's enforcement verdict** — see *The enforcement verdict* in `docs/pin-standard.md`.
 The original goal, *"make the standard mechanical — a new pin that can pass while checking nothing
@@ -2557,9 +2557,66 @@ What the census actually sized, in order:
    if it proves cheap.
 4. **Decide the population's own limit**, `docs/plans/2026-09-22-phase-15.0-census.md` §9: the key is
    *callers of `BnRepo.Root()`*, so a vacuous-capable pin over two in-memory collections is invisible
-   to it.
+   to it. **Deferred to 15.4 with #375**, ruled by the phase design before 15.1 began — the wrong
+   second key reintroduces the name-based enumeration M15 spent a phase removing, and that is not a
+   call to rush inside a fix phase. §9 records it as open rather than answered.
 **Surface:** Backend
 **HelpWanted:** no
+**Design:** [`docs/superpowers/specs/2026-09-23-phase-15.1-design.md`](../superpowers/specs/2026-09-23-phase-15.1-design.md)
+**Plan:** [`docs/superpowers/plans/2026-09-23-phase-15.1-close-the-nine-gaps.md`](../superpowers/plans/2026-09-23-phase-15.1-close-the-nine-gaps.md)
+**Merged:** PR **#377**, 2026-09-23. Suite **1112 → 1132** — Analyzers 27 · Renderer 140 · Runtime 965.
+
+> **Outcome: all nine gap facts closed, plus the live defect and the two non-pin detectors.** The
+> mechanism held across all nine: every uncontrolled detector here is an **absence assertion**, and
+> the fix for one is **a fixed point it must still hit**. The phase produced four anchor models, and
+> the fourth is the one worth remembering — an **exempt subtree** that must keep holding live
+> violations, a **spliced fixture** for a subject empty by construction, **the exclusion list itself**
+> as a source of anchors, and the case where **no anchor is structurally available**, which ends in
+> disclosure plus a named repair rather than a fix.
+>
+> **The census was wrong about item 6, and wider than recorded.** It read as a *commented-out*
+> `BnSafeArea` wrap satisfying a raw-text match. The pin was in fact green over a wrap **simply
+> deleted**, in all five files, because each file *documents* the mechanism it uses and the prose
+> kept matching after the code was gone. Demonstrated before any code was written.
+>
+> **The whole-branch review found two fresh instances of the defect inside this branch** — absence
+> loops with the iterated set unfloored, one of them in a fact this phase had just added, both
+> mutation-proven rather than argued. Closed before the PR opened. The census rows that scored them
+> as conforming now record why the overstatement survived three reads: **the assertion each one
+> needed was present, and about the wrong set.**
+>
+> **Two decisions recorded.** §6.1: `BnRepo.cs`' by-name exemption needs no guard of its own, with
+> the revisit trigger named — that file growing a third member. §6.3: resolved **by experiment**,
+> not argument — the stale-dll channel is real but unreachable, because the same
+> `ReferenceOutputAssembly` flag that forces the checkout fallback sits on the reference that keeps
+> the analyzer freshly built.
+
+
+> **Two residuals carried past this phase, and neither of them is this phase's work.** Both are
+> disclosed at the pin that carries them; they are ledgered here so the disclosure is not the only
+> place they exist.
+>
+> **1. Mentioning is not wrapping.** `BnSafeAreaCoverageTests` proves the name `BnSafeArea` appears
+> in live, uncommented code in each of its five files — which is a real strengthening, because
+> before 15.1 it was satisfied by a comment and green over a wrap that had been **deleted outright**.
+> What it still cannot prove is that `BnSafeArea` is an **ancestor** of the page's content. A wrap
+> moved to the wrong nesting level, or a component named in an unrelated position, reads the same to
+> a name match. Closing it means mounting each page and asserting on the frame — a different and
+> much larger pin. **It fails green**, which by the standard's own test makes it a defect rather
+> than a footnote, and it is why the limit is written at the pin as well as here.
+>
+> **2. The Apple negative control's structural gap, which a fix round already tried and could not
+> close.** Routing `ParseNameTable` through the shared stripper closed a false green in the three
+> style-table facts and, in the same edit, took the teeth out of three of the Apple row's four fixed
+> points: they are comment-derived, so their absence half became trivially true. The fourth is live
+> code but is removed by the outermost-depth filter. **This is not fixable by finding a better
+> anchor — that was attempted and the reason it fails is structural.** Swift puts `case` at `switch`
+> depth, so every live quoted string in that body sits at least one level deeper than the arm
+> labels; Kotlin puts its `when` arms level with a live guard and an `else ->` fallback, which is
+> exactly why the Kotlin row keeps full teeth. The row still rules out a comment-collecting
+> extractor and no longer rules out a depth-preserving widening; both directions were verified by
+> mutation. The honest repair is a **fixture harness for `ParseNameTable`**, named and deliberately
+> not built inside a fix round, because it is a new control design rather than a patch.
 
 #### Phase 15.2: Define the auth pin's coverage [status: pending]
 **Goal:** Answer **#364** by stating what the auth-semantics scan must cover — which trees, which
@@ -2577,7 +2634,10 @@ mirror cannot drift either. **It must red before it is fixed.**
 
 #### Phase 15.4: The missing guards [status: pending]
 **Goal:** Close **#297** and **#302** — a pin that does not exist, and a release-notes guard that
-does not exist — each written to the 15.0 standard.
+does not exist — each written to the 15.0 standard. Also **#375**, and with it the population-key
+decision 15.1 deferred here: `docs/plans/2026-09-22-phase-15.0-census.md` §9 asks whether the Rule 6
+population is the population M15 wants, and #375 is the vacuous-capable pin the current key cannot
+see. Decide the key first; #375 follows from it rather than the other way round.
 **Surface:** Mixed
 **HelpWanted:** no
 

@@ -407,36 +407,7 @@ public sealed class ComponentReferenceDriftTests : IClassFixture<ComponentRefere
         Assert.True(published.Count > 50,
             $"only {published.Count} PUBLIC documented members — the filter ate the subject.");
 
-        // The vocabulary of a repo talking to itself. Each of these was in the
-        // shipped XML when this phase opened.
-        (string Pattern, string Why)[] banned =
-        [
-            (@"\bPhase \d", "a phase number — the reader has no access to the phase history"),
-            (@"\bGate \d", "a gate number — same"),
-            (@"\bDoD #\d", "a Definition-of-Done reference"),
-            (@"\bdesign decision \d", "a design-doc decision number"),
-            (@"\bBnDemo\b", "a demo page the reader does not have"),
-            (@"\bBnSettingsPage\b", "a demo page the reader does not have"),
-            // NO trailing \b, and that is not sloppiness — it is a correction. The
-            // phrase in the shipped XML was "the BnDemo goldens stay
-            // byte-identical", and /\bgolden\b/ does NOT match "goldens": the
-            // boundary fails against the plural the repo actually writes. The
-            // mutation caught 3 of 4 patterns and this was the miss.
-            (@"\bgolden", "a golden file the reader cannot run"),
-            (@"\bHelloComponent\b", "an internal fixture"),
-            (@"\bfile header\b", "the reader is looking at a web page, not your source file"),
-            (@"awaits \.razor compilation", "it does not — Razor components compile today"),
-        ];
-
-        var violations = new List<string>();
-        foreach (var (name, text) in published)
-            foreach (var (pattern, why) in banned)
-            {
-                Match m = Regex.Match(text, pattern, RegexOptions.IgnoreCase);
-                if (m.Success)
-                    violations.Add($"    {name}\n        matched /{pattern}/ ({why})\n"
-                        + $"        ...{Excerpt(text, m.Index)}...");
-            }
+        List<string> violations = Violations(published);
 
         Assert.True(violations.Count == 0,
             $"{violations.Count} PUBLISHED doc comment(s) speak to this repo rather than to a "
@@ -445,10 +416,290 @@ public sealed class ComponentReferenceDriftTests : IClassFixture<ComponentRefere
             + "add an exception here.\n\n" + string.Join("\n", violations));
     }
 
+    /// <summary>
+    /// THE POSITIVE CONTROL FOR THE TEN BANNED PROSE PATTERNS, HALF ONE — a TREE
+    /// ANCHOR (pin standard Rule 3; census item 8).
+    ///
+    /// <see cref="PublishedDocs_SpeakToConsumers_NotToTheRepo"/> is an ABSENCE
+    /// assertion, and its subject tree is required to be empty by construction: the
+    /// published surface must contain none of these phrases, so nothing there can ever
+    /// be a fixed point. Reword a pattern past its subject and it reports no violations
+    /// forever.
+    ///
+    /// THE ANCHOR IS THE EXCLUSION. That fact filters to the PUBLIC surface on purpose,
+    /// and says so: the XML also documents internal and private members — BnItemsJson's
+    /// wire grammar, BnListWindow's arithmetic, BnPicker's clamp guard — which are
+    /// MAINTAINER documentation the generator correctly drops. Anything deliberately
+    /// excluded from a scan is something the detector must still be able to SEE, and
+    /// that half of the file is full of exactly the repo-speak the published half must
+    /// not carry. Three of the ten patterns have a live subject there right now:
+    ///
+    ///   · `\bfile header\b`         — BnItemsJson's "normative grammar in the file
+    ///                                 header", BnPicker.Clamp's "The normative clamp
+    ///                                 (file header)"
+    ///   · `\bdesign decision \d`    — BnListWindow.Compute's "(design decision 3)"
+    ///   · `\bGate \d`               — BnPicker.OnParametersSetAsync's "(Gate 1 review…"
+    ///
+    /// THE OTHER SEVEN have no instance anywhere in this XML, which is the pin working:
+    /// they were reworded out of the published surface when this file was written and
+    /// out of the internal one since. They are controlled by the fixture in
+    /// <see cref="TheBannedProsePatterns_MatchThePhrasesTheyWereWrittenFor"/> instead,
+    /// and the split is stated rather than blurred — a tree anchor and a fixture are
+    /// not the same strength of evidence.
+    ///
+    /// IF THIS REDS: an internal doc comment was rewritten, which is legitimate and
+    /// free — maintainer prose is not governed by this pin. Move the pattern down to
+    /// the fixture-only list and say so, rather than restoring prose to satisfy a test
+    /// or deleting the assertion.
+    /// </summary>
+    [Fact]
+    public void TheBannedProsePatterns_StillHitTheUnpublishedHalfOfTheXml()
+    {
+        XDocument xml = ShippedXml();
+        List<(string Name, string Text)> unpublished = NonPublishedDocs(xml);
+
+        Assert.True(unpublished.Count > 10,
+            $"only {unpublished.Count} NON-published documented members — this control's subject "
+            + "is the internal/private half of the shipped XML, and an empty half would let every "
+            + "assertion below pass over nothing. Either the filter inverted or "
+            + "GenerateDocumentationFile stopped emitting internals.");
+
+        string[] anchored = [@"\bfile header\b", @"\bdesign decision \d", @"\bGate \d"];
+
+        // THE FLOOR ON THE ITERATED SET (pin standard Rule 2). `unpublished.Count > 10`
+        // above floors the SUBJECT — the half of the XML this control searches. It says
+        // nothing about `anchored`, which is what the loop below actually iterates, and
+        // emptying that array left this whole fact GREEN: measured by the 15.1 branch
+        // review, in a fact 15.1 itself added, which is why the floor is here now.
+        //
+        // WHY THREE, and why a floor rather than the set-equality coupling its sibling
+        // fact uses. The sibling couples two lists that must be IDENTICAL — every one of
+        // the ten patterns gets a fixture row. This list is deliberately a SUBSET: the
+        // doc comment above names these three, one at a time, as the patterns with a live
+        // subject in the unpublished half, and says outright that the other seven are
+        // fixture-controlled instead. So the honest floor is the size of that enumeration.
+        // Coupling the other way — asserting this list equals every pattern that happens
+        // to hit — was considered and refused: it would red the moment a maintainer's doc
+        // comment gained a "Phase 3.4", which is ordinary correct writing, and a guard
+        // that reds on correct writing is the thing this file's own header warns about.
+        //
+        // `>=`, not `==`: a pattern GAINING a tree anchor strengthens this control and
+        // should be free to record. Losing one must red, because the failure message
+        // below already demands that demotion be deliberate and written down.
+        Assert.True(anchored.Length >= 3,
+            $"this control names only {anchored.Length} tree-anchored pattern(s) — "
+            + $"[{string.Join(", ", anchored)}] — and the loop below iterates exactly that list, so "
+            + "shortening it does not make this fact fail, it makes it check less. The doc comment "
+            + "above enumerates THREE patterns with a live subject in the unpublished half of the "
+            + "XML. If one genuinely lost its tree anchor, that is the deliberate demotion the "
+            + "failure message below describes: move it to the fixture-only list, lower this floor "
+            + "in the same commit, and correct the enumeration above so the count and the prose "
+            + "cannot drift apart.");
+
+        foreach (string pattern in anchored)
+        {
+            // Rule 4: this control names three patterns by their literal text. If one
+            // is reworded in BannedProse and not here, the loop below would be
+            // exercising a pattern the pin no longer uses.
+            Assert.True(BannedProse.Any(b => b.Pattern == pattern),
+                $"/{pattern}/ is named here as a tree-anchored pattern but is no longer in "
+                + "BannedProse. It was reworded or removed and this control was not moved with "
+                + "it — so this loop is about to test a pattern the pin does not run. Re-point "
+                + "deliberately.");
+
+            var hits = unpublished
+                .Where(m => Regex.IsMatch(m.Text, pattern, RegexOptions.IgnoreCase))
+                .Select(m => m.Name)
+                .ToList();
+
+            Assert.True(hits.Count > 0,
+                $"/{pattern}/ no longer matches ANY member of the unpublished half of "
+                + "BlazorNative.Components.xml, and that half is this control's fixed point — the "
+                + "maintainer documentation the publication filter deliberately drops, which is "
+                + "where the repo is still allowed to talk to itself.\n\n"
+                + "TWO THINGS THIS CAN MEAN, and they need different answers. Either the PATTERN "
+                + "was reworded past its subject — in which case PublishedDocs_SpeakToConsumers_"
+                + "NotToTheRepo is now green because it cannot see, not because the docs are "
+                + "clean, and the pattern is the thing to fix. Or the internal PROSE was rewritten "
+                + "and this phrase simply no longer occurs anywhere — which is fine and free, and "
+                + "the answer is to move this pattern into the fixture-only list in "
+                + "TheBannedProsePatterns_MatchThePhrasesTheyWereWrittenFor and record that it "
+                + "lost its tree anchor.");
+        }
+    }
+
+    /// <summary>
+    /// THE POSITIVE CONTROL, HALF TWO — a FIXTURE for all ten patterns, run through
+    /// the pin's OWN detector (<see cref="Violations"/>), not a copy of it.
+    ///
+    /// Each row is a phrase in the shape the shipped XML actually carried when this
+    /// phase opened; four are verbatim lines still in the file. The pin's failure mode
+    /// is a pattern that stops matching the prose people really write, and the scar is
+    /// already recorded three lines above <c>\bgolden</c>: `/\bgolden\b/` does NOT match
+    /// "goldens", and the plural is what the repo writes. That correction was found by
+    /// a mutation and would have been lost again by the next person to "tidy" the
+    /// pattern with a trailing boundary — SO THE PLURAL IS IN THE FIXTURE. Add the
+    /// boundary back and this reds.
+    ///
+    /// THE NEGATIVE HALF is ordinary English that contains each pattern's words in a
+    /// shape it must refuse. Without it, "make every pattern match" is satisfiable by
+    /// widening them all to `.`, and the pin would red on prose doing its job — which
+    /// the file's own header warns about for a different reason: a pin that reds on
+    /// correct writing teaches the next author to delete engineering truth.
+    ///
+    /// WHAT A FIXTURE CANNOT BUY, stated because the strengths differ: a hand-written
+    /// phrase proves the regex still matches a string in this file. It cannot prove the
+    /// regex matches the prose a future author will write. That is the unguardable
+    /// WIDTH of the list — ten phrasings someone thought of — and no control over a
+    /// fixed pattern set reaches it.
+    /// </summary>
+    [Fact]
+    public void TheBannedProsePatterns_MatchThePhrasesTheyWereWrittenFor()
+    {
+        (string Pattern, string Phrase)[] fixtures =
+        [
+            (@"\bPhase \d", "Introduced in Phase 3.4 when the renderer learned about text."),
+            (@"\bGate \d", "Tightened at Gate 1 review, see the clamp note."),
+            (@"\bDoD #\d", "Closes M8 DoD #5."),
+            (@"\bdesign decision \d", "Fixed row height in dp/pt (design decision 3)."),
+            (@"\bBnDemo\b", "Exercised by BnDemo; the BnDemo goldens stay byte-identical."),
+            (@"\bBnSettingsPage\b", "See BnSettingsPage for the switch wiring."),
+            // THE PLURAL, deliberately. /\bgolden\b/ does not match it.
+            (@"\bgolden", "the BnDemo goldens stay byte-identical"),
+            (@"\bHelloComponent\b", "Mirrors HelloComponent in the test project."),
+            (@"\bfile header\b", "Normative grammar in the file header."),
+            (@"awaits \.razor compilation", "The typed overload awaits .razor compilation."),
+        ];
+
+        // THE COUPLING between the fixture rows and the pattern list. Set equality,
+        // spelled out as two differences so the failure can say WHICH way it broke:
+        // an xUnit sequence diff names the strings and says nothing about the repair,
+        // which is the state that teaches the next author to edit the fixture instead
+        // of the pattern. This is the shape PackagePurityTests' alternation coupling
+        // mirrors; 15.1 task 4b brought the exemplar up to the same bar.
+        List<string> unfixtured = BannedProse.Select(b => b.Pattern)
+            .Except(fixtures.Select(f => f.Pattern)).ToList();
+        List<string> orphaned = fixtures.Select(f => f.Pattern)
+            .Except(BannedProse.Select(b => b.Pattern)).Distinct().ToList();
+
+        Assert.True(unfixtured.Count == 0 && orphaned.Count == 0,
+            "The fixture rows are no longer set-equal to BannedProse.\n"
+            + $"    unfixtured: {DescribePatterns(unfixtured)}  <- banned patterns with NO fixture row\n"
+            + $"    orphaned:   {DescribePatterns(orphaned)}  <- fixture rows matching no live pattern\n"
+            + "An UNFIXTURED pattern is what this equality exists for: it is a live banned "
+            + "pattern that nothing below ever runs the detector against, so it can be reworded "
+            + "past its subject and PublishedDocs_SpeakToConsumers_NotToTheRepo will report zero "
+            + "violations forever while the published docs fill up with repo-speak. That is "
+            + "exactly how the /\\bgolden\\b/ plural was lost once already. Add a row carrying a "
+            + "phrase in the shape the shipped XML really wrote.\n"
+            + "An ORPHANED row means a pattern was removed or respelled and the fixture was not "
+            + "moved with it. Re-point the row at the pattern's new spelling, or -- if the "
+            + "pattern is genuinely gone -- delete both together and say so. Deleting the row "
+            + "alone, or this assertion, silently narrows what the control covers, which is the "
+            + "defect census item 8 recorded.");
+
+        foreach (var (pattern, phrase) in fixtures)
+        {
+            List<string> hits = Violations([($"fixture:{pattern}", phrase)]);
+            Assert.True(hits.Any(h => h.Contains($"/{pattern}/", StringComparison.Ordinal)),
+                $"/{pattern}/ no longer matches the phrase it was written for:\n\n    \"{phrase}\"\n\n"
+                + "That phrase is the shape the shipped XML carried when this pin was written, and "
+                + "several are verbatim lines still in the file. A pattern that has stopped "
+                + "matching its own subject makes PublishedDocs_SpeakToConsumers_NotToTheRepo "
+                + "report zero violations forever while the published docs fill up with repo-speak. "
+                + "Fix the pattern; do not rewrite the fixture to suit it.");
+        }
+
+        // THE NEGATIVE: ordinary prose that shares the words but not the shape. A net
+        // widened until everything matches is not a stricter pin, it is a broken one.
+        string[] nearMisses =
+        [
+            "We phase the rollout in gradually; the gateway stays open.",
+            "See BnDemonstrator and BnSettingsPageModel for the wiring.",
+            "The golfer left a note in the header file about the grammar.",
+            "This overload awaits razor compilation and a DoD number 5 sign-off.",
+            "HelloComponentBase is internal, and design decisions were revisited.",
+        ];
+
+        foreach (string phrase in nearMisses)
+        {
+            List<string> hits = Violations([("near-miss", phrase)]);
+            Assert.True(hits.Count == 0,
+                $"a banned pattern now matches ordinary prose:\n\n    \"{phrase}\"\n\n"
+                + string.Join("\n", hits)
+                + "\n\nEvery one of these shares words with a banned pattern in a shape the "
+                + "pattern must refuse — no digit after 'Phase', no word boundary after 'BnDemo', "
+                + "'header file' rather than 'file header', no literal dot before 'razor'. A "
+                + "pattern widened past those distinctions reds on doc comments that are doing "
+                + "their job, and the next author will delete the sentence rather than the "
+                + "pattern.");
+        }
+    }
+
+    /// <summary>The vocabulary of a repo talking to itself. Each of these was in the
+    /// shipped XML when phase 8.4 opened. Declared once and shared by the pin and both
+    /// of its controls, so a control can never be testing a stale copy of the list —
+    /// which is the whole reason the array moved out of the fact body in 15.1.</summary>
+    private static readonly (string Pattern, string Why)[] BannedProse =
+    [
+        (@"\bPhase \d", "a phase number — the reader has no access to the phase history"),
+        (@"\bGate \d", "a gate number — same"),
+        (@"\bDoD #\d", "a Definition-of-Done reference"),
+        (@"\bdesign decision \d", "a design-doc decision number"),
+        (@"\bBnDemo\b", "a demo page the reader does not have"),
+        (@"\bBnSettingsPage\b", "a demo page the reader does not have"),
+        // NO trailing \b, and that is not sloppiness — it is a correction. The
+        // phrase in the shipped XML was "the BnDemo goldens stay
+        // byte-identical", and /\bgolden\b/ does NOT match "goldens": the
+        // boundary fails against the plural the repo actually writes. The
+        // mutation caught 3 of 4 patterns and this was the miss. The plural is
+        // pinned as a fixture in
+        // TheBannedProsePatterns_MatchThePhrasesTheyWereWrittenFor so the
+        // correction cannot be tidied away a second time.
+        (@"\bgolden", "a golden file the reader cannot run"),
+        (@"\bHelloComponent\b", "an internal fixture"),
+        (@"\bfile header\b", "the reader is looking at a web page, not your source file"),
+        (@"awaits \.razor compilation", "it does not — Razor components compile today"),
+    ];
+
+    /// <summary>Pattern lists for a failure message: `/…/` per entry, `(none)` when
+    /// empty, so an empty side reads as an answer rather than as a missing value.</summary>
+    private static string DescribePatterns(IReadOnlyCollection<string> patterns)
+        => patterns.Count == 0 ? "(none)" : string.Join(" ", patterns.Select(p => $"/{p}/"));
+
+
+    /// <summary>THE DETECTOR, factored out so the pin and both of its positive
+    /// controls run the same code. A control that re-implemented this loop would
+    /// prove that the control's copy works.</summary>
+    private static List<string> Violations(IEnumerable<(string Name, string Text)> docs)
+    {
+        var violations = new List<string>();
+        foreach (var (name, text) in docs)
+            foreach (var (pattern, why) in BannedProse)
+            {
+                Match m = Regex.Match(text, pattern, RegexOptions.IgnoreCase);
+                if (m.Success)
+                    violations.Add($"    {name}\n        matched /{pattern}/ ({why})\n"
+                        + $"        ...{Excerpt(text, m.Index)}...");
+            }
+        return violations;
+    }
+
     /// <summary>The documented members the generator PUBLISHES: public members of
     /// public types, plus the public types themselves — the same surface
     /// `--member-accessibility-level public` emits.</summary>
     private static List<(string Name, string Text)> PublicSurfaceDocs(XDocument xml)
+        => PartitionDocs(xml).Published;
+
+    /// <summary>The complement: everything in the shipped XML the generator DROPS —
+    /// internal types, private fields, protected overrides. Maintainer documentation,
+    /// correctly unpublished, and therefore the one place the banned vocabulary is
+    /// still allowed to live. That is what makes it a fixed point.</summary>
+    private static List<(string Name, string Text)> NonPublishedDocs(XDocument xml)
+        => PartitionDocs(xml).Unpublished;
+
+    private static (List<(string Name, string Text)> Published,
+                    List<(string Name, string Text)> Unpublished) PartitionDocs(XDocument xml)
     {
         var publicTypeNames = PublicTypes().Select(t => t.FullName!).ToHashSet(StringComparer.Ordinal);
 
@@ -464,7 +715,8 @@ public sealed class ComponentReferenceDriftTests : IClassFixture<ComponentRefere
             foreach (var m in t.GetMethods(flags)) publicMemberIds.Add($"M:{t.FullName}.{m.Name}");
         }
 
-        var result = new List<(string, string)>();
+        var published = new List<(string, string)>();
+        var unpublished = new List<(string, string)>();
         foreach (var member in xml.Descendants("member"))
         {
             string id = member.Attribute("name")?.Value ?? "";
@@ -472,17 +724,17 @@ public sealed class ComponentReferenceDriftTests : IClassFixture<ComponentRefere
                 ? id[..id.IndexOf('(', StringComparison.Ordinal)]
                 : id;
 
-            if (!publicMemberIds.Contains(id) && !publicMemberIds.Contains(idNoArgs))
-                continue;
-
             // A member of a public type is only published if its own declaring
             // type is public — GetProperties(Public) already guarantees that.
-            result.Add((id, member.Value));
+            if (publicMemberIds.Contains(id) || publicMemberIds.Contains(idNoArgs))
+                published.Add((id, member.Value));
+            else
+                unpublished.Add((id, member.Value));
         }
 
-        Assert.All(result, r => Assert.True(
+        Assert.All(published, r => Assert.True(
             publicTypeNames.Count > 0, "public type set went empty"));
-        return result;
+        return (published, unpublished);
     }
 
     private static XDocument ShippedXml()
