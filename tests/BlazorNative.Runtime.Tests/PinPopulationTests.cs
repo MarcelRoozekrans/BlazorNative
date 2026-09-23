@@ -119,6 +119,15 @@ public sealed class PinPopulationTests
             // else routes through. This file is allowed to SPELL the markers,
             // because it is where they are declared; nothing can scan for a string
             // it is forbidden to contain.
+            //
+            // STILL TWO, deliberately, after 15.1 moved CommentStrippedSource.cs into
+            // tests/Shared beside BnRepo.cs. Living in that directory is not the
+            // qualification — doing the walk is. The stripper never reaches the tree:
+            // it is handed a path by its caller and reads it. It carries no bypass
+            // marker in live code, so it is SCANNED like any other test file, and it
+            // must be. Every by-name exclusion is a blind spot the scan can never read
+            // again, so an exclusion added for tidiness costs coverage and buys
+            // nothing. Do not grow this list because a file moved next door.
             string name = Path.GetFileName(path);
             if (name == "BnRepo.cs" || name == "PinPopulationTests.cs") continue;
 

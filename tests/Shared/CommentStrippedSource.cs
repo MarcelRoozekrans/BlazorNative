@@ -1,14 +1,26 @@
 using System.Text;
 
-namespace BlazorNative.Runtime.Tests;
+namespace BlazorNative.Tests.Shared;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CommentStrippedSource — THE single "remove comments before scanning" for every
 // pin in this repo. Swift, Kotlin and C# share both comment forms, so one
-// implementation serves all eight callers: GeneratedSymbolShadowTests,
+// implementation serves all ten callers: GeneratedSymbolShadowTests,
 // DispatchSurfaceDriftTests, AuthSemanticsDriftTests, PinPopulationTests,
-// NSLogDriftTests, ConsoleErrorDriftTests, AndroidLogDriftTests and
-// DeepLinkSeedDriftTests.
+// NSLogDriftTests, ConsoleErrorDriftTests, AndroidLogDriftTests,
+// DeepLinkSeedDriftTests, BnSafeAreaCoverageTests and ShellStyleTableDriftTests.
+//
+// IT LIVES IN tests/Shared BECAUSE "ONE IMPLEMENTATION" WAS ONLY TRUE INSIDE ONE
+// PROJECT. Until phase 15.1 this file sat in tests/BlazorNative.Runtime.Tests, and
+// neither BlazorNative.Renderer.Tests nor BlazorNative.Analyzers.Tests had a project
+// reference to it -- both reference only src/. So "one stripper, eight callers" was
+// a statement about Runtime.Tests, and a pin in either other project could not
+// reach the shared copy even having been told to. That was not hypothetical: it is
+// exactly why ShellStyleTableDriftTests carried a DISCLOSED FALSE GREEN over
+// block-commented dispatch arms, with its own comment naming this move as the
+// blocker. It is linked into every test project by tests/Directory.Build.props, the
+// same way BnRepo.cs is and for the same reason -- a project cannot forget it, and
+// a project cannot be unable to reach it.
 //
 // WHY IT IS ONE TYPE, TWICE OVER.
 //

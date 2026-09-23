@@ -272,10 +272,26 @@ public sealed class ShellStyleTableDriftTests
     ///     function; the nested arms of `when (value)` sit deeper. Nothing else
     ///     separates the two, because a nested arm has the identical shape.
     ///
+    /// **COMMENTS ARE REMOVED BEFORE EITHER ANCHOR RUNS**, by
+    /// <c>CommentStrippedSource.Strip</c> — the repo's one stripper, string-literal-aware
+    /// and shared with nine other pins. Until phase 15.1 that helper lived in
+    /// `BlazorNative.Runtime.Tests`, which this project does not reference, and the
+    /// consequence was a disclosed false GREEN in this very method: an arm inside
+    /// `/* … */` kept its indentation and its shape, so it was collected and the pin
+    /// stayed green over a dispatch that no longer existed. Rule 5's defect direction,
+    /// not its footnote direction. Moving the helper to `tests/Shared` closed it;
+    /// mutation-verified in both directions — a block-commented arm reds naming the
+    /// style now, and passed before the move. A LINE-commented arm was already
+    /// excluded, by the anchor rather than by the stripper, and still reds.
+    ///
+    /// The stripper preserves every newline and every line's surviving leading spaces,
+    /// which is what lets the DEPTH anchor keep reading true indentation off stripped
+    /// text rather than off the raw file.
+    ///
     /// Fails loudly when the declaration cannot be found, and now also when the body
     /// contains no arm at all: either failure means the pin has lost its subject.
     ///
-    /// **What this does NOT cover** (Rule 5), all four measured rather than guessed:
+    /// **What this does NOT cover** (Rule 5), both measured rather than guessed:
     ///
     ///  - **Depth is read from LEADING SPACES.** A shell reformatted to tabs, or one
     ///    that indented a nested arm more shallowly than a top-level one, would be
@@ -284,25 +300,13 @@ public sealed class ShellStyleTableDriftTests
     ///    into the set, which is precisely what
     ///    <see cref="TheNameExtractor_CollectsArmLabelsOnly_NotEveryQuotedString"/>
     ///    reds on — so they fail LOUD.
-    ///  - **A LINE-commented arm is correctly excluded** — `// "flexGrow" -> …` does
-    ///    not start with a quote, so the anchor misses it and the fact reds naming
-    ///    `flexGrow`. Mutation-verified. The old every-quoted-string extractor passed
-    ///    that mutation; this is one of the holes the narrowing closed.
-    ///  - **A BLOCK-commented arm is NOT.** An arm inside `/* … */` keeps its
-    ///    indentation and its shape, so it is collected and the pin stays green over a
-    ///    dispatch that no longer exists. Mutation-verified, and it is a false GREEN —
-    ///    Rule 5's defect direction, not its footnote direction. It is **bounded by
-    ///    inspection, not by the parser**: none of the three bodies contains a `/*` at
-    ///    all, verified by count. The real fix is Rule 8 consolidation — route this
-    ///    through `CommentStrippedSource`, which is string-literal-aware and already
-    ///    handles Kotlin and Swift — and that is blocked on the helper living in
-    ///    `BlazorNative.Runtime.Tests` rather than in `tests/Shared`. **This limit
-    ///    predates 15.1 and the narrowing did not widen it**: the old extractor
-    ///    collected block-commented arms too, along with everything else.
     ///  - **It does not understand `#if`.** None of the three bodies has one.</summary>
     private static HashSet<string> ParseNameTable(string relativePath, string pattern, string what = "setStyle")
     {
-        var source = ReadShellSource(relativePath);
+        // Rule 8: the shared stripper, reachable from this project only since 15.1
+        // moved it into tests/Shared. It runs BEFORE the declaration match so a
+        // commented-out copy of the whole dispatch cannot be the thing we parse.
+        var source = CommentStrippedSource.Strip(ReadShellSource(relativePath));
         var match = Regex.Match(source, pattern, RegexOptions.Singleline);
 
         Assert.True(match.Success,

@@ -334,9 +334,23 @@ knew the shared copy with **three** callers existed. The fix landed on the less-
 widely-used one kept the bug, and four more copies were still undiscovered.
 
 One `BnRepo.Root()`, called by every test that reaches the checkout — 27 files at the time of
-writing. One `CommentStrippedSource`, 8 callers — **9 since phase 15.1**, and that growth is the
+writing. One `CommentStrippedSource`, 8 callers — **10 since phase 15.1**, and that growth is the
 rule working rather than an exception to it. The caller count grows with the suite and should; the
 count of *implementations* is the one that must stay at one.
+
+### "One implementation" is a claim about REACHABILITY, not about file count
+
+The tenth caller is the one that makes the point. `CommentStrippedSource` lived in
+`tests/BlazorNative.Runtime.Tests`, and neither of the other two test projects referenced it, so
+there was exactly one implementation and two thirds of the suite could not call it. That is not a
+tidiness problem. `ShellStyleTableDriftTests` in `BlazorNative.Renderer.Tests` carried a
+**disclosed false green** over block-commented dispatch arms whose own comment named the fix and
+named the blocker: the helper was in the wrong project. It cost nothing to move it to
+`tests/Shared` and link it through `tests/Directory.Build.props` the way `BnRepo.cs` is linked, and
+the gap closed on the next run.
+
+So when Rule 8 says *merge the copies*, the merged thing has to land somewhere every caller can
+reach. A shared helper a project cannot reference is a copy waiting to be written.
 
 ### The corollary Rule 8 does NOT state, and 15.1 had to decide
 
