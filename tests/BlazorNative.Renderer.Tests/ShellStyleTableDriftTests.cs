@@ -51,8 +51,17 @@ namespace BlazorNative.Renderer.Tests;
 // population, and it was here. `ParseNameTable` collected EVERY quoted string in
 // the dispatch body, so value keywords (`row`, `center`, `nowrap`, `absolute`),
 // comment text and log-message prose sat in the same bag as arm labels — 48
-// strings for a dispatch with 26 arms. A manifest style whose arm was never
-// written READ AS DISPATCHED whenever an unrelated string matched its name.
+// strings for a dispatch with 26 arms.
+//
+// What that buys an unwritten arm depends on WHICH set the bag is compared
+// against, and that is luck rather than design: a manifest style whose arm was
+// never written reads as dispatched as soon as some unrelated quoted string in
+// the body matches its name. The bag really did hold genuine manifest names —
+// `gap`, a live yogaStyles entry, was in the Swift body's set, put there by a
+// commented-out example. That one was never checked against a name it could
+// collide with, because the Swift body's set is only ever compared with the
+// three VISUAL styles. It is evidence of the defect operating on a real name,
+// not evidence of an assertion that flipped.
 //
 // Two things changed, and neither is sufficient alone. The extractor now anchors
 // on ARM-LABEL POSITION and outermost depth; and
@@ -240,8 +249,17 @@ public sealed class ShellStyleTableDriftTests
     /// `absolute` are all value literals of a `when (value)` arm — and comments carry
     /// quoted names too: the Swift body's `OpenElement("scroll") + AddAttribute("gap",
     /// …)` example put **`gap`, a real manifest Yoga style name**, into the bag with
-    /// no arm behind it. A manifest style whose arm was never written READ AS
-    /// DISPATCHED whenever any unrelated quoted string happened to match its name.
+    /// no arm behind it.
+    ///
+    /// **Whether a name in that bag flips an assertion depends on which set the bag is
+    /// compared against — and that is luck, not design.** A manifest style whose arm
+    /// was never written reads as dispatched the moment some unrelated quoted string
+    /// in the body matches its name. `gap` never did flip one: the Swift body's set is
+    /// only ever compared with `VisualStyleAttributes`, which is `backgroundColor`,
+    /// `color` and `fontSize`, and iOS pins its Yoga half at runtime through a
+    /// different mechanism entirely. It shows the noise collection reaching a GENUINE
+    /// manifest name rather than a synthetic probe, which is the reason to narrow the
+    /// extractor rather than to argue about it.
     ///
     /// Two anchors do the narrowing, and both are derived from the shell sources
     /// rather than assumed:
@@ -345,10 +363,11 @@ public sealed class ShellStyleTableDriftTests
     /// Before phase 15.1 <see cref="ParseNameTable"/> collected EVERY quoted string in
     /// the dispatch body — value keywords, comment text and log-message prose landed
     /// in the same bag as arm labels. Yoga's VALUE vocabulary overlaps its PROPERTY
-    /// vocabulary, so a manifest style whose arm was never written READ AS DISPATCHED
-    /// whenever an unrelated string matched its name. The narrowing that closed it is
-    /// only safe for as long as something notices it being undone, and this is that
-    /// something.
+    /// vocabulary, so a manifest style whose arm was never written reads as dispatched
+    /// whenever an unrelated string matches its name — and whether that flips an
+    /// assertion depends on which set the bag is compared against, which no part of
+    /// the design controls. The narrowing that closed it is only safe for as long as
+    /// something notices it being undone, and this is that something.
     ///
     /// The names below were MEASURED out of the three bodies, not assumed, and each is
     /// asserted twice: it must still be PRESENT as a quoted string in the body — so a
@@ -356,9 +375,15 @@ public sealed class ShellStyleTableDriftTests
     /// vacuous — and it must be ABSENT from the parsed set. Widen the extractor back
     /// and the second half fails, naming the name.
     ///
-    /// **The headline is `gap` in the Swift body.** It is a real
-    /// `yogaStyles` entry, and it reaches that body only through a comment's
-    /// `AddAttribute("gap", …)` example. Under the old extractor it was in the bag.
+    /// **The sharpest of them is `gap` in the Swift body** — sharpest as a
+    /// demonstration, and it is worth being exact about what it demonstrates. It is a
+    /// real `yogaStyles` entry, its only appearance in that body is inside a
+    /// commented-out `AddAttribute("gap", …)` example, and under the old extractor it
+    /// was in the bag. It was **never checked against a name it could collide with**:
+    /// this body's set is compared only with `VisualStyleAttributes`, never with
+    /// `YogaStyleAttributes`. So it did not mask a wrong green on any assertion that
+    /// existed — it shows the collection defect operating on a genuine manifest name
+    /// instead of a name invented to prove a point.
     ///
     /// Limits (Rule 5): this controls the OVER-match direction only. Under-matching —
     /// an arm shape the grammar misses — is caught by the three facts above going red,
