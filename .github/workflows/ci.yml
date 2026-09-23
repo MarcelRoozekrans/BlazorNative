@@ -3071,9 +3071,15 @@ jobs:
         uses: actions/cache@v6
         with:
           path: ${{ runner.temp }}/SPM
-          key: spm-${{ runner.os }}-${{ hashFiles('src/BlazorNative.Apple/project.yml') }}
-          restore-keys: |
-            spm-${{ runner.os }}-
+          # KEYED ON Package.resolved, AND THERE IS NO restore-keys FALLBACK.
+          # It was keyed on project.yml with a `restore-keys: spm-<os>-` line, and
+          # that pair is a false-green machine: the key encodes the dependency
+          # declaration and the fallback then DISCARDS the key. Measured on PR #378
+          # — the key missed legitimately and the fallback restored the pre-change
+          # cache, so this required lane compiled the OLD Kingfisher and went green
+          # over a pin it had never exercised. A cache miss must cost a resolve now,
+          # not silently reuse whatever happened to be there.
+          key: spm-${{ runner.os }}-${{ hashFiles('src/BlazorNative.Apple/Package.resolved') }}
 
       # ── Publish the static NativeAOT archive ────────────────────────────────
       - name: Publish ${{ matrix.rid }} (NativeLib=Static; assert exactly 4 IL2072)
@@ -3242,6 +3248,23 @@ jobs:
         working-directory: src/BlazorNative.Apple
         run: xcodegen generate --spec project.yml 2>&1 | tee ../../ios-build-out/xcodegen.log
 
+      # ── THE SPM GRAPH IS PINNED IN THE TREE ─────────────────────────────────
+      # Package.resolved is committed, copied into the GENERATED workspace, and
+      # enforced below with -onlyUsePackageVersionsFromResolvedFile. Without it
+      # xcodebuild re-resolves project.yml's range on every run, so the build is
+      # not reproducible from a checkout — it depends on what upstream published
+      # since. Not hypothetical: Kingfisher 8.13.0 raised its own deployment floor
+      # from iOS 13 to iOS 15 in a MINOR release on 2026-09-23 and broke the iOS
+      # lane with no commit anywhere in this tree.
+      - name: Pin the SwiftPM graph to the committed Package.resolved
+        working-directory: src/BlazorNative.Apple
+        run: |
+          set -euo pipefail
+          dest=BnHost.xcodeproj/project.xcworkspace/xcshareddata/swiftpm
+          mkdir -p "$dest"
+          cp Package.resolved "$dest/Package.resolved"
+          echo "pinned graph:"; cat Package.resolved
+
       # ── THE GATE ────────────────────────────────────────────────────────────
       # `build-for-testing` compiles BnHost (Swift + the two .mm files) AND
       # BnHostTests, resolves Kingfisher through SwiftPM, and LINKS both products
@@ -3271,6 +3294,7 @@ jobs:
                  -destination "$IOS_DESTINATION" \
                  -derivedDataPath "$RUNNER_TEMP/DerivedData" \
                  -clonedSourcePackagesDirPath "$RUNNER_TEMP/SPM" \
+                 -onlyUsePackageVersionsFromResolvedFile \
                  ARCHS=arm64 \
                  CODE_SIGNING_ALLOWED=NO \
                  2>&1 | tee ../../ios-build-out/xcodebuild-build-for-testing.log; then
@@ -3295,6 +3319,39 @@ jobs:
           WHY
             exit 1
           fi
+
+      # ── THE PIN'S OWN PIN ───────────────────────────────────────────────────
+      # -onlyUsePackageVersionsFromResolvedFile is the MECHANISM. This is the
+      # assertion that the mechanism ran, and they are not the same thing: delete
+      # the flag and the build still SUCCEEDS, silently re-resolved. The expected
+      # version is read back out of Package.resolved rather than restated here, so
+      # the number keeps exactly one home.
+      - name: Assert the compiled SwiftPM versions match Package.resolved
+        working-directory: src/BlazorNative.Apple
+        run: |
+          set -euo pipefail
+          log=../../ios-build-out/xcodebuild-build-for-testing.log
+          [ -f "$log" ] || { echo "::error::no xcodebuild log at $log" >&2; exit 1; }
+          python3 - <<'EOF' > "$RUNNER_TEMP/bn-pins.txt"
+          import json
+          d = json.load(open('Package.resolved'))
+          for pin in d['pins']:
+              print(pin['identity'], pin['location'], pin['state']['version'])
+          EOF
+          fail=0
+          while read -r identity location want; do
+            got=$(grep -F "$location @ " "$log" | tail -1 | awk '{print $NF}' || true)
+            if [ -z "$got" ]; then
+              echo "::error::$identity never appears in the xcodebuild resolution output. Either it left project.yml without Package.resolved following, or the log format changed and this assert is now blind. Do not delete it to make this green." >&2
+              fail=1
+            elif [ "$got" != "$want" ]; then
+              echo "::error::$identity resolved to $got but Package.resolved pins $want. xcodebuild re-resolved past the committed pin, which is the exact channel that let Kingfisher 8.13.0 raise this project iOS floor with no commit in the tree." >&2
+              fail=1
+            else
+              echo "$identity @ $got matches the committed pin"
+            fi
+          done < "$RUNNER_TEMP/bn-pins.txt"
+          [ "$fail" -eq 0 ]
 
       # ── Prove it LINKED, rather than trusting a zero exit code ──────────────
       # `xcodebuild` exiting 0 is not the assertion. A scheme change that quietly

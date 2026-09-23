@@ -115,6 +115,22 @@
 name: ios
 
 on:
+  # ── PULL_REQUEST, AND THE POSTURE CHANGED WITH IT ─────────────────────────
+  # This lane was dispatch-and-push-to-main only, and INFORMATIONAL by design:
+  # simulator EXECUTION flakes, compilation does not, and compilation was said to
+  # be covered by the required `ios-build` in ci.yml.
+  #
+  # That reasoning held right up until it did not. On 2026-09-23 Kingfisher 8.13.0
+  # raised its deployment floor mid-minor; this lane caught it and `ios-build` did
+  # not, because `ios-build` restored a SwiftPM cache through a `restore-keys`
+  # fallback that discarded its own key. The advisory lane was the honest one, and
+  # a PR merged green over a red compile because nothing it gated cared.
+  #
+  # So it runs on PRs now. The flake argument was never wrong — it is a real cost,
+  # paid deliberately — but 'the required lane already covers compilation' was a
+  # claim about another workflow's cache behaviour, and nothing pinned it.
+  pull_request:
+    branches: [main]
   workflow_dispatch:
   push:
     branches: [main]
@@ -408,6 +424,18 @@ jobs:
         working-directory: src/BlazorNative.Apple
         run: xcodegen generate --spec project.yml 2>&1 | tee ../../ios-out/xcodegen.log
 
+      # Same committed pin ci.yml uses — see the long note there. Without it this
+      # lane re-resolves project.yml's range on every run, which is exactly how it
+      # went red on a tree nobody had touched.
+      - name: Pin the SwiftPM graph to the committed Package.resolved
+        working-directory: src/BlazorNative.Apple
+        run: |
+          set -euo pipefail
+          dest=BnHost.xcodeproj/project.xcworkspace/xcshareddata/swiftpm
+          mkdir -p "$dest"
+          cp Package.resolved "$dest/Package.resolved"
+          echo "pinned graph:"; cat Package.resolved
+
       # ── DEVICE leg: build only. There is no device to run XCTest on ──────────
       # The lane's job on `ios-arm64` is to prove the slice COMPILES and LINKS —
       # NativeAOT archive, merged runtime support, Yoga, Swift, ObjC++, all of it
@@ -427,6 +455,7 @@ jobs:
           xcodebuild build \
             -project BnHost.xcodeproj \
             -scheme BnHost \
+            -onlyUsePackageVersionsFromResolvedFile \
             -sdk "$IOS_SDK" \
             -arch arm64 \
             -derivedDataPath "$RUNNER_TEMP/DerivedData" \
@@ -461,6 +490,7 @@ jobs:
           xcodebuild test \
             -project BnHost.xcodeproj \
             -scheme BnHost \
+            -onlyUsePackageVersionsFromResolvedFile \
             -destination "platform=iOS Simulator,id=${{ steps.sim.outputs.udid }}" \
             -resultBundlePath ../../ios-out/BnHost.xcresult \
             -derivedDataPath "$RUNNER_TEMP/DerivedData" \
