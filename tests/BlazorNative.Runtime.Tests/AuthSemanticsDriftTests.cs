@@ -97,20 +97,40 @@ public sealed class AuthSemanticsDriftTests
     /// — writes a BiometricPrompt offering weak biometry or device credential
     /// without spelling one dotted token, and it was MEASURED 4/4 green.</para>
     ///
-    /// <para>THE SPAN RULE IN <see cref="AuthenticatorHits"/> IS WHAT MAKES THEM
-    /// SAFE TO ADD, and it was measured rather than assumed: the whole-tree
-    /// occurrence count went 9 → 10, not 9 → 14. Every bare match that sits inside
-    /// a dotted or AUTH_-prefixed match is suppressed as a false echo, exactly as
-    /// <c>.deviceOwnerAuthentication</c> is inside
-    /// <c>.deviceOwnerAuthenticationWithBiometrics</c>. The one new occurrence is
-    /// a real one the dotted vocabulary could not see —
-    /// <c>BiometricPrompt.ERROR_NO_DEVICE_CREDENTIAL</c>, an error code rather than
-    /// an authenticator, which is why it is an `ignored` entry with a reason and
-    /// not a site.</para>
+    /// <para>TWO SUPPRESSION RULES IN <see cref="AuthenticatorHits"/> ARE WHAT MAKE
+    /// THEM SAFE TO ADD, and the numbers below are measured, not reasoned:</para>
+    /// <list type="bullet">
+    /// <item><description>with no suppression at all, the three bare names take the
+    /// whole-tree occurrence count from <b>12 to 18</b> — six raw matches;</description></item>
+    /// <item><description>the SPAN rule removes the five that sit inside a longer
+    /// VOCABULARY token, exactly as <c>.deviceOwnerAuthentication</c> sits inside
+    /// <c>.deviceOwnerAuthenticationWithBiometrics</c>;</description></item>
+    /// <item><description>the IDENTIFIER-BOUNDARY rule removes the sixth, which sits
+    /// inside a longer identifier the vocabulary does NOT know —
+    /// <c>BiometricPrompt.ERROR_NO_DEVICE_CREDENTIAL</c>, an error code;</description></item>
+    /// <item><description>so the live count is <b>9 before and 9 after</b>. Adding the
+    /// three names moved nothing.</description></item>
+    /// </list>
     ///
-    /// <para>ADDING THE NAMES CLOSES THAT ALIAS. It does not close the CLASS — the
-    /// next alias invents a spelling nobody listed — which is what
-    /// <see cref="NoShellSource_AliasesAnAuthenticatorNamespace"/> is for.</para></summary>
+    /// <para>⚠ AN EARLIER VERSION OF THIS PARAGRAPH SAID "9 → 10 … and the one new
+    /// occurrence is an <c>ignored</c> entry". Both halves are gone. The number was
+    /// right for the code of the day and the <c>ignored</c> entry was the defect:
+    /// a counted excuse is a LICENCE, and with the error arm deleted in the same
+    /// commit a <c>typealias</c> spent it for a live
+    /// <c>setAllowedAuthenticators(Auth.DEVICE_CREDENTIAL)</c> at <b>977 of 977
+    /// green</b>. The boundary rule means there is nothing to excuse and no entry to
+    /// spend. Its counterfactual figure was wrong too: it read "9 → 14" where the
+    /// like-for-like figure is <b>15</b>, because the bare names contribute six raw
+    /// matches and not five. That is its own small lesson — the 9 → 10 beside it WAS
+    /// measured, and a number standing next to a measurement does not thereby become
+    /// one. The three figures above are each a run: 12 and 18 are printed by a
+    /// forced-fail of the completeness floor with the suppression rules commented
+    /// out, and 9 is the same print with them in.</para>
+    ///
+    /// <para>ADDING THE NAMES CLOSES THE ALIAS AT THE USE SITE, which every binding
+    /// construct shares. <see cref="NoShellSource_AliasesAnAuthenticatorNamespace"/>
+    /// closes it at the BINDING site, which each of them varies, and is what covers
+    /// an authenticator constant nobody has added to this list yet.</para></summary>
     private static readonly string[] AuthenticatorVocabulary =
     [
         ".deviceOwnerAuthenticationWithBiometrics",
@@ -211,7 +231,45 @@ public sealed class AuthSemanticsDriftTests
             // a leading `\s*` can pull the match back across a newline, which would
             // otherwise blame the previous line for a wrapped token.
             int at = start;
-            while (at < start + length && char.IsWhiteSpace(stripped[at])) at++;
+            int end = start + length;
+            while (at < end && char.IsWhiteSpace(stripped[at])) at++;
+
+            // ── THE IDENTIFIER-BOUNDARY RULE — the SIBLING of the span rule ──────
+            //
+            // The span rule above suppresses a token that sits inside a LONGER
+            // VOCABULARY token. This one suppresses a token that sits inside a
+            // longer IDENTIFIER THE VOCABULARY DOES NOT KNOW, which is a different
+            // set and was a live hole: `BiometricPrompt.ERROR_NO_DEVICE_CREDENTIAL`
+            // is an error CODE, and bare `DEVICE_CREDENTIAL` matched inside it.
+            //
+            // WHY THIS IS THE ROOT FIX AND AN `ignored` ENTRY WAS NOT. The first
+            // cut excused that echo with a counted `ignored` entry, and a counted
+            // excuse is a LICENCE: delete the error arm and the count is free to be
+            // spent by a real occurrence somewhere else in the same file. MEASURED,
+            // on the tree that shipped it — `private typealias Auth =
+            // BiometricManager.Authenticators` plus
+            // `.setAllowedAuthenticators(Auth.DEVICE_CREDENTIAL)`, with the error
+            // arm deleted and the template mirrored, was **977 of 977 GREEN** with a
+            // device-credential-accepting prompt live in the shipped shell. A star
+            // import of the same namespace was green the same way. Both red the
+            // moment the licence is gone, because both end at a bare name.
+            //
+            // THE RULE APPLIES ONLY WHERE IT MEANS ANYTHING: a match that BEGINS
+            // with an identifier character must not be PRECEDED by one, and a match
+            // that ENDS with one must not be FOLLOWED by one. The Apple tokens
+            // begin with `.` and are untouched — that is not an accident to be
+            // relied on, it is why the condition is written on the matched text
+            // rather than on the token: `LAPolicy.deviceOwnerAuthentication` must
+            // keep matching, and it does, because the match starts at the dot.
+            if (at < end
+                && IsIdentifierChar(stripped[at])
+                && at > 0 && IsIdentifierChar(stripped[at - 1]))
+                continue;
+
+            if (end > at
+                && IsIdentifierChar(stripped[end - 1])
+                && end < stripped.Length && IsIdentifierChar(stripped[end]))
+                continue;
 
             int line = 1;
             for (int k = 0; k < at; k++) if (stripped[k] == '\n') line++;
@@ -219,6 +277,13 @@ public sealed class AuthSemanticsDriftTests
             yield return new ShellSourceScan.RawHit(line, token, token);
         }
     }
+
+    /// <summary>What counts as part of a Kotlin or Swift identifier, for the
+    /// boundary rule in <see cref="AuthenticatorHits"/>. Both languages allow
+    /// letters, digits and underscore; neither allows a dot, which is what makes
+    /// `KeyProperties.AUTH_BIOMETRIC_STRONG` a boundary and
+    /// `ERROR_NO_DEVICE_CREDENTIAL` not one.</summary>
+    private static bool IsIdentifierChar(char c) => char.IsLetterOrDigit(c) || c == '_';
 
     /// <summary>The authenticator scan, over every root this pin consumes. Each
     /// fact calls this itself so that it asserts coverage on its OWN record —
@@ -471,9 +536,27 @@ public sealed class AuthSemanticsDriftTests
     /// <para>The <c>alias</c> group exists so the failure message can name the
     /// binding a reader has to go and delete. It is read in the message only —
     /// the DETECTION is the match itself.</para></summary>
+    /// <summary>The namespaces that CARRY authenticator constants, spelled once so
+    /// the three construct arms below cannot come to disagree about which
+    /// namespaces they are about.</summary>
+    private const string AuthenticatorNamespace =
+        @"(?:BiometricManager|KeyProperties|Authenticators|LocalAuthentication)";
+
+    /// <summary>THE THREE KOTLIN CONSTRUCTS THAT BIND AN AUTHENTICATOR NAMESPACE
+    /// TO A SHORTER NAME. Enumerated deliberately rather than patched one at a
+    /// time — see the enumeration table on
+    /// <see cref="NoShellSource_AliasesAnAuthenticatorNamespace"/>, where every row
+    /// was measured.</summary>
     private const string AuthenticatorNamespaceAlias =
-        @"import\s+[\w.]*(?:BiometricManager|KeyProperties|Authenticators|LocalAuthentication)"
-        + @"[\w.]*\s+as\s+(?<alias>\w+)";
+        // 1. `import a.b.BiometricManager.Authenticators as Auth`
+        @"(?:import\s+[\w.]*" + AuthenticatorNamespace + @"[\w.]*\s+as\s+(?<alias>\w+))"
+        // 2. `import a.b.BiometricManager.Authenticators.*` — members unqualified,
+        //    which binds every constant at once WITHOUT naming any of them.
+        + @"|(?:import\s+[\w.]*" + AuthenticatorNamespace + @"[\w.]*\s*\.\s*\*)"
+        // 3. `typealias Auth = BiometricManager.Authenticators` — the sibling the
+        //    first cut of this ban missed, and the one that was measured 977/977
+        //    green with a device-credential prompt live.
+        + @"|(?:typealias\s+(?<alias>\w+)\s*=\s*[\w.]*" + AuthenticatorNamespace + @"[\w.]*)";
 
     /// <summary>AN ALIAS MAKES EVERY DOTTED TOKEN UNSEEABLE, so the construct is
     /// refused rather than the spellings chased. #364 F4:
@@ -483,36 +566,95 @@ public sealed class AuthSemanticsDriftTests
     /// #213 divergence itself, under a green pin.
     ///
     /// <para>Adding bare constant names closes THAT alias. It does not close the
-    /// CLASS: the next alias invents a spelling nobody listed. This does, by making
-    /// it not compile past review — 14.0's bar, in this repo's own words:
+    /// CLASS: the next binding invents a spelling nobody listed. This does, by
+    /// making it not compile past review — 14.0's bar, in this repo's own words:
     /// divergence stops being REPRESENTABLE rather than merely detected.</para>
     ///
-    /// <para>SCOPE, deliberately narrow — see <see cref="AuthenticatorNamespaceAlias"/>.
+    /// <para>⚠ THE FIRST CUT OF THIS BAN MATCHED ONLY <c>import … as</c>, AND THAT
+    /// WAS A GUESS DRESSED AS A RULE. Review measured the sibling: a Kotlin
+    /// <c>typealias</c>, with the one excused bare occurrence freed, was
+    /// <b>977 of 977 GREEN</b> with <c>.setAllowedAuthenticators(Auth.DEVICE_CREDENTIAL)</c>
+    /// live in the shipped shell AND its template mirror. So the constructs are now
+    /// ENUMERATED rather than collected one review at a time, and every row below
+    /// was measured on the tree that shipped the first cut:</para>
+    ///
+    /// <list type="table">
+    /// <item><description><b>import … as</b> — banned here, arm 1. Was RED already.</description></item>
+    /// <item><description><b>import … .*</b> — banned here, arm 2. A star import binds
+    /// every constant at once while naming none, and it was <b>977/977 GREEN</b>
+    /// before this arm existed. It is the row that proves enumerating beats patching:
+    /// a typealias-only repair would have left it open.</description></item>
+    /// <item><description><b>typealias</b> — banned here, arm 3. The review's finding.</description></item>
+    /// <item><description><b>import … .MEMBER</b>, no alias — NOT banned and does not
+    /// need to be: the import line spells the constant, so the use site is a SECOND
+    /// occurrence and the count reds. Measured RED.</description></item>
+    /// <item><description><b>import … .MEMBER as X</b> — caught by arm 1, which does not
+    /// care whether the aliased thing is a namespace or a member.</description></item>
+    /// <item><description><b>a val or fun holding the qualified constant</b> — NOT banned
+    /// and does not need to be: it must WRITE
+    /// <c>Authenticators.DEVICE_CREDENTIAL</c> to read it. Measured RED.</description></item>
+    /// <item><description><b>the raw platform integers</b> —
+    /// <c>setAllowedAuthenticators(0x0000000F or 0x00008000)</c>. <b>NOT CLOSED, and
+    /// not closeable by a token scanner:</b> there is no name to find. Measured
+    /// <b>977/977 GREEN</b>, and it was green before this phase too. FAILS GREEN; see
+    /// the limit list below.</description></item>
+    /// </list>
+    ///
+    /// <para>AND THE CONSTRUCT BAN IS THE SECOND LINE, NOT THE FIRST. What actually
+    /// closed the review's attack is that <see cref="AuthenticatorHits"/> no longer
+    /// reports a bare name that is a FRAGMENT of a longer identifier, so
+    /// <c>ERROR_NO_DEVICE_CREDENTIAL</c> needs no <c>ignored</c> entry and there is
+    /// no counted licence left to spend. That closes every route AT THE USE SITE,
+    /// which all of them share; this ban closes them at the BINDING site, which each
+    /// of them varies. The binding ban still earns its place — it is what covers an
+    /// authenticator constant nobody has added to the vocabulary yet.</para>
+    ///
+    /// <para>SCOPE, deliberately narrow — see <see cref="AuthenticatorNamespace"/>.
     /// A ban that reds on unrelated code is one the next author weakens rather than
     /// obeys.</para>
     ///
     /// <para>WHAT THIS DOES NOT COVER (pin standard, Rule 5), each with its
     /// direction:</para>
     /// <list type="bullet">
-    /// <item><description>SWIFT HAS NO <c>import … as</c>, so the <c>.swift</c> half
-    /// of this walk is INERT today. It is scanned anyway because the roster says
-    /// this consumer reads both shells and narrowing the extension list to dodge a
-    /// currently-empty half is how a pin stops seeing a tree. Swift's own aliasing
-    /// spelling is <c>typealias</c>, which cannot hide these tokens — the Apple
-    /// vocabulary is dot-leading enum shorthand (<c>.deviceOwnerAuthentication</c>)
-    /// and survives any renaming of <c>LAPolicy</c> itself. FAILS SAFE, and it is
-    /// a claim about the language rather than about today's tree.</description></item>
-    /// <item><description>A KOTLIN <c>typealias</c> — <c>typealias Auth =
-    /// BiometricManager.Authenticators</c> — is a DIFFERENT construct and this fact
-    /// does NOT flag it. MEASURED, with the typealias AND #364 F4's aliased call
-    /// planted together: this fact stayed green and
-    /// <c>EveryAuthenticatorOccurrence_IsDeclaredOrIgnored</c> reddened on an
-    /// undeclared bare <c>BIOMETRIC_WEAK</c>. So the route is covered — by the BARE
-    /// NAMES, at the call site, not by anything here. An earlier draft of this
-    /// bullet said the typealias LINE would be scored by the completeness scan; it
-    /// would not, because <c>BiometricManager.Authenticators</c> on its own matches
-    /// no vocabulary entry. The conclusion survived the measurement and the reason
-    /// did not, which is why the reason is now the measured one.</description></item>
+    /// <item><description>SWIFT REACHES TWO OF THE THREE ARMS, not none — which is a
+    /// correction, because the first cut of this bullet called the whole
+    /// <c>.swift</c> half inert. Swift has no <c>import … as</c> and no member star
+    /// import, so arms 1 and 2 are dead there; it very much has <c>typealias</c>,
+    /// and arm 3 reds on <c>typealias Auth = LocalAuthentication.LAPolicy</c> in a
+    /// <c>.swift</c> file — MEASURED, 1 red. The Apple vocabulary is dot-leading
+    /// enum shorthand (<c>.deviceOwnerAuthentication</c>) and so was never hideable
+    /// behind a Swift alias in the first place, which makes arm 3's Swift reach
+    /// defence in depth rather than the load-bearing part. The walk covers
+    /// <c>.swift</c> because the roster says this consumer reads both shells:
+    /// narrowing an extension list to dodge a half you believe is empty is how a
+    /// pin stops seeing a tree, and this bullet is the evidence that the belief can
+    /// be wrong.</description></item>
+    /// <item><description>⚠ THE SENTENCE THAT STOOD HERE — <i>"So the route is
+    /// covered — by the BARE NAMES"</i> — WAS FALSE, AND IT IS DELETED RATHER THAN
+    /// SOFTENED. It was written from a measurement that could not see the damage:
+    /// the typealias was planted with <c>Auth.BIOMETRIC_WEAK</c>, which has no
+    /// excuse count, so the red it produced said nothing whatever about
+    /// <c>Auth.DEVICE_CREDENTIAL</c>, which had one. Review planted the same
+    /// construct with the excused name and got <b>977 of 977 GREEN</b>. THE LESSON
+    /// IS THE GENERAL ONE AND IT BELONGS HERE RATHER THAN IN A REPORT: a mutation
+    /// proves nothing if the fixture cannot reach the state under test, and picking
+    /// the variant that happens to red is the easiest way to prove nothing while
+    /// feeling thorough. The same shape cost this phase an
+    /// <c>android.util.Log.i</c> plant the pin deliberately ignores. <b>Choose the
+    /// plant that is hardest for the pin to see, not the one nearest to
+    /// hand.</b></description></item>
+    /// <item><description>A KOTLIN <c>typealias</c> IS NOW BANNED, as arm 3 — see the
+    /// enumeration above. So is a star import, as arm 2. Neither is a limit any
+    /// more; both are listed here only because a reader arriving from the first cut
+    /// of this pin will be looking for them.</description></item>
+    /// <item><description>THE RAW PLATFORM INTEGERS ARE NOT CLOSED AND CANNOT BE BY
+    /// THIS MECHANISM. <c>setAllowedAuthenticators(0x0000000F or 0x00008000)</c> is
+    /// <c>BIOMETRIC_STRONG or DEVICE_CREDENTIAL</c> with no name anywhere for a
+    /// token scanner to find. MEASURED <b>977 of 977 GREEN</b>, with the error arm
+    /// left intact so the red could not come from somewhere else. It was green
+    /// before this phase and it is green after; closing it needs a Kotlin
+    /// type-resolving parser, which this repo does not have, and saying so is the
+    /// point. FAILS GREEN.</description></item>
     /// <item><description>The scan is over comment-stripped code, so this text and
     /// any Kotlin KDoc describing the rule cannot satisfy it. It is NOT
     /// string-literal-blind: MEASURED, a <c>const val</c> holding the banned import
@@ -524,8 +666,8 @@ public sealed class AuthSemanticsDriftTests
     /// control's fixture. MEASURED both ways: keyed on
     /// <c>package io.blazornative.shell</c> — the file the fixture is spliced from
     /// — it reds 4 facts including the control; keyed on
-    /// <c>package io.blazornative.jni</c>, with the alias planted under
-    /// <c>src/main/kotlin</c> instead, the whole set is 27 of 27 GREEN. FAILS
+    /// <c>package io.blazornative.jni</c>, with the binding planted under
+    /// <c>src/main/kotlin</c> instead, the whole set is 30 of 30 GREEN. FAILS
     /// GREEN. This is limit A at <c>ShellSourceScan</c>, not a new one, and it is
     /// repeated here because a pin's limits belong where the pin is.</description></item>
     /// </list></summary>
@@ -541,21 +683,33 @@ public sealed class AuthSemanticsDriftTests
             .HitsCoveringEveryDeclaredRoot();
 
         Assert.True(aliases.Length == 0,
-            "AN IMPORT ALIAS OF AN AUTHENTICATOR NAMESPACE (#364 F4). The alias(es) below make "
-            + "every dotted token in AuthenticatorVocabulary unseeable, so a BiometricPrompt "
+            "A BINDING OF AN AUTHENTICATOR NAMESPACE TO A SHORTER NAME (#364 F4). Each one below "
+            + "makes every dotted token in AuthenticatorVocabulary unseeable, so a BiometricPrompt "
             + "offering weak biometry or device credential — the #213 semantic divergence itself "
-            + "— can be written under a green pin:\n"
-            + string.Join("\n", aliases.Select(h =>
-                $"  {h.File}:{h.Line} — binds `{Regex.Match(h.Token, AuthenticatorNamespaceAlias)
-                    .Groups["alias"].Value}`\n      {h.Token}"))
-            + "\n\nTHE FIX IS TO DELETE THE ALIAS and spell the namespace out at the call site "
+            + "— can be written without spelling one of them:\n"
+            + string.Join("\n", aliases.Select(h => $"  {h.File}:{h.Line} — {Bound(h.Token)}"
+                                                    + $"\n      {h.Token}"))
+            + "\n\nTHE FIX IS TO DELETE THE BINDING and spell the namespace out at the call site "
             + "— `BiometricManager.Authenticators.BIOMETRIC_STRONG`, "
             + "`KeyProperties.AUTH_BIOMETRIC_STRONG`. IT IS NOT to widen "
-            + "AuthenticatorVocabulary with whatever this alias happens to be called: that closes "
-            + "one spelling and leaves the class open, which is exactly what #364 F4 demonstrated "
-            + "about the bare names. If a new namespace genuinely carries authenticator constants, "
-            + "add it to the alternation in AuthenticatorNamespaceAlias and to the vocabulary "
-            + "both, deliberately, with a reason.");
+            + "AuthenticatorVocabulary with whatever this binding happens to be called: that "
+            + "closes one spelling and leaves the class open, which is exactly what #364 F4 "
+            + "demonstrated about the bare names, and what a typealias then demonstrated about "
+            + "the first cut of this ban. If a new namespace genuinely carries authenticator "
+            + "constants, add it to AuthenticatorNamespace and to the vocabulary both, "
+            + "deliberately, with a reason.");
+    }
+
+    /// <summary>How one matched construct is described in the failure message. Two
+    /// of the three arms capture a name; the star import binds every member at once
+    /// and captures none, and a message reading "binds ``" would send a reader
+    /// looking for an identifier that is not there.</summary>
+    private static string Bound(string construct)
+    {
+        string alias = Regex.Match(construct, AuthenticatorNamespaceAlias).Groups["alias"].Value;
+        return alias.Length > 0
+            ? $"binds `{alias}`"
+            : "star-imports its members, so every constant is reachable unqualified";
     }
 
     /// <summary>THE POSITIVE CONTROL FOR <see cref="AuthenticatorNamespaceAlias"/>
@@ -654,6 +808,47 @@ public sealed class AuthSemanticsDriftTests
             + "that holds the shell's whole auth surface.\n"
             + "  Fix the pattern. Do not green this by editing the expectation.");
 
+        // ── EVERY ARM, NOT ONLY THE ONE THE FINDING WAS WRITTEN ABOUT ────────
+        //
+        // The first cut of this control exercised arm 1 alone, because arm 1 was
+        // the arm that existed. That is how a ban ends up covering the spelling it
+        // was shown: a control built around one instance cannot tell you the other
+        // arms ever worked. Each arm is spliced at the SAME anchor and asserted at
+        // the SAME line, so a reader can see that the three are held to one
+        // standard rather than to three.
+        foreach ((string construct, string expect) in new[]
+                 {
+                     ("import androidx.biometric.BiometricManager.Authenticators as Auth",
+                      "binds `Auth`"),
+                     ("import androidx.biometric.BiometricManager.Authenticators.*",
+                      "star-imports its members, so every constant is reachable unqualified"),
+                     ("private typealias Auth = BiometricManager.Authenticators",
+                      "binds `Auth`"),
+                 })
+        {
+            var armed = lines.ToList();
+            armed.Insert(importAt + 1, construct);
+
+            var armHits = ShellSourceScan
+                .PatternHits(string.Join("\n", armed), AuthenticatorNamespaceAlias)
+                .Where(h => h.Line == importAt + 2)
+                .ToList();
+
+            Assert.True(armHits.Count == 1 && Bound(armHits[0].Token) == expect,
+                $"THE BAN NO LONGER REFUSES `{construct}`. Spliced into "
+                + $"{AuthBearingShellFileRelative} at line {importAt + 2}, the shared matcher "
+                + "reported: "
+                + (armHits.Count == 0
+                    ? "(nothing)"
+                    : string.Join("; ", armHits.Select(h => $"{h.Token} → {Bound(h.Token)}")))
+                + $" — expected exactly one, described as `{expect}`.\n"
+                + "  EVERY ARM OF THIS BAN IS LOAD-BEARING AND EACH WAS MEASURED GREEN BEFORE IT "
+                + "EXISTED. The typealias arm: 977 of 977 passing with "
+                + "`setAllowedAuthenticators(Auth.DEVICE_CREDENTIAL)` live in the shipped shell. "
+                + "The star-import arm: the same, reached a different way. Losing an arm does not "
+                + "narrow this pin, it reopens a measured hole.");
+        }
+
         // ── the negative: shapes the ban must NOT claim ──────────────────────
         // A ban that reds on ordinary imports is one the next author weakens rather
         // than obeys, so the narrowness is pinned and not merely promised.
@@ -661,7 +856,16 @@ public sealed class AuthSemanticsDriftTests
             "import io.blazornative.jni.FlatJson as Json\n"
             + "import androidx.biometric.BiometricPrompt as BP\n"
             + "import kotlinx.coroutines.flow.Flow as KFlow\n"
-            + "import androidx.biometric.BiometricManager\n",
+            + "import androidx.biometric.BiometricManager\n"
+            // One near miss per NEW arm, or the arms are only pinned in the
+            // widening direction. A star import of the biometric PACKAGE is
+            // ordinary Kotlin and binds no authenticator constant; a typealias of
+            // a callback type is the commonest typealias in Android code and must
+            // not be collateral.
+            + "import androidx.biometric.*\n"
+            + "import kotlinx.coroutines.flow.*\n"
+            + "typealias AuthCallback = BiometricPrompt.AuthenticationCallback\n"
+            + "typealias Completion = (Boolean) -> Unit\n",
             AuthenticatorNamespaceAlias).ToList();
 
         Assert.True(benign.Count == 0,
@@ -697,13 +901,22 @@ public sealed class AuthSemanticsDriftTests
     [Fact]
     public void TheBareAuthenticatorNames_SurviveAnAlias_AndAreSuppressedInsideLongerTokens()
     {
-        // Line 1 is the alias shape the bare names exist for; lines 2-4 are the
-        // longer tokens they must NOT double-report.
+        // Lines 1-2 are the shapes the bare names exist for; 3-6 are the longer
+        // VOCABULARY tokens they must not double-report; 7 is the longer
+        // NON-vocabulary identifier, which is a different suppression rule.
+        //
+        // THE _WEAK ARMS ARE HERE BECAUSE REVIEW FOUND THEM MISSING. The first cut
+        // exercised the _STRONG and DEVICE_CREDENTIAL arms only, which pins the
+        // span rule for the token lengths that happened to be live and says nothing
+        // about the others. The rule is generic over length; the fixture now is too.
         var hits = AuthenticatorHits(
             "                .setAllowedAuthenticators(Auth.BIOMETRIC_WEAK or Auth.DEVICE_CREDENTIAL)\n"
             + "                .setAllowedAuthenticators(Auth.BIOMETRIC_STRONG)\n"
             + "                KeyProperties.AUTH_BIOMETRIC_STRONG or KeyProperties.AUTH_DEVICE_CREDENTIAL\n"
-            + "                BiometricManager.Authenticators.BIOMETRIC_STRONG\n").ToList();
+            + "                BiometricManager.Authenticators.BIOMETRIC_STRONG\n"
+            + "                KeyProperties.AUTH_BIOMETRIC_WEAK\n"
+            + "                BiometricManager.Authenticators.BIOMETRIC_WEAK or BiometricManager.Authenticators.DEVICE_CREDENTIAL\n"
+            + "                BiometricPrompt.ERROR_NO_DEVICE_CREDENTIAL -> UNAVAILABLE\n").ToList();
 
         string report = hits.Count == 0
             ? "(nothing)"
@@ -731,7 +944,12 @@ public sealed class AuthSemanticsDriftTests
             && hits.Count(h => h.Line == 3 && h.Token == "AUTH_BIOMETRIC_STRONG") == 1
             && hits.Count(h => h.Line == 3 && h.Token == "AUTH_DEVICE_CREDENTIAL") == 1
             && hits.Count(h => h.Line == 4) == 1
-            && hits.Count(h => h.Line == 4 && h.Token == "Authenticators.BIOMETRIC_STRONG") == 1,
+            && hits.Count(h => h.Line == 4 && h.Token == "Authenticators.BIOMETRIC_STRONG") == 1
+            && hits.Count(h => h.Line == 5) == 1
+            && hits.Count(h => h.Line == 5 && h.Token == "AUTH_BIOMETRIC_WEAK") == 1
+            && hits.Count(h => h.Line == 6) == 2
+            && hits.Count(h => h.Line == 6 && h.Token == "Authenticators.BIOMETRIC_WEAK") == 1
+            && hits.Count(h => h.Line == 6 && h.Token == "Authenticators.DEVICE_CREDENTIAL") == 1,
             "THE SPAN SUPPRESSION STOPPED SUPPRESSING. A bare name matching INSIDE a longer "
             + "vocabulary token is a FALSE ECHO of that token, not a second occurrence: "
             + "`KeyProperties.AUTH_BIOMETRIC_STRONG` is ONE hit and "
@@ -741,6 +959,66 @@ public sealed class AuthSemanticsDriftTests
             + "src/auth-semantics.json and every declared site is sized against these numbers, so "
             + "the repair a reader reaches for is widening the manifest until the pin is quiet — "
             + "which raises the excuse ceiling on the very tokens this pin exists to count.");
+
+        // THE IDENTIFIER-BOUNDARY HALF — a bare name inside a longer identifier the
+        // VOCABULARY DOES NOT KNOW. This is a different rule from the span rule and
+        // neither subsumes the other: `ERROR_NO_DEVICE_CREDENTIAL` is not any
+        // vocabulary token, so no span contains it, and the bare `BIOMETRIC_STRONG`
+        // inside `Authenticators.BIOMETRIC_STRONG` is preceded by a dot, so no
+        // boundary rejects it. Delete either and the other does not cover for it.
+        Assert.True(hits.Count(h => h.Line == 7) == 0,
+            "THE IDENTIFIER-BOUNDARY SUPPRESSION STOPPED SUPPRESSING. "
+            + "`BiometricPrompt.ERROR_NO_DEVICE_CREDENTIAL` is an ERROR CODE and must produce NO "
+            + "authenticator occurrence at all — the matcher reported: " + report + ".\n"
+            + "  THIS IS NOT A TIDINESS ASSERTION. The first cut of this pin let that echo "
+            + "through and excused it with a counted `ignored` entry, and a counted excuse is a "
+            + "LICENCE: with the error arm deleted in the same commit, a `typealias` spent it on "
+            + "a live `setAllowedAuthenticators(Auth.DEVICE_CREDENTIAL)` at 977 of 977 green. If "
+            + "this reds, DO NOT re-add the ignore entry — fix the boundary rule, or you are "
+            + "re-issuing the licence.");
+    }
+
+    /// <summary>THE LIVE NEGATIVE ANCHOR for the identifier-boundary rule (pin
+    /// standard, Rule 3, second model: a known-MISMATCHING subject the detector must
+    /// still reject).
+    ///
+    /// <para>The three bare names have no live positive fixed point and must not
+    /// have one — a bare <c>DEVICE_CREDENTIAL</c> in shell source is either a
+    /// declared site or the defect. What the tree DOES hold is a live near miss:
+    /// <c>BiometricPrompt.ERROR_NO_DEVICE_CREDENTIAL</c>. This fact pins BOTH halves
+    /// of that — the text is still there, and the scan still reports nothing for it
+    /// — so the anchor cannot quietly evaporate the way a fixture-only control can.
+    /// If the boundary rule regresses, <c>EveryAuthenticatorOccurrence_IsDeclaredOrIgnored</c>
+    /// reds as well, which is the point: the near miss is exercised on every run by
+    /// the production scan, not only here.</para>
+    ///
+    /// <para>WHY IT IS A FACT AND NOT A COMMENT: without the presence half, deleting
+    /// the error arm would silently remove the anchor and leave the boundary rule
+    /// unexercised against anything live.</para></summary>
+    [Fact]
+    public void TheLiveErrorCodeNearMiss_IsStillThere_AndStillNotAnAuthenticator()
+    {
+        const string NearMiss = "BiometricPrompt.ERROR_NO_DEVICE_CREDENTIAL";
+
+        string code = CommentStrippedSource.Strip(File.ReadAllText(AuthBearingShellFile()));
+
+        Assert.True(code.Contains(NearMiss, StringComparison.Ordinal),
+            $"`{NearMiss}` is no longer live code in {AuthBearingShellFileRelative}. It is the one "
+            + "thing in the tree that exercises the identifier-boundary rule against something "
+            + "real: a bare DEVICE_CREDENTIAL sitting inside a longer identifier the vocabulary "
+            + "does not know. If the error arm was legitimately removed, this anchor is gone and "
+            + "the boundary rule is left with fixtures only — say so deliberately and re-point "
+            + "this fact at another near miss, rather than deleting it.");
+
+        var onTheNearMiss = AuthenticatorHits($"            {NearMiss} ->\n").ToList();
+
+        Assert.True(onTheNearMiss.Count == 0,
+            $"the matcher reported an authenticator occurrence for `{NearMiss}`: "
+            + string.Join("; ", onTheNearMiss.Select(h => h.Token))
+            + ". It is an ERROR CODE. The identifier-boundary rule in AuthenticatorHits exists to "
+            + "reject exactly this, and the alternative it replaced — a counted `ignored` entry — "
+            + "was a licence that a typealias spent on a live device-credential prompt at 977 of "
+            + "977 green. Fix the rule; do not excuse the occurrence.");
     }
 
     /// <summary>The Android shell file the auth surface lives in, repo-relative.
