@@ -11,8 +11,20 @@
     "THE CONTRACT: every consumer accounts for EVERY set, exactly once, as consumes /",
     "delegated / excluded. ShellSourceRootsDriftTests asserts the three lists partition",
     "the set list, so 'unmentioned' is not a state a tree can be in. Five separate reviews",
-    "defeated the auth pin by finding places it did not look; this is what makes 'it does",
-    "not look there' a RED.",
+    "defeated the auth pin by finding places it did not look; this is what will make 'it",
+    "does not look there' a RED.",
+    "",
+    "WILL, NOT DOES -- and the tense is load-bearing until phase 15.2 task 3 lands. These",
+    "entries record what each pin CLAIMS, not what it scans. A consumer can declare that it",
+    "consumes `appleShell` while scanning somewhere else entirely and everything is green;",
+    "the claim only binds once that pin reads its roots from ShellSourceRoots.SetsFor.",
+    "Delete this paragraph in the commit that repoints the last consumer.",
+    "",
+    "A TEST NAMED ANYWHERE HERE MUST RESOLVE. `delegated.guard` is checked by",
+    "EveryDelegation_NamesAGuardThatExists, and every `reason` string -- delegated and",
+    "excluded alike -- is read for PascalCase_PascalCase identifiers by",
+    "EveryTestNamedInAReason_Exists. Citing a test in an exclusion is the same claim a",
+    "delegation makes; the only thing that used to separate them was which key it sat under.",
     "",
     "DELEGATED IS NOT A SYNONYM FOR EXCLUDED. A delegation is a claim about ANOTHER test's",
     "behaviour, and an unpinned claim of that kind is the bug class this repo has paid for",
@@ -25,15 +37,17 @@
     "walks every .cs under src/: that is the .NET tree. Sharing a walk is not sharing a",
     "subject.",
     "",
-    "THE HONEST RESIDUAL, stated rather than implied. The totality fact makes 'unmentioned",
-    "BY A CONSUMER' impossible. It does NOT make 'absent from `sets`' impossible, and that",
-    "is one level further out than the partition can reach. src/BlazorNative.Jni/src/debug",
-    "holds no .kt files today -- only res/xml -- so it is not a Kotlin source tree and is",
-    "deliberately absent from `sets` rather than excluded by each consumer. If it ever",
-    "gains Kotlin, NOTHING HERE REDS: a tree that is in no set is not in the partition.",
-    "EveryRoot_ExistsOnDisk only checks the other direction -- declared roots exist, not",
-    "that existing trees are declared. That is the same shape #364 kept finding, and it is",
-    "disclosed here because a gap treated as covered ground is worse than an admitted one.",
+    "THE OTHER DIRECTION IS `scanRoots`, BELOW. The totality fact makes 'unmentioned BY A",
+    "CONSUMER' impossible; on its own it cannot make 'absent from `sets`' impossible, because",
+    "`sets` is where it reasons FROM. EveryShellSourceFile_IsInsideADeclaredRoot closes that:",
+    "it walks the scanRoots and requires every .kt and .swift file found there to sit inside",
+    "some declared root. src/BlazorNative.Jni/src/debug holds no .kt today -- only res/xml --",
+    "so leaving it out of `sets` is correct, and the day it gains Kotlin that fact reds.",
+    "",
+    "WHAT IS STILL NOT COVERED, because the residual moved rather than vanished: a shell tree",
+    "outside every scanRoots entry, and anything under a declared `ignore`. Both fail GREEN.",
+    "That is disclosed here because a gap treated as covered ground is worse than an admitted",
+    "one.",
     "",
     "TO ADD A SET: add it here, then add it to ALL THREE consumers -- the totality fact",
     "reds until every one of them has said what it does about the new tree. That is the",
@@ -88,6 +102,25 @@
       ]
     }
   },
+
+  "scanRoots": [
+    {
+      "path": "src/BlazorNative.Jni/src",
+      "extensions": [".kt"],
+      "why": "every Gradle source set of the Android shell project lives directly under here, declared or not. This is the container that makes a NEW sibling -- a src/foo/kotlin nobody added to `sets` -- visible."
+    },
+    {
+      "path": "templates/BlazorNative.Templates/content/BlazorNative.App/android/src",
+      "extensions": [".kt"],
+      "why": "the same shape in the generated app's tree. A source set that appears here and not in `sets` ships to every consumer of `dotnet new blazornative` unscanned."
+    },
+    {
+      "path": "src/BlazorNative.Apple",
+      "extensions": [".swift"],
+      "ignore": ["src/BlazorNative.Apple/vendor"],
+      "why": "BnHost and BnHostTests are the two declared Swift trees; a third target added beside them would otherwise be invisible. `vendor` is ignored because it is where third-party checkouts land -- a vendored Swift package is nobody's shell, and scanning it would buy a red that has nothing to do with this repo's source."
+    }
+  ],
 
   "consumers": {
     "AuthSemanticsDriftTests": {
