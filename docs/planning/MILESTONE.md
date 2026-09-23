@@ -113,7 +113,7 @@ verdict** — the number is not to be trusted until it is.
    known defects, because all four already execute a count assertion on the **wrong set** — so
    it would hand out a green under a name claiming coverage. 15.1 re-scoped accordingly
 2. Phase 15.1 — enforce the standard [complete] — all nine gap facts closed, plus the live style-table defect and the two non-pin detectors; suite 1112 → 1132 (#377)
-3. Phase 15.2 — define the auth pin's coverage [pending]
+3. Phase 15.2 — define the auth pin's coverage [active]
 4. Phase 15.3 — the first live test: deep-link scheme [pending]
 5. Phase 15.4 — the missing guards [pending]
 6. Phase 15.5 — prose, and the small corrections [pending]
