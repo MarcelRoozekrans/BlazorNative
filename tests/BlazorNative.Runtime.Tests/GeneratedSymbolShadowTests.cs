@@ -517,6 +517,45 @@ public sealed class GeneratedSymbolShadowTests
     private static readonly string[] HostEventSeamNames =
         ["dispatchHostEventUnchecked", "dispatchHostEventBlocking"];
 
+    /// <summary>THE FLOOR ON THE ITERATED SET — one implementation at the single point BOTH
+    /// consumers reach it (pin standard Rule 2, and Rule 8 for why it is not two copies).
+    ///
+    /// <para>WHAT WAS UNGUARDED, and it is this milestone's own headline shape. The pin below
+    /// floors its WALK (<c>sources.Length &gt; 0</c>) and the control below floors its walk too,
+    /// but the set they both ITERATE was a bare literal array that nothing floored. Replacing
+    /// <see cref="HostEventSeamNames"/> with <c>[]</c> left BOTH facts GREEN — measured by the
+    /// 15.1 branch review, not reasoned about. A floor on the walk with the iterated set bare is
+    /// the exact defect phase 15.1 exists to remove, and it was shipping inside the phase.</para>
+    ///
+    /// <para>WHY THE NUMBER IS 2. One entry per raw-String door that exists: BlazorNativeRuntime.kt
+    /// declares exactly two, <c>dispatchHostEventUnchecked</c> and <c>dispatchHostEventBlocking</c>,
+    /// and that count is not this comment's word for it — the width coupling at the end of
+    /// <see cref="TheSeamCallDetector_StillMatchesTheCallsTheTestSourceSetExistsToMake"/> reads the
+    /// declarations out of the home file and requires this list to name exactly them. So the floor
+    /// cannot drift out of step with the tree the way a hand-chosen number would.</para>
+    ///
+    /// <para>A ONE-ELEMENT LIST MUST RED, and that is the deliberate answer rather than a side
+    /// effect of picking a round number. Dropping a seam from this list while it still compiles in
+    /// Kotlin does not narrow the pin loudly — it narrows it silently, leaving a live raw-String
+    /// door with nothing watching it, which is the precise failure this pin was written to prevent.
+    /// A seam legitimately going away is a deliberate re-point: delete it in Kotlin first, and the
+    /// coupling will tell you to lower this floor with it.</para></summary>
+    private static string[] HostEventSeams()
+    {
+        Assert.True(HostEventSeamNames.Length >= 2,
+            $"HostEventSeamNames names only {HostEventSeamNames.Length} seam(s) — "
+            + $"[{string.Join(", ", HostEventSeamNames)}]. This list is the set BOTH "
+            + "NoProductionShellSource_CallsTheHostEventSeamsDirectly and its positive control "
+            + "iterate, so shrinking it does not make either fact fail: it makes them run fewer "
+            + "iterations, and at zero it makes them pass over nothing at all. There are two "
+            + "raw-String host-event doors in BlazorNativeRuntime.kt and there must be one entry "
+            + "here per door. If a door was genuinely removed from Kotlin, re-point this "
+            + "deliberately — lower the floor in the same commit that deletes the declaration, and "
+            + "say which door went.");
+
+        return HostEventSeamNames;
+    }
+
     /// <summary>A CALL SITE — a word boundary plus an open paren — not a bare mention.
     /// One implementation, driven by the pin and by its positive control alike (pin
     /// standard Rule 8).</summary>
@@ -527,6 +566,25 @@ public sealed class GeneratedSymbolShadowTests
     /// what makes it the fixed point in
     /// <see cref="TheSeamCallDetector_StillMatchesTheCallsTheTestSourceSetExistsToMake"/>.</summary>
     private const string SeamTestSourceSet = "src/BlazorNative.Jni/src/test/kotlin";
+
+    /// <summary>The seams' own home file — the one production file that DECLARES them, which is
+    /// why <see cref="ProductionHostEventSources"/> excludes it by name. It is also the anchor for
+    /// the width coupling in
+    /// <see cref="TheSeamCallDetector_StillMatchesTheCallsTheTestSourceSetExistsToMake"/>. Only the
+    /// repo copy is read: TemplateDriftTests pins the template's mirror byte-identical to it.</summary>
+    private const string SeamHomeFile =
+        "src/BlazorNative.Jni/src/main/kotlin/io/blazornative/jni/BlazorNativeRuntime.kt";
+
+    /// <summary>A RAW-STRING DOOR: a host-event function in the home file that another file in the
+    /// module can call with an arbitrary name. Two halves carry the meaning. <c>internal</c> is
+    /// load-bearing — <c>hostEventCore(name: String, …)</c> has the same parameter shape and is
+    /// <c>private</c>, so no other file can reach it and it is not a door. The bare
+    /// <c>name: String</c> first parameter is the other half: <c>dispatchHostEvent</c> and
+    /// <c>dispatchHostEventAndWait</c> are <c>internal</c> too, but they take
+    /// <c>event: BnHostEvent</c>, which is the enum overload the manifest governs — the sanctioned
+    /// entry point rather than a bypass of it.</summary>
+    private const string SeamDeclarationPattern =
+        @"\binternal\s+fun\s+(\w*[Hh]ost[Ee]vent\w*)\s*\(\s*name\s*:\s*String";
 
     /// <summary>PRODUCTION Kotlin only: the `main` + `androidMain` source sets
     /// (see build.gradle.kts: <c>java.srcDirs("src/main/kotlin",
@@ -582,6 +640,11 @@ public sealed class GeneratedSymbolShadowTests
     [Fact]
     public void NoProductionShellSource_CallsTheHostEventSeamsDirectly()
     {
+        // THE ITERATED SET, floored before the walk is even attempted: an empty seam list makes
+        // the offender loop below run zero iterations and report clean forever, and no assertion
+        // about the file walk can notice that. See HostEventSeams for the measurement.
+        string[] seams = HostEventSeams();
+
         string[] sources = ProductionHostEventSources();
         Assert.True(sources.Length > 0,
             "ProductionHostEventSources() found zero Kotlin files — the Android source-set layout "
@@ -594,7 +657,7 @@ public sealed class GeneratedSymbolShadowTests
             string[] lines = CodeLines(source);
             for (int i = 0; i < lines.Length; i++)
             {
-                foreach (string seam in HostEventSeamNames)
+                foreach (string seam in seams)
                 {
                     if (Regex.IsMatch(lines[i], SeamCallPattern(seam)))
                         offenders.Add($"{Path.GetFileName(source)}:{i + 1} calls {seam}(...)");
@@ -633,16 +696,31 @@ public sealed class GeneratedSymbolShadowTests
     /// and a real anchor beats a fixture whenever one exists, because it also notices when the
     /// seam stops being exercised at all.</para>
     ///
+    /// <para>THE WIDTH IS COUPLED, at the end, and that is a separate claim from the one
+    /// above. The loop proves the detector still matches the seams we listed; it cannot notice
+    /// a THIRD raw-String door being added to the home file and never listed, which would be
+    /// unpinned from birth. So the last assertion reads the doors back out of
+    /// <see cref="SeamHomeFile"/> — <c>internal</c> functions taking a bare
+    /// <c>name: String</c>, see <see cref="SeamDeclarationPattern"/> — and requires
+    /// <see cref="HostEventSeamNames"/> to name exactly them. It also makes the floor in
+    /// <see cref="HostEventSeams"/> answerable to the tree rather than to a comment: the number
+    /// 2 is not a judgement, it is how many doors the file declares.</para>
+    ///
     /// <para>WHAT THIS DOES NOT COVER (Rule 5). It controls the UNDER-matching direction
     /// only: the pattern still recognises a real call. It says nothing about Swift, whose
     /// bypass door is the imported C symbol <c>blazornative_host_event</c> called bare — a
     /// different shape that the pin does not cover either, stated on
-    /// <see cref="HostEventSeamNames"/>. It also cannot notice a seam being renamed in BOTH
-    /// Kotlin and this list while a third, unlisted raw-String door is added; the list's
-    /// width is guarded by review, not by this assertion.</para></summary>
+    /// <see cref="HostEventSeamNames"/>. The width coupling reaches the home file ONLY: a
+    /// raw-String door declared in some OTHER production Kotlin file would be a door this list
+    /// never hears about, and nothing here would say so. That is a narrower residual than the
+    /// "guarded by review" this paragraph used to claim, but it is still a residual.</para></summary>
     [Fact]
     public void TheSeamCallDetector_StillMatchesTheCallsTheTestSourceSetExistsToMake()
     {
+        // THE ITERATED SET — the same floor the pin runs, from the same implementation, because
+        // this control iterates the same list and emptying it left THIS fact green too.
+        string[] seams = HostEventSeams();
+
         string dir = Path.Combine(BnRepo.Root(), SeamTestSourceSet.Replace('/', Path.DirectorySeparatorChar));
 
         Assert.True(Directory.Exists(dir),
@@ -659,7 +737,7 @@ public sealed class GeneratedSymbolShadowTests
             $"no Kotlin files under {SeamTestSourceSet} — the walk this control depends on found "
             + "nothing, so the assertion below would be checking nothing.");
 
-        foreach (string seam in HostEventSeamNames)
+        foreach (string seam in seams)
         {
             var hits = files
                 .SelectMany(f => CodeLines(f).Select((line, i) => (File: f, Line: i + 1, Text: line)))
@@ -677,5 +755,39 @@ public sealed class GeneratedSymbolShadowTests
                 + "which case the seam's rc paths are now unexercised and this fixed point must be "
                 + "re-pointed deliberately rather than deleted.");
         }
+
+        // ── THE WIDTH COUPLING — read the doors out of the home file, last ──────────
+        // Ordered after the loop on purpose: a seam reworded past its subject should fail with
+        // the detector's message above, which names the excluded tree and the two ways it can
+        // break, not with this one.
+        string home = Path.Combine(BnRepo.Root(), SeamHomeFile.Replace('/', Path.DirectorySeparatorChar));
+
+        Assert.True(File.Exists(home),
+            $"{SeamHomeFile} is missing, so the seams' declarations cannot be read and the width "
+            + "coupling below has nothing to compare against. The file moved — re-point this AND "
+            + "ProductionHostEventSources' by-name exclusion of it together, because that exclusion "
+            + "is keyed on the same file and would otherwise start excluding nothing.");
+
+        string[] declared = [.. CodeLines(home)
+            .Select(line => Regex.Match(line, SeamDeclarationPattern))
+            .Where(m => m.Success)
+            .Select(m => m.Groups[1].Value)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(n => n, StringComparer.Ordinal)];
+
+        string[] listed = [.. HostEventSeamNames.OrderBy(n => n, StringComparer.Ordinal)];
+
+        Assert.True(declared.SequenceEqual(listed, StringComparer.Ordinal),
+            "HostEventSeamNames and the raw-String doors actually declared in "
+            + $"{SeamHomeFile} have diverged.\n"
+            + $"  declared there : [{string.Join(", ", declared)}]\n"
+            + $"  named here     : [{string.Join(", ", listed)}]\n"
+            + "A door declared there but NOT named here is UNPINNED — production code can call it "
+            + "with an arbitrary name and NoProductionShellSource_CallsTheHostEventSeamsDirectly "
+            + "will never look for it. A name here that is NOT declared there is a pin pointed at "
+            + "nothing, and it also makes HostEventSeams' floor of 2 a number with no subject "
+            + "behind it. An EMPTY declared set means this scan stopped recognising a Kotlin "
+            + "declaration — pattern: " + SeamDeclarationPattern + " — which is the same failure "
+            + "wearing a different hat: re-point it rather than editing the list to match.");
     }
 }

@@ -417,7 +417,7 @@ public sealed class ComponentReferenceDriftTests : IClassFixture<ComponentRefere
     }
 
     /// <summary>
-    /// THE POSITIVE CONTROL FOR THE NINE BANNED PROSE PATTERNS, HALF ONE — a TREE
+    /// THE POSITIVE CONTROL FOR THE TEN BANNED PROSE PATTERNS, HALF ONE — a TREE
     /// ANCHOR (pin standard Rule 3; census item 8).
     ///
     /// <see cref="PublishedDocs_SpeakToConsumers_NotToTheRepo"/> is an ABSENCE
@@ -465,6 +465,36 @@ public sealed class ComponentReferenceDriftTests : IClassFixture<ComponentRefere
             + "GenerateDocumentationFile stopped emitting internals.");
 
         string[] anchored = [@"\bfile header\b", @"\bdesign decision \d", @"\bGate \d"];
+
+        // THE FLOOR ON THE ITERATED SET (pin standard Rule 2). `unpublished.Count > 10`
+        // above floors the SUBJECT — the half of the XML this control searches. It says
+        // nothing about `anchored`, which is what the loop below actually iterates, and
+        // emptying that array left this whole fact GREEN: measured by the 15.1 branch
+        // review, in a fact 15.1 itself added, which is why the floor is here now.
+        //
+        // WHY THREE, and why a floor rather than the set-equality coupling its sibling
+        // fact uses. The sibling couples two lists that must be IDENTICAL — every one of
+        // the ten patterns gets a fixture row. This list is deliberately a SUBSET: the
+        // doc comment above names these three, one at a time, as the patterns with a live
+        // subject in the unpublished half, and says outright that the other seven are
+        // fixture-controlled instead. So the honest floor is the size of that enumeration.
+        // Coupling the other way — asserting this list equals every pattern that happens
+        // to hit — was considered and refused: it would red the moment a maintainer's doc
+        // comment gained a "Phase 3.4", which is ordinary correct writing, and a guard
+        // that reds on correct writing is the thing this file's own header warns about.
+        //
+        // `>=`, not `==`: a pattern GAINING a tree anchor strengthens this control and
+        // should be free to record. Losing one must red, because the failure message
+        // below already demands that demotion be deliberate and written down.
+        Assert.True(anchored.Length >= 3,
+            $"this control names only {anchored.Length} tree-anchored pattern(s) — "
+            + $"[{string.Join(", ", anchored)}] — and the loop below iterates exactly that list, so "
+            + "shortening it does not make this fact fail, it makes it check less. The doc comment "
+            + "above enumerates THREE patterns with a live subject in the unpublished half of the "
+            + "XML. If one genuinely lost its tree anchor, that is the deliberate demotion the "
+            + "failure message below describes: move it to the fixture-only list, lower this floor "
+            + "in the same commit, and correct the enumeration above so the count and the prose "
+            + "cannot drift apart.");
 
         foreach (string pattern in anchored)
         {
