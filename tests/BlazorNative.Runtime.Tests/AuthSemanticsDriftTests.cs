@@ -736,8 +736,8 @@ public sealed class AuthSemanticsDriftTests
     /// <item><description>A FILTER IN <c>ForPatternAcrossLines</c>'S OWN LAMBDA —
     /// outside the matcher, so no control that calls the matcher directly can see it.
     /// <b>31 of 31 GREEN</b> with a live binding. The two text assertions in
-    /// <see cref="AssertTheBanIsWiredToTheAcrossLinesMatcher"/> hold the chain's first
-    /// two links; this shape adds a condition INSIDE a body they only check the
+    /// <see cref="AssertEveryBanIsWiredToTheDoorItsSubjectNeeds"/> hold the chain's
+    /// first two links; this shape adds a condition INSIDE a body they only check the
     /// delegation of. FAILS GREEN.</description></item>
     /// <item><description>EVERY DENOMINATOR HERE NAMES ITS FILTER — the four
     /// <c>ShellSourceScan</c> consumers, AuthSemantics, ShellSourceRoots, NSLog and
@@ -820,8 +820,7 @@ public sealed class AuthSemanticsDriftTests
     [Fact]
     public void TheAliasDetector_StillMatchesTheShapeItWasWrittenFor()
     {
-        AssertTheBanIsWiredToTheAcrossLinesMatcher(
-            nameof(NoShellSource_AliasesAnAuthenticatorNamespace));
+        AssertEveryBanIsWiredToTheDoorItsSubjectNeeds();
 
         string[] lines = File.ReadAllText(AuthBearingShellFile())
             .Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
@@ -1235,6 +1234,16 @@ public sealed class AuthSemanticsDriftTests
             + "deliberately as the ignore entries are.");
     }
 
+    /// <summary>THE FACTS ALLOWED THROUGH THE PER-LINE DOOR, named. Everything else in
+    /// this file that calls a <c>ShellSourceScan</c> door must go through the
+    /// across-lines one, and a fact in neither half is a RED — which is how "nobody
+    /// wrote a wiring check for the new ban" stops being a state this file can be
+    /// in.</summary>
+    private static readonly string[] PerLineByDesign = new[]
+    {
+        nameof(TheTestOnlyCredentialBranch_IsStillGuarded),
+    };
+
     /// <summary>THE WIRING, WHICH A FIXTURE CONTROL CANNOT REACH — and this exists
     /// because a mutation showed the gap rather than because it was designed in.
     ///
@@ -1259,38 +1268,89 @@ public sealed class AuthSemanticsDriftTests
     /// accepts for exactly this job. It does NOT survive a determined rewiring: a new
     /// helper named <c>ForPatternAcrossLines</c> that delegates to the per-line
     /// matcher would satisfy it. FAILS GREEN for that shape, and it is listed as a
-    /// residual rather than described as coverage.</para></summary>
-    private static void AssertTheBanIsWiredToTheAcrossLinesMatcher(string fact)
+    /// residual rather than described as coverage.</para>
+    ///
+    /// <para>AND THE SUBJECT IS ENUMERATED, NOT PASSED IN. The first cut took the
+    /// fact's name as an argument, so the check's subject was an unpinned parameter:
+    /// nothing required a ban to HAVE a wiring check at all. MEASURED — a third ban
+    /// added to this file through the per-line door, with no call naming it and a
+    /// wrapped <c>setWeakUnlockAllowed(</c> … <c>true</c> … <c>)</c> live in both
+    /// copies of the shell, was <b>43 of 43 GREEN</b>. That is an OMISSION mode: there
+    /// is no artefact for a reviewer to look at, because the defect is the thing that
+    /// was never written. So the facts are now read out of this file and PARTITIONED —
+    /// across-lines, or named in <see cref="PerLineByDesign"/> — and a ban in neither
+    /// half reds. It is the same move the roster made for trees, one level down.</para>
+    /// </summary>
+    private static void AssertEveryBanIsWiredToTheDoorItsSubjectNeeds()
     {
         string source = CommentStrippedSource.Strip(File.ReadAllText(Path.Combine(
             BnRepo.Root(), "tests", "BlazorNative.Runtime.Tests", "AuthSemanticsDriftTests.cs")));
 
-        int at = source.IndexOf($"public void {fact}()", StringComparison.Ordinal);
-        Assert.True(at >= 0,
-            $"could not find `public void {fact}()` in AuthSemanticsDriftTests.cs. The fact was "
-            + "renamed or restructured, so this wiring check cannot see its subject and must red "
-            + "rather than vouch for a method it did not read. Re-point it deliberately.");
+        var acrossLines = new List<string>();
+        var perLine = new List<string>();
 
-        int end = source.IndexOf("\n    }", at, StringComparison.Ordinal);
-        Assert.True(end > at,
-            $"could not find the end of `{fact}` — no `}}` at method indentation after it. The "
-            + "file's formatting changed under this check; re-point it rather than widening it.");
+        foreach (Match m in Regex.Matches(source, @"\n    public void (\w+)\(\)"))
+        {
+            string name = m.Groups[1].Value;
 
-        string body = source[at..end];
+            int end = source.IndexOf("\n    }", m.Index, StringComparison.Ordinal);
+            Assert.True(end > m.Index,
+                $"could not find the end of `{name}` — no closing brace at method indentation "
+                + "after it. The file's formatting changed under this check, so it cannot read "
+                + "that method's body. Re-point it deliberately rather than letting it SKIP a "
+                + "fact — skipping is the shape that let a ban go unclassified in the first "
+                + "place.");
 
-        Assert.True(body.Contains("ForPatternAcrossLines", StringComparison.Ordinal),
-            $"`{fact}` no longer scans through ShellSourceScan.ForPatternAcrossLines.\n"
-            + "  Its detector's whole subject is a CALL, and a call wraps: the shell's own Kotlin "
-            + "opens a paren at end of line 96 times. Through the per-line door, "
-            + "`setDeviceCredentialAllowed(` with `true` on the next line is 31 of 31 GREEN with "
-            + "the weakened prompt live. The fixture controls cannot see this, because they drive "
-            + "the matcher directly — which is why this assertion reads the wiring as text.");
+            string body = source[m.Index..end];
 
-        Assert.False(body.Contains(".ForPattern(", StringComparison.Ordinal),
-            $"`{fact}` calls the PER-LINE ShellSourceScan.ForPattern. That door is correct for "
-            + "NSLogDriftTests, AndroidLogDriftTests and this pin's credential-caller count, whose "
-            + "subjects are single-line declarations and whose failure messages print the line "
-            + "text. It is wrong for a ban on a CALL. Use ForPatternAcrossLines.");
+            if (body.Contains(".ForPatternAcrossLines(", StringComparison.Ordinal))
+            {
+                acrossLines.Add(name);
+            }
+
+            if (body.Contains(".ForPattern(", StringComparison.Ordinal))
+            {
+                perLine.Add(name);
+            }
+        }
+
+        Assert.True(acrossLines.Count >= 2,
+            $"found only {acrossLines.Count} facts in this file scanning through "
+            + "ShellSourceScan.ForPatternAcrossLines, and there are two bans that must. Either a "
+            + "ban was deleted — then delete this floor in the same commit and say why — or the "
+            + "method scan has stopped seeing its subject, in which case every remaining ban is "
+            + "being approved without being read. This floor is the anti-vacuity half: a regex "
+            + "that matches nothing classifies nothing, and classifying nothing passes.");
+
+        string[] bothDoors = acrossLines.Intersect(perLine, StringComparer.Ordinal).ToArray();
+        Assert.True(bothDoors.Length == 0,
+            "FACTS CALLING BOTH ShellSourceScan DOORS:\n"
+            + string.Join("\n", bothDoors.Select(n => "  " + n))
+            + "\n\nOne subject, one door. A fact that calls both cannot be classified here, and "
+            + "the per-line result is the one that silently misses a wrapped call.");
+
+        string[] unclassified = perLine.Except(PerLineByDesign, StringComparer.Ordinal).ToArray();
+        Assert.True(unclassified.Length == 0,
+            "FACTS WALKING THROUGH THE PER-LINE ShellSourceScan.ForPattern WITHOUT SAYING SO:\n"
+            + string.Join("\n", unclassified.Select(n => "  " + n))
+            + "\n\nThe per-line door is correct for NSLogDriftTests, AndroidLogDriftTests and "
+            + "this pin's credential-caller count, whose subjects are single-line DECLARATIONS "
+            + "and whose messages print the line text. It is wrong for a ban on a CALL, because "
+            + "a call wraps: the shell's own Kotlin opens a paren at end of line 96 times, and "
+            + "`setDeviceCredentialAllowed(` with `true` on the next line was measured 31 of 31 "
+            + "GREEN through it with the weakened prompt live.\n"
+            + "  IF THE PER-LINE DOOR IS GENUINELY RIGHT for this fact, add it to "
+            + "PerLineByDesign with a reason a reviewer can read. Do not widen this check.");
+
+        string[] stale = PerLineByDesign.Except(perLine, StringComparer.Ordinal).ToArray();
+        Assert.True(stale.Length == 0,
+            "PerLineByDesign NAMES FACTS THAT NO LONGER CALL THE PER-LINE DOOR:\n"
+            + string.Join("\n", stale.Select(n => "  " + n))
+            + "\n\nEither the fact was renamed, or it was re-pointed at the across-lines door. "
+            + "Either way the exemption now approves nothing, and an exemption nobody can see "
+            + "expire is how the `ignored` licence in src/auth-semantics.json shipped a hole. "
+            + "This assertion is also the scan's live anchor: if the method regex stops matching, "
+            + "every name here goes stale at once and this reds.");
 
         // ── THE SECOND LINK, AND IT IS WHERE THE MEASUREMENT LANDED ──────────
         //
@@ -1345,8 +1405,7 @@ public sealed class AuthSemanticsDriftTests
     [Fact]
     public void TheGateWideningDetector_StillMatchesTheShapesItWasWrittenFor()
     {
-        AssertTheBanIsWiredToTheAcrossLinesMatcher(
-            nameof(NoShellSource_WidensTheGateThroughAPlatformApi));
+        AssertEveryBanIsWiredToTheDoorItsSubjectNeeds();
 
         foreach (string offender in new[]
                  {
