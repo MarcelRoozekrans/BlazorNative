@@ -143,6 +143,27 @@ namespace BlazorNative.Tests.Shared;
 // commit whose entire point was deleting an unenforced safety claim had shipped a new
 // one. That is how cheap the mistake is to make; it is written here so the next reader
 // spends their suspicion on the claims and not only on the code.
+//
+// ROUND FIVE, THIRD PASS -- and it makes the same point a third time, which is the
+// point.
+//
+// Re-review of the bounded fix found three more claims-about-today, in the round
+// written to delete one. TWO were about the helper: a cost note quoting a measured
+// maximum that was already wrong in the file it was measured in, and -- the one that
+// mattered -- a TERMINATION ARGUMENT resting on an unstated lemma. The argument said
+// the opening precondition and the closing arm ask "the SAME predicate"; they did not
+// quite, because the closing arm carried an extra `!inString` the lookahead did not,
+// and the gap closed only via the unwritten fact that `inString` is frozen while raw.
+//
+// The fix was to REMOVE THE DEPENDENCY, not to write the lemma down. The reason is
+// worth keeping because it generalises: the lemma is NOT PINNABLE by anything this
+// class may write. Both arrangements produce identical output for every input --
+// verified over all 435 scanned sources and 400,000 adversarial strings, zero
+// differences -- so no behavioural fact can tell them apart, and the alternatives were
+// exposing the flag or scanning this file from a test, which would move a non-pin into
+// the Rule 6 population. AN INVARIANT THAT CANNOT BE PINNED SHOULD BE ENGINEERED OUT,
+// NOT ANNOTATED. The cost note got the same treatment in its own register: it now
+// describes what BOUNDS the work instead of quoting what the work measured.
 // ─────────────────────────────────────────────────────────────────────────────
 
 internal static class CommentStrippedSource
@@ -243,8 +264,22 @@ internal static class CommentStrippedSource
             // reasoning and the scar; the short version is that the first cut of this
             // fix had no precondition and blinded two real files to EOF.
             //
-            // The `!inString` guard says an ordinary literal's INTERIOR is never a
-            // fence. It is defence in depth and is deliberately NOT claimed as
+            // READ THE CONDITION'S SHAPE, NOT JUST ITS PARTS. `!inString` sits INSIDE
+            // the opening disjunct, which looks like a nicety and is the termination
+            // argument. Hoisted out in front — where it was first written, and where
+            // it reads more naturally — the closing arm becomes
+            // `!inString && IsFenceAt(...)` while the lookahead is `IsFenceAt(...)`
+            // alone, and "the SAME predicate" above stops being literally true. The
+            // proof then needs a LEMMA: that `inString` is frozen for the whole
+            // duration of raw state, which happens to hold because the passthrough
+            // below sits above the quote branch and the newline reset and `continue`s
+            // unconditionally. True, load-bearing, and — as first shipped — written
+            // down nowhere. Review found it. Put the conjunct back where it is and the
+            // lemma is not needed at all: the closing arm asks exactly what the
+            // lookahead asked, so what the lookahead found, the loop closes on.
+            //
+            // The `!inString` guard itself says an ordinary literal's INTERIOR is
+            // never a fence. It is defence in depth and is deliberately NOT claimed as
             // pinned: no valid C#, Kotlin or Swift reaches it, because three adjacent
             // quotes while the ordinary flag is set means the first of them is that
             // literal's own closing quote. It can only be reached after the ordinary
@@ -260,8 +295,8 @@ internal static class CommentStrippedSource
             // closing-fence precondition. The facts are in CommentStrippedSourceTests
             // — see the roster in its header, which names each property and the fact
             // that holds it, so a renamed fact is found by reading one list.
-            if (!inString && IsFenceAt(source, i, out int fence)
-                && (inRawString || HasFenceAtOrAfter(source, i + fence)))
+            if (IsFenceAt(source, i, out int fence)
+                && (inRawString || (!inString && HasFenceAtOrAfter(source, i + fence))))
             {
                 inRawString = !inRawString;
                 sb.Append('"', fence);
@@ -422,16 +457,50 @@ internal static class CommentStrippedSource
 
     /// <summary>True when a fence exists at or after <paramref name="from"/>. This is the
     /// ENTRY PRECONDITION on raw-string state and the whole of why that state cannot reach
-    /// end of file: the opening arm refuses to enter without a closer, the closing arm
-    /// accepts any fence, and both ask <see cref="IsFenceAt"/>, so a state that was
-    /// entered will be left. An unterminated `"""` is therefore emitted as ordinary quotes
-    /// and bounded by the newline reset — the same choice, for the same reason, as the
-    /// unterminated `/*` in <see cref="Strip"/>.
+    /// end of file.
     ///
-    /// Cost is one scan of the remaining quotes per CANDIDATE opener, and a candidate is
-    /// already a three-or-more run in code state, of which the largest file in this repo
-    /// has single digits. It is not called for the `@`-refused shapes at all: the
-    /// short-circuit in <see cref="Strip"/> puts <see cref="IsFenceAt"/> first.</summary>
+    /// THE TERMINATION ARGUMENT, in full, because it is the correctness proof of the fix
+    /// and the one-sentence version was found to be leaning on something unstated.
+    ///
+    /// · The opening arm enters only when this method reports a fence at some index
+    ///   <c>j ≥ from</c>, and <c>from</c> is <c>i + run</c> — the exact index at which the
+    ///   main loop resumes after consuming the opener. An opener cannot satisfy its own
+    ///   precondition, and no index between the two is skipped.
+    /// · While raw, the loop advances ONE character at a time, and the only thing that can
+    ///   skip indices is a fence match — which itself leaves the state. So the loop reaches
+    ///   <c>j</c>, or an earlier fence.
+    /// · At <c>j</c> the branch asks <see cref="IsFenceAt"/> and nothing else. That is
+    ///   LITERALLY the predicate this method used, not merely an equivalent one: the
+    ///   `!inString` conjunct lives inside the OPENING disjunct precisely so the closing
+    ///   arm carries no extra condition. What the lookahead found, the loop closes on.
+    ///
+    /// THE VERSION THAT SHIPPED FIRST PUT `!inString` IN FRONT OF BOTH ARMS, and the proof
+    /// then needed a lemma — that `inString` is frozen for the duration of raw state —
+    /// which is true, is load-bearing, and was written down nowhere. The choice made here
+    /// was to REMOVE THE DEPENDENCY rather than to state and pin the lemma, and the reason
+    /// is that the lemma is not pinnable by any fact this class is allowed to write: the
+    /// two arrangements produce identical output for every input, so no behavioural
+    /// assertion can tell them apart, and the alternatives are exposing the flag — turning
+    /// an implementation detail into API — or scanning this file from a test, which would
+    /// move a non-pin into the Rule 6 pin population. An invariant that cannot be pinned
+    /// should be engineered out, not annotated. It also fails better: if a future edit did
+    /// unfreeze `inString`, this shape still closes the fence, where the other shape would
+    /// go blind to EOF.
+    ///
+    /// An unterminated `"""` is therefore emitted as ordinary quotes and bounded by the
+    /// newline reset — the same choice, for the same reason, as the unterminated `/*` in
+    /// <see cref="Strip"/>.
+    ///
+    /// COST, described by what bounds it rather than by a number measured today. One scan
+    /// of the remaining quotes per CANDIDATE opener, where a candidate is a three-or-more
+    /// quote run reached in code state — so the call count is bounded by the number of
+    /// quote RUNS in the file, never by its length. Every SUCCESSFUL call opens a state
+    /// whose closing fence costs no scan at all, because the `inRawString ||`
+    /// short-circuit skips this method on the closing arm; and it is not called for the
+    /// `@`-refused shapes either, because <see cref="IsFenceAt"/> is evaluated first. An
+    /// earlier version of this paragraph quoted a measured maximum instead, which was
+    /// wrong within the same file it was measured in — a fact about today, in the round
+    /// whose subject was facts about today.</summary>
     private static bool HasFenceAtOrAfter(string source, int from)
     {
         for (int j = source.IndexOf('"', from); j >= 0; j = source.IndexOf('"', j + 1))

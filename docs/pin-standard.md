@@ -669,15 +669,23 @@ and escapes an embedded quote by **doubling** it, so a verbatim literal beginnin
 `@"""` — three consecutive quotes that open a fence nothing ever closes.
 `ShellFrameTableDriftTests.cs:296` and `TemplateDriftTests.cs:1344` each went blind to **end of
 file** behind one, 358 lines between them, inside `PinPopulationTests`' own walk, and the whole
-suite stayed green: under that state, 1115 of 1118 .NET tests pass and the Renderer project — which
-*contains* one of the two blinded files — is **fully** green. Review caught it, not CI.
+suite stayed green. Measured under a mutation restoring that state: **1142 of the 1145 tests in the
+.NET suite pass** — all three projects, Runtime 975/978, Renderer **140/140** and Analyzers 27/27 —
+and the three failures are the three facts phase 15.2 added for it. The Renderer project *contains*
+one of the two blinded files and does not notice at all. Review caught this, not CI.
+
+*(An earlier version of that sentence said "1115 of 1118", which was Runtime plus Renderer only. The
+figure is stronger once the population is named, not weaker — which is the usual shape of a
+miscounted denominator, and no reason to leave one standing.)*
 
 So the rule the stripper now holds is neither *strip more* nor *strip less*. It is: **no input may
 make the stripper blind past the construct that confused it.** Raw state is entered only when a
-closing fence already exists ahead, found with the same predicate the closing arm uses — so a state
-that is entered is left, **by construction, for all inputs**. That is a stronger claim than the
-newline reset ever supported, and it is the reason this section can say what follows without
-hedging on today's tree.
+closing fence already exists ahead, found with the same predicate the closing arm uses — and
+*literally* the same one: the ordinary-string conjunct sits inside the **opening** disjunct so the
+closing arm carries no extra condition, which is what keeps the termination argument from resting
+on an unstated lemma about when that flag can change. A state that is entered is left, **by
+construction, for all inputs**. That is a stronger claim than the newline reset ever supported, and
+it is the reason this section can say what follows without hedging on today's tree.
 
 **Read the failure directions before the limits, because the natural assumption about them is
 wrong.** Over-stripping is a false **green** — a pin's subject is deleted before it is looked for.
