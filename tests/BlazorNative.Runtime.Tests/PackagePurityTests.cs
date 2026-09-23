@@ -79,7 +79,14 @@ public sealed class PackagePurityTests
     private const string SampleAppAssembly = "BlazorNative.SampleApp";
 
     /// <summary>The pattern net: app-shaped names that must never appear in
-    /// a shipped assembly, whatever the roster knows about.</summary>
+    /// a shipped assembly, whatever the roster knows about.
+    ///
+    /// ITS FIXED POINT IS <see cref="TheAppShapedNet_StillCatchesTheSampleApp"/>
+    /// (pin standard Rule 3; census item 9). This regex is the detector in an
+    /// ABSENCE assertion, so rewording it past its subject — `Demo$` to `Demos$`,
+    /// a lost `^`, a stray `\b` of the kind that cost
+    /// ComponentReferenceDriftTests a pattern — produces no offenders forever
+    /// while claiming the shipped assemblies are clean.</summary>
     private static readonly Regex AppShapedTypeName =
         new("(Demo$)|(Probe$)|(^SpikeRazor)", RegexOptions.CultureInvariant);
 
@@ -131,6 +138,81 @@ public sealed class PackagePurityTests
             "The pattern net (*Demo / *Probe / SpikeRazor*) caught an app-shaped type in a "
             + $"shipped assembly: {string.Join(", ", offenders)}. Demo pages and probes live in "
             + "samples/BlazorNative.SampleApp — the library ships no app types.");
+    }
+
+    /// <summary>
+    /// THE POSITIVE CONTROL FOR <see cref="AppShapedTypeName"/> (pin standard Rule 3;
+    /// census item 9, one of the two uncontrolled detectors that sat OUTSIDE the pin
+    /// population — this is a purity fact over PE metadata, not a drift pin, and it is
+    /// closed anyway because an uncontrolled detector is a liability in either
+    /// population).
+    ///
+    /// THE ANCHOR IS THE EXEMPTION, which is the cheapest model available and the one
+    /// NSLogDriftTests uses: the assembly the net deliberately does NOT scan is the
+    /// assembly that must still be full of what the net looks for.
+    /// `BlazorNative.SampleApp.dll` is where all sixteen moved types live, by the
+    /// normative rule this file exists to enforce — so it is guaranteed, not merely
+    /// likely, to hold a match for every alternation.
+    ///
+    /// ONE NAME PER ALTERNATION, each asserted to be a REAL type in that assembly
+    /// first. Naming a string literal and matching it would prove only that the regex
+    /// matches a string someone typed beside it; requiring the name to exist in the PE
+    /// metadata makes it a tree anchor. Reword any single alternation and exactly one
+    /// row here reds, naming which.
+    ///
+    /// THE NEGATIVE HALF guards the other direction. The net's failure mode is not
+    /// only under-matching: dropping the `$` anchors would flag `DemoRecorder`, and
+    /// dropping `^` would flag `NotSpikeRazor`. A net widened that way reds on
+    /// innocent shipped types, which is a false red — cheap, but it is also how an
+    /// author is taught to weaken the net. The near-misses below are the shapes the
+    /// anchors exist to refuse.
+    ///
+    /// WHAT THIS DOES NOT BUY: the net's WIDTH. `*Demo`, `*Probe` and `SpikeRazor*`
+    /// are the three shapes someone thought of in phase 8.0. A demo page called
+    /// `BnSandbox` parked in a shipped assembly matches nothing here and nothing in
+    /// the roster either, and no control over a fixed pattern list can see it. That
+    /// gap FAILS GREEN and is stated rather than implied.
+    /// </summary>
+    [Fact]
+    public void TheAppShapedNet_StillCatchesTheSampleApp()
+    {
+        HashSet<string> sampleTypes = TypeNamesOf(SampleAppAssembly);
+
+        (string Name, string Alternation)[] anchors =
+        [
+            ("BnDemo", "Demo$"),
+            ("CompositionProbe", "Probe$"),
+            ("SpikeRazor", "^SpikeRazor"),
+        ];
+
+        foreach (var (name, alternation) in anchors)
+        {
+            Assert.True(sampleTypes.Contains(name),
+                $"'{name}' is no longer a type in {SampleAppAssembly}.dll, so it cannot anchor the "
+                + $"`{alternation}` alternation of the app-shaped net. Either the type was renamed "
+                + "— then re-point this control at whatever now plays its part, and check "
+                + "MovedTypeRoster in the same pass — or it was deleted, in which case this "
+                + "alternation may have no live subject left and the question is whether the "
+                + "alternation should survive it. Do not drop the row to make this green.");
+
+            Assert.True(AppShapedTypeName.IsMatch(name),
+                $"AppShapedTypeName no longer matches '{name}', a real type in "
+                + $"{SampleAppAssembly}.dll and this control's anchor for the `{alternation}` "
+                + "alternation. The net has been reworded past its subject, so "
+                + "NoAppShapedTypeName_InAnyShippedAssembly is now reporting zero offenders "
+                + "because it can no longer SEE one — not because the shipped assemblies are "
+                + $"clean. Current pattern: /{AppShapedTypeName}/");
+        }
+
+        // THE NEGATIVE: the anchors are load-bearing. Each of these contains an
+        // alternation's text in a position the anchor must refuse; a net widened by
+        // dropping `$` or `^` flags all three and reds on innocent shipped names.
+        foreach (string nearMiss in new[] { "DemoRecorder", "ProbeStore", "NotSpikeRazor", "BnView" })
+            Assert.False(AppShapedTypeName.IsMatch(nearMiss),
+                $"AppShapedTypeName now matches '{nearMiss}', which is NOT an app-shaped name — "
+                + "`Demo` and `Probe` are anchored at the END and `SpikeRazor` at the START on "
+                + "purpose. A net that matches anywhere reds on ordinary library types, and the "
+                + $"next author will weaken it rather than fix it. Current pattern: /{AppShapedTypeName}/");
     }
 
     // ── 3. The shipped set is pinned EVERYWHERE it appears ───────────────────
@@ -250,6 +332,16 @@ public sealed class PackagePurityTests
         {
             names.Add(metadata.GetString(metadata.GetTypeDefinition(handle).Name));
         }
+
+        // The walk's own floor. Every caller above is an assertion of the form "for
+        // every type name, assert X" — the shape that passes trivially over an empty
+        // set (pin standard Rule 2). An assembly always defines <Module>, so zero is
+        // never a legitimate answer here; it means the PE was read but yielded
+        // nothing, and the absence facts would go green over it.
+        Assert.True(names.Count > 0,
+            $"enumerated ZERO type definitions out of {path} — the purity facts would all pass "
+            + "vacuously over an empty set. The PE was opened but yielded no metadata; fix the "
+            + "read, do not let it green.");
         return names;
     }
 

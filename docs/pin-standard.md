@@ -334,9 +334,27 @@ knew the shared copy with **three** callers existed. The fix landed on the less-
 widely-used one kept the bug, and four more copies were still undiscovered.
 
 One `BnRepo.Root()`, called by every test that reaches the checkout — 27 files at the time of
-writing. One `CommentStrippedSource`, 8 callers. **That is the target shape, and note which number
-is allowed to move:** the caller count grows with the suite and should. The count of
-*implementations* is the one that must stay at one.
+writing. One `CommentStrippedSource`, 8 callers — **9 since phase 15.1**, and that growth is the
+rule working rather than an exception to it. The caller count grows with the suite and should; the
+count of *implementations* is the one that must stay at one.
+
+### The corollary Rule 8 does NOT state, and 15.1 had to decide
+
+**A NEW GRAMMAR IS NOT A SECOND COPY, BUT IT STILL BELONGS IN THE SAME HOME.**
+`BnSafeAreaCoverageTests` needed Razor's `@* … *@`, which `CommentStrippedSource` did not know. The
+usual argument for consolidating did not apply — a Razor stripper cannot diverge from a C#/Kotlin/
+Swift one, because they implement different grammars and share no truth. What *does* apply is
+discoverability: the next author who needs to scan a `.razor` file looks in the one comment
+stripper, and finding nothing there is exactly how a ninth copy gets written.
+
+So it went in — as `StripRazor`, **a sibling entry point rather than a mode flag on `Strip`**. The
+distinction is load-bearing and is the other half of the ruling. A `razor: true` parameter would
+thread through `Lines` and `NumberedCodeLines` and would need a default for eight callers who must
+never get Razor behaviour; a defaulted flag on shared machinery is the mechanism by which a helper
+change leaves the whole-suite count correct while quietly moving what ONE pin sees. Adding a
+sibling left `Strip`'s body unedited, so those eight are unchanged **by construction** rather than
+by re-verification — which is the property worth engineering for when the shared thing has this
+many dependants.
 
 ---
 
@@ -493,7 +511,7 @@ reasons set out directly above.
 | Helper | Job |
 |---|---|
 | `tests/Shared/BnRepo.cs` | `Root()` — the one walk to the checkout. `TestBinaryDirectory()` — the test's own build output, which is a different job |
-| `CommentStrippedSource` | `Strip`, `Lines`, `NumberedCodeLines` — string-literal-aware comment removal for C#, Kotlin and Swift, with nesting block comments and one-based line numbers against the original file |
+| `CommentStrippedSource` | `Strip`, `Lines`, `NumberedCodeLines` — string-literal-aware comment removal for C#, Kotlin and Swift, with nesting block comments and one-based line numbers against the original file. `StripRazor` (15.1) adds Razor's `@* … *@` for `.razor` sources and then composes `Strip` for the C# forms a `@code` block carries — a sibling, deliberately not a mode on `Strip`; see Rule 8's corollary |
 | `PinPopulationTests` | enforces Rule 6 — reachability only — and is therefore the thing that keeps the population enumerable. It does **not** enforce Rule 2 |
 
 Known limits of the shared stripper, restated here because Rule 5 applies to it too: a raw or

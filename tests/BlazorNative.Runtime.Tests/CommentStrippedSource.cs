@@ -47,6 +47,32 @@ namespace BlazorNative.Runtime.Tests;
 // scoped to a four-statement body with no string literals, and it FAILS SAFE --
 // over-stripping there yields a false red, never a false green. A guard against a
 // ninth copy is phase 15.1's job, not a fifth hand-migration.
+//
+// ROUND FOUR, phase 15.1: RAZOR, and why it is a SIBLING rather than a MODE.
+//
+// `BnSafeAreaCoverageTests` scans a `.razor` file, whose comment form is `@* ... *@`
+// and is not `//` or `/* */`. The census filed that as a disclosed small gap; it was
+// a live false green in all five of that pin's files, demonstrated by deleting the
+// wrap outright from BnStarterPage.razor and watching the pin pass off the header
+// comment alone.
+//
+// Rule 8 says consolidate rather than port, and the ARGUMENT FOR THIS HOME survives
+// the grammar difference even though the usual one does not. `@* ... *@` is a
+// different grammar from `//` and `/* */`, so a Razor stripper is not a second copy
+// of the one above and there is nothing for it to diverge FROM -- the divergence
+// class Rule 8 exists to prevent does not apply. What DOES apply is the home: the
+// next pin that needs to scan a `.razor` file will look for comment stripping here,
+// and if it finds nothing it will write the ninth copy. Discoverability is the part
+// of Rule 8 that is grammar-independent.
+//
+// But a MODE would have been the wrong shape, and the reasoning is worth keeping.
+// A `razor: true` flag on `Strip` threads through `Lines` and `NumberedCodeLines`,
+// needs a default for eight callers who must never get Razor behaviour, and a
+// defaulted flag on a shared hot path is exactly the mechanism by which a
+// shared-helper change leaves the aggregate test count correct while quietly moving
+// what ONE pin sees. So: same home, separate entry point, and `Strip`'s body is not
+// edited at all -- the eight callers are unchanged BY CONSTRUCTION rather than by
+// re-verification. (They were re-run anyway; the counts are in the phase report.)
 // ─────────────────────────────────────────────────────────────────────────────
 
 internal static class CommentStrippedSource
@@ -161,6 +187,79 @@ internal static class CommentStrippedSource
         }
 
         return sb.ToString();
+    }
+
+    /// <summary>A `.razor` source with BOTH of its comment grammars removed: Razor's
+    /// `@* … *@` first, then <see cref="Strip"/> for the `//` and `/* … */` a
+    /// `@code` block can carry. One call, because a Razor file is a mixed grammar and
+    /// a caller that remembers only one half has the false green this method exists
+    /// to close.
+    ///
+    /// Razor comments DO NOT NEST — `@* a @* b *@ c *@` ends at the FIRST `*@`, and
+    /// this matches that rather than the nesting rule <see cref="Strip"/> implements
+    /// for Kotlin and Swift. `@@` is Razor's escape for a literal `@`, so `@@*` is
+    /// text and not an opener; it is skipped as a pair. An UNTERMINATED `@*` is left
+    /// in place rather than swallowing the rest of the file — the same policy and the
+    /// same reason: over-stripping hides live call sites, which is a false green.
+    /// Newlines inside a removed comment are preserved, so line numbers survive and a
+    /// caller can still align the result index-for-index with the original.
+    ///
+    /// WHAT THIS DOES NOT COVER, and the direction each one fails.
+    /// · An HTML comment, `&lt;!-- … --&gt;`, is NOT removed. A `&lt;BnSafeArea&gt;` inside one
+    ///   would still be counted as live. FAILS GREEN, and is the one limit here that
+    ///   does — it is left uncovered deliberately, because Razor's own handling of
+    ///   components inside HTML comments is not a thing this repo has pinned, and a
+    ///   stripper that guessed would be asserting a compiler behaviour nobody
+    ///   measured. If it ever matters, measure it first.
+    /// · A `@*` or a `*@` inside a C# string literal in a `@code` block is treated as
+    ///   a delimiter, because the Razor pass runs before any string-literal
+    ///   awareness. Over-strips. FAILS RED.
+    /// · Running <see cref="Strip"/> over MARKUP means markup quoting drives its
+    ///   string state. The state resets at every newline, so any mis-parse is bounded
+    ///   to one line, and a mis-parse can only remove text. FAILS RED.
+    /// · Nothing here understands `@if` / `@foreach`: a wrap inside a branch that
+    ///   never executes is live text and reads as live. FAILS GREEN, and is out of
+    ///   reach of any text scan — it is a parse problem, not a stripper problem.</summary>
+    public static string StripRazor(string source)
+    {
+        var sb = new StringBuilder(source.Length);
+        int i = 0;
+
+        while (i < source.Length)
+        {
+            // `@@` is an escaped literal `@`. Consume both so `@@*` cannot open a
+            // comment — it is text, and treating it as an opener would over-strip.
+            if (source[i] == '@' && i + 1 < source.Length && source[i + 1] == '@')
+            {
+                sb.Append(source[i]);
+                sb.Append(source[i + 1]);
+                i += 2;
+                continue;
+            }
+
+            if (source[i] == '@' && i + 1 < source.Length && source[i + 1] == '*')
+            {
+                int end = source.IndexOf("*@", i + 2, StringComparison.Ordinal);
+                if (end < 0)
+                {
+                    // Unterminated — emit the '@' verbatim and resume one character
+                    // on, rather than swallowing to EOF and blinding the scan.
+                    sb.Append(source[i]);
+                    i++;
+                    continue;
+                }
+
+                for (int k = i; k < end + 2; k++)
+                    if (source[k] == '\n') sb.Append('\n');
+                i = end + 2;
+                continue;
+            }
+
+            sb.Append(source[i]);
+            i++;
+        }
+
+        return Strip(sb.ToString());
     }
 
     /// <summary>The file's lines that are CODE, numbered from 1 against the ORIGINAL
