@@ -441,9 +441,8 @@ count of *implementations* is the one that must stay at one.
 The tenth caller is the one that makes the point. `CommentStrippedSource` lived in
 `tests/BlazorNative.Runtime.Tests`, and neither of the other two test projects referenced it, so
 there was exactly one implementation and **two of the three test projects could not call it**.
-By test count that is the smaller share -- 167 of 1132 -- and the count is the wrong measure: what
-was out of reach was not a fraction of the assertions but every pin either of those projects will
-ever carry. That is not a tidiness problem. `ShellStyleTableDriftTests` in `BlazorNative.Renderer.Tests` carried a
+By test count that is the smaller share, and the count is the wrong measure: what was out of reach
+was not a fraction of the assertions but every pin either of those projects will ever carry. That is not a tidiness problem. `ShellStyleTableDriftTests` in `BlazorNative.Renderer.Tests` carried a
 **disclosed false green** over block-commented dispatch arms whose own comment named the fix and
 named the blocker: the helper was in the wrong project. It cost nothing to move it to
 `tests/Shared` and link it through `tests/Directory.Build.props` the way `BnRepo.cs` is linked, and
@@ -669,14 +668,20 @@ and escapes an embedded quote by **doubling** it, so a verbatim literal beginnin
 `@"""` — three consecutive quotes that open a fence nothing ever closes.
 `ShellFrameTableDriftTests.cs:296` and `TemplateDriftTests.cs:1344` each went blind to **end of
 file** behind one, 358 lines between them, inside `PinPopulationTests`' own walk, and the whole
-suite stayed green. Measured under a mutation restoring that state: **1142 of the 1145 tests in the
-.NET suite pass** — all three projects, Runtime 975/978, Renderer **140/140** and Analyzers 27/27 —
-and the three failures are the three facts phase 15.2 added for it. The Renderer project *contains*
-one of the two blinded files and does not notice at all. Review caught this, not CI.
+suite stayed green.
 
-*(An earlier version of that sentence said "1115 of 1118", which was Runtime plus Renderer only. The
-figure is stronger once the population is named, not weaker — which is the usual shape of a
-miscounted denominator, and no reason to leave one standing.)*
+> **Measured 2026-09-23, phase 15.2**, under a mutation restoring the defective state: of the
+> **1145** tests in the .NET suite, **1142 passed** — Runtime 975/978, Renderer **140/140**,
+> Analyzers 27/27. The three failures were the three facts 15.2 added for this defect, and nothing
+> else in the suite noticed. The Renderer project *contains* one of the two blinded files and was
+> **fully green**.
+
+That block is a **dated measurement, not a standing fact** — read it as what the suite did on that
+day, and do not maintain the numbers. Its point survives the counts going stale: a defect that
+switched comment stripping off across 358 lines, inside the walk of the pin that enumerates the pin
+population, was invisible to every test in the repository except the ones written for it. Review
+caught this, not CI. *(The figure was restated once, from "1115 of 1118" — Runtime plus Renderer
+only — against the whole suite. Naming the population made it stronger, not weaker.)*
 
 So the rule the stripper now holds is neither *strip more* nor *strip less*. It is: **no input may
 make the stripper blind past the construct that confused it.** Raw state is entered only when a

@@ -162,8 +162,30 @@ namespace BlazorNative.Tests.Shared;
 // differences -- so no behavioural fact can tell them apart, and the alternatives were
 // exposing the flag or scanning this file from a test, which would move a non-pin into
 // the Rule 6 population. AN INVARIANT THAT CANNOT BE PINNED SHOULD BE ENGINEERED OUT,
-// NOT ANNOTATED. The cost note got the same treatment in its own register: it now
-// describes what BOUNDS the work instead of quoting what the work measured.
+// NOT ANNOTATED. The cost note got a different treatment, below.
+//
+// ROUND FIVE, FOURTH PASS -- which is the one about the PATTERN, not the instance.
+//
+// The replacement cost note was wrong too. It claimed the call count is bounded by the
+// number of quote RUNS and never by file length. It is bounded by quote CHARACTERS: a
+// failed lookahead falls through to the quote branch, which toggles the ordinary flag,
+// so the tail of the same run re-offers two characters later and a run of length L
+// costs floor of L-1 over 2 scans. Measured on this helper, a 41-quote run costs 20.
+//
+// STOP AND COUNT THE PASSES. Round two corrected a false claim and introduced one.
+// Round three corrected that and introduced one. Round four is correcting THAT. Each
+// correction was in a better register than the last -- a number, then a structural
+// argument -- and each was still wrong, because the register was never the problem.
+// Writing prose that asserts a property is cheap and being right is not, so the cost
+// of an assertion is paid every time someone has to re-check it, forever.
+//
+// So the fourth pass DELETES rather than corrects, and that is the generalisable move:
+// before writing a sentence that asserts a property, ask whether the property can be
+// ENGINEERED OUT or PINNED. If neither, ask whether anything depends on it. If nothing
+// does -- as nothing depended on this helper's call count -- do not write the sentence.
+// The termination argument stays because correctness rests on it and it is checkable
+// against four lines of code. The cost note goes because it was decoration that three
+// people had to read carefully to find wrong.
 // ─────────────────────────────────────────────────────────────────────────────
 
 internal static class CommentStrippedSource
@@ -491,16 +513,12 @@ internal static class CommentStrippedSource
     /// newline reset — the same choice, for the same reason, as the unterminated `/*` in
     /// <see cref="Strip"/>.
     ///
-    /// COST, described by what bounds it rather than by a number measured today. One scan
-    /// of the remaining quotes per CANDIDATE opener, where a candidate is a three-or-more
-    /// quote run reached in code state — so the call count is bounded by the number of
-    /// quote RUNS in the file, never by its length. Every SUCCESSFUL call opens a state
-    /// whose closing fence costs no scan at all, because the `inRawString ||`
-    /// short-circuit skips this method on the closing arm; and it is not called for the
-    /// `@`-refused shapes either, because <see cref="IsFenceAt"/> is evaluated first. An
-    /// earlier version of this paragraph quoted a measured maximum instead, which was
-    /// wrong within the same file it was measured in — a fact about today, in the round
-    /// whose subject was facts about today.</summary>
+    /// NO COST BOUND IS ASSERTED HERE, and the absence is deliberate rather than an
+    /// oversight — do not fill it in. Nothing depends on one: this is a private helper on a
+    /// test-only path, and correctness rests on the termination argument above, not on how
+    /// many times it runs. Two attempts at a bound shipped and both were wrong, the second
+    /// being the correction for the first. What the body says is checkable in four lines
+    /// and needs no paragraph: one scan of the remaining quotes, per call.</summary>
     private static bool HasFenceAtOrAfter(string source, int from)
     {
         for (int j = source.IndexOf('"', from); j >= 0; j = source.IndexOf('"', j + 1))
