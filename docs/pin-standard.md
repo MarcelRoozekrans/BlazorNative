@@ -431,7 +431,8 @@ knew the shared copy with **three** callers existed. The fix landed on the less-
 widely-used one kept the bug, and four more copies were still undiscovered.
 
 One `BnRepo.Root()`, called by every test that reaches the checkout — 27 files at the time of
-writing. One `CommentStrippedSource`, 8 callers — **10 since phase 15.1**, and that growth is the
+writing. One `CommentStrippedSource`, 8 callers — **10 since phase 15.1**, plus an eleventh in 15.2
+that is a unit-test class over the helper itself rather than a pin, and that growth is the
 rule working rather than an exception to it. The caller count grows with the suite and should; the
 count of *implementations* is the one that must stay at one.
 
@@ -651,7 +652,33 @@ reasons set out directly above.
 | `CommentStrippedSource` | `Strip`, `Lines`, `NumberedCodeLines` — string-literal-aware comment removal for C#, Kotlin and Swift, with nesting block comments and one-based line numbers against the original file. `StripRazor` (15.1) adds Razor's `@* … *@` for `.razor` sources and then composes `Strip` for the C# forms a `@code` block carries — a sibling, deliberately not a mode on `Strip`; see Rule 8's corollary |
 | `PinPopulationTests` | enforces Rule 6 — reachability only — and is therefore the thing that keeps the population enumerable. It does **not** enforce Rule 2 |
 
-Known limits of the shared stripper, restated here because Rule 5 applies to it too: a raw or
-multiline string literal, and a C# `'"'` char literal, toggle its string state wrongly until the
-next newline resets it. No file currently holding a scanned marker contains either — but that is a
-fact about today, and nothing pins it.
+Known limits of the shared stripper, restated here because Rule 5 applies to it too.
+
+**The paragraph that used to stand here was wrong, and the way it was wrong is the lesson.** It
+said a raw or multiline string literal "toggles its string state wrongly until the next newline
+resets it", and filed that under *bounded*. Issue #364's **F3** is the counterexample: the newline
+reset put the raw string's **body** back into **code** state, where a `/*` opened a block comment
+that ran to the next `*/` — arbitrarily far away, in another declaration entirely — and deleted the
+live code between them from the scan. The reset did not bound that mis-parse. It **caused** it.
+That is the over-strip direction, which is a false **green**, and it is the same direction the
+stripper's own unterminated-opener rule already existed to avoid. Phase 15.2 fixed it: `"""` is now
+tracked as its own state that deliberately **survives** the newline, and
+`CommentStrippedSourceTests` holds it there.
+
+What remains, with the direction each one fails:
+
+- **Only the bare three-quote fence is understood.** C#'s longer fences (`""""` and up) and Swift's
+  `#"…"#` / `#"""…"""#` delimiters are not parsed. Neither spelling occurs in any file a pin
+  currently scans, and the narrowness is deliberate — a general raw-string parser is how this pin
+  family got into trouble — but this one can fail in **either** direction, so it is the limit to
+  revisit first if one of those spellings lands in a scanned tree.
+- **A C# `'"'` char literal still toggles the ordinary string state once**, and an unbalanced quote
+  in an ordinary literal still mis-parses. Those *are* bounded by the newline reset, which applies
+  to the ordinary flag and not to the raw one.
+- **An unterminated `"""` now does blind the rest of the file** — read as body, so comments below
+  it stop being stripped. That is the under-strip direction and it fails **red**: a pin sees prose
+  it should not have and complains, rather than missing a call site and passing.
+
+No file currently holding a scanned marker contains a shape that trips any of these — but that is a
+fact about today, and the first sentence of this section is what happens when such a fact is
+written down as a guarantee.

@@ -9,6 +9,9 @@ namespace BlazorNative.Tests.Shared;
 // DispatchSurfaceDriftTests, AuthSemanticsDriftTests, PinPopulationTests,
 // NSLogDriftTests, ConsoleErrorDriftTests, AndroidLogDriftTests,
 // DeepLinkSeedDriftTests, BnSafeAreaCoverageTests and ShellStyleTableDriftTests.
+// Phase 15.2 added an eleventh caller that is NOT one of them:
+// CommentStrippedSourceTests holds this type's own behaviour directly, so the
+// limits below are facts rather than a paragraph. See ROUND FIVE.
 //
 // IT LIVES IN tests/Shared BECAUSE "ONE IMPLEMENTATION" WAS ONLY TRUE INSIDE ONE
 // PROJECT. Until phase 15.1 this file sat in tests/BlazorNative.Runtime.Tests, and
@@ -85,6 +88,32 @@ namespace BlazorNative.Tests.Shared;
 // what ONE pin sees. So: same home, separate entry point, and `Strip`'s body is not
 // edited at all -- the eight callers are unchanged BY CONSTRUCTION rather than by
 // re-verification. (They were re-run anyway; the counts are in the phase report.)
+//
+// ROUND FIVE, phase 15.2: RAW STRINGS, and the comment that was the bug.
+//
+// Issue #364's F3. `Strip` had ONE string flag and it reset at every newline. A
+// `"""` toggled that flag three times and landed inside-string; the reset then put
+// the raw string's BODY back into CODE state, and a `/*` in the body opened a block
+// comment that ran to the next `*/` -- which can be in another declaration
+// entirely. The live code between the two was deleted from the scanned text. That
+// is OVER-stripping, which is the FALSE-GREEN direction and the exact direction the
+// unterminated-opener rule below already existed to avoid.
+//
+// The part worth keeping is not the fix. It is that the doc comment on `Strip`
+// asserted the newline reset "confines any mis-parse to a single line rather than
+// letting one stray quote blind the rest of the file", and named raw strings in the
+// same paragraph as an example of something it bounded. The reset did not bound the
+// raw-string case; it CAUSED it. An unenforced safety claim in a comment is this
+// repo's most expensive bug class -- three incidents in one week were each exactly
+// that -- and this one had been read past by everyone who touched the file through
+// four rounds. `CommentStrippedSourceTests` is the fix for that half: the limits are
+// now held by facts rather than by a paragraph.
+//
+// This round ALSO recorded a scope refusal, because the next reader will be tempted.
+// Only the bare three-quote fence is parsed. C#'s longer fences and Swift's `#"..."#`
+// delimiters are deliberately NOT, and the reason is in the doc comment below rather
+// than in anyone's head: scope escaping through a general parser is how this pin
+// family got into trouble in the first place.
 // ─────────────────────────────────────────────────────────────────────────────
 
 internal static class CommentStrippedSource
@@ -105,25 +134,92 @@ internal static class CommentStrippedSource
     /// read as a comment — `://` already appears in both shells' literals, and in C# test
     /// sources, so this is a live shape and not a hypothetical.
     ///
-    /// REMAINING BOUNDED LIMITS, not claims. A `"""` multiline or raw string toggles three
-    /// times and lands inside-string; a C# `'"'` char literal toggles once. Only the
-    /// newline reset clears either. The reset is the point — it confines any mis-parse to
-    /// a single line rather than letting one stray quote blind the rest of the file.</summary>
+    /// RAW STRINGS (`"""`) ARE TRACKED SEPARATELY, and that state deliberately SURVIVES
+    /// the newline. It has to: this is issue #364's F3. Under the single flag alone a
+    /// `"""` toggled three times and landed INSIDE-string, the newline reset then put the
+    /// raw string's BODY back into CODE state, and a `/*` in that body opened a block
+    /// comment that ran to the next `*/` — which can be in another declaration entirely.
+    /// Everything between the two was deleted from the scanned text. Over-stripping hides
+    /// live call sites, which is a false GREEN, and it is the same direction the
+    /// unterminated-opener rule above already exists to avoid.
+    ///
+    /// REMAINING BOUNDED LIMITS, not claims — and the direction each one fails.
+    /// · Only the bare three-quote fence is understood. C#'s longer fences (`""""` and
+    ///   up) and Swift's `#"…"#` / `#"""…"""#` delimiters are NOT parsed: a `""""` opener
+    ///   is read as `"""` plus one ordinary quote, and `#"` is read as an ordinary quote.
+    ///   Neither spelling occurs in any file a pin currently scans. This was left
+    ///   deliberately narrow — a general raw-string parser is how this pin family got
+    ///   into trouble — and it can fail in EITHER direction, so it is the limit to revisit
+    ///   first if one of those spellings ever lands in a scanned tree.
+    /// · A C# `'"'` char literal still toggles the ordinary string flag once, and is
+    ///   still bounded by the newline reset. Same for any unbalanced quote in an ordinary
+    ///   literal: the mis-parse ends at the end of its line.
+    /// · What the newline reset does and does not buy, stated exactly, because the
+    ///   previous wording of this paragraph claimed more than the code did and F3 was the
+    ///   counterexample. It bounds a mis-parse arising from the ORDINARY string flag to a
+    ///   single line. It does NOT bound the raw-string flag, which is the point of it, so
+    ///   an UNTERMINATED `"""` now does blind the rest of the file — read as body, so
+    ///   comments below it stop being stripped. That is the UNDER-strip direction and it
+    ///   fails RED, never green: a pin sees prose it should not have seen and complains,
+    ///   rather than missing a call site and passing.</summary>
     public static string Strip(string source)
     {
         var sb = new StringBuilder(source.Length);
         int i = 0;
         bool inString = false;
+        bool inRawString = false;
 
         while (i < source.Length)
         {
+            // RAW STRINGS (`"""`), Kotlin and Swift both, and C# in the test sources.
+            // This state deliberately SURVIVES the newline, unlike the single-quote
+            // state below. #364 F3: `"""` toggled the simple flag three times, landed
+            // inside-string, and the newline reset then put the BODY back into CODE
+            // state — where a `/*` opened a block comment running to the next `*/`,
+            // which can be arbitrarily far away. Over-stripping hides live call sites;
+            // that is a false GREEN, and it is the direction the unterminated-opener
+            // branch below was already written to avoid.
+            //
+            // The `!inString` guard says an ordinary literal's INTERIOR is never a
+            // fence. It is defence in depth and is deliberately NOT claimed as
+            // pinned: no valid C#, Kotlin or Swift reaches it, because three
+            // adjacent quotes while the ordinary flag is set means the first of them
+            // is that literal's own closing quote. It can only be reached after the
+            // ordinary flag has ALREADY mis-parsed — a `'"'` char literal, or an odd
+            // backslash run the two-character escape look-back gets wrong — and in
+            // that state neither answer is right. What it buys is that such a
+            // mis-parse stays bounded by the newline reset instead of escalating
+            // into a whole-file raw-string mis-parse.
+            //
+            // The FENCE WIDTH is pinned, by two facts, and it needed them: narrowing
+            // this to `""` leaves the F3 fixture green while turning every empty
+            // string literal in the repo into a raw-string opener. See
+            // CommentStrippedSourceTests.AnEmptyStringLiteral_DoesNotOpenARawString.
+            if (!inString && i + 2 < source.Length
+                && source[i] == '"' && source[i + 1] == '"' && source[i + 2] == '"')
+            {
+                inRawString = !inRawString;
+                sb.Append("\"\"\"");
+                i += 3;
+                continue;
+            }
+
+            if (inRawString)
+            {
+                sb.Append(source[i]);   // newlines included — line numbers must stay true
+                i++;
+                continue;
+            }
+
             // STRING LITERALS (14.4's F2, and the reason this type absorbed the
             // AuthSemantics copy in 15.0). A `//` inside a string is not a comment —
             // the shells already contain `://` in literals, at BnDeepLink.swift and
             // BnCamera.swift. Tracking is deliberately simple: toggle on an unescaped
-            // `"`, and RESET AT EVERY NEWLINE. No ordinary string in Swift, Kotlin or
-            // C# spans lines, and the reset is what BOUNDS a mis-parse to one line
-            // rather than letting one stray quote blind the rest of the file.
+            // `"`, and RESET AT EVERY NEWLINE. No ORDINARY string in Swift, Kotlin or
+            // C# spans lines, and the reset is what BOUNDS an ordinary-literal
+            // mis-parse to one line. It bounds THIS flag only — the raw-string flag
+            // above is deliberately outside it, because a raw string DOES span lines
+            // and #364's F3 is what the reset did when applied to one.
             if (source[i] == '"')
             {
                 bool escaped = i > 0 && source[i - 1] == '\\'
