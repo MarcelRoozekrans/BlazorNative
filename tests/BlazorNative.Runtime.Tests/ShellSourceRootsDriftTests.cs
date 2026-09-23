@@ -1762,9 +1762,12 @@ public sealed class ShellSourceRootsDriftTests
 
     /// <summary>NO ROOT LIST IN THE ROSTER IS A FREE LITERAL. Every set's roots
     /// are read out of a file the BUILD reads — `src/BlazorNative.Jni/build.gradle.kts`
-    /// for the five Kotlin source sets, `src/BlazorNative.Apple/project.yml` for
+    /// for the four Kotlin source sets, `src/BlazorNative.Apple/project.yml` for
     /// the two Swift targets — and the seventh, `androidTemplateMirror`, inherits
-    /// `androidShell`'s through `mirrorOf`.
+    /// `androidShell`'s through `mirrorOf`. Four plus two is the six sets that
+    /// carry `derivedFrom`, which is what `derived.Count` below counts; an
+    /// earlier version of this sentence said five, which made the mirror the
+    /// eighth of seven and contradicted the count in the same file.
     ///
     /// WHY IT REACHES ALL SEVEN AND NOT ONE. It derived only `androidShell` for
     /// three rounds, and the file claimed that covered the roster because a root
@@ -1798,7 +1801,30 @@ public sealed class ShellSourceRootsDriftTests
     /// WHAT IT STILL DOES NOT CHECK: that a set's `language` matches the tree it
     /// names. Nothing does. With every list derived, a Swift tree can no longer
     /// arrive under a Kotlin set by rearrangement — but if the two build files
-    /// ever agree on a path, this would not notice. FAILS GREEN, disclosed.</summary>
+    /// ever agree on a path, this would not notice. FAILS GREEN, disclosed.
+    ///
+    /// AND THE DERIVATION IS ONE CALL DEEP, which is the limit that matters and
+    /// is a FAILS-GREEN one rather than a false red. `pattern` locates ONE call
+    /// per set. Gradle and XcodeGen both offer siblings that add to or replace
+    /// the very same source set, and this fact is blind to all of them —
+    /// MEASURED, three ways, 11 of 11 green each with the edit proved landed:
+    /// `kotlin.setSrcDirs(listOf(…))` after the matched call REPLACES the source
+    /// dirs, so `src/main/kotlin` stops compiling into the shipped AAR while the
+    /// roster still calls it shell source; singular
+    /// `kotlin.srcDir(rootProject.file(…))` ADDS a compiled Kotlin tree outside
+    /// every `scanRoot`, so neither this derivation nor the orphan walk sees it;
+    /// and XcodeGen `excludes:` under `- path: BnHost` DROPS the two auth-bearing
+    /// Swift files from the shipped iOS target.
+    ///
+    /// THE SUBTRACTIONS HAVE NO BACKSTOP ANYWHERE. The orphan walk sees files
+    /// that EXIST, never files the build has stopped compiling, so the first and
+    /// third shapes recreate in two tokens the AGP 9 incident the message below
+    /// names as the thing this fact prevents. It prevents the half where the
+    /// ROSTER drifts from the matched call; it does not prevent the half where a
+    /// second call moves the build out from under both. The cheap closure, if it
+    /// is ever wanted, is the dual of `EveryRootList_IsExternallyDerived`: every
+    /// source set and target found in the two build files must appear in the
+    /// roster. Do not read the message below as wider than this.</summary>
     [Fact]
     public void EveryDerivedRootList_MatchesItsExternalRecord()
     {
@@ -1869,7 +1895,17 @@ public sealed class ShellSourceRootsDriftTests
                 + "and the build does not is the AGP 9 incident: source in the tree that nothing "
                 + "builds, with pins reporting green over it. And a root that has MOVED from one "
                 + "set to another is why this reaches every set rather than one: no count can see "
-                + "a move, and a move can put a consumed tree inside an excluded set.");
+                + "a move, and a move can put a consumed tree inside an excluded set.\n"
+                + "  WHAT THIS DOES NOT CATCH, so the sentence above is not read as wider than "
+                + "it is: it compares the roster against ONE call per set. A SECOND call in the "
+                + "same block that adds to or replaces that source set is invisible — "
+                + "`setSrcDirs(listOf(...))`, singular `srcDir(rootProject.file(...))`, and "
+                + "XcodeGen's `excludes:`, each measured 11 of 11 GREEN while changing what "
+                + "actually compiles. The first and third are SUBTRACTIONS and nothing in this "
+                + "repository backstops those: the orphan walk sees files that exist, not files "
+                + "the build has stopped compiling. So this fact prevents the AGP 9 shape where "
+                + "the ROSTER drifts; it does not prevent the one where a second build call "
+                + "moves the compilation out from under both.");
         }
     }
 
@@ -1974,8 +2010,20 @@ public sealed class ShellSourceRootsDriftTests
     /// `EveryDerivedRootList_MatchesItsExternalRecord` now derives every other
     /// root list from the build file that already knows it, and
     /// `EveryRootList_IsExternallyDerived` stops an eighth set arriving with a
-    /// free one. This fact covers `androidTemplateMirror`, whose source tree no
-    /// build file in this repository declares independently of the shell's.
+    /// free one. This fact covers `androidTemplateMirror`.
+    ///
+    /// THE REASON WRITTEN HERE FOR THAT WAS FALSE, and it is corrected rather
+    /// than quietly dropped. It said no build file in this repository declares
+    /// the mirror's tree independently of the shell's. One does:
+    /// `templates/BlazorNative.Templates/content/BlazorNative.App/android/build.gradle.kts`
+    /// carries the same `kotlin.srcDirs("src/main/kotlin", "src/androidMain/kotlin")`
+    /// call, byte-for-byte, and nothing in the repository reads it —
+    /// `TemplateDriftTests`' gradle pin compares a dictionary of named literals,
+    /// not the source-set call. So `mirrorOf` here is a CHOICE, not a necessity:
+    /// giving the mirror its own `derivedFrom` as well would turn `mirrorOf` into
+    /// a real differential pin between the two Gradle files, which is the M14
+    /// shape this phase sits inside. Until someone does that, a narrowing of the
+    /// template's own `srcDirs` reds nothing. FAILS GREEN, disclosed.
     ///
     /// LIMIT: it compares root LISTS, not the trees behind them. The template
     /// genuinely having those directories is `EveryRoot_ExistsOnDisk`; their
