@@ -591,15 +591,40 @@ internal static class ShellSourceRoots
 //     but CONTENT IS A PROXY FOR PATH: a Kotlin package declaration or a Swift
 //     import names the tree just as well.
 //
-//     AND THE POSITIVE CONTROL DOES NOT SAVE IT, AND THERE IS ONLY ONE.
-//     `TheTestBundleExemption_IsRealAndStillHoldsNSLog` runs through this
-//     matcher, so a filter broad enough to blind it reds — but a filter keyed
-//     on one package is not broad enough, and that control lives in another
-//     package. `TheInstrumentedTestExemption_IsRealAndStillHoldsBareLogI` does
-//     NOT run through here at all: its tree is roster-EXCLUDED, so it walks
-//     itself and only shares the PATTERN. An earlier draft named both, which
-//     overstated the cover by exactly one control — measured: a total blind of
-//     `ForPattern` reds 5 facts and that one is not among them.
+//     AND THE POSITIVE CONTROLS DO NOT SAVE IT. There are TWO that run through
+//     this matcher, not the one an earlier draft counted, and the second was
+//     added by 15.2 — but the residual survives both, narrowed rather than
+//     closed.
+//       - `TheTestBundleExemption_IsRealAndStillHoldsNSLog` runs through here,
+//         so a filter broad enough to blind it reds — but a filter keyed on one
+//         package is not broad enough, and that control lives in another package.
+//       - `AuthSemanticsDriftTests.TheAliasDetector_StillMatchesTheShapeItWasWrittenFor`
+//         drives `PatternHits` over AndroidShellBridge.kt's OWN text, so a filter
+//         keyed on THAT file's content reds it. MEASURED, both directions: a
+//         `text.Contains("package io.blazornative.shell") ? [] : …` inside
+//         `PatternHits`, with an authenticator-namespace alias planted in that
+//         file, reds 4 facts INCLUDING that control — while the alias ban itself
+//         stays green. The SAME filter keyed on `package io.blazornative.jni`,
+//         with the alias planted in `src/main/kotlin` instead, is **27 of 27
+//         GREEN**. A control's fixture only covers the tree its fixture comes
+//         from.
+//       - `TheInstrumentedTestExemption_IsRealAndStillHoldsBareLogI` does NOT
+//         run through here at all: its tree is roster-EXCLUDED, so it walks
+//         itself and only shares the PATTERN. An earlier draft named it as cover,
+//         which overstated it by exactly one control — measured: a total blind of
+//         `ForPattern` reds 5 facts and that one is not among them.
+//
+//     AND `ForPattern` ITSELF IS A SECOND SITE, which is new in 15.2 and is
+//     disclosed rather than discovered later. Splitting `PatternHits` out so a
+//     fixture could drive the production matcher left `ForPattern`'s lambda as
+//     one expression OUTSIDE it. MEASURED: the same content filter placed there
+//     instead — `text => text.Contains(…) ? [] : PatternHits(text, pattern)` —
+//     blinds the alias ban with a live alias planted, and its control does NOT
+//     notice, because the control calls `PatternHits` directly. Three unrelated
+//     facts reddened on that tree's other contents; the alias fact was not one
+//     of them. The split did not create the class — limit A already was this
+//     class — but it did widen it by one expression, and that is the honest
+//     accounting.
 //     Direction: FAILS GREEN.
 //
 //  B. REWRITING A FACT'S BODY. MEASURED GREEN, twice: reassigning the hit array
@@ -611,11 +636,37 @@ internal static class ShellSourceRoots
 //     rewritten; what a pin can do is make the rewrite VISIBLE and make the
 //     cheap version unavailable, and that part is done — there is no leftover
 //     walk to filter, no root list to re-point, and the coverage proof is fused
-//     into the call that yields the value the assertion consumes, so the shapes
-//     below are all that is left and every one of them shows up in a diff as new
-//     code rather than as a changed constant.
+//     into the call that yields the value the assertion consumes.
 //
-//  C. WHAT IS CLOSED, each verified by a mutation that now REDS where it used to
+//     ⚠ THE SENTENCE THAT USED TO END THIS PARAGRAPH — "so the shapes below are
+//     all that is left" — IS DELETED RATHER THAN SOFTENED, for the fifth round
+//     running. It was falsified again by limit C. Do not write its replacement:
+//     the roster's own $doc names this as the sentence four rounds already wrote,
+//     and a sixth would be the unenforced safety claim this phase exists to
+//     retire. The residuals below are the ones measurement has found SO FAR, and
+//     the list is open by construction.
+//
+//  C. A PATH-KEYED FILTER ON THE HIT LIST, AFTER THE RECORD. MEASURED GREEN
+//     TWICE, by two reviews, at two denominators: 24 passed / 0 failed when it
+//     was found, and — re-measured in 15.2 rather than quoted — **977 passed /
+//     0 failed**, the whole .NET Runtime suite bar the slow reference fixture,
+//     with a live `import androidx.biometric.BiometricManager.Authenticators as
+//     Auth` planted in `src/main/kotlin` and its template mirror. One line
+//     inside `Over`'s loop — `if (file.Contains("/main/kotlin/")) continue;`
+//     wrapped around the `hits.Add` — drops findings from a tree that was
+//     genuinely READ. Coverage stays honest, because coverage is a statement
+//     about the READ and this filter is downstream of it.
+//
+//     IT IS NOT CLOSEABLE BY MOVING THE GUARD ONE LINK FURTHER, which is the
+//     move rounds 1–4 each made. THE HIT LIST IS A DERIVATION OF THE READ, AND
+//     ANY DERIVATION IS FILTERABLE: fusing the record into the read fixed what
+//     the record can be lied to about, and it cannot fix what happens to the
+//     values afterwards, because those values are not the read. The honest
+//     statement of the boundary is that coverage proves the BYTES ARRIVED, never
+//     that everything the matcher said about them survived to the assertion.
+//     Direction: FAILS GREEN. It shows up in a diff as new code.
+//
+//  D. WHAT IS CLOSED, each verified by a mutation that now REDS where it used to
 //     pass:
 //       - re-pointing a pin at a hard-coded root list — NOT EXPRESSIBLE. No door
 //         a pin can call takes roots; they take a consumer name and an optional
@@ -809,10 +860,34 @@ internal static class ShellSourceScan
     /// once.</summary>
     internal static Result ForPattern(
         string consumer, string? set, string[] extensions, string pattern)
-        => Over(consumer, set, extensions, text =>
-            CommentStrippedSource.NumberedCodeLinesOf(text)
-                .SelectMany(l => Regex.Matches(l.Text, pattern)
-                    .Select(m => new RawHit(l.Number, l.Text.Trim(), m.Value))));
+        => Over(consumer, set, extensions, text => PatternHits(text, pattern));
+
+    /// <summary>THE MATCHING ITSELF, as a pure function of text — split out of
+    /// <see cref="ForPattern"/> so that a pin's POSITIVE CONTROL can drive the
+    /// production matcher over a fixture instead of restating it (pin standard,
+    /// Rules 3 and 8).
+    ///
+    /// <para><c>ForPattern</c> walks the tree, which a control over a spliced
+    /// fixture cannot use: the splice exists precisely because the subject tree
+    /// is required to be EMPTY of the pattern. A control that re-implemented the
+    /// regex loop would control its own copy, which is the shape
+    /// <c>ReleaseWorkflowPinTests.Offenders</c> exists to avoid. This is the same
+    /// ruling: one implementation, two callers, and the control provably exercises
+    /// the path the pin uses.</para>
+    ///
+    /// <para>Line numbers are one-based against the ORIGINAL text, so a control
+    /// can assert line fidelity through the stripper and not merely that the
+    /// regex fired.</para>
+    ///
+    /// <para>⚠ WHAT THE SPLIT COSTS, measured and written here rather than left
+    /// to be found: it leaves <see cref="ForPattern"/>'s lambda as one expression
+    /// OUTSIDE this method, and a content filter placed THERE blinds a pin while
+    /// every control that calls this method directly stays green. See limit A in
+    /// the type header, which now carries both measurements.</para></summary>
+    internal static IEnumerable<RawHit> PatternHits(string text, string pattern)
+        => CommentStrippedSource.NumberedCodeLinesOf(text)
+            .SelectMany(l => Regex.Matches(l.Text, pattern)
+                .Select(m => new RawHit(l.Number, l.Text.Trim(), m.Value)));
 
     /// <summary>READS <paramref name="path"/>, and records the file it read —
     /// naming it from THAT SAME PATH.
