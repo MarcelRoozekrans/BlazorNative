@@ -26,6 +26,51 @@ namespace BlazorNative.Runtime.Tests;
 // scan runs over `CommentStrippedSource`, the shared stripper two sibling pins
 // (GeneratedSymbolShadowTests, DispatchSurfaceDriftTests) already scan through
 // for the same reason. No new infrastructure, and no marker is exempted.
+//
+// ── WHAT THIS PIN DOES NOT COVER (pin standard, Rule 5) ─────────────────────
+//
+// Phase 15.1. These limits were disclosed in docs/pin-standard.md and in a task
+// report, and nowhere near the guard itself. Rule 5 is specifically about a
+// reader finding the limit where they find the pin, so they live here now.
+//
+// READ THE DIRECTION FIRST, because it is the part that matters: ALL FOUR OF
+// THESE FAIL GREEN. By the standard's own test -- "a limit that can only cost
+// you a red is a footnote; a limit that can hand you a green is a defect,
+// whether or not it is written down" -- every one of them is a defect this pin
+// cannot close, not a footnote. They are written down because the alternative
+// is a guard that implies completeness it does not have, which the standard
+// rates as worse than an admitted gap.
+//
+//  1. A MARKER BUILT BY STRING CONCATENATION EVADES THE SCAN. The detector is
+//     `code.Contains(marker)` over one file's stripped text. A test that spells
+//     the sentinel as two halves joined at runtime contains neither marker as a
+//     substring and is invisible. This is the accidental/determined boundary:
+//     what this pin catches is the COPY-PASTED walk, which is how all 24 copies
+//     phase 15.0 consolidated actually arose.
+//
+//  2. A BYPASS CAN REACH THE TREE WITH NEITHER MARKER PRESENT, and this is
+//     DEMONSTRATED rather than theoretical. `Assembly.GetExecutingAssembly()
+//     .Location` plus a fixed `Path.GetFullPath` climb lands in the checkout
+//     without naming the solution file and without touching AppContext. The
+//     marker list is a list of the two EASY doors, not of every door -- see
+//     limit 4 on why widening it is not a fix on its own.
+//
+//  3. THE TWO BY-NAME EXCLUSIONS ARE BLIND SPOTS, not merely exemptions. A
+//     bypass written INSIDE BnRepo.cs or inside this file is never read by the
+//     scan. The census calls the plausible half of that: BnRepo.cs could grow a
+//     THIRD walk beside Root and TestBinaryDirectory, with a slightly different
+//     sentinel or climb -- two copies of one truth inside the file whose whole
+//     purpose is that there be one, in the one location nothing scans. Both
+//     exclusions are correct and neither should be removed; what is missing is
+//     a guard, and BnRepo.cs is 51 lines reviewed by eye.
+//
+//  4. `BypassMarkers` IS A MANUAL LIST AND NOTHING GUARDS ITS WIDTH. The
+//     positive control below proves each DECLARED marker still matches real
+//     code. It cannot prove the list is still COMPLETE: delete an entry and the
+//     control simply stops asking about it. Completeness is a fact about the
+//     .NET API surface rather than about this repo, so no assertion in this
+//     repository can establish it -- which is exactly why the list is described
+//     below as the one manual seam that cannot be removed.
 // ─────────────────────────────────────────────────────────────────────────────
 
 public sealed class PinPopulationTests
@@ -38,6 +83,16 @@ public sealed class PinPopulationTests
         "BlazorNative.sln",       // the sentinel — walking to it by hand
         "AppContext.BaseDirectory",
     ];
+
+    /// <summary>THE DETECTOR — one implementation, driven by the pin AND by its
+    /// positive control (pin standard Rule 8). A control that reran its own copy
+    /// of `Contains` would control the copy; the point is that both facts push the
+    /// same marker list through the same stripper.</summary>
+    private static IReadOnlyList<string> MarkersIn(string path)
+    {
+        string code = string.Join('\n', CommentStrippedSource.Lines(path));
+        return [.. BypassMarkers.Where(m => code.Contains(m, StringComparison.Ordinal))];
+    }
 
     [Fact]
     public void NoTest_ReachesTheRepoTree_WithoutTheSharedHelper()
@@ -68,10 +123,8 @@ public sealed class PinPopulationTests
             if (name == "BnRepo.cs" || name == "PinPopulationTests.cs") continue;
 
             scanned++;
-            string code = string.Join('\n', CommentStrippedSource.Lines(path));
-            foreach (string marker in BypassMarkers)
-                if (code.Contains(marker, StringComparison.Ordinal))
-                    offenders.Add($"{relative} uses '{marker}'");
+            foreach (string marker in MarkersIn(path))
+                offenders.Add($"{relative} uses '{marker}'");
         }
 
         // ANTI-VACUITY: the standard this milestone is writing, applied to the
@@ -87,6 +140,9 @@ public sealed class PinPopulationTests
         // theatre, which is precisely what this milestone exists to remove. 100
         // leaves 29 files of headroom so ordinary deletion does not red it, and
         // sits far enough above zero that a broken walk cannot slip through.
+        //
+        // AND IT PROVES ONLY THE WALK. Whether the DETECTOR still detects is a
+        // separate property, asserted separately below (pin standard Rule 3).
         Assert.True(scanned >= 100,
             $"scanned only {scanned} test files, and there are roughly 129 — the walk has stopped "
             + "seeing its subject, so the assertion below is checking almost nothing");
@@ -94,5 +150,63 @@ public sealed class PinPopulationTests
         Assert.True(offenders.Count == 0,
             "these tests reach the repo tree without BnRepo.Root, so they are invisible to pin "
             + "enforcement — route them through the shared helper:\n  " + string.Join("\n  ", offenders));
+    }
+
+    /// <summary>THE POSITIVE CONTROL for <see cref="BypassMarkers"/> (pin standard
+    /// Rule 3; phase 15.0 census item 1 and §5.6).
+    ///
+    /// <para>WHY THIS PIN NEEDED ONE MOST, and why being the milestone's own
+    /// enforcement mechanism makes that worse rather than exempt. The fact above is
+    /// an ABSENCE claim: it asserts an empty offender list. Its floor of 100 proves
+    /// the WALK found files; nothing proved the DETECTOR still detects. Reword either
+    /// marker — or let the shared stripper start removing too much — and it reports
+    /// no offenders, forever, while its name tells every reader that the population
+    /// is enumerable. A guard that cannot demonstrate its own detector works is
+    /// precisely what the standard objects to, and this one is the guard the standard
+    /// is enforced BY.</para>
+    ///
+    /// <para>WHY `BnRepo.cs` IS THE FIXED POINT, and the relationship worth
+    /// understanding rather than an arbitrary file to assert about. It is the ONE
+    /// PERMITTED HOME of the walk, so by construction it must contain both markers in
+    /// live code: <c>Root()</c> climbs to the solution-file sentinel, and
+    /// <c>TestBinaryDirectory()</c> exists specifically to give the base-directory
+    /// marker a sanctioned home rather than an exemption. If either marker stopped
+    /// being found THERE, it would stop being found in an offender too.</para>
+    ///
+    /// <para>That is <c>NSLogDriftTests</c>' design, read in reverse: the file the
+    /// offender scan EXCLUDES is the file the detector is required to hit. There, the
+    /// exempt test bundle must still hold the `NSLog` calls the shipped tree must
+    /// not; here, the exempt implementation must still hold the markers every other
+    /// test must not. The exemption and the control are two different jobs, and until
+    /// phase 15.1 only the first had been done.</para>
+    ///
+    /// <para>Read through <see cref="MarkersIn"/> — the pin's own detector, over the
+    /// same comment-stripped source — so this controls the production path and not a
+    /// copy of it. What it does NOT establish is the list's WIDTH; see limit 4 in the
+    /// header.</para></summary>
+    [Fact]
+    public void TheBypassMarkers_AreStillFoundInBnRepo_TheOnePermittedHomeOfTheWalk()
+    {
+        string bnRepo = Path.Combine(BnRepo.Root(), "tests", "Shared", "BnRepo.cs");
+
+        Assert.True(File.Exists(bnRepo),
+            $"tests/Shared/BnRepo.cs is missing (looked in {bnRepo}) — it is both the one permitted "
+            + "implementation of the walk and the fixed point this control depends on. Either it "
+            + "moved, in which case re-point this control AND the by-name exclusion in the pin "
+            + "above deliberately, or the shared helper is gone, in which case the whole population "
+            + "has stopped being enumerable and that is the thing to fix.");
+
+        var found = MarkersIn(bnRepo);
+        string[] missing = [.. BypassMarkers.Except(found, StringComparer.Ordinal)];
+
+        Assert.True(missing.Length == 0,
+            $"the bypass marker(s) [{string.Join(", ", missing)}] matched NOTHING in "
+            + "tests/Shared/BnRepo.cs, which is the one file that MUST contain every one of them: "
+            + "it is the only sanctioned home of the walk, so Root() spells the solution-file "
+            + "sentinel and TestBinaryDirectory() spells the base-directory marker, both in live "
+            + "code. Either a marker was reworded past its subject, or the shared comment stripper "
+            + "now removes code it should keep — and in EITHER case the pin above is reporting an "
+            + "empty offender list because it can no longer see an offender, not because none "
+            + "exists. Fix the detector; do not green this by editing the list.");
     }
 }

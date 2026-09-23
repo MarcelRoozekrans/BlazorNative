@@ -172,6 +172,63 @@ public sealed class GeneratedSymbolShadowTests
     /// hiding a bare NSLog behind a URL in a string literal.</para></summary>
     private static string[] CodeLines(string file) => CommentStrippedSource.Lines(file);
 
+    /// <summary>A hand-written DECLARATION of the given generated symbol's name — not a
+    /// use of it. In C, specifically a definition with its own initializer;
+    /// `kYogaStyles[i]` and `sizeof(kYogaStyles[0])` index with something and do not
+    /// match.</summary>
+    private static string DeclarationPattern(string symbol, bool c) => c
+        ? $@"\b{Regex.Escape(symbol)}\s*\[\s*\]\s*=\s*\{{"
+        : $@"\b(?:static\s+let|let|val|var)\s+{Regex.Escape(symbol)}\b";
+
+    /// <summary>THE FORWARDING WINDOW — the pin's SUPPRESSION BRANCH, and therefore the
+    /// branch that can go quiet by accident (pin standard Rule 7). Scans the declaration
+    /// line plus the two that follow for a qualified reference to the generated symbol.
+    /// C definitions never forward — `BnWireVocabulary.kNodeTypes` cannot occur in an
+    /// `#include`d header — so the window is never offered to them.</summary>
+    private static bool Forwards(string[] lines, int index, string symbol)
+    {
+        for (int j = index; j < Math.Min(index + 3, lines.Length); j++)
+            if (Regex.IsMatch(lines[j], $@"BnWireVocabulary\.{Regex.Escape(symbol)}\b"))
+                return true;
+        return false;
+    }
+
+    /// <summary>THE DETECTOR, over one file's already-stripped lines: every declaration
+    /// of <paramref name="symbol"/>, one-based, each tagged with whether the forwarding
+    /// window exempted it.
+    ///
+    /// <para>One implementation, driven by the pin, by <see cref="DeclarationSites"/>
+    /// and by the positive control's C fixture alike (pin standard Rule 8). Taking
+    /// LINES rather than a path is what lets the control splice a real declaration into
+    /// real source and run the production detector over the result, instead of
+    /// controlling a copy of it.</para></summary>
+    private static List<(int Line, bool Forwards)> DeclarationSitesIn(string[] lines, string symbol, bool c)
+    {
+        var sites = new List<(int, bool)>();
+        for (int i = 0; i < lines.Length; i++)
+            if (Regex.IsMatch(lines[i], DeclarationPattern(symbol, c)))
+                sites.Add((i + 1, !c && Forwards(lines, i, symbol)));
+        return sites;
+    }
+
+    private readonly record struct DeclarationSite(string Source, string Symbol, int Line, bool Forwards);
+
+    /// <summary>Every hand-written declaration of a generated symbol anywhere in the two
+    /// shell trees, forwarding or not. The pin below reports the non-forwarding ones;
+    /// its control asserts the forwarding ones are still SEEN and still EXEMPTED.</summary>
+    private static List<DeclarationSite> DeclarationSites()
+    {
+        var sites = new List<DeclarationSite>();
+        foreach ((string file, string symbol, _) in GeneratedSymbols())
+        {
+            bool c = IsCHeader(file);
+            foreach (string source in ShellSources(file))
+                foreach ((int line, bool forwards) in DeclarationSitesIn(CodeLines(source), symbol, c))
+                    sites.Add(new DeclarationSite(source, symbol, line, forwards));
+        }
+        return sites;
+    }
+
     /// <summary>THE PIN. A hand-written declaration of a generated symbol's name
     /// shadows it: the generated value goes dead and the manifest stops governing
     /// that vocabulary, silently.
@@ -202,54 +259,19 @@ public sealed class GeneratedSymbolShadowTests
     /// would flag every declaration. The one C shape that DERIVES from the generated
     /// symbol rather than replacing it is an `extern` re-declaration, which names the
     /// same entity and has no initializer. So in C the offender is specifically a
-    /// DEFINITION: `NAME[] = {`, its own literal, a second copy of the truth.</summary>
+    /// DEFINITION: `NAME[] = {`, its own literal, a second copy of the truth.
+    ///
+    /// <para>THIS IS AN ABSENCE CLAIM, so it is only worth what its detector is worth:
+    /// see <see cref="TheShadowDetector_StillMatchesRealDeclarations_AndTheForwardingWindowStillFires"/>,
+    /// which is the fixed point both the declaration pattern and the forwarding window
+    /// are required to keep hitting.</para></summary>
     [Fact]
     public void NoGeneratedSymbol_IsShadowedByAHandWrittenDeclaration()
     {
-        var offenders = new List<string>();
-
-        foreach ((string file, string symbol, _) in GeneratedSymbols())
-        {
-            bool c = IsCHeader(file);
-
-            // A DECLARATION of the same name — not a use of it. In C, specifically a
-            // definition with its own initializer; `kYogaStyles[i]` and
-            // `sizeof(kYogaStyles[0])` index with something and do not match.
-            string declaration = c
-                ? $@"\b{Regex.Escape(symbol)}\s*\[\s*\]\s*=\s*\{{"
-                : $@"\b(?:static\s+let|let|val|var)\s+{Regex.Escape(symbol)}\b";
-
-            foreach (string source in ShellSources(file))
-            {
-                string[] lines = CodeLines(source);
-                for (int i = 0; i < lines.Length; i++)
-                {
-                    if (!Regex.IsMatch(lines[i], declaration))
-                        continue;
-
-                    // FORWARDING, not shadowing: scan the declaration line plus the two
-                    // that follow for a qualified reference to the generated symbol.
-                    // (C definitions never forward — see the note above — so the window
-                    // can never exempt one.)
-                    bool forwards = false;
-                    if (!c)
-                    {
-                        for (int j = i; j < Math.Min(i + 3, lines.Length); j++)
-                        {
-                            if (Regex.IsMatch(lines[j], $@"BnWireVocabulary\.{Regex.Escape(symbol)}\b"))
-                            {
-                                forwards = true;
-                                break;
-                            }
-                        }
-                    }
-                    if (forwards)
-                        continue;
-
-                    offenders.Add($"{Path.GetFileName(source)}:{i + 1} declares '{symbol}', which WireGen generates");
-                }
-            }
-        }
+        var offenders = DeclarationSites()
+            .Where(s => !s.Forwards)
+            .Select(s => $"{Path.GetFileName(s.Source)}:{s.Line} declares '{s.Symbol}', which WireGen generates")
+            .ToList();
 
         Assert.True(offenders.Count == 0,
             "A generated symbol is shadowed by a hand-written declaration. The generated value goes "
@@ -257,6 +279,126 @@ public sealed class GeneratedSymbolShadowTests
             + "governing that vocabulary — while the codegen tests stay green, because they compare "
             + "generated files to the manifest and never look at a hand-written twin. Consume the "
             + "generated symbol instead.\n  " + string.Join("\n  ", offenders));
+    }
+
+    /// <summary>The two live forwarding declarations this detector must still SEE and
+    /// still EXEMPT — one per language that has a qualified form. Both are the
+    /// intended consumption pattern, both are hand-written production code, and both
+    /// are exactly the shape #279's fix took, so neither can be rewritten away without
+    /// somebody noticing.</summary>
+    private static readonly (string Source, string Symbol)[] ForwardingFixedPoints =
+    [
+        ("BnFrameAdapter.swift", "nodeTypes"),   // static let nodeTypes = BnWireVocabulary.nodeTypes
+        ("YogaLayout.kt", "YOGA_STYLES"),        // private val YOGA_STYLES = BnWireVocabulary.YOGA_STYLES
+    ];
+
+    /// <summary>THE POSITIVE CONTROL for the shadow-declaration detector (pin standard
+    /// Rule 3; phase 15.0 census item 4 and §5.4).
+    ///
+    /// <para>WHAT WAS UNGUARDED. <see cref="NoGeneratedSymbol_IsShadowedByAHandWrittenDeclaration"/>
+    /// is an ABSENCE claim standing on two moving parts: the declaration pattern, and
+    /// the forwarding window that suppresses a match. <see cref="GeneratedSymbolFloor"/>
+    /// proves the generated symbols were PARSED; nothing proved either of those two
+    /// still fires over real shell source. Reword <see cref="DeclarationPattern"/> past
+    /// its subject — a Swift or Kotlin syntax change, an over-eager escape — and the pin
+    /// reports zero offenders forever while a hand-written twin sits in the tree. That is
+    /// <b>#279 reopening silently</b>, which is the specific failure this file exists to
+    /// prevent.</para>
+    ///
+    /// <para>SWIFT AND KOTLIN HAVE HONEST TREE ANCHORS, and they buy both halves at once.
+    /// <see cref="ForwardingFixedPoints"/> names a live forwarding declaration in each
+    /// language. Each must be MATCHED as a declaration — that controls the pattern — and
+    /// then EXEMPTED by the window — that proves the suppression branch is entered at all,
+    /// which the census flags as a Rule 7 concern in its own right, since no assertion
+    /// previously proved anything ever reached it.</para>
+    ///
+    /// <para>C HAS NO TREE ANCHOR AND GETS A FIXTURE, for a structural reason rather than
+    /// a shortage of searching. The C detector matches a DEFINITION, and a hand-written
+    /// definition of a generated array is precisely what the pin forbids: the scanned tree
+    /// is required to be empty of the shape, by construction. That is the difference from
+    /// <c>NSLogDriftTests</c>, whose exempt bundle must still hold what the shipped tree
+    /// must not. So the fixture is built from real parts: the REAL definition line WireGen
+    /// emitted into the header, spliced into the REAL <c>BnYogaLayout.mm</c> immediately
+    /// above its `#include` of that header — where a hand-written twin would actually be
+    /// written — and run through <see cref="DeclarationSitesIn"/>, the pin's own detector.
+    /// It requires exactly one site, AT THE SPLICED LINE, so the failure message's line
+    /// fidelity is exercised too. The unspliced file is asserted to yield none, which is
+    /// the negative: `sizeof(kYogaStyles[0])` and `kYogaStyles[i]` index with something and
+    /// must keep being refused.</para>
+    ///
+    /// <para>WHAT THIS DOES NOT COVER (Rule 5). It controls the UNDER-matching direction
+    /// for the pattern and the ENTERED direction for the window. It cannot catch a window
+    /// that has become too BROAD — one that exempts a genuine shadow — because a widened
+    /// window still exempts these two fixed points. That failure hands out a green, so it
+    /// is a defect rather than a footnote; what stands against it today is that the window
+    /// is three lines of already-stripped code and that a change to it is a change to
+    /// <see cref="Forwards"/>, which no other pin shares.</para></summary>
+    [Fact]
+    public void TheShadowDetector_StillMatchesRealDeclarations_AndTheForwardingWindowStillFires()
+    {
+        // ── Swift and Kotlin: live forwarding declarations, matched then exempted ──
+        var sites = DeclarationSites();
+
+        foreach ((string source, string symbol) in ForwardingFixedPoints)
+        {
+            Assert.True(
+                sites.Any(s => Path.GetFileName(s.Source) == source && s.Symbol == symbol && s.Forwards),
+                $"the shadow detector no longer sees '{symbol}' declared-and-forwarded in {source}, "
+                + "which is a live forwarding declaration and the fixed point this detector is "
+                + $"required to hit (pattern: {DeclarationPattern(symbol, c: false)}). EITHER the "
+                + "declaration pattern stopped matching real shell source — in which case "
+                + "NoGeneratedSymbol_IsShadowedByAHandWrittenDeclaration is green over nothing and "
+                + "#279 can reopen unseen — OR the forwarding window stopped firing, in which case "
+                + "its suppression branch is now unexercised. If the forward itself was genuinely "
+                + "moved or renamed, re-point this fixed point deliberately at the new one; do not "
+                + "delete the row, because a detector with no fixed point is what this assertion "
+                + "exists to forbid.\n  sites seen: "
+                + string.Join(", ", sites.Select(s => $"{Path.GetFileName(s.Source)}:{s.Line} {s.Symbol} forwards={s.Forwards}")));
+        }
+
+        // ── C: a fixture, built from the real definition and the real consumer ──
+        (string header, string cSymbol, bool _) = GeneratedSymbols().First(s => IsCHeader(s.File));
+        string pattern = DeclarationPattern(cSymbol, c: true);
+
+        string[] generated = File.ReadAllLines(header);
+        int declaredAt = Array.FindIndex(generated, l => Regex.IsMatch(l, pattern));
+        Assert.True(declaredAt >= 0,
+            $"'{cSymbol}' has no definition matching {pattern} in {Path.GetFileName(header)} — the "
+            + "file it was parsed OUT of. WireGen changed the shape it emits for a C array, so the "
+            + "pin's C branch is now looking for a shape that no longer exists anywhere. Re-point "
+            + "CArrayDeclaration and this pattern together.");
+
+        string mm = Path.Combine(Path.GetDirectoryName(header)!, "BnYogaLayout.mm");
+        Assert.True(File.Exists(mm),
+            $"BnYogaLayout.mm is missing from {Path.GetDirectoryName(header)} — it is the one "
+            + "Objective-C++ consumer of the generated header and the realistic home this fixture "
+            + "splices into. Re-point the fixture at the new consumer rather than falling back to a "
+            + "synthetic file, which would stop exercising real source.");
+
+        string[] real = CodeLines(mm);
+        Assert.Empty(DeclarationSitesIn(real, cSymbol, c: true));   // the negative: uses are not definitions
+
+        int at = Array.FindIndex(real, l => l.Contains($"#include \"{Path.GetFileName(header)}\"", StringComparison.Ordinal));
+        Assert.True(at >= 0,
+            $"BnYogaLayout.mm no longer includes {Path.GetFileName(header)} — the fixture has no "
+            + "realistic place to splice a twin, and more importantly the C half of the wire "
+            + "vocabulary may have stopped being consumed at all. Check that before re-pointing.");
+
+        var spliced = real.ToList();
+        spliced.Insert(at, generated[declaredAt]);
+
+        var found = DeclarationSitesIn([.. spliced], cSymbol, c: true);
+
+        Assert.True(found.Count == 1 && found[0].Line == at + 1 && !found[0].Forwards,
+            $"the C shadow detector did not report exactly one non-forwarding site at line {at + 1} "
+            + $"after splicing the header's own definition of '{cSymbol}' into BnYogaLayout.mm.\n"
+            + $"  spliced line: {generated[declaredAt].Trim()}\n"
+            + $"  pattern:      {pattern}\n"
+            + $"  found:        {(found.Count == 0 ? "(nothing)" : string.Join(", ", found.Select(f => $"line {f.Line} forwards={f.Forwards}")))}\n"
+            + "Nothing found means a hand-written C twin would no longer be detected and the pin is "
+            + "green over a blind spot. A wrong line number means the offender message would send a "
+            + "reader to the wrong place. An exemption means the forwarding window is being offered "
+            + "to C, which it must never be — C has no qualified form to forward through.");
     }
 
     /// <summary>Generated symbols that nothing consumes, each with a written reason.
@@ -375,6 +517,17 @@ public sealed class GeneratedSymbolShadowTests
     private static readonly string[] HostEventSeamNames =
         ["dispatchHostEventUnchecked", "dispatchHostEventBlocking"];
 
+    /// <summary>A CALL SITE — a word boundary plus an open paren — not a bare mention.
+    /// One implementation, driven by the pin and by its positive control alike (pin
+    /// standard Rule 8).</summary>
+    private static string SeamCallPattern(string seam) => $@"\b{seam}\s*\(";
+
+    /// <summary>The Kotlin unit-test source set: excluded from the pin's scan BY DESIGN,
+    /// and therefore the one tree that must still contain direct seam calls — which is
+    /// what makes it the fixed point in
+    /// <see cref="TheSeamCallDetector_StillMatchesTheCallsTheTestSourceSetExistsToMake"/>.</summary>
+    private const string SeamTestSourceSet = "src/BlazorNative.Jni/src/test/kotlin";
+
     /// <summary>PRODUCTION Kotlin only: the `main` + `androidMain` source sets
     /// (see build.gradle.kts: <c>java.srcDirs("src/main/kotlin",
     /// "src/androidMain/kotlin")</c>) — never `test` or `androidTest`, which
@@ -421,7 +574,11 @@ public sealed class GeneratedSymbolShadowTests
     /// production file — of which this codebase has several, forwarding to it
     /// from doc comments on `dispatchHostEvent` and `dispatchHostEventAndWait`
     /// — does not false-positive; CodeLines already strips those, but the
-    /// call-site shape is the real reason a bare identifier mention is safe.</summary>
+    /// call-site shape is the real reason a bare identifier mention is safe.
+    ///
+    /// <para>THIS IS AN ABSENCE CLAIM, and `sources.Length > 0` floors only the WALK.
+    /// The detector's own fixed point is
+    /// <see cref="TheSeamCallDetector_StillMatchesTheCallsTheTestSourceSetExistsToMake"/>.</para></summary>
     [Fact]
     public void NoProductionShellSource_CallsTheHostEventSeamsDirectly()
     {
@@ -439,7 +596,7 @@ public sealed class GeneratedSymbolShadowTests
             {
                 foreach (string seam in HostEventSeamNames)
                 {
-                    if (Regex.IsMatch(lines[i], $@"\b{seam}\s*\("))
+                    if (Regex.IsMatch(lines[i], SeamCallPattern(seam)))
                         offenders.Add($"{Path.GetFileName(source)}:{i + 1} calls {seam}(...)");
                 }
             }
@@ -453,5 +610,72 @@ public sealed class GeneratedSymbolShadowTests
             + "can send. If a genuinely new raw-string production need exists, that is a design "
             + "decision requiring a recorded reason, not a quiet call to dispatchHostEventUnchecked "
             + "or dispatchHostEventBlocking.\n  " + string.Join("\n  ", offenders));
+    }
+
+    /// <summary>THE POSITIVE CONTROL for the seam call-site detector (pin standard Rule 3;
+    /// phase 15.0 census item 5 and §5.4).
+    ///
+    /// <para>WHAT WAS UNGUARDED. The pin above floors its WALK — `sources.Length > 0` — and
+    /// nothing floored its DETECTOR. Reword <see cref="SeamCallPattern"/> past its subject,
+    /// or rename a seam in <see cref="HostEventSeamNames"/> without renaming it in Kotlin,
+    /// and the pin reports zero offenders forever while a production file calls the raw-String
+    /// door directly. The KDoc this pin exists to make true would go back to being an
+    /// unenforced safety claim in a comment, which is the class the section header above
+    /// calls this repo's most dangerous.</para>
+    ///
+    /// <para>THE FIXED POINT IS THE EXCLUSION ITSELF, which is <c>NSLogDriftTests</c>' design
+    /// applied to a different exclusion. <see cref="ProductionHostEventSources"/> deliberately
+    /// scans only the production source sets, because the unit tests legitimately call both
+    /// seams directly — that is what the seams are FOR: rc 3 is only reachable through a bare
+    /// String. So the excluded tree is required to keep containing exactly what the scanned
+    /// tree must not, and the detector is required to keep finding it there. The census
+    /// recorded this as needing a fixture; it does not — the anchor is real code in the tree,
+    /// and a real anchor beats a fixture whenever one exists, because it also notices when the
+    /// seam stops being exercised at all.</para>
+    ///
+    /// <para>WHAT THIS DOES NOT COVER (Rule 5). It controls the UNDER-matching direction
+    /// only: the pattern still recognises a real call. It says nothing about Swift, whose
+    /// bypass door is the imported C symbol <c>blazornative_host_event</c> called bare — a
+    /// different shape that the pin does not cover either, stated on
+    /// <see cref="HostEventSeamNames"/>. It also cannot notice a seam being renamed in BOTH
+    /// Kotlin and this list while a third, unlisted raw-String door is added; the list's
+    /// width is guarded by review, not by this assertion.</para></summary>
+    [Fact]
+    public void TheSeamCallDetector_StillMatchesTheCallsTheTestSourceSetExistsToMake()
+    {
+        string dir = Path.Combine(BnRepo.Root(), SeamTestSourceSet.Replace('/', Path.DirectorySeparatorChar));
+
+        Assert.True(Directory.Exists(dir),
+            $"{SeamTestSourceSet} is missing, so the exclusion the pin above relies on protects "
+            + "nothing and this control has no fixed point. Either the Kotlin unit-test source set "
+            + "moved — then re-point BOTH this control and ProductionHostEventSources deliberately "
+            + "— or it is gone, in which case the seams have no sanctioned caller left and that is "
+            + "the thing to look at.");
+
+        string[] files = [.. Directory.EnumerateFiles(dir, "*.kt", SearchOption.AllDirectories)
+            .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}build{Path.DirectorySeparatorChar}", StringComparison.Ordinal))];
+
+        Assert.True(files.Length > 0,
+            $"no Kotlin files under {SeamTestSourceSet} — the walk this control depends on found "
+            + "nothing, so the assertion below would be checking nothing.");
+
+        foreach (string seam in HostEventSeamNames)
+        {
+            var hits = files
+                .SelectMany(f => CodeLines(f).Select((line, i) => (File: f, Line: i + 1, Text: line)))
+                .Where(x => Regex.IsMatch(x.Text, SeamCallPattern(seam)))
+                .ToList();
+
+            Assert.True(hits.Count > 0,
+                $"the seam call-site pattern matched NO call to {seam} anywhere under "
+                + $"{SeamTestSourceSet} (pattern: {SeamCallPattern(seam)}), which is the one tree "
+                + "that MUST still contain direct calls to it — the pin above excludes that tree "
+                + "precisely because these calls are legitimate there. EITHER the pattern no longer "
+                + "matches a real Kotlin call, in which case "
+                + "NoProductionShellSource_CallsTheHostEventSeamsDirectly is holding NOTHING and a "
+                + "production bypass would pass unseen, OR the tests stopped calling the seam, in "
+                + "which case the seam's rc paths are now unexercised and this fixed point must be "
+                + "re-pointed deliberately rather than deleted.");
+        }
     }
 }
