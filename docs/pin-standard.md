@@ -158,6 +158,32 @@ control anchored to a sentence buys a false red on a docs edit. Rule 2's corolla
 that moves for irrelevant reasons applies to a control just as hard: a guard that reds for a reason
 nobody can connect to a real change is one the next person weakens rather than investigates.
 
+**That refusal is about DIRECTION and DISTANCE, not a ban on prose — and it has to be said, because
+this same phase shipped two controls anchored to prose.** The scar is that the paragraph above,
+read literally, describes a tree that does not exist.
+
+- **Forbidden: prose propping up an ABSENCE half.** Delete the sentence and the pin hands you a
+  **green**. Nothing announces it, and the pin is then a comment claiming a safety property — the
+  bug class this repo has paid for three times in one week. The Apple row in
+  `ShellStyleTableDriftTests` is the worked example of what that looks like after the fact, and the
+  fourth outcome below is what the phase did about it: disclosure and a named repair, rather than
+  leaving the green standing.
+- **Weak, not forbidden: prose on the POSITIVE half.** It can only ever cost a **false red**, and a
+  false red gets investigated and re-pointed rather than silently believed. So it sits below all
+  three anchor models listed next — reach for it when they are exhausted, not first — and it ships
+  with a re-point instruction at the assertion saying what to do when the prose legitimately
+  changes. `ComponentReferenceDriftTests`' tree anchor names three phrases that
+  live in internal maintainer doc comments; `BnSafeAreaCoverageTests` anchors one
+  `// #338 …: wrapped in BnSafeArea` line per demo page. Both are weak on purpose and both say so.
+- **Distance is the tiebreak, and it is why `ReleaseWorkflowPinTests` still gets a fixture.** Its
+  four candidate sentences live in a setup doc, two archived plans and a script comment — artefacts
+  nobody touches *because of* the release workflow, so the red would arrive detached from any change
+  to the pin's subject, which is precisely the "moves for irrelevant reasons" failure. The two
+  controls above anchor inside the artefact their pin already scans, so an edit that removes the
+  anchor IS an edit to the subject. **Where a fixture is available and the prose is remote, take the
+  fixture.** That is a preference between a weak anchor and a strong one, and Rule 3's requirement —
+  every detector has a fixed point it must still hit — is untouched by it.
+
 **So the answer is a fixture — and what makes it worth anything is that it is driven through the
 pin's own detector.** `Offenders` is one implementation called by both the pin and the control, so
 the fixture provably exercises the production path rather than a restatement of it. That is Rule 8
@@ -588,8 +614,10 @@ iterated set in two files. One lesson, four worked examples already in the tree,
 it. See `docs/plans/2026-09-22-phase-15.0-census.md` §7 for the sizing.
 
 **That is what 15.1 did, and the sizing held.** All nine landed, plus the two uncontrolled detectors
-outside the pin population, for nine new control facts and one real bug fix. Two of the nine needed
-something the shape above does not describe — see Rule 3's corollary — and one could not be given a
+outside the pin population, for **twelve** new control facts and one real bug fix — nine inside the
+pin population, which is the `102 + 9 = 111` the enforcement verdict above counts, and three more
+from those two detectors, which are `exempt — not pins` and never entered that arithmetic. Two of
+the nine needed something the shape above does not describe — see Rule 3's corollary — and one could not be given a
 tree anchor at all; that one ships disclosed at the pin with the repair named. **Do not read this
 paragraph as saying coverage is now total.**
 
