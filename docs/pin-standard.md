@@ -57,8 +57,10 @@ directory that authors are merely expected to use.
 ## Rule 2 — It must fail when it scans nothing
 
 **Nothing in CI checks this rule. It is on you, at review time** — see *The enforcement verdict*
-below for why a mechanical check was considered, costed and rejected, and why the four facts in this
-repo that can pass while scanning nothing all already carry an anti-vacuity assertion.
+below for why a mechanical check was considered, costed and rejected. The four facts the 15.0 census
+found that could pass while scanning nothing **all already carried an anti-vacuity assertion**, and
+that is the whole of why the cheap check fails. Phase 15.1 closed all four; the argument is about
+assertion shape rather than about those four, so it did not close with them.
 
 **Vacuity is a property of the assertion shape, not of the input.** An assertion of the form *for
 every X, assert Y* passes trivially when there are no X — and it does not matter whether X came
@@ -139,9 +141,78 @@ A positive control does not need a second tree. Any of these work, in rough orde
 `DeepLinkSeedDriftTests` is a positive-match pin by construction: it asserts a match exists rather
 than that none does, so its detector is exercised on every run.
 
+### The corollary — when the subject must be EMPTY by construction, the anchor is a FIXTURE
+
+**The list above quietly assumes a fixed point exists somewhere in the tree. Sometimes none can.**
+
+The scar is `ReleaseWorkflowPinTests.TheReleaseWorkflow_NeverOverridesTheVersion`. It asserts that
+no build path in the release workflow overrides the package version, and **a live `-p:Version=`
+cannot exist while the pin is true** — its subject tree is *required* to be empty of the pattern.
+That is the structural difference from `NSLogDriftTests`, which works only because it has an
+**exempt subtree** that must keep holding live violations. A pin with nothing exempt has no such
+half to borrow.
+
+Anchoring to the four places that *do* spell the shape was considered and refused: all four are
+prose — a script comment, a setup doc, two archived plans, and `ci.yml`'s own narration — and a
+control anchored to a sentence buys a false red on a docs edit. Rule 2's corollary about a floor
+that moves for irrelevant reasons applies to a control just as hard: a guard that reds for a reason
+nobody can connect to a real change is one the next person weakens rather than investigates.
+
+**So the answer is a fixture — and what makes it worth anything is that it is driven through the
+pin's own detector.** `Offenders` is one implementation called by both the pin and the control, so
+the fixture provably exercises the production path rather than a restatement of it. That is Rule 8
+paying for itself somewhere nobody designed it to. Build the fixture as close to the real thing as
+it will go: this one splices the reference implementation's own `pack -p:PackageVersion=$VERSION`
+into the **real** workflow text immediately above the **real** `dotnet nuget push` line, and demands
+exactly one offender **at the line the splice landed on** — line fidelity, not merely a regex hit —
+with the near-miss spellings `-p:VersionPrefix=` and `-p:VersionSuffix=` that a widened pattern must
+still refuse.
+
+**State what the fixture cannot buy, beside it.** It proves the detector recognises the shape; it
+never proves the detector is pointed at anything real. That second half is the Rule 4 subject-moved
+guard's job, and the two are only worth anything read together — which is exactly the distinction
+the old *"THE POSITIVE CONTROL, first"* label collapsed.
+
+### The order to look in — three anchor models, then disclosure
+
+Phase 15.1 produced three, and they are in decreasing order of what they buy:
+
+1. **A live subtree the scan deliberately excludes.** `NSLogDriftTests`' exempt test bundle is the
+   original; `PinPopulationTests` is the same design in reverse, with `BnRepo.cs` — the one file the
+   offender scan skips — as the one file the detector must still hit.
+2. **The exclusion list itself, read as a source of anchors.** Broader than 1, because an exclusion
+   does not have to be a *violation* — only something the detector must be able to see. This one
+   kept being rediscovered and is worth stating outright: **anything a scan deliberately excludes is
+   something the detector must still be able to see**, so the exclusion list is the *first* place to
+   look, not the last. The
+   census predicted a fixture would be needed in three cases and was wrong in two of them — the
+   excluded Kotlin unit-test source set must still call both host-event seams; the unpublished half
+   of the shipped XML still carries live instances of the banned prose patterns; the sample-app
+   assembly the purity net does not scan is guaranteed to hold a match for every alternation. **"The
+   anchor would have to be built" is a claim to re-check against the exclusions before you believe
+   it.**
+3. **A fixture, when the subject is empty by construction** — the corollary above.
+
+And a fourth outcome that is not an anchor at all. **Sometimes none of the three is available, and
+then the answer is disclosure plus a named repair, not a weaker control dressed up as a strong
+one.** `ShellStyleTableDriftTests`' Apple row is the worked example: three of its four fixed points
+are comment-derived and went trivially true the moment the parse started stripping comments, and the
+fourth is removed by the outermost-depth filter. No same-depth live-code replacement exists, and
+that was *measured* rather than assumed — Swift puts `case` at `switch` depth, so every live quoted
+string in that body sits at least one level deeper than the arm labels, while Kotlin puts its `when`
+arms level with a live guard and an `else ->` fallback, which is precisely why the Kotlin row keeps
+full teeth. The row still rules out a comment-collecting extractor and no longer rules out a widened
+arm grammar; both directions were verified by mutation. The repair is a fixture harness the parser
+can be run against — **named, and deliberately not built in a fix round**, because that is a new
+control design rather than a patch. It is written at the row, where the rows are.
+
 **Be honest about where we are.** Every anti-vacuity assertion added during the milestone that
-wrote this standard — including its author's own floor of 100 — proves only the walk. That is a
-real gap across the existing population, and closing it is part of why this document exists.
+wrote this standard — including its author's own floor of 100 — proves only the walk. That **was** a
+real gap across the existing population, and closing it is why phase 15.1 exists: the census found
+nine uncontrolled detectors, every one of them an absence assertion, and all nine now carry a fixed
+point. The rule stays at full strength anyway, because the next pin will arrive without one — and
+because one of those nine controls lost most of its teeth on one of its three rows to a fix landed
+in the same phase, which the paragraph above says out loud rather than averaging away.
 
 ---
 
@@ -391,8 +462,10 @@ property and it is genuinely enforced.
 
 **Reachability is not anti-vacuity.** A pin can route through `BnRepo.Root()`, appear in every
 census, satisfy the one enforced rule in this document, and still pass while scanning nothing. Four
-facts in the population do exactly that today. Enumerability is what makes the population *countable*
-so a human can judge it; it does not do the judging.
+facts in the population did exactly that when the 15.0 census measured them, and nothing mechanical
+said so in either direction — a human reading assertions is what found them, and phase 15.1 is what
+closed them. Enumerability is what makes the population *countable* so a human can judge it; it does
+not do the judging.
 
 ### Why the cheap mechanism fails, measured rather than argued
 
@@ -400,7 +473,8 @@ The obvious convention test is *"every pin fact must contain a count-style asser
 `Assert.NotEmpty`, a `Count >= n`, a floor of some shape. It is a few dozen lines and it would run in
 milliseconds.
 
-**Run against the four known defects, it scores zero.**
+**Run against the four defects the 15.0 census found, it scores zero.** They are the illustration
+and they are closed; the scoring is what does not decay.
 
 | The defect | Does the fact execute a floor? | A presence check says |
 |---|---|---|
@@ -414,11 +488,13 @@ population as 15.0 censused it, and the cost argument below is made against that
 the closing note on why this verdict is revisitable rather than settled.)* The census found this and it is the sharpest thing it found: the useful
 distinction is not *has a floor* but **which side of the comparison the floor guards**.
 
-- `ShellStyleTableDriftTests` computes `routed.Except(dispatched)` and floors `dispatched` — the set
-  being **subtracted**. `routed`, the set being **iterated**, is unfloored; empty it and all three
-  facts go green.
-- `DispatchSurfaceDriftTests`' bare fact floors the **manifest** it compares against. The **scanned**
-  set — the `dispatch`-prefixed declarations the `foreach` walks — has no floor at all.
+- `ShellStyleTableDriftTests` computed `routed.Except(dispatched)` and floored `dispatched` — the set
+  being **subtracted**. `routed`, the set being **iterated**, was unfloored; empty it and all three
+  facts went green. *(15.1 task 1 floored the iterated set. Both halves of the mutation were run:
+  with the floor in place the fact reds on the count, with it removed the same tree goes green.)*
+- `DispatchSurfaceDriftTests`' bare fact floored the **manifest** it compares against. The **scanned**
+  set — the `dispatch`-prefixed declarations the `foreach` walks — had no floor at all. *(15.1 task 2
+  floored the scanned set, per shell. This is issue #357.)*
 
 A mechanism that detects the presence of a count assertion would score both as conforming and hand
 out a green over the only demonstrated false-green channel in the repo. By this document's own Rule 5
@@ -448,10 +524,14 @@ Three things sink it:
    `routed` is `NativeRenderer.YogaStyleAttributes`, a **generated** product-assembly static, and
    whether it can be empty is a fact about the generator, not about the test.
 
-2. **The false-positive surface is 98 facts against 4 true positives.** Most conforming pins floor
-   through a shared helper or a structural assertion that no dominance rule recognises. A check that
-   reds 98 correct tests is suppressed within a week, and a suppressed analyzer is worse than no
-   analyzer, because the suppressions look like considered exemptions.
+2. **The false-positive surface dwarfs the true one: 98 conforming facts against 4 defects, as the
+   15.0 census measured the population.** Most conforming pins floor through a shared helper or a
+   structural assertion that no dominance rule recognises. A check that reds 98 correct tests is
+   suppressed within a week, and a suppressed analyzer is worse than no analyzer, because the
+   suppressions look like considered exemptions. **The ratio is what carries the argument, not the
+   pair of numbers** — and the ratio has since got worse, not better. Phase 15.1 closed all four
+   defects and added nine control facts of its own, so the population is now **111 pin facts with
+   zero known true positives**: the only thing such a check could still produce is the false half.
 
 3. **The population it can see is the wrong population.** Rule 2 is about assertion shape, not file
    access — `RouteMenuDriftTests` reads no files, is vacuous-capable, and is outside Rule 6's
@@ -484,10 +564,17 @@ assertion, and nothing mechanical would have found it.)*
 ### This verdict is a judgement about cost, and nothing pins it
 
 **Stated plainly, because Rule 5 applies to this section as much as to a pin.** The conclusion above
-is a judgement about cost and collateral measured against the population as it stands today — 4 true
-positives, 98 facts flooring through shared helpers, one root reaching across an assembly boundary.
-Change that population and the arithmetic can change with it. A future contributor is entitled to
-revisit it, and the honest form of that is to **rewrite this section rather than leave it standing**:
+is a judgement about cost and collateral measured against the population **as the 15.0 census
+measured it** — 4 true positives, 98 facts flooring through shared helpers, one root reaching across
+an assembly boundary. Change that population and the arithmetic can change with it.
+
+**And it has already changed once.** Phase 15.1 closed all four true positives and added nine
+control facts, so the same measurement today reads **0 true positives against 111 pin facts**. The
+verdict did not move, because it never rested on the count: a presence-style check still cannot tell
+which side of a comparison a floor guards, and an interprocedural one still has to resolve floors
+across helpers and one assembly boundary. What moved is the incentive, and it moved the wrong way
+for the analyzer. **A future contributor is entitled to revisit it**, and the honest form of that is
+to **rewrite this section rather than leave it standing**:
 if a mechanical anti-vacuity check ever lands, the sentences above become false and **nothing in CI
 will red to say so.** A document asserting a safety property that nothing enforces is this repo's
 most expensive bug class, and the only defence available here is that the section names the exact
@@ -499,6 +586,12 @@ check it rejects, so a reviewer has something specific to match the new one agai
 `ConsoleErrorDriftTests`, `NSLogDriftTests` and `AndroidLogDriftTests`, plus a floor moved to the
 iterated set in two files. One lesson, four worked examples already in the tree, nine places to apply
 it. See `docs/plans/2026-09-22-phase-15.0-census.md` §7 for the sizing.
+
+**That is what 15.1 did, and the sizing held.** All nine landed, plus the two uncontrolled detectors
+outside the pin population, for nine new control facts and one real bug fix. Two of the nine needed
+something the shape above does not describe — see Rule 3's corollary — and one could not be given a
+tree anchor at all; that one ships disclosed at the pin with the repair named. **Do not read this
+paragraph as saying coverage is now total.**
 
 ---
 
