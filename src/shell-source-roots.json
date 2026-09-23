@@ -18,7 +18,11 @@
     "entries record what each pin CLAIMS, not what it scans. A consumer can declare that it",
     "consumes `appleShell` while scanning somewhere else entirely and everything is green;",
     "the claim only binds once that pin reads its roots from ShellSourceRoots.SetsFor.",
-    "Delete this paragraph in the commit that repoints the last consumer.",
+    "Delete this paragraph in the commit that repoints the last consumer -- and that is not an",
+    "honour instruction. TheClaimsNotScansDisclaimer_MatchesWhetherTheConsumersAreRepointed",
+    "reds if it survives the repointing, and reds if it is deleted early. A note asking a",
+    "future reader to delete something, with nothing enforcing it, is the same unpinned",
+    "claim this file was written to stop.",
     "",
     "A TEST NAMED ANYWHERE HERE MUST RESOLVE. `delegated.guard` is checked by",
     "EveryDelegation_NamesAGuardThatExists, and every `reason` string -- delegated and",
@@ -43,6 +47,14 @@
     "it walks the scanRoots and requires every .kt and .swift file found there to sit inside",
     "some declared root. src/BlazorNative.Jni/src/debug holds no .kt today -- only res/xml --",
     "so leaving it out of `sets` is correct, and the day it gains Kotlin that fact reds.",
+    "",
+    "EACH scanRoot CARRIES ITS OWN `minFiles`, AND THAT IS NOT BOOKKEEPING. A single global",
+    "floor over these three containers is an aggregate over a partition, and it cannot see a",
+    "member leave: the template container is 18 files, which vanishes inside the headroom of",
+    "any total large enough to be useful. Deleting the whole entry was MEASURED green. So the",
+    "floor is per container and the total is derived by summing them. `measured` records what",
+    "was counted when the floor was set; `minFiles` is that number with headroom, so ordinary",
+    "deletion does not red and a container quietly narrowing does.",
     "",
     "WHAT IS STILL NOT COVERED, because the residual moved rather than vanished: a shell tree",
     "outside every scanRoots entry, and anything under a declared `ignore`. Both fail GREEN.",
@@ -107,18 +119,24 @@
     {
       "path": "src/BlazorNative.Jni/src",
       "extensions": [".kt"],
+      "minFiles": 85,
+      "measured": 100,
       "why": "every Gradle source set of the Android shell project lives directly under here, declared or not. This is the container that makes a NEW sibling -- a src/foo/kotlin nobody added to `sets` -- visible."
     },
     {
       "path": "templates/BlazorNative.Templates/content/BlazorNative.App/android/src",
       "extensions": [".kt"],
-      "why": "the same shape in the generated app's tree. A source set that appears here and not in `sets` ships to every consumer of `dotnet new blazornative` unscanned."
+      "minFiles": 15,
+      "measured": 18,
+      "why": "the same shape in the generated app's tree. A source set that appears here and not in `sets` ships to every consumer of `dotnet new blazornative` unscanned. It is also the SMALLEST container, which is exactly why its floor is its own rather than a share of a total -- 18 files disappear inside 34 of headroom on any global count."
     },
     {
       "path": "src/BlazorNative.Apple",
       "extensions": [".swift"],
       "ignore": ["src/BlazorNative.Apple/vendor"],
-      "why": "BnHost and BnHostTests are the two declared Swift trees; a third target added beside them would otherwise be invisible. `vendor` is ignored because it is where third-party checkouts land -- a vendored Swift package is nobody's shell, and scanning it would buy a red that has nothing to do with this repo's source."
+      "minFiles": 55,
+      "measured": 66,
+      "why": "BnHost and BnHostTests are the two declared Swift trees; a third target added beside them would otherwise be invisible. `vendor` is ignored because it is where third-party checkouts land -- a vendored Swift package is nobody's shell. THE IGNORE IS INERT TODAY, measured: vendor holds a .gitkeep and nothing else, so that arm of the walk has no live exercise and this sentence is a forward-looking exclusion rather than a description of anything running."
     }
   ],
 

@@ -73,21 +73,71 @@ namespace BlazorNative.Runtime.Tests;
 //     bounds it is that a guard is written once, by hand, beside the claim it
 //     serves.
 //
-//     And `EveryTestNamedInAReason_Exists` only sees names in a test-method
-//     SHAPE -- PascalCase_PascalCase. A reason that cites a test in prose
-//     ("the credential branch pin") makes an unpinned claim this cannot see.
-//     Direction: FAILS GREEN, and the fix is to write the identifier.
+//     And `EveryTestNamedInAReason_Exists` only sees names carrying an
+//     UNDERSCORE. That is 578 of the repository's 591 declared test names,
+//     measured; the 13 it cannot see are the ones with no underscore at all
+//     -- `AnEmptyComponentFailsLoudlyRatherThanVacuously`,
+//     `EventsAreProjected`, `TheImageCannotMoveTheFrameTable`. Nothing can
+//     match those without also matching every capitalised word in prose, so
+//     the boundary is where it is on purpose rather than by oversight. A
+//     reason citing one of those 13, or citing a test in prose at all, makes
+//     an unpinned claim this cannot see. Direction: FAILS GREEN, and the fix
+//     is to cite a test whose name has an underscore, which 98% do.
 //
-//  5. AN AGGREGATE OVER A PARTITION SAYS NOTHING ABOUT ANY MEMBER. This is
-//     written as a limit because this file already got it wrong once, in
-//     review: `EveryRoot_ExistsOnDisk` floored the TOTAL root count against
-//     the SET count and its message claimed that proved no set had an empty
-//     `roots` array. It did not -- 9 roots over 7 sets absorbs one emptied
-//     array without the total dropping below 7, and emptying `appleShell`
-//     left all five facts green while two pins would have stopped scanning
-//     the entire iOS shell. The per-set assertion is what delivers the
-//     property; the total is only a total. Do not re-derive this with a
-//     different aggregate.
+//  5. AN AGGREGATE OVER A PARTITION SAYS NOTHING ABOUT ANY MEMBER -- and the
+//     honest thing to record here is that WRITING THIS DOWN DID NOT WORK.
+//
+//     First instance: `EveryRoot_ExistsOnDisk` floored the TOTAL root count
+//     against the SET count and its message claimed that proved no set had
+//     an empty `roots` array. It did not -- 9 roots over 7 sets absorbs one
+//     emptied array without the total dropping below 7 -- and emptying
+//     `appleShell` left all five facts green while two pins would have
+//     stopped scanning the entire iOS shell. The fix was a per-set
+//     assertion, and this paragraph was written beside it, with the incident
+//     attached, so that nobody re-derived it.
+//
+//     Second instance: TWELVE LINES BELOW, IN THE SAME COMMIT.
+//     `EveryShellSourceFile_IsInsideADeclaredRoot` shipped `scanned >= 150`
+//     over three containers of 100 / 18 / 66 files. Deleting the whole
+//     template container -- the tree that ships with every `dotnet new
+//     blazornative` -- left all seven facts green, because 18 disappears
+//     inside 34 of headroom. Third instance, found by the sweep that finally
+//     followed: `consumers.Count > 0` against three consumers.
+//
+//     KNOWING THE RULE, HAVING JUST WRITTEN THE RULE, AND ATTACHING A WORKED
+//     INCIDENT TO IT DID NOT PREVENT THE NEXT INSTANCE. Prose does not
+//     generalise itself; only a mechanism that reds does. So the rule this
+//     file now follows is structural rather than advisory: every floor is
+//     either a CARDINALITY over the partition, a PER-MEMBER assertion, or a
+//     total DERIVED by summing the per-member floors -- never an independent
+//     literal free to be looser than the members imply.
+//
+//     THE SWEEP, so the next reader does not have to redo it. Every floor in
+//     this file and what carries it:
+//
+//       DELIVERED BY THE FLOOR ITSELF, because it IS the cardinality --
+//       `sets.Count >= DeclaredSetCount`, `consumers.Count >=
+//       DeclaredConsumerCount`, `scanRoots.Length >= ScanRootCount`,
+//       `checkedRoots >= DeclaredRootCount`. Each is an exact count of the
+//       partition, so a member leaving drops it.
+//
+//       DELIVERED PER MEMBER, inside the loop -- `s.Roots.Length > 0`,
+//       `contributed >= sr.MinFiles`, `calls.Count > 0`, `declared.Count > 0`,
+//       `entries.Count > 0`.
+//
+//       DERIVED -- `scanned >= expected`, where `expected` is the sum of the
+//       per-container floors. Not an independent number.
+//
+//       TOTALS WITH NOTHING RESTING ON THEM, named individually because that
+//       claim has to be checkable: `delegations >= 1`, `cited.Count >= 1`,
+//       `derived.Count >= 1`, `authFiles.Count >= 1`. In all four, every
+//       member the loop finds is asserted individually as it is found, so the
+//       count is a non-vacuity floor and nothing else is resting on it. They
+//       are still latently the same shape -- a second member would let the
+//       first be dropped green -- and each says so where it sits.
+//
+//       ONE WALK, NO PARTITION BELOW -- `sources.Length >= 100` and
+//       `names.Count >= 500` in DeclaredTestMethods.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// <summary>THE ONE PARSE of src/shell-source-roots.json. Lives here rather than
@@ -131,7 +181,8 @@ internal static class ShellSourceRoots
     /// EveryShellSourceFile_IsInsideADeclaredRoot, to answer the question the
     /// roster cannot answer from its own contents: is there a source tree here
     /// that nobody declared?</summary>
-    internal sealed record ScanRoot(string Path, string[] Extensions, string[] Ignore, string Why);
+    internal sealed record ScanRoot(
+        string Path, string[] Extensions, string[] Ignore, int MinFiles, int Measured, string Why);
 
     private sealed record Roster(
         IReadOnlyDictionary<string, SetDef> Sets,
@@ -250,6 +301,8 @@ internal static class ShellSourceRoots
                 e.TryGetProperty("ignore", out JsonElement ig)
                     ? [.. ig.EnumerateArray().Select(x => x.GetString()!)]
                     : [],
+                e.GetProperty("minFiles").GetInt32(),
+                e.GetProperty("measured").GetInt32(),
                 e.GetProperty("why").GetString()!));
 
         return new Roster(sets, consumers, [.. scanRoots]);
@@ -286,6 +339,15 @@ public sealed class ShellSourceRootsDriftTests
     /// note at its assertion before reaching for it as a per-set guarantee; that
     /// mistake is limit 5 in this file's header and it shipped once.</summary>
     private const int DeclaredRootCount = 9;
+
+    /// <summary>The three pins that declare a coverage position. A cardinality
+    /// floor rather than <c>&gt; 0</c>, for the reason limit 5 gives.</summary>
+    private const int DeclaredConsumerCount = 3;
+
+    /// <summary>The three containers walked when looking for undeclared source
+    /// trees. Same shape, same reason — and this is the one the re-review caught:
+    /// deleting the template container left all seven facts green.</summary>
+    private const int ScanRootCount = 3;
 
     /// <summary>THE ANTI-VACUITY FLOOR, ON THE ITERATED SET. Three facts read the
     /// roster through here rather than through <c>ShellSourceRoots.Sets()</c>
@@ -343,10 +405,17 @@ public sealed class ShellSourceRootsDriftTests
         var all = TheWholeRoster().Keys.ToHashSet(StringComparer.Ordinal);
 
         IReadOnlyDictionary<string, ShellSourceRoots.Consumer> consumers = ShellSourceRoots.Consumers();
-        Assert.True(consumers.Count > 0,
-            $"{ShellSourceRoots.ManifestPath} declares no consumers, so this fact iterates "
-            + "nothing and the partition contract binds nobody. Either a consumer was lost, or "
-            + "the `consumers` object moved — re-point this deliberately.");
+        // CARDINALITY, NOT `> 0` — the second instance of limit 5's shape, found
+        // by the sweep limit 5 should have made reflexive. `> 0` is an aggregate
+        // over a three-member partition: delete one consumer's whole entry and
+        // 2 > 0 still passes, while that pin's coverage position stops being
+        // recorded anywhere. Measured.
+        Assert.True(consumers.Count >= DeclaredConsumerCount,
+            $"{ShellSourceRoots.ManifestPath} declares {consumers.Count} consumers and "
+            + $"{DeclaredConsumerCount} are expected. A consumer whose entry is deleted is a pin "
+            + "with NO declared coverage position — the partition contract stops binding it, "
+            + "silently, which is this fact's own failure one level up. If a pin was genuinely "
+            + "retired, edit DeclaredConsumerCount in the same commit and say why.");
 
         foreach ((string consumer, ShellSourceRoots.Consumer c) in consumers)
         {
@@ -536,11 +605,18 @@ public sealed class ShellSourceRootsDriftTests
                     cited.Add(($"{consumer}.excluded.{set}", n));
         }
 
-        // NON-VACUITY, and it is a real fixed point rather than a formality: the
-        // roster cites exactly one test today, in an `excluded` reason, and that
-        // citation is the whole reason this fact was written. If the extraction
-        // stops matching it, this reds instead of quietly approving every reason
-        // in the file.
+        // NON-VACUITY, and a real fixed point rather than a formality — for a
+        // non-obvious reason worth writing down. The roster's only citation sits
+        // in an `excluded` reason, so deleting the `foreach (c.Excluded)` loop —
+        // the exact regression this fact exists to prevent — takes `cited` to 0
+        // and reds here.
+        //
+        // THAT IS LUCK, AND IT EXPIRES. The moment any `delegated` reason gains an
+        // identifier, this floor is satisfied by the delegated half alone and the
+        // excluded half can be dropped green. It is limit 5's shape one mutation
+        // away rather than present: an aggregate over two sources of citations.
+        // If a delegated reason ever cites a test, split this into one floor per
+        // source rather than raising the number.
         Assert.True(cited.Count >= 1,
             $"no reason in {ShellSourceRoots.ManifestPath} yielded a test-method identifier, so "
             + "this fact approved every reason without reading one. Either the identifier shape "
@@ -576,10 +652,15 @@ public sealed class ShellSourceRootsDriftTests
     /// package that is nobody's shell. Direction: FAILS GREEN, narrower than
     /// before by the whole of the Jni and template android trees.
     ///
-    /// EXTENSION MATCHING IS EXPLICIT, not a glob. `Directory.EnumerateFiles` with
-    /// `*.kt` also returns `.kts` on Windows — the legacy short-name rule — which
-    /// would drag every `build.gradle.kts` into the subject and red immediately.
-    /// The walk takes `*` and compares the extension itself.</summary>
+    /// EXTENSION MATCHING IS EXPLICIT, not a glob, because
+    /// `Directory.EnumerateFiles` with `*.kt` also returns `.kts` on Windows —
+    /// the legacy short-name rule. NOTHING WOULD BE DRAGGED IN TODAY: there are
+    /// zero `.kts` files under any scanRoot, and `build.gradle.kts` sits one level
+    /// ABOVE the `src/BlazorNative.Jni/src` container. That sentence used to claim
+    /// the opposite and is corrected rather than softened — a checkable claim that
+    /// is wrong reads as a measurement and makes the code look load-bearing for a
+    /// reason it is not. The explicit compare stays because it costs nothing and
+    /// keeps the property true if a `.kts` ever lands inside a container.</summary>
     [Fact]
     public void EveryShellSourceFile_IsInsideADeclaredRoot()
     {
@@ -588,17 +669,27 @@ public sealed class ShellSourceRootsDriftTests
             .ToList();
 
         ShellSourceRoots.ScanRoot[] scanRoots = ShellSourceRoots.ScanRoots();
-        Assert.True(scanRoots.Length >= 1,
-            $"{ShellSourceRoots.ManifestPath} declares no `scanRoots`, so this fact walks nothing "
-            + "and every undeclared tree is invisible again. Restore the block, or delete this "
-            + "fact and put the residual back in the header where a reader will find it.");
+        // CARDINALITY FIRST. `>= 1` was the defect: deleting the template
+        // container — the tree that ships with every `dotnet new blazornative` —
+        // left all seven facts green, because 2 >= 1 and because 18 files vanish
+        // inside a global floor's headroom. Measured.
+        Assert.True(scanRoots.Length >= ScanRootCount,
+            $"{ShellSourceRoots.ManifestPath} declares {scanRoots.Length} `scanRoots` and "
+            + $"{ScanRootCount} are expected. A container that is DELETED rather than "
+            + "mis-pointed is invisible to every other assertion here: Directory.Exists never "
+            + "runs for it, and no count over the containers that remain can miss what is no "
+            + "longer iterated. If a container was genuinely consolidated, edit ScanRootCount "
+            + "in the same commit and say why.");
 
         string repo = BnRepo.Root();
         var orphans = new List<string>();
         int scanned = 0;
+        int expected = 0;
 
         foreach (ShellSourceRoots.ScanRoot sr in scanRoots)
         {
+            int contributed = 0;
+            expected += sr.MinFiles;
             string abs = Path.Combine(repo, sr.Path.Replace('/', Path.DirectorySeparatorChar));
             Assert.True(Directory.Exists(abs),
                 $"`scanRoots` names '{sr.Path}', which is not a directory. A container that is "
@@ -619,21 +710,38 @@ public sealed class ShellSourceRootsDriftTests
                     continue;
 
                 scanned++;
+                contributed++;
                 string rel = Path.GetRelativePath(repo, file);
                 if (!roots.Any(r => rel.StartsWith(r, StringComparison.OrdinalIgnoreCase)))
                     orphans.Add("  " + rel.Replace(Path.DirectorySeparatorChar, '/'));
             }
+
+            // PER CONTAINER. This is the thing the total below cannot do, and the
+            // reason the manifest carries a floor per entry rather than one number
+            // for all three: a container re-pointed at a deeper directory
+            // contributes a handful of files instead of a hundred, and any global
+            // floor with useful headroom absorbs that without a word.
+            Assert.True(contributed >= sr.MinFiles,
+                $"`scanRoots` entry '{sr.Path}' contributed {contributed} files against its "
+                + $"declared floor of {sr.MinFiles}; {sr.Measured} were counted when that floor "
+                + "was set. The container has narrowed — it was re-pointed deeper, its "
+                + "extensions no longer match what lives there, or the tree genuinely shrank. "
+                + "The first two leave this fact blind to everything under it while the orphan "
+                + "list stays empty. If the tree really shrank, edit `minFiles` and `measured` "
+                + "together in the same commit and say why.");
         }
 
-        // ANTI-VACUITY ON THE ITERATED SET. 118 Kotlin and 66 Swift files as
-        // measured; the floor sits under both so ordinary growth and ordinary
-        // deletion never touch it, while a walk that has stopped seeing its
-        // subject cannot hide behind an empty orphan list.
-        Assert.True(scanned >= 150,
-            $"scanned only {scanned} shell source files across {scanRoots.Length} scanRoots, and "
-            + "there are roughly 184 — 118 Kotlin and 66 Swift, measured. The walk or the "
-            + "extension list has stopped seeing its subject, so the orphan list below is empty "
-            + "for the wrong reason.");
+        // THE TOTAL IS DERIVED, NOT DECLARED. It is the sum of the per-container
+        // floors asserted above, so there is no second number free to be looser
+        // than the members imply, and nothing here can be read as a guarantee the
+        // members do not already give. It survives only because it catches the
+        // loop not running at all, which the per-container arm cannot report.
+        Assert.True(scanned >= expected,
+            $"scanned {scanned} shell source files across {scanRoots.Length} scanRoots against "
+            + $"a summed floor of {expected}; 184 were counted when those floors were set, 118 "
+            + "Kotlin and 66 Swift. This is a floor on a TOTAL, and the per-container "
+            + "assertions above are what rule out a single container going quiet — read it as "
+            + "arithmetic over them, not as a guarantee of its own.");
 
         Assert.True(orphans.Count == 0,
             "SHELL SOURCE LIVES OUTSIDE EVERY DECLARED ROOT:\n"
@@ -643,6 +751,78 @@ public sealed class ShellSourceRootsDriftTests
             + "That is #364 F1 one level out. Add a set for it and answer the totality question "
             + "for all three consumers, or widen an existing set's roots — both are a few lines, "
             + "and neither is silent.");
+    }
+
+    /// <summary>THE DISCLAIMER DELETES ITSELF, OR THIS REDS. The manifest carries a
+    /// paragraph saying these entries record what a pin CLAIMS rather than what it
+    /// scans, true only until task 3 points each consumer at
+    /// <c>ShellSourceRoots.SetsFor</c>. It ends with an instruction to delete it in
+    /// that commit.
+    ///
+    /// A NOTE INSTRUCTING A FUTURE DELETION, WITH NOTHING ENFORCING IT, IS THE
+    /// CLASS THIS WHOLE PHASE IS ABOUT — one more time, in the artefact a reader
+    /// opens first. If the paragraph survives the repointing, the roster's primary
+    /// document carries a false disclaimer saying the roster does not bind, in a
+    /// repository where it does. If it is deleted EARLY, the opposite: the roster
+    /// claims to bind while three pins still read their own private lists.
+    ///
+    /// So the paragraph's presence is pinned to the tree rather than to anyone's
+    /// diligence. Present while any consumer is unrepointed; gone once none is.
+    ///
+    /// LIMIT: "repointed" is `the consumer's source names SetsFor`, which is a
+    /// text test, not a proof the pin USES the result. A consumer that calls it
+    /// and ignores the answer satisfies this. Direction: FAILS GREEN, and it is
+    /// bounded by task 3 being one reviewed commit rather than a drift path.</summary>
+    [Fact]
+    public void TheClaimsNotScansDisclaimer_MatchesWhetherTheConsumersAreRepointed()
+    {
+        const string marker = "WILL, NOT DOES";
+
+        string[] testSources = Directory.EnumerateFiles(
+            Path.Combine(BnRepo.Root(), "tests"), "*.cs", SearchOption.AllDirectories).ToArray();
+
+        var consumers = ShellSourceRoots.Consumers().Keys
+            .OrderBy(k => k, StringComparer.Ordinal).ToList();
+        Assert.True(consumers.Count >= DeclaredConsumerCount,
+            $"only {consumers.Count} consumers to check — the roster shrank, and this fact would "
+            + "otherwise decide the disclaimer's fate from a short list.");
+
+        var unrepointed = new List<string>();
+        foreach (string consumer in consumers)
+        {
+            string? file = testSources.FirstOrDefault(
+                f => Path.GetFileNameWithoutExtension(f).Equals(consumer, StringComparison.Ordinal));
+
+            Assert.True(file is not null,
+                $"'{consumer}' is a consumer in {ShellSourceRoots.ManifestPath} and no file named "
+                + $"{consumer}.cs exists under tests/. The pin was renamed or removed, so neither "
+                + "this fact nor a reader can tell whether it has been repointed — fix the roster "
+                + "key deliberately.");
+
+            if (!File.ReadAllText(file!).Contains("ShellSourceRoots.SetsFor", StringComparison.Ordinal))
+                unrepointed.Add(consumer);
+        }
+
+        bool disclaimerPresent = File.ReadAllText(Path.Combine(
+            BnRepo.Root(), ShellSourceRoots.ManifestPath.Replace('/', Path.DirectorySeparatorChar)))
+            .Contains(marker, StringComparison.Ordinal);
+
+        if (unrepointed.Count > 0)
+            Assert.True(disclaimerPresent,
+                $"{string.Join(", ", unrepointed)} still {(unrepointed.Count == 1 ? "reads" : "read")} "
+                + $"{(unrepointed.Count == 1 ? "its" : "their")} own roots rather than calling "
+                + $"ShellSourceRoots.SetsFor, and the `{marker}` paragraph is gone from "
+                + $"{ShellSourceRoots.ManifestPath}. The roster now reads as if it binds those "
+                + "pins. It does not: a consumer can declare that it consumes a set while scanning "
+                + "somewhere else entirely and everything stays green. Restore the paragraph, or "
+                + "repoint the pins.");
+        else
+            Assert.False(disclaimerPresent,
+                $"every consumer now calls ShellSourceRoots.SetsFor, so the `{marker}` paragraph "
+                + $"in {ShellSourceRoots.ManifestPath} is false: it tells the reader these entries "
+                + "record what a pin claims rather than what it scans, and they now record both. "
+                + "Delete the paragraph — that is the instruction it ends with — and delete this "
+                + "fact with it, since it exists only to make the deletion happen.");
     }
 
     /// <summary>Every test-method name declared under tests/, read once. Two facts
@@ -686,13 +866,29 @@ public sealed class ShellSourceRootsDriftTests
     private static readonly string ObjSegment =
         $"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}";
 
-    /// <summary>Test-method identifiers inside a reason string:
-    /// PascalCase_PascalCase, each half beginning upper-then-lower. Narrow on
-    /// purpose — see EveryTestNamedInAReason_Exists for why ALL_CAPS constants
-    /// must not match.</summary>
+    /// <summary>Test-method identifiers inside a reason string: an upper-case
+    /// head, at least one underscore, and at least one lower-case letter
+    /// somewhere in the whole name.
+    ///
+    /// THE SHAPE WAS WIDENED AFTER MEASURING IT. The first cut required each
+    /// underscore-separated half to begin upper-then-lower, and that missed 38 of
+    /// the repository's 591 declared test names — every one-letter-word head
+    /// (`ACommentedOutWrap_…`, `AThrowingSink_…`), every ALL-CAPS segment
+    /// (`…_STILL_BlocksTheDispatchLane`) and every snake_case name
+    /// (`Mount_returns_component_id_for_sync_component`). Two NONEXISTENT names in
+    /// those shapes were put in a reason and the fact passed, so the hole was a
+    /// false green, not a theoretical one. This shape reaches 578 of 591.
+    ///
+    /// THE ALL_CAPS REFUSAL MOVED, it did not go. It is now carried by the
+    /// lower-case requirement over the whole identifier rather than by the head
+    /// pattern, so `BIOMETRIC_STRONG` and `AUTH_DEVICE_CREDENTIAL` — constants
+    /// this repo's reasons legitimately name — still do not match. Verified over
+    /// every reason in the roster and ten adversarial spellings: zero false
+    /// positives.</summary>
     private static IEnumerable<string> TestIdentifiersIn(string reason) =>
-        Regex.Matches(reason, @"\b[A-Z][a-z][A-Za-z0-9]*(?:_[A-Z][a-z][A-Za-z0-9]*)+\b")
-             .Select(m => m.Value);
+        Regex.Matches(reason, @"\b[A-Z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)+\b")
+             .Select(m => m.Value)
+             .Where(v => v.Any(char.IsLower));
 
     /// <summary>THE ROSTER ANSWERS TO THE BUILD, NOT TO ITSELF. `androidShell`
     /// must name exactly the directories the Gradle `main` source set feeds the
@@ -747,15 +943,24 @@ public sealed class ShellSourceRootsDriftTests
             MatchCollection calls = Regex.Matches(code, pattern);
 
             // THE REGEX MUST HIT SOMETHING FIRST. Without this, a call that was
-            // reformatted or renamed yields an empty extracted set, and an empty
+            // renamed or commented out yields an empty extracted set, and an empty
             // set compared to an empty roster would be "equal" — two nothings
             // agreeing. Assert the subject was found before comparing it.
+            //
+            // NOT "reformatted", which is what this comment and the message below
+            // used to say. Splitting the argument list across lines PASSES — the
+            // capture is `[^)]*` and that matches newlines. The claim was corrected
+            // in the doc comment and left standing here, which is the worse half:
+            // this text is read at the failure, by someone deciding what broke.
             Assert.True(calls.Count > 0,
-                $"could not find a `{g.Call}(` call in {g.File} (pattern: {pattern}). It was "
-                + "renamed, reformatted onto several lines, or the directory list moved into a "
-                + "variable — a pin that cannot see its subject must never pass vacuously, so "
-                + "this reds. Re-point the regex, or change `derivedFrom.call` to whatever the "
-                + "build now spells.");
+                $"could not find a `{g.Call}(` call in {g.File} (pattern: {pattern}). Three "
+                + "things do this, all verified: the call was RENAMED, it was COMMENTED OUT — "
+                + "the comment-stripping pass runs first — or the directory list moved into a "
+                + "VARIABLE, which reds on the next assertion instead. Splitting the argument "
+                + "list across lines does NOT do it and is not worth checking; the capture "
+                + "matches newlines, measured. A pin that cannot see its subject must never "
+                + "pass vacuously, so this reds. Re-point the regex, or change "
+                + "`derivedFrom.call` to whatever the build now spells.");
 
             var declared = new SortedSet<string>(StringComparer.Ordinal);
             foreach (Match call in calls)
@@ -831,7 +1036,12 @@ public sealed class ShellSourceRootsDriftTests
         using JsonDocument auth = JsonDocument.Parse(File.ReadAllText(authManifest),
             new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Skip });
 
-        var authFiles = auth.RootElement.GetProperty("sites").EnumerateArray()
+        Assert.True(auth.RootElement.TryGetProperty("sites", out JsonElement authSites),
+            "src/auth-semantics.json has no top-level `sites` array, so this guard cannot tell "
+            + "which shell file the delegation is about. The manifest was restructured — re-point "
+            + "this deliberately rather than deleting the guard.");
+
+        var authFiles = authSites.EnumerateArray()
             .Select(s => s.GetProperty("file").GetString()!)
             .Where(f => shell.Roots.Any(r => f.StartsWith(r + "/", StringComparison.Ordinal)))
             .Distinct(StringComparer.Ordinal)
