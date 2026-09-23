@@ -1,0 +1,132 @@
+{
+  "$doc": [
+    "SHELL SOURCE ROOTS -- one home for the answer to 'what is the shell's source tree'.",
+    "",
+    "WHY THIS FILE EXISTS: AuthSemanticsDriftTests scanned src/androidMain only, while",
+    "AndroidLogDriftTests scanned src/main/kotlin AND src/androidMain/kotlin AND both",
+    "template mirrors, quoting the Gradle line as its authority. Two pins, two different",
+    "answers to one question, and nothing compared them. That is a twin divergence in the",
+    "pins themselves -- see #364 F1.",
+    "",
+    "THE CONTRACT: every consumer accounts for EVERY set, exactly once, as consumes /",
+    "delegated / excluded. ShellSourceRootsDriftTests asserts the three lists partition",
+    "the set list, so 'unmentioned' is not a state a tree can be in. Five separate reviews",
+    "defeated the auth pin by finding places it did not look; this is what makes 'it does",
+    "not look there' a RED.",
+    "",
+    "DELEGATED IS NOT A SYNONYM FOR EXCLUDED. A delegation is a claim about ANOTHER test's",
+    "behaviour, and an unpinned claim of that kind is the bug class this repo has paid for",
+    "most often. Every delegation names a `guard` -- a test that asserts the delegate still",
+    "covers the tree. A delegation without one is an exclusion wearing a better word.",
+    "",
+    "ONLY SHELL-TREE-SCANNING PINS BELONG HERE. A pin that names specific files on purpose",
+    "-- BnLogFormat, TextCollapseParity, DeepLinkSeed, DispatchSurface, GeneratedSymbolShadow",
+    "-- must NOT be repointed at this roster. Neither must ConsoleErrorDriftTests, which",
+    "walks every .cs under src/: that is the .NET tree. Sharing a walk is not sharing a",
+    "subject.",
+    "",
+    "THE HONEST RESIDUAL, stated rather than implied. The totality fact makes 'unmentioned",
+    "BY A CONSUMER' impossible. It does NOT make 'absent from `sets`' impossible, and that",
+    "is one level further out than the partition can reach. src/BlazorNative.Jni/src/debug",
+    "holds no .kt files today -- only res/xml -- so it is not a Kotlin source tree and is",
+    "deliberately absent from `sets` rather than excluded by each consumer. If it ever",
+    "gains Kotlin, NOTHING HERE REDS: a tree that is in no set is not in the partition.",
+    "EveryRoot_ExistsOnDisk only checks the other direction -- declared roots exist, not",
+    "that existing trees are declared. That is the same shape #364 kept finding, and it is",
+    "disclosed here because a gap treated as covered ground is worse than an admitted one.",
+    "",
+    "TO ADD A SET: add it here, then add it to ALL THREE consumers -- the totality fact",
+    "reds until every one of them has said what it does about the new tree. That is the",
+    "mechanism, not a chore around it."
+  ],
+
+  "sets": {
+    "androidShell": {
+      "language": "kotlin",
+      "purpose": "the shipped Android shell -- both source directories of the Gradle `main` source set, one compilation, one AAR",
+      "roots": [
+        "src/BlazorNative.Jni/src/main/kotlin",
+        "src/BlazorNative.Jni/src/androidMain/kotlin"
+      ],
+      "derivedFrom": {
+        "file": "src/BlazorNative.Jni/build.gradle.kts",
+        "call": "kotlin.srcDirs",
+        "pathPrefix": "src/BlazorNative.Jni/"
+      }
+    },
+    "appleShell": {
+      "language": "swift",
+      "purpose": "the shipped iOS shell -- the BnHost target's whole source tree",
+      "roots": ["src/BlazorNative.Apple/BnHost"]
+    },
+    "appleTestBundle": {
+      "language": "swift",
+      "purpose": "the XCTest bundle. NOT shipped output. NSLogDriftTests consumes it deliberately as its positive-control anchor -- it MUST still hold live NSLog calls -- which is exactly why this roster has named sets rather than one flat list",
+      "roots": ["src/BlazorNative.Apple/BnHostTests"]
+    },
+    "androidInstrumentedTests": {
+      "language": "kotlin",
+      "purpose": "the instrumented suite. Not shipped.",
+      "roots": ["src/BlazorNative.Jni/src/androidTest/kotlin"]
+    },
+    "androidJvmTests": {
+      "language": "kotlin",
+      "purpose": "the JVM unit-test source set. Not shipped.",
+      "roots": ["src/BlazorNative.Jni/src/test/kotlin"]
+    },
+    "androidJvmHost": {
+      "language": "kotlin",
+      "purpose": "the desktop JVM inspector host -- InspectorHost.kt, InspectorPage.kt, InspectorServer.kt. A separate source set, not part of the Gradle `main` compilation, and it never runs on a device.",
+      "roots": ["src/BlazorNative.Jni/src/jvmHost/kotlin"]
+    },
+    "androidTemplateMirror": {
+      "language": "kotlin",
+      "purpose": "the generated app's shell. Ships to every consumer of `dotnet new blazornative`, and carries its own copy of AndroidShellBridge.kt",
+      "roots": [
+        "templates/BlazorNative.Templates/content/BlazorNative.App/android/src/main/kotlin",
+        "templates/BlazorNative.Templates/content/BlazorNative.App/android/src/androidMain/kotlin"
+      ]
+    }
+  },
+
+  "consumers": {
+    "AuthSemanticsDriftTests": {
+      "consumes": ["androidShell", "appleShell"],
+      "delegated": {
+        "androidTemplateMirror": {
+          "to": "TemplateDriftTests",
+          "guard": "TheAuthBearingShellFile_IsStillInTheTemplateMirrorList",
+          "reason": "the template's AndroidShellBridge.kt is held BYTE-IDENTICAL to the repo's copy, so an auth change there without the same change here already reds. Scanning it as well would double every site and every ignored count in auth-semantics.json for a tree that cannot differ."
+        }
+      },
+      "excluded": {
+        "appleTestBundle": "XCTest source. An authenticator token here configures a test, not a user's gate.",
+        "androidInstrumentedTests": "instrumented source. The credential-path seam it drives is pinned in the shell by TheTestOnlyCredentialBranch_IsStillGuarded, which is where the guarantee belongs.",
+        "androidJvmTests": "JVM unit-test source, no device auth surface reachable from it.",
+        "androidJvmHost": "the desktop inspector host. It runs on a JVM, not a device, so there is no platform authenticator for it to name."
+      }
+    },
+    "AndroidLogDriftTests": {
+      "consumes": ["androidShell", "androidTemplateMirror"],
+      "delegated": {},
+      "excluded": {
+        "appleShell": "Swift. Wrong language for an android.util.Log scan.",
+        "appleTestBundle": "Swift.",
+        "androidInstrumentedTests": "test source; its own exemption is declared in that pin.",
+        "androidJvmTests": "test source; likewise.",
+        "androidJvmHost": "not the Android compilation. android.util.Log is not even on its classpath."
+      }
+    },
+    "NSLogDriftTests": {
+      "consumes": ["appleShell", "appleTestBundle"],
+      "delegated": {},
+      "excluded": {
+        "androidShell": "Kotlin. Wrong language for an NSLog scan.",
+        "androidInstrumentedTests": "Kotlin.",
+        "androidJvmTests": "Kotlin.",
+        "androidTemplateMirror": "Kotlin.",
+        "androidJvmHost": "Kotlin."
+      }
+    }
+  }
+}
