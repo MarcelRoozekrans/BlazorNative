@@ -58,11 +58,22 @@ namespace BlazorNative.Runtime.Tests;
 //     first one; in every plausible spelling the quoted strings still extract
 //     correctly, so that is a note rather than a hole.
 //
-//  3. THE ROSTER SAYS NOTHING ABOUT WHAT A CONSUMER ACTUALLY SCANS. It records
-//     what each pin CLAIMS. The claim only becomes binding when that pin reads
-//     its roots from `ShellSourceRoots.SetsFor`, which is task 3's job. Until
-//     then a consumer entry is documentation. Direction: FAILS GREEN, and it
-//     is the reason task 3 is not optional.
+//  3. THE ROSTER NOW BINDS, AND WHAT IS LEFT OF THE OLD LIMIT IS NARROWER AND
+//     WORTH READING RATHER THAN SKIMMING. This entry used to say the roster
+//     recorded what a pin CLAIMS and nothing more, because no pin read it.
+//     All three now take their roots from `ShellSourceRoots.SetsFor` and
+//     `EveryConsumer_ReadsItsRootsFromTheRoster` reds if one stops, so the
+//     claim and the behaviour are one object — that is #364 F1 and F2 closed
+//     as a consequence of the roster rather than as two patches.
+//
+//     WHAT REMAINS: that fact is a TEXT test over the consumer's source. It
+//     sees the call; it cannot see whether the RESULT reaches the walk. A pin
+//     that calls `SetsFor` and then enumerates a hard-coded path anyway
+//     satisfies it. Direction: FAILS GREEN. What used to bound the same limit
+//     was that repointing was one reviewed commit; nothing bounds it now, so
+//     the honest claim is that this catches the REVERT — a private array back
+//     in the pin — and not a pin that lies while calling. Closing it means
+//     tracing a value to a walk, which is a dataflow question and not a scan.
 //
 //  4. A NAMED TEST IS CHECKED ONLY TO THE DEPTH OF "IT EXISTS". Both
 //     `EveryDelegation_NamesAGuardThatExists` and
@@ -311,22 +322,11 @@ internal static class ShellSourceRoots
     /// this whole roster exists to prevent.</summary>
     internal static string[] SetsFor(string consumer)
     {
-        if (!Consumers().TryGetValue(consumer, out Consumer? c))
-            throw new InvalidOperationException(
-                $"'{consumer}' is not a consumer in {ManifestPath} — the pin was renamed, or its "
-                + "entry was never written. Add it, with its three lists, rather than reaching "
-                + "past the roster: a pin whose coverage position is unrecorded is the #364 F1 "
-                + "shape all over again.");
+        Consumer c = ConsumerOrThrow(consumer);
 
         var roots = new List<string>();
         foreach (string set in c.Consumes)
-        {
-            if (!Sets().TryGetValue(set, out SetDef? s))
-                throw new InvalidOperationException(
-                    $"'{consumer}' consumes '{set}', which is not a set in {ManifestPath}. A typo "
-                    + "here silently drops a tree from the pin's subject.");
-            roots.AddRange(s.Roots);
-        }
+            roots.AddRange(RootsOfConsumedSet(consumer, set));
 
         if (roots.Count == 0)
             throw new InvalidOperationException(
@@ -334,6 +334,66 @@ internal static class ShellSourceRoots
                 + "scans nothing and passes — fix the roster, do not let the caller proceed.");
 
         return [.. roots];
+    }
+
+    /// <summary>THE SAME DOOR, ONE SET AT A TIME — for a consumer that treats its
+    /// consumed sets DIFFERENTLY and therefore cannot use the flattened list.
+    ///
+    /// <c>NSLogDriftTests</c> is the case and the reason this overload exists:
+    /// it scans <c>appleShell</c> for offenders and uses <c>appleTestBundle</c>
+    /// as its positive control, which must still hold live <c>NSLog</c> calls.
+    /// Flattening the two is exactly what loses that distinction, so the pin
+    /// names the set — and naming a set the roster says this consumer does NOT
+    /// consume throws, rather than quietly scanning a tree the consumer's own
+    /// entry disclaims. That check is what keeps this from being a back door
+    /// around the partition: the set still has to be declared, by this consumer,
+    /// as consumed.
+    ///
+    /// Throws, never returns an empty array, for the same reason the flattened
+    /// overload does.</summary>
+    internal static string[] SetsFor(string consumer, string set)
+    {
+        Consumer c = ConsumerOrThrow(consumer);
+
+        if (!c.Consumes.Contains(set, StringComparer.Ordinal))
+            throw new InvalidOperationException(
+                $"'{consumer}' asked for the roots of '{set}', which is not in its `consumes` "
+                + $"list in {ManifestPath} — it is delegated, excluded, or absent. A pin may only "
+                + "scan a tree it has declared it consumes; scanning one it disclaims makes the "
+                + "roster's reason and the pin's behaviour two different things, which is the "
+                + "#364 F1 shape in the other direction.");
+
+        return RootsOfConsumedSet(consumer, set);
+    }
+
+    /// <summary>One set's roots, resolved for a named consumer. The one place
+    /// either overload turns a set name into paths, so there is no second copy of
+    /// the resolution to diverge from the first (pin standard, Rule 8).</summary>
+    private static string[] RootsOfConsumedSet(string consumer, string set)
+    {
+        if (!Sets().TryGetValue(set, out SetDef? s))
+            throw new InvalidOperationException(
+                $"'{consumer}' consumes '{set}', which is not a set in {ManifestPath}. A typo "
+                + "here silently drops a tree from the pin's subject.");
+
+        if (s.Roots.Length == 0)
+            throw new InvalidOperationException(
+                $"'{set}' declares no roots in {ManifestPath}, so '{consumer}' would scan nothing "
+                + "for a tree it says it covers. Fix the roster, do not let the caller proceed.");
+
+        return s.Roots;
+    }
+
+    /// <summary>The consumer entry, or a throw naming what to do about it.</summary>
+    private static Consumer ConsumerOrThrow(string consumer)
+    {
+        if (!Consumers().TryGetValue(consumer, out Consumer? c))
+            throw new InvalidOperationException(
+                $"'{consumer}' is not a consumer in {ManifestPath} — the pin was renamed, or its "
+                + "entry was never written. Add it, with its three lists, rather than reaching "
+                + "past the roster: a pin whose coverage position is unrecorded is the #364 F1 "
+                + "shape all over again.");
+        return c;
     }
 
     private static Roster Load()
@@ -1026,46 +1086,56 @@ public sealed class ShellSourceRootsDriftTests
             + "and neither is silent.");
     }
 
-    /// <summary>THE DISCLAIMER DELETES ITSELF, OR THIS REDS. The manifest carries a
-    /// paragraph saying these entries record what a pin CLAIMS rather than what it
-    /// scans, true only until task 3 points each consumer at
-    /// <c>ShellSourceRoots.SetsFor</c>. It ends with an instruction to delete it in
-    /// that commit.
+    /// <summary>THE ROSTER BINDS, AND THIS IS WHAT MAKES IT BIND (phase 15.2
+    /// task 3, #364 F1 and F2).
     ///
-    /// A NOTE INSTRUCTING A FUTURE DELETION, WITH NOTHING ENFORCING IT, IS THE
-    /// CLASS THIS WHOLE PHASE IS ABOUT — one more time, in the artefact a reader
-    /// opens first. If the paragraph survives the repointing, the roster's primary
-    /// document carries a false disclaimer saying the roster does not bind, in a
-    /// repository where it does. If it is deleted EARLY, the opposite: the roster
-    /// claims to bind while three pins still read their own private lists.
+    /// Every entry under `consumers` is a claim about where a pin looks. A claim
+    /// nothing enforces is the bug class this repository has paid for most often,
+    /// and for one phase this file carried it openly: the manifest disclosed, in
+    /// its own $doc, that a consumer could declare it consumes `appleShell` while
+    /// scanning somewhere else entirely with everything green. The three pins now
+    /// read their roots from <see cref="ShellSourceRoots.SetsFor"/>, so the claim
+    /// and the behaviour are the same object — and this fact is what keeps them
+    /// that way when someone re-grows a private array, which is precisely the
+    /// state #364 F1 was reported from.
     ///
-    /// So the paragraph's presence is pinned to the tree rather than to anyone's
-    /// diligence. Present while any consumer is unrepointed; gone once none is.
+    /// IT REPLACED A TEMPORARY FACT RATHER THAN OUTLIVING ONE.
+    /// `TheClaimsNotScansDisclaimer_MatchesWhetherTheConsumersAreRepointed` held
+    /// the $doc disclaimer present while any consumer was unrepointed and absent
+    /// once none was; it deleted itself with the paragraph, by its own
+    /// instruction. What that fact was PROVING along the way — that each consumer
+    /// names the door — is a standing property, so it stays here without the
+    /// disclaimer half. Deleting the whole thing would have handed the next
+    /// author a roster that reads as binding and is not.
     ///
-    /// LIMIT: "repointed" is `the consumer's source names SetsFor`, which is a
-    /// text test, not a proof the pin USES the result. A consumer that calls it
-    /// and ignores the answer satisfies this. Direction: FAILS GREEN, and it is
-    /// bounded by task 3 being one reviewed commit rather than a drift path.</summary>
+    /// LIMIT, and it is the deleted fact's limit unchanged in shape but no longer
+    /// bounded in time: "reads its roots from the roster" is `the consumer's
+    /// source names SetsFor`, which is a TEXT test. A pin that calls it and then
+    /// scans a hard-coded path anyway satisfies this. Direction: FAILS GREEN.
+    /// What used to bound it was that repointing was one reviewed commit; now
+    /// nothing does, and the honest statement is that this catches the REVERT —
+    /// a private array in place of the call — and not a pin that lies while
+    /// calling. Closing that needs the call's RESULT traced to the walk, which is
+    /// a dataflow question a text scan cannot answer.</summary>
     [Fact]
-    public void TheClaimsNotScansDisclaimer_MatchesWhetherTheConsumersAreRepointed()
+    public void EveryConsumer_ReadsItsRootsFromTheRoster()
     {
-        const string marker = "WILL, NOT DOES";
-
-        // nameof, not a literal: `SetsFor` has NO callers yet, so a rename or a
-        // typo in a bare string would be noticed by nothing. It would make every
-        // consumer permanently "unrepointed" and point this fact at demanding the
-        // false disclaimer stay forever — the exact direction it exists to stop.
+        // nameof, not a literal: a rename of the door must break this at compile
+        // time rather than turn every consumer permanently "unrepointed".
         string SetsForMarker =
             $"{nameof(ShellSourceRoots)}.{nameof(ShellSourceRoots.SetsFor)}";
 
         string[] testSources = Directory.EnumerateFiles(
-            Path.Combine(BnRepo.Root(), "tests"), "*.cs", SearchOption.AllDirectories).ToArray();
+            Path.Combine(BnRepo.Root(), "tests"), "*.cs", SearchOption.AllDirectories)
+            .Where(f => !f.Contains(BinSegment, StringComparison.Ordinal)
+                     && !f.Contains(ObjSegment, StringComparison.Ordinal))
+            .ToArray();
 
         var consumers = ShellSourceRoots.Consumers().Keys
             .OrderBy(k => k, StringComparer.Ordinal).ToList();
         Assert.True(consumers.Count >= DeclaredConsumerCount,
             $"only {consumers.Count} consumers to check — the roster shrank, and this fact would "
-            + "otherwise decide the disclaimer's fate from a short list.");
+            + "otherwise approve the binding from a short list.");
 
         var unrepointed = new List<string>();
         foreach (string consumer in consumers)
@@ -1076,33 +1146,22 @@ public sealed class ShellSourceRootsDriftTests
             Assert.True(file is not null,
                 $"'{consumer}' is a consumer in {ShellSourceRoots.ManifestPath} and no file named "
                 + $"{consumer}.cs exists under tests/. The pin was renamed or removed, so neither "
-                + "this fact nor a reader can tell whether it has been repointed — fix the roster "
-                + "key deliberately.");
+                + "this fact nor a reader can tell whether it still reads the roster — fix the "
+                + "roster key deliberately.");
 
             if (!File.ReadAllText(file!).Contains(SetsForMarker, StringComparison.Ordinal))
                 unrepointed.Add(consumer);
         }
 
-        bool disclaimerPresent = File.ReadAllText(Path.Combine(
-            BnRepo.Root(), ShellSourceRoots.ManifestPath.Replace('/', Path.DirectorySeparatorChar)))
-            .Contains(marker, StringComparison.Ordinal);
-
-        if (unrepointed.Count > 0)
-            Assert.True(disclaimerPresent,
-                $"{string.Join(", ", unrepointed)} still {(unrepointed.Count == 1 ? "reads" : "read")} "
-                + $"{(unrepointed.Count == 1 ? "its" : "their")} own roots rather than calling "
-                + $"{SetsForMarker}, and the `{marker}` paragraph is gone from "
-                + $"{ShellSourceRoots.ManifestPath}. The roster now reads as if it binds those "
-                + "pins. It does not: a consumer can declare that it consumes a set while scanning "
-                + "somewhere else entirely and everything stays green. Restore the paragraph, or "
-                + "repoint the pins.");
-        else
-            Assert.False(disclaimerPresent,
-                $"every consumer now calls {SetsForMarker}, so the `{marker}` paragraph "
-                + $"in {ShellSourceRoots.ManifestPath} is false: it tells the reader these entries "
-                + "record what a pin claims rather than what it scans, and they now record both. "
-                + "Delete the paragraph — that is the instruction it ends with — and delete this "
-                + "fact with it, since it exists only to make the deletion happen.");
+        Assert.True(unrepointed.Count == 0,
+            "THESE PINS DECLARE A COVERAGE POSITION IN THE ROSTER AND DO NOT READ IT:\n"
+            + string.Join("\n", unrepointed.Select(c => "  " + c))
+            + $"\n\nEach must take its roots from {SetsForMarker} rather than from a private "
+            + "array. A private array is how #364 F1 happened: AuthSemanticsDriftTests' own list "
+            + "omitted src/BlazorNative.Jni/src/main/kotlin — half the Android shell — while "
+            + "AndroidLogDriftTests' list had it, and nothing compared the two. The roster is the "
+            + "one home for that answer; a pin that keeps its own copy is back to being right by "
+            + "luck, and its entry here becomes a claim about behaviour that nothing checks.");
     }
 
     /// <summary>Every test-method name declared under tests/, read once. Two facts

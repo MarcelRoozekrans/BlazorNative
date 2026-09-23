@@ -59,24 +59,25 @@ namespace BlazorNative.Runtime.Tests;
 
 public sealed class AndroidLogDriftTests
 {
-    /// <summary>The shipped Android shell — the pin's subject. Both source roots
-    /// the gradle `main` source set compiles (build.gradle.kts declares
-    /// `kotlin.srcDirs("src/main/kotlin", "src/androidMain/kotlin")`).</summary>
-    private static readonly string[] ShellRoots =
-    [
-        "src/BlazorNative.Jni/src/main/kotlin",
-        "src/BlazorNative.Jni/src/androidMain/kotlin",
-    ];
-
-    /// <summary>The template's byte-identical mirror of the same shell — scanned
-    /// in the same pass, because it is what a `dotnet new blazornative` app
-    /// actually compiles. `TemplateDriftTests` holds the two byte-equal, so this
-    /// is a second lock on the same door; it costs one array entry.</summary>
-    private static readonly string[] TemplateRoots =
-    [
-        "templates/BlazorNative.Templates/content/BlazorNative.App/android/src/main/kotlin",
-        "templates/BlazorNative.Templates/content/BlazorNative.App/android/src/androidMain/kotlin",
-    ];
+    /// <summary>THE PIN'S SUBJECT, FROM THE ROSTER (#364 F1) — the shipped Android
+    /// shell AND the template's byte-identical mirror of it, scanned in one pass.
+    ///
+    /// These were two private arrays declared here, and they were the RIGHT
+    /// answer: both source roots the gradle `main` source set compiles, plus both
+    /// template mirrors. `AuthSemanticsDriftTests` had a different array with a
+    /// different answer, missing `src/main/kotlin` entirely, and nothing compared
+    /// them. Being right in a private copy is the precondition for the twin
+    /// divergence, not a defence against it (pin standard, Rule 8), so the answer
+    /// now lives once in `src/shell-source-roots.json` — still derived from the
+    /// Gradle `kotlin.srcDirs` call this comment used to quote, but derived by a
+    /// test rather than by a human reading it.
+    ///
+    /// The template mirror stays in the subject rather than being delegated to
+    /// `TemplateDriftTests`' byte comparison: it is what a `dotnet new
+    /// blazornative` app actually compiles, and a second lock on the same door
+    /// costs one roster entry.</summary>
+    private static string[] ShellAndTemplateRoots() =>
+        ShellSourceRoots.SetsFor(nameof(AndroidLogDriftTests));
 
     /// <summary>THE ONE FILE ALLOWED TO CALL `Log` AT A GATED LEVEL: the seam
     /// itself, whose default sink is a `Log.println`.
@@ -188,7 +189,7 @@ public sealed class AndroidLogDriftTests
         // Both trees, not just the repo's: the template ships the shell a
         // generated app compiles, and a scan that silently stopped covering it
         // would leave the consumer-facing copy unguarded.
-        foreach (string root in ShellRoots.Concat(TemplateRoots))
+        foreach (string root in ShellAndTemplateRoots())
         {
             Assert.Contains(files, f => f.StartsWith(CheckoutPath(root), StringComparison.Ordinal));
         }
@@ -309,7 +310,7 @@ public sealed class AndroidLogDriftTests
     /// accident.</summary>
     private static IEnumerable<string> ShellFiles()
     {
-        foreach (string relative in ShellRoots.Concat(TemplateRoots))
+        foreach (string relative in ShellAndTemplateRoots())
         {
             string root = CheckoutPath(relative);
             Assert.True(Directory.Exists(root), $"{relative} not found under the repo root: {root}");

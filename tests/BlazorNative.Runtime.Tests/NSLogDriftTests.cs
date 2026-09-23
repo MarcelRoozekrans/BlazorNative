@@ -42,8 +42,27 @@ namespace BlazorNative.Runtime.Tests;
 
 public sealed class NSLogDriftTests
 {
-    /// <summary>The shipped iOS shell — the pin's subject.</summary>
-    private const string BnHost = "src/BlazorNative.Apple/BnHost";
+    /// <summary>THE PIN'S SUBJECT, FROM THE ROSTER (#364 F1) — the shipped iOS
+    /// shell, the `appleShell` set of `src/shell-source-roots.json`.
+    ///
+    /// This was a `const string` here. It was the right answer, and a private
+    /// copy of a right answer is the precondition for a twin divergence rather
+    /// than a defence against it (pin standard, Rule 8): two other pins held
+    /// their own answers to "what is the shell's source tree", one of them
+    /// missing half the Android shell, and nothing compared them. The roster is
+    /// now the one home, derived from XcodeGen's own `BnHost` target source list.
+    ///
+    /// THIS PIN NAMES ITS SETS ONE AT A TIME rather than taking the flattened
+    /// list, because it treats its two consumed sets DIFFERENTLY — `appleShell`
+    /// is scanned for offenders and `appleTestBundle` is the positive control
+    /// that must still hold live `NSLog` calls. Flattening them is exactly what
+    /// would lose that distinction, and the overload still checks each name
+    /// against this pin's own `consumes` list.</summary>
+    private static string[] AppleShellRoots() =>
+        ShellSourceRoots.SetsFor(nameof(NSLogDriftTests), "appleShell");
+
+    /// <summary>The roots above, as one string for a failure message.</summary>
+    private static string BnHost => string.Join(" + ", AppleShellRoots());
 
     /// <summary>THE EXEMPT DIRECTORY, NAMED EXPLICITLY SO THE EXEMPTION IS VISIBLE
     /// RATHER THAN IMPLIED (design §4.2 step 3, §12).
@@ -59,8 +78,20 @@ public sealed class NSLogDriftTests
     /// simply never walks `BnHostTests/`. It is named here — and asserted to be
     /// real by <see cref="TheTestBundleExemption_IsRealAndStillHoldsNSLog"/> —
     /// so that a reader of the failure message knows why their test file is not
-    /// covered without having to infer it from a path.</summary>
-    private const string BnHostTests = "src/BlazorNative.Apple/BnHostTests";
+    /// covered without having to infer it from a path.
+    ///
+    /// IT IS A ROSTER SET, `appleTestBundle`, and the roster entry says in as
+    /// many words that this pin consumes it deliberately as its positive-control
+    /// anchor. That is why the roster has NAMED SETS rather than one flat list of
+    /// roots: "excluded" and "consumed as the fixed point the detector must still
+    /// hit" are opposite positions, and a flat list cannot tell them apart.
+    /// Dropping it from `consumes` would defuse the control silently, so the
+    /// partition makes that a deliberate, reviewed edit.</summary>
+    private static string[] AppleTestBundleRoots() =>
+        ShellSourceRoots.SetsFor(nameof(NSLogDriftTests), "appleTestBundle");
+
+    /// <summary>The roots above, as one string for a failure message.</summary>
+    private static string BnHostTests => string.Join(" + ", AppleTestBundleRoots());
 
     /// <summary>Matches an `NSLog` CALL. Comments are excluded by
     /// <see cref="CommentStrippedSource.NumberedCodeLines"/> — this phase's own sources discuss `NSLog` at
@@ -143,6 +174,27 @@ public sealed class NSLogDriftTests
         Assert.Contains("BnLog.swift", names);
         foreach (string swept in SweptFiles)
             Assert.Contains(swept, names);
+
+        // THE EXEMPTION IS STRUCTURAL, AND NOW THAT BOTH TREES COME FROM THE ROSTER
+        // THAT IS ASSERTED RATHER THAN OBSERVED. `BnHostTests/` being a SIBLING of
+        // `BnHost/` was a fact about two directory names; the roots are now two
+        // manifest entries, and a widened `appleShell` root would swallow the test
+        // bundle — taking this pin's positive control INSIDE its own subject, where
+        // its 24 deliberate NSLog sites become 24 offenders. That direction is a
+        // loud red rather than a silent green, and this says which edit caused it.
+        var bundles = AppleTestBundleRoots().Select(CheckoutPath).ToArray();
+        var swallowed = files
+            .Where(f => bundles.Any(b => f.StartsWith(b, StringComparison.Ordinal)))
+            .ToList();
+
+        Assert.True(swallowed.Count == 0,
+            "THE EXEMPT TEST BUNDLE IS INSIDE THE SCANNED SHELL:\n"
+            + string.Join("\n", swallowed.Select(f => "  " + Relative(f)))
+            + "\n\n`appleShell` and `appleTestBundle` are separate sets in "
+            + ShellSourceRoots.ManifestPath + " precisely so this pin can scan one and use the "
+            + "other as its positive control. A root that nests them makes the control part of "
+            + "the subject, so the 24 XCTest NSLog sites that MUST stay would be reported as "
+            + "offenders. Re-point the roster, not this assertion.");
     }
 
     /// <summary>…AND THE PATTERN STILL MATCHES WHERE A MATCH IS KNOWN TO EXIST.
@@ -155,15 +207,20 @@ public sealed class NSLogDriftTests
     [Fact]
     public void TheTestBundleExemption_IsRealAndStillHoldsNSLog()
     {
-        string tests = Path.Combine(BnRepo.Root(), BnHostTests.Replace('/', Path.DirectorySeparatorChar));
-        Assert.True(Directory.Exists(tests),
-            $"{BnHostTests} is missing, so the exemption this pin names protects nothing. Either "
-            + "the test bundle moved — then re-point the exemption deliberately — or it is gone, "
-            + "in which case delete the exemption rather than keeping it as folklore.");
+        int hits = 0;
+        foreach (string relative in AppleTestBundleRoots())
+        {
+            string tests = CheckoutPath(relative);
+            Assert.True(Directory.Exists(tests),
+                $"{relative} is missing, so the exemption this pin names protects nothing. Either "
+                + "the test bundle moved — then re-point it in " + ShellSourceRoots.ManifestPath
+                + " deliberately — or it is gone, in which case delete the exemption rather than "
+                + "keeping it as folklore.");
 
-        int hits = Directory.EnumerateFiles(tests, "*.swift", SearchOption.AllDirectories)
-            .SelectMany(CommentStrippedSource.NumberedCodeLines)
-            .Count(l => Regex.IsMatch(l.Text, NSLogCall));
+            hits += Directory.EnumerateFiles(tests, "*.swift", SearchOption.AllDirectories)
+                .SelectMany(CommentStrippedSource.NumberedCodeLines)
+                .Count(l => Regex.IsMatch(l.Text, NSLogCall));
+        }
 
         Assert.True(hits > 0,
             $"the NSLog pattern matched NOTHING under {BnHostTests}, which is the one tree that "
@@ -214,14 +271,28 @@ public sealed class NSLogDriftTests
     /// not a filter that could be edited away by accident.</summary>
     private static IEnumerable<string> ShellFiles()
     {
-        string root = Path.Combine(BnRepo.Root(), BnHost.Replace('/', Path.DirectorySeparatorChar));
-        Assert.True(Directory.Exists(root), $"{BnHost} not found under the repo root: {root}");
-
         string[] extensions = [".swift", ".m", ".mm", ".h"];
-        return Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)
-            .Where(f => extensions.Contains(Path.GetExtension(f), StringComparer.OrdinalIgnoreCase))
-            .OrderBy(f => f, StringComparer.Ordinal);
+        var files = new List<string>();
+
+        foreach (string relative in AppleShellRoots())
+        {
+            string root = CheckoutPath(relative);
+            Assert.True(Directory.Exists(root),
+                $"{relative} not found under the repo root: {root}. It is declared in "
+                + ShellSourceRoots.ManifestPath + ", so either the target moved and the roster "
+                + "needs re-pointing, or the roster is already wrong and every consumer of "
+                + "`appleShell` is blind.");
+
+            files.AddRange(Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)
+                .Where(f => extensions.Contains(
+                    Path.GetExtension(f), StringComparer.OrdinalIgnoreCase)));
+        }
+
+        return files.OrderBy(f => f, StringComparer.Ordinal);
     }
+
+    private static string CheckoutPath(string relativePath)
+        => Path.Combine(BnRepo.Root(), relativePath.Replace('/', Path.DirectorySeparatorChar));
 
     private static string Relative(string file)
         => Path.GetRelativePath(BnRepo.Root(), file).Replace(Path.DirectorySeparatorChar, '/');

@@ -104,11 +104,23 @@ public sealed class AuthSemanticsDriftTests
         "Authenticators.DEVICE_CREDENTIAL",
     ];
 
-    private static readonly string[] ShellSourceRoots =
-    [
-        Path.Combine("src", "BlazorNative.Apple", "BnHost"),
-        Path.Combine("src", "BlazorNative.Jni", "src", "androidMain"),
-    ];
+    /// <summary>THE SUBJECT COMES FROM THE ROSTER, NOT FROM THIS FILE (#364 F1).
+    ///
+    /// This used to be a two-entry array declared here, and `src/BlazorNative.Jni/
+    /// src/main/kotlin` was not one of the entries — HALF THE ANDROID SHELL. The
+    /// Gradle `main` source set compiles both `src/main/kotlin` and
+    /// `src/androidMain/kotlin` into one AAR, `AndroidLogDriftTests` scanned both
+    /// and quoted the Gradle line as its authority, and nothing in the repository
+    /// compared the two pins' answers. That is a twin divergence in the pins
+    /// themselves, and a private array is the mechanism that allowed it.
+    ///
+    /// `src/shell-source-roots.json` is now the one home for the answer, and this
+    /// pin's entry there declares — in a partition every consumer must complete —
+    /// which trees it consumes, which it delegates and which it excludes, each
+    /// with a reason. `ShellSourceRootsDriftTests` holds that roster to the
+    /// checkout.</summary>
+    private static string[] ShellRoots() =>
+        ShellSourceRoots.SetsFor(nameof(AuthSemanticsDriftTests));
 
     private sealed record Occurrence(string Token, string File, int Line);
 
@@ -125,12 +137,14 @@ public sealed class AuthSemanticsDriftTests
         string root = BnRepo.Root();
         var found = new List<Occurrence>();
 
-        foreach (string rel in ShellSourceRoots)
+        foreach (string rel in ShellRoots())
         {
-            string dir = Path.Combine(root, rel);
+            string dir = Path.Combine(root, rel.Replace('/', Path.DirectorySeparatorChar));
             Assert.True(Directory.Exists(dir),
                 $"shell source root '{rel}' does not exist — the scan would silently cover "
-                + "nothing");
+                + "nothing. It is declared in " + ShellSourceRoots.ManifestPath + ", so either "
+                + "the tree moved and the roster needs re-pointing, or the roster is already "
+                + "wrong and every consumer of that set is blind.");
 
             foreach (string path in Directory.EnumerateFiles(dir, "*.*", SearchOption.AllDirectories)
                          .Where(p => p.EndsWith(".swift", StringComparison.Ordinal)
@@ -292,14 +306,25 @@ public sealed class AuthSemanticsDriftTests
         // passed every other assertion in this file. The argument literal is countable
         // the same way the token is, so it is counted.
         //
-        // WHAT IS STILL NOT COVERED, stated plainly rather than hedged: the count is
-        // over ONE SPELLING of the argument. A POSITIONAL call —
-        // `provisionKey(key, true, true)` — carries no parameter name at all, and a
-        // named call written without spaces around the `=` is a different string. Both
-        // slip past. Closing those needs a Kotlin parser, not a scanner, and this pin
-        // does not have one. The cheap spellings are pinned; the rest is a reviewer's
-        // job, and saying so here is the point.
-        string path = Path.Combine(BnRepo.Root(),
+        // WHAT IS STILL NOT COVERED, stated plainly rather than hedged, and the list
+        // is one item SHORTER than it was because #364 F2 was a gap this block did not
+        // name. It enumerated spelling variants only; the count itself was scoped to
+        // ONE FILE, so a `BnRecovery.kt` added beside AndroidShellBridge.kt — the exact
+        // spelling counted here, in the shipped shell — passed all four facts. FILE
+        // SCOPE IS NOW THE ROSTER: the count below walks every `.kt` under every root
+        // src/shell-source-roots.json says this pin consumes, so a new caller anywhere
+        // in the Android shell reds. The template mirror is DELEGATED rather than
+        // scanned — see the roster entry, and TheAuthBearingShellFile_IsStillInTheTemplateMirrorList,
+        // which is what holds that delegation honest.
+        //
+        // WHAT REMAINS, unchanged and still real: the count is over ONE SPELLING of
+        // the argument. A POSITIONAL call — `provisionKey(key, true, true)` — carries
+        // no parameter name at all, and a named call written without spaces around
+        // the `=` is a different string. Both slip past. Closing those needs a Kotlin
+        // parser, not a scanner, and this pin does not have one. The cheap spellings
+        // are pinned; the rest is a reviewer's job, and saying so here is the point.
+        string repo = BnRepo.Root();
+        string path = Path.Combine(repo,
             "src", "BlazorNative.Jni", "src", "androidMain", "kotlin", "io",
             "blazornative", "shell", "AndroidShellBridge.kt");
         Assert.True(File.Exists(path),
@@ -308,6 +333,9 @@ public sealed class AuthSemanticsDriftTests
 
         string code = CommentStrippedSource.Strip(File.ReadAllText(path));
 
+        // The two guard assertions stay scoped to the DECLARING file on purpose: they
+        // are about the declaration, which lives in exactly one place. Only the caller
+        // count is a question about the whole tree.
         Assert.Contains("if (allowDeviceCredentialForTest)", code, StringComparison.Ordinal);
 
         // And the parameter must still default to false, or every caller gets the
@@ -321,20 +349,53 @@ public sealed class AuthSemanticsDriftTests
         // in prose and a raw-file count would score it. Exactly-one, not at-most-one:
         // if the seam is deleted, this entry and its manifest reason describe a caller
         // that no longer exists, and a stale excuse is a licence for the next one.
+        //
+        // EXACTLY-ONE IS ITS OWN NON-VACUITY FLOOR, which is why no separate file count
+        // is asserted here: a walk that stops seeing its tree reports ZERO callers and
+        // reds on the same line, with a message that says what zero means. A Swift root
+        // in the same roster contributes nothing to a Kotlin spelling, by construction
+        // and not by accident — it cannot take the count DOWN.
         const string CallerLiteral = "allowDeviceCredentialForTest = true";
-        int callers = 0;
-        for (int i = code.IndexOf(CallerLiteral, StringComparison.Ordinal); i >= 0;
-             i = code.IndexOf(CallerLiteral, i + CallerLiteral.Length, StringComparison.Ordinal))
-            callers++;
+        var callerSites = new List<string>();
+        foreach (string rel in ShellRoots())
+        {
+            string dir = Path.Combine(repo, rel.Replace('/', Path.DirectorySeparatorChar));
+            Assert.True(Directory.Exists(dir),
+                $"shell source root '{rel}' does not exist — the caller count would silently "
+                + "cover nothing. It is declared in " + ShellSourceRoots.ManifestPath
+                + "; re-point the roster deliberately rather than narrowing this walk.");
 
-        Assert.True(callers == 1,
-            $"expected exactly one caller passing `{CallerLiteral}` in AndroidShellBridge.kt, "
-            + $"found {callers}. The ignore entry for AUTH_DEVICE_CREDENTIAL in "
-            + "src/auth-semantics.json rests on there being ONE, writeAuthBoundSecretForTest, "
-            + "reachable only from the instrumented suite. A second caller widens the "
-            + "credential path in production without writing the token or touching the "
-            + "guard, so nothing else in this file would notice. Zero means the seam was "
-            + "deleted and the manifest reason now describes code that is gone.");
+            foreach (string file in Directory
+                         .EnumerateFiles(dir, "*.kt", SearchOption.AllDirectories)
+                         .OrderBy(f => f, StringComparer.Ordinal))
+            {
+                string source = CommentStrippedSource.Strip(File.ReadAllText(file));
+                string relative = Path.GetRelativePath(repo, file).Replace('\\', '/');
+
+                for (int i = source.IndexOf(CallerLiteral, StringComparison.Ordinal); i >= 0;
+                     i = source.IndexOf(
+                         CallerLiteral, i + CallerLiteral.Length, StringComparison.Ordinal))
+                {
+                    int line = 1;
+                    for (int k = 0; k < i; k++) if (source[k] == '\n') line++;
+                    callerSites.Add($"  {relative}:{line}");
+                }
+            }
+        }
+
+        Assert.True(callerSites.Count == 1,
+            $"expected exactly one caller passing `{CallerLiteral}` across the roots "
+            + $"{nameof(AuthSemanticsDriftTests)} consumes in {ShellSourceRoots.ManifestPath}, "
+            + $"found {callerSites.Count}:\n"
+            + (callerSites.Count == 0 ? "  (none)" : string.Join("\n", callerSites))
+            + "\n\nThe ignore entry for AUTH_DEVICE_CREDENTIAL in src/auth-semantics.json rests "
+            + "on there being ONE, writeAuthBoundSecretForTest, reachable only from the "
+            + "instrumented suite. A second caller widens the credential path in production "
+            + "without writing the token or touching the guard, so nothing else in this file "
+            + "would notice — that is #364 F2, and it was demonstrated with a new file beside "
+            + "the declaring one while this count still read a single path. Zero means the seam "
+            + "was deleted and the manifest reason now describes code that is gone, OR that the "
+            + "walk has stopped seeing the shell at all.");
     }
 
     [Fact]
