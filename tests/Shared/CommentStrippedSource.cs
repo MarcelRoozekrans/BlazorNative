@@ -110,10 +110,39 @@ namespace BlazorNative.Tests.Shared;
 // now held by facts rather than by a paragraph.
 //
 // This round ALSO recorded a scope refusal, because the next reader will be tempted.
-// Only the bare three-quote fence is parsed. C#'s longer fences and Swift's `#"..."#`
-// delimiters are deliberately NOT, and the reason is in the doc comment below rather
-// than in anyone's head: scope escaping through a general parser is how this pin
-// family got into trouble in the first place.
+// C#'s fence-WIDTH rule and Swift's `#"..."#` delimiters are deliberately NOT
+// implemented, and the reason is in the doc comment below rather than in anyone's
+// head: scope escaping through a general parser is how this pin family got into
+// trouble in the first place.
+//
+// ROUND FIVE, SECOND PASS -- and this is the part to read if you are about to change
+// the fence.
+//
+// The first cut of the F3 fix tracked raw state with NO BOUND. Review found it live
+// on two files. C#'s verbatim string escapes an embedded quote by doubling it, so a
+// verbatim literal that begins with a quote spells `@"""` -- three consecutive quotes
+// -- and the rest of that literal never offers a three-run to close on.
+// `ShellFrameTableDriftTests.cs:296` and `TemplateDriftTests.cs:1344` each opened a
+// raw string that stayed open to EOF, switching comment stripping off over 358 lines
+// between them, inside PinPopulationTests' own walk, with every pin green.
+//
+// SAY THE SHAPE OUT LOUD, because it is the reusable part. F3 blinded the scan past
+// the construct that confused it by OVER-stripping. The first fix blinded the scan
+// past the construct that confused it by UNDER-stripping. Same hazard, opposite sign,
+// and the second arrived through a door the fix itself opened. The rule the file now
+// holds is neither "strip more" nor "strip less": NO INPUT MAY MAKE THE STRIPPER BLIND
+// PAST THE CONSTRUCT THAT CONFUSED IT. The unterminated-`/*` branch had been obeying
+// it since before any of this; the raw-string branch now does too, by refusing to
+// enter the state at all unless a closer already exists ahead.
+//
+// THE OTHER HALF OF THE CORRECTION WAS A CLAIM, not code. The first cut's disclosure
+// said an unterminated fence "fails RED, never green". That is true for an ABSENCE
+// pin and FALSE for a PRESENCE pin, and this repo has presence pins BY DESIGN -- every
+// Rule 3 fixed point is one. A commented-out `Log.i` left visible by under-stripping
+// satisfies `AndroidLogDriftTests`' `Assert.True(hits > 0, ...)`, measured 0 -> 1. A
+// commit whose entire point was deleting an unenforced safety claim had shipped a new
+// one. That is how cheap the mistake is to make; it is written here so the next reader
+// spends their suspicion on the claims and not only on the code.
 // ─────────────────────────────────────────────────────────────────────────────
 
 internal static class CommentStrippedSource
@@ -134,34 +163,59 @@ internal static class CommentStrippedSource
     /// read as a comment — `://` already appears in both shells' literals, and in C# test
     /// sources, so this is a live shape and not a hypothetical.
     ///
-    /// RAW STRINGS (`"""`) ARE TRACKED SEPARATELY, and that state deliberately SURVIVES
-    /// the newline. It has to: this is issue #364's F3. Under the single flag alone a
-    /// `"""` toggled three times and landed INSIDE-string, the newline reset then put the
-    /// raw string's BODY back into CODE state, and a `/*` in that body opened a block
-    /// comment that ran to the next `*/` — which can be in another declaration entirely.
-    /// Everything between the two was deleted from the scanned text. Over-stripping hides
-    /// live call sites, which is a false GREEN, and it is the same direction the
-    /// unterminated-opener rule above already exists to avoid.
+    /// RAW STRINGS (a run of three or more `"`) ARE TRACKED SEPARATELY, and that state
+    /// deliberately SURVIVES the newline. It has to: this is issue #364's F3. Under the
+    /// single flag alone a `"""` toggled three times and landed INSIDE-string, the newline
+    /// reset then put the raw string's BODY back into CODE state, and a `/*` in that body
+    /// opened a block comment that ran to the next `*/` — which can be in another
+    /// declaration entirely. Everything between the two was deleted from the scanned text.
+    /// Over-stripping hides live call sites, which is a false GREEN, and it is the same
+    /// direction the unterminated-opener rule above already exists to avoid.
     ///
-    /// REMAINING BOUNDED LIMITS, not claims — and the direction each one fails.
-    /// · Only the bare three-quote fence is understood. C#'s longer fences (`""""` and
-    ///   up) and Swift's `#"…"#` / `#"""…"""#` delimiters are NOT parsed: a `""""` opener
-    ///   is read as `"""` plus one ordinary quote, and `#"` is read as an ordinary quote.
-    ///   Neither spelling occurs in any file a pin currently scans. This was left
-    ///   deliberately narrow — a general raw-string parser is how this pin family got
-    ///   into trouble — and it can fail in EITHER direction, so it is the limit to revisit
-    ///   first if one of those spellings ever lands in a scanned tree.
+    /// THE STATE CANNOT REACH END OF FILE, BY CONSTRUCTION, and that property is load
+    /// bearing rather than decorative — see <see cref="IsFenceAt"/> for the two rules that
+    /// produce it and for the review that made them necessary. A first cut of this fix
+    /// tracked raw state with no bound at all and traded F3's block-comment blinding for a
+    /// raw-body blinding that ran to EOF; it was live on two files in this repo before it
+    /// was caught. The bound is not a disclosure. It is a precondition on entering the
+    /// state, and <c>CommentStrippedSourceTests</c> holds it.
+    ///
+    /// REMAINING LIMITS — and the direction each one fails. NOTE THE DIRECTIONS FIRST,
+    /// because the natural assumption about them is wrong:
+    ///
+    /// OVER-stripping is a false GREEN — a pin's subject is deleted before it is looked
+    /// for. UNDER-stripping is a false RED for an ABSENCE pin, which is most of them, and
+    /// a false GREEN for a PRESENCE pin, of which this repo has several BY DESIGN: every
+    /// Rule 3 fixed point is one. `AndroidLogDriftTests`' `Assert.True(hits > 0, …)` is
+    /// satisfied by a COMMENTED-OUT `Log.i` that under-stripping left visible, and that
+    /// was measured going 0 → 1, not reasoned about. So "it only ever costs a red" is not
+    /// available as a defence here for either direction, and nothing below claims it.
+    ///
+    /// · C#'s FENCE-WIDTH RULE is not implemented. A run of three or more quotes opens,
+    ///   and any later run of three or more closes it — so a C# `""""` fence, which the
+    ///   language says must close on four or more, would close here on three. The runs in
+    ///   this repo are `ItemsJsonTest.kt:91` and `:106`, Kotlin rather than C#, and both
+    ///   open and close on whole runs and parse correctly. Deliberately narrow: a general
+    ///   raw-string parser is how this pin family got into trouble, and scope escaping
+    ///   through one is the thing to refuse. EITHER DIRECTION, bounded by the construction
+    ///   above.
+    /// · Swift's CUSTOM DELIMITERS `#"…"#` and `#"""…"""#` are not understood. The first
+    ///   is live — `BnWidgetMapper.swift:3461`, inside both `ShellStyleTableDriftTests`'
+    ///   and `NSLogDriftTests`' walks, and again across `BnHostTests/*.swift` — and it
+    ///   costs nothing, because `#"` presents only a ONE-quote run and is read as an
+    ///   ordinary literal exactly as it was before this change. The second does not occur
+    ///   in the tree; were it to, its `"""` would be read as a fence and its `#` as code.
+    ///   FAILS RED for absence pins, GREEN for presence pins, bounded to the file.
     /// · A C# `'"'` char literal still toggles the ordinary string flag once, and is
     ///   still bounded by the newline reset. Same for any unbalanced quote in an ordinary
     ///   literal: the mis-parse ends at the end of its line.
     /// · What the newline reset does and does not buy, stated exactly, because the
     ///   previous wording of this paragraph claimed more than the code did and F3 was the
     ///   counterexample. It bounds a mis-parse arising from the ORDINARY string flag to a
-    ///   single line. It does NOT bound the raw-string flag, which is the point of it, so
-    ///   an UNTERMINATED `"""` now does blind the rest of the file — read as body, so
-    ///   comments below it stop being stripped. That is the UNDER-strip direction and it
-    ///   fails RED, never green: a pin sees prose it should not have seen and complains,
-    ///   rather than missing a call site and passing.</summary>
+    ///   single line. It does NOT bound the raw-string flag — that is the point of it —
+    ///   and the raw flag is bounded instead by the entry precondition above, which is a
+    ///   stronger guarantee than the reset ever gave: it holds for ALL inputs rather than
+    ///   for the ones anyone happened to look at.</summary>
     public static string Strip(string source)
     {
         var sb = new StringBuilder(source.Length);
@@ -171,36 +225,47 @@ internal static class CommentStrippedSource
 
         while (i < source.Length)
         {
-            // RAW STRINGS (`"""`), Kotlin and Swift both, and C# in the test sources.
-            // This state deliberately SURVIVES the newline, unlike the single-quote
-            // state below. #364 F3: `"""` toggled the simple flag three times, landed
+            // RAW STRINGS, Kotlin and Swift both, and C# in the test sources. This
+            // state deliberately SURVIVES the newline, unlike the single-quote state
+            // below. #364 F3: `"""` toggled the simple flag three times, landed
             // inside-string, and the newline reset then put the BODY back into CODE
             // state — where a `/*` opened a block comment running to the next `*/`,
             // which can be arbitrarily far away. Over-stripping hides live call sites;
             // that is a false GREEN, and it is the direction the unterminated-opener
             // branch below was already written to avoid.
             //
+            // ENTERING THE STATE HAS A PRECONDITION: a fence that closes it must
+            // already exist ahead, found with the SAME predicate the closing arm uses.
+            // That is what makes "raw state cannot reach EOF" true by construction
+            // rather than by inspection of today's tree, and it is the direct mirror
+            // of the unterminated-block-opener branch below, which emits its `/*`
+            // verbatim rather than swallowing the file. `IsFenceAt` carries the
+            // reasoning and the scar; the short version is that the first cut of this
+            // fix had no precondition and blinded two real files to EOF.
+            //
             // The `!inString` guard says an ordinary literal's INTERIOR is never a
             // fence. It is defence in depth and is deliberately NOT claimed as
-            // pinned: no valid C#, Kotlin or Swift reaches it, because three
-            // adjacent quotes while the ordinary flag is set means the first of them
-            // is that literal's own closing quote. It can only be reached after the
-            // ordinary flag has ALREADY mis-parsed — a `'"'` char literal, or an odd
-            // backslash run the two-character escape look-back gets wrong — and in
-            // that state neither answer is right. What it buys is that such a
-            // mis-parse stays bounded by the newline reset instead of escalating
-            // into a whole-file raw-string mis-parse.
+            // pinned: no valid C#, Kotlin or Swift reaches it, because three adjacent
+            // quotes while the ordinary flag is set means the first of them is that
+            // literal's own closing quote. It can only be reached after the ordinary
+            // flag has ALREADY mis-parsed — a `'"'` char literal, or an odd backslash
+            // run the two-character escape look-back gets wrong — and in that state
+            // neither answer is right. What it buys is that such a mis-parse stays
+            // bounded by the newline reset instead of escalating into a whole-file
+            // raw-string mis-parse.
             //
-            // The FENCE WIDTH is pinned, by two facts, and it needed them: narrowing
-            // this to `""` leaves the F3 fixture green while turning every empty
-            // string literal in the repo into a raw-string opener. See
-            // CommentStrippedSourceTests.AnEmptyStringLiteral_DoesNotOpenARawString.
-            if (!inString && i + 2 < source.Length
-                && source[i] == '"' && source[i + 1] == '"' && source[i + 2] == '"')
+            // The FENCE WIDTH is pinned, and it needed to be: narrowing this to `""`
+            // leaves the F3 fixture green while turning every empty string literal in
+            // the repo into a raw-string opener. So is the `@` refusal, and so is the
+            // closing-fence precondition. The facts are in CommentStrippedSourceTests
+            // — see the roster in its header, which names each property and the fact
+            // that holds it, so a renamed fact is found by reading one list.
+            if (!inString && IsFenceAt(source, i, out int fence)
+                && (inRawString || HasFenceAtOrAfter(source, i + fence)))
             {
                 inRawString = !inRawString;
-                sb.Append("\"\"\"");
-                i += 3;
+                sb.Append('"', fence);
+                i += fence;
                 continue;
             }
 
@@ -295,6 +360,84 @@ internal static class CommentStrippedSource
         }
 
         return sb.ToString();
+    }
+
+    /// <summary>True when <paramref name="i"/> begins a run of quotes that may act as a
+    /// raw-string fence, with <paramref name="run"/> set to the run's full length. ONE
+    /// predicate, used by the opening arm, the closing arm AND the lookahead — that
+    /// identity is what makes the termination argument hold, so do not inline a variant
+    /// of it at any of the three sites.
+    ///
+    /// TWO RULES, and the second is a scar.
+    ///
+    /// 1. THE RUN MUST BE THREE OR MORE, and the whole run is consumed. Taking exactly
+    ///    three would split a four-quote run into a fence plus a stray quote, which is
+    ///    what put `ItemsJsonTest.kt:91` and `:106` — `"""["a""""` and `""""a""""` — into
+    ///    a mid-line mis-parse that retained their trailing `//` comments.
+    ///
+    /// 2. A C# VERBATIM OPENER IS NOT A FENCE. `@"` escapes an embedded quote by DOUBLING
+    ///    it, so a verbatim string whose first character is a quote spells `@"""` — three
+    ///    consecutive quotes that open nothing. The rest of such a literal then offers
+    ///    only one- and two-quote runs, so it never presents a closer.
+    ///
+    ///    THIS WAS NOT HYPOTHETICAL AND IT IS WHY THIS METHOD EXISTS. The first cut of
+    ///    #364's F3 fix had neither rule, and both `ShellFrameTableDriftTests.cs:296` and
+    ///    `TemplateDriftTests.cs:1344` opened a raw string that stayed open to EOF —
+    ///    blinding 358 lines of comment stripping between them, inside
+    ///    `PinPopulationTests`' own walk, while every pin stayed green. The recognisable
+    ///    part is that this is F3's hazard with the sign flipped: F3 blinded the scan by
+    ///    over-stripping, the first fix blinded it by under-stripping, and BOTH ran to an
+    ///    arbitrary distance from the construct that caused them.
+    ///
+    ///    Refusing on `@` alone is NOT sufficient and was not what shipped. Two `@"""`
+    ///    occurrences in one file would otherwise pair into a span neither of them opened
+    ///    — bounded, but wrong, and wrong over a region no reader could predict. The
+    ///    lookahead in <see cref="HasFenceAtOrAfter"/> is the half that bounds it; this
+    ///    rule is the half that stops the bogus pairing in the first place. They are not
+    ///    alternatives.
+    ///
+    /// The `$` in the look-back is for C#'s `$@"` and `$$@"` prefixes: the verbatim marker
+    /// is the `@` ANYWHERE in the prefix, not just the character immediately before the
+    /// run. `$$"""` — a genuine interpolated raw string, live at `DevHostBridge.cs:430` —
+    /// carries no `@` and is correctly a fence.
+    ///
+    /// WHAT THIS REFUSES THAT IT NEED NOT: a raw-string body ending in `@`, spelled
+    /// `"""…@"""`, is not recognised as a closer, so the opener is refused too and the
+    /// whole construct degrades to ordinary quotes bounded by the newline reset. No such
+    /// body exists in the tree. The degradation is to the PRE-15.2 behaviour rather than
+    /// to something new, which is the property worth having when a rule has to guess.</summary>
+    private static bool IsFenceAt(string source, int i, out int run)
+    {
+        run = 0;
+        if (source[i] != '"') return false;
+
+        while (i + run < source.Length && source[i + run] == '"') run++;
+        if (run < 3) return false;
+
+        for (int k = i - 1; k >= 0 && (source[k] == '$' || source[k] == '@'); k--)
+            if (source[k] == '@') return false;
+
+        return true;
+    }
+
+    /// <summary>True when a fence exists at or after <paramref name="from"/>. This is the
+    /// ENTRY PRECONDITION on raw-string state and the whole of why that state cannot reach
+    /// end of file: the opening arm refuses to enter without a closer, the closing arm
+    /// accepts any fence, and both ask <see cref="IsFenceAt"/>, so a state that was
+    /// entered will be left. An unterminated `"""` is therefore emitted as ordinary quotes
+    /// and bounded by the newline reset — the same choice, for the same reason, as the
+    /// unterminated `/*` in <see cref="Strip"/>.
+    ///
+    /// Cost is one scan of the remaining quotes per CANDIDATE opener, and a candidate is
+    /// already a three-or-more run in code state, of which the largest file in this repo
+    /// has single digits. It is not called for the `@`-refused shapes at all: the
+    /// short-circuit in <see cref="Strip"/> puts <see cref="IsFenceAt"/> first.</summary>
+    private static bool HasFenceAtOrAfter(string source, int from)
+    {
+        for (int j = source.IndexOf('"', from); j >= 0; j = source.IndexOf('"', j + 1))
+            if (IsFenceAt(source, j, out _)) return true;
+
+        return false;
     }
 
     /// <summary>A `.razor` source with BOTH of its comment grammars removed: Razor's

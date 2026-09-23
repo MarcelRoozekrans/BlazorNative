@@ -661,24 +661,53 @@ reset put the raw string's **body** back into **code** state, where a `/*` opene
 that ran to the next `*/` — arbitrarily far away, in another declaration entirely — and deleted the
 live code between them from the scan. The reset did not bound that mis-parse. It **caused** it.
 That is the over-strip direction, which is a false **green**, and it is the same direction the
-stripper's own unterminated-opener rule already existed to avoid. Phase 15.2 fixed it: `"""` is now
-tracked as its own state that deliberately **survives** the newline, and
-`CommentStrippedSourceTests` holds it there.
+stripper's own unterminated-opener rule already existed to avoid.
 
-What remains, with the direction each one fails:
+**And then the FIX for it did the same thing with the sign flipped, which is the part worth your
+attention.** Its first cut tracked raw state with no bound at all. C# spells a verbatim string `@"`
+and escapes an embedded quote by **doubling** it, so a verbatim literal beginning with a quote is
+`@"""` — three consecutive quotes that open a fence nothing ever closes.
+`ShellFrameTableDriftTests.cs:296` and `TemplateDriftTests.cs:1344` each went blind to **end of
+file** behind one, 358 lines between them, inside `PinPopulationTests`' own walk, and the whole
+suite stayed green: under that state, 1115 of 1118 .NET tests pass and the Renderer project — which
+*contains* one of the two blinded files — is **fully** green. Review caught it, not CI.
 
-- **Only the bare three-quote fence is understood.** C#'s longer fences (`""""` and up) and Swift's
-  `#"…"#` / `#"""…"""#` delimiters are not parsed. Neither spelling occurs in any file a pin
-  currently scans, and the narrowness is deliberate — a general raw-string parser is how this pin
-  family got into trouble — but this one can fail in **either** direction, so it is the limit to
-  revisit first if one of those spellings lands in a scanned tree.
+So the rule the stripper now holds is neither *strip more* nor *strip less*. It is: **no input may
+make the stripper blind past the construct that confused it.** Raw state is entered only when a
+closing fence already exists ahead, found with the same predicate the closing arm uses — so a state
+that is entered is left, **by construction, for all inputs**. That is a stronger claim than the
+newline reset ever supported, and it is the reason this section can say what follows without
+hedging on today's tree.
+
+**Read the failure directions before the limits, because the natural assumption about them is
+wrong.** Over-stripping is a false **green** — a pin's subject is deleted before it is looked for.
+Under-stripping is a false **red** for an *absence* pin, which is most of them, and a false
+**green** for a *presence* pin — and this document mandates presence pins by design, because every
+Rule 3 fixed point is one. `AndroidLogDriftTests`' `Assert.True(hits > 0, …)` is satisfied by a
+commented-out `Log.i` that under-stripping left visible; that was **measured going 0 → 1**, not
+argued. *"It only ever costs a red"* is not available as a defence for either direction, and the
+first cut of the 15.2 fix claimed it in exactly those words — in the commit whose entire purpose was
+deleting an unenforced safety claim.
+
+What remains, each with its direction:
+
+- **C#'s fence-width rule is not implemented.** A run of three or more quotes opens, and any later
+  run of three or more closes — so a C# `""""` fence, which the language requires to close on four
+  or more, would close here on three. The runs that exist in the tree are `ItemsJsonTest.kt:91` and
+  `:106`, Kotlin rather than C#, and both parse correctly because whole runs are consumed. **Either
+  direction**, bounded by the construction above. The narrowness is deliberate: a general
+  raw-string parser is how this pin family got into trouble.
+- **Swift's custom delimiters `#"…"#` and `#"""…"""#` are not understood.** The first *is* live —
+  `BnWidgetMapper.swift:3461`, inside both `ShellStyleTableDriftTests`' and `NSLogDriftTests`'
+  walks, and again across `BnHostTests/*.swift` — and costs nothing, because `#"` presents only a
+  one-quote run and reads as an ordinary literal exactly as it did before 15.2. The second does not
+  occur in the tree. **Red for absence pins, green for presence pins**, bounded to the file.
 - **A C# `'"'` char literal still toggles the ordinary string state once**, and an unbalanced quote
   in an ordinary literal still mis-parses. Those *are* bounded by the newline reset, which applies
   to the ordinary flag and not to the raw one.
-- **An unterminated `"""` now does blind the rest of the file** — read as body, so comments below
-  it stop being stripped. That is the under-strip direction and it fails **red**: a pin sees prose
-  it should not have and complains, rather than missing a call site and passing.
 
-No file currently holding a scanned marker contains a shape that trips any of these — but that is a
-fact about today, and the first sentence of this section is what happens when such a fact is
-written down as a guarantee.
+The two wider spellings above **do** occur in scanned files, and the previous version of this
+section said they did not. That sentence is gone rather than softened: a limit disclosed against a
+factual claim that is wrong is worse than an undisclosed one, because the disclosure makes the
+wrong placement look considered. What replaces it is not another fact about today — it is the
+entry precondition, which does not decay when someone adds a file.
