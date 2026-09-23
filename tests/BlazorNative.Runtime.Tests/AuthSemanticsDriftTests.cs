@@ -1203,6 +1203,22 @@ public sealed class AuthSemanticsDriftTests
     /// string-literal-blind, and blinded by a content-keyed filter inside the shared
     /// matcher. See the limit list on
     /// <see cref="NoShellSource_AliasesAnAuthenticatorNamespace"/>.</description></item>
+    /// <item><description>RESIDUAL 16 — A DOOR THE PARTITION DOES NOT SPELL.
+    /// <see cref="AssertEveryBanIsWiredToTheDoorItsSubjectNeeds"/> classifies a fact by
+    /// which of the TWO <c>ShellSourceScan</c> doors its body calls, and every one of
+    /// its four assertions reasons from the two lists that produces. A THIRD door —
+    /// say a <c>ForPatternLenient</c> beside the others, delegating to the per-line
+    /// matcher — puts a ban in neither list, and nothing fires: <b>32 of 32 GREEN</b>,
+    /// with a wrapped <c>setWeakUnlockAllowed(</c> … <c>true</c> … <c>)</c> live in
+    /// BOTH copies of the shell. Two narrower shapes of the same class, each separately
+    /// measured at <b>32 of 32 GREEN</b> with the same offender live: a ban written as
+    /// a parameterised <c>[Theory]</c>, which the method scan's
+    /// <c>public void X()</c> pattern never matches, and a ban delegating through a
+    /// private helper in this file that calls the door on its behalf. FAILS GREEN, all
+    /// three. NOT CLOSED, deliberately — a fifth mechanism is the move this pin has
+    /// made four times, each time closing the route it was shown and each time leaving
+    /// a sentence claiming the class. What is written instead is the residual and the
+    /// measurement.</description></item>
     /// </list></summary>
     [Fact]
     public void NoShellSource_WidensTheGateThroughAPlatformApi()
@@ -1234,11 +1250,20 @@ public sealed class AuthSemanticsDriftTests
             + "deliberately as the ignore entries are.");
     }
 
-    /// <summary>THE FACTS ALLOWED THROUGH THE PER-LINE DOOR, named. Everything else in
-    /// this file that calls a <c>ShellSourceScan</c> door must go through the
-    /// across-lines one, and a fact in neither half is a RED — which is how "nobody
-    /// wrote a wiring check for the new ban" stops being a state this file can be
-    /// in.</summary>
+    /// <summary>THE FACTS ALLOWED THROUGH THE PER-LINE DOOR, named. A fact that calls
+    /// <c>ShellSourceScan.ForPattern</c> and is not named here REDS — measured — so a
+    /// ban cannot reach the shipped tree through the per-line door unnamed.
+    ///
+    /// <para>READ THAT AS THE NARROW SENTENCE IT IS. An earlier version of this summary
+    /// said "a fact in neither half is a RED", which claims a TOTALITY the four
+    /// assertions below do not have: every one of them keys off a fact that is already
+    /// in one of the two lists, so a ban reaching the tree through a door this partition
+    /// does not SPELL is in neither list and is simply invisible. MEASURED at
+    /// <b>32 of 32 GREEN</b> — see the fourth-door residual on
+    /// <see cref="NoShellSource_WidensTheGateThroughAPlatformApi"/>. The sentence was
+    /// falsified in one run, in the commit whose subject was "require a ban to have a
+    /// wiring check", which is this phase's failure mode arriving one more
+    /// time.</para></summary>
     private static readonly string[] PerLineByDesign = new[]
     {
         nameof(TheTestOnlyCredentialBranch_IsStillGuarded),
@@ -1278,8 +1303,20 @@ public sealed class AuthSemanticsDriftTests
     /// copies of the shell, was <b>43 of 43 GREEN</b>. That is an OMISSION mode: there
     /// is no artefact for a reviewer to look at, because the defect is the thing that
     /// was never written. So the facts are now read out of this file and PARTITIONED —
-    /// across-lines, or named in <see cref="PerLineByDesign"/> — and a ban in neither
-    /// half reds. It is the same move the roster made for trees, one level down.</para>
+    /// across-lines, or named in <see cref="PerLineByDesign"/> — and a fact that calls
+    /// the PER-LINE door without being named reds. It is the same move the roster made
+    /// for trees, one level down.</para>
+    ///
+    /// <para>AND HERE IS WHAT THAT DOES NOT BUY, because the first draft of this
+    /// paragraph claimed it did. It said "a ban in neither half reds". It does not: all
+    /// four assertions below reason FROM the two lists, so a ban is only ever caught by
+    /// walking through a door this partition spells. Add a fourth door and route a ban
+    /// through it and the ban is in neither list and nothing fires —
+    /// <b>32 of 32 GREEN</b>, with a live wrapped offender in both copies of the shell.
+    /// The partition closes the two doors that exist; it does not close the one somebody
+    /// adds. That is residual 16, written at the gate-widening fact, and it is disclosed
+    /// rather than chased: a fifth mechanism is the move this pin has made four times
+    /// already, and each one closed the route it was shown.</para>
     /// </summary>
     private static void AssertEveryBanIsWiredToTheDoorItsSubjectNeeds()
     {

@@ -2638,8 +2638,11 @@ files; the other 13 are the stripper's fixture harness, outside the population b
 >
 > **The mechanism is one roster, not four patches.** `src/shell-source-roots.json` is the single
 > home for *what is the shell's source tree*, and every consuming pin accounts for every set exactly
-> once as consumes / delegated / excluded. A partition makes **unmentioned** impossible, which is
-> what "the pin did not look there" had been. Four review rounds then moved it from documentary to
+> once as consumes / delegated / excluded. A partition makes **unmentioned** impossible **for a
+> tree the roster lists or one inside the three `scanRoots` containers**, which is what "the pin
+> did not look there" had been. It is not impossible for a tree the build compiles from outside
+> them - that is residual 3, measured 11 of 11 green, and the qualifier belongs in the headline
+> because the unqualified version was this phase's own repeated failure mode. Four review rounds then moved it from documentary to
 > **binding**: the pins hold no root lists at all, the doors take a consumer name, and the call that
 > proves coverage returns the very value the assertion consumes.
 >
@@ -2663,10 +2666,16 @@ files; the other 13 are the stripper's fixture harness, outside the population b
 > parser" is true** — it needs type resolution over an Android classpath, so a Lint check or a
 > compiler plugin, not a pin. Fails green.
 >
-> **2. Four ways to blind the machinery from inside**, each measured: a content-keyed filter inside
+> **2. Five ways to blind the machinery from inside**, each measured: a content-keyed filter inside
 > the shared matcher; a filter inside a `ForPattern*` lambda; a new helper of the same name
-> delegating to the per-line matcher; and a path-keyed filter on the hit list after the coverage
-> record. All fail green. The general lesson is written at the pin: **a guard that RECEIVES a value
+> delegating to the per-line matcher; a path-keyed filter on the hit list after the coverage
+> record; and — found by the final review, in the commit that added the ban partition — **a door
+> the partition does not spell**. Adding a third `ShellSourceScan` door and routing a ban through
+> it puts that ban in neither of the two lists every assertion reasons from: **32 of 32 green**
+> with a live wrapped offender in both copies of the shell. A ban written as a parameterised
+> `[Theory]`, and one delegating through a private helper, are the same class and were separately
+> measured at 32 of 32. The commit had claimed *"a fact in neither half is a RED"*; that sentence
+> is corrected at both of its homes and no fifth mechanism was built. All fail green. The general lesson is written at the pin: **a guard that RECEIVES a value
 > cannot say where the value came from**, so each round's fix moved the hole one line further down
 > rather than closing the class.
 >
@@ -2688,12 +2697,19 @@ files; the other 13 are the stripper's fixture harness, outside the population b
 > files — the M14 shape this phase sits inside. Until then a narrowing of the template's own
 > `srcDirs` reds nothing.
 >
-> **5. The enumeration key gained an error in each direction, and 15.4 owns it.**
-> `grep -rl "BnRepo.Root()"` now misses `NSLogDriftTests`, which is still a pin but reaches the tree
-> through `ShellSourceScan` in another file, and it catches `CommentStrippedSourceTests`, whose only
-> two matches are in comments saying it is deliberately outside. §9 of the census asks what the key
-> cannot see because a pin never touches the tree; **this is the same hole arriving from the other
-> side**, and the population decision deferred to 15.4 with **#375** should weigh both.
+> **5. The enumeration key gained an error in each direction; the documented key is widened here,
+> the decision stays with 15.4.** `grep -rl "BnRepo.Root()"` now misses `NSLogDriftTests`, which is
+> still a pin but reaches the tree through `ShellSourceScan` in another file, and it catches
+> `CommentStrippedSourceTests`, whose only two matches are in comments saying it is deliberately
+> outside. §9 of the census asks what the key cannot see because a pin never touches the tree;
+> **this is the same hole arriving from the other side**. The key is a **method-name proxy for the
+> call graph** — the substitution `docs/pin-standard.md` scores four-for-four against — and it held
+> only while proxy and call graph coincided. **Consolidation is what separates them, and 15.3
+> routes another pin through the same roster**, so a second false negative arrives before 15.4
+> runs. No interim pin was built. What this phase does is widen the DOCUMENTED key to
+> `grep -rlE "BnRepo\.Root\(\)|ShellSourceScan\."`, measured to return **29 — exactly the 28
+> plus `NSLogDriftTests`** — in the census and `docs/pin-standard.md`. The population decision
+> deferred to 15.4 with **#375** should weigh both directions.
 >
 > **6. Ten CS1570 doc-comment warnings in the test tree, filed rather than fixed.** Three files —
 > `ComponentReferenceDriftTests`, `PackageVersionPinTests`, `TextCollapseParityDriftTests` — carry

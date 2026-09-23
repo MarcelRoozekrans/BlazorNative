@@ -431,9 +431,18 @@ knew the shared copy with **three** callers existed. The fix landed on the less-
 widely-used one kept the bug, and four more copies were still undiscovered.
 
 One `BnRepo.Root()`, called by every test that reaches the checkout — 27 files at the time of
-writing. One `CommentStrippedSource`, 8 callers — **10 since phase 15.1**, plus an eleventh in 15.2
-that is a unit-test class over the helper itself rather than a pin, and that growth is the
-rule working rather than an exception to it. The caller count grows with the suite and should; the
+writing. One `CommentStrippedSource`, 8 callers — **10 since phase 15.1** and **12 since 15.2**,
+which added `ShellSourceRootsDriftTests` and a unit-test class over the helper itself that is not
+a pin, and that growth is the rule working rather than an exception to it.
+
+**And the `BnRepo.Root()` figure is now a proxy that has come apart from the thing it proxies.**
+15.2 routed `NSLogDriftTests` through `ShellSourceScan`, so it reads the checkout through a door
+in another file and the grep no longer returns it — **a pin missing from a name-based
+enumeration, in the document that scores name-based substitutes four-for-four**. The enumeration
+used elsewhere is widened to
+`grep -rlE "BnRepo\.Root\(\)|ShellSourceScan\." tests/ --include="*.cs"`, which returns 29 and
+restores it. Whether the population key should be the call graph instead is **#375**, ruled to
+15.4. The caller count grows with the suite and should; the
 count of *implementations* is the one that must stay at one.
 
 ### "One implementation" is a claim about REACHABILITY, not about file count
