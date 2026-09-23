@@ -513,8 +513,14 @@ public sealed class GeneratedSymbolShadowTests
     /// <summary>The two Kotlin seam names this pin forbids outside their own home
     /// file and outside test source sets. (Swift has no equivalent named seam —
     /// its bypass door is the imported C symbol `blazornative_host_event` called
-    /// bare, which is a different shape this pin does not cover.)</summary>
-    private static readonly string[] HostEventSeamNames =
+    /// bare, which is a different shape this pin does not cover.)
+    ///
+    /// <para>NAMED "UNFLOORED" ON PURPOSE. Every consumer must come through
+    /// <see cref="HostEventSeams"/>, which is where the floor lives; reading this field directly
+    /// bypasses it. The name is the signal, because a third consumer added later would otherwise
+    /// reach the bare array with nothing saying not to — and the floor exists precisely because the
+    /// two consumers that already existed both did.</para></summary>
+    private static readonly string[] HostEventSeamNamesUnfloored =
         ["dispatchHostEventUnchecked", "dispatchHostEventBlocking"];
 
     /// <summary>THE FLOOR ON THE ITERATED SET — one implementation at the single point BOTH
@@ -523,7 +529,7 @@ public sealed class GeneratedSymbolShadowTests
     /// <para>WHAT WAS UNGUARDED, and it is this milestone's own headline shape. The pin below
     /// floors its WALK (<c>sources.Length &gt; 0</c>) and the control below floors its walk too,
     /// but the set they both ITERATE was a bare literal array that nothing floored. Replacing
-    /// <see cref="HostEventSeamNames"/> with <c>[]</c> left BOTH facts GREEN — measured by the
+    /// <see cref="HostEventSeamNamesUnfloored"/> with <c>[]</c> left BOTH facts GREEN — measured by the
     /// 15.1 branch review, not reasoned about. A floor on the walk with the iterated set bare is
     /// the exact defect phase 15.1 exists to remove, and it was shipping inside the phase.</para>
     ///
@@ -542,9 +548,9 @@ public sealed class GeneratedSymbolShadowTests
     /// coupling will tell you to lower this floor with it.</para></summary>
     private static string[] HostEventSeams()
     {
-        Assert.True(HostEventSeamNames.Length >= 2,
-            $"HostEventSeamNames names only {HostEventSeamNames.Length} seam(s) — "
-            + $"[{string.Join(", ", HostEventSeamNames)}]. This list is the set BOTH "
+        Assert.True(HostEventSeamNamesUnfloored.Length >= 2,
+            $"HostEventSeamNamesUnfloored names only {HostEventSeamNamesUnfloored.Length} seam(s) — "
+            + $"[{string.Join(", ", HostEventSeamNamesUnfloored)}]. This list is the set BOTH "
             + "NoProductionShellSource_CallsTheHostEventSeamsDirectly and its positive control "
             + "iterate, so shrinking it does not make either fact fail: it makes them run fewer "
             + "iterations, and at zero it makes them pass over nothing at all. There are two "
@@ -553,7 +559,7 @@ public sealed class GeneratedSymbolShadowTests
             + "deliberately — lower the floor in the same commit that deletes the declaration, and "
             + "say which door went.");
 
-        return HostEventSeamNames;
+        return HostEventSeamNamesUnfloored;
     }
 
     /// <summary>A CALL SITE — a word boundary plus an open paren — not a bare mention.
@@ -680,7 +686,7 @@ public sealed class GeneratedSymbolShadowTests
     ///
     /// <para>WHAT WAS UNGUARDED. The pin above floors its WALK — `sources.Length > 0` — and
     /// nothing floored its DETECTOR. Reword <see cref="SeamCallPattern"/> past its subject,
-    /// or rename a seam in <see cref="HostEventSeamNames"/> without renaming it in Kotlin,
+    /// or rename a seam in <see cref="HostEventSeamNamesUnfloored"/> without renaming it in Kotlin,
     /// and the pin reports zero offenders forever while a production file calls the raw-String
     /// door directly. The KDoc this pin exists to make true would go back to being an
     /// unenforced safety claim in a comment, which is the class the section header above
@@ -702,7 +708,7 @@ public sealed class GeneratedSymbolShadowTests
     /// unpinned from birth. So the last assertion reads the doors back out of
     /// <see cref="SeamHomeFile"/> — <c>internal</c> functions taking a bare
     /// <c>name: String</c>, see <see cref="SeamDeclarationPattern"/> — and requires
-    /// <see cref="HostEventSeamNames"/> to name exactly them. It also makes the floor in
+    /// <see cref="HostEventSeamNamesUnfloored"/> to name exactly them. It also makes the floor in
     /// <see cref="HostEventSeams"/> answerable to the tree rather than to a comment: the number
     /// 2 is not a judgement, it is how many doors the file declares.</para>
     ///
@@ -710,7 +716,7 @@ public sealed class GeneratedSymbolShadowTests
     /// only: the pattern still recognises a real call. It says nothing about Swift, whose
     /// bypass door is the imported C symbol <c>blazornative_host_event</c> called bare — a
     /// different shape that the pin does not cover either, stated on
-    /// <see cref="HostEventSeamNames"/>. The width coupling reaches the home file ONLY: a
+    /// <see cref="HostEventSeamNamesUnfloored"/>. The width coupling reaches the home file ONLY: a
     /// raw-String door declared in some OTHER production Kotlin file would be a door this list
     /// never hears about, and nothing here would say so. That is a narrower residual than the
     /// "guarded by review" this paragraph used to claim, but it is still a residual.</para></summary>
@@ -775,10 +781,10 @@ public sealed class GeneratedSymbolShadowTests
             .Distinct(StringComparer.Ordinal)
             .OrderBy(n => n, StringComparer.Ordinal)];
 
-        string[] listed = [.. HostEventSeamNames.OrderBy(n => n, StringComparer.Ordinal)];
+        string[] listed = [.. seams.OrderBy(n => n, StringComparer.Ordinal)];
 
         Assert.True(declared.SequenceEqual(listed, StringComparer.Ordinal),
-            "HostEventSeamNames and the raw-String doors actually declared in "
+            "The seam list and the raw-String doors actually declared in "
             + $"{SeamHomeFile} have diverged.\n"
             + $"  declared there : [{string.Join(", ", declared)}]\n"
             + $"  named here     : [{string.Join(", ", listed)}]\n"

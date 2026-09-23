@@ -617,8 +617,8 @@ it. See `docs/plans/2026-09-22-phase-15.0-census.md` §7 for the sizing.
 outside the pin population, for **twelve** new control facts and one real bug fix — nine inside the
 pin population, which is the `102 + 9 = 111` the enforcement verdict above counts, and three more
 from those two detectors, which are `exempt — not pins` and never entered that arithmetic. Two of
-the nine needed something the shape above does not describe — see Rule 3's corollary — and one could not be given a
-tree anchor at all; that one ships disclosed at the pin with the repair named. **Do not read this
+the nine needed something the shape above does not describe — see Rule 3's corollary — and one
+could not be given a tree anchor at all; that one ships disclosed at the pin with the repair named. **Do not read this
 paragraph as saying coverage is now total.**
 
 ---
