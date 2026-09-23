@@ -214,14 +214,14 @@
   "scanRoots": [
     {
       "path": "src/BlazorNative.Jni/src",
-      "extensions": [".kt"],
+      "extensions": [".kt", ".java"],
       "minFiles": 85,
       "measured": 100,
       "why": "every Gradle source set of the Android shell project lives directly under here, declared or not. This is the container that makes a NEW sibling -- a src/foo/kotlin nobody added to `sets` -- visible."
     },
     {
       "path": "templates/BlazorNative.Templates/content/BlazorNative.App/android/src",
-      "extensions": [".kt"],
+      "extensions": [".kt", ".java"],
       "minFiles": 15,
       "measured": 18,
       "why": "the same shape in the generated app's tree. A source set that appears here and not in `sets` ships to every consumer of `dotnet new blazornative` unscanned. It is also the SMALLEST container, which is exactly why its floor is its own rather than a share of a total -- 18 files disappear inside 34 of headroom on any global count."

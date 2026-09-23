@@ -605,10 +605,13 @@ internal static class ShellSourceRoots
 //         `PatternHits`, with an authenticator-namespace binding planted in that
 //         file, reds 4 facts INCLUDING that control — while the ban itself stays
 //         green. The SAME filter keyed on `package io.blazornative.jni`, with the
-//         binding planted in `src/main/kotlin` instead, is **30 of 30 GREEN**. A
-//         control's fixture only covers the tree its fixture comes from.
-//         Re-measured in the same phase after the ban grew two arms; the shape did
-//         not move and the denominator did.
+//         binding planted in `src/main/kotlin` instead, is **31 of 31 GREEN** over
+//         the four `ShellSourceScan` consumers — the filter is named because the
+//         figure was twice written without one and twice read as derived rather
+//         than run. A control's fixture only covers the tree its fixture comes
+//         from. The SHAPE has now survived three re-measurements across three
+//         rounds; only the denominator moved, and it moved because facts were
+//         added.
 //       - `TheInstrumentedTestExemption_IsRealAndStillHoldsBareLogI` does NOT
 //         run through here at all: its tree is roster-EXCLUDED, so it walks
 //         itself and only shares the PATTERN. An earlier draft named it as cover,
@@ -649,9 +652,10 @@ internal static class ShellSourceRoots
 //
 //  C. A PATH-KEYED FILTER ON THE HIT LIST, AFTER THE RECORD. MEASURED GREEN
 //     TWICE, by two reviews, at two denominators: 24 passed / 0 failed when it
-//     was found, and — re-measured in 15.2 rather than quoted — **978 passed /
-//     0 failed**, the whole .NET Runtime suite bar the slow reference fixture,
-//     with a live `typealias Auth = BiometricManager.Authenticators` planted in
+//     was found, and — re-measured in 15.2 rather than quoted, twice, as facts
+//     were added — **981 passed / 0 failed**, the whole .NET Runtime suite bar
+//     the slow reference fixture, with a live
+//     `typealias Auth = BiometricManager.Authenticators` planted in
 //     `src/main/kotlin` and its template mirror. One line
 //     inside `Over`'s loop — `if (file.Contains("/main/kotlin/")) continue;`
 //     wrapped around the `hits.Add` — drops findings from a tree that was

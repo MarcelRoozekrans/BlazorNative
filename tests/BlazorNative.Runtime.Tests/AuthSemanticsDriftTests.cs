@@ -138,6 +138,16 @@ public sealed class AuthSemanticsDriftTests
         ".biometryCurrentSet",
         ".biometryAny",
         ".userPresence",
+        // `.devicePasscode` is the WEAKENING member of the same
+        // SecAccessControlCreateFlags enum the three above come from, and it was
+        // missing. MEASURED: adding it beside the declared flag —
+        // `[.biometryCurrentSet, .devicePasscode]` in BnSecureStorage's
+        // SecAccessControlCreateWithFlags call — was 978 of 978 GREEN, a
+        // passcode-acceptable ACL under the #213 pin itself. A vocabulary that
+        // carries three members of an enum and not its weakest one is a list
+        // assembled from what the code does rather than from what the platform
+        // offers.
+        ".devicePasscode",
         "AUTH_BIOMETRIC_STRONG",
         "AUTH_BIOMETRIC_WEAK",
         "AUTH_DEVICE_CREDENTIAL",
@@ -293,8 +303,27 @@ public sealed class AuthSemanticsDriftTests
             .Over(nameof(AuthSemanticsDriftTests), null, ShellSource, AuthenticatorHits)
             .HitsCoveringEveryDeclaredRoot();
 
-    /// <summary>The two shells' source extensions.</summary>
-    private static readonly string[] ShellSource = [".swift", ".kt"];
+    /// <summary>The two shells' COMPILED source extensions — every language the
+    /// build turns into shipped output from a declared root.
+    ///
+    /// <para>⚠ <c>.java</c> IS NOT DECORATION AND IT IS NOT DEFENSIVE. It was a
+    /// measured hole: <c>build.gradle.kts</c> declares
+    /// <c>java.srcDirs("src/main/kotlin", "src/androidMain/kotlin")</c>, so Java in
+    /// those directories compiles into the AAR, and this list said
+    /// <c>[".swift", ".kt"]</c>. An <c>AuthFlags.java</c> holding
+    /// <c>Authenticators.DEVICE_CREDENTIAL</c>, with
+    /// <c>.setAllowedAuthenticators(io.blazornative.jni.AuthFlags.DC)</c> in the
+    /// shell, was <b>978 of 978 GREEN</b> in the shipped tree.</para>
+    ///
+    /// <para>AND THE COVERAGE GUARD COULD NOT SEE IT EITHER, which is the part worth
+    /// keeping in mind. <c>ShellSourceScan</c>'s per-root set equality recomputes its
+    /// candidate files from THIS SAME LIST, so narrowing the list narrows the walk
+    /// and the proof that the walk was complete, together — the shape three review
+    /// rounds removed from the ROOT list and nobody had removed from the EXTENSION
+    /// list. <see cref="TheScannedExtensions_CoverEveryLanguageTheBuildCompiles"/> is
+    /// what makes that list answer to the build file instead of to this line, the
+    /// way the roster already makes root lists answer to it.</para></summary>
+    private static readonly string[] ShellSource = [".swift", ".kt", ".java"];
 
     /// <summary>Kotlin only — the credential flag is a Kotlin spelling.</summary>
     private static readonly string[] KotlinSource = [".kt"];
@@ -549,10 +578,15 @@ public sealed class AuthSemanticsDriftTests
     /// was measured.</summary>
     private const string AuthenticatorNamespaceAlias =
         // 1. `import a.b.BiometricManager.Authenticators as Auth`
-        @"(?:import\s+[\w.]*" + AuthenticatorNamespace + @"[\w.]*\s+as\s+(?<alias>\w+))"
+        @"(?:import\s+(?:static\s+)?[\w.]*" + AuthenticatorNamespace + @"[\w.]*\s+as\s+(?<alias>\w+))"
         // 2. `import a.b.BiometricManager.Authenticators.*` — members unqualified,
-        //    which binds every constant at once WITHOUT naming any of them.
-        + @"|(?:import\s+[\w.]*" + AuthenticatorNamespace + @"[\w.]*\s*\.\s*\*)"
+        //    which binds every constant at once WITHOUT naming any of them. The
+        //    `static` is Java's spelling of the same thing, and it is here because
+        //    `.java` is now a scanned extension: `import static
+        //    androidx.biometric.BiometricManager.Authenticators.*;` is exactly arm 2
+        //    in the other language, and `[\w.]*` cannot cross the space after
+        //    `static`.
+        + @"|(?:import\s+(?:static\s+)?[\w.]*" + AuthenticatorNamespace + @"[\w.]*\s*\.\s*\*)"
         // 3. `typealias Auth = BiometricManager.Authenticators` — the sibling the
         //    first cut of this ban missed, and the one that was measured 977/977
         //    green with a device-credential prompt live.
@@ -593,10 +627,21 @@ public sealed class AuthSemanticsDriftTests
     /// <item><description><b>a val or fun holding the qualified constant</b> — NOT banned
     /// and does not need to be: it must WRITE
     /// <c>Authenticators.DEVICE_CREDENTIAL</c> to read it. Measured RED.</description></item>
+    /// <item><description><b>a .java file in a declared root</b> — not a construct at
+    /// all. <b>978/978 GREEN</b> until <c>".java"</c> joined
+    /// <see cref="ShellSource"/>; the walk never read the file, and neither did the
+    /// coverage guard, which recomputes from the same list. Held to the build by
+    /// <see cref="TheScannedExtensions_CoverEveryLanguageTheBuildCompiles"/>. Java's
+    /// <c>import static … .*</c> is arm 2 in the other language and is matched
+    /// there.</description></item>
+    /// <item><description><b>a platform API that names nothing</b> —
+    /// <c>setDeviceCredentialAllowed(true)</c> and two siblings, each <b>978/978
+    /// GREEN</b>. Not a binding and not a constant; refused by
+    /// <see cref="NoShellSource_WidensTheGateThroughAPlatformApi"/>.</description></item>
     /// <item><description><b>the raw platform integers</b> —
     /// <c>setAllowedAuthenticators(0x0000000F or 0x00008000)</c>. <b>NOT CLOSED, and
     /// not closeable by a token scanner:</b> there is no name to find. Measured
-    /// <b>977/977 GREEN</b>, and it was green before this phase too. FAILS GREEN; see
+    /// <b>978/978 GREEN</b>, and it was green before this phase too. FAILS GREEN; see
     /// the limit list below.</description></item>
     /// </list>
     ///
@@ -604,10 +649,26 @@ public sealed class AuthSemanticsDriftTests
     /// closed the review's attack is that <see cref="AuthenticatorHits"/> no longer
     /// reports a bare name that is a FRAGMENT of a longer identifier, so
     /// <c>ERROR_NO_DEVICE_CREDENTIAL</c> needs no <c>ignored</c> entry and there is
-    /// no counted licence left to spend. That closes every route AT THE USE SITE,
-    /// which all of them share; this ban closes them at the BINDING site, which each
-    /// of them varies. The binding ban still earns its place — it is what covers an
-    /// authenticator constant nobody has added to the vocabulary yet.</para>
+    /// no counted licence left to spend. This ban is the second line, at the BINDING
+    /// site, and it is what covers an authenticator constant nobody has added to the
+    /// vocabulary yet.</para>
+    ///
+    /// <para>⚠ THE SENTENCE THAT USED TO JOIN THOSE TWO — <i>"that closes every route
+    /// AT THE USE SITE, which all of them share"</i> — IS DELETED. It was measured
+    /// false in the very next review: a <c>.java</c> file in a declared root held
+    /// <c>Authenticators.DEVICE_CREDENTIAL</c> and the use site read
+    /// <c>AuthFlags.DC</c>, which shares no name with anything — <b>978 of 978
+    /// GREEN</b>. The route was not a construct at all; it was a FILE EXTENSION the
+    /// walk did not read.</para>
+    ///
+    /// <para>DO NOT WRITE ITS REPLACEMENT. Four rounds of this pin have each closed
+    /// the route they were shown and each ended by claiming the class was shut: "the
+    /// bare names close it", "the use site closes it", and twice before that. The
+    /// roster's own <c>$doc</c> carries the same warning about the airtight sentence
+    /// and it applies here word for word. What is true is smaller and more useful —
+    /// four mechanisms, each catching a NAMED set of shapes, each shape measured
+    /// green before its mechanism existed, and everything unmeasured living in a
+    /// residual list rather than inside a generalisation.</para>
     ///
     /// <para>SCOPE, deliberately narrow — see <see cref="AuthenticatorNamespace"/>.
     /// A ban that reds on unrelated code is one the next author weakens rather than
@@ -667,9 +728,13 @@ public sealed class AuthSemanticsDriftTests
     /// <c>package io.blazornative.shell</c> — the file the fixture is spliced from
     /// — it reds 4 facts including the control; keyed on
     /// <c>package io.blazornative.jni</c>, with the binding planted under
-    /// <c>src/main/kotlin</c> instead, the whole set is 30 of 30 GREEN. FAILS
-    /// GREEN. This is limit A at <c>ShellSourceScan</c>, not a new one, and it is
-    /// repeated here because a pin's limits belong where the pin is.</description></item>
+    /// <c>src/main/kotlin</c> instead, the set is <b>31 of 31 GREEN</b>. FAILS GREEN.
+    /// This is limit A at <c>ShellSourceScan</c>, not a new one, and it is repeated
+    /// here because a pin's limits belong where the pin is. THE DENOMINATOR NAMES ITS
+    /// FILTER — the four <c>ShellSourceScan</c> consumers, AuthSemantics,
+    /// ShellSourceRoots, NSLog and AndroidLog — because the previous figure was
+    /// written from a run over a different filter and read as derived. A count with
+    /// no filter beside it cannot be reproduced and will drift again.</description></item>
     /// </list></summary>
     [Fact]
     public void NoShellSource_AliasesAnAuthenticatorNamespace()
@@ -824,6 +889,13 @@ public sealed class AuthSemanticsDriftTests
                       "star-imports its members, so every constant is reachable unqualified"),
                      ("private typealias Auth = BiometricManager.Authenticators",
                       "binds `Auth`"),
+                     // JAVA'S SPELLING OF ARM 2, and it is here because a mutation
+                     // found it missing: deleting `(?:static\s+)?` from arm 2 left
+                     // all eleven facts GREEN. `.java` is a scanned extension now,
+                     // so `import static …Authenticators.*;` is a live shape and
+                     // `[\w.]*` cannot cross the space after `static`.
+                     ("import static androidx.biometric.BiometricManager.Authenticators.*;",
+                      "star-imports its members, so every constant is reachable unqualified"),
                  })
         {
             var armed = lines.ToList();
@@ -916,7 +988,14 @@ public sealed class AuthSemanticsDriftTests
             + "                BiometricManager.Authenticators.BIOMETRIC_STRONG\n"
             + "                KeyProperties.AUTH_BIOMETRIC_WEAK\n"
             + "                BiometricManager.Authenticators.BIOMETRIC_WEAK or BiometricManager.Authenticators.DEVICE_CREDENTIAL\n"
-            + "                BiometricPrompt.ERROR_NO_DEVICE_CREDENTIAL -> UNAVAILABLE\n").ToList();
+            + "                BiometricPrompt.ERROR_NO_DEVICE_CREDENTIAL -> UNAVAILABLE\n"
+            // Line 8 is the APPLE half, and it is here because a mutation found it
+            // uncontrolled: deleting `.devicePasscode` from the vocabulary left all
+            // eleven facts GREEN. It is also the real weakening shape rather than a
+            // lone token — a SecAccessControl flag ARRAY, where the declared flag is
+            // still present and the passcode flag has been added beside it, which is
+            // exactly how a widening arrives in review looking like an addition.
+            + "                [.biometryCurrentSet, .devicePasscode],\n").ToList();
 
         string report = hits.Count == 0
             ? "(nothing)"
@@ -966,6 +1045,21 @@ public sealed class AuthSemanticsDriftTests
         // vocabulary token, so no span contains it, and the bare `BIOMETRIC_STRONG`
         // inside `Authenticators.BIOMETRIC_STRONG` is preceded by a dot, so no
         // boundary rejects it. Delete either and the other does not cover for it.
+        // THE APPLE FLAG, both members of the array seen, neither swallowing the
+        // other. `.devicePasscode` is the vocabulary's newest entry and the only
+        // reason it is not a silent addition.
+        Assert.True(
+            hits.Count(h => h.Line == 8) == 2
+            && hits.Count(h => h.Line == 8 && h.Token == ".biometryCurrentSet") == 1
+            && hits.Count(h => h.Line == 8 && h.Token == ".devicePasscode") == 1,
+            "THE APPLE ACCESS-CONTROL FLAGS ARE NOT BOTH SEEN. "
+            + "`[.biometryCurrentSet, .devicePasscode]` must report ONE of each: the declared "
+            + "flag AND the passcode flag added beside it. The matcher reported: " + report + ".\n"
+            + "  `.devicePasscode` is the weakening member of the same "
+            + "SecAccessControlCreateFlags enum the other three Apple tokens come from, and it "
+            + "was missing from AuthenticatorVocabulary — measured 978 of 978 GREEN with a "
+            + "passcode-acceptable ACL live in BnSecureStorage. Losing it here reopens that.");
+
         Assert.True(hits.Count(h => h.Line == 7) == 0,
             "THE IDENTIFIER-BOUNDARY SUPPRESSION STOPPED SUPPRESSING. "
             + "`BiometricPrompt.ERROR_NO_DEVICE_CREDENTIAL` is an ERROR CODE and must produce NO "
@@ -1019,6 +1113,281 @@ public sealed class AuthSemanticsDriftTests
             + "reject exactly this, and the alternative it replaced — a counted `ignored` entry — "
             + "was a licence that a typealias spent on a live device-credential prompt at 977 of "
             + "977 green. Fix the rule; do not excuse the occurrence.");
+    }
+
+    // ── THE THIRD DETECTOR: APIS THAT WIDEN THE GATE WITHOUT NAMING ANYTHING ──
+
+    /// <summary>PLATFORM CALLS THAT SELECT THE AUTHENTICATOR CLASS WITHOUT NAMING A
+    /// CONSTANT. A vocabulary cannot see these and neither can the binding ban:
+    /// there is no constant to spell and no namespace to rebind. They are ordinary
+    /// method names, which is why they cost one alternation each.
+    ///
+    /// <para>Each arm below was MEASURED 978 of 978 GREEN before it existed, planted
+    /// in both shell copies with the error arm left intact so no red could arrive
+    /// from somewhere else:</para>
+    /// <list type="bullet">
+    /// <item><description><c>setDeviceCredentialAllowed(true)</c> —
+    /// <c>BiometricPrompt.PromptInfo.Builder</c>, deprecated in androidx.biometric
+    /// 1.1.0 and still present at <c>build.gradle.kts:94</c>. It is the API a real
+    /// author reaches for FIRST, because it is what the older documentation
+    /// shows.</description></item>
+    /// <item><description><c>setUserAuthenticationValidityDurationSeconds(n)</c> with
+    /// any <c>n</c> other than <c>-1</c> — <c>KeyGenParameterSpec.Builder</c>. A
+    /// positive window means the key unlocks on ANY device-credential authentication
+    /// inside it, which is device credential by another name. <c>-1</c> is the
+    /// per-use biometric form and is deliberately allowed, so this arm cannot be
+    /// satisfied by writing the safe call.</description></item>
+    /// <item><description><c>createConfirmDeviceCredentialIntent</c> —
+    /// <c>KeyguardManager</c>. It does not weaken the prompt; it REPLACES it with the
+    /// lock-screen credential sheet, which is the same outcome by a route that never
+    /// touches BiometricPrompt at all.</description></item>
+    /// </list>
+    ///
+    /// <para>WHAT THIS IS NOT: a general ban on weakening. It is three named calls,
+    /// and a fourth will not announce itself. The honest statement of the boundary is
+    /// at <see cref="NoShellSource_WidensTheGateThroughAPlatformApi"/>.</para></summary>
+    private const string GateWideningApi =
+        @"(?:setDeviceCredentialAllowed\s*\(\s*true\s*\))"
+        // ATOMIC `(?>\s*)`, NOT `\s*`, and the negative control is what found it. A
+        // greedy `\s*` before the lookahead BACKTRACKS to zero width, and then the
+        // lookahead tests `-` against the space it declined to consume, succeeds in
+        // being "not -1", and the arm claims the SAFE call
+        // `setUserAuthenticationValidityDurationSeconds( -1 )`. Measured, on the
+        // first cut of this pattern, by the assertion twelve lines below. An atomic
+        // group cannot give the space back, so the lookahead sees the argument.
+        + @"|(?:setUserAuthenticationValidityDurationSeconds\s*\((?>\s*)(?!-(?>\s*)1(?>\s*)\))[^)]*\))"
+        + @"|(?:createConfirmDeviceCredentialIntent)";
+
+    /// <summary>NO PLATFORM CALL MAY WIDEN THE AUTHENTICATOR GATE WITHOUT NAMING AN
+    /// AUTHENTICATOR. The third detector, and the one that answers "the residual is
+    /// the analyzer's territory" — which was true of the raw integers and false as a
+    /// general claim.
+    ///
+    /// <para>WHY IT IS A SEPARATE FACT rather than a fourth arm on the binding ban:
+    /// the binding ban is about NAMES being rebound and its failure message tells the
+    /// reader to spell the namespace out. That advice is wrong here. These calls are
+    /// not a naming problem; the fix is a different API, and the message says
+    /// so.</para>
+    ///
+    /// <para>WHAT IT DOES NOT COVER, with the direction (pin standard, Rule 5):</para>
+    /// <list type="bullet">
+    /// <item><description>THE RAW PLATFORM INTEGERS.
+    /// <c>setAllowedAuthenticators(0x0000000F or 0x00008000)</c> names nothing at
+    /// all. MEASURED 978 of 978 GREEN. This one genuinely needs type resolution over
+    /// an Android classpath — a Lint check or a compiler plugin, not a scanner — and
+    /// it is the ONLY residual in this pin of which that is true. FAILS
+    /// GREEN.</description></item>
+    /// <item><description>A FOURTH API NOBODY HAS NAMED. Three were found by reading
+    /// the platform surface rather than by waiting for a review, and that is not a
+    /// completeness argument. FAILS GREEN.</description></item>
+    /// <item><description>The same suppression and matcher limits as its two sibling
+    /// detectors: comment-stripped so prose cannot satisfy it, not
+    /// string-literal-blind, and blinded by a content-keyed filter inside the shared
+    /// matcher. See the limit list on
+    /// <see cref="NoShellSource_AliasesAnAuthenticatorNamespace"/>.</description></item>
+    /// </list></summary>
+    [Fact]
+    public void NoShellSource_WidensTheGateThroughAPlatformApi()
+    {
+        ShellSourceScan.Hit[] calls = ShellSourceScan
+            .ForPattern(nameof(AuthSemanticsDriftTests), null, ShellSource, GateWideningApi)
+            .HitsCoveringEveryDeclaredRoot();
+
+        Assert.True(calls.Length == 0,
+            "A PLATFORM CALL THAT WIDENS THE AUTHENTICATOR GATE WITHOUT NAMING AN AUTHENTICATOR:\n"
+            + string.Join("\n", calls.Select(h => $"  {h.File}:{h.Line} — {h.Token}"))
+            + "\n\n`requireAuth: true` means BIOMETRY on both shells. Each of these accepts the "
+            + "device credential instead, and none of them writes a token any vocabulary could "
+            + "hold — which is why they are matched by NAME.\n"
+            + "  setDeviceCredentialAllowed(true)  -> use setAllowedAuthenticators with "
+            + "BiometricManager.Authenticators.BIOMETRIC_STRONG. It is deprecated precisely "
+            + "because it conflated the two.\n"
+            + "  setUserAuthenticationValidityDurationSeconds(n) -> -1 is the per-use biometric "
+            + "form; any window accepts any device-credential unlock inside it. On API 30+ use "
+            + "setUserAuthenticationParameters with KeyProperties.AUTH_BIOMETRIC_STRONG.\n"
+            + "  createConfirmDeviceCredentialIntent -> this is the lock-screen sheet, not a "
+            + "biometric prompt. There is no authenticator argument to fix; the call is the "
+            + "defect.\n\n"
+            + "THE FIX IS A DIFFERENT API, not a different spelling — do not reach for "
+            + "AuthenticatorVocabulary or AuthenticatorNamespace, neither of which is about this. "
+            + "If a call here is genuinely correct, it needs a site in src/auth-semantics.json and "
+            + "a reason a reviewer can read, and this pin needs an exemption written as "
+            + "deliberately as the ignore entries are.");
+    }
+
+    /// <summary>THE POSITIVE CONTROL FOR <see cref="GateWideningApi"/> (pin standard,
+    /// Rule 3). Subject empty by construction, so it is a fixture driven through the
+    /// production matcher — the same shape as
+    /// <see cref="TheAliasDetector_StillMatchesTheShapeItWasWrittenFor"/>, and for the
+    /// same reason.
+    ///
+    /// <para>EVERY ARM INDIVIDUALLY, because a control built around one instance
+    /// cannot tell you the others ever worked — that is not a hypothetical here, it
+    /// is what the first cut of the binding ban did.</para>
+    ///
+    /// <para>AND A NEGATIVE PER ARM, because two of the three have a legitimate
+    /// neighbour that must not be collateral: <c>setDeviceCredentialAllowed(false)</c>
+    /// is the safe call, and
+    /// <c>setUserAuthenticationValidityDurationSeconds(-1)</c> is the per-use
+    /// biometric form the pre-API-30 path is entitled to use.</para></summary>
+    [Fact]
+    public void TheGateWideningDetector_StillMatchesTheShapesItWasWrittenFor()
+    {
+        foreach (string offender in new[]
+                 {
+                     "                .setDeviceCredentialAllowed(true)",
+                     "            spec.setUserAuthenticationValidityDurationSeconds(30)",
+                     "            spec.setUserAuthenticationValidityDurationSeconds(0)",
+                     "            km.createConfirmDeviceCredentialIntent(null, null)",
+                 })
+        {
+            var hit = ShellSourceScan.PatternHits(offender + "\n", GateWideningApi).ToList();
+            Assert.True(hit.Count == 1,
+                $"THE GATE-WIDENING DETECTOR NO LONGER MATCHES `{offender.Trim()}` — it reported "
+                + (hit.Count == 0 ? "(nothing)" : string.Join("; ", hit.Select(h => h.Token)))
+                + ", expected exactly one.\n"
+                + "  Every arm of this pattern was measured 978 of 978 GREEN before it existed. "
+                + "Losing one does not narrow this pin, it reopens a hole that was demonstrated "
+                + "with a live weakened prompt.");
+        }
+
+        var safe = ShellSourceScan.PatternHits(
+            "                .setDeviceCredentialAllowed(false)\n"
+            + "            spec.setUserAuthenticationValidityDurationSeconds(-1)\n"
+            + "            spec.setUserAuthenticationValidityDurationSeconds( -1 )\n"
+            + "            spec.setUserAuthenticationParameters(0, types)\n"
+            + "            spec.setUserAuthenticationRequired(true)\n",
+            GateWideningApi).ToList();
+
+        Assert.True(safe.Count == 0,
+            "the gate-widening ban claimed a call it must not: "
+            + string.Join("; ", safe.Select(h => $"line {h.Line}: {h.Token}"))
+            + ". `setDeviceCredentialAllowed(false)` is the safe call and "
+            + "`setUserAuthenticationValidityDurationSeconds(-1)` is the per-use biometric form "
+            + "the pre-API-30 path is entitled to use. A ban that reds on the correct call is one "
+            + "the next author deletes rather than obeys — and worse, it teaches that the safe "
+            + "spelling and the unsafe one are the same thing.");
+    }
+
+    /// <summary>THE EXTENSION LIST ANSWERS TO THE BUILD, the way the roster already
+    /// makes ROOT lists answer to it. This is the repair for #364's fourth route, and
+    /// it is a repair rather than a patch because adding <c>".java"</c> to
+    /// <see cref="ShellSource"/> closes one language and this closes the class.
+    ///
+    /// <para>THE DEFECT IT ANSWERS. <c>build.gradle.kts</c> declares the Gradle `main`
+    /// source set with BOTH <c>java.srcDirs(…)</c> and <c>kotlin.srcDirs(…)</c> over
+    /// the same two directories, so Java compiles into the shipped AAR from a root the
+    /// roster declares. The scan's extension list said <c>[".swift", ".kt"]</c>. An
+    /// <c>AuthFlags.java</c> holding <c>Authenticators.DEVICE_CREDENTIAL</c>, used from
+    /// the shell as <c>setAllowedAuthenticators(io.blazornative.jni.AuthFlags.DC)</c>,
+    /// was <b>978 of 978 GREEN</b>.</para>
+    ///
+    /// <para>AND THE COVERAGE GUARD COULD NOT CATCH IT, which is why a one-word fix is
+    /// not enough on its own. <c>ShellSourceScan</c> recomputes its per-root candidate
+    /// set from the SAME extension list the walk used, so narrowing that list narrows
+    /// the walk and the proof of the walk together. That is precisely the shape three
+    /// review rounds removed from the ROOT list — a guard and its subject derived from
+    /// one source move together — and nobody had removed it from the EXTENSION list.
+    /// This fact is the independent source: the build file, which is not a test and
+    /// does not move when a pin is narrowed.</para>
+    ///
+    /// <para>IT IS OPEN-WORLD ON PURPOSE. A <c>&lt;lang&gt;.srcDirs</c> this test does
+    /// not recognise is a RED, not a shrug — an unclassified entry is exactly how
+    /// <c>java</c> stayed invisible. Classify it into one of the two lists below
+    /// deliberately.</para>
+    ///
+    /// <para>WHAT IT DOES NOT COVER: the Apple side. <c>project.yml</c> lists target
+    /// PATHS, not languages, so there is no declaration to read — an Objective-C or C
+    /// file inside <c>BnHost</c> would compile and go unscanned, and nothing here would
+    /// say so. FAILS GREEN, and it is named rather than left to be found. The Android
+    /// half is the half where the build states the languages, so it is the half that
+    /// can be pinned.</para></summary>
+    [Fact]
+    public void TheScannedExtensions_CoverEveryLanguageTheBuildCompiles()
+    {
+        // Gradle source-set members that DECLARE COMPILED SOURCE, with the extension
+        // each one contributes. If a language arrives here, it also arrives in the
+        // AAR, which is what makes this list the requirement rather than a preference.
+        var compiled = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["java"] = ".java",
+            ["kotlin"] = ".kt",
+        };
+
+        // Members that are NOT compiled source. Resources and manifests ship, but no
+        // authenticator token in them reaches a gate, and a scanner over XML would
+        // red on the prose in a string resource.
+        string[] notSource =
+            ["res", "assets", "jniLibs", "aidl", "renderscript", "shaders", "mlModels",
+             "baselineProfiles", "resources", "manifest"];
+
+        string gradle = Path.Combine(BnRepo.Root(),
+            "src", "BlazorNative.Jni", "build.gradle.kts");
+        Assert.True(File.Exists(gradle),
+            $"{gradle} does not exist — it is the only place that says which LANGUAGES the "
+            + "Android shell compiles, and without it the scan's extension list is a free "
+            + "literal again. Re-point this fact deliberately rather than deleting it.");
+
+        string code = CommentStrippedSource.Strip(File.ReadAllText(gradle));
+
+        // The `main` source set only: androidTest and test are roster-EXCLUDED for
+        // this consumer, so what they compile is not this pin's subject.
+        int at = code.IndexOf("getByName(\"main\")", StringComparison.Ordinal);
+        Assert.True(at >= 0,
+            "could not find `getByName(\"main\")` in src/BlazorNative.Jni/build.gradle.kts "
+            + "(pattern: getByName(\"main\")). The source-set block moved or was rewritten, so "
+            + "this fact can no longer tell which languages the shipped AAR compiles — which "
+            + "is the whole of what it checks. Re-point it deliberately.");
+
+        int end = code.IndexOf("getByName(\"androidTest\")", at, StringComparison.Ordinal);
+        string main = end > at ? code[at..end] : code[at..];
+
+        var declared = Regex.Matches(main, @"(?<member>\w+)\s*\.\s*srcDirs\s*\(")
+            .Select(m => m.Groups["member"].Value)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(x => x, StringComparer.Ordinal)
+            .ToList();
+
+        // ANTI-VACUITY. Two members are declared today, java and kotlin, and both are
+        // load-bearing: if this parse stops matching, every assertion below passes
+        // over an empty list and the fact reports green while checking nothing.
+        Assert.True(declared.Count >= 2,
+            $"parsed only {declared.Count} `<member>.srcDirs(` declarations out of the `main` "
+            + "source set, and there are at least 2 — java and kotlin, both over the shell's two "
+            + "source directories. The parse has stopped seeing its subject, so the coverage "
+            + "assertions below are checking nothing.");
+
+        var unclassified = declared
+            .Where(d => !compiled.ContainsKey(d) && !notSource.Contains(d, StringComparer.Ordinal))
+            .ToList();
+
+        Assert.True(unclassified.Count == 0,
+            "src/BlazorNative.Jni/build.gradle.kts declares a source-set member this pin does not "
+            + "recognise: " + string.Join(", ", unclassified) + ".\n"
+            + "  An UNCLASSIFIED member is how `.java` stayed invisible: the build compiled it "
+            + "into the AAR and the auth scan's extension list did not mention it, so a "
+            + "DEVICE_CREDENTIAL constant in a declared root was read by nobody. Decide which it "
+            + "is — compiled source, which means adding its extension to ShellSource and to this "
+            + "map, or not source, which means adding it to notSource with that decision on "
+            + "record. Do not delete this assertion to make it quiet.");
+
+        var missing = declared
+            .Where(d => compiled.ContainsKey(d))
+            .Select(d => compiled[d])
+            .Where(ext => !ShellSource.Contains(ext, StringComparer.Ordinal))
+            .ToList();
+
+        Assert.True(missing.Count == 0,
+            "THE BUILD COMPILES A LANGUAGE THE AUTH SCAN DOES NOT READ: "
+            + string.Join(", ", missing) + ".\n"
+            + $"  build.gradle.kts declares [{string.Join(", ", declared)}] over the `main` source "
+            + $"set; ShellSource is [{string.Join(", ", ShellSource)}].\n"
+            + "  This is #364's fourth route and it was measured: a .java file in a declared root "
+            + "holding Authenticators.DEVICE_CREDENTIAL, used from the shell, was 978 of 978 "
+            + "GREEN — invisible to the walk AND to the per-root coverage guard, which recomputes "
+            + "its candidates from this same list. Add the extension to ShellSource. Narrowing "
+            + "this map instead makes the pin agree with itself about a tree it no longer reads, "
+            + "which is the #364 F1 shape one level down.");
     }
 
     /// <summary>The Android shell file the auth surface lives in, repo-relative.
