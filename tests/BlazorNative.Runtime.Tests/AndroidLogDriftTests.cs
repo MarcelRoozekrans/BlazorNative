@@ -76,8 +76,13 @@ public sealed class AndroidLogDriftTests
     /// `TemplateDriftTests`' byte comparison: it is what a `dotnet new
     /// blazornative` app actually compiles, and a second lock on the same door
     /// costs one roster entry.</summary>
-    private static string[] ShellAndTemplateRoots() =>
-        ShellSourceRoots.SetsFor(nameof(AndroidLogDriftTests));
+    /// THERE IS DELIBERATELY NO ACCESSOR HERE FOR THE WALK AND THE COVERAGE
+    /// ASSERTION TO SHARE. One private method returning the roots is one line to
+    /// revert, and reverting it moves the walk and the assertion written to catch
+    /// the walk together, while a text guard looking for the name `SetsFor` stays
+    /// green. Each site calls the loader itself, so `TheScan_IsNotVacuous` reads
+    /// the roster INDEPENDENTLY of what `ShellFiles()` read. One implementation,
+    /// several callers, is what Rule 8 asks for.</summary>
 
     /// <summary>THE ONE FILE ALLOWED TO CALL `Log` AT A GATED LEVEL: the seam
     /// itself, whose default sink is a `Log.println`.
@@ -189,10 +194,22 @@ public sealed class AndroidLogDriftTests
         // Both trees, not just the repo's: the template ships the shell a
         // generated app compiles, and a scan that silently stopped covering it
         // would leave the consumer-facing copy unguarded.
-        foreach (string root in ShellAndTemplateRoots())
-        {
-            Assert.Contains(files, f => f.StartsWith(CheckoutPath(root), StringComparison.Ordinal));
-        }
+        // THE SEPARATOR IS LOAD-BEARING. Without it `src/.../main` prefix-matches
+        // `src/.../mainTest`, so a root could be "covered" by a sibling tree whose
+        // name merely starts the same way.
+        var unvisited = ShellSourceRoots.SetsFor(nameof(AndroidLogDriftTests))
+            .Where(r => !files.Any(f => f.StartsWith(
+                CheckoutPath(r) + Path.DirectorySeparatorChar, StringComparison.Ordinal)))
+            .ToList();
+
+        Assert.True(unvisited.Count == 0,
+            "THE SCAN NEVER OPENED A FILE UNDER THESE DECLARED ROOTS:\n"
+            + string.Join("\n", unvisited.Select(r => "  " + r))
+            + $"\n\n{ShellSourceRoots.ManifestPath} says {nameof(AndroidLogDriftTests)} "
+            + $"consumes them, and the walk visited {files.Count} files, none of them there. "
+            + "Either the walk was re-pointed away from the roster — naming the roster is not "
+            + "the same as reading it, and this is the half that checks — or a source set "
+            + "moved and the roster needs re-pointing deliberately.");
     }
 
     /// <summary>…AND THE PATTERN STILL MATCHES WHERE A MATCH IS KNOWN TO EXIST.
@@ -305,12 +322,17 @@ public sealed class AndroidLogDriftTests
     /// <summary>Every `.kt` under the shell's two source roots AND the template's
     /// two mirrors. Fails loudly if a root is not there — a missing tree must
     /// break this test, not silently pass it with an empty set. The `androidTest`
-    /// and `test` trees are SIBLINGS of these roots, so they are never walked:
-    /// the exemption is structural, not a filter that could be edited away by
-    /// accident.</summary>
+    /// and `test` trees are never walked — not because of a filter here, but
+    /// because the roster declares them as their own sets, `androidInstrumentedTests`
+    /// and `androidJvmTests`, and this pin's entry EXCLUDES both with a reason.
+    /// The old sentence called that "structural because they are siblings", which
+    /// was a fact about directory names written in this file; it is now a fact
+    /// about the partition, which `EveryConsumer_AccountsForEverySet_ExactlyOnce`
+    /// holds. `TheScan_IsNotVacuous` checks the other half — that every root the
+    /// roster DOES declare was actually opened.</summary>
     private static IEnumerable<string> ShellFiles()
     {
-        foreach (string relative in ShellAndTemplateRoots())
+        foreach (string relative in ShellSourceRoots.SetsFor(nameof(AndroidLogDriftTests)))
         {
             string root = CheckoutPath(relative);
             Assert.True(Directory.Exists(root), $"{relative} not found under the repo root: {root}");

@@ -104,25 +104,45 @@ public sealed class AuthSemanticsDriftTests
         "Authenticators.DEVICE_CREDENTIAL",
     ];
 
-    /// <summary>THE SUBJECT COMES FROM THE ROSTER, NOT FROM THIS FILE (#364 F1).
-    ///
-    /// This used to be a two-entry array declared here, and `src/BlazorNative.Jni/
-    /// src/main/kotlin` was not one of the entries — HALF THE ANDROID SHELL. The
-    /// Gradle `main` source set compiles both `src/main/kotlin` and
-    /// `src/androidMain/kotlin` into one AAR, `AndroidLogDriftTests` scanned both
-    /// and quoted the Gradle line as its authority, and nothing in the repository
-    /// compared the two pins' answers. That is a twin divergence in the pins
-    /// themselves, and a private array is the mechanism that allowed it.
-    ///
-    /// `src/shell-source-roots.json` is now the one home for the answer, and this
-    /// pin's entry there declares — in a partition every consumer must complete —
-    /// which trees it consumes, which it delegates and which it excludes, each
-    /// with a reason. `ShellSourceRootsDriftTests` holds that roster to the
-    /// checkout.</summary>
-    private static string[] ShellRoots() =>
-        ShellSourceRoots.SetsFor(nameof(AuthSemanticsDriftTests));
+    // ── THE SUBJECT COMES FROM THE ROSTER, AND EVERY SITE ASKS IT ITSELF ──────
+    //
+    // This was a two-entry array declared here, and `src/BlazorNative.Jni/src/
+    // main/kotlin` was not one of the entries — HALF THE ANDROID SHELL. The
+    // Gradle `main` source set compiles both `src/main/kotlin` and
+    // `src/androidMain/kotlin` into one AAR, `AndroidLogDriftTests` scanned both
+    // and quoted the Gradle line as its authority, and nothing in the repository
+    // compared the two pins' answers. That is #364 F1, and a private array is the
+    // mechanism that allowed it. `src/shell-source-roots.json` is the one home
+    // for the answer now.
+    //
+    // THERE IS DELIBERATELY NO `ShellRoots()` HELPER WRAPPING THE CALL, and that
+    // is a review finding rather than a style choice. A single wrapper is a
+    // SINGLE LINE that reverts the whole of this: point one private method back
+    // at a hard-coded array and every caller — the walk AND the assertion meant
+    // to catch the walk — reads the reverted answer together, while
+    // `EveryConsumer_ReadsItsRootsFromTheRoster` stays green because the file
+    // still contains the name `SetsFor` somewhere. MEASURED: 15 passed, 0 failed,
+    // with F1's token re-added and the iOS shell and `src/main/kotlin` both out
+    // of the scan.
+    //
+    // So each site calls `ShellSourceRoots.SetsFor` for itself. That is not a
+    // duplicated implementation — there is exactly one, in the loader, and a
+    // growing caller list is the shape the pin standard asks for (Rule 8). What
+    // it buys is that the coverage assertion below reads the roster INDEPENDENTLY
+    // of whatever the walk read, so a walk pointed somewhere else disagrees with
+    // it instead of agreeing with it.
 
     private sealed record Occurrence(string Token, string File, int Line);
+
+    /// <summary>What the scan produced AND what it actually visited. The second
+    /// half is the point: a list of occurrences cannot distinguish "this root
+    /// holds no authenticator token" from "this root was never opened", and today
+    /// `src/BlazorNative.Jni/src/main/kotlin` is legitimately the first of those —
+    /// so the occurrence list alone can never prove the root was scanned.
+    /// <paramref name="Files"/> is every file the walk opened, repo-relative with
+    /// forward slashes, recorded by the production path rather than re-derived.
+    /// </summary>
+    private sealed record ScanResult(Occurrence[] Occurrences, string[] Files);
 
     /// <summary>Scans both shells' non-test source for every vocabulary token,
     /// comments stripped. Shared by the completeness and anti-vacuity tests so the
@@ -132,12 +152,13 @@ public sealed class AuthSemanticsDriftTests
     /// split over two lines is one occurrence, not none. The reported line is the one
     /// the token's first non-whitespace character sits on, so a wrapped token names the
     /// line it starts on rather than the line before it.</summary>
-    private static Occurrence[] ScanOccurrences()
+    private static ScanResult ScanOccurrences()
     {
         string root = BnRepo.Root();
         var found = new List<Occurrence>();
+        var visited = new List<string>();
 
-        foreach (string rel in ShellRoots())
+        foreach (string rel in ShellSourceRoots.SetsFor(nameof(AuthSemanticsDriftTests)))
         {
             string dir = Path.Combine(root, rel.Replace('/', Path.DirectorySeparatorChar));
             Assert.True(Directory.Exists(dir),
@@ -151,6 +172,7 @@ public sealed class AuthSemanticsDriftTests
                                   || p.EndsWith(".kt", StringComparison.Ordinal)))
             {
                 string file = Path.GetRelativePath(root, path).Replace('\\', '/');
+                visited.Add(file);
                 string stripped = CommentStrippedSource.Strip(File.ReadAllText(path));
 
                 // WHOLE-TEXT MATCHING (F1). The old scan split on '\n' first, so a
@@ -208,7 +230,7 @@ public sealed class AuthSemanticsDriftTests
             }
         }
 
-        return [.. found];
+        return new ScanResult([.. found], [.. visited]);
     }
 
     [Fact]
@@ -256,7 +278,7 @@ public sealed class AuthSemanticsDriftTests
             }
         }
 
-        foreach (Occurrence occ in ScanOccurrences())
+        foreach (Occurrence occ in ScanOccurrences().Occurrences)
         {
             bool declared = sites.Any(s => s.File == occ.File && s.Token == occ.Token);
 
@@ -357,7 +379,7 @@ public sealed class AuthSemanticsDriftTests
         // and not by accident — it cannot take the count DOWN.
         const string CallerLiteral = "allowDeviceCredentialForTest = true";
         var callerSites = new List<string>();
-        foreach (string rel in ShellRoots())
+        foreach (string rel in ShellSourceRoots.SetsFor(nameof(AuthSemanticsDriftTests)))
         {
             string dir = Path.Combine(repo, rel.Replace('/', Path.DirectorySeparatorChar));
             Assert.True(Directory.Exists(dir),
@@ -401,7 +423,8 @@ public sealed class AuthSemanticsDriftTests
     [Fact]
     public void TheCompletenessScan_IsNotVacuous()
     {
-        Occurrence[] occurrences = ScanOccurrences();
+        ScanResult scan = ScanOccurrences();
+        Occurrence[] occurrences = scan.Occurrences;
 
         // The sibling test above passes trivially if the scan finds nothing — a regex or
         // a path that stops matching turns the guard into a no-op that still reports
@@ -415,5 +438,46 @@ public sealed class AuthSemanticsDriftTests
 
         Assert.Contains(occurrences, o => o.File.EndsWith(".swift", StringComparison.Ordinal));
         Assert.Contains(occurrences, o => o.File.EndsWith(".kt", StringComparison.Ordinal));
+
+        // ── THE ROSTER IS WHAT THE WALK WALKED, ASSERTED RATHER THAN WRITTEN DOWN ──
+        //
+        // Everything above measures the scan's OUTPUT, and output cannot tell a root
+        // that holds no authenticator token from a root that was never opened. That
+        // is not hypothetical: `src/BlazorNative.Jni/src/main/kotlin` holds no token
+        // today, so re-pointing this pin at its old private array left all four facts
+        // GREEN with half the Android shell and the whole iOS shell unscanned — #364
+        // F1 reopened by one line, MEASURED at 15 passed / 0 failed.
+        //
+        // A TEXT GUARD CANNOT CLOSE THAT, AND A BEHAVIOURAL ONE CAN — which is the
+        // whole finding, because the first draft of this pin wrote three times that
+        // closing it needed dataflow analysis. It does not. Every root the roster
+        // declares must have contributed at least one file to what the walk ACTUALLY
+        // OPENED, and `ShellSourceRoots.SetsFor` is called HERE rather than through a
+        // helper the walk shares, so a walk pointed elsewhere disagrees with this list
+        // instead of moving with it.
+        //
+        // WHAT THIS DOES NOT COVER, because the residual is narrower rather than gone:
+        // it demands ONE file per root, not the whole root, and it cannot see a walk
+        // that scans a strict SUPERSET of the declared roots. The superset direction
+        // fails SAFE for an absence pin — extra trees can only add undeclared
+        // occurrences, which red — and the one-file-per-root limit is what a per-root
+        // floor would tighten if a root is ever found to be scanned partially.
+        var unvisited = new List<string>();
+        foreach (string rel in ShellSourceRoots.SetsFor(nameof(AuthSemanticsDriftTests)))
+        {
+            string prefix = rel.TrimEnd('/') + "/";
+            if (!scan.Files.Any(f => f.StartsWith(prefix, StringComparison.Ordinal)))
+                unvisited.Add(rel);
+        }
+
+        Assert.True(unvisited.Count == 0,
+            "THE SCAN NEVER OPENED A FILE UNDER THESE DECLARED ROOTS:\n"
+            + string.Join("\n", unvisited.Select(r => "  " + r))
+            + $"\n\n{ShellSourceRoots.ManifestPath} says {nameof(AuthSemanticsDriftTests)} "
+            + $"consumes them, and the walk visited {scan.Files.Length} files, none of them "
+            + "there. Either the walk was re-pointed away from the roster — that is #364 F1, "
+            + "and it is what this assertion exists to make loud — or the tree moved and the "
+            + "roster needs re-pointing deliberately. Naming the roster is not the same as "
+            + "reading it; this is the half that checks.");
     }
 }

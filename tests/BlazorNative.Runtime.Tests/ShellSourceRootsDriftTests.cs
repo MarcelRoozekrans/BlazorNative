@@ -66,14 +66,30 @@ namespace BlazorNative.Runtime.Tests;
 //     claim and the behaviour are one object — that is #364 F1 and F2 closed
 //     as a consequence of the roster rather than as two patches.
 //
-//     WHAT REMAINS: that fact is a TEXT test over the consumer's source. It
-//     sees the call; it cannot see whether the RESULT reaches the walk. A pin
-//     that calls `SetsFor` and then enumerates a hard-coded path anyway
-//     satisfies it. Direction: FAILS GREEN. What used to bound the same limit
-//     was that repointing was one reviewed commit; nothing bounds it now, so
-//     the honest claim is that this catches the REVERT — a private array back
-//     in the pin — and not a pin that lies while calling. Closing it means
-//     tracing a value to a walk, which is a dataflow question and not a scan.
+//     THE TEXT GUARD IS NOT WHAT CLOSES IT, AND THE FIRST DRAFT OF THIS ENTRY
+//     SAID THE OPPOSITE THREE TIMES. It said the residual — a pin that calls
+//     `SetsFor` and then walks a hard-coded path anyway — needed dataflow
+//     analysis and could not be closed by a test. That was FALSE, and the
+//     counterexample was in the same commit: `AndroidLogDriftTests` already
+//     carried a two-line per-root coverage assertion doing exactly this. The
+//     claim was measured false, not argued false — reverting one wrapper method
+//     in the auth pin while leaving the name `SetsFor` elsewhere in the file
+//     reopened #364 F1 at 15 passed / 0 failed, and the coverage assertion is
+//     what reds on it.
+//
+//     SO WHAT BINDS THE ROSTER IS BEHAVIOURAL AND LIVES IN EACH CONSUMER: every
+//     root the roster declares must have contributed at least one file to what
+//     that pin's walk ACTUALLY OPENED, with `SetsFor` called at the assertion
+//     rather than through a helper the walk shares — otherwise one edit moves
+//     both. `EveryConsumer_ReadsItsRootsFromTheRoster` is the cheap first line
+//     that catches the blunt revert; the per-consumer coverage assertions are
+//     what make the claim true.
+//
+//     WHAT REMAINS is narrower and is stated where each assertion is: coverage
+//     demands ONE file per root rather than the whole root, and a walk over a
+//     strict SUPERSET of the declared roots is not detected. The superset
+//     direction fails SAFE for these three pins, all of which assert an absence
+//     — an extra tree can only add offenders.
 //
 //  4. A NAMED TEST IS CHECKED ONLY TO THE DEPTH OF "IT EXISTS". Both
 //     `EveryDelegation_NamesAGuardThatExists` and
@@ -1108,15 +1124,27 @@ public sealed class ShellSourceRootsDriftTests
     /// disclaimer half. Deleting the whole thing would have handed the next
     /// author a roster that reads as binding and is not.
     ///
-    /// LIMIT, and it is the deleted fact's limit unchanged in shape but no longer
-    /// bounded in time: "reads its roots from the roster" is `the consumer's
-    /// source names SetsFor`, which is a TEXT test. A pin that calls it and then
-    /// scans a hard-coded path anyway satisfies this. Direction: FAILS GREEN.
-    /// What used to bound it was that repointing was one reviewed commit; now
-    /// nothing does, and the honest statement is that this catches the REVERT —
-    /// a private array in place of the call — and not a pin that lies while
-    /// calling. Closing that needs the call's RESULT traced to the walk, which is
-    /// a dataflow question a text scan cannot answer.</summary>
+    /// THIS IS THE CHEAP FIRST LINE, NOT THE GUARANTEE, AND THE DIFFERENCE WAS A
+    /// REVIEW FINDING. It is a TEXT test: it sees the consumer's source name
+    /// `SetsFor`; it cannot see whether the result reaches the walk. A pin that
+    /// calls it and then enumerates a hard-coded path anyway satisfies this, and
+    /// that is not hypothetical — reverting ONE wrapper method in
+    /// `AuthSemanticsDriftTests` while leaving a `SetsFor` call eleven lines away
+    /// reopened #364 F1 with the repository at 15 passed / 0 failed.
+    ///
+    /// AN EARLIER VERSION OF THIS COMMENT SAID CLOSING THAT NEEDED DATAFLOW
+    /// ANALYSIS. It does not, and the counterexample was already in the same
+    /// commit: each consuming pin now asserts that every root the roster declares
+    /// contributed at least one file to what its walk ACTUALLY OPENED, reading
+    /// the roster at the assertion rather than through a helper the walk shares.
+    /// That is two lines per pin. What this fact still adds is a legible red for
+    /// the blunt revert — a private array and no roster call at all — naming the
+    /// consumer rather than reporting an unvisited root.
+    ///
+    /// IT READS COMMENT-STRIPPED SOURCE, for a reason found by mutation rather
+    /// than by design: every one of the three consumers now carries a doc comment
+    /// explaining why it calls the roster, and against RAW text those comments
+    /// satisfied this fact all by themselves.</summary>
     [Fact]
     public void EveryConsumer_ReadsItsRootsFromTheRoster()
     {
@@ -1149,7 +1177,16 @@ public sealed class ShellSourceRootsDriftTests
                 + "this fact nor a reader can tell whether it still reads the roster — fix the "
                 + "roster key deliberately.");
 
-            if (!File.ReadAllText(file!).Contains(SetsForMarker, StringComparison.Ordinal))
+            // COMMENT-STRIPPED, AND THIS WAS A LIVE HOLE RATHER THAN A PRECAUTION.
+            // The first cut read the raw file, so ANY mention of the marker satisfied
+            // it — including the doc comments each of these three pins now carries
+            // EXPLAINING why it calls the roster. MEASURED: replacing every real call
+            // in AuthSemanticsDriftTests with a hard-coded array left this fact GREEN,
+            // satisfied by its own header comment, with #364 F1 fully reopened at 15
+            // passed / 0 failed. A guard defeated by the prose written to describe it
+            // is the worst shape available, because the prose arrives with the fix.
+            string code = CommentStrippedSource.Strip(File.ReadAllText(file!));
+            if (!code.Contains(SetsForMarker, StringComparison.Ordinal))
                 unrepointed.Add(consumer);
         }
 

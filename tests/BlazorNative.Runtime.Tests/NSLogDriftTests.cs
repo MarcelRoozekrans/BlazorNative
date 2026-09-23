@@ -58,11 +58,18 @@ public sealed class NSLogDriftTests
     /// that must still hold live `NSLog` calls. Flattening them is exactly what
     /// would lose that distinction, and the overload still checks each name
     /// against this pin's own `consumes` list.</summary>
-    private static string[] AppleShellRoots() =>
-        ShellSourceRoots.SetsFor(nameof(NSLogDriftTests), "appleShell");
-
-    /// <summary>The roots above, as one string for a failure message.</summary>
-    private static string BnHost => string.Join(" + ", AppleShellRoots());
+    /// THERE IS DELIBERATELY NO `AppleShellRoots()` HELPER FOR THE WALKS TO
+    /// SHARE. A single wrapper is a SINGLE LINE that reverts all of this: point
+    /// one private method at a hard-coded path and the walk AND the assertion
+    /// written to catch the walk read the reverted answer together, while
+    /// `EveryConsumer_ReadsItsRootsFromTheRoster` stays green because the file
+    /// still names `SetsFor` somewhere. Every site calls the loader for itself,
+    /// so the coverage assertion in `TheScan_IsNotVacuous` reads the roster
+    /// INDEPENDENTLY of what the walk read and disagrees with it rather than
+    /// moving with it. One implementation, several callers, is Rule 8's shape.
+    /// </summary>
+    private static string BnHost => string.Join(
+        " + ", ShellSourceRoots.SetsFor(nameof(NSLogDriftTests), "appleShell"));
 
     /// <summary>THE EXEMPT DIRECTORY, NAMED EXPLICITLY SO THE EXEMPTION IS VISIBLE
     /// RATHER THAN IMPLIED (design §4.2 step 3, §12).
@@ -87,11 +94,10 @@ public sealed class NSLogDriftTests
     /// hit" are opposite positions, and a flat list cannot tell them apart.
     /// Dropping it from `consumes` would defuse the control silently, so the
     /// partition makes that a deliberate, reviewed edit.</summary>
-    private static string[] AppleTestBundleRoots() =>
-        ShellSourceRoots.SetsFor(nameof(NSLogDriftTests), "appleTestBundle");
-
-    /// <summary>The roots above, as one string for a failure message.</summary>
-    private static string BnHostTests => string.Join(" + ", AppleTestBundleRoots());
+    /// <summary>The exempt roots, as one string for a failure message. As above,
+    /// there is no shared accessor: each walk asks the loader itself.</summary>
+    private static string BnHostTests => string.Join(
+        " + ", ShellSourceRoots.SetsFor(nameof(NSLogDriftTests), "appleTestBundle"));
 
     /// <summary>Matches an `NSLog` CALL. Comments are excluded by
     /// <see cref="CommentStrippedSource.NumberedCodeLines"/> — this phase's own sources discuss `NSLog` at
@@ -182,7 +188,9 @@ public sealed class NSLogDriftTests
         // bundle — taking this pin's positive control INSIDE its own subject, where
         // its 24 deliberate NSLog sites become 24 offenders. That direction is a
         // loud red rather than a silent green, and this says which edit caused it.
-        var bundles = AppleTestBundleRoots().Select(CheckoutPath).ToArray();
+        var bundles = ShellSourceRoots.SetsFor(nameof(NSLogDriftTests), "appleTestBundle")
+            .Select(r => CheckoutPath(r) + Path.DirectorySeparatorChar)
+            .ToArray();
         var swallowed = files
             .Where(f => bundles.Any(b => f.StartsWith(b, StringComparison.Ordinal)))
             .ToList();
@@ -195,6 +203,34 @@ public sealed class NSLogDriftTests
             + "other as its positive control. A root that nests them makes the control part of "
             + "the subject, so the 24 XCTest NSLog sites that MUST stay would be reported as "
             + "offenders. Re-point the roster, not this assertion.");
+
+        // ── THE ROSTER IS WHAT THE WALK WALKED, ASSERTED RATHER THAN WRITTEN DOWN ──
+        //
+        // Everything above measures the scan's OUTPUT, and `NoBareNSLog` is an ABSENCE
+        // assertion, so an output of nothing is indistinguishable from a walk that
+        // opened nothing. `SetsFor` is called HERE rather than through a helper the
+        // walk shares, so a walk re-pointed at a hard-coded path disagrees with this
+        // list instead of moving with it — which is the one-line revert that reopens
+        // #364 F1 while a text guard looking for the name `SetsFor` stays green.
+        //
+        // WHAT THIS DOES NOT COVER: it demands ONE file per root, not the whole root,
+        // and it cannot see a walk over a strict SUPERSET of the declared roots. The
+        // superset direction fails SAFE here — an extra tree can only add offenders —
+        // except for the one case the assertion directly above rules out, which is a
+        // superset that swallows the exempt bundle.
+        var unvisited = ShellSourceRoots.SetsFor(nameof(NSLogDriftTests), "appleShell")
+            .Where(r => !files.Any(f => f.StartsWith(
+                CheckoutPath(r) + Path.DirectorySeparatorChar, StringComparison.Ordinal)))
+            .ToList();
+
+        Assert.True(unvisited.Count == 0,
+            "THE SCAN NEVER OPENED A FILE UNDER THESE DECLARED ROOTS:\n"
+            + string.Join("\n", unvisited.Select(r => "  " + r))
+            + $"\n\n{ShellSourceRoots.ManifestPath} says {nameof(NSLogDriftTests)} consumes "
+            + $"them as `appleShell`, and the walk visited {files.Count} files, none of them "
+            + "there. Either the walk was re-pointed away from the roster — naming the roster "
+            + "is not the same as reading it, and this is the half that checks — or the target "
+            + "moved and the roster needs re-pointing deliberately.");
     }
 
     /// <summary>…AND THE PATTERN STILL MATCHES WHERE A MATCH IS KNOWN TO EXIST.
@@ -208,7 +244,8 @@ public sealed class NSLogDriftTests
     public void TheTestBundleExemption_IsRealAndStillHoldsNSLog()
     {
         int hits = 0;
-        foreach (string relative in AppleTestBundleRoots())
+        foreach (string relative in ShellSourceRoots.SetsFor(
+                     nameof(NSLogDriftTests), "appleTestBundle"))
         {
             string tests = CheckoutPath(relative);
             Assert.True(Directory.Exists(tests),
@@ -265,16 +302,25 @@ public sealed class NSLogDriftTests
     // ── the scanner ──────────────────────────────────────────────────────────
 
     /// <summary>Every Swift / Objective-C / Objective-C++ / header file under
-    /// `BnHost/`. Fails loudly if the tree is not there — a missing tree must
-    /// break this test, not silently pass it with an empty set. `BnHostTests/` is
-    /// a SIBLING directory, so it is never walked: the exemption is structural,
-    /// not a filter that could be edited away by accident.</summary>
+    /// the roster's `appleShell` roots. Fails loudly if a tree is not there — a
+    /// missing tree must break this test, not silently pass it with an empty set.
+    ///
+    /// THE EXEMPTION IS NO LONGER "STRUCTURAL BECAUSE THEY ARE SIBLINGS", and the
+    /// old sentence saying so was left standing for one commit after it stopped
+    /// being true. `BnHostTests/` being a sibling of `BnHost/` was a fact about
+    /// two directory names written in this file; both are now manifest entries,
+    /// so what keeps the exempt bundle out of this walk is that the roster
+    /// declares them as two separate sets. That is a stronger guarantee and a
+    /// different one, and `TheScan_IsNotVacuous` asserts it directly rather than
+    /// leaving it as a property of the paths — see the `swallowed` check
+    /// there.</summary>
     private static IEnumerable<string> ShellFiles()
     {
         string[] extensions = [".swift", ".m", ".mm", ".h"];
         var files = new List<string>();
 
-        foreach (string relative in AppleShellRoots())
+        foreach (string relative in ShellSourceRoots.SetsFor(
+                     nameof(NSLogDriftTests), "appleShell"))
         {
             string root = CheckoutPath(relative);
             Assert.True(Directory.Exists(root),
