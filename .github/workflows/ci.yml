@@ -4,7 +4,7 @@
 #
 #   build-test (windows-latest) — the local verification procedure verbatim
 #   (setup.ps1 §1–7 documents the toolchain pins):
-#     build (analyzers ride it) → .NET tests (1112 passed / 0 skipped) →
+#     build (analyzers ride it) → .NET tests (1132 passed / 0 skipped) →
 #     three NativeAOT publishes of samples/BlazorNative.SampleApp — the
 #     publish head since Phase 8.0: the app owns PublishAot, the exports stay
 #     in Runtime via UnmanagedEntryPointsAssembly, and the artifact is
@@ -2161,7 +2161,23 @@ jobs:
       # Task 1 moves no count -- it widens the existing scanner to see tokens
       # wrapped across lines and stops it reading string literals as comments,
       # both reproduced first as live undeclared occurrences under a green pin.
-      - name: .NET tests (assert 1112 passed / 0 skipped)
+      # 1112 -> 1132 (15.1 close the nine gaps, +20): TWELVE new fact methods,
+      # twenty test cases, because two of them are Theories over the five files
+      # BnSafeAreaCoverageTests names. Every one is a POSITIVE CONTROL: the 15.0
+      # census found nine uncontrolled detectors and every one was an absence
+      # assertion, whose fix is a fixed point the detector must still hit. By
+      # task: +1 ShellStyleTableDriftTests' negative control; +3
+      # DispatchSurfaceDriftTests' scanned-set floor -- issue #357 --
+      # IosSliceMatrixDriftTests' conditioned-leg control and
+      # ReleaseWorkflowPinTests' spliced VersionOverride fixture; +3
+      # PinPopulationTests' bypass-marker control and GeneratedSymbolShadowTests
+      # x2; +13 BnSafeAreaCoverageTests x2 as Theories over five files,
+      # ComponentReferenceDriftTests x2 and PackagePurityTests x1. The phase also
+      # carries one real bug fix that moves no count: ShellStyleTableDriftTests
+      # collected EVERY quoted string in the dispatch body, so a manifest style
+      # whose arm was never written read as dispatched off any unrelated quoted
+      # string matching its name. That was live on main.
+      - name: .NET tests (assert 1132 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -2179,8 +2195,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 1112 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 1112 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 1132 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 1132 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # ── NativeAOT publishes + ten-export verification ─────────────────────

@@ -58,6 +58,18 @@ namespace BlazorNative.Runtime.Tests;
 // before it reports on it. That is the house rule at
 // PackagePurityTests.TypeNamesOf: *a pin that cannot see its subject must never
 // pass vacuously.*
+//
+// AND THAT IS TWO PROPERTIES, NOT ONE — the correction phase 15.1 made to this
+// file, because until then it said "one" and the comment on fact 2 said so in
+// capitals. Proving the SCAN found its subject and proving the DETECTOR still
+// recognises its shape are different claims, and this file had only the first:
+// `dotnet nuget push` being present says nothing about whether `VersionOverride`
+// would still match `-p:PackageVersion=`. A pattern reworded past its subject
+// leaves both the file read and the absence claim perfectly healthy and lets a
+// real override through. The containment pin (fact 1) was always controlled for
+// free — `total == 1` reds at zero matches, which is a reworded regex — and the
+// no-override pin was not. TheOverrideDetector_StillMatchesTheShapeItWasWritten
+// For is the control it was missing; the pin standard calls this Rule 3.
 // ─────────────────────────────────────────────────────────────────────────────
 
 public sealed class ReleaseWorkflowPinTests
@@ -148,12 +160,23 @@ public sealed class ReleaseWorkflowPinTests
     {
         string source = ReadPublishWorkflow();
 
-        // THE POSITIVE CONTROL, first. The assertion below is an ABSENCE claim,
-        // and this file could be emptied, gutted or restructured while the
-        // absence stayed perfectly true. So: prove the subject is still the
-        // thing being claimed about. `dotnet nuget push` IS the release path —
-        // if it is gone, this pin is guarding a file that no longer publishes
-        // anything, and it must say so rather than pass.
+        // THE SUBJECT-MOVED GUARD, first (pin standard Rule 4). The assertion
+        // below is an ABSENCE claim, and this file could be emptied, gutted or
+        // restructured while the absence stayed perfectly true. So: prove the
+        // subject is still the thing being claimed about. `dotnet nuget push` IS
+        // the release path — if it is gone, this pin is guarding a file that no
+        // longer publishes anything, and it must say so rather than pass.
+        //
+        // ⚠ THIS WAS LABELLED "THE POSITIVE CONTROL" UNTIL PHASE 15.1, AND IT IS
+        // NOT ONE. It proves the SUBJECT is still the release path; it proves
+        // nothing whatever about `VersionOverride`, which is the DETECTOR. The
+        // two properties are different — a walk that finds its file versus a
+        // pattern that still matches its shape — and the pin standard's Rule 3
+        // exists because they are routinely confused. The mislabel was worse than
+        // the gap it hid: the phase-15.0 census records that any sweep grepping
+        // for the phrase "positive control" would have scored this fact as done
+        // and moved on. The real control is a separate fact —
+        // TheOverrideDetector_StillMatchesTheShapeItWasWrittenFor, below.
         Assert.True(
             source.Contains("dotnet nuget push", StringComparison.Ordinal),
             $"could not find `dotnet nuget push` in {PublishWorkflow} — the release path moved or "
@@ -161,13 +184,7 @@ public sealed class ReleaseWorkflowPinTests
             + "a file that publishes nothing: TRUE, and worthless. Re-point this pin deliberately "
             + "rather than letting it pass over a subject it can no longer see.");
 
-        var offenders = VersionOverride.Matches(source)
-            .Select(m =>
-            {
-                int line = source.Take(m.Index).Count(c => c == '\n') + 1;
-                return $"line {line}: {m.Value}";
-            })
-            .ToList();
+        var offenders = Offenders(source);
 
         Assert.True(offenders.Count == 0,
             "THE PROPS IS THE VERSION; THE TAG IS A CLAIM (8.2 decision 2). No `-p:Version=` or "
@@ -182,6 +199,126 @@ public sealed class ReleaseWorkflowPinTests
             + "because GitVersion computes its version anyway. This repo has a version LITERAL, on "
             + "purpose. The release flow ASSERTS the tag against it (scripts/release-preflight.ps1) "
             + "and never overrides it. Bump the props in a PR, then let release-please tag it.");
+    }
+
+    /// <summary>THE OFFENDER PROJECTION — one implementation, shared by the pin and by
+    /// its positive control (pin standard Rule 8). A control that reruns its own copy of
+    /// this projection controls the copy, not the pin; the whole point is that the
+    /// control drives the SAME regex through the SAME line-numbering the failure message
+    /// prints.</summary>
+    private static List<string> Offenders(string source) =>
+        [.. VersionOverride.Matches(source)
+            .Select(m => $"line {source.Take(m.Index).Count(c => c == '\n') + 1}: {m.Value}")];
+
+    /// <summary>THE POSITIVE CONTROL FOR `VersionOverride` (pin standard Rule 3; census
+    /// item 7, and §5.5's mislabel). The name is used here in its narrow sense — a fixed
+    /// point the DETECTOR is required to hit — and nowhere else in this file.
+    ///
+    /// <para>NO HONEST TREE ANCHOR EXISTS FOR THIS DETECTOR, and that conclusion is
+    /// recorded rather than worked around, because a forced control reads as coverage
+    /// while providing none. The anchors considered, and why each fails:</para>
+    /// <list type="bullet">
+    /// <item><description>A live `-p:Version=` anywhere in a build or publish path —
+    /// there is none, <b>by construction</b>. This pin's entire claim is that the repo
+    /// never overrides the version, so the subject tree is required to be empty of the
+    /// pattern. That is the structural difference from <c>NSLogDriftTests</c>, whose
+    /// exempt test bundle is a real tree that MUST still hold the thing the shipped tree
+    /// must not.</description></item>
+    /// <item><description><c>scripts/release-preflight.ps1</c>'s comment and
+    /// <c>docs/GITHUB-SETUP.md</c>'s prose both spell `-p:Version=` while describing this
+    /// rule. Prose is reworded freely and legitimately; anchoring a detector to a
+    /// sentence buys a false red on a docs edit, and a pin that reds on docs edits gets
+    /// weakened rather than investigated (pin standard, Rule 2's corollary on floors that
+    /// move for irrelevant reasons — the same failure, applied to a control).</description></item>
+    /// <item><description><c>docs/plans/2026-07-16-phase-8.2-*.md</c> spell it several
+    /// times, but those are archived milestone docs; the standard says so itself, which
+    /// is why it lives in <c>docs/</c> rather than beside them.</description></item>
+    /// <item><description><c>ci.yml</c>'s own test-count narration quotes the shape while
+    /// explaining this pin. It is prose about a baseline that every counting phase
+    /// rewrites — including the one adding this fact.</description></item>
+    /// </list>
+    ///
+    /// <para>SO THE CONTROL IS A FIXTURE, which Rule 3 lists as its third form, and it is
+    /// built to be as close to the real thing as a fixture can get: it takes the REAL
+    /// release workflow's text, splices in the EXACT shape the reference implementation
+    /// would import — <c>pack -p:PackageVersion=$VERSION</c>, the AdoNet.Async line the
+    /// class header names as the predictable drift — immediately above the real
+    /// <c>dotnet nuget push</c>, and runs the pin's own <see cref="Offenders"/> over the
+    /// result. It asserts the detector finds exactly one, AT THE LINE THE SPLICE LANDED
+    /// ON, so the failure message's line:line fidelity is exercised too and not merely
+    /// the regex (Rule 7's note that line numbers through a projection break silently).
+    /// Reword <see cref="VersionOverride"/> past its subject and this reds.</para>
+    ///
+    /// <para>WHAT A FIXTURE CANNOT BUY, said plainly: it proves the detector still
+    /// recognises the shape, never that the detector is pointed at anything real. That
+    /// second property is what the subject-moved guard inside
+    /// <see cref="TheReleaseWorkflow_NeverOverridesTheVersion"/> buys, and the two are
+    /// only worth anything read together — which is the distinction the old "THE POSITIVE
+    /// CONTROL" label collapsed.</para></summary>
+    [Fact]
+    public void TheOverrideDetector_StillMatchesTheShapeItWasWrittenFor()
+    {
+        // ── the reference implementation's line, spliced into the real workflow ──
+        string[] lines = ReadPublishWorkflow().Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
+        // The COMMAND, not the `- name:` above it and not the prose around it: this
+        // workflow says "dotnet nuget push" in four comments and two step names, and a
+        // splice above a comment would be testing the detector against a line the
+        // release path never executes.
+        int at = Array.FindIndex(lines, l => l.TrimStart().StartsWith("dotnet nuget push", StringComparison.Ordinal));
+        Assert.True(at >= 0,
+            $"no `dotnet nuget push` COMMAND line in {PublishWorkflow} to splice above — the "
+            + "workflow still mentions the phrase in prose, but nothing runs it. The release path "
+            + "moved, and this control has nowhere realistic to put the override it is testing "
+            + "for. Re-point it at the new pack/push step rather than falling back to a bare "
+            + "string, which would stop exercising the real file altogether.");
+
+        var spliced = lines.ToList();
+        spliced.Insert(at, "          dotnet pack -p:PackageVersion=$VERSION -o ./artifacts");
+        var found = Offenders(string.Join("\n", spliced));
+
+        Assert.True(found.Count == 1 && found[0] == $"line {at + 1}: -p:PackageVersion=",
+            "THE VERSION-OVERRIDE DETECTOR NO LONGER DETECTS. With the reference "
+            + "implementation's own `pack -p:PackageVersion=$VERSION` spliced into "
+            + $"{PublishWorkflow} at line {at + 1}, the pin's offender projection reported: "
+            + (found.Count == 0 ? "(nothing)" : string.Join("; ", found)) + $" — expected exactly "
+            + $"one, reading `line {at + 1}: -p:PackageVersion=`.\n"
+            + "  Zero matches means TheReleaseWorkflow_NeverOverridesTheVersion is an absence "
+            + "claim over a pattern that can no longer see its subject: a real override in the "
+            + "release path would pass, the packages on nuget.org would stop being reproducible "
+            + "from the commit they name, and NOTHING would red. A match at the wrong line means "
+            + "the offender projection's line numbering drifted, so the failure message would "
+            + "send a reader to the wrong line of a file they publish from once per release.\n"
+            + "  Fix the pattern or the projection. Do not green this by editing the expectation.");
+
+        // ── every spelling the pattern CLAIMS, as a fixture ──────────────────────
+        // The doc on VersionOverride promises `-p:` and `/p:`, both property names, any
+        // casing, and tolerated whitespace before the `=`. A promise in a doc comment
+        // with nothing enforcing it is this repo's most expensive bug class.
+        var spellings = Offenders(
+            "dotnet pack -p:Version=1.2.3\n"
+            + "dotnet pack /p:PackageVersion=$VERSION\n"
+            + "dotnet pack -p:packageversion =$VERSION\n");
+        Assert.True(spellings.Count == 3,
+            "VersionOverride claims to cover `-p:` and `/p:`, `Version` and `PackageVersion`, any "
+            + $"casing, and whitespace before the `=` — it matched {spellings.Count} of those 3 "
+            + "spellings: " + (spellings.Count == 0 ? "(none)" : string.Join("; ", spellings))
+            + ". A narrowed pattern leaves a spelling MSBuild still honours unguarded, which is "
+            + "the override arriving through the one door nobody is watching.");
+
+        // ── the negative: near-misses that are NOT overrides ─────────────────────
+        // `VersionPrefix`/`VersionSuffix` are legitimate and would be a different
+        // decision to make; this pin must not claim them. A control that only ever
+        // widens a detector is not a control.
+        var nearMisses = Offenders(
+            "dotnet pack -p:VersionPrefix=1.2.3\n"
+            + "dotnet pack -p:VersionSuffix=rc1\n"
+            + "dotnet pack -p:ContinuousIntegrationBuild=true\n");
+        Assert.True(nearMisses.Count == 0,
+            "VersionOverride matched a near-miss it must not claim: "
+            + string.Join("; ", nearMisses) + ". `-p:VersionPrefix=` and `-p:VersionSuffix=` are "
+            + "different properties and forbidding them is a different decision, not this one. A "
+            + "detector widened until it reds on ordinary pack flags is a detector the next "
+            + "contributor deletes.");
     }
 
     // ── Readers (non-vacuity asserted) ───────────────────────────────────────
