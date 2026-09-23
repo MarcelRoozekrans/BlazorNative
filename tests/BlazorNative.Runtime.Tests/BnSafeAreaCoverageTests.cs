@@ -32,7 +32,7 @@ namespace BlazorNative.Runtime.Tests;
 // live code:
 //
 //   · BnStarterPage.razor       — its `@* … *@` header draws the component tree,
-//                                 naming BnSafeArea three times
+//                                 naming BnSafeArea twice
 //   · the four capability demos — each carries `// #338 (phase 14.2 task 6):
 //                                 wrapped in BnSafeArea (opt-in — …)` above the
 //                                 builder call

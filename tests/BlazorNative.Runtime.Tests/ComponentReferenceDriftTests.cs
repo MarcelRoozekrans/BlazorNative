@@ -432,7 +432,7 @@ public sealed class ComponentReferenceDriftTests : IClassFixture<ComponentRefere
     /// MAINTAINER documentation the generator correctly drops. Anything deliberately
     /// excluded from a scan is something the detector must still be able to SEE, and
     /// that half of the file is full of exactly the repo-speak the published half must
-    /// not carry. Three of the nine patterns have a live subject there right now:
+    /// not carry. Three of the ten patterns have a live subject there right now:
     ///
     ///   · `\bfile header\b`         — BnItemsJson's "normative grammar in the file
     ///                                 header", BnPicker.Clamp's "The normative clamp
@@ -440,7 +440,7 @@ public sealed class ComponentReferenceDriftTests : IClassFixture<ComponentRefere
     ///   · `\bdesign decision \d`    — BnListWindow.Compute's "(design decision 3)"
     ///   · `\bGate \d`               — BnPicker.OnParametersSetAsync's "(Gate 1 review…"
     ///
-    /// THE OTHER SIX have no instance anywhere in this XML, which is the pin working:
+    /// THE OTHER SEVEN have no instance anywhere in this XML, which is the pin working:
     /// they were reworded out of the published surface when this file was written and
     /// out of the internal one since. They are controlled by the fixture in
     /// <see cref="TheBannedProsePatterns_MatchThePhrasesTheyWereWrittenFor"/> instead,
@@ -499,7 +499,7 @@ public sealed class ComponentReferenceDriftTests : IClassFixture<ComponentRefere
     }
 
     /// <summary>
-    /// THE POSITIVE CONTROL, HALF TWO — a FIXTURE for all nine patterns, run through
+    /// THE POSITIVE CONTROL, HALF TWO — a FIXTURE for all ten patterns, run through
     /// the pin's OWN detector (<see cref="Violations"/>), not a copy of it.
     ///
     /// Each row is a phrase in the shape the shipped XML actually carried when this
@@ -520,7 +520,7 @@ public sealed class ComponentReferenceDriftTests : IClassFixture<ComponentRefere
     /// WHAT A FIXTURE CANNOT BUY, stated because the strengths differ: a hand-written
     /// phrase proves the regex still matches a string in this file. It cannot prove the
     /// regex matches the prose a future author will write. That is the unguardable
-    /// WIDTH of the list — nine phrasings someone thought of — and no control over a
+    /// WIDTH of the list — ten phrasings someone thought of — and no control over a
     /// fixed pattern set reaches it.
     /// </summary>
     [Fact]
