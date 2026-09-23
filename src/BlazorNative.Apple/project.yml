@@ -48,10 +48,29 @@ options:
 # the image code calls Yoga only through the plain-C `bn_yoga_*` surface, exactly
 # as every other Swift file does.
 #
-# The `from:` below is the pin, and it is the ONE home for the version — this
-# comment names no number on purpose. `KingfisherManager.retrieveImage` is the API
-# the shell is written against and it survived the major bump; a further major bump
-# is a deliberate change, not a resolver's choice.
+# The `exactVersion:` below is the pin, and it is the ONE home for the version —
+# this comment names no number on purpose. `KingfisherManager.retrieveImage` is the
+# API the shell is written against and it survived the major bump.
+#
+# **IT IS EXACT, AND THAT IS THE POINT.** This read `from: 8.12.0` — a SemVer range
+# — until Kingfisher 8.13.0, published 2026-09-23, raised its own deployment floor
+# from iOS 13 to iOS 15 inside a MINOR release. Nothing in this repo changed and
+# the iOS lane went red on main: `error: compiling for iOS 13.0, but module
+# 'Kingfisher' has a minimum deployment target of iOS 15.0`. No `Package.resolved`
+# is committed, so every CI run re-resolves and the failure is not reproducible
+# from the tree — it depends on what upstream published since the last run.
+#
+# The prose here used to say "a further MAJOR bump is a deliberate change, not a
+# resolver's choice." That named the wrong hazard. The hazard is not the version
+# number's shape; it is that ANY range lets a dependency change this project's
+# minimum platform without a commit. An exact pin makes the upgrade a reviewed diff
+# that the iOS lane actually builds before it lands — Renovate still proposes it,
+# CI still tests it, and a floor-raising release now arrives as a red PR check
+# instead of a red main.
+#
+# Raising this project's own deploymentTarget to iOS 15 is a separate and real
+# decision — `BnLog.swift` and `BnGeolocation.swift` both carry code written for
+# the iOS 13 floor — and it is not made here.
 #
 # (This comment read "Pinned to 7.x" until Phase 8.4. It was true when written at
 # 6.3, then Renovate bumped the dependency and the prose did not follow — so the
@@ -60,7 +79,7 @@ options:
 packages:
   Kingfisher:
     url: https://github.com/onevcat/Kingfisher.git
-    from: 8.12.0
+    exactVersion: 8.12.0
 
 settings:
   base:
