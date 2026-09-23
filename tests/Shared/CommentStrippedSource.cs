@@ -607,8 +607,19 @@ internal static class CommentStrippedSource
     /// phase. They report `file:line` at a human, so the number must be the line the
     /// reader will open, not an index into the surviving lines.</summary>
     public static IEnumerable<(int Number, string Text)> NumberedCodeLines(string file)
+        => NumberedCodeLinesOf(File.ReadAllText(file));
+
+    /// <summary>The same walk over CONTENT the caller already holds, rather than a
+    /// path this re-reads. Added in 15.2 for ShellSourceScan, which must record a
+    /// file as covered in the same expression that hands its bytes to a matcher —
+    /// a helper that re-opens the path would put the read back on a second code
+    /// path, which is the whole defect that motivated it. A sibling entry point,
+    /// deliberately not a mode flag, and <see cref="NumberedCodeLines(string)"/>
+    /// now delegates here so there is one implementation rather than two
+    /// (pin standard, Rule 8).</summary>
+    public static IEnumerable<(int Number, string Text)> NumberedCodeLinesOf(string source)
     {
-        string[] lines = Lines(file);
+        string[] lines = LinesOf(source);
         for (int i = 0; i < lines.Length; i++)
             if (lines[i].Trim().Length > 0)
                 yield return (i + 1, lines[i]);
@@ -620,9 +631,12 @@ internal static class CommentStrippedSource
     /// empty string, not a dropped entry: callers that need line indices to survive
     /// (GeneratedSymbolShadowTests) rely on that; callers that only want code text
     /// (DispatchSurfaceDriftTests) filter blanks themselves.</summary>
-    public static string[] Lines(string file)
+    public static string[] Lines(string file) => LinesOf(File.ReadAllText(file));
+
+    /// <summary>The same as <see cref="Lines(string)"/> over content already in
+    /// hand. See <see cref="NumberedCodeLinesOf"/> for why this exists.</summary>
+    public static string[] LinesOf(string source)
     {
-        string source = File.ReadAllText(file);
         if (source.Length == 0) return [];
 
         string[] lines = Strip(source).Split('\n');

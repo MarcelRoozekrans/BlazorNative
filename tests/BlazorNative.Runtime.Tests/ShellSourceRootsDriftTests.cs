@@ -100,6 +100,14 @@ namespace BlazorNative.Runtime.Tests;
 //     bounds it is that a guard is written once, by hand, beside the claim it
 //     serves.
 //
+//     AND THE INDEX IS BUILT FROM RAW SOURCE, so a COMMENTED-OUT test still
+//     resolves a citation. That is disclosed at `DeclaredTestMethods` and was
+//     missing from this list, which is the decay Rule 5's subtle half warns
+//     about: a limit stated in one place and omitted from the summary a reader
+//     trusts. The choice is deliberate -- a name is being resolved, not a
+//     behaviour asserted, and a citation this cannot SEE at all is the worse
+//     failure -- but it belongs in both places. Direction: FAILS GREEN.
+//
 //     And `EveryTestNamedInAReason_Exists` only sees names carrying an
 //     UNDERSCORE -- all but a handful of the suite, and the exceptions are
 //     exactly the underscore-free names:
@@ -505,6 +513,285 @@ internal static class ShellSourceRoots
                 + "ShellSourceRootsDriftTests reads through here, so the alternative to a loud "
                 + "failure is five pins that cannot see their subject.");
         return value;
+    }
+}
+
+// THE ONE WALK over a consumer's declared shell source, and the thing
+// that makes the roster BIND rather than merely be named.
+//
+// ── WHY THIS TYPE EXISTS AT ALL ─────────────────────────────────────────────
+//
+// Three rounds of review each bound one link further along a chain, and each
+// time the assertion that mattered consumed something a line or two downstream
+// of what the guard watched:
+//
+//   round 1 — the pin NAMES `SetsFor`  → defeated by a private wrapper method
+//   round 2 — the pin CALLS `SetsFor` per site → defeated because the walk and
+//             the coverage assertion called it through the same wrapper
+//   round 3 — the walk RECORDS what it enumerated → defeated by a one-line
+//             content filter between the listing and the read, and by a second
+//             walk inside the fact that asserts the absence
+//
+// The common cause was always the same: the guard was bound to a FILE-LIST
+// PRODUCER while the absence assertion consumed something else. So this type
+// stops moving along the chain and binds to its end. Three properties, and each
+// one closed a demonstrated one-line defeat:
+//
+//  1. THE COVERAGE RECORD IS WRITTEN WHERE THE FILE IS READ. `Recorded` is
+//     called in the ARGUMENT that carries the bytes to the extractor, so there
+//     is no statement between the read and the record into which a filter can be
+//     inserted. If the bytes never reached the matcher, the file is not covered.
+//
+//  2. THE FACT THAT ASSERTS AN ABSENCE OBSERVES THE RECORD ITS OWN CALL
+//     PRODUCED. Every fact calls this itself and asserts coverage on the
+//     <see cref="Result"/> it got back — never on a sibling's walk and never on a
+//     second walk of its own.
+//
+//  3. NO PIN HOLDS A ROOT LIST. Callers name a CONSUMER, and the roots are
+//     resolved here from the roster. There is no array in a pin to re-point, so
+//     the round-1 and round-2 defeats are not expressible rather than merely
+//     detected.
+//
+// And one hardening that is not on the reviewer's list but closes the obvious
+// next move: THE EXTRACTOR IS NEVER TOLD WHICH FILE IT IS LOOKING AT. It
+// receives content and returns <see cref="RawHit"/>s carrying a line number;
+// this type stamps the path on afterwards. A path-keyed filter inside a matcher
+// — the shape every one of the defeats above took — is therefore not
+// expressible either.
+//
+// ── WHAT THIS STILL DOES NOT COVER (pin standard, Rule 5) ───────────────────
+//
+// EVERY LINE BELOW WAS MEASURED BY MUTATION, and two of them contradict what an
+// earlier draft of this header asserted. That draft claimed the shared matcher
+// was protected by the positive controls running through it. IT IS NOT, and the
+// claim is deleted rather than softened: an unenforced safety sentence is the
+// bug class this whole phase exists to close, and writing one INTO the machinery
+// built to close it is the worst available place for it.
+//
+//  A. A CONTENT-KEYED FILTER INSIDE A MATCHER. MEASURED GREEN. One line —
+//     `text.Contains("package io.blazornative.jni") ? [] : …` inside
+//     `ForPattern` — hid a planted bare `Log.i` from all 24 facts. The extractor
+//     cannot see a PATH, which is why every earlier defeat's path filter is gone,
+//     but CONTENT IS A PROXY FOR PATH: a Kotlin package declaration or a Swift
+//     import names the tree just as well.
+//
+//     AND THE POSITIVE CONTROLS DO NOT SAVE IT. `TheTestBundleExemption_…` and
+//     `TheInstrumentedTestExemption_…` run through this same matcher, so a filter
+//     broad enough to blind THEM reds — but a filter keyed on one package is not
+//     broad enough, and both controls live in other packages. That was the
+//     specific sentence the draft got wrong.
+//     Direction: FAILS GREEN.
+//
+//  B. REWRITING A FACT'S BODY. MEASURED GREEN, twice: reassigning the hit array
+//     from a freshly written second walk, and `.Where(…)`-ing the array before
+//     the assertion reads it. Both are 1–9 lines INSIDE the fact.
+//
+//     This one is not a defect that a guard can close, and saying so is not a
+//     shrug. No assertion in any repository survives its own body being
+//     rewritten; what a pin can do is make the rewrite VISIBLE and make the
+//     cheap version unavailable, and that part is done — there is no leftover
+//     walk to filter, no root list to re-point, and the coverage proof is fused
+//     into the call that yields the value the assertion consumes, so the shapes
+//     below are all that is left and every one of them shows up in a diff as new
+//     code rather than as a changed constant.
+//
+//  C. WHAT IS CLOSED, each verified by a mutation that now REDS where it used to
+//     pass:
+//       - re-pointing a pin at a hard-coded root list — NOT EXPRESSIBLE. No door
+//         a pin can call takes roots; they take a consumer name and an optional
+//         set name, both checked against the roster.
+//       - a content filter between the listing and the read — REDS, 7 facts.
+//       - a filter narrowed to exactly ONE file — REDS, 7 facts. This is what
+//         forced coverage from "at least one file per root" to SET EQUALITY: the
+//         loose form was measured green on a package-wide filter, with a planted
+//         offender escaping its own fact and only a sibling's count floor
+//         noticing.
+//       - an early return part-way through the walk — REDS, 7 facts.
+//       - a second walk SHARING one coverage assertion — no longer possible:
+//         every fact calls the scan itself and the coverage proof is fused to the
+//         value it consumes.
+internal static class ShellSourceScan
+{
+    /// <summary>A finding as the EXTRACTOR reports it: a line number against the
+    /// original file, the text, and whatever the matcher wants to call it. NO
+    /// PATH — see the type header. <see cref="Over"/> stamps the file on.</summary>
+    internal sealed record RawHit(int Line, string Text, string Token);
+
+    /// <summary>A finding with its file attached.</summary>
+    internal sealed record Hit(string File, int Line, string Text, string Token);
+
+    /// <summary>What one scan found AND what it actually read. The second half is
+    /// the point: an empty findings list cannot distinguish "this tree is clean"
+    /// from "this tree was never opened", and every pin using this asserts an
+    /// absence.</summary>
+    internal sealed record Result(
+        string Consumer, string? Set, string[] Roots, string[] Extensions,
+        Hit[] Hits, string[] Read)
+    {
+        /// <summary>THE COVERAGE ASSERTION, over the record THIS result carries.
+        /// Every fact that asserts an absence must call this on its own result —
+        /// that is property 2, and the reason it is a method on the result rather
+        /// than a free function taking a root list is so that it cannot be handed
+        /// one walk's roots and another walk's files.</summary>
+        /// <summary>The findings, but only after proving the scan read everything the
+        /// roster puts in its scope. THE TWO ARE ONE CALL ON PURPOSE: a fact that
+        /// holds a <c>Result</c> can assert coverage on it and then hand its
+        /// assertion a different collection, which is the "guard watches producer A,
+        /// assertion consumes producer B" shape three review rounds kept finding. A
+        /// fact that only ever holds the ARRAY this returns has nothing to swap.
+        /// </summary>
+        internal Hit[] HitsCoveringEveryDeclaredRoot() => CoveringEveryDeclaredRoot().Hits;
+
+        /// <summary>Both halves, for a fact that needs the findings AND the file
+        /// list. One call, one scan, one coverage proof.</summary>
+        internal (Hit[] Hits, string[] Read) CoveringEveryDeclaredRoot()
+        {
+            AssertItReadEveryDeclaredRoot();
+            return (Hits, Read);
+        }
+
+        /// <summary>The files read, after the same proof. Same reasoning.</summary>
+        internal string[] ReadCoveringEveryDeclaredRoot() => CoveringEveryDeclaredRoot().Read;
+
+        private void AssertItReadEveryDeclaredRoot()
+        {
+            string repo = BnRepo.Root();
+            var shortfall = new List<string>();
+
+            foreach (string root in Roots)
+            {
+                string prefix = root.TrimEnd('/') + "/";
+                string dir = Path.Combine(repo, root.Replace('/', Path.DirectorySeparatorChar));
+
+                // THE CANDIDATE SET IS ENUMERATED HERE, INDEPENDENTLY OF THE WALK.
+                // That independence is the whole mechanism: whatever the walk did or
+                // skipped, this recomputes what it was supposed to read straight from
+                // the roster's root and the scan's own declared extensions.
+                var candidates = Directory.Exists(dir)
+                    ? Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories)
+                        .Where(f => Extensions.Contains(
+                            Path.GetExtension(f), StringComparer.OrdinalIgnoreCase))
+                        .Select(f => Path.GetRelativePath(repo, f).Replace('\\', '/'))
+                        .ToHashSet(StringComparer.Ordinal)
+                    : [];
+
+                // A ROOT HOLDING NO FILE OF THE SCANNED KINDS IS NOT A DEFECT. This pin
+                // family runs language-specific scans over a two-language roster: the
+                // auth pin's Kotlin-only caller count legitimately reads nothing under
+                // an iOS target, and demanding otherwise is a permanent false red. An
+                // empty root is what EveryRoot_ExistsOnDisk and
+                // EveryShellSourceFile_IsInsideADeclaredRoot are already looking at.
+                if (candidates.Count == 0) continue;
+
+                // EVERY CANDIDATE, NOT MERELY ONE — and this is the strengthening that
+                // a mutation forced rather than a tidiness. "At least one file per
+                // root" was MEASURED defeated: a one-line content filter dropped every
+                // file of one Kotlin package before the read, the root still had other
+                // files under it so coverage stayed green, and a planted bare `Log.i`
+                // escaped its own offender fact. Only a sibling's file-count floor
+                // caught it, and a filter one file narrower would have cleared that
+                // too. Set equality has no such gap: any file the roster says is in
+                // scope and the scan did not read is named here.
+                var missed = candidates
+                    .Where(c => !Read.Contains(c, StringComparer.Ordinal))
+                    .OrderBy(c => c, StringComparer.Ordinal)
+                    .ToList();
+
+                if (missed.Count > 0)
+                    shortfall.Add($"  {root} — READ {candidates.Count - missed.Count} of "
+                        + $"{candidates.Count}, missing:\n"
+                        + string.Join("\n", missed.Select(m => "      " + m)));
+            }
+
+            Assert.True(shortfall.Count == 0,
+                "THE SCAN DID NOT READ EVERY FILE THE ROSTER PUTS IN ITS SCOPE:\n"
+                + string.Join("\n", shortfall)
+                + $"\n\n{ShellSourceRoots.ManifestPath} says {Consumer} consumes "
+                + (Set is null ? "these roots" : $"these roots as `{Set}`")
+                + $", and this scan's own extensions ({string.Join(", ", Extensions)}) match the "
+                + "files listed above, yet their content never reached the matcher. Coverage is "
+                + "recorded in the same expression that hands a file's bytes to the matcher, so "
+                + "this is not 'a path was listed' — it is 'the content never arrived'. Either "
+                + "the scan was narrowed away from the roster, which is #364 F1, or a tree moved "
+                + "and the roster needs re-pointing deliberately.");
+        }
+    }
+
+    /// <summary>Walk one consumer's declared roots, READ every file with a listed
+    /// extension, and hand each file's content to <paramref name="extract"/>.
+    ///
+    /// <paramref name="set"/> names ONE consumed set for a pin that treats its
+    /// sets differently — `NSLogDriftTests` scans `appleShell` and uses
+    /// `appleTestBundle` as its positive control — and is null for a pin that
+    /// takes everything it consumes.
+    ///
+    /// The caller passes a CONSUMER NAME, never roots: there is deliberately no
+    /// overload taking a root list, because a pin holding a root list is the
+    /// defect this type was built after.</summary>
+    internal static Result Over(
+        string consumer, string? set, string[] extensions,
+        Func<string, IEnumerable<RawHit>> extract)
+    {
+        string[] roots = set is null
+            ? ShellSourceRoots.SetsFor(consumer)
+            : ShellSourceRoots.SetsFor(consumer, set);
+
+        string repo = BnRepo.Root();
+        var hits = new List<Hit>();
+        var read = new List<string>();
+
+        foreach (string rel in roots)
+        {
+            string dir = Path.Combine(repo, rel.Replace('/', Path.DirectorySeparatorChar));
+            Assert.True(Directory.Exists(dir),
+                $"declared root '{rel}' does not exist, so {consumer} would scan nothing there "
+                + "and report it as clean. It is declared in " + ShellSourceRoots.ManifestPath
+                + " — re-point the roster deliberately rather than narrowing the walk.");
+
+            foreach (string path in Directory
+                         .EnumerateFiles(dir, "*", SearchOption.AllDirectories)
+                         .Where(f => extensions.Contains(
+                             Path.GetExtension(f), StringComparer.OrdinalIgnoreCase))
+                         .OrderBy(f => f, StringComparer.Ordinal))
+            {
+                string file = Path.GetRelativePath(repo, path).Replace('\\', '/');
+
+                // ── PROPERTY 1, AND IT IS THIS LINE ──────────────────────────
+                // `Recorded` runs inside the ARGUMENT that carries the bytes, so
+                // the file is marked covered by the act of delivering its content
+                // and by nothing else. There is no statement between the read and
+                // the record to put a filter in. An earlier version recorded the
+                // ENUMERATION one line before the read, and a one-line content
+                // filter in between left the whole repository green with a live
+                // planted defect.
+                foreach (RawHit h in extract(Recorded(read, file, File.ReadAllText(path))))
+                    hits.Add(new Hit(file, h.Line, h.Text, h.Token));
+            }
+        }
+
+        return new Result(consumer, set, roots, extensions, [.. hits], [.. read]);
+    }
+
+    /// <summary>The regex-over-code-lines shape four pin facts want, with the
+    /// matching loop living HERE rather than in each pin. That is deliberate:
+    /// a loop in a pin is a place to insert a one-line filter, and the three
+    /// demonstrated defeats were all exactly that. Comments are stripped through
+    /// the shared helper, from content already read, so the file is opened
+    /// once.</summary>
+    internal static Result ForPattern(
+        string consumer, string? set, string[] extensions, string pattern)
+        => Over(consumer, set, extensions, text =>
+            CommentStrippedSource.NumberedCodeLinesOf(text)
+                .SelectMany(l => Regex.Matches(l.Text, pattern)
+                    .Select(m => new RawHit(l.Number, l.Text.Trim(), m.Value))));
+
+    /// <summary>Marks <paramref name="file"/> as READ and returns the content it
+    /// was handed. Exists only so that the record and the delivery of the bytes
+    /// are one expression — see property 1.</summary>
+    private static string Recorded(List<string> read, string file, string text)
+    {
+        read.Add(file);
+        return text;
     }
 }
 
@@ -1148,10 +1435,20 @@ public sealed class ShellSourceRootsDriftTests
     [Fact]
     public void EveryConsumer_ReadsItsRootsFromTheRoster()
     {
-        // nameof, not a literal: a rename of the door must break this at compile
-        // time rather than turn every consumer permanently "unrepointed".
-        string SetsForMarker =
-            $"{nameof(ShellSourceRoots)}.{nameof(ShellSourceRoots.SetsFor)}";
+        // TWO DOORS, BOTH NAMED BY `nameof` so a rename breaks this at compile time
+        // rather than turning every consumer permanently "unrepointed".
+        //
+        // `ShellSourceScan` is the one a pin should reach for: it resolves the roots
+        // from the roster AND reads the files AND records coverage, so the pin holds
+        // no root list at all. `ShellSourceRoots.SetsFor` is the raw loader, still
+        // legitimate for a fact that needs the root strings themselves — NSLog's
+        // swallowed-bundle check compares roots rather than scanning them.
+        string[] doors =
+        [
+            $"{nameof(ShellSourceScan)}.",
+            $"{nameof(ShellSourceRoots)}.{nameof(ShellSourceRoots.SetsFor)}",
+        ];
+        string SetsForMarker = string.Join(" or ", doors);
 
         string[] testSources = Directory.EnumerateFiles(
             Path.Combine(BnRepo.Root(), "tests"), "*.cs", SearchOption.AllDirectories)
@@ -1186,7 +1483,7 @@ public sealed class ShellSourceRootsDriftTests
             // passed / 0 failed. A guard defeated by the prose written to describe it
             // is the worst shape available, because the prose arrives with the fix.
             string code = CommentStrippedSource.Strip(File.ReadAllText(file!));
-            if (!code.Contains(SetsForMarker, StringComparison.Ordinal))
+            if (!doors.Any(d => code.Contains(d, StringComparison.Ordinal)))
                 unrepointed.Add(consumer);
         }
 

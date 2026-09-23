@@ -76,13 +76,24 @@ public sealed class AndroidLogDriftTests
     /// `TemplateDriftTests`' byte comparison: it is what a `dotnet new
     /// blazornative` app actually compiles, and a second lock on the same door
     /// costs one roster entry.</summary>
-    /// THERE IS DELIBERATELY NO ACCESSOR HERE FOR THE WALK AND THE COVERAGE
-    /// ASSERTION TO SHARE. One private method returning the roots is one line to
-    /// revert, and reverting it moves the walk and the assertion written to catch
-    /// the walk together, while a text guard looking for the name `SetsFor` stays
-    /// green. Each site calls the loader itself, so `TheScan_IsNotVacuous` reads
-    /// the roster INDEPENDENTLY of what `ShellFiles()` read. One implementation,
-    /// several callers, is what Rule 8 asks for.</summary>
+    // ── THIS PIN HOLDS NO ROOT LIST AND NO MATCHING LOOP ─────────────────────
+    //
+    // Both were deleted, in that order, across two review rounds. A private
+    // accessor returning the roots is ONE line to re-point, and re-pointing it
+    // moved the walk and the assertion written to catch the walk together. A
+    // matching loop in the fact is ONE line to filter, which defeated the
+    // coverage assertion a round later while the offender assertion stayed green
+    // over half the Android shell.
+    //
+    // So this pin names a CONSUMER and a PATTERN, and `ShellSourceScan` does the
+    // rest: it resolves the roots from src/shell-source-roots.json, reads each
+    // file, and records coverage in the same expression that hands the bytes to
+    // the matcher. Every fact below calls it ITSELF and asserts coverage on the
+    // result of ITS OWN call — never a sibling's, never a second walk.
+    //
+    // The Gradle line this comment used to quote as its authority is still the
+    // authority; `EveryDerivedRootList_MatchesItsExternalRecord` is what reads
+    // it now, instead of a human copying it into an array here.
 
     /// <summary>THE ONE FILE ALLOWED TO CALL `Log` AT A GATED LEVEL: the seam
     /// itself, whose default sink is a `Log.println`.
@@ -124,6 +135,17 @@ public sealed class AndroidLogDriftTests
     /// sources quote the offending lines at length.</summary>
     private const string BareLogCall = @"(?<![\w.])Log\s*\.\s*[idv]\s*\(";
 
+    /// <summary>The seam call each swept file must still reach.</summary>
+    private const string SeamCall = @"\bBnShellLog\s*\.\s*(info|debug|verbose)\s*\(";
+
+    /// <summary>The shell's own copy of the default threshold. Group 1 is the
+    /// level name.</summary>
+    private const string DefaultLevelDecl =
+        @"const\s+val\s+DEFAULT_LEVEL\s*:\s*Int\s*=\s*BnLogLevel\.(\w+)";
+
+    /// <summary>The extensions that are Kotlin source.</summary>
+    private static readonly string[] KotlinSource = [".kt"];
+
     /// <summary>The files that held the five ungated sites, plus the seam. Each
     /// must still be found by the walk AND still route through
     /// <c>BnShellLog</c> — see <see cref="TheSweptFiles_StillNarrate"/>.</summary>
@@ -147,18 +169,16 @@ public sealed class AndroidLogDriftTests
     [Fact]
     public void NoBareLogInfoDebugOrVerbose_SurvivesInTheAndroidShell()
     {
-        var offenders = new List<string>();
+        // ITS OWN SCAN, AND ITS OWN COVERAGE ASSERTION ON THAT SCAN'S RECORD.
+        // An absence assertion over a walk somebody else performed is an absence
+        // assertion over nothing in particular.
+        ShellSourceScan.Hit[] hits = ShellSourceScan
+            .ForPattern(nameof(AndroidLogDriftTests), null, KotlinSource, BareLogCall)
+            .HitsCoveringEveryDeclaredRoot();
 
-        foreach (string file in ShellFiles())
-        {
-            offenders.AddRange(CommentStrippedSource.NumberedCodeLines(file)
-                .Where(l => Regex.IsMatch(l.Text, BareLogCall))
-                .Select(l => $"  {Relative(file)}:{l.Number}  {l.Text.Trim()}"));
-        }
-
-        Assert.True(offenders.Count == 0,
+        Assert.True(hits.Length == 0,
             "BARE Log.i / Log.d / Log.v IN THE ANDROID SHELL — it must go through BnShellLog.\n"
-            + string.Join("\n", offenders)
+            + string.Join("\n", hits.Select(h => $"  {h.File}:{h.Line}  {h.Text}"))
             + "\n\nA bare android.util.Log call asks no threshold, so it prints in every consumer's "
             + "Release build. That is issue #200, observed on hardware: at the DEFAULT Warn a cold "
             + "launch still emitted four Info `[BOOT]` lines, while ZERO lines carried the pump's "
@@ -179,37 +199,19 @@ public sealed class AndroidLogDriftTests
     [Fact]
     public void TheScan_IsNotVacuous()
     {
-        List<string> files = ShellFiles().ToList();
+        var (hits, read) = ShellSourceScan
+            .ForPattern(nameof(AndroidLogDriftTests), null, KotlinSource, BareLogCall)
+            .CoveringEveryDeclaredRoot();
 
-        Assert.True(files.Count > 20,
-            $"the Android-shell scan found only {files.Count} Kotlin files — it is reading the "
+        Assert.True(read.Length > 20,
+            $"the Android-shell scan READ only {read.Length} Kotlin files — it is reading the "
             + "wrong tree and NoBareLogInfoDebugOrVerbose_SurvivesInTheAndroidShell is passing "
             + "while blind. Fix the walk, do not delete the pin.");
 
-        var names = files.Select(Path.GetFileName).ToHashSet(StringComparer.Ordinal);
+        var names = read.Select(f => f.Split('/')[^1]).ToHashSet(StringComparer.Ordinal);
         Assert.Contains(TheSeam, names);
         foreach (string swept in SweptFiles)
             Assert.Contains(swept, names);
-
-        // Both trees, not just the repo's: the template ships the shell a
-        // generated app compiles, and a scan that silently stopped covering it
-        // would leave the consumer-facing copy unguarded.
-        // THE SEPARATOR IS LOAD-BEARING. Without it `src/.../main` prefix-matches
-        // `src/.../mainTest`, so a root could be "covered" by a sibling tree whose
-        // name merely starts the same way.
-        var unvisited = ShellSourceRoots.SetsFor(nameof(AndroidLogDriftTests))
-            .Where(r => !files.Any(f => f.StartsWith(
-                CheckoutPath(r) + Path.DirectorySeparatorChar, StringComparison.Ordinal)))
-            .ToList();
-
-        Assert.True(unvisited.Count == 0,
-            "THE SCAN NEVER OPENED A FILE UNDER THESE DECLARED ROOTS:\n"
-            + string.Join("\n", unvisited.Select(r => "  " + r))
-            + $"\n\n{ShellSourceRoots.ManifestPath} says {nameof(AndroidLogDriftTests)} "
-            + $"consumes them, and the walk visited {files.Count} files, none of them there. "
-            + "Either the walk was re-pointed away from the roster — naming the roster is not "
-            + "the same as reading it, and this is the half that checks — or a source set "
-            + "moved and the roster needs re-pointing deliberately.");
     }
 
     /// <summary>…AND THE PATTERN STILL MATCHES WHERE A MATCH IS KNOWN TO EXIST.
@@ -223,15 +225,23 @@ public sealed class AndroidLogDriftTests
     [Fact]
     public void TheInstrumentedTestExemption_IsRealAndStillHoldsBareLogI()
     {
+        // THIS TREE IS EXCLUDED BY THE ROSTER, SO IT IS NOT REACHED THROUGH IT.
+        // `ShellSourceScan` resolves a set this pin CONSUMES; `androidInstrumentedTests`
+        // is one it EXCLUDES, with a reason, and a door handing a pin the roots of a
+        // tree it disclaims would be a back way around the partition. A control over an
+        // excluded tree therefore names its own path — which is the pin standard's
+        // second anchor model, the exclusion list read as a source of fixed points.
         string tests = CheckoutPath(InstrumentedTests);
         Assert.True(Directory.Exists(tests),
             $"{InstrumentedTests} is missing, so the exemption this pin names protects nothing. "
             + "Either the instrumented tree moved — then re-point the exemption deliberately — or "
             + "it is gone, in which case delete the exemption rather than keeping it as folklore.");
 
+        // Through the SAME extractor the pin above uses, so this genuinely exercises the
+        // production matcher rather than restating it (pin standard, Rule 8).
         int hits = Directory.EnumerateFiles(tests, "*.kt", SearchOption.AllDirectories)
-            .SelectMany(CommentStrippedSource.NumberedCodeLines)
-            .Count(l => Regex.IsMatch(l.Text, BareLogCall));
+            .Sum(f => CommentStrippedSource.NumberedCodeLinesOf(File.ReadAllText(f))
+                .Count(l => Regex.IsMatch(l.Text, BareLogCall)));
 
         Assert.True(hits > 0,
             $"the bare-Log pattern matched NOTHING under {InstrumentedTests}, which is the one "
@@ -251,27 +261,34 @@ public sealed class AndroidLogDriftTests
     [Fact]
     public void TheSweptFiles_StillNarrate()
     {
-        var offenders = new List<string>();
+        var (hits, read) = ShellSourceScan
+            .ForPattern(nameof(AndroidLogDriftTests), null, KotlinSource, SeamCall)
+            .CoveringEveryDeclaredRoot();
 
-        foreach (string name in SweptFiles)
-        {
-            foreach (string file in ShellFiles().Where(f => Path.GetFileName(f) == name))
-            {
-                bool routed = CommentStrippedSource.NumberedCodeLines(file)
-                    .Any(l => Regex.IsMatch(l.Text, @"\bBnShellLog\s*\.\s*(info|debug|verbose)\s*\("));
+        var routed = hits.Select(h => h.File.Split('/')[^1]).ToHashSet(StringComparer.Ordinal);
+        var everRead = read.Select(f => f.Split('/')[^1]).ToHashSet(StringComparer.Ordinal);
 
-                if (!routed) offenders.Add($"  {Relative(file)}");
-            }
-        }
+        // NOT VACUOUS BY ITS OWN HAND. The previous shape filtered a walk to each
+        // swept name and looped, so a name the walk no longer produced meant zero
+        // iterations and a silent pass. A missing file is now its own red.
+        var missing = SweptFiles.Where(n => !everRead.Contains(n)).ToList();
+        Assert.True(missing.Count == 0,
+            "THESE SWEPT FILES WERE NEVER READ BY THE SCAN:\n"
+            + string.Join("\n", missing.Select(n => "  " + n))
+            + "\n\nThey are named in SweptFiles because they held #200's ungated sites. If one "
+            + "was renamed or removed, edit SweptFiles deliberately — a name the walk cannot "
+            + "produce would otherwise make the routing check below iterate zero times.");
 
+        var offenders = SweptFiles.Where(n => !routed.Contains(n)).ToList();
         Assert.True(offenders.Count == 0,
             "THE #200 FIX WAS UNDONE BY DELETION, NOT BY GATING. These files narrated before the "
-            + "fix and now reach no logging seam at all:\n" + string.Join("\n", offenders)
-            + "\n\n'No bare Log.i' is trivially satisfied by deleting every narration line, and "
+            + "fix and now reach no logging seam at all:\n"
+            + string.Join("\n", offenders.Select(n => "  " + n))
+            + "\n\n\'No bare Log.i\' is trivially satisfied by deleting every narration line, and "
             + "that is the opposite of what #200 asked for — the issue says in as many words that "
-            + "the lines are 'genuinely useful at higher verbosity'. scripts/devloop.ps1 waits for "
-            + "'[BOOT] mounted <Component>' in logcat, and the Phase 11.2 runbook's deep-link PASS "
-            + "criteria name the '[deep-link]' lines. If a file genuinely no longer narrates, "
+            + "the lines are \'genuinely useful at higher verbosity\'. scripts/devloop.ps1 waits for "
+            + "\'[BOOT] mounted <Component>\' in logcat, and the Phase 11.2 runbook's deep-link PASS "
+            + "criteria name the \'[deep-link]\' lines. If a file genuinely no longer narrates, "
             + "remove it from SweptFiles deliberately.");
     }
 
@@ -297,58 +314,41 @@ public sealed class AndroidLogDriftTests
     [Fact]
     public void TheShellsDefaultThreshold_IsTheFrameworksDefault()
     {
-        string seam = ShellFiles().First(f => Path.GetFileName(f) == TheSeam);
-        string source = File.ReadAllText(seam);
+        // N-4, AND IT WAS A REAL FALSE-GREEN CHANNEL. This read the seam's RAW text
+        // and took the FIRST regex match, so a commented-out `DEFAULT_LEVEL` line
+        // above the live one won and this fact compared the framework's default
+        // against a dead constant. It now runs through the shared scan, which
+        // strips comments, and requires exactly one surviving declaration.
+        ShellSourceScan.Hit[] hits = ShellSourceScan
+            .ForPattern(nameof(AndroidLogDriftTests), null, KotlinSource, DefaultLevelDecl)
+            .HitsCoveringEveryDeclaredRoot();
 
-        Match m = Regex.Match(source, @"const\s+val\s+DEFAULT_LEVEL\s*:\s*Int\s*=\s*BnLogLevel\.(\w+)");
-        Assert.True(m.Success,
-            $"could not find `const val DEFAULT_LEVEL: Int = BnLogLevel.…` in {Relative(seam)} — "
-            + "the constant moved or was renamed and this pin is holding nothing. Re-point it "
-            + "deliberately rather than deleting it.");
+        var declarations = hits
+            .Where(h => h.File.EndsWith("/" + TheSeam, StringComparison.Ordinal))
+            .ToList();
 
-        string kotlin = m.Groups[1].Value;                       // e.g. "WARN"
-        string csharp = BnLog.DefaultLevel.ToString().ToUpperInvariant(); // "WARN"
+        Assert.True(declarations.Count >= 1,
+            $"could not find `const val DEFAULT_LEVEL: Int = BnLogLevel.…` in any {TheSeam} the "
+            + "scan read — the constant moved, was renamed, or was commented out, and this pin is "
+            + "holding nothing. Re-point it deliberately rather than deleting it.");
 
-        Assert.True(string.Equals(kotlin, csharp, StringComparison.Ordinal),
-            $"SHELL/RUNTIME DEFAULT-LEVEL DRIFT. {Relative(seam)} falls back to "
-            + $"BnLogLevel.{kotlin}; BnLog.DefaultLevel is {BnLog.DefaultLevel}.\n\n"
-            + "An app that declares no level would then get one verbosity from the framework and "
-            + "another from the shell — two thresholds wearing one name, which is precisely what "
-            + "#200's fix exists to prevent. Change both in the same commit, or change neither.");
-    }
-
-    // ── the scanner ──────────────────────────────────────────────────────────
-
-    /// <summary>Every `.kt` under the shell's two source roots AND the template's
-    /// two mirrors. Fails loudly if a root is not there — a missing tree must
-    /// break this test, not silently pass it with an empty set. The `androidTest`
-    /// and `test` trees are never walked — not because of a filter here, but
-    /// because the roster declares them as their own sets, `androidInstrumentedTests`
-    /// and `androidJvmTests`, and this pin's entry EXCLUDES both with a reason.
-    /// The old sentence called that "structural because they are siblings", which
-    /// was a fact about directory names written in this file; it is now a fact
-    /// about the partition, which `EveryConsumer_AccountsForEverySet_ExactlyOnce`
-    /// holds. `TheScan_IsNotVacuous` checks the other half — that every root the
-    /// roster DOES declare was actually opened.</summary>
-    private static IEnumerable<string> ShellFiles()
-    {
-        foreach (string relative in ShellSourceRoots.SetsFor(nameof(AndroidLogDriftTests)))
+        foreach (ShellSourceScan.Hit declaration in declarations)
         {
-            string root = CheckoutPath(relative);
-            Assert.True(Directory.Exists(root), $"{relative} not found under the repo root: {root}");
+            Match m = Regex.Match(declaration.Text, DefaultLevelDecl);
+            string kotlin = m.Groups[1].Value;                       // e.g. "WARN"
+            string csharp = BnLog.DefaultLevel.ToString().ToUpperInvariant(); // "WARN"
 
-            foreach (string file in Directory
-                .EnumerateFiles(root, "*.kt", SearchOption.AllDirectories)
-                .OrderBy(f => f, StringComparer.Ordinal))
-            {
-                yield return file;
-            }
+            Assert.True(string.Equals(kotlin, csharp, StringComparison.Ordinal),
+                $"SHELL/RUNTIME DEFAULT-LEVEL DRIFT. {declaration.File}:{declaration.Line} falls "
+                + $"back to BnLogLevel.{kotlin}; BnLog.DefaultLevel is {BnLog.DefaultLevel}.\n\n"
+                + "An app that declares no level would then get one verbosity from the framework and "
+                + "another from the shell — two thresholds wearing one name, which is precisely what "
+                + "#200's fix exists to prevent. Change both in the same commit, or change neither.");
         }
     }
 
+    // ── the scanner is `ShellSourceScan`; this pin has none of its own ───────
+
     private static string CheckoutPath(string relativePath)
         => Path.Combine(BnRepo.Root(), relativePath.Replace('/', Path.DirectorySeparatorChar));
-
-    private static string Relative(string file)
-        => Path.GetRelativePath(BnRepo.Root(), file).Replace(Path.DirectorySeparatorChar, '/');
 }
