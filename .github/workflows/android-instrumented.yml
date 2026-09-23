@@ -24,6 +24,14 @@
 name: android-instrumented
 
 on:
+  # ── PULL_REQUEST ──────────────────────────────────────────────────────────
+  # Nightly-and-dispatch only until 2026-09-23. The header of ci.yml's iOS gate
+  # already records what that costs, about this very lane: the AGP 9 migration
+  # left `src/androidMain/kotlin` uncompiled while this suite reported 111 passing
+  # tests, and it merged, because a lane that does not gate a PR cannot stop one.
+  # A green required set never meant these ran.
+  pull_request:
+    branches: [main]
   workflow_dispatch:
   schedule:
     - cron: '0 3 * * *'   # nightly 03:00 UTC
