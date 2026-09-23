@@ -48,6 +48,14 @@
     "some declared root. src/BlazorNative.Jni/src/debug holds no .kt today -- only res/xml --",
     "so leaving it out of `sets` is correct, and the day it gains Kotlin that fact reds.",
     "",
+    "NO NUMBER HERE IS FREE. `minFiles` must be at least 1 and at most `measured`, asserted, so",
+    "the floor cannot be lowered past the observation it was set from -- setting it to 0 and",
+    "re-pointing the container one level deeper was MEASURED green before that relation existed,",
+    "which is two JSON tokens defusing the whole mechanism. And `androidTemplateMirror` carries",
+    "`mirrorOf` rather than a free root list: its roots must be `androidShell`'s with the prefix",
+    "swapped, so the template's source sets answer to the same Gradle call the repo's do. Moving",
+    "one of its two roots into another set was MEASURED green before that too.",
+    "",
     "EACH scanRoot CARRIES ITS OWN `minFiles`, AND THAT IS NOT BOOKKEEPING. A single global",
     "floor over these three containers is an aggregate over a partition, and it cannot see a",
     "member leave: the template container is 18 files, which vanishes inside the headroom of",
@@ -111,7 +119,11 @@
       "roots": [
         "templates/BlazorNative.Templates/content/BlazorNative.App/android/src/main/kotlin",
         "templates/BlazorNative.Templates/content/BlazorNative.App/android/src/androidMain/kotlin"
-      ]
+      ],
+      "mirrorOf": {
+        "set": "androidShell",
+        "pathPrefix": "templates/BlazorNative.Templates/content/BlazorNative.App/android/"
+      }
     }
   },
 

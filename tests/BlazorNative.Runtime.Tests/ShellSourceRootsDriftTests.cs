@@ -74,15 +74,21 @@ namespace BlazorNative.Runtime.Tests;
 //     serves.
 //
 //     And `EveryTestNamedInAReason_Exists` only sees names carrying an
-//     UNDERSCORE. That is 578 of the repository's 591 declared test names,
-//     measured; the 13 it cannot see are the ones with no underscore at all
-//     -- `AnEmptyComponentFailsLoudlyRatherThanVacuously`,
-//     `EventsAreProjected`, `TheImageCannotMoveTheFrameTable`. Nothing can
-//     match those without also matching every capitalised word in prose, so
-//     the boundary is where it is on purpose rather than by oversight. A
-//     reason citing one of those 13, or citing a test in prose at all, makes
-//     an unpinned claim this cannot see. Direction: FAILS GREEN, and the fix
-//     is to cite a test whose name has an underscore, which 98% do.
+//     UNDERSCORE -- all but a handful of the suite, and the exceptions are
+//     exactly the underscore-free names:
+//     `AnEmptyComponentFailsLoudlyRatherThanVacuously`, `EventsAreProjected`,
+//     `TheImageCannotMoveTheFrameTable`. Nothing can match those without also
+//     matching every capitalised word in prose, so the boundary is where it
+//     is on purpose. A reason citing one of them, or citing a test in prose
+//     at all, makes an unpinned claim this cannot see. Direction: FAILS
+//     GREEN, and the fix is to cite a test whose name has an underscore.
+//
+//     The other direction is latent and LOUD. Anything shaped `Word_Word`
+//     with a lower-case letter matches -- `Phase_2`, `BnHost_Tests` -- so a
+//     reason that happens to contain one would red demanding a test that was
+//     never meant. Zero occur in today's reasons, checked, and the direction
+//     is a red rather than a green, which is why the shape is not narrowed
+//     further: narrowing it is what produced the false green above.
 //
 //  5. AN AGGREGATE OVER A PARTITION SAYS NOTHING ABOUT ANY MEMBER -- and the
 //     honest thing to record here is that WRITING THIS DOWN DID NOT WORK.
@@ -104,40 +110,98 @@ namespace BlazorNative.Runtime.Tests;
 //     inside 34 of headroom. Third instance, found by the sweep that finally
 //     followed: `consumers.Count > 0` against three consumers.
 //
+//     Fourth instance: `checkedRoots >= DeclaredRootCount`, a literal 9
+//     summing a SECOND-LEVEL partition -- roots within sets. Worse, the fix
+//     round CLASSIFIED it as a cardinality and promised "a member leaving
+//     drops it", while its own assertion site twelve hundred lines away said
+//     "A TOTAL, AND IT IS ONLY A TOTAL". Right at the red, wrong in the
+//     summary -- which is precisely the defect that same round had just
+//     corrected elsewhere. Moving one of androidTemplateMirror's two roots
+//     into androidJvmHost left all eight facts green.
+//
 //     KNOWING THE RULE, HAVING JUST WRITTEN THE RULE, AND ATTACHING A WORKED
-//     INCIDENT TO IT DID NOT PREVENT THE NEXT INSTANCE. Prose does not
-//     generalise itself; only a mechanism that reds does. So the rule this
-//     file now follows is structural rather than advisory: every floor is
-//     either a CARDINALITY over the partition, a PER-MEMBER assertion, or a
-//     total DERIVED by summing the per-member floors -- never an independent
-//     literal free to be looser than the members imply.
+//     INCIDENT TO IT DID NOT PREVENT THE NEXT INSTANCE. Neither did writing
+//     a taxonomy: the taxonomy acquired a wrong row on its first outing.
+//     Prose does not generalise itself, and NEITHER DOES CLASSIFICATION --
+//     a bucket is just more prose, and it can be wrong in the same way.
 //
-//     THE SWEEP, so the next reader does not have to redo it. Every floor in
-//     this file and what carries it:
+//     SO THE RULE IS NOT "CLASSIFY EVERY FLOOR". IT IS: ASK WHETHER THE
+//     NUMBER CAN BE DERIVED FROM THE MANIFEST, AND IF IT CAN, DERIVE IT. A
+//     derived number needs no classification, because there is nothing left
+//     to misclassify. Applied here, that emptied two of the four buckets:
 //
-//       DELIVERED BY THE FLOOR ITSELF, because it IS the cardinality --
-//       `sets.Count >= DeclaredSetCount`, `consumers.Count >=
-//       DeclaredConsumerCount`, `scanRoots.Length >= ScanRootCount`,
-//       `checkedRoots >= DeclaredRootCount`. Each is an exact count of the
-//       partition, so a member leaving drops it.
+//       DERIVED, so not classifiable and not arguable --
+//       `scanned >= expected`, the sum of the per-container `minFiles`; and
+//       `checkedRoots >= declaredRoots`, the sum of the per-set root counts,
+//       which used to be the literal 9.
 //
-//       DELIVERED PER MEMBER, inside the loop -- `s.Roots.Length > 0`,
-//       `contributed >= sr.MinFiles`, `calls.Count > 0`, `declared.Count > 0`,
-//       `entries.Count > 0`.
+//       CONSTRAINED BY A RELATION between numbers the manifest already holds
+//       -- `sr.MinFiles >= 1 && sr.MinFiles <= sr.Measured`. Without it,
+//       `minFiles: 0` plus a re-point defused the whole fact in two JSON
+//       tokens, measured.
 //
-//       DERIVED -- `scanned >= expected`, where `expected` is the sum of the
-//       per-container floors. Not an independent number.
+//       PER MEMBER, inside the loop -- `s.Roots.Length > 0` and
+//       `contributed >= sr.MinFiles`. These deliver a property about every
+//       member; no aggregate can.
 //
-//       TOTALS WITH NOTHING RESTING ON THEM, named individually because that
-//       claim has to be checkable: `delegations >= 1`, `cited.Count >= 1`,
-//       `derived.Count >= 1`, `authFiles.Count >= 1`. In all four, every
-//       member the loop finds is asserted individually as it is found, so the
-//       count is a non-vacuity floor and nothing else is resting on it. They
-//       are still latently the same shape -- a second member would let the
-//       first be dropped green -- and each says so where it sits.
+//       EXTERNALLY DERIVED ROOT LISTS, which is what stops a root MOVING
+//       between sets where no count can see it -- the Gradle derivation for
+//       `androidShell`, `mirrorOf` for `androidTemplateMirror`. Those are the
+//       roster's only two multi-root sets, and a root leaving a single-root
+//       set hits zero and reds per set, so the cover is complete TODAY. A
+//       third multi-root set would arrive uncovered: give it a derivation,
+//       not a count.
 //
-//       ONE WALK, NO PARTITION BELOW -- `sources.Length >= 100` and
-//       `names.Count >= 500` in DeclaredTestMethods.
+//     WHAT IS STILL AN INDEPENDENT LITERAL, which is the honest residual and
+//     is now a short list rather than four buckets:
+//
+//       `DeclaredSetCount` 7, `DeclaredConsumerCount` 3, `ScanRootCount` 3.
+//       These CANNOT be derived: there is no second record of how many sets,
+//       consumers or containers there ought to be -- the number IS the
+//       record, which is exactly why it has to be exact rather than `> 0`.
+//
+//       The six manifest numbers -- three `minFiles`, three `measured`. Not
+//       derivable either, because they are observations about the disk. They
+//       are mutually constrained by the relation above, which is the most a
+//       recorded observation can be given.
+//
+//       `sources.Length >= 100` and `names.Count >= 500` in
+//       DeclaredTestMethods. One walk over tests/, no manifest behind it.
+//       Both fail LOUD: a narrowed index makes a real citation unresolvable.
+//
+//       `delegations >= 1`, `cited.Count >= 1`, `derived.Count >= 1`,
+//       `authFiles.Count >= 1`. Each population is single-member today, so
+//       `>= 1` IS its exact cardinality, and every member the loop finds is
+//       asserted as it is found. Each carries its own note saying what a
+//       second member would cost.
+//
+//       `entries.Count > 0` in QuotedEntries. NOT per-member and NOT in a
+//       loop -- the earlier taxonomy put it in the per-member bucket and
+//       that was wrong. See limit 6.
+//  6. THE DELEGATION GUARD READS ANOTHER TEST'S SOURCE WITH A REGEX, AND
+//     THAT REGEX SEES ONLY THE COLLECTION INITIALISER. `QuotedEntries`
+//     captures the text between `{` and `};`, so entries added to
+//     TemplateDriftTests' `divergent` set by any other route -- an
+//     `Add(...)` call after the initialiser, a loop, a second collection
+//     unioned in -- are invisible. MEASURED in review: an `Add` of the
+//     auth-bearing file immediately below the initialiser removed it from
+//     the byte comparison and all nineteen facts across both pins passed,
+//     with this guard's entire job bypassed. Adding the same file INSIDE
+//     the initialiser reds, so the detector works; its subject is too
+//     narrow.
+//
+//     Direction: FAILS GREEN, on a negative membership test, which is the
+//     worst combination in this file. `entries.Count > 0` does not help --
+//     it is a total over five initialiser entries and says nothing about
+//     any of them, which is why it is NOT in the per-member list above.
+//
+//     THE REPAIR IS NAMED AND ASSIGNED, not deferred vaguely: make
+//     `TemplateVerbatimAndroidFiles()` internal and assert membership of
+//     the byte-identity set itself instead of regexing its source. That
+//     deletes both regexes here, turns a rename into a compile error, and
+//     closes this because it reads the SET the comparison uses rather than
+//     the text one of its inputs is written in. Phase 15.2 task 5 owns it;
+//     that file is already open there.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// <summary>THE ONE PARSE of src/shell-source-roots.json. Lives here rather than
@@ -155,7 +219,14 @@ internal static class ShellSourceRoots
     /// present only on sets whose roots are a copy of something the BUILD
     /// declares -- see <see cref="GradleSource"/>.</summary>
     internal sealed record SetDef(
-        string Name, string Language, string Purpose, string[] Roots, GradleSource? DerivedFrom);
+        string Name, string Language, string Purpose, string[] Roots,
+        GradleSource? DerivedFrom, MirrorSource? MirrorOf);
+
+    /// <summary>A set whose roots are another set's roots with the path prefix
+    /// swapped. It is how a root list stops being a free literal: the template
+    /// mirror's two source sets answer to the same Gradle call the repo's do,
+    /// transitively, instead of being a pair of strings nothing compares.</summary>
+    internal sealed record MirrorSource(string Set, string PathPrefix);
 
     /// <summary>Where a set's roots really come from: a call in a build script
     /// whose quoted arguments, prefixed with <paramref name="PathPrefix"/>, must
@@ -265,7 +336,12 @@ internal static class ShellSourceRoots
                 p.Value.GetProperty("language").GetString()!,
                 p.Value.GetProperty("purpose").GetString()!,
                 [.. p.Value.GetProperty("roots").EnumerateArray().Select(r => r.GetString()!)],
-                derived);
+                derived,
+                p.Value.TryGetProperty("mirrorOf", out JsonElement mo)
+                    ? new MirrorSource(
+                        mo.GetProperty("set").GetString()!,
+                        mo.GetProperty("pathPrefix").GetString()!)
+                    : null);
         }
 
         var consumers = new Dictionary<string, Consumer>(StringComparer.Ordinal);
@@ -332,13 +408,6 @@ public sealed class ShellSourceRootsDriftTests
     /// instead of something that slides past. 15.1's review called a floor of 20
     /// against 131 files "theatre"; this is the opposite end of the same rule.</summary>
     private const int DeclaredSetCount = 7;
-
-    /// <summary>The roster's total root count: 9 over those 7 sets —
-    /// <c>androidShell</c> and <c>androidTemplateMirror</c> carry two each, the
-    /// other five one apiece. It is a floor on a TOTAL and nothing more. Read the
-    /// note at its assertion before reaching for it as a per-set guarantee; that
-    /// mistake is limit 5 in this file's header and it shipped once.</summary>
-    private const int DeclaredRootCount = 9;
 
     /// <summary>The three pins that declare a coverage position. A cardinality
     /// floor rather than <c>&gt; 0</c>, for the reason limit 5 gives.</summary>
@@ -507,18 +576,26 @@ public sealed class ShellSourceRootsDriftTests
             }
         }
 
-        // A TOTAL, AND IT IS ONLY A TOTAL. It cannot see an emptied `roots`
-        // array — the per-set assertion above does that, and this comment is
-        // here because the message that used to sit on this line claimed
-        // otherwise. What it does catch is the loop not running: a roster whose
-        // sets all parsed with no roots at all, which the per-set arm would
-        // report one set at a time and this reports as a whole.
-        Assert.True(checkedRoots >= DeclaredRootCount,
-            $"walked only {checkedRoots} roots, and {ShellSourceRoots.ManifestPath} declares "
-            + $"{DeclaredRootCount} — the parse or the walk has stopped seeing the roster. This is "
-            + "a floor on the total, NOT a per-set guarantee; the assertion inside the loop is "
-            + "what rules out an empty array. If roots were deliberately consolidated, edit "
-            + "DeclaredRootCount in the same commit and say why.");
+        // DERIVED, NOT DECLARED — and this line is the file's fourth encounter
+        // with the aggregate shape. It used to read `>= DeclaredRootCount`, a
+        // literal 9 summing a SECOND-LEVEL partition: roots within sets. The
+        // header called that a cardinality and promised "a member leaving drops
+        // it". It does not. Moving one of androidTemplateMirror's two roots into
+        // androidJvmHost keeps the total at 9, every array non-empty, and left
+        // all eight facts green while the tree that ships with every
+        // `dotnet new blazornative` declared one of its two source directories.
+        //
+        // So the number is computed from the roster rather than written beside
+        // it. There is nothing left to misclassify: this asserts the loop ran
+        // once per declared root and claims nothing else. What stops a root
+        // MOVING between sets is elsewhere, and it is complete — see the note
+        // at TheTemplateMirrorRoots_MirrorTheShellRoots.
+        int declaredRoots = TheWholeRoster().Values.Sum(x => x.Roots.Length);
+        Assert.True(checkedRoots >= declaredRoots,
+            $"walked {checkedRoots} roots against {declaredRoots} declared in "
+            + $"{ShellSourceRoots.ManifestPath} — the walk did not run once per root, so this "
+            + "fact has skipped part of the roster. This is arithmetic over the per-set "
+            + "assertion above, not a guarantee of its own.");
     }
 
     /// <summary>DELEGATED IS NOT A SYNONYM FOR EXCLUDED, and this fact is what
@@ -689,6 +766,21 @@ public sealed class ShellSourceRootsDriftTests
         foreach (ShellSourceRoots.ScanRoot sr in scanRoots)
         {
             int contributed = 0;
+
+            // THE FLOOR'S OWN DATA IS FLOORED. Moving the magic number out of
+            // the C# and into the manifest moved it somewhere nothing
+            // constrained it: `minFiles: 0` plus a re-point one level deeper was
+            // MEASURED green, two JSON tokens defusing this fact entirely. The
+            // relation is between two numbers the manifest already records, so
+            // it costs two comparisons and needs no new surface.
+            Assert.True(sr.MinFiles >= 1 && sr.MinFiles <= sr.Measured,
+                $"`scanRoots` entry '{sr.Path}' declares minFiles={sr.MinFiles} against "
+                + $"measured={sr.Measured}. A floor must be at least 1 — zero forgives a "
+                + "container that has stopped contributing anything — and never above what was "
+                + "actually counted, which would red on a tree that is fine. Lowering a floor "
+                + "below its observation is the edit this fact exists to make loud, so it is "
+                + "the one edit that cannot be made quietly.");
+
             expected += sr.MinFiles;
             string abs = Path.Combine(repo, sr.Path.Replace('/', Path.DirectorySeparatorChar));
             Assert.True(Directory.Exists(abs),
@@ -778,6 +870,13 @@ public sealed class ShellSourceRootsDriftTests
     {
         const string marker = "WILL, NOT DOES";
 
+        // nameof, not a literal: `SetsFor` has NO callers yet, so a rename or a
+        // typo in a bare string would be noticed by nothing. It would make every
+        // consumer permanently "unrepointed" and point this fact at demanding the
+        // false disclaimer stay forever — the exact direction it exists to stop.
+        string SetsForMarker =
+            $"{nameof(ShellSourceRoots)}.{nameof(ShellSourceRoots.SetsFor)}";
+
         string[] testSources = Directory.EnumerateFiles(
             Path.Combine(BnRepo.Root(), "tests"), "*.cs", SearchOption.AllDirectories).ToArray();
 
@@ -799,7 +898,7 @@ public sealed class ShellSourceRootsDriftTests
                 + "this fact nor a reader can tell whether it has been repointed — fix the roster "
                 + "key deliberately.");
 
-            if (!File.ReadAllText(file!).Contains("ShellSourceRoots.SetsFor", StringComparison.Ordinal))
+            if (!File.ReadAllText(file!).Contains(SetsForMarker, StringComparison.Ordinal))
                 unrepointed.Add(consumer);
         }
 
@@ -853,10 +952,15 @@ public sealed class ShellSourceRootsDriftTests
             foreach (Match m in Regex.Matches(File.ReadAllText(f), @"public\s+void\s+(\w+)\s*\("))
                 names.Add(m.Groups[1].Value);
 
+        // NO TOTAL IS QUOTED HERE ON PURPOSE. The first version said "591 were
+        // measured" and the commit that wrote it added a `public void`, so it
+        // shipped stale in the round whose subject was three corrected
+        // measurements. A lower bound needs no denominator to do its job: this
+        // exists to catch the pattern failing wholesale, not to track the suite.
         Assert.True(names.Count >= 500,
             $"extracted only {names.Count} distinct test-method names from {sources.Length} "
-            + "files, and 591 were measured — the `public void Name(` pattern has stopped "
-            + "matching. Re-point it; do not let citations resolve against a short index.");
+            + "files — the `public void Name(` pattern has stopped matching most of the "
+            + "suite. Re-point it; do not let citations resolve against a short index.");
 
         return names;
     }
@@ -871,13 +975,18 @@ public sealed class ShellSourceRootsDriftTests
     /// somewhere in the whole name.
     ///
     /// THE SHAPE WAS WIDENED AFTER MEASURING IT. The first cut required each
-    /// underscore-separated half to begin upper-then-lower, and that missed 38 of
-    /// the repository's 591 declared test names — every one-letter-word head
-    /// (`ACommentedOutWrap_…`, `AThrowingSink_…`), every ALL-CAPS segment
-    /// (`…_STILL_BlocksTheDispatchLane`) and every snake_case name
-    /// (`Mount_returns_component_id_for_sync_component`). Two NONEXISTENT names in
-    /// those shapes were put in a reason and the fact passed, so the hole was a
-    /// false green, not a theoretical one. This shape reaches 578 of 591.
+    /// underscore-separated half to begin upper-then-lower, and that missed every
+    /// one-letter-word head (`ACommentedOutWrap_…`, `AThrowingSink_…`), every
+    /// ALL-CAPS segment (`…_STILL_BlocksTheDispatchLane`) and every snake_case
+    /// name (`Mount_returns_component_id_for_sync_component`) — dozens of real
+    /// tests. Two NONEXISTENT names in those shapes were put in a reason and the
+    /// fact passed, so the hole was a false green rather than a theoretical one.
+    ///
+    /// WHAT IT REACHES IS STATED STRUCTURALLY, not as a ratio, because a ratio
+    /// decays the moment anyone adds a test — the first version quoted one and
+    /// the same commit invalidated it. This shape matches EVERY declared test
+    /// name that contains an underscore. The ones it cannot see are exactly the
+    /// ones with no underscore at all, and that sentence stays true.
     ///
     /// THE ALL_CAPS REFUSAL MOVED, it did not go. It is now carried by the
     /// lower-case requirement over the whole identifier rather than by the head
@@ -982,6 +1091,71 @@ public sealed class ShellSourceRootsDriftTests
                 + "every consuming pin is blind to — #364 F1 exactly — and a directory the roster "
                 + "names and Gradle does not is the AGP 9 incident: source in the tree that "
                 + "nothing builds, with pins reporting green over it.");
+        }
+    }
+
+    /// <summary>THE TEMPLATE'S ROOT LIST IS NOT A FREE LITERAL EITHER. It used to
+    /// be two strings nothing compared. `androidShell` answers to the Gradle
+    /// `kotlin.srcDirs` call; this makes `androidTemplateMirror` answer to
+    /// `androidShell`, so both multi-root sets in the roster are externally
+    /// derived and the generated app's source sets are the repo's with a prefix
+    /// swapped — which is what they have to be, because the template's own
+    /// build.gradle.kts compiles the same two names.
+    ///
+    /// WHY IT EXISTS: a root can MOVE between sets without any count noticing.
+    /// Taking `…/android/src/main/kotlin` out of `androidTemplateMirror` and
+    /// putting it in `androidJvmHost` leaves the total at 9, every array
+    /// non-empty, every root on disk, and every file still inside some root —
+    /// eight facts green, with the tree that ships to every `dotnet new
+    /// blazornative` consumer declaring one of its two source directories.
+    ///
+    /// THE COVER IS COMPLETE, and that is worth stating because it is why no
+    /// aggregate is needed here. A root leaving a SINGLE-root set takes it to
+    /// zero, which `EveryRoot_ExistsOnDisk` reds on per set. The roster has
+    /// exactly two multi-root sets: `androidShell`, held by the Gradle
+    /// derivation, and `androidTemplateMirror`, held here. A third would arrive
+    /// uncovered — so if one does, give it a derivation rather than a count.
+    ///
+    /// LIMIT: it compares root LISTS, not the trees behind them. The template
+    /// genuinely having those directories is `EveryRoot_ExistsOnDisk`; their
+    /// contents being a byte mirror is TemplateDriftTests'.</summary>
+    [Fact]
+    public void TheTemplateMirrorRoots_MirrorTheShellRoots()
+    {
+        IReadOnlyDictionary<string, ShellSourceRoots.SetDef> sets = TheWholeRoster();
+
+        var mirrors = sets.Values.Where(x => x.MirrorOf is not null).ToList();
+        Assert.True(mirrors.Count >= 1,
+            $"no set in {ShellSourceRoots.ManifestPath} carries a `mirrorOf` block, so every "
+            + "multi-root set but `androidShell` is back to being a free list of strings. The one "
+            + "that needs it is `androidTemplateMirror`; if it was renamed, re-point this "
+            + "deliberately.");
+
+        foreach (ShellSourceRoots.SetDef mirror in mirrors)
+        {
+            ShellSourceRoots.MirrorSource m = mirror.MirrorOf!;
+            ShellSourceRoots.SetDef source = RequireSet(sets, m.Set);
+
+            Assert.True(source.DerivedFrom is not null,
+                $"set '{mirror.Name}' mirrors '{m.Set}', and '{m.Set}' has no `derivedFrom` block. "
+                + "The whole value of a mirror is that it inherits an EXTERNAL derivation; "
+                + "mirroring a set that answers only to itself makes two free lists out of one.");
+
+            var expected = new SortedSet<string>(
+                source.Roots.Select(r => m.PathPrefix + r[source.DerivedFrom!.PathPrefix.Length..]),
+                StringComparer.Ordinal);
+            var actual = new SortedSet<string>(mirror.Roots, StringComparer.Ordinal);
+
+            Assert.True(actual.SetEquals(expected),
+                $"set '{mirror.Name}' and the set it mirrors, '{m.Set}', disagree about which "
+                + "source sets the Android shell has.\n"
+                + $"  mirrored from {m.Set}: {string.Join(", ", expected)}\n"
+                + $"  declared on {mirror.Name}: {string.Join(", ", actual)}\n"
+                + "The generated app compiles the same source-set names the repo does — its own "
+                + "build.gradle.kts says so — so a root here that the shell does not have, or a "
+                + "shell root missing here, means the template ships a tree no pin walks. A root "
+                + "MOVED into another set is the case no count can see: the total is unchanged and "
+                + "every array is still non-empty.");
         }
     }
 
@@ -1108,6 +1282,11 @@ public sealed class ShellSourceRootsDriftTests
                 + $"{contentRelative}, so the template's copy of the auth-bearing shell file is "
                 + "not part of the pack inventory that pin holds. " + WhyThisMatters);
 
+            // A NEGATIVE MEMBERSHIP TEST OVER A REGEX-PARSED LIST, which is the
+            // fails-green combination limit 6 is about: `divergent` holds only
+            // what the collection INITIALISER spells, so a file added to that set
+            // any other way is invisible here and this passes. Task 5 replaces the
+            // parse with the byte-identity set itself.
             Assert.False(divergent.Contains(androidRelative),
                 $"TemplateDriftTests now names {androidRelative} in its `divergent` set — the one "
                 + "list that REMOVES a file from the byte comparison while everything stays "
@@ -1147,6 +1326,12 @@ public sealed class ShellSourceRootsDriftTests
             .Select(m => m.Groups[1].Value)
             .ToHashSet(StringComparer.Ordinal);
 
+        // A TOTAL, AND ONE OF THIS FILE'S TWO CALLERS LEANS ON IT THE WRONG WAY.
+        // For the content manifest the consumer is a POSITIVE membership test, so
+        // a narrowed parse reds. For `divergent` it is a NEGATIVE one, and `> 0`
+        // says nothing about any of the five entries. Do not read this as a
+        // per-member assertion; it is not, and an earlier version of limit 5 said
+        // it was. Limit 6 has the measurement and the assigned repair.
         Assert.True(entries.Count > 0,
             $"{what} matched but parsed to ZERO entries. Comparing against an empty set would "
             + "make every membership question answer the convenient way — re-point the parse.");
