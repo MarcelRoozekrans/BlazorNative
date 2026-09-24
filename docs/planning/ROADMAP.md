@@ -2767,12 +2767,17 @@ mirror cannot drift either. **It must red before it is fixed.**
 > comment-only negative. M9–M13 cover the comment-stripper branch, the Swift and plist extractors
 > and the routed-vector anchor. The bonus, an always-true `UsesHomeScheme`, is caught by the anchor
 > itself. Three rows also tripped the positive control, whose splice reads the mutated file —
-> disclosed, not a defect. **Known gap:** the stripper mutations M9/M10 are full-line comments only;
-> Rule 7 prefers a same-line-after-code shape.
+> disclosed, not a defect. **Known gap, accepted:** the stripper mutations M9/M10 are full-line comments
+> only, where Rule 7 prefers a same-line-after-code shape. It is not a false-green channel: the
+> stripper treats `//` the same wherever it starts, `CommentStrippedSourceTests` covers the
+> string-before-comment case, and an exactly-one floor reds whether the stripper keeps too much or
+> too little.
 >
-> **Not covered (the pin's Rule 5 list):** a generated app that renames its scheme, a scheme
-> assembled at runtime, a site not listed in `Sites` (fails green), and a second declaration,
-> which reds on the floor as unmodelled rather than as a mismatch. No API, wire or ABI change:
+> **Not covered (the pin's Rule 5 list):** a generated app that renames its scheme; whether the
+> parsers *use* the declaration, which only the shared vectors on the advisory device lanes catch;
+> a site not listed in `Sites`, which fails green; and a second declaration, which reds on the
+> floor as unmodelled rather than as a mismatch. A scheme assembled from parts at a listed site
+> reds; the first draft of the list said it failed green, and the final review corrected it. No API, wire or ABI change:
 > outside tests and vectors, `MainActivity.kt` is the only `src` diff.
 
 #### Phase 15.4: The missing guards [status: pending]

@@ -26,7 +26,12 @@ namespace BlazorNative.Runtime.Tests;
 //   - An app generated from the template that later renames its scheme. This pins
 //     the SHIPPED template; the generated app owns its copies, and
 //     website/docs/shells/android.md tells its author where they are.
-//   - A scheme assembled at runtime from parts. Fails green: no site spells it.
+//   - Whether the parsers USE the declaration. This pins what each site declares,
+//     not that parseDeepLinkRoute / route(from:) compare against it; a parser that
+//     compares against its own literal is caught only by the shared vectors, which
+//     run on the advisory device lanes. At a listed site, a scheme assembled from
+//     parts does NOT pass: a non-literal yields zero values, so the floor reds, and
+//     a concatenation yields its first fragment, so agreement reds.
 //   - A SECOND <data android:scheme> or CFBundleURLSchemes entry. That reds on the
 //     exactly-one floor, whose message names it as an unmodelled second
 //     declaration rather than a mismatch.
