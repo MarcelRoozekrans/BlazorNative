@@ -17,3 +17,7 @@ gradlew text eol=lf
 *.dll   binary
 *.ttf   binary
 *.keystore binary
+
+# commit-parse-check's self-test fixtures must check out with LF -- a Windows
+# checkout (autocrlf=true) must not change what the self-test parses.
+scripts/commit-parse-check/fixtures/*.txt text eol=lf

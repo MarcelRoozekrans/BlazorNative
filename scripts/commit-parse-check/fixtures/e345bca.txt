@@ -1,0 +1,107 @@
+feat(renderer): report a render batch driven from a non-owner thread (#292)
+
+* feat(renderer): report a render batch driven from a non-owner thread
+
+Phase 13.2 set out to make InlineDispatcher.CheckAccess() stop returning an
+unconditional `true`. The spike says no, and the reason is worth the phase on its
+own: an honest CheckAccess() does not fail tests, it KILLS THE PROCESS with a
+stack overflow, reproducibly. The captured loop:
+
+    Renderer.Dispose()
+      -> CheckAccess()                             false
+      -> Dispatcher.InvokeAsync(() => Dispose())   marshal to "the right thread"
+      -> InlineDispatcher.InvokeAsync runs it INLINE, on the same thread
+      -> Renderer.Dispose() -> CheckAccess() false -> ... until the stack ends
+
+Blazor calls CheckAccess() to decide whether to MARSHAL, not merely to assert. An
+inline dispatcher runs work on the calling thread and so has nowhere to marshal
+to -- it MUST claim every thread is the right one. The unconditional `true` is
+load-bearing for the dispatcher's own coherence, not an oversight nobody got to.
+An honest answer needs InvokeAsync to own a real queue and a real thread, and that
+breaks the sync-mount contract the C ABI depends on (first render completes
+synchronously inside the native callback window; Exports.cs, MountSyncTests).
+
+So what ships is DETECTION. ReportIfNotTheRenderOwnerThread() runs at the top of
+UpdateDisplayAsync, warns under StrictErrors and reports at Debug otherwise, and
+NEVER throws -- a throw would change behaviour on a path that works today, in the
+area the spike just proved is delicate. "Owner" is whoever drove the FIRST batch,
+not whoever constructed the renderer: construction can happen anywhere, while the
+contract is about the thread driving renders inside the native callback window.
+
+The reason lives next to the code, not only in a conclusion doc, because the next
+reader's first instinct will be "why isn't this just AssertAccess()?" and the
+answer needs to be where they are standing.
+
+Three tests, each mutation-proven against a DIFFERENT mutation: removing the check
+reds the two reporting tests; ignoring StrictErrors reds the Debug-level test; and
+dropping the owner==current guard reds the SILENCE test. That third one earns its
+place -- a guard that fires on every batch is noise, and noise looks like coverage
+while providing none.
+
+The test class carries [Collection("bnlog-global")] and forwards to the previously
+installed sink. BnLog.Level and BnLog.Sink are process-wide, xUnit runs classes in
+parallel, and this suite has classes that assert on log output: without both, the
+capture swallows their lines and they fail for reasons that have nothing to do with
+them. That is not hypothetical -- it is what happened on the first full run, and
+Runtime.Tests' BnLogTests had already documented the same hazard.
+
+.NET 1051 -> 1054.
+
+Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+
+* docs(planning): record the phase 13.2 conclusion and close the phase
+
+The conclusion leads with the finding rather than the deliverable, because the
+finding IS the phase: an honest CheckAccess() kills the process with a stack
+overflow, Blazor uses CheckAccess() for marshalling rather than assertion, and an
+inline dispatcher has nowhere to marshal to -- so the unconditional `true` is
+load-bearing and the honest answer is unavailable until the dispatcher changes,
+which the C ABI's sync-mount contract forbids.
+
+Section 4 records a defect this phase created and fixed (a test capture installing
+a process-wide BnLog sink that swallowed two other classes' log assertions), and
+also records that the first diagnosis of a 50-minute test run was WRONG -- it
+blamed the new guard, and the cause was contention from ~48 leftover processes.
+Re-measured clean: 23 seconds with the guard, which fires fewer than 50 times
+across the suite. A conclusion that only reports what went right is not a record.
+
+Section 5 states plainly that #9 is NOT closed by this work: single-lane
+starvation is a scheduling problem, not a which-thread problem, and the phase
+touched its neighbourhood without addressing it.
+
+.NET 1051 -> 1054.
+
+Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+
+* test(renderer): drive the non-owner-thread case on a dedicated thread, not the pool
+
+CI failed two tests that pass locally, and both were defects in the new test
+rather than in the guard. A 2-core runner exposed what a many-core machine hides.
+
+Task.Run does not guarantee a different thread. When cores are scarce the pool
+INLINES the work onto the calling thread, so the cross-thread assertion compared
+12 against 12 and failed. A dedicated Thread is provably distinct.
+
+Pool continuations also land on arbitrary pool threads -- including the one running
+RendererSpike.RenderWalk_IsAllocationFree_OnSteadyState, whose
+GC.GetAllocatedBytesForCurrentThread() then measures THIS test's allocations. That
+reported a 835,200-byte "regression" against a 295,200 baseline which the guard did
+not cause: the guard returns before allocating anything on the same-thread path,
+and that test drives every render from one thread. A phantom, but an expensive one
+to read, because an allocation budget is exactly the kind of pin you believe.
+
+The tests are now synchronous end to end -- renderer.Mount<T>() rather than
+MountAsync, and a named background Thread that is joined -- so nothing this class
+does can escape onto a thread another test is measuring.
+
+Also worth recording: raising BnLog.Level is genuinely required (BnLog.Write gates
+on IsEnabled BEFORE reaching the sink, so Debug lines are dropped otherwise), and
+no other class in this suite asserts the ABSENCE of log output -- so the temporary
+raise can only add lines nobody checks for. Together with the forwarding sink, the
+cross-class hazard is closed from both directions.
+
+Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+
+---------
+
+Co-authored-by: Claude Opus 5 (1M context) <noreply@anthropic.com>
