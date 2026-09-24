@@ -2851,15 +2851,20 @@ see. Decide the key first; #375 follows from it rather than the other way round.
 > as a rule of thumb — "nested parentheses" is narrower than the real throwing shape in both directions, which
 > is why it runs the real parser rather than a regex.
 >
-> **Minors recorded for the final review, not fixed here:** four on `PatchKindDriftTests` (the
+> **The final review triaged the ten deferred minors: four fixed before merge, six accepted and
+> recorded.** Fixed: the `@conventional-commits/parser` version, now recorded in
+> `action-version.json` and asserted by `TheGuardsLockedParser_IsTheRecordedVersion`; the
+> CONTRIBUTING example, now the full `[Singleton(As = typeof(IDetector), AllowMultiple = true)]`
+> form confirmed dropped by the real parser, with "a common cause" in place of "the usual cause";
+> the `squashMessage` comment, which now says it approximates GitHub's squash; and the pin's Rule 5
+> bullet, which now names `release-please.yml`. Accepted and recorded: `PatchKindDriftTests`'
 > positive control splices Kotlin only; `TheEncodedKinds_AreExactlyTheLiveEnum_BothWays`'s
 > `Assert.True` short-circuits so M5 is only half-observable per run; the per-shell arm floor is
-> `Count > 0`, not `>= LiveKinds().Length`; and Task 3's own report initially mis-listed the arm
-> set, a report-only error) and five on the parse guard (`@conventional-commits/parser`'s version
-> is unpinned, only `release-please`'s is; the CONTRIBUTING example describes an approximate
-> trigger; `squashMessage` omits GitHub's `" (#N)"` and trailer reordering; an unreadable messages
-> file exits 1 by an uncaught throw where the header says 2; and the pin's Rule 5 bullet should say
-> "in `release-please.yml`" rather than leaving the file unnamed).
+> `Count > 0`, not `>= LiveKinds().Length`; Task 3's own report initially mis-listed the arm set, a
+> report-only error; an unreadable messages file exits 1 by an uncaught throw where the header says
+> 2; and the Suite line above omits that `android-instrumented` attempt 1 on `188f162` failed on
+> infrastructure before any test ran — a system-image download "Premature EOF" — passing on attempt
+> 2 with 228/0.
 
 #### Phase 15.5: Prose, and the small corrections [status: pending]
 **Goal:** Answer **#291** for the three unpinned documentation transcription pairs M14 found, and
