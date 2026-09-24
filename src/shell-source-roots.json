@@ -1,0 +1,292 @@
+{
+  "$doc": [
+    "SHELL SOURCE ROOTS -- one home for the answer to 'what is the shell's source tree'.",
+    "",
+    "WHY THIS FILE EXISTS: AuthSemanticsDriftTests scanned src/androidMain only, while",
+    "AndroidLogDriftTests scanned src/main/kotlin AND src/androidMain/kotlin AND both",
+    "template mirrors, quoting the Gradle line as its authority. Two pins, two different",
+    "answers to one question, and nothing compared them. That is a twin divergence in the",
+    "pins themselves -- see #364 F1.",
+    "",
+    "THE CONTRACT: every consumer accounts for EVERY set, exactly once, as consumes /",
+    "delegated / excluded. ShellSourceRootsDriftTests asserts the three lists partition",
+    "the set list, so 'unmentioned' is not a state a tree can be in -- FOR A TREE THIS FILE",
+    "LISTS, OR ONE LIVING INSIDE A `scanRoots` CONTAINER. Say the qualifier out loud: a tree",
+    "the build compiles from OUTSIDE those containers is in neither place and is green,",
+    "measured 11 of 11, and that is the residual recorded on",
+    "EveryDerivedRootList_MatchesItsExternalRecord. Five separate reviews defeated the auth",
+    "pin by finding places it did not look; this is what makes 'it does not look there' a RED",
+    "for everything the two mechanisms above reach.",
+    "",
+    "IT BINDS, AND HERE IS WHAT MAKES IT BIND -- TWO THINGS, NOT ONE. The cheap one is a",
+    "text test: EveryConsumer_ReadsItsRootsFromTheRoster reds if a consumer stops naming a",
+    "roster door at all. It replaced a temporary fact whose only job was to force this",
+    "paragraph's predecessor -- 'these entries record what a pin CLAIMS, not what it scans'",
+    "-- to be deleted the moment it stopped being true.",
+    "",
+    "THE ONE THAT ACTUALLY BINDS IS ShellSourceScan. No pin holds a root list: the doors take",
+    "a consumer name and an optional set name, so handing a pin its own paths is a COMPILE",
+    "ERROR rather than a red. The scan reads every file this roster puts in that pin's scope,",
+    "the code that RECORDS a read is the code that PERFORMS it, and the call that proves",
+    "coverage returns the very value the pin's assertion consumes. Coverage is per-root SET",
+    "EQUALITY: every file in scope, not merely one per root.",
+    "",
+    "EVERY CLAUSE ABOVE REPLACED ONE THAT WAS MEASURED FALSE, and that history is the",
+    "instruction. Round 1 said naming the door was enough; round 2 said calling it per site",
+    "was; round 3 said recording the enumeration was; round 4 said recording inside the",
+    "expression that carried the bytes was. Each was defeated by ONE line a step further",
+    "down, because a guard that RECEIVES a value cannot say where the value came from -- it",
+    "can only vouch for what it obtains itself. If you are about to add a sentence here",
+    "claiming this is now airtight, that is the sentence four rounds already wrote.",
+    "",
+    "WHAT REMAINS, measured: a CONTENT-keyed filter inside the shared matcher -- content is a",
+    "proxy for a path, one line hides a tree, and the single positive control running through",
+    "that matcher lives in another package so it stays green. And rewriting a pin's own fact",
+    "body, which no assertion anywhere survives. A walk over a strict SUPERSET of these roots",
+    "is also undetected, and that one fails SAFE for all three pins, which assert absences --",
+    "an extra tree can only add offenders. The residuals that survive measurement live beside",
+    "the code in ShellSourceScan; trust those, not a summary.",
+    "",
+    "A TEST NAMED ANYWHERE HERE MUST RESOLVE. `delegated.guard` is checked by",
+    "EveryDelegation_NamesAGuardThatExists, and every `reason` string -- delegated and",
+    "excluded alike -- is read for PascalCase_PascalCase identifiers by",
+    "EveryTestNamedInAReason_Exists. Citing a test in an exclusion is the same claim a",
+    "delegation makes; the only thing that used to separate them was which key it sat under.",
+    "",
+    "DELEGATED IS NOT A SYNONYM FOR EXCLUDED. A delegation is a claim about ANOTHER test's",
+    "behaviour, and an unpinned claim of that kind is the bug class this repo has paid for",
+    "most often. Every delegation names a `guard` -- a test that asserts the delegate still",
+    "covers the tree. A delegation without one is an exclusion wearing a better word.",
+    "",
+    "ONLY SHELL-TREE-SCANNING PINS BELONG HERE. A pin that names specific files on purpose",
+    "-- BnLogFormat, TextCollapseParity, DeepLinkSeed, DispatchSurface, GeneratedSymbolShadow",
+    "-- must NOT be repointed at this roster. Neither must ConsoleErrorDriftTests, which",
+    "walks every .cs under src/: that is the .NET tree. Sharing a walk is not sharing a",
+    "subject.",
+    "",
+    "THE OTHER DIRECTION IS `scanRoots`, BELOW. The totality fact makes 'unmentioned BY A",
+    "CONSUMER' impossible; on its own it cannot make 'absent from `sets`' impossible, because",
+    "`sets` is where it reasons FROM. EveryShellSourceFile_IsInsideADeclaredRoot closes that:",
+    "it walks the scanRoots and requires every .kt and .swift file found there to sit inside",
+    "some declared root. src/BlazorNative.Jni/src/debug holds no .kt today -- only res/xml --",
+    "so leaving it out of `sets` is correct, and the day it gains Kotlin that fact reds.",
+    "",
+    "NO NUMBER HERE IS FREE. `minFiles` must be at least 1 and at most `measured`, asserted, so",
+    "the floor cannot be lowered past the observation it was set from -- setting it to 0 and",
+    "re-pointing the container one level deeper was MEASURED green before that relation existed,",
+    "which is two JSON tokens defusing the whole mechanism.",
+    "",
+    "AND NO `roots` LIST IS FREE EITHER. Every set carries `derivedFrom` -- the build file that",
+    "already knows that source tree, with the anchors locating the block and a pattern reading the",
+    "paths out of it -- except `androidTemplateMirror`, which carries `mirrorOf` and inherits",
+    "`androidShell`'s. FOUR Kotlin source sets come from build.gradle.kts, two Swift targets from",
+    "project.yml -- four plus two is the six sets carrying `derivedFrom`, and the mirror is the",
+    "seventh. This sentence said FIVE for three rounds, which made the mirror the eighth of seven.",
+    "EveryRootList_IsExternallyDerived reds if an eighth set arrives with a hand written list.",
+    "",
+    "AND THE DERIVATION IS ONE CALL DEEP. It compares the roster against the ONE call its pattern",
+    "locates; a SECOND call in the same block that adds to or replaces that source set is invisible",
+    "-- `setSrcDirs(listOf(...))`, singular `srcDir(rootProject.file(...))`, XcodeGen `excludes:`,",
+    "each measured 11 of 11 GREEN while changing what actually compiles. The first and third are",
+    "SUBTRACTIONS and nothing here backstops those, because the orphan walk sees files that EXIST",
+    "and not files the build has stopped compiling. Written on the fact itself too; do not read",
+    "`derivedFrom` as a guarantee that the roster and the build agree about the whole source set.",
+    "",
+    "WHY IT IS EVERY SET AND NOT THE ONE MULTI-ROOT SET IT STARTED AS: a root can MOVE. The file",
+    "claimed for three rounds that single-root sets were covered because removing their only root",
+    "takes them to zero. True of removal, false of rearrangement -- swapping `appleShell` and",
+    "`appleTestBundle` puts the shipped iOS shell in a set the auth pin EXCLUDES, and it was",
+    "MEASURED green, as were two more shapes. Every root list answering to a build file retires",
+    "the class; naming it would only have described it.",
+    "",
+    "EACH scanRoot CARRIES ITS OWN `minFiles`, AND THAT IS NOT BOOKKEEPING. A single global",
+    "floor over these three containers is an aggregate over a partition, and it cannot see a",
+    "member leave: the template container is 18 files, which vanishes inside the headroom of",
+    "any total large enough to be useful. Deleting the whole entry was MEASURED green. So the",
+    "floor is per container and the total is derived by summing them. `measured` records what",
+    "was counted when the floor was set; `minFiles` is that number with headroom, so ordinary",
+    "deletion does not red and a container quietly narrowing does.",
+    "",
+    "WHAT IS STILL NOT COVERED, because the residual moved rather than vanished: a shell tree",
+    "outside every scanRoots entry, and anything under a declared `ignore`. Both fail GREEN.",
+    "That is disclosed here because a gap treated as covered ground is worse than an admitted",
+    "one.",
+    "",
+    "TO ADD A SET: add it here, then add it to ALL THREE consumers -- the totality fact",
+    "reds until every one of them has said what it does about the new tree. That is the",
+    "mechanism, not a chore around it."
+  ],
+
+  "sets": {
+    "androidShell": {
+      "language": "kotlin",
+      "purpose": "the shipped Android shell -- both source directories of the Gradle `main` source set, one compilation, one AAR",
+      "roots": [
+        "src/BlazorNative.Jni/src/main/kotlin",
+        "src/BlazorNative.Jni/src/androidMain/kotlin"
+      ],
+      "derivedFrom": {
+        "file": "src/BlazorNative.Jni/build.gradle.kts",
+        "within": [
+          "sourceSets {",
+          "getByName(\"main\") {"
+        ],
+        "describes": "the Gradle `main` source set's kotlin.srcDirs call",
+        "pattern": "kotlin\\.srcDirs\\s*\\(([^)]*)\\)",
+        "pathPrefix": "src/BlazorNative.Jni/"
+      }
+    },
+    "appleShell": {
+      "language": "swift",
+      "purpose": "the shipped iOS shell -- the BnHost target's whole source tree",
+      "roots": ["src/BlazorNative.Apple/BnHost"],
+      "derivedFrom": {
+        "file": "src/BlazorNative.Apple/project.yml",
+        "within": [
+          "targets:",
+          "BnHost:"
+        ],
+        "describes": "XcodeGen's BnHost target source list",
+        "pattern": "^\\s*-\\s*path:\\s*([^\\s#]+)",
+        "pathPrefix": "src/BlazorNative.Apple/"
+      }
+    },
+    "appleTestBundle": {
+      "language": "swift",
+      "purpose": "the XCTest bundle. NOT shipped output. NSLogDriftTests consumes it deliberately as its positive-control anchor -- it MUST still hold live NSLog calls -- which is exactly why this roster has named sets rather than one flat list",
+      "roots": ["src/BlazorNative.Apple/BnHostTests"],
+      "derivedFrom": {
+        "file": "src/BlazorNative.Apple/project.yml",
+        "within": [
+          "targets:",
+          "BnHostTests:"
+        ],
+        "describes": "XcodeGen's BnHostTests target source list",
+        "pattern": "^\\s*-\\s*path:\\s*([^\\s#]+)",
+        "pathPrefix": "src/BlazorNative.Apple/"
+      }
+    },
+    "androidInstrumentedTests": {
+      "language": "kotlin",
+      "purpose": "the instrumented suite. Not shipped.",
+      "roots": ["src/BlazorNative.Jni/src/androidTest/kotlin"],
+      "derivedFrom": {
+        "file": "src/BlazorNative.Jni/build.gradle.kts",
+        "within": [
+          "sourceSets {",
+          "getByName(\"androidTest\") {"
+        ],
+        "describes": "the Gradle `androidTest` source set's java.srcDirs call",
+        "pattern": "java\\.srcDirs\\s*\\(([^)]*)\\)",
+        "pathPrefix": "src/BlazorNative.Jni/"
+      }
+    },
+    "androidJvmTests": {
+      "language": "kotlin",
+      "purpose": "the JVM unit-test source set. Not shipped.",
+      "roots": ["src/BlazorNative.Jni/src/test/kotlin"],
+      "derivedFrom": {
+        "file": "src/BlazorNative.Jni/build.gradle.kts",
+        "within": [
+          "sourceSets {",
+          "getByName(\"test\") {"
+        ],
+        "describes": "the Gradle `test` source set's java.srcDirs call",
+        "pattern": "java\\.srcDirs\\s*\\(([^)]*)\\)",
+        "pathPrefix": "src/BlazorNative.Jni/"
+      }
+    },
+    "androidJvmHost": {
+      "language": "kotlin",
+      "purpose": "the desktop JVM inspector host -- InspectorHost.kt, InspectorPage.kt, InspectorServer.kt. A separate source set, not part of the Gradle `main` compilation, and it never runs on a device.",
+      "roots": ["src/BlazorNative.Jni/src/jvmHost/kotlin"],
+      "derivedFrom": {
+        "file": "src/BlazorNative.Jni/build.gradle.kts",
+        "within": [
+          "compileJvmHostKotlin.configure {"
+        ],
+        "describes": "the compileJvmHostKotlin task's source() call",
+        "pattern": "layout\\.projectDirectory\\.dir\\s*\\(([^)]*)\\)",
+        "pathPrefix": "src/BlazorNative.Jni/"
+      }
+    },
+    "androidTemplateMirror": {
+      "language": "kotlin",
+      "purpose": "the generated app's shell. Ships to every consumer of `dotnet new blazornative`, and carries its own copy of AndroidShellBridge.kt",
+      "roots": [
+        "templates/BlazorNative.Templates/content/BlazorNative.App/android/src/main/kotlin",
+        "templates/BlazorNative.Templates/content/BlazorNative.App/android/src/androidMain/kotlin"
+      ],
+      "mirrorOf": {
+        "set": "androidShell",
+        "pathPrefix": "templates/BlazorNative.Templates/content/BlazorNative.App/android/"
+      }
+    }
+  },
+
+  "scanRoots": [
+    {
+      "path": "src/BlazorNative.Jni/src",
+      "extensions": [".kt", ".java"],
+      "minFiles": 85,
+      "measured": 100,
+      "why": "every Gradle source set of the Android shell project lives directly under here, declared or not. This is the container that makes a NEW sibling -- a src/foo/kotlin nobody added to `sets` -- visible."
+    },
+    {
+      "path": "templates/BlazorNative.Templates/content/BlazorNative.App/android/src",
+      "extensions": [".kt", ".java"],
+      "minFiles": 15,
+      "measured": 18,
+      "why": "the same shape in the generated app's tree. A source set that appears here and not in `sets` ships to every consumer of `dotnet new blazornative` unscanned. It is also the SMALLEST container, which is exactly why its floor is its own rather than a share of a total -- 18 files disappear inside 34 of headroom on any global count."
+    },
+    {
+      "path": "src/BlazorNative.Apple",
+      "extensions": [".swift"],
+      "ignore": ["src/BlazorNative.Apple/vendor"],
+      "minFiles": 55,
+      "measured": 66,
+      "why": "BnHost and BnHostTests are the two declared Swift trees; a third target added beside them would otherwise be invisible. `vendor` is ignored because it is where third-party checkouts land -- a vendored Swift package is nobody's shell. THE IGNORE IS INERT TODAY, measured: vendor holds a .gitkeep and nothing else, so that arm of the walk has no live exercise and this sentence is a forward-looking exclusion rather than a description of anything running."
+    }
+  ],
+
+  "consumers": {
+    "AuthSemanticsDriftTests": {
+      "consumes": ["androidShell", "appleShell"],
+      "delegated": {
+        "androidTemplateMirror": {
+          "to": "TemplateDriftTests",
+          "guard": "TheAuthBearingShellFile_IsStillInTheTemplateMirrorList",
+          "reason": "the template's AndroidShellBridge.kt is held BYTE-IDENTICAL to the repo's copy, so an auth change there without the same change here already reds. Scanning it as well would double every site and every ignored count in auth-semantics.json for a tree that cannot differ."
+        }
+      },
+      "excluded": {
+        "appleTestBundle": "XCTest source. An authenticator token here configures a test, not a user's gate.",
+        "androidInstrumentedTests": "instrumented source. The credential-path seam it drives is pinned in the shell by TheTestOnlyCredentialBranch_IsStillGuarded, which is where the guarantee belongs.",
+        "androidJvmTests": "JVM unit-test source, no device auth surface reachable from it.",
+        "androidJvmHost": "the desktop inspector host. It runs on a JVM, not a device, so there is no platform authenticator for it to name."
+      }
+    },
+    "AndroidLogDriftTests": {
+      "consumes": ["androidShell", "androidTemplateMirror"],
+      "delegated": {},
+      "excluded": {
+        "appleShell": "Swift. Wrong language for an android.util.Log scan.",
+        "appleTestBundle": "Swift.",
+        "androidInstrumentedTests": "test source; its own exemption is declared in that pin.",
+        "androidJvmTests": "test source; likewise.",
+        "androidJvmHost": "not the Android compilation. android.util.Log is not even on its classpath."
+      }
+    },
+    "NSLogDriftTests": {
+      "consumes": ["appleShell", "appleTestBundle"],
+      "delegated": {},
+      "excluded": {
+        "androidShell": "Kotlin. Wrong language for an NSLog scan.",
+        "androidInstrumentedTests": "Kotlin.",
+        "androidJvmTests": "Kotlin.",
+        "androidTemplateMirror": "Kotlin.",
+        "androidJvmHost": "Kotlin."
+      }
+    }
+  }
+}

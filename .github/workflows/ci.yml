@@ -4,7 +4,7 @@
 #
 #   build-test (windows-latest) — the local verification procedure verbatim
 #   (setup.ps1 §1–7 documents the toolchain pins):
-#     build (analyzers ride it) → .NET tests (1132 passed / 0 skipped) →
+#     build (analyzers ride it) → .NET tests (1163 passed / 0 skipped) →
 #     three NativeAOT publishes of samples/BlazorNative.SampleApp — the
 #     publish head since Phase 8.0: the app owns PublishAot, the exports stay
 #     in Runtime via UnmanagedEntryPointsAssembly, and the artifact is
@@ -2177,7 +2177,20 @@ jobs:
       # collected EVERY quoted string in the dispatch body, so a manifest style
       # whose arm was never written read as dispatched off any unrelated quoted
       # string matching its name. That was live on main.
-      - name: .NET tests (assert 1132 passed / 0 skipped)
+      # 1132 -> 1163 (15.2 auth pin coverage, +31): eighteen population facts
+      # plus thirteen fixture facts in the new CommentStrippedSourceTests, which
+      # writes its own inputs and reads no checkout. By file: +11
+      # ShellSourceRootsDriftTests, the shell-source roster and its totality pin
+      # -- one home for the answer to "what is the shell's source tree", because
+      # the auth pin and the log pin disagreed about it and nothing compared
+      # them; +7 AuthSemanticsDriftTests, four detectors and three of their
+      # fixed points, closing #364's four reproduced holes -- half the Android
+      # shell unscanned, a caller count scoped to one file, the shared stripper
+      # over-stripping past raw strings, and an import alias defeating every
+      # dotted token; +13 CommentStrippedSourceTests, the stripper's own
+      # fixture harness. Every hole was measured GREEN on the unfixed tree
+      # first.
+      - name: .NET tests (assert 1163 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -2195,8 +2208,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 1132 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 1132 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 1163 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 1163 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # ── NativeAOT publishes + ten-export verification ─────────────────────

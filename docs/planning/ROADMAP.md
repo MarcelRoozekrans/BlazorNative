@@ -2618,12 +2618,108 @@ What the census actually sized, in order:
 > mutation. The honest repair is a **fixture harness for `ParseNameTable`**, named and deliberately
 > not built inside a fix round, because it is a new control design rather than a patch.
 
-#### Phase 15.2: Define the auth pin's coverage [status: pending]
+#### Phase 15.2: Define the auth pin's coverage [status: active]
 **Goal:** Answer **#364** by stating what the auth-semantics scan must cover — which trees, which
 spellings, which file kinds — and closing its four reproduced holes as consequences of that
 statement rather than as four patches.
 **Surface:** Backend
 **HelpWanted:** no
+**Design:** [`docs/superpowers/specs/2026-09-23-phase-15.2-design.md`](../superpowers/specs/2026-09-23-phase-15.2-design.md)
+**Plan:** [`docs/superpowers/plans/2026-09-23-phase-15.2-auth-pin-coverage.md`](../superpowers/plans/2026-09-23-phase-15.2-auth-pin-coverage.md)
+**Suite:** **1132 → 1163** — Analyzers 27 · Renderer 140 · Runtime 996, of which 15 are
+`ReferenceDriftTests` counted by discovery. Census population 130 → **148** facts across **28**
+files; the other 13 are the stripper's fixture harness, outside the population by Rule 1.
+
+> **Outcome: all four of #364's holes closed, each measured green on the unfixed tree before its
+> mechanism existed.** F1, half the Android shell unscanned. F2, the credential-caller count scoped
+> to one file. F3, the shared comment stripper losing raw-string state and stripping past a `"""`
+> body into live code. F4, an import alias rebinding the authenticator namespace so that every
+> dotted token in the vocabulary became unseeable.
+>
+> **The mechanism is one roster, not four patches.** `src/shell-source-roots.json` is the single
+> home for *what is the shell's source tree*, and every consuming pin accounts for every set exactly
+> once as consumes / delegated / excluded. A partition makes **unmentioned** impossible **for a
+> tree the roster lists or one inside the three `scanRoots` containers**, which is what "the pin
+> did not look there" had been. It is not impossible for a tree the build compiles from outside
+> them - that is residual 3, measured 11 of 11 green, and the qualifier belongs in the headline
+> because the unqualified version was this phase's own repeated failure mode. Four review rounds then moved it from documentary to
+> **binding**: the pins hold no root lists at all, the doors take a consumer name, and the call that
+> proves coverage returns the very value the assertion consumes.
+>
+> **`templates/` is delegated, not unscanned** — recorded once, on the auth pin's consumer entry,
+> with the delegate, the reason, and the guard that holds it,
+> `TheAuthBearingShellFile_IsStillInTheTemplateMirrorList`. `src/auth-semantics.json` points at that
+> record rather than restating it; a second copy of the terms is the defect this phase removed.
+>
+> **Thirteen claims were falsified by measurement and deleted rather than softened**, and the
+> phase's own success criterion converged on **the pin's claims and its reach being the same size**
+> rather than on *no route survives*. What replaced the last universal sentence is: *four
+> mechanisms, each catching a named set of shapes, each shape measured green before its mechanism
+> existed, and everything unmeasured in a residual list.*
+
+> **Residuals carried past this phase. The fifteen-entry list is on the facts themselves and is
+> reproduced in full in the PR body; only what outlives the phase is ledgered here.**
+>
+> **1. The raw platform integers.** `setAllowedAuthenticators(0x0000000F or 0x00008000)` is
+> `BIOMETRIC_STRONG or DEVICE_CREDENTIAL` with no name for a token scanner to find. Measured
+> **978 of 978 green** with the error arm intact. **This is the only residual of which "needs a
+> parser" is true** — it needs type resolution over an Android classpath, so a Lint check or a
+> compiler plugin, not a pin. Fails green.
+>
+> **2. Five ways to blind the machinery from inside**, each measured: a content-keyed filter inside
+> the shared matcher; a filter inside a `ForPattern*` lambda; a new helper of the same name
+> delegating to the per-line matcher; a path-keyed filter on the hit list after the coverage
+> record; and — found by the final review, in the commit that added the ban partition — **a door
+> the partition does not spell**. Adding a third `ShellSourceScan` door and routing a ban through
+> it puts that ban in neither of the two lists every assertion reasons from: **32 of 32 green**
+> with a live wrapped offender in both copies of the shell. A ban written as a parameterised
+> `[Theory]`, and one delegating through a private helper, are the same class and were separately
+> measured at 32 of 32. The commit had claimed *"a fact in neither half is a RED"*; that sentence
+> is corrected at both of its homes and no fifth mechanism was built. All fail green. The general lesson is written at the pin: **a guard that RECEIVES a value
+> cannot say where the value came from**, so each round's fix moved the hole one line further down
+> rather than closing the class.
+>
+> **3. The derivation grammar is one build call deep, and subtractions have no backstop anywhere.**
+> `EveryDerivedRootList_MatchesItsExternalRecord` compares the roster against the one call its
+> pattern locates. `kotlin.setSrcDirs(listOf(…))` **replaces** the source dirs so a tree stops
+> compiling; singular `kotlin.srcDir(rootProject.file(…))` adds one outside every `scanRoot`;
+> XcodeGen `excludes:` drops files from the shipped target. Each measured **11 of 11 green** while
+> changing what actually compiles, and the first shape recreates in two tokens the **AGP 9 incident
+> that assertion's own message cites as the thing it prevents**. The message and the limit list now
+> say what they do and do not catch. **The cheap closure is the dual of
+> `EveryRootList_IsExternallyDerived`**: every source set and target found in the two build files
+> must appear in the roster. Not built here — it is a new pin, not a patch.
+>
+> **4. The template's Gradle file is an unread second record.**
+> `templates/…/android/build.gradle.kts` carries the same `kotlin.srcDirs` call byte-for-byte and
+> nothing reads it, so `mirrorOf` is a choice rather than a necessity. Giving the mirror its own
+> `derivedFrom` as well would turn `mirrorOf` into a real differential pin between the two Gradle
+> files — the M14 shape this phase sits inside. Until then a narrowing of the template's own
+> `srcDirs` reds nothing.
+>
+> **5. The enumeration key gained an error in each direction; the documented key is widened here,
+> the decision stays with 15.4.** `grep -rl "BnRepo.Root()"` now misses `NSLogDriftTests`, which is
+> still a pin but reaches the tree through `ShellSourceScan` in another file, and it catches
+> `CommentStrippedSourceTests`, whose only two matches are in comments saying it is deliberately
+> outside. §9 of the census asks what the key cannot see because a pin never touches the tree;
+> **this is the same hole arriving from the other side**. The key is a **method-name proxy for the
+> call graph** — the substitution `docs/pin-standard.md` scores four-for-four against — and it held
+> only while proxy and call graph coincided. **Consolidation is what separates them, and 15.3
+> routes another pin through the same roster**, so a second false negative arrives before 15.4
+> runs. No interim pin was built. What this phase does is widen the DOCUMENTED key to
+> `grep -rlE "BnRepo\.Root\(\)|ShellSourceScan\."`, measured to return **29 — exactly the 28
+> plus `NSLogDriftTests`** — in the census and `docs/pin-standard.md`. The population decision
+> deferred to 15.4 with **#375** should weigh both directions.
+>
+> **6. Ten CS1570 doc-comment warnings in the test tree, filed rather than fixed.** Three files —
+> `ComponentReferenceDriftTests`, `PackageVersionPinTests`, `TextCollapseParityDriftTests` — carry
+> badly-formed XML in `///` comments: an `<inheritdoc>` closed as `</summary>`, two `<Version>`
+> fragments closed the same way, and two bare `&` characters. They are invisible today because test
+> projects do not set `GenerateDocumentationFile`, and visible in one flag:
+> `dotnet build -p:GenerateDocumentationFile=true`. **That is exactly why it is worth recording.**
+> The release `validate` job enforces a zero-warning pack, and that mechanism is what orphaned
+> **0.9.0** — a warning nobody could see until the gate that could see it ran. None of the three is
+> in a file this phase touched. 15.5 is the natural home.
 
 #### Phase 15.3: The first live test — deep-link scheme [status: pending]
 **Goal:** Close **#296** using the mechanism rather than around it. Establish which behaviour is
