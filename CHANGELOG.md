@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.2](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.16.1...v0.16.2) (2026-09-24)
+
+
+### Bug Fixes
+
+* **15.3:** match the deep-link scheme case-insensitively on Android, as iOS does ([#384](https://github.com/MarcelRoozekrans/BlazorNative/issues/384)) ([66cd693](https://github.com/MarcelRoozekrans/BlazorNative/commit/66cd693234415717273e4787de48c05c7f1792d6))
+
 ## [0.16.1](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.16.0...v0.16.1) (2026-09-23)
 
 

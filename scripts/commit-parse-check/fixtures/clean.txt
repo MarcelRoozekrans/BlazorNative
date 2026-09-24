@@ -1,0 +1,6 @@
+fix(runtime): keep the frame arena alive for the whole callback
+
+The arena was returned one statement early. Nothing read it after that
+point today, but the ordering was an accident rather than a rule.
+
+Co-Authored-By: A Contributor <contributor@example.com>
