@@ -2618,7 +2618,7 @@ What the census actually sized, in order:
 > mutation. The honest repair is a **fixture harness for `ParseNameTable`**, named and deliberately
 > not built inside a fix round, because it is a new control design rather than a patch.
 
-#### Phase 15.2: Define the auth pin's coverage [status: active]
+#### Phase 15.2: Define the auth pin's coverage [status: complete]
 **Goal:** Answer **#364** by stating what the auth-semantics scan must cover — which trees, which
 spellings, which file kinds — and closing its four reproduced holes as consequences of that
 statement rather than as four patches.
@@ -2626,6 +2626,7 @@ statement rather than as four patches.
 **HelpWanted:** no
 **Design:** [`docs/superpowers/specs/2026-09-23-phase-15.2-design.md`](../superpowers/specs/2026-09-23-phase-15.2-design.md)
 **Plan:** [`docs/superpowers/plans/2026-09-23-phase-15.2-auth-pin-coverage.md`](../superpowers/plans/2026-09-23-phase-15.2-auth-pin-coverage.md)
+**Completed:** 2026-09-24 · [PR #382](https://github.com/MarcelRoozekrans/BlazorNative/pull/382)
 **Suite:** **1132 → 1163** — Analyzers 27 · Renderer 140 · Runtime 996, of which 15 are
 `ReferenceDriftTests` counted by discovery. Census population 130 → **148** facts across **28**
 files; the other 13 are the stripper's fixture harness, outside the population by Rule 1.
