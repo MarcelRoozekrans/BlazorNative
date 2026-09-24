@@ -165,6 +165,9 @@ pinning the bug.
 - **Deep-link scheme case-sensitivity** (Android case-sensitive, iOS case-insensitive) — a residual
   instance of this phase's own bug class, deferred on a reachability argument (Android's manifest
   intent-filter matching is itself case-sensitive against a lowercase value, so the parser never
-  sees such a URL). Written up as its own issue rather than left as a comment.
+  sees such a URL). Written up as its own issue rather than left as a comment. **Since fixed —
+  #296:** a reachability test measured the argument. The filter claim held, but an explicit intent
+  bypasses the filter, so the parser can see such a URL. Android now lowercases the scheme like
+  iOS, pinned by a shared vector row.
 - The low-severity items grouped in **#283**, triaged in writing on that issue.
 

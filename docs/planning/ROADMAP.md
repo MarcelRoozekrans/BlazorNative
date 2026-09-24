@@ -2722,12 +2722,64 @@ files; the other 13 are the stripper's fixture harness, outside the population b
 > **0.9.0** — a warning nobody could see until the gate that could see it ran. None of the three is
 > in a file this phase touched. 15.5 is the natural home.
 
-#### Phase 15.3: The first live test — deep-link scheme [status: pending]
+#### Phase 15.3: The first live test — deep-link scheme [status: complete]
 **Goal:** Close **#296** using the mechanism rather than around it. Establish which behaviour is
 correct, align the outlier, and pin it so the third copy in `AndroidManifest.xml` and its template
 mirror cannot drift either. **It must red before it is fixed.**
 **Surface:** Backend
 **HelpWanted:** no
+**Design:** [`docs/superpowers/specs/2026-09-24-phase-15.3-design.md`](../superpowers/specs/2026-09-24-phase-15.3-design.md)
+**Plan:** [`docs/superpowers/plans/2026-09-24-phase-15.3-deeplink-scheme.md`](../superpowers/plans/2026-09-24-phase-15.3-deeplink-scheme.md)
+**Completed:** 2026-09-24 · [PR #384](https://github.com/MarcelRoozekrans/BlazorNative/pull/384)
+**Suite:** .NET **1163 → 1169** (Analyzers 27 · Renderer 140 · Runtime 996 → 1002: five
+`DeepLinkSchemeDriftTests` facts plus one vector row) · Android instrumented **226 → 228**
+(`BnDeepLinkReachabilityTest`) · iOS 271 and JVM 162 unchanged.
+
+> **Outcome: #296 closed through the mechanism, and it redded before it was fixed.** The scheme
+> now has one home, `src/deeplink-vectors.json`'s `scheme` key. `DeepLinkSchemeDriftTests` pins
+> all six copies to it: both `MainActivity.kt`, both `AndroidManifest.xml`, `BnDeepLink.swift` and
+> `Info.plist`.
+>
+> **The red.** Commit B `24917b4` added the eighth shared vector, `BLAZORNATIVE://settings → /settings`,
+> with no fix. [Run 36004048485](https://github.com/MarcelRoozekrans/BlazorNative/actions/runs/36004048485),
+> API 34, 228 tests, exactly one failure: `deep-link vector: BLAZORNATIVE://settings
+> expected:</settings> but was:<null>`. `ios` was green on the same SHA — Swift already lowercased.
+> The twins disagreed, and the shared vector saw it.
+>
+> **Reachability, as measured — hygiene, not a user-visible fix.**
+> `BnDeepLinkReachabilityTest.theIntentFilter_resolvesLowercase_butNotAnUppercaseScheme` confirmed
+> that the manifest filter resolves `blazornative://` and does **not** resolve `BLAZORNATIVE://`, so a
+> browser or implicit intent never reaches the parser with that spelling.
+> `anExplicitIntent_resolvesToMainActivity_independentOfTheScheme` confirmed that an explicit intent
+> resolves anyway. The fix is therefore parity with iOS plus explicit-intent correctness. The
+> deferral argument recorded in 0.11's migration note held for the filter and failed for explicit
+> intents. Resolution is measured; delivery into `parseDeepLinkRoute` is inferred.
+>
+> **The green.** Commit C `1587af4` lowercases the scheme. The shell and template copies are
+> byte-identical, and the mirror pin was proven by reverting only the template and watching
+> `TemplateMainActivity_EqualsTheRepos_ModuloTheFallbackAndTheImport` go red.
+> [android-instrumented](https://github.com/MarcelRoozekrans/BlazorNative/actions/runs/36030419938)
+> 228/0 · [ios](https://github.com/MarcelRoozekrans/BlazorNative/actions/runs/36030419936) 271/0 ·
+> [ci](https://github.com/MarcelRoozekrans/BlazorNative/actions/runs/36030419937) 1169 — all on
+> `1587af4`'s exact `headSha`.
+>
+> **Mutation table (Rule 7): 13 rows plus one bonus, every row as predicted.** M1–M8 cover the floor,
+> the vacuity contrast, a misspelling at each site kind, a dead mismatch detector and a
+> comment-only negative. M9–M13 cover the comment-stripper branch, the Swift and plist extractors
+> and the routed-vector anchor. The bonus, an always-true `UsesHomeScheme`, is caught by the anchor
+> itself. Three rows also tripped the positive control, whose splice reads the mutated file —
+> disclosed, not a defect. **Known gap, accepted:** the stripper mutations M9/M10 are full-line comments
+> only, where Rule 7 prefers a same-line-after-code shape. It is not a false-green channel: the
+> stripper treats `//` the same wherever it starts, `CommentStrippedSourceTests` covers the
+> string-before-comment case, and an exactly-one floor reds whether the stripper keeps too much or
+> too little.
+>
+> **Not covered (the pin's Rule 5 list):** a generated app that renames its scheme; whether the
+> parsers *use* the declaration, which only the shared vectors on the advisory device lanes catch;
+> a site not listed in `Sites`, which fails green; and a second declaration, which reds on the
+> floor as unmodelled rather than as a mismatch. A scheme assembled from parts at a listed site
+> reds; the first draft of the list said it failed green, and the final review corrected it. No API, wire or ABI change:
+> outside tests and vectors, `MainActivity.kt` is the only `src` diff.
 
 #### Phase 15.4: The missing guards [status: pending]
 **Goal:** Close **#297** and **#302** — a pin that does not exist, and a release-notes guard that

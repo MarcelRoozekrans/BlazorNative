@@ -35,6 +35,17 @@ public sealed class DeepLinkVectorTests
             v => v.Url == "blazornative://settings/audio" && v.Route == "/settings/audio");
     }
 
+    /// <summary>#296: the scheme-case row. The Kotlin parser compared the scheme exactly
+    /// while Swift lowercased it. Losing this row puts both shells back to passing over a
+    /// table that no longer covers the divergence, so its removal has to be a red here, on
+    /// the one lane that runs on every PR.</summary>
+    [Fact]
+    public void TheTable_StillContainsTheSchemeCaseRow()
+    {
+        Assert.Contains(BnDeepLinkVectors.All,
+            v => v.Url == "BLAZORNATIVE://settings" && v.Route == "/settings");
+    }
+
     /// <summary>Every vector is usable as a vector: a non-empty URL, and an expected route
     /// that is either null (the URL must be rejected) or an absolute route. A blank URL or a
     /// route missing its leading slash would be asserted faithfully by all three suites and

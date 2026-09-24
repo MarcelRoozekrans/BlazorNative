@@ -32,6 +32,8 @@ object BnDeepLinkVectors {
         Pair("blazornative://", "/"),
         // empty authority, explicit path — Android reads data.host (null here), iOS reads url.host (empty); the two APIs disagree about where the first segment lives
         Pair("blazornative:///settings", "/settings"),
+        // #296: schemes are case-insensitive (RFC 3986 3.1). iOS lowercases; Android compared exactly and returned null
+        Pair("BLAZORNATIVE://settings", "/settings"),
         // wrong scheme is REJECTED, never coerced into a route
         Pair("https://example.com/settings", null),
     )
