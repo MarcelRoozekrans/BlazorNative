@@ -2722,7 +2722,7 @@ files; the other 13 are the stripper's fixture harness, outside the population b
 > **0.9.0** — a warning nobody could see until the gate that could see it ran. None of the three is
 > in a file this phase touched. 15.5 is the natural home.
 
-#### Phase 15.3: The first live test — deep-link scheme [status: active]
+#### Phase 15.3: The first live test — deep-link scheme [status: complete]
 **Goal:** Close **#296** using the mechanism rather than around it. Establish which behaviour is
 correct, align the outlier, and pin it so the third copy in `AndroidManifest.xml` and its template
 mirror cannot drift either. **It must red before it is fixed.**
@@ -2730,6 +2730,7 @@ mirror cannot drift either. **It must red before it is fixed.**
 **HelpWanted:** no
 **Design:** [`docs/superpowers/specs/2026-09-24-phase-15.3-design.md`](../superpowers/specs/2026-09-24-phase-15.3-design.md)
 **Plan:** [`docs/superpowers/plans/2026-09-24-phase-15.3-deeplink-scheme.md`](../superpowers/plans/2026-09-24-phase-15.3-deeplink-scheme.md)
+**Completed:** 2026-09-24 · [PR #384](https://github.com/MarcelRoozekrans/BlazorNative/pull/384)
 **Suite:** .NET **1163 → 1169** (Analyzers 27 · Renderer 140 · Runtime 996 → 1002: five
 `DeepLinkSchemeDriftTests` facts plus one vector row) · Android instrumented **226 → 228**
 (`BnDeepLinkReachabilityTest`) · iOS 271 and JVM 162 unchanged.
