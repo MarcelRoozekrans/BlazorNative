@@ -2791,6 +2791,74 @@ see. Decide the key first; #375 follows from it rather than the other way round.
 **HelpWanted:** no
 **Design:** [`docs/superpowers/specs/2026-09-24-phase-15.4-design.md`](../superpowers/specs/2026-09-24-phase-15.4-design.md)
 **Plan:** [`docs/superpowers/plans/2026-09-24-phase-15.4-missing-guards.md`](../superpowers/plans/2026-09-24-phase-15.4-missing-guards.md)
+**Suite:** .NET **1169 → 1176** (Analyzers 27 · Renderer 140 · Runtime 1002 → 1009: five
+`PatchKindDriftTests` facts plus two `ReleaseParserVersionPinTests` facts) · Android instrumented
+228, iOS 271 and JVM 162 unchanged — no shell source moved.
+
+> **Outcome: all three named issues closed.** #375's population-key decision, #297's missing
+> patch-kind pin, and #302's missing release-notes guard, each built and mutation-proven to the
+> 15.0 standard.
+>
+> **#375 — the population key stays *tree-readers*; a hand-kept register covers the rest.** §9 of
+> the census asked whether Rule 6's population is the population M15 wants. Decided: yes, with a
+> named exception — a `[Pin]` attribute was rejected as declared-not-derived, so pins over
+> in-memory collections are listed by hand in `docs/pin-standard.md`, directly under Rule 6.
+> `RouteMenuDriftTests` is the register's first row. Its two comparison facts were vacuity-capable
+> individually — measured red-before-fix: with `BnDemo.Destinations` emptied,
+> `EveryMenuRow_PointsAtARoutedPage` passed over nothing while its sibling still caught the defect
+> on its own floor. `AssertBothSidesNonEmpty` now floors both sides of every comparison. M1–M4
+> confirmed each shape: M1 empties `Destinations` and both facts red on the new floor; M2 empties
+> `RoutedPages()` and both comparison facts red the same way, `TheTwoExemptions_…` unaffected; M3
+> removes the floor call from one fact alone and reproduces the original vacuity; M4 adds a ghost
+> route and the coverage fact reds naming it. The counts in census §1 and §3 remain counts of
+> tree-readers, as the census always said — the register is not added to them.
+>
+> **#297 — `PatchKindDriftTests`, four facts plus the control, mutation-proven M1–M10.** Every
+> `RenderPatch` subclass now encodes through the real `FrameEncoder` and is held against
+> `BlazorNativePatchKind` and the Kotlin/Swift patch-kind `when`/`switch` arms, both directions.
+> `MinimumSubclassCount = 9` is confirmed load-bearing by M6; M1–M3 red a missing or revived arm on
+> each shell; M4–M5 red an unencodable or misrouted subclass; M7 is the corrected vacuity contrast
+> — an emptied subclass scan passes fact 1 but fact 2 stays red on "declared kinds no subclass
+> produces", an implicit reverse floor; M9–M10 red a moved anchor and a broken control. M8 was
+> re-run in fix round 1: the original line-comment plant could never match the arm regex regardless
+> of stripping, so it proved nothing; the re-run plants a block comment at arm indentation, green
+> with `CommentStrippedSource.Strip` in place and red — naming the arm — with `Strip` bypassed,
+> which is the actual demonstration that the stripper does real work on this pin's subject.
+>
+> **#302 — the reproduced cause, the guard, and the live red.** release-please 17.6.0 with parser
+> 0.4.1 drops any commit-body chunk that throws while parsing, logged at debug level only, so the
+> workflow stays green while the changelog silently loses content: `cf8e956` lost its headline (the
+> 0.12.0 breaking change), and `6ec3894` lost a later chunk that turned out to be a sub-commit
+> repeating its own headline, so nothing was actually missing from that changelog. The `!`
+> breaking-change marker does not sidestep it, and a fenced code block does not protect a line
+> either — confirmed by running the real parser both ways. `scripts/commit-parse-check/check.js`
+> runs that same real parser, at the version `release-please-action` bundles
+> (`ReleaseParserVersionPinTests` holds the two in sync), as two new `footer-check` steps. The live
+> red is [scratch PR #389, run 36045241913](https://github.com/MarcelRoozekrans/BlazorNative/actions/runs/36045241913):
+> only the parse step failed, naming `unexpected token '(' at 3:28` on a planted `cf8e956`-shaped
+> line, while the self-tests on the same run passed; the branch was closed unmerged and deleted
+> after the check was observed. Cause and reproduction are also recorded on
+> [#302](https://github.com/MarcelRoozekrans/BlazorNative/issues/302#issuecomment-5820373973).
+>
+> **Not covered (the three Rule 5 lists, one line each).** `RouteMenuDriftTests` carries no Rule 5
+> block of its own — as a register entry outside Rule 6 it covers only the in-memory comparison
+> between `SampleAppPages.All` and `BnDemo.Destinations`, nothing on the tree and no third
+> mechanism to reach a page. `PatchKindDriftTests` does not cover arm *bodies* (that kind 6 decodes
+> `SetStyle` correctly is `FrameEncoderTests`' job), the reserved id's meaning, the template's copy
+> of `NativeFrameAdapter.kt` (delegated to `TemplateDriftTests`), or a subclass whose override
+> argument is present but wrong. `check.js` does not restate the parser's grammar as a rule of
+> thumb — "nested parentheses" is narrower than the real throwing shape in both directions, which
+> is why it runs the real parser rather than a regex.
+>
+> **Minors recorded for the final review, not fixed here:** four on `PatchKindDriftTests` (the
+> positive control splices Kotlin only; `TheEncodedKinds_AreExactlyTheLiveEnum_BothWays`'s
+> `Assert.True` short-circuits so M5 is only half-observable per run; the per-shell arm floor is
+> `Count > 0`, not `>= LiveKinds().Length`; and Task 3's own report initially mis-listed the arm
+> set, a report-only error) and five on the parse guard (`@conventional-commits/parser`'s version
+> is unpinned, only `release-please`'s is; the CONTRIBUTING example describes an approximate
+> trigger; `squashMessage` omits GitHub's `" (#N)"` and trailer reordering; an unreadable messages
+> file exits 1 by an uncaught throw where the header says 2; and the pin's Rule 5 bullet should say
+> "in `release-please.yml`" rather than leaving the file unnamed).
 
 #### Phase 15.5: Prose, and the small corrections [status: pending]
 **Goal:** Answer **#291** for the three unpinned documentation transcription pairs M14 found, and
