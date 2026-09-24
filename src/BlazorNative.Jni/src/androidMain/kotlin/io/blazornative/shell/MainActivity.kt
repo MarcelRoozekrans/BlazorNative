@@ -131,7 +131,12 @@ class MainActivity : FragmentActivity() {
         private fun parseDeepLinkRoute(intent: Intent): String? {
             if (intent.action != Intent.ACTION_VIEW) return null
             val data = intent.data ?: return null
-            if (data.scheme != DEEP_LINK_SCHEME) return null
+            // Schemes are case-insensitive (RFC 3986 3.1), and iOS's twin,
+            // BnDeepLink.route(from:), lowercases before comparing. Until #296 this
+            // compared exactly, so BLAZORNATIVE://settings routed on iOS and returned
+            // null here. The filter may never deliver that spelling, but an explicit
+            // intent bypasses the filter: BnDeepLinkReachabilityTest measures both.
+            if (data.scheme?.lowercase() != DEEP_LINK_SCHEME) return null
 
             // HOST + PATH, matching iOS (BnDeepLink.route(from:)). The host is the first
             // path segment because `blazornative://settings` parses with host "settings"
