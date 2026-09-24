@@ -1,0 +1,5 @@
+{
+  "$doc": "Which release-please the pinned release-please-action bundles. Measured from the action's own lockfile: gh api 'repos/googleapis/release-please-action/contents/package-lock.json?ref=<actionSha>' --jq .content | base64 -d, then packages['node_modules/release-please'].version. ReleaseParserVersionPinTests reds when release-please.yml's action SHA stops matching actionSha. RE-MEASURE on every bump; do not just copy the new SHA in.",
+  "actionSha": "45996ed1f6d02564a971a2fa1b5860e934307cf7",
+  "releasePlease": "17.6.0"
+}

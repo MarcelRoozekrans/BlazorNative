@@ -159,6 +159,8 @@ jobs:
   # the title lint, and when it reds the reader should see WHICH question failed
   # without opening a log. `pr-title` red = your title is malformed.
   # `footer-check` red = your body says something your title does not.
+  # Since 15.4 it also runs the release-notes parse guard (#302) — a third
+  # question, same PR in hand.
   #
   # THE DECISION LIVES IN THE SCRIPT, NOT HERE. That is the house rule, stated
   # in release.yml for the same reason: YAML that fires on one event is the
@@ -182,6 +184,27 @@ jobs:
         run: |
           ./scripts/footer-check.ps1 -SelfTest
           if ($LASTEXITCODE -ne 0) { throw "footer-check -SelfTest failed (exit $LASTEXITCODE) — the check is broken; it does not get to judge a PR." }
+
+      # THE RELEASE-NOTES PARSE GUARD (15.4, #302). release-please drops a commit
+      # chunk its parser rejects, at debug level, with the workflow green — that
+      # is how 0.12.0's breaking change vanished. These steps run the SAME parser,
+      # release-please 17.6.0 as locked in scripts/commit-parse-check and pinned
+      # to release-please.yml's action SHA by ReleaseParserVersionPinTests.
+      #
+      # NO npm CACHE, deliberately: one small locked tree, and a cache with a
+      # fallback key is how a required gate went falsely green once already.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Install the release-notes parser (locked)
+        working-directory: scripts/commit-parse-check
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      # The positive control runs FIRST, for the same reason as footer-check's:
+      # if the guard cannot red on cf8e956 and 6ec3894, it does not judge a PR.
+      - name: The parse guard's own self-test (cf8e956 and 6ec3894 must red)
+        run: node scripts/commit-parse-check/check.js --self-test
 
       # The title arrives via env, never via a ${{ }} interpolation into the
       # shell — same reasoning as the lint step above: a PR title is
@@ -219,3 +242,9 @@ jobs:
           # A failed fetch lands here as an empty array; footer-check.ps1 throws
           # on that rather than passing vacuously over zero commits.
           pwsh ./scripts/footer-check.ps1 -Title "$PR_TITLE" -CommitMessagesJson /tmp/pr-commits.json
+
+      # Title via env, never ${{ }} into the shell — same reason as above.
+      - name: Every commit must survive release-please's parser
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: node scripts/commit-parse-check/check.js --title "$PR_TITLE" --messages /tmp/pr-commits.json
