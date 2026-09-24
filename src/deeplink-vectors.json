@@ -14,8 +14,13 @@
     "route: null means the URL must produce NO route (rejected, not coerced).",
     "",
     "TO ADD A CASE: add it here, run `dotnet run --project tools/BlazorNative.WireGen`,",
-    "and commit the regenerated files. Never hand-edit a .g.* file."
+    "and commit the regenerated files. Never hand-edit a .g.* file.",
+    "",
+    "`scheme` is the ONE home of the deep-link scheme name (#296, Phase 15.3). Six sites",
+    "restate it — Kotlin DEEP_LINK_SCHEME x2, Swift BnDeepLink.scheme, android:scheme x2,",
+    "Info.plist CFBundleURLSchemes — and DeepLinkSchemeDriftTests reds if any disagrees."
   ],
+  "scheme": "blazornative",
   "vectors": [
     { "url": "blazornative://settings",             "route": "/settings",             "why": "the common case — both shells already agree" },
     { "url": "blazornative://settings/audio",       "route": "/settings/audio",       "why": "THE DIVERGENCE (#278): Android returned /settings and dropped /audio" },
