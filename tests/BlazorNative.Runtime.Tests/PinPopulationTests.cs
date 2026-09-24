@@ -141,19 +141,19 @@ public sealed class PinPopulationTests
         // nothing and this test passes while checking nothing.
         //
         // THE FLOOR IS NOT ARBITRARY, and a low one is nearly useless. This scan
-        // sees 129 files today: 131 hand-written .cs files under tests/, less the
-        // two named above. The "~151" the plan quoted counted bin/ and obj/, which
+        // sees 131 files today: 133 hand-written .cs files under tests/, less the
+        // two named above. It was 129 of 131 until 15.2 added two test files. The "~151" the plan quoted counted bin/ and obj/, which
         // this scan skips -- the same counting-the-wrong-thing mistake the
         // population itself has suffered three times. A floor of 20 would pass
         // while the walk saw 15% of its subject -- a guard weak enough to be
         // theatre, which is precisely what this milestone exists to remove. 100
-        // leaves 29 files of headroom so ordinary deletion does not red it, and
+        // leaves 31 files of headroom so ordinary deletion does not red it, and
         // sits far enough above zero that a broken walk cannot slip through.
         //
         // AND IT PROVES ONLY THE WALK. Whether the DETECTOR still detects is a
         // separate property, asserted separately below (pin standard Rule 3).
         Assert.True(scanned >= 100,
-            $"scanned only {scanned} test files, and there are roughly 129 — the walk has stopped "
+            $"scanned only {scanned} test files, and there are roughly 131 — the walk has stopped "
             + "seeing its subject, so the assertion below is checking almost nothing");
 
         Assert.True(offenders.Count == 0,

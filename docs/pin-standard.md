@@ -431,8 +431,18 @@ knew the shared copy with **three** callers existed. The fix landed on the less-
 widely-used one kept the bug, and four more copies were still undiscovered.
 
 One `BnRepo.Root()`, called by every test that reaches the checkout — 27 files at the time of
-writing. One `CommentStrippedSource`, 8 callers — **10 since phase 15.1**, and that growth is the
-rule working rather than an exception to it. The caller count grows with the suite and should; the
+writing. One `CommentStrippedSource`, 8 callers — **10 since phase 15.1** and **12 since 15.2**,
+which added `ShellSourceRootsDriftTests` and a unit-test class over the helper itself that is not
+a pin, and that growth is the rule working rather than an exception to it.
+
+**And the `BnRepo.Root()` figure is now a proxy that has come apart from the thing it proxies.**
+15.2 routed `NSLogDriftTests` through `ShellSourceScan`, so it reads the checkout through a door
+in another file and the grep no longer returns it — **a pin missing from a name-based
+enumeration, in the document that scores name-based substitutes four-for-four**. The enumeration
+used elsewhere is widened to
+`grep -rlE "BnRepo\.Root\(\)|ShellSourceScan\." tests/ --include="*.cs"`, which returns 29 and
+restores it. Whether the population key should be the call graph instead is **#375**, ruled to
+15.4. The caller count grows with the suite and should; the
 count of *implementations* is the one that must stay at one.
 
 ### "One implementation" is a claim about REACHABILITY, not about file count
@@ -440,9 +450,8 @@ count of *implementations* is the one that must stay at one.
 The tenth caller is the one that makes the point. `CommentStrippedSource` lived in
 `tests/BlazorNative.Runtime.Tests`, and neither of the other two test projects referenced it, so
 there was exactly one implementation and **two of the three test projects could not call it**.
-By test count that is the smaller share -- 167 of 1132 -- and the count is the wrong measure: what
-was out of reach was not a fraction of the assertions but every pin either of those projects will
-ever carry. That is not a tidiness problem. `ShellStyleTableDriftTests` in `BlazorNative.Renderer.Tests` carried a
+By test count that is the smaller share, and the count is the wrong measure: what was out of reach
+was not a fraction of the assertions but every pin either of those projects will ever carry. That is not a tidiness problem. `ShellStyleTableDriftTests` in `BlazorNative.Renderer.Tests` carried a
 **disclosed false green** over block-commented dispatch arms whose own comment named the fix and
 named the blocker: the helper was in the wrong project. It cost nothing to move it to
 `tests/Shared` and link it through `tests/Directory.Build.props` the way `BnRepo.cs` is linked, and
@@ -651,7 +660,76 @@ reasons set out directly above.
 | `CommentStrippedSource` | `Strip`, `Lines`, `NumberedCodeLines` — string-literal-aware comment removal for C#, Kotlin and Swift, with nesting block comments and one-based line numbers against the original file. `StripRazor` (15.1) adds Razor's `@* … *@` for `.razor` sources and then composes `Strip` for the C# forms a `@code` block carries — a sibling, deliberately not a mode on `Strip`; see Rule 8's corollary |
 | `PinPopulationTests` | enforces Rule 6 — reachability only — and is therefore the thing that keeps the population enumerable. It does **not** enforce Rule 2 |
 
-Known limits of the shared stripper, restated here because Rule 5 applies to it too: a raw or
-multiline string literal, and a C# `'"'` char literal, toggle its string state wrongly until the
-next newline resets it. No file currently holding a scanned marker contains either — but that is a
-fact about today, and nothing pins it.
+Known limits of the shared stripper, restated here because Rule 5 applies to it too.
+
+**The paragraph that used to stand here was wrong, and the way it was wrong is the lesson.** It
+said a raw or multiline string literal "toggles its string state wrongly until the next newline
+resets it", and filed that under *bounded*. Issue #364's **F3** is the counterexample: the newline
+reset put the raw string's **body** back into **code** state, where a `/*` opened a block comment
+that ran to the next `*/` — arbitrarily far away, in another declaration entirely — and deleted the
+live code between them from the scan. The reset did not bound that mis-parse. It **caused** it.
+That is the over-strip direction, which is a false **green**, and it is the same direction the
+stripper's own unterminated-opener rule already existed to avoid.
+
+**And then the FIX for it did the same thing with the sign flipped, which is the part worth your
+attention.** Its first cut tracked raw state with no bound at all. C# spells a verbatim string `@"`
+and escapes an embedded quote by **doubling** it, so a verbatim literal beginning with a quote is
+`@"""` — three consecutive quotes that open a fence nothing ever closes.
+`ShellFrameTableDriftTests.cs:296` and `TemplateDriftTests.cs:1344` each went blind to **end of
+file** behind one, 358 lines between them, inside `PinPopulationTests`' own walk, and the whole
+suite stayed green.
+
+> **Measured 2026-09-23, phase 15.2**, under a mutation restoring the defective state: of the
+> **1145** tests in the .NET suite, **1142 passed** — Runtime 975/978, Renderer **140/140**,
+> Analyzers 27/27. The three failures were the three facts 15.2 added for this defect, and nothing
+> else in the suite noticed. The Renderer project *contains* one of the two blinded files and was
+> **fully green**.
+
+That block is a **dated measurement, not a standing fact** — read it as what the suite did on that
+day, and do not maintain the numbers. Its point survives the counts going stale: a defect that
+switched comment stripping off across 358 lines, inside the walk of the pin that enumerates the pin
+population, was invisible to every test in the repository except the ones written for it. Review
+caught this, not CI. *(The figure was restated once, from "1115 of 1118" — Runtime plus Renderer
+only — against the whole suite. Naming the population made it stronger, not weaker.)*
+
+So the rule the stripper now holds is neither *strip more* nor *strip less*. It is: **no input may
+make the stripper blind past the construct that confused it.** Raw state is entered only when a
+closing fence already exists ahead, found with the same predicate the closing arm uses — and
+*literally* the same one: the ordinary-string conjunct sits inside the **opening** disjunct so the
+closing arm carries no extra condition, which is what keeps the termination argument from resting
+on an unstated lemma about when that flag can change. A state that is entered is left, **by
+construction, for all inputs**. That is a stronger claim than the newline reset ever supported, and
+it is the reason this section can say what follows without hedging on today's tree.
+
+**Read the failure directions before the limits, because the natural assumption about them is
+wrong.** Over-stripping is a false **green** — a pin's subject is deleted before it is looked for.
+Under-stripping is a false **red** for an *absence* pin, which is most of them, and a false
+**green** for a *presence* pin — and this document mandates presence pins by design, because every
+Rule 3 fixed point is one. `AndroidLogDriftTests`' `Assert.True(hits > 0, …)` is satisfied by a
+commented-out `Log.i` that under-stripping left visible; that was **measured going 0 → 1**, not
+argued. *"It only ever costs a red"* is not available as a defence for either direction, and the
+first cut of the 15.2 fix claimed it in exactly those words — in the commit whose entire purpose was
+deleting an unenforced safety claim.
+
+What remains, each with its direction:
+
+- **C#'s fence-width rule is not implemented.** A run of three or more quotes opens, and any later
+  run of three or more closes — so a C# `""""` fence, which the language requires to close on four
+  or more, would close here on three. The runs that exist in the tree are `ItemsJsonTest.kt:91` and
+  `:106`, Kotlin rather than C#, and both parse correctly because whole runs are consumed. **Either
+  direction**, bounded by the construction above. The narrowness is deliberate: a general
+  raw-string parser is how this pin family got into trouble.
+- **Swift's custom delimiters `#"…"#` and `#"""…"""#` are not understood.** The first *is* live —
+  `BnWidgetMapper.swift:3461`, inside both `ShellStyleTableDriftTests`' and `NSLogDriftTests`'
+  walks, and again across `BnHostTests/*.swift` — and costs nothing, because `#"` presents only a
+  one-quote run and reads as an ordinary literal exactly as it did before 15.2. The second does not
+  occur in the tree. **Red for absence pins, green for presence pins**, bounded to the file.
+- **A C# `'"'` char literal still toggles the ordinary string state once**, and an unbalanced quote
+  in an ordinary literal still mis-parses. Those *are* bounded by the newline reset, which applies
+  to the ordinary flag and not to the raw one.
+
+The two wider spellings above **do** occur in scanned files, and the previous version of this
+section said they did not. That sentence is gone rather than softened: a limit disclosed against a
+factual claim that is wrong is worse than an undisclosed one, because the disclosure makes the
+wrong placement look considered. What replaces it is not another fact about today — it is the
+entry precondition, which does not decay when someone adds a file.

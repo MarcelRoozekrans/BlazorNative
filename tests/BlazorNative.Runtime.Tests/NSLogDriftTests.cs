@@ -42,25 +42,54 @@ namespace BlazorNative.Runtime.Tests;
 
 public sealed class NSLogDriftTests
 {
-    /// <summary>The shipped iOS shell — the pin's subject.</summary>
-    private const string BnHost = "src/BlazorNative.Apple/BnHost";
+    // ── THIS PIN HOLDS NO ROOT LIST AND NO MATCHING LOOP ─────────────────────
+    //
+    // Both were deleted across two review rounds. A private accessor returning the
+    // roots is ONE line to re-point, and re-pointing it moves the walk and the
+    // assertion written to catch the walk together. A matching loop in the fact is
+    // ONE line to filter, which defeats a coverage assertion while the offender
+    // assertion stays green over an unscanned shell.
+    //
+    // So this pin names a CONSUMER and a SET, and `ShellSourceScan` resolves the
+    // roots from src/shell-source-roots.json, reads each file, and records coverage
+    // in the same expression that hands the bytes to the matcher. Every fact below
+    // calls it ITSELF and asserts coverage on the result of ITS OWN call.
+    //
+    // IT NAMES ITS SETS ONE AT A TIME, which is why the scan takes a set at all:
+    // this pin scans `appleShell` for offenders and uses `appleTestBundle` as the
+    // positive control that must still hold live NSLog calls. Flattening the two
+    // loses exactly that distinction, and a set named here is still checked against
+    // this pin's own `consumes` list in the roster.
+    //
+    // THE EXEMPT BUNDLE, NAMED SO THE EXEMPTION IS VISIBLE RATHER THAN IMPLIED
+    // (design §4.2 step 3, §12). `appleTestBundle` holds 24 NSLog sites and they
+    // STAY: XCTest output is not shipped output, it is read by a human watching a
+    // simulator run, it never reaches an end user's device, and the process it runs
+    // in is a test host. Routing it through a level-gated seam would only mean a
+    // failing test could print nothing about why. It is ALSO this pin's positive
+    // control -- see TheTestBundleExemption_IsRealAndStillHoldsNSLog -- which is
+    // why the roster has NAMED SETS rather than one flat list: "excluded" and
+    // "consumed as the fixed point the detector must still hit" are opposite
+    // positions, and a flat list cannot tell them apart.
 
-    /// <summary>THE EXEMPT DIRECTORY, NAMED EXPLICITLY SO THE EXEMPTION IS VISIBLE
-    /// RATHER THAN IMPLIED (design §4.2 step 3, §12).
-    ///
-    /// `src/BlazorNative.Apple/BnHostTests/**` holds 24 `NSLog` sites and they
-    /// STAY. XCTest output is not shipped output: it is read by a human watching a
-    /// simulator run, it never reaches an end user's device, and it carries no
-    /// information-disclosure risk because the process it runs in is a test host.
-    /// Routing it through a level-gated seam would only mean a failing test could
-    /// print nothing about why.
-    ///
-    /// The exemption is a DIRECTORY, not a pattern: this pin scans `BnHost/` and
-    /// simply never walks `BnHostTests/`. It is named here — and asserted to be
-    /// real by <see cref="TheTestBundleExemption_IsRealAndStillHoldsNSLog"/> —
-    /// so that a reader of the failure message knows why their test file is not
-    /// covered without having to infer it from a path.</summary>
-    private const string BnHostTests = "src/BlazorNative.Apple/BnHostTests";
+    /// <summary>The exempt roots, as one string for a failure message.</summary>
+    private static string BnHostTests => string.Join(
+        " + ", ShellSourceRoots.SetsFor(nameof(NSLogDriftTests), "appleTestBundle"));
+
+    /// <summary>The scanned roots, as one string for a failure message.</summary>
+    private static string BnHost => string.Join(
+        " + ", ShellSourceRoots.SetsFor(nameof(NSLogDriftTests), "appleShell"));
+
+    /// <summary>The seam each swept file must still reach. Swift through
+    /// <c>BnLog.</c>, Objective-C++ through the <c>@_cdecl</c> <c>BnLogC</c> shim,
+    /// which is the only way that language can call it.</summary>
+    private const string SeamCall = @"\bBnLog\.\w+\s*\(|\bBnLogC\s*\(|\bbn_log_\w+\s*\(";
+
+    /// <summary>The file kinds under an Apple target that are source.</summary>
+    private static readonly string[] AppleSource = [".swift", ".m", ".mm", ".h"];
+
+    /// <summary>The exempt bundle is Swift only.</summary>
+    private static readonly string[] SwiftSource = [".swift"];
 
     /// <summary>Matches an `NSLog` CALL. Comments are excluded by
     /// <see cref="CommentStrippedSource.NumberedCodeLines"/> — this phase's own sources discuss `NSLog` at
@@ -99,18 +128,14 @@ public sealed class NSLogDriftTests
     [Fact]
     public void NoBareNSLog_SurvivesUnderBnHost()
     {
-        var offenders = new List<string>();
+        // ITS OWN SCAN, AND ITS OWN COVERAGE ASSERTION ON THAT SCAN'S RECORD.
+        ShellSourceScan.Hit[] hits = ShellSourceScan
+            .ForPattern(nameof(NSLogDriftTests), "appleShell", AppleSource, NSLogCall)
+            .HitsCoveringEveryDeclaredRoot();
 
-        foreach (string file in ShellFiles())
-        {
-            offenders.AddRange(CommentStrippedSource.NumberedCodeLines(file)
-                .Where(l => Regex.IsMatch(l.Text, NSLogCall))
-                .Select(l => $"  {Relative(file)}:{l.Number}  {l.Text.Trim()}"));
-        }
-
-        Assert.True(offenders.Count == 0,
+        Assert.True(hits.Length == 0,
             "BARE NSLog UNDER " + BnHost + " — it must go through BnLog.\n"
-            + string.Join("\n", offenders)
+            + string.Join("\n", hits.Select(h => $"  {h.File}:{h.Line}  {h.Text}"))
             + "\n\nNSLog is unconditional (no level, never compiled out, so it ships in Release), "
             + "and — the half that level gating cannot fix — EVERY VALUE IT INTERPOLATES IS "
             + "PUBLIC in any log collected off the device. os.Logger's interpolation is private "
@@ -118,8 +143,8 @@ public sealed class NSLogDriftTests
             + "Use BnLog.error/warn/info/debug/verbose(category, message) from Swift, or BnLogC "
             + "(BnLog.h) from Objective-C++. The category is the bracketed tag the message "
             + "already carried, without the brackets.\n"
-            + $"({BnHostTests}'s 24 sites are XCTest diagnostics and are exempt BY DIRECTORY — "
-            + "that exemption is about test output and buys no exemption here.)");
+            + "(The exempt XCTest bundle's sites stay and are exempt BY SET — that exemption is "
+            + "about test output and buys no exemption here.)");
     }
 
     // ── 2. Non-vacuity — the scan must be looking at something ───────────────
@@ -132,17 +157,37 @@ public sealed class NSLogDriftTests
     [Fact]
     public void TheScan_IsNotVacuous()
     {
-        List<string> files = ShellFiles().ToList();
+        var (hits, read) = ShellSourceScan
+            .ForPattern(nameof(NSLogDriftTests), "appleShell", AppleSource, NSLogCall)
+            .CoveringEveryDeclaredRoot();
 
-        Assert.True(files.Count > 15,
-            $"the {BnHost} scan found only {files.Count} files — it is reading the wrong tree and "
-            + "NoBareNSLog_SurvivesUnderBnHost is passing while blind. Fix the walk, do not delete "
-            + "the pin.");
+        Assert.True(read.Length > 15,
+            $"the shell scan READ only {read.Length} files — it is reading the wrong tree "
+            + "and NoBareNSLog_SurvivesUnderBnHost is passing while blind. Fix the walk, do not "
+            + "delete the pin.");
 
-        var names = files.Select(Path.GetFileName).ToHashSet(StringComparer.Ordinal);
+        var names = read.Select(f => f.Split('/')[^1]).ToHashSet(StringComparer.Ordinal);
         Assert.Contains("BnLog.swift", names);
         foreach (string swept in SweptFiles)
             Assert.Contains(swept, names);
+
+        // THE EXEMPT BUNDLE MUST NOT BE INSIDE THE SCANNED SHELL. `appleShell` and
+        // `appleTestBundle` are separate sets precisely so this pin can scan one and
+        // use the other as its positive control; a root that nests them makes the
+        // control part of the subject, and the bundle's deliberate NSLog sites become
+        // offenders. The trailing separator is load-bearing — without it `BnHost`
+        // prefix-matches `BnHostTests`.
+        var bundles = ShellSourceRoots.SetsFor(nameof(NSLogDriftTests), "appleTestBundle")
+            .Select(r => r.TrimEnd('/') + "/")
+            .ToArray();
+        var swallowed = read
+            .Where(f => bundles.Any(b => f.StartsWith(b, StringComparison.Ordinal)))
+            .ToList();
+
+        Assert.True(swallowed.Count == 0,
+            "THE EXEMPT TEST BUNDLE IS INSIDE THE SCANNED SHELL:\n"
+            + string.Join("\n", swallowed.Select(f => "  " + f))
+            + "\n\nRe-point the roster, not this assertion.");
     }
 
     /// <summary>…AND THE PATTERN STILL MATCHES WHERE A MATCH IS KNOWN TO EXIST.
@@ -155,22 +200,22 @@ public sealed class NSLogDriftTests
     [Fact]
     public void TheTestBundleExemption_IsRealAndStillHoldsNSLog()
     {
-        string tests = Path.Combine(BnRepo.Root(), BnHostTests.Replace('/', Path.DirectorySeparatorChar));
-        Assert.True(Directory.Exists(tests),
-            $"{BnHostTests} is missing, so the exemption this pin names protects nothing. Either "
-            + "the test bundle moved — then re-point the exemption deliberately — or it is gone, "
-            + "in which case delete the exemption rather than keeping it as folklore.");
+        // THROUGH THE SAME EXTRACTOR the offender fact uses, so this exercises the
+        // production matcher rather than restating it — and with its own coverage
+        // assertion, so "the bundle held no NSLog" cannot mean "the bundle was never
+        // read" (pin standard, Rules 3 and 8).
+        var (hits, read) = ShellSourceScan
+            .ForPattern(nameof(NSLogDriftTests), "appleTestBundle", SwiftSource, NSLogCall)
+            .CoveringEveryDeclaredRoot();
 
-        int hits = Directory.EnumerateFiles(tests, "*.swift", SearchOption.AllDirectories)
-            .SelectMany(CommentStrippedSource.NumberedCodeLines)
-            .Count(l => Regex.IsMatch(l.Text, NSLogCall));
-
-        Assert.True(hits > 0,
+        Assert.True(hits.Length > 0,
             $"the NSLog pattern matched NOTHING under {BnHostTests}, which is the one tree that "
             + "MUST still contain live NSLog calls (XCTest diagnostics, deliberately not swept). "
-            + "Either the test bundle stopped using NSLog — then this fixed point moved and should "
-            + "be re-pointed — or the pattern no longer matches a real call, in which case "
-            + "NoBareNSLog_SurvivesUnderBnHost is holding nothing.");
+            + $"The scan READ {read.Length} files there, so the walk is fine and the "
+            + "DETECTOR is what stopped working — either the bundle stopped using NSLog, in which "
+            + "case this fixed point moved and should be re-pointed, or the pattern no longer "
+            + "matches a real call, in which case NoBareNSLog_SurvivesUnderBnHost is holding "
+            + "nothing.");
     }
 
     /// <summary>THE SWEEP REWROTE THE DIAGNOSTICS; IT DID NOT DELETE THEM.
@@ -185,44 +230,34 @@ public sealed class NSLogDriftTests
     [Fact]
     public void TheSweptFiles_StillRouteThroughTheSeam()
     {
-        var offenders = new List<string>();
+        var (hits, read) = ShellSourceScan
+            .ForPattern(nameof(NSLogDriftTests), "appleShell", AppleSource, SeamCall)
+            .CoveringEveryDeclaredRoot();
 
-        foreach (string name in SweptFiles)
-        {
-            string file = ShellFiles().Single(f => Path.GetFileName(f) == name);
-            bool routed = CommentStrippedSource.NumberedCodeLines(file)
-                .Any(l => Regex.IsMatch(l.Text, @"\bBnLog\.\w+\s*\(|\bBnLogC\s*\(|\bbn_log_\w+\s*\("));
+        var routed = hits.Select(h => h.File.Split('/')[^1]).ToHashSet(StringComparer.Ordinal);
+        var everRead = read.Select(f => f.Split('/')[^1]).ToHashSet(StringComparer.Ordinal);
 
-            if (!routed) offenders.Add($"  {name}");
-        }
+        // A NAME THE WALK CANNOT PRODUCE IS ITS OWN RED. The previous shape called
+        // `.Single()` on a filtered walk, which threw rather than explaining; a
+        // filtered-to-empty variant of the same shape would have iterated zero times.
+        var missing = SweptFiles.Where(n => !everRead.Contains(n)).ToList();
+        Assert.True(missing.Count == 0,
+            "THESE SWEPT FILES WERE NEVER READ BY THE SCAN:\n"
+            + string.Join("\n", missing.Select(n => "  " + n))
+            + "\n\nThey are named in SweptFiles because they held 66 of Gate C's 78 sites. If one "
+            + "was renamed or removed, edit SweptFiles deliberately.");
 
+        var offenders = SweptFiles.Where(n => !routed.Contains(n)).ToList();
         Assert.True(offenders.Count == 0,
             "THE SWEEP WAS UNDONE BY DELETION, NOT BY MIGRATION. These files held NSLog sites "
-            + "before Gate C and now reach no logging seam at all:\n" + string.Join("\n", offenders)
-            + "\n\n'No bare NSLog' is trivially satisfied by deleting every diagnostic, and that is "
-            + "the opposite of what #155 asked for: the mapper's `ignored`/`skipped` lines are the "
-            + "only record that a wire the app author wrote was silently dropped (design §4.3). If "
-            + "a file genuinely no longer logs, remove it from SweptFiles deliberately.");
+            + "before Gate C and now reach no logging seam at all:\n"
+            + string.Join("\n", offenders.Select(n => "  " + n))
+            + "\n\n\'No bare NSLog\' is trivially satisfied by deleting every diagnostic, and that "
+            + "is the opposite of what #155 asked for: the mapper's `ignored`/`skipped` lines are "
+            + "the only record that a wire the app author wrote was silently dropped (design "
+            + "§4.3). If a file genuinely no longer logs, remove it from SweptFiles "
+            + "deliberately.");
     }
 
-    // ── the scanner ──────────────────────────────────────────────────────────
-
-    /// <summary>Every Swift / Objective-C / Objective-C++ / header file under
-    /// `BnHost/`. Fails loudly if the tree is not there — a missing tree must
-    /// break this test, not silently pass it with an empty set. `BnHostTests/` is
-    /// a SIBLING directory, so it is never walked: the exemption is structural,
-    /// not a filter that could be edited away by accident.</summary>
-    private static IEnumerable<string> ShellFiles()
-    {
-        string root = Path.Combine(BnRepo.Root(), BnHost.Replace('/', Path.DirectorySeparatorChar));
-        Assert.True(Directory.Exists(root), $"{BnHost} not found under the repo root: {root}");
-
-        string[] extensions = [".swift", ".m", ".mm", ".h"];
-        return Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)
-            .Where(f => extensions.Contains(Path.GetExtension(f), StringComparer.OrdinalIgnoreCase))
-            .OrderBy(f => f, StringComparer.Ordinal);
-    }
-
-    private static string Relative(string file)
-        => Path.GetRelativePath(BnRepo.Root(), file).Replace(Path.DirectorySeparatorChar, '/');
+    // ── the scanner is `ShellSourceScan`; this pin has none of its own ───────
 }
