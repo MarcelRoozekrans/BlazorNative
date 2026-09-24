@@ -183,17 +183,17 @@ public sealed class DeepLinkSchemeDriftTests
 
     /// <summary>Every vector that expects a route is written against the home scheme,
     /// compared case-INsensitively: the #296 row deliberately differs in case. Floor: the
-    /// table has six routed rows before 15.3's #296 row and seven after it; losing any reds
-    /// here. Rule 3: the trailing pair of assertions is a known-mismatch anchor — the table's
-    /// wrong-scheme row (route: null) must NOT match through the same <see cref="UsesHomeScheme"/>
-    /// predicate the loop above uses, so a detector that always answered "yes" cannot leave
-    /// this fact green.</summary>
+    /// table had six routed rows before 15.3's #296 row and has seven after it; losing any
+    /// reds here. Rule 3: the trailing pair of assertions is a known-mismatch anchor — the
+    /// table's wrong-scheme row (route: null) must NOT match through the same
+    /// <see cref="UsesHomeScheme"/> predicate the loop above uses, so a detector that always
+    /// answered "yes" cannot leave this fact green.</summary>
     [Fact]
     public void EveryRoutedVector_UsesTheHomeScheme()
     {
         string home = Home();
         var routed = BnDeepLinkVectors.All.Where(v => v.Route is not null).ToList();
-        Assert.True(routed.Count >= 6, $"only {routed.Count} routed vectors; the table has lost its cases.");
+        Assert.True(routed.Count >= 7, $"only {routed.Count} routed vectors; the table has lost its cases.");
         foreach ((string url, _) in routed)
             Assert.True(UsesHomeScheme(url, home),
                 $"routed vector {url} is not written against the home scheme \"{home}\".");

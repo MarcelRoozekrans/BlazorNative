@@ -28,6 +28,7 @@
     { "url": "blazornative://about/",               "route": "/about",                "why": "trailing slash trimmed — two spellings of one route would be a silent table miss" },
     { "url": "blazornative://",                     "route": "/",                     "why": "degenerate: no host, no path" },
     { "url": "blazornative:///settings",            "route": "/settings",             "why": "empty authority, explicit path — Android reads data.host (null here), iOS reads url.host (empty); the two APIs disagree about where the first segment lives" },
+    { "url": "BLAZORNATIVE://settings",             "route": "/settings",             "why": "#296: schemes are case-insensitive (RFC 3986 3.1). iOS lowercases; Android compared exactly and returned null" },
     { "url": "https://example.com/settings",        "route": null,                    "why": "wrong scheme is REJECTED, never coerced into a route" }
   ]
 }

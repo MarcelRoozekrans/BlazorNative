@@ -4,7 +4,7 @@
 #
 #   build-test (windows-latest) — the local verification procedure verbatim
 #   (setup.ps1 §1–7 documents the toolchain pins):
-#     build (analyzers ride it) → .NET tests (1168 passed / 0 skipped) →
+#     build (analyzers ride it) → .NET tests (1169 passed / 0 skipped) →
 #     three NativeAOT publishes of samples/BlazorNative.SampleApp — the
 #     publish head since Phase 8.0: the app owns PublishAot, the exports stay
 #     in Runtime via UnmanagedEntryPointsAssembly, and the artifact is
@@ -2192,7 +2192,10 @@ jobs:
       # first.
       # 1163 -> 1168 (15.3 deep-link scheme, +5): DeepLinkSchemeDriftTests — the
       # scheme name's one home and its six copies, floor, positive control, vectors.
-      - name: .NET tests (assert 1168 passed / 0 skipped)
+      # 1168 -> 1169 (15.3 deep-link scheme, +1): TheTable_StillContainsTheSchemeCaseRow —
+      # the #296 row (BLAZORNATIVE://settings) pinned in DeepLinkVectorTests; the Android
+      # parser fix lands in the same phase.
+      - name: .NET tests (assert 1169 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -2210,8 +2213,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 1168 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 1168 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 1169 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 1169 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # ── NativeAOT publishes + ten-export verification ─────────────────────
