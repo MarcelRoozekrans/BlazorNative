@@ -24,6 +24,9 @@ namespace BlazorNative.Runtime.Tests;
 // "/settings" is reached by the pinned "Settings →" button that IS the DoD #7
 // navigation proof. If either ever stops being exempt-worthy — BnDemo moved off
 // "/", say — the exemption assertions below fail rather than quietly widening.
+//
+// Each comparison fact carries its own floor (15.4, #375): an empty page list or an empty menu
+// reds the fact that would otherwise compare nothing, not only its sibling.
 // ─────────────────────────────────────────────────────────────────────────────
 
 public sealed class RouteMenuDriftTests
@@ -37,12 +40,26 @@ public sealed class RouteMenuDriftTests
             .Where(p => p.Route is not null)
             .Select(p => p.Route!)];
 
+    /// <summary>Rule 2, per fact: each comparison below is <i>for every X, assert Y</i>, which
+    /// passes over an empty X. Until 15.4 only a SIBLING fact noticed an empty input; each fact now
+    /// refuses to compare nothing on its own, naming the collection that came back empty.</summary>
+    private static void AssertBothSidesNonEmpty(string[] routed)
+    {
+        Assert.True(routed.Length > 0,
+            "SampleAppPages.All yields no routed page — this fact would compare nothing and pass (Rule 2).");
+        Assert.True(BnDemo.Destinations.Length > 0,
+            "BnDemo.Destinations is empty — this fact would compare nothing and pass (Rule 2).");
+    }
+
     [Fact]
     public void EveryRoutedPage_ExceptTheTwoExemptions_HasAMenuRow()
     {
+        var routed = RoutedPages();
+        AssertBothSidesNonEmpty(routed);
+
         var inMenu = BnDemo.Destinations.Select(d => d.Route).ToHashSet(StringComparer.Ordinal);
 
-        var missing = RoutedPages()
+        var missing = routed
             .Where(r => r != SelfRoute && r != SettingsRoute)
             .Where(r => !inMenu.Contains(r))
             .ToArray();
@@ -56,7 +73,9 @@ public sealed class RouteMenuDriftTests
     [Fact]
     public void EveryMenuRow_PointsAtARoutedPage()
     {
-        var routed = RoutedPages().ToHashSet(StringComparer.Ordinal);
+        string[] routedPages = RoutedPages();
+        AssertBothSidesNonEmpty(routedPages);
+        var routed = routedPages.ToHashSet(StringComparer.Ordinal);
 
         var dangling = BnDemo.Destinations
             .Select(d => d.Route)

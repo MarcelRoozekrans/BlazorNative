@@ -380,6 +380,25 @@ Two consequences worth stating, since both have surprised someone:
   the Kotlin predicate to the shape the derivation assumes, checks the template mirror in the same
   pass, and writes down the three things it cannot cover.
 
+**What this population is, and what it is not.** Callers of `BnRepo.Root()` are the population of
+pins that read the tree — *tree-readers*, by construction. That is the only population a machine can
+enumerate here. It is **not** every pin. A test that compares two in-memory collections can hold two
+copies of one truth and red when they diverge, which makes it a pin by every other rule in this
+document, while never calling `BnRepo.Root()`. No derived key finds those: *compares two copies of
+one truth* is the binding problem that sank mechanical Rule 2 enforcement, and a marker attribute
+would be declared rather than derived, the pattern this milestone rejected four times.
+
+**Decided in 15.4 (owner, 2026-09-24): they are listed by hand, below.** The cost is stated rather
+than hidden: **this register grows only when someone remembers to add to it.** A new in-memory pin
+that nobody lists is invisible to every mechanism here, exactly as `RouteMenuDriftTests` was until
+the 15.0 census walked past it.
+
+#### The register — pins that do not read the tree
+
+| Pin | What it compares | Verdict (Rules 2–5, 7) |
+|---|---|---|
+| `RouteMenuDriftTests` | `SampleAppPages.All` ↔ `BnDemo.Destinations`, both directions, with two asserted exemptions | **conforms since 15.4** — per-fact floors added (#375). Before 15.4 each comparison fact was vacuous-capable on its own, though the file was not: `TheTwoExemptions_…` reds on an empty page list. |
+
 ---
 
 ## Rule 7 — Its mutations must exercise the PIN's own code paths, not only its subject
