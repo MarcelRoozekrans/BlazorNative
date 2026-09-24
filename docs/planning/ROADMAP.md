@@ -2832,22 +2832,23 @@ see. Decide the key first; #375 follows from it rather than the other way round.
 > repeating its own headline, so nothing was actually missing from that changelog. The `!`
 > breaking-change marker does not sidestep it, and a fenced code block does not protect a line
 > either — confirmed by running the real parser both ways. `scripts/commit-parse-check/check.js`
-> runs that same real parser, at the version `release-please-action` bundles
-> (`ReleaseParserVersionPinTests` holds the two in sync), as two new `footer-check` steps. The live
+> runs that same real parser, at the release-please version and the
+> `@conventional-commits/parser` version `release-please-action` bundles
+> (`ReleaseParserVersionPinTests` holds both pairs in sync), as two new `footer-check` steps. The live
 > red is [scratch PR #389, run 36045241913](https://github.com/MarcelRoozekrans/BlazorNative/actions/runs/36045241913):
 > only the parse step failed, naming `unexpected token '(' at 3:28` on a planted `cf8e956`-shaped
 > line, while the self-tests on the same run passed; the branch was closed unmerged and deleted
 > after the check was observed. Cause and reproduction are also recorded on
 > [#302](https://github.com/MarcelRoozekrans/BlazorNative/issues/302#issuecomment-5820373973).
 >
-> **Not covered (the three Rule 5 lists, one line each).** `RouteMenuDriftTests` carries no Rule 5
-> block of its own — as a register entry outside Rule 6 it covers only the in-memory comparison
-> between `SampleAppPages.All` and `BnDemo.Destinations`, nothing on the tree and no third
-> mechanism to reach a page. `PatchKindDriftTests` does not cover arm *bodies* (that kind 6 decodes
-> `SetStyle` correctly is `FrameEncoderTests`' job), the reserved id's meaning, the template's copy
-> of `NativeFrameAdapter.kt` (delegated to `TemplateDriftTests`), or a subclass whose override
-> argument is present but wrong. `check.js` does not restate the parser's grammar as a rule of
-> thumb — "nested parentheses" is narrower than the real throwing shape in both directions, which
+> **Not covered (the three Rule 5 lists, one line each).** `RouteMenuDriftTests` carries a Rule 5
+> block, added in the final review — as a register entry outside Rule 6 it covers only the
+> in-memory comparison between `SampleAppPages.All` and `BnDemo.Destinations`, nothing on the tree
+> and no third mechanism to reach a page. `PatchKindDriftTests` does not cover arm *bodies* (that
+> kind 6 decodes `SetStyle` correctly is `FrameEncoderTests`' job), the reserved id's meaning, the
+> template's copy of `NativeFrameAdapter.kt` (delegated to `TemplateDriftTests`), or a subclass
+> whose override argument is present but wrong. `check.js` does not restate the parser's grammar
+> as a rule of thumb — "nested parentheses" is narrower than the real throwing shape in both directions, which
 > is why it runs the real parser rather than a regex.
 >
 > **Minors recorded for the final review, not fixed here:** four on `PatchKindDriftTests` (the

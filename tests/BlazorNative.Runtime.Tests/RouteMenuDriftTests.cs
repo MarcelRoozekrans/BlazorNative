@@ -27,6 +27,12 @@ namespace BlazorNative.Runtime.Tests;
 //
 // Each comparison fact carries its own floor (15.4, #375): an empty page list or an empty menu
 // reds the fact that would otherwise compare nothing, not only its sibling.
+//
+// WHAT THIS DOES NOT COVER (Rule 5):
+//   - Only the in-memory comparison between `SampleAppPages.All` and `BnDemo.Destinations` — as
+//     a register entry outside Rule 6 (#375), it reads nothing on the tree.
+//   - No third mechanism to reach a page: a route reachable by neither a menu row nor by one of
+//     the two asserted exemptions (deep link, an Intent extra) is invisible to this file.
 // ─────────────────────────────────────────────────────────────────────────────
 
 public sealed class RouteMenuDriftTests

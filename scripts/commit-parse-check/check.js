@@ -40,7 +40,11 @@ function droppedChunks(label, message) {
   return dropped;
 }
 
-/** The squash message GitHub builds under PR_TITLE + COMMIT_MESSAGES. */
+/**
+ * Approximates GitHub's PR_TITLE + COMMIT_MESSAGES squash message. GitHub
+ * appends " (#N)" to the title and reorders trailers; neither has changed a
+ * parse result here.
+ */
 function squashMessage(title, messages) {
   return [title, ...messages.map(m => `* ${m.trim()}`)].join('\n\n');
 }
@@ -82,7 +86,7 @@ function check(title, messagesFile) {
   }
   console.error('release-please would SILENTLY DROP part of this PR from the release notes:');
   for (const d of dropped) console.error(`  - ${d}`);
-  console.error('Reword the named line: a "(" attached to a word, with another "(" inside it before it closes, is the usual cause. See CONTRIBUTING.md.');
+  console.error('Reword the named line: a "(" attached to a word, with another "(" inside it before it closes, is a common cause. See CONTRIBUTING.md.');
   return 1;
 }
 

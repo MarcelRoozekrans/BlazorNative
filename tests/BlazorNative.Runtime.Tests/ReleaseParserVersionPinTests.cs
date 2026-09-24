@@ -7,18 +7,22 @@ namespace BlazorNative.Runtime.Tests;
 // ─────────────────────────────────────────────────────────────────────────────
 // ReleaseParserVersionPinTests — the parse guard runs the parser that writes the notes (#302).
 //
-// scripts/commit-parse-check is only worth running if its release-please is the
-// one release-please-action bundles: the two commits it exists to catch parse or
-// fail depending on the parser's version. "Same version as the action" would
-// otherwise be a comment. action-version.json records the pair, measured from the
-// action's lockfile, and this pin holds both ends of it.
+// scripts/commit-parse-check is only worth running if its release-please, and its
+// release-please's @conventional-commits/parser, are the pair release-please-action
+// bundles: the two commits it exists to catch parse or fail depending on the
+// parser's version. "Same version as the action" would otherwise be a comment.
+// action-version.json records the pair pinned — release-please plus its parser —
+// measured from the action's lockfile, and this pin holds both ends of it.
 //
 // WHAT THIS DOES NOT COVER (Rule 5):
 //   - Whether the recorded pair is TRUE. A bump that copies the new actionSha in
 //     without re-measuring passes. This pin guarantees a bump is NOTICED, not
 //     that it is measured correctly; action-version.json's $doc says how.
-//   - A second release-please-action use in the workflow. That reds on the
+//   - A second release-please-action use in release-please.yml. That reds on the
 //     exactly-one floor as unmodelled rather than being compared.
+//   - Whether the squash reconstruction check.js approximates matches what GitHub
+//     actually builds. It assumes the repo's COMMIT_MESSAGES squash setting, which
+//     nothing here pins, and a message edited in the merge dialog is never seen.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// <summary>The parse guard's release-please version is the one the release action runs.</summary>
@@ -62,5 +66,13 @@ public sealed class ReleaseParserVersionPinTests
         string locked = Json($"{GuardDir}/package-lock.json").GetProperty("packages")
             .GetProperty("node_modules/release-please").GetProperty("version").GetString() ?? "";
         Assert.True(locked == recorded, $"{GuardDir}/package-lock.json locks release-please {locked}; the action bundles {recorded}.");
+
+        string recordedParser = Recorded("conventionalCommitsParser");
+        Assert.Matches(@"^\d+\.\d+\.\d+$", recordedParser);
+
+        string lockedParser = Json($"{GuardDir}/package-lock.json").GetProperty("packages")
+            .GetProperty("node_modules/@conventional-commits/parser").GetProperty("version").GetString() ?? "";
+        Assert.True(lockedParser == recordedParser,
+            $"{GuardDir}/package-lock.json locks @conventional-commits/parser {lockedParser}; action-version.json records {recordedParser}.");
     }
 }

@@ -102,11 +102,11 @@ future reader can't reconstruct from the diff.
 
 **Release notes are parsed, and a line can silently drop your commit.** release-please parses
 every commit with a conventional-commit grammar and **drops any part it cannot parse, with the
-release workflow still green** — which is how 0.12.0 lost its breaking change (#302). The usual
+release workflow still green** — which is how 0.12.0 lost its breaking change (#302). A common
 cause is a `(` attached to a word with another `(` inside it before it closes, such as
-`` Width="@(x ? (T?)w : null)" `` or `` Singleton(As = typeof(IDetector)) ``. The `footer-check`
-job runs the same parser on every PR and names the line. Reword it — a fenced block does not
-help; the parser throws on the line whether or not it sits inside one.
+`` Width="@(x ? (T?)w : null)" `` or `` [Singleton(As = typeof(IDetector), AllowMultiple = true)] ``.
+The `footer-check` job runs the same parser on every PR and names the line. Reword it — a fenced
+block does not help; the parser throws on the line whether or not it sits inside one.
 
 ### Branch naming
 
