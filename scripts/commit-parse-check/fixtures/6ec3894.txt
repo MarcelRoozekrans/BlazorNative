@@ -1,0 +1,61 @@
+fix: size-negotiate blazornative_init so an old shell is read safely (#213 item 3) (#226)
+
+fix: size-negotiate blazornative_init so an old shell is read safely, not out of bounds (#213 item 3)
+
+blazornative_init took a bare pointer and read FIXED OFFSETS out of the caller's
+buffer -- PlatformInfoKind at 24, LogLevel at 28. Those offsets are M10/M11
+additions: the struct grew 24 -> 32 bytes. So a shell compiled against a pre-M10
+header allocates 24 bytes, and reading offsets 24/28 there is an OUT-OF-BOUNDS
+read, not the merely-uninitialised value the code assumed.
+
+register_bridge solved exactly this at its own boundary and init did not, which
+was the whole defect: the safety rested on "the shells ship in lockstep" where
+the codebase already had the mechanism to not need the assumption. That
+assumption stops being true the day someone else writes a shell -- which is what
+a 1.0 invites. The owner chose to add negotiation now (option (a)), before the
+signature is expensive to change.
+
+blazornative_init(int structSize, BlazorNativeInitOptions*) now copies
+min(structSize, sizeof(ours)) into a ZEROED struct via Exports.NegotiateInitOptions
+(the twin of NativeShellBridge.Register's min-copy) and reads every field from
+that. A field the shell did not send reads as zero -- DevHost for Kind,
+Unset->Warn for LogLevel, the safe non-lying defaults the fixed-offset path
+intended but could not guarantee. A newer shell's extra tail is ignored; a
+negative/zero size copies nothing; a null pointer yields all defaults.
+
+THIS IS A DELIBERATE EXPORT SIGNATURE CHANGE, and the PublicAPI.Shipped.txt
+baseline caught it -- exactly what that gate is for. Updated in the same commit,
+alongside the C header, both shell bindings, the Swift and Kotlin call sites, the
+preview host, three test call sites, and the template's two byte-identical Kotlin
+mirrors. The export COUNT is unchanged (still 10) and no struct grew, so the
+frozen-ABI milestone's other invariants hold; this is the init INPUT contract,
+never the 80-byte callbacks bridge.
+
+NegotiateInitOptions is internal so the boundary cases are unit-tested the way
+Register's are, rather than only through the one-shot export:
+  - ShortBuffer (Theory, 24- and 28-byte historical shapes): a field past the
+    caller's buffer reads as 0; a field WITHIN it (Kind at 24, in the 28-byte
+    case) still copies -- proving the negotiation copies what was sent rather
+    than blanket-zeroing anything short.
+  - FullBuffer: every field copies.
+  - OversizeAndDegenerate: newer tail ignored, negative/zero safe, null -> default.
+One of these tests initially failed on MY error, not the code's -- at 28 bytes
+Kind IS in range, so it is correctly iOS; the assertion wrongly expected DevHost.
+Fixed the assertion, which is now split by size and stronger for it.
+
+The InitOptionsStruct_Is32Bytes pin STAYS: negotiation protects a SHORT sender,
+it does not license the full-struct layout to drift -- a shell sending all 32
+bytes must still land every field where the runtime reads it. Its stale
+"a shell that predates the field allocates 32 bytes anyway" note (true pre-11.4,
+false pre-10.0) is corrected.
+
+CROSS-ABI PROVEN, not just compiled: the JVM lane's BootSmokeNativeTest calls the
+new two-arg init(opts.size(), opts) against the freshly PUBLISHED win-x64 dll and
+gets status=0 -- Kotlin and .NET agree over the real JNA boundary.
+
+.NET 894 -> 898 (Runtime.Tests 727 -> 731); JVM 158 unchanged (re-run against a
+fresh publish, today's XML); compileDebugAndroidTestKotlin green. ci.yml and
+README moved with the count; ledger entry added. iOS lane dispatched on the PR --
+it carries the Swift signature + call-site change and BnPlatformInfoTests.
+
+Co-authored-by: Claude Opus 4.8 <noreply@anthropic.com>
