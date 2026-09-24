@@ -2722,12 +2722,14 @@ files; the other 13 are the stripper's fixture harness, outside the population b
 > **0.9.0** — a warning nobody could see until the gate that could see it ran. None of the three is
 > in a file this phase touched. 15.5 is the natural home.
 
-#### Phase 15.3: The first live test — deep-link scheme [status: pending]
+#### Phase 15.3: The first live test — deep-link scheme [status: active]
 **Goal:** Close **#296** using the mechanism rather than around it. Establish which behaviour is
 correct, align the outlier, and pin it so the third copy in `AndroidManifest.xml` and its template
 mirror cannot drift either. **It must red before it is fixed.**
 **Surface:** Backend
 **HelpWanted:** no
+**Design:** [`docs/superpowers/specs/2026-09-24-phase-15.3-design.md`](../superpowers/specs/2026-09-24-phase-15.3-design.md)
+**Plan:** [`docs/superpowers/plans/2026-09-24-phase-15.3-deeplink-scheme.md`](../superpowers/plans/2026-09-24-phase-15.3-deeplink-scheme.md)
 
 #### Phase 15.4: The missing guards [status: pending]
 **Goal:** Close **#297** and **#302** — a pin that does not exist, and a release-notes guard that
