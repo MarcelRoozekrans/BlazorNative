@@ -28,8 +28,8 @@ namespace BlazorNative.Runtime.Tests;
 //     website/docs/shells/android.md tells its author where they are.
 //   - A scheme assembled at runtime from parts. Fails green: no site spells it.
 //   - A SECOND <data android:scheme> or CFBundleURLSchemes entry. That reds on the
-//     exactly-one floor, which is a red for the right subject but the wrong
-//     message. Disclosed rather than modelled.
+//     exactly-one floor, whose message names it as an unmodelled second
+//     declaration rather than a mismatch.
 //   - Any site not in Sites. Adding a seventh copy of the scheme is invisible to
 //     this pin until it is added to the list. Fails green.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -165,7 +165,8 @@ public sealed class DeepLinkSchemeDriftTests
             template.RelativePath.Replace('/', Path.DirectorySeparatorChar)));
         string home = Home();
         string planted = real.Replace($"android:scheme=\"{home}\"", "android:scheme=\"blazor-native\"", StringComparison.Ordinal);
-        Assert.NotEqual(real, planted);   // the splice landed, or this control proves nothing
+        Assert.True(planted != real,
+            $"positive control: no android:scheme=\"{home}\" in {template.RelativePath} to plant into — the control proves nothing");
 
         List<string> found = Mismatches(home, [(template.RelativePath, template.Extract(planted))]);
 
@@ -174,9 +175,19 @@ public sealed class DeepLinkSchemeDriftTests
         Assert.Contains("blazor-native", only);
     }
 
+    /// <summary>THE detector for <see cref="EveryRoutedVector_UsesTheHomeScheme"/>'s positive
+    /// loop and its Rule 3 known-mismatch anchor below, so the anchor exercises the same
+    /// predicate rather than a restatement of it.</summary>
+    private static bool UsesHomeScheme(string url, string home) =>
+        url.StartsWith(home + "://", StringComparison.OrdinalIgnoreCase);
+
     /// <summary>Every vector that expects a route is written against the home scheme,
     /// compared case-INsensitively: the #296 row deliberately differs in case. Floor: the
-    /// table has six routed rows before 15.3's #296 row and seven after it; losing any reds here.</summary>
+    /// table has six routed rows before 15.3's #296 row and seven after it; losing any reds
+    /// here. Rule 3: the trailing pair of assertions is a known-mismatch anchor — the table's
+    /// wrong-scheme row (route: null) must NOT match through the same <see cref="UsesHomeScheme"/>
+    /// predicate the loop above uses, so a detector that always answered "yes" cannot leave
+    /// this fact green.</summary>
     [Fact]
     public void EveryRoutedVector_UsesTheHomeScheme()
     {
@@ -184,7 +195,16 @@ public sealed class DeepLinkSchemeDriftTests
         var routed = BnDeepLinkVectors.All.Where(v => v.Route is not null).ToList();
         Assert.True(routed.Count >= 6, $"only {routed.Count} routed vectors; the table has lost its cases.");
         foreach ((string url, _) in routed)
-            Assert.True(url.StartsWith(home + "://", StringComparison.OrdinalIgnoreCase),
+            Assert.True(UsesHomeScheme(url, home),
                 $"routed vector {url} is not written against the home scheme \"{home}\".");
+
+        var rejected = BnDeepLinkVectors.All.Where(v => v.Route is null).ToList();
+        Assert.True(rejected.Count >= 1,
+            "no rejected (route: null) vectors; the table has lost its wrong-scheme case, and "
+            + "this fact's detector now has nothing to prove it can say no.");
+        Assert.True(rejected.Any(v => !UsesHomeScheme(v.Url, home)),
+            "every rejected vector matches the home scheme through UsesHomeScheme — the "
+            + "detector this fact relies on cannot say no, so its green above is not evidence "
+            + "of anything.");
     }
 }
