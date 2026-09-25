@@ -73,32 +73,28 @@ namespace BlazorNative.Runtime.Tests;
 //     triple-backtick fence (with 0–3 leading spaces); none of these three
 //     forms exist on a hand-written page today, and a page that starts using
 //     one is invisible here exactly the way an unlabeled fence is.
-//   - A `v`-prefixed version such as `v0.12.0`. The Version regex matches
-//     bare `\d+\.\d+\.\d+`; the leading `v` is not part of that pattern, so a
-//     line naming only a `v`-prefixed version slips past NoNarrativePage_….
 // ─────────────────────────────────────────────────────────────────────────────
 
 public sealed class DocsSamplesDriftTests
 {
-    /// <summary>Re-measured 2026-09-25 (fix round 1, after DocSampleParser started
-    /// seeing 0–3-space-indented fences): 20 hand-written pages, 35 razor/csharp fences
-    /// (15 + 20) out of 62 fences total on those pages — the other 27 are bash, xml,
-    /// swift, yaml, sh, powershell and diff, outside DocSampleParser.CompiledLanguages.
-    /// The six indented `analyzers.md` "Compliant shape" samples this round found
-    /// account for the jump from the original 28: they were always real fences, just
-    /// invisible to the un-indented anchor this pin used to have. Floors, not counts —
-    /// adding a page or a sample passes; losing the scan does not.</summary>
+    /// <summary>Re-measured 2026-09-25 (Task 4 fix round 1): 20 hand-written pages,
+    /// 36 razor/csharp fences (16 + 20) out of 63 fences total on those pages — the
+    /// other 27 are bash, xml, swift, yaml, sh, powershell and diff, outside
+    /// DocSampleParser.CompiledLanguages. History: 28 before the parser saw
+    /// 0–3-space-indented fences, 35 once it did (six indented `analyzers.md`
+    /// samples), 36 after the Task 4 audit removed one sample and added two. Floors,
+    /// not counts — adding a page or a sample passes; losing the scan does not.</summary>
     private const int MinimumPages = 20;
-    private const int MinimumFences = 35;
-    /// <summary>Re-measured 2026-09-25 (fix round 2): 32 of the 35 compiled-language
-    /// fences are component/file/statements; the other 3 are skip — the signature
-    /// listing (testing-harness.md) and the two genuine render-and-throw ✗
-    /// counterexamples (layout-and-yoga.md, typed-lengths.md). Fix round 1 measured
-    /// 31/4 here; fix round 2 closed state.md's BnThemedPanel NEEDS_CONTEXT by making
-    /// the page's own abridged consumer fence the real definition
-    /// (bn-sample=component:BnThemedPanel), not by adding cascading-theme support to a
-    /// shipped component, moving one skip to compiled.</summary>
-    private const int MinimumCompiledSamples = 32;
+    private const int MinimumFences = 36;
+    /// <summary>Re-measured 2026-09-25 (Task 4 fix round 1): 33 of the 36
+    /// compiled-language fences are component/file/statements; the other 3 are skip —
+    /// the signature listing (testing-harness.md) and the two genuine render-and-throw
+    /// ✗ counterexamples (layout-and-yoga.md, typed-lengths.md). History: 31/4 after
+    /// Task 2's fix round 1; 32/3 after fix round 2 made state.md's abridged consumer
+    /// fence the real definition (bn-sample=component:BnThemedPanel); 33/3 after the
+    /// Task 4 audit, which removed a redundant rest-backends.md sample and added the
+    /// scroll and testing samples.</summary>
+    private const int MinimumCompiledSamples = 33;
     /// <summary>Fix round 2: at least one bn-sample=component:<Name> must exist — a
     /// floor, not a count, so the fact this file adds for it
     /// (NoNamedSampleComponent_CollidesWithAShippedType) is provably scanning something.
@@ -107,7 +103,11 @@ public sealed class DocsSamplesDriftTests
     private const int MinimumNamedComponents = 1;
 
     private const string MigratingDir = "website/docs/migrating/";
-    private static readonly Regex Version = new(@"(?<![\w.])\d+\.\d+\.\d+(?![\w.])", RegexOptions.CultureInvariant);
+    /// <summary>An `X.Y.Z` version, with an optional leading `v` that is part of the
+    /// match — `0.12.0` and `v0.12.0` both hit. The lookarounds keep it from matching
+    /// inside a longer token (`abc1.2.3`, `xv1.2.3`, `1.2.3.4`) or an IP address, and a
+    /// two-part name such as `.NET 10` never has three numeric parts.</summary>
+    private static readonly Regex Version = new(@"(?<![\w.])v?\d+\.\d+\.\d+(?![\w.])", RegexOptions.CultureInvariant);
     private static readonly Regex ComponentName = new(@"^[A-Za-z_][A-Za-z0-9_]*$", RegexOptions.CultureInvariant);
 
     /// <summary>One verified-public anchor type per shipped package DocSamples.csproj
@@ -239,6 +239,10 @@ public sealed class DocsSamplesDriftTests
         Assert.Single(Unclassified(plantedFences));
         Assert.Single(VersionMentions("website/docs/planted.md", planted));
         Assert.Empty(VersionMentions(MigratingDir + "planted.md", planted));
+        // A v-prefixed version is a version too — the gap Task 4 found live twice.
+        Assert.Single(VersionMentions("website/docs/planted.md", "since v0.12.0 it is generated\n"));
+        // …but not inside a longer token, an address, or a two-part platform name.
+        Assert.Empty(VersionMentions("website/docs/planted.md", "xv1.2.3 abc1.2.3 10.0.0.1 on .NET 10\n"));
 
         // The CompiledLanguages filter itself, through the SAME InScope helper AllFences
         // uses: an unmarked bash fence is a fence (DocSampleParser.Fences sees it) but

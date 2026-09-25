@@ -176,15 +176,16 @@ public sealed class DocsNameDriftTests
 {
     private const string AnalyzersDir = "src/BlazorNative.Analyzers";
 
-    /// <summary>Re-measured 2026-09-25 (fix round 1, after the span pattern was
-    /// widened to see decorated identifiers — leading `@`, a mid-name generic, a
-    /// trailing `?`, a trailing call): 250 inline Bn/BlazorNative spans across the
-    /// 20 hand-written pages, all resolved (up from 230; the widened pattern now
-    /// sees real spans, like `BnLength?` and `@BnAutoLength.Auto`, that used to
-    /// be invisible). A floor, not a count — Rule 2. Fewer means the scan
+    /// <summary>Re-measured 2026-09-25 (Task 4 fix round 1): 266 inline
+    /// Bn/BlazorNative spans across the 20 hand-written pages, all resolved. History:
+    /// 230 at first; 250 after the span pattern was widened to see decorated
+    /// identifiers — leading `@`, a mid-name generic, a trailing `?`, a trailing
+    /// call — such as `BnLength?` and `@BnAutoLength.Auto`; 277 after the Task 4
+    /// audit's page edits added spans; 266 once its fix round moved the list of
+    /// untiered type names off api-stability.md into the tier table. A floor, not a count — Rule 2. Fewer means the scan
     /// stopped seeing pages, or a real name silently stopped resolving and
     /// someone raised the floor to match instead of fixing it.</summary>
-    private const int MinimumResolvedSpans = 250;
+    private const int MinimumResolvedSpans = 266;
 
     /// <summary>Captures the WHOLE backtick content once it starts with an
     /// optional `@` then `Bn`/`BlazorNative` — permissive on purpose. What this

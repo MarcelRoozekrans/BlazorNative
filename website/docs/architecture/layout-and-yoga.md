@@ -204,6 +204,7 @@ complete when the command is queued for the next frame, not when the view stops 
     }
   </BnColumn>
 </BnScroll>
+<BnText Text="@($"Scrolled to {_offset:0} dp/pt")" />
 <BnButton Label="Add a line" OnClick="AddLineAsync" />
 
 @code {

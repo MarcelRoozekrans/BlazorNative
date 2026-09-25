@@ -23,7 +23,7 @@ changelog line. At 1.0 the same files become a freeze.
 
 ## What "marked but not frozen" means for you
 
-Every shipped package except the analyzers carries a `PublicAPI.Shipped.txt` baseline — one line
+Every shipped library package except the analyzers carries a `PublicAPI.Shipped.txt` baseline — one line
 per public member, including enum members and nullability annotations. The Roslyn public-API analyzers turn three
 diagnostics into **build errors** in the required CI lane:
 
@@ -90,12 +90,12 @@ The surface an app author actually types.
 | `BlazorNative.Http` | `BridgeHttpHandler` and `AddBlazorNativeHttp` / the two `AddBlazorNativeHttpClient` overloads. |
 | `BlazorNative.Runtime` | `BlazorNativeApp` (`DefaultRoute`, `RegisterPages`, `ConfigureServices`) and `BlazorNativePage` (`Routed<T>`, `Named<T>`). Your whole startup contract, deliberately tiny. |
 
-**Types with no tier recorded yet.** The tier table predates these, and nothing has placed them
-since: `BnSafeArea`, `BnSafeAreaEdge`, `BnLayoutItem`, `BnLayoutContainer`, `BnLength`,
-`BnAutoLength` and `BnLengthUnit` in `BlazorNative.Components`, and `BnHostEvents` and
-`BnSafeAreaInsets` in `BlazorNative.Core`. They are baselined like everything else, so a change
-to any of them still shows in the pull request's diff. Which tier each belongs to is an open
-decision — do not read their absence from the table above as a promise either way.
+**Some public types have no tier yet.** Types that shipped after the tier table was written and
+have not been placed are listed in the tier table's own
+[not-yet-tiered section](https://github.com/MarcelRoozekrans/BlazorNative/blob/main/docs/plans/2026-07-21-phase-11.3-api-tiers.md#8-not-yet-tiered--pending-owner-decision).
+They are baselined like everything else, so a change to any of them still shows in the pull
+request's diff. Which tier each belongs to is an open decision — do not read a type's absence
+from the table above as a promise either way.
 
 **Example — every `BlazorNative.*` line here is STABLE** (`Home`/`Camera` are this page's own
 stand-ins for your page components, not part of the framework):
