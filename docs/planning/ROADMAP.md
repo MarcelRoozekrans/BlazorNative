@@ -3014,13 +3014,14 @@ shell source moved. `#397` (the phase PR) merged as `0bdeb84` before this record
 > `Android:`/`<c>…</c> on Android` marker, or one stated only in free prose, is checked by hand and
 > is not scanned.
 
-#### Phase 15.6: Audit and close [status: active]
+#### Phase 15.6: Audit and close [status: complete]
 **Goal:** Run `audit-milestone` against the DoD on live evidence and close M15. **No tag** — the
 8.6 rule, and `CONVENTIONS.md` records `Milestone completion tags a release: no`.
 **Surface:** Docs
 **HelpWanted:** no
 **Design:** [`docs/superpowers/specs/2026-09-25-phase-15.6-design.md`](../superpowers/specs/2026-09-25-phase-15.6-design.md)
 **Plan:** [`docs/superpowers/plans/2026-09-25-phase-15.6-audit-and-close.md`](../superpowers/plans/2026-09-25-phase-15.6-audit-and-close.md)
+**Completed:** 2026-09-25 · [PR #408](https://github.com/MarcelRoozekrans/BlazorNative/pull/408) — the audit phase is complete; the milestone is not, see 15.7–15.8
 
 > **Outcome: the audit FAILS, and that is the audit working.** [`docs/plans/2026-09-25-milestone-15-audit.md`](../plans/2026-09-25-milestone-15-audit.md)
 > records 7 MET, 2 MET NARROWLY and 2 NOT MET:
