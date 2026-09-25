@@ -54,7 +54,8 @@ At **1.0** the files do not change — the *rule about who may edit them* does. 
 
 ## The three tiers
 
-Every public type sits in exactly one tier. The tiers are a property of the **type**, not of the
+Every tiered public type sits in exactly one tier — a small number, shipped after the tier table
+was written, have no tier yet; see below. The tiers are a property of the **type**, not of the
 package it happens to live in.
 
 | Tier | What it means for your code |

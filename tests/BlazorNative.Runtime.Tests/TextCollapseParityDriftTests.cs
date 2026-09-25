@@ -365,7 +365,13 @@ public sealed class TextCollapseParityDriftTests
         Match control = InternalAndroidClaim.Match("Android: SwitchMaterial/Switch.");
         Assert.True(control.Success, "the extractor itself failed to match the planted string.");
         Assert.Equal("SwitchMaterial", control.Groups["cls"].Value);
-        Assert.NotEqual(control.Groups["cls"].Value, widgetClasses["switch"]);
+        // Final review M2: this used to be a hand-written Assert.NotEqual, checking only the
+        // extractor — deleting the real per-file Assert.True(actual == claimed, ...) below
+        // (the assertion that actually catches a wrong claim) would have left this control
+        // green. ClaimMatches is the SAME comparison helper the real per-file check below
+        // calls, so a neutralised comparison reds here too.
+        Assert.False(ClaimMatches(control.Groups["cls"].Value, widgetClasses["switch"]),
+            "the extractor's planted pre-#298 claim ('SwitchMaterial') must NOT match the shell's real 'switch' class — if it does, the comparison helper stopped comparing.");
 
         // Internal design comments — five components (BnActivityIndicator, BnCheckbox,
         // BnPicker, BnSlider, BnSwitch).
@@ -401,13 +407,22 @@ public sealed class TextCollapseParityDriftTests
                 string kind = isPublished
                     ? "published `///` summary — ships in the generated component reference"
                     : "internal design comment — never reaches the assembly or the reference";
-                Assert.True(actual == claimed,
+                Assert.True(ClaimMatches(claimed, actual),
                     $"{file}'s {kind} claims Android builds `{claimed}` for a `{nodeType}` node, "
                     + $"but WidgetMapper.kt's `when (p.nodeType)` now builds `{actual}`. Fix the "
                     + "doc, or update this fact if the new class is correct — never both silently.");
             }
         }
     }
+
+    /// <summary>The ONE comparison a claimed Android widget class is held to — an exact
+    /// match against what WidgetMapper.kt actually builds, never a substring or word-boundary
+    /// search over the whole claim text (that is exactly how the original #298 fact, built on
+    /// `\bSwitch\b`, passed on its own pre-fix regression: `"SwitchMaterial/Switch"` contains a
+    /// standalone `Switch`). Both the real per-file check above and this fact's own positive
+    /// control call this, so neutralising the comparison reds the control too (final review
+    /// M2).</summary>
+    private static bool ClaimMatches(string claimed, string actual) => actual == claimed;
 
     // ── The iOS half, and what it is worth ───────────────────────────────────
 

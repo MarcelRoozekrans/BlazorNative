@@ -198,8 +198,23 @@ A pragma without a justification comment does not pass review.
 
   public static class MyVersionExports
   {
+      // Also BN0020-compliant (final review I2: analyzers now run over every docs sample,
+      // and an expression-bodied export is ALWAYS flagged by BN0020 — see above — so a
+      // BN0021 "compliant shape" export must satisfy both rules at once, exactly like a
+      // real export would).
       [UnmanagedCallersOnly(EntryPoint = "myapp_get_version", CallConvs = new[] { typeof(CallConvCdecl) })]
-      public static int GetVersion() => 0;
+      public static int GetVersion()
+      {
+          try
+          {
+              return 0; // stands for your own version lookup
+          }
+          catch (Exception ex)
+          {
+              Console.Error.WriteLine($"[Exports] version lookup failed: {ex}");
+              return -1;
+          }
+      }
   }
   ```
 

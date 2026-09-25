@@ -2881,8 +2881,8 @@ shell source moved. `#397` (the phase PR) merged as `0bdeb84` before this record
 `ci`, `ios` and `android-instrumented` were still running on its head; all three finished green on
 `1b675a9`, including the new "Docs samples compile" step (33 compiled, 3 skipped).
 
-> **Outcome: the audit closes #291, the two guards it left behind close #298 for real and answer
-> two of #365's three prose pairs, and #356 is corrected everywhere without a behaviour change.**
+> **Outcome: the audit closes #291, the two guards it left behind close #298 for real, #365's three
+> prose pairs are answered one by one, and #356 is corrected everywhere without a behaviour change.**
 >
 > **The audit's headline: 46 false claims across 19 of the 20 hand-written pages, plus 6 coverage
 > gaps.** Only `migrating/typed-lengths.md` had nothing false. **The most consequential finding was
@@ -2896,8 +2896,9 @@ shell source moved. `#397` (the phase PR) merged as `0bdeb84` before this record
 >
 > **The two guards, `DocsSamplesDriftTests` and `DocsNameDriftTests`, are the docs pin pair #291
 > asked for — one fence parser (`tools/BlazorNative.DocSamples`), so the CI compile step and the
-> pins cannot disagree about what a fence is (Rule 8).** `DocsSamplesDriftTests` compiles every
-> `component`/`file`/`statements` fence on the 20 pages and holds every fence to a declared kind;
+> pins cannot disagree about what a fence is (Rule 8).** The CI "Docs samples compile" step compiles
+> every `component`/`file`/`statements` fence on the 20 pages, through the generator; `DocsSamplesDriftTests`
+> itself never invokes a compiler (its own Rule 5 says so) — it holds every fence to a declared kind.
 > `DocsNameDriftTests` resolves every inline `` `Bn…` ``/`` `BlazorNative…` `` span against the
 > shipped surface, shell declarations, tracked file names and analyzer string literals. **Three fix
 > rounds on the samples pin, each closing a real hole rather than a cosmetic one:** round 0 shipped
@@ -2922,7 +2923,7 @@ shell source moved. `#397` (the phase PR) merged as `0bdeb84` before this record
 > `BnListWindow.Compute`; review called that a project-wide loosening and it was reverted to a
 > **line-scoped "internal" prose gate** instead — a non-public member resolves only on a doc line
 > whose prose says "internal" outside any backtick span, so code that merely contains the word
-> cannot open the gate. Final count: 250 resolved spans, re-measured after the audit's own edits
+> cannot open the gate. Final count: 266 resolved spans, re-measured after the audit's own edits
 > moved eleven of them off `api-stability.md`. N1–N6 mutation-proven, including the N6 vacuity
 > contrast and an N3 re-run that caught a real bug before it shipped: a directory merely containing
 > a dot (`BlazorNative.Apple`) was read as having a file extension, manufacturing a false resolution.
@@ -2945,27 +2946,28 @@ shell source moved. `#397` (the phase PR) merged as `0bdeb84` before this record
 > (`MaterialCheckBox` → `CheckBox`), `BnPicker` (bare `Spinner` → `BnSpinner`, a `Spinner` subclass),
 > `BnSlider` on iOS (`UISlider` → `BnSliderView`, the iOS 26 exact-value shim), `BnImage` on iOS
 > (`UIImageView` → `BnImageView`, which carries the decoded pixel size), and `BnView` on Android
-> (`FrameLayout` → `BnYogaFrameLayout`, which suppresses the framework's own layout pass). Floor
-> `>= 4` discovered claims measured at 5 internal-comment and 11 published-doc occurrences once the
-> scan moved from `Match` to `Matches` in the second fix round, so it means "every occurrence found"
-> rather than "whichever occurrence came first".
+> (`FrameLayout` → `BnYogaFrameLayout`, which suppresses the framework's own layout pass). Two
+> separate floors, one per scan: `floor: 5` for internal-comment claims and `floor: 11` for
+> published-doc claims, measured once the scan moved from `Match` to `Matches` in the second fix
+> round, so each means "every occurrence found" rather than "whichever occurrence came first".
 >
 > **F6, F7 and F8 — #365's three prose pairs — answered one by one, with the DoD's own reasoning for
 > whether each is pinned.**
 > - **F6** — stale "nine exports" prose in three CI comments, two of them never touched by the PR
->   that claimed to have fixed all copies. **Pinned: yes, by removing the duplicate rather than
->   correcting it to the true count.** Each comment now points at the assertion that holds the
->   number instead of repeating it, so a comment naming no count cannot drift out of step with the
->   assertion that does.
+>   that claimed to have fixed all copies. **Not pinned, not needed: the duplicate was removed**, so
+>   the count now appears only in the assertion that holds it. Each comment points at that assertion
+>   instead of repeating the number, so there is no second copy left to drift out of step.
 > - **F7** — `GITHUB-SETUP.md` and `ios.yml` both called the device leg "already-required" when only
 >   its *result* is gated through the required `ios-build` aggregator, not its own context.
->   **Pinned: no.** This is prose compared against other prose about CI/branch-protection state;
->   nothing in the repo enforces the two sentences to agree, so only re-reading catches drift.
+>   **Pinned: no.** This is prose against prose about CI state — a test would only restate whichever
+>   side it chose, and the truth lives in GitHub's live branch protection, not in anything the repo
+>   itself carries. Corrected in both files and recorded with this reasoning, not tested.
 > - **F8** — the device-verification handover's own DoD item still asked for the device-build lane
->   Phase 14.4 already built. **Pinned: no**, for the same reason as F7 — a claim about what CI state
->   already exists, checked against no mechanism but a reader.
+>   Phase 14.4 already built. **Pinned: no**, for the same reason as F7: a claim about what CI state
+>   already exists, checked against no mechanism but a reader, and no more provable by a repo-local
+>   test than F7 is. Corrected to match the handover's own `:315–319`.
 >
-> **#298 and #356, and the split issue.** #298's own component, plus four siblings the widened scan
+> **#298 and #356, and the split issue.** #298's own component, plus five siblings the widened scan
 > found, are corrected in both their internal comments and their published XML docs, held to
 > `TextCollapseParityDriftTests`' new fact. #356's secure-storage legend is corrected in its three
 > copies together — `BnSecureStorage.swift`, `ShellBridge.kt` plus its byte-identical template
@@ -2982,11 +2984,12 @@ shell source moved. `#397` (the phase PR) merged as `0bdeb84` before this record
 > since the tier table has no tier anywhere; the list now lives in
 > `docs/plans/2026-07-21-phase-11.3-api-tiers.md` §8, "Not yet tiered — pending owner decision", and
 > `api-stability.md` links it by name and count-free. The audit record's `## Code questions raised`
-> holds eight items the audit found but that change behaviour or API tiers, so they were left as
-> findings rather than fixed in place — headline ones: the stderr-pump twin divergence between iOS's
-> `BnStderrPump.sink` (re-gates at the shell's level) and Android's `toLogcat` (does not), and the
-> `IMobileBridge` consume-only policy gap `HostSession.cs` enforces for `INavigationManager` but not
-> for `IMobileBridge`.
+> holds seven items the audit found but did not fix in place, since fixing them changes behaviour or
+> API tiers — five are still open, and two (the `Directory.Build.targets` "Six packages" comment and
+> the version guard's `v`-prefix gap) were closed in fix round 1. Headline open ones: the
+> stderr-pump twin divergence between iOS's `BnStderrPump.sink` (re-gates at the shell's level) and
+> Android's `toLogcat` (does not), and the `IMobileBridge` consume-only policy gap `HostSession.cs`
+> enforces for `INavigationManager` but not for `IMobileBridge`.
 >
 > **The live red.** Commit `bd0ab8b` broke `guides/safe-area.md` fence 1 with `Padding="16px"` on
 > this follow-up branch, `docs/15.5-record`, since the phase PR's own live-red step could not run
