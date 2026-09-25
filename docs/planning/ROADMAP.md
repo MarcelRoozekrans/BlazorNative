@@ -2867,13 +2867,14 @@ see. Decide the key first; #375 follows from it rather than the other way round.
 > infrastructure before any test ran — a system-image download "Premature EOF" — passing on attempt
 > 2 with 228/0.
 
-#### Phase 15.5: Prose, and the small corrections [status: active]
+#### Phase 15.5: Prose, and the small corrections [status: complete]
 **Goal:** Answer **#291** for the three unpinned documentation transcription pairs M14 found, and
 land **#298**, **#356**, **#365**.
 **Surface:** Docs
 **HelpWanted:** no
 **Design:** [`docs/superpowers/specs/2026-09-25-phase-15.5-design.md`](../superpowers/specs/2026-09-25-phase-15.5-design.md)
 **Plan:** [`docs/superpowers/plans/2026-09-25-phase-15.5-prose-and-corrections.md`](../superpowers/plans/2026-09-25-phase-15.5-prose-and-corrections.md)
+**Completed:** 2026-09-25 · [PR #397](https://github.com/MarcelRoozekrans/BlazorNative/pull/397), record and final-review fixes [PR #399](https://github.com/MarcelRoozekrans/BlazorNative/pull/399)
 **Suite:** .NET **1176 → 1186** (Analyzers 27 · Renderer 140 · Runtime 1009 → 1019:
 `DocsSamplesDriftTests` +7 over three fix rounds · `DocsNameDriftTests` +2 · one fact grown onto
 `TextCollapseParityDriftTests`) · Android instrumented 228, iOS 271 and JVM 162 unchanged — no
