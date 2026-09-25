@@ -22,7 +22,7 @@
 #     Phase 8.1, M4 DoD #7 / M8 DoD #2) → artifacts for the instrumented
 #     (Gate 3) job.
 #
-#   ios-build (macos-latest) — THE iOS SHELL MUST COMPILE. Publish +
+#   ios-build (ubuntu-latest) — THE iOS SHELL MUST COMPILE. Publish +
 #     `xcodebuild build-for-testing`: Swift + Objective-C++ compiled, the app
 #     and the XCTest bundle LINKED. No simulator is booted and no test is run.
 #     Since Phase 14.4 the work is a TWO-LEG MATRIX — `iossimulator-arm64` and
@@ -2653,8 +2653,9 @@ jobs:
       # app that installs, and rc 1 at first mount with nothing naming the cause.
       #
       # So this step GENERATES an app and PUBLISHES it, asserting the 8.0
-      # tripwire trio on GENERATED output — 4 IL2072 + the 9 exports + the
-      # page-presence probe. A text pin on the template's csproj was considered
+      # tripwire trio on GENERATED output — 4 IL2072 + the exports ARM 2 of
+      # template-smoke.ps1 enumerates + the page-presence probe. A text pin on
+      # the template's csproj was considered
       # and REFUSED: it proves the LINE IS IN THE FILE, and 8.0's own absence was
       # found by a PUBLISH, not by a read. The trio is mutation-proven — deleting
       # TrimmerRootAssembly from the template reds arms 1 and 3 together (both
@@ -3182,13 +3183,14 @@ jobs:
 
           # Phase 7.4: assert the export surface ON THE ARCHIVE, with VISIBILITY.
           # The post-link gate below proved blazornative_init can vanish from the
-          # linked dylib's global table while `nm -gU` on the .a still lists all
-          # nine exports — because nm -gU also lists private-external (N_PEXT)
-          # globals, which ld64 LOCALIZES in the output (no -exported_symbols_list
-          # is passed; a default-visibility global in a force_loaded member MUST
-          # surface as a dylib export, a private-external one MUST NOT). So "the
-          # nine symbols are in the .a" (ios.yml's check) does not prove the app
-          # will export them. `nm -m` names the verdict per symbol ("external"
+          # linked dylib's global table while `nm -gU` on the .a still lists every
+          # export the `expected` list below enumerates — because nm -gU also
+          # lists private-external (N_PEXT) globals, which ld64 LOCALIZES in the
+          # output (no -exported_symbols_list is passed; a default-visibility
+          # global in a force_loaded member MUST surface as a dylib export, a
+          # private-external one MUST NOT). So "they're all in the .a" (ios.yml's
+          # check) does not prove the app will export them. `nm -m` names the
+          # verdict per symbol ("external"
           # vs "private external"); assert it HERE so an ILC visibility flip
           # fails at its source with the discriminating evidence, not two
           # minutes later at the far end of an xcodebuild.
@@ -3610,10 +3612,13 @@ jobs:
   # Actions API call ON THE VERDICT PATH, which is exactly what it must not have.
   # So the roster is pinned OUTSIDE the workflow instead, by
   # `IosSliceMatrixDriftTests` in the required .NET suite: it asserts that
-  # `ios-build-slice` declares both `iossimulator-arm64` and `ios-arm64`, and that
-  # the job carries no `if:` and no `continue-on-error`. With those two facts held,
-  # "every leg the matrix declared succeeded" — all this job can honestly claim —
-  # is equivalent to "both slices compiled", by construction rather than by
+  # `ios-build-slice` declares both the `simulator`/`iossimulator-arm64` and the
+  # `device`/`ios-arm64` leg, with every field that decides which slice is
+  # actually built and what the LC_BUILD_VERSION gate compares against — not the
+  # RID alone (#365 F5) — and that the job carries no `if:` and no
+  # `continue-on-error`. With those facts held, "every leg the matrix declared
+  # succeeded" — all this job can honestly claim — is equivalent to "both
+  # slices, correctly configured, compiled", by construction rather than by
   # assertion. If you need a conditional leg, that pin reds and says so; decide the
   # trade out loud rather than editing it away.
   #

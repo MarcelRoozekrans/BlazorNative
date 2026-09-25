@@ -20,16 +20,22 @@ namespace BlazorNative.Runtime.Tests;
 /// roster therefore lives OUTSIDE the job, here, in the required .NET suite that already
 /// parses `ci.yml` for exactly this kind of copy.
 ///
-/// WHAT THAT BUYS. With both RIDs pinned and the matrix job pinned unconditional, "every
+/// WHAT THAT BUYS (#365 F5). Pinning the RID alone was not enough: `sdk`, `min_flag`,
+/// `destination`, `expected_platform` and `expected_platform_num` are what decide WHICH
+/// slice actually gets built and what the LC_BUILD_VERSION link gate compares against, and
+/// a consistent two-field edit on one leg — say, pointing the device leg at the simulator
+/// SDK while also relabelling its expected platform — left the old RID-only roster green.
+/// With every field of both legs pinned, and the matrix job pinned unconditional, "every
 /// leg the matrix declared succeeded" — which is all the aggregator can honestly claim —
-/// becomes equivalent to "both slices compiled", TRUE BY CONSTRUCTION rather than by a
-/// sentence in an echo. Dropping the device slice stops being a silent green and becomes
-/// a red test that names the missing RID.
+/// becomes equivalent to "both slices, correctly configured, compiled", TRUE BY
+/// CONSTRUCTION rather than by a sentence in an echo. Dropping a slice, or drifting one of
+/// its fields, stops being a silent green and becomes a red test that names the leg and
+/// the field.
 ///
-/// WHY THE RIDS ARE A LITERAL ROSTER AND NOT DERIVED. Every other copy of a RID in this
-/// repo is downstream of this matrix — `ios.yml` declares the same two in its own
+/// WHY THE ROSTER IS A LITERAL RECORD AND NOT DERIVED. Every other copy of these fields in
+/// this repo is downstream of this matrix — `ios.yml` declares the same shape in its own
 /// advisory matrix, which makes it a twin worth pinning against one day, but a purely
-/// differential pin passes when BOTH copies lose the device leg. A floor has to be
+/// differential pin passes when BOTH copies drift the same way. A floor has to be
 /// absolute to be a floor. (`ReadmeDriftTests` derives both sides because both sides
 /// exist; here one side is the decision itself.)
 /// </summary>
@@ -58,21 +64,48 @@ public sealed class IosSliceMatrixDriftTests
     private static Match JobLevelCondition(string jobBody) =>
         Regex.Match(jobBody, JobLevelConditionPattern);
 
-    /// <summary>Every slice the per-PR gate must build. Adding one here without adding it
-    /// to `ci.yml` reds this test, and vice versa — which is the point.</summary>
-    private static readonly string[] RequiredRids = ["iossimulator-arm64", "ios-arm64"];
+    /// <summary>Every slice the per-PR gate must build, with every field that decides WHICH
+    /// slice is built and what the link gate compares against — not the RID alone (#365 F5).
+    /// A consistent two-field edit on one leg now reds here.</summary>
+    private sealed record Slice(string Leg, string Rid, string Sdk, string MinFlag, string Destination, string ExpectedPlatform, string ExpectedPlatformNum);
 
-    /// <summary>`ci.yml`'s `ios-build-slice` matrix declares EVERY required slice, and
-    /// declares them unconditionally.
+    private static readonly Slice[] RequiredSlices =
+    [
+        new("simulator", "iossimulator-arm64", "iphonesimulator", "-mios-simulator-version-min=13.0", "generic/platform=iOS Simulator", "IOSSIMULATOR", "7"),
+        new("device", "ios-arm64", "iphoneos", "-miphoneos-version-min=13.0", "generic/platform=iOS", "IOS", "2"),
+    ];
+
+    /// <summary>Matches one `- leg: <value>` entry header inside the `include:` block. Each
+    /// entry's other six fields are read independently from the text between this match and
+    /// the next, in the file's existing regex style (see <see cref="Field"/>) — not by
+    /// requiring a fixed field order, so a reordered entry still parses.</summary>
+    private static readonly Regex LegEntryStart = new(@"(?m)^\s+-\s*leg:\s*(?<leg>\S+)\s*$");
+
+    /// <summary>Reads one scalar field (`rid:`, `sdk:`, …) out of a single entry's text,
+    /// tolerating an optional surrounding quote (`expected_platform_num` is quoted so YAML
+    /// does not read it as a number). Returns "" — never throws — when the field is absent,
+    /// so a dropped field shows up as a named mismatch against <see cref="RequiredSlices"/>
+    /// rather than an exception that obscures which field vanished.</summary>
+    private static string Field(string entry, string name)
+    {
+        Match m = Regex.Match(entry, @"(?m)^\s+" + Regex.Escape(name) + @":\s*""?(?<value>[^""\r\n]+?)""?\s*$");
+        return m.Success ? m.Groups["value"].Value : "";
+    }
+
+    /// <summary>`ci.yml`'s `ios-build-slice` matrix declares EVERY required slice, with
+    /// every field that decides which one is built, and declares them unconditionally.
     ///
-    /// Two facts, one test, because neither is sufficient alone: a matrix that names both
-    /// RIDs but carries <c>if: matrix.leg != 'device'</c> compiles one slice and reports
-    /// `success`, and an unconditional matrix that lost an `include:` entry does the same.
-    /// Both are the green-on-nothing class the aggregator exists to close.
+    /// Three facts, one test, because none is sufficient alone: a matrix that names both
+    /// legs but carries <c>if: matrix.leg != 'device'</c> compiles one slice and reports
+    /// `success`; an unconditional matrix that lost an `include:` entry does the same; and
+    /// a matrix that kept both `rid:` values but drifted a device leg's `sdk` or
+    /// `expected_platform*` builds — or grades — the wrong thing while still reporting two
+    /// declared legs. All three are the green-on-nothing class the aggregator exists to
+    /// close.
     ///
     /// NON-VACUITY, at four points, per issue #357: the job header must match exactly once,
     /// the job body must be non-empty, the `include:` block must match exactly once inside
-    /// it, and at least one `rid:` must parse. If any regex here stops matching — the job
+    /// it, and at least one leg entry must parse. If any regex here stops matching — the job
     /// is renamed, the matrix moves, the YAML is reindented — this test FAILS rather than
     /// looping zero times over nothing and going green.
     ///
@@ -97,33 +130,75 @@ public sealed class IosSliceMatrixDriftTests
 
         string include = job[includes[0].Index..];
 
-        var declared = Regex.Matches(include, @"(?m)^\s+-?\s*rid:\s*(?<rid>[A-Za-z0-9._-]+)\s*$")
-            .Select(m => m.Groups["rid"].Value)
-            .ToList();
+        MatchCollection legStarts = LegEntryStart.Matches(include);
+        Assert.True(legStarts.Count > 0,
+            $"{MatrixJob}'s `include:` block declares NO `- leg:` entry at all, so this pin holds "
+            + "NOTHING and would pass forever. The matrix was rewritten past the pattern, or "
+            + "emptied. A pin whose subject vanished must say so, not go quietly green.");
 
-        Assert.True(declared.Count > 0,
-            $"{MatrixJob}'s `include:` block declares NO `rid:` at all, so this pin holds NOTHING "
-            + "and would pass forever. The matrix was rewritten past the pattern, or emptied. "
-            + "A pin whose subject vanished must say so, not go quietly green.");
+        var declared = new List<Slice>();
+        for (int i = 0; i < legStarts.Count; i++)
+        {
+            int start = legStarts[i].Index;
+            int end = i + 1 < legStarts.Count ? legStarts[i + 1].Index : include.Length;
+            string entry = include[start..end];
+            declared.Add(new Slice(
+                legStarts[i].Groups["leg"].Value,
+                Field(entry, "rid"),
+                Field(entry, "sdk"),
+                Field(entry, "min_flag"),
+                Field(entry, "destination"),
+                Field(entry, "expected_platform"),
+                Field(entry, "expected_platform_num")));
+        }
 
-        // ── 2. the roster, compared BOTH directions ─────────────────────────────
-        var missing = RequiredRids.Except(declared, StringComparer.Ordinal).ToList();
-        var extra = declared.Except(RequiredRids, StringComparer.Ordinal).ToList();
+        // ── 2. the roster, compared BOTH directions, leg by leg and field by field ──
+        var declaredByLeg = declared.ToDictionary(s => s.Leg, StringComparer.Ordinal);
+        var requiredByLeg = RequiredSlices.ToDictionary(s => s.Leg, StringComparer.Ordinal);
 
-        Assert.True(missing.Count == 0 && extra.Count == 0,
+        var missingLegs = requiredByLeg.Keys.Except(declaredByLeg.Keys, StringComparer.Ordinal).ToList();
+        var extraLegs = declaredByLeg.Keys.Except(requiredByLeg.Keys, StringComparer.Ordinal).ToList();
+
+        var fieldMismatches = new List<string>();
+        foreach (string leg in requiredByLeg.Keys.Intersect(declaredByLeg.Keys, StringComparer.Ordinal))
+        {
+            Slice expected = requiredByLeg[leg];
+            Slice actual = declaredByLeg[leg];
+            void Compare(string field, string expectedValue, string actualValue)
+            {
+                if (!string.Equals(expectedValue, actualValue, StringComparison.Ordinal))
+                {
+                    fieldMismatches.Add($"  leg '{leg}', field `{field}`: expected '{expectedValue}', found '{actualValue}'");
+                }
+            }
+            Compare("rid", expected.Rid, actual.Rid);
+            Compare("sdk", expected.Sdk, actual.Sdk);
+            Compare("min_flag", expected.MinFlag, actual.MinFlag);
+            Compare("destination", expected.Destination, actual.Destination);
+            Compare("expected_platform", expected.ExpectedPlatform, actual.ExpectedPlatform);
+            Compare("expected_platform_num", expected.ExpectedPlatformNum, actual.ExpectedPlatformNum);
+        }
+
+        Assert.True(missingLegs.Count == 0 && extraLegs.Count == 0 && fieldMismatches.Count == 0,
             "iOS SLICE MATRIX DRIFT — the required `ios-build` check would report success over "
-            + "the wrong set of slices.\n"
-            + (missing.Count > 0
-                ? $"  Required but NOT declared in ci.yml's {MatrixJob} matrix: {string.Join(", ", missing)}\n"
+            + "the wrong set of slices, or over the right legs built the wrong way.\n"
+            + (missingLegs.Count > 0
+                ? $"  Required but NOT declared in ci.yml's {MatrixJob} matrix: {string.Join(", ", missingLegs)}\n"
                   + "  `ios-build` aggregates whatever legs the matrix declares, so a dropped leg is a "
                   + "SILENT pass: the check stays green and nothing else in the repo would notice. "
                   + "`ios-arm64` is the slice that actually ships and had never been built by CI at "
                   + "all before Phase 14.4.\n"
                 : "")
-            + (extra.Count > 0
-                ? $"  Declared in ci.yml but not in this roster: {string.Join(", ", extra)}\n"
+            + (extraLegs.Count > 0
+                ? $"  Declared in ci.yml but not in this roster: {string.Join(", ", extraLegs)}\n"
                   + "  A new slice is welcome, but it has to join the roster ON PURPOSE so this pin "
                   + "keeps knowing how many rows it should have.\n"
+                : "")
+            + (fieldMismatches.Count > 0
+                ? "  Field drift on a declared leg (#365 F5) — the RID matched but at least one of "
+                  + "the fields that decide which slice is actually built, or what the "
+                  + "LC_BUILD_VERSION link gate compares against, did not:\n"
+                  + string.Join("\n", fieldMismatches) + "\n"
                 : ""));
 
         // ── 3. nothing may condition a leg out ──────────────────────────────────

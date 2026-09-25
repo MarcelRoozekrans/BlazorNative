@@ -291,8 +291,10 @@ difference, a measurement path, a scale/point-vs-pixel error) — capture it.
   writer of stderr wins; the `BnStderrPump` install order decides whose output survives.
 - **The loser of that fight is usually YOUR CONSOLE.** The consequence the line above
   leaves out is the one that costs a device run time: `BnStderrPump` claims fd 2 with
-  `dup2` as the first statement in `HostViewController.viewDidLoad`, so anything the OS
-  mirrors onto fd 2 lands in the pump's pipe instead of your terminal. On a real device
+  `dup2` inside `HostViewController.viewDidLoad`, immediately after the XCTest guard
+  (`viewDidLoad:120`, guard at `:107` — not the first statement in the method), so
+  anything the OS mirrors onto fd 2 lands in the pump's pipe instead of your terminal.
+  On a real device
   that mirror is the **only** remaining route to `Debug` and `Verbose` — both map to
   `OSLogType.debug`, the unified log drops that unless the subsystem is enabled for
   capture, and `log config` has no `--device` flag. The escape is the environment variable
@@ -333,8 +335,11 @@ difference, a measurement path, a scale/point-vs-pixel error) — capture it.
 
 P3 can be called **met** when:
 
-1. The demo app **runs, signed, on a real iPhone** (Phase A), and the recipe is written
-   down (ideally as a PR adding the device build lane).
+1. The demo app **runs, signed, on a real iPhone** (Phase A). The device-build lane
+   already exists — Phase 14.4 added an `ios-arm64` leg to both `ci.yml`'s
+   `ios-build-slice` matrix and `ios.yml` — so what remains is the device-execution
+   item: someone actually runs the signed app on hardware and records the signing
+   recipe (team, profile, entitlements) that CI cannot hold.
 2. All **seven acceptance items** have been exercised with evidence and a PASS/caveat note.
 3. The **secure-storage ACL** (#213 item 1) is confirmed-and-filed or proven-not-a-problem.
    **Met, and closed: confirmed on hardware in September 2026 and fixed in Phase 14.3.**

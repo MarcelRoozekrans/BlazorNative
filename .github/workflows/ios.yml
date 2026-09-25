@@ -13,10 +13,11 @@
 #     one. Count runs OF THE LEG on main with no sim-flake reds, not runs of the
 #     workflow: a workflow-level count would be satisfied by a device leg that
 #     cannot flake, which is the bar this criterion is trying not to be.
-#   · DEVICE leg — DO NOT promote it. It duplicates what `ci.yml`'s already-required
-#     `ios-build-slice device ios-arm64` leg proves on every PR, so promoting it
-#     would add a required check that says nothing new. It stays the merge-time
-#     re-run.
+#   · DEVICE leg — DO NOT promote it. It duplicates what `ci.yml`'s
+#     `ios-build-slice device ios-arm64` leg proves on every PR, gated through
+#     the required `ios-build` aggregator even though the leg's own context is
+#     not itself required, so promoting it would add a required check that
+#     says nothing new. It stays the merge-time re-run.
 # Promoting a leg means adding its LEG check name, `${{ matrix.leg }} ${{ matrix.rid }}`
 # as declared below, to the required set — never the workflow name. Documented in
 # docs/GITHUB-SETUP.md → "Branch protection", alongside the emulator lane.

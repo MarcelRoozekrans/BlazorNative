@@ -313,8 +313,10 @@ ships, and runs **nothing** — a device is needed to run, and CI has none.
 > would justify promoting it is a different, and much shorter, bar than the
 > simulator leg's.
 >
-> - **`ios.yml`'s device leg** — it duplicates what `ci.yml`'s already-required
->   `ios-build-slice device ios-arm64` leg proves on every PR. Promoting it would
+> - **`ios.yml`'s device leg** — it duplicates what `ci.yml`'s
+>   `ios-build-slice device ios-arm64` leg proves on every PR, gated through the
+>   required `ios-build` aggregator even though the leg's own context is not
+>   itself required. Promoting it would
 >   add a required check that says nothing new, so the answer is **do not promote
 >   it**; keep it as the merge-time re-run.
 > - **`ios.yml`'s simulator leg** — this is the one the ≈10-consecutive-green-runs
