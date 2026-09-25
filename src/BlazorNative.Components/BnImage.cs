@@ -166,8 +166,10 @@ namespace BlazorNative.Components;
 
 /// <summary>
 /// An image loaded from a URL. Renders as a native <c>ImageView</c> on Android
-/// and a <c>UIImageView</c> on iOS. The platform fetches, decodes and measures
-/// the bytes — your code only names the source. The rest of its surface is
+/// and as <c>BnImageView</c> on iOS, a <c>UIImageView</c> subclass that carries
+/// the decoded bytes' own pixel size for measurement. The platform fetches,
+/// decodes and measures the bytes — your code only names the source. The rest
+/// of its surface is
 /// <see cref="BnView"/>'s flex <b>item</b> surface (<see cref="BnLayoutItem.Grow"/>,
 /// <see cref="BnLayoutItem.Shrink"/>, <see cref="BnLayoutItem.Basis"/>,
 /// <see cref="BnLayoutItem.AlignSelf"/>, the box, <see cref="BnLayoutItem.Margin"/>,

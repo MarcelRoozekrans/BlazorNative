@@ -463,9 +463,17 @@ public enum BiometricStatus
 //   0 Ok           — set/delete succeeded; GET FOUND THE VALUE ({"value":…} payload on get)
 //   1 NotFound     — get/getWithAuth of an absent key (no payload)
 //   2 AuthFailed   — the biometric gate on getWithAuth denied / failed / cancelled / locked out
-//   3 Unavailable  — no secure hardware / Keystore unusable / (getWithAuth) biometrics not
-//                    enrolled on ANDROID (AndroidShellBridge.provisionKey). On iOS what an
-//                    unenrolled device returns here is NOT ESTABLISHED — see #396.
+//   3 Unavailable  — no secure hardware, or Keystore/Keychain unusable. On ANDROID this is
+//                    the auth-bound SET path only (AndroidShellBridge.secureSetAuth's
+//                    provisionKey call, whose KeyGenParameterSpec refuses to provision a
+//                    key with no biometric enrolled): a getWithAuth of an EXISTING item
+//                    does NOT reach Unavailable the same way — a denied or unavailable
+//                    prompt there always folds to AuthFailed (secureGetWithAuth's onDenied
+//                    ignores the BiometricPrompt error code), and only a setup exception —
+//                    for example a key invalidated by an enrolment change — can produce a
+//                    different status, which secureErrorStatus maps to Error, not
+//                    Unavailable. On iOS what an unenrolled auth-bound SET returns is NOT
+//                    ESTABLISHED — see #396.
 //   4 Error        — unexpected host error (a caught throw, a decrypt failure, malformed/oversize args)
 //
 // NotFound (1), AuthFailed (2), Unavailable (3) and Error (4) are all VALUES,
@@ -485,10 +493,13 @@ public enum SecureStorageStatus
     NotFound = 1,
     /// <summary>The biometric gate on getWithAuth denied / failed / cancelled / locked out.</summary>
     AuthFailed = 2,
-    /// <summary>No secure hardware, or the Keystore/Keychain is unusable. On Android this also
-    /// covers <c>getWithAuth</c> on a device with no biometric enrolled. <b>On iOS, what an
-    /// unenrolled device returns is not yet established</b> (issue #396) — do not assume it
-    /// agrees with Android until that is settled on a device.</summary>
+    /// <summary>No secure hardware, or the Keystore/Keychain is unusable. On Android this is
+    /// the auth-bound <c>set</c> path refusing to provision a key when no biometric is
+    /// enrolled — a <c>getWithAuth</c> of an existing item does not reach this status the
+    /// same way; a denied or unavailable prompt there always resolves to
+    /// <c>AuthFailed</c> instead. <b>On iOS, what an unenrolled auth-bound <c>set</c>
+    /// returns is not yet established</b> (issue #396) — do not assume it agrees with
+    /// Android until that is settled on a device.</summary>
     Unavailable = 3,
     /// <summary>Unexpected host error (a caught throw, a decrypt failure, malformed/oversize args).</summary>
     Error = 4,

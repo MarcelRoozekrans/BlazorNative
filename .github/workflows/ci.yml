@@ -2227,11 +2227,16 @@ jobs:
       # control. DocsSamplesDriftTests holds the CODE half of a page to compiling; this is
       # the PROSE half.
       # 1185 -> 1186 (15.5 #298 pin, +1): ComponentDocs_NameTheAndroidWidgetClassTheShellActuallyBuilds --
-      # every component header comment naming an Android widget class (BnActivityIndicator,
-      # BnCheckbox, BnPicker, BnSlider, BnSwitch) is held to WidgetMapper.kt's own
-      # node-type-to-widget-class derivation (reused from TextCollapseParityDriftTests), floor,
-      # positive control drawn from the #298 regression itself (MaterialCheckBox), word-boundary
-      # match so "Switch" cannot pass by matching inside "SwitchMaterial".
+      # every component naming an Android widget, in its internal design comment ("Android: X")
+      # or its published `///` summary ("<c>X</c> on Android"), is held to WidgetMapper.kt's own
+      # node-type-to-widget-class derivation (reused from TextCollapseParityDriftTests). The claim
+      # set is DISCOVERED by scanning src/BlazorNative.Components, not a hand-written list, with a
+      # measured floor on each scan and a file->node-type lookup that reds on an unmapped
+      # discovery. The extractor pulls only the token adjacent to the claim -- a file-wide
+      # word-boundary search was tried first and PASSED on #298's own pre-fix
+      # "SwitchMaterial/Switch" text (a second, standalone "Switch" after the slash matches
+      # \bSwitch\b), so it was replaced before landing; the positive control runs the same
+      # extractor on that exact planted string and asserts it disagrees with the derived class.
       - name: .NET tests (assert 1186 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
