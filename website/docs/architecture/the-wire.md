@@ -35,7 +35,10 @@ A render cycle yields a list of atomic commands the shell applies to its widget 
 | `SetStylePatch` | Apply one style property to a node |
 | `UpdatePropPatch` | Set or update a property (a `null` value removes it) |
 | `ReplaceTextPatch` | Replace a text node's content |
+| `AttachEventPatch` | Start routing one event type for a node to a .NET handler id |
+| `DetachEventPatch` | Stop routing that event |
 | `ScrollToPatch` | Scroll a scroll node to an offset, or to the end of its content |
+| `CommitFramePatch` | The batch is complete: apply everything before it together |
 
 Three details in there are load-bearing and worth pulling out:
 
@@ -49,9 +52,9 @@ creation carried placement, and moves are remove-plus-insert.
 own no view; the renderer translates its own sibling positions into *host* child indices,
 skipping them. A shell never has to know that a component existed.
 
-**One patch commands rather than describes, and it is applied differently.** Every patch
-above says what the tree *is* — except `ScrollToPatch`, which asks a live view to *do*
-something. Two consequences follow. Because a command is not idempotent, repeating it has to
+**One patch commands rather than describes, and it is applied differently.** Every other
+patch above says what the tree *is*, or where a batch ends — `ScrollToPatch` asks a live view
+to *do* something. Two consequences follow. Because a command is not idempotent, repeating it has to
 be observable, so it rides the frame stream where its position relative to the content
 around it is meaningful. And because "the end of the content" is a Yoga result the *shell*
 holds, a shell must **queue** the command and honour it after that frame's layout — scrolling
@@ -68,7 +71,8 @@ allowed to happen.
 
 The runtime's export surface is a small, deliberately boring set of `cdecl` entry points —
 initialize, shut down, report a version, register the frame callback, mount a component,
-dispatch an event, register the host bridge, complete a fetch, deliver a host event.
+dispatch an event, register the host bridge, complete a fetch, deliver a host event, and
+complete a permission-gated host call such as a location or camera request.
 
 This site does not list their count or their signatures, on purpose: they are declared in
 one place, and that place is checked by the build.
@@ -105,7 +109,7 @@ The shell completes a fetch with a **single** call carrying the **whole** body a
 string. There is no incremental delivery path on the ABI, so Server-Sent Events, chunked
 reads and long-polling all degrade to "wait for the complete response" (effectively polling),
 and binary bodies are unsupported. Streaming would be an ABI-shaped change — a roadmap
-item, not a handler option ([#257](https://github.com/MarcelRoozekrans/BlazorNative/issues/257)).
+item, not a handler option ([#285](https://github.com/MarcelRoozekrans/BlazorNative/issues/285)).
 :::
 
 Adding a capability to this contract touches the ABI in several places at once. The

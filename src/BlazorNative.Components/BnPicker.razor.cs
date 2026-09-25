@@ -4,8 +4,9 @@ namespace BlazorNative.Components;
 // type-level summary in a partial class.
 
 /// <summary>
-/// A drop-down / wheel picker over a list of strings. Renders as a native
-/// <c>Spinner</c> on Android and a <c>UIPickerView</c> on iOS.
+/// A drop-down / wheel picker over a list of strings. Renders as
+/// <c>BnSpinner</c> on Android, a <c>Spinner</c> subclass, and as
+/// <c>UIPickerView</c> on iOS.
 /// </summary>
 /// <remarks>
 /// <para>

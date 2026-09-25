@@ -8,8 +8,11 @@ sidebar_position: 1
 # Components
 
 Everything you put on a page is a `Bn*` component. **There is no DOM** — `<div>`, `<span>`
-and `<p>` are not widgets and render nothing. The `BlazorNative.Analyzers` package catches
-the common cases at compile time; see [Analyzer rules](../analyzers.md).
+and `<p>` are not HTML here. The renderer maps a small set of element names onto native node
+types, which is how the components themselves are built, and turns any name it does not
+recognise into a plain view. So a raw element does render something, but it gets none of a
+component's typed parameters, and nothing warns you about it: no analyzer rule looks at element
+names. Write the `Bn*` component.
 
 ## They render natively, not identically
 

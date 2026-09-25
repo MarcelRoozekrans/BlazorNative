@@ -240,6 +240,175 @@ public sealed class TextCollapseParityDriftTests
                      template.OrderBy(kv => kv.Key, StringComparer.Ordinal));
     }
 
+    // ── #298: the component docs' own widget claims, held to the same derivation ─
+    //
+    // FIX ROUND 1 REWRITE. The first version matched a claimed class name anywhere in the
+    // file with a word-boundary regex — which is exactly what let #298's OWN pre-fix text
+    // through: "Android: SwitchMaterial/Switch." contains a SECOND, standalone "Switch"
+    // after the slash, and `\bSwitch\b` finds that occurrence and reports a match even
+    // though the claim right after "Android:" is "SwitchMaterial". Confirmed by restoring
+    // that exact text and re-running the old fact: it passed. This version instead
+    // EXTRACTS the token immediately after "Android:" (or immediately before "on Android"
+    // in a published `///` doc) and compares that extracted token, never a file-wide
+    // search — see the extractor mutation below for the corrected pin actually going red.
+
+    /// <summary>File name → node type, for every component the two scans below might
+    /// discover. A file the scan finds with no row here REDS rather than being silently
+    /// skipped — a new "Android: X" claim, or a new published "&lt;c&gt;X&lt;/c&gt; on
+    /// Android", must be wired to a node type deliberately. The published-doc scan turned
+    /// up six components the original #298 sweep never looked at (`BnButton`, `BnImage`,
+    /// `BnInput`, `BnScroll`, `BnText`, `BnView`) — two of which, `BnImage` and `BnView`,
+    /// had the identical class of false claim (`UIImageView` for the `BnImageView`
+    /// subclass; `FrameLayout` for the `BnYogaFrameLayout` subclass), corrected in the
+    /// same fix round this table was widened in.</summary>
+    private static readonly Dictionary<string, string> ComponentNodeTypes =
+        new(StringComparer.Ordinal)
+        {
+            ["BnActivityIndicator.cs"] = "activityindicator",
+            ["BnButton.cs"] = "button",
+            ["BnCheckbox.razor"] = "checkbox",
+            ["BnCheckbox.razor.cs"] = "checkbox",
+            ["BnImage.cs"] = "image",
+            ["BnInput.cs"] = "input",
+            ["BnPicker.razor"] = "picker",
+            ["BnPicker.razor.cs"] = "picker",
+            ["BnScroll.cs"] = "scroll",
+            ["BnSlider.razor"] = "slider",
+            ["BnSlider.razor.cs"] = "slider",
+            ["BnSwitch.razor"] = "switch",
+            ["BnSwitch.razor.cs"] = "switch",
+            ["BnText.cs"] = "text",
+            ["BnView.cs"] = "view",
+        };
+
+    private const string ComponentsDir = "src/BlazorNative.Components";
+
+    /// <summary>The internal-comment claim shape: `Android: ClassName` — captures only the
+    /// FIRST token, so "SwitchMaterial/Switch" yields "SwitchMaterial", not "Switch".</summary>
+    private static readonly Regex InternalAndroidClaim =
+        new(@"Android:\s*(?<cls>[A-Za-z_][A-Za-z0-9_]*)");
+
+    /// <summary>The published `///` doc claim shape: `&lt;c&gt;ClassName&lt;/c&gt; on
+    /// Android` — the class immediately adjacent to "on Android", not any `&lt;c&gt;` span
+    /// in the remarks. Matched against the NORMALIZED text (see
+    /// <see cref="StripDocCommentContinuations"/>) because a wrapped `///` summary breaks
+    /// the phrase across lines with a `///` marker in between — `BnActivityIndicator.cs`
+    /// does exactly this ("...&lt;c&gt;ProgressBar&lt;/c&gt; on\n/// Android...") and a
+    /// plain `\s+` does not bridge a `///` marker, which is not whitespace.</summary>
+    private static readonly Regex PublishedAndroidClaim =
+        new(@"<c>(?<cls>[A-Za-z_][A-Za-z0-9_]*)</c>\s+on Android");
+
+    /// <summary>Joins a wrapped `///` XML doc comment back into one line, so a phrase split
+    /// across the wrap (`&lt;c&gt;X&lt;/c&gt; on\n/// Android`) reads as one run of text
+    /// instead of being invisible to a `\s+`-only regex.</summary>
+    private static string StripDocCommentContinuations(string text) =>
+        Regex.Replace(text, @"\r?\n\s*///\s?", " ");
+
+    /// <summary>Scans every `.razor`/`.cs` file directly under <see cref="ComponentsDir"/> for
+    /// EVERY match of <paramref name="pattern"/> — <c>Matches</c>, not <c>Match</c> — returning
+    /// (file name, captured class) pairs, one per occurrence. A MEASUREMENT of what the sources
+    /// currently claim, never a hand-maintained list of which files to look at, and never
+    /// truncated to a file's FIRST claim: fix round 2 found the single-match version silently
+    /// stopped looking after one hit per file, which is exactly the kind of gap that let a
+    /// second, divergent claim in the same file go unchecked.</summary>
+    private static List<(string File, string ClaimedClass)> ScanAndroidClaims(Regex pattern, bool normalizeDocComments)
+    {
+        string dir = Path.Combine(BnRepo.Root(), ComponentsDir.Replace('/', Path.DirectorySeparatorChar));
+        var found = new List<(string, string)>();
+        foreach (string path in Directory.EnumerateFiles(dir)
+            .Where(p => p.EndsWith(".razor", StringComparison.Ordinal) || p.EndsWith(".cs", StringComparison.Ordinal))
+            .OrderBy(p => p, StringComparer.Ordinal))
+        {
+            string text = File.ReadAllText(path);
+            if (normalizeDocComments) text = StripDocCommentContinuations(text);
+            foreach (Match m in pattern.Matches(text))
+                found.Add((Path.GetFileName(path), m.Groups["cls"].Value));
+        }
+        return found;
+    }
+
+    /// <summary>#298's own fix, held so it cannot regress: a component doc that names an
+    /// Android widget class must name the class WidgetMapper.kt's `when (p.nodeType)`
+    /// actually builds for that node type — the SAME derivation
+    /// <see cref="TheHarnessAndroidSet_IsExactlyWhatTheKotlinShellsWidgetClassesImply"/>
+    /// already reads out of the shell, reused rather than re-parsed. Covers BOTH claim
+    /// shapes: the internal design comments (`Android: X`, never published) AND the
+    /// published `///` summaries that ship in the generated component reference
+    /// (`&lt;c&gt;X&lt;/c&gt; on Android`) — #298's own regression was in the former, but
+    /// `BnPicker.razor.cs` carried the identical mistake in the latter, so both are worth
+    /// holding.
+    ///
+    /// RULE 5 — WHAT THIS DOES NOT CHECK. iOS claims (`iOS: X` / `&lt;c&gt;X&lt;/c&gt; on
+    /// iOS`): `BnWidgetMapper.swift`'s factory is a `switch` whose arms are prose-heavy
+    /// Swift, not a parseable one-line-per-arm table the way `WidgetMapper.kt`'s `when` is,
+    /// so the #298 sweep checked the iOS side BY HAND (recorded in the audit record) rather
+    /// than parsed here. Components that make NO widget claim at all — nothing forces one to
+    /// be written in the first place. And a BARE, non-`Android:`-prefixed mention of a
+    /// platform widget class elsewhere in a file's free prose — for example
+    /// `BnCheckbox.razor`'s intrinsic-size aside ("a framework CheckBox is whatever the
+    /// device theme says") or `BnSlider.razor`'s clamp aside ("SeekBar/UISlider clamp on
+    /// their own") — is checked BY HAND (recorded in the audit record, fix round 2), not
+    /// parsed: recognizing an arbitrary sentence as a claim, reliably, is the same fragile-regex
+    /// problem the iOS side is declared out of scope for, and every instance found is a
+    /// restatement of the SAME fact the primary `Android:` claim already pins, not an
+    /// independent one — so a fragile parse buys little and risks a false sense of
+    /// coverage.</summary>
+    [Fact]
+    public void ComponentDocs_NameTheAndroidWidgetClassTheShellActuallyBuilds()
+    {
+        IReadOnlyDictionary<string, string> widgetClasses = NodeTypeToWidgetClass(ShellWidgetMapper);
+
+        // POSITIVE CONTROL — run the SAME extractor on the exact planted pre-#298 string,
+        // and assert it yields the WRONG class, distinct from what the shell derives for
+        // `switch`. This is what proves the detector can actually tell a bad claim from a
+        // good one, rather than merely existing.
+        Match control = InternalAndroidClaim.Match("Android: SwitchMaterial/Switch.");
+        Assert.True(control.Success, "the extractor itself failed to match the planted string.");
+        Assert.Equal("SwitchMaterial", control.Groups["cls"].Value);
+        Assert.NotEqual(control.Groups["cls"].Value, widgetClasses["switch"]);
+
+        // Internal design comments — five components (BnActivityIndicator, BnCheckbox,
+        // BnPicker, BnSlider, BnSwitch).
+        CheckClaims(InternalAndroidClaim, isPublished: false, normalizeDocComments: false, floor: 5);
+        // Published `///` summaries — eleven components. The published-doc scan reaches
+        // six the internal-comment scan never covered (BnButton, BnImage, BnInput,
+        // BnScroll, BnText, BnView), because a hand-written component with no `.razor`
+        // header still carries a type-level `///` summary naming its widget.
+        CheckClaims(PublishedAndroidClaim, isPublished: true, normalizeDocComments: true, floor: 11);
+
+        void CheckClaims(Regex pattern, bool isPublished, bool normalizeDocComments, int floor)
+        {
+            List<(string File, string ClaimedClass)> discovered = ScanAndroidClaims(pattern, normalizeDocComments);
+
+            // VACUITY GUARD — the scan did not stop seeing its subject, and did not shrink
+            // below what is measured on the checkout today.
+            Assert.True(discovered.Count >= floor,
+                $"discovered only {discovered.Count} {(isPublished ? "published `///`" : "internal comment")} "
+                + $"Android claims under {ComponentsDir} (floor {floor}) — the scan stopped seeing its "
+                + "subject, or claims were removed without this floor being lowered deliberately.");
+
+            foreach ((string file, string claimed) in discovered)
+            {
+                Assert.True(ComponentNodeTypes.TryGetValue(file, out string? nodeType),
+                    $"{file} names an Android widget (\"{claimed}\") with no row in "
+                    + $"{nameof(ComponentNodeTypes)} — a new claim must be wired to a node type "
+                    + "deliberately, not silently skipped.");
+
+                Assert.True(widgetClasses.TryGetValue(nodeType!, out string? actual),
+                    $"{file}: node type '{nodeType}' has no `when` arm in {ShellWidgetMapper} — "
+                    + "the claim cannot be checked.");
+
+                string kind = isPublished
+                    ? "published `///` summary — ships in the generated component reference"
+                    : "internal design comment — never reaches the assembly or the reference";
+                Assert.True(actual == claimed,
+                    $"{file}'s {kind} claims Android builds `{claimed}` for a `{nodeType}` node, "
+                    + $"but WidgetMapper.kt's `when (p.nodeType)` now builds `{actual}`. Fix the "
+                    + "doc, or update this fact if the new class is correct — never both silently.");
+            }
+        }
+    }
+
     // ── The iOS half, and what it is worth ───────────────────────────────────
 
     /// <summary>PARTIAL BY CONSTRUCTION, and said so rather than dressed up. The Swift

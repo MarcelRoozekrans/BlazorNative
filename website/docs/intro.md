@@ -26,7 +26,7 @@ The result is that the same C# produces **the same frames on both platforms** �
 this project asserts with a test rather than prose. See
 [the parity contract](./architecture/parity.md).
 
-```razor
+```razor bn-sample=component
 <BnSafeArea>
   <BnColumn Gap="16" Padding="16">
     <BnRow Justify="FlexJustify.SpaceBetween" Align="FlexAlign.Center">
@@ -49,11 +49,14 @@ container, each placed at the coordinates Yoga computed. On iOS it is a `UILabel
 
 ## Status — read this before you build anything on it
 
-:::warning Pre-release proof of concept
+:::warning Pre-1.0
 
-The API surface is **unstable and changes without notice**. This is a proof of concept, not
-a product. iOS is **simulator-only** — real-device iOS needs code signing and provisioning
-that this project does not have yet.
+The public API is **marked but not frozen**: it can still break in a minor version — on
+purpose, visible in the pull request, and with a changelog line — but never silently. See
+[API stability](./api-stability.md) for what you may depend on. iOS is proven in CI on the
+**simulator**; a real device has been exercised by hand, and real-device verification is still
+an open 1.0 blocker. Device signing and provisioning are yours to arrange — see
+[Shells → iOS](./shells/ios.md).
 
 :::
 

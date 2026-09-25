@@ -184,6 +184,13 @@ change a public member, write its `///` doc — packages with `BnEnforceDocCover
 on treat a missing doc as a build error (`CS1591`). Enum members are referenced with
 `<c>…</c>`, not `<see cref>` (they render as a table, not an anchor).
 
+**Narrative pages state no version and no hand-maintained count.** A version is stale the day a
+release ships, and a count is stale the day someone adds one more — both have happened here
+(#290). Point at where the number lives instead, or word the sentence so it holds without one.
+`migrating/*` pages are about a specific release and are the one exception.
+`DocsSamplesDriftTests` enforces the version half. Counts are not enforced: detecting "N things"
+in English is a regex over prose, wrong in both directions, so this rule is how that half is kept.
+
 ---
 
 ## Pull requests

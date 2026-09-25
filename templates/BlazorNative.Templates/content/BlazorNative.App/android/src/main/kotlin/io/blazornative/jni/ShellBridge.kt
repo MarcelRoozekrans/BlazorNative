@@ -190,7 +190,13 @@ object SecureStorageStatus {
     const val OK = 0            // set/delete succeeded; GET FOUND THE VALUE ({"value":…} on get)
     const val NOT_FOUND = 1     // get/getWithAuth of an absent key (no payload)
     const val AUTH_FAILED = 2   // the biometric gate on getWithAuth denied / failed / cancelled / locked out
-    const val UNAVAILABLE = 3   // no secure hardware / Keystore unusable / biometrics not enrolled
+    const val UNAVAILABLE = 3   // no secure hardware / Keystore unusable — the auth-bound SET path
+                                 // only (secureSetAuth's provisionKey call: its KeyGenParameterSpec
+                                 // throws when generating a key with none enrolled; caught by
+                                 // secureErrorStatus). getWithAuth of an EXISTING item does NOT reach
+                                 // this the same way — a denied/unavailable prompt there always folds
+                                 // to AuthFailed. iOS is NOT known to map the SET case the same way —
+                                 // nothing on that shell checks enrolment (#396).
     const val ERROR = 4         // unexpected host error (a caught throw, a decrypt failure, malformed args)
 }
 

@@ -43,7 +43,8 @@ site is downstream of.
   cache, eviction and prefetch policies. The contract is drawn on **frames**, deliberately,
   and nowhere else — what must match is the measured size, *when* it is reported, and what
   happens on failure and cancellation.
-- **Not "iOS is done".** iOS is simulator-only today.
+- **Not "iOS is done".** CI proves iOS on the simulator; real-device verification is still an
+  open 1.0 blocker — see [the roadmap to 1.0](../api-stability.md#roadmap-to-10).
 
 ## The part that matters: it is asserted, not promised
 
@@ -67,9 +68,10 @@ moves:
 
 - **The normative contract** —
   [Phase 6.3 design, "The parity contract"](https://github.com/MarcelRoozekrans/BlazorNative/blob/main/docs/plans/2026-07-14-phase-6.3-design.md#the-parity-contract-the-thing-two-libraries-put-at-risk).
-  Roughly fifty citations in the shells' own sources treat that section as permanent and
-  normative; it is the text both shells are written against.
+  The shells' own sources cite that section throughout as permanent and normative; it is the
+  text both shells are written against.
 - **The test that makes it true** —
   [`ShellFrameTableDriftTests.cs`](https://github.com/MarcelRoozekrans/BlazorNative/blob/main/tests/BlazorNative.Renderer.Tests/ShellFrameTableDriftTests.cs).
-- **The style-table twin** — the same mechanism guards the style routing allow-list across
-  three parsers. See [Layout and Yoga](./layout-and-yoga.md).
+- **The style-table twin** — the style routing allow-list is not asserted equal across copies
+  at all: it lives once and every copy is generated from it, which makes a disagreement
+  impossible to write rather than merely detected. See [Layout and Yoga](./layout-and-yoga.md).

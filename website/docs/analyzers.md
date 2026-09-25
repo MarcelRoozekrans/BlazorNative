@@ -18,7 +18,7 @@ off the retired WASI premise: two categories remain.
 
 **Escape hatch:** every rule can be suppressed in a reviewed, scoped way — never blanket:
 
-```csharp
+```csharp bn-sample=statements
 #pragma warning disable BN0004 // justification: <why this specific site is safe>
 Thread.Sleep(1); // ...
 #pragma warning restore BN0004
@@ -33,12 +33,13 @@ A pragma without a justification comment does not pass review.
 **Thread.Sleep blocks a runtime thread** — `BlazorNative.MobilePolicy`, Warning.
 
 - **What it flags:** any call to `System.Threading.Thread.Sleep(...)`.
-- **Why:** the Kotlin host drives the runtime on a single dispatch lane
-  (`BlazorNative-Dispatch`). A blocking sleep on that lane stalls every queued frame and
-  event for its full duration — the app freezes, no exception tells you why.
+- **Why:** each shell drives the runtime on a single serial dispatch lane, named
+  `BlazorNative-Dispatch` on both Android and iOS. A blocking sleep on that lane stalls every
+  queued frame and event for its full duration — the app freezes, no exception tells you why.
 - **Compliant shape:**
 
-  ```csharp
+  ```csharp bn-sample=statements
+  CancellationToken ct = default; // however you obtained it
   await Task.Delay(TimeSpan.FromMilliseconds(250), ct);
   ```
 
@@ -55,7 +56,9 @@ A pragma without a justification comment does not pass review.
   platform sandbox.
 - **Compliant shape:** ride the bridge —
 
-  ```csharp
+  ```csharp bn-sample=statements
+  IMobileBridge bridge = default!;
+  IServiceCollection services = default!;
   var response = await bridge.FetchAsync(new BridgeHttpRequest("https://api.example.com/v1/items"));
   // or, at the DI level:
   services.AddBlazorNativeHttp();   // injects an HttpClient over BridgeHttpHandler
@@ -74,7 +77,7 @@ A pragma without a justification comment does not pass review.
   handler stays legal; `BlazorNative.Http` itself constructs over `BridgeHttpHandler`.
 - **Compliant shape:** inject the client registered by `AddBlazorNativeHttp()`:
 
-  ```csharp
+  ```csharp bn-sample=file
   public sealed class ItemsService(HttpClient http)   // DI-injected, bridge-backed
   {
       public Task<string> GetAsync() => http.GetStringAsync("/v1/items");
@@ -107,7 +110,11 @@ A pragma without a justification comment does not pass review.
   escapes the callback window and exceptions vanish.
 - **Compliant shape:**
 
-  ```csharp
+  ```csharp bn-sample=statements
+  IMobileBridge bridge = default!;
+  Dispatcher Dispatcher = default!; // however you obtained it — e.g. inherited from ComponentBase
+  static Task HandleAsync(NativeEvent e) => Task.CompletedTask; // stands for your own async handler
+
   bridge.NativeEvents += e =>
   {
       // synchronous work only; defer async work explicitly:
@@ -115,8 +122,9 @@ A pragma without a justification comment does not pass review.
   };
   ```
 
-- **Note:** `NativeEvents`' own redesign is a ledgered open item (`NativeShellBridge`
-  currently stubs it no-op); the rule guards the surviving contract.
+- **Note:** on a device, `NativeShellBridge.NativeEvents` is real: every host event .NET does
+  not route itself, such as the lifecycle events, is raised through it. This rule guards a live
+  contract, not a dormant one.
 - **Escape hatch:** `#pragma warning disable BN0014` with justification (expected: none).
 
 ## BN0020
@@ -130,22 +138,31 @@ A pragma without a justification comment does not pass review.
 - **Why:** an exception crossing the C-ABI boundary is undefined behavior under NativeAOT —
   on Android it aborts the process with no managed diagnostics. Every export must convert
   failure into a return code (the rc-code contract `Exports.cs` follows).
-- **Compliant shape (the `Exports.cs` reference pattern):**
+- **Compliant shape** (mirrors the shape `Exports.cs` actually uses; `TryMount` here stands
+  for your own mount/dispatch call — the framework's own equivalent is `internal`):
 
-  ```csharp
-  [UnmanagedCallersOnly(EntryPoint = "blazornative_mount", CallConvs = new[] { typeof(CallConvCdecl) })]
-  public static int Mount(IntPtr nameUtf8)
+  ```csharp bn-sample=file
+  using System.Runtime.CompilerServices;
+  using System.Runtime.InteropServices;
+
+  public static class MyExports
   {
-      try
+      [UnmanagedCallersOnly(EntryPoint = "myapp_mount", CallConvs = new[] { typeof(CallConvCdecl) })]
+      public static int Mount(IntPtr nameUtf8)
       {
-          // entire body inside the try — no statements outside it
-          return HostSession.TryMount(nameUtf8);
+          try
+          {
+              // entire body inside the try — no statements outside it
+              return TryMount(nameUtf8); // stands for your own mount/dispatch logic
+          }
+          catch (Exception ex)
+          {
+              Console.Error.WriteLine($"[Exports] mount failed: {ex}");
+              return 2;
+          }
       }
-      catch (Exception ex)
-      {
-          Console.Error.WriteLine($"[Exports] mount failed: {ex}");
-          return 2;
-      }
+
+      private static int TryMount(IntPtr nameUtf8) => 0;
   }
   ```
 
@@ -175,8 +192,15 @@ A pragma without a justification comment does not pass review.
   are already compiler-enforced — CS8894 family — and need no analyzer.)
 - **Compliant shape:**
 
-  ```csharp
-  [UnmanagedCallersOnly(EntryPoint = "blazornative_version", CallConvs = new[] { typeof(CallConvCdecl) })]
+  ```csharp bn-sample=file
+  using System.Runtime.CompilerServices;
+  using System.Runtime.InteropServices;
+
+  public static class MyVersionExports
+  {
+      [UnmanagedCallersOnly(EntryPoint = "myapp_get_version", CallConvs = new[] { typeof(CallConvCdecl) })]
+      public static int GetVersion() => 0;
+  }
   ```
 
 - **Escape hatch:** `#pragma warning disable BN0021` with justification (expected: none).
@@ -185,7 +209,7 @@ A pragma without a justification comment does not pass review.
 
 ## Retired rule IDs
 
-Retired in Phase 4.1 (`AnalyzerReleases.Shipped.md`, release `4.1.0`). The WASI-era
+Retired in Phase 4.1 (see `AnalyzerReleases.Shipped.md`'s release header for that phase). The WASI-era
 premise ("this API throws on WASI Preview 1") died with the Mono-WASI runtime; NativeAOT
 has real threads, a real thread pool, real file I/O. **IDs are never reused.**
 

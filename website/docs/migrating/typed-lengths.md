@@ -72,8 +72,8 @@ than restore it. This is also why every parameter is nullable and never bare —
 **Plain numeric literals in markup need no edit at all.** This is the headline: most markup is
 unaffected.
 
-```razor
-<BnView Height="200" Width="12.5" Padding="16" Gap="8">
+```razor bn-sample=component
+<BnView Height="200" Width="12.5" Padding="16" Gap="8" />
 ```
 
 Integer literals convert through `int` → `float` → `BnLength`; decimal literals compile as
@@ -143,7 +143,7 @@ chance to apply the conversion, and Blazor's parameter setter does a **cast**, n
 
 The result: it **compiles fine and throws `InvalidCastException` at first render.**
 
-```csharp
+```csharp bn-sample=skip:the ✗ counterexamples compile and throw at render — compiling them proves nothing
 // ✗ compiles, throws at render — a boxed string
 var p = new Dictionary<string, object?> { ["Width"] = "200" };
 
@@ -162,7 +162,10 @@ cast — there is no mechanical rewrite for those two spellings.
 
 The same applies to hand-written `BuildRenderTree`:
 
-```csharp
+```csharp bn-sample=statements
+using Microsoft.AspNetCore.Components.Rendering;
+RenderTreeBuilder b = default!; // however you obtained it — a component's own BuildRenderTree
+
 // ✗ b.AddComponentParameter(31, nameof(BnImage.Width), 120f);
 b.AddComponentParameter(31, nameof(BnImage.Width), (BnAutoLength)120f);
 ```
@@ -180,7 +183,7 @@ those.
 - **Both native shells.** No `.kt`, no `.swift`, no `.mm` and no `wire-vocabulary.json` is in the
   branch diff, and no shell frame table was edited. If the phase had found itself editing Kotlin
   or Swift, the design would have been wrong.
-- **The C ABI.** Unchanged, still the frozen 80-byte / 10-export contract.
+- **The C ABI.** Unchanged.
 - **`Grow`, `Shrink`** — still `float?`. They are ratios, not lengths.
 - **`BackgroundColor`** — still `string?`. Colour typing is a separate concern and is not in this
   phase.
@@ -217,10 +220,10 @@ errors. *Domain* errors — negatives, `NaN`, infinities — are not.
 and this too was decided rather than skipped.
 
 They are not styling inputs; they are the virtualization window's arithmetic — they are fed to
-`BnListWindow.Compute(offset, Height, ItemHeight, count, overscan)`, where `ItemHeight` is a
-divisor. They must be **point values**. `BnAutoLength` cannot promise one: `auto` and `50%` are
-legal in the type and unusable in that arithmetic, and nothing surfaces viewport size back to
-.NET, so there is no fallback measurement to recover a real number from.
+the internal `BnListWindow.Compute(offset, Height, ItemHeight, count, overscan)`, where
+`ItemHeight` is a divisor. They must be **point values**. `BnAutoLength` cannot promise one:
+`auto` and `50%` are legal in the type and unusable in that arithmetic, and nothing surfaces
+viewport size back to .NET, so there is no fallback measurement to recover a real number from.
 
 `BnList<TItem>.Width` **is** typed (`BnLength?`), because it is a genuine layout length.
 

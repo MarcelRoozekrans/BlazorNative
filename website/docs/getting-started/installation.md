@@ -34,7 +34,7 @@ If you are wiring BlazorNative into an existing project rather than using the te
 | `BlazorNative.Components` | the `Bn*` component library | **direct** |
 | `BlazorNative.Analyzers` | the compile-time analyzers | **direct** |
 | `BlazorNative.Renderer` | the headless renderer + patch model | transitive (via Runtime) |
-| `BlazorNative.Core` | the `IMobileBridge` contract + bridge implementations | transitive (via Runtime) |
+| `BlazorNative.Core` | the `IMobileBridge` contract, the capability result types, and the `DevHostBridge` mock | transitive (via Runtime) |
 | `BlazorNative.Http` | `HttpClient` over the host fetch bridge | transitive (via Runtime) |
 | `BlazorNative.Device` | device-capability façades (geolocation, notifications, biometrics, secure storage, camera) | transitive (via Runtime) |
 
@@ -50,6 +50,10 @@ dotnet add package BlazorNative.Analyzers
 `Renderer`, `Core`, `Http` and `Device` then resolve automatically as dependencies of
 `Runtime`; you can confirm the full closure with
 `dotnet list package --include-transitive`.
+
+One more package exists, and it belongs in your **test** project, never the app:
+`BlazorNative.Testing` mounts a page in a unit test and hands you the widget tree it rendered.
+See [Testing a page](../getting-started/quick-start.md#testing-a-page).
 
 ### Building from source instead
 
@@ -71,7 +75,7 @@ dotnet new install ./artifacts/packages/BlazorNative.Templates.*.nupkg
 | Temurin JDK | Gradle / the Kotlin shell | Android |
 | Android SDK + NDK | The bionic cross-compile, and the emulator | Android |
 | An AVD or a device | Actually running it | Android |
-| macOS + Xcode | The Swift/UIKit shell | iOS (simulator only) |
+| macOS + Xcode | The Swift/UIKit shell | iOS — the simulator, or a device with your own signing ([iOS shell](../shells/ios.md)) |
 
 **The exact SDK band and NDK revision are pinned by the repository, not by this page.** A
 generated app carries a `global.json` that pins the .NET SDK feature band the ILC host
@@ -91,8 +95,9 @@ Installing the SDKs is not quite enough — three environment steps trip up a fr
   which it locates with `vswhere`. Run your builds from a **Developer Command Prompt for
   Visual Studio**, or make sure the VS Installer directory is on `PATH` so `vswhere` is
   reachable.
-- **Gradle / Android:** point `JAVA_HOME` at a **JDK 21** (not an old JRE) — Gradle reads
-  `JAVA_HOME`, and an older or JRE-only Java fails the shell build.
+- **Gradle / Android:** point `JAVA_HOME` at a full **JDK** — the one `setup.ps1` installs,
+  not an old JRE. Gradle reads `JAVA_HOME`, and an older or JRE-only Java fails the shell
+  build.
 - **bionic / Android publish:** set `ANDROID_NDK_ROOT` to your installed NDK
   (for example `$ANDROID_HOME/ndk/<version>`) so the bionic cross-compile can find it.
 

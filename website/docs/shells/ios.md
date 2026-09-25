@@ -31,7 +31,7 @@ is the written recipe. §8 below covers the one device-only thing that is not ob
 **It does not transcribe the recipe.** `project.yml` links against `$(SRCROOT)/vendor/…` and
 names no publish directory and no app anywhere: the link between "your .NET app" and "the
 iOS shell" is a directory of frozen-name files, and the only thing that populates it today
-is CI — about ninety lines of bash across two workflow steps.
+is CI — the bash in its staging and Yoga steps.
 There is no script and no Makefile target. (That absence is a known gap:
 `scripts/stage-ios.ps1` is on the backlog precisely because it would make this recipe
 executable and testable instead of prose.)
@@ -73,8 +73,8 @@ heavily, and they are the procedure:
 
 ## 1. Copy the shell
 
-Copy **`src/BlazorNative.Apple/BnHost/`** into your tree — **19 files**. `BnWidgetMapper.swift`
-alone is ~3,500 lines.
+Copy **`src/BlazorNative.Apple/BnHost/`** into your tree — the whole directory.
+`BnWidgetMapper.swift` alone is several thousand lines.
 
 **The shell is not packaged.** There is no `.framework`, no CocoaPod, no SwiftPM product.
 The Android side has the same duplication problem and the same eventual answer (an `.aar` /
@@ -90,7 +90,7 @@ the most load-bearing file in the iOS build and it is thoroughly commented.
 
 ## 2. What to delete
 
-**`BnHostTests/`** — 30 files. It is the reference shell's own XCTest surface (the fixture
+**`BnHostTests/`** — the whole directory. It is the reference shell's own XCTest surface (the fixture
 image server, the widget-mapper tests, the runtime tests). Delete the directory, its target
 in `project.yml`, and its scheme's test action.
 
@@ -121,13 +121,15 @@ backlog to retire on purpose; delete it if you want the smaller surface.
 
 ## 3. What to edit — and these are source edits, not configuration
 
-The shell hardcodes the reference app's root component in **two places**. There is no
-setting for this; you are editing the shell's source, which is the honest word for it.
+The shell hardcodes the reference app's component names in **several places**. There is no
+setting for this; you are editing the shell's source, which is the honest word for it. Search
+for the text, not a line number:
 
-| File | The line | Change it to |
+| File | The code | Change it to |
 |---|---|---|
-| `BnHost/HostViewController.swift:60` | `try runtime.start(component: "BnDemo", os: "ios")` | your root component's registered name |
-| `BnHost/BnRuntime.swift:184` | `func start(component: String = "BnDemo", os: String = "ios", apiLevel: Int32 = 0) throws` | the default — same name |
+| `BnHost/HostViewController.swift` | `?? "BnDemo"` — the fallback when no deep link or notification tap chose the first page | your root component's registered name |
+| `BnHost/BnRuntime.swift` | `func start(component: String = "BnDemo", os: String = "ios", apiLevel: Int32 = 0) throws` | the default — same name |
+| `BnHost/BnDeepLink.swift` | `static let routeComponents` — the routes a cold-launch deep link can mount directly, mapped to the reference app's demo pages | your own routes and the names they register, or an empty map |
 
 **The name must match a page your app registers.** On the .NET side that is the `name`
 argument in your `AppPages.All` manifest — `BlazorNativePage.Routed<BnStarterPage>(BlazorNativeApp.DefaultRoute, "BnStarterPage")`
@@ -153,11 +155,11 @@ Drop a key only if your app never uses that capability.
 
 ## 4. What is a stub, not a feature
 
-**`BnHost/AppleShellBridge.swift:106` — `fetchBegin` fails every request, synchronously:**
+**`BnHost/AppleShellBridge.swift` — `fetchBegin` fails every request, synchronously:**
 
 ```swift
 func fetchBegin(_ requestId: Int64) -> Int32 {
-    NSLog("[AppleShellBridge] fetchBegin id=\(requestId) — unsupported (5.3 stub), returning -1")
+    BnLog.warn("AppleShellBridge", "fetchBegin id=\(requestId) — unsupported (5.3 stub), returning -1")
     return -1
 }
 ```
@@ -208,7 +210,8 @@ vocabulary: `onResume` ← `applicationDidBecomeActive`, `onPause` ←
 `e.Name == BnHostEvents.OnPause` cannot drift from what a shell actually sends the way
 `e.Name == "onPause"` can:
 
-```csharp
+```csharp bn-sample=statements
+IMobileBridge bridge = default!; // however you obtained it — [Inject] in a component
 bridge.NativeEvents += e =>
 {
     if (e.Name == BnHostEvents.OnPause)
@@ -238,11 +241,11 @@ lives.
 
 The recipe lives in `ios-build-slice`'s **`Stage the link inputs`** step. Its shape:
 
-1. **Publish** your app for `iossimulator-arm64`. The static archive lands under
-   `bin/Release/net10.0/iossimulator-arm64/` — **`publish/` *or* `native/`**, depending on
-   the publish shape; the CI step checks both, and so should you.
-2. **`bootstrapperdll.o`** comes out of the NuGet **runtime pack**
-   (`Microsoft.NETCore.App.Runtime.NativeAOT.iossimulator-arm64`), not out of your publish.
+1. **Publish** your app for `iossimulator-arm64`, or `ios-arm64` for a device. The static
+   archive lands under `bin/Release/net10.0/<rid>/` — **`publish/` *or* `native/`**, depending
+   on the publish shape; the CI step checks both, and so should you.
+2. **`bootstrapperdll.o`** comes out of the NuGet **runtime pack** for the same RID
+   (`Microsoft.NETCore.App.Runtime.NativeAOT.<rid>`), not out of your publish.
 3. **The support archive**: the rest of the runtime pack's `native/*.a`, merged with
    `xcrun libtool -static` into one `libBnRuntimeSupport.a` — **minus exactly three
    members**: `libRuntime.ServerGC.a`, `libeventpipe-enabled.a`, `libstandalonegc-enabled.a`.
@@ -303,20 +306,23 @@ resolve the module's own headers. Removing it forces plain textual includes via
 
 **Use the same Yoga version both shells use.** It is one engine, and identical frames on
 Android and iOS is the entire reason this framework chose Yoga — two versions lay out
-differently, silently. The repo pins it in four files and asserts them equal in CI's very
-first step; your copy is a fifth that nothing checks.
+differently, silently. The repo pins it in several files and asserts them equal in the
+required lane's first step after checkout; your copy is one more that nothing checks.
 
 ---
 
 ## 7. The csproj — and the asymmetry you are entitled to know about
 
 Your app's csproj needs an iOS `PropertyGroup`. The reference is
-`samples/BlazorNative.SampleApp/BlazorNative.SampleApp.csproj`:
+`samples/BlazorNative.SampleApp/BlazorNative.SampleApp.csproj` — **copy `RuntimeFrameworkVersion`'s
+exact value from there** (one home for that number, so this page cannot go stale the day it
+moves; the placeholder below is deliberately not a real version, so an unedited copy fails
+loudly instead of silently pinning nothing):
 
 ```xml
 <PropertyGroup Condition="$(RuntimeIdentifier.StartsWith('iossimulator')) Or $(RuntimeIdentifier.StartsWith('ios-'))">
   <NativeLib>Static</NativeLib>
-  <RuntimeFrameworkVersion>10.0.9</RuntimeFrameworkVersion>
+  <RuntimeFrameworkVersion>REPLACE-WITH-SAMPLEAPP-VALUE</RuntimeFrameworkVersion>
   <!-- … -->
 </PropertyGroup>
 ```
@@ -326,7 +332,7 @@ You also need `UnmanagedEntryPointsAssembly`, `TrimmerRootAssembly` and the
 three**, so if you started from the template, you are copying only the iOS `PropertyGroup`.
 
 > **`TrimmerRootAssembly` is not optional and its failure is silent.** Without it ILC trims
-> your entire app module — green build, trim warnings drop from 4 to 0, your page names
+> your entire app module — green build, the expected trim warnings drop to zero, your page names
 > vanish from the binary, and the first thing you see is a failed mount. The template's
 > csproj carries the line with a comment explaining it; do not drop it on the way to iOS.
 
@@ -354,9 +360,10 @@ stdio: `devicectl device process launch --console` carries fd 1 and fd 2, and se
 `OS_ACTIVITY_DT_MODE=YES` asks the OS to **mirror** `os_log` output onto fd 2 so it
 arrives there too.
 
-Except the shell's `BnStderrPump` claims fd 2 with `dup2` as the first statement in
-`HostViewController.viewDidLoad`, so the mirror used to land in the pump's own pipe. One
-UIKit line arrived before the install, and then nothing, even at Verbose.
+Except the shell's `BnStderrPump` claims fd 2 with `dup2` inside
+`HostViewController.viewDidLoad`, immediately after the XCTest guard, so the mirror used
+to land in the pump's own pipe. One UIKit line arrived before the install, and then
+nothing, even at Verbose.
 
 **The shell now stands aside.** When `OS_ACTIVITY_DT_MODE` is set in the environment,
 `BnStderrPump.install()` returns immediately without creating the pipe or touching fd 2,
@@ -398,16 +405,16 @@ simulator `xcrun simctl launch --console` and `log stream` both still work.
 
 | Path | What it is |
 |---|---|
-| `src/BlazorNative.Apple/BnHost/` | the shell — 19 files, copy them |
+| `src/BlazorNative.Apple/BnHost/` | the shell — copy the whole directory |
 | `src/BlazorNative.Apple/project.yml` | XcodeGen spec: targets, link flags, SwiftPM deps. Heavily commented; read it |
-| `src/BlazorNative.Apple/BnHostTests/` | the reference's tests — 30 files, delete them |
+| `src/BlazorNative.Apple/BnHostTests/` | the reference's tests — delete the directory |
 | `src/BlazorNative.Apple/vendor/` | the frozen-name link inputs, produced by the staging step: `bootstrapperdll.o`, `libBlazorNative.Runtime.a`, `libBnRuntimeSupport.a`, `libyoga.a` + `yoga-include/`. The `.a`/`.o` are git-ignored — they are build outputs, never committed |
 | `.github/workflows/ci.yml` → `ios-build-slice` | **the executable truth.** A two-leg matrix, simulator + device, run on every PR; the required check `ios-build` aggregates it |
 | `.github/workflows/ios.yml` | the advisory execution lane — runs the XCTests on a booted simulator, and compiles the device slice alongside |
 
-**Third-party dependencies** (from `project.yml`): **Kingfisher** (`from: 8.10.0`) via
-SwiftPM — the iOS twin of Android's Coil, driving `BnImage`. Exactly one file in the shell
-imports it.
+**Third-party dependencies** (from `project.yml`): **Kingfisher**, pinned there with
+`exactVersion:` — the ONE home for that number, on purpose — via SwiftPM, the iOS twin of
+Android's Coil, driving `BnImage`. Exactly one file in the shell imports it.
 
 ---
 

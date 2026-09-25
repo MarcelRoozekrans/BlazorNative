@@ -4,7 +4,7 @@
 #
 #   build-test (windows-latest) — the local verification procedure verbatim
 #   (setup.ps1 §1–7 documents the toolchain pins):
-#     build (analyzers ride it) → .NET tests (1176 passed / 0 skipped) →
+#     build (analyzers ride it) → .NET tests (1186 passed / 0 skipped) →
 #     three NativeAOT publishes of samples/BlazorNative.SampleApp — the
 #     publish head since Phase 8.0: the app owns PublishAot, the exports stay
 #     in Runtime via UnmanagedEntryPointsAssembly, and the artifact is
@@ -22,7 +22,7 @@
 #     Phase 8.1, M4 DoD #7 / M8 DoD #2) → artifacts for the instrumented
 #     (Gate 3) job.
 #
-#   ios-build (macos-latest) — THE iOS SHELL MUST COMPILE. Publish +
+#   ios-build (ubuntu-latest) — THE iOS SHELL MUST COMPILE. Publish +
 #     `xcodebuild build-for-testing`: Swift + Objective-C++ compiled, the app
 #     and the XCTest bundle LINKED. No simulator is booted and no test is run.
 #     Since Phase 14.4 the work is a TWO-LEG MATRIX — `iossimulator-arm64` and
@@ -2202,7 +2202,44 @@ jobs:
       # the release-notes parse guard (#302) is only worth running if its
       # release-please is the one release-please-action bundles; this pins
       # both ends of that pair against action-version.json.
-      - name: .NET tests (assert 1176 passed / 0 skipped)
+      # 1176 -> 1181 (15.5 docs samples, +5): DocsSamplesDriftTests -- every fence on a
+      # hand-written docs page whose language is razor/csharp/cs declares a known kind
+      # (component/file/statements/skip:<reason>), floor, positive control. The actual
+      # compile is the separate "Docs samples compile" step below, driven by the same
+      # tools/BlazorNative.DocSamples parser this pin calls (#291).
+      # 1181 -> 1182 (15.5 fix round 1, +1): NamedComponents_HaveValidUniqueIdentifiers --
+      # bn-sample=component:<Name> (added so testing-harness.md's two fences could
+      # reference one generated SettingsPage.razor) is held to a valid, globally unique
+      # C# identifier. The same round also found six indented "Compliant shape" samples
+      # on analyzers.md that the un-indented fence anchor had never seen (28 -> 35
+      # in-scope fences); that moves MinimumFences/MinimumCompiledSamples, not this count.
+      # 1182 -> 1183 (15.5 fix round 2, +1): NoNamedSampleComponent_CollidesWithAShippedType --
+      # a bn-sample=component:<Name> must not share a simple name with a public type in any
+      # of the seven shipped packages; state.md's BnThemedPanel (round 2 closed its
+      # NEEDS_CONTEXT by making the page's own consumer fence the real definition) is the
+      # second named sample this guards alongside testing-harness.md's SettingsPage.
+      # 1183 -> 1185 (15.5 docs names, +2): DocsNameDriftTests -- every inline `Bn…`/
+      # `BlazorNative…` span on a hand-written docs page (outside a fenced code block)
+      # resolves to something real, via a resolver built from the seven shipped packages'
+      # public surface, Kotlin/Swift/Objective-C++ shell declarations (plus a file-scoped
+      # member map), tracked repo file/directory names (plus file stems and <Assembly>.dll),
+      # and the BlazorNative.Analyzers diagnostic-category string literals; floor, positive
+      # control. DocsSamplesDriftTests holds the CODE half of a page to compiling; this is
+      # the PROSE half.
+      # 1185 -> 1186 (15.5 #298 pin, +1): ComponentDocs_NameTheAndroidWidgetClassTheShellActuallyBuilds --
+      # every component naming an Android widget, in its internal design comment ("Android: X")
+      # or its published `///` summary ("<c>X</c> on Android"), is held to WidgetMapper.kt's own
+      # node-type-to-widget-class derivation (reused from TextCollapseParityDriftTests). The claim
+      # set is DISCOVERED by scanning src/BlazorNative.Components, not a hand-written list, with a
+      # measured floor on each scan and a file->node-type lookup that reds on an unmapped
+      # discovery, checking every claim a file makes (Matches, not Match). The extractor pulls
+      # only the token adjacent to the claim -- the first version instead searched the whole
+      # file with a word-boundary regex, LANDED (816466f), and was found by review to PASS on
+      # #298's own pre-fix "SwitchMaterial/Switch" text (a second, standalone "Switch" after the
+      # slash matches \bSwitch\b); the next commit (50267a1) replaced it with the extractor. The
+      # positive control runs the same extractor on that exact planted string and asserts it
+      # disagrees with the derived class.
+      - name: .NET tests (assert 1186 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -2220,9 +2257,20 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 1176 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 1176 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 1186 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 1186 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
+
+      # 15.5 (#291): every docs sample a consumer might copy is compiled. The fence
+      # parser is tools/BlazorNative.DocSamples — the same one DocsSamplesDriftTests
+      # holds to "every fence is classified", so a sample cannot dodge this by omission.
+      - name: Docs samples compile
+        shell: pwsh
+        run: |
+          dotnet run --project tools/BlazorNative.DocSamples -c Release -- --out artifacts/doc-samples
+          if ($LASTEXITCODE -ne 0) { throw "doc-samples generation failed (exit $LASTEXITCODE)" }
+          dotnet build artifacts/doc-samples/DocSamples.csproj -c Release
+          if ($LASTEXITCODE -ne 0) { throw "a docs sample no longer compiles — see the <PageSlug>_<N> name in the error for the page and fence" }
 
       # ── NativeAOT publishes + ten-export verification ─────────────────────
       # Phase 8.0: the publish head is samples/BlazorNative.SampleApp (the app
@@ -2618,8 +2666,9 @@ jobs:
       # app that installs, and rc 1 at first mount with nothing naming the cause.
       #
       # So this step GENERATES an app and PUBLISHES it, asserting the 8.0
-      # tripwire trio on GENERATED output — 4 IL2072 + the 9 exports + the
-      # page-presence probe. A text pin on the template's csproj was considered
+      # tripwire trio on GENERATED output — 4 IL2072 + the exports ARM 2 of
+      # template-smoke.ps1 enumerates + the page-presence probe. A text pin on
+      # the template's csproj was considered
       # and REFUSED: it proves the LINE IS IN THE FILE, and 8.0's own absence was
       # found by a PUBLISH, not by a read. The trio is mutation-proven — deleting
       # TrimmerRootAssembly from the template reds arms 1 and 3 together (both
@@ -3147,13 +3196,14 @@ jobs:
 
           # Phase 7.4: assert the export surface ON THE ARCHIVE, with VISIBILITY.
           # The post-link gate below proved blazornative_init can vanish from the
-          # linked dylib's global table while `nm -gU` on the .a still lists all
-          # nine exports — because nm -gU also lists private-external (N_PEXT)
-          # globals, which ld64 LOCALIZES in the output (no -exported_symbols_list
-          # is passed; a default-visibility global in a force_loaded member MUST
-          # surface as a dylib export, a private-external one MUST NOT). So "the
-          # nine symbols are in the .a" (ios.yml's check) does not prove the app
-          # will export them. `nm -m` names the verdict per symbol ("external"
+          # linked dylib's global table while `nm -gU` on the .a still lists every
+          # export the `expected` list below enumerates — because nm -gU also
+          # lists private-external (N_PEXT) globals, which ld64 LOCALIZES in the
+          # output (no -exported_symbols_list is passed; a default-visibility
+          # global in a force_loaded member MUST surface as a dylib export, a
+          # private-external one MUST NOT). So "they're all in the .a" (ios.yml's
+          # check) does not prove the app will export them. `nm -m` names the
+          # verdict per symbol ("external"
           # vs "private external"); assert it HERE so an ILC visibility flip
           # fails at its source with the discriminating evidence, not two
           # minutes later at the far end of an xcodebuild.
@@ -3575,10 +3625,13 @@ jobs:
   # Actions API call ON THE VERDICT PATH, which is exactly what it must not have.
   # So the roster is pinned OUTSIDE the workflow instead, by
   # `IosSliceMatrixDriftTests` in the required .NET suite: it asserts that
-  # `ios-build-slice` declares both `iossimulator-arm64` and `ios-arm64`, and that
-  # the job carries no `if:` and no `continue-on-error`. With those two facts held,
-  # "every leg the matrix declared succeeded" — all this job can honestly claim —
-  # is equivalent to "both slices compiled", by construction rather than by
+  # `ios-build-slice` declares both the `simulator`/`iossimulator-arm64` and the
+  # `device`/`ios-arm64` leg, with every field that decides which slice is
+  # actually built and what the LC_BUILD_VERSION gate compares against — not the
+  # RID alone (#365 F5) — and that the job carries no `if:` and no
+  # `continue-on-error`. With those facts held, "every leg the matrix declared
+  # succeeded" — all this job can honestly claim — is equivalent to "both
+  # slices, correctly configured, compiled", by construction rather than by
   # assertion. If you need a conditional leg, that pin reds and says so; decide the
   # trade out loud rather than editing it away.
   #

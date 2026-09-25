@@ -6,9 +6,11 @@ sidebar_label: State
 
 # State in BlazorNative
 
-**There is no `BlazorNative.State` package, and there is not going to be one.** Blazor's own
-state mechanisms work here unchanged, and everything on this page is exercised on a real device by
-the sample app in this repository — not asserted from how Blazor behaves on the web.
+**There is no "BlazorNative.State" package, and there is not going to be one.** Blazor's own
+state mechanisms work here unchanged. The cascading theme and the `[Inject]`-ed services on this
+page are the sample app's own, exercised on a real device; registering your own singleton through
+`ConfigureServices` is covered by the framework's unit tests rather than by the sample. None of it
+is asserted from how Blazor behaves on the web.
 
 That decision is [issue #22](https://github.com/MarcelRoozekrans/BlazorNative/issues/22)'s real
 answer. The short version: a state package would be a mandatory transitive dependency that adds a
@@ -25,10 +27,10 @@ vocabulary you would have to learn, in place of one you already know.
 
 A private field and `StateHasChanged`. Nothing framework-specific:
 
-```razor
+```razor bn-sample=component
 <BnColumn Gap="8">
     <BnText Text="@($"Count: {_count}")" />
-    <BnButton Text="Increment" OnClick="Increment" />
+    <BnButton Label="Increment" OnClick="Increment" />
 </BnColumn>
 
 @code {
@@ -48,9 +50,11 @@ written.
 ## Shared across a subtree — `CascadingValue`
 
 Wrap the subtree, cascade the value, and read it with `[CascadingParameter]`. The sample's theme
-toggle is exactly this, and both halves ship in the repo:
+toggle is exactly this — the consumer below is the sample app's `BnThemedPanel`, abridged; the
+full version, with its own history, lives at
+`samples/BlazorNative.SampleApp/BnThemedPanel.razor`:
 
-```razor
+```razor bn-sample=component
 @* provider *@
 <CascadingValue Value="_theme">
     <BnThemedPanel Padding="16">…</BnThemedPanel>
@@ -69,10 +73,14 @@ toggle is exactly this, and both halves ship in the repo:
 }
 ```
 
-```razor
-@* consumer *@
+```razor bn-sample=component:BnThemedPanel
+@* consumer — abridged from samples/BlazorNative.SampleApp/BnThemedPanel.razor *@
+<BnView BackgroundColor="@(Theme?.Background)" Padding="@Padding" ChildContent="@ChildContent" />
+
 @code {
     [CascadingParameter] public BnTheme? Theme { get; set; }
+    [Parameter] public float? Padding { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
 }
 ```
 
@@ -88,14 +96,14 @@ Prefer immutable types for anything you cascade.
 
 Register in `ConfigureServices` and take it with `[Inject]`:
 
-```csharp
+```csharp bn-sample=statements
 BlazorNativeApp.ConfigureServices(services =>
 {
     services.AddSingleton<CartState>();
 });
 ```
 
-```razor
+```razor bn-sample=component
 @code {
     [Inject] public CartState Cart { get; set; } = default!;
 }
@@ -112,14 +120,16 @@ Two things worth knowing:
   sample does, deliberately.
 - **Adding services is always safe; replacing a framework contract is not.** `INavigationManager`
   and `IMobileBridge` are documented **consume-only** — the framework both implements and consumes
-  them, and a replacement is rejected rather than half-honoured.
+  them. Re-registering `INavigationManager` is rejected at startup with an exception rather than
+  half-honoured. Re-registering `IMobileBridge` is not checked, but it is just as unsupported: do
+  not do it.
 
 ### Notifying components from a singleton
 
 A singleton has no `StateHasChanged` of its own. The ordinary Blazor pattern applies — expose an
 event, subscribe in `OnInitialized`, and **unsubscribe in `Dispose`**:
 
-```csharp
+```csharp bn-sample=file
 public sealed class CartState
 {
     private int _count;
@@ -135,7 +145,7 @@ public sealed class CartState
 }
 ```
 
-```razor
+```razor bn-sample=component
 @implements IDisposable
 
 @code {
@@ -185,8 +195,9 @@ like any other dependency. The framework does not ship one because:
 - **DI singletons and cascading values already cover the demonstrated cases**, both proven on device.
 - A shipped store would be a **mandatory transitive dependency** for every consumer, including those
   who want none of it.
-- It would be an eighth package, against a rule this project has recorded four times and pins with
-  `PackagePurityTests`.
+- It would be one more shipped package. This project adds packages only on purpose — capabilities
+  join an existing package — and `PackagePurityTests` makes any new one join the pinned shipped set
+  deliberately rather than drift in.
 
 If your app grows past what this page describes, reach for a library you choose — not one the
 framework chose for you.
