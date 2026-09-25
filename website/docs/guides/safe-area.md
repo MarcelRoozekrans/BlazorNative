@@ -28,7 +28,7 @@ page:
 
 ```razor bn-sample=component
 <BnSafeArea>
-    <BnView BackgroundColor="#FFFFFF" Padding="16">
+    <BnView BackgroundColor="#FFFFFF" Padding="16px">
         <BnText Text="Hello from BlazorNative" FontSize="24" />
         <BnButton Label="Tap me" OnClick="OnTap" />
     </BnView>
