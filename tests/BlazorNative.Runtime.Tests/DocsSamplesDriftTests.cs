@@ -34,7 +34,7 @@ namespace BlazorNative.Runtime.Tests;
 // instead of leaving it checking nothing (fix round 1: a duplicated filter in
 // the control used to mean the control tested only itself).
 //
-// FIX ROUND 1 (2026-09-26): the original `Open` anchor required a fence's
+// FIX ROUND 1 (2026-09-25): the original `Open` anchor required a fence's
 // opening backticks at column 0. CommonMark allows 0–3 leading spaces, and six
 // `analyzers.md` "Compliant shape" samples — indented two spaces inside a list
 // item — were invisible to this whole pin: the generator silently compiled
@@ -93,8 +93,11 @@ public sealed class DocsSamplesDriftTests
     /// Task 2's fix round 1; 32/3 after fix round 2 made state.md's abridged consumer
     /// fence the real definition (bn-sample=component:BnThemedPanel); 33/3 after the
     /// Task 4 audit, which removed a redundant rest-backends.md sample and added the
-    /// scroll and testing samples.</summary>
-    private const int MinimumCompiledSamples = 33;
+    /// scroll and testing samples. Final review I1: this floor now lives once, on
+    /// <see cref="DocSampleParser.MinimumCompiledSamples"/> — the generator enforces it
+    /// by exiting non-zero, and this fact measures the same count independently, from
+    /// the parsed fences rather than the files written.</summary>
+    private const int MinimumCompiledSamples = DocSampleParser.MinimumCompiledSamples;
     /// <summary>Fix round 2: at least one bn-sample=component:<Name> must exist — a
     /// floor, not a count, so the fact this file adds for it
     /// (NoNamedSampleComponent_CollidesWithAShippedType) is provably scanning something.

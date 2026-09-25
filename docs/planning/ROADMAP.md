@@ -2874,6 +2874,144 @@ land **#298**, **#356**, **#365**.
 **HelpWanted:** no
 **Design:** [`docs/superpowers/specs/2026-09-25-phase-15.5-design.md`](../superpowers/specs/2026-09-25-phase-15.5-design.md)
 **Plan:** [`docs/superpowers/plans/2026-09-25-phase-15.5-prose-and-corrections.md`](../superpowers/plans/2026-09-25-phase-15.5-prose-and-corrections.md)
+**Suite:** .NET **1176 → 1186** (Analyzers 27 · Renderer 140 · Runtime 1009 → 1019:
+`DocsSamplesDriftTests` +7 over three fix rounds · `DocsNameDriftTests` +2 · one fact grown onto
+`TextCollapseParityDriftTests`) · Android instrumented 228, iOS 271 and JVM 162 unchanged — no
+shell source moved. `#397` (the phase PR) merged as `0bdeb84` before this record was written, while
+`ci`, `ios` and `android-instrumented` were still running on its head; all three finished green on
+`1b675a9`, including the new "Docs samples compile" step (33 compiled, 3 skipped).
+
+> **Outcome: the audit closes #291, the two guards it left behind close #298 for real, #365's three
+> prose pairs are answered one by one, and #356 is corrected everywhere without a behaviour change.**
+>
+> **The audit's headline: 46 false claims across 19 of the 20 hand-written pages, plus 6 coverage
+> gaps.** Only `migrating/typed-lengths.md` had nothing false. **The most consequential finding was
+> `api-stability.md`, the published compatibility contract**: its hand-maintained type counts were
+> stale, its PROVISIONAL table omitted `BnLog`/`BnLogLevel` and the whole `BlazorNative.Testing`
+> package, it said "six of seven packages" are baselined when seven of eight are, it linked a closed
+> docs issue as the ABI-growth case instead of the real one, and it told the page's own reader that
+> iOS "has never run on physical iOS hardware" — false since M14's device report on #17/#213. Nine
+> public types added since the tier table has no tier anywhere; the page now says so openly rather
+> than silently.
+>
+> **The two guards, `DocsSamplesDriftTests` and `DocsNameDriftTests`, are the docs pin pair #291
+> asked for — one fence parser (`tools/BlazorNative.DocSamples`), so the CI compile step and the
+> pins cannot disagree about what a fence is (Rule 8).** The CI "Docs samples compile" step compiles
+> every `component`/`file`/`statements` fence on the 20 pages, through the generator; `DocsSamplesDriftTests`
+> itself never invokes a compiler (its own Rule 5 says so) — it holds every fence to a declared kind.
+> `DocsNameDriftTests` resolves every inline `` `Bn…` ``/`` `BlazorNative…` `` span against the
+> shipped surface, shell declarations, tracked file names and analyzer string literals. **Three fix
+> rounds on the samples pin, each closing a real hole rather than a cosmetic one:** round 0 shipped
+> with **indented fences invisible end to end** — six `analyzers.md` samples, two spaces deep inside
+> list items, were unclassified and uncompiled while the pin stayed green; round 1 fixed the
+> CommonMark 0–3-space indent and found **four `skip` classifications that were dodges** under the
+> owner's no-workarounds rule rather than fences that were genuinely uncompilable, compiling all
+> four; the same round added the **named-component mechanism**, `bn-sample=component:<Name>`, so a
+> second fence on a page can reference the first one's generated file by name, which is what let
+> `testing-harness.md`'s `SettingsPage` and `state.md`'s `BnThemedPanel` compile as real cross-fence
+> consumers instead of being left as `skip`. Final counts: 63 fences on the 20 pages, 36 in the
+> compiled-language scope, of which 33 compile and 3 are genuinely uncompilable — a signature
+> listing and two ✗ counterexamples that compile-and-throw by design. S1–S10 mutation-proven,
+> including two vacuity contrasts (S4: the `migrating/*` version exemption passes, and reds when the
+> directory name is perturbed; S8: `HandWrittenPages` emptied with the floor assert deleted passes
+> over zero pages, proving the floor is what makes the fact mean anything). **The names pin's own
+> history is a narrowing, not a widening:** the shell-declaration source first attributed every
+> member in a file to every `Bn…` container that file declared — `BnWidgetMapper.swift` alone
+> declares 14 containers, so one local variable resolved as a member of all of them — fixed by
+> scoping to `func`/`fun` only, one container per file, the file's own stem. A later round nearly
+> widened .NET reflection to the full public-and-internal surface to resolve one real span,
+> `BnListWindow.Compute`; review called that a project-wide loosening and it was reverted to a
+> **line-scoped "internal" prose gate** instead — a non-public member resolves only on a doc line
+> whose prose says "internal" outside any backtick span, so code that merely contains the word
+> cannot open the gate. Final count: 266 resolved spans, re-measured after the audit's own edits
+> moved eleven of them off `api-stability.md`. N1–N6 mutation-proven, including the N6 vacuity
+> contrast and an N3 re-run that caught a real bug before it shipped: a directory merely containing
+> a dot (`BlazorNative.Apple`) was read as having a file extension, manufacturing a false resolution.
+> Both pins moved the .NET count by measurement at every round, never by computation, matching the
+> Global Constraint.
+>
+> **The widget pin, `TextCollapseParityDriftTests`' new fact, passed on #298's own regression in its
+> first committed form and was rewritten to compare the named class exactly.** The original fact
+> used `\bSwitch\b`, a word-boundary search over the whole claim text; run against `BnSwitch.razor`'s
+> real pre-fix wording, `"Android: SwitchMaterial/Switch."`, it **passed**, because `\bSwitch\b`
+> matches the standalone `Switch` after the slash without ever looking at what follows `Android:`
+> specifically — a false green on the exact defect the pin exists to catch. Rewritten to extract the
+> first token after `Android:` (and after `<c>…</c> on Android` in published docs) and compare it
+> with `==` against the shell's derived widget class, never a regex search over the whole file;
+> re-run against the same pre-fix text, it now reds naming `SwitchMaterial` against the derived
+> `Switch`. Widening the scan from a hand-picked file list to every `.razor`/`.cs` file under
+> `src/BlazorNative.Components`, and from internal comments alone to published `///` summaries too,
+> surfaced claims the original #298 grep sweep never found. **Six wrong widget claims in total:**
+> `BnSwitch` (#298 itself, `SwitchMaterial/Switch` → `Switch`, the framework widget), `BnCheckbox`
+> (`MaterialCheckBox` → `CheckBox`), `BnPicker` (bare `Spinner` → `BnSpinner`, a `Spinner` subclass),
+> `BnSlider` on iOS (`UISlider` → `BnSliderView`, the iOS 26 exact-value shim), `BnImage` on iOS
+> (`UIImageView` → `BnImageView`, which carries the decoded pixel size), and `BnView` on Android
+> (`FrameLayout` → `BnYogaFrameLayout`, which suppresses the framework's own layout pass). Two
+> separate floors, one per scan: `floor: 5` for internal-comment claims and `floor: 11` for
+> published-doc claims, measured once the scan moved from `Match` to `Matches` in the second fix
+> round, so each means "every occurrence found" rather than "whichever occurrence came first".
+>
+> **F6, F7 and F8 — #365's three prose pairs — answered one by one, with the DoD's own reasoning for
+> whether each is pinned.**
+> - **F6** — stale "nine exports" prose in three CI comments, two of them never touched by the PR
+>   that claimed to have fixed all copies. **Not pinned, not needed: the duplicate was removed**, so
+>   the count now appears only in the assertion that holds it. Each comment points at that assertion
+>   instead of repeating the number, so there is no second copy left to drift out of step.
+> - **F7** — `GITHUB-SETUP.md` and `ios.yml` both called the device leg "already-required" when only
+>   its *result* is gated through the required `ios-build` aggregator, not its own context.
+>   **Pinned: no.** This is prose against prose about CI state — a test would only restate whichever
+>   side it chose, and the truth lives in GitHub's live branch protection, not in anything the repo
+>   itself carries. Corrected in both files and recorded with this reasoning, not tested.
+> - **F8** — the device-verification handover's own DoD item still asked for the device-build lane
+>   Phase 14.4 already built. **Pinned: no**, for the same reason as F7: a claim about what CI state
+>   already exists, checked against no mechanism but a reader, and no more provable by a repo-local
+>   test than F7 is. Corrected to match the handover's own `:315–319`.
+>
+> **#298 and #356, and the split issue.** #298's own component, plus five siblings the widened scan
+> found, are corrected in both their internal comments and their published XML docs, held to
+> `TextCollapseParityDriftTests`' new fact. #356's secure-storage legend is corrected in its three
+> copies together — `BnSecureStorage.swift`, `ShellBridge.kt` plus its byte-identical template
+> mirror, and `IMobileBridge.cs`'s public XML doc — scoped to the Android auth-bound **SET** path
+> the code actually reaches (`getWithAuth` of an existing item cannot produce `Unavailable`; a
+> denied or unavailable prompt there always folds to `AuthFailed`), with iOS's matching behaviour
+> stated as **not established**, pointing at the split issue **#396**: *"iOS secure storage on an
+> unenrolled device may return Ok where Android returns Unavailable."* #396 pre-existed at task
+> start and was verified against the brief's requirements rather than refiled. `git diff --stat` and
+> a hunk-by-hunk read of every `src/` change in both tasks confirm comments and XML docs only, and
+> `git diff -- '**/PublicAPI*'` is empty.
+>
+> **Owner decisions left open, both already surfaced rather than buried.** Nine public types added
+> since the tier table has no tier anywhere; the list now lives in
+> `docs/plans/2026-07-21-phase-11.3-api-tiers.md` §8, "Not yet tiered — pending owner decision", and
+> `api-stability.md` links it by name and count-free. The audit record's `## Code questions raised`
+> holds seven items the audit found but did not fix in place, since fixing them changes behaviour or
+> API tiers — five are still open, and two (the `Directory.Build.targets` "Six packages" comment and
+> the version guard's `v`-prefix gap) were closed in fix round 1. Headline open ones: the
+> stderr-pump twin divergence between iOS's `BnStderrPump.sink` (re-gates at the shell's level) and
+> Android's `toLogcat` (does not), and the `IMobileBridge` consume-only policy gap `HostSession.cs`
+> enforces for `INavigationManager` but not for `IMobileBridge`.
+>
+> **The live red.** Commit `bd0ab8b` broke `guides/safe-area.md` fence 1 with `Padding="16px"` on
+> this follow-up branch, `docs/15.5-record`, since the phase PR's own live-red step could not run
+> before the owner merged #397. [CI run
+> 36119508755](https://github.com/MarcelRoozekrans/BlazorNative/actions/runs/36119508755) **FAILED**,
+> and the only failing step was "Docs samples compile", naming `CS1003` in
+> `Website_docs_guides_safe_area_1.razor` — the sample the mutation broke, by name, exactly as the
+> pin's own doc comment promises a docs-sample break will fail. Reverted as `ae99eab`.
+>
+> **Not covered — each pin's Rule 5 list, one line each.** `DocsSamplesDriftTests`: whether a sample
+> *means* what the prose around it claims is never checked; a `skip` sample is held only to carrying
+> a reason, never compiled; the actual build runs in CI, not in this test. `DocsNameDriftTests`: a
+> name's prose meaning is unchecked — a real type can still expire out from under a true sentence; a
+> span without the `Bn`/`BlazorNative` prefix is invisible to it; a member is checked to exist, not
+> to carry the signature the prose implies; the shell-member map is file-scoped, not brace-scoped,
+> so an unrelated `func` in the same file as a matched container could in principle borrow its name;
+> the "internal" gate is whole-line, not clause-scoped, and covers a dotted member only, never a
+> bare non-public type name. `ComponentDocs_NameTheAndroidWidgetClassTheShellActuallyBuilds`: iOS
+> claims are prose against `BnWidgetMapper.swift`'s `switch` arms, not a parseable table the way
+> Kotlin's `when` is, so only the Android side is mechanically checked; a claim with no literal
+> `Android:`/`<c>…</c> on Android` marker, or one stated only in free prose, is checked by hand and
+> is not scanned.
 
 #### Phase 15.6: Audit and close [status: pending]
 **Goal:** Run `audit-milestone` against the DoD on live evidence and close M15. **No tag** — the

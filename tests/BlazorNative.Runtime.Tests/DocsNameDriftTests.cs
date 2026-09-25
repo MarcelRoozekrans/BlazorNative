@@ -633,18 +633,23 @@ public sealed class DocsNameDriftTests
         return spans;
     }
 
-    internal static List<string> Unresolved(string root, Resolver resolver)
+    /// <summary>The actual `Spans` → resolve loop, over an arbitrary set of (page, markdown)
+    /// pairs — shared by the real, disk-backed overload below AND, final review M1, by
+    /// TheResolver_SeesAPlantedName's control, so a planted unresolved name is checked
+    /// through the exact same path the real fact uses, not a second hand-rolled loop that
+    /// could silently drift from it.</summary>
+    internal static List<string> Unresolved(IEnumerable<(string Page, string Markdown)> pages, Resolver resolver)
     {
         var bad = new List<string>();
-        foreach (string page in DocSampleParser.HandWrittenPages(root))
-        {
-            string markdown = File.ReadAllText(Path.Combine(root, page));
+        foreach ((string page, string markdown) in pages)
             foreach ((int line, string name, string lineText) in Spans(markdown))
                 if (!resolver.ResolvesOnLine(name, lineText))
                     bad.Add($"{page}:{line} `{name}`");
-        }
         return bad;
     }
+
+    internal static List<string> Unresolved(string root, Resolver resolver) =>
+        Unresolved(DocSampleParser.HandWrittenPages(root).Select(p => (p, File.ReadAllText(Path.Combine(root, p)))), resolver);
 
     [Fact]
     public void EveryInlineName_OnAHandWrittenPage_Resolves()
@@ -680,5 +685,16 @@ public sealed class DocsNameDriftTests
         // The word must be prose, not code: a backtick-quoted `internal` on the
         // same line must NOT satisfy the gate.
         Assert.False(resolver.ResolvesOnLine("BnListWindow.Compute", "calls `internal` BnListWindow.Compute with the offset"));
+
+        // Final review M1: every assert above calls resolver.Resolves/ResolvesOnLine
+        // directly, so gutting Unresolved (e.g. making it always return an empty list)
+        // would leave this whole fact green — nothing here exercised that path. Route a
+        // planted unresolvable span through the SAME Spans → Unresolved path the real
+        // fact (EveryInlineName_OnAHandWrittenPage_Resolves) uses, via the shared
+        // Unresolved overload both call.
+        const string plantedUnresolvedMarkdown = "see `BnDoesNotExist` for details\n";
+        List<string> plantedBad = Unresolved([("website/docs/planted.md", plantedUnresolvedMarkdown)], resolver);
+        Assert.Single(plantedBad);
+        Assert.Contains("BnDoesNotExist", plantedBad[0]);
     }
 }

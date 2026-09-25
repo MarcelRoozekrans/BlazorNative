@@ -198,8 +198,22 @@ A pragma without a justification comment does not pass review.
 
   public static class MyVersionExports
   {
+      // Also BN0020-compliant: an expression-bodied export is always flagged by BN0020
+      // (see above), so a BN0021-compliant export must use a block body with a
+      // catch-all, exactly like any real export.
       [UnmanagedCallersOnly(EntryPoint = "myapp_get_version", CallConvs = new[] { typeof(CallConvCdecl) })]
-      public static int GetVersion() => 0;
+      public static int GetVersion()
+      {
+          try
+          {
+              return 0; // stands for your own version lookup
+          }
+          catch (Exception ex)
+          {
+              Console.Error.WriteLine($"[Exports] version lookup failed: {ex}");
+              return -1;
+          }
+      }
   }
   ```
 

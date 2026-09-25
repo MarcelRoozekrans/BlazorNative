@@ -162,6 +162,20 @@ foreach (string page in DocSampleParser.HandWrittenPages(repoRoot))
 }
 
 Console.WriteLine($"total: {totalCompiled} compiled, {totalSkipped} skipped");
+
+// Final review finding I1: this generator used to always return 0, and nothing checked
+// how many sample files it actually wrote — the CI "Docs samples compile" step could
+// pass while compiling almost nothing, as long as the (possibly empty) project it
+// handed to `dotnet build` had no errors. DocSampleParser.MinimumCompiledSamples is the
+// SAME floor DocsSamplesDriftTests.TheCompiledSampleCount_MeetsItsFloor measures from the
+// parsed fences; failing loudly here, from the count of files this generator itself
+// wrote, closes the gap between "the pin is green" and "the step compiled anything".
+if (totalCompiled < DocSampleParser.MinimumCompiledSamples)
+{
+    Console.Error.WriteLine($"only {totalCompiled} sample files were written, fewer than DocSampleParser.MinimumCompiledSamples ({DocSampleParser.MinimumCompiledSamples}) — the docs-sample build step would pass while compiling too little. Fix the page scan or lower the floor deliberately, in one place (DocSampleParser.MinimumCompiledSamples), never here.");
+    return 1;
+}
+
 return 0;
 
 static string FindRepoRoot()
@@ -194,6 +208,14 @@ static void WriteProjectFile(string outDir, string repoRoot)
         string path = Path.Combine(repoRoot, "src", $"BlazorNative.{p}", $"BlazorNative.{p}.csproj");
         refs.AppendLine($"""    <ProjectReference Include="{path}" />""");
     }
+    // Final review finding I2: OutputItemType="Analyzer" on a src csproj's own reference
+    // to BlazorNative.Analyzers does not flow to a project that merely references that
+    // src csproj — analyzers are per-project, not transitive. Without this, every sample
+    // in DocSamples.csproj built clean of BN diagnostics regardless of whether it was
+    // actually compliant. Same attributes as every src csproj's own reference, e.g.
+    // src/BlazorNative.Components/BlazorNative.Components.csproj.
+    string analyzersPath = Path.Combine(repoRoot, "src", "BlazorNative.Analyzers", "BlazorNative.Analyzers.csproj");
+    refs.AppendLine($"""    <ProjectReference Include="{analyzersPath}" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />""");
 
     string xunitVersion = ReadPackageVersion(repoRoot, "xunit");
 

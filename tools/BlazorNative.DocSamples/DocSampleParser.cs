@@ -28,6 +28,14 @@ public static class DocSampleParser
     public static readonly IReadOnlySet<string> CompiledLanguages = new HashSet<string>(StringComparer.Ordinal)
         { "razor", "csharp", "cs" };
 
+    /// <summary>The one floor for how many sample files the generator must actually WRITE
+    /// (component + file + statements fences; `skip` writes nothing). Held here, not
+    /// duplicated, so the generator (which enforces it by exiting non-zero) and
+    /// DocsSamplesDriftTests.TheCompiledSampleCount_MeetsItsFloor (which measures the same
+    /// count from the parsed fences, before any file is written) cannot drift apart —
+    /// final review finding I1. Measured 2026-09-25 (Task 4 audit): 33.</summary>
+    public const int MinimumCompiledSamples = 33;
+
     /// <summary>CommonMark allows 0–3 leading spaces on a fence's opening (and closing)
     /// line — an indented fence inside a list item, exactly like the six `analyzers.md`
     /// "Compliant shape" samples fix round 1 found invisible to the un-indented anchor this
