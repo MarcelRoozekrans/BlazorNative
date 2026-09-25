@@ -19,7 +19,7 @@ public static class DocSampleParser
 
     /// <summary>Controller ruling (2026-09-25, amending the original task brief): the
     /// classify-and-compile obligation applies ONLY to a fence written in one of these
-    /// languages. Measured 2026-09-26 (fix round 1, after indented fences were found):
+    /// languages. Measured 2026-09-25 (fix round 1, after indented fences were found):
     /// 20 razor + 15 csharp/cs fences vs. 26 in bash, xml, swift, yaml, sh, powershell and
     /// diff — a shell transcript or a Kotlin/Swift excerpt is not a .NET compilation unit,
     /// and giving it a bn-sample marker would say nothing true. <see cref="Fences"/> still
@@ -37,9 +37,15 @@ public static class DocSampleParser
     /// NOT HANDLED (Rule 5 — see DocsSamplesDriftTests' header): `~~~`-fenced blocks,
     /// four-or-more-backtick fences, and MDX's `&lt;CodeBlock&gt;` component. None exist on
     /// a hand-written page today; a page that starts using one is invisible to this parser
-    /// exactly the way an unlabeled fence is.</summary>
+    /// exactly the way an unlabeled fence is.
+    ///
+    /// Close REQUIRES an end anchor (fix round 3): CommonMark's closing fence is 0–3
+    /// leading spaces, three-or-more backticks, THEN ONLY WHITESPACE to the end of the
+    /// line. Without `[ \t]*$`, a body line that merely STARTS with "```csharp" (a fence
+    /// shown INSIDE another fence, to document the marker syntax itself) would close the
+    /// fence early — exactly the case TheDetectors_SeeAPlantedDefect now plants.</summary>
     private static readonly Regex Open = new(@"^(?<indent> {0,3})```(?<lang>[A-Za-z0-9_+-]*)(?<meta>[^\r\n]*)$", RegexOptions.CultureInvariant);
-    private static readonly Regex Close = new(@"^ {0,3}```", RegexOptions.CultureInvariant);
+    private static readonly Regex Close = new(@"^ {0,3}`{3,}[ \t]*$", RegexOptions.CultureInvariant);
     private static readonly Regex Marker = new(@"(?:^|\s)bn-sample=(?<kind>[a-z]+)(?::(?<reason>[^\s].*))?\s*$", RegexOptions.CultureInvariant);
 
     /// <summary>Every *.md / *.mdx under website/docs except the directories

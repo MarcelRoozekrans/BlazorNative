@@ -146,7 +146,7 @@ A pragma without a justification comment does not pass review.
 
   public static class MyExports
   {
-      [UnmanagedCallersOnly(EntryPoint = "blazornative_mount", CallConvs = new[] { typeof(CallConvCdecl) })]
+      [UnmanagedCallersOnly(EntryPoint = "myapp_mount", CallConvs = new[] { typeof(CallConvCdecl) })]
       public static int Mount(IntPtr nameUtf8)
       {
           try
@@ -197,7 +197,7 @@ A pragma without a justification comment does not pass review.
 
   public static class MyVersionExports
   {
-      [UnmanagedCallersOnly(EntryPoint = "blazornative_version", CallConvs = new[] { typeof(CallConvCdecl) })]
+      [UnmanagedCallersOnly(EntryPoint = "myapp_get_version", CallConvs = new[] { typeof(CallConvCdecl) })]
       public static int GetVersion() => 0;
   }
   ```

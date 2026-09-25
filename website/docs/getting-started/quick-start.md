@@ -62,13 +62,17 @@ route table are *derived views* of that array, so they cannot drift from it:
 ```csharp bn-sample=file
 using BlazorNative.Runtime;
 
+// MyBlazorNativeApp is dotnet new blazornative's default namespace for your app —
+// AppPages.cs there carries the same namespace.
+namespace MyBlazorNativeApp;
+
 // BnAboutPage and SomeScreen stand for your own page components.
 internal sealed class BnAboutPage : Microsoft.AspNetCore.Components.ComponentBase { }
 internal sealed class SomeScreen : Microsoft.AspNetCore.Components.ComponentBase { }
 
-internal static class MyAppPages
+public static class AppPages
 {
-    internal static readonly BlazorNativePage[] All =
+    public static readonly BlazorNativePage[] All =
     [
         BlazorNativePage.Routed<BnAboutPage>("/about", "BnAboutPage"),   // route + mount name
         BlazorNativePage.Named<SomeScreen>("SomeScreen"),                // mount name only

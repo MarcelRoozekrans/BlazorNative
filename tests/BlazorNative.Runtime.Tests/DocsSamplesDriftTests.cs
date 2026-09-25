@@ -80,7 +80,7 @@ namespace BlazorNative.Runtime.Tests;
 
 public sealed class DocsSamplesDriftTests
 {
-    /// <summary>Re-measured 2026-09-26 (fix round 1, after DocSampleParser started
+    /// <summary>Re-measured 2026-09-25 (fix round 1, after DocSampleParser started
     /// seeing 0–3-space-indented fences): 20 hand-written pages, 35 razor/csharp fences
     /// (15 + 20) out of 62 fences total on those pages — the other 27 are bash, xml,
     /// swift, yaml, sh, powershell and diff, outside DocSampleParser.CompiledLanguages.
@@ -90,19 +90,19 @@ public sealed class DocsSamplesDriftTests
     /// adding a page or a sample passes; losing the scan does not.</summary>
     private const int MinimumPages = 20;
     private const int MinimumFences = 35;
-    /// <summary>Re-measured 2026-09-26 (fix round 1): 31 of the 35 compiled-language
-    /// fences are component/file/statements; the other 4 are skip — the signature
+    /// <summary>Re-measured 2026-09-25 (fix round 2): 32 of the 35 compiled-language
+    /// fences are component/file/statements; the other 3 are skip — the signature
     /// listing (testing-harness.md) and the two genuine render-and-throw ✗
-    /// counterexamples (layout-and-yoga.md, typed-lengths.md). Fix round 2: state.md's
-    /// BnThemedPanel is no longer skip — the controller's binding ruling on the round 1
-    /// NEEDS_CONTEXT was to make the page's own abridged consumer fence the real
-    /// definition (bn-sample=component:BnThemedPanel), not to add cascading-theme
-    /// support to a shipped component.</summary>
+    /// counterexamples (layout-and-yoga.md, typed-lengths.md). Fix round 1 measured
+    /// 31/4 here; fix round 2 closed state.md's BnThemedPanel NEEDS_CONTEXT by making
+    /// the page's own abridged consumer fence the real definition
+    /// (bn-sample=component:BnThemedPanel), not by adding cascading-theme support to a
+    /// shipped component, moving one skip to compiled.</summary>
     private const int MinimumCompiledSamples = 32;
     /// <summary>Fix round 2: at least one bn-sample=component:<Name> must exist — a
     /// floor, not a count, so the fact this file adds for it
     /// (NoNamedSampleComponent_CollidesWithAShippedType) is provably scanning something.
-    /// Measured 2026-09-27: two, SettingsPage (migrating/testing-harness.md) and
+    /// Measured 2026-09-25: two, SettingsPage (migrating/testing-harness.md) and
     /// BnThemedPanel (guides/state.md).</summary>
     private const int MinimumNamedComponents = 1;
 
@@ -277,5 +277,14 @@ public sealed class DocsSamplesDriftTests
         var collisionFences = DocSampleParser.Fences(plantedShippedCollision).Select(f => ("website/docs/planted.md", f)).ToList();
         Assert.Single(collisionFences); // the splice landed, or this control proves nothing
         Assert.Single(ShippedTypeCollisions(collisionFences));
+
+        // Fix round 3: Close requires an end anchor. A body line that merely STARTS with
+        // "```csharp" — documenting the fence marker syntax itself, inside another fence —
+        // must NOT close the fence early; only a line that is 0–3 spaces, three-or-more
+        // backticks, then nothing but whitespace closes it.
+        const string plantedFakeClose = "```csharp\nline one\n```csharp\nline two\n```\n";
+        var fakeCloseFences = DocSampleParser.Fences(plantedFakeClose);
+        Assert.Single(fakeCloseFences); // one fence, not two — the mid-body "```csharp" must not close it
+        Assert.Equal("line one\n```csharp\nline two", fakeCloseFences[0].Body);
     }
 }

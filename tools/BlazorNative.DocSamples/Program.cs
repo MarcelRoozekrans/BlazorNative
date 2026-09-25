@@ -25,6 +25,15 @@ if (outArg is null)
     return 1;
 }
 
+// Fix round 3: every file this tool writes gets a consistent LF line ending,
+// including its trailing newline. `Environment.NewLine` is CRLF on Windows, and a
+// raw string literal's embedded newlines follow whatever the SOURCE file itself
+// uses — mixing the two produced files that were LF throughout except for a
+// trailing CRLF. Normalising unconditionally (not just appending "\n") means this
+// holds regardless of how Program.cs itself is checked out.
+static void WriteLf(string path, string content) =>
+    File.WriteAllText(path, content.Replace("\r\n", "\n").TrimEnd('\n') + "\n");
+
 string repoRoot = FindRepoRoot();
 string outDir = Path.GetFullPath(outArg, Directory.GetCurrentDirectory());
 
@@ -80,11 +89,11 @@ foreach (string page in DocSampleParser.HandWrittenPages(repoRoot))
                         throw new InvalidOperationException($"bn-sample=component:{componentName} claimed twice: {first} and {where}");
                     usedComponentNames[componentName] = where;
                 }
-                File.WriteAllText(Path.Combine(samplesDir, $"{componentName}.razor"), fence.Body + Environment.NewLine);
+                WriteLf(Path.Combine(samplesDir, $"{componentName}.razor"), fence.Body);
                 compiled++;
                 break;
             case "file":
-                File.WriteAllText(Path.Combine(samplesDir, $"{name}.cs"), fence.Body + Environment.NewLine);
+                WriteLf(Path.Combine(samplesDir, $"{name}.cs"), fence.Body);
                 compiled++;
                 break;
             case "statements":
@@ -136,7 +145,7 @@ foreach (string page in DocSampleParser.HandWrittenPages(repoRoot))
                         }
                     }
                     """;
-                File.WriteAllText(Path.Combine(samplesDir, $"{name}.cs"), wrapped + Environment.NewLine);
+                WriteLf(Path.Combine(samplesDir, $"{name}.cs"), wrapped);
                 compiled++;
                 break;
             case "skip":
@@ -186,6 +195,8 @@ static void WriteProjectFile(string outDir, string repoRoot)
         refs.AppendLine($"""    <ProjectReference Include="{path}" />""");
     }
 
+    string xunitVersion = ReadPackageVersion(repoRoot, "xunit");
+
     string csproj = $"""
         <Project Sdk="Microsoft.NET.Sdk.Razor">
 
@@ -204,22 +215,50 @@ static void WriteProjectFile(string outDir, string repoRoot)
             <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
             <StaticWebAssetsEnabled>false</StaticWebAssetsEnabled>
             <NoWarn>NETSDK1206</NoWarn>
-            <!-- Fix round 1: no sample may be the project's entry point — logging.md's
-                 top-level-statements sample was reclassified to "statements" (its `using`
-                 lines are hoisted by the generator instead), so nothing here needs
-                 OutputType=Exe any more. -->
           </PropertyGroup>
 
           <ItemGroup>
         {refs}
             <!-- testing-harness.md's compiled sample calls Assert directly (the fence is
-                 written the way a consumer's own xUnit test would be) — pinned to the same
-                 version tests/BlazorNative.Runtime.Tests.csproj uses for the `xunit` meta-package,
-                 so the two cannot drift apart. -->
-            <PackageReference Include="xunit.assert" Version="2.9.3" />
+                 written the way a consumer's own xUnit test would be) — version READ, at
+                 generation time, from the same `xunit` PackageReference
+                 tests/BlazorNative.Runtime.Tests.csproj pins, so the two cannot drift apart
+                 the way a second hard-coded copy could. -->
+            <PackageReference Include="xunit.assert" Version="{xunitVersion}" />
           </ItemGroup>
 
         </Project>
         """;
-    File.WriteAllText(Path.Combine(outDir, "DocSamples.csproj"), csproj);
+    WriteLf(Path.Combine(outDir, "DocSamples.csproj"), csproj);
+}
+
+/// <summary>Reads the version of <paramref name="packageId"/> the test suite itself pins,
+/// so the generated project's own reference cannot silently drift from it (fix round 3 —
+/// this used to be a hard-coded "2.9.3"). Checks the ordinary
+/// `&lt;PackageReference Include="..." Version="..." /&gt;` form first; falls back to
+/// `Directory.Packages.props` for a repo using central package management. Throws rather
+/// than falling back to a guessed version — a docs-sample project silently pinning the
+/// wrong test framework version is worse than a loud generation failure.</summary>
+static string ReadPackageVersion(string repoRoot, string packageId)
+{
+    string testCsproj = Path.Combine(repoRoot, "tests", "BlazorNative.Runtime.Tests", "BlazorNative.Runtime.Tests.csproj");
+    var direct = new Regex($"""<PackageReference\s+Include="{Regex.Escape(packageId)}"\s+Version="(?<version>[^"]+)"\s*/>""", RegexOptions.CultureInvariant);
+    if (File.Exists(testCsproj))
+    {
+        Match m = direct.Match(File.ReadAllText(testCsproj));
+        if (m.Success) return m.Groups["version"].Value;
+    }
+
+    string centralProps = Path.Combine(repoRoot, "Directory.Packages.props");
+    if (File.Exists(centralProps))
+    {
+        var central = new Regex($"""<PackageVersion\s+Include="{Regex.Escape(packageId)}"\s+Version="(?<version>[^"]+)"\s*/>""", RegexOptions.CultureInvariant);
+        Match m = central.Match(File.ReadAllText(centralProps));
+        if (m.Success) return m.Groups["version"].Value;
+    }
+
+    throw new InvalidOperationException(
+        $"could not find a Version for PackageReference '{packageId}' in {testCsproj} " +
+        $"or in {centralProps} — the generator refuses to guess a version for xunit.assert " +
+        "rather than risk it silently drifting from what the test suite actually pins.");
 }
