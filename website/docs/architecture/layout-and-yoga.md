@@ -59,7 +59,7 @@ allowlist with a written reason.
 `BnRow` and `BnColumn` are thin presets over `BnView`: they forward every parameter *except*
 `Direction`, because a `BnRow` **is** a row. Reach for `BnView` when the direction is dynamic.
 
-**There is deliberately no `BnStack`** — it would be a synonym for `BnColumn`, and two names
+**There is deliberately no "BnStack"** — it would be a synonym for `BnColumn`, and two names
 for one thing is a library smell on day one.
 
 ```razor bn-sample=component

@@ -4,7 +4,7 @@
 #
 #   build-test (windows-latest) — the local verification procedure verbatim
 #   (setup.ps1 §1–7 documents the toolchain pins):
-#     build (analyzers ride it) → .NET tests (1183 passed / 0 skipped) →
+#     build (analyzers ride it) → .NET tests (1185 passed / 0 skipped) →
 #     three NativeAOT publishes of samples/BlazorNative.SampleApp — the
 #     publish head since Phase 8.0: the app owns PublishAot, the exports stay
 #     in Runtime via UnmanagedEntryPointsAssembly, and the artifact is
@@ -2218,7 +2218,15 @@ jobs:
       # of the seven shipped packages; state.md's BnThemedPanel (round 2 closed its
       # NEEDS_CONTEXT by making the page's own consumer fence the real definition) is the
       # second named sample this guards alongside testing-harness.md's SettingsPage.
-      - name: .NET tests (assert 1183 passed / 0 skipped)
+      # 1183 -> 1185 (15.5 docs names, +2): DocsNameDriftTests -- every inline `Bn…`/
+      # `BlazorNative…` span on a hand-written docs page (outside a fenced code block)
+      # resolves to something real, via a resolver built from the seven shipped packages'
+      # public surface, Kotlin/Swift/Objective-C++ shell declarations (plus a file-scoped
+      # member map), tracked repo file/directory names (plus file stems and <Assembly>.dll),
+      # and the BlazorNative.Analyzers diagnostic-category string literals; floor, positive
+      # control. DocsSamplesDriftTests holds the CODE half of a page to compiling; this is
+      # the PROSE half.
+      - name: .NET tests (assert 1185 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -2236,8 +2244,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 1183 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 1183 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 1185 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 1185 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # 15.5 (#291): every docs sample a consumer might copy is compiled. The fence

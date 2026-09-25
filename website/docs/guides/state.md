@@ -6,7 +6,7 @@ sidebar_label: State
 
 # State in BlazorNative
 
-**There is no `BlazorNative.State` package, and there is not going to be one.** Blazor's own
+**There is no "BlazorNative.State" package, and there is not going to be one.** Blazor's own
 state mechanisms work here unchanged, and everything on this page is exercised on a real device by
 the sample app in this repository — not asserted from how Blazor behaves on the web.
 
