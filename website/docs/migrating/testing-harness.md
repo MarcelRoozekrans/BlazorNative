@@ -137,7 +137,7 @@ an app with its own nested routes should re-check: a link that used to land on `
 ask for `/settings/audio`, and will miss the table unless that route exists.
 
 The rule now lives once, in `src/deeplink-vectors.json`, and `tools/BlazorNative.WireGen` emits the
-.NET, Kotlin and Swift assertion tables from it. All three suites assert the same seven cases. Do
+.NET, Kotlin and Swift assertion tables from it. All three suites assert the same cases. Do
 not hand-edit a `BnDeepLinkVectors.g.*`.
 
 **Known residual, deliberately deferred:** scheme comparison is case-sensitive on Android and

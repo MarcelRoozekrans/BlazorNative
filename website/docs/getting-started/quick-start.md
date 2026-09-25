@@ -85,17 +85,40 @@ public static class AppPages
 Adding a **routed** page is that one row and nothing else. Android's deep-link map
 (`res/raw/blazornative_routes.json`, read at Intent-parse time *before* the native library
 loads) used to be a hand-written mirror in `MainActivity.kt` you had to keep in sync — the last
-place a page lived twice. Since v0.3.0 it is **generated from `AppPages.All` at build time**
+place a page lived twice. It is now **generated from `AppPages.All` at build time**
 (`BlazorNative.RouteGen` reads your routed rows and emits the resource), so it cannot drift from
 your pages and there is no shell file to edit. Add the row; the deep link works.
 
 :::
 
+## Testing a page
+
+Add `BlazorNative.Testing` to your **test** project — never to the app — and a unit test can
+mount a page and assert the widget tree it rendered, with no device and no emulator.
+`BnTestHost.Mount<T>()` runs the real renderer and the real components; `host.Tree` is the
+result, with children in the order the shells place them. `ClickAsync` and `ChangeAsync` drive
+events, and when the page injects `IMobileBridge`, register a `DevHostBridge` through `Mount`'s
+`configureServices`. It does not run Yoga, so it answers "what did my page render?", never
+"how big is it?".
+
+```csharp bn-sample=statements
+using BlazorNative.Testing;
+
+// Inside a test method in your test project, with your test framework's Assert:
+using BnTestHost host = BnTestHost.Mount<BnButton>(
+    new Dictionary<string, object?> { ["Label"] = "Save" });
+
+BnTestNode button = host.Tree.FindAll("button")[0];
+Assert.Equal("Save", button.Text);
+```
+
 ## Writing pages — the subset that actually renders
 
-**Only `Bn*` components render.** There is no DOM here: `<div>`, `<span>` and `<p>` are not
-widgets and will not appear. The `BlazorNative.Analyzers` package is referenced for you and
-catches the common mistakes at compile time — see [Analyzer rules](../analyzers.md).
+**Write `Bn*` components.** There is no DOM here: `<div>`, `<span>` and `<p>` are not HTML.
+The renderer maps a few element names onto native widgets and turns any other name into a
+plain view, so a raw element does appear — but with none of a component's typed parameters,
+and no analyzer rule flags it. The `BlazorNative.Analyzers` package is referenced for you and
+catches other mistakes at compile time — see [Analyzer rules](../analyzers.md).
 
 Two rules worth knowing before they bite:
 

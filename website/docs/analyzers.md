@@ -33,9 +33,9 @@ A pragma without a justification comment does not pass review.
 **Thread.Sleep blocks a runtime thread** — `BlazorNative.MobilePolicy`, Warning.
 
 - **What it flags:** any call to `System.Threading.Thread.Sleep(...)`.
-- **Why:** the Kotlin host drives the runtime on a single dispatch lane
-  (`BlazorNative-Dispatch`). A blocking sleep on that lane stalls every queued frame and
-  event for its full duration — the app freezes, no exception tells you why.
+- **Why:** each shell drives the runtime on a single serial dispatch lane, named
+  `BlazorNative-Dispatch` on both Android and iOS. A blocking sleep on that lane stalls every
+  queued frame and event for its full duration — the app freezes, no exception tells you why.
 - **Compliant shape:**
 
   ```csharp bn-sample=statements
@@ -122,8 +122,9 @@ A pragma without a justification comment does not pass review.
   };
   ```
 
-- **Note:** `NativeEvents`' own redesign is a ledgered open item (`NativeShellBridge`
-  currently stubs it no-op); the rule guards the surviving contract.
+- **Note:** on a device, `NativeShellBridge.NativeEvents` is real: every host event .NET does
+  not route itself, such as the lifecycle events, is raised through it. This rule guards a live
+  contract, not a dormant one.
 - **Escape hatch:** `#pragma warning disable BN0014` with justification (expected: none).
 
 ## BN0020

@@ -25,11 +25,13 @@ style patch arrives, its name decides which tree it lands in:
 | **Layout** | the Yoga node | `flexDirection`, `justifyContent`, `width`, `margin`, `padding`, … |
 | **Visual** | the view | `backgroundColor`, `color`, `fontSize`, … |
 
-The partition is an **allow-list**, not a heuristic — and because it is hand-written in the
-renderer's C#, the Android shell's Kotlin, and the iOS shell's Objective-C++, a name present
-in one and missing from another would be *silently dropped*. So a drift test in the required
-CI lane parses all three and asserts set-equality. **Every accepted name is a name three
-parsers must implement**, which is why the accepted set is small and grows deliberately.
+The partition is an **allow-list**, not a heuristic. The renderer's C#, the Android shell's
+Kotlin and the iOS shell's Objective-C++ and Swift all need it, and a name present in one copy
+and missing from another would be *silently dropped* — so no copy is written by hand. The names
+live once, in `src/wire-vocabulary.json`; a generator emits every language's table from it, and a
+test in the required CI lane regenerates them and fails if a committed copy differs. **Every
+accepted name is still a name both shells must implement**, which is why the accepted set is
+small and grows deliberately.
 
 Containers are **layout-suppressed frame containers**: they exist to hold children, not to
 arrange them. Leaves are **measured natively** through Yoga's measure callback — a long
@@ -46,15 +48,15 @@ It is declared **once**, on two abstract bases, and nearly every component inher
 | **Size** | `Width` · `Height` · `MinWidth` · `MaxWidth` · `MinHeight` · `MaxHeight` | `BnLayoutItem` |
 | **Position** | `Position` · `Top` · `Right` · `Bottom` · `Left` | `BnLayoutItem` |
 | **Visual** | `BackgroundColor` | `BnLayoutItem` |
-| **Container** | `Justify` · `Align` · `Wrap` · `Gap` · `Padding` | `BnLayoutContainer` |
+| **Container** | `Justify` · `Align` · `Wrap` · `Gap` · `Padding` · `PaddingTop` · `PaddingRight` · `PaddingBottom` · `PaddingLeft` | `BnLayoutContainer` |
 
 `BnLayoutContainer` derives from `BnLayoutItem`, so a container is also an item — a `BnColumn`
 can be given a `Margin` by its own parent.
 
 **This means the size and position parameters are not a `BnView` privilege.** `<BnText Width="100"
-Margin="8" />` works, and so does `<BnButton MaxWidth="200" />`. Thirteen components inherit one of
-the two bases; the exceptions are `BnList<TItem>` and `BnModal`, and both are on an explicit
-allowlist with a written reason.
+Margin="8" />` works, and so does `<BnButton MaxWidth="200" />`. Every component inherits one of
+the two bases except `BnList<TItem>` and `BnModal`, and both are on an explicit allowlist with a
+written reason.
 
 `BnRow` and `BnColumn` are thin presets over `BnView`: they forward every parameter *except*
 `Direction`, because a `BnRow` **is** a row. Reach for `BnView` when the direction is dynamic.
@@ -107,7 +109,7 @@ The two types differ by exactly one case:
 
 | Type | Points | Percent | `auto` | Used by |
 |---|---|---|---|---|
-| `BnLength` | ✅ | ✅ | ❌ | `MinWidth` · `MaxWidth` · `MinHeight` · `MaxHeight` · `Top` · `Right` · `Bottom` · `Left` · `Padding` · `Gap` |
+| `BnLength` | ✅ | ✅ | ❌ | `MinWidth` · `MaxWidth` · `MinHeight` · `MaxHeight` · `Top` · `Right` · `Bottom` · `Left` · `Padding` and its per-edge forms · `Gap` |
 | `BnAutoLength` | ✅ | ✅ | ✅ | `Width` · `Height` · `Basis` · `Margin` |
 
 The split is not cosmetic: `Margin` accepts `auto` and `Padding` does not, because that is what the
@@ -183,6 +185,43 @@ distributes only *positive* free space — the viewport hugs its content and nev
 That is exactly why CSS's `flex: 1` shorthand sets basis to `0`. The shells emit a
 diagnostic when a viewport is indefinite.
 
+### Reading and moving the scroll position
+
+`OnScroll` reports the vertical content offset as `BnScrollEventArgs.OffsetY`, in dp on Android
+and pt on iOS. Events are conflated — at most one per rendered frame, latest offset wins — so it
+tells you where the viewport is, not how many times it moved. To move it, take a `@ref` and call
+`ScrollToAsync(offset)` or `ScrollToEndAsync()`; for an append-driven view such as a log or a chat
+transcript, `AutoScrollToEnd="true"` scrolls to the end on every render instead. Both methods
+complete when the command is queued for the next frame, not when the view stops moving — watch
+`OnScroll` to see where it landed.
+
+```razor bn-sample=component
+<BnScroll @ref="_scroll" Height="200" OnScroll="OnScrolled">
+  <BnColumn Gap="8">
+    @foreach (var line in _lines)
+    {
+      <BnText Text="@line" />
+    }
+  </BnColumn>
+</BnScroll>
+<BnButton Label="Add a line" OnClick="AddLineAsync" />
+
+@code {
+    private BnScroll? _scroll;
+    private readonly List<string> _lines = ["line 1"];
+    private float _offset;
+
+    private void OnScrolled(BnScrollEventArgs e) => _offset = e.OffsetY;
+
+    private async Task AddLineAsync()
+    {
+        _lines.Add($"line {_lines.Count + 1}");
+        if (_scroll is not null)
+            await _scroll.ScrollToEndAsync();
+    }
+}
+```
+
 ## Honest boundaries
 
 These are real limits, not omissions from this page:
@@ -190,9 +229,7 @@ These are real limits, not omissions from this page:
 - **No horizontal scroll.** Android's `ScrollView` is vertical-only; horizontal is a
   different widget class, which would have to be chosen at node creation from a
   `flexDirection` that arrives in a *later* style patch.
-- **No `onScroll` / `scrollTo`**, and no scroll-offset restore across navigation. `onScroll`
-  fires at 60 Hz and would be the first high-frequency producer on a wire designed for
-  taps.
+- **No scroll-offset restore across navigation.**
 - **`alignContent`, `rowGap`, `columnGap`, `display`, `flex`** are accepted by nothing — no
   typed parameter, no producer.
 - **`BnPicker` does not flex its children.** `Spinner` and `UIPickerView` are framework

@@ -74,14 +74,16 @@ real notched device.
 
 ## Live
 
-Rotation, a keyboard appearing, a call banner — the reported insets can change while the
-app is running, and `BnSafeArea` re-lays-out when they do. There is no need to subscribe
-to anything yourself.
+Rotation, for one — the reported insets can change while the app is running, and
+`BnSafeArea` re-lays-out when they do. There is no need to subscribe to anything yourself.
 
 ## What it does not do
 
 - **No `margin` mode.** Padding covers the case #338 needed; a margin mode can be added
   later without breaking anything, so it is left out until something needs it.
+- **It does not avoid the keyboard.** The insets are the system bars and the display cutout
+  — Android's `systemBars()` and `displayCutout()`, iOS's `safeAreaInsets` — and neither shell
+  reports the on-screen keyboard as one.
 - **The very first frame renders at zero insets.** Both shells mount before their first
   layout pass, so the first frame cannot yet know the insets — content briefly renders
   unpadded, then re-renders once the real values arrive. React Native has the same gap

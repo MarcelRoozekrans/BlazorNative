@@ -38,9 +38,13 @@ silently turns logging **off**.
 
 ## Raising the level
 
-You can raise verbosity three ways; they do not conflict, and the **last writer at boot
-wins** (a per-launch override beats the app's declared default beats the runtime
-default).
+You can raise verbosity three ways. On each shell a per-launch override beats the app's
+declared default, which beats the runtime default, and the shell hands the result to .NET at
+boot. A managed `BnLog.Level` assignment made from your `ConfigureServices` callback runs
+later than that — when the first page mounts — so it replaces the level .NET was booted with,
+for the rest of the session. It does not reach back into the shells: their own narration keeps
+the level they resolved, and on iOS the shell's stderr pump re-applies that level to the lines
+.NET writes, so a managed raise shows up there only once the shell's level is raised too.
 
 ### From managed code — `BnLog.Level`
 
@@ -51,7 +55,7 @@ verbosity for a session without touching the shell:
 ```csharp bn-sample=statements
 using BlazorNative.Core;
 
-// e.g. in your BlazorNativeApp.ConfigureServices override:
+// e.g. inside the callback you pass to BlazorNativeApp.ConfigureServices:
 BnLog.Level = BnLogLevel.Debug;
 ```
 

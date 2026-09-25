@@ -7,8 +7,10 @@ sidebar_label: State
 # State in BlazorNative
 
 **There is no "BlazorNative.State" package, and there is not going to be one.** Blazor's own
-state mechanisms work here unchanged, and everything on this page is exercised on a real device by
-the sample app in this repository — not asserted from how Blazor behaves on the web.
+state mechanisms work here unchanged. The cascading theme and the `[Inject]`-ed services on this
+page are the sample app's own, exercised on a real device; registering your own singleton through
+`ConfigureServices` is covered by the framework's unit tests rather than by the sample. None of it
+is asserted from how Blazor behaves on the web.
 
 That decision is [issue #22](https://github.com/MarcelRoozekrans/BlazorNative/issues/22)'s real
 answer. The short version: a state package would be a mandatory transitive dependency that adds a
@@ -28,7 +30,7 @@ A private field and `StateHasChanged`. Nothing framework-specific:
 ```razor bn-sample=component
 <BnColumn Gap="8">
     <BnText Text="@($"Count: {_count}")" />
-    <BnButton Text="Increment" OnClick="Increment" />
+    <BnButton Label="Increment" OnClick="Increment" />
 </BnColumn>
 
 @code {
@@ -118,7 +120,9 @@ Two things worth knowing:
   sample does, deliberately.
 - **Adding services is always safe; replacing a framework contract is not.** `INavigationManager`
   and `IMobileBridge` are documented **consume-only** — the framework both implements and consumes
-  them, and a replacement is rejected rather than half-honoured.
+  them. Re-registering `INavigationManager` is rejected at startup with an exception rather than
+  half-honoured. Re-registering `IMobileBridge` is not checked, but it is just as unsupported: do
+  not do it.
 
 ### Notifying components from a singleton
 
@@ -191,8 +195,9 @@ like any other dependency. The framework does not ship one because:
 - **DI singletons and cascading values already cover the demonstrated cases**, both proven on device.
 - A shipped store would be a **mandatory transitive dependency** for every consumer, including those
   who want none of it.
-- It would be an eighth package, against a rule this project has recorded four times and pins with
-  `PackagePurityTests`.
+- It would be one more shipped package. This project adds packages only on purpose — capabilities
+  join an existing package — and `PackagePurityTests` makes any new one join the pinned shipped set
+  deliberately rather than drift in.
 
 If your app grows past what this page describes, reach for a library you choose — not one the
 framework chose for you.

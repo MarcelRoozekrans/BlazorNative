@@ -183,7 +183,7 @@ those.
 - **Both native shells.** No `.kt`, no `.swift`, no `.mm` and no `wire-vocabulary.json` is in the
   branch diff, and no shell frame table was edited. If the phase had found itself editing Kotlin
   or Swift, the design would have been wrong.
-- **The C ABI.** Unchanged, still the frozen 80-byte / 10-export contract.
+- **The C ABI.** Unchanged.
 - **`Grow`, `Shrink`** — still `float?`. They are ratios, not lengths.
 - **`BackgroundColor`** — still `string?`. Colour typing is a separate concern and is not in this
   phase.

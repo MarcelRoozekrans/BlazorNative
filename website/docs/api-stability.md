@@ -23,8 +23,8 @@ changelog line. At 1.0 the same files become a freeze.
 
 ## What "marked but not frozen" means for you
 
-Six of the seven packages carry a `PublicAPI.Shipped.txt` baseline — one line per public member,
-including enum members and nullability annotations. The Roslyn public-API analyzers turn three
+Every shipped package except the analyzers carries a `PublicAPI.Shipped.txt` baseline — one line
+per public member, including enum members and nullability annotations. The Roslyn public-API analyzers turn three
 diagnostics into **build errors** in the required CI lane:
 
 | Diagnostic | Fires when | Reads as |
@@ -44,7 +44,7 @@ declared.
   `PublicAPI.Unshipped.txt` — so **the break appears in the diff as reviewable lines**, and the
   changelog can carry it.
 - **Still true while we are on 0.x:** breaking is *allowed*. A `feat:` commit produces a new
-  **minor** (0.4 → 0.5) and that minor may break the surface. The gate makes a break a
+  **minor** version, and that minor may break the surface. The gate makes a break a
   **decision**, not an accident. It does not make it impossible.
 
 At **1.0** the files do not change — the *rule about who may edit them* does. See
@@ -57,20 +57,24 @@ At **1.0** the files do not change — the *rule about who may edit them* does. 
 Every public type sits in exactly one tier. The tiers are a property of the **type**, not of the
 package it happens to live in.
 
-| Tier | Count | What it means for your code |
-|---|---:|---|
-| **STABLE** | 55 | The surface we intend to freeze at 1.0. Build on it. |
-| **PROVISIONAL** | 2 | Usable, baselined, *not* advertised as stable. We will tell you when it moves; we are not promising it will not. |
-| **NOT-API** | 31 | Public for mechanical reasons. Binding to it is doing something the framework does not support. |
-| **Total public types** | **88** | across seven shipped packages |
+| Tier | What it means for your code |
+|---|---|
+| **STABLE** | The surface we intend to freeze at 1.0. Build on it. |
+| **PROVISIONAL** | Usable, baselined, *not* advertised as stable. We will tell you when it moves; we are not promising it will not. |
+| **NOT-API** | Public for mechanical reasons. Binding to it is doing something the framework does not support. |
+
+The type-by-type record, with the reason for every placement, is the tier table in the
+repository:
+[`docs/plans/2026-07-21-phase-11.3-api-tiers.md`](https://github.com/MarcelRoozekrans/BlazorNative/blob/main/docs/plans/2026-07-21-phase-11.3-api-tiers.md).
+The full list of public types is the baselines themselves, `src/*/PublicAPI.*.txt`.
 
 <details>
 <summary>Why the largest non-stable bucket is the healthiest possible finding</summary>
 
-31 types are NOT-API — but **not one of them is "unfinished"**. They are public because a
-C-ABI export mechanism, a cross-assembly composition root, or a source generator required them
-to be. That is a very different problem from 31 half-built types, and it is why the honest mark
-for them is `[EditorBrowsable(Never)]` rather than `[Experimental]`.
+NOT-API is the largest non-stable tier — but **not one of its types is "unfinished"**. They are
+public because a C-ABI export mechanism, a cross-assembly composition root, or a source generator
+required them to be. That is a very different problem from half-built types, and it is why the
+honest mark for them is `[EditorBrowsable(Never)]` rather than `[Experimental]`.
 
 </details>
 
@@ -80,11 +84,18 @@ The surface an app author actually types.
 
 | Package | What is stable |
 |---|---|
-| `BlazorNative.Components` | All **25** components and their `[Parameter]`s — `BnView`, `BnText`, `BnRow`, `BnColumn`, `BnButton`, `BnInput`, `BnImage`, `BnScroll`, `BnActivityIndicator`, `BnList<TItem>`, `BnModal`, `BnPicker`, `BnSlider`, `BnSwitch`, `BnCheckbox`, the `BnFlexPreset` base, `BnTheme`, and the `Flex*` / `ImageContentMode` enums and constant holders. |
-| `BlazorNative.Device` | The **5 `[Inject]`-able façades** — `IGeolocation`, `INotifications`, `IBiometrics`, `ISecureStorage`, `ICamera` — plus `AddBlazorNativeDevice()`. 15 members total. Every implementation is `internal sealed`, so an interface is the *only* thing you can bind to. This is the cleanest surface in the repo. |
-| `BlazorNative.Core` | The **11 capability result/status types** (`GeolocationResult`, `GeolocationPosition`, `GeolocationStatus`, `NotificationSpec`, `NotificationStatus`, `BiometricStatus`, `SecureStorageStatus`, `SecretResult`, `CameraStatus`, `CaptureOptions`, `PhotoResult`), `IMobileBridge`, `INavigationManager`, `PlatformInfo` / `PlatformKind`, `NativeEvent`, `BridgeHttpRequest` / `BridgeHttpResponse`, `BnImageErrorEventArgs`, `BnScrollEventArgs`. |
+| `BlazorNative.Components` | The components and their `[Parameter]`s — `BnView`, `BnText`, `BnRow`, `BnColumn`, `BnButton`, `BnInput`, `BnImage`, `BnScroll`, `BnActivityIndicator`, `BnList<TItem>`, `BnModal`, `BnPicker`, `BnSlider`, `BnSwitch`, `BnCheckbox`, the `BnFlexPreset` base, `BnTheme`, and the `Flex*` / `ImageContentMode` enums and constant holders. |
+| `BlazorNative.Device` | The **`[Inject]`-able façades** — `IGeolocation`, `INotifications`, `IBiometrics`, `ISecureStorage`, `ICamera` — plus `AddBlazorNativeDevice()`. Every implementation is `internal sealed`, so an interface is the *only* thing you can bind to. This is the cleanest surface in the repo. |
+| `BlazorNative.Core` | The **capability result/status types** (`GeolocationResult`, `GeolocationPosition`, `GeolocationStatus`, `NotificationSpec`, `NotificationStatus`, `BiometricStatus`, `SecureStorageStatus`, `SecretResult`, `CameraStatus`, `CaptureOptions`, `PhotoResult`), `IMobileBridge`, `INavigationManager`, `PlatformInfo` / `PlatformKind`, `NativeEvent`, `BridgeHttpRequest` / `BridgeHttpResponse`, `BnImageErrorEventArgs`, `BnScrollEventArgs`. |
 | `BlazorNative.Http` | `BridgeHttpHandler` and `AddBlazorNativeHttp` / the two `AddBlazorNativeHttpClient` overloads. |
 | `BlazorNative.Runtime` | `BlazorNativeApp` (`DefaultRoute`, `RegisterPages`, `ConfigureServices`) and `BlazorNativePage` (`Routed<T>`, `Named<T>`). Your whole startup contract, deliberately tiny. |
+
+**Types with no tier recorded yet.** The tier table predates these, and nothing has placed them
+since: `BnSafeArea`, `BnSafeAreaEdge`, `BnLayoutItem`, `BnLayoutContainer`, `BnLength`,
+`BnAutoLength` and `BnLengthUnit` in `BlazorNative.Components`, and `BnHostEvents` and
+`BnSafeAreaInsets` in `BlazorNative.Core`. They are baselined like everything else, so a change
+to any of them still shows in the pull request's diff. Which tier each belongs to is an open
+decision — do not read their absence from the table above as a promise either way.
 
 **Example — every `BlazorNative.*` line here is STABLE** (`Home`/`Camera` are this page's own
 stand-ins for your page components, not part of the framework):
@@ -123,7 +134,9 @@ public static class AppPages
 
 | Type | Why it is not STABLE |
 |---|---|
-| `DevHostBridge` (`BlazorNative.Core`) | The in-process mock bridge. Genuinely useful for your tests — but its members are *mock-shaped*: seeding hooks and canned results, not a contract designed for strangers. It is also the natural home of a future consumer test harness, work that will reshape it. |
+| `DevHostBridge` (`BlazorNative.Core`) | The in-process mock bridge. Genuinely useful for your tests — it is the bridge double you register when a page mounted by `BlazorNative.Testing` injects `IMobileBridge` — but its members are *mock-shaped*: seeding hooks and canned results, not a contract designed for strangers. |
+| `BnLog` / `BnLogLevel` (`BlazorNative.Core`) | The logging seam — see [Logging](./logging.md). The level names and `BnLogLevel`'s ordinals are not expected to move; `Sink`'s deliberately narrow shape and the line format were chosen before their first real consumers, so they may. |
+| `BlazorNative.Testing` — `BnTestHost`, `BnTestTree`, `BnTestNode`, `BnShell` | The consumer test harness — see [Testing a page](./getting-started/quick-start.md#testing-a-page). Its shape may move while real consumer suites shake it out. |
 | `AddBlazorNativeRenderer` (`BlazorNative.Renderer`) | A composition-root call you need only if you are building a custom host. It is a one-line delegate to generated code, so its shape is not ours to promise. |
 
 Use them. Pin your version if you depend on their exact shape.
@@ -132,16 +145,16 @@ Use them. Pin your version if you depend on their exact shape.
 
 These are public because a mechanism required it, not because they are a contract:
 
-- **`NativeRenderer`** and the renderer's in-memory patch model (`RenderPatch` and its 9
+- **`NativeRenderer`** and the renderer's in-memory patch model (`RenderPatch` and its
   derivatives, `RenderFrame`, `NativeUiEvent`, `BlazorVersionMismatchException`) — `NativeRenderer`
   is public *so that an `internal` type in a different assembly can drive it*. There is no
   scenario in which an app author sets `StrictErrors`.
-- **The C-ABI interop surface in `BlazorNative.Runtime`** — `Exports` (the 10
+- **The C-ABI interop surface in `BlazorNative.Runtime`** — `Exports` (the
   `[UnmanagedCallersOnly]` entry points), `BlazorNativeBridgeCallbacks`,
   `BlazorNativeFetchRequest`/`Response`, `BlazorNativeInitOptions`/`Result`, `BlazorNativePatch`,
   `BlazorNativeFrame`, `BlazorNativePatchKind`, `BlazorNativeNodeType` — plus `NativeShellBridge`
   and `NativeNavigationManager`. These are frozen **far harder** than a managed baseline can
-  express (an 80-byte struct pinned by `Marshal.SizeOf`, a fixed field offset, a symbol-count
+  express (struct sizes pinned by `Marshal.SizeOf`, fixed field offsets, a symbol-count
   gate on every published binary) — but that freeze is a contract with **the two native shells**,
   not with you. Their *managed* shape is an artefact of it.
 - **The three analyzers.** You cannot reference them at all — the package ships as an analyzer
@@ -164,7 +177,7 @@ cannot be added to source we do not own.
 
 ### The C-ABI extension policy — how a "frozen" ABI grows
 
-"Frozen 10 exports / 80 bytes" describes what the shells bind to today; it does **not** mean
+"Frozen" describes the export set and struct layouts the shells bind to today; it does **not** mean
 the ABI cannot grow. It was built to grow **additively**: clipboard + share, geolocation,
 notifications, biometrics + secure storage and camera all landed on it with two struct grows
 and one export grow between them — and the last four with **no ABI change at all**, riding
@@ -176,12 +189,12 @@ own contributors (the shells are the only supported callers), and it is what let
 | Change | Class | Why |
 |---|---|---|
 | **Append** a trailing callback slot to `BlazorNativeBridgeCallbacks` | **Additive** | `blazornative_register_bridge(structSize, …)` copies `min(structSize, sizeof)` bytes and **zero-fills the tail**. An older shell leaves the new slot `NULL` — the *capability-unsupported* signal, surfaced as `NotSupportedException`, never dereferenced. A newer shell's extra tail is ignored. Same rule for `blazornative_init(structSize, BlazorNativeInitOptions*)`. |
-| **Consume a new ordinal** — a `BlazorNativeNodeType` id, a `BlazorNativePatchKind` id, a `HostCallBegin` `op` value, a `NativeEvent` name, a style / event / prop **string** | **Additive** | Rides an existing `int32` field or `const char*`; no offset moves. A shell that predates the value logs and falls back (`"?"` node type, unknown op → error status) rather than crashing. **This is how M9–M11 added every capability with zero ABI churn.** |
+| **Consume a new ordinal** — a `BlazorNativeNodeType` id, a `BlazorNativePatchKind` id, a `HostCallBegin` `op` value, a `NativeEvent` name, a style / event / prop **string** | **Additive** | Rides an existing `int32` field or `const char*`; no offset moves. A shell that predates the value logs and falls back (`"?"` node type, unknown op → error status) rather than crashing. **This is how every capability after geolocation was added with zero ABI churn.** |
 | **Use `BlazorNativePatch.Reserved0`** (offset 20, `int`) | **Additive** | Alignment padding that the encoder **always zero-fills** (`FrameArena.AllocPatches` clears the block), so `0` is guaranteed to mean *absent* to every shell shipped so far. Spend it once, for a value whose zero is a safe default. |
 | **Add a JSON key** to a `HostCallBegin` args / `host_call_complete` payload / headers blob | **Additive** | Both shells parse JSON by key; unknown keys are ignored. |
 | Reorder, resize, or re-type an existing field; move an existing offset | **Breaking** | The three mirrors read by **offset**. `Marshal.SizeOf`/`OffsetOf` pins in `BridgeProtocolNativeTests` / `PatchProtocolNativeTests` and the Kotlin/Swift drift tests red on it — by design. |
-| Grow `BlazorNativeFetchRequest` / `BlazorNativeFetchResponse` (32 bytes each) or `BlazorNativeFrame` (24) | **Breaking** | These cross **without** a size argument (`fetch_complete(requestId, response*)`, the frame callback), so there is no negotiation to absorb a new field. Growing them needs a new sized export or a v2 struct — see [#257](https://github.com/MarcelRoozekrans/BlazorNative/issues/257) for the first case that will want one. |
-| Repurpose an existing ordinal (incl. the reserved-dormant `AppendChild = 2`), rename or re-sign an export, change a return-code meaning | **Breaking** | Ids and exports are **never reused**; a symbol-count gate on every published binary and the export-resolve tests pin the ten names. |
+| Grow `BlazorNativeFetchRequest` / `BlazorNativeFetchResponse` (32 bytes each) or `BlazorNativeFrame` (24) | **Breaking** | These cross **without** a size argument (`fetch_complete(requestId, response*)`, the frame callback), so there is no negotiation to absorb a new field. Growing them needs a new sized export or a v2 struct — see [#285](https://github.com/MarcelRoozekrans/BlazorNative/issues/285), streaming, for the first case that will want one. |
+| Repurpose an existing ordinal (incl. the reserved-dormant `AppendChild = 2`), rename or re-sign an export, change a return-code meaning | **Breaking** | Ids and exports are **never reused**; a symbol-count gate on every published binary and the export-resolve tests pin the export names. |
 
 At 1.0 the *breaking* row becomes a **major**-version conversation; the *additive* rows stay
 free, exactly as an added `IMobileBridge` member does. Where the enforcement lives, so the
@@ -219,7 +232,7 @@ live warning. Ids are **never reused**.
 site, so it is spent only for informed consent about a genuinely unproven surface — the first
 member of a capability shipped ahead of device proof, for instance. It is *not* a synonym for
 "internal": marking a NOT-API type experimental would claim "this may change" about something
-that has not moved in five milestones, while breaking the build of anyone referencing the package
+that has not moved since it was marked, while breaking the build of anyone referencing the package
 for unrelated reasons.
 
 ---
@@ -234,13 +247,13 @@ for unrelated reasons.
 This asymmetry is deliberate and it favours you:
 
 - Adding an interface member is **invisible to every caller** and **fatal to every implementer**.
-- `IMobileBridge` grows *by construction* — once per capability. Five capabilities have added to
-  it already, and more are planned. A policy that made each addition a major bump would make the
+- `IMobileBridge` grows *by construction* — once per capability. Every capability so far has
+  added to it, and more are planned. A policy that made each addition a major bump would make the
   framework unable to grow.
 - The only two implementations are ours (`NativeShellBridge`, `DevHostBridge`).
 
-**If you need a test double, do not hand-implement 27 members.** Mock a
-`BlazorNative.Device` façade instead — they are 2–5 members each and exist precisely for this —
+**If you need a test double, do not hand-implement `IMobileBridge`.** Mock a
+`BlazorNative.Device` façade instead — they are a few members each and exist precisely for this —
 or use `DevHostBridge`.
 
 The policy is written into the interfaces' own xmldoc, so it reaches you through IntelliSense.
@@ -294,18 +307,20 @@ those are being fixed as defects rather than blessed by the file that recorded t
 
 ## Roadmap to 1.0
 
-1.0 is defined by an explicit, checkable list — **12 blockers**, covering the API baselines and
-marking, real-device Android proof, logging discipline, a surfaced render error, and this
-documentation. As of 2026-07-22, **7 are met** and the remaining 5 are owned by named work.
+1.0 is defined by an explicit, checkable list of blockers, covering the API baselines and
+marking, real-device proof on both platforms, logging discipline, a surfaced render error, and
+this documentation. Which are met and which are open is recorded in that list, not here — this
+page would be wrong the day one of them closed.
 
 The full list, with evidence for every row, lives in the repository:
 [`docs/plans/2026-07-22-phase-11.3-one-point-oh-criteria.md`](https://github.com/MarcelRoozekrans/BlazorNative/blob/main/docs/plans/2026-07-22-phase-11.3-one-point-oh-criteria.md).
 
-**One caveat will survive to 1.0 and is named rather than hidden:** iOS is proven on the
-**simulator** — a real ARM64 execution of the real NativeAOT static library through the real
-`xcodebuild` toolchain, with frame tables asserted identical to Android's — and has **never run
-on physical iOS hardware**. Specifically untested on device: camera capture from a real sensor,
-Face ID / Touch ID against the Secure Enclave, real-GPS geolocation, APNs and universal links,
-code-signing and provisioning, and thermal/background behaviour. **Android is device-proven.**
-Exactly one platform may carry this caveat, and it is the one blocked on an Apple Developer
-account rather than on engineering.
+**iOS on a real device is a blocker, not a caveat.** CI proves iOS on the **simulator** — a real
+ARM64 execution of the real NativeAOT static library through the real `xcodebuild` toolchain,
+with frame tables asserted identical to Android's — and builds the device slice on every pull
+request. Neither is an iPhone, so 1.0 will not ship on them: real-device verification is blocker
+**P3** in that list, tracked on [#17](https://github.com/MarcelRoozekrans/BlazorNative/issues/17).
+Its acceptance criteria are the things a simulator cannot prove — camera capture from a real
+sensor, Face ID / Touch ID against the Secure Enclave, real-GPS geolocation, APNs and universal
+links, code-signing and provisioning, and thermal/background behaviour. **Android is
+device-proven.**
