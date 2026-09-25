@@ -304,10 +304,13 @@ public sealed class TextCollapseParityDriftTests
     private static string StripDocCommentContinuations(string text) =>
         Regex.Replace(text, @"\r?\n\s*///\s?", " ");
 
-    /// <summary>Scans every `.razor`/`.cs` file directly under <see cref="ComponentsDir"/>
-    /// for the first match of <paramref name="pattern"/>, returning (file name, captured
-    /// class) pairs — a MEASUREMENT of what the sources currently claim, never a
-    /// hand-maintained list of which files to look at.</summary>
+    /// <summary>Scans every `.razor`/`.cs` file directly under <see cref="ComponentsDir"/> for
+    /// EVERY match of <paramref name="pattern"/> — <c>Matches</c>, not <c>Match</c> — returning
+    /// (file name, captured class) pairs, one per occurrence. A MEASUREMENT of what the sources
+    /// currently claim, never a hand-maintained list of which files to look at, and never
+    /// truncated to a file's FIRST claim: fix round 2 found the single-match version silently
+    /// stopped looking after one hit per file, which is exactly the kind of gap that let a
+    /// second, divergent claim in the same file go unchecked.</summary>
     private static List<(string File, string ClaimedClass)> ScanAndroidClaims(Regex pattern, bool normalizeDocComments)
     {
         string dir = Path.Combine(BnRepo.Root(), ComponentsDir.Replace('/', Path.DirectorySeparatorChar));
@@ -318,8 +321,8 @@ public sealed class TextCollapseParityDriftTests
         {
             string text = File.ReadAllText(path);
             if (normalizeDocComments) text = StripDocCommentContinuations(text);
-            Match m = pattern.Match(text);
-            if (m.Success) found.Add((Path.GetFileName(path), m.Groups["cls"].Value));
+            foreach (Match m in pattern.Matches(text))
+                found.Add((Path.GetFileName(path), m.Groups["cls"].Value));
         }
         return found;
     }
@@ -339,8 +342,17 @@ public sealed class TextCollapseParityDriftTests
     /// iOS`): `BnWidgetMapper.swift`'s factory is a `switch` whose arms are prose-heavy
     /// Swift, not a parseable one-line-per-arm table the way `WidgetMapper.kt`'s `when` is,
     /// so the #298 sweep checked the iOS side BY HAND (recorded in the audit record) rather
-    /// than parsed here. And components that make NO widget claim at all — nothing forces
-    /// one to be written in the first place.</summary>
+    /// than parsed here. Components that make NO widget claim at all — nothing forces one to
+    /// be written in the first place. And a BARE, non-`Android:`-prefixed mention of a
+    /// platform widget class elsewhere in a file's free prose — for example
+    /// `BnCheckbox.razor`'s intrinsic-size aside ("a framework CheckBox is whatever the
+    /// device theme says") or `BnSlider.razor`'s clamp aside ("SeekBar/UISlider clamp on
+    /// their own") — is checked BY HAND (recorded in the audit record, fix round 2), not
+    /// parsed: recognizing an arbitrary sentence as a claim, reliably, is the same fragile-regex
+    /// problem the iOS side is declared out of scope for, and every instance found is a
+    /// restatement of the SAME fact the primary `Android:` claim already pins, not an
+    /// independent one — so a fragile parse buys little and risks a false sense of
+    /// coverage.</summary>
     [Fact]
     public void ComponentDocs_NameTheAndroidWidgetClassTheShellActuallyBuilds()
     {

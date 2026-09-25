@@ -469,11 +469,13 @@ public enum BiometricStatus
 //                    key with no biometric enrolled): a getWithAuth of an EXISTING item
 //                    does NOT reach Unavailable the same way — a denied or unavailable
 //                    prompt there always folds to AuthFailed (secureGetWithAuth's onDenied
-//                    ignores the BiometricPrompt error code), and only a setup exception —
-//                    for example a key invalidated by an enrolment change — can produce a
-//                    different status, which secureErrorStatus maps to Error, not
-//                    Unavailable. On iOS what an unenrolled auth-bound SET returns is NOT
-//                    ESTABLISHED — see #396.
+//                    ignores the BiometricPrompt error code); only a SETUP exception can
+//                    produce a different status there, and secureErrorStatus classifies
+//                    only InvalidAlgorithmParameterException / IllegalStateException as
+//                    Unavailable — everything else, for example a key invalidated by an
+//                    enrolment change (KeyPermanentlyInvalidatedException), is Error. On
+//                    iOS what an unenrolled auth-bound SET returns is NOT ESTABLISHED —
+//                    see #396.
 //   4 Error        — unexpected host error (a caught throw, a decrypt failure, malformed/oversize args)
 //
 // NotFound (1), AuthFailed (2), Unavailable (3) and Error (4) are all VALUES,

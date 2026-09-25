@@ -2232,11 +2232,13 @@ jobs:
       # node-type-to-widget-class derivation (reused from TextCollapseParityDriftTests). The claim
       # set is DISCOVERED by scanning src/BlazorNative.Components, not a hand-written list, with a
       # measured floor on each scan and a file->node-type lookup that reds on an unmapped
-      # discovery. The extractor pulls only the token adjacent to the claim -- a file-wide
-      # word-boundary search was tried first and PASSED on #298's own pre-fix
-      # "SwitchMaterial/Switch" text (a second, standalone "Switch" after the slash matches
-      # \bSwitch\b), so it was replaced before landing; the positive control runs the same
-      # extractor on that exact planted string and asserts it disagrees with the derived class.
+      # discovery, checking every claim a file makes (Matches, not Match). The extractor pulls
+      # only the token adjacent to the claim -- the first version instead searched the whole
+      # file with a word-boundary regex, LANDED (816466f), and was found by review to PASS on
+      # #298's own pre-fix "SwitchMaterial/Switch" text (a second, standalone "Switch" after the
+      # slash matches \bSwitch\b); the next commit (50267a1) replaced it with the extractor. The
+      # positive control runs the same extractor on that exact planted string and asserts it
+      # disagrees with the derived class.
       - name: .NET tests (assert 1186 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
