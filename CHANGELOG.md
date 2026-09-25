@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.3](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.16.2...v0.16.3) (2026-09-25)
+
+
+### Bug Fixes
+
+* **15.4:** let the parse guard parse around a non-conventional subject ([#392](https://github.com/MarcelRoozekrans/BlazorNative/issues/392)) ([bd938d8](https://github.com/MarcelRoozekrans/BlazorNative/commit/bd938d87facdcedb125acb5c9fbc0996d3eb71bd))
+
 ## [0.16.2](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.16.1...v0.16.2) (2026-09-24)
 
 
