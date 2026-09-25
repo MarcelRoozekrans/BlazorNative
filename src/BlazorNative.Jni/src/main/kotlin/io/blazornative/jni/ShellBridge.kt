@@ -191,6 +191,10 @@ object SecureStorageStatus {
     const val NOT_FOUND = 1     // get/getWithAuth of an absent key (no payload)
     const val AUTH_FAILED = 2   // the biometric gate on getWithAuth denied / failed / cancelled / locked out
     const val UNAVAILABLE = 3   // no secure hardware / Keystore unusable / biometrics not enrolled
+                                 // (AndroidShellBridge.provisionKey's KeyGenParameterSpec path throws
+                                 // when an auth-bound key is generated with none enrolled; caught by
+                                 // secureErrorStatus). iOS is NOT known to map the same case the same
+                                 // way — nothing on that shell checks enrolment (#396).
     const val ERROR = 4         // unexpected host error (a caught throw, a decrypt failure, malformed args)
 }
 

@@ -4,7 +4,7 @@
 #
 #   build-test (windows-latest) — the local verification procedure verbatim
 #   (setup.ps1 §1–7 documents the toolchain pins):
-#     build (analyzers ride it) → .NET tests (1185 passed / 0 skipped) →
+#     build (analyzers ride it) → .NET tests (1186 passed / 0 skipped) →
 #     three NativeAOT publishes of samples/BlazorNative.SampleApp — the
 #     publish head since Phase 8.0: the app owns PublishAot, the exports stay
 #     in Runtime via UnmanagedEntryPointsAssembly, and the artifact is
@@ -2226,7 +2226,13 @@ jobs:
       # and the BlazorNative.Analyzers diagnostic-category string literals; floor, positive
       # control. DocsSamplesDriftTests holds the CODE half of a page to compiling; this is
       # the PROSE half.
-      - name: .NET tests (assert 1185 passed / 0 skipped)
+      # 1185 -> 1186 (15.5 #298 pin, +1): ComponentDocs_NameTheAndroidWidgetClassTheShellActuallyBuilds --
+      # every component header comment naming an Android widget class (BnActivityIndicator,
+      # BnCheckbox, BnPicker, BnSlider, BnSwitch) is held to WidgetMapper.kt's own
+      # node-type-to-widget-class derivation (reused from TextCollapseParityDriftTests), floor,
+      # positive control drawn from the #298 regression itself (MaterialCheckBox), word-boundary
+      # match so "Switch" cannot pass by matching inside "SwitchMaterial".
+      - name: .NET tests (assert 1186 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -2244,8 +2250,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 1185 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 1185 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 1186 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 1186 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # 15.5 (#291): every docs sample a consumer might copy is compiled. The fence

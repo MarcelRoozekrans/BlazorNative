@@ -5,8 +5,10 @@
 
     Emits the `select` element → NodeType 7 — "picker", on the wire since
     Phase 2.5 and a do-nothing stub in both shells until this phase. The
-    LAST stubbed widget becomes real. Android: Spinner + ArrayAdapter. iOS:
-    UIPickerView with the component as its own dataSource/delegate.
+    LAST stubbed widget becomes real. Android: BnSpinner + ArrayAdapter — a
+    Spinner SUBCLASS, not a stock Spinner (WidgetMapper.kt's CreateNode
+    comment: it answers its own layout request, a finding its KDoc names).
+    iOS: UIPickerView with the component as its own dataSource/delegate.
 
     Unlike input (where the TEXT lives in .NET and the widget echoes it), a
     native picker OWNS its items and its selection UI — that is what

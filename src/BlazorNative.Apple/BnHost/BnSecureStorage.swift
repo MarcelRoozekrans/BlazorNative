@@ -87,7 +87,12 @@ enum BnSecureStorageStatus {
     static let ok: Int32 = 0          // set/delete succeeded; GET FOUND THE VALUE ({"value":…} on get)
     static let notFound: Int32 = 1    // get/getWithAuth of an absent key (no payload)
     static let authFailed: Int32 = 2  // the biometric gate denied / failed / cancelled / locked out; or a plain get of an auth item
-    static let unavailable: Int32 = 3 // no secure hardware / Keychain unusable / biometrics not enrolled
+    static let unavailable: Int32 = 3 // a nil SecAccessControlCreateWithFlags result (secureSet, ~line 233),
+                                       // or errSecMissingEntitlement / errSecNotAvailable from mapAddError
+                                       // (~line 409) — the Keychain is unusable. NOT "biometrics not
+                                       // enrolled": nothing on iOS checks enrolment, and what an unenrolled
+                                       // device returns here is not established (#396) — Android's
+                                       // provisionKey path DOES map that case to Unavailable; iOS may not.
     static let error: Int32 = 4       // unexpected host error (a caught throw, malformed args)
 }
 

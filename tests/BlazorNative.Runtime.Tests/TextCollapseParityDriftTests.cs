@@ -240,6 +240,64 @@ public sealed class TextCollapseParityDriftTests
                      template.OrderBy(kv => kv.Key, StringComparer.Ordinal));
     }
 
+    // ── #298: the component docs' own widget claims, held to the same derivation ─
+
+    /// <summary>Every component whose header comment names the Android widget class it
+    /// builds (the #298 sweep, phase 15.5 Task 6) — the node type it claims for, the file
+    /// that carries the claim, and the class name AS WRITTEN there. Reused as the SAME
+    /// literal string [NodeTypeToWidgetClass] must derive from WidgetMapper.kt, so the two
+    /// can drift apart only by someone editing one without the other — which is exactly
+    /// what #298 found (`BnSwitch.razor` said "SwitchMaterial/Switch" against a shell that
+    /// builds framework `Switch`).</summary>
+    private static readonly (string File, string NodeType, string ClaimedClass)[] AndroidWidgetClaims =
+    {
+        ("src/BlazorNative.Components/BnCheckbox.razor", "checkbox", "CheckBox"),
+        ("src/BlazorNative.Components/BnSwitch.razor", "switch", "Switch"),
+        ("src/BlazorNative.Components/BnSlider.razor", "slider", "SeekBar"),
+        ("src/BlazorNative.Components/BnPicker.razor", "picker", "BnSpinner"),
+        ("src/BlazorNative.Components/BnActivityIndicator.cs", "activityindicator", "ProgressBar"),
+    };
+
+    /// <summary>#298's own fix, held so it cannot regress: a component doc that names an
+    /// Android widget class must name the class WidgetMapper.kt's `when (p.nodeType)`
+    /// actually builds for that node type — the SAME derivation
+    /// <see cref="TheHarnessAndroidSet_IsExactlyWhatTheKotlinShellsWidgetClassesImply"/>
+    /// already reads out of the shell, reused rather than re-parsed.</summary>
+    [Fact]
+    public void ComponentDocs_NameTheAndroidWidgetClassTheShellActuallyBuilds()
+    {
+        IReadOnlyDictionary<string, string> widgetClasses = NodeTypeToWidgetClass(ShellWidgetMapper);
+
+        // VACUITY GUARD — the claim table did not shrink to nothing.
+        Assert.True(AndroidWidgetClaims.Length >= 4,
+            "the AndroidWidgetClaims table shrank below its floor — a component's Android "
+            + "widget claim stopped being checked against the shell.");
+
+        // POSITIVE CONTROL — the comparison below can actually fail. "MaterialCheckBox" is
+        // #298's OWN sibling bug (BnCheckbox.razor's pre-fix claim): it must not equal what
+        // the shell derives for `checkbox`, or this fact is comparing nothing to nothing.
+        Assert.NotEqual("MaterialCheckBox", widgetClasses["checkbox"]);
+
+        foreach ((string file, string nodeType, string claimed) in AndroidWidgetClaims)
+        {
+            Assert.True(widgetClasses.TryGetValue(nodeType, out string? actual),
+                $"{file}: claims an Android widget for node type '{nodeType}', but "
+                + $"{ShellWidgetMapper} has no `when` arm for it — the claim cannot be checked.");
+
+            Assert.True(actual == claimed,
+                $"{file} claims Android builds `{claimed}` for a `{nodeType}` node, but "
+                + $"WidgetMapper.kt's `when (p.nodeType)` now builds `{actual}`. Fix the doc "
+                + "(this is a published XML doc / component reference source, not an internal "
+                + "note) or update this table if the new class is correct — never both silently.");
+
+            // Word-boundary, not Contains: "Switch" is a substring of "SwitchMaterial" and
+            // "SwitchCompat" — the exact wrong claims #298 found — so a plain Contains would
+            // pass on the very regression this fact exists to catch.
+            string doc = ReadCheckoutFile(file);
+            Assert.Matches(new Regex($@"\b{Regex.Escape(claimed)}\b"), doc);
+        }
+    }
+
     // ── The iOS half, and what it is worth ───────────────────────────────────
 
     /// <summary>PARTIAL BY CONSTRUCTION, and said so rather than dressed up. The Swift
