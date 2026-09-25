@@ -132,6 +132,12 @@ namespace BlazorNative.Runtime.Tests;
 //     be prose, not code). A page that names a private implementation detail
 //     without saying so gets no help from this pin at all — source 1 simply
 //     will not see it, exactly as if the name were not real.
+//   - The gate is WHOLE-LINE, not clause-scoped. "internal" anywhere on the
+//     line admits every non-public dotted name on that line, including one
+//     the sentence does not itself describe as internal.
+//   - A bare non-public TYPE name, with no member, does not resolve even
+//     when the line says "internal" — `ResolvesOnLine` only ever checks a
+//     dotted `A.B`. No doc span needs this today.
 //   - ONLY a tracked path resolves via source 3 — a locally-built file that
 //     is not checked in must never be why a span resolves, for a reason CI
 //     cannot reproduce. `<AssemblyName>.dll` (source 1) is the ONE deliberate
