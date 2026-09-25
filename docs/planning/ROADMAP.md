@@ -2867,11 +2867,13 @@ see. Decide the key first; #375 follows from it rather than the other way round.
 > infrastructure before any test ran — a system-image download "Premature EOF" — passing on attempt
 > 2 with 228/0.
 
-#### Phase 15.5: Prose, and the small corrections [status: pending]
+#### Phase 15.5: Prose, and the small corrections [status: active]
 **Goal:** Answer **#291** for the three unpinned documentation transcription pairs M14 found, and
 land **#298**, **#356**, **#365**.
 **Surface:** Docs
 **HelpWanted:** no
+**Design:** [`docs/superpowers/specs/2026-09-25-phase-15.5-design.md`](../superpowers/specs/2026-09-25-phase-15.5-design.md)
+**Plan:** [`docs/superpowers/plans/2026-09-25-phase-15.5-prose-and-corrections.md`](../superpowers/plans/2026-09-25-phase-15.5-prose-and-corrections.md)
 
 #### Phase 15.6: Audit and close [status: pending]
 **Goal:** Run `audit-milestone` against the DoD on live evidence and close M15. **No tag** — the
