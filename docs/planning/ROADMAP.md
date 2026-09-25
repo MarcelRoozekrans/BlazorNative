@@ -2781,7 +2781,7 @@ mirror cannot drift either. **It must red before it is fixed.**
 > reds; the first draft of the list said it failed green, and the final review corrected it. No API, wire or ABI change:
 > outside tests and vectors, `MainActivity.kt` is the only `src` diff.
 
-#### Phase 15.4: The missing guards [status: active]
+#### Phase 15.4: The missing guards [status: complete]
 **Goal:** Close **#297** and **#302** — a pin that does not exist, and a release-notes guard that
 does not exist — each written to the 15.0 standard. Also **#375**, and with it the population-key
 decision 15.1 deferred here: `docs/plans/2026-09-22-phase-15.0-census.md` §9 asks whether the Rule 6
@@ -2791,6 +2791,7 @@ see. Decide the key first; #375 follows from it rather than the other way round.
 **HelpWanted:** no
 **Design:** [`docs/superpowers/specs/2026-09-24-phase-15.4-design.md`](../superpowers/specs/2026-09-24-phase-15.4-design.md)
 **Plan:** [`docs/superpowers/plans/2026-09-24-phase-15.4-missing-guards.md`](../superpowers/plans/2026-09-24-phase-15.4-missing-guards.md)
+**Completed:** 2026-09-25 · [PR #388](https://github.com/MarcelRoozekrans/BlazorNative/pull/388), guard follow-up [PR #392](https://github.com/MarcelRoozekrans/BlazorNative/pull/392)
 **Suite:** .NET **1169 → 1176** (Analyzers 27 · Renderer 140 · Runtime 1002 → 1009: five
 `PatchKindDriftTests` facts plus two `ReleaseParserVersionPinTests` facts) · Android instrumented
 228, iOS 271 and JVM 162 unchanged — no shell source moved.

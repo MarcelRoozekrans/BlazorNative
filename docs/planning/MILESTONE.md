@@ -115,7 +115,7 @@ verdict** — the number is not to be trusted until it is.
 2. Phase 15.1 — enforce the standard [complete] — all nine gap facts closed, plus the live style-table defect and the two non-pin detectors; suite 1112 → 1132 (#377)
 3. Phase 15.2 — define the auth pin's coverage [complete] — #364's four holes closed as consequences of one roster, `src/shell-source-roots.json`; suite 1132 → 1163 (#382)
 4. Phase 15.3 — the first live test: deep-link scheme [complete] — #296 closed through the mechanism: one home for the scheme, six copies pinned, redded on Android before the fix; suite 1163 → 1169, Android 226 → 228 (#384)
-5. Phase 15.4 — the missing guards [active]
+5. Phase 15.4 — the missing guards [complete] — population key decided as a hand-kept register under Rule 6; RouteMenuDriftTests floored, PatchKindDriftTests and the release-notes parse guard added; #297 #302 #375 closed; suite 1169 → 1176 (#388, guard follow-up #392)
 6. Phase 15.5 — prose, and the small corrections [pending]
 7. Phase 15.6 — audit and close [pending]
 
