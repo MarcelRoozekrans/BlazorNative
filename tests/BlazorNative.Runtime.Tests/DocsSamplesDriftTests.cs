@@ -34,7 +34,7 @@ namespace BlazorNative.Runtime.Tests;
 // instead of leaving it checking nothing (fix round 1: a duplicated filter in
 // the control used to mean the control tested only itself).
 //
-// FIX ROUND 1 (2026-09-26): the original `Open` anchor required a fence's
+// FIX ROUND 1 (2026-09-25): the original `Open` anchor required a fence's
 // opening backticks at column 0. CommonMark allows 0–3 leading spaces, and six
 // `analyzers.md` "Compliant shape" samples — indented two spaces inside a list
 // item — were invisible to this whole pin: the generator silently compiled
