@@ -78,7 +78,12 @@ public sealed class IosSliceMatrixDriftTests
     /// <summary>Matches one `- leg: <value>` entry header inside the `include:` block. Each
     /// entry's other six fields are read independently from the text between this match and
     /// the next, in the file's existing regex style (see <see cref="Field"/>) — not by
-    /// requiring a fixed field order, so a reordered entry still parses.</summary>
+    /// requiring a fixed field order, so any order AFTER `leg:` still parses. `leg:` itself
+    /// must stay first and carry the `-` list marker: it is what this pattern anchors on to
+    /// find an entry boundary at all. If YAML ever put another key first — `- rid: …` with
+    /// `leg:` following, unmarked — this pattern would not see an entry start there, and the
+    /// fields around that boundary would be misattributed to the wrong leg, which reds as a
+    /// field mismatch or a missing leg rather than a silent pass.</summary>
     private static readonly Regex LegEntryStart = new(@"(?m)^\s+-\s*leg:\s*(?<leg>\S+)\s*$");
 
     /// <summary>Reads one scalar field (`rid:`, `sdk:`, …) out of a single entry's text,
@@ -226,9 +231,12 @@ public sealed class IosSliceMatrixDriftTests
     /// fact"</i>).
     ///
     /// <para>The fact above is controlled everywhere except here. Its roster is compared
-    /// BOTH directions, so a reworded `rid:` pattern yields an empty `declared` and reds
-    /// naming both missing RIDs; its `include:` match is an exact-count assertion; its
-    /// job header likewise. But clause 3 is an ABSENCE claim over
+    /// BOTH directions, so a reworded `- leg:` header pattern fails the
+    /// <c>legStarts.Count &gt; 0</c> non-vacuity check and names the whole matrix as
+    /// missing, and a reworded per-field pattern in <see cref="Field"/> reads an empty
+    /// value that reds as a named field mismatch against <see cref="RequiredSlices"/>;
+    /// its `include:` match is an exact-count assertion; its job header likewise. But
+    /// clause 3 is an ABSENCE claim over
     /// <see cref="JobLevelConditionPattern"/>, and nothing required that pattern to still
     /// match anything. Reword it — four spaces to five, a `(?m)` dropped, the alternation
     /// misspelled — and a genuinely conditioned matrix leg sails through while the rest

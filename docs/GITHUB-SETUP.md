@@ -154,12 +154,17 @@ only for public repos. Protection therefore lands right after the repo goes
 public, before the phase closes.)
 
 - Require PR before merging (no direct pushes to `main`, admins included)
-- Required status checks — **the three required contexts of `.github/workflows/ci.yml`**:
+- Required status checks — named exactly as their job ids. This page names them for
+  readability, but the live set is the source of truth; verify it with
+  `gh api repos/{owner}/{repo}/branches/main/protection --jq '.required_status_checks.contexts'`
+  rather than trusting a count written here.
+
+  From `.github/workflows/ci.yml`:
   - **`build-test`** (windows-latest) — build + analyzers, the .NET test suite,
     the three NativeAOT publishes with ten-export verification, JVM
     `testDebugUnitTest`, consumer smoke, and the `.so` artifact uploads (kept so
     a **human** can download and inspect a build's binaries — **no job consumes
-    them**; see the note under the three bullets).
+    them**; see the note under `ci.yml`'s three bullets).
 
     > **Local IL2072 counts: publish from clean.** The publish gates assert
     > **exactly 4** IL2072 trim warnings — but an *incremental* local
@@ -188,11 +193,25 @@ public, before the phase closes.)
     meant, only stronger: it used to say "the simulator slice compiled" and now
     says "**both** slices compiled". *Which* slices those are is not claimed by the
     aggregator — it is pinned by `IosSliceMatrixDriftTests` inside `build-test`.
+
+  From `.github/workflows/commitlint.yml`:
+  - **`pr-title`** (ubuntu-latest) — lints the PR **title** as a conventional-commit
+    subject. This repo squash-merges, so that title becomes the commit subject
+    release-please reads; the branch's own commit subjects are discarded. Designed
+    advisory at Phase 8.6, promoted to required afterward — `commitlint.yml`'s own
+    header records the promotion.
+  - **`footer-check`** (ubuntu-latest) — `scripts/footer-check.ps1` asserts the PR
+    **body**'s own claims agree with what its commits actually say, closing the class
+    of bug where a title and body disagree with the diff; since Phase 15.4 it also
+    runs the release-notes parse guard (#302). Same promotion history as `pr-title`.
 - Require conversation resolution before merging
 - No force pushes
 
-> **The three required contexts run in parallel, and each does its own checkout
-> and its own publish.** `ci.yml` has exactly **one** `needs:` edge, added in Phase
+> **`ci.yml`'s three required contexts run in parallel, and each does its own
+> checkout and its own publish** — `pr-title` and `footer-check`, from
+> `commitlint.yml`, run in parallel with them too, but read the PR's title and
+> commit list rather than checking out and publishing anything. `ci.yml` has
+> exactly **one** `needs:` edge, added in Phase
 > 14.4: the `ios-build` aggregator on the `ios-build-slice` matrix. It is not an
 > artifact hand-off — the aggregator reads a *result*, not a file — and it is safe
 > as a required check only because it carries `if: ${{ always() }}` plus an explicit
@@ -209,22 +228,27 @@ public, before the phase closes.)
 > compiling against a `.so` `build-test` uploads. It has never been any of those
 > things, and the same false belief is what produced review finding I-3.)*
 
-> **All three REQUIRED check names are exactly the job ids** — `build-test`,
-> `android-build` and `ios-build` — because none of those three declares a `name:`
-> and none of them is a matrix. `ios-build-slice` is **both**: it declares
+> **`build-test`, `android-build` and `ios-build`'s REQUIRED check names are
+> exactly their job ids**, because none of the three declares a `name:` and none
+> of them is a matrix. `ios-build-slice` is **both**: it declares
 > `name: ios-build-slice ${{ matrix.leg }} ${{ matrix.rid }}` and reports one check
 > per leg, which is exactly why it could not be called `ios-build` — a required
 > context that nothing ever reports under that exact name blocks every pull request,
 > including the one that renamed it. Its two leg contexts are **not** required.
+> `pr-title` and `footer-check`, the other two required contexts, are likewise
+> named exactly as their job ids, in `commitlint.yml`.
 
-> **`release.yml` adds no fourth required check, by design (Phase 8.2).** Its
+> **`release.yml` adds no new required check, by design (Phase 8.2).** Its
 > `validate` job runs on PRs that touch the release machinery or bump
 > `src/Directory.Build.props`, and one of the things it does is ask nuget.org
 > whether the version is still free. Making that **required** would put
 > nuget.org's availability on the critical path of every such PR — an outage
 > would red a required gate on a change that has nothing to do with nuget.org.
-> Same posture as the device lanes: the required set stays at three, and their
-> names and contexts are a standing constraint.
+> Same posture as the device lanes: `ci.yml`'s three required job ids stay
+> unchanged, and their names and contexts are a standing constraint. `pr-title`
+> and `footer-check`, from `commitlint.yml`, are a separate pair already
+> promoted to required — see above — not a precedent for promoting
+> `release.yml`'s `validate`.
 
 Each native shell now has a distinctly-named required compile gate: a red
 `android-build` names the Android shell, a red `ios-build` names the iOS shell.

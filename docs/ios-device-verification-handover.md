@@ -291,11 +291,10 @@ difference, a measurement path, a scale/point-vs-pixel error) — capture it.
   writer of stderr wins; the `BnStderrPump` install order decides whose output survives.
 - **The loser of that fight is usually YOUR CONSOLE.** The consequence the line above
   leaves out is the one that costs a device run time: `BnStderrPump` claims fd 2 with
-  `dup2` inside `HostViewController.viewDidLoad`, immediately after the XCTest guard
-  (`viewDidLoad:120`, guard at `:107` — not the first statement in the method), so
-  anything the OS mirrors onto fd 2 lands in the pump's pipe instead of your terminal.
-  On a real device
-  that mirror is the **only** remaining route to `Debug` and `Verbose` — both map to
+  `dup2` inside `HostViewController.viewDidLoad`, immediately after the XCTest guard,
+  not as the first statement in the method, so anything the OS mirrors onto fd 2 lands
+  in the pump's pipe instead of your terminal. On a real device that mirror is the
+  **only** remaining route to `Debug` and `Verbose` — both map to
   `OSLogType.debug`, the unified log drops that unless the subsystem is enabled for
   capture, and `log config` has no `--device` flag. The escape is the environment variable
   **`OS_ACTIVITY_DT_MODE`**: when it is set, the pump now **stands aside** and returns

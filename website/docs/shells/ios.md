@@ -362,8 +362,8 @@ arrives there too.
 
 Except the shell's `BnStderrPump` claims fd 2 with `dup2` inside
 `HostViewController.viewDidLoad`, immediately after the XCTest guard, so the mirror used
-to land in the pump's own pipe. The guard and the background-color line arrived before
-the install, and then nothing, even at Verbose.
+to land in the pump's own pipe. One UIKit line arrived before the install, and then
+nothing, even at Verbose.
 
 **The shell now stands aside.** When `OS_ACTIVITY_DT_MODE` is set in the environment,
 `BnStderrPump.install()` returns immediately without creating the pipe or touching fd 2,
