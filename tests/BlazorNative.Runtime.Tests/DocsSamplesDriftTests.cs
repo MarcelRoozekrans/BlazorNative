@@ -92,15 +92,42 @@ public sealed class DocsSamplesDriftTests
     private const int MinimumFences = 35;
     /// <summary>Re-measured 2026-09-26 (fix round 1): 31 of the 35 compiled-language
     /// fences are component/file/statements; the other 4 are skip — the signature
-    /// listing (testing-harness.md), the two genuine render-and-throw ✗ counterexamples
-    /// (layout-and-yoga.md, typed-lengths.md), and one NEEDS_CONTEXT (state.md's
-    /// BnThemedPanel — see docs/plans/2026-09-25-phase-15.5-docs-audit.md). Round 0's
-    /// five other skips were dodges under the no-workarounds rule and are now compiled.</summary>
-    private const int MinimumCompiledSamples = 31;
+    /// listing (testing-harness.md) and the two genuine render-and-throw ✗
+    /// counterexamples (layout-and-yoga.md, typed-lengths.md). Fix round 2: state.md's
+    /// BnThemedPanel is no longer skip — the controller's binding ruling on the round 1
+    /// NEEDS_CONTEXT was to make the page's own abridged consumer fence the real
+    /// definition (bn-sample=component:BnThemedPanel), not to add cascading-theme
+    /// support to a shipped component.</summary>
+    private const int MinimumCompiledSamples = 32;
+    /// <summary>Fix round 2: at least one bn-sample=component:<Name> must exist — a
+    /// floor, not a count, so the fact this file adds for it
+    /// (NoNamedSampleComponent_CollidesWithAShippedType) is provably scanning something.
+    /// Measured 2026-09-27: two, SettingsPage (migrating/testing-harness.md) and
+    /// BnThemedPanel (guides/state.md).</summary>
+    private const int MinimumNamedComponents = 1;
 
     private const string MigratingDir = "website/docs/migrating/";
     private static readonly Regex Version = new(@"(?<![\w.])\d+\.\d+\.\d+(?![\w.])", RegexOptions.CultureInvariant);
     private static readonly Regex ComponentName = new(@"^[A-Za-z_][A-Za-z0-9_]*$", RegexOptions.CultureInvariant);
+
+    /// <summary>One verified-public anchor type per shipped package DocSamples.csproj
+    /// references — <see cref="Type.Assembly"/> off each reaches every OTHER public type
+    /// in that assembly, so the collision set is measured, not hand-copied from a
+    /// reference page that could itself drift.</summary>
+    private static readonly Type[] ShippedAssemblyAnchors =
+    [
+        typeof(BlazorNative.Components.BnView),
+        typeof(BlazorNative.Core.BnLog),
+        typeof(BlazorNative.Device.ICamera),
+        typeof(BlazorNative.Http.BridgeHttpHandler),
+        typeof(BlazorNative.Renderer.NativeRenderer),
+        typeof(BlazorNative.Runtime.BlazorNativeApp),
+        typeof(BlazorNative.Testing.BnTestHost),
+    ];
+
+    internal static HashSet<string> ShippedTypeNames() =>
+        [.. ShippedAssemblyAnchors.Select(t => t.Assembly).Distinct()
+            .SelectMany(a => a.GetTypes()).Where(t => t.IsPublic).Select(t => t.Name)];
 
     /// <summary>The ONE place the CompiledLanguages filter is applied — AllFences and the
     /// positive control (TheDetectors_SeeAPlantedDefect) both call this, so deleting the
@@ -136,6 +163,16 @@ public sealed class DocsSamplesDriftTests
                   .Where(g => g.Count() > 1)
                   .Select(g => $"bn-sample=component:{g.Key} claimed by " + string.Join(" and ", g.Select(x => $"{x.Page}:{x.Fence.Line}")))];
 
+    /// <summary>A named sample sharing a simple name with a public shipped type would
+    /// shadow it or resolve ambiguously wherever both are in scope — never a name a
+    /// docs author should be free to pick.</summary>
+    internal static List<string> ShippedTypeCollisions(IEnumerable<(string Page, Fence Fence)> fences)
+    {
+        HashSet<string> shipped = ShippedTypeNames();
+        return [.. NamedComponentFences(fences).Where(x => shipped.Contains(x.Fence.SkipReason!))
+                  .Select(x => $"{x.Page}:{x.Fence.Line} bn-sample=component:{x.Fence.SkipReason} collides with a public shipped type of the same name")];
+    }
+
     [Fact]
     public void EveryFenceOnAHandWrittenPage_DeclaresAKnownKind()
     {
@@ -164,6 +201,18 @@ public sealed class DocsSamplesDriftTests
         Assert.True(bad.Count == 0, "bn-sample=component:<Name> must be a valid C# identifier: " + string.Join(" | ", bad));
         List<string> dup = DuplicateComponentNames(fences);
         Assert.True(dup.Count == 0, "two fences may not claim the same component name — they would overwrite one another's generated file: " + string.Join(" | ", dup));
+    }
+
+    [Fact]
+    public void NoNamedSampleComponent_CollidesWithAShippedType()
+    {
+        var fences = AllFences(BnRepo.Root()).ToList();
+        var named = NamedComponentFences(fences).ToList();
+        Assert.True(named.Count >= MinimumNamedComponents,
+            $"found {named.Count} named (bn-sample=component:<Name>) samples, fewer than the measured {MinimumNamedComponents} — this fact would be scanning nothing (Rule 2).");
+        List<string> collisions = ShippedTypeCollisions(fences);
+        Assert.True(collisions.Count == 0,
+            "a named doc sample must not share a simple name with a public shipped type — it would shadow it, or resolve ambiguously wherever both are in scope: " + string.Join(" | ", collisions));
     }
 
     [Fact]
@@ -221,5 +270,12 @@ public sealed class DocsSamplesDriftTests
         var duplicateNameFences = DocSampleParser.Fences(plantedDuplicateName).Select(f => ("website/docs/planted.md", f)).ToList();
         Assert.Equal(2, duplicateNameFences.Count); // the splice landed, or this control proves nothing
         Assert.Single(DuplicateComponentNames(duplicateNameFences));
+
+        // Fix round 2: a named sample claiming a real shipped type's simple name must be
+        // caught by the SAME helper the real fact calls.
+        const string plantedShippedCollision = "```razor bn-sample=component:BnView\n<BnText />\n```\n";
+        var collisionFences = DocSampleParser.Fences(plantedShippedCollision).Select(f => ("website/docs/planted.md", f)).ToList();
+        Assert.Single(collisionFences); // the splice landed, or this control proves nothing
+        Assert.Single(ShippedTypeCollisions(collisionFences));
     }
 }

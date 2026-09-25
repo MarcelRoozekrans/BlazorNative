@@ -48,9 +48,11 @@ written.
 ## Shared across a subtree — `CascadingValue`
 
 Wrap the subtree, cascade the value, and read it with `[CascadingParameter]`. The sample's theme
-toggle is exactly this, and both halves ship in the repo:
+toggle is exactly this — the consumer below is the sample app's `BnThemedPanel`, abridged; the
+full version, with its own history, lives at
+`samples/BlazorNative.SampleApp/BnThemedPanel.razor`:
 
-```razor bn-sample=skip:BnThemedPanel lives in samples/BlazorNative.SampleApp, not one of the seven shipped packages this sample project references
+```razor bn-sample=component
 @* provider *@
 <CascadingValue Value="_theme">
     <BnThemedPanel Padding="16">…</BnThemedPanel>
@@ -69,10 +71,14 @@ toggle is exactly this, and both halves ship in the repo:
 }
 ```
 
-```razor bn-sample=component
-@* consumer *@
+```razor bn-sample=component:BnThemedPanel
+@* consumer — abridged from samples/BlazorNative.SampleApp/BnThemedPanel.razor *@
+<BnView BackgroundColor="@(Theme?.Background)" Padding="@Padding" ChildContent="@ChildContent" />
+
 @code {
     [CascadingParameter] public BnTheme? Theme { get; set; }
+    [Parameter] public float? Padding { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
 }
 ```
 
