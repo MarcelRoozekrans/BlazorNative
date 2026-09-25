@@ -198,10 +198,9 @@ A pragma without a justification comment does not pass review.
 
   public static class MyVersionExports
   {
-      // Also BN0020-compliant (final review I2: analyzers now run over every docs sample,
-      // and an expression-bodied export is ALWAYS flagged by BN0020 — see above — so a
-      // BN0021 "compliant shape" export must satisfy both rules at once, exactly like a
-      // real export would).
+      // Also BN0020-compliant: an expression-bodied export is always flagged by BN0020
+      // (see above), so a BN0021-compliant export must use a block body with a
+      // catch-all, exactly like any real export.
       [UnmanagedCallersOnly(EntryPoint = "myapp_get_version", CallConvs = new[] { typeof(CallConvCdecl) })]
       public static int GetVersion()
       {
