@@ -11,11 +11,11 @@ sidebar_label: Firebase & REST backends
 Anything reachable over HTTP works today from .NET, through the `HttpClient` the framework
 registers. No native code, no new package, no waiting.
 
-```csharp
+```csharp bn-sample=statements
 BlazorNativeApp.ConfigureServices(services => services.AddBlazorNativeHttp());
 ```
 
-```razor
+```razor bn-sample=component
 @code {
     [Inject] public HttpClient Http { get; set; } = default!;
 

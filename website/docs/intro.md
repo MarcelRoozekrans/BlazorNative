@@ -26,7 +26,7 @@ The result is that the same C# produces **the same frames on both platforms** â€
 this project asserts with a test rather than prose. See
 [the parity contract](./architecture/parity.md).
 
-```razor
+```razor bn-sample=component
 <BnSafeArea>
   <BnColumn Gap="16" Padding="16">
     <BnRow Justify="FlexJustify.SpaceBetween" Align="FlexAlign.Center">

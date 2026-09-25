@@ -208,7 +208,8 @@ vocabulary: `onResume` ← `applicationDidBecomeActive`, `onPause` ←
 `e.Name == BnHostEvents.OnPause` cannot drift from what a shell actually sends the way
 `e.Name == "onPause"` can:
 
-```csharp
+```csharp bn-sample=statements
+IMobileBridge bridge = default!; // however you obtained it — [Inject] in a component
 bridge.NativeEvents += e =>
 {
     if (e.Name == BnHostEvents.OnPause)
@@ -316,7 +317,9 @@ Your app's csproj needs an iOS `PropertyGroup`. The reference is
 ```xml
 <PropertyGroup Condition="$(RuntimeIdentifier.StartsWith('iossimulator')) Or $(RuntimeIdentifier.StartsWith('ios-'))">
   <NativeLib>Static</NativeLib>
-  <RuntimeFrameworkVersion>10.0.9</RuntimeFrameworkVersion>
+  <!-- Copy the exact RuntimeFrameworkVersion samples/BlazorNative.SampleApp/BlazorNative.SampleApp.csproj
+       pins — one home for that number, so this page cannot go stale the day it moves. -->
+  <RuntimeFrameworkVersion><!-- … --></RuntimeFrameworkVersion>
   <!-- … -->
 </PropertyGroup>
 ```
@@ -405,9 +408,9 @@ simulator `xcrun simctl launch --console` and `log stream` both still work.
 | `.github/workflows/ci.yml` → `ios-build-slice` | **the executable truth.** A two-leg matrix, simulator + device, run on every PR; the required check `ios-build` aggregates it |
 | `.github/workflows/ios.yml` | the advisory execution lane — runs the XCTests on a booted simulator, and compiles the device slice alongside |
 
-**Third-party dependencies** (from `project.yml`): **Kingfisher** (`from: 8.10.0`) via
-SwiftPM — the iOS twin of Android's Coil, driving `BnImage`. Exactly one file in the shell
-imports it.
+**Third-party dependencies** (from `project.yml`): **Kingfisher**, pinned there with
+`exactVersion:` — the ONE home for that number, on purpose — via SwiftPM, the iOS twin of
+Android's Coil, driving `BnImage`. Exactly one file in the shell imports it.
 
 ---
 

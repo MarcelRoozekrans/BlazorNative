@@ -21,7 +21,7 @@ is a place where the second copy was wrong and nothing said so.
 
 ## 1. `BnTestHost.Mount` gained a `BnShell shell = BnShell.Ios` parameter
 
-```csharp
+```csharp bn-sample=skip:signature listing, not a compilable unit
 public static BnTestHost Mount<TComponent>(
     IDictionary<string, object?>? parameters = null,
     Action<IServiceCollection>? configureServices = null,
@@ -78,12 +78,12 @@ reading as though it asserted both — on Android the text is the widget's own c
 childless leaves today, so this shape is reachable only through the **raw-element hatch** — a page
 that writes the wire element directly:
 
-```razor
+```razor bn-sample=component
 @* SettingsPage.razor — the raw-element hatch, not BnCheckbox *@
 <checkbox value="true">Enable audio</checkbox>
 ```
 
-```csharp
+```csharp bn-sample=skip:test-suite excerpt — presumes the reader's own xUnit-style Assert and the SettingsPage page from the fence above, not a standalone unit
 // iOS's projection (unchanged, and still the default).
 // checkbox is NOT text-bearing there, so the text stays a child node.
 using BnTestHost ios = BnTestHost.Mount<SettingsPage>();

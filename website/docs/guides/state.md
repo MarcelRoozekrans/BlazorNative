@@ -25,7 +25,7 @@ vocabulary you would have to learn, in place of one you already know.
 
 A private field and `StateHasChanged`. Nothing framework-specific:
 
-```razor
+```razor bn-sample=component
 <BnColumn Gap="8">
     <BnText Text="@($"Count: {_count}")" />
     <BnButton Text="Increment" OnClick="Increment" />
@@ -50,7 +50,7 @@ written.
 Wrap the subtree, cascade the value, and read it with `[CascadingParameter]`. The sample's theme
 toggle is exactly this, and both halves ship in the repo:
 
-```razor
+```razor bn-sample=skip:BnThemedPanel lives in samples/BlazorNative.SampleApp, not one of the seven shipped packages this sample project references
 @* provider *@
 <CascadingValue Value="_theme">
     <BnThemedPanel Padding="16">…</BnThemedPanel>
@@ -69,7 +69,7 @@ toggle is exactly this, and both halves ship in the repo:
 }
 ```
 
-```razor
+```razor bn-sample=component
 @* consumer *@
 @code {
     [CascadingParameter] public BnTheme? Theme { get; set; }
@@ -88,14 +88,14 @@ Prefer immutable types for anything you cascade.
 
 Register in `ConfigureServices` and take it with `[Inject]`:
 
-```csharp
+```csharp bn-sample=statements
 BlazorNativeApp.ConfigureServices(services =>
 {
     services.AddSingleton<CartState>();
 });
 ```
 
-```razor
+```razor bn-sample=component
 @code {
     [Inject] public CartState Cart { get; set; } = default!;
 }
@@ -119,7 +119,7 @@ Two things worth knowing:
 A singleton has no `StateHasChanged` of its own. The ordinary Blazor pattern applies — expose an
 event, subscribe in `OnInitialized`, and **unsubscribe in `Dispose`**:
 
-```csharp
+```csharp bn-sample=file
 public sealed class CartState
 {
     private int _count;
@@ -135,7 +135,7 @@ public sealed class CartState
 }
 ```
 
-```razor
+```razor bn-sample=component
 @implements IDisposable
 
 @code {

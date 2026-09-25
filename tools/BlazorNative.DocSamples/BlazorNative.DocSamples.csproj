@@ -1,0 +1,53 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- ─────────────────────────────────────────────────────────────────────
+       BlazorNative.DocSamples — Phase 15.5 (#291). The ONE fence parser and
+       the generator that turns every hand-written docs page's compilable
+       code fences into one buildable project.
+
+       WHY A SEPARATE TOOL AND NOT INLINE IN THE TEST. DocsSamplesDriftTests
+       holds every fence on a hand-written page to "declares a known kind";
+       the CI sample build is a SEPARATE step that actually compiles the
+       generated project. Both need the same parser (pin standard Rule 8 —
+       one parser, so the two cannot disagree about what a fence is), so the
+       parser lives here, in a library both reference, rather than being
+       copy-pasted the way the RouteGen/WireGen precedent warns against.
+
+       WHY PLAIN Sdk, NOT Sdk.Razor. This tool only reads markdown and writes
+       TEXT — .razor and .cs file bodies as strings — it compiles nothing
+       itself. The generated project it emits (Program.cs, DocSamples.csproj)
+       is the one that needs Sdk.Razor, because THAT tree contains the actual
+       .razor samples.
+
+       NOT PACKED: this tool serves THIS repo's docs build, never a
+       consumer's (the RouteGen/WireGen distinction).
+       ───────────────────────────────────────────────────────────────────── -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>BlazorNative.DocSamples</RootNamespace>
+    <AssemblyName>BlazorNative.DocSamples</AssemblyName>
+    <IsPackable>false</IsPackable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!-- A build-time host tool: never AOT, never RID-specific (same reasoning
+         as WireGen's and RouteGen's). -->
+    <PublishAot>false</PublishAot>
+    <UseAppHost>false</UseAppHost>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <EnforceCodeStyleInBuild>false</EnforceCodeStyleInBuild>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The prelude files are DATA this tool copies into a generated project —
+         never part of the tool's own compilation, which is why the default
+         Compile glob is overridden here (GlobalUsings.cs would otherwise be
+         compiled twice: once as this tool's own global usings, wrongly, and
+         once copied into the generated project). -->
+    <Compile Remove="prelude\**" />
+    <None Include="prelude\**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

@@ -88,7 +88,13 @@ The surface an app author actually types.
 
 **Example — every line here is STABLE:**
 
-```csharp
+```csharp bn-sample=file
+using BlazorNative.Runtime;
+
+// Home and Camera stand for your own page components.
+internal sealed class Home : Microsoft.AspNetCore.Components.ComponentBase { }
+internal sealed class Camera : Microsoft.AspNetCore.Components.ComponentBase { }
+
 public static class AppPages
 {
     public static readonly BlazorNativePage[] All =
@@ -97,12 +103,19 @@ public static class AppPages
         BlazorNativePage.Routed<Camera>("/camera", "camera"),
     ];
 }
+```
 
-// In a component:
+```razor bn-sample=component
+@* In a component: *@
 @inject ICamera Camera
 
-PhotoResult photo = await Camera.CapturePhotoAsync(new CaptureOptions(Quality: 80));
-if (photo.Status == CameraStatus.Denied) { /* denial is DATA, never an exception */ }
+@code {
+    private async Task LoadPhotoAsync()
+    {
+        PhotoResult photo = await Camera.CapturePhotoAsync(new CaptureOptions(Quality: 80));
+        if (photo.Status == CameraStatus.Denied) { /* denial is DATA, never an exception */ }
+    }
+}
 ```
 
 ### PROVISIONAL — usable, movable

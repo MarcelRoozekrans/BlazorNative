@@ -18,7 +18,7 @@ off the retired WASI premise: two categories remain.
 
 **Escape hatch:** every rule can be suppressed in a reviewed, scoped way — never blanket:
 
-```csharp
+```csharp bn-sample=skip:pragma-suppression template — the justification is a deliberate <placeholder>, and BN0004 needs the BlazorNative.Analyzers package this sample project does not reference
 #pragma warning disable BN0004 // justification: <why this specific site is safe>
 Thread.Sleep(1); // ...
 #pragma warning restore BN0004
@@ -185,7 +185,7 @@ A pragma without a justification comment does not pass review.
 
 ## Retired rule IDs
 
-Retired in Phase 4.1 (`AnalyzerReleases.Shipped.md`, release `4.1.0`). The WASI-era
+Retired in Phase 4.1 (see `AnalyzerReleases.Shipped.md`'s release header for that phase). The WASI-era
 premise ("this API throws on WASI Preview 1") died with the Mono-WASI runtime; NativeAOT
 has real threads, a real thread pool, real file I/O. **IDs are never reused.**
 

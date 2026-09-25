@@ -72,8 +72,8 @@ than restore it. This is also why every parameter is nullable and never bare —
 **Plain numeric literals in markup need no edit at all.** This is the headline: most markup is
 unaffected.
 
-```razor
-<BnView Height="200" Width="12.5" Padding="16" Gap="8">
+```razor bn-sample=component
+<BnView Height="200" Width="12.5" Padding="16" Gap="8" />
 ```
 
 Integer literals convert through `int` → `float` → `BnLength`; decimal literals compile as
@@ -143,7 +143,7 @@ chance to apply the conversion, and Blazor's parameter setter does a **cast**, n
 
 The result: it **compiles fine and throws `InvalidCastException` at first render.**
 
-```csharp
+```csharp bn-sample=skip:the ✗ counterexamples compile and throw at render — compiling them proves nothing
 // ✗ compiles, throws at render — a boxed string
 var p = new Dictionary<string, object?> { ["Width"] = "200" };
 
@@ -162,7 +162,7 @@ cast — there is no mechanical rewrite for those two spellings.
 
 The same applies to hand-written `BuildRenderTree`:
 
-```csharp
+```csharp bn-sample=skip:the commented ✗ line is a counterexample that compiles and throws at render — compiling it proves nothing
 // ✗ b.AddComponentParameter(31, nameof(BnImage.Width), 120f);
 b.AddComponentParameter(31, nameof(BnImage.Width), (BnAutoLength)120f);
 ```

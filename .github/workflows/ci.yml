@@ -4,7 +4,7 @@
 #
 #   build-test (windows-latest) — the local verification procedure verbatim
 #   (setup.ps1 §1–7 documents the toolchain pins):
-#     build (analyzers ride it) → .NET tests (1176 passed / 0 skipped) →
+#     build (analyzers ride it) → .NET tests (1181 passed / 0 skipped) →
 #     three NativeAOT publishes of samples/BlazorNative.SampleApp — the
 #     publish head since Phase 8.0: the app owns PublishAot, the exports stay
 #     in Runtime via UnmanagedEntryPointsAssembly, and the artifact is
@@ -2202,7 +2202,12 @@ jobs:
       # the release-notes parse guard (#302) is only worth running if its
       # release-please is the one release-please-action bundles; this pins
       # both ends of that pair against action-version.json.
-      - name: .NET tests (assert 1176 passed / 0 skipped)
+      # 1176 -> 1181 (15.5 docs samples, +5): DocsSamplesDriftTests -- every fence on a
+      # hand-written docs page whose language is razor/csharp/cs declares a known kind
+      # (component/file/statements/skip:<reason>), floor, positive control. The actual
+      # compile is the separate "Docs samples compile" step below, driven by the same
+      # tools/BlazorNative.DocSamples parser this pin calls (#291).
+      - name: .NET tests (assert 1181 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -2220,9 +2225,20 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 1176 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 1176 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 1181 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 1181 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
+
+      # 15.5 (#291): every docs sample a consumer might copy is compiled. The fence
+      # parser is tools/BlazorNative.DocSamples — the same one DocsSamplesDriftTests
+      # holds to "every fence is classified", so a sample cannot dodge this by omission.
+      - name: Docs samples compile
+        shell: pwsh
+        run: |
+          dotnet run --project tools/BlazorNative.DocSamples -c Release -- --out artifacts/doc-samples
+          if ($LASTEXITCODE -ne 0) { throw "doc-samples generation failed (exit $LASTEXITCODE)" }
+          dotnet build artifacts/doc-samples/DocSamples.csproj -c Release
+          if ($LASTEXITCODE -ne 0) { throw "a docs sample no longer compiles — see the <PageSlug>_<N> name in the error for the page and fence" }
 
       # ── NativeAOT publishes + ten-export verification ─────────────────────
       # Phase 8.0: the publish head is samples/BlazorNative.SampleApp (the app

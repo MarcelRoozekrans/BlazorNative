@@ -62,7 +62,7 @@ allowlist with a written reason.
 **There is deliberately no `BnStack`** — it would be a synonym for `BnColumn`, and two names
 for one thing is a library smell on day one.
 
-```razor
+```razor bn-sample=component
 <BnColumn Gap="16" Padding="16">
 
   @* Grow absorbs the free space: the middle box computes the same on both platforms *@
@@ -93,7 +93,7 @@ That matters because the grammar has **no units**. A length is a bare number of 
 points, a percentage, or — where the property allows it — `auto`. `12px` is CSS muscle memory, and
 before these types it compiled, shipped, and was logged-and-ignored by both shells at runtime.
 
-```razor
+```razor bn-sample=component
 <BnView Width="200"                     @* points — a plain number, unchanged *@
         Height="12.5"                   @* decimals are fine too *@
         MinWidth="@BnLength.Percent(50)"     @* percentages *@
@@ -134,7 +134,7 @@ layout value passes through `object` — a `ParameterView`, a `Dictionary<string
 hand-written `AddComponentParameter` — the compiler never gets to apply them, and Blazor casts
 rather than converts. That **compiles and throws at first render**:
 
-```csharp
+```csharp bn-sample=skip:the ✗ counterexample compiles and throws at render — compiling it proves nothing
 ["Width"] = 200f                    // ✗ throws — boxed float, no runtime conversion
 ["Width"] = (BnAutoLength)200f      // ✓ box the constructed type
 ```
@@ -153,7 +153,7 @@ to y = −300 and make the top of the page **permanently unreachable**. To shape
 compose *inside* the scroll — React Native's `contentContainerStyle`, without a second
 style surface:
 
-```razor
+```razor bn-sample=component
 @* BnScroll is a VIEWPORT: give it a definite height, compose the content inside *@
 <BnScroll Height="200">
   <BnColumn Gap="8">
@@ -163,6 +163,11 @@ style surface:
     }
   </BnColumn>
 </BnScroll>
+
+@code {
+    // Rows stands for your own data source.
+    private static readonly string[] Rows = ["Row 1", "Row 2", "Row 3"];
+}
 ```
 
 The shells enforce the same rule at the wire, so the raw-element hatch is closed by the same

@@ -26,13 +26,17 @@ show real Yoga coordinates.
 Opt-in only works if the correct thing is the thing you copy, so wrap the root of a new
 page:
 
-```razor
+```razor bn-sample=component
 <BnSafeArea>
     <BnView BackgroundColor="#FFFFFF" Padding="16">
         <BnText Text="Hello from BlazorNative" FontSize="24" />
         <BnButton Label="Tap me" OnClick="OnTap" />
     </BnView>
 </BnSafeArea>
+
+@code {
+    private void OnTap() { /* … */ }
+}
 ```
 
 The `dotnet new blazornative` starter page wraps its content the same way — copy it from
@@ -49,7 +53,7 @@ independently of the others:
 | `Additive` (default) | The reported inset is **added** to your own padding for that edge. |
 | `Maximum` | Whichever is larger: the reported inset, or your own padding for that edge — React Native's rule, `Math.max(insets.bottom, 16)` written once here instead of by every author. |
 
-```razor
+```razor bn-sample=component
 <BnSafeArea TopEdge="BnSafeAreaEdge.Off" BottomEdge="BnSafeAreaEdge.Maximum">
     …
 </BnSafeArea>
