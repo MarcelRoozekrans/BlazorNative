@@ -4,7 +4,7 @@
 **Auditor:** phase 15.6
 **Milestone:** [M15](../planning/MILESTONE.md) · opened at `76728c9` (#368), six phases, closed over four days
 **Measured against:** `origin/main` at `bbef02a4234de851c156f91032b60fedcdcc37d9`, fetched at the time of writing
-**Verdict:** **FAIL** — one criterion NOT MET, three MET NARROWLY, seven MET. See [the verdict](#verdict).
+**Verdict:** **FAIL** — two criteria NOT MET, two MET NARROWLY, seven MET. See [the verdict](#verdict).
 
 Every number below was re-measured for this audit. None was copied from a phase record, the
 census or an earlier audit. The command that reproduces each number sits beside it. CI evidence
@@ -20,7 +20,7 @@ before it was cited.
 | 1 | All planned phases complete | **MET** |
 | 2 | All tests passing, both device lanes dispatched, `headSha` compared | **MET** |
 | 3 | A written pin standard exists | **MET** |
-| 4 | Every existing pin assessed and recorded | **MET NARROWLY** |
+| 4 | Every existing pin assessed and recorded | **NOT MET** — two named pins have no verdict anywhere |
 | 5 | The standard is enforced mechanically, or the absence is recorded | **MET NARROWLY** |
 | 6 | #364 answered, not merely fixed | **MET NARROWLY** |
 | 7 | #296 closed by the standard, red before fixed | **MET** |
@@ -99,10 +99,17 @@ It also carries Rule 1 (a pin is defined by behaviour), Rule 3 (a positive contr
 Rule 8 (consolidate, do not port), an enforcement verdict and a checklist. See
 `grep -n "^## " docs/pin-standard.md`.
 
-## 4. Every existing pin assessed and recorded — **MET NARROWLY**
+## 4. Every existing pin assessed and recorded — **NOT MET**
 
-There are two sets. The tree-reader population is fully covered. The non-tree register has one
-row, and that row contains one claim that is false when measured and one rule it never settles.
+There are two recorded sets, and a third population nobody recorded:
+
+- **The tree-reader population is fully covered.** See §4a.
+- **The non-tree register has one row**, and its wording overclaims per fact. See §4b.
+- **Two pins that the milestone's own document names have no verdict anywhere.** See §4d, which
+  is why this item is NOT MET.
+
+This audit's first draft scored the item MET NARROWLY. Review found §4d, and the verdict was
+corrected here rather than softened.
 
 ### 4a. The tree-reader population: 33 files, 170 facts, every one with a verdict
 
@@ -137,38 +144,49 @@ including every split row: 4a+4b, 7a+7b, 10a+10b, 13a+13b, 14a+14b, 18a+18b, 23a
 and 27a+27b.
 
 **Every one of the 33 files has a scorecard row, and every row carries one of the DoD's three
-verdicts:**
+verdicts.** The total is 170 facts: 151 pin facts plus 19 exempt, not pins, each named with its
+reason in census §2.3. There are **0 gap** facts. How the 151 pin facts split between conforms and
+fixed depends on the counting rule, and the two rules give different numbers:
 
-- **142 conforms**
-- **9 fixed**, all by 15.1
-- **19 exempt, not pins**, each named with its reason in census §2.3
-- **0 gap** in the scorecard
+- **Per defect, the census spread table's rule: 142 conforms, 9 fixed.** "Fixed" counts only the
+  nine facts the census found as gaps: `ShellStyleTableDriftTests` ×3, `DispatchSurfaceDriftTests`,
+  `ReleaseWorkflowPinTests`, `GeneratedSymbolShadowTests` ×2, `PinPopulationTests` and
+  `BnSafeAreaCoverageTests`. Control facts added in the same rows count as conforms.
+- **Per scorecard row label: 139 conforms, 12 fixed.** Summing the facts in the rows labelled
+  *fixed* gives 4a 3, 9 3, 13b 1, 14b 2, 20 2, 23b 1, which is 12. The difference is rows 9 and 20:
+  `BnSafeAreaCoverageTests`'s 3 theories and `PinPopulationTests`' 2 facts are labelled *fixed* as
+  whole rows, while only one fact in each was a censused gap.
 
-142 + 9 is 151 pin facts, and 151 + 19 is 170.
+Either way, every pin fact carries conforms or fixed.
 
-### 4b. The non-tree register: one pin, whose row is incomplete
+### 4b. The non-tree register: one pin, whose row overclaims per fact
 
 `docs/pin-standard.md`, "The register — pins that do not read the tree", under Rule 6, has
-**one row: `RouteMenuDriftTests`**, with 4 facts. It has a row, so it is not silent. But the row does not
-give a verdict of the kind the DoD requires, for two reasons:
+**one row: `RouteMenuDriftTests`**, with 4 facts. The row exists, so the pin is assessed. Two
+things in it are not right:
 
-1. **Rule 3 is recorded as "no positive control", and nothing else is said.** No fix is
-   recorded, no exemption reason, no disclosure with a named repair of the kind Rule 3's fourth
-   outcome describes, and no issue. By the census's own vocabulary, *read, judged against a
-   specific rule, found wanting, and left alone*, that is a **gap**. The DoD accepts only conforms,
-   fixed or exempt with a written reason, so this is the only pin in either set that ends at an
-   open gap.
-2. **The row's Rule 2 claim is false for one of the four facts. I measured this; it is not an
-   inference.** The row says *"Rule 2 conforms since 15.4 — per-fact floors (#375) close the
-   vacuity"*. `MenuRows_AreUniqueAndLabelled` has no floor. In a scratch worktree at
-   `origin/main`, I replaced `BnDemo.Destinations` with an empty array and ran
-   `dotnet test tests/BlazorNative.Runtime.Tests --filter "FullyQualifiedName~RouteMenuDriftTests"`.
-   Result: **Failed 2, Passed 2.** The two comparison facts red on `AssertBothSidesNonEmpty`, as
-   15.4's M1 recorded. `MenuRows_AreUniqueAndLabelled` **passes over an empty menu**: two
-   `Assert.Equal(0, 0)` and an `Assert.All` over nothing. `TheTwoExemptions_…` also passes, but
-   correctly, because an empty menu really does not contain the two exempt routes. The worktree
-   was then removed. If `MenuRows_AreUniqueAndLabelled` is not a pin, because it compares no two
-   copies, the register should say so per fact, as census §2.3 does. It does not.
+1. **Rule 2: the register row's wording overclaims per fact. The pin itself is not defective.**
+   `pin-standard.md:400` says *"Rule 2 conforms since 15.4 — per-fact floors (#375) close the
+   vacuity"*.
+   - **The mutation.** In a scratch worktree at `origin/main` I replaced `BnDemo.Destinations`
+     with an empty array. Then I ran
+     `dotnet test tests/BlazorNative.Runtime.Tests --filter "FullyQualifiedName~RouteMenuDriftTests"`.
+   - **The result: Failed 2, Passed 2.** The review reproduced the same result independently.
+     The two comparison facts go red on `AssertBothSidesNonEmpty`, as 15.4's M1 recorded.
+     `MenuRows_AreUniqueAndLabelled` passes over an empty menu: two `Assert.Equal(0, 0)` and an
+     `Assert.All` over nothing. `TheTwoExemptions_…` also passes, and correctly, because an empty
+     menu really does not contain the two exempt routes.
+   - **So the gap is per fact, and the file still catches it.** An empty menu reds this file,
+     through its siblings.
+   - **The file's own header is accurate.** At line 28 it scopes its claim to *"each comparison
+     fact"*. What overclaims is the register row, which drops that scope.
+   - **This is a Rule 2 finding in the per-fact unit** the census uses, not a defective pin.
+2. **Rule 3 is recorded as "no positive control", and nothing else is said.** There is no fix, no
+   exemption reason, no disclosure with a named repair of the kind Rule 3's fourth outcome
+   describes, and no issue. By the census's own vocabulary, *read, judged against a specific rule,
+   found wanting, and left alone*, this rule is left at an open gap.
+
+The worktree was removed after the run.
 
 ### 4c. Manifests
 
@@ -200,10 +218,44 @@ for m in wire-vocabulary.json dispatch-surface.json auth-semantics.json deeplink
 
 Every manifest is covered. The treatment is implicit, not written down.
 
-**Why narrowly.** 33 of 33 tree-reader files and 170 of 170 facts carry a verdict, and every
-manifest is covered. The register's single row leaves Rule 3 at an open gap. Its Rule 2 "conforms"
-is false for one fact, and I measured that. The item is met in that no pin goes unassessed. It is
-not met in the stronger sense that every pin ends at conforms, fixed or exempt.
+### 4d. Two named pins with no verdict anywhere — why this item is NOT MET
+
+`docs/planning/MILESTONE.md:53–54`, in the milestone's own Goal, names five pins that do not carry
+the `DriftTests` suffix. `LayoutSurfacePinTests` and `DefaultStructTrapSweepTests` are two of them.
+
+**Neither reads the tree:**
+- `grep -nE "BnRepo|File\.|Directory\." tests/BlazorNative.Runtime.Tests/LayoutSurfacePinTests.cs
+  tests/BlazorNative.Runtime.Tests/DefaultStructTrapSweepTests.cs` returns nothing.
+- So neither is in Rule 6's population, and neither is in census §3.
+
+**Neither is in the register, and neither has a verdict anywhere in `docs/`:**
+- `git grep -c "LayoutSurfacePinTests\|DefaultStructTrapSweepTests" -- docs/pin-standard.md
+  docs/plans/2026-09-22-phase-15.0-census.md` returns no match.
+- `git grep -n` over all of `docs/` finds both only in M13 records, in M15's Goal and in the 15.0
+  design. None of those assigns a verdict.
+
+**What each pin holds:**
+- **`LayoutSurfacePinTests`**, 16 facts, holds two copies of one truth: a hand-written list of
+  **17** item parameters, `ItemParameters`, and 9 container parameters, `ContainerParameters`,
+  compared by reflection against what the component types actually declare. It compares two
+  in-memory collections, which is exactly the shape Rule 6's register exists for.
+- **`DefaultStructTrapSweepTests`**, 3 facts, is a standing reflection sweep over the public
+  structs of named API assemblies. It is the #178/#181 guard.
+
+**Why my first draft missed them.** It searched outward from the 33 population files, for
+references to their types. That method cannot see a pin that never touches the population.
+Census §9 warned about exactly this: *"How many non-tree pins exist is **unmeasured**"*. The
+register decided in 15.4 closes the hole only as far as someone remembers to add rows, and nobody
+added these two. The pin standard names this cost: *"this register grows only when someone
+remembers to add to it."*
+
+**This audit does not assign either pin a verdict.** Assessing them is gap work for the owner.
+Neither can be the only case, either: the 104 test files outside the population were never swept
+for in-memory two-copy comparisons.
+
+**Verdict on the item: NOT MET.** The DoD says *"An unassessed pin is a gap … silence is not"*
+acceptable. Two pins that the milestone itself names are unassessed. The 33 tree-reader files and
+the register row are covered, as §4a–4c show, but that does not rescue the item.
 
 ## 5. The standard is enforced mechanically, or the absence is recorded — **MET NARROWLY**
 
@@ -228,7 +280,9 @@ not be", `:502`:
   executed a floor, on the wrong side of the comparison. See the table at `:533`.
 - **A binding-aware analyzer is decidable in principle**, but it has these problems:
   - It forces the floor duplication Rule 8 bans.
-  - It would face 98 conforming facts against 4 defects, now 0 true positives against 111.
+  - It would face 98 conforming facts against 4 defects. The record's own figure after 15.1 is
+    0 true positives against 111 pin facts. That is the record's number at that time, not
+    re-measured here; the pin-fact count is 151 today, per §4a.
   - It cannot see the non-tree register at all.
 - The section names the exact check it rejects, so a future one can be compared against it
   (`:618`).
@@ -243,7 +297,7 @@ is **not** delivered. The item is met only through its fallback clause, and even
   "enforcing only the anti-vacuity half". What exists enforces reachability, which the standard
   itself says `:517` *"is not anti-vacuity"*.
 
-This audit's own measurement in §4b bears the verdict out: the one non-tree pin passes over an
+This audit's own measurement in §4b bears the verdict out: one fact of the one registered non-tree pin passes over an
 empty input, and nothing mechanical said so.
 
 ## 6. #364 answered, not merely fixed — **MET NARROWLY**
@@ -341,8 +395,21 @@ The commit body names #357. Census row 13b records it as **fixed, 15.1 task 2**.
 - the timeline's last event on #357 is a `referenced` event from `d481dae`, on 2026-09-23. There is
   no `closed` event;
 - no PR in the range names #357 in a closing keyword. `closedByPullRequestsReferences` is empty;
-- `grep -n "#357" docs/planning/ROADMAP.md docs/planning/MILESTONE.md` finds #357 only in the
-  milestone's *Closes:* list and in its goal lines. No phase record claims to have closed it.
+- **but the census says it is closed, and that is false on GitHub.**
+  `docs/plans/2026-09-22-phase-15.0-census.md:667` reads *"**CLOSED BY 15.1 TASK 2 — issue
+  #357.**"*, and `:1164` reads *"the 14.1 residual and issue #357, closed"*. The work was done, but
+  the record claims a closure that never happened. `grep -n "#357"` over ROADMAP and MILESTONE
+  alone finds it only in the *Closes:* list and the goal lines. That is why this audit's first
+  draft said no record claimed the closure. That was wrong, and it is corrected here.
+
+**The fix itself fully meets what the issue asks for.** Review confirmed this, and I re-read it:
+- `TheDispatchDeclarationScan_IsNotVacuous` floors the **scanned** set, not the manifest, and it
+  does so **per shell**. `MinimumKotlinDispatchDeclarations = 6` at `:342` and
+  `MinimumSwiftDispatchDeclarations = 4` at `:350`, against measured 8 and 5 per census `:1164`.
+  So one emptied shell cannot hide behind the other's count.
+- It is mutation-proven per the 15.1 record.
+
+**The only thing missing is closing the issue.**
 
 The DoD says **"are closed"**, and the phase spec for this audit requires each issue to be
 **closed on GitHub and** backed by its commit. #357 is backed but not closed. The owner's
@@ -449,6 +516,8 @@ API, wire or ABI:
 
 - **Comments and XML docs only, 15.5:**
   - `BnCheckbox`, `BnImage`, `BnPicker`, `BnSafeArea`, `BnSlider`, `BnSwitch`, `BnView`
+  - `BnPicker.razor.cs` and `BnSlider.razor.cs`: XML `<summary>` only, naming `BnSpinner` and
+    `BnSliderView`
   - `IMobileBridge.cs`
   - `BnSecureStorage.swift`
   - `ShellBridge.kt`
@@ -458,6 +527,14 @@ API, wire or ABI:
   `data.scheme?.lowercase()`. This is behaviour, not surface, and it is the point of 15.3.
 - **Pin manifests.** `auth-semantics.json`, `deeplink-vectors.json`, and the new
   `shell-source-roots.json`. All are test inputs; none is wire.
+- **Generated test vector data, 15.3.** Each copy gains one row,
+  `BLAZORNATIVE://settings → /settings`, emitted from `deeplink-vectors.json`:
+  - `src/BlazorNative.Jni/src/androidTest/kotlin/io/blazornative/shell/BnDeepLinkVectors.g.kt`,
+    the androidTest source set
+  - `src/BlazorNative.Apple/BnHostTests/BnDeepLinkVectors.g.swift`, the XCTest bundle
+
+  Both are test data, not shipped shell code. My first `grep -v -i test` filter hid the Kotlin
+  copy, because its path contains `androidTest`.
 - **Build and tooling:**
   - `Package.resolved` and `project.yml`: #378, #379, the SwiftPM pin
   - the Gradle wrapper: #387
@@ -487,8 +564,10 @@ each is outside M15's DoD:
 reaches these too, so each needs an issue or an explicit decision:
 
 - **#357, still open.** This is the §8 gap, not carried debt.
-- **The register row for `RouteMenuDriftTests`.** Rule 3 has no disposition, and
-  `MenuRows_AreUniqueAndLabelled` passes over an empty menu. See §4b.
+- **`LayoutSurfacePinTests` and `DefaultStructTrapSweepTests`, unassessed.** This is the §4 gap,
+  not carried debt, and the rest of the non-population tests are unswept.
+- **The register row for `RouteMenuDriftTests`.** Its Rule 2 wording overclaims per fact, and its
+  Rule 3 has no disposition. See §4b.
 - **15.2 residuals 3 and 4.** The "dual of `EveryRootList_IsExternallyDerived`" pin and the
   template-Gradle second record were both named as new pins, not built, and not filed.
 - **15.2 residual 6.** Ten CS1570 doc-comment warnings in three test files. The ROADMAP says
@@ -515,15 +594,27 @@ caught it, not CI.** From the record:
 - 15.5's samples pin shipped with indented fences invisible end to end.
 - Its widget pin passed on #298's own regression.
 
-This audit adds one more: the register's Rule 2 claim for `RouteMenuDriftTests` is false for one
-fact. The standard's Rule 2 was right that assertion shape, not input, is what makes a pin vacuous.
+This audit adds one more: the register row for `RouteMenuDriftTests` claims per-fact floors
+that one of its four facts lacks. The standard's Rule 2 was right that assertion shape, not input,
+is what makes a pin vacuous.
 
-**Records drift from their subjects in the same way pins do.**
-- #357 was fixed in 15.1 and is still open, because no record said to close it.
+**The population nobody can enumerate stayed unenumerated.** Census §9 said non-tree pins were
+*"unmeasured"*. 15.4 answered with a register that grows only when someone remembers it. The
+register gained one row. The milestone's own Goal names two more non-tree pins,
+`LayoutSurfacePinTests` and `DefaultStructTrapSweepTests`, and neither was ever assessed. This
+audit's first draft missed them too, because it searched outward from the population it already
+had, which is exactly the blindness §9 describes.
+
+**Records drift from their subjects in the same way pins do, and one record here was false, not
+merely silent.**
+- The census says #357 is **"CLOSED BY 15.1 TASK 2"** at `:667`, and **"closed"** at `:1164`. On
+  GitHub it has been open the whole time. A reader who trusted the census would have ticked this
+  DoD item.
 - 15.2 said *"filed"* for a warning set nobody filed.
 
-Neither is a code defect. Both are claims that travelled through a document without a mechanism
-behind them.
+Neither is a code defect. Both are claims about the outside world, a GitHub issue state and an
+issue's existence, written into a document with no mechanism behind them. This is the pattern
+this repo calls a safety claim without a pin, applied to bookkeeping.
 
 **A guard fix is worth most when it is proven live.** #392 rewrote the release-notes parse guard
 so it would stop redding GitHub's "Update branch" merge commits. PR #399's merge commit `4ac678e`,
@@ -534,33 +625,41 @@ commit must survive release-please's parser" in commitlint run 36125170475.
 
 ## Verdict
 
-**FAIL.** Seven criteria are MET, three MET NARROWLY, and one NOT MET.
+**FAIL.** Seven criteria are MET, two MET NARROWLY, and two NOT MET: items 4 and 8.
 
-**What M15 delivered.** It did what it set out to do in substance:
+**What M15 delivered.** It did what it set out to do in most of its substance:
 - **The standard.** A written standard with its reasons attached.
-- **The census.** A population enumerable by behaviour, with 170 of 170 tree-reader facts carrying
+- **The census.** A tree-reader population enumerable by behaviour, with 170 of 170 facts carrying
   a verdict.
 - **The auth pin.** Its coverage is defined on three axes.
 - **The live divergence.** It was redded before it was fixed.
 - **Prose.** It was answered with reasoning.
 - **Surface.** No public, wire or ABI change.
 
-**Why FAIL.** The DoD says #357 is closed, and it is not. The fix exists, in `d481dae`, and is
-pinned, but the issue is open on GitHub. The audit spec requires both, and the no-workarounds
-rule forbids calling that met.
+**Why FAIL. Two criteria are not met, and the no-workarounds rule forbids rewording either:**
+- **Item 4.** Two pins that the milestone's own Goal names, `LayoutSurfacePinTests` and
+  `DefaultStructTrapSweepTests`, have no verdict anywhere. The DoD says an unassessed pin is a gap.
+  The wider non-tree population was never swept, so these two may not be the only ones.
+- **Item 8.** #357 is open on GitHub. Its fix, `d481dae`, fully meets the issue, and the census
+  records it as closed, but the DoD and the audit spec require the issue itself to be closed.
 
-**The three narrow items are honest partials, not defects to hide:**
-- **§4:** one register row is incomplete, and one of its claims is false when measured.
+**The two narrow items are honest partials, not defects to hide:**
 - **§5:** the milestone's headline enforcement was rejected on cost, and the rejection is
   recorded with evidence.
 - **§6:** F3 closed as a patch, not as a consequence.
 
-**What happens next.** Per the audit spec, FAIL goes to `plan-milestone-gaps`. The gap list is
-short:
-1. Close #357, citing `d481dae` / #377.
-2. Give the `RouteMenuDriftTests` register row a Rule 3 disposition and a per-fact verdict for
-   `MenuRows_AreUniqueAndLabelled`: a floor, or a written not-a-pin classification.
-3. File or decide the unfiled residuals listed under *Carried forward*.
+## Path to close — a recommendation; the owner decides
 
-Once item 1 is done and re-measured, §8 becomes MET. If the owner accepts the three narrow items
-as recorded, the milestone would then read **PASS WITH FINDINGS**.
+Per the audit spec, FAIL goes to `plan-milestone-gaps`. Recommended gaps:
+
+1. **Close #357 with its evidence:** `d481dae` / #377, `TheDispatchDeclarationScan_IsNotVacuous`,
+   and the per-shell floors 6 and 4.
+2. **Assess `LayoutSurfacePinTests` and `DefaultStructTrapSweepTests`** against Rules 2–5 and 7,
+   and add them to the register. Then sweep the remaining non-population test files once for
+   in-memory two-copy comparisons, so the register holds the whole set that is known today and not
+   only the one pin someone remembered.
+3. **Fix the `RouteMenuDriftTests` register row.** Scope its Rule 2 wording to the two comparison
+   facts, as the file header already does, and give Rule 3 a disposition.
+4. **File 15.2 residuals 3, 4 and 6** as issues.
+5. **Re-audit.** Re-measure items 4 and 8; everything else can be carried from this audit only if
+   `main` has not moved in a way that touches it.
