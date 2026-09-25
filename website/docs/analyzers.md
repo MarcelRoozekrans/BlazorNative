@@ -18,7 +18,7 @@ off the retired WASI premise: two categories remain.
 
 **Escape hatch:** every rule can be suppressed in a reviewed, scoped way — never blanket:
 
-```csharp bn-sample=skip:pragma-suppression template — the justification is a deliberate <placeholder>, and BN0004 needs the BlazorNative.Analyzers package this sample project does not reference
+```csharp bn-sample=statements
 #pragma warning disable BN0004 // justification: <why this specific site is safe>
 Thread.Sleep(1); // ...
 #pragma warning restore BN0004
@@ -38,7 +38,8 @@ A pragma without a justification comment does not pass review.
   event for its full duration — the app freezes, no exception tells you why.
 - **Compliant shape:**
 
-  ```csharp
+  ```csharp bn-sample=statements
+  CancellationToken ct = default; // however you obtained it
   await Task.Delay(TimeSpan.FromMilliseconds(250), ct);
   ```
 
@@ -55,7 +56,9 @@ A pragma without a justification comment does not pass review.
   platform sandbox.
 - **Compliant shape:** ride the bridge —
 
-  ```csharp
+  ```csharp bn-sample=statements
+  IMobileBridge bridge = default!;
+  IServiceCollection services = default!;
   var response = await bridge.FetchAsync(new BridgeHttpRequest("https://api.example.com/v1/items"));
   // or, at the DI level:
   services.AddBlazorNativeHttp();   // injects an HttpClient over BridgeHttpHandler
@@ -74,7 +77,7 @@ A pragma without a justification comment does not pass review.
   handler stays legal; `BlazorNative.Http` itself constructs over `BridgeHttpHandler`.
 - **Compliant shape:** inject the client registered by `AddBlazorNativeHttp()`:
 
-  ```csharp
+  ```csharp bn-sample=file
   public sealed class ItemsService(HttpClient http)   // DI-injected, bridge-backed
   {
       public Task<string> GetAsync() => http.GetStringAsync("/v1/items");
@@ -107,7 +110,11 @@ A pragma without a justification comment does not pass review.
   escapes the callback window and exceptions vanish.
 - **Compliant shape:**
 
-  ```csharp
+  ```csharp bn-sample=statements
+  IMobileBridge bridge = default!;
+  Dispatcher Dispatcher = default!; // however you obtained it — e.g. inherited from ComponentBase
+  static Task HandleAsync(NativeEvent e) => Task.CompletedTask; // stands for your own async handler
+
   bridge.NativeEvents += e =>
   {
       // synchronous work only; defer async work explicitly:
@@ -130,22 +137,31 @@ A pragma without a justification comment does not pass review.
 - **Why:** an exception crossing the C-ABI boundary is undefined behavior under NativeAOT —
   on Android it aborts the process with no managed diagnostics. Every export must convert
   failure into a return code (the rc-code contract `Exports.cs` follows).
-- **Compliant shape (the `Exports.cs` reference pattern):**
+- **Compliant shape** (mirrors the shape `Exports.cs` actually uses; `TryMount` here stands
+  for your own mount/dispatch call — the framework's own equivalent is `internal`):
 
-  ```csharp
-  [UnmanagedCallersOnly(EntryPoint = "blazornative_mount", CallConvs = new[] { typeof(CallConvCdecl) })]
-  public static int Mount(IntPtr nameUtf8)
+  ```csharp bn-sample=file
+  using System.Runtime.CompilerServices;
+  using System.Runtime.InteropServices;
+
+  public static class MyExports
   {
-      try
+      [UnmanagedCallersOnly(EntryPoint = "blazornative_mount", CallConvs = new[] { typeof(CallConvCdecl) })]
+      public static int Mount(IntPtr nameUtf8)
       {
-          // entire body inside the try — no statements outside it
-          return HostSession.TryMount(nameUtf8);
+          try
+          {
+              // entire body inside the try — no statements outside it
+              return TryMount(nameUtf8); // stands for your own mount/dispatch logic
+          }
+          catch (Exception ex)
+          {
+              Console.Error.WriteLine($"[Exports] mount failed: {ex}");
+              return 2;
+          }
       }
-      catch (Exception ex)
-      {
-          Console.Error.WriteLine($"[Exports] mount failed: {ex}");
-          return 2;
-      }
+
+      private static int TryMount(IntPtr nameUtf8) => 0;
   }
   ```
 
@@ -175,8 +191,15 @@ A pragma without a justification comment does not pass review.
   are already compiler-enforced — CS8894 family — and need no analyzer.)
 - **Compliant shape:**
 
-  ```csharp
-  [UnmanagedCallersOnly(EntryPoint = "blazornative_version", CallConvs = new[] { typeof(CallConvCdecl) })]
+  ```csharp bn-sample=file
+  using System.Runtime.CompilerServices;
+  using System.Runtime.InteropServices;
+
+  public static class MyVersionExports
+  {
+      [UnmanagedCallersOnly(EntryPoint = "blazornative_version", CallConvs = new[] { typeof(CallConvCdecl) })]
+      public static int GetVersion() => 0;
+  }
   ```
 
 - **Escape hatch:** `#pragma warning disable BN0021` with justification (expected: none).

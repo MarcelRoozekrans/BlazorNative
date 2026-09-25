@@ -43,7 +43,14 @@ foreach (string file in Directory.EnumerateFiles(preludeDir))
 WriteProjectFile(outDir, repoRoot);
 
 var awaitProbe = new Regex(@"\bawait\b", RegexOptions.CultureInvariant);
+// A leading `using Namespace;` DIRECTIVE line (not a `using var x = ...;` DECLARATION,
+// which is legal statement syntax and must stay in the body) — fix round 1: a
+// "statements" fence occasionally needs its own using (logging.md's BnLog.Level sample),
+// and a using directive cannot appear inside the wrapped method body, so it is hoisted
+// above the generated class instead.
+var usingDirective = new Regex(@"^using\s+[\w.]+\s*;\s*$", RegexOptions.CultureInvariant);
 int totalCompiled = 0, totalSkipped = 0;
+var usedComponentNames = new Dictionary<string, string>(StringComparer.Ordinal); // name -> page:line, generator-side courtesy check
 
 foreach (string page in DocSampleParser.HandWrittenPages(repoRoot))
 {
@@ -61,7 +68,19 @@ foreach (string page in DocSampleParser.HandWrittenPages(repoRoot))
         switch (fence.Kind)
         {
             case "component":
-                File.WriteAllText(Path.Combine(samplesDir, $"{name}.razor"), fence.Body + Environment.NewLine);
+                // bn-sample=component:<Name> — DocsSamplesDriftTests validates <Name> is a
+                // valid C# identifier and globally unique; this is a courtesy check so the
+                // generator fails loudly too, rather than one fence silently overwriting
+                // another's file.
+                string componentName = fence.SkipReason ?? name;
+                if (fence.SkipReason is not null)
+                {
+                    string where = $"{page}:{fence.Line}";
+                    if (usedComponentNames.TryGetValue(componentName, out string? first))
+                        throw new InvalidOperationException($"bn-sample=component:{componentName} claimed twice: {first} and {where}");
+                    usedComponentNames[componentName] = where;
+                }
+                File.WriteAllText(Path.Combine(samplesDir, $"{componentName}.razor"), fence.Body + Environment.NewLine);
                 compiled++;
                 break;
             case "file":
@@ -69,25 +88,52 @@ foreach (string page in DocSampleParser.HandWrittenPages(repoRoot))
                 compiled++;
                 break;
             case "statements":
-                bool isAsync = awaitProbe.IsMatch(fence.Body);
+                // These usings are the generator's wrapper boilerplate, not the prelude
+                // (spec risk 2 only constrains prelude/_Imports.razor and
+                // prelude/GlobalUsings.cs) — a "statements" fence is, by definition, a
+                // fragment meant to be pasted inside a method that already has whatever
+                // usings its own file needs, so the fence body itself never shows one,
+                // except the rare case hoisted below (logging.md).
+                string[] defaultUsings =
+                [
+                    "using BlazorNative.Components;",
+                    "using BlazorNative.Core;",
+                    "using BlazorNative.Device;",
+                    "using BlazorNative.Http;",
+                    "using BlazorNative.Runtime;",
+                    "using BlazorNative.Testing;",
+                    "using DocSamples.Samples;",
+                    "using Microsoft.AspNetCore.Components;",
+                    "using Xunit;",
+                ];
+
+                string[] bodyLines = fence.Body.Replace("\r\n", "\n").Split('\n');
+                int hoistCount = bodyLines.TakeWhile(l => usingDirective.IsMatch(l) || l.Length == 0).Count();
+                // Trim only the usings themselves, not blank lines that separate them from
+                // the rest of the body — hoisting fewer than all the leading blanks keeps
+                // the body's own formatting close to what the page shows.
+                while (hoistCount > 0 && bodyLines[hoistCount - 1].Length == 0) hoistCount--;
+                // A hoisted using already covered by a default (e.g. logging.md's own
+                // `using BlazorNative.Core;`) is dropped here, not emitted twice (CS0105).
+                string[] hoistedLines = [.. bodyLines.Take(hoistCount)
+                    .Where(l => l.Length == 0 || !defaultUsings.Contains(l.Trim()))];
+                string hoisted = string.Join('\n', hoistedLines);
+                string remainder = string.Join('\n', bodyLines.Skip(hoistCount));
+
+                bool isAsync = awaitProbe.IsMatch(remainder);
                 string signature = isAsync
                     ? "internal static async System.Threading.Tasks.Task Run()"
                     : "internal static void Run()";
-                // These three usings are the generator's wrapper boilerplate, not the
-                // prelude (spec risk 2 only constrains prelude/_Imports.razor and
-                // prelude/GlobalUsings.cs) — a "statements" fence is, by definition, a
-                // fragment meant to be pasted inside a method that already has whatever
-                // usings its own file needs, so the fence body itself never shows one.
                 string wrapped = $$"""
-                    using BlazorNative.Core;
-                    using BlazorNative.Device;
-                    using BlazorNative.Http;
-                    using BlazorNative.Runtime;
-
+                    {{string.Join('\n', defaultUsings)}}
+                    {{(hoistCount > 0 ? hoisted + "\n" : "")}}
                     namespace DocSamples;
                     internal static class {{name}}
                     {
-                        {{signature}} { {{fence.Body}} }
+                        {{signature}}
+                        {
+                    {{remainder}}
+                        }
                     }
                     """;
                 File.WriteAllText(Path.Combine(samplesDir, $"{name}.cs"), wrapped + Environment.NewLine);
@@ -158,14 +204,20 @@ static void WriteProjectFile(string outDir, string repoRoot)
             <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
             <StaticWebAssetsEnabled>false</StaticWebAssetsEnabled>
             <NoWarn>NETSDK1206</NoWarn>
-            <!-- A "file" fence is a complete, standalone .cs file verbatim — one docs
-                 sample (logging.md) is written as top-level statements, which C#
-                 requires to be an executable's entry point (CS8805). -->
-            <OutputType>Exe</OutputType>
+            <!-- Fix round 1: no sample may be the project's entry point — logging.md's
+                 top-level-statements sample was reclassified to "statements" (its `using`
+                 lines are hoisted by the generator instead), so nothing here needs
+                 OutputType=Exe any more. -->
           </PropertyGroup>
 
           <ItemGroup>
-        {refs}    </ItemGroup>
+        {refs}
+            <!-- testing-harness.md's compiled sample calls Assert directly (the fence is
+                 written the way a consumer's own xUnit test would be) — pinned to the same
+                 version tests/BlazorNative.Runtime.Tests.csproj uses for the `xunit` meta-package,
+                 so the two cannot drift apart. -->
+            <PackageReference Include="xunit.assert" Version="2.9.3" />
+          </ItemGroup>
 
         </Project>
         """;

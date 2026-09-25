@@ -59,9 +59,21 @@ gives you the loadable `.dll`, not an app you can launch without writing a host 
 **A page is declared once** — one row in `AppPages.All`. The runtime's mount registry and
 route table are *derived views* of that array, so they cannot drift from it:
 
-```csharp bn-sample=skip:array-literal rows meant for insertion into your own AppPages.All, not a standalone statement — BnAboutPage/SomeScreen stand for your own page components
-BlazorNativePage.Routed<BnAboutPage>("/about", "BnAboutPage"),   // route + mount name
-BlazorNativePage.Named<SomeScreen>("SomeScreen"),                // mount name only
+```csharp bn-sample=file
+using BlazorNative.Runtime;
+
+// BnAboutPage and SomeScreen stand for your own page components.
+internal sealed class BnAboutPage : Microsoft.AspNetCore.Components.ComponentBase { }
+internal sealed class SomeScreen : Microsoft.AspNetCore.Components.ComponentBase { }
+
+internal static class MyAppPages
+{
+    internal static readonly BlazorNativePage[] All =
+    [
+        BlazorNativePage.Routed<BnAboutPage>("/about", "BnAboutPage"),   // route + mount name
+        BlazorNativePage.Named<SomeScreen>("SomeScreen"),                // mount name only
+    ];
+}
 ```
 
 :::tip Everything derives — including the deep-link map

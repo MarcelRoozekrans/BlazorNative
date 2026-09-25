@@ -86,7 +86,8 @@ The surface an app author actually types.
 | `BlazorNative.Http` | `BridgeHttpHandler` and `AddBlazorNativeHttp` / the two `AddBlazorNativeHttpClient` overloads. |
 | `BlazorNative.Runtime` | `BlazorNativeApp` (`DefaultRoute`, `RegisterPages`, `ConfigureServices`) and `BlazorNativePage` (`Routed<T>`, `Named<T>`). Your whole startup contract, deliberately tiny. |
 
-**Example — every line here is STABLE:**
+**Example — every `BlazorNative.*` line here is STABLE** (`Home`/`Camera` are this page's own
+stand-ins for your page components, not part of the framework):
 
 ```csharp bn-sample=file
 using BlazorNative.Runtime;

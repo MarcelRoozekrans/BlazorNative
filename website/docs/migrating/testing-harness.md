@@ -78,12 +78,12 @@ reading as though it asserted both — on Android the text is the widget's own c
 childless leaves today, so this shape is reachable only through the **raw-element hatch** — a page
 that writes the wire element directly:
 
-```razor bn-sample=component
+```razor bn-sample=component:SettingsPage
 @* SettingsPage.razor — the raw-element hatch, not BnCheckbox *@
 <checkbox value="true">Enable audio</checkbox>
 ```
 
-```csharp bn-sample=skip:test-suite excerpt — presumes the reader's own xUnit-style Assert and the SettingsPage page from the fence above, not a standalone unit
+```csharp bn-sample=statements
 // iOS's projection (unchanged, and still the default).
 // checkbox is NOT text-bearing there, so the text stays a child node.
 using BnTestHost ios = BnTestHost.Mount<SettingsPage>();

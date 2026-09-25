@@ -312,14 +312,15 @@ first step; your copy is a fifth that nothing checks.
 ## 7. The csproj — and the asymmetry you are entitled to know about
 
 Your app's csproj needs an iOS `PropertyGroup`. The reference is
-`samples/BlazorNative.SampleApp/BlazorNative.SampleApp.csproj`:
+`samples/BlazorNative.SampleApp/BlazorNative.SampleApp.csproj` — **copy `RuntimeFrameworkVersion`'s
+exact value from there** (one home for that number, so this page cannot go stale the day it
+moves; the placeholder below is deliberately not a real version, so an unedited copy fails
+loudly instead of silently pinning nothing):
 
 ```xml
 <PropertyGroup Condition="$(RuntimeIdentifier.StartsWith('iossimulator')) Or $(RuntimeIdentifier.StartsWith('ios-'))">
   <NativeLib>Static</NativeLib>
-  <!-- Copy the exact RuntimeFrameworkVersion samples/BlazorNative.SampleApp/BlazorNative.SampleApp.csproj
-       pins — one home for that number, so this page cannot go stale the day it moves. -->
-  <RuntimeFrameworkVersion><!-- … --></RuntimeFrameworkVersion>
+  <RuntimeFrameworkVersion>REPLACE-WITH-SAMPLEAPP-VALUE</RuntimeFrameworkVersion>
   <!-- … -->
 </PropertyGroup>
 ```

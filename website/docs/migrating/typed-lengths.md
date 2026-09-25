@@ -162,7 +162,10 @@ cast — there is no mechanical rewrite for those two spellings.
 
 The same applies to hand-written `BuildRenderTree`:
 
-```csharp bn-sample=skip:the commented ✗ line is a counterexample that compiles and throws at render — compiling it proves nothing
+```csharp bn-sample=statements
+using Microsoft.AspNetCore.Components.Rendering;
+RenderTreeBuilder b = default!; // however you obtained it — a component's own BuildRenderTree
+
 // ✗ b.AddComponentParameter(31, nameof(BnImage.Width), 120f);
 b.AddComponentParameter(31, nameof(BnImage.Width), (BnAutoLength)120f);
 ```

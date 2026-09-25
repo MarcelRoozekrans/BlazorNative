@@ -48,7 +48,7 @@ default).
 from your app's `BlazorNativeApp.ConfigureServices` callback — when a consumer wants
 verbosity for a session without touching the shell:
 
-```csharp bn-sample=file
+```csharp bn-sample=statements
 using BlazorNative.Core;
 
 // e.g. in your BlazorNativeApp.ConfigureServices override:
@@ -148,7 +148,19 @@ the narrowest extension point that works; the framework does not host an
 `ILoggerProvider` ecosystem. A sink that throws is swallowed, because a logger that faults
 its caller is worse than a quiet one.
 
-```csharp bn-sample=skip:MyLogger stands for the reader's own structured-logging sink — Serilog, OpenTelemetry, or similar — not a real symbol
-BnLog.Sink = (level, category, message) =>
-    MyLogger.Write(level.ToString(), category, message);
+```csharp bn-sample=file
+using BlazorNative.Core;
+
+// MyLogger stands for your own structured-logging sink — Serilog, OpenTelemetry, or similar.
+internal static class MyLogger
+{
+    internal static void Write(string level, string category, string message) { }
+}
+
+internal static class MyLoggingSetup
+{
+    internal static void Configure() =>
+        BnLog.Sink = (level, category, message) =>
+            MyLogger.Write(level.ToString(), category, message);
+}
 ```

@@ -28,9 +28,28 @@ namespace BlazorNative.Runtime.Tests;
 //
 // CONTROLLER RULING (2026-09-25, amending the original task brief): the
 // classify-and-compile obligation binds ONLY a fence whose language is in
-// DocSampleParser.CompiledLanguages (razor, csharp, cs). Measured: 14 razor +
-// 14 csharp/cs fences vs. 26 in bash, xml, swift, yaml, sh, powershell and
-// diff — AllFences below filters to that set before anything else runs.
+// DocSampleParser.CompiledLanguages (razor, csharp, cs). AllFences below (and
+// the positive control, through the same InScope helper) filters to that set
+// before anything else runs — ONE filter, so deleting it reds the control
+// instead of leaving it checking nothing (fix round 1: a duplicated filter in
+// the control used to mean the control tested only itself).
+//
+// FIX ROUND 1 (2026-09-26): the original `Open` anchor required a fence's
+// opening backticks at column 0. CommonMark allows 0–3 leading spaces, and six
+// `analyzers.md` "Compliant shape" samples — indented two spaces inside a list
+// item — were invisible to this whole pin: the generator silently compiled
+// nothing for them and EveryFenceOnAHandWrittenPage_DeclaresAKnownKind stayed
+// green over six unclassified fences. DocSampleParser.Fences now accepts and
+// strips that indent; TheDetectors_SeeAPlantedDefect plants an indented fence
+// to keep this from regressing invisibly a second time.
+//
+// bn-sample=component:<Name> (fix round 1) lets one fence reference another's
+// generated file by name — `<Name>.razor` instead of the page/index slug —
+// for the rare case where a SECOND fence on the page needs to call into the
+// FIRST one's generated component (testing-harness.md's SettingsPage). The
+// name must be a valid C# identifier and globally unique (two pages could
+// otherwise collide in one Samples/ directory); NamedComponents_…below is the
+// fact and its planted controls are in TheDetectors_SeeAPlantedDefect.
 //
 // WHAT THIS DOES NOT COVER (Rule 5):
 //   - Whether a sample MEANS what the prose around it says. A fence can
@@ -49,31 +68,50 @@ namespace BlazorNative.Runtime.Tests;
 //     ``` with no language, is invisible to this whole mechanism — not
 //     classified, not compiled, not reported missing. Nothing here reads a
 //     fence's CONTENT to guess what language it actually is.
+//   - `~~~`-fenced code blocks, four-or-more-backtick fences, and MDX's
+//     `<CodeBlock>` component. DocSampleParser.Fences only recognises a
+//     triple-backtick fence (with 0–3 leading spaces); none of these three
+//     forms exist on a hand-written page today, and a page that starts using
+//     one is invisible here exactly the way an unlabeled fence is.
+//   - A `v`-prefixed version such as `v0.12.0`. The Version regex matches
+//     bare `\d+\.\d+\.\d+`; the leading `v` is not part of that pattern, so a
+//     line naming only a `v`-prefixed version slips past NoNarrativePage_….
 // ─────────────────────────────────────────────────────────────────────────────
 
 public sealed class DocsSamplesDriftTests
 {
-    /// <summary>Measured 2026-09-25: 20 hand-written pages, 28 razor/csharp fences
-    /// (14 + 14) out of 54 fences total on those pages — the other 26 are bash, xml,
+    /// <summary>Re-measured 2026-09-26 (fix round 1, after DocSampleParser started
+    /// seeing 0–3-space-indented fences): 20 hand-written pages, 35 razor/csharp fences
+    /// (15 + 20) out of 62 fences total on those pages — the other 27 are bash, xml,
     /// swift, yaml, sh, powershell and diff, outside DocSampleParser.CompiledLanguages.
-    /// Floors, not counts — adding a page or a sample passes; losing the scan does
-    /// not.</summary>
+    /// The six indented `analyzers.md` "Compliant shape" samples this round found
+    /// account for the jump from the original 28: they were always real fences, just
+    /// invisible to the un-indented anchor this pin used to have. Floors, not counts —
+    /// adding a page or a sample passes; losing the scan does not.</summary>
     private const int MinimumPages = 20;
-    private const int MinimumFences = 28;
-    /// <summary>Measured 2026-09-25: 20 of the 28 compiled-language fences are
-    /// component/file/statements; the other 9 are skip (a signature listing, three
-    /// render-and-throw counterexamples, and five fences that are, by nature, not a
-    /// standalone unit — see docs/plans/2026-09-25-phase-15.5-docs-audit.md).</summary>
-    private const int MinimumCompiledSamples = 20;
+    private const int MinimumFences = 35;
+    /// <summary>Re-measured 2026-09-26 (fix round 1): 31 of the 35 compiled-language
+    /// fences are component/file/statements; the other 4 are skip — the signature
+    /// listing (testing-harness.md), the two genuine render-and-throw ✗ counterexamples
+    /// (layout-and-yoga.md, typed-lengths.md), and one NEEDS_CONTEXT (state.md's
+    /// BnThemedPanel — see docs/plans/2026-09-25-phase-15.5-docs-audit.md). Round 0's
+    /// five other skips were dodges under the no-workarounds rule and are now compiled.</summary>
+    private const int MinimumCompiledSamples = 31;
 
     private const string MigratingDir = "website/docs/migrating/";
     private static readonly Regex Version = new(@"(?<![\w.])\d+\.\d+\.\d+(?![\w.])", RegexOptions.CultureInvariant);
+    private static readonly Regex ComponentName = new(@"^[A-Za-z_][A-Za-z0-9_]*$", RegexOptions.CultureInvariant);
+
+    /// <summary>The ONE place the CompiledLanguages filter is applied — AllFences and the
+    /// positive control (TheDetectors_SeeAPlantedDefect) both call this, so deleting the
+    /// filter reds the control instead of leaving a second copy that tests nothing (fix
+    /// round 1: the control used to re-implement this inline).</summary>
+    internal static IEnumerable<(string Page, Fence Fence)> InScope(IEnumerable<(string Page, Fence Fence)> fences) =>
+        fences.Where(x => DocSampleParser.CompiledLanguages.Contains(x.Fence.Language));
 
     internal static IEnumerable<(string Page, Fence Fence)> AllFences(string root) =>
-        DocSampleParser.HandWrittenPages(root).SelectMany(p =>
-            DocSampleParser.Fences(File.ReadAllText(Path.Combine(root, p)))
-                .Where(f => DocSampleParser.CompiledLanguages.Contains(f.Language))
-                .Select(f => (p, f)));
+        InScope(DocSampleParser.HandWrittenPages(root).SelectMany(p =>
+            DocSampleParser.Fences(File.ReadAllText(Path.Combine(root, p))).Select(f => (p, f))));
 
     internal static List<string> Unclassified(IEnumerable<(string Page, Fence Fence)> fences) =>
         [.. fences.Where(x => x.Fence.Kind is null || !DocSampleParser.Kinds.Contains(x.Fence.Kind))
@@ -83,6 +121,20 @@ public sealed class DocsSamplesDriftTests
         page.StartsWith(MigratingDir, StringComparison.Ordinal) ? [] :
         [.. markdown.Replace("\r\n", "\n").Split('\n').Select((l, i) => (l, i))
             .Where(x => Version.IsMatch(x.l)).Select(x => $"{page}:{x.i + 1}: {Version.Match(x.l).Value}")];
+
+    /// <summary>Named fences only (`bn-sample=component:<Name>`) — the plain `component`
+    /// form (SkipReason null) has no name to validate.</summary>
+    private static IEnumerable<(string Page, Fence Fence)> NamedComponentFences(IEnumerable<(string Page, Fence Fence)> fences) =>
+        fences.Where(x => x.Fence.Kind == "component" && x.Fence.SkipReason is not null);
+
+    internal static List<string> BadComponentNames(IEnumerable<(string Page, Fence Fence)> fences) =>
+        [.. NamedComponentFences(fences).Where(x => !ComponentName.IsMatch(x.Fence.SkipReason!))
+                  .Select(x => $"{x.Page}:{x.Fence.Line} bn-sample=component:{x.Fence.SkipReason} is not a valid C# identifier")];
+
+    internal static List<string> DuplicateComponentNames(IEnumerable<(string Page, Fence Fence)> fences) =>
+        [.. NamedComponentFences(fences).GroupBy(x => x.Fence.SkipReason, StringComparer.Ordinal)
+                  .Where(g => g.Count() > 1)
+                  .Select(g => $"bn-sample=component:{g.Key} claimed by " + string.Join(" and ", g.Select(x => $"{x.Page}:{x.Fence.Line}")))];
 
     [Fact]
     public void EveryFenceOnAHandWrittenPage_DeclaresAKnownKind()
@@ -105,6 +157,16 @@ public sealed class DocsSamplesDriftTests
     }
 
     [Fact]
+    public void NamedComponents_HaveValidUniqueIdentifiers()
+    {
+        var fences = AllFences(BnRepo.Root()).ToList();
+        List<string> bad = BadComponentNames(fences);
+        Assert.True(bad.Count == 0, "bn-sample=component:<Name> must be a valid C# identifier: " + string.Join(" | ", bad));
+        List<string> dup = DuplicateComponentNames(fences);
+        Assert.True(dup.Count == 0, "two fences may not claim the same component name — they would overwrite one another's generated file: " + string.Join(" | ", dup));
+    }
+
+    [Fact]
     public void TheCompiledSampleCount_MeetsItsFloor()
     {
         int compiled = AllFences(BnRepo.Root()).Count(x => x.Fence.Kind is "component" or "file" or "statements");
@@ -124,23 +186,40 @@ public sealed class DocsSamplesDriftTests
     public void TheDetectors_SeeAPlantedDefect()
     {
         const string planted = "text\n```razor\n<BnView />\n```\nsee 0.12.0\n";
-        Assert.Single(Unclassified(DocSampleParser.Fences(planted)
-            .Where(f => DocSampleParser.CompiledLanguages.Contains(f.Language))
-            .Select(f => ("website/docs/planted.md", f))));
+        var plantedFences = InScope(DocSampleParser.Fences(planted).Select(f => ("website/docs/planted.md", f)));
+        Assert.Single(Unclassified(plantedFences));
         Assert.Single(VersionMentions("website/docs/planted.md", planted));
         Assert.Empty(VersionMentions(MigratingDir + "planted.md", planted));
 
-        // The CompiledLanguages filter itself: an unmarked bash fence is a fence
-        // (DocSampleParser.Fences sees it) but never a compiled-language one, so it
-        // must never be COUNTED as unclassified — it is simply out of scope, the same
-        // way the other 26 non-razor/csharp fences on real pages are.
+        // The CompiledLanguages filter itself, through the SAME InScope helper AllFences
+        // uses: an unmarked bash fence is a fence (DocSampleParser.Fences sees it) but
+        // never a compiled-language one, so it must never be COUNTED as unclassified — it
+        // is simply out of scope, the same way the other 26 non-razor/csharp fences on
+        // real pages are.
         const string plantedBash = "text\n```bash\necho hi\n```\n";
         var bashFences = DocSampleParser.Fences(plantedBash);
         Assert.Single(bashFences); // the splice landed, or this control proves nothing
-        var compiledLanguageBashFences = bashFences
-            .Where(f => DocSampleParser.CompiledLanguages.Contains(f.Language))
-            .Select(f => ("website/docs/planted.md", f));
+        var compiledLanguageBashFences = InScope(bashFences.Select(f => ("website/docs/planted.md", f)));
         Assert.Empty(compiledLanguageBashFences);
         Assert.Empty(Unclassified(compiledLanguageBashFences));
+
+        // Fix round 1: an indented fence (0–3 leading spaces, legal CommonMark inside a
+        // list item) must be SEEN at all — this is exactly the shape that was invisible
+        // before analyzers.md's six "Compliant shape" samples were found.
+        const string plantedIndented = "text\n\n  ```csharp\n  var x = 1;\n  ```\n";
+        var indentedFences = InScope(DocSampleParser.Fences(plantedIndented).Select(f => ("website/docs/planted.md", f))).ToList();
+        Assert.Single(indentedFences); // the splice landed, or this control proves nothing
+        Assert.Single(Unclassified(indentedFences));
+
+        // Fix round 1: bn-sample=component:<Name> — a bad identifier and a duplicate name
+        // must both be caught, never silently accepted or silently overwritten.
+        const string plantedBadName = "```razor bn-sample=component:123bad\n<BnView />\n```\n";
+        var badNameFences = DocSampleParser.Fences(plantedBadName).Select(f => ("website/docs/planted.md", f)).ToList();
+        Assert.Single(BadComponentNames(badNameFences));
+
+        const string plantedDuplicateName = "```razor bn-sample=component:Dup\n<BnView />\n```\n```razor bn-sample=component:Dup\n<BnView />\n```\n";
+        var duplicateNameFences = DocSampleParser.Fences(plantedDuplicateName).Select(f => ("website/docs/planted.md", f)).ToList();
+        Assert.Equal(2, duplicateNameFences.Count); // the splice landed, or this control proves nothing
+        Assert.Single(DuplicateComponentNames(duplicateNameFences));
     }
 }
