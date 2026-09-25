@@ -3014,9 +3014,41 @@ shell source moved. `#397` (the phase PR) merged as `0bdeb84` before this record
 > `Android:`/`<c>…</c> on Android` marker, or one stated only in free prose, is checked by hand and
 > is not scanned.
 
-#### Phase 15.6: Audit and close [status: pending]
+#### Phase 15.6: Audit and close [status: active]
 **Goal:** Run `audit-milestone` against the DoD on live evidence and close M15. **No tag** — the
 8.6 rule, and `CONVENTIONS.md` records `Milestone completion tags a release: no`.
+**Surface:** Docs
+**HelpWanted:** no
+**Design:** [`docs/superpowers/specs/2026-09-25-phase-15.6-design.md`](../superpowers/specs/2026-09-25-phase-15.6-design.md)
+**Plan:** [`docs/superpowers/plans/2026-09-25-phase-15.6-audit-and-close.md`](../superpowers/plans/2026-09-25-phase-15.6-audit-and-close.md)
+
+> **Outcome: the audit FAILS, and that is the audit working.** [`docs/plans/2026-09-25-milestone-15-audit.md`](../plans/2026-09-25-milestone-15-audit.md)
+> records 7 MET, 2 MET NARROWLY and 2 NOT MET:
+> - **Item 4, every pin assessed: NOT MET.** `LayoutSurfacePinTests` and `DefaultStructTrapSweepTests`
+>   are named as pins in this milestone's own MILESTONE.md, but they do not read the tree. So they
+>   are outside the census population, and neither has a verdict anywhere. This is the hole census
+>   §9 warned about.
+> - **Item 8: NOT MET.** #357's fix landed in 15.1, but the issue was never closed, and the census
+>   claimed twice that it had been.
+>
+> Seven carried items are filed as #401–#407, beside #396. The owner chose to keep the FAIL on
+> record, close the gaps in 15.7, and re-audit in 15.8.
+
+#### Phase 15.7: Close the audit gaps [status: pending]
+**Goal:** Close the two NOT MET items from the 15.6 audit, and one overclaimed register row:
+- close **#357** with its evidence;
+- give `LayoutSurfacePinTests` and `DefaultStructTrapSweepTests` a verdict, and sweep the remaining
+  non-population test files once for in-memory two-copy pins, so that the non-tree population is
+  measured instead of assumed;
+- make `RouteMenuDriftTests`' register row true for every fact, and give its Rule 3 status a
+  disposition;
+- file the three unfiled 15.2 residuals.
+**Surface:** Mixed
+**HelpWanted:** no
+
+#### Phase 15.8: Re-audit and close [status: pending]
+**Goal:** Re-run `audit-milestone` on live evidence after 15.7, and close M15 if every DoD item is
+MET or MET NARROWLY with its reason. **No tag**, per `CONVENTIONS.md`.
 **Surface:** Docs
 **HelpWanted:** no
 
