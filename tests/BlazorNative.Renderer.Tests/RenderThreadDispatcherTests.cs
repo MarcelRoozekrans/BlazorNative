@@ -170,18 +170,26 @@ public sealed class RenderThreadDispatcherTests
         SynchronizationContext context = await renderer.Dispatcher
             .InvokeAsync(() => SynchronizationContext.Current!);
 
+        var boom = new BoomException("thrown inside Send");
         var sinkSaw = new List<Exception>();
         Action<Exception> original = RenderThreadDispatcher.UnhandledExceptionSink;
         try
         {
-            RenderThreadDispatcher.UnhandledExceptionSink = ex => { lock (sinkSaw) sinkSaw.Add(ex); };
+            // Records only THIS test's exception, and forwards anything else to the original
+            // sink: the sink is process-wide, and swallowing another test's fault would hide it.
+            RenderThreadDispatcher.UnhandledExceptionSink = ex =>
+            {
+                if (ReferenceEquals(ex, boom))
+                    lock (sinkSaw) sinkSaw.Add(ex);
+                else
+                    original(ex);
+            };
 
             // Positive control: Send runs the callback on the render thread and returns.
             int ranOn = 0;
             context.Send(_ => ranOn = Environment.CurrentManagedThreadId, null);
             Assert.Equal(renderer.RenderThreadId, ranOn);
 
-            var boom = new BoomException("thrown inside Send");
             var thrown = Assert.Throws<BoomException>(() => context.Send(_ => throw boom, null));
             Assert.Same(boom, thrown);
 
@@ -226,6 +234,40 @@ public sealed class RenderThreadDispatcherTests
                 $"overload {i}: work posted after shutdown never completed — anything awaiting it hangs");
             Assert.True(late[i].IsCanceled, $"overload {i}: expected Canceled, was {late[i].Status}");
         }
+    }
+
+    /// <summary>The reviewer's probe, fix round 1: an InvokeAsync whose work item is
+    /// suspended on an await when the renderer is disposed. Its continuation can never run —
+    /// the render thread has exited — so the returned Task must complete as CANCELLED rather
+    /// than wait forever for a continuation the dispatcher drops.</summary>
+    [Fact]
+    public void AnAwaitInFlightAtShutdown_CompletesCancelled_NeverHangs()
+    {
+        // Positive control: the same shape WITHOUT the shutdown completes normally once the gate
+        // opens, so a cancelled task below is caused by the shutdown, not by the call shape.
+        using (var control = NewRenderer())
+        {
+            var openGate = new TaskCompletionSource();
+            Task running = control.Dispatcher.InvokeAsync(async () => await openGate.Task);
+            Assert.False(Settles(running, TimeSpan.FromMilliseconds(100)), "the work item did not wait on its gate");
+            openGate.SetResult();
+            Assert.True(Settles(running, TimeSpan.FromSeconds(2)));
+            Assert.Equal(TaskStatus.RanToCompletion, running.Status);
+        }
+
+        var gate = new TaskCompletionSource();
+        Task inFlight;
+        using (var renderer = NewRenderer())
+        {
+            inFlight = renderer.Dispatcher.InvokeAsync(async () => await gate.Task);
+            Assert.False(Settles(inFlight, TimeSpan.FromMilliseconds(100)), "the work item did not wait on its gate");
+        }   // Dispose: off the render thread, so it shuts the thread down and joins it
+
+        gate.SetResult();   // its continuation is posted to a render thread that has exited
+
+        Assert.True(Settles(inFlight, TimeSpan.FromSeconds(2)),
+            $"an await in flight at shutdown never completed (status {inFlight.Status}) — anything awaiting it hangs");
+        Assert.True(inFlight.IsCanceled, $"expected Canceled, was {inFlight.Status}");
     }
 
     // ── 13.2's regression ────────────────────────────────────────────────────

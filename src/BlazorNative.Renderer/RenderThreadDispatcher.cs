@@ -19,8 +19,13 @@ namespace BlazorNative.Renderer;
 // Contracts, each pinned by RenderThreadDispatcherTests:
 //   - Work from another thread is QUEUED and runs on the render thread; work from the
 //     render thread runs inline. An await inside a work item resumes on the render thread.
-//   - Work posted after Shutdown completes its Task as CANCELLED. It is never dropped
-//     silently, because anything awaiting a dropped InvokeAsync would hang forever.
+//   - Work posted after Shutdown completes its Task as CANCELLED. So does work that was
+//     already running but suspended on an await when the thread exited: its continuation
+//     is posted to a thread that no longer runs anything, so the dispatcher cancels every
+//     cross-thread InvokeAsync still pending once the queue has drained and Run() exits,
+//     or when Shutdown cannot join the thread. Nothing awaiting an InvokeAsync hangs.
+//     A raw SynchronizationContext.Post with no InvokeAsync behind it has no Task to
+//     complete; it is dropped with a warning.
 //   - An exception escaping raw posted work, such as an async void that throws after an
 //     await, goes to UnhandledExceptionSink. The default re-raises it as unhandled, so the
 //     process terminates exactly as it does without a SynchronizationContext.
@@ -39,6 +44,11 @@ internal sealed class RenderThreadDispatcher : Dispatcher, IDisposable
 
     private readonly BlockingCollection<(SendOrPostCallback Cb, object? State)> _queue = new();
     private readonly Thread _thread;
+
+    /// <summary>Every cross-thread InvokeAsync whose Task is not yet complete, keyed by its
+    /// TaskCompletionSource, with the action that cancels it. A work item suspended on an
+    /// await stays here until it finishes; if the thread exits first, it is cancelled.</summary>
+    private readonly ConcurrentDictionary<object, Action> _pending = new(ReferenceEqualityComparer.Instance);
 
     public RenderThreadDispatcher()
     {
@@ -77,6 +87,23 @@ internal sealed class RenderThreadDispatcher : Dispatcher, IDisposable
                 UnhandledExceptionSink(ex);
             }
         }
+
+        // The queue is closed and drained. Any InvokeAsync still pending is suspended on an
+        // await whose continuation can no longer run here: complete it as cancelled.
+        CancelPending();
+    }
+
+    private void Track(object tcs, Action cancel) => _pending[tcs] = cancel;
+
+    private void Untrack(object tcs) => _pending.TryRemove(tcs, out _);
+
+    private void CancelPending()
+    {
+        foreach (object key in _pending.Keys)
+        {
+            if (_pending.TryRemove(key, out Action? cancel))
+                cancel();
+        }
     }
 
     /// <summary>Queues raw work. Returns false when the queue is shut down; callers then
@@ -107,12 +134,17 @@ internal sealed class RenderThreadDispatcher : Dispatcher, IDisposable
         }
 
         var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        Track(tcs, () => tcs.TrySetCanceled());
         if (!TryPost(_ =>
             {
                 try { workItem(); tcs.TrySetResult(); }
                 catch (Exception ex) { tcs.TrySetException(ex); }
+                finally { Untrack(tcs); }
             }, null))
+        {
+            Untrack(tcs);
             tcs.TrySetCanceled();
+        }
         return tcs.Task;
     }
 
@@ -125,12 +157,17 @@ internal sealed class RenderThreadDispatcher : Dispatcher, IDisposable
         }
 
         var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        Track(tcs, () => tcs.TrySetCanceled());
         if (!TryPost(async _ =>
             {
                 try { await (workItem() ?? Task.CompletedTask); tcs.TrySetResult(); }
                 catch (Exception ex) { tcs.TrySetException(ex); }
+                finally { Untrack(tcs); }
             }, null))
+        {
+            Untrack(tcs);
             tcs.TrySetCanceled();
+        }
         return tcs.Task;
     }
 
@@ -143,12 +180,17 @@ internal sealed class RenderThreadDispatcher : Dispatcher, IDisposable
         }
 
         var tcs = new TaskCompletionSource<TResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+        Track(tcs, () => tcs.TrySetCanceled());
         if (!TryPost(_ =>
             {
                 try { tcs.TrySetResult(workItem()); }
                 catch (Exception ex) { tcs.TrySetException(ex); }
+                finally { Untrack(tcs); }
             }, null))
+        {
+            Untrack(tcs);
             tcs.TrySetCanceled();
+        }
         return tcs.Task;
     }
 
@@ -161,25 +203,37 @@ internal sealed class RenderThreadDispatcher : Dispatcher, IDisposable
         }
 
         var tcs = new TaskCompletionSource<TResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+        Track(tcs, () => tcs.TrySetCanceled());
         if (!TryPost(async _ =>
             {
                 try { tcs.TrySetResult(await workItem()); }
                 catch (Exception ex) { tcs.TrySetException(ex); }
+                finally { Untrack(tcs); }
             }, null))
+        {
+            Untrack(tcs);
             tcs.TrySetCanceled();
+        }
         return tcs.Task;
     }
 
     /// <summary>Closes the queue, lets the thread finish what is already queued, and joins
     /// it within <paramref name="joinBudget"/>. Returns whether it joined. Called ON the
     /// render thread it cannot join itself and returns false; the thread still exits once
-    /// the queue drains.</summary>
+    /// the queue drains, and Run() cancels what is pending then. If the join times out,
+    /// because a work item never yields, whatever is still pending is cancelled here, so no
+    /// awaiter waits on a thread that may never come back.</summary>
     public bool Shutdown(TimeSpan joinBudget)
     {
         _queue.CompleteAdding();
+        // No cancel on the render thread's own shutdown: the work item running it has not
+        // finished yet, and cancelling its Task would report a completing dispose as cancelled.
         if (Environment.CurrentManagedThreadId == _thread.ManagedThreadId)
             return false;
-        return _thread.Join(joinBudget);
+        bool joined = _thread.Join(joinBudget);
+        if (!joined)
+            CancelPending();
+        return joined;
     }
 
     public void Dispose() => Shutdown(TimeSpan.FromSeconds(5));
