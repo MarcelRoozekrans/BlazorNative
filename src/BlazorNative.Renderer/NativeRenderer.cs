@@ -1644,9 +1644,10 @@ public sealed class NativeRenderer : BlazorRenderer
     internal static readonly HashSet<string> VisualStyleAttributes =
         new(BnWireVocabulary.VisualStyles, StringComparer.Ordinal);
 
-    /// <summary>The union — what "is a style" MEANS to the renderer. Pinned
-    /// equal to (and disjointly partitioned by) the two sets above in
-    /// StyleAttributePartitionTests.</summary>
+    /// <summary>The union — what "is a style" MEANS to the renderer. It is this union by
+    /// definition, so nothing pins it; the two halves are pinned disjoint in
+    /// StyleAttributePartitionTests and equal to src/wire-vocabulary.json in
+    /// WireVocabularyCodegenTests.</summary>
     internal static readonly HashSet<string> StyleAttributes =
         new(YogaStyleAttributes.Concat(VisualStyleAttributes), StringComparer.Ordinal);
 }

@@ -145,7 +145,8 @@ public sealed class BnImagePolishDemoTests
         Assert.Equal(BnImageDemo.FixedWidthDp, BnImagePolishDemo.DeclaredWidthDp);
         Assert.Equal(BnImageDemo.FixedHeightDp, BnImagePolishDemo.DeclaredHeightDp);
 
-        // No fixture equalities (15.7): the page defines FixtureOrigin, ErrorSrc, IntrinsicSrc and ModeSrc as `= BnImageDemo.X`, so comparing them could never red.
+        // No fixture equalities (15.7): the page defines FixtureOrigin, ErrorSrc,
+        // IntrinsicSrc and ModeSrc as `= BnImageDemo.X`, so comparing them could never red.
         // The held source is NEW (a fixture-server extension, Gates 2/3) and
         // loopback like everything else — CI never touches the internet.
         Assert.StartsWith(BnImagePolishDemo.FixtureOrigin, BnImagePolishDemo.SlowSrc,

@@ -48,9 +48,9 @@ public sealed class ForwardedParameterNameTests
     // BnLayoutItem and BnLayoutContainer, the bases the roster in LayoutSurfacePinTests is
     // pinned to, so these facts are close to a tautology: they go red only if a target stops
     // deriving from that base, or shadows a roster name with a property that is not a
-    // [Parameter]. They cannot see a forward that
-    // was deleted or misnamed; Half 2 below is what catches that. And the BnScroll row guards
-    // no forward at all, as the paragraph above says: nothing forwards into BnScroll by name.
+    // [Parameter]. They cannot see a forward that was deleted or misnamed; Half 2 below is
+    // what catches that. And the BnScroll row guards no forward at all, as the paragraph
+    // above says: nothing forwards into BnScroll by name.
     [Theory]
     [InlineData(typeof(BnView))]
     [InlineData(typeof(BnScroll))]
