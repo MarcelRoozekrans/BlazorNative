@@ -178,6 +178,22 @@ public static class Emitters
         foreach (HostEvent e in v.HostEvents.Events)
             sb.Append($"    {e.EnumCase}(\"{e.Name}\"), // {e.Tier}\n");
         sb.Append("}\n");
+        sb.Append('\n');
+        sb.Append("""
+            /**
+             * The op integer of the ONE hostCallBegin slot: which capability a host call is
+             * for. The integer IS the wire contract, and each id is frozen once shipped.
+             * Hand-mirrored in three languages until Phase 16.1; now generated.
+             */
+            object HostCallOp {
+
+            """);
+        foreach (HostCallOpEntry op in v.HostCallOps.Ops)
+        {
+            sb.Append($"    /** {op.Doc} */\n");
+            sb.Append($"    const val {op.KotlinName} = {op.Id}\n");
+        }
+        sb.Append("}\n");
         return sb.ToString();
     }
 
@@ -287,8 +303,55 @@ public static class Emitters
         foreach (HostEvent e in v.HostEvents.Events)
             sb.Append($"    case {char.ToLowerInvariant(e.EnumCase[0])}{e.EnumCase[1..]} = \"{e.Name}\" // {e.Tier}\n");
         sb.Append("}\n");
+        sb.Append('\n');
+        // A caseless enum of Int32 constants, NOT `enum X: Int32` with cases: every
+        // hostCallBegin signature and switch takes the raw Int32, so this keeps each call
+        // site's spelling exactly as it was when the enum was hand-written.
+        sb.Append("""
+            /// The op integer of the ONE hostCallBegin slot: which capability a host call is
+            /// for. The integer IS the wire contract, and each id is frozen once shipped.
+            /// Hand-mirrored in three languages until Phase 16.1; now generated.
+            enum BnHostCallOp {
+
+            """);
+        foreach (HostCallOpEntry op in v.HostCallOps.Ops)
+        {
+            sb.Append($"    /// {op.Doc}\n");
+            sb.Append($"    static let {op.SwiftName}: Int32 = {op.Id}\n");
+        }
+        sb.Append("}\n");
         return sb.ToString();
     }
+
+    // ── C# — BlazorNative.Runtime, where the bridge that sends these lives ───
+
+    public static string EmitCSharpHostCallOps(WireVocabulary v)
+    {
+        var sb = new StringBuilder();
+        sb.Append(Banner("//"));
+        sb.Append("""
+
+            namespace BlazorNative.Runtime;
+
+            /// <summary>The op integer of the ONE hostCallBegin slot: which capability a
+            /// permission-gated host call is for, generated from the manifest. The integer IS
+            /// the wire contract: every shell switches on it, and each id is frozen once
+            /// shipped. Adding an op is NOT an ABI change: no slot, no export, no struct grow.</summary>
+            internal enum HostCallOp
+            {
+
+            """);
+        foreach (HostCallOpEntry op in v.HostCallOps.Ops)
+        {
+            sb.Append($"    /// <summary>{XmlEscape(op.Doc)}</summary>\n");
+            sb.Append($"    {op.Name} = {op.Id},\n");
+        }
+        sb.Append("}\n");
+        return sb.ToString();
+    }
+
+    private static string XmlEscape(string s)
+        => s.Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;");
 
     private static void AppendSwiftArray(StringBuilder sb, string name, IEnumerable<string> names)
     {
@@ -400,6 +463,7 @@ public static class Emitters
     public static IReadOnlyDictionary<string, string> EmitAll(WireVocabulary v) => new Dictionary<string, string>
     {
         ["src/BlazorNative.Renderer/BnWireVocabulary.g.cs"] = EmitCSharp(v),
+        ["src/BlazorNative.Runtime/BnHostCallOps.g.cs"] = EmitCSharpHostCallOps(v),
         ["src/BlazorNative.Jni/src/main/kotlin/io/blazornative/jni/BnWireVocabulary.g.kt"] = EmitKotlin(v),
         ["templates/BlazorNative.Templates/content/BlazorNative.App/android/src/main/kotlin/io/blazornative/jni/BnWireVocabulary.g.kt"] = EmitKotlin(v),
         ["src/BlazorNative.Apple/BnHost/BnWireVocabulary.g.h"] = EmitObjCHeader(v),

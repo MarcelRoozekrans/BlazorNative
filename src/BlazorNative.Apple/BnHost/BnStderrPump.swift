@@ -13,7 +13,7 @@
 //
 // ⚠ ZERO ABI COST, WHICH IS THE WHOLE REASON THIS SHAPE WAS CHOSEN. The runtime
 // is not modified at all — the shell reads a file descriptor. The alternatives
-// (a `HostCallOp = 5` on the bridge, or an 11th export) were both rejected in
+// (a log-line HostCallOp on the bridge, or an 11th export) were both rejected in
 // design §5.2/§5.3, and the deciding argument was coverage, not cost: neither can
 // carry the output of the BCL, of the NativeAOT runtime itself, or of anything
 // written before `register_bridge` — including `blazornative_init`'s failure

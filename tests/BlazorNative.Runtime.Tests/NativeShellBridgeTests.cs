@@ -79,6 +79,18 @@ internal static unsafe class FakeShellHost
     /// null = no payload, the shape every non-Granted status uses.</summary>
     public static string? HostCallPayloadJson;
 
+    /// <summary>Phase 16.1: EVERY host call begun, in order, because the Last* fields
+    /// above keep only the latest one. A late fault's FaultNotice arrives after the
+    /// capability call it followed, so a test that needs both must read the log. Take
+    /// the lock: the notice is begun from a thread-pool thread.</summary>
+    public static readonly List<(long RequestId, int Op, string? Args)> HostCallLog = new();
+
+    /// <summary>A snapshot of <see cref="HostCallLog"/>, taken under its lock.</summary>
+    public static List<(long RequestId, int Op, string? Args)> HostCalls()
+    {
+        lock (HostCallLog) return HostCallLog.ToList();
+    }
+
     /// <summary>The managed thread the last Navigate callback ran on, or -1. Phase 16.1:
     /// the host-event arms' thread pin reads it, because the nav manager notifies the host
     /// on whatever thread the arm runs on, before the swap marshals itself.</summary>
@@ -110,6 +122,7 @@ internal static unsafe class FakeShellHost
         AutoCompleteHostCall = true;
         HostCallStatus = 0;
         HostCallPayloadJson = null;
+        lock (HostCallLog) HostCallLog.Clear();
     }
 
     public static BlazorNativeBridgeCallbacks BuildCallbacks() => new()
@@ -251,6 +264,7 @@ internal static unsafe class FakeShellHost
         LastHostCallRequestId = requestId;
         LastHostCallOp = op;
         LastHostCallArgs = argsUtf8 == null ? null : Marshal.PtrToStringUTF8((IntPtr)argsUtf8);
+        lock (HostCallLog) HostCallLog.Add((requestId, op, LastHostCallArgs));
         if (HostCallBeginReturnCode != 0)
             return HostCallBeginReturnCode;
 

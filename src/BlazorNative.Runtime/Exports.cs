@@ -437,11 +437,10 @@ public static class Exports
         }
     }
 
-    /// <summary>Receives the pending Task of a reserved host event, <c>back</c> or
-    /// <c>navigate</c>, whose navigation was still running when its export returned rc 0,
-    /// with the event name (Phase 16.1). The same shape as
-    /// <see cref="PendingDispatchObserver"/>; while it is null the interim late-fault
-    /// logger is attached instead.</summary>
+    /// <summary>TEST TAP: also receives the pending Task of a reserved host event,
+    /// <c>back</c> or <c>navigate</c>, whose navigation was still running when its export
+    /// returned rc 0, with the event name (Phase 16.1). Delivery of a later fault never
+    /// depends on it: see <see cref="PendingDispatchObserver"/>.</summary>
     internal static Action<string, Task>? PendingHostEventObserver;
 
     /// <summary>Test-only: replaces <c>NavigateBackAsync</c> inside the <c>back</c> arm.
@@ -453,11 +452,11 @@ public static class Exports
     /// for the same reason as <see cref="HostBackWorkForTests"/>.</summary>
     internal static Func<string, Task>? HostNavigateWorkForTests;
 
-    /// <summary>Receives every dispatch whose handler was still running when its export
-    /// returned rc 0: the handler id, the event name and the pending Task (Phase 16.1).
-    /// Fault delivery for a fault after the first await hooks in here. While it is
-    /// null, the export attaches an interim logger instead, so a late fault is never
-    /// silent.</summary>
+    /// <summary>TEST TAP: also receives every dispatch whose handler was still running
+    /// when its export returned rc 0: the handler id, the event name and the pending Task
+    /// (Phase 16.1). Tests save and restore it, so it must never carry production
+    /// behaviour: a late fault is delivered by <see cref="DeliverLateFault"/>, attached
+    /// directly by the export whether or not this is set.</summary>
     internal static Action<ulong, string, Task>? PendingDispatchObserver;
 
     /// <summary>
@@ -492,7 +491,7 @@ public static class Exports
     /// render thread, and this waits only until the handler has returned its Task,
     /// never until that Task completes. So an async handler awaiting the host no
     /// longer holds the calling thread, the shell's dispatch lane (#345). A handler
-    /// still running is handed to <see cref="PendingDispatchObserver"/>. The
+    /// still running is handed to <see cref="DeliverLateFault"/>. The
     /// host-side threading contract (single BlazorNative-Dispatch lane, never the
     /// UI thread) lives in BlazorNativeRuntime.kt.
     /// </summary>
@@ -578,20 +577,15 @@ public static class Exports
         return 0;
     }
 
-    /// <summary>Hands a still-running dispatch to <see cref="PendingDispatchObserver"/>.
-    /// While no observer is set, INTERIM (Phase 16.1): logs a later fault with
-    /// <c>BnLog.Error</c>, so a fault after the first await is never silent. The
-    /// FaultNotice delivery replaces the logger in the same phase. <paramref name="pending"/>
-    /// is the dispatcher's shutdown-tracked mirror: it ends cancelled if the render thread
-    /// shuts down while the handler is still suspended.</summary>
+    /// <summary>Hands a still-running dispatch to <see cref="DeliverLateFault"/>, then to
+    /// the <see cref="PendingDispatchObserver"/> test tap if one is set.
+    /// <paramref name="pending"/> is the dispatcher's shutdown-tracked mirror: it ends
+    /// cancelled if the render thread shuts down while the handler is still suspended,
+    /// and a cancellation is not a fault, so nothing is sent for it.</summary>
     private static void ObservePendingDispatch(ulong handlerId, string name, Task pending)
     {
-        if (PendingDispatchObserver is { } observer)
-        {
-            observer(handlerId, name, pending);
-            return;
-        }
-        LogLateFault($"dispatch_event handler {handlerId} '{name}'", pending);
+        DeliverLateFault(handlerId, name, $"dispatch_event handler {handlerId} '{name}'", pending);
+        PendingDispatchObserver?.Invoke(handlerId, name, pending);
     }
 
     /// <summary>Decision 5: a mirror of <paramref name="pending"/> that the renderer's
@@ -604,26 +598,29 @@ public static class Exports
             : pending;
 
     /// <summary>Hands a reserved host event's still-running navigation to
-    /// <see cref="PendingHostEventObserver"/>, or, while none is set, to the interim
-    /// late-fault logger.</summary>
+    /// <see cref="DeliverLateFault"/> with handler id 0, then to the
+    /// <see cref="PendingHostEventObserver"/> test tap if one is set.</summary>
     private static void ObservePendingHostEvent(string name, Task pending)
     {
-        if (PendingHostEventObserver is { } observer)
-        {
-            observer(name, pending);
-            return;
-        }
-        LogLateFault($"host_event '{name}'", pending);
+        DeliverLateFault(0, name, $"host_event '{name}'", pending);
+        PendingHostEventObserver?.Invoke(name, pending);
     }
 
-    /// <summary>Logs the fault of a Task that was still running when its export returned,
-    /// once it faults. Never the payload: it can carry the user's input.</summary>
-    private static void LogLateFault(string what, Task pending)
+    /// <summary>#8: once a Task that was still running when its export returned FAULTS,
+    /// logs the fault with <c>BnLog.Error</c> and sends it to the shell as a FaultNotice
+    /// host call, so it reaches the shell's onError. Runs on the thread pool, never the
+    /// render thread, and never throws: SendFaultNotice swallows its own failures. Never
+    /// the payload: it can carry the user's input.</summary>
+    private static void DeliverLateFault(ulong handlerId, string eventName, string what, Task pending)
         => pending.ContinueWith(
-            static (t, state) => BnLog.Error("Exports",
-                $"{(string)state!} faulted after its first await",
-                t.Exception!.InnerException ?? t.Exception),
-            what,
+            static (t, state) =>
+            {
+                var (id, evt, label) = ((ulong, string, string))state!;
+                Exception fault = t.Exception!.InnerException ?? t.Exception;
+                BnLog.Error("Exports", $"{label} faulted after its first await", fault);
+                NativeShellBridge.SendFaultNotice(id, evt, fault);
+            },
+            (handlerId, eventName, what),
             CancellationToken.None,
             TaskContinuationOptions.OnlyOnFaulted,
             TaskScheduler.Default);
@@ -876,7 +873,7 @@ public static class Exports
     /// synchronous part: the swap's frames are delivered before this returns
     /// (RunAfterDispatch finds no open scope and runs at once). NavigateBackAsync
     /// completes synchronously today; if it ever yields, this reports rc 0 and a
-    /// later fault is logged, the dispatch_event contract.</summary>
+    /// later fault is sent to the shell as a FaultNotice, the dispatch_event contract.</summary>
     private static int DispatchHostBack()
     {
         NativeNavigationManager? nav = HostSession.CurrentNavigationManager;
@@ -910,7 +907,7 @@ public static class Exports
     /// 2 = the navigation swap faulted. Runs on the render thread and waits for its
     /// synchronous part: NavigateToAsync runs the swap inline, so the target page's
     /// frames are delivered before this returns. If it ever yields, this reports rc 0
-    /// and a later fault is logged, the dispatch_event contract. An unknown
+    /// and a later fault is sent to the shell as a FaultNotice, the dispatch_event contract. An unknown
     /// route surfaces as ArgumentException from NavigateToAsync and is mapped to
     /// rc 1 (not handled) rather than rc 2 (fault): a stale deep link is not a
     /// renderer fault, and a live session that cannot honour the route simply stays

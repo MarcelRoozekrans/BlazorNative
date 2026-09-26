@@ -53,9 +53,9 @@ public sealed class SecureBiometricsAbiUnchangedTests
         // Geolocation = 0 and Notifications = 1. Enum values are wire vocabulary
         // carried on the existing `int op` field — not a struct grow, not an export,
         // not a drift-pin move.
-        Assert.Equal(0, (int)NativeShellBridge.HostCallOp.Geolocation);
-        Assert.Equal(1, (int)NativeShellBridge.HostCallOp.Notifications);
-        Assert.Equal(2, (int)NativeShellBridge.HostCallOp.Biometrics);
-        Assert.Equal(3, (int)NativeShellBridge.HostCallOp.SecureStorage);
+        Assert.Equal(0, (int)HostCallOp.Geolocation);
+        Assert.Equal(1, (int)HostCallOp.Notifications);
+        Assert.Equal(2, (int)HostCallOp.Biometrics);
+        Assert.Equal(3, (int)HostCallOp.SecureStorage);
     }
 }

@@ -47,7 +47,7 @@ public sealed class NotificationsAbiUnchangedTests
         // The ONLY op-enum change: Notifications = 1 beside Geolocation = 0. An
         // enum value is wire vocabulary carried on the existing `int op` field —
         // not a struct grow, not an export, not a drift-pin move.
-        Assert.Equal(0, (int)NativeShellBridge.HostCallOp.Geolocation);
-        Assert.Equal(1, (int)NativeShellBridge.HostCallOp.Notifications);
+        Assert.Equal(0, (int)HostCallOp.Geolocation);
+        Assert.Equal(1, (int)HostCallOp.Notifications);
     }
 }

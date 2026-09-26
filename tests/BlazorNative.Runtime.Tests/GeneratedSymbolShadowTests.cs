@@ -34,13 +34,14 @@ namespace BlazorNative.Runtime.Tests;
 
 public sealed class GeneratedSymbolShadowTests
 {
-    /// <summary>How many symbols the three generated shell files hold TODAY (5 Swift,
-    /// 6 Kotlin — the 5 BnWireVocabulary members plus BnHostEvent's constructor
-    /// property `wireName`, which Swift has no equivalent of because Swift's
-    /// BnHostEvent consumes the built-in `.rawValue` instead — and 3 C). The floor
-    /// below is measured, not guessed; if the manifest legitimately loses a name,
+    /// <summary>How many symbols the three generated shell files hold TODAY (11 Swift,
+    /// 12 Kotlin and 3 C). Swift: the 5 BnWireVocabulary members and the 6 BnHostCallOp
+    /// constants. Kotlin: the same 11, plus BnHostEvent's constructor property
+    /// `wireName`, which Swift has no equivalent of because Swift's BnHostEvent consumes
+    /// the built-in `.rawValue` instead. The op constants arrived with Phase 16.1. The
+    /// floor below is measured, not guessed; if the manifest legitimately loses a name,
     /// lower it in the same commit.</summary>
-    private const int GeneratedSymbolFloor = 14;
+    private const int GeneratedSymbolFloor = 26;
 
     /// <summary>Swift `static let NAME` / Kotlin `val NAME` / `@JvmField val NAME`.</summary>
     private const string SwiftKotlinDeclaration = @"\b(?:static\s+let|val)\s+([A-Za-z_][A-Za-z0-9_]*)\b";
@@ -56,6 +57,12 @@ public sealed class GeneratedSymbolShadowTests
     /// to the block's closing brace is a member of that enum, not of the
     /// `BnWireVocabulary` object — see the note on <see cref="GeneratedSymbols"/>.</summary>
     private const string HostEventEnumOpen = @"\benum\s+(?:class\s+)?BnHostEvent\b";
+
+    /// <summary>A top-level host-call op table: Kotlin's <c>object HostCallOp {</c> and
+    /// Swift's <c>enum BnHostCallOp {</c> (Phase 16.1). Group 1 is the type name, which is
+    /// how its constants are referenced: <c>HostCallOp.CAMERA</c>, <c>BnHostCallOp.camera</c>.
+    /// Anchored at column 0 so prose that mentions the type cannot open the block.</summary>
+    private const string HostCallOpTableOpen = @"^(?:object|enum)\s+(HostCallOp|BnHostCallOp)\b";
 
     /// <summary>Every symbol WireGen emits into a shell, by generated-file path, plus
     /// whether it was declared inside the <c>BnHostEvent</c> enum rather than the
@@ -77,7 +84,7 @@ public sealed class GeneratedSymbolShadowTests
     /// them over an empty set — the exact silent-degradation shape this phase
     /// exists to remove, sitting inside its own flagship guard. `File.Exists`
     /// guards the file MOVING; only a count guards the parse FAILING.</para></summary>
-    private static IReadOnlyList<(string File, string Symbol, bool InHostEventEnum)> GeneratedSymbols()
+    private static IReadOnlyList<(string File, string Symbol, bool InHostEventEnum, string? OpTable)> GeneratedSymbols()
     {
         string root = BnRepo.Root();
         (string Path, string Pattern)[] generated =
@@ -87,28 +94,34 @@ public sealed class GeneratedSymbolShadowTests
             (Path.Combine(root, "src", "BlazorNative.Apple", "BnHost", "BnWireVocabulary.g.h"), CArrayDeclaration),
         ];
 
-        var symbols = new List<(string File, string Symbol, bool InHostEventEnum)>();
+        var symbols = new List<(string File, string Symbol, bool InHostEventEnum, string? OpTable)>();
         foreach ((string path, string pattern) in generated)
         {
             Assert.True(File.Exists(path), $"generated file missing: {path}");
 
             bool inHostEventEnum = false;
+            string? opTable = null;
             foreach (string line in File.ReadAllLines(path))
             {
                 // Entering counts on the SAME line: Kotlin declares the enum and its
                 // `wireName` property in one statement (`BnHostEvent(val wireName: ...)`).
                 if (!inHostEventEnum && Regex.IsMatch(line, HostEventEnumOpen))
                     inHostEventEnum = true;
+                Match open = Regex.Match(line, HostCallOpTableOpen);
+                if (opTable is null && open.Success)
+                    opTable = open.Groups[1].Value;
 
                 Match m = Regex.Match(line, pattern);
                 if (m.Success)
-                    symbols.Add((path, m.Groups[1].Value, inHostEventEnum));
+                    symbols.Add((path, m.Groups[1].Value, inHostEventEnum, opTable));
 
-                // Both generated files close their last top-level type with an
-                // unindented `}` and declare nothing after BnHostEvent, so this is
-                // sufficient without a full brace-depth parser.
-                if (inHostEventEnum && line.Trim() == "}")
+                // Every top-level type in these files closes with an unindented `}`,
+                // so this is sufficient without a full brace-depth parser.
+                if (line.Trim() == "}")
+                {
                     inHostEventEnum = false;
+                    opTable = null;
+                }
             }
         }
 
@@ -176,9 +189,23 @@ public sealed class GeneratedSymbolShadowTests
     /// use of it. In C, specifically a definition with its own initializer;
     /// `kYogaStyles[i]` and `sizeof(kYogaStyles[0])` index with something and do not
     /// match.</summary>
-    private static string DeclarationPattern(string symbol, bool c) => c
+    private static string DeclarationPattern(string symbol, bool c, bool opConstant = false) => c
         ? $@"\b{Regex.Escape(symbol)}\s*\[\s*\]\s*=\s*\{{"
-        : $@"\b(?:static\s+let|let|val|var)\s+{Regex.Escape(symbol)}\b";
+        : opConstant
+            ? OpConstantDeclarationPattern(symbol)
+            : $@"\b(?:static\s+let|let|val|var)\s+{Regex.Escape(symbol)}\b";
+
+    /// <summary>A hand-written twin of a host-call op constant: the same name bound to an
+    /// INTEGER LITERAL, e.g. <c>static let camera: Int32 = 4</c> or
+    /// <c>const val CAMERA = 4</c> (Phase 16.1).
+    ///
+    /// <para>NARROWER THAN THE NAME ALONE, on purpose. The op names are also the natural
+    /// names of the capability objects: <c>let camera = BnCamera()</c> in
+    /// AppleShellBridge.swift is a property, not an op, and a name-only pattern flags it.
+    /// What makes a declaration a second copy of the WIRE value is the literal integer, so
+    /// that is what this matches.</para></summary>
+    private static string OpConstantDeclarationPattern(string symbol)
+        => $@"\b(?:static\s+let|let|val|var)\s+{Regex.Escape(symbol)}\s*(?::\s*\w+)?\s*=\s*-?\d+\s*$";
 
     /// <summary>THE FORWARDING WINDOW — the pin's SUPPRESSION BRANCH, and therefore the
     /// branch that can go quiet by accident (pin standard Rule 7). Scans the declaration
@@ -202,11 +229,11 @@ public sealed class GeneratedSymbolShadowTests
     /// LINES rather than a path is what lets the control splice a real declaration into
     /// real source and run the production detector over the result, instead of
     /// controlling a copy of it.</para></summary>
-    private static List<(int Line, bool Forwards)> DeclarationSitesIn(string[] lines, string symbol, bool c)
+    private static List<(int Line, bool Forwards)> DeclarationSitesIn(string[] lines, string symbol, bool c, bool opConstant = false)
     {
         var sites = new List<(int, bool)>();
         for (int i = 0; i < lines.Length; i++)
-            if (Regex.IsMatch(lines[i], DeclarationPattern(symbol, c)))
+            if (Regex.IsMatch(lines[i], DeclarationPattern(symbol, c, opConstant)))
                 sites.Add((i + 1, !c && Forwards(lines, i, symbol)));
         return sites;
     }
@@ -219,11 +246,11 @@ public sealed class GeneratedSymbolShadowTests
     private static List<DeclarationSite> DeclarationSites()
     {
         var sites = new List<DeclarationSite>();
-        foreach ((string file, string symbol, _) in GeneratedSymbols())
+        foreach ((string file, string symbol, _, string? opTable) in GeneratedSymbols())
         {
             bool c = IsCHeader(file);
             foreach (string source in ShellSources(file))
-                foreach ((int line, bool forwards) in DeclarationSitesIn(CodeLines(source), symbol, c))
+                foreach ((int line, bool forwards) in DeclarationSitesIn(CodeLines(source), symbol, c, opTable is not null))
                     sites.Add(new DeclarationSite(source, symbol, line, forwards));
         }
         return sites;
@@ -357,7 +384,7 @@ public sealed class GeneratedSymbolShadowTests
         }
 
         // ── C: a fixture, built from the real definition and the real consumer ──
-        (string header, string cSymbol, bool _) = GeneratedSymbols().First(s => IsCHeader(s.File));
+        (string header, string cSymbol, bool _, string? _) = GeneratedSymbols().First(s => IsCHeader(s.File));
         string pattern = DeclarationPattern(cSymbol, c: true);
 
         string[] generated = File.ReadAllLines(header);
@@ -399,6 +426,53 @@ public sealed class GeneratedSymbolShadowTests
             + "green over a blind spot. A wrong line number means the offender message would send a "
             + "reader to the wrong place. An exemption means the forwarding window is being offered "
             + "to C, which it must never be — C has no qualified form to forward through.");
+    }
+
+    /// <summary>THE POSITIVE CONTROL for the op-constant shadow shape (Rule 3, Phase 16.1).
+    /// The tree must hold no hand-written op twin, so the anchor is a FIXTURE built from
+    /// real parts, as the C half above does: the generated Swift and Kotlin constant lines
+    /// themselves, spliced into the real files that route on them. Each must be reported
+    /// at the spliced line; the unspliced files must report none, which is the negative
+    /// for <c>let camera = BnCamera()</c>, a property that shares an op's name.
+    ///
+    /// <para>DOES NOT COVER (Rule 5): an op twin written with a non-literal initializer,
+    /// such as <c>let camera: Int32 = 2 + 2</c>. That is contrived enough to leave to
+    /// review; the consumption pin still reds if the generated constant goes dead.</para></summary>
+    [Fact]
+    public void TheOpConstantShadowDetector_MatchesAnIntegerTwin_AndNotACapabilityProperty()
+    {
+        var ops = GeneratedSymbols().Where(s => s.OpTable is not null).ToList();
+        Assert.True(ops.Count >= 12, $"parsed {ops.Count} host-call op constants, expected at least 12 (6 per language)");
+
+        (string Consumer, string Symbol)[] fixtures =
+        [
+            (Path.Combine("BlazorNative.Apple", "BnHost", "AppleShellBridge.swift"), "camera"),
+            (Path.Combine("BlazorNative.Jni", "src", "main", "kotlin", "io", "blazornative", "jni", "ShellBridge.kt"), "CAMERA"),
+        ];
+        foreach ((string consumer, string symbol) in fixtures)
+        {
+            var op = ops.Single(o => o.Symbol == symbol);
+            string? twin = File.ReadAllLines(op.File).SingleOrDefault(l => Regex.IsMatch(l, OpConstantDeclarationPattern(symbol)));
+            Assert.True(twin is not null,
+                $"the op-constant pattern no longer matches the generated declaration of '{symbol}' in "
+                + $"{Path.GetFileName(op.File)}, the very shape a hand-written twin would copy. The "
+                + "detector is blind, and the shadow pin is green over nothing for op constants.");
+
+            string[] real = CodeLines(Path.Combine(BnRepo.Root(), "src", consumer));
+            var unspliced = DeclarationSitesIn(real, symbol, c: false, opConstant: true);
+            Assert.True(unspliced.Count == 0,
+                $"the op-constant pattern matches '{symbol}' in the unspliced {consumer} at line(s) "
+                + $"{string.Join(", ", unspliced.Select(u => u.Line))}. It has widened past the integer "
+                + "literal and now flags a capability property that merely shares the op's name.");
+
+            var spliced = real.ToList();
+            spliced.Insert(1, twin);
+            var found = DeclarationSitesIn([.. spliced], symbol, c: false, opConstant: true);
+            Assert.True(found.Count == 1 && found[0].Line == 2 && !found[0].Forwards,
+                $"the op-constant shadow detector did not report the spliced twin '{twin.Trim()}' "
+                + $"at line 2 of {consumer}; found {found.Count}. A hand-written op constant would no "
+                + "longer be detected.");
+        }
     }
 
     /// <summary>Generated symbols that nothing consumes, each with a written reason.
@@ -460,19 +534,22 @@ public sealed class GeneratedSymbolShadowTests
     {
         var dead = new List<string>();
 
-        foreach ((string file, string symbol, bool inHostEventEnum) in GeneratedSymbols())
+        foreach ((string file, string symbol, bool inHostEventEnum, string? opTable) in GeneratedSymbols())
         {
             if (UnconsumedByDesign.ContainsKey(symbol))
                 continue;
 
             // BnWireVocabulary members are named through that object; a BnHostEvent
             // enum member is named through property access on an enum instance
-            // instead; C `#include`s the header and names its arrays bare.
+            // instead; a host-call op constant is named through its own table type;
+            // C `#include`s the header and names its arrays bare.
             string reference = IsCHeader(file)
                 ? $@"\b{Regex.Escape(symbol)}\b"
-                : inHostEventEnum
-                    ? $@"\.{Regex.Escape(symbol)}\b"
-                    : $@"BnWireVocabulary\.{Regex.Escape(symbol)}\b";
+                : opTable is not null
+                    ? $@"\b{Regex.Escape(opTable)}\.{Regex.Escape(symbol)}\b"
+                    : inHostEventEnum
+                        ? $@"\.{Regex.Escape(symbol)}\b"
+                        : $@"BnWireVocabulary\.{Regex.Escape(symbol)}\b";
 
             bool referenced = ShellSources(file)
                 .Any(src => CodeLines(src).Any(line => Regex.IsMatch(line, reference)));
