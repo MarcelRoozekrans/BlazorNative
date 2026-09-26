@@ -476,6 +476,269 @@ public sealed class DispatchWindowScopeTests
         }
     }
 
+    // ── The scope's edges: fix round 2 of the Task 3 review ─────────────────────
+
+    /// <summary>Runs <paramref name="body"/> with every BnLog line captured through
+    /// the seam, at Error and above, and restores the sink and level after.</summary>
+    private static List<string> CaptureLog(Action body)
+    {
+        var lines = new List<string>();
+        Action<BnLogLevel, string, string>? originalSink = BnLog.Sink;
+        BnLogLevel originalLevel = BnLog.Level;
+        BnLog.Level = BnLogLevel.Warn;
+        BnLog.Sink = (_, c, m) => { lock (lines) lines.Add($"{c}: {m}"); };
+        try { body(); }
+        finally
+        {
+            BnLog.Sink = originalSink;
+            BnLog.Level = originalLevel;
+        }
+        lock (lines) return lines.ToList();
+    }
+
+    /// <summary>Clicks FireAndForgetProbe's "go", which finishes synchronously after
+    /// starting work that later re-renders into a throwing BuildRenderTree, opens the
+    /// gate, and returns that work's Task once it has finished.</summary>
+    private static Task RunFireAndForget(bool strict, out List<string> log)
+    {
+        var pending = new List<Task>();
+        var (renderer, frames) = StartSession();
+        var previousObserver = ObservePending(pending);
+        FireAndForgetProbe.Gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        FireAndForgetProbe.Work = null;
+        Task? work = null;
+        try
+        {
+            renderer.StrictErrors = strict;
+            renderer.Mount<FireAndForgetProbe>();
+            log = CaptureLog(() =>
+            {
+                Assert.Equal(0, DispatchBounded(frames.ClickHandlerForLabel("go"), "go"));
+                // Anchor: the handler finished synchronously, so nothing is pending.
+                lock (pending)
+                    Assert.True(pending.Count == 0,
+                        $"the handler should have finished synchronously, but {pending.Count} "
+                        + "dispatch(es) are still running");
+                work = Assert.IsAssignableFrom<Task>(FireAndForgetProbe.Work);
+
+                FireAndForgetProbe.Gate.SetResult();
+                WaitBounded(work);
+                Assert.True(work.IsCompleted, "the fire-and-forget work never finished");
+            });
+            return work!;
+        }
+        finally
+        {
+            FireAndForgetProbe.Gate.TrySetResult();
+            TearDown(pending, previousObserver);
+        }
+    }
+
+    [Fact]
+    public void AFireAndForgetFault_FromAHandlerThatFinishedSynchronously_TakesTheNoWindowPath()
+    {
+        // STRICT: the no-window path rethrows, exactly as before 16.1, so the render
+        // fault escapes StateHasChanged and faults the fire-and-forget work.
+        Task strictWork = RunFireAndForget(strict: true, out _);
+        Assert.True(strictWork.IsFaulted,
+            $"in strict mode the fire-and-forget work ended {strictWork.Status}: its render fault "
+            + "was swallowed instead of rethrown. It was attributed to the handler that started it, "
+            + "which had already FINISHED synchronously, so the fault went into a scope nobody reads.");
+        Assert.Equal("ff-boom", strictWork.Exception!.GetBaseException().Message);
+
+        // PRODUCTION: logged as an ordinary render fault, never as the handler's.
+        RunFireAndForget(strict: false, out List<string> log);
+        Assert.Contains(log, l => l.Contains("ff-boom"));
+        Assert.DoesNotContain(log, l => l.Contains("after the handler's first await"));
+    }
+
+    [Fact]
+    public void AParameterBindingFault_AfterTheFirstAwait_StillTakesThe164Path()
+    {
+        // #164: a parameter-binding fault is an author bug and aborts, in production
+        // mode too. Raised in a continuation it must reach that path, not be recorded
+        // as the handler's late fault first.
+        var pending = new List<Task>();
+        var (renderer, frames) = StartSession();
+        var previousObserver = ObservePending(pending);
+        LateBindingProbe.Gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        Task? handler = null;
+        try
+        {
+            renderer.StrictErrors = false;
+            renderer.Mount<LateBindingProbe>();
+            List<string> log = CaptureLog(() =>
+            {
+                Assert.Equal(0, DispatchBounded(frames.ClickHandlerForLabel("bind"), "bind"));
+                lock (pending)
+                {
+                    Assert.True(pending.Count == 1, $"expected one still-running dispatch, got {pending.Count}");
+                    handler = pending[0];
+                }
+                LateBindingProbe.Gate.SetResult();
+                WaitBounded(handler);
+            });
+
+            Assert.True(handler!.IsCompleted, "the handler never finished after its gate opened");
+            Assert.True(log.Any(l => l.Contains("parameter-binding fault") && l.Contains("#164")),
+                "the binding fault raised after the first await never took #164's path: no "
+                + "'parameter-binding fault … #164' line was logged. Got: " + string.Join(" | ", log.Select(l => l.Split('\n')[0])));
+            Assert.DoesNotContain(log, l => l.Contains("after the handler's first await"));
+            Assert.True(handler.IsFaulted, $"the pending Task ended {handler.Status}");
+        }
+        finally
+        {
+            LateBindingProbe.Gate.TrySetResult();
+            TearDown(pending, previousObserver);
+        }
+    }
+
+    /// <summary>Waits, bounded, for a Task to finish, faulted or not.</summary>
+    private static void WaitBounded(Task t)
+        => Task.WhenAny(t, Task.Delay(Budget)).GetAwaiter().GetResult();
+
+    [Fact]
+    public async Task TheFlowingScope_IsRestored_SoUnrelatedRenderThreadWorkSeesNone()
+    {
+        // The render thread does not flow a poster's execution context, and the export
+        // posts DispatchSyncPart as a SYNCHRONOUS work item. A flowing scope that is not
+        // restored therefore stays on the render thread and leaks into the next,
+        // unrelated work item, which would then have its faults attributed to A or B.
+        var pending = new List<Task>();
+        var (renderer, frames) = StartSession();
+        var previousObserver = ObservePending(pending);
+        TwoGatesProbe.GateA = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        TwoGatesProbe.GateB = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        try
+        {
+            renderer.Mount<TwoGatesProbe>();
+            bool UnrelatedWorkSeesAScope()
+                => renderer.Dispatcher.InvokeAsync(() => renderer.FlowingScopeIsSetForTests)
+                    .GetAwaiter().GetResult();
+
+            Assert.Equal(0, DispatchBounded(frames.ClickHandlerForLabel("A"), "A"));
+            Assert.False(UnrelatedWorkSeesAScope(),
+                "a work item posted after A's export returned saw a dispatch scope: A's scope "
+                + "was not restored and leaked onto the render thread");
+
+            Assert.Equal(0, DispatchBounded(frames.ClickHandlerForLabel("B"), "B"));
+            Assert.False(UnrelatedWorkSeesAScope(),
+                "a work item posted while A and B were both pending saw a dispatch scope");
+            lock (pending) Assert.True(pending.Count == 2, $"expected A and B pending, got {pending.Count}");
+
+            TwoGatesProbe.GateA.SetResult();
+            TwoGatesProbe.GateB.SetResult();
+            Task[] both;
+            lock (pending) both = pending.ToArray();
+            await Task.WhenAny(Task.WhenAll(both), Task.Delay(Budget));
+            Assert.All(both, t => Assert.True(t.IsCompletedSuccessfully, $"a handler ended {t.Status}"));
+            Assert.False(UnrelatedWorkSeesAScope(), "a work item posted after A and B finished saw a dispatch scope");
+
+            // Rule 3: the continuations DID carry their scope, so the accessor can see one.
+            Assert.True(TwoGatesProbe.SawScopeInContinuation,
+                "neither handler's continuation saw its flowing scope, so FlowingScopeIsSetForTests "
+                + "cannot see a scope at all and the assertions above prove nothing");
+        }
+        finally
+        {
+            TwoGatesProbe.GateA.TrySetResult();
+            TwoGatesProbe.GateB.TrySetResult();
+            TearDown(pending, previousObserver);
+        }
+    }
+
+    /// <summary>"go" finishes synchronously after starting work that awaits a gate and
+    /// then re-renders into a BuildRenderTree that throws.</summary>
+    private sealed class FireAndForgetProbe : ComponentBase
+    {
+        public static TaskCompletionSource Gate = new();
+        public static Task? Work;
+        private bool _explode;
+
+        private async Task Later()
+        {
+            await Gate.Task;
+            _explode = true;
+            StateHasChanged();
+        }
+
+        protected override void BuildRenderTree(RenderTreeBuilder b)
+        {
+            if (_explode)
+                throw new InvalidOperationException("ff-boom");
+            b.OpenElement(0, "button");
+            b.AddAttribute(1, "onclick", EventCallback.Factory.Create<MouseEventArgs>(this, () =>
+            {
+                Work = Later();
+            }));
+            b.AddContent(2, "go");
+            b.CloseElement();
+        }
+    }
+
+    /// <summary>"bind" awaits a gate, then re-renders with #164's bad binding: a child
+    /// handed a parameter it does not declare.</summary>
+    private sealed class LateBindingProbe : ComponentBase
+    {
+        public static TaskCompletionSource Gate = new();
+        private bool _bad;
+
+        protected override void BuildRenderTree(RenderTreeBuilder b)
+        {
+            b.OpenElement(0, "button");
+            b.AddAttribute(1, "onclick", EventCallback.Factory.Create<MouseEventArgs>(this, async () =>
+            {
+                await Gate.Task;
+                _bad = true;
+            }));
+            b.AddContent(2, "bind");
+            b.CloseElement();
+
+            if (_bad)
+            {
+                b.OpenComponent<BlazorNative.Components.BnSwitch>(10);
+                b.AddAttribute(11, "Value", true);   // the property is `Checked`
+                b.CloseComponent();
+            }
+        }
+    }
+
+    /// <summary>"A" and "B" each await their own gate. A continuation records whether it
+    /// saw a flowing scope.</summary>
+    private sealed class TwoGatesProbe : ComponentBase
+    {
+        public static TaskCompletionSource GateA = new();
+        public static TaskCompletionSource GateB = new();
+        public static bool SawScopeInContinuation;
+
+        protected override void OnInitialized() => SawScopeInContinuation = false;
+
+        // Method groups, not capturing lambdas: an equal delegate keeps its handler id
+        // across the re-render A's click causes, so B's id from the mount frame stays live.
+        private Task ClickA() => AwaitThenRecord(GateA.Task);
+        private Task ClickB() => AwaitThenRecord(GateB.Task);
+
+        private static async Task AwaitThenRecord(Task gate)
+        {
+            await gate;
+            if (HostSession.CurrentRenderer?.FlowingScopeIsSetForTests == true)
+                SawScopeInContinuation = true;
+        }
+
+        protected override void BuildRenderTree(RenderTreeBuilder b)
+        {
+            b.OpenElement(0, "button");
+            b.AddAttribute(1, "onclick", EventCallback.Factory.Create<MouseEventArgs>(this, ClickA));
+            b.AddContent(2, "A");
+            b.CloseElement();
+
+            b.OpenElement(10, "button");
+            b.AddAttribute(11, "onclick", EventCallback.Factory.Create<MouseEventArgs>(this, ClickB));
+            b.AddContent(12, "B");
+            b.CloseElement();
+        }
+    }
+
     /// <summary>"A" awaits a test-held gate; "B" throws synchronously. Static slots
     /// are safe under the "host-session" collection.</summary>
     private sealed class SuspendThenThrowProbe : ComponentBase

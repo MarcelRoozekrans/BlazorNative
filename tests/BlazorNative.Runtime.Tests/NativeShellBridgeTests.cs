@@ -79,9 +79,15 @@ internal static unsafe class FakeShellHost
     /// null = no payload, the shape every non-Granted status uses.</summary>
     public static string? HostCallPayloadJson;
 
+    /// <summary>The managed thread the last Navigate callback ran on, or -1. Phase 16.1:
+    /// the host-event arms' thread pin reads it, because the nav manager notifies the host
+    /// on whatever thread the arm runs on, before the swap marshals itself.</summary>
+    public static int LastNavigateThread = -1;
+
     public static void Reset()
     {
         Route = "/";
+        LastNavigateThread = -1;
         Store.Clear();
         CurrentRouteAlwaysTooSmall = false;
         CurrentRouteCallCount = 0;
@@ -126,6 +132,7 @@ internal static unsafe class FakeShellHost
         string? route = Marshal.PtrToStringUTF8((IntPtr)routeUtf8);
         if (route is null) return -1;
         Route = route; // copy — the pointer dies when we return
+        LastNavigateThread = Environment.CurrentManagedThreadId;
         return 0;
     }
 

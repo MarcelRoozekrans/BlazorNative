@@ -25,13 +25,16 @@ namespace BlazorNative.Runtime.Tests;
 // renderer's thread, never a process-wide "last constructed" value (spike
 // requirement 9).
 //
-// DOES NOT COVER, stated plainly: for "back" and "navigate" this pin is not
-// arm-specific. Both reach component code only through HostSession.SwapRoot and
-// NativeRenderer.Mount, which marshal onto the render thread themselves, so
-// un-marshalling either ARM alone leaves this pin green; only the multicast and
-// "safeAreaChanged" arms run subscriber code directly, and the recorded mutation
-// is on the multicast. Neither does it cover thread identity for an arm with no
-// session, which runs on the caller by design.
+// "back" and "navigate" reach COMPONENT code only through HostSession.SwapRoot
+// and NativeRenderer.Mount, which marshal onto the render thread themselves, so
+// component records alone cannot tell whether the ARM was marshalled. What can:
+// the nav manager notifies the host FIRST, on whatever thread the arm runs on,
+// before the swap marshals. So for those two arms the pin also asserts the thread
+// of the host's Navigate callback (FakeShellHost.LastNavigateThread).
+//
+// DOES NOT COVER: thread identity for an arm with no session, which runs on the
+// caller by design; or code an arm might run between the host notify and the
+// swap, beyond the callback itself.
 // ─────────────────────────────────────────────────────────────────────────────
 
 [Collection("host-session")]
@@ -92,16 +95,35 @@ public sealed class HostEventArmThreadTests
         Assert.True(rc == 0, $"host_event '{arm}' returned rc {rc}, not 0");
     }
 
+    /// <summary>For "back" and "navigate": the host's Navigate callback ran on the
+    /// render thread, which it does only when the ARM itself was marshalled.</summary>
+    private static void AssertHostNotifiedOnTheRenderThread(NativeRenderer renderer, string arm)
+    {
+        int notified = FakeShellHost.LastNavigateThread;
+        Assert.True(notified >= 0,
+            $"host_event '{arm}' never called the host's Navigate callback, so the arm's own "
+            + "thread was not observed. Has the nav manager stopped notifying the host first?");
+        Assert.True(notified == renderer.RenderThreadId,
+            $"host_event '{arm}' notified the host on thread {notified}, but this renderer's "
+            + $"render thread is {renderer.RenderThreadId}: the arm ran on the caller's thread. "
+            + "Its component code still landed on the render thread only because SwapRoot "
+            + "marshals by itself.");
+    }
+
     [Fact]
     public void EveryHostEventArm_RunsItsComponentCode_OnTheRenderThread()
     {
         var (renderer, demo, settings) = StartSessionWithProbePages();
         try
         {
+            FakeShellHost.LastNavigateThread = -1;
             AssertArmRunsOnTheRenderThread(renderer, BnHostEvents.Navigate, "/settings", "init");
+            AssertHostNotifiedOnTheRenderThread(renderer, BnHostEvents.Navigate);
             Assert.Equal("/settings", HostSession.CurrentNavigationManager!.CurrentRoute);
 
+            FakeShellHost.LastNavigateThread = -1;
             AssertArmRunsOnTheRenderThread(renderer, BnHostEvents.Back, null, "init");
+            AssertHostNotifiedOnTheRenderThread(renderer, BnHostEvents.Back);
             Assert.Equal("/", HostSession.CurrentNavigationManager!.CurrentRoute);
 
             AssertArmRunsOnTheRenderThread(renderer, BnHostEvents.SafeAreaChanged, SafeAreaPayload, "safeArea");

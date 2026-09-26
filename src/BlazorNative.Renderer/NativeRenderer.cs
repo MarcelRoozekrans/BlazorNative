@@ -592,9 +592,12 @@ public sealed class NativeRenderer : BlazorRenderer
         // After a handler's first await: no scope is open, but the continuation still
         // carries its dispatch's scope in the execution context. Attribute the fault to
         // THAT dispatch, so its pending Task faults, in production mode as well as strict.
-        // A scope that is Done belongs to a handler whose Task already completed; a fault
-        // then is fire-and-forget, and takes the no-window path below.
-        if (s_flowingScope.Value is { Done: false } flowing && ReferenceEquals(flowing.Owner, this))
+        // A scope that is Done belongs to a handler that already finished; a fault then is
+        // fire-and-forget, and takes the no-window path below. A PARAMETER-BINDING fault
+        // is never attributed here: #164's abort below must see it first.
+        if (s_flowingScope.Value is { Done: false } flowing
+            && ReferenceEquals(flowing.Owner, this)
+            && !BlazorInterop.IsParameterBindingFault(exception))
         {
             Interlocked.CompareExchange(ref flowing.LateFault, exception, null);
             BnLog.Error("BlazorNative.Renderer", "render fault (after the handler's first await)", exception);
@@ -1521,9 +1524,14 @@ public sealed class NativeRenderer : BlazorRenderer
     /// through it and records <see cref="LateFault"/>, and the pending Task that
     /// <see cref="DispatchSyncPart"/> returns faults with it. Pinned by
     /// DispatchWindowScopeTests.ALateFault_InProductionMode_FaultsThePendingTask.
-    /// Once the handler's Task has completed, the scope is <see cref="Done"/>, and a
-    /// later fire-and-forget fault takes the no-window path: strict rethrow, or a
-    /// log.</para></summary>
+    /// Once the handler has finished — at the synchronous return when it never
+    /// yielded, or when its pending Task completes — the scope is <see cref="Done"/>,
+    /// and a later fire-and-forget fault takes the no-window path: strict rethrow, or
+    /// a log. A parameter-binding fault is never attributed this way; it takes #164's
+    /// abort. Pinned by DispatchWindowScopeTests'
+    /// AFireAndForgetFault_FromAHandlerThatFinishedSynchronously_TakesTheNoWindowPath,
+    /// AParameterBindingFault_AfterTheFirstAwait_StillTakesThe164Path and
+    /// TheFlowingScope_IsRestored_SoUnrelatedRenderThreadWorkSeesNone.</para></summary>
     private sealed class DispatchScope(NativeRenderer owner)
     {
         public readonly NativeRenderer Owner = owner;
@@ -1531,7 +1539,8 @@ public sealed class NativeRenderer : BlazorRenderer
         public List<Action>? PostDispatchActions;
         /// <summary>The first fault raised after the handler's first await.</summary>
         public Exception? LateFault;
-        /// <summary>Set once the handler's Task has completed.</summary>
+        /// <summary>Set once the handler has finished: at DispatchSyncPart's return when
+        /// it never yielded, otherwise when its pending Task completes.</summary>
         public volatile bool Done;
     }
 
@@ -1548,6 +1557,11 @@ public sealed class NativeRenderer : BlazorRenderer
     /// thread does not flow a poster's execution context, so a value left set would
     /// leak into whatever work item ran next.</summary>
     private static readonly AsyncLocal<DispatchScope?> s_flowingScope = new();
+
+    /// <summary>Test-only: whether a dispatch scope flows in the CURRENT execution
+    /// context. DispatchWindowScopeTests reads it from unrelated render-thread work to
+    /// pin that <see cref="DispatchSyncPart"/> restores it.</summary>
+    internal bool FlowingScopeIsSetForTests => s_flowingScope.Value is not null;
 
     /// <summary>Runs one UI event's SYNCHRONOUS part — the handler up to its first
     /// incomplete await, its re-render and FrameSink delivery — inside its own
@@ -1605,12 +1619,22 @@ public sealed class NativeRenderer : BlazorRenderer
                 (outer.PostDispatchActions ??= new List<Action>()).AddRange(queued);
         }
 
+        // The handler is finished on these two returns, so the scope is Done at once:
+        // fire-and-forget work it started must not have a later fault attributed to it.
+        // Only the Pending return leaves marking Done to AwaitWholeHandler.
         if (scope.Fault is { } captured)
+        {
+            scope.Done = true;
             return new DispatchOutcome(DispatchOutcomeKind.Faulted, captured, null);
+        }
         if (task is null || task.IsCompletedSuccessfully)
+        {
+            scope.Done = true;
             return new DispatchOutcome(DispatchOutcomeKind.Completed, null, null);
+        }
         if (task.IsCompleted)
         {
+            scope.Done = true;
             // Faulted or cancelled before yielding: this dispatch's fault.
             Exception fault = task.IsFaulted
                 ? task.Exception!.InnerException ?? task.Exception
