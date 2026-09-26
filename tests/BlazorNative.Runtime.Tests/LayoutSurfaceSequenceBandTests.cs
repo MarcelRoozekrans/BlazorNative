@@ -6,6 +6,7 @@ using BlazorNative.Components;
 using BlazorNative.Renderer;
 using BlazorNative.Runtime;
 using Microsoft.AspNetCore.Components;
+using Microsoft.AspNetCore.Components.Rendering;
 using Microsoft.AspNetCore.Components.RenderTree;
 using Xunit;
 
@@ -31,6 +32,48 @@ namespace BlazorNative.Runtime.Tests;
 // AddAttribute(17, "left", …) misfiled onto 100 collides with BnText's own
 // AddAttribute(100, "fontSize", …), and the diff silently mismatches them —
 // no exception, no red test, just a wrong wire on the next render.
+//
+// ItemNames and ContainerNames below are a THIRD hand copy of the layout
+// surface, after BnLayoutItem/BnLayoutContainer themselves and
+// LayoutSurfacePinTests' ItemParameters/ContainerParameters. The emission pins
+// read this copy, not the declaration, so TheEmissionRosters_AreExactlyTheDeclaredSurface
+// holds its parameter half to the declared surface in both directions.
+//
+// WHAT THIS DOES NOT COVER (Rule 5):
+//
+// - THE WIRE HALF OF THE ROSTERS IS NOT PINNED HERE. The roster fact compares
+//   parameter names only. A wrong wire spelling in ItemNames or ContainerNames
+//   fails SAFE in the emission and band pins: the emission pins would miss the
+//   frame and red, and the band pin would file the attribute under the
+//   component's own 100+ band and red. It is not a false-green channel, but the
+//   wire names' agreement with the shells is src/wire-vocabulary.json's job.
+//
+// - ONE MOUNT, SAMPLE VALUES ONLY. Each component is mounted once with
+//   SampleValue's representative values. A parameter SampleValue leaves unset,
+//   such as a bool, int, EventCallback or RenderFragment, emits no element
+//   attribute, so a collision or band error on THAT attribute is never seen.
+//   Nothing re-renders, so a collision that appears only on a second render is
+//   out of reach too.
+//
+// - ROOT-CONTIGUOUS RUNS ONLY. The emission and band pins read RootAttributes:
+//   the attribute frames that immediately follow the FIRST Element or
+//   Component frame. An item attribute emitted on a nested element, or after a
+//   non-attribute frame, is invisible to them. The collision pin walks every
+//   region, but only the contiguous attribute run after each opening frame.
+//
+// - BnList<> AND BnModal ARE OUTSIDE. The rows are LayoutItemComponents, the
+//   exported components deriving from BnLayoutItem, so the two argued
+//   exceptions in LayoutSurfacePinTests.AllowedNonLayoutComponents are never
+//   mounted here.
+//
+// - PRESENCE, NOT VALUE, AND EITHER SPELLING. PIN 4 accepts a parameter under
+//   its wire name OR its parameter name, and never checks the value.
+//
+// - THE EXEMPTIONS. The collision pin excuses a shared sequence in the four
+//   RazorEmitters when every name in the group is an item wire name, and the
+//   band pin skips those four entirely. The container emission pin skips every
+//   non-container row, and TheContainerRows_AreThereToBeChecked floors the rows
+//   it does check.
 // ─────────────────────────────────────────────────────────────────────────────
 
 [Collection("host-session")]
@@ -91,6 +134,24 @@ public sealed class LayoutSurfaceSequenceBandTests : IDisposable
         ("PaddingLeft",   "paddingLeft"),
     };
 
+    /// <summary>ItemNames/ContainerNames are this file's hand copy of the layout
+    /// surface. The emission facts read THEM, not the declaration, so a parameter
+    /// added to BnLayoutItem and LayoutSurfacePinTests.ItemParameters but not here
+    /// would never be checked for emission. This holds the copy to the declared
+    /// surface in both directions. ItemParameters and ContainerParameters are
+    /// themselves held to the declaration by LayoutSurfacePinTests, so this chains
+    /// the third copy to the source.</summary>
+    [Fact]
+    public void TheEmissionRosters_AreExactlyTheDeclaredSurface()
+    {
+        Assert.Equal(
+            LayoutSurfacePinTests.ItemParameters.OrderBy(n => n, StringComparer.Ordinal),
+            ItemNames.Select(p => p.Parameter).OrderBy(n => n, StringComparer.Ordinal));
+        Assert.Equal(
+            LayoutSurfacePinTests.ContainerParameters.OrderBy(n => n, StringComparer.Ordinal),
+            ContainerNames.Select(p => p.Parameter).OrderBy(n => n, StringComparer.Ordinal));
+    }
+
     /// <summary>The wire names <see cref="BnLayoutItem.EmitItemAttributes"/> and
     /// <see cref="BnLayoutItem.ItemAttributes"/> both write — the CAMEL-CASE
     /// wire form, not the C# parameter names in
@@ -130,17 +191,21 @@ public sealed class LayoutSurfaceSequenceBandTests : IDisposable
     public static TheoryData<Type> LayoutItemComponents()
     {
         var data = new TheoryData<Type>();
-        foreach (Type t in typeof(BnLayoutItem).Assembly
+        foreach (Type t in LayoutItemTypes())
+            data.Add(t);
+        return data;
+    }
+
+    /// <summary>The rows of <see cref="LayoutItemComponents"/> as types, so a
+    /// floor can count the same population the theories run over.</summary>
+    private static Type[] LayoutItemTypes()
+        => typeof(BnLayoutItem).Assembly
             .GetExportedTypes()
             .Where(t => typeof(IComponent).IsAssignableFrom(t))
             .Where(t => !t.IsAbstract)
             .Where(t => typeof(BnLayoutItem).IsAssignableFrom(t))
-            .OrderBy(t => t.Name, StringComparer.Ordinal))
-        {
-            data.Add(t);
-        }
-        return data;
-    }
+            .OrderBy(t => t.Name, StringComparer.Ordinal)
+            .ToArray();
 
     private static readonly MethodInfo GetCurrentRenderTreeFramesMethod =
         typeof(NativeRenderer).BaseType!.GetMethod(
@@ -240,10 +305,88 @@ public sealed class LayoutSurfaceSequenceBandTests : IDisposable
     [MemberData(nameof(LayoutItemComponents))]
     public void Component_EmitsNoSequenceCollisionOutsideTheDocumentedSplat(Type component)
     {
-        RenderTreeFrame[] frames = FramesForFullSurfaceMount(component);
+        (List<string> offenders, int attributeRegions) = SequenceCollisions(
+            component.Name, FramesForFullSurfaceMount(component), SplatEmitters.Contains(component));
 
-        bool isSplatEmitter = SplatEmitters.Contains(component);
+        // Rule 2, per row: every layout component carries the item surface on
+        // its root, so a mount with every parameter set yields at least one
+        // region with attributes. Zero regions means the walk saw nothing, and
+        // the Assert.Empty below would pass over it.
+        Assert.True(attributeRegions >= 1,
+            $"{component.Name}: the collision walk found no attribute region in its frames, " +
+            "so it checked nothing. Either the mount stopped emitting or the walk stopped seeing it.");
 
+        Assert.Empty(offenders);
+    }
+
+    /// <summary>
+    /// The positive control for <see cref="Component_EmitsNoSequenceCollisionOutsideTheDocumentedSplat"/>.
+    /// Synthetic frames, built with Blazor's own <see cref="RenderTreeBuilder"/>, are
+    /// fed through the SAME <see cref="SequenceCollisions"/> the pin calls. The
+    /// planted collision is the 13.0 mutation table's shape: <c>left</c> misfiled
+    /// onto 100, where it collides with a component's own <c>fontSize</c>.
+    /// </summary>
+    [Fact]
+    public void TheCollisionDetector_ReportsAPlantedCollision_AndExcusesOnlyTheDocumentedSplat()
+    {
+        RenderTreeFrame[] planted = Synthetic(b =>
+        {
+            b.OpenElement(0, "text");
+            b.AddAttribute(100, "fontSize", "x");
+            b.AddAttribute(100, "left", "x");
+            b.CloseElement();
+        });
+
+        (List<string> offenders, int regions) = SequenceCollisions("Planted", planted, isSplatEmitter: false);
+        Assert.Equal(1, regions);
+        Assert.Equal(new[] { "Planted: sequence 100 shared by [fontSize, left]" }, offenders);
+
+        // A splat emitter does not excuse it either: fontSize is not an item wire name.
+        Assert.Single(SequenceCollisions("Planted", planted, isSplatEmitter: true).Offenders);
+
+        // The documented splat: only item wire names share the sequence. Excused
+        // in a splat emitter, and reported anywhere else.
+        RenderTreeFrame[] splat = Synthetic(b =>
+        {
+            b.OpenElement(0, "checkbox");
+            b.AddAttribute(1, "margin", "x");
+            b.AddAttribute(1, "left", "x");
+            b.CloseElement();
+        });
+        Assert.Empty(SequenceCollisions("Splat", splat, isSplatEmitter: true).Offenders);
+        Assert.Single(SequenceCollisions("Splat", splat, isSplatEmitter: false).Offenders);
+
+        // The bucketing: the same sequence in two DIFFERENT regions is not a collision.
+        RenderTreeFrame[] twoRegions = Synthetic(b =>
+        {
+            b.OpenElement(0, "view");
+            b.AddAttribute(100, "a", "x");
+            b.OpenElement(1, "text");
+            b.AddAttribute(100, "b", "x");
+            b.CloseElement();
+            b.CloseElement();
+        });
+        (List<string> bucketed, int bucketedRegions) = SequenceCollisions("TwoRegions", twoRegions, isSplatEmitter: false);
+        Assert.Equal(2, bucketedRegions);
+        Assert.Empty(bucketed);
+    }
+
+    /// <summary>Frames built by Blazor's own <see cref="RenderTreeBuilder"/>, for the
+    /// controls: the same frame shape a component's BuildRenderTree produces.</summary>
+    private static RenderTreeFrame[] Synthetic(Action<RenderTreeBuilder> build)
+    {
+        using var builder = new RenderTreeBuilder();
+        build(builder);
+        ArrayRange<RenderTreeFrame> range = builder.GetFrames();
+        return range.Array.Take(range.Count).ToArray();
+    }
+
+    /// <summary>The collision detector, shared by the pin and its control. Returns
+    /// every shared sequence outside the documented splat, and how many regions
+    /// carried at least one attribute, which is what the pin floors.</summary>
+    internal static (List<string> Offenders, int AttributeRegions) SequenceCollisions(
+        string componentName, RenderTreeFrame[] frames, bool isSplatEmitter)
+    {
         // Attribute frames for one Element/Component region are CONTIGUOUS,
         // immediately following the frame that opens it — that is the shape
         // every BuildRenderTree in this package produces (EmitItemAttributes /
@@ -256,6 +399,7 @@ public sealed class LayoutSurfaceSequenceBandTests : IDisposable
         // forwards into a child component and a splat-owning element in a
         // sibling region must not be conflated).
         var offenders = new List<string>();
+        int attributeRegions = 0;
         int i = 0;
         while (i < frames.Length)
         {
@@ -270,6 +414,9 @@ public sealed class LayoutSurfaceSequenceBandTests : IDisposable
             while (j < frames.Length && frames[j].FrameType == RenderTreeFrameType.Attribute)
                 j++;
 
+            if (j > regionStart)
+                attributeRegions++;
+
             var duplicateGroups = frames[regionStart..j]
                 .GroupBy(f => f.Sequence)
                 .Where(g => g.Count() > 1);
@@ -280,13 +427,13 @@ public sealed class LayoutSurfaceSequenceBandTests : IDisposable
                 bool isDocumentedSplat = isSplatEmitter && names.All(n => ItemWireNames.Contains(n));
 
                 if (!isDocumentedSplat)
-                    offenders.Add($"{component.Name}: sequence {group.Key} shared by [{string.Join(", ", names)}]");
+                    offenders.Add($"{componentName}: sequence {group.Key} shared by [{string.Join(", ", names)}]");
             }
 
             i = j;
         }
 
-        Assert.Empty(offenders);
+        return (offenders, attributeRegions);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -342,7 +489,7 @@ public sealed class LayoutSurfaceSequenceBandTests : IDisposable
     [MemberData(nameof(LayoutItemComponents))]
     public void Container_EmitsEveryContainerParameterItDeclares(Type component)
     {
-        if (!typeof(BnLayoutContainer).IsAssignableFrom(component))
+        if (!IsContainerRow(component))
             return; // Not a container — it has no container surface to emit.
 
         string[] emitted = RootAttributes(FramesForFullSurfaceMount(component))
@@ -356,6 +503,32 @@ public sealed class LayoutSurfaceSequenceBandTests : IDisposable
             .ToArray();
 
         Assert.Empty(missing);
+    }
+
+    /// <summary>Which rows <see cref="Container_EmitsEveryContainerParameterItDeclares"/>
+    /// actually checks. Shared with its floor, so the floor counts the rows the
+    /// fact really checks rather than a restatement of the filter.</summary>
+    private static bool IsContainerRow(Type component)
+        => typeof(BnLayoutContainer).IsAssignableFrom(component);
+
+    /// <summary>
+    /// Rule 2 for <see cref="Container_EmitsEveryContainerParameterItDeclares"/>. That
+    /// fact returns early for every non-container row, so a filter that matched
+    /// nothing would pass every row while checking none. Measured at 4 container
+    /// rows on 2026-09-26 (BnColumn, BnRow, BnSafeArea and BnView), floored at
+    /// exactly that with no headroom, with BnView as the named anchor.
+    /// </summary>
+    [Fact]
+    public void TheContainerRows_AreThereToBeChecked()
+    {
+        Type[] containerRows = LayoutItemTypes()
+            .Where(IsContainerRow)
+            .ToArray();
+
+        Assert.True(containerRows.Length >= 4,
+            $"only {containerRows.Length} of the layout rows are containers, and there are 4. " +
+            "The container emission pin returns early for the rest, so it is checking too little.");
+        Assert.Contains(typeof(BnView), containerRows);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -384,9 +557,58 @@ public sealed class LayoutSurfaceSequenceBandTests : IDisposable
         if (SplatEmitters.Contains(component))
             return; // Compiler-assigned sequences — see the note above.
 
+        RenderTreeFrame[] rootAttributes = RootAttributes(FramesForFullSurfaceMount(component));
+
+        // Rule 2, per row: a component that declares any parameter, mounted with
+        // every parameter set, has a non-empty root attribute run. An empty run
+        // would make the band check below pass while checking nothing.
+        bool declaresAnyParameter = component
+            .GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.FlattenHierarchy)
+            .Any(p => p.GetCustomAttribute<ParameterAttribute>() is not null);
+        if (declaresAnyParameter)
+            Assert.True(rootAttributes.Length > 0,
+                $"{component.Name} declares parameters, but its root attribute run is empty, so " +
+                "the band check saw nothing. The mount or RootAttributes has stopped seeing the surface.");
+
+        Assert.Empty(BandOffenders(component.Name, rootAttributes));
+    }
+
+    /// <summary>
+    /// The positive control for <see cref="HandWrittenEmitter_KeepsEachAttributeInItsDeclaredBand"/>.
+    /// Synthetic frames go through the SAME <see cref="RootAttributes"/> and
+    /// <see cref="BandOffenders"/> the pin calls. The planted errors are the 13.0
+    /// conclusion's recorded mutation, <c>fontSize</c> moved from 100 to 18, and
+    /// the collision table's <c>left</c> misfiled onto 100. The in-band
+    /// <c>margin</c> and <c>padding</c> must not be reported.
+    /// </summary>
+    [Fact]
+    public void TheBandDetector_ReportsOutOfBandAttributes_AndOnlyThose()
+    {
+        RenderTreeFrame[] planted = Synthetic(b =>
+        {
+            b.OpenElement(0, "text");
+            b.AddAttribute(1, "margin", "x");
+            b.AddAttribute(18, "fontSize", "x");
+            b.AddAttribute(50, "padding", "x");
+            b.AddAttribute(100, "left", "x");
+            b.CloseElement();
+        });
+
+        Assert.Equal(
+            new[]
+            {
+                "Planted: 'fontSize' is at sequence 18, outside the component's own 100+.",
+                "Planted: 'left' is at sequence 100, outside item 1-17.",
+            },
+            BandOffenders("Planted", RootAttributes(planted)));
+    }
+
+    /// <summary>The band detector, shared by the pin and its control.</summary>
+    internal static List<string> BandOffenders(string componentName, RenderTreeFrame[] rootAttributes)
+    {
         var offenders = new List<string>();
 
-        foreach (RenderTreeFrame f in RootAttributes(FramesForFullSurfaceMount(component)))
+        foreach (RenderTreeFrame f in rootAttributes)
         {
             string name = f.AttributeName;
             int seq = f.Sequence;
@@ -401,9 +623,9 @@ public sealed class LayoutSurfaceSequenceBandTests : IDisposable
                     : ("the component's own 100+", seq >= 100);
 
             if (!rule.Ok)
-                offenders.Add($"{component.Name}: '{name}' is at sequence {seq}, outside {rule.Band}.");
+                offenders.Add($"{componentName}: '{name}' is at sequence {seq}, outside {rule.Band}.");
         }
 
-        Assert.Empty(offenders);
+        return offenders;
     }
 }
