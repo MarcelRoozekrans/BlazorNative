@@ -3035,7 +3035,7 @@ shell source moved. `#397` (the phase PR) merged as `0bdeb84` before this record
 > Seven carried items are filed as #401–#407, beside #396. The owner chose to keep the FAIL on
 > record, close the gaps in 15.7, and re-audit in 15.8.
 
-#### Phase 15.7: Close the audit gaps [status: active]
+#### Phase 15.7: Close the audit gaps [status: complete]
 **Goal:** Close the two NOT MET items from the 15.6 audit, and one overclaimed register row:
 - close **#357** with its evidence;
 - give `LayoutSurfacePinTests` and `DefaultStructTrapSweepTests` a verdict, and sweep the remaining
@@ -3048,6 +3048,7 @@ shell source moved. `#397` (the phase PR) merged as `0bdeb84` before this record
 **HelpWanted:** no
 **Design:** [`docs/superpowers/specs/2026-09-26-phase-15.7-design.md`](../superpowers/specs/2026-09-26-phase-15.7-design.md)
 **Plan:** [`docs/superpowers/plans/2026-09-26-phase-15.7-close-the-audit-gaps.md`](../superpowers/plans/2026-09-26-phase-15.7-close-the-audit-gaps.md)
+**Completed:** 2026-09-26 · [PR #415](https://github.com/MarcelRoozekrans/BlazorNative/pull/415)
 **Suite:** .NET 1186 → 1200, measured; Android 228, iOS 271 and JVM 162 unchanged.
 
 A read-only sweep of every non-tree test file
