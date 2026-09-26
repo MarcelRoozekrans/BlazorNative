@@ -104,9 +104,10 @@ public sealed class BnTestHost : IDisposable
                 ? ParameterView.Empty
                 : ParameterView.FromDictionary(parameters);
 
-            // Mount is synchronous under the renderer's inline dispatcher (the
-            // sync-mount contract the C-ABI host depends on), so by the time this
-            // returns the tree is populated — no awaiting, no polling for a shape.
+            // Mount posts to the renderer's render thread and waits for the first
+            // render to complete (the sync-mount contract the C-ABI host depends on),
+            // so by the time this returns the tree is populated — no awaiting, no
+            // polling for a shape.
             renderer.Mount<TComponent>(view);
             return host;
         }

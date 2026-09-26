@@ -453,10 +453,10 @@ public static class Exports
     ///   3 = malformed or NULL args, including a handlerId outside the int
     ///       range of the renderer's handler table.
     ///
-    /// SYNCHRONOUS by contract: the renderer's InlineDispatcher runs the
-    /// handler, the re-render, and the FrameSink callback on the calling
-    /// thread, so everything — including frame delivery to the host — has
-    /// completed when this returns. Frames therefore still fire only inside
+    /// SYNCHRONOUS by contract: the dispatch is posted to the renderer's
+    /// render thread and this waits for it, so the handler, the re-render,
+    /// and the FrameSink callback — including frame delivery to the host —
+    /// have completed when this returns. Frames therefore still fire only inside
     /// host calls (mount OR dispatch), containing the 3.0d trampoline hazard.
     /// The host-side threading contract (single BlazorNative-Dispatch lane,
     /// never the UI thread) lives in BlazorNativeRuntime.kt.
