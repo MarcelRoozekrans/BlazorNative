@@ -17,13 +17,16 @@ namespace BlazorNative.Runtime.Tests;
 //   0 = dispatched (INCLUDING stale handlerId — at-most-once delivery; the
 //       renderer already catches the ArgumentException + logs)
 //   1 = no session / nothing mounted
-//   2 = dispatch faulted — the handler, the resulting re-render, or frame
-//       delivery threw (detail ex.ToString() on stderr)
+//   2 = the synchronous part faulted — the handler before its first await,
+//       the resulting re-render, or frame delivery threw (detail
+//       ex.ToString() on stderr)
 //   3 = malformed / NULL args JSON (incl. handlerId beyond int range)
 //
-// Synchronous contract: the handler, the re-render, AND frame delivery all
-// complete before the core returns (InlineDispatcher) — the tests assert the
-// re-render frame is ALREADY captured when the call returns, no waiting.
+// Since Phase 16.1 rc reports the handler's SYNCHRONOUS part. Every handler
+// here is synchronous, so the handler, the re-render, AND frame delivery all
+// complete on the render thread before the core returns — the tests assert the
+// re-render frame is ALREADY captured when the call returns, no waiting. An
+// async handler is DispatchLaneBlockingTests and DispatchWindowScopeTests.
 //
 // State note: HostSession is a process-wide singleton; every test here resets
 // it (ResetForTests) and the class shares the "host-session" collection with
@@ -273,8 +276,8 @@ public sealed class DispatchEventTests
             b.OpenElement(0, "button");
             b.AddAttribute(1, "onclick", EventCallback.Factory.Create<MouseEventArgs>(this, () =>
             {
-                // Inline dispatcher: the nested dispatch (handler + any
-                // re-render) completes synchronously right here.
+                // Already on the render thread, so InvokeAsync runs inline: the
+                // nested dispatch (handler + any re-render) completes right here.
                 Renderer!.DispatchUiEventAsync(
                         new NativeUiEvent(0, InnerHandlerId, "change", "nested"))
                     .GetAwaiter().GetResult();

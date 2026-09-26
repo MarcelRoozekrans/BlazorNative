@@ -126,11 +126,18 @@ void blazornative_shutdown(void);
 
 // Host→renderer UI event ingress (Exports.cs DispatchEvent). handlerId is the
 // AttachEvent's aux field (widened to u64); argsJsonUtf8 is NUL-terminated flat
-// JSON ({"name":"click"} / {"name":"change","payload":"<raw>"}). SYNCHRONOUS: the
-// handler, the re-render, and the frame callback all complete before this returns
-// (so the re-render frame arrives on the CALLING thread — the dispatch lane).
-// Return: 0 dispatched (incl. stale handler) / 1 no session / 2 dispatch faulted /
-// 3 malformed args or handlerId out of int range.
+// JSON ({"name":"click"} / {"name":"change","payload":"<raw>"}). Since Phase 16.1 the
+// handler runs on the runtime's render thread, and this waits only for its synchronous
+// part — never for an await on the host (#345).
+//
+// rc reports the SYNCHRONOUS part of the handler: 0 = it ran and did not fault before its
+// first await (the handler may still be running); 2 = it faulted before yielding. A fault
+// after the first await is delivered later through the FaultNotice host-call op, never as
+// an rc. Frames from the synchronous part are delivered before this returns; frames from a
+// continuation are delivered later, from the render thread.
+//
+// Return: 0 dispatched (incl. a still-running handler and a stale handler) / 1 no
+// session / 2 faulted before yielding / 3 malformed args or handlerId out of int range.
 int32_t blazornative_dispatch_event(uint64_t handlerId, const char* argsJsonUtf8);
 
 // The host-implemented shell callbacks (BridgeProtocolNative.cs
@@ -204,8 +211,9 @@ int32_t blazornative_host_call_complete(int64_t requestId, int32_t status, const
 // time in Phase 9.1 — the WARM half of notification tap-through dispatches the
 // reserved name "navigate" with the tap's route as the payload, and .NET maps it to
 // NavigateToAsync (the "back" precedent, a new reserved name over the SAME export).
-// name is required (NULL/empty → rc 3); payload may be NULL. SYNCHRONOUS: the re-route
-// swap's frames are delivered before this returns. Returns 0 handled (navigated) /
+// name is required (NULL/empty → rc 3); payload may be NULL. Every arm runs on the render
+// thread and this waits for its synchronous part (Phase 16.1): the re-route swap's frames
+// are delivered before this returns. Returns 0 handled (navigated) /
 // 1 not handled (no session / unknown route) / 2 fault / 3 malformed. NO new export —
 // the symbol has been in the archive since Phase 5.1 (ios.yml's nm gate lists it).
 int32_t blazornative_host_event(const char* nameUtf8, const char* payloadUtf8);

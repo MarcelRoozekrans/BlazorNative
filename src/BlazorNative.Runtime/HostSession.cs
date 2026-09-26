@@ -264,7 +264,11 @@ internal static unsafe class HostSession
     /// cannot start its disposal batch there); the deferred swap still runs
     /// before blazornative_dispatch_event returns. Failures THROW — direct
     /// callers see them; deferred ones join the 3.2 dispatch capture and
-    /// map to export rc 2 (strict conventions).</summary>
+    /// map to export rc 2 (strict conventions). Phase 16.1: the whole swap
+    /// decision runs on the render thread, and a call from any other thread
+    /// waits for ALL of it — off the render thread no dispatch scope can be
+    /// open, so the swap runs at once and its frames are delivered before
+    /// this returns.</summary>
     /// <param name="name">The mount-registry key to swap to.</param>
     /// <param name="afterSwap">Runs INSIDE the swap unit, after the new root
     /// mounted — the nav manager finalizes route state + RouteChanged here so
@@ -278,7 +282,9 @@ internal static unsafe class HostSession
         }
 
         NativeRenderer renderer = EnsureSession();
-        renderer.RunAfterDispatch(() =>
+        // Inline on the render thread, where a handler's navigation must still see
+        // its own dispatch scope; a full wait from anywhere else.
+        renderer.Dispatcher.InvokeAsync(() => renderer.RunAfterDispatch(() =>
         {
             int current = Volatile.Read(ref s_currentRootComponentId);
             if (current >= 0)
@@ -296,7 +302,7 @@ internal static unsafe class HostSession
             }
             MountRoot(name, renderer);
             afterSwap?.Invoke();
-        });
+        })).GetAwaiter().GetResult();
     }
 
     /// <summary>Mounts a registry component (callers verified the key) and

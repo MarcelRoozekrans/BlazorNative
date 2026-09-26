@@ -16,9 +16,9 @@ namespace BlazorNative.Renderer.Tests;
 //
 // The fix for that satisfied "never discard" and then did the wrong thing with
 // what it caught: for an ASYNC subscriber it called HandleException straight from
-// a ThreadPool continuation. HandleException reads and writes three fields this
-// renderer declares single-threaded — _uiEventDispatchDepth,
-// _uiEventDispatchException, _reportedBindingFault — and under StrictErrors it
+// a ThreadPool continuation. HandleException reads and writes state this
+// renderer declares single-threaded — the dispatch capture window, then a depth
+// counter and a shared slot, and _reportedBindingFault — and under StrictErrors it
 // rethrows via ExceptionDispatchInfo.Throw() ON THAT POOL THREAD, where nothing
 // observes it. So the mechanism built to stop a fault being swallowed could
 // corrupt renderer state AND swallow the fault a second way.

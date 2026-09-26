@@ -128,7 +128,7 @@ public sealed class NativeRenderer : BlazorRenderer
     // Each renderer owns ONE dedicated thread, "BlazorNative-Render", with a
     // single-threaded SynchronizationContext on it (RenderThreadDispatcher). Every
     // mutating entry point below — Mount, MountAsync, Unmount, RunAfterDispatch,
-    // DispatchUiEventAsync and Dispose — runs its body on that thread: a call from
+    // DispatchUiEventAsync, DispatchSyncPart and Dispose — runs its body on that thread: a call from
     // another thread posts the work and blocks until it completes, and a call from the
     // render thread runs inline. CheckAccess() answers honestly.
     //
@@ -256,62 +256,62 @@ public sealed class NativeRenderer : BlazorRenderer
     /// <see cref="RunAfterDispatch"/> instead (the navigation swap does).</summary>
     public void Unmount(int componentId) => OnRenderThread(() => RemoveRootComponent(componentId));
 
-    // ── Post-dispatch deferral (Phase 3.5) ────────────────────────────────────
+    // ── Post-dispatch deferral (Phase 3.5, scoped per dispatch in 16.1) ──────
     //
     // Blazor's Renderer.DispatchEventAsync keeps its batch open across the
     // synchronous part of an event handler (state changes coalesce into ONE
     // re-render after the handler). Work that must start a NEW batch — the
     // navigation swap's RemoveRootComponent — therefore cannot run inside the
-    // handler; it queues here and drains when the OUTERMOST dispatch window
-    // unwinds (handler + its re-render batch complete), still synchronously
-    // inside DispatchUiEventAsync — so swap frames are delivered before
+    // handler; it queues into the CURRENT dispatch's scope and runs when that
+    // scope closes, which is when the dispatch's synchronous part returns its
+    // Task — still inside DispatchSyncPart, so swap frames are delivered before
     // blazornative_dispatch_event returns (the dispatch-window pin).
 
-    private List<Action>? _postDispatchActions;
-
-    /// <summary>Runs <paramref name="action"/> immediately when no UI-event
-    /// dispatch window is open; otherwise queues it to run when the outermost
-    /// window unwinds (still inside the dispatch export call). A queued
-    /// action's exception — including strict-mode renderer errors from the
-    /// frames it produces — is routed into the dispatch capture slot, so it
-    /// faults the dispatch task exactly like a handler fault (export rc 2).
-    /// Honest boundary (NON-strict mode): the drain runs at depth 0, so a
-    /// renderer error DURING a deferred action's own batches routes through
-    /// <see cref="HandleException"/>'s log-only path — the action "succeeds"
-    /// and the export returns 0. Only exceptions the action itself throws
-    /// (or strict-mode rethrows) reach the capture slot. In-window faults are
-    /// unaffected: they always map to rc 2.</summary>
+    /// <summary>Runs <paramref name="action"/> immediately when no dispatch's
+    /// synchronous part is running; otherwise queues it into that dispatch's
+    /// <see cref="DispatchScope"/>, to run when the scope closes (still inside the
+    /// dispatch export call). A queued action's exception — including strict-mode
+    /// renderer errors from the frames it produces — is captured into that same
+    /// scope, so it faults the dispatch exactly like a handler fault (export rc 2).
+    /// A handler SUSPENDED on an await holds no scope, so a dispatch arriving
+    /// meanwhile queues into its own scope and swaps before its own export returns
+    /// (16.0 spike requirement 1). Honest boundary (NON-strict mode): the drain
+    /// runs after the scope closed, so a renderer error DURING a deferred action's
+    /// own batches routes through <see cref="HandleException"/>'s log-only path —
+    /// the action "succeeds" and the export returns 0. Only exceptions the action
+    /// itself throws (or strict-mode rethrows) reach the scope. In-window faults
+    /// are unaffected: they always map to rc 2.</summary>
     public void RunAfterDispatch(Action action)
     {
-        // 16.1: reads _uiEventDispatchDepth, which only the render thread may touch.
+        // 16.1: reads the current scope, which only the render thread may touch.
         if (!_dispatcher.CheckAccess())
         {
             OnRenderThread(() => RunAfterDispatch(action));
             return;
         }
-        if (_uiEventDispatchDepth == 0)
+        if (_currentScope is not { } scope)
         {
             action();
             return;
         }
-        (_postDispatchActions ??= new List<Action>()).Add(action);
+        (scope.PostDispatchActions ??= new List<Action>()).Add(action);
     }
 
-    /// <summary>Drains queued post-dispatch work (see <see cref="RunAfterDispatch"/>).
-    /// Runs with the dispatch depth already at 0 — a drained action's
-    /// Unmount/Mount batches process normally, and a RunAfterDispatch call
-    /// DURING the drain executes immediately (depth 0), so the while-loop is
+    /// <summary>Drains a closed scope's queued post-dispatch work (see
+    /// <see cref="RunAfterDispatch"/>). Runs after the scope closed — a drained
+    /// action's Unmount/Mount batches process normally, and a RunAfterDispatch
+    /// call DURING the drain executes immediately, so the while-loop is
     /// unreachable today: purely defensive against a future change that
-    /// re-queues mid-drain. Action faults land in the capture slot (first
-    /// one wins, matching the window contract) instead of escaping the
-    /// calling finally; EVERY fault is logged to stderr — mirroring
-    /// <see cref="HandleException"/>'s window path — so a second fault is
-    /// never silently discarded when the slot is already taken.</summary>
-    private void DrainPostDispatchActions()
+    /// re-queues mid-drain. Action faults land in THIS scope (first one wins,
+    /// matching the window contract) instead of escaping the calling finally;
+    /// EVERY fault is logged to stderr — mirroring <see cref="HandleException"/>'s
+    /// window path — so a second fault is never silently discarded when the slot
+    /// is already taken.</summary>
+    private static void DrainPostDispatchActions(DispatchScope scope)
     {
-        while (_postDispatchActions is { Count: > 0 } actions)
+        while (scope.PostDispatchActions is { Count: > 0 } actions)
         {
-            _postDispatchActions = null;
+            scope.PostDispatchActions = null;
             foreach (Action action in actions)
             {
                 try
@@ -321,7 +321,7 @@ public sealed class NativeRenderer : BlazorRenderer
                 catch (Exception ex)
                 {
                     BnLog.Error("BlazorNative.Renderer", "post-dispatch action threw", ex);
-                    _uiEventDispatchException ??= ex;
+                    scope.Fault ??= ex;
                 }
             }
         }
@@ -478,9 +478,9 @@ public sealed class NativeRenderer : BlazorRenderer
                 // #213 item 2 — PARK IT, DO NOT HANDLE IT HERE.
                 //
                 // This continuation runs on a ThreadPool thread. It used to call
-                // HandleException directly, which reads and writes three fields this class
-                // declares single-threaded (_uiEventDispatchDepth,
-                // _uiEventDispatchException, _reportedBindingFault) and, under
+                // HandleException directly, which reads and writes state this class
+                // declares single-threaded (the current dispatch scope, and
+                // _reportedBindingFault) and, under
                 // StrictErrors, rethrows via ExceptionDispatchInfo.Throw() — on a pool
                 // thread, where nothing observes it. So the mechanism meant to stop a
                 // subscriber fault being SWALLOWED could both corrupt renderer state and
@@ -543,8 +543,8 @@ public sealed class NativeRenderer : BlazorRenderer
     /// Interlocked access. Every other field in this class — including the three
     /// <see cref="HandleException"/> touches — is single-threaded by contract, which is
     /// exactly what the old fault continuation broke: it called HandleException straight
-    /// from the pool thread, reading and writing <c>_uiEventDispatchDepth</c>,
-    /// <c>_uiEventDispatchException</c> and <c>_reportedBindingFault</c> from off the
+    /// from the pool thread, reading and writing the dispatch capture window, then a
+    /// depth counter and a shared slot, and <c>_reportedBindingFault</c> from off the
     /// renderer thread, and under <see cref="StrictErrors"/> it also rethrew via
     /// <c>ExceptionDispatchInfo.Throw()</c> on that pool thread — where nothing observes
     /// it.</para>
@@ -575,14 +575,16 @@ public sealed class NativeRenderer : BlazorRenderer
 
     protected override void HandleException(Exception exception)
     {
-        // Inside a UI-event dispatch window, remember the first exception so
-        // DispatchUiEventAsync can fault its task (Blazor swallows dispatch
-        // exceptions here otherwise — see _uiEventDispatchException doc).
-        // The window wins over strict mode: the fault surfaces ONCE, at the
-        // dispatch boundary (export rc 2) — never from this stack.
-        if (_uiEventDispatchDepth > 0)
+        // Inside a dispatch's synchronous part, remember the first exception in
+        // THAT dispatch's scope so DispatchSyncPart reports it as Faulted (Blazor
+        // swallows dispatch exceptions here otherwise — see DispatchScope). The
+        // window wins over strict mode: the fault surfaces ONCE, at the dispatch
+        // boundary (export rc 2) — never from this stack. A handler suspended on
+        // an await holds no scope, so a fault raised by ANOTHER dispatch meanwhile
+        // is that dispatch's, never the suspended one's (16.0 requirement 1).
+        if (_currentScope is { } scope)
         {
-            _uiEventDispatchException ??= exception;
+            scope.Fault ??= exception;
             BnLog.Error("BlazorNative.Renderer", "render fault (dispatch window)", exception);
             return;
         }
@@ -1467,78 +1469,131 @@ public sealed class NativeRenderer : BlazorRenderer
 
     // ── Event ingestion ───────────────────────────────────────────────────────
 
-    /// <summary>Captures the first exception Blazor routes to
-    /// <see cref="HandleException"/> during a <see cref="DispatchUiEventAsync"/>
-    /// window. Blazor's Renderer.DispatchEventAsync does NOT propagate such
-    /// exceptions to its caller — they go to HandleExceptionViaErrorBoundary →
-    /// (no error boundary here) → HandleException, and the returned task
-    /// completes successfully. Without this capture,
-    /// blazornative_dispatch_event could never honor its "2 = dispatch
-    /// faulted" contract (Phase 3.2, DoD #9 partial). Note the capture is a
-    /// WINDOW, not a handler hook: anything routed to HandleException while
-    /// the window is open is captured — the handler itself, the resulting
-    /// re-render (UpdateDisplayAsync failures land here too), or frame
-    /// delivery.
+    /// <summary>One dispatch's capture window (Phase 16.1): the first fault Blazor
+    /// routes to <see cref="HandleException"/> during that dispatch's synchronous
+    /// part, and the post-dispatch actions queued by <see cref="RunAfterDispatch"/>.
     ///
-    /// The depth counter (not a bool) keeps the window correct for NESTED
-    /// dispatches (a handler that itself calls DispatchUiEventAsync): the
-    /// slot is only cleared + rethrown when the OUTERMOST dispatch unwinds,
-    /// and is never reset at nested-dispatch start — so an outer handler's
-    /// throw cannot be discarded by an inner dispatch.
+    /// <para>Why a window at all: Blazor's Renderer.DispatchEventAsync does NOT
+    /// propagate a handler's exception to its caller — it goes to
+    /// HandleExceptionViaErrorBoundary → (no error boundary here) →
+    /// HandleException, and the returned task completes successfully. Without the
+    /// capture, blazornative_dispatch_event could never honor its "2 = faulted
+    /// before yielding" contract (Phase 3.2, DoD #9 partial). The capture is a
+    /// WINDOW, not a handler hook: anything routed to HandleException while it is
+    /// open is captured — the handler itself, the resulting re-render
+    /// (UpdateDisplayAsync failures land here too), or frame delivery.</para>
     ///
-    /// These guarantees assume SYNCHRONOUS handlers; async handlers (await in
-    /// @onclick) move continuations off the dispatch thread and out of this
-    /// window. RE-LEDGERED — Phase 4.2 triage item 1 (ledger of record:
-    /// docs/plans/2026-07-11-phase-4.2-hardening-triage.md): revisit with the
-    /// first real async @onclick consumer, together with the dispatch lane's
-    /// async-offload (triage item 2 — the same design).
+    /// <para>Why per dispatch: until 16.1 the window was a renderer-wide depth
+    /// counter decremented in the dispatch lambda's finally, so it stayed open
+    /// across an async handler's await. A second dispatch arriving while the first
+    /// was suspended was treated as nested inside it: its navigation swap waited
+    /// for the unrelated handler, and its fault landed in the shared slot, returned
+    /// rc 0, and surfaced later as the FIRST handler's fault (16.0 spike
+    /// requirement 1). A scope is current only while its own dispatch's
+    /// synchronous part runs on the render thread; <see cref="DispatchSyncPart"/>
+    /// closes it when Blazor hands back the handler's Task.</para>
     ///
-    /// Instance fields are safe: all dispatch runs on the renderer's render
-    /// thread (Phase 16.1).</summary>
-    private Exception? _uiEventDispatchException;
-    private int _uiEventDispatchDepth;
+    /// <para>Genuinely NESTED dispatch — a handler that itself dispatches,
+    /// synchronously, on the render thread — opens an inner scope and restores the
+    /// outer one on close. The inner fault is the inner dispatch's; the inner
+    /// scope's queued actions move to the outer scope, so they still run when the
+    /// OUTERMOST synchronous part unwinds, as they always did.</para>
+    ///
+    /// <para>A fault raised after the first await, in a continuation, finds no
+    /// scope: it takes <see cref="HandleException"/>'s no-window path, and reaches
+    /// the export's caller only through the pending Task.</para></summary>
+    private sealed class DispatchScope
+    {
+        public Exception? Fault;
+        public List<Action>? PostDispatchActions;
+    }
 
-    /// <summary>Dispatches a host UI event into Blazor's handler table.
-    /// Marshalled onto the render thread (Phase 16.1): the returned task
-    /// completes when the handler, its re-render and FrameSink delivery have
-    /// all completed. Stale handler ids (ArgumentException from a handler that
-    /// died in a re-render) are caught + logged — delivery is at-most-once,
-    /// a stale tap is not an error. A fault anywhere in the dispatch window —
-    /// the handler, the resulting re-render, or frame delivery — faults the
-    /// returned task (see <see cref="_uiEventDispatchException"/>) so the
-    /// export can map it to return code 2.</summary>
+    /// <summary>The scope of the dispatch whose synchronous part is running now, or
+    /// null. Render thread only.</summary>
+    private DispatchScope? _currentScope;
+
+    /// <summary>Runs one UI event's SYNCHRONOUS part — the handler up to its first
+    /// incomplete await, its re-render and FrameSink delivery — inside its own
+    /// <see cref="DispatchScope"/>, and reports how it ended. MUST be called on the
+    /// render thread. Stale handler ids (ArgumentException from a handler that died
+    /// in a re-render) are caught + logged — delivery is at-most-once, a stale tap is
+    /// not an error — and report <see cref="DispatchOutcomeKind.Completed"/>.
+    /// The scope closes when Blazor returns the handler's Task, and its post-dispatch
+    /// actions (the navigation swap) run at that close, before this returns.
+    /// Returns <see cref="DispatchOutcomeKind.Faulted"/> when the scope captured a
+    /// fault or the returned Task is faulted, <see cref="DispatchOutcomeKind.Completed"/>
+    /// when the Task is complete, and <see cref="DispatchOutcomeKind.Pending"/>, carrying
+    /// the Task, when the handler is still running.</summary>
+    internal DispatchOutcome DispatchSyncPart(NativeUiEvent e)
+    {
+        if (!_dispatcher.CheckAccess())
+        {
+            throw new InvalidOperationException(
+                $"DispatchSyncPart ran on thread {Environment.CurrentManagedThreadId}, not on this "
+                + $"renderer's render thread {RenderThreadId}. Post it through Dispatcher.InvokeAsync.");
+        }
+
+        var scope = new DispatchScope();
+        DispatchScope? outer = _currentScope;
+        _currentScope = scope;
+        Task? task = null;
+        try
+        {
+            var args = BuildEventArgs(e);
+            task = BlazorInterop.DispatchEventViaAccessor(this, (ulong)e.HandlerId, args);
+        }
+        catch (ArgumentException ex)
+        {
+            // Warn: a stale handler id is a teardown race, tolerated by design.
+            BnLog.Warn("NativeRenderer", $"stale handler {e.HandlerId}: {ex.Message}");
+        }
+        catch (Exception ex)
+        {
+            // Anything else escaping Blazor's own dispatch is this dispatch's fault.
+            scope.Fault ??= ex;
+        }
+        finally
+        {
+            // CLOSE the scope: the synchronous part has returned its Task. Inside the
+            // finally so a faulted dispatch still drains — the queue must never leak
+            // into another dispatch; action faults join this scope, never escape.
+            _currentScope = outer;
+            if (outer is null)
+                DrainPostDispatchActions(scope);
+            else if (scope.PostDispatchActions is { } queued)
+                (outer.PostDispatchActions ??= new List<Action>()).AddRange(queued);
+        }
+
+        if (scope.Fault is { } captured)
+            return new DispatchOutcome(DispatchOutcomeKind.Faulted, captured, null);
+        if (task is null || task.IsCompletedSuccessfully)
+            return new DispatchOutcome(DispatchOutcomeKind.Completed, null, null);
+        if (task.IsCompleted)
+        {
+            // Faulted or cancelled before yielding: this dispatch's fault.
+            Exception fault = task.IsFaulted
+                ? task.Exception!.InnerException ?? task.Exception
+                : new TaskCanceledException(task);
+            return new DispatchOutcome(DispatchOutcomeKind.Faulted, fault, null);
+        }
+        return new DispatchOutcome(DispatchOutcomeKind.Pending, null, task);
+    }
+
+    /// <summary>Dispatches a host UI event into Blazor's handler table, for direct
+    /// callers such as the test host. Marshalled onto the render thread (Phase 16.1)
+    /// and run through <see cref="DispatchSyncPart"/>. The returned task completes when
+    /// the WHOLE handler has completed, continuation included. It faults with the
+    /// fault the dispatch's window captured or, for a handler still running after its
+    /// synchronous part, with the fault its Task ends in. The export does not use
+    /// this: it waits only for the synchronous part.</summary>
     public Task DispatchUiEventAsync(NativeUiEvent e)
         => Dispatcher.InvokeAsync(async () =>
         {
-            _uiEventDispatchDepth++;
-            try
-            {
-                var args = BuildEventArgs(e);
-                await BlazorInterop.DispatchEventViaAccessor(this, (ulong)e.HandlerId, args);
-            }
-            catch (ArgumentException ex)
-            {
-                // Warn: a stale handler id is a teardown race, tolerated by design.
-                BnLog.Warn("NativeRenderer", $"stale handler {e.HandlerId}: {ex.Message}");
-            }
-            finally
-            {
-                _uiEventDispatchDepth--;
-                // Phase 3.5: run deferred work (the navigation swap) when the
-                // OUTERMOST window unwinds — the event's own batch is closed,
-                // so a new batch (Unmount's disposal) may start. Inside the
-                // finally so a faulted handler still drains (the queue must
-                // never leak into the NEXT dispatch); action faults join the
-                // capture slot, never escape this finally.
-                if (_uiEventDispatchDepth == 0)
-                    DrainPostDispatchActions();
-            }
-
-            if (_uiEventDispatchDepth == 0 && _uiEventDispatchException is { } dispatchEx)
-            {
-                _uiEventDispatchException = null;
-                System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(dispatchEx).Throw();
-            }
+            DispatchOutcome outcome = DispatchSyncPart(e);
+            if (outcome.Kind == DispatchOutcomeKind.Faulted)
+                System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(outcome.Fault!).Throw();
+            if (outcome.Kind == DispatchOutcomeKind.Pending)
+                await outcome.Pending!;
         });
 
     private static EventArgs BuildEventArgs(NativeUiEvent e) => e.EventName switch

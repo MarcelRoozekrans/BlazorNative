@@ -132,8 +132,8 @@ public sealed class NavigationTests
 
     // ── Phase 5.1 named risk: SwapRoot's RunAfterDispatch drains OFF the ──────
     // dispatch lane (host-initiated back, no open dispatch batch). NavigateBack
-    // rides this: a host event arriving between clicks calls the swap with
-    // _uiEventDispatchDepth == 0, where RunAfterDispatch must run the action
+    // rides this: a host event arriving between clicks calls the swap with no
+    // dispatch scope open, where RunAfterDispatch must run the action
     // IMMEDIATELY (not queue it — nothing would ever drain the queue off-lane).
     // The 3.5 KDoc frames deferral around the in-click case; this pins the
     // no-open-batch path the back button depends on.
@@ -152,7 +152,7 @@ public sealed class NavigationTests
 
             bool afterSwapRan = false;
             // Called directly — NOT inside any blazornative_dispatch_event
-            // window, so _uiEventDispatchDepth == 0 (host-initiated posture).
+            // window, so no dispatch scope is open (host-initiated posture).
             HostSession.SwapRoot("BnSettingsPage", afterSwap: () => afterSwapRan = true);
 
             // The swap ran SYNCHRONOUSLY here (no queue, no pending dispatch to
