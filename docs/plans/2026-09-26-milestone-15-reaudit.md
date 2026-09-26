@@ -644,3 +644,124 @@ had missed. My draft scored the item MET NARROWLY and the milestone PASS WITH FI
 wrong, and it is corrected here rather than softened. Items 5 and 6 stay narrow, unchanged. Per the
 spec, FAIL sends the gap to the owner. The owner decided to close it inside 15.8; the outcome is
 appended below.
+
+---
+
+## Item 4, re-measured after the closure
+
+Everything above this heading is the re-audit as it stood when the FAIL was recorded, in
+`bca5f26`. It is not edited. This section re-measures item 4 only, after the owner closed the gap
+inside 15.8 in `f85f6a2`, and gives the final verdict. Nothing under `src/` or `samples/` changed:
+`git diff --stat origin/main HEAD -- src samples` is empty.
+
+### What changed
+
+- **Rule 4 on every register row.** `docs/pin-standard.md`'s register header now reads
+  *"Verdict (Rules 2–5, 7)"*. Every pin row carries a Rule 4 cell that names the mechanism, checked
+  in the code, by which the pin reds when its subject moves.
+- **One more pin, registered.** `BnActivityIndicatorTests.DeclaresNoOwnParameters_ButInheritsTheFullItemSurface`
+  has group C's shape and was missed by the 15.7 sweep and by this report's draft. It now has a row
+  with all five rule cells, and the sweep record has an addendum. The non-tree count is now **16
+  files holding pins and 41 pin facts**.
+- **Census row 27a made true.** It is split. 27a holds the eight facts that conform, and 27c holds
+  `TheRenderersStyleSets_AreTheManifests` as *partial, named* on Rule 2. The spread table now reads
+  141 conforms, 1 partial named, 9 fixed, still out of 151 pin facts. Check with
+  `grep -n "^| 27\|partial, named\*\* |" docs/plans/2026-09-22-phase-15.0-census.md`.
+- **The two surviving mutations now red,** as test code:
+
+| # | mutation | before, on `main` `592d2d5` | after, on `f85f6a2` |
+|---|---|---|---|
+| R1 | `DispatchNamedDeclaration` blind to `*AndWait` | 4 of 4 green; Kotlin 8→6 and Swift 5→4 sit on the floors | **red**: `TheDispatchDeclarationScan_IsNotVacuous` alone, naming the unseen Kotlin names |
+| R1b | the same blindness on Swift only | — | **red**: the same fact alone, naming `dispatchHostEventAndWait`; the Swift count of 4 still meets its floor |
+| R2 | `LayoutItemTypes()` filtered to containers | 20 of 20 green; 10 of 14 rows gone | **red**: `TheLayoutRows_AreThereToBeChecked` alone, 1 of 21 |
+| R3 | a public `[Parameter]` added to `BnActivityIndicator` | no register row | **red**: `DeclaresNoOwnParameters_…` alone, 1 of 3 |
+
+Each was run with `dotnet build tests/BlazorNative.Runtime.Tests` and then
+`dotnet test --no-build --filter "FullyQualifiedName~<class>"`, and reverted. The table is in
+`docs/plans/2026-09-26-phase-15.7-record.md` under *15.8 re-audit review*.
+
+- **.NET count 1200 → 1201,** measured from a clean rebuild: `dotnet build BlazorNative.sln
+  --no-incremental`, then `dotnet test BlazorNative.sln --no-build` gives Renderer 139, Analyzers
+  27, Runtime 1035. The new fact is `TheLayoutRows_AreThereToBeChecked`. `README.md` and both `ci.yml`
+  sites moved with a history comment. The device lanes and the JVM suite are unaffected, because
+  only .NET test files and docs changed.
+
+### Re-measured: every row, all five rule cells
+
+I parsed the register table in `docs/pin-standard.md`, from its header to the next `---`, and
+checked each row's verdict cell for a Rule 2, 3, 4, 5 and 7 verdict. Combined forms such as
+*"Rules 2, 3 and 5 conform"* count for each rule they name.
+
+| row | R2 | R3 | R4 | R5 | R7 |
+|---|---|---|---|---|---|
+| `RouteMenuDriftTests` | y | y | conforms | y | y |
+| `LayoutSurfacePinTests`, with group D | y | y | conforms | y | y |
+| `LayoutSurfaceSequenceBandTests` | y, conforms since 15.8 | y | conforms since 15.8 | y | y |
+| `DefaultStructTrapSweepTests`, with group F | y | y | conforms | y | y |
+| `LengthParameterNullabilityPinTests` | y | y | conforms | y | y |
+| `ParameterBindingFaultTests` | y | y | conforms | y | y |
+| `BnComponentTests` | y | y | conforms | y | y |
+| `StyleAttributePartitionTests` | y | y, row 38 partial | conforms | y, row 38 partial | y |
+| `NotApiEditorBrowsableTests` | y | y | conforms | y | y |
+| `SpikeRazorTests` | y | y | conforms | y | y |
+| `BnItemsJsonTests` | y | y | conforms | y | y |
+| `ScrollCommandTests` | n/a, scalar | y | **partial, named** | y | y |
+| `BnModalTests` | y | y | conforms | y | y |
+| `BnFormControlTests` | y | y | conforms | y | y |
+| `ForwardedParameterNameTests` | y | y | conforms | y | y |
+| `BnActivityIndicatorTests`, new | partial | partial | conforms | partial | y |
+| group C | partial | y | conforms | y | y |
+| group E | n/a, scalar | y | conforms | partial | y |
+| group A, not pins | — | — | n/a, not pins | — | — |
+| group B, not pins | — | — | n/a, not pins | — | — |
+
+**No pin row is silent on any of the five rules.** Groups A and B are classed as not pins, with the
+reasons written in their rows, which is the DoD's *"exempt with a written reason"*.
+
+**Each Rule 4 cell names a mechanism, and I checked a sample of them in the code:**
+- `RazorEmitters` is four `typeof`s, at `LayoutSurfacePinTests.cs:363–364`;
+- the `ForwardTarget_…` rows are `[InlineData(typeof(BnView))]` and `typeof(BnScroll)`, at
+  `ForwardedParameterNameTests.cs:55–56`;
+- `NotApiEditorBrowsableTests.Resolve` throws naming the type, at `:153–165`;
+- the `ParameterBindingFaultTests` frames resolve with `Assert.True(type is not null …)` and
+  `overloads.Length > 0`, at `:225–241`;
+- the four struct-sweep assembly anchors are at `DefaultStructTrapSweepTests.cs:91–96`.
+
+**The one Rule 4 partial is judged acceptable.** `ScrollCommandTests` compares two pairs of .NET
+constants. A rename is a build break. But if either side stopped reading its constant, the fact
+would compare two unused constants and stay green. The cell says exactly that, and names where it
+would show instead. That is a named partial, not silence.
+
+**The tree-readers are unchanged.** There are 33 files and 170 facts, and every census row has a
+Rule 4 column. Row 13a now also records the R1 anchors.
+
+### Item 4 verdict after the closure — **MET NARROWLY**
+
+Every known pin is now assessed against all five rules of the standard, including all three that
+the DoD names. Every partial is named at its row, and the two survivors are fixed and
+mutation-proven. That meets the item.
+
+It is narrow for two reasons, both on the record:
+- **The non-tree population is still kept by hand, and the review has just shown the cost.** The
+  15.7 sweep read all 93 files and still missed `BnActivityIndicatorTests`. A reviewer found it, not
+  a mechanism. So the claim is *every pin known today*. No mechanism can say *every pin*, which the
+  standard's own Rule 6 text already admits.
+- **Named partials remain:** `ScrollCommandTests` on Rule 4; row 38 on Rules 3 and 5; group C,
+  group E and `BnActivityIndicatorTests` on the rules marked above; and census row 27c on Rule 2.
+
+### Final verdict
+
+**PASS WITH FINDINGS.** Eight criteria are MET, three are MET NARROWLY (items 4, 5 and 6), and none
+is NOT MET.
+
+This re-audit first recorded **FAIL**, on item 4. That record stands above, and the verdict here
+does not replace it: it is the outcome after the owner closed the gap inside 15.8.
+- **Items 5 and 6** are unchanged from the FAIL record. Enforcement is met through its recorded
+  fallback, and #364's F3 closed as a patch.
+- **Item 4** is met because every known pin now carries a verdict on every rule of the standard.
+  It is narrow because the population behind "every" is hand-kept, and a reviewer, not the sweep,
+  found its most recent member.
+- **Findings carried:** #417 and #418 are filed. N5, the Audit History table, is for
+  `complete-milestone`. Everything under *Carried forward* stays open.
+
+Per the spec, PASS WITH FINDINGS leads to `complete-milestone`, with **no tag**.
