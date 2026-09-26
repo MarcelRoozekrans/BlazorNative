@@ -3173,7 +3173,7 @@ the six JVM failures, and it is requirement 1.
 failed because `vswhere` was not on the shell PATH, and Gradle loaded a stale library built from
 `main`. Check the publish exit code and the library's timestamp before trusting a JVM count.
 
-#### Phase 16.1: The render thread [status: pending]
+#### Phase 16.1: The render thread [status: active]
 **Goal:** Replace the inline dispatcher with a .NET-owned render thread and carry the 16.0 spike's
 11 requirements: correct the false `Exports.cs` comment first, free the lane on yield and flip
 `DispatchLaneBlockingTests`, scope the capture window per dispatch, pin render-thread ownership,
@@ -3186,6 +3186,8 @@ never a merged state where a fault after the first await is only logged. Closes 
 > numbers as written: its "16.2" means 16.1, its "16.3" means 16.2, and its "16.4" means 16.3.
 **Surface:** Backend
 **HelpWanted:** no
+**Design:** [`docs/superpowers/specs/2026-09-26-phase-16.1-design.md`](../superpowers/specs/2026-09-26-phase-16.1-design.md)
+**Plan:** [`docs/superpowers/plans/2026-09-26-phase-16.1-render-thread.md`](../superpowers/plans/2026-09-26-phase-16.1-render-thread.md)
 
 #### Phase 16.2: Back and navigation off the main thread [status: pending]
 **Goal:** Push `canGoBack` from .NET and toggle Android's `OnBackInvokedCallback` to match; make back
