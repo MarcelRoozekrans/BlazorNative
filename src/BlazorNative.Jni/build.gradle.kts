@@ -100,7 +100,7 @@ dependencies {
     // explicit `implementation` wins Gradle's version resolution over a lower transitive
     // request, the same reason jna-platform's jna exclusion exists above. 1.13.1 is the
     // latest stable release compatible with this project's compileSdk 34.
-    implementation("androidx.core:core:1.13.1")
+    implementation("androidx.core:core:1.19.1")
 
     // Kotlin stdlib
     implementation(kotlin("stdlib-jdk8", kotlinVersion))
