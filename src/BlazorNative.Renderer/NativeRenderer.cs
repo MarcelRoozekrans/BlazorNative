@@ -123,43 +123,49 @@ public sealed class NativeRenderer : BlazorRenderer
         };
     }
 
-    // Born on the retired Mono-WASI runtime (single-threaded, no real scheduler):
-    // Dispatcher.CreateDefault() returns a dispatcher whose async-state-machine
-    // continuations don't unwind synchronously even when the wrapped work completes
-    // inline (Phase 2.4 Task 4). The inline dispatcher outlived that era because the
-    // sync-mount contract survives it — HostSession's C-ABI mount path still requires
-    // the first render to complete synchronously inside the native callback window —
-    // so all work runs directly on the calling thread (pinned by MountSyncTests).
-    public override Dispatcher Dispatcher { get; } = new InlineDispatcher();
+    // ── The render thread (Phase 16.1) ───────────────────────────────────────
+    //
+    // Each renderer owns ONE dedicated thread, "BlazorNative-Render", with a
+    // single-threaded SynchronizationContext on it (RenderThreadDispatcher). Every
+    // mutating entry point below — Mount, MountAsync, Unmount, RunAfterDispatch,
+    // DispatchUiEventAsync and Dispose — runs its body on that thread: a call from
+    // another thread posts the work and blocks until it completes, and a call from the
+    // render thread runs inline. CheckAccess() answers honestly.
+    //
+    // This replaces the inline dispatcher, born on the retired Mono-WASI runtime, which
+    // ran all work on the CALLING thread and answered CheckAccess() with an unconditional
+    // true. That made every export a blocking wait whenever a handler awaited the host,
+    // which is #345, and it could not be made honest without a real thread to marshal to:
+    // 13.2 measured the honest answer recursing Dispose -> InvokeAsync -> Dispose into a
+    // stack overflow. The 16.0 spike proved the render thread keeps the sync-mount contract
+    // the C ABI needs — Mount still returns only after its first frame — and removes the
+    // recursion, because the hop is now real (docs/plans/2026-09-26-phase-16.0-spike-conclusion.md).
+    private readonly RenderThreadDispatcher _dispatcher = new();
 
-    private sealed class InlineDispatcher : Dispatcher
+    /// <summary>This renderer's render thread (Phase 16.1).</summary>
+    public override Dispatcher Dispatcher => _dispatcher;
+
+    /// <summary>The managed id of THIS renderer's render thread. An instance property on
+    /// purpose: the 16.0 spike's static "last constructed" id named another renderer's
+    /// thread under test parallelism (spike requirement 9), so every thread-identity pin
+    /// compares against the renderer under test.</summary>
+    internal int RenderThreadId => _dispatcher.ThreadId;
+
+    /// <summary>Runs <paramref name="work"/> on the render thread and waits for it to finish.
+    /// Blocking is safe: off the render thread the caller is never the thread that must run
+    /// the work, and on it the work runs inline.</summary>
+    private void OnRenderThread(Action work)
     {
-        public override bool CheckAccess() => true;
-
-        public override Task InvokeAsync(Action workItem)
-        {
-            try { workItem(); return Task.CompletedTask; }
-            catch (Exception ex) { return Task.FromException(ex); }
-        }
-
-        public override Task InvokeAsync(Func<Task> workItem)
-        {
-            try { return workItem() ?? Task.CompletedTask; }
-            catch (Exception ex) { return Task.FromException(ex); }
-        }
-
-        public override Task<TResult> InvokeAsync<TResult>(Func<TResult> workItem)
-        {
-            try { return Task.FromResult(workItem()); }
-            catch (Exception ex) { return Task.FromException<TResult>(ex); }
-        }
-
-        public override Task<TResult> InvokeAsync<TResult>(Func<Task<TResult>> workItem)
-        {
-            try { return workItem(); }
-            catch (Exception ex) { return Task.FromException<TResult>(ex); }
-        }
+        if (_dispatcher.CheckAccess())
+            work();
+        else
+            _dispatcher.InvokeAsync(work).GetAwaiter().GetResult();
     }
+
+    private T OnRenderThread<T>(Func<T> work)
+        => _dispatcher.CheckAccess()
+            ? work()
+            : _dispatcher.InvokeAsync(work).GetAwaiter().GetResult();
 
     /// <summary>Convenience overload that explicitly passes <see cref="ParameterView.Empty"/>.
     /// Do NOT collapse this into a single overload with <c>ParameterView parameters = default</c>:
@@ -176,6 +182,8 @@ public sealed class NativeRenderer : BlazorRenderer
         ParameterView parameters,
         CancellationToken ct = default)
         where TComponent : IComponent
+        // Marshals through the dispatcher: InvokeAsync posts to the render thread when called
+        // from any other thread, and the returned Task completes when the mount does.
         => Dispatcher.InvokeAsync(() => AddComponentAsync(typeof(TComponent), parameters));
 
     /// <summary>Convenience overload that explicitly passes <see cref="ParameterView.Empty"/>.
@@ -205,6 +213,12 @@ public sealed class NativeRenderer : BlazorRenderer
     /// </remarks>
     public int Mount<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.All)] TComponent>(ParameterView parameters)
         where TComponent : IComponent
+        => OnRenderThread(() => MountOnRenderThread<TComponent>(parameters));
+
+    // The "must complete synchronously" check runs HERE, on the render thread, so it still
+    // means what it always meant: the first render finished inside this call.
+    private int MountOnRenderThread<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.All)] TComponent>(ParameterView parameters)
+        where TComponent : IComponent
     {
         var component = InstantiateComponent(typeof(TComponent));
         var componentId = AssignRootComponentId(component);
@@ -216,7 +230,7 @@ public sealed class NativeRenderer : BlazorRenderer
                 $"Mount<T> requires RenderRootComponentAsync to complete synchronously. " +
                 $"task.Status={task.Status}; task.Exception={inner?.Message ?? "<none>"}. " +
                 "Common causes: component has truly async SetParametersAsync/OnInitializedAsync " +
-                "work, or the Dispatcher is no longer inline (see Phase 2.4 Task 4 investigation).",
+                "work that yields before the first render completes.",
                 inner);
         }
         return componentId;
@@ -227,8 +241,9 @@ public sealed class NativeRenderer : BlazorRenderer
     /// Thin wrapper over Blazor's <c>RemoveRootComponent(int)</c> (protected
     /// internal on the Renderer base — verified present on Blazor 10.0.x):
     /// Blazor enqueues the component (and transitively its descendants) for
-    /// disposal and processes the render queue; on the InlineDispatcher the
-    /// disposal batch reaches UpdateDisplayAsync SYNCHRONOUSLY, so the
+    /// disposal and processes the render queue on the render thread, and a call
+    /// from another thread waits for it, so the disposal batch has reached
+    /// UpdateDisplayAsync when this returns, and the
     /// RemoveNode patches that clear the screen (the Phase 3.3 disposal
     /// machinery — today EmitDisposedComponentRemoves + its pass-2 delta and
     /// CleanupDisposedComponent) have already been delivered to
@@ -239,7 +254,7 @@ public sealed class NativeRenderer : BlazorRenderer
     /// RemoveRootComponent's ProcessRenderQueue throws "Cannot start a batch
     /// when one is already in progress" — defer via
     /// <see cref="RunAfterDispatch"/> instead (the navigation swap does).</summary>
-    public void Unmount(int componentId) => RemoveRootComponent(componentId);
+    public void Unmount(int componentId) => OnRenderThread(() => RemoveRootComponent(componentId));
 
     // ── Post-dispatch deferral (Phase 3.5) ────────────────────────────────────
     //
@@ -268,6 +283,12 @@ public sealed class NativeRenderer : BlazorRenderer
     /// unaffected: they always map to rc 2.</summary>
     public void RunAfterDispatch(Action action)
     {
+        // 16.1: reads _uiEventDispatchDepth, which only the render thread may touch.
+        if (!_dispatcher.CheckAccess())
+        {
+            OnRenderThread(() => RunAfterDispatch(action));
+            return;
+        }
         if (_uiEventDispatchDepth == 0)
         {
             action();
@@ -316,67 +337,46 @@ public sealed class NativeRenderer : BlazorRenderer
         return componentId;
     }
 
-    // ── The render-owner thread (Phase 13.2) ─────────────────────────────────
+    // ── The render-owner check (Phase 13.2, made an assertion in 16.1) ───────
     //
-    // WHY THIS IS A REPORT AND NOT AN ASSERTION — read before "fixing" it.
+    // Blazor's own Dispatcher.AssertAccess() rejects an off-thread render before a batch
+    // starts, but it trusts CheckAccess(). This check does NOT: it compares the thread
+    // that actually reached UpdateDisplayAsync against THIS renderer's RenderThreadId. So
+    // it is a second, independent line that still fires if CheckAccess() ever lies again —
+    // 13.2's inline dispatcher answered true for every thread, which is exactly how a batch
+    // could reach the tree from the wrong thread.
     //
-    // The obvious guard is <c>Dispatcher.AssertAccess()</c>, and it cannot be used
-    // here. <see cref="InlineDispatcher.CheckAccess"/> answers an unconditional
-    // <c>true</c>, and that is LOAD-BEARING rather than a lie left lying around:
-    // Blazor calls CheckAccess() to decide whether to MARSHAL, not merely to assert.
-    // <c>Renderer.Dispose()</c> is the clearest case — on a false answer it calls
-    // <c>Dispatcher.InvokeAsync(() =&gt; Dispose())</c> to hop threads. An inline
-    // dispatcher runs that work on the CALLING thread, so the hop never happens,
-    // CheckAccess() is false again, and it recurses until the stack ends.
-    //
-    // Phase 13.2 measured exactly that: an honest CheckAccess() killed the test host
-    // with a stack overflow, reproducibly, in the Dispose/InvokeAsync loop above. So
-    // an honest answer needs InvokeAsync to own a real queue and a real thread — and
-    // that breaks the sync-mount contract the C ABI depends on (the first render must
-    // complete synchronously inside the native callback window; see Exports.cs and
-    // MountSyncTests). The door is closed until the dispatcher itself changes.
-    //
-    // What remains available is DETECTION, which is what this is. It never throws —
-    // not even under StrictErrors — because a throw would change behaviour on a path
-    // that works today, in the area the spike proved is delicate.
-    //
-    // "Owner" is whoever drove the FIRST batch, not whoever constructed the renderer:
-    // construction can happen anywhere, while the contract is about the thread driving
-    // renders inside the native callback window.
-    private int _renderOwnerThreadId;
-
-    private void ReportIfNotTheRenderOwnerThread()
+    // Under StrictErrors, which every test harness enables, it THROWS, so a violation fails
+    // under test instead of scrolling past as a log line. Otherwise it warns. It names both
+    // threads, because "wrong thread" alone cannot be acted on. The silent path allocates
+    // nothing: the message is built only when the check fails.
+    private void AssertOnTheRenderThread()
     {
         int current = Environment.CurrentManagedThreadId;
-
-        // First batch claims ownership. CompareExchange returns the PREVIOUS value, so a
-        // zero here means this call is the one that claimed it — nothing to report.
-        int owner = Interlocked.CompareExchange(ref _renderOwnerThreadId, current, 0);
-        if (owner == 0 || owner == current)
+        int owner = RenderThreadId;
+        if (current == owner)
             return;
 
         string message =
             $"render batch driven from thread {current}, but this renderer's batches are "
-            + $"owned by thread {owner} — the render tree is not safe to drive concurrently. "
-            + "Marshal the work onto the owning thread (usually by raising the change from a "
-            + "native event handler) rather than calling into the renderer directly.";
+            + $"owned by thread {owner}, its render thread — the render tree is not safe to "
+            + "drive concurrently. Marshal the work onto the render thread with "
+            + "Dispatcher.InvokeAsync rather than calling into the renderer directly.";
 
-        // StrictErrors is this renderer's documented "surface it rather than swallow it"
-        // posture and every test harness enables it, so it is what escalates the level.
         if (StrictErrors)
-            BnLog.Warn("BlazorNative.Renderer", message);
-        else
-            BnLog.Debug("BlazorNative.Renderer", message);
+            throw new InvalidOperationException(message);
+        BnLog.Warn("BlazorNative.Renderer", message);
     }
 
     // ── UpdateDisplayAsync ────────────────────────────────────────────────────
 
     protected override Task UpdateDisplayAsync(in RenderBatch renderBatch)
     {
-        // 13.2. Pure observation — no renderer state is touched — so it sits ahead of the
-        // drain without disturbing the drain-first rule below, and still reports the thread
-        // even when the drain rethrows under strict mode.
-        ReportIfNotTheRenderOwnerThread();
+        // 13.2, an assertion since 16.1. No renderer state is touched, so it sits ahead of
+        // the drain without disturbing the drain-first rule below. Under StrictErrors the
+        // throw routes through ProcessRenderQueue's catch into HandleException, which
+        // rethrows it at the caller boundary.
+        AssertOnTheRenderThread();
 
         // #213 item 2: route any Frames fault parked by a ThreadPool continuation. FIRST,
         // on the renderer thread — the only thread where HandleException's single-threaded
@@ -664,7 +664,7 @@ public sealed class NativeRenderer : BlazorRenderer
     /// <c>HostSession.ReplaceRegistryEntryForTests</c>): triggers a
     /// steady-state re-render of a mounted root — the exact
     /// <c>StateHasChanged()</c> a component's own event handler would issue,
-    /// resolved through Blazor's ComponentState. On the InlineDispatcher the
+    /// resolved through Blazor's ComponentState, run on the render thread. The
     /// render batch (diff → UpdateDisplayAsync → frame delivery) has fully
     /// completed when this returns. Exists solely so the allocation-budget
     /// test (RendererSpike.RenderWalk_IsAllocationFree_OnSteadyState, the M1
@@ -674,6 +674,11 @@ public sealed class NativeRenderer : BlazorRenderer
     /// wiring bug, not a runtime condition).</summary>
     internal void TriggerRootRenderForTests(int componentId)
     {
+        if (!_dispatcher.CheckAccess())
+        {
+            OnRenderThread(() => TriggerRootRenderForTests(componentId));
+            return;
+        }
         if (GetComponentState(componentId).Component is not ComponentBase component)
         {
             throw new InvalidOperationException(
@@ -685,15 +690,39 @@ public sealed class NativeRenderer : BlazorRenderer
 
     protected override void Dispose(bool disposing)
     {
-        if (disposing)
+        if (!disposing)
         {
-            // Release any handlers registered against Frames. The underlying
-            // AsyncEventHandler<T> struct holds delegate references in its
-            // internal state; resetting to default releases them so per-test
-            // closures don't leak across NativeRenderer instances.
-            _frames = default;
+            base.Dispose(disposing);
+            return;
         }
-        base.Dispose(disposing);
+
+        // Already disposed: the render thread is gone, and Blazor's own guard makes a second
+        // dispose a no-op anyway. Returning here keeps a repeat Dispose from waiting on a
+        // cancelled post.
+        if (_dispatcher.IsShutDown)
+            return;
+
+        try
+        {
+            // The body runs ON the render thread, so Blazor's base Dispose sees CheckAccess()
+            // true and never re-marshals: 13.2's Dispose -> InvokeAsync -> Dispose loop has
+            // nowhere to recur.
+            OnRenderThread(() =>
+            {
+                // Release any handlers registered against Frames. The underlying
+                // AsyncEventHandler<T> struct holds delegate references in its
+                // internal state; resetting to default releases them so per-test
+                // closures don't leak across NativeRenderer instances.
+                _frames = default;
+                base.Dispose(disposing);
+            });
+        }
+        finally
+        {
+            // Last: stop the render thread. Off the thread this joins it; on it, the thread
+            // exits once the queue drains.
+            _dispatcher.Dispose();
+        }
     }
 
     // ── Render tree walking (typed against Bn* wrappers only) ─────────────────
@@ -1464,15 +1493,15 @@ public sealed class NativeRenderer : BlazorRenderer
     /// first real async @onclick consumer, together with the dispatch lane's
     /// async-offload (triage item 2 — the same design).
     ///
-    /// Instance fields are safe: all dispatch runs on the InlineDispatcher's
-    /// calling thread (single-threaded post-boot contract).</summary>
+    /// Instance fields are safe: all dispatch runs on the renderer's render
+    /// thread (Phase 16.1).</summary>
     private Exception? _uiEventDispatchException;
     private int _uiEventDispatchDepth;
 
     /// <summary>Dispatches a host UI event into Blazor's handler table.
-    /// Synchronous in effect (InlineDispatcher): handler, re-render, and
-    /// FrameSink delivery have all completed when the returned task is
-    /// observed. Stale handler ids (ArgumentException from a handler that
+    /// Marshalled onto the render thread (Phase 16.1): the returned task
+    /// completes when the handler, its re-render and FrameSink delivery have
+    /// all completed. Stale handler ids (ArgumentException from a handler that
     /// died in a re-render) are caught + logged — delivery is at-most-once,
     /// a stale tap is not an error. A fault anywhere in the dispatch window —
     /// the handler, the resulting re-render, or frame delivery — faults the
