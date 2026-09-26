@@ -349,8 +349,9 @@ public sealed class DispatchSurfaceDriftTests
     /// act; re-point this with it.</summary>
     private const int MinimumSwiftDispatchDeclarations = 4;
 
-    /// <summary>THE FLOOR ON THE SCANNED SET — issue #357, open since 14.1, and the last
-    /// instance of census §4.2's shape in the pin population.
+    /// <summary>THE FLOOR ON THE SCANNED SET — issue #357, opened in 14.1 and closed on
+    /// 2026-09-25 with this fact as its fix, and the last instance of census §4.2's shape in
+    /// the pin population.
     ///
     /// <para><see cref="EveryDispatchNamedDeclaration_IsDeclaredOrIgnored"/> iterates
     /// <see cref="DispatchNamedDeclarations"/>, and the only anti-vacuity assertion it
@@ -376,12 +377,54 @@ public sealed class DispatchSurfaceDriftTests
     /// <para>It floors the two shells SEPARATELY rather than summing them. A combined
     /// floor is satisfiable by one healthy shell: Kotlin's eight names alone would clear
     /// any total low enough for Swift's five to matter, so an emptied Swift scan would
-    /// pass. Per shell, an emptied scan reds naming the shell.</para></summary>
+    /// pass. Per shell, an emptied scan reds naming the shell.</para>
+    ///
+    /// <para>THE COUNT FLOOR ALONE WAS NOT ENOUGH, and the 15.8 re-audit review proved it.
+    /// Its headroom, two names in Kotlin and one in Swift, was exactly the size of the
+    /// <c>*AndWait</c> methods — the blocking half of the #339 split, the very methods
+    /// this pin exists to guard. A <see cref="DispatchNamedDeclaration"/> made blind to
+    /// <c>AndWait</c> took Kotlin from 8 to 6 and Swift from 5 to 4, landing ON both floors,
+    /// and every fact stayed green. So the scan now also has NAMED ANCHORS, derived from
+    /// the manifest rather than restated: every name <c>src/dispatch-surface.json</c>
+    /// records for a shell, in <c>methods</c> or in <c>ignored</c>, must be one the scan
+    /// actually sees in that shell's source. A pattern that goes blind to any one known
+    /// name reds naming it, whatever the count. The count floor stays, as the check that
+    /// still means something if the manifest itself is emptied.</para>
+    ///
+    /// <para>WHAT THE ANCHORS DO NOT COVER: a name the manifest does not yet know about.
+    /// That is the completeness fact's job, and it is exactly the set the anchors cannot
+    /// name in advance.</para></summary>
     [Fact]
     public void TheDispatchDeclarationScan_IsNotVacuous()
     {
         FloorTheScannedSet("Kotlin", KotlinRuntime(), MinimumKotlinDispatchDeclarations);
         FloorTheScannedSet("Swift", SwiftRuntime(), MinimumSwiftDispatchDeclarations);
+
+        AnchorTheScannedSet("Kotlin", KotlinRuntime(), "kotlin");
+        AnchorTheScannedSet("Swift", SwiftRuntime(), "swift");
+
+        static void AnchorTheScannedSet(string shellLabel, string source, string platform)
+        {
+            string[] known =
+            [
+                .. Surface().Where(m => m.Platforms is null || m.Platforms.Contains(platform)).Select(m => m.Name),
+                .. Ignored().Where(i => i.Platforms is null || i.Platforms.Contains(platform)).Select(i => i.Name),
+            ];
+            Assert.True(known.Length >= 4,
+                $"the manifest records only {known.Length} dispatch names for {shellLabel}; the "
+                + "anchors below would check too little. src/dispatch-surface.json lost entries.");
+            Assert.Contains("dispatchHostEventAndWait", known);
+
+            HashSet<string> seen = DispatchNamedDeclarations(source).ToHashSet(StringComparer.Ordinal);
+            string[] unseen = [.. known.Where(n => !seen.Contains(n)).OrderBy(n => n, StringComparer.Ordinal)];
+
+            Assert.True(unseen.Length == 0,
+                $"the {shellLabel} runtime scan ({DispatchNamedDeclaration}) does not see "
+                + string.Join(", ", unseen) + ", which src/dispatch-surface.json records for this "
+                + "shell. Either the declaration pattern has gone blind to part of its subject, "
+                + "which is how an *AndWait-blind pattern once passed the count floor, or the "
+                + "method was retired and its manifest entry must go with it.");
+        }
 
         static void FloorTheScannedSet(string shellLabel, string source, int minimum)
         {

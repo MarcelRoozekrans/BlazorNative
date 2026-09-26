@@ -532,6 +532,37 @@ public sealed class LayoutSurfaceSequenceBandTests : IDisposable
         Assert.Contains(typeof(BnView), containerRows);
     }
 
+    /// <summary>
+    /// Rule 2 for every <see cref="LayoutItemComponents"/> theory in this file, on the
+    /// WHOLE row set rather than one kind of row. The 15.8 re-audit review filtered
+    /// <see cref="LayoutItemTypes"/> to container rows only: 10 of the 14 rows vanished,
+    /// the container floor above was still satisfied, and every fact stayed green,
+    /// because xUnit's refusal of empty <c>MemberData</c> floors a theory at one row,
+    /// not at the population. Measured at 14 rows on 2026-09-26: BnActivityIndicator,
+    /// BnButton, BnCheckbox, BnColumn, BnImage, BnInput, BnPicker, BnRow, BnSafeArea,
+    /// BnScroll, BnSlider, BnSwitch, BnText and BnView. Floored at exactly that, with no
+    /// headroom: a new layout component raises it deliberately, and a retired one lowers
+    /// it with the reason written here. <see cref="BnText"/> is the named leaf anchor,
+    /// a hand-written non-container row, so a filter that keeps only containers reds
+    /// here by name as well as by count.
+    ///
+    /// <para>WHAT IT DOES NOT COVER: which ROWS the population holds beyond the anchor.
+    /// A swap of one component for another at the same count passes here; the rosters
+    /// and the declaration pins in LayoutSurfacePinTests hold the membership.</para>
+    /// </summary>
+    [Fact]
+    public void TheLayoutRows_AreThereToBeChecked()
+    {
+        Type[] rows = LayoutItemTypes();
+
+        Assert.True(rows.Length >= 14,
+            $"only {rows.Length} layout rows feed this file's theories, and there are 14. " +
+            "Every theory here would still pass on what is left, checking too little.");
+        Assert.Contains(typeof(BnText), rows);
+        Assert.False(IsContainerRow(typeof(BnText)),
+            "BnText is the leaf anchor for this floor; it must stay a non-container row.");
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // PIN 5 — the sequence BANDS, which until now were only asserted in prose.
     //
