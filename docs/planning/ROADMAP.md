@@ -2455,7 +2455,7 @@ public-API change.** Four workstreams, grown from three by a review finding and 
 
 ---
 
-### 🔄 Milestone 15 — A Standard for Pins  *(active — started 2026-09-22)* [status: active]
+### ✅ Milestone 15 — A Standard for Pins  *(complete — 2026-09-22 → 2026-09-26)* [status: complete]
 
 **Goal:** This repo defends its invariants with **drift pins** — tests that read source or config
 and assert two copies of one truth agree. There are **at least nineteen** of them and **four** manifests,
@@ -2464,6 +2464,9 @@ shared standard, and it shows. M15 establishes what a pin must do to be trusted,
 standard to every existing pin, and closes the backlog of missing and broken ones as
 **consequences rather than as nine separate errands**.
 **Started:** 2026-09-22
+**Completed:** 2026-09-26 · verdict **PASS WITH FINDINGS**, 8 MET, 3 MET NARROWLY, 0 NOT MET
+· [re-audit](../plans/2026-09-26-milestone-15-reaudit.md), after a first
+[audit that FAILED](../plans/2026-09-25-milestone-15-audit.md) and is kept on record
 **Design:** [`docs/superpowers/specs/2026-09-22-milestone-15-design.md`](../superpowers/specs/2026-09-22-milestone-15-design.md)
 · full scope, DoD and risks in [MILESTONE.md](MILESTONE.md).
 **Source:** M14's own audit. Its central criterion — *a NEW divergence reds* — was met **narrowly**,
@@ -3105,13 +3108,29 @@ the Rule 6 heading "The register — pins that do not read the tree".
 **Lesson:** a PR body's next-steps list can close an issue through GitHub's keyword matching, so
 write "#N to be closed", never "close #N".
 
-#### Phase 15.8: Re-audit and close [status: active]
+#### Phase 15.8: Re-audit and close [status: complete]
 **Goal:** Re-run `audit-milestone` on live evidence after 15.7, and close M15 if every DoD item is
 MET or MET NARROWLY with its reason. **No tag**, per `CONVENTIONS.md`.
 **Surface:** Docs
 **HelpWanted:** no
 **Design:** [`docs/superpowers/specs/2026-09-26-phase-15.8-design.md`](../superpowers/specs/2026-09-26-phase-15.8-design.md)
 **Plan:** [`docs/superpowers/plans/2026-09-26-phase-15.8-reaudit-and-close.md`](../superpowers/plans/2026-09-26-phase-15.8-reaudit-and-close.md)
+**Completed:** 2026-09-26 · [PR #419](https://github.com/MarcelRoozekrans/BlazorNative/pull/419)
+**Audit:** [`docs/plans/2026-09-26-milestone-15-reaudit.md`](../plans/2026-09-26-milestone-15-reaudit.md)
+**Suite:** .NET 1200 → 1201, from a clean rebuild; Android 228, iOS 271 and JVM 162 unchanged.
+
+**The re-audit failed once before it passed, and both results are on record.** The first draft
+scored item 4 MET NARROWLY; the reviewer ruled it NOT MET, because the non-tree register assessed
+pins against Rules 2, 3, 5 and 7 and never against Rule 4, a minimum clause of DoD item 3. The
+owner ruled "fix inside 15.8, record both": the FAIL was committed on its own, every register row
+then got a Rule 4 cell citing a mechanism checked against the code, `BnActivityIndicatorTests` was
+registered, census row 27a was split, and the two reviewer mutations that had survived now red.
+Item 4 re-measured MET NARROWLY; final verdict **PASS WITH FINDINGS**, 8 MET, 3 MET NARROWLY, 0 NOT
+MET. Filed: #417 (unpinned cross-language demo goldens and the `BuildHostGraph` mirror), #418 (test
+warnings: 46 BL0006, 2 CS8669).
+
+**Lesson:** a plan that narrows a DoD clause to a subset of the rules produces an audit that
+inherits the narrowing. The 15.7 plan listed Rules 2, 3, 5 and 7; the DoD named Rule 4.
 
 ---
 

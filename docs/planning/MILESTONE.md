@@ -1,7 +1,10 @@
 # Milestone 15: A Standard for Pins
 
-**Status:** active
+**Status:** complete
 **Started:** 2026-09-22
+**Completed:** 2026-09-26 — verdict **PASS WITH FINDINGS**
+([re-audit](../plans/2026-09-26-milestone-15-reaudit.md); the first
+[audit](../plans/2026-09-25-milestone-15-audit.md) FAILED and stays on record)
 
 **Design:** [`docs/superpowers/specs/2026-09-22-milestone-15-design.md`](../superpowers/specs/2026-09-22-milestone-15-design.md)
 **Predecessor:** Milestone 14 — Twin Divergence, Closed Mechanically (complete 2026-09-22, verdict
@@ -68,30 +71,42 @@ verdict** — the number is not to be trusted until it is.
 
 ## Definition of Done
 
-- [ ] All planned phases complete
-- [ ] All tests passing — .NET, JVM, **and both device lanes dispatched**, with each lane's
+- [x] All planned phases complete
+- [x] All tests passing — .NET, JVM, **and both device lanes dispatched**, with each lane's
       `headSha` compared against the PR head rather than its conclusion read alone
-- [ ] **A written pin standard exists**, in the repo rather than in a milestone doc, stating what
+- [x] **A written pin standard exists**, in the repo rather than in a milestone doc, stating what
       every drift pin must do — at minimum: it must fail when it scans nothing, it must fail when
       its subject moves, and it must state what it does **not** cover.
-- [ ] **Every one of the existing pins is assessed against that standard**, recorded per
+- [x] **Every one of the existing pins is assessed against that standard**, recorded per
       pin as *conforms*, *fixed*, or *exempt with a written reason*. An unassessed pin is a gap;
       "exempt" is an acceptable outcome, **silence is not**.
-- [ ] **The standard is enforced mechanically, not by review.** A new pin that can pass while
+      **MET NARROWLY — see the [re-audit](../plans/2026-09-26-milestone-15-reaudit.md).** Every
+      known pin carries a verdict on all five rules, every partial named at its row. Narrow because
+      the non-tree population is kept by hand, and a reviewer, not the sweep, found its newest
+      member. This item first scored **NOT MET** twice: in 15.6, two named pins had no verdict; in
+      15.8, the register had never assessed Rule 4. Both FAILs are on record.
+- [x] **The standard is enforced mechanically, not by review.** A new pin that can pass while
       checking nothing must red. If no mechanical form exists, that is a finding to record
       explicitly with its evidence — never a line to quietly drop.
-- [ ] **[#364][i364] is answered, not merely fixed.** The auth-semantics pin's *coverage* is
+      **MET NARROWLY — through its recorded fallback.** Rule 6 reachability reds mechanically
+      (`PinPopulationTests`); nothing mechanically reds a *new* pin that can pass while checking
+      nothing. 15.0 measured why: a presence-style convention test scored 0 of 4 against the known
+      defects. That negative result is the finding, recorded with its evidence.
+- [x] **[#364][i364] is answered, not merely fixed.** The auth-semantics pin's *coverage* is
       written down — which trees, which spellings, which file kinds — and its four known holes
       close as consequences of that definition rather than as four patches.
-- [ ] **[#296][i296] is closed by the standard rather than around it.** It is the first live
+      **MET NARROWLY.** Coverage is written once in `src/shell-source-roots.json`, and three of the
+      four holes closed as consequences of it. The fourth, F3, closed as a patch. Residuals are filed
+      as #411 and #412.
+- [x] **[#296][i296] is closed by the standard rather than around it.** It is the first live
       divergence to meet the new mechanism, and **it must red before it is fixed**.
-- [ ] **[#357][i357], [#297][i297] and [#302][i302] are closed** — an asymmetry between twins, a
+- [x] **[#357][i357], [#297][i297] and [#302][i302] are closed** — an asymmetry between twins, a
       missing pin, and a missing guard.
-- [ ] **[#291][i291] is answered for prose.** M14 found **three** unpinned documentation
+- [x] **[#291][i291] is answered for prose.** M14 found **three** unpinned documentation
       transcription pairs. Either they are pinned, or the milestone records that prose pinning was
       attempted and judged not worth its cost — **with the reasoning, not the conclusion alone**.
-- [ ] **The small corrections land:** [#298][i298], [#356][i356], [#365][i365].
-- [ ] **No new public API, wire or ABI change** — verified by diffing, not asserted.
+- [x] **The small corrections land:** [#298][i298], [#356][i356], [#365][i365].
+- [x] **No new public API, wire or ABI change** — verified by diffing, not asserted.
 
 > **No "release tagged in git" criterion.** `docs/planning/CONVENTIONS.md` records **`Milestone
 > completion tags a release: no`** — release-please owns the `v<semver>` namespace. A checkbox
@@ -119,7 +134,7 @@ verdict** — the number is not to be trusted until it is.
 6. Phase 15.5 — prose, and the small corrections [complete] — all 20 hand-written docs pages audited: 46 false claims across 19 fixed; docs samples compiled in CI with the analyzers, inline Bn names held to what exists; #365's prose pairs answered with reasoning; #291 #298 #356 #365 closed, #356's behaviour split to #396; suite 1176 → 1186 (#397, #399)
 7. Phase 15.6 — audit and close [complete] — audit FAILS 7 MET / 2 NARROW / 2 NOT MET: two named pins never assessed, and #357 never closed; gaps to 15.7, re-audit in 15.8; #401–#407 filed (#408)
 8. Phase 15.7 — close the audit gaps [complete] — the non-tree pin population measured: 93 files read, 40 pin facts, every one with a verdict — 25 fixed, 1 tautology retired, 3 partial named; #357 found already closed by #408's merge and recorded truthfully; #411–#414 filed; suite 1186 → 1200 (#415)
-9. Phase 15.8 — re-audit and close [active]
+9. Phase 15.8 — re-audit and close [complete] — the re-audit first recorded FAIL on item 4, never assessed against Rule 4; closed inside the phase, re-measured MET NARROWLY; final verdict PASS WITH FINDINGS, 8 MET / 3 NARROW / 0 NOT MET; #417 #418 filed; suite 1200 → 1201 (#419)
 
 **Ordering rationale.** 15.0 comes first because the standard is what everything else applies;
 writing it afterwards would make it a description of whatever we happened to do. **15.2 and 15.3
@@ -162,4 +177,5 @@ definition was any good. 15.4 and 15.5 are independent of each other and of 15.3
 
 | Date | Verdict | Gaps |
 |---|---|---|
-| — | *(not yet audited)* | — |
+| 2026-09-25 | **FAIL** — 7 MET, 2 MET NARROWLY, 2 NOT MET ([audit](../plans/2026-09-25-milestone-15-audit.md), #408) | Item 4: `LayoutSurfacePinTests` and `DefaultStructTrapSweepTests` had no verdict. Item 8: #357 was never closed. Both closed in 15.7 |
+| 2026-09-26 | **FAIL**, then **PASS WITH FINDINGS** — 8 MET, 3 MET NARROWLY, 0 NOT MET ([re-audit](../plans/2026-09-26-milestone-15-reaudit.md), #419) | The first pass failed item 4: the register never assessed Rule 4. Closed inside 15.8 and re-measured. Carried: #395, #396, #401–#407, #411–#414, #417, #418 |
