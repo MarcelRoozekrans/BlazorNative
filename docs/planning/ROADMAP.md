@@ -3105,11 +3105,13 @@ the Rule 6 heading "The register — pins that do not read the tree".
 **Lesson:** a PR body's next-steps list can close an issue through GitHub's keyword matching, so
 write "#N to be closed", never "close #N".
 
-#### Phase 15.8: Re-audit and close [status: pending]
+#### Phase 15.8: Re-audit and close [status: active]
 **Goal:** Re-run `audit-milestone` on live evidence after 15.7, and close M15 if every DoD item is
 MET or MET NARROWLY with its reason. **No tag**, per `CONVENTIONS.md`.
 **Surface:** Docs
 **HelpWanted:** no
+**Design:** [`docs/superpowers/specs/2026-09-26-phase-15.8-design.md`](../superpowers/specs/2026-09-26-phase-15.8-design.md)
+**Plan:** [`docs/superpowers/plans/2026-09-26-phase-15.8-reaudit-and-close.md`](../superpowers/plans/2026-09-26-phase-15.8-reaudit-and-close.md)
 
 ---
 
