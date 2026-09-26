@@ -28,6 +28,20 @@ namespace BlazorNative.Runtime.Tests;
 //      the SAME frame. That is guaranteed for AutoScrollToEnd and for calls made
 //      inside one render cycle — and NOT for a call made from outside one, which
 //      is pinned here as a fact rather than left to be discovered.
+//
+// WHAT THIS DOES NOT COVER (Rule 5):
+//
+// - TheCommandVocabulary_IsTheSameOnBothSidesOfTheSeam holds
+//   NativeRenderer.ScrollToAttributeName/ScrollToEndTarget against
+//   BnScroll's own copies of the SAME two .NET string constants. It states
+//   what the seam is FOR — "a rename on one side would produce a command the
+//   renderer logs and drops" — but it does not reach either half of what
+//   "the seam" means on a device: the LITERAL SPELLING each shell's Kotlin or
+//   Swift code compares against (a Kotlin string that drifted from
+//   ScrollToAttributeName would fail exactly the silent way this comment
+//   describes, and nothing here would see it), and THE NONCE GRAMMAR the
+//   attribute value carries ("end#<n>" / "<offset>#<n>") is asserted only by
+//   the parsing facts below, not by this vocabulary fact.
 // ─────────────────────────────────────────────────────────────────────────────
 
 public sealed class ScrollCommandTests

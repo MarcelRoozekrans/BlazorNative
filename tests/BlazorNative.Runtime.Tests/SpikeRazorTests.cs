@@ -28,6 +28,19 @@ namespace BlazorNative.Runtime.Tests;
 // The remaining tests drive the spike's four capabilities on the .razor-
 // compiled component itself: markup shape, [Parameter], @onclick, @bind —
 // through Exports.DispatchEventCore, the same harness as BnDemoTests.
+//
+// WHAT THIS DOES NOT COVER (Rule 5):
+//
+// - COMMON-MODE BLINDNESS. GoldenVsTwin_PatchStreams_AreIdentical_AcrossThe
+//   WholeLifecycle proves the .razor-compiled component and its hand-written
+//   twin agree with EACH OTHER — but both are mounted through the SAME
+//   NativeRenderer, driven by the SAME dispatch script (one change, one click),
+//   in this one file. A bug shared by both halves — a renderer defect that
+//   miscompiles or misdispatches identically for a Razor-generated component
+//   and a hand-written one, or a dispatch step the script never exercises
+//   (a second @bind field, a re-render triggered some other way) — passes here
+//   with the two sides still equal to each other. This test cannot tell "both
+//   are right" from "both are wrong the same way."
 // ─────────────────────────────────────────────────────────────────────────────
 
 [Collection("host-session")]
