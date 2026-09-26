@@ -501,9 +501,10 @@ public static class Exports
 
         try
         {
-            // GetAwaiter().GetResult() is the sync contract, not a blocking
-            // wait: the InlineDispatcher completed the work before the Task
-            // was handed back (Phase 2.4 decision).
+            // KNOWN FALSE BEFORE PHASE 16.1, kept honest here: GetAwaiter().GetResult() is a
+            // blocking wait whenever the handler goes async — it held the shell's dispatch lane
+            // until the host replied, which is #345. It was never "the sync contract" for an
+            // async handler; only a synchronous handler completed before the Task came back.
             renderer.DispatchUiEventAsync(new NativeUiEvent(0, (int)handlerId, name, payload))
                 .GetAwaiter().GetResult();
             // #201 developer trace — the "I pressed a button and saw it" line. Debug, so
