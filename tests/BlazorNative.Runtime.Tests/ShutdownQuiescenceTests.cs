@@ -42,13 +42,11 @@ namespace BlazorNative.Runtime.Tests;
 // regression is a failed assertion, never a hung job.
 //
 // DOES NOT COVER:
-//   - SetFrameCallback re-registration while a frame is in flight: only shutdown
-//     drains, a plain re-registration does not;
-//   - a callback that blocks for longer than the 5 s drain budget: shutdown then
-//     returns with it still in flight, and logs a warning;
-//   - the handler's own pending Task after shutdown. Its continuation is dropped
-//     with the thread, so that Task never completes. Nothing in production awaits
-//     it, so nothing hangs, but it is not completed as cancelled either;
+//   - a callback that blocks for longer than the 5 s budget: shutdown, or a
+//     re-registration, then returns with it still in flight, and logs a warning;
+//   - two re-registrations racing each other;
+//   - the host-event arms' pending Tasks: only dispatch_event's pending handler is
+//     handed on as a shutdown-tracked mirror;
 //   - renderers that tests build directly and never dispose. Only threads owned by
 //     HostSession are joined by ResetForTests;
 //   - the Kotlin and Swift sides of quiescence.
@@ -165,6 +163,7 @@ public sealed unsafe class ShutdownQuiescenceTests
         FakeShellHost.AutoCompleteHostCall = true;
         BlockingProbe.Release.Set();
         s_callbackRelease.Set();
+        s_secondRelease.Set();
         HostSession.SetFrameCallback(IntPtr.Zero);
         HostSession.ResetForTests();
         NativeShellBridge.ResetForTests();
@@ -174,7 +173,7 @@ public sealed unsafe class ShutdownQuiescenceTests
 
     /// <summary>A Take Photo handler suspended on an open host call; the call is
     /// completed only AFTER shutdown (or, for the control, without one).</summary>
-    private static void RunHeldCall(bool shutdown)
+    private static Task RunHeldCall(bool shutdown)
     {
         var frames = new List<RenderFrame>();
         var pending = new List<Task>();
@@ -200,9 +199,13 @@ public sealed unsafe class ShutdownQuiescenceTests
             Assert.Equal(0, rc);
             requestId = FakeShellHost.LastHostCallRequestId;
             Assert.True(requestId >= 0, "Take Photo never began a host call; has BnCameraDemo's button moved?");
+            Task handler;
             lock (pending)
+            {
                 Assert.True(pending.Count == 1 && !pending[0].IsCompleted,
                     $"expected one suspended handler after Take Photo, got {pending.Count}");
+                handler = pending[0];
+            }
 
             if (shutdown)
             {
@@ -236,6 +239,7 @@ public sealed unsafe class ShutdownQuiescenceTests
                     + "post-shutdown pin's 'no frame' proves nothing. Has BnCameraDemo stopped re-rendering "
                     + "on a cancelled capture?");
             }
+            return handler;
         }
         finally
         {
@@ -257,6 +261,36 @@ public sealed unsafe class ShutdownQuiescenceTests
 
     [Fact]
     public void NoFrameReachesTheCallback_AfterShutdownReturns_PositiveControl() => RunHeldCall(shutdown: false);
+
+    // ── 1b. Decision 5: the pending handler's Task ends CANCELLED at shutdown ─
+    //
+    // The Task handed to PendingDispatchObserver (and to the interim late-fault
+    // logger) is a mirror the dispatcher tracks until shutdown. The handler's own
+    // continuation is dropped with the thread, so without the mirror that Task
+    // stayed WaitingForActivation forever: measured by the Task 4 review, 3 s after
+    // the held call completed.
+
+    [Fact]
+    public void APendingHandler_EndsCancelled_WhenItsCallCompletesAfterShutdown()
+    {
+        Task handler = RunHeldCall(shutdown: true);
+        Assert.True(WaitUntil(() => handler.IsCompleted, TimeSpan.FromSeconds(2)),
+            $"the pending handler's Task was still {handler.Status} 2 s after its held call completed "
+            + "post-shutdown. Anything awaiting it hangs forever: decision 5 says it completes as cancelled.");
+        Assert.True(handler.IsCanceled, $"the pending handler's Task ended {handler.Status}, not Canceled");
+    }
+
+    [Fact]
+    public void APendingHandler_EndsCancelled_WhenItsCallCompletesAfterShutdown_PositiveControl()
+    {
+        // Rule 3: without shutdown, the same observed Task completes NORMALLY, so the
+        // mirror carries the handler's real outcome and the pin above is not reading
+        // a Task that is always cancelled.
+        Task handler = RunHeldCall(shutdown: false);
+        Assert.True(WaitUntil(() => handler.IsCompleted, Budget),
+            $"the pending handler's Task never completed without shutdown: {handler.Status}");
+        Assert.Equal(TaskStatus.RanToCompletion, handler.Status);
+    }
 
     // ── 2. A handler that never yields: bounded shutdown, and the gate holds ─
 
@@ -386,6 +420,194 @@ public sealed unsafe class ShutdownQuiescenceTests
             s_callbackRelease.Set();
             sinkWorker?.Join(Budget);
             shutdownWorker?.Join(Budget);
+            TearDown();
+        }
+    }
+
+    // ── 3b. Re-registration waits out callbacks that may hold the OLD pointer ─
+    //
+    // Android Activity recreation re-registers the frame callback WITHOUT shutdown,
+    // and the old JNA callback object becomes collectable once registration returns.
+    // So SetFrameCallback must not return while a callback holding the old pointer is
+    // still in flight. The Task 4 review measured it returning in 0.0 ms.
+    //
+    // As in 3, the sink is invoked from workers so no render-thread join can stand in
+    // for the gate. DOES NOT COVER: two registrations racing each other, and an old
+    // callback in flight for longer than the 5 s budget, after which registration
+    // returns with a warning.
+
+    private static readonly ManualResetEventSlim s_secondEntered = new(false);
+    private static readonly ManualResetEventSlim s_secondRelease = new(false);
+
+    /// <summary>A second in-flight callback, independent of <see cref="BlockingFrame"/>.</summary>
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    private static void SecondBlockingFrame(BlazorNativeFrame* frame)
+    {
+        s_secondEntered.Set();
+        s_secondRelease.Wait(TimeSpan.FromSeconds(30));
+    }
+
+    /// <summary>Re-registers the counting callback from INSIDE a frame callback.</summary>
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    private static void ReRegisteringFrame(BlazorNativeFrame* frame) => RegisterCounter();
+
+    /// <summary>Mounts HelloComponent and returns its sink and first frame, so a test
+    /// can drive the sink from its own threads.</summary>
+    private static (Action<RenderFrame> Sink, RenderFrame Frame) SinkAndFrame()
+    {
+        var frames = new List<RenderFrame>();
+        NativeRenderer renderer = StartSession(frames);
+        Assert.Equal(0, HostSession.TryMount("HelloComponent"));
+        RenderFrame frame;
+        lock (frames) frame = Assert.Single(frames);
+        return (renderer.FrameSink ?? throw new Xunit.Sdk.XunitException("EnsureSession installed no FrameSink"),
+            frame);
+    }
+
+    private static Thread Start(string name, ThreadStart body)
+    {
+        var t = new Thread(body) { IsBackground = true, Name = name };
+        t.Start();
+        return t;
+    }
+
+    private static void SetBlocking()
+    {
+        delegate* unmanaged[Cdecl]<BlazorNativeFrame*, void> fn = &BlockingFrame;
+        HostSession.SetFrameCallback((IntPtr)fn);
+    }
+
+    private static void SetSecondBlocking()
+    {
+        delegate* unmanaged[Cdecl]<BlazorNativeFrame*, void> fn = &SecondBlockingFrame;
+        HostSession.SetFrameCallback((IntPtr)fn);
+    }
+
+    [Fact]
+    public void SetFrameCallback_DoesNotReturn_WhileAnOldCallbackIsInFlight()
+    {
+        s_callbackEntered.Reset();
+        s_callbackRelease.Reset();
+        Thread? sinkWorker = null, register = null;
+        try
+        {
+            var (sink, frame) = SinkAndFrame();
+            SetBlocking();
+            sinkWorker = Start("sink-probe", () => sink(frame));
+            Assert.True(s_callbackEntered.Wait(Budget), "the old callback never started");
+
+            using var registered = new ManualResetEventSlim(false);
+            register = Start("register-probe", () => { RegisterCounter(); registered.Set(); });
+            Assert.False(registered.Wait(TimeSpan.FromMilliseconds(500)),
+                "SetFrameCallback returned while a callback holding the OLD pointer was still in flight. "
+                + "A host that frees its old callback on re-registration, as Android Activity recreation "
+                + "does, is then inside freed memory.");
+
+            // Rule 3, through the same detector: once the old callback leaves, it returns.
+            s_callbackRelease.Set();
+            Assert.True(registered.Wait(Budget), "SetFrameCallback never returned after the old callback left");
+        }
+        finally
+        {
+            s_callbackRelease.Set();
+            sinkWorker?.Join(Budget);
+            register?.Join(Budget);
+            TearDown();
+        }
+    }
+
+    [Fact]
+    public void SetFrameCallback_ReturnsPromptly_WithNoCallbackInFlight_PositiveControl()
+    {
+        // Rule 3: registration is not simply always slow, so the red above means "waited".
+        try
+        {
+            SinkAndFrame();
+            var sw = Stopwatch.StartNew();
+            RegisterCounter();
+            Assert.True(sw.Elapsed < TimeSpan.FromMilliseconds(500),
+                $"SetFrameCallback took {sw.ElapsedMilliseconds} ms with nothing in flight");
+        }
+        finally
+        {
+            TearDown();
+        }
+    }
+
+    [Fact]
+    public void SetFrameCallback_IsNotStarved_ByANewCallbackInFlight()
+    {
+        // The two-slot epoch: a callback that entered AFTER the swap holds the NEW
+        // pointer, so registration must not wait for it. A single counter would.
+        s_callbackEntered.Reset();
+        s_callbackRelease.Reset();
+        s_secondEntered.Reset();
+        s_secondRelease.Reset();
+        Thread? oldWorker = null, newWorker = null, register = null;
+        try
+        {
+            var (sink, frame) = SinkAndFrame();
+            SetBlocking();
+            oldWorker = Start("old-sink-probe", () => sink(frame));
+            Assert.True(s_callbackEntered.Wait(Budget), "the old callback never started");
+
+            using var registered = new ManualResetEventSlim(false);
+            register = Start("register-probe", () => { SetSecondBlocking(); registered.Set(); });
+            // The swap happens before the wait; start the new entry only once it has.
+            delegate* unmanaged[Cdecl]<BlazorNativeFrame*, void> second = &SecondBlockingFrame;
+            IntPtr secondPtr = (IntPtr)second;
+            FieldInfo? slot = typeof(HostSession).GetField("s_frameCallback", BindingFlags.NonPublic | BindingFlags.Static);
+            Assert.True(slot is not null,
+                "HostSession.s_frameCallback was not found; this pin reads it by name to know the swap happened. "
+                + "Re-point it deliberately.");
+            Assert.True(WaitUntil(() => (IntPtr)slot!.GetValue(null)! == secondPtr, Budget),
+                "SetFrameCallback never swapped the pointer before waiting");
+            newWorker = Start("new-sink-probe", () => sink(frame));
+            Assert.True(s_secondEntered.Wait(Budget), "the new callback never started");
+            Assert.False(registered.IsSet, "registration returned while the old callback was in flight");
+
+            s_callbackRelease.Set();
+            Assert.True(registered.Wait(TimeSpan.FromSeconds(2)),
+                "SetFrameCallback kept waiting after the old callback left, for a callback that entered "
+                + "AFTER the swap and holds the NEW pointer. A steady stream of new frames would starve it.");
+        }
+        finally
+        {
+            s_callbackRelease.Set();
+            s_secondRelease.Set();
+            oldWorker?.Join(Budget);
+            newWorker?.Join(Budget);
+            register?.Join(Budget);
+            TearDown();
+        }
+    }
+
+    [Fact]
+    public void SetFrameCallback_FromInsideACallback_DoesNotDeadlock()
+    {
+        Thread? sinkWorker = null;
+        try
+        {
+            var (sink, frame) = SinkAndFrame();
+            delegate* unmanaged[Cdecl]<BlazorNativeFrame*, void> fn = &ReRegisteringFrame;
+            HostSession.SetFrameCallback((IntPtr)fn);
+
+            using var done = new ManualResetEventSlim(false);
+            sinkWorker = Start("sink-probe", () => { sink(frame); done.Set(); });
+            // 2 s, under the 5 s budget: a registration waiting on its own callback would
+            // time out at 5 s, and this reds before that.
+            Assert.True(done.Wait(TimeSpan.FromSeconds(2)),
+                "a callback that re-registers the frame callback did not return within 2 s: registration "
+                + "waited for the very callback it was called from");
+
+            // Anchor: the re-registration really happened, so the next frame is counted.
+            int before = Frames;
+            sink(frame);
+            Assert.True(Frames > before, "the callback's re-registration never took effect");
+        }
+        finally
+        {
+            sinkWorker?.Join(Budget);
             TearDown();
         }
     }

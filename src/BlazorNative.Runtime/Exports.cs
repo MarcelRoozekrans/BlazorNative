@@ -546,7 +546,13 @@ public static class Exports
                 return 2;
 
             case DispatchOutcomeKind.Pending:
-                ObservePendingDispatch(handlerId, name, outcome.Pending!);
+                // Decision 5: hand on a mirror the render thread cancels at shutdown. The
+                // handler's own Task never completes once its continuation is dropped with
+                // the thread, and anything awaiting it would hang.
+                Task pending = renderer.Dispatcher is RenderThreadDispatcher dispatcher
+                    ? dispatcher.TrackUntilShutdown(outcome.Pending!)
+                    : outcome.Pending!;
+                ObservePendingDispatch(handlerId, name, pending);
                 break;
         }
 
@@ -562,7 +568,9 @@ public static class Exports
     /// <summary>Hands a still-running dispatch to <see cref="PendingDispatchObserver"/>.
     /// While no observer is set, INTERIM (Phase 16.1): logs a later fault with
     /// <c>BnLog.Error</c>, so a fault after the first await is never silent. The
-    /// FaultNotice delivery replaces the logger in the same phase.</summary>
+    /// FaultNotice delivery replaces the logger in the same phase. <paramref name="pending"/>
+    /// is the dispatcher's shutdown-tracked mirror: it ends cancelled if the render thread
+    /// shuts down while the handler is still suspended.</summary>
     private static void ObservePendingDispatch(ulong handlerId, string name, Task pending)
     {
         if (PendingDispatchObserver is { } observer)

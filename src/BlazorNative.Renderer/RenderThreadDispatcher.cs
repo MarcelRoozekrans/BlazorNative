@@ -25,7 +25,9 @@ namespace BlazorNative.Renderer;
 //     cross-thread InvokeAsync still pending once the queue has drained and Run() exits,
 //     or when Shutdown cannot join the thread. Nothing awaiting an InvokeAsync hangs.
 //     A raw SynchronizationContext.Post with no InvokeAsync behind it has no Task to
-//     complete; it is dropped with a warning.
+//     complete; it is dropped with a warning. A dispatch's still-running handler Task is
+//     such a case, so the export hands on a TrackUntilShutdown mirror instead, and the
+//     mirror is cancelled with the rest.
 //   - An exception escaping raw posted work, such as an async void that throws after an
 //     await, goes to UnhandledExceptionSink. The default re-raises it as unhandled, so the
 //     process terminates exactly as it does without a SynchronizationContext.
@@ -97,8 +99,47 @@ internal sealed class RenderThreadDispatcher : Dispatcher, IDisposable
 
     private void Untrack(object tcs) => _pending.TryRemove(tcs, out _);
 
+    /// <summary>Set once the dispatcher has started cancelling what is pending, so a Task
+    /// tracked after that point is cancelled at once instead of waiting forever.</summary>
+    private int _pendingCancelled;
+
+    /// <summary>Returns a mirror of <paramref name="task"/> that completes with its outcome,
+    /// or as CANCELLED when this dispatcher shuts down first (decision 5). For a handler
+    /// suspended on an await: its continuation is posted to this thread, so once the
+    /// thread is gone the handler's own Task never completes, and anything awaiting it
+    /// would hang. The export hands the mirror onward, never the raw Task.</summary>
+    internal Task TrackUntilShutdown(Task task)
+    {
+        if (task.IsCompleted)
+            return task;
+
+        var mirror = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        Track(mirror, () => mirror.TrySetCanceled());
+        task.ContinueWith(
+            t =>
+            {
+                Untrack(mirror);
+                if (t.IsFaulted)
+                    mirror.TrySetException(t.Exception!.InnerExceptions);
+                else if (t.IsCanceled)
+                    mirror.TrySetCanceled();
+                else
+                    mirror.TrySetResult();
+            },
+            CancellationToken.None,
+            TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
+
+        // Tracked after CancelPending already swept: cancel now. CancelPending sets the
+        // flag before it sweeps, so either the sweep sees this entry or this sees the flag.
+        if (Volatile.Read(ref _pendingCancelled) != 0)
+            CancelPending();
+        return mirror.Task;
+    }
+
     private void CancelPending()
     {
+        Interlocked.Exchange(ref _pendingCancelled, 1);
         foreach (object key in _pending.Keys)
         {
             if (_pending.TryRemove(key, out Action? cancel))

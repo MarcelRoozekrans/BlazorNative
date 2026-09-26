@@ -40,35 +40,63 @@ internal static unsafe class HostSession
     /// for the render thread to join (Phase 16.1).</summary>
     private static readonly TimeSpan QuiesceBudget = TimeSpan.FromSeconds(5);
 
+    /// <summary>Serializes <see cref="SetFrameCallback"/>'s swap-and-wait, so each wait
+    /// covers exactly the entries that may hold the pointer it replaced.</summary>
+    private static readonly object s_registrationLock = new();
+
     /// <summary>Phase 16.1: a counted region around every frame-callback invocation.
-    /// The sink enters it before it reads the callback pointer and leaves it after the
-    /// callback returns; <see cref="CloseAndDrain"/> refuses new entries and waits for the
-    /// ones in flight. So once shutdown has closed and drained the gate, no frame of that
-    /// session can reach the host, including one produced later by a handler that
-    /// outlived the render thread's join, and none is inside the host's trampoline.</summary>
+    /// The sink enters it before it reads the callback pointer, INVOKES the callback
+    /// inside it, and leaves only after the callback returns. What makes waiting on the
+    /// gate safe is that invocation: a callback that is running is always counted.
+    /// <list type="bullet">
+    /// <item><see cref="CloseAndDrain"/> refuses new entries and waits for the ones in
+    /// flight. Once shutdown has closed and drained the gate, no frame of that session
+    /// reaches the host, including one produced later by a handler that outlived the
+    /// render thread's join, and none is inside the host's trampoline.</item>
+    /// <item><see cref="WaitOutPreviousEpoch"/> leaves the gate open and waits only for
+    /// the entries that may hold a pointer that has just been replaced. Entries are
+    /// counted in one of two epoch slots, and the swap flips the epoch, so entries that
+    /// arrive after it land in the other slot and a steady stream of new frames cannot
+    /// starve the wait.</item>
+    /// </list></summary>
     internal sealed class FrameGate
     {
-        private int _inFlight;
+        /// <summary>How many gate regions the CURRENT thread is inside, across all gates.
+        /// A registration from inside a frame callback must not wait for itself.</summary>
+        [ThreadStatic] private static int t_depth;
+
+        private readonly int[] _inFlight = new int[2];
+        private int _epoch;
         private volatile bool _closed;
 
-        /// <summary>Enters the region. False once the gate is closed: the caller drops
-        /// the frame.</summary>
-        public bool TryEnter()
+        /// <summary>True when the calling thread is inside a frame callback.</summary>
+        public static bool CallerIsInside => t_depth > 0;
+
+        /// <summary>Enters the region, in the current epoch's slot. False once the gate
+        /// is closed: the caller drops the frame.</summary>
+        public bool TryEnter(out int slot)
         {
-            // Increment BEFORE reading _closed, and CloseAndDrain writes _closed BEFORE
-            // reading the count, with a full fence on each side: either the closer sees
-            // this entry and waits for it, or this entry sees the gate closed.
-            Interlocked.Increment(ref _inFlight);
+            // Increment BEFORE reading _closed or the pointer. CloseAndDrain writes _closed,
+            // and SetFrameCallback writes the pointer, BEFORE reading the counts, with a
+            // full fence on each side: either the waiter sees this entry and waits for it,
+            // or this entry sees the gate closed or the new pointer.
+            slot = Volatile.Read(ref _epoch);
+            Interlocked.Increment(ref _inFlight[slot]);
             if (_closed)
             {
-                Interlocked.Decrement(ref _inFlight);
+                Interlocked.Decrement(ref _inFlight[slot]);
                 return false;
             }
+            t_depth++;
             return true;
         }
 
         /// <summary>Leaves the region entered by a successful <see cref="TryEnter"/>.</summary>
-        public void Exit() => Interlocked.Decrement(ref _inFlight);
+        public void Exit(int slot)
+        {
+            t_depth--;
+            Interlocked.Decrement(ref _inFlight[slot]);
+        }
 
         /// <summary>Closes the gate, then waits until no callback is in flight, bounded by
         /// <paramref name="budget"/>. Returns whether it drained.</summary>
@@ -76,7 +104,21 @@ internal static unsafe class HostSession
         {
             _closed = true;
             Interlocked.MemoryBarrier();
-            return SpinWait.SpinUntil(() => Volatile.Read(ref _inFlight) == 0, budget);
+            return SpinWait.SpinUntil(
+                () => Volatile.Read(ref _inFlight[0]) == 0 && Volatile.Read(ref _inFlight[1]) == 0,
+                budget);
+        }
+
+        /// <summary>Called after the callback pointer was replaced: flips the epoch and
+        /// waits, bounded, for the previous epoch's entries, which are the only ones that
+        /// can hold the replaced pointer. Returns whether they drained.</summary>
+        public bool WaitOutPreviousEpoch(TimeSpan budget)
+        {
+            int previous = Volatile.Read(ref _epoch);
+            // Exchange is a full fence: the pointer write before it is visible to any
+            // entry that reads the new epoch, so such an entry reads the new pointer.
+            Interlocked.Exchange(ref _epoch, 1 - previous);
+            return SpinWait.SpinUntil(() => Volatile.Read(ref _inFlight[previous]) == 0, budget);
         }
     }
 
@@ -138,12 +180,35 @@ internal static unsafe class HostSession
     }
 
     /// <summary>Stores the host's frame callback. IntPtr.Zero disables
-    /// delivery; re-registration is allowed (last wins). Phase 16.1: this does NOT
-    /// drain a callback already in flight, so a host must not free the previous
-    /// callback on the strength of re-registering. Only <see cref="Shutdown"/> drains:
-    /// it closes the session's frame gate first, and clears the pointer after.</summary>
+    /// delivery; re-registration is allowed (last wins). Phase 16.1: once this
+    /// returns, no callback holding the PREVIOUS pointer is still in flight, so the
+    /// host may release its old callback object. Android Activity recreation does
+    /// exactly that without calling shutdown. The gate stays open: frames keep
+    /// flowing to the new pointer while the old ones drain. The wait is bounded at
+    /// 5 s with a warning, and skipped when called from inside a frame callback,
+    /// which would otherwise wait for itself.</summary>
     public static void SetFrameCallback(IntPtr fnPtr)
-        => Volatile.Write(ref s_frameCallback, fnPtr);
+    {
+        if (FrameGate.CallerIsInside)
+        {
+            // Registering from a callback: that callback is itself an old-pointer entry,
+            // so waiting would only time out. Swap, and leave the wait to the host.
+            Volatile.Write(ref s_frameCallback, fnPtr);
+            return;
+        }
+
+        lock (s_registrationLock)
+        {
+            Volatile.Write(ref s_frameCallback, fnPtr);
+            FrameGate? gate = Volatile.Read(ref s_frameGate);
+            if (gate is not null && !gate.WaitOutPreviousEpoch(QuiesceBudget))
+            {
+                BnLog.Warn("HostSession",
+                    $"a callback holding the previous frame callback was still in flight "
+                    + $"{QuiesceBudget.TotalSeconds:0} s after re-registration; returning without it");
+            }
+        }
+    }
 
     /// <summary>Stores the app's ConfigureServices delegate (design §1) —
     /// backing BlazorNativeApp.ConfigureServices. Consumed once by
@@ -540,14 +605,17 @@ internal static unsafe class HostSession
             renderer.StrictErrors = Volatile.Read(ref s_strictErrors)
                 || Environment.GetEnvironmentVariable("BLAZORNATIVE_STRICT") == "1";
 
-            // Phase 16.1: every callback invocation runs inside this session's frame
-            // gate, and the pointer is read INSIDE it, so Shutdown's drain covers every
-            // read of the pointer it is about to clear. A closed gate drops the frame:
-            // the session has been shut down or reset.
+            // Phase 16.1: every callback is INVOKED inside this session's frame gate,
+            // and the gate is left only after the callback returns. That is what makes
+            // both waits safe: a callback that is running is always counted, so
+            // Shutdown's drain and SetFrameCallback's epoch wait each cover every call
+            // into the pointer they replace. The pointer is read after entering, so an
+            // entry the waiter misses reads the new value. A closed gate drops the
+            // frame: the session has been shut down or reset.
             var gate = new FrameGate();
             renderer.FrameSink = frame =>
             {
-                if (!gate.TryEnter())
+                if (!gate.TryEnter(out int slot))
                     return;
                 try
                 {
@@ -562,7 +630,7 @@ internal static unsafe class HostSession
                 }
                 finally
                 {
-                    gate.Exit();
+                    gate.Exit(slot);
                 }
             };
 
