@@ -5,7 +5,14 @@
 **Milestone:** [M15](../planning/MILESTONE.md) · opened at `76728c9` (#368)
 **Measured against:** `origin/main` at `592d2d5683cb5b3b31eedc51c518df8de8ff5dfd`, fetched at the time of writing
 **The audit it re-runs:** [`2026-09-25-milestone-15-audit.md`](2026-09-25-milestone-15-audit.md), **FAIL**. That report stays as it is.
-**Verdict:** **PASS WITH FINDINGS** — eight criteria MET, three MET NARROWLY, none NOT MET. See [the verdict](#verdict).
+**Verdict:** **FAIL** — eight criteria MET, two MET NARROWLY, one NOT MET: item 4. See [the verdict](#verdict).
+
+> **How this report came to say FAIL.** The draft committed as `bda0f87` scored item 4 MET NARROWLY
+> and the milestone PASS WITH FINDINGS. The phase review ruled that wrong, and the owner decided to
+> close the gap inside 15.8 and record both outcomes. The sections below are the corrected re-audit
+> and say FAIL. What happened after the correction is appended at the end, under
+> [Item 4, re-measured after the closure](#item-4-re-measured-after-the-closure), and does not
+> rewrite anything above it.
 
 Every number below was measured again for this re-audit, from scratch. None was copied from the
 first audit, from 15.7's sweep, record or register, or from a ROADMAP block. The command that
@@ -25,7 +32,7 @@ Commands assume Git Bash on Windows, so `export MSYS_NO_PATHCONV=1` is needed be
 | 1 | All planned phases complete | **MET** |
 | 2 | All tests passing, both device lanes dispatched, `headSha` compared | **MET** |
 | 3 | A written pin standard exists | **MET** |
-| 4 | Every existing pin assessed and recorded | **MET NARROWLY**. Every pin has a verdict, but the non-tree register never assesses Rule 4 |
+| 4 | Every existing pin assessed and recorded | **NOT MET** — no non-tree pin is assessed against Rule 4 |
 | 5 | The standard is enforced mechanically, or the absence is recorded | **MET NARROWLY** |
 | 6 | #364 answered, not merely fixed | **MET NARROWLY** |
 | 7 | #296 closed by the standard, red before fixed | **MET** |
@@ -113,11 +120,11 @@ three clauses the DoD names, one rule each (`grep -n "^## " docs/pin-standard.md
 It also carries Rules 1, 3, 6, 7 and 8, the enforcement verdict at `:532`, and the checklist at
 `:684`, which lists Rule 4 as its own box at `:695`.
 
-## 4. Every existing pin assessed and recorded — **MET NARROWLY**
+## 4. Every existing pin assessed and recorded — **NOT MET**
 
-Two populations, each enumerated here by its own key. Every member of both has a verdict. The item
-is narrow, not clean, for the reason in §4d: the non-tree register assesses Rules 2, 3, 5 and 7, and
-never Rule 4, which is one of the three clauses the DoD itself names.
+Two populations, each enumerated here by its own key. Every member of both has a verdict row. The
+item is still NOT MET, for the reason in §4d: the non-tree register assesses Rules 2, 3, 5 and 7, and
+is silent on Rule 4, which is one of the three clauses the DoD itself names as the standard's minimum.
 
 ### 4a. The tree-reader population: 33 files, 170 facts, every one with a verdict
 
@@ -244,7 +251,7 @@ is assessed, with what is missing written at the row. I judge all of them accept
 
 | row | rule | what is missing | judgement |
 |---|---|---|---|
-| sweep 12 and 15, `LayoutSurfaceSequenceBandTests` | Rule 2 | the number of theory rows is floored only by xUnit's refusal of empty `MemberData`, so at least 1 | acceptable. Per-row floors exist, and the reviewer's region-filter mutation in the 15.7 record reds 15 facts. The residual is one row surviving out of many, and the row says so |
+| sweep 12 and 15, `LayoutSurfaceSequenceBandTests` | Rule 2 | the number of theory rows is floored only by xUnit's refusal of empty `MemberData`, so at least 1 | **acceptable as a recorded partial, but my first draft understated it.** Per-row floors exist, and the 15.7 reviewer's region-filter mutation reds 15 facts. But the draft called the residual *"one row surviving out of many"*. The 15.8 review showed it is much larger: filtering `LayoutItemTypes()` to container rows drops **10 of the 14** theory rows and every fact stays green. That is a surviving mutation, not a one-row edge |
 | sweep 38, `YogaAndVisualStyleAttributes_AreDisjoint` | Rule 3 | no planted overlap through the `Intersect` | acceptable. Rows 39–40 anchor named members of each half, and each half is floored at its measured count |
 | sweep 38 | Rule 5 | the header states purpose, not reach | acceptable, but it is the weakest of the set: a missing disclosure on a disjointness check is cheap to add |
 | group C | Rule 2 | no floor of its own | acceptable. The facts are near-tautological and say so |
@@ -256,15 +263,21 @@ The ROADMAP 15.7 block counts *"3 remain partial"*: rows 12, 15 and 38. That cou
 facts only. The group partials and the row 4 note sit outside it, and the ROADMAP block names C, D
 and E separately. The numbers agree once that scope is read.
 
-### 4d. Why narrowly: Rule 4 is never assessed for the non-tree pins
+### 4d. Why NOT MET: Rule 4 is never assessed for the non-tree pins
 
 The register's verdict column is headed **"Verdict (Rules 2, 3, 5, 7)"**, at `docs/pin-standard.md:410`.
-No row carries a Rule 4 verdict. The sweep's columns are R2, R3 and R5. The 15.7 plan asked for
-*"a per-rule verdict for Rules 2, 3, 5 and 7"* at
-`docs/superpowers/plans/2026-09-26-phase-15.7-close-the-audit-gaps.md:253`. But the 15.4 design that
-created the register specified *"its verdict against Rules 2–5 and 7"*, at
-`docs/superpowers/specs/2026-09-24-phase-15.4-design.md:81`. Rule 4 dropped out between the two,
-and no document gives a reason:
+No row carries a Rule 4 verdict. The sweep's columns are R2, R3 and R5. Two earlier documents asked
+for Rule 4, and 15.7's plan narrowed it away:
+
+- the 15.4 design that created the register specified *"its verdict against Rules 2–5 and 7"*, at
+  `docs/superpowers/specs/2026-09-24-phase-15.4-design.md:81`;
+- **the first audit's own recommended fix** said *"Assess `LayoutSurfacePinTests` and
+  `DefaultStructTrapSweepTests` against Rules 2–5 and 7"*, at
+  `docs/plans/2026-09-25-milestone-15-audit.md:657`;
+- 15.7's plan then asked for *"a per-rule verdict for Rules 2, 3, 5 and 7"*, at
+  `docs/superpowers/plans/2026-09-26-phase-15.7-close-the-audit-gaps.md:253`.
+
+Rule 4 dropped out at that last step, and no document gives a reason:
 `grep -rn "Rule 4" docs/pin-standard.md docs/plans/2026-09-26-phase-15.7-*.md docs/superpowers/specs/2026-09-26-phase-15.7-design.md`
 finds only the rule itself and two cross-references in the standard's Rule 3 text and checklist.
 
@@ -272,23 +285,26 @@ Rule 4, *"it must fail when its subject moves"*, is one of the **three** clauses
 standard's minimum. The tree-reader scorecard does assess it: census §3 has a Rule 4 column, and
 every row reads *yes*.
 
-**How much this matters in substance, from my own spot check, which is not a verdict.** The 16
-files that hold non-tree pins reach their subjects mostly through compile-time symbols, so a rename
-is a build break rather than a shrug. Per file,
-`grep -c 'typeof('` and `grep -c 'nameof('` give, for example, `BnComponentTests` 28/129,
-`BnFormControlTests` 22/92, `LayoutSurfacePinTests` 41/2 and `DefaultStructTrapSweepTests` 23/0.
-The few string lookups either dereference with `!` or assert `NotNull`, so they throw or red. The
-reflection sweeps carry named anchors, such as `BnView`, `CaptureOptions`, `FlexAlign` and the seven
-named assemblies, which red if the subject leaves the swept set. So Rule 4 probably holds for most
-of these pins. But *probably, from an auditor's grep* is not the per-pin verdict the DoD asks for,
-and the standard's own point is that silence on a rule is the failure mode.
+**Two readings could rescue the item, and neither does.**
 
-**Why this is MET NARROWLY and not NOT MET.** The DoD's unit is the **pin**: *"recorded per pin as
-conforms, fixed, or exempt … An unassessed pin is a gap."* Every pin in both populations has a
-recorded verdict. None of them is unassessed, which was the first audit's defect. What is missing is
-one rule of the standard, across the whole non-tree register. That is an incomplete assessment, not
-an absent one. A stricter reading, that *"assessed against that standard"* means every rule, would
-make this NOT MET. I record that reading here so the owner can apply it. This is new finding N1.
+- **(a) The census's Rule 4 column covers it.** It covers the 33 tree-readers only. The non-tree
+  register has no such column.
+- **(b) Rule 4 is implied by the comparison shape.** An exact-equality comparison against a non-empty
+  literal, or a `typeof`/`nameof` reference that turns a rename into a build break, does make most of
+  these pins red when their subject moves. My own spot check suggests that:
+  `grep -c 'typeof('` and `grep -c 'nameof('` give, for example, `BnComponentTests` 28/129,
+  `BnFormControlTests` 22/92, `LayoutSurfacePinTests` 41/2 and `DefaultStructTrapSweepTests` 23/0.
+  The reading is plausible. **But it is recorded nowhere.** A verdict that exists only as an
+  inference in an auditor's head is silent in the record, and *"silence is not"* acceptable is the
+  DoD's own line.
+
+**Why NOT MET.** DoD item 3 defines the standard's minimum as *"it must fail when it scans nothing,
+it must fail when its subject moves, and it must state what it does not cover"*. Item 4 requires
+every pin to be assessed against that standard. Every non-tree register row is silent on the middle
+clause. My draft, `bda0f87`, scored this MET NARROWLY on the ground that every pin has *a* verdict.
+The review ruled, and I adopt the ruling, that a verdict silent on one of the DoD's three named
+clauses is not an assessment against the standard. The first audit's own fix asked for Rule 4, so
+this is not a new bar. It is the bar the gap plan set, narrowed without a reason.
 
 ## 5. The standard is enforced mechanically, or the absence is recorded — **MET NARROWLY**
 
@@ -529,7 +545,7 @@ the first audit did not account for, apart from the two above.
 | 1 | phases complete | MET | MET | 15.6 and 15.7 completed: `1f2b3a7` #409, `592d2d5` #416 |
 | 2 | tests, device lanes, `headSha` | MET | MET | counts .NET 1186 → 1200 from 15.7's controls and one retirement, `5b536f4` #415; lanes re-dispatched on `592d2d5` |
 | 3 | written standard | MET | MET | the register section grew from one row to the full non-tree population, `5b536f4` #415; the three minimum rules are unchanged |
-| 4 | every pin assessed | **NOT MET** | **MET NARROWLY** | `LayoutSurfacePinTests` and `DefaultStructTrapSweepTests` now have register rows; the 93 non-tree files were swept and every pin file has a row, `5b536f4` #415. Narrow on Rule 4, never assessed for the non-tree pins, and on census row 27a |
+| 4 | every pin assessed | **NOT MET** | **NOT MET** | `LayoutSurfacePinTests` and `DefaultStructTrapSweepTests` now have register rows, and the 93 non-tree files were swept with a row for every pin file, `5b536f4` #415. But the register is silent on Rule 4, which the first audit's fix at `:657` asked for and 15.7's plan dropped |
 | 5 | enforced mechanically | MET NARROWLY | MET NARROWLY | nothing changed, and nothing was asked to |
 | 6 | #364 answered | MET NARROWLY | MET NARROWLY | residuals 3 and 4 filed as #411 and #412 during 15.7; F3 is still a patch |
 | 7 | #296 red before fixed | MET | MET | nothing; re-measured, including the JUnit XML of the red run |
@@ -562,57 +578,69 @@ M15's DoD:
 - **#412** The template's build.gradle.kts is an unread second record of the shell source dirs. *Same family as #411.*
 - **#413** Ten CS1570 malformed-XML doc-comment warnings in the test tree. *Test-tree hygiene.*
 - **#414** Differential pin: cross-language ABI and wire constants, read from Kotlin, Swift and C. *The replacement for group A's goldens, which the register classes as not pins.*
+- **#417** Unpinned copies: .NET demo goldens transcribed by Kotlin/Swift suites, and BuildHostGraph mirroring EnsureSession. *Filed from this re-audit's N3; the sweep classes both groups as not pins.*
+- **#418** Test-tree warnings: 46 BL0006 and 2 CS8669 on a clean build. *Filed from this re-audit's N4; test-tree hygiene, not a DoD item.*
 
 Older open debt this milestone did not touch: #345 and #346, pinned by tests that assert the bug
 still exists, and the owner-accepted hardening ledger, #8, #9, #12 and #13.
 
-### New findings, for the controller to file
+### New findings, filed
 
-This re-audit files nothing itself. Each of these is new, and none is tracked by an issue today:
+The phase spec's §Approach item 5 requires a new finding to be filed **before** the report cites it.
+My draft cited them unfiled, and that was wrong. They are filed or disposed of now:
 
 - **N1. The non-tree register never assesses Rule 4.** Its column is *"Verdict (Rules 2, 3, 5, 7)"*,
-  `docs/pin-standard.md:410`, while the 15.4 design that created it asked for Rules 2–5 and 7. No
-  document gives a reason for the omission. Rule 4 is one of the DoD's three minimum clauses. The
-  fix is a Rule 4 cell per row, or a written reason why reflection pins satisfy it by construction.
-  This is §4d, and it is why item 4 is narrow.
+  `docs/pin-standard.md:410`, while the 15.4 design and the first audit's fix both asked for Rules
+  2–5 and 7. This is §4d and the reason item 4 is NOT MET. **Disposition: closed inside 15.8,** by
+  giving every register row a Rule 4 cell. No issue, because the phase closes it.
 - **N2. Census row 27a overclaims per fact.** It scores
   `WireVocabularyCodegenTests.TheRenderersStyleSets_AreTheManifests` Rule 2 *yes*, **conforms**, while
   the census's own 15.7 addendum at `:1306–1313` names that fact as an unfixed per-fact Rule 2 gap.
-  The spread table's *"0 gap"* inherits the overclaim. The fix is a floor on the fact, or a row
-  split marking it partial. This is §4a.
-- **N3. The sweep's groups G and H have no disposition.** Both are recorded copies with nothing
-  comparing them. H is `BridgeHttpEndToEndTests.BuildHostGraph`, a hand mirror of
-  `HostSession.EnsureSession`'s registrations whose own comment says it must be updated by hand. G is
-  the goldens that Kotlin and Swift suites transcribe: `HelloGoldenTests`, `FlatJsonTests`,
-  `BnLayoutDemoTests`, `BnScrollDemoTests`, `BnListWindowTests`, `BnFormDemoTests`, `BnModalDemoTests`
-  and `BnSafeAreaDemoTests`. #414 covers group A only. This is §4b.
-- **N4. Test-tree compiler warnings: 46 BL0006 and 2 CS8669** on a clean build, per the hand-off, 42
-  of the BL0006 in `LayoutSurfaceSequenceBandTests.cs`, partly grown by 15.7's synthetic-frame
-  controls. Not a DoD item and not in shipped `src`; the same kind of test-tree warning debt as #413.
-  This is §2.
-- **N5. `docs/planning/MILESTONE.md`'s Audit History table still reads *"(not yet audited)"*,** though
-  the FAIL audit of 2026-09-25 exists. This is bookkeeping for `complete-milestone` to correct with
-  both rows, the FAIL and this re-audit, rather than an issue.
+  This is §4a. **Disposition: corrected inside 15.8.**
+- **N3. The sweep's groups G and H have no disposition.** H is `BridgeHttpEndToEndTests.BuildHostGraph`,
+  a hand mirror of `HostSession.EnsureSession`'s registrations. G is the goldens that Kotlin and Swift
+  suites transcribe. #414 covers group A only. This is §4b. **Filed as #417.**
+- **N4. Test-tree compiler warnings: 46 BL0006 and 2 CS8669** on a clean build, 42 of the BL0006 in
+  `LayoutSurfaceSequenceBandTests.cs`. Not a DoD item. This is §2. **Filed as #418.**
+- **N5. `docs/planning/MILESTONE.md`'s Audit History table still reads *"(not yet audited)"*.**
+  **Disposition: bookkeeping, handled at `complete-milestone`,** which adds the rows.
+
+### What the phase review measured, and which of its numbers reproduced
+
+The review re-measured this report and ran its own mutations. Its numbers reproduced. They are
+recorded here because two of them are defects this report missed:
+
+- **Survivor A, `DispatchSurfaceDriftTests`.** A `DispatchNamedDeclaration` regex made blind to
+  `*AndWait` names brings the Kotlin scan from 8 to 6 and the Swift scan from 5 to 4. Those land
+  exactly **on** the floors of 6 and 4, so every fact stays green.
+- **Survivor B, `LayoutSurfaceSequenceBandTests`.** Filtering `LayoutItemTypes()` to container rows
+  drops 10 of the 14 theory rows, and every fact stays green. §4c above is corrected for it.
+- **An unregistered pin.** `BnActivityIndicatorTests.DeclaresNoOwnParameters_ButInheritsTheFullItemSurface`
+  loops `ItemParameters` and checks each property exists on the component. That is group C's shape,
+  and it has no register row. The sweep classed the file as not a pin, and so did this report.
+- **A stale comment.** `DispatchSurfaceDriftTests.cs:352` still says #357 is *"open since 14.1"*.
+- **One correction to the hand-off, not to the review.** `RenderTree` lines in
+  `LayoutSurfaceSequenceBandTests.cs` went from **21 to 33** across 15.7, measured with
+  `git show <rev>:<file> | grep -c RenderTree` at `1f2b3a7` and `origin/main`. The hand-off's
+  *"14 references … 25 now"* is not that measure. §2 already used 21 and 33.
 
 ---
 
 ## Verdict
 
-**PASS WITH FINDINGS.** Eight criteria are MET, three are MET NARROWLY, and none is NOT MET.
+**FAIL.** Eight criteria are MET, two are MET NARROWLY, and one is NOT MET: item 4.
 
-The first audit's two failures are closed on evidence measured today. #357 is closed on GitHub and
-backed by `d481dae`. Every record now says truthfully that it closed by accident, at #408's merge. The
-non-tree population was measured rather than assumed: 93 files, the same 93 on `main` as at the
-sweep's base, and every one of the 15 pin files and every pin fact has a register verdict. That
-includes the two pins the first audit found unassessed, and the partials are named where they sit. The
-tree-reader population is unchanged at 33 files and 170 facts, each with a scorecard verdict. Three
-items stay narrow, and none of them is hidden. Enforcement is met through its recorded fallback. #364's
-F3 closed as a patch. And item 4 is narrow for a reason this re-audit found and the first did not: the
-register that assesses the non-tree pins has no Rule 4 column. Rule 4 is one of the three clauses the
-DoD names, and nothing records why it was left out. My own spot check suggests those pins mostly
-satisfy Rule 4 through compile-time symbols and named anchors, but that is not a per-pin verdict. Every
-pin still carries a verdict, which is the DoD's unit, so this is an incomplete assessment rather than
-a missing one. That puts the item at MET NARROWLY, with N1 to file. If the owner reads *"assessed
-against that standard"* as every rule, this item and so the milestone would be FAIL. The verdict is
-stated so that reading can be applied. On PASS WITH FINDINGS the spec runs `complete-milestone`,
-with **no tag**, per `CONVENTIONS.md`.
+The first audit's item 8 failure is closed on evidence measured today. #357 is closed on GitHub,
+backed by `d481dae`, and every record says truthfully that it closed by accident at #408's merge.
+The non-tree population was measured rather than assumed: 93 files, the same 93 on `main` as at the
+sweep's base, and every pin file has a register row, including the two pins the first audit found
+unassessed. But item 4 asks for every pin to be assessed **against the standard**, and the standard's
+minimum, as DoD item 3 defines it, includes *"it must fail when its subject moves"*. The register
+that assesses the non-tree pins is silent on that rule for every row. The first audit's own fix asked
+for it, and 15.7's plan narrowed it away without a reason. A Rule 4 verdict inferred from the shape
+of the comparisons is plausible, but it is recorded nowhere, and the DoD says silence is not
+acceptable. The review also found two surviving mutations and one unregistered pin that this report
+had missed. My draft scored the item MET NARROWLY and the milestone PASS WITH FINDINGS. That was
+wrong, and it is corrected here rather than softened. Items 5 and 6 stay narrow, unchanged. Per the
+spec, FAIL sends the gap to the owner. The owner decided to close it inside 15.8; the outcome is
+appended below.
