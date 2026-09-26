@@ -205,11 +205,22 @@ public sealed class ParameterBindingFaultTests
     /// `VerifyAccessors` on purpose: `ComponentProperties` is an INTERNAL type,
     /// and a `Type.GetType` lookup that the trimmer had stripped the metadata for
     /// would turn a diagnostic into a false BOOT FAILURE on device. A red test is
-    /// the right blast radius for this.</summary>
+    /// the right blast radius for this.
+    ///
+    /// WHAT THIS DOES NOT COVER (Rule 5): it checks that each allow-listed name
+    /// still RESOLVES to a method in the Blazor assembly. It does not check that
+    /// the method is still the frame a binding fault is THROWN from, so a Blazor
+    /// refactor that keeps the name but moves the throw into a new helper leaves
+    /// this green while the classifier stops matching. That half belongs to
+    /// ABadParameterBinding_AbortsTheMount_WithTheExistingRc2, which provokes a
+    /// real binding fault through the real Blazor path.
+    /// It also does not check the SIGNATURE: any overload with the name passes.
+    /// </summary>
     [Fact]
     public void TheAllowListedFrames_StillNameRealBlazorMethods()
     {
         Assembly components = typeof(ParameterView).Assembly;
+        int resolved = 0;
 
         foreach (string frame in BlazorInterop.ParameterBindingFrames)
         {
@@ -226,7 +237,15 @@ public sealed class ParameterBindingFaultTests
                 .Where(m => m.Name == methodName)
                 .ToArray();
             Assert.True(overloads.Length > 0, $"Blazor method '{frame}' no longer exists");
+            resolved++;
         }
+
+        // This loop's OWN floor. Before 15.7 an empty allow-list passed here, and only
+        // the sibling below, which pins the exact list, stood between that and a green.
+        // Measured on 2026-09-26: 2 frames, floored at exactly that with no headroom.
+        Assert.True(resolved >= 2,
+            $"resolved {resolved} allow-listed frames against the Blazor assembly, and there "
+            + "were 2 when measured. A loop over an empty list checks nothing.");
     }
 
     /// <summary>The frames that are deliberately NOT on the list, stated as an
