@@ -63,7 +63,7 @@ and the back gesture always answers.**
 
 ## Phases
 
-1. Phase 16.0 — the render-thread spike [active]
+1. Phase 16.0 — the render-thread spike [complete] — PROCEED, not a clean GO: 5 of 7, G1 and G6 fail as written with every failure fixable; 11 named 16.1 requirements; spike unmerged at 9df59f0 (#422)
 2. Phase 16.1 — the render thread [pending]
 3. Phase 16.2 — async faults [pending]
 4. Phase 16.3 — back and navigation off the main thread [pending]

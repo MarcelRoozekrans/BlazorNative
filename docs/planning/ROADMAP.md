@@ -3146,7 +3146,7 @@ serialising renderer work, so the two must be separated rather than the wait sim
 · full scope, DoD and risks in [MILESTONE.md](MILESTONE.md).
 **Closes:** #345, #346, #8. **Re-assesses on measurement:** #9.
 
-#### Phase 16.0: The render-thread spike [status: active]
+#### Phase 16.0: The render-thread spike [status: complete]
 **Goal:** Measure whether a .NET-owned single-thread dispatcher can replace `InlineDispatcher` —
 exports post and wait for the synchronous part, continuations marshal back — against all tests,
 `MountSyncTests`, the navigation dispatch-window tests, and 13.2's `Dispose → InvokeAsync`
@@ -3155,6 +3155,23 @@ recursion. Output a measured go/no-go; **a no-go stops M16 and goes to the owner
 **HelpWanted:** no
 **Design:** [`docs/superpowers/specs/2026-09-26-phase-16.0-design.md`](../superpowers/specs/2026-09-26-phase-16.0-design.md)
 **Plan:** [`docs/superpowers/plans/2026-09-26-phase-16.0-render-thread-spike.md`](../superpowers/plans/2026-09-26-phase-16.0-render-thread-spike.md)
+**Completed:** 2026-09-26 · [PR #422](https://github.com/MarcelRoozekrans/BlazorNative/pull/422)
+**Conclusion:** [`docs/plans/2026-09-26-phase-16.0-spike-conclusion.md`](../plans/2026-09-26-phase-16.0-spike-conclusion.md)
+
+**PROCEED, not a clean GO.** 5 of 7 criteria met: G2, G4, G5 and G7 cleanly, and G3 on its named
+tests only. G1 and G6 fail as written. No failure is unfixable, so, per the spec's rule, M16
+proceeds and every failure is a named 16.1 requirement. There are **11**. The spike code stays on
+`spike/16.0-render-thread` at `9df59f0`, unmerged. #345 is freed on the spike: the export returns
+within 1 s with the host call open, and the continuation renders on the render thread. The thread
+hop costs microseconds.
+
+**The finding that matters most:** a navigation issued while another handler is suspended waits
+for that handler, because one capture-window depth counter spans the `await`. It caused four of
+the six JVM failures, and it is requirement 1.
+
+**Lesson, the near-miss:** the first JVM run reported a false 162/0. The win-x64 NativeAOT publish
+failed because `vswhere` was not on the shell PATH, and Gradle loaded a stale library built from
+`main`. Check the publish exit code and the library's timestamp before trusting a JVM count.
 
 #### Phase 16.1: The render thread [status: pending]
 **Goal:** Replace the inline dispatcher with the render thread: correct the false `Exports.cs`
