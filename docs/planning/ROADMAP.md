@@ -3146,13 +3146,15 @@ serialising renderer work, so the two must be separated rather than the wait sim
 · full scope, DoD and risks in [MILESTONE.md](MILESTONE.md).
 **Closes:** #345, #346, #8. **Re-assesses on measurement:** #9.
 
-#### Phase 16.0: The render-thread spike [status: pending]
+#### Phase 16.0: The render-thread spike [status: active]
 **Goal:** Measure whether a .NET-owned single-thread dispatcher can replace `InlineDispatcher` —
 exports post and wait for the synchronous part, continuations marshal back — against all tests,
 `MountSyncTests`, the navigation dispatch-window tests, and 13.2's `Dispose → InvokeAsync`
 recursion. Output a measured go/no-go; **a no-go stops M16 and goes to the owner.**
 **Surface:** Backend
 **HelpWanted:** no
+**Design:** [`docs/superpowers/specs/2026-09-26-phase-16.0-design.md`](../superpowers/specs/2026-09-26-phase-16.0-design.md)
+**Plan:** [`docs/superpowers/plans/2026-09-26-phase-16.0-render-thread-spike.md`](../superpowers/plans/2026-09-26-phase-16.0-render-thread-spike.md)
 
 #### Phase 16.1: The render thread [status: pending]
 **Goal:** Replace the inline dispatcher with the render thread: correct the false `Exports.cs`

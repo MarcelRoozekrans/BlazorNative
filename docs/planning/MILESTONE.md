@@ -63,7 +63,7 @@ and the back gesture always answers.**
 
 ## Phases
 
-1. Phase 16.0 — the render-thread spike [pending]
+1. Phase 16.0 — the render-thread spike [active]
 2. Phase 16.1 — the render thread [pending]
 3. Phase 16.2 — async faults [pending]
 4. Phase 16.3 — back and navigation off the main thread [pending]
