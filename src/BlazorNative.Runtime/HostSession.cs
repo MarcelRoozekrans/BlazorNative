@@ -159,6 +159,7 @@ internal static unsafe class HostSession
             Volatile.Read(ref s_renderer)?.Dispose();
 #pragma warning restore BL0006
             Volatile.Write(ref s_renderer, null);
+            NativeRenderer.SetSessionRenderer(null); // Phase 16.0 spike
             Volatile.Write(ref s_navigation, null);
             Volatile.Write(ref s_currentRootComponentId, -1);
             Volatile.Write(ref s_frameCallback, IntPtr.Zero);
@@ -229,17 +230,23 @@ internal static unsafe class HostSession
         {
             NativeRenderer renderer = EnsureSession();
 
-            string effective = name;
-            if (Volatile.Read(ref s_currentRootComponentId) < 0
-                && name == NativeNavigationManager.DefaultComponent
-                && Volatile.Read(ref s_navigation) is { } nav)
+            // Phase 16.0 spike: the whole mount runs on the render thread; the caller
+            // waits for it to COMPLETE (the sync-mount contract).
+            string effective = RunOnRenderThread(renderer, () =>
             {
-                // CurrentRoute lazily queries the host here (startup query);
-                // the table clamps it, so ResolveComponent cannot miss.
-                effective = nav.ResolveComponent(nav.CurrentRoute);
-            }
+                string resolved = name;
+                if (Volatile.Read(ref s_currentRootComponentId) < 0
+                    && name == NativeNavigationManager.DefaultComponent
+                    && Volatile.Read(ref s_navigation) is { } nav)
+                {
+                    // CurrentRoute lazily queries the host here (startup query);
+                    // the table clamps it, so ResolveComponent cannot miss.
+                    resolved = nav.ResolveComponent(nav.CurrentRoute);
+                }
 
-            MountRoot(effective, renderer);
+                MountRoot(resolved, renderer);
+                return resolved;
+            });
             // #201 developer trace (Debug, IsEnabled-guarded). `effective` is the
             // resolved registry name — a route-aware initial mount may differ from `name`.
             if (BnLog.IsEnabled(BnLogLevel.Debug))
@@ -278,7 +285,9 @@ internal static unsafe class HostSession
         }
 
         NativeRenderer renderer = EnsureSession();
-        renderer.RunAfterDispatch(() =>
+        // Phase 16.0 spike: RunAfterDispatch reads the dispatch depth, so the decision
+        // (and a depth-0 swap) runs on the render thread; the caller waits for it.
+        RunOnRenderThread(renderer, () => renderer.RunAfterDispatch(() =>
         {
             int current = Volatile.Read(ref s_currentRootComponentId);
             if (current >= 0)
@@ -296,8 +305,25 @@ internal static unsafe class HostSession
             }
             MountRoot(name, renderer);
             afterSwap?.Invoke();
-        });
+        }));
     }
+
+    /// <summary>Phase 16.0 spike: run on the render thread and wait for completion.
+    /// The caller is never the render thread when it waits, so this cannot self-deadlock.</summary>
+    internal static void RunOnRenderThread(NativeRenderer renderer, Action work)
+    {
+        if (renderer.Dispatcher.CheckAccess())
+        {
+            work();
+            return;
+        }
+        renderer.Dispatcher.InvokeAsync(work).GetAwaiter().GetResult();
+    }
+
+    internal static T RunOnRenderThread<T>(NativeRenderer renderer, Func<T> work)
+        => renderer.Dispatcher.CheckAccess()
+            ? work()
+            : renderer.Dispatcher.InvokeAsync(work).GetAwaiter().GetResult();
 
     /// <summary>Mounts a registry component (callers verified the key) and
     /// tracks it as the session's current root; a ROUTED component also syncs
@@ -429,6 +455,7 @@ internal static unsafe class HostSession
             };
 
             Volatile.Write(ref s_renderer, renderer);
+            NativeRenderer.SetSessionRenderer(renderer); // Phase 16.0 spike
             return renderer;
         }
     }

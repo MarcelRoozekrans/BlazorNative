@@ -1,4 +1,5 @@
-﻿using System.Globalization;
+﻿using System.Collections.Concurrent;
+using System.Globalization;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using BlazorNative.Core;
@@ -130,38 +131,166 @@ public sealed class NativeRenderer : BlazorRenderer
     // sync-mount contract survives it — HostSession's C-ABI mount path still requires
     // the first render to complete synchronously inside the native callback window —
     // so all work runs directly on the calling thread (pinned by MountSyncTests).
-    public override Dispatcher Dispatcher { get; } = new InlineDispatcher();
+    public override Dispatcher Dispatcher { get; } = new RenderThreadDispatcher();
 
-    /// <summary>Phase 16.0 spike only: the render thread's managed id, or null on the
-    /// inline dispatcher, which has no render thread.</summary>
-    internal static int? RenderThreadId => null;
+    // Phase 16.0 SPIKE: the HOST SESSION renderer's render thread, set by HostSession.
+    // Not "the last constructed renderer": other test classes build renderers in
+    // parallel, which made that definition race.
+    private static int s_sessionRenderThreadId;
 
-    private sealed class InlineDispatcher : Dispatcher
+    /// <summary>Phase 16.0 spike only: the session renderer's render thread's managed id.</summary>
+    internal static int? RenderThreadId
     {
-        public override bool CheckAccess() => true;
+        get
+        {
+            int id = Volatile.Read(ref s_sessionRenderThreadId);
+            return id == 0 ? null : id;
+        }
+    }
+
+    internal static void SetSessionRenderer(NativeRenderer? renderer)
+        => Volatile.Write(ref s_sessionRenderThreadId,
+            renderer is null ? 0 : ((RenderThreadDispatcher)renderer.Dispatcher).ThreadId);
+
+    /// <summary>Phase 16.0 spike: post raw work to the render thread. False when the
+    /// thread has shut down and the work was dropped.</summary>
+    internal bool PostToRenderThread(SendOrPostCallback cb, object? state)
+        => ((RenderThreadDispatcher)Dispatcher).Post(cb, state);
+
+    /// <summary>Phase 16.0 spike observation: the capture-window depth, read on the
+    /// render thread.</summary>
+    internal int UiEventDispatchDepthForTests
+        => Dispatcher.InvokeAsync(() => _uiEventDispatchDepth).GetAwaiter().GetResult();
+
+    private void RunOnRenderThread(Action work)
+    {
+        if (Dispatcher.CheckAccess()) { work(); return; }
+        Dispatcher.InvokeAsync(work).GetAwaiter().GetResult();
+    }
+
+    internal sealed class RenderThreadDispatcher : Dispatcher
+    {
+        private readonly BlockingCollection<(SendOrPostCallback Cb, object? State)> _queue = new();
+        private readonly Thread _thread;
+
+        public RenderThreadDispatcher()
+        {
+            _thread = new Thread(Run) { IsBackground = true, Name = "BlazorNative-Render" };
+            _thread.Start();
+        }
+
+        public int ThreadId => _thread.ManagedThreadId;
+
+        private void Run()
+        {
+            SynchronizationContext.SetSynchronizationContext(new RenderThreadContext(this));
+            foreach (var (cb, state) in _queue.GetConsumingEnumerable())
+            {
+                try
+                {
+                    cb(state);
+                }
+                catch (Exception ex)
+                {
+                    // A raw post (a continuation) that throws must not kill the thread.
+                    BnLog.Error("BlazorNative.Renderer", "render-thread work item threw", ex);
+                }
+            }
+        }
+
+        internal bool Post(SendOrPostCallback cb, object? state)
+        {
+            try
+            {
+                _queue.Add((cb, state));
+                return true;
+            }
+            catch (InvalidOperationException)
+            {
+                BnLog.Warn("BlazorNative.Renderer", "work posted after the render thread shut down was dropped");
+                return false;
+            }
+        }
+
+        /// <summary>Waits until everything posted so far has run.</summary>
+        internal void Drain()
+        {
+            if (CheckAccess())
+                return;
+            using var done = new ManualResetEventSlim(false);
+            if (Post(_ => done.Set(), null))
+                done.Wait();
+        }
+
+        internal void Shutdown() => _queue.CompleteAdding();
+
+        public override bool CheckAccess() => Environment.CurrentManagedThreadId == _thread.ManagedThreadId;
 
         public override Task InvokeAsync(Action workItem)
         {
-            try { workItem(); return Task.CompletedTask; }
-            catch (Exception ex) { return Task.FromException(ex); }
+            if (CheckAccess())
+            {
+                try { workItem(); return Task.CompletedTask; }
+                catch (Exception ex) { return Task.FromException(ex); }
+            }
+            var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            if (!Post(_ => { try { workItem(); tcs.SetResult(); } catch (Exception ex) { tcs.SetException(ex); } }, null))
+                tcs.SetException(new ObjectDisposedException(nameof(RenderThreadDispatcher)));
+            return tcs.Task;
         }
 
         public override Task InvokeAsync(Func<Task> workItem)
         {
-            try { return workItem() ?? Task.CompletedTask; }
-            catch (Exception ex) { return Task.FromException(ex); }
+            if (CheckAccess())
+            {
+                try { return workItem() ?? Task.CompletedTask; }
+                catch (Exception ex) { return Task.FromException(ex); }
+            }
+            var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            if (!Post(async _ => { try { await workItem(); tcs.SetResult(); } catch (Exception ex) { tcs.SetException(ex); } }, null))
+                tcs.SetException(new ObjectDisposedException(nameof(RenderThreadDispatcher)));
+            return tcs.Task;
         }
 
         public override Task<TResult> InvokeAsync<TResult>(Func<TResult> workItem)
         {
-            try { return Task.FromResult(workItem()); }
-            catch (Exception ex) { return Task.FromException<TResult>(ex); }
+            if (CheckAccess())
+            {
+                try { return Task.FromResult(workItem()); }
+                catch (Exception ex) { return Task.FromException<TResult>(ex); }
+            }
+            var tcs = new TaskCompletionSource<TResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+            if (!Post(_ => { try { tcs.SetResult(workItem()); } catch (Exception ex) { tcs.SetException(ex); } }, null))
+                tcs.SetException(new ObjectDisposedException(nameof(RenderThreadDispatcher)));
+            return tcs.Task;
         }
 
         public override Task<TResult> InvokeAsync<TResult>(Func<Task<TResult>> workItem)
         {
-            try { return workItem(); }
-            catch (Exception ex) { return Task.FromException<TResult>(ex); }
+            if (CheckAccess())
+            {
+                try { return workItem(); }
+                catch (Exception ex) { return Task.FromException<TResult>(ex); }
+            }
+            var tcs = new TaskCompletionSource<TResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+            if (!Post(async _ => { try { tcs.SetResult(await workItem()); } catch (Exception ex) { tcs.SetException(ex); } }, null))
+                tcs.SetException(new ObjectDisposedException(nameof(RenderThreadDispatcher)));
+            return tcs.Task;
+        }
+
+        private sealed class RenderThreadContext(RenderThreadDispatcher owner) : SynchronizationContext
+        {
+            public override void Post(SendOrPostCallback d, object? state) => owner.Post(d, state);
+
+            public override void Send(SendOrPostCallback d, object? state)
+            {
+                if (owner.CheckAccess()) { d(state); return; }
+                using var done = new ManualResetEventSlim();
+                if (owner.Post(s => { try { d(s); } finally { done.Set(); } }, state))
+                    done.Wait();
+            }
+
+            public override SynchronizationContext CreateCopy() => this;
         }
     }
 
@@ -210,6 +339,9 @@ public sealed class NativeRenderer : BlazorRenderer
     public int Mount<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.All)] TComponent>(ParameterView parameters)
         where TComponent : IComponent
     {
+        if (!Dispatcher.CheckAccess())
+            return Dispatcher.InvokeAsync(() => Mount<TComponent>(parameters)).GetAwaiter().GetResult();
+
         var component = InstantiateComponent(typeof(TComponent));
         var componentId = AssignRootComponentId(component);
         var task = RenderRootComponentAsync(componentId, parameters);
@@ -243,7 +375,7 @@ public sealed class NativeRenderer : BlazorRenderer
     /// RemoveRootComponent's ProcessRenderQueue throws "Cannot start a batch
     /// when one is already in progress" — defer via
     /// <see cref="RunAfterDispatch"/> instead (the navigation swap does).</summary>
-    public void Unmount(int componentId) => RemoveRootComponent(componentId);
+    public void Unmount(int componentId) => RunOnRenderThread(() => RemoveRootComponent(componentId));
 
     // ── Post-dispatch deferral (Phase 3.5) ────────────────────────────────────
     //
@@ -272,6 +404,11 @@ public sealed class NativeRenderer : BlazorRenderer
     /// unaffected: they always map to rc 2.</summary>
     public void RunAfterDispatch(Action action)
     {
+        if (!Dispatcher.CheckAccess())
+        {
+            RunOnRenderThread(() => RunAfterDispatch(action));
+            return;
+        }
         if (_uiEventDispatchDepth == 0)
         {
             action();
@@ -678,6 +815,11 @@ public sealed class NativeRenderer : BlazorRenderer
     /// wiring bug, not a runtime condition).</summary>
     internal void TriggerRootRenderForTests(int componentId)
     {
+        if (!Dispatcher.CheckAccess())
+        {
+            RunOnRenderThread(() => TriggerRootRenderForTests(componentId));
+            return;
+        }
         if (GetComponentState(componentId).Component is not ComponentBase component)
         {
             throw new InvalidOperationException(
@@ -689,6 +831,15 @@ public sealed class NativeRenderer : BlazorRenderer
 
     protected override void Dispose(bool disposing)
     {
+        // Phase 16.0 spike: off the render thread, let Blazor's own CheckAccess()
+        // marshal the dispose (13.2's path), then wait for it and stop the thread.
+        if (disposing && Dispatcher is RenderThreadDispatcher rt && !rt.CheckAccess())
+        {
+            base.Dispose(disposing);
+            rt.Drain();
+            rt.Shutdown();
+            return;
+        }
         if (disposing)
         {
             // Release any handlers registered against Frames. The underlying

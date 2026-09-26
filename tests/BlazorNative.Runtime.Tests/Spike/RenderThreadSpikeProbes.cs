@@ -258,6 +258,64 @@ public sealed class RenderThreadSpikeProbes
         }
     }
 
+    // ── Observation, not a criterion: the capture window under an open async handler ──
+
+    [Fact]
+    [Trait("Category", "Spike")]
+    public void Observe_CaptureWindow_SecondDispatchWhileAsyncHandlerOpen()
+    {
+        FakeShellHost.Reset();
+        NativeShellBridge.Register(FakeShellHost.BuildCallbacks());
+        HostSession.ResetForTests();
+        var gate = new object();
+        var frames = new List<RenderFrame>();
+        bool completed = false;
+        try
+        {
+            NativeRenderer renderer = HostSession.EnsureSession();
+            renderer.Frames += (f, _) => { lock (gate) frames.Add(f); return ValueTask.CompletedTask; };
+            Assert.Equal(0, HostSession.TryMount("BnCameraDemo"));
+            RenderFrame mount;
+            lock (gate) mount = frames[0];
+            int take = ClickHandlerForLabel(mount, "Take Photo");
+            int back = ClickHandlerForLabel(mount, "← Back");
+
+            FakeShellHost.AutoCompleteHostCall = false;
+            int rcTake = Exports.DispatchEventCore((ulong)take, """{"name":"click"}""");
+            int depthAfterTake = renderer.UiEventDispatchDepthForTests;
+
+            int before;
+            lock (gate) before = frames.Count;
+            int rcBack = Exports.DispatchEventCore((ulong)back, """{"name":"click"}""");
+            int afterBack;
+            lock (gate) afterBack = frames.Count;
+            int depthAfterBack = renderer.UiEventDispatchDepthForTests;
+            string routeAfterBack = HostSession.CurrentNavigationManager!.CurrentRoute;
+
+            NativeShellBridge.CompleteHostCall(FakeShellHost.LastHostCallRequestId, (int)CameraStatus.Cancelled, null);
+            completed = true;
+            var sw = Stopwatch.StartNew();
+            while (renderer.UiEventDispatchDepthForTests != 0 && sw.Elapsed < TimeSpan.FromSeconds(5))
+                Thread.Sleep(10);
+            renderer.Dispatcher.InvokeAsync(() => { }).GetAwaiter().GetResult();
+            int afterComplete;
+            lock (gate) afterComplete = frames.Count;
+            string routeAfterComplete = HostSession.CurrentNavigationManager!.CurrentRoute;
+
+            _output.WriteLine($"OBSERVE rcTake={rcTake} depthAfterTake={depthAfterTake}");
+            _output.WriteLine($"OBSERVE rcBack={rcBack} framesDuringBack={afterBack - before} depthAfterBack={depthAfterBack} routeAfterBack={routeAfterBack}");
+            _output.WriteLine($"OBSERVE afterHostCallCompleted framesSinceBack={afterComplete - afterBack} depth={renderer.UiEventDispatchDepthForTests} route={routeAfterComplete}");
+        }
+        finally
+        {
+            FakeShellHost.AutoCompleteHostCall = true;
+            if (!completed && FakeShellHost.LastHostCallRequestId >= 0)
+                NativeShellBridge.CompleteHostCall(FakeShellHost.LastHostCallRequestId, (int)CameraStatus.Cancelled, null);
+            HostSession.ResetForTests();
+            NativeShellBridge.ResetForTests();
+        }
+    }
+
     // ── Timing: the thread hop's cost, recorded not gated ────────────────────
 
     [Fact]

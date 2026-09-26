@@ -501,11 +501,20 @@ public static class Exports
 
         try
         {
-            // GetAwaiter().GetResult() is the sync contract, not a blocking
-            // wait: the InlineDispatcher completed the work before the Task
-            // was handed back (Phase 2.4 decision).
-            renderer.DispatchUiEventAsync(new NativeUiEvent(0, (int)handlerId, name, payload))
-                .GetAwaiter().GetResult();
+            // Phase 16.0 spike: post to the render thread, wait for the SYNC part only.
+            Task dispatch = PostAndWaitForSyncPart(renderer,
+                () => renderer.DispatchUiEventAsync(new NativeUiEvent(0, (int)handlerId, name, payload)));
+            if (!dispatch.IsCompleted)
+            {
+                // The handler went async. rc 0 now; a later fault is logged (16.2 stand-in).
+                ulong id = handlerId;
+                dispatch.ContinueWith(
+                    t => BnLog.Error("Exports", $"dispatch_event handler {id} faulted after the export returned",
+                        t.Exception!.GetBaseException()),
+                    CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
+                return 0;
+            }
+            dispatch.GetAwaiter().GetResult();
             // #201 developer trace — the "I pressed a button and saw it" line. Debug, so
             // the default (Warn) stays quiet; IsEnabled-guarded so the interpolation never
             // runs on the hot dispatch path when off. Name only, never `payload` (it can
@@ -745,7 +754,13 @@ public static class Exports
 
         try
         {
-            bool faulted = NativeShellBridge.RaiseNativeEvent(new NativeEvent(name, payload));
+            // Phase 16.0 spike: subscribers call StateHasChanged, which Blazor asserts is on
+            // the dispatcher's thread, so the multicast runs on the render thread (full wait).
+            var evt = new NativeEvent(name, payload);
+            NativeRenderer? renderer = HostSession.CurrentRenderer;
+            bool faulted = renderer is null
+                ? NativeShellBridge.RaiseNativeEvent(evt)
+                : HostSession.RunOnRenderThread(renderer, () => NativeShellBridge.RaiseNativeEvent(evt));
             return faulted ? 2 : 0;
         }
         catch (Exception ex)
@@ -770,7 +785,19 @@ public static class Exports
 
         try
         {
-            bool handled = nav.NavigateBackAsync().GetAwaiter().GetResult();
+            NativeRenderer? renderer = HostSession.CurrentRenderer;
+            Task<bool> back = renderer is null
+                ? nav.NavigateBackAsync().AsTask()
+                : PostAndWaitForSyncPart(renderer, () => nav.NavigateBackAsync().AsTask());
+            if (!back.IsCompleted)
+            {
+                back.ContinueWith(
+                    t => BnLog.Error("Exports", "host_event 'back' faulted after the export returned",
+                        t.Exception!.GetBaseException()),
+                    CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
+                return 0;
+            }
+            bool handled = back.GetAwaiter().GetResult();
             return handled ? 0 : 1;
         }
         catch (Exception ex)
@@ -801,7 +828,19 @@ public static class Exports
 
         try
         {
-            nav.NavigateToAsync(route).GetAwaiter().GetResult();
+            NativeRenderer? renderer = HostSession.CurrentRenderer;
+            Task navigate = renderer is null
+                ? nav.NavigateToAsync(route).AsTask()
+                : PostAndWaitForSyncPart(renderer, () => nav.NavigateToAsync(route).AsTask());
+            if (!navigate.IsCompleted)
+            {
+                navigate.ContinueWith(
+                    t => BnLog.Error("Exports", "host_event 'navigate' faulted after the export returned",
+                        t.Exception!.GetBaseException()),
+                    CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
+                return 0;
+            }
+            navigate.GetAwaiter().GetResult();
             return 0;
         }
         catch (ArgumentException)
@@ -868,9 +907,38 @@ public static class Exports
         // Store unconditionally, even when nothing is mounted to re-render, so a
         // later mount starts with the right values instead of rendering at zero
         // a second time.
-        BnSafeAreaInsets.Report(new BnSafeAreaInsets(top, right, bottom, left));
+        var insets = new BnSafeAreaInsets(top, right, bottom, left);
+        NativeRenderer? renderer = HostSession.CurrentRenderer;
+        if (renderer is null)
+            BnSafeAreaInsets.Report(insets);
+        else
+            // Phase 16.0 spike: Report re-renders subscribers — on the render thread.
+            HostSession.RunOnRenderThread(renderer, () => BnSafeAreaInsets.Report(insets));
 
-        return HostSession.CurrentRenderer is null ? 1 : 0;
+        return renderer is null ? 1 : 0;
+    }
+
+    /// <summary>Phase 16.0 spike: post <paramref name="start"/> to the render thread and
+    /// wait only until it has RETURNED its task, complete or not.</summary>
+    private static T PostAndWaitForSyncPart<T>(NativeRenderer renderer, Func<T> start) where T : Task
+    {
+        if (renderer.Dispatcher.CheckAccess())
+            return start();
+
+        T? inner = null;
+        System.Runtime.ExceptionServices.ExceptionDispatchInfo? thrown = null;
+        using var done = new ManualResetEventSlim(false);
+        bool posted = renderer.PostToRenderThread(_ =>
+        {
+            try { inner = start(); }
+            catch (Exception ex) { thrown = System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex); }
+            finally { done.Set(); }
+        }, null);
+        if (!posted)
+            throw new ObjectDisposedException("the render thread has shut down");
+        done.Wait();
+        thrown?.Throw();
+        return inner!;
     }
 
     /// <summary>Parses one edge's value out of the flat-JSON payload. Rejects — as a
