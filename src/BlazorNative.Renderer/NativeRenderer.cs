@@ -132,6 +132,10 @@ public sealed class NativeRenderer : BlazorRenderer
     // so all work runs directly on the calling thread (pinned by MountSyncTests).
     public override Dispatcher Dispatcher { get; } = new InlineDispatcher();
 
+    /// <summary>Phase 16.0 spike only: the render thread's managed id, or null on the
+    /// inline dispatcher, which has no render thread.</summary>
+    internal static int? RenderThreadId => null;
+
     private sealed class InlineDispatcher : Dispatcher
     {
         public override bool CheckAccess() => true;
