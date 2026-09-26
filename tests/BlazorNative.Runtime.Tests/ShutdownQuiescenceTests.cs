@@ -44,7 +44,11 @@ namespace BlazorNative.Runtime.Tests;
 // DOES NOT COVER:
 //   - a callback that blocks for longer than the 5 s budget: shutdown, or a
 //     re-registration, then returns with it still in flight, and logs a warning;
-//   - two re-registrations racing each other;
+//   - two re-registrations CONCURRENT with each other: s_registrationLock
+//     serializes them, and no pin drives two at once. Two SEQUENTIAL registrations
+//     with an entry straddling the first flip ARE pinned, through the hook between
+//     TryEnter's epoch read and its increment. Only that one window is driven; an
+//     entry preempted anywhere else in TryEnter is covered by argument, not by a pin;
 //   - a REAL back or navigate that yields: both complete synchronously today, so
 //     the host-event pins hold the arm's work open through a test seam that
 //     replaces the navigation call, and the hand-on after it is what they pin;
@@ -666,6 +670,76 @@ public sealed unsafe class ShutdownQuiescenceTests
             oldWorker?.Join(Budget);
             newWorker?.Join(Budget);
             register?.Join(Budget);
+            TearDown();
+        }
+    }
+
+    [Fact]
+    public void SetFrameCallback_TwoSequentialRegistrations_WaitForAnEntryThatStraddledTheFirstFlip()
+    {
+        // The interleaving the Task 4 re-review reproduced, driven step by step through
+        // the hook between TryEnter's epoch read and its slot increment:
+        //   1. an entry reads epoch 0 and is held BEFORE it increments slot 0;
+        //   2. registration 1 swaps P0 for P1, flips the epoch to 1, sees slot 0 empty
+        //      and returns, which is correct: the entry has not read a pointer yet;
+        //   3. the entry resumes and calls the callback, which is now P1;
+        //   4. registration 2 swaps P1 for P2 and flips the epoch back to 0.
+        // Without an epoch re-check the entry is counted in slot 0 and registration 2
+        // waits only on slot 1, so it returns while P1 is running.
+        s_callbackEntered.Reset();
+        s_callbackRelease.Reset();
+        using var entryPaused = new ManualResetEventSlim(false);
+        using var entryResume = new ManualResetEventSlim(false);
+        Thread? entry = null, register2 = null;
+        try
+        {
+            var (sink, frame) = SinkAndFrame();
+            RegisterCounter(); // P0
+
+            int held = 0;
+            HostSession.FrameGate.AfterEpochReadForTests = () =>
+            {
+                // Hold only the probe entry, and only on its first epoch read.
+                if (Thread.CurrentThread.Name == "straddle-probe" && Interlocked.Exchange(ref held, 1) == 0)
+                {
+                    entryPaused.Set();
+                    entryResume.Wait(Budget);
+                }
+            };
+
+            entry = Start("straddle-probe", () => sink(frame));
+            Assert.True(entryPaused.Wait(Budget), "the probe entry never reached the epoch-read hook");
+
+            // Step 2: registration 1 returns at once, since nothing is counted in slot 0.
+            var sw = Stopwatch.StartNew();
+            SetBlocking(); // P1
+            Assert.True(sw.Elapsed < TimeSpan.FromSeconds(2),
+                $"registration 1 took {sw.ElapsedMilliseconds} ms; the paused entry had not entered any slot");
+
+            // Step 3: the entry resumes and runs P1.
+            entryResume.Set();
+            Assert.True(s_callbackEntered.Wait(Budget),
+                "the straddling entry never called P1. The interleaving did not happen as designed.");
+
+            // Step 4: registration 2 must wait for the entry running P1.
+            using var registered2 = new ManualResetEventSlim(false);
+            register2 = Start("register-2-probe", () => { RegisterCounter(); registered2.Set(); });
+            Assert.False(registered2.Wait(TimeSpan.FromMilliseconds(500)),
+                "registration 2 returned while an entry that straddled registration 1's flip was still "
+                + "running P1. The entry was counted in the slot of the epoch it read BEFORE the flip, and "
+                + "registration 2 waited only on the other slot, so the host may free P1 under it.");
+
+            // Rule 3, through the same detector: once P1 returns, registration 2 does too.
+            s_callbackRelease.Set();
+            Assert.True(registered2.Wait(Budget), "registration 2 never returned after P1 left");
+        }
+        finally
+        {
+            HostSession.FrameGate.AfterEpochReadForTests = null;
+            entryResume.Set();
+            s_callbackRelease.Set();
+            entry?.Join(Budget);
+            register2?.Join(Budget);
             TearDown();
         }
     }

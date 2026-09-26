@@ -72,6 +72,11 @@ internal static unsafe class HostSession
         /// <summary>True when the calling thread is inside a frame callback.</summary>
         public static bool CallerIsInside => t_depth > 0;
 
+        /// <summary>Test-only: runs inside <see cref="TryEnter"/> between the epoch read and
+        /// the slot increment, the window a registration's flip can land in. Null in
+        /// production and never set in <c>src</c>; tests reset it in a <c>finally</c>.</summary>
+        internal static Action? AfterEpochReadForTests;
+
         /// <summary>Enters the region, in the current epoch's slot. False once the gate
         /// is closed: the caller drops the frame.</summary>
         public bool TryEnter(out int slot)
@@ -80,8 +85,25 @@ internal static unsafe class HostSession
             // and SetFrameCallback writes the pointer, BEFORE reading the counts, with a
             // full fence on each side: either the waiter sees this entry and waits for it,
             // or this entry sees the gate closed or the new pointer.
-            slot = Volatile.Read(ref _epoch);
-            Interlocked.Increment(ref _inFlight[slot]);
+            //
+            // The slot must be the epoch that is current AFTER the increment, so the epoch
+            // is re-read once the increment's full fence has passed, and a mismatch backs
+            // out and retries. Without it, an entry that read the epoch, then lost the CPU
+            // across a registration's flip, would be counted in the old slot while it went
+            // on to read and call the NEW pointer. The next registration flips back and
+            // waits only on the other slot, so it would return while that callback ran.
+            // Once the epoch is confirmed, any registration that flips after it waits on
+            // this slot, and any that flipped before it wrote its pointer first, which is
+            // the pointer this entry then reads.
+            while (true)
+            {
+                slot = Volatile.Read(ref _epoch);
+                AfterEpochReadForTests?.Invoke();
+                Interlocked.Increment(ref _inFlight[slot]);
+                if (Volatile.Read(ref _epoch) == slot)
+                    break;
+                Interlocked.Decrement(ref _inFlight[slot]);
+            }
             if (_closed)
             {
                 Interlocked.Decrement(ref _inFlight[slot]);
