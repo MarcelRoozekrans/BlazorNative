@@ -27,10 +27,16 @@ namespace BlazorNative.Runtime.Tests;
 // runs every export on a worker with a bounded wait, so a regression back to a
 // blocking export is a failed assertion, never a hung job.
 //
-// DOES NOT COVER: two dispatches suspended at once, a fault raised in a
-// continuation after the first await, which is FaultNotice's pin, or the
-// host-event arms. Genuinely NESTED dispatch, a handler that itself dispatches
-// synchronously, is DispatchEventTests.Dispatch_NestedDispatchInsideHandler_*.
+// A fault raised in a continuation after the first await is attributed to its
+// own dispatch too, through the pending Task, in PRODUCTION mode as well as
+// strict: ALateFault_InProductionMode_FaultsThePendingTask.
+//
+// DOES NOT COVER: two dispatches suspended at once; how a late fault reaches the
+// SHELL, which is FaultNotice's pin; a fire-and-forget fault raised after the
+// handler's Task completed, which takes the no-window path by design; or the
+// host-event arms, which are HostEventArmThreadTests. A nested dispatch's FAULT
+// is DispatchEventTests.Dispatch_NestedDispatchInsideHandler_*; its queued
+// navigation is pinned here.
 // ─────────────────────────────────────────────────────────────────────────────
 
 [Collection("host-session")]
@@ -129,7 +135,16 @@ public sealed class DispatchWindowScopeTests
         return (renderer, frames);
     }
 
-    private static void TearDown(List<Task> pending)
+    /// <summary>Installs an observer that records every still-running dispatch, and
+    /// returns the one it replaced so <see cref="TearDown"/> can restore it.</summary>
+    private static Action<ulong, string, Task>? ObservePending(List<Task> pending)
+    {
+        Action<ulong, string, Task>? previous = Exports.PendingDispatchObserver;
+        Exports.PendingDispatchObserver = (_, _, t) => { lock (pending) pending.Add(t); };
+        return previous;
+    }
+
+    private static void TearDown(List<Task> pending, Action<ulong, string, Task>? previousObserver)
     {
         FakeShellHost.AutoCompleteHostCall = true;
         if (FakeShellHost.LastHostCallRequestId >= 0)
@@ -143,7 +158,7 @@ public sealed class DispatchWindowScopeTests
         Task[] snapshot;
         lock (pending) snapshot = pending.ToArray();
         Task.WaitAll(snapshot.Select(t => t.ContinueWith(_ => { })).ToArray(), Budget);
-        Exports.PendingDispatchObserver = null;
+        Exports.PendingDispatchObserver = previousObserver;
         HostSession.ResetForTests();
         NativeShellBridge.ResetForTests();
     }
@@ -199,7 +214,7 @@ public sealed class DispatchWindowScopeTests
     {
         var pending = new List<Task>();
         var (_, frames) = StartSession();
-        Exports.PendingDispatchObserver = (_, _, t) => { lock (pending) pending.Add(t); };
+        var previousObserver = ObservePending(pending);
         try
         {
             ReachCameraAndTakePhoto(frames, holdTheCall: true, pending);
@@ -220,7 +235,7 @@ public sealed class DispatchWindowScopeTests
         }
         finally
         {
-            TearDown(pending);
+            TearDown(pending, previousObserver);
         }
     }
 
@@ -231,7 +246,7 @@ public sealed class DispatchWindowScopeTests
         // detector, nothing suspended, so the menu frame must arrive during the export.
         var pending = new List<Task>();
         var (_, frames) = StartSession();
-        Exports.PendingDispatchObserver = (_, _, t) => { lock (pending) pending.Add(t); };
+        var previousObserver = ObservePending(pending);
         try
         {
             ReachCameraAndTakePhoto(frames, holdTheCall: false, pending);
@@ -247,7 +262,7 @@ public sealed class DispatchWindowScopeTests
         }
         finally
         {
-            TearDown(pending);
+            TearDown(pending, previousObserver);
         }
     }
 
@@ -258,7 +273,7 @@ public sealed class DispatchWindowScopeTests
     {
         var pending = new List<Task>();
         var (renderer, frames) = StartSession();
-        Exports.PendingDispatchObserver = (_, _, t) => { lock (pending) pending.Add(t); };
+        var previousObserver = ObservePending(pending);
         SuspendThenThrowProbe.Gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         SuspendThenThrowProbe.AResumed = false;
         try
@@ -295,7 +310,169 @@ public sealed class DispatchWindowScopeTests
         finally
         {
             SuspendThenThrowProbe.Gate.TrySetResult();
-            TearDown(pending);
+            TearDown(pending, previousObserver);
+        }
+    }
+
+    // ── A late fault, in production mode: C1 of the Task 3 review ───────────────
+    //
+    // Blazor's GetErrorHandledTask catches a handler's fault after its first await and
+    // routes it to HandleException, and the Task Blazor returns then completes
+    // SUCCESSFULLY. Before the fix, only StrictErrors turned that into a faulted Task:
+    // in production, which is not strict, the fault was logged and the pending Task
+    // ran to completion, so nothing downstream could ever deliver it.
+
+    private static async Task<Task> RunLateFault(bool strict)
+    {
+        var pending = new List<Task>();
+        var (renderer, frames) = StartSession();
+        var previousObserver = ObservePending(pending);
+        LateFaultProbe.Gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        try
+        {
+            renderer.StrictErrors = strict;
+            renderer.Mount<LateFaultProbe>();
+
+            Assert.Equal(0, DispatchBounded(frames.ClickHandlerForLabel("late"), "late"));
+            Task handler;
+            lock (pending)
+            {
+                Assert.True(pending.Count == 1,
+                    $"the late-fault handler should be the one still-running dispatch, got {pending.Count}");
+                handler = pending[0];
+            }
+            Assert.False(handler.IsCompleted, "the handler finished before its gate opened");
+
+            LateFaultProbe.Gate.SetResult();
+            await Task.WhenAny(handler, Task.Delay(Budget));
+            Assert.True(handler.IsCompleted, "the handler never finished after its gate opened");
+            return handler;
+        }
+        finally
+        {
+            LateFaultProbe.Gate.TrySetResult();
+            TearDown(pending, previousObserver);
+        }
+    }
+
+    [Fact]
+    public async Task ALateFault_InProductionMode_FaultsThePendingTask()
+    {
+        Task handler = await RunLateFault(strict: false);
+
+        Assert.True(handler.IsFaulted,
+            $"the handler threw after its first await, in production mode, and its pending Task "
+            + $"ended {handler.Status}. The late fault was only logged: Blazor routed it to "
+            + "HandleException, which found no dispatch to attribute it to, so no FaultNotice "
+            + "could ever reach the shell.");
+        Assert.Equal("late-boom", handler.Exception!.GetBaseException().Message);
+    }
+
+    [Fact]
+    public async Task ALateFault_InStrictMode_FaultsThePendingTask_PositiveControl()
+    {
+        // Rule 3: strict mode faulted the pending Task even before the fix, through
+        // HandleException's rethrow. So this proves the observer, the probe and the
+        // assertions can see a late fault; the production-mode pin above is then about
+        // the attribution alone.
+        Task handler = await RunLateFault(strict: true);
+
+        Assert.True(handler.IsFaulted, $"the pending Task ended {handler.Status} even in strict mode");
+        Assert.Equal("late-boom", handler.Exception!.GetBaseException().Message);
+    }
+
+    // ── A nested dispatch's queued navigation: I1 of the Task 3 review ──────────
+
+    [Fact]
+    public void ANavigationQueuedInsideANestedDispatch_StillRunsBeforeTheOuterExportReturns()
+    {
+        var pending = new List<Task>();
+        var (renderer, frames) = StartSession();
+        var previousObserver = ObservePending(pending);
+        NestedNavigateProbe.Renderer = renderer;
+        try
+        {
+            renderer.Mount<NestedNavigateProbe>();
+            NestedNavigateProbe.InnerHandlerId = FindChangeHandler(frames);
+
+            int before = frames.Count;
+            int rc = DispatchBounded(frames.ClickHandlerForLabel("outer"), "outer");
+            List<RenderFrame> during = frames.Since(before);
+
+            Assert.Equal(0, rc);
+            Assert.True(NestedNavigateProbe.InnerRan, "the nested dispatch never ran");
+            // Anchor: BnSettingsPage's title. It is not on the probe, so it can only
+            // arrive with the swap.
+            Assert.True(during.Any(f => HasText(f, "Settings")),
+                $"none of the {during.Count} frames delivered during the outer export carried "
+                + "BnSettingsPage. The navigation the NESTED dispatch queued never ran: its scope "
+                + "closed while the outer one was still open, and its queued actions were not "
+                + "handed to the outer scope.");
+            Assert.Equal("/settings", HostSession.CurrentNavigationManager!.CurrentRoute);
+        }
+        finally
+        {
+            TearDown(pending, previousObserver);
+        }
+    }
+
+    private static int FindChangeHandler(FrameLog frames)
+    {
+        RenderFrame mount = frames.Since(0)[0];
+        return Assert.Single(mount.Patches.OfType<AttachEventPatch>(), p => p.EventName == "change").HandlerId;
+    }
+
+    /// <summary>"late" awaits a test-held gate, then throws. Static slots are safe
+    /// under the "host-session" collection.</summary>
+    private sealed class LateFaultProbe : ComponentBase
+    {
+        public static TaskCompletionSource Gate = new();
+
+        protected override void BuildRenderTree(RenderTreeBuilder b)
+        {
+            b.OpenElement(0, "button");
+            b.AddAttribute(1, "onclick", EventCallback.Factory.Create<MouseEventArgs>(this, async () =>
+            {
+                await Gate.Task;
+                throw new InvalidOperationException("late-boom");
+            }));
+            b.AddContent(2, "late");
+            b.CloseElement();
+        }
+    }
+
+    /// <summary>"outer" runs a NESTED dispatch of the input's change handler, which
+    /// navigates. The navigation queues into the nested dispatch's scope, which closes
+    /// while the outer one is still open.</summary>
+    private sealed class NestedNavigateProbe : ComponentBase
+    {
+        public static NativeRenderer? Renderer;
+        public static int InnerHandlerId;
+        public static bool InnerRan;
+
+        [Inject] public INavigationManager Navigation { get; set; } = default!;
+
+        protected override void OnInitialized() => InnerRan = false;
+
+        protected override void BuildRenderTree(RenderTreeBuilder b)
+        {
+            b.OpenElement(0, "button");
+            b.AddAttribute(1, "onclick", EventCallback.Factory.Create<MouseEventArgs>(this, () =>
+            {
+                // Already on the render thread, so this runs inline, nested.
+                Renderer!.DispatchUiEventAsync(new NativeUiEvent(0, InnerHandlerId, "change", "go"))
+                    .GetAwaiter().GetResult();
+            }));
+            b.AddContent(2, "outer");
+            b.CloseElement();
+
+            b.OpenElement(10, "input");
+            b.AddAttribute(11, "onchange", EventCallback.Factory.Create<ChangeEventArgs>(this, () =>
+            {
+                InnerRan = true;
+                return Navigation.NavigateToAsync("/settings").AsTask();
+            }));
+            b.CloseElement();
         }
     }
 

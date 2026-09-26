@@ -589,6 +589,18 @@ public sealed class NativeRenderer : BlazorRenderer
             return;
         }
 
+        // After a handler's first await: no scope is open, but the continuation still
+        // carries its dispatch's scope in the execution context. Attribute the fault to
+        // THAT dispatch, so its pending Task faults, in production mode as well as strict.
+        // A scope that is Done belongs to a handler whose Task already completed; a fault
+        // then is fire-and-forget, and takes the no-window path below.
+        if (s_flowingScope.Value is { Done: false } flowing && ReferenceEquals(flowing.Owner, this))
+        {
+            Interlocked.CompareExchange(ref flowing.LateFault, exception, null);
+            BnLog.Error("BlazorNative.Renderer", "render fault (after the handler's first await)", exception);
+            return;
+        }
+
         // Strict mode (Phase 3.3 Task 6, DoD #9): rethrow with the original
         // stack — the exception surfaces synchronously at whatever boundary
         // invoked the render work (mount, batch). See StrictErrors doc for
@@ -1499,18 +1511,43 @@ public sealed class NativeRenderer : BlazorRenderer
     /// scope's queued actions move to the outer scope, so they still run when the
     /// OUTERMOST synchronous part unwinds, as they always did.</para>
     ///
-    /// <para>A fault raised after the first await, in a continuation, finds no
-    /// scope: it takes <see cref="HandleException"/>'s no-window path, and reaches
-    /// the export's caller only through the pending Task.</para></summary>
-    private sealed class DispatchScope
+    /// <para>A fault raised after the first await, in a continuation, is attributed
+    /// to its own dispatch too, in production mode as well as strict. Blazor catches
+    /// it in GetErrorHandledTask and routes it to <see cref="HandleException"/>, then
+    /// completes its Task SUCCESSFULLY, so before this the fault was only logged
+    /// unless StrictErrors rethrew it. GetErrorHandledTask starts inside the
+    /// synchronous part, so its continuation carries the execution context captured
+    /// there, including <see cref="s_flowingScope"/>. HandleException finds the scope
+    /// through it and records <see cref="LateFault"/>, and the pending Task that
+    /// <see cref="DispatchSyncPart"/> returns faults with it. Pinned by
+    /// DispatchWindowScopeTests.ALateFault_InProductionMode_FaultsThePendingTask.
+    /// Once the handler's Task has completed, the scope is <see cref="Done"/>, and a
+    /// later fire-and-forget fault takes the no-window path: strict rethrow, or a
+    /// log.</para></summary>
+    private sealed class DispatchScope(NativeRenderer owner)
     {
+        public readonly NativeRenderer Owner = owner;
         public Exception? Fault;
         public List<Action>? PostDispatchActions;
+        /// <summary>The first fault raised after the handler's first await.</summary>
+        public Exception? LateFault;
+        /// <summary>Set once the handler's Task has completed.</summary>
+        public volatile bool Done;
     }
 
     /// <summary>The scope of the dispatch whose synchronous part is running now, or
-    /// null. Render thread only.</summary>
+    /// null. Render thread only. <see cref="RunAfterDispatch"/> and the in-window
+    /// capture use THIS, never <see cref="s_flowingScope"/>: a continuation must not
+    /// queue into a scope that has already closed, or the cascade returns.</summary>
     private DispatchScope? _currentScope;
+
+    /// <summary>The same scope, flowed with the execution context into the handler's
+    /// continuations. Used ONLY to attribute a late fault in
+    /// <see cref="HandleException"/>. Set and restored alongside
+    /// <see cref="_currentScope"/>: the restore is required, because the render
+    /// thread does not flow a poster's execution context, so a value left set would
+    /// leak into whatever work item ran next.</summary>
+    private static readonly AsyncLocal<DispatchScope?> s_flowingScope = new();
 
     /// <summary>Runs one UI event's SYNCHRONOUS part — the handler up to its first
     /// incomplete await, its re-render and FrameSink delivery — inside its own
@@ -1522,8 +1559,9 @@ public sealed class NativeRenderer : BlazorRenderer
     /// actions (the navigation swap) run at that close, before this returns.
     /// Returns <see cref="DispatchOutcomeKind.Faulted"/> when the scope captured a
     /// fault or the returned Task is faulted, <see cref="DispatchOutcomeKind.Completed"/>
-    /// when the Task is complete, and <see cref="DispatchOutcomeKind.Pending"/>, carrying
-    /// the Task, when the handler is still running.</summary>
+    /// when the Task is complete, and <see cref="DispatchOutcomeKind.Pending"/> when the
+    /// handler is still running. The pending Task is <see cref="AwaitWholeHandler"/>'s,
+    /// not Blazor's: it also faults with a fault raised after the first await.</summary>
     internal DispatchOutcome DispatchSyncPart(NativeUiEvent e)
     {
         if (!_dispatcher.CheckAccess())
@@ -1533,9 +1571,11 @@ public sealed class NativeRenderer : BlazorRenderer
                 + $"renderer's render thread {RenderThreadId}. Post it through Dispatcher.InvokeAsync.");
         }
 
-        var scope = new DispatchScope();
+        var scope = new DispatchScope(this);
         DispatchScope? outer = _currentScope;
+        DispatchScope? outerFlowing = s_flowingScope.Value;
         _currentScope = scope;
+        s_flowingScope.Value = scope;
         Task? task = null;
         try
         {
@@ -1558,6 +1598,7 @@ public sealed class NativeRenderer : BlazorRenderer
             // finally so a faulted dispatch still drains — the queue must never leak
             // into another dispatch; action faults join this scope, never escape.
             _currentScope = outer;
+            s_flowingScope.Value = outerFlowing;
             if (outer is null)
                 DrainPostDispatchActions(scope);
             else if (scope.PostDispatchActions is { } queued)
@@ -1576,7 +1617,25 @@ public sealed class NativeRenderer : BlazorRenderer
                 : new TaskCanceledException(task);
             return new DispatchOutcome(DispatchOutcomeKind.Faulted, fault, null);
         }
-        return new DispatchOutcome(DispatchOutcomeKind.Pending, null, task);
+        return new DispatchOutcome(DispatchOutcomeKind.Pending, null, AwaitWholeHandler(task, scope));
+    }
+
+    /// <summary>The pending Task <see cref="DispatchSyncPart"/> hands out: completes when
+    /// the handler does, then marks the scope <see cref="DispatchScope.Done"/> and faults
+    /// with the late fault <see cref="HandleException"/> attributed to it, if any. Blazor's
+    /// own Task would complete successfully for that fault.</summary>
+    private static async Task AwaitWholeHandler(Task handler, DispatchScope scope)
+    {
+        try
+        {
+            await handler.ConfigureAwait(false);
+        }
+        finally
+        {
+            scope.Done = true;
+        }
+        if (Volatile.Read(ref scope.LateFault) is { } late)
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(late).Throw();
     }
 
     /// <summary>Dispatches a host UI event into Blazor's handler table, for direct

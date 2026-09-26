@@ -55,6 +55,14 @@ public sealed class DispatchLaneBlockingTests
             p => p.NodeId == buttonNode && p.EventName == "click").HandlerId;
     }
 
+    /// <summary>Waits, bounded, for every captured handler to finish, faulted or not.</summary>
+    private static void WaitForHandlers(List<Task> pending)
+    {
+        Task[] handlers;
+        lock (pending) handlers = pending.ToArray();
+        Task.WaitAll(handlers.Select(t => t.ContinueWith(_ => { })).ToArray(), Budget);
+    }
+
     [Fact]
     public void AnAsyncHandlerAwaitingAnOpenHostCall_ReturnsWhileTheCallIsOpen()
     {
@@ -67,6 +75,11 @@ public sealed class DispatchLaneBlockingTests
         // under it — see the finally block's comment.
         var returned = new ManualResetEventSlim(false);
         Thread? worker = null;
+        // The still-running handler, captured so the finally can wait for IT: the
+        // suspended handler, not the worker, is what can race ResetForTests.
+        var pending = new List<Task>();
+        Action<ulong, string, Task>? previousObserver = Exports.PendingDispatchObserver;
+        Exports.PendingDispatchObserver = (_, _, t) => { lock (pending) pending.Add(t); };
 
         try
         {
@@ -116,23 +129,25 @@ public sealed class DispatchLaneBlockingTests
 
             // CLEANUP, NOT PART OF THE MEASUREMENT (kept from the pre-16.1 pin, which
             // mirrored the JVM twin's cleanup in HostEventTest.kt). The export has
-            // returned, but the HANDLER is still suspended on the open host call. Resetting
-            // HostSession/NativeShellBridge under it would cancel the call's TCS, and with
-            // RunContinuationsAsynchronously that continuation resumes AFTER this method
-            // has returned, racing the next test in this [Collection("host-session")]. So:
-            // complete the held call exactly as the shell would once the user answers the
-            // permission sheet, wait for the worker, and only THEN reset. If the fix
-            // regresses, the worker is still parked in the export, and this completion is
-            // what releases it. Bounded throughout — a hanging teardown is worse than no
-            // guard.
+            // returned, but the HANDLER is still suspended on the open host call, and it
+            // is the handler that can race the reset: its continuation would resume on a
+            // render thread being torn down under it, after this method returned, and
+            // bleed into the next test in this [Collection("host-session")]. So: complete
+            // the held call exactly as the shell would once the user answers the
+            // permission sheet, wait for the handler's pending Task to finish, and only
+            // THEN reset. The worker is joined too, because if the fix regresses it is
+            // still parked in the export, and the completion is what releases it.
+            // Bounded throughout — a hanging teardown is worse than no guard.
             if (FakeShellHost.LastHostCallRequestId >= 0)
             {
                 NativeShellBridge.CompleteHostCall(
                     FakeShellHost.LastHostCallRequestId, (int)CameraStatus.Cancelled, null);
             }
 
+            WaitForHandlers(pending);
             returned.Wait(Budget);
             worker?.Join(Budget);
+            Exports.PendingDispatchObserver = previousObserver;
 
             HostSession.ResetForTests();
             NativeShellBridge.ResetForTests();
