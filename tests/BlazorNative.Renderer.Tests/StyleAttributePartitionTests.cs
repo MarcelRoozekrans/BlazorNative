@@ -17,8 +17,9 @@ namespace BlazorNative.Renderer.Tests;
 //
 // Two hand-written parsers (Kotlin's YogaLayout, iOS's BnYogaLayout.mm) are
 // written against that table, so it must be MECHANICAL, not a judgement call:
-// hence YogaStyleAttributes / VisualStyleAttributes, their union pinned equal to
-// StyleAttributes and their intersection pinned empty, right here.
+// hence YogaStyleAttributes / VisualStyleAttributes, and their intersection
+// pinned empty, right here. Their union IS StyleAttributes by definition in
+// NativeRenderer, so the fact that pinned it was retired in 15.7; see below.
 //
 // The one that bites if you get it wrong: `padding` is LAYOUT. Yoga places a
 // container's children inside its padding box, so padding belongs to the Yoga
@@ -29,24 +30,54 @@ namespace BlazorNative.Renderer.Tests;
 
 public sealed class StyleAttributePartitionTests
 {
-    /// <summary>The allow-list IS the two halves — nothing more, nothing less.</summary>
-    [Fact]
-    public void StyleAttributes_AreExactlyTheUnionOfTheYogaAndVisualHalves()
-    {
-        var union = new HashSet<string>(
-            NativeRenderer.YogaStyleAttributes.Concat(NativeRenderer.VisualStyleAttributes),
-            StringComparer.Ordinal);
+    // ── RETIRED (Phase 15.7): StyleAttributes_AreExactlyTheUnionOfTheYogaAndVisualHalves ──
+    //
+    // It asserted StyleAttributes == YogaStyleAttributes ∪ VisualStyleAttributes, and
+    // NativeRenderer DEFINES StyleAttributes as exactly that union, so it compared a value with
+    // its own definition and could not go red. The house rule, set when NavigationTests retired
+    // EveryRoute_ResolvesToAComponentTheMountRegistryKnows in Phase 7.6, is that a green
+    // tautology is retired, not kept.
+    //
+    // It was not re-pointed, because no independent second copy exists. Provenance of each
+    // candidate side:
+    //   - StyleAttributes: the union of the two halves, built in NativeRenderer.
+    //   - YogaStyleAttributes and VisualStyleAttributes: new HashSets over
+    //     BnWireVocabulary.YogaStyles and .VisualStyles, which WireGen emits from
+    //     src/wire-vocabulary.json.
+    //   - The manifest's style lists: the source every set above is generated from.
+    // Every pairing is therefore a set against its own definition, or a generated table against
+    // its own source. The second is already pinned twice, in BlazorNative.Runtime.Tests:
+    // WireVocabularyCodegenTests byte-compares BnWireVocabulary.g.cs with what the manifest
+    // produces, and its TheRenderersStyleSets_AreTheManifests holds both halves equal to the
+    // manifest's lists. A third comparison here would restate those pins, not add a pair.
+    //
+    // What the retired fact's message warned about, a style name that belongs to neither half,
+    // cannot be written: a name enters StyleAttributes only through one of the halves.
 
-        Assert.True(union.SetEquals(NativeRenderer.StyleAttributes),
-            "StyleAttributes must be exactly YogaStyleAttributes ∪ VisualStyleAttributes — "
-            + "a name in neither half is a name no shell knows where to route.");
-    }
+    /// <summary>The measured sizes of the two halves, at zero headroom. The disjointness fact
+    /// below reads "the overlap is empty", and an empty half makes the overlap empty for free.
+    /// </summary>
+    private const int MeasuredYogaStyles = 26;
+    private const int MeasuredVisualStyles = 3;
 
     /// <summary>...and the halves are DISJOINT: every style has exactly one
     /// destination. A name in both is a double-apply waiting to happen.</summary>
     [Fact]
     public void YogaAndVisualStyleAttributes_AreDisjoint()
     {
+        // Rule 2, on this fact alone (15.7): the theories below anchor named rows in each half,
+        // but this fact must not lean on a sibling to notice that a half came back empty.
+        Assert.True(NativeRenderer.YogaStyleAttributes.Count >= MeasuredYogaStyles,
+            $"YogaStyleAttributes has {NativeRenderer.YogaStyleAttributes.Count} names, and "
+            + $"{MeasuredYogaStyles} were measured. An empty half makes the overlap below empty and "
+            + "this fact pass while checking nothing; if a name was deliberately removed, lower the "
+            + "floor in the same commit.");
+        Assert.True(NativeRenderer.VisualStyleAttributes.Count >= MeasuredVisualStyles,
+            $"VisualStyleAttributes has {NativeRenderer.VisualStyleAttributes.Count} names, and "
+            + $"{MeasuredVisualStyles} were measured. An empty half makes the overlap below empty and "
+            + "this fact pass while checking nothing; if a name was deliberately removed, lower the "
+            + "floor in the same commit.");
+
         var overlap = NativeRenderer.YogaStyleAttributes
             .Intersect(NativeRenderer.VisualStyleAttributes, StringComparer.Ordinal)
             .ToList();

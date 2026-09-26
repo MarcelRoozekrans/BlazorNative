@@ -8,6 +8,56 @@ using Xunit;
 
 namespace BlazorNative.Runtime.Tests;
 
+// ─────────────────────────────────────────────────────────────────────────────
+// LayoutSurfacePinTests — the layout surface's DECLARATION pins (13.0 Task 9).
+//
+// Pure reflection over the Components assembly: it reads no file and mounts
+// nothing. The hand copies here (ItemParameters, ContainerParameters and the
+// AllowedNonLayoutComponents ledger) are held against what the assembly
+// declares. What the components EMIT is LayoutSurfaceSequenceBandTests' job.
+//
+// WHAT THIS DOES NOT COVER (Rule 5):
+//
+// - NAMES ONLY. BnLayoutItem_DeclaresExactlyTheItemSurface and
+//   BnLayoutContainer_DeclaresExactlyTheContainerSurface compare parameter
+//   NAMES. Change a surface parameter's TYPE, say Margin from BnLength? to
+//   string, and both stay green. So do BnList_KeepsExactlyTheTwoItemNames… and
+//   BnView_IsALayoutContainer_AndKeepsOnlyDirectionAndChildContent, which also
+//   compare names. The one type fact in this file is BnList's Height, held by
+//   BnList_CannotTakeTheItemBase_BecauseItsHeightIsNarrowedToFloat; the length
+//   types are held by LengthParameterNullabilityPinTests in BnLengthTests.cs.
+//
+// - EXPORTED TYPES ONLY. EveryComponentInThePackage_DerivesFromBnLayoutItem and
+//   NoComponent_RedeclaresAnInheritedLayoutParameter scan GetExportedTypes. An
+//   internal component, or one nested in a non-public type, is never scanned.
+//   Nothing outside the Components assembly is scanned at all, so a sample-app
+//   or third-party component is out of reach by design.
+//
+// - A STALE ALLOWLIST ENTRY. The allowlist pin itself checks only the COUNT and
+//   that each reason is not a placeholder. It does not check that an entry is
+//   still NEEDED. That half is now covered by
+//   NonLayoutDetector_WithTheAllowlistRemoved_FindsExactlyTheTwoArguedExceptions:
+//   if BnList<> or BnModal starts deriving from BnLayoutItem, its entry is stale
+//   and that control reds, because the detector no longer reports it. It does
+//   not cover an entry naming a type that is not exported, since the scan never
+//   sees such a type in either direction.
+//
+// - GROUP D RESTATES THE ITEM SURFACE. The per-type absence facts
+//   BnImage_TakesTheItemSurfaceFromTheBase_AndRedeclaresNothing,
+//   RazorEmitter_TakesTheItemSurfaceFromTheBase and
+//   BnFlexPreset_TakesItsSurfaceFromTheContainerBase each assert that an
+//   Intersect with ItemParameters is EMPTY. An empty ItemParameters would make
+//   all three pass while checking nothing. They are not vacuous today only
+//   because BnLayoutItem_DeclaresExactlyTheItemSurface holds ItemParameters to a
+//   non-empty declared set, and they are targeted restatements of
+//   NoComponent_RedeclaresAnInheritedLayoutParameter rather than independent
+//   pins.
+//
+// - DECLARATION, NOT BEHAVIOUR. A parameter declared here and never emitted
+//   passes this file. LayoutSurfaceSequenceBandTests' PIN 4 covers emission,
+//   and BnComponentTests and BnFormControlTests cover the value.
+// ─────────────────────────────────────────────────────────────────────────────
+
 public sealed class LayoutSurfacePinTests
 {
     /// <summary>The 17 parameters that constitute the item surface, by name.</summary>
@@ -141,15 +191,60 @@ public sealed class LayoutSurfacePinTests
     [Fact]
     public void EveryComponentInThePackage_DerivesFromBnLayoutItem()
     {
-        Type[] offenders = typeof(BnLayoutItem).Assembly
+        Type[] scanned = ScannedComponents(typeof(BnLayoutItem).Assembly);
+
+        // Rule 2: measured at 16 exported non-abstract components on 2026-09-26,
+        // floored at exactly that with no headroom. A mis-scoped filter or a
+        // wrong assembly anchor scans nothing, and the Assert.Empty below would
+        // then pass over an empty set. Removing a component reds this, and the
+        // floor moves down in the same change that removes it.
+        Assert.True(scanned.Length >= 16,
+            $"scanned only {scanned.Length} components, and there are 16. The scan has " +
+            "stopped seeing its subject, so the offender check below is checking too little.");
+        Assert.Contains(typeof(BnView), scanned);
+
+        Assert.Empty(NonLayoutOffenders(scanned, AllowedNonLayoutComponents.Keys));
+    }
+
+    /// <summary>
+    /// The positive control for <see cref="EveryComponentInThePackage_DerivesFromBnLayoutItem"/>,
+    /// Rule 3 model 2: the allowlist read as a source of anchors. Everything the
+    /// pin excuses is something its detector must still be able to see. With the
+    /// allowlist removed, the SAME detector must report exactly the two argued
+    /// exceptions. A detector that stopped reporting anything reds here, and so
+    /// does a stale allowlist entry whose type now derives from the base.
+    /// </summary>
+    [Fact]
+    public void NonLayoutDetector_WithTheAllowlistRemoved_FindsExactlyTheTwoArguedExceptions()
+    {
+        Type[] offenders = NonLayoutOffenders(
+            ScannedComponents(typeof(BnLayoutItem).Assembly), Array.Empty<Type>());
+
+        Assert.Equal(
+            new[] { typeof(BnList<>), typeof(BnModal) }.OrderBy(t => t.FullName, StringComparer.Ordinal),
+            offenders.OrderBy(t => t.FullName, StringComparer.Ordinal));
+    }
+
+    /// <summary>The population <see cref="EveryComponentInThePackage_DerivesFromBnLayoutItem"/>
+    /// scans: every exported, non-abstract <see cref="IComponent"/> in
+    /// <paramref name="assembly"/>.</summary>
+    internal static Type[] ScannedComponents(Assembly assembly)
+        => assembly
             .GetExportedTypes()
             .Where(t => typeof(IComponent).IsAssignableFrom(t))
             .Where(t => !t.IsAbstract)
-            .Where(t => !typeof(BnLayoutItem).IsAssignableFrom(t))
-            .Where(t => !AllowedNonLayoutComponents.ContainsKey(t))
             .ToArray();
 
-        Assert.Empty(offenders);
+    /// <summary>The detector: every scanned type that does not derive from
+    /// <see cref="BnLayoutItem"/> and is not in <paramref name="allowed"/>.
+    /// Called by the pin with the real allowlist and by its control with none.</summary>
+    internal static Type[] NonLayoutOffenders(IEnumerable<Type> scanned, IEnumerable<Type> allowed)
+    {
+        var allowedSet = new HashSet<Type>(allowed);
+        return scanned
+            .Where(t => !typeof(BnLayoutItem).IsAssignableFrom(t))
+            .Where(t => !allowedSet.Contains(t))
+            .ToArray();
     }
 
     /// <summary>
@@ -174,20 +269,52 @@ public sealed class LayoutSurfacePinTests
     [Fact]
     public void NoComponent_RedeclaresAnInheritedLayoutParameter()
     {
-        string[] surface = ItemParameters.Concat(ContainerParameters).ToArray();
-
-        var offenders = typeof(BnLayoutItem).Assembly
+        Type[] derived = typeof(BnLayoutItem).Assembly
             .GetExportedTypes()
             .Where(t => typeof(BnLayoutItem).IsAssignableFrom(t))
             .Where(t => t != typeof(BnLayoutItem) && t != typeof(BnLayoutContainer))
+            .ToArray();
+
+        // Rule 2: measured at 15 derived types on 2026-09-26 (the 14 layout
+        // components plus the abstract BnFlexPreset), floored at exactly that
+        // with no headroom. Removing one reds this, and the floor moves down in
+        // the same change.
+        Assert.True(derived.Length >= 15,
+            $"scanned only {derived.Length} types deriving from BnLayoutItem, and there are 15. " +
+            "The scan has stopped seeing its subject, so the check below is checking too little.");
+        Assert.Contains(typeof(BnView), derived);
+
+        Assert.Empty(RedeclaredLayoutParameters(derived));
+    }
+
+    /// <summary>
+    /// The positive control for <see cref="NoComponent_RedeclaresAnInheritedLayoutParameter"/>:
+    /// <see cref="ShadowingHeightProbe"/> redeclares <c>Height</c> with its own
+    /// <c>[Parameter]</c>, which is exactly the shadow that pin exists to catch, so
+    /// the SAME detector must report it. The probe does not derive from
+    /// <see cref="BnLayoutItem"/>, so it is handed to the detector directly rather
+    /// than found by the pin's population scan. This proves the detector, not the
+    /// population; the floor in the pin covers the population.
+    /// </summary>
+    [Fact]
+    public void RedeclarationDetector_ReportsTheShadowingProbe()
+        => Assert.Equal(
+            new[] { "ShadowingHeightProbe.Height" },
+            RedeclaredLayoutParameters(new[] { typeof(ShadowingHeightProbe) }));
+
+    /// <summary>The detector: every <c>[Parameter]</c> a type declares ITSELF
+    /// (DeclaredOnly) whose name is on the item or container surface.</summary>
+    internal static string[] RedeclaredLayoutParameters(IEnumerable<Type> types)
+    {
+        string[] surface = ItemParameters.Concat(ContainerParameters).ToArray();
+
+        return types
             .SelectMany(t => t
                 .GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
                 .Where(p => p.GetCustomAttribute<ParameterAttribute>() is not null)
                 .Where(p => surface.Contains(p.Name))
                 .Select(p => $"{t.Name}.{p.Name}"))
             .ToArray();
-
-        Assert.Empty(offenders);
     }
 
     /// <summary>The 9 parameters that constitute the container surface, by name.</summary>
@@ -235,6 +362,48 @@ public sealed class LayoutSurfacePinTests
 
     public static TheoryData<Type> RazorEmitters => new()
         { typeof(BnCheckbox), typeof(BnPicker), typeof(BnSlider), typeof(BnSwitch) };
+
+    /// <summary>Why each <see cref="RazorEmitters"/> member is on the list. The
+    /// list is more than a theory row source: <c>LayoutSurfaceSequenceBandTests</c>
+    /// reads it as the band pin's SKIP list and as the collision pin's splat
+    /// excuse, so adding a type to it silences two pins for that type.</summary>
+    private static readonly Dictionary<Type, string> RazorEmitterReasons = new()
+    {
+        [typeof(BnCheckbox)] = "authored in BnCheckbox.razor, so the Razor compiler generates its BuildRenderTree and the item surface arrives as a splat, not through EmitItemAttributes.",
+        [typeof(BnPicker)]   = "authored in BnPicker.razor, so the Razor compiler generates its BuildRenderTree and the item surface arrives as a splat, not through EmitItemAttributes.",
+        [typeof(BnSlider)]   = "authored in BnSlider.razor, so the Razor compiler generates its BuildRenderTree and the item surface arrives as a splat, not through EmitItemAttributes.",
+        [typeof(BnSwitch)]   = "authored in BnSwitch.razor, so the Razor compiler generates its BuildRenderTree and the item surface arrives as a splat, not through EmitItemAttributes.",
+    };
+
+    /// <summary>
+    /// PIN — the exemption list, pinned shut, modelled on
+    /// <see cref="AllowedNonLayoutComponents_GrowingItIsADeliberateAct"/>.
+    /// <see cref="RazorEmitters"/> is the band pin's skip list and the
+    /// collision pin's splat excuse, so a one-line <c>typeof(BnView)</c> added
+    /// to it would take BnView out of the band pin and loosen its collision
+    /// check with no test reddening. Measured at 4, the four .razor-authored
+    /// components that derive from BnLayoutItem; BnList and BnModal are also
+    /// .razor-authored but derive from nothing on the item surface. Growing the
+    /// list means changing the count here AND arguing the new member in
+    /// <see cref="RazorEmitterReasons"/>.
+    /// </summary>
+    [Fact]
+    public void RazorEmitters_GrowingItIsADeliberateAct()
+    {
+        var members = new List<Type>();
+        foreach (Type t in RazorEmitters)   // the same enumeration the band file's ComputeSplatEmitters uses
+            members.Add(t);
+
+        Assert.Equal(4, members.Count);
+        Assert.Equal(4, members.Distinct().Count());
+        Assert.Equal(
+            RazorEmitterReasons.Keys.Select(t => t.Name).OrderBy(n => n, StringComparer.Ordinal),
+            members.Select(t => t.Name).OrderBy(n => n, StringComparer.Ordinal));
+
+        foreach ((Type type, string reason) in RazorEmitterReasons)
+            Assert.True(reason.Trim().Length >= 40,
+                $"{type.Name}'s exemption reason (\"{reason}\") reads like a placeholder, not an argued exception.");
+    }
 
     [Theory]
     [MemberData(nameof(RazorEmitters))]

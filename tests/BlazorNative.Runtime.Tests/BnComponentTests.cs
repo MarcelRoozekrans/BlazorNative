@@ -576,19 +576,61 @@ public sealed class BnComponentTests : IDisposable
     /// happened to exist when this pin was written; they were never a closed
     /// vocabulary. <c>BnLengthUnit</c> (13.1) takes this branch rather than
     /// being renamed to <c>FlexLengthUnit</c>, which would divorce it from
-    /// <c>BnLength</c>, the very type it describes.</summary>
+    /// <c>BnLength</c>, the very type it describes.
+    ///
+    /// WHAT THIS DOES NOT COVER (Rule 5): the Components assembly only, and
+    /// only its EXPORTED enums. Core's public enums are unprefixed by design
+    /// and out of scope, for example <c>CameraStatus</c> and
+    /// <c>GeolocationStatus</c>, and nothing here says whether they should be.
+    /// It checks enum TYPE names only: a public class, struct or delegate with a
+    /// bare name is not swept.</summary>
     [Fact]
     public void PublicEnumTypes_CarryADomainPrefix_ToNotCollideWithAppTypes()
     {
-        System.Reflection.Assembly components = typeof(BnView).Assembly;
-        Assert.All(
-            components.GetExportedTypes().Where(t => t.IsEnum),
-            t => Assert.True(
-                t.Name.StartsWith("Flex", StringComparison.Ordinal)
-                    || t.Name.StartsWith("Image", StringComparison.Ordinal)
-                    || t.Name.StartsWith("Bn", StringComparison.Ordinal),
-                $"public enum {t.Name} carries no domain prefix (Flex*/Image*/Bn*) — a bare name "
-                + "in the library's root namespace collides with app-side types"));
+        Type[] enums = ExportedEnums();
+
+        // NON-VACUITY. Assert.All over an empty set passes. Measured on 2026-09-26:
+        // 8 exported enums, floored at exactly that with no headroom, with FlexAlign
+        // as the named anchor.
+        Assert.True(enums.Length >= 8,
+            $"the prefix sweep found {enums.Length} exported enums in BlazorNative.Components, "
+            + "and there were 8 when measured. A sweep over nothing passes vacuously.");
+        Assert.Contains(typeof(FlexAlign), enums);
+
+        List<string> offenders = UnprefixedEnums(enums);
+        Assert.True(offenders.Count == 0,
+            "these public enums carry no domain prefix (Flex*/Image*/Bn*) — a bare name "
+            + "in the library's root namespace collides with app-side types: "
+            + string.Join(", ", offenders));
+    }
+
+    /// <summary>The exported enums of the Components assembly: the population the
+    /// prefix sweep runs over.</summary>
+    private static Type[] ExportedEnums()
+        => typeof(BnView).Assembly.GetExportedTypes().Where(t => t.IsEnum).ToArray();
+
+    /// <summary>The prefix rule, extracted so the fact and its control share it.</summary>
+    internal static bool HasADomainPrefix(string typeName)
+        => typeName.StartsWith("Flex", StringComparison.Ordinal)
+           || typeName.StartsWith("Image", StringComparison.Ordinal)
+           || typeName.StartsWith("Bn", StringComparison.Ordinal);
+
+    /// <summary>The detector: the names of the given enum types that fail the rule.</summary>
+    internal static List<string> UnprefixedEnums(IEnumerable<Type> enums)
+        => enums.Where(t => !HasADomainPrefix(t.Name)).Select(t => t.Name).ToList();
+
+    /// <summary>A planted collision-prone name, for the control.</summary>
+    public enum Align { Start, End }
+
+    /// <summary>A planted prefixed name, for the control's negative half.</summary>
+    public enum BnPlantedAlign { Start, End }
+
+    /// <summary>The positive control, run through the fact's own detector: a bare
+    /// <c>Align</c> is rejected and a <c>Bn</c>-prefixed one is cleared.</summary>
+    [Fact]
+    public void ThePrefixDetector_RejectsABareEnumName_AndClearsAPrefixedOne()
+    {
+        Assert.Equal(["Align"], UnprefixedEnums([typeof(Align), typeof(BnPlantedAlign)]));
     }
 
     // ── BnRow / BnColumn (Phase 6.1 Task 1.3) ─────────────────────────────────

@@ -3035,7 +3035,7 @@ shell source moved. `#397` (the phase PR) merged as `0bdeb84` before this record
 > Seven carried items are filed as #401–#407, beside #396. The owner chose to keep the FAIL on
 > record, close the gaps in 15.7, and re-audit in 15.8.
 
-#### Phase 15.7: Close the audit gaps [status: pending]
+#### Phase 15.7: Close the audit gaps [status: active]
 **Goal:** Close the two NOT MET items from the 15.6 audit, and one overclaimed register row:
 - close **#357** with its evidence;
 - give `LayoutSurfacePinTests` and `DefaultStructTrapSweepTests` a verdict, and sweep the remaining
@@ -3046,6 +3046,63 @@ shell source moved. `#397` (the phase PR) merged as `0bdeb84` before this record
 - file the three unfiled 15.2 residuals.
 **Surface:** Mixed
 **HelpWanted:** no
+**Design:** [`docs/superpowers/specs/2026-09-26-phase-15.7-design.md`](../superpowers/specs/2026-09-26-phase-15.7-design.md)
+**Plan:** [`docs/superpowers/plans/2026-09-26-phase-15.7-close-the-audit-gaps.md`](../superpowers/plans/2026-09-26-phase-15.7-close-the-audit-gaps.md)
+**Suite:** .NET 1186 → 1200, measured; Android 228, iOS 271 and JVM 162 unchanged.
+
+A read-only sweep of every non-tree test file
+([`docs/plans/2026-09-26-phase-15.7-nontree-sweep.md`](../plans/2026-09-26-phase-15.7-nontree-sweep.md))
+read all 93 files that hold a `[Fact]`/`[Theory]` and never reach the tree, found 15 of them holding
+pins, 40 pin facts total, and gave every fact a per-rule verdict; 29 facts had gaps. **Every pin
+fact now has a verdict: 25 of the 29 gap facts now conform on every rule, 1 was retired as a
+tautology, and 3 remain partial** (rows 12 and 15 on Rule 2, row 38 on Rules 3 and 5). Outside the
+40, group C stays partial on Rule 2, group E on Rule 5, and group D has no floor of its own. The
+remaining partials are named per row in the register. Every mutation table, the row 37 provenance trace, the Activator proof and
+the row 17 decision are transcribed into
+[`docs/plans/2026-09-26-phase-15.7-record.md`](../plans/2026-09-26-phase-15.7-record.md), which
+survives after the phase's gitignored SDD reports are deleted; `docs/pin-standard.md`'s register
+points there for its Rule 7 cells.
+
+**The fixes, by family:**
+- **Layout surface** (`LayoutSurfacePinTests`, `LayoutSurfaceSequenceBandTests`, rows 5–15 and group
+  D): a third hand copy of the item/container surface, `ItemNames`/`ContainerNames`, was pinned back
+  to the declaration; the component-derivation and redeclaration sweeps got measured floors, a
+  `BnView` anchor and fixed-point controls; the collision and band sweeps got per-row floors and
+  controls fed synthetic `RenderTreeBuilder` frames.
+- **Struct trap, lengths, binding frames, enum prefixes** (rows 19–22, 28, 35, group F): the
+  struct-trap sweep now compares `new T()` against the primary constructor's declared defaults by
+  **value**, not by existence of a ctor, catching a `WrongValueFixture` the old check missed; nested
+  public value types are now swept; the length, binding-frame and enum-prefix sweeps each got a
+  measured floor and an extracted-detector control.
+- **Style partition, route menu, image polish, forwarded names** (rows 1, 2, 4, 37, 38, groups C and
+  E): the route-menu absence detectors got extracted helpers and planted-ghost/planted-dangling
+  controls; four tautological image-polish fixture equalities were deleted and the one genuine
+  two-literal pin was kept; a Rule 5 note was added for the near-tautological forward-target facts.
+- **Rule 5 disclosures** (rows 17, 23, 24–26, 27, 30): each remaining pin got a "what this does not
+  cover" block; row 17 was **widened** rather than merely disclosed, to sweep all seven shipped
+  packages instead of two, proven by a mutation against a planted stray mark.
+
+**Row 37 decision: retired.** `NativeRenderer.StyleAttributes` is defined as the union of its two
+halves, both generated from `src/wire-vocabulary.json`, and the union already has two independent
+pins in `WireVocabularyCodegenTests`. No independent third copy exists, so the fact was retired as a
+tautology, per the NavigationTests 7.6 precedent, rather than re-pointed.
+
+**#357: closed 2026-09-25 by #408's merge, through an accidental "close #357" keyword in that PR's
+next-steps list.** The fix itself is d481dae / #377, from Phase 15.1. 15.7 did not close it; it
+found the issue already closed and posted an evidence comment. Do not credit 15.7 with the close.
+
+**Issues filed:** #411 (subtractive build calls — `setSrcDirs`, a singular `srcDir`, XcodeGen
+excludes — pass the shell source roster's derivation check), #412 (the template's
+`build.gradle.kts` is an unread second record of the shell source dirs), #413 (ten CS1570
+malformed-XML doc-comment warnings in the test tree, hidden until `GenerateDocumentationFile`),
+#414 (a tree-reading differential pin for cross-language ABI and wire constants, read from Kotlin,
+Swift and C and compared with .NET, replacing group A's common-mode-blind half-pins).
+
+**What each pin still does not cover** is stated per row in `docs/pin-standard.md`'s register, under
+the Rule 6 heading "The register — pins that do not read the tree".
+
+**Lesson:** a PR body's next-steps list can close an issue through GitHub's keyword matching, so
+write "#N to be closed", never "close #N".
 
 #### Phase 15.8: Re-audit and close [status: pending]
 **Goal:** Re-run `audit-milestone` on live evidence after 15.7, and close M15 if every DoD item is

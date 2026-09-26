@@ -118,7 +118,7 @@ verdict** — the number is not to be trusted until it is.
 5. Phase 15.4 — the missing guards [complete] — population key decided as a hand-kept register under Rule 6; RouteMenuDriftTests floored, PatchKindDriftTests and the release-notes parse guard added; #297 #302 #375 closed; suite 1169 → 1176 (#388, guard follow-up #392)
 6. Phase 15.5 — prose, and the small corrections [complete] — all 20 hand-written docs pages audited: 46 false claims across 19 fixed; docs samples compiled in CI with the analyzers, inline Bn names held to what exists; #365's prose pairs answered with reasoning; #291 #298 #356 #365 closed, #356's behaviour split to #396; suite 1176 → 1186 (#397, #399)
 7. Phase 15.6 — audit and close [complete] — audit FAILS 7 MET / 2 NARROW / 2 NOT MET: two named pins never assessed, and #357 never closed; gaps to 15.7, re-audit in 15.8; #401–#407 filed (#408)
-8. Phase 15.7 — close the audit gaps [pending]
+8. Phase 15.7 — close the audit gaps [active]
 9. Phase 15.8 — re-audit and close [pending]
 
 **Ordering rationale.** 15.0 comes first because the standard is what everything else applies;
