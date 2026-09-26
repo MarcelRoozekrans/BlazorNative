@@ -71,7 +71,8 @@ namespace BlazorNative.Runtime.Tests;
 //
 // - THE EXEMPTIONS. The collision pin excuses a shared sequence in the four
 //   RazorEmitters when every name in the group is an item wire name, and the
-//   band pin skips those four entirely. The container emission pin skips every
+//   band pin skips those four entirely. RazorEmitters_GrowingItIsADeliberateAct
+//   in LayoutSurfacePinTests holds that list at exactly 4. The container emission pin skips every
 //   non-container row, and TheContainerRows_AreThereToBeChecked floors the rows
 //   it does check.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -580,6 +581,13 @@ public sealed class LayoutSurfaceSequenceBandTests : IDisposable
     /// conclusion's recorded mutation, <c>fontSize</c> moved from 100 to 18, and
     /// the collision table's <c>left</c> misfiled onto 100. The in-band
     /// <c>margin</c> and <c>padding</c> must not be reported.
+    /// <para>Each of the detector's four arms has a planted offender, so no arm
+    /// can be weakened to always-pass without this going red: <c>left</c> for
+    /// the item arm, <c>padding</c> at 5 for the container arm, <c>ChildContent</c>
+    /// at 150 for the ChildContent arm, and <c>fontSize</c> for the fallback.
+    /// 150 is chosen deliberately: it is outside ChildContent's exact 200 but
+    /// INSIDE the fallback's 100+, so it also reds if the ChildContent arm is
+    /// deleted and the name falls through to the fallback.</para>
     /// </summary>
     [Fact]
     public void TheBandDetector_ReportsOutOfBandAttributes_AndOnlyThose()
@@ -588,17 +596,21 @@ public sealed class LayoutSurfaceSequenceBandTests : IDisposable
         {
             b.OpenElement(0, "text");
             b.AddAttribute(1, "margin", "x");
+            b.AddAttribute(5, "padding", "x");
             b.AddAttribute(18, "fontSize", "x");
             b.AddAttribute(50, "padding", "x");
             b.AddAttribute(100, "left", "x");
+            b.AddAttribute(150, "ChildContent", "x");
             b.CloseElement();
         });
 
         Assert.Equal(
             new[]
             {
+                "Planted: 'padding' is at sequence 5, outside container 50-99.",
                 "Planted: 'fontSize' is at sequence 18, outside the component's own 100+.",
                 "Planted: 'left' is at sequence 100, outside item 1-17.",
+                "Planted: 'ChildContent' is at sequence 150, outside ChildContent 200.",
             },
             BandOffenders("Planted", RootAttributes(planted)));
     }

@@ -123,6 +123,27 @@ public sealed class NotApiEditorBrowsableTests
         typeof(BlazorNative.Testing.BnTestHost).Assembly,        // BlazorNative.Testing
     ];
 
+    /// <summary>Floor on the widened sweep (Phase 15.7 final review). Direction 1
+    /// is only as wide as <see cref="ShippedAssemblies"/>, and nothing held that
+    /// list at seven: deleting the five entries 15.7 added narrowed the sweep back
+    /// to Runtime + Renderer with every fact still green. The seven are
+    /// BlazorNative.Components, .Core, .Device, .Http, .Renderer, .Runtime and
+    /// .Testing — the shipped packages minus the analyzers, per the header's
+    /// DERIVATION note. Adding an eighth package means changing this count.</summary>
+    [Fact]
+    public void ShippedAssemblies_AreExactlyTheSevenShippedPackages()
+    {
+        Assert.Equal(7, ShippedAssemblies.Distinct().Count());
+        Assert.Equal(
+            new[]
+            {
+                "BlazorNative.Components", "BlazorNative.Core", "BlazorNative.Device",
+                "BlazorNative.Http", "BlazorNative.Renderer", "BlazorNative.Runtime",
+                "BlazorNative.Testing",
+            },
+            ShippedAssemblies.Select(a => a.GetName().Name!).Distinct().OrderBy(n => n, StringComparer.Ordinal));
+    }
+
     private static bool IsBrowsableNever(Type t)
     {
         EditorBrowsableAttribute? a = t.GetCustomAttribute<EditorBrowsableAttribute>(inherit: false);

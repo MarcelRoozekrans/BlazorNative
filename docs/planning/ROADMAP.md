@@ -3048,13 +3048,16 @@ shell source moved. `#397` (the phase PR) merged as `0bdeb84` before this record
 **HelpWanted:** no
 **Design:** [`docs/superpowers/specs/2026-09-26-phase-15.7-design.md`](../superpowers/specs/2026-09-26-phase-15.7-design.md)
 **Plan:** [`docs/superpowers/plans/2026-09-26-phase-15.7-close-the-audit-gaps.md`](../superpowers/plans/2026-09-26-phase-15.7-close-the-audit-gaps.md)
-**Suite:** .NET 1186 → 1198, measured; Android 228, iOS 271 and JVM 162 unchanged.
+**Suite:** .NET 1186 → 1200, measured; Android 228, iOS 271 and JVM 162 unchanged.
 
 A read-only sweep of every non-tree test file
 ([`docs/plans/2026-09-26-phase-15.7-nontree-sweep.md`](../plans/2026-09-26-phase-15.7-nontree-sweep.md))
 read all 93 files that hold a `[Fact]`/`[Theory]` and never reach the tree, found 15 of them holding
-pins, 40 pin facts total, and gave every fact a per-rule gap. **29 of those gaps were fixed; one was
-retired as a tautology.** Every mutation table, the row 37 provenance trace, the Activator proof and
+pins, 40 pin facts total, and gave every fact a per-rule verdict; 29 facts had gaps. **Every pin
+fact now has a verdict: 25 of the 29 gap facts now conform on every rule, 1 was retired as a
+tautology, and 3 remain partial** (rows 12 and 15 on Rule 2, row 38 on Rules 3 and 5). Outside the
+40, group C stays partial on Rule 2, group E on Rule 5, and group D has no floor of its own. The
+remaining partials are named per row in the register. Every mutation table, the row 37 provenance trace, the Activator proof and
 the row 17 decision are transcribed into
 [`docs/plans/2026-09-26-phase-15.7-record.md`](../plans/2026-09-26-phase-15.7-record.md), which
 survives after the phase's gitignored SDD reports are deleted; `docs/pin-standard.md`'s register

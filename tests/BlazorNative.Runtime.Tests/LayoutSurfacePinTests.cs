@@ -363,6 +363,48 @@ public sealed class LayoutSurfacePinTests
     public static TheoryData<Type> RazorEmitters => new()
         { typeof(BnCheckbox), typeof(BnPicker), typeof(BnSlider), typeof(BnSwitch) };
 
+    /// <summary>Why each <see cref="RazorEmitters"/> member is on the list. The
+    /// list is more than a theory row source: <c>LayoutSurfaceSequenceBandTests</c>
+    /// reads it as the band pin's SKIP list and as the collision pin's splat
+    /// excuse, so adding a type to it silences two pins for that type.</summary>
+    private static readonly Dictionary<Type, string> RazorEmitterReasons = new()
+    {
+        [typeof(BnCheckbox)] = "authored in BnCheckbox.razor, so the Razor compiler generates its BuildRenderTree and the item surface arrives as a splat, not through EmitItemAttributes.",
+        [typeof(BnPicker)]   = "authored in BnPicker.razor, so the Razor compiler generates its BuildRenderTree and the item surface arrives as a splat, not through EmitItemAttributes.",
+        [typeof(BnSlider)]   = "authored in BnSlider.razor, so the Razor compiler generates its BuildRenderTree and the item surface arrives as a splat, not through EmitItemAttributes.",
+        [typeof(BnSwitch)]   = "authored in BnSwitch.razor, so the Razor compiler generates its BuildRenderTree and the item surface arrives as a splat, not through EmitItemAttributes.",
+    };
+
+    /// <summary>
+    /// PIN — the exemption list, pinned shut, modelled on
+    /// <see cref="AllowedNonLayoutComponents_GrowingItIsADeliberateAct"/>.
+    /// <see cref="RazorEmitters"/> is the band pin's skip list and the
+    /// collision pin's splat excuse, so a one-line <c>typeof(BnView)</c> added
+    /// to it would take BnView out of the band pin and loosen its collision
+    /// check with no test reddening. Measured at 4, the four .razor-authored
+    /// components that derive from BnLayoutItem; BnList and BnModal are also
+    /// .razor-authored but derive from nothing on the item surface. Growing the
+    /// list means changing the count here AND arguing the new member in
+    /// <see cref="RazorEmitterReasons"/>.
+    /// </summary>
+    [Fact]
+    public void RazorEmitters_GrowingItIsADeliberateAct()
+    {
+        var members = new List<Type>();
+        foreach (Type t in RazorEmitters)   // the same enumeration the band file's ComputeSplatEmitters uses
+            members.Add(t);
+
+        Assert.Equal(4, members.Count);
+        Assert.Equal(4, members.Distinct().Count());
+        Assert.Equal(
+            RazorEmitterReasons.Keys.Select(t => t.Name).OrderBy(n => n, StringComparer.Ordinal),
+            members.Select(t => t.Name).OrderBy(n => n, StringComparer.Ordinal));
+
+        foreach ((Type type, string reason) in RazorEmitterReasons)
+            Assert.True(reason.Trim().Length >= 40,
+                $"{type.Name}'s exemption reason (\"{reason}\") reads like a placeholder, not an argued exception.");
+    }
+
     [Theory]
     [MemberData(nameof(RazorEmitters))]
     public void RazorEmitter_TakesTheItemSurfaceFromTheBase(Type component)

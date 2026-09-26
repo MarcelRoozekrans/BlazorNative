@@ -48,6 +48,15 @@ namespace BlazorNative.Runtime.Tests;
 //
 // WHAT THIS DOES NOT COVER (Rule 5):
 //
+// - ONE TYPE EXAMINED TODAY. The sweep examines exactly one production type,
+//   CaptureOptions, so it guards against a NEW trapped type arriving more than
+//   it covers the existing surface.
+//
+// - ENUM-TYPED PARAMETER DEFAULTS ARE UNVERIFIED. ParameterInfo.DefaultValue may
+//   hand back the underlying integer rather than the enum value, so a struct
+//   with an enum-defaulted parameter may be misjudged or throw at Invoke. No
+//   such struct exists today; the gap is latent.
+//
 // - THE FOUR ASSEMBLIES ONLY. Core, Runtime, Device and Components are swept.
 //   A public struct in Renderer, Http, Testing or the sample app is never seen,
 //   and neither is an app's own struct. Within those four, only a type that is
