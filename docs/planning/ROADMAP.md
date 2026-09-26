@@ -2455,7 +2455,7 @@ public-API change.** Four workstreams, grown from three by a review finding and 
 
 ---
 
-### 🔄 Milestone 15 — A Standard for Pins  *(active — started 2026-09-22)* [status: active]
+### ✅ Milestone 15 — A Standard for Pins  *(complete — 2026-09-22 → 2026-09-26)* [status: complete]
 
 **Goal:** This repo defends its invariants with **drift pins** — tests that read source or config
 and assert two copies of one truth agree. There are **at least nineteen** of them and **four** manifests,
@@ -2464,6 +2464,9 @@ shared standard, and it shows. M15 establishes what a pin must do to be trusted,
 standard to every existing pin, and closes the backlog of missing and broken ones as
 **consequences rather than as nine separate errands**.
 **Started:** 2026-09-22
+**Completed:** 2026-09-26 · verdict **PASS WITH FINDINGS**, 8 MET, 3 MET NARROWLY, 0 NOT MET
+· [re-audit](../plans/2026-09-26-milestone-15-reaudit.md), after a first
+[audit that FAILED](../plans/2026-09-25-milestone-15-audit.md) and is kept on record
 **Design:** [`docs/superpowers/specs/2026-09-22-milestone-15-design.md`](../superpowers/specs/2026-09-22-milestone-15-design.md)
 · full scope, DoD and risks in [MILESTONE.md](MILESTONE.md).
 **Source:** M14's own audit. Its central criterion — *a NEW divergence reds* — was met **narrowly**,
