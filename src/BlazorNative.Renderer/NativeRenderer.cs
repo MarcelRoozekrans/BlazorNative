@@ -1530,6 +1530,7 @@ public sealed class NativeRenderer : BlazorRenderer
     /// a log. A parameter-binding fault is never attributed this way; it takes #164's
     /// abort. Pinned by DispatchWindowScopeTests'
     /// AFireAndForgetFault_FromAHandlerThatFinishedSynchronously_TakesTheNoWindowPath,
+    /// AFireAndForgetFault_FromAPendingHandler_AfterItCompletes_TakesTheNoWindowPath,
     /// AParameterBindingFault_AfterTheFirstAwait_StillTakesThe164Path and
     /// TheFlowingScope_IsRestored_SoUnrelatedRenderThreadWorkSeesNone.</para></summary>
     private sealed class DispatchScope(NativeRenderer owner)

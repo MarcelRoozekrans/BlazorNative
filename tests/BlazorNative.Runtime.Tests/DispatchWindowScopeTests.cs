@@ -31,12 +31,24 @@ namespace BlazorNative.Runtime.Tests;
 // own dispatch too, through the pending Task, in PRODUCTION mode as well as
 // strict: ALateFault_InProductionMode_FaultsThePendingTask.
 //
-// DOES NOT COVER: two dispatches suspended at once; how a late fault reaches the
-// SHELL, which is FaultNotice's pin; a fire-and-forget fault raised after the
-// handler's Task completed, which takes the no-window path by design; or the
-// host-event arms, which are HostEventArmThreadTests. A nested dispatch's FAULT
-// is DispatchEventTests.Dispatch_NestedDispatchInsideHandler_*; its queued
-// navigation is pinned here.
+// Also pinned here: two dispatches suspended at once share no scope, and
+// unrelated render-thread work sees neither; a fire-and-forget fault takes the
+// no-window path once its handler has finished, whether it finished
+// synchronously or after a pending await; a parameter-binding fault after the
+// first await still takes #164's abort; and a nested dispatch's queued
+// navigation. A nested dispatch's FAULT is
+// DispatchEventTests.Dispatch_NestedDispatchInsideHandler_*, and the host-event
+// arms are HostEventArmThreadTests.
+//
+// DOES NOT COVER:
+//   - how a late fault reaches the SHELL, which is FaultNotice's pin;
+//   - late faults from TWO handlers suspended at once, each attributed to its
+//     own dispatch: only one late fault is ever raised per test;
+//   - fire-and-forget work started by a handler that NEVER completes. Its scope
+//     is never Done, so that work's faults stay attributed to the handler for as
+//     long as it is suspended; that is by design, and unpinned;
+//   - a dispatch still pending when the render thread shuts down, which is
+//     Task 4's teardown.
 // ─────────────────────────────────────────────────────────────────────────────
 
 [Collection("host-session")]
@@ -550,6 +562,112 @@ public sealed class DispatchWindowScopeTests
         RunFireAndForget(strict: false, out List<string> log);
         Assert.Contains(log, l => l.Contains("ff-boom"));
         Assert.DoesNotContain(log, l => l.Contains("after the handler's first await"));
+    }
+
+    [Fact]
+    public void AFireAndForgetFault_FromAPendingHandler_AfterItCompletes_TakesTheNoWindowPath()
+    {
+        // STRICT: the no-window path rethrows, so the render fault escapes and faults
+        // the work. If the pending handler's scope were never marked Done, the fault
+        // would be recorded as that handler's late fault, AFTER its pending Task had
+        // already completed, and read by nobody.
+        Task strictWork = RunPendingThenFireAndForget(strict: true, out _);
+        Assert.True(strictWork.IsFaulted,
+            $"in strict mode the fire-and-forget work ended {strictWork.Status}: its render fault "
+            + "was swallowed instead of rethrown. It was attributed to the pending handler that "
+            + "started it, which had already COMPLETED, so its scope was not marked Done.");
+        Assert.Equal("pff-boom", strictWork.Exception!.GetBaseException().Message);
+
+        // PRODUCTION: logged as an ordinary render fault, never as the handler's.
+        RunPendingThenFireAndForget(strict: false, out List<string> log);
+        Assert.Contains(log, l => l.Contains("pff-boom"));
+        Assert.DoesNotContain(log, l => l.Contains("after the handler's first await"));
+    }
+
+    /// <summary>Clicks PendingThenFireAndForgetProbe's "photo" with the host call held,
+    /// completes the call so the handler finishes after starting gated work, waits for
+    /// the handler's pending Task, then releases the gate so the work throws. Returns
+    /// the work's Task once it has finished.</summary>
+    private static Task RunPendingThenFireAndForget(bool strict, out List<string> log)
+    {
+        var pending = new List<Task>();
+        var (renderer, frames) = StartSession();
+        var previousObserver = ObservePending(pending);
+        PendingThenFireAndForgetProbe.Gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        PendingThenFireAndForgetProbe.Work = null;
+        Task? work = null;
+        try
+        {
+            renderer.StrictErrors = strict;
+            renderer.Mount<PendingThenFireAndForgetProbe>();
+            FakeShellHost.AutoCompleteHostCall = false;
+            log = CaptureLog(() =>
+            {
+                Assert.Equal(0, DispatchBounded(frames.ClickHandlerForLabel("photo"), "photo"));
+                Task handler;
+                lock (pending)
+                {
+                    Assert.True(pending.Count == 1,
+                        $"the handler should be suspended on the held host call, but {pending.Count} "
+                        + "dispatch(es) are still running");
+                    handler = pending[0];
+                }
+                Assert.True(FakeShellHost.LastHostCallRequestId >= 0, "the handler never began a host call");
+
+                NativeShellBridge.CompleteHostCall(
+                    FakeShellHost.LastHostCallRequestId, (int)CameraStatus.Cancelled, null);
+                WaitBounded(handler);
+                // Anchor: the handler has COMPLETED, cleanly, and its work is still gated.
+                Assert.True(handler.IsCompletedSuccessfully, $"the handler ended {handler.Status}");
+                work = Assert.IsAssignableFrom<Task>(PendingThenFireAndForgetProbe.Work);
+                Assert.False(work.IsCompleted, "the fire-and-forget work finished before its gate opened");
+
+                PendingThenFireAndForgetProbe.Gate.SetResult();
+                WaitBounded(work);
+                Assert.True(work.IsCompleted, "the fire-and-forget work never finished");
+            });
+            return work!;
+        }
+        finally
+        {
+            PendingThenFireAndForgetProbe.Gate.TrySetResult();
+            TearDown(pending, previousObserver);
+        }
+    }
+
+    /// <summary>"photo" awaits a camera capture — a host call the test holds open —
+    /// then starts work that awaits a gate and re-renders into a BuildRenderTree that
+    /// throws, and completes without waiting for it.</summary>
+    private sealed class PendingThenFireAndForgetProbe : ComponentBase
+    {
+        public static TaskCompletionSource Gate = new();
+        public static Task? Work;
+        private bool _explode;
+
+        [Inject] public BlazorNative.Device.ICamera Camera { get; set; } = default!;
+
+        private async Task Photo()
+        {
+            await Camera.CapturePhotoAsync();
+            Work = Later();
+        }
+
+        private async Task Later()
+        {
+            await Gate.Task;
+            _explode = true;
+            StateHasChanged();
+        }
+
+        protected override void BuildRenderTree(RenderTreeBuilder b)
+        {
+            if (_explode)
+                throw new InvalidOperationException("pff-boom");
+            b.OpenElement(0, "button");
+            b.AddAttribute(1, "onclick", EventCallback.Factory.Create<MouseEventArgs>(this, Photo));
+            b.AddContent(2, "photo");
+            b.CloseElement();
+        }
     }
 
     [Fact]
