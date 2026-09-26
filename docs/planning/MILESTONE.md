@@ -1,181 +1,104 @@
-# Milestone 15: A Standard for Pins
+# Milestone 16: Unblock the Dispatch Lane
 
-**Status:** complete
-**Started:** 2026-09-22
-**Completed:** 2026-09-26 — verdict **PASS WITH FINDINGS**
-([re-audit](../plans/2026-09-26-milestone-15-reaudit.md); the first
-[audit](../plans/2026-09-25-milestone-15-audit.md) FAILED and stays on record)
+**Status:** active
+**Started:** 2026-09-26
 
-**Design:** [`docs/superpowers/specs/2026-09-22-milestone-15-design.md`](../superpowers/specs/2026-09-22-milestone-15-design.md)
-**Predecessor:** Milestone 14 — Twin Divergence, Closed Mechanically (complete 2026-09-22, verdict
-**PASS WITH FINDINGS**, [audit](../plans/2026-09-22-milestone-14-audit.md)).
-**Source:** M14's own audit. Its central criterion — *a NEW divergence reds* — was met **narrowly**,
-and the four reproduced holes filed as [#364][i364] carried an argument larger than themselves:
-the thing to reason about is a pin's **coverage**, not its assertions.
+**Design:** [`docs/superpowers/specs/2026-09-26-milestone-16-design.md`](../superpowers/specs/2026-09-26-milestone-16-design.md)
+**Predecessor:** Milestone 15 — A Standard for Pins (complete 2026-09-26, verdict **PASS WITH
+FINDINGS**, [re-audit](../plans/2026-09-26-milestone-15-reaudit.md)).
+**Closes:** [#345][i345], [#346][i346], [#8][i8]. **Re-assesses on measurement:** [#9][i9].
 
-[i296]: https://github.com/MarcelRoozekrans/BlazorNative/issues/296
-[i297]: https://github.com/MarcelRoozekrans/BlazorNative/issues/297
-[i298]: https://github.com/MarcelRoozekrans/BlazorNative/issues/298
-[i302]: https://github.com/MarcelRoozekrans/BlazorNative/issues/302
-[i356]: https://github.com/MarcelRoozekrans/BlazorNative/issues/356
-[i357]: https://github.com/MarcelRoozekrans/BlazorNative/issues/357
-[i364]: https://github.com/MarcelRoozekrans/BlazorNative/issues/364
-[i365]: https://github.com/MarcelRoozekrans/BlazorNative/issues/365
-[i291]: https://github.com/MarcelRoozekrans/BlazorNative/issues/291
+[i8]: https://github.com/MarcelRoozekrans/BlazorNative/issues/8
+[i9]: https://github.com/MarcelRoozekrans/BlazorNative/issues/9
+[i345]: https://github.com/MarcelRoozekrans/BlazorNative/issues/345
+[i346]: https://github.com/MarcelRoozekrans/BlazorNative/issues/346
 
 ## Goal
 
-This repo defends its invariants with **drift pins** — tests that read source or config and assert
-that two copies of one truth agree. There are **at least nineteen** of them and **four** manifests,
-accumulated across many milestones, each written to catch the bug in front of it. They have no
-shared standard, and it shows: M14's newest pin was defeated by **five successive reviews**, each
-with a shape the previous round had not tried, and every fix was local to the instance.
+Every export that runs handler code runs it inline, then blocks on `GetAwaiter().GetResult()`. When
+a handler awaits the host, that blocking freezes the shell's dispatch lane (#345), and Android
+predictive back, which asks .NET for its verdict from the main thread, waits behind it (#346).
+**The same blocking is, by accident, the only thing serialising renderer work** — after an awaited
+host call the continuation renders on a thread-pool thread while the lane thread waits. The
+deadlock and the serialisation are one mechanism today, so "return early" alone would trade a
+deadlock for a data race.
 
-M15 establishes what a pin must do to be trusted, applies that standard to every existing pin, and
-closes the backlog of missing and broken ones as **consequences rather than as nine separate
-errands**. The user-visible outcome is narrow but real: **a green CI run means more afterwards than
-it does today.**
+M16 separates them: the renderer gets **one .NET-owned thread**; exports post work to it and wait
+only for the synchronous part, so the shell lane is freed the moment a handler yields. A fault after
+the first await reaches the shell through the existing `hostCallBegin` slot. .NET pushes
+`canGoBack` and Android's back callback is toggled to match. **No ABI change.**
 
-## The thesis, stated precisely
-
-**A pin that can pass while checking nothing is not a pin.** Today we cannot say which of ours can.
-
-Vacuity is more general than "the scan stopped matching". Any assertion of the form *for every X,
-assert Y* passes trivially when there are no X — whether X came from a regex over source, a
-directory walk, or a collection comparison. `RouteMenuDriftTests` performs **no file scanning at
-all**, and `EveryRoutedPage_ExceptTheTwoExemptions_HasAMenuRow` still passes over an empty page
-list.
-
-A first heuristic measurement suggested **6 of the 16 in `Runtime.Tests`** carry no anti-vacuity
-assertion. Some may not need one. **Phase 15.0 replaces that guess with a measured per-pin
-verdict** — the number is not to be trusted until it is.
-
-> **Correction, found in 15.0's first minutes and kept here as evidence rather than tidied away.**
-> That heuristic counted **one test project**. The real population is **19 `*DriftTests` across
-> three projects**, plus at least five more pins that do not carry that suffix at all —
-> `LayoutSurfacePinTests`, `PackageVersionPinTests`, `ReleaseWorkflowPinTests`,
-> `DefaultStructTrapSweepTests`, `AnalyzerDiagnosticRosterTests`.
->
-> **You cannot enumerate this population by name.** `Drift`, `Pin`, `Sweep` and `Roster` are all in
-> use. That is not cosmetic: it directly threatens the DoD's enforcement criterion, because a
-> convention test reflecting over `*DriftTests` would **silently miss a quarter of the pins** —
-> this milestone's own bug class, reproduced inside the mechanism meant to close it.
->
-> **So 15.0 has a prior question: *what makes a test a pin?*** The naming is evidence that the
-> answer is not currently obvious, and enforcement cannot key on a suffix a quarter of the
-> population does not use.
-
-> **[#357][i357] is the thesis in miniature.** 14.1's completeness pin lacks an assertion that
-> 14.3's structurally identical twin has. **The guards built to catch twin divergence have drifted
-> from each other.**
+The user-visible outcome: **an app cannot freeze because a handler waited for a permission sheet,
+and the back gesture always answers.**
 
 ## Definition of Done
 
-- [x] All planned phases complete
-- [x] All tests passing — .NET, JVM, **and both device lanes dispatched**, with each lane's
-      `headSha` compared against the PR head rather than its conclusion read alone
-- [x] **A written pin standard exists**, in the repo rather than in a milestone doc, stating what
-      every drift pin must do — at minimum: it must fail when it scans nothing, it must fail when
-      its subject moves, and it must state what it does **not** cover.
-- [x] **Every one of the existing pins is assessed against that standard**, recorded per
-      pin as *conforms*, *fixed*, or *exempt with a written reason*. An unassessed pin is a gap;
-      "exempt" is an acceptable outcome, **silence is not**.
-      **MET NARROWLY — see the [re-audit](../plans/2026-09-26-milestone-15-reaudit.md).** Every
-      known pin carries a verdict on all five rules, every partial named at its row. Narrow because
-      the non-tree population is kept by hand, and a reviewer, not the sweep, found its newest
-      member. This item first scored **NOT MET** twice: in 15.6, two named pins had no verdict; in
-      15.8, the register had never assessed Rule 4. Both FAILs are on record.
-- [x] **The standard is enforced mechanically, not by review.** A new pin that can pass while
-      checking nothing must red. If no mechanical form exists, that is a finding to record
-      explicitly with its evidence — never a line to quietly drop.
-      **MET NARROWLY — through its recorded fallback.** Rule 6 reachability reds mechanically
-      (`PinPopulationTests`); nothing mechanically reds a *new* pin that can pass while checking
-      nothing. 15.0 measured why: a presence-style convention test scored 0 of 4 against the known
-      defects. That negative result is the finding, recorded with its evidence.
-- [x] **[#364][i364] is answered, not merely fixed.** The auth-semantics pin's *coverage* is
-      written down — which trees, which spellings, which file kinds — and its four known holes
-      close as consequences of that definition rather than as four patches.
-      **MET NARROWLY.** Coverage is written once in `src/shell-source-roots.json`, and three of the
-      four holes closed as consequences of it. The fourth, F3, closed as a patch. Residuals are filed
-      as #411 and #412.
-- [x] **[#296][i296] is closed by the standard rather than around it.** It is the first live
-      divergence to meet the new mechanism, and **it must red before it is fixed**.
-- [x] **[#357][i357], [#297][i297] and [#302][i302] are closed** — an asymmetry between twins, a
-      missing pin, and a missing guard.
-- [x] **[#291][i291] is answered for prose.** M14 found **three** unpinned documentation
-      transcription pairs. Either they are pinned, or the milestone records that prose pinning was
-      attempted and judged not worth its cost — **with the reasoning, not the conclusion alone**.
-- [x] **The small corrections land:** [#298][i298], [#356][i356], [#365][i365].
-- [x] **No new public API, wire or ABI change** — verified by diffing, not asserted.
+- [ ] All planned phases complete
+- [ ] All tests passing — .NET, JVM, **and both device lanes dispatched**, with each lane's
+      `headSha` compared against the PR head
+- [ ] **[#345][i345] is fixed.** `DispatchLaneBlockingTests` is **flipped, not deleted** — the
+      export returns while a host call is still open — and the false comment at
+      `Exports.cs:504-506` is corrected **as the first commit** of the fix.
+- [ ] **[#346][i346] is fixed.** The JVM `..._still_deadlocks_...` test is flipped. **No main-thread
+      caller blocks on .NET** — back, `onNewIntent`, and iOS's `navigateDispatcher` included. An
+      **iOS XCTest twin** of the lane-blocking pin exists.
+- [ ] **One thread owns the renderer, and a pin proves it.** Every frame emission and every
+      renderer mutation happens on the render thread; `ReportIfNotTheRenderOwnerThread` fails under
+      test instead of only logging.
+- [ ] **The sync-mount contract survives.** `MountSyncTests` pins the *behaviour*, not the type
+      name `InlineDispatcher`, and 13.2's `Dispose → InvokeAsync` recursion is kept as a named
+      regression test.
+- [ ] **[#8][i8] is fixed.** A fault after the first await reaches `onError` on both shells, proven
+      on the JVM and on XCTest. The rc contract — "rc reports the synchronous part" — is written
+      once, and every export's rc table agrees with it.
+- [ ] **[#9][i9] is re-assessed on measurement** after the async offload lands: fixed, or
+      re-ledgered with a new trigger. Never silently closed.
+- [ ] **No ABI change**, verified by diffing — 80-byte bridge struct, 10 exports. The new notice
+      ops live in `src/wire-vocabulary.json` and are generated like the others.
+- [ ] **Every new pin conforms to [`docs/pin-standard.md`](../pin-standard.md)** on Rules 2–5 and 7,
+      with its mutations recorded.
 
 > **No "release tagged in git" criterion.** `docs/planning/CONVENTIONS.md` records **`Milestone
-> completion tags a release: no`** — release-please owns the `v<semver>` namespace. A checkbox
-> nothing will ever tick is a permanent false gap.
+> completion tags a release: no`** — release-please owns the `v<semver>` namespace.
 
 ## Phases
 
-1. Phase 15.0 — the pin standard [complete] — closed 2026-09-22 on
-   [PR #372](https://github.com/MarcelRoozekrans/BlazorNative/pull/372) +
-   [PR #373](https://github.com/MarcelRoozekrans/BlazorNative/pull/373); .NET 1111 → **1112**;
-   no production source change. **The population is enumerable by BEHAVIOUR** — 24 copy-pasted
-   `RepoRoot()` walks became one, and **callers of the shared helper are the pin population,
-   exactly**. The count had been wrong **four** times, every time by counting a name. It found
-   **six unhardened comment strippers**, one of them letting a bare undeclared `NSLog` hide
-   behind an ordinary URL and leaving a **PII guard green** over a tree that contained it — now
-   one stripper, eight callers. Census judges **per fact**: 118 facts, 102 pins,
-   **93 conforms / 9 gap / 16 exempt**. **The enforcement verdict is NEGATIVE** and is the
-   phase's most useful output: a presence-style convention test scores **0 of 4** against the
-   known defects, because all four already execute a count assertion on the **wrong set** — so
-   it would hand out a green under a name claiming coverage. 15.1 re-scoped accordingly
-2. Phase 15.1 — enforce the standard [complete] — all nine gap facts closed, plus the live style-table defect and the two non-pin detectors; suite 1112 → 1132 (#377)
-3. Phase 15.2 — define the auth pin's coverage [complete] — #364's four holes closed as consequences of one roster, `src/shell-source-roots.json`; suite 1132 → 1163 (#382)
-4. Phase 15.3 — the first live test: deep-link scheme [complete] — #296 closed through the mechanism: one home for the scheme, six copies pinned, redded on Android before the fix; suite 1163 → 1169, Android 226 → 228 (#384)
-5. Phase 15.4 — the missing guards [complete] — population key decided as a hand-kept register under Rule 6; RouteMenuDriftTests floored, PatchKindDriftTests and the release-notes parse guard added; #297 #302 #375 closed; suite 1169 → 1176 (#388, guard follow-up #392)
-6. Phase 15.5 — prose, and the small corrections [complete] — all 20 hand-written docs pages audited: 46 false claims across 19 fixed; docs samples compiled in CI with the analyzers, inline Bn names held to what exists; #365's prose pairs answered with reasoning; #291 #298 #356 #365 closed, #356's behaviour split to #396; suite 1176 → 1186 (#397, #399)
-7. Phase 15.6 — audit and close [complete] — audit FAILS 7 MET / 2 NARROW / 2 NOT MET: two named pins never assessed, and #357 never closed; gaps to 15.7, re-audit in 15.8; #401–#407 filed (#408)
-8. Phase 15.7 — close the audit gaps [complete] — the non-tree pin population measured: 93 files read, 40 pin facts, every one with a verdict — 25 fixed, 1 tautology retired, 3 partial named; #357 found already closed by #408's merge and recorded truthfully; #411–#414 filed; suite 1186 → 1200 (#415)
-9. Phase 15.8 — re-audit and close [complete] — the re-audit first recorded FAIL on item 4, never assessed against Rule 4; closed inside the phase, re-measured MET NARROWLY; final verdict PASS WITH FINDINGS, 8 MET / 3 NARROW / 0 NOT MET; #417 #418 filed; suite 1200 → 1201 (#419)
+1. Phase 16.0 — the render-thread spike [pending]
+2. Phase 16.1 — the render thread [pending]
+3. Phase 16.2 — async faults [pending]
+4. Phase 16.3 — back and navigation off the main thread [pending]
+5. Phase 16.4 — starvation, measured [pending]
+6. Phase 16.5 — audit and close [pending]
 
-**Ordering rationale.** 15.0 comes first because the standard is what everything else applies;
-writing it afterwards would make it a description of whatever we happened to do. **15.2 and 15.3
-are adjacent deliberately** — 15.2 defines coverage for the pin that has been defeated five times,
-and 15.3 is the first live divergence to meet it, which is the cheapest honest test of whether the
-definition was any good. 15.4 and 15.5 are independent of each other and of 15.3.
+**Ordering rationale.** 16.0 first because it is the only phase that can end the milestone: **a
+measured no-go stops M16 and goes to the owner.** 16.1 next. 16.2 and 16.3 each depend on 16.1 and
+not on each other. 16.4 needs 16.1's offload in place, or there is nothing new to measure.
 
 ## Risk areas
 
 | Risk | Impact | Mitigation |
 |---|---|---|
-| **The standard describes what we already do**, so every pin "conforms" and nothing changes | The milestone documents the status quo, and the sixth review finds a seventh shape | 15.0's census is **measured per pin, not asserted**, and must replace the heuristic 6-of-16-in-one-project with a real number. If it finds every pin conforming, that is a finding to challenge — the evidence says otherwise |
-| **No mechanical enforcement exists** for "a pin must not pass while checking nothing" | The standard degrades into a review checklist, which is what M14 already had | Record it explicitly with evidence rather than dropping it. A partial mechanism — enforcing only the anti-vacuity half — is an acceptable honest outcome |
-| **15.2 defines coverage too narrowly** and 15.3 exposes it immediately | Rework, and the definition loses credibility | That is the *point* of the adjacency. An early failure there is cheap and informative; finding it in 15.6's audit is not |
-| **Prose pinning proves not worth its cost** | #291 goes unanswered again, having been deferred once already | "Attempted and judged not worth it, with reasoning" is an acceptable pass. **Silence is not** |
-| **The pin population is a lot of surface for one milestone** | 15.1 balloons and crowds out 15.2-15.5 | 15.0's census sizes it before 15.1 commits. If the non-conforming set is large, split 15.1 by pin family and say which were deferred |
-| **The milestone polishes pins while the truths they guard rot** | A perfectly standardised population guarding stale facts | 15.3 and 15.4 are **real bugs**, not pin work. They are here deliberately so the milestone ships behaviour, not only mechanism |
+| **13.2's door is shut for a reason not yet found** | M16's core does not work | 16.0 is a spike with an explicit no-go that stops the milestone — not a phase that must succeed |
+| **Frames arriving after the export returns break shell assumptions** | Device-only glitches | The render thread is the only frame emitter, so frames stay serial; 16.1 audits Android's `pending` list and the iOS trampoline; both device lanes run every phase |
+| **The rc meaning changes quietly** | A third-party shell reads rc 0 as "handler finished" | The contract is written in the C header and `Exports.cs`, and called out in the changelog as a behaviour change |
+| **The `canGoBack` stale window** | A back press swallowed at root, or the app finishing one step early | 16.3 writes down which side wins and tests each direction |
+| **A threading bug only a device exposes** | Green CI, a hung phone | Both device lanes, `headSha` compared; the iOS twin pin makes iOS measurable |
+| **New pins that pass while checking nothing** | M15's lesson repeats inside M16 | The DoD applies the standard; every pin mutation-proven |
 
 ## Out of scope
 
-- **1.0** — carried forward from M14's scoping decision 1. Whether the pin standard is a 1.0
-  requirement is a separate owner call.
-- **#17's Apple-account cluster and real-device execution** — externally dependent, untouched here.
-  **No phase in this milestone needs a device, an Apple account, or an external contributor**, and
-  that is deliberate.
-- **The feature backlog** — #18, #21, #24, #284, #285, #286. Each is its own milestone.
-- **The accepted hardening debt** — #8, #9, #12, #13, owner-accepted as Q3.
+- **1.0 and the remaining iPhone items** — APNs, universal links, thermal.
+- **The feature backlog** — #284, #285.
+- **M15's carried debt** — #395–#418, except where a 16.x phase edits the same file.
+- **#12 and #13** — the hardening ledger's perf items.
 
 ## Open questions
 
-- **Does a mechanical form exist for "this pin cannot pass while checking nothing"?** A Roslyn
-  analyzer over test methods, a convention test reflecting over pin classes, or something cheaper.
-  **15.0 must answer this**, because the DoD's enforcement criterion depends on it — and a negative
-  answer reshapes 15.1 rather than failing it.
-- **Is set-comparison in scope for the standard?** `RouteMenuDriftTests` scans nothing and can
-  still go vacuous. The design says yes — vacuity is about the *assertion shape*, not the input —
-  but it widens the census. **Confirm in 15.0.**
+- **16.3:** which side wins in the `canGoBack` stale window.
+- **16.4:** whether #9 is fixed or re-ledgered — decided on measurement.
 
 ## Audit History
 
 | Date | Verdict | Gaps |
 |---|---|---|
-| 2026-09-25 | **FAIL** — 7 MET, 2 MET NARROWLY, 2 NOT MET ([audit](../plans/2026-09-25-milestone-15-audit.md), #408) | Item 4: `LayoutSurfacePinTests` and `DefaultStructTrapSweepTests` had no verdict. Item 8: #357 was never closed. Both closed in 15.7 |
-| 2026-09-26 | **FAIL**, then **PASS WITH FINDINGS** — 8 MET, 3 MET NARROWLY, 0 NOT MET ([re-audit](../plans/2026-09-26-milestone-15-reaudit.md), #419) | The first pass failed item 4: the register never assessed Rule 4. Closed inside 15.8 and re-measured. Carried: #395, #396, #401–#407, #411–#414, #417, #418 |
+| — | *(not yet audited)* | — |

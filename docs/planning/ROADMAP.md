@@ -3134,6 +3134,64 @@ inherits the narrowing. The 15.7 plan listed Rules 2, 3, 5 and 7; the DoD named 
 
 ---
 
+### 🔄 Milestone 16 — Unblock the Dispatch Lane  *(active — started 2026-09-26)* [status: active]
+
+**Goal:** Give the renderer one .NET-owned thread so exports stop blocking on async handlers —
+freeing the shell's dispatch lane (#345), taking Android back off the main thread (#346), and
+delivering faults after the first await to the shell (#8) — with **no ABI change**. Today the
+lane-blocking `GetAwaiter().GetResult()` is both the deadlock and, by accident, the only thing
+serialising renderer work, so the two must be separated rather than the wait simply removed.
+**Started:** 2026-09-26
+**Design:** [`docs/superpowers/specs/2026-09-26-milestone-16-design.md`](../superpowers/specs/2026-09-26-milestone-16-design.md)
+· full scope, DoD and risks in [MILESTONE.md](MILESTONE.md).
+**Closes:** #345, #346, #8. **Re-assesses on measurement:** #9.
+
+#### Phase 16.0: The render-thread spike [status: pending]
+**Goal:** Measure whether a .NET-owned single-thread dispatcher can replace `InlineDispatcher` —
+exports post and wait for the synchronous part, continuations marshal back — against all tests,
+`MountSyncTests`, the navigation dispatch-window tests, and 13.2's `Dispose → InvokeAsync`
+recursion. Output a measured go/no-go; **a no-go stops M16 and goes to the owner.**
+**Surface:** Backend
+**HelpWanted:** no
+
+#### Phase 16.1: The render thread [status: pending]
+**Goal:** Replace the inline dispatcher with the render thread: correct the false `Exports.cs`
+comment first, free the lane on yield and flip `DispatchLaneBlockingTests`, pin render-thread
+ownership, move `MountSyncTests` from the type name to behaviour, write the rc contract once, and
+audit both shells' frame paths. Closes #345.
+**Surface:** Backend
+**HelpWanted:** no
+
+#### Phase 16.2: Async faults [status: pending]
+**Goal:** Make #8's capture window continuous on the render thread and deliver faults after the
+first await to both shells' `onError`, through a reserved notice op generated from
+`src/wire-vocabulary.json` and sent over `hostCallBegin`. Closes #8.
+**Surface:** Backend
+**HelpWanted:** no
+
+#### Phase 16.3: Back and navigation off the main thread [status: pending]
+**Goal:** Push `canGoBack` from .NET and toggle Android's `OnBackInvokedCallback` to match; make back
+and deep-link navigation fire-and-forget on both shells; write and test the stale-window rule;
+update `src/dispatch-surface.json`, add the iOS twin pin, and update the template mirrors. Closes
+#346.
+**Surface:** Mixed
+**HelpWanted:** no
+
+#### Phase 16.4: Starvation, measured [status: pending]
+**Goal:** With async offload in place, measure what a slow *synchronous* handler still costs, then
+fix #9 or re-ledger it with a new trigger; publish an app-author page on what runs where and what
+rc and async faults mean.
+**Surface:** Mixed
+**HelpWanted:** no
+
+#### Phase 16.5: Audit and close [status: pending]
+**Goal:** Run `audit-milestone` against the DoD on live evidence and close M16. **No tag**, per
+`CONVENTIONS.md`.
+**Surface:** Docs
+**HelpWanted:** no
+
+---
+
 ### 🔮 Backlog / Future *(uncommitted — promote to a dated milestone when they approach)*
 
 **Enterprise readiness** (old P7): OTA updates with delta + rollback, MD3 / iOS HIG
