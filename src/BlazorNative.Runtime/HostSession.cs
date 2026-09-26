@@ -34,6 +34,51 @@ internal static unsafe class HostSession
     private static NativeRenderer? s_renderer;
     private static NativeNavigationManager? s_navigation; // born with the session (Phase 3.5)
     private static IntPtr s_frameCallback; // delegate* unmanaged[Cdecl]<BlazorNativeFrame*, void>
+    private static FrameGate? s_frameGate; // the live session's gate; born and detached with it
+
+    /// <summary>How long shutdown waits for callbacks already in flight, and, separately,
+    /// for the render thread to join (Phase 16.1).</summary>
+    private static readonly TimeSpan QuiesceBudget = TimeSpan.FromSeconds(5);
+
+    /// <summary>Phase 16.1: a counted region around every frame-callback invocation.
+    /// The sink enters it before it reads the callback pointer and leaves it after the
+    /// callback returns; <see cref="CloseAndDrain"/> refuses new entries and waits for the
+    /// ones in flight. So once shutdown has closed and drained the gate, no frame of that
+    /// session can reach the host, including one produced later by a handler that
+    /// outlived the render thread's join, and none is inside the host's trampoline.</summary>
+    internal sealed class FrameGate
+    {
+        private int _inFlight;
+        private volatile bool _closed;
+
+        /// <summary>Enters the region. False once the gate is closed: the caller drops
+        /// the frame.</summary>
+        public bool TryEnter()
+        {
+            // Increment BEFORE reading _closed, and CloseAndDrain writes _closed BEFORE
+            // reading the count, with a full fence on each side: either the closer sees
+            // this entry and waits for it, or this entry sees the gate closed.
+            Interlocked.Increment(ref _inFlight);
+            if (_closed)
+            {
+                Interlocked.Decrement(ref _inFlight);
+                return false;
+            }
+            return true;
+        }
+
+        /// <summary>Leaves the region entered by a successful <see cref="TryEnter"/>.</summary>
+        public void Exit() => Interlocked.Decrement(ref _inFlight);
+
+        /// <summary>Closes the gate, then waits until no callback is in flight, bounded by
+        /// <paramref name="budget"/>. Returns whether it drained.</summary>
+        public bool CloseAndDrain(TimeSpan budget)
+        {
+            _closed = true;
+            Interlocked.MemoryBarrier();
+            return SpinWait.SpinUntil(() => Volatile.Read(ref _inFlight) == 0, budget);
+        }
+    }
 
     // Phase 0.4.0-prep Gate A (design §1): the app's captured service-
     // registration delegate — the ConfigureServices seam. Written ONCE via
@@ -93,7 +138,10 @@ internal static unsafe class HostSession
     }
 
     /// <summary>Stores the host's frame callback. IntPtr.Zero disables
-    /// delivery; re-registration is allowed (last wins).</summary>
+    /// delivery; re-registration is allowed (last wins). Phase 16.1: this does NOT
+    /// drain a callback already in flight, so a host must not free the previous
+    /// callback on the strength of re-registering. Only <see cref="Shutdown"/> drains:
+    /// it closes the session's frame gate first, and clears the pointer after.</summary>
     public static void SetFrameCallback(IntPtr fnPtr)
         => Volatile.Write(ref s_frameCallback, fnPtr);
 
@@ -145,28 +193,98 @@ internal static unsafe class HostSession
     internal static NativeNavigationManager? CurrentNavigationManager
         => Volatile.Read(ref s_navigation);
 
-    /// <summary>Test-only: tears down the session singleton so "no session"
-    /// paths are testable and each test gets a fresh renderer. Tests touching
-    /// HostSession serialize via the "host-session" xUnit collection — the
-    /// production ABI never calls this.</summary>
-    internal static void ResetForTests()
+    /// <summary>Detaches the live session under <c>s_lock</c> and returns its renderer
+    /// and frame gate, so the caller can quiesce them OUTSIDE the lock. Nothing here
+    /// waits. The next EnsureSession builds a fresh session.</summary>
+    private static (NativeRenderer? Renderer, FrameGate? Gate) Detach()
     {
         lock (s_lock)
         {
-            // BL0006: Dispose comes from Blazor's internal Renderer base —
-            // same deliberate-access rationale as CurrentRenderer above.
-#pragma warning disable BL0006
-            Volatile.Read(ref s_renderer)?.Dispose();
-#pragma warning restore BL0006
+            NativeRenderer? renderer = Volatile.Read(ref s_renderer);
+            FrameGate? gate = Volatile.Read(ref s_frameGate);
             Volatile.Write(ref s_renderer, null);
+            Volatile.Write(ref s_frameGate, null);
             Volatile.Write(ref s_navigation, null);
             Volatile.Write(ref s_currentRootComponentId, -1);
-            Volatile.Write(ref s_frameCallback, IntPtr.Zero);
-            // Gate A: clear the app's captured ConfigureServices delegate too,
-            // so a session-composition capture never leaks across tests (the
-            // ConfigureServices seam's isolation, alongside the renderer's).
-            Volatile.Write(ref s_configureServices, null);
+            return (renderer, gate);
         }
+    }
+
+    /// <summary>Quiescence steps 1 and 2: close the session's frame gate and drain the
+    /// callbacks in flight, THEN clear the callback pointer. Never under s_lock.</summary>
+    private static void CloseGateAndClearCallback(FrameGate? gate)
+    {
+        if (gate is not null && !gate.CloseAndDrain(QuiesceBudget))
+        {
+            BnLog.Warn("HostSession",
+                $"a frame callback was still in flight {QuiesceBudget.TotalSeconds:0} s after shutdown "
+                + "closed the frame gate; shutdown continues without it");
+        }
+        Volatile.Write(ref s_frameCallback, IntPtr.Zero);
+    }
+
+    /// <summary>Quiescence step 3: shut the render thread's queue and join it, bounded.
+    /// Logs a warning when it did not join. Never under s_lock.</summary>
+    private static void JoinRenderThread(NativeRenderer renderer)
+    {
+        if (renderer.Dispatcher is RenderThreadDispatcher dispatcher
+            && !dispatcher.Shutdown(QuiesceBudget))
+        {
+            BnLog.Warn("HostSession",
+                $"the render thread did not join within {QuiesceBudget.TotalSeconds:0} s because a "
+                + "handler has not yielded; its later frames are dropped at the closed frame gate");
+        }
+    }
+
+    /// <summary>Phase 16.1 — behind blazornative_shutdown. Once this returns, no frame
+    /// of the session can reach the host's callback and none is in flight, even when a
+    /// handler never yields. In order:
+    /// <list type="number">
+    /// <item>detach the session under s_lock, so the next EnsureSession builds a fresh
+    /// one instead of handing out a renderer whose thread is gone;</item>
+    /// <item>close the frame gate and drain the callbacks already in flight;</item>
+    /// <item>clear the callback pointer;</item>
+    /// <item>shut the render thread's queue and join it, bounded at 5 s, with a warning
+    /// if it did not join. Work posted after this completes as cancelled.</item>
+    /// </list>
+    /// Steps 2 to 4 run outside s_lock. The renderer is not disposed: its components'
+    /// Dispose needs the render thread, which a handler may still hold.</summary>
+    internal static void Shutdown()
+    {
+        (NativeRenderer? renderer, FrameGate? gate) = Detach();
+        CloseGateAndClearCallback(gate);
+        if (renderer is not null)
+            JoinRenderThread(renderer);
+    }
+
+    /// <summary>Test-only: tears down the session singleton so "no session"
+    /// paths are testable and each test gets a fresh renderer. Tests touching
+    /// HostSession serialize via the "host-session" xUnit collection — the
+    /// production ABI never calls this. Phase 16.1: the statics are swapped out
+    /// under s_lock, and everything that waits (the gate's drain, the renderer's
+    /// dispose on its render thread, and the join) runs after the lock is
+    /// released. The session's render thread is joined, so no thread leaks.</summary>
+    internal static void ResetForTests()
+    {
+        (NativeRenderer? renderer, FrameGate? gate) = Detach();
+        // Gate A: clear the app's captured ConfigureServices delegate too,
+        // so a session-composition capture never leaks across tests (the
+        // ConfigureServices seam's isolation, alongside the renderer's).
+        Volatile.Write(ref s_configureServices, null);
+
+        CloseGateAndClearCallback(gate);
+        if (renderer is null)
+            return;
+
+        // BL0006: Dispose comes from Blazor's internal Renderer base —
+        // same deliberate-access rationale as CurrentRenderer above. The
+        // components are disposed ON the render thread, which waits for any
+        // handler holding it: the reason none of this runs under s_lock.
+#pragma warning disable BL0006
+        renderer.Dispose();
+#pragma warning restore BL0006
+        // Dispose joins on its way out; this call reports a join that timed out.
+        JoinRenderThread(renderer);
     }
 
     /// <summary>Test-only: the mount registry's KEYS — every name
@@ -422,18 +540,33 @@ internal static unsafe class HostSession
             renderer.StrictErrors = Volatile.Read(ref s_strictErrors)
                 || Environment.GetEnvironmentVariable("BLAZORNATIVE_STRICT") == "1";
 
+            // Phase 16.1: every callback invocation runs inside this session's frame
+            // gate, and the pointer is read INSIDE it, so Shutdown's drain covers every
+            // read of the pointer it is about to clear. A closed gate drops the frame:
+            // the session has been shut down or reset.
+            var gate = new FrameGate();
             renderer.FrameSink = frame =>
             {
-                var cb = (delegate* unmanaged[Cdecl]<BlazorNativeFrame*, void>)
-                    Volatile.Read(ref s_frameCallback);
-                if (cb == null)
-                    return; // no host callback registered — drop the frame
+                if (!gate.TryEnter())
+                    return;
+                try
+                {
+                    var cb = (delegate* unmanaged[Cdecl]<BlazorNativeFrame*, void>)
+                        Volatile.Read(ref s_frameCallback);
+                    if (cb == null)
+                        return; // no host callback registered — drop the frame
 
-                using var arena = FrameArena.Rent();
-                BlazorNativeFrame native = FrameEncoder.Encode(frame, arena);
-                cb(&native); // synchronous: arena memory dies when this returns
+                    using var arena = FrameArena.Rent();
+                    BlazorNativeFrame native = FrameEncoder.Encode(frame, arena);
+                    cb(&native); // synchronous: arena memory dies when this returns
+                }
+                finally
+                {
+                    gate.Exit();
+                }
             };
 
+            Volatile.Write(ref s_frameGate, gate);
             Volatile.Write(ref s_renderer, renderer);
             return renderer;
         }

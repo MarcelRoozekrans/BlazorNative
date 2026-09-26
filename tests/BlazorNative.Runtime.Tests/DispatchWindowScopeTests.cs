@@ -48,7 +48,7 @@ namespace BlazorNative.Runtime.Tests;
 //     is never Done, so that work's faults stay attributed to the handler for as
 //     long as it is suspended; that is by design, and unpinned;
 //   - a dispatch still pending when the render thread shuts down, which is
-//     Task 4's teardown.
+//     ShutdownQuiescenceTests.
 // ─────────────────────────────────────────────────────────────────────────────
 
 [Collection("host-session")]

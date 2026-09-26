@@ -308,13 +308,16 @@ public static class Exports
     {
         try
         {
-            // Phase 3.0d: clear the frame callback so a post-shutdown re-render
-            // (possible once Phase 3.2 wires event-driven re-renders) can never
-            // dispatch into a freed JNA trampoline after the host releases its
-            // callback object. Renderer/session state is NOT disposed (frame
-            // flush / teardown is later-phase work); the static cstrings are
-            // intentionally leaked — process-scoped lifetime.
-            HostSession.SetFrameCallback(IntPtr.Zero);
+            // Phase 16.1: shutdown QUIESCES before it returns. A render-thread
+            // continuation can emit a frame at any time, so clearing the pointer
+            // alone would leave a callback in flight inside the host's trampoline,
+            // and a thread still rendering. HostSession.Shutdown closes and drains
+            // the frame gate, clears the pointer, then joins the render thread,
+            // bounded at 5 s. After it returns no frame reaches the host, even from
+            // a handler that never yields. The session is detached, so a later
+            // mount builds a fresh one. The static cstrings are intentionally
+            // leaked — process-scoped lifetime.
+            HostSession.Shutdown();
         }
         catch (Exception ex)
         {
