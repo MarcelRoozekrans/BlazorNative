@@ -45,8 +45,11 @@ namespace BlazorNative.Runtime.Tests;
 //   - a callback that blocks for longer than the 5 s budget: shutdown, or a
 //     re-registration, then returns with it still in flight, and logs a warning;
 //   - two re-registrations racing each other;
-//   - the host-event arms' pending Tasks: only dispatch_event's pending handler is
-//     handed on as a shutdown-tracked mirror;
+//   - a REAL back or navigate that yields: both complete synchronously today, so
+//     the host-event pins hold the arm's work open through a test seam that
+//     replaces the navigation call, and the hand-on after it is what they pin;
+//   - host events other than back and navigate: the lifecycle multicast and the
+//     safe-area arm hand on no Task at all;
 //   - renderers that tests build directly and never dispose. Only threads owned by
 //     HostSession are joined by ResetForTests;
 //   - the Kotlin and Swift sides of quiescence.
@@ -290,6 +293,91 @@ public sealed unsafe class ShutdownQuiescenceTests
         Assert.True(WaitUntil(() => handler.IsCompleted, Budget),
             $"the pending handler's Task never completed without shutdown: {handler.Status}");
         Assert.Equal(TaskStatus.RanToCompletion, handler.Status);
+    }
+
+    // ── 1c. Decision 5 for the reserved host events, back and navigate ───────
+    //
+    // Both arms hand on a still-running navigation the way dispatch_event hands on a
+    // handler: as a mirror the render thread cancels at shutdown. The real navigation
+    // completes synchronously today, so the arm's work is replaced through a test
+    // seam with a Task the test holds open. The seam runs where the navigation runs,
+    // on the render thread, inside the arm; the hand-on under test is untouched.
+
+    private static Task RunHeldHostEvent(string name, bool shutdown)
+    {
+        var held = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var observed = new List<(string Name, Task Task)>();
+        Action<string, Task>? previousObserver = Exports.PendingHostEventObserver;
+        Exports.PendingHostEventObserver = (n, t) => { lock (observed) observed.Add((n, t)); };
+        // Async lambdas, so the work suspends ON the render thread and its continuation
+        // is posted back there, exactly like a real navigation that yields: after
+        // shutdown that continuation is dropped with the thread.
+        Exports.HostBackWorkForTests = () => HeldHostWork.Back(held.Task);
+        Exports.HostNavigateWorkForTests = _ => HeldHostWork.Navigate(held.Task);
+        try
+        {
+            StartSession(new List<RenderFrame>());
+            Assert.Equal(0, HostSession.TryMount("BnDemo"));
+
+            string? payload = name == BnHostEvents.Navigate ? "/settings" : null;
+            Assert.Equal(0, Exports.DispatchHostEventCore(name, payload));
+
+            Task pending;
+            lock (observed)
+            {
+                // Rule 2 anchor: the arm really handed on pending work, so the pin below
+                // reads a Task this arm produced.
+                var single = Assert.Single(observed);
+                Assert.Equal(name, single.Name);
+                pending = single.Task;
+            }
+            Assert.False(pending.IsCompleted, $"'{name}' handed on work that had already completed");
+
+            if (shutdown)
+                ShutdownExport();
+            // Complete the held work, exactly as a late navigation would finish.
+            held.TrySetResult(true);
+            // Without shutdown, let the completion reach the handed-on Task before the
+            // teardown's reset can cancel what is still tracked.
+            if (!shutdown)
+                WaitUntil(() => pending.IsCompleted, Budget);
+            return pending;
+        }
+        finally
+        {
+            held.TrySetResult(true);
+            Exports.HostBackWorkForTests = null;
+            Exports.HostNavigateWorkForTests = null;
+            Exports.PendingHostEventObserver = previousObserver;
+            TearDown();
+        }
+    }
+
+    [Theory]
+    [InlineData("back")]
+    [InlineData("navigate")]
+    public void APendingHostEvent_EndsCancelled_AtShutdown(string name)
+    {
+        Assert.Contains(name, new[] { BnHostEvents.Back, BnHostEvents.Navigate });
+        Task pending = RunHeldHostEvent(name, shutdown: true);
+        Assert.True(WaitUntil(() => pending.IsCompleted, TimeSpan.FromSeconds(2)),
+            $"host_event '{name}''s pending work was still {pending.Status} 2 s after shutdown. The arm "
+            + "handed on the raw Task, whose continuation died with the render thread, so anything "
+            + "awaiting it hangs: decision 5 says it completes as cancelled.");
+        Assert.True(pending.IsCanceled, $"host_event '{name}''s pending work ended {pending.Status}, not Canceled");
+    }
+
+    [Theory]
+    [InlineData("back")]
+    [InlineData("navigate")]
+    public void APendingHostEvent_EndsCancelled_AtShutdown_PositiveControl(string name)
+    {
+        // Rule 3: without shutdown, the same handed-on Task completes NORMALLY once the
+        // held work finishes, so the pin above is not reading an always-cancelled Task.
+        Task pending = RunHeldHostEvent(name, shutdown: false);
+        Assert.True(WaitUntil(() => pending.IsCompleted, Budget),
+            $"host_event '{name}''s pending work never completed without shutdown: {pending.Status}");
+        Assert.Equal(TaskStatus.RanToCompletion, pending.Status);
     }
 
     // ── 2. A handler that never yields: bounded shutdown, and the gate holds ─
@@ -810,4 +898,19 @@ public sealed unsafe class ShutdownQuiescenceTests
             b.CloseElement();
         }
     }
+}
+
+/// <summary>The held work behind ShutdownQuiescenceTests' host-event pins. Outside that
+/// class because it is unsafe, and an unsafe context cannot await. Each method suspends
+/// on <paramref name="held"/> wherever it is called, so called on the render thread its
+/// continuation is posted back to the render thread, like a real navigation that yields.</summary>
+internal static class HeldHostWork
+{
+    public static async Task<bool> Back(Task held)
+    {
+        await held;
+        return true;
+    }
+
+    public static async Task Navigate(Task held) => await held;
 }

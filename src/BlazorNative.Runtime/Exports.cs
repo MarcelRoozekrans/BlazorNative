@@ -437,6 +437,22 @@ public static class Exports
         }
     }
 
+    /// <summary>Receives the pending Task of a reserved host event, <c>back</c> or
+    /// <c>navigate</c>, whose navigation was still running when its export returned rc 0,
+    /// with the event name (Phase 16.1). The same shape as
+    /// <see cref="PendingDispatchObserver"/>; while it is null the interim late-fault
+    /// logger is attached instead.</summary>
+    internal static Action<string, Task>? PendingHostEventObserver;
+
+    /// <summary>Test-only: replaces <c>NavigateBackAsync</c> inside the <c>back</c> arm.
+    /// The real navigation completes synchronously today, so a test needs this to hold
+    /// the arm's work pending across shutdown. Runs on the render thread.</summary>
+    internal static Func<Task<bool>>? HostBackWorkForTests;
+
+    /// <summary>Test-only: replaces <c>NavigateToAsync</c> inside the <c>navigate</c> arm,
+    /// for the same reason as <see cref="HostBackWorkForTests"/>.</summary>
+    internal static Func<string, Task>? HostNavigateWorkForTests;
+
     /// <summary>Receives every dispatch whose handler was still running when its export
     /// returned rc 0: the handler id, the event name and the pending Task (Phase 16.1).
     /// Fault delivery for a fault after the first await hooks in here. While it is
@@ -549,10 +565,7 @@ public static class Exports
                 // Decision 5: hand on a mirror the render thread cancels at shutdown. The
                 // handler's own Task never completes once its continuation is dropped with
                 // the thread, and anything awaiting it would hang.
-                Task pending = renderer.Dispatcher is RenderThreadDispatcher dispatcher
-                    ? dispatcher.TrackUntilShutdown(outcome.Pending!)
-                    : outcome.Pending!;
-                ObservePendingDispatch(handlerId, name, pending);
+                ObservePendingDispatch(handlerId, name, TrackUntilShutdown(renderer, outcome.Pending!));
                 break;
         }
 
@@ -579,6 +592,28 @@ public static class Exports
             return;
         }
         LogLateFault($"dispatch_event handler {handlerId} '{name}'", pending);
+    }
+
+    /// <summary>Decision 5: a mirror of <paramref name="pending"/> that the renderer's
+    /// render thread cancels at shutdown. A continuation posted to a thread that has
+    /// exited is dropped, so the raw Task would never complete. Every export that hands
+    /// on a still-running Task hands on this mirror instead.</summary>
+    private static Task TrackUntilShutdown(NativeRenderer renderer, Task pending)
+        => renderer.Dispatcher is RenderThreadDispatcher dispatcher
+            ? dispatcher.TrackUntilShutdown(pending)
+            : pending;
+
+    /// <summary>Hands a reserved host event's still-running navigation to
+    /// <see cref="PendingHostEventObserver"/>, or, while none is set, to the interim
+    /// late-fault logger.</summary>
+    private static void ObservePendingHostEvent(string name, Task pending)
+    {
+        if (PendingHostEventObserver is { } observer)
+        {
+            observer(name, pending);
+            return;
+        }
+        LogLateFault($"host_event '{name}'", pending);
     }
 
     /// <summary>Logs the fault of a Task that was still running when its export returned,
@@ -851,10 +886,12 @@ public static class Exports
 
         try
         {
-            Task<bool> back = OnRenderThread(renderer, () => nav.NavigateBackAsync().AsTask());
+            Task<bool> back = OnRenderThread(renderer,
+                () => HostBackWorkForTests?.Invoke() ?? nav.NavigateBackAsync().AsTask());
             if (!back.IsCompleted)
             {
-                LogLateFault($"host_event '{BnHostEvents.Back}'", back);
+                // Decision 5, as in dispatch_event: hand on the shutdown-tracked mirror.
+                ObservePendingHostEvent(BnHostEvents.Back, TrackUntilShutdown(renderer, back));
                 return 0;
             }
             return back.GetAwaiter().GetResult() ? 0 : 1;
@@ -890,10 +927,12 @@ public static class Exports
 
         try
         {
-            Task navigation = OnRenderThread(renderer, () => nav.NavigateToAsync(route).AsTask());
+            Task navigation = OnRenderThread(renderer,
+                () => HostNavigateWorkForTests?.Invoke(route) ?? nav.NavigateToAsync(route).AsTask());
             if (!navigation.IsCompleted)
             {
-                LogLateFault($"host_event '{BnHostEvents.Navigate}'", navigation);
+                // Decision 5, as in dispatch_event: hand on the shutdown-tracked mirror.
+                ObservePendingHostEvent(BnHostEvents.Navigate, TrackUntilShutdown(renderer, navigation));
                 return 0;
             }
             navigation.GetAwaiter().GetResult();
