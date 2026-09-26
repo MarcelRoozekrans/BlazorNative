@@ -3144,7 +3144,7 @@ serialising renderer work, so the two must be separated rather than the wait sim
 **Started:** 2026-09-26
 **Design:** [`docs/superpowers/specs/2026-09-26-milestone-16-design.md`](../superpowers/specs/2026-09-26-milestone-16-design.md)
 · full scope, DoD and risks in [MILESTONE.md](MILESTONE.md).
-**Closes:** #345, #346, #8. **Re-assesses on measurement:** #9.
+**Closes:** #345, #346, #8. **Re-assesses on measurement:** #9. Five phases after the 2026-09-26 fold.
 
 #### Phase 16.0: The render-thread spike [status: complete]
 **Goal:** Measure whether a .NET-owned single-thread dispatcher can replace `InlineDispatcher` —
@@ -3174,21 +3174,20 @@ failed because `vswhere` was not on the shell PATH, and Gradle loaded a stale li
 `main`. Check the publish exit code and the library's timestamp before trusting a JVM count.
 
 #### Phase 16.1: The render thread [status: pending]
-**Goal:** Replace the inline dispatcher with the render thread: correct the false `Exports.cs`
-comment first, free the lane on yield and flip `DispatchLaneBlockingTests`, pin render-thread
-ownership, move `MountSyncTests` from the type name to behaviour, write the rc contract once, and
-audit both shells' frame paths. Closes #345.
+**Goal:** Replace the inline dispatcher with a .NET-owned render thread and carry the 16.0 spike's
+11 requirements: correct the false `Exports.cs` comment first, free the lane on yield and flip
+`DispatchLaneBlockingTests`, scope the capture window per dispatch, pin render-thread ownership,
+move `MountSyncTests` from the type name to behaviour, write the rc contract once, make shutdown
+quiesce, and fix both shells' frame paths. **Also delivers async faults** — a reserved notice op
+over `hostCallBegin`, routed to both shells' `onError` — folded in from the former 16.2 so there is
+never a merged state where a fault after the first await is only logged. Closes #345 and #8.
+> **Renumbered 2026-09-26.** The former Phase 16.2 "Async faults" was removed and folded into 16.1,
+> so the former 16.3, 16.4 and 16.5 are now 16.2, 16.3 and 16.4. The 16.0 conclusion keeps the old
+> numbers as written: its "16.2" means 16.1, its "16.3" means 16.2, and its "16.4" means 16.3.
 **Surface:** Backend
 **HelpWanted:** no
 
-#### Phase 16.2: Async faults [status: pending]
-**Goal:** Make #8's capture window continuous on the render thread and deliver faults after the
-first await to both shells' `onError`, through a reserved notice op generated from
-`src/wire-vocabulary.json` and sent over `hostCallBegin`. Closes #8.
-**Surface:** Backend
-**HelpWanted:** no
-
-#### Phase 16.3: Back and navigation off the main thread [status: pending]
+#### Phase 16.2: Back and navigation off the main thread [status: pending]
 **Goal:** Push `canGoBack` from .NET and toggle Android's `OnBackInvokedCallback` to match; make back
 and deep-link navigation fire-and-forget on both shells; write and test the stale-window rule;
 update `src/dispatch-surface.json`, add the iOS twin pin, and update the template mirrors. Closes
@@ -3196,14 +3195,14 @@ update `src/dispatch-surface.json`, add the iOS twin pin, and update the templat
 **Surface:** Mixed
 **HelpWanted:** no
 
-#### Phase 16.4: Starvation, measured [status: pending]
+#### Phase 16.3: Starvation, measured [status: pending]
 **Goal:** With async offload in place, measure what a slow *synchronous* handler still costs, then
 fix #9 or re-ledger it with a new trigger; publish an app-author page on what runs where and what
 rc and async faults mean.
 **Surface:** Mixed
 **HelpWanted:** no
 
-#### Phase 16.5: Audit and close [status: pending]
+#### Phase 16.4: Audit and close [status: pending]
 **Goal:** Run `audit-milestone` against the DoD on live evidence and close M16. **No tag**, per
 `CONVENTIONS.md`.
 **Surface:** Docs
