@@ -4,7 +4,7 @@
 #
 #   build-test (windows-latest) — the local verification procedure verbatim
 #   (setup.ps1 §1–7 documents the toolchain pins):
-#     build (analyzers ride it) → .NET tests (1201 passed / 0 skipped) →
+#     build (analyzers ride it) → .NET tests (1255 passed / 0 skipped) →
 #     three NativeAOT publishes of samples/BlazorNative.SampleApp — the
 #     publish head since Phase 8.0: the app owns PublishAot, the exports stay
 #     in Runtime via UnmanagedEntryPointsAssembly, and the artifact is
@@ -13,7 +13,7 @@
 #     each publish must show exactly the 4 accepted IL2072 trim warnings) →
 #     ten-export verification (dumpbin via vswhere / llvm-readelf from the
 #     pinned NDK) → Gradle testDebugUnitTest against the fresh win-x64 dll
-#     (162 passed / 0 failed — the assertion is the step near the end of this
+#     (170 passed / 0 failed — the assertion is the step near the end of this
 #     job; this header is a copy, and it read 92 for four milestones) →
 #     the instrumented sources COMPILE →
 #     consumer smoke (EIGHT packages packed at the one props version, nupkg
@@ -2277,7 +2277,21 @@ jobs:
       # file runs over, with BnText as the leaf anchor; a container-only filter had dropped
       # 10 of 14 rows with every fact green. DispatchSurfaceDriftTests' manifest-derived
       # anchors are assertions inside an existing fact, not a new one.
-      - name: .NET tests (assert 1201 passed / 0 skipped)
+      # 1201 -> 1255 (16.1 the render thread, +54): Renderer 139 -> 147 and Runtime
+      # 1035 -> 1081; Analyzers unchanged at 27. Renderer gains the eight facts of
+      # RenderThreadDispatcherTests: honest CheckAccess, InvokeAsync marshalling, the
+      # exception sink, Send propagation, cancel-after-shutdown, an await in flight at
+      # shutdown, and 13.2's Dispose recursion as a named regression. Runtime gains
+      # DispatchWindowScopeTests (10: the per-dispatch window, late-fault attribution
+      # in production mode, the nested hand-off, the flowing scope's restore),
+      # ShutdownQuiescenceTests (20 cases: the frame gate, the join, the session
+      # detach, re-registration epochs, pending work cancelled at shutdown, and a
+      # reset that never waits under s_lock), FaultNoticeTests (10 cases: #8's
+      # delivery), HostEventArmThreadTests (2), WireVocabularyCodegenTests (+3: the
+      # generated HostCallOp table) and GeneratedSymbolShadowTests (+1: the op
+      # constant shadow control). The flips of DispatchLaneBlockingTests (#345),
+      # MountSyncTests and RenderThreadWarningTests change assertions, not counts.
+      - name: .NET tests (assert 1255 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -2295,8 +2309,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 1201 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 1201 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 1255 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 1255 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # 15.5 (#291): every docs sample a consumer might copy is compiled. The fence
@@ -2655,7 +2669,20 @@ jobs:
       #    call itself after measuring (not during) so it does not corrupt the
       #    ONE process-global native session every other JVM test class in this
       #    run shares.
-      - name: JVM tests (Gradle testDebugUnitTest — assert 162 passed / 0 failed)
+      # 162 -> 170 (16.1 the render thread, +8): FaultNoticeTest (2: op 5, and a
+      #    fault after the first await reaching onError through BridgeRegistrar),
+      #    FrameProducerTest (3: the single-producer check, its negative, and its
+      #    wiring across a second session), ShutdownQuiescenceTest (2: no late
+      #    continuation frame reaches the host after shutdown, and its control) and
+      #    RetireLateContinuationTest (1: a HAZARD pin, retire() does not quiesce
+      #    .NET, #425). The #346 pin in HostEventTest and the frame-thread test in
+      #    DispatchEventTest were FLIPPED, not added: the first now asserts that
+      #    dispatchHostEventAndWait returns while a handler holds a host call, with
+      #    no rc, and the second that frames arrive serially on one non-lane thread
+      #    named BlazorNative-Render. Run locally with --rerun: testDebugUnitTest
+      #    does not declare the native dll as an input and can report a stale
+      #    UP-TO-DATE, #424.
+      - name: JVM tests (Gradle testDebugUnitTest — assert 170 passed / 0 failed)
         working-directory: src/BlazorNative.Jni
         run: |
           .\gradlew.bat --no-daemon testDebugUnitTest
@@ -2669,8 +2696,8 @@ jobs:
             $errors += [int]$suite.errors; $skipped += [int]$suite.skipped
           }
           Write-Host "JVM test totals across $($xmls.Count) suites: tests=$tests failures=$failures errors=$errors skipped=$skipped"
-          if ($tests -ne 162 -or $failures -ne 0 -or $errors -ne 0 -or $skipped -ne 0) {
-            throw "JVM test baseline drift: expected 162 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped"
+          if ($tests -ne 170 -or $failures -ne 0 -or $errors -ne 0 -or $skipped -ne 0) {
+            throw "JVM test baseline drift: expected 170 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped"
           }
 
       # the instrumented-sources compile gate moved to its own required job

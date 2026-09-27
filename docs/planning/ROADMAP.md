@@ -3189,6 +3189,170 @@ never a merged state where a fault after the first await is only logged. Closes 
 **Design:** [`docs/superpowers/specs/2026-09-26-phase-16.1-design.md`](../superpowers/specs/2026-09-26-phase-16.1-design.md)
 **Plan:** [`docs/superpowers/plans/2026-09-26-phase-16.1-render-thread.md`](../superpowers/plans/2026-09-26-phase-16.1-render-thread.md)
 
+> **16.1 outcome: the render thread shipped, #345 and #8 are fixed in code, and all 11 spike
+> requirements are accounted for. Three are carried in part, and each is named below.** The
+> issues are to be closed by the phase PR: #345 and #8.
+
+**What shipped:**
+- **The dispatcher.** `InlineDispatcher` is gone. Each `NativeRenderer` now owns a
+  `RenderThreadDispatcher`: one background thread named `BlazorNative-Render`, a single-threaded
+  `SynchronizationContext` and an honest `CheckAccess()`. Every entry point that mutates the
+  renderer is marshalled onto that thread and waits there. That covers mount, unmount, the root
+  swap, dispose, `RunAfterDispatch` and every `host_event` arm.
+- **Exports wait for the synchronous part only.** A handler that awaits frees the shell's lane at
+  its first await. The capture window belongs to one dispatch, not to the renderer. A late fault
+  is attributed to its own handler through an `AsyncLocal` scope, in production mode as well as
+  strict.
+- **Fault delivery.** A fault after the first await is sent to the shell as a `FaultNotice` host
+  call, op 5, over the existing `hostCallBegin` slot. Its args are exactly `handlerId`, `event`,
+  `type` and `message`, never the stack or the payload. Both shells route it to `onError`.
+  `HostCallOp` is now generated from `src/wire-vocabulary.json` in C#, Kotlin and Swift, with the
+  ids 0–4 frozen.
+- **Shutdown quiesces.** A counted, two-epoch frame gate closes, and shutdown drains the
+  callbacks already in flight. It then clears the pointer and joins the render thread, bounded at
+  5 s. Re-registering a callback waits out any callback still holding the old pointer. Work that is
+  pending at shutdown ends `Canceled`. `ResetForTests` joins every session thread, and it never
+  waits under `s_lock`.
+- **The shells.** Kotlin checks that frames have a single producer. The Kotlin and Swift comments
+  that claimed "frames only inside host calls" and "a retired runtime is fully quiescent" are
+  rewritten. There is a new XCTest twin of the lane pin.
+- **No ABI change.** `BlazorNativeRuntimeC.h` differs from `main` in comment lines only, and the rc
+  contract is written there and in `Exports.cs`.
+
+**Requirement by requirement.** The requirements are the 16.0 conclusion's §5. Each row is checked
+against the tree at `a2c6a9d`.
+
+| # | Requirement | Commits | Pins | Status |
+|---|---|---|---|---|
+| — | The false `Exports.cs` "non-blocking" comment, truth first | `f13bcd8` | none; it is a comment | Met |
+| 1 | A capture window per dispatch | `fdde723` `96b41d1` `5f942cd` `785e998` | `DispatchWindowScopeTests`: `ANavigationDuringAnotherHandlersSuspension_SwapsBeforeItsOwnExportReturns` and its control, `AFaultInASecondDispatch_IsAttributedToIt_NotToTheSuspendedFirst`, `ANavigationQueuedInsideANestedDispatch_…` | Met |
+| 2 | The shells' frame paths | `fdde723` for the `Exports.cs` comment, `521d4c3` for Kotlin and Swift | JVM `FrameProducerTest` ×3, and the flipped `DispatchEventTest.async_dispatchEvent_rerenders_serially_on_one_non_lane_thread` | **Met on Android, partial on iOS.** Kotlin's single-producer check reports to `onError` and still delivers the frame. On iOS the trampoline was audited, and the mapper already hops to `DispatchQueue.main`, but no iOS pin asserts a single producer |
+| 3 | No callback in flight when the pointer is cleared | `094f8f9` `2555dc3` `8a978ad` | `Shutdown_WaitsForACallbackAlreadyInFlight`, `SetFrameCallback_DoesNotReturn_WhileAnOldCallbackIsInFlight`, `…TwoSequentialRegistrations_WaitForAnEntryThatStraddledTheFirstFlip` | Met |
+| 4 | Teardown: no wait under a lock, a deliberate post-shutdown policy, no thread leak | `55290d2` `64ced82` `094f8f9` `2555dc3` `bb45ee7` | `ResetForTests_DoesNotWaitWhileHoldingTheSessionLock`, `ResetForTests_JoinsTheRenderThread_AndLeaksNone`, `WorkPostedAfterShutdown_CompletesCancelled_NeverHangs`, `AnAwaitInFlightAtShutdown_…`, `APendingHandler_EndsCancelled_…`, `APendingHostEvent_EndsCancelled_AtShutdown` | **Met for session threads, partial for others.** A renderer that is built directly and never disposed still leaks one blocked background thread. This is disclosed in `ShutdownQuiescenceTests`' header. Production shutdown joins the thread but does not dispose the old session's components |
+| 5 | Marshal every `host_event` arm deliberately, and pin each one | `fdde723` `96b41d1` `5f942cd` | `HostEventArmThreadTests.EveryHostEventArm_RunsItsComponentCode_OnTheRenderThread` and its control | Met. The arms wait for the synchronous part. Taking back off Android's main thread is 16.2's job |
+| 6 | `ConfigureAwait(false)` followed by a re-render | none needed; see the audit below | none | **Audit met. The rest is carried.** The rule goes on 16.3's app-author page, per owner decision 4. The analyzer is #427 |
+| 7 | Flip the tests that M16's DoD names, and delete none | `55290d2` `fdde723` `521d4c3` | `RenderThreadWarningTests` ×2, `MountSyncTests.Renderer_mounts_synchronously_on_its_render_thread`, `DispatchLaneBlockingTests.…_ReturnsWhileTheCallIsOpen`, JVM `HostEventTest.dispatchHostEventAndWait_returns_while_a_handler_holds_a_host_call`, JVM `DispatchEventTest` frame thread | Met. All six were flipped and none was deleted |
+| 8 | JVM tests that suit a shared session which is never reset | `521d4c3` | `HeldCameraCall.kt`; every held call completes in a `finally`; the #346 flip asserts no rc | Met |
+| 9 | Thread-identity pins use the renderer under test | `55290d2` onward | Every thread assertion compares with `renderer.RenderThreadId` | Met |
+| 10 | A deliberate policy for render-thread exceptions | `55290d2` `64ced82` | `AThrowFromPostedWork_ReachesTheUnhandledExceptionSink`, `SendPropagatesTheException_ToItsCaller` | Met. The process crashes as on `main`, by owner decision 2 |
+| 11 | The Kotlin quiescence claim | `094f8f9` `521d4c3` `a2c6a9d` | .NET `ShutdownQuiescenceTests`; JVM `ShutdownQuiescenceTest` and its control; JVM `RetireLateContinuationTest`, a hazard pin | **Met, by correcting the claim.** `shutdown()` is quiescent and pinned. `retire()` is not, and the comments now say so. Whether `retire()` should quiesce is #425 |
+| #8 | Fault delivery, folded in from the former 16.2 | `a72dd2b` `54bc744`, on top of requirement 1's attribution | `FaultNoticeTests` (10 cases, all in production mode), JVM `FaultNoticeTest` ×2, XCTest `BnFaultNoticeTests` ×4, `WireVocabularyCodegenTests.TheHostCallOps_KeepTheirFrozenIds` | Met. An older iOS shell only logs the notice, as described below |
+
+**The `ConfigureAwait(false)` audit, re-measured at `a2c6a9d`.** The command was
+`grep -rn "ConfigureAwait(false)" samples templates src --include=*.cs --include=*.razor`, excluding
+`bin`, `obj` and generated files. **It found 20 hits, all in library code and none in a component
+or in `samples/` or `templates/`, and no render follows any of them on the same path.** The pre-plan
+count was 18. The two new hits are 16.1's own:
+- `NativeShellBridge.cs`, 18 hits, at lines 345, 436, 443, 487, 591, 662, 669, 676, 683, 690, 754, 763,
+  776, 783, 794, 801, 906 and 916. Seventeen are the host-call plumbing and the capability facades
+  over it. They return a value to their caller, and they never render. The new one, at `:591`, is in
+  `AwaitFaultNotice`, which logs and disposes a timeout.
+- `Biometrics.cs:20` maps a status to a `bool`, and it does not render.
+- `NativeRenderer.cs:1656` is new. It is in `AwaitWholeHandler`, which marks the scope `Done` and
+  rethrows a late fault. It does not render. Its only in-process awaiter is `DispatchUiEventAsync`,
+  which awaits it inside `Dispatcher.InvokeAsync` without `ConfigureAwait`, so it resumes on the
+  render thread.
+
+No hit needed a fix. #427 is the analyzer that would catch a component doing this.
+
+**Counts, measured on `a2c6a9d`.** The .NET build was a clean
+`dotnet build BlazorNative.sln --no-incremental -v q`: 0 errors, and 24 warnings that already
+existed, BL0006 and CS8669 in the test project. The JVM run followed a fresh
+`dotnet publish samples/BlazorNative.SampleApp -c Release -r win-x64`, which exited 0 with 4 IL2072
+and wrote a dll newer than the stamp. Gradle then ran with `--rerun`.
+
+| Surface | Before (`main`) | After | Change |
+|---|---|---|---|
+| .NET total | 1201 | **1255** | +54 |
+| · Renderer | 139 | 147 | +8: `RenderThreadDispatcherTests` |
+| · Analyzers | 27 | 27 | 0 |
+| · Runtime | 1035 | 1081 | +46: `DispatchWindowScopeTests` 10, `ShutdownQuiescenceTests` 20, `FaultNoticeTests` 10, `HostEventArmThreadTests` 2, `WireVocabularyCodegenTests` +3, `GeneratedSymbolShadowTests` +1 |
+| JVM | 162 | **170**, 0 failed | +8: `FaultNoticeTest` 2, `FrameProducerTest` 3, `ShutdownQuiescenceTest` 2, `RetireLateContinuationTest` 1 |
+| iOS | 271 | **276** | +5: `BnFaultNoticeTests` 4, `BnDispatchLaneTests` 1. Measured on the ios lane, run 36283515416 at `521d4c3`, with 276 passed and 0 failed. No Swift changed after `521d4c3` |
+| Android | 228 | 228 | No instrumented test was added. The android-instrumented lane, run 36283514207 at `521d4c3`, was green at 228 |
+
+**Notable mutations.** Every mutation below went red unless it is marked otherwise. The per-pin
+tables are in the register in `docs/pin-standard.md`.
+- **The #345 flip:** putting back `GetResult` in `DispatchEventCore` reds the flipped lane pin with
+  "did NOT return within 1s".
+- **The cascade:** keeping the capture window open across the await, which is the old depth-counter
+  shape, reds only the cascade pin. Every `DispatchEventTests` fact stayed green.
+- **Production attribution:** removing the `AsyncLocal` branch in `HandleException` reds the
+  production-mode pin, which reports "pending Task ended RanToCompletion". The strict control stays
+  green, and that contrast is the whole of the lesson below.
+- **Fault delivery:** removing `DeliverLateFault` from `ObservePendingDispatch` reds 5 of the 10
+  `FaultNoticeTests` cases.
+- **The gate:**
+  - removing the epoch re-check in `TryEnter` reds the straddle pin;
+  - a `TryEnter` that ignores `closed` reds `Shutdown_ReturnsWithinBudget_…`;
+  - a drain that does not wait reds `Shutdown_WaitsForACallbackAlreadyInFlight`.
+- **JNA:** without `CallbackThreadInitializer`, the JVM frame flip reads `got [Thread-6, Thread-7]`.
+  JNA attaches a native thread for one callback and detaches it on return, so every frame arrived
+  on a new Java thread.
+- **Equivalent mutants, which stayed green:**
+  - Clearing the pointer before the drain. The sink reads the pointer inside the gate.
+  - Losing only the gate close, or only the join, against the JVM shutdown pin. Either mechanism
+    alone still quiesces that scenario. The .NET `ShutdownQuiescenceTests` pin each one separately.
+- **Pins with no recorded red:**
+  - The XCTest twin `BnDispatchLaneTests` has never been run red. Its red on the old runtime is
+    argued by reading.
+  - `BnFaultNoticeTests` has no mutation.
+
+**Behaviour changes, for the changelog and for shell authors:**
+- **rc now reports the synchronous part only.** `dispatch_event` returns 0 once a handler has
+  yielded, and that says nothing about the continuation. A later fault reaches the shell as a
+  `FaultNotice`, not as rc 2.
+- **`Shutdown` detaches the session.** A mount after shutdown builds a fresh session, with a new
+  renderer and a new render thread, and `TryMount_AfterShutdown_BuildsAFreshSession` pins this.
+  Before the detach, the dead session answered rc 2 to everything for the life of the process.
+  Until something mounts again, these calls return rc 1, which was read from `Exports.cs` and is not
+  pinned:
+  - `dispatch_event`;
+  - the reserved `host_event` arms: `back`, `navigate` and `safeAreaChanged`.
+
+  A passthrough host event, such as a lifecycle event, still runs the app multicast on the caller's
+  thread and returns 0 or 2.
+- **Frames arrive from the .NET render thread.** That covers continuations, which come with no
+  export in progress. JNA keeps that thread attached as one daemon named `BlazorNative-Render`,
+  where before it attached and detached for each frame. Only the JVM lane and the green
+  android-instrumented run at `521d4c3` have seen this; no hardware has run it yet.
+- **An older iOS shell only logs a FaultNotice.** Its unknown-op branch completes the call with
+  Error through `BnLog.warn`, and the fault never reaches `onError`. An older Android shell's
+  unknown-op branch does call `onError`.
+- **`onError` can run on any thread,** including a .NET thread-pool thread for a FaultNotice.
+- **An off-thread render now throws under `StrictErrors`.** Without `StrictErrors` it warns. A
+  component that calls `StateHasChanged` after `ConfigureAwait(false)` gets Blazor's own
+  "not associated with the Dispatcher" exception.
+
+**Issues filed:**
+- **#424:** Gradle's `testDebugUnitTest` does not declare the native dll as an input, so a run can
+  be a stale `UP-TO-DATE`. Use `--rerun`.
+- **#425:** `retire()` does not quiesce .NET, which is a late-continuation hazard on Activity
+  recreation. It is pinned by `RetireLateContinuationTest`, and it needs a decision.
+- **#426:** a FaultNotice's `message` is logged unredacted by Android's `Log.e` in Release builds.
+  iOS redacts it.
+- **#427:** an analyzer for `ConfigureAwait(false)` followed by a render.
+
+**Open questions for the owner:**
+- **#426, privacy:** should the notice's exception message be redacted, dropped, or kept on
+  Android? The behaviour was deliberately left unchanged overnight.
+- **#425:** should `retire()` quiesce .NET, or should the shell be designed for late frames?
+- **Uncommitted edits were reverted on disk during Task 4, three times, and the cause is unknown.**
+  Twice it hit `src/` files and once `Exports.cs`. No agent was live at the third revert, and no IDE
+  or watcher process was found. Only the files the implementer had open were affected, never the
+  test file. The mitigation was to commit before every test run, and to run reviewers' probes in a
+  separate worktree. Task 5 reported no recurrence, and none was seen while this record was written.
+- **One register partial found while writing this record, and not fixed here.** Three absence
+  assertions in `DispatchWindowScopeTests` match the literal log text "after the handler's first
+  await". If that text is reworded, they pass while checking nothing. The Rule 4 cell of that row
+  names it.
+
+**Lesson:** strict-mode tests hid a production-only fault path. Every test harness sets
+`StrictErrors = true`, and there Blazor's rethrow faults the handler's Task. In production,
+`HandleException` only logged the fault, so the Task completed successfully and the planned
+FaultNotice could never have fired on a device. The first design passed every test. **Every fault
+pin in 16.1 now runs in production mode, and strict mode appears only as a control.**
+
 #### Phase 16.2: Back and navigation off the main thread [status: pending]
 **Goal:** Push `canGoBack` from .NET and toggle Android's `OnBackInvokedCallback` to match; make back
 and deep-link navigation fire-and-forget on both shells; write and test the stale-window rule;

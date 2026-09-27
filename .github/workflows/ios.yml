@@ -574,7 +574,7 @@ jobs:
             > ios-out/xcresult.json 2>/dev/null || true
           ls -la ios-out/crash || true
 
-      - name: Assert XCTest baseline (271 passed / 0 failed)
+      - name: Assert XCTest baseline (276 passed / 0 failed)
         if: ${{ always() && matrix.runs_tests }}
         run: |
           log=ios-out/xcodebuild-test.log
@@ -1405,9 +1405,17 @@ jobs:
           # install() returns false for three different reasons, and without it the test
           # would pass for the wrong one. If the early return ever moved below the flag,
           # this test reds here rather than hijacking the test runner's fd 2.
-          if [ "$failed" -ne 0 ] || [ "$passed" -ne 271 ]; then
+          # 271 -> 276 (16.1 the render thread, +5): BnFaultNoticeTests (4: op 5; a
+          # notice routes to onError as a BnFaultNotice and completes status 0 with no
+          # payload; an unknown op still completes Error and never reaches onError, the
+          # control; with no runtime the notice still completes) and BnDispatchLaneTests
+          # (1: the XCTest twin of the .NET lane-blocking pin, #345: a dispatch whose
+          # handler awaits an open camera call returns rc 0 within 2 s while the call
+          # is still in flight). Measured on the ios lane at 521d4c3, 276 passed and 0
+          # failed, red there only on this stale 271 bar; no Swift changed after it.
+          if [ "$failed" -ne 0 ] || [ "$passed" -ne 276 ]; then
             grep -E "Test Case '.*' (passed|failed)" "$log" || true
-            echo "iOS XCTest baseline drift: expected 271 passed / 0 failed, got passed=$passed failed=$failed" >&2
+            echo "iOS XCTest baseline drift: expected 276 passed / 0 failed, got passed=$passed failed=$failed" >&2
             exit 1
           fi
 
