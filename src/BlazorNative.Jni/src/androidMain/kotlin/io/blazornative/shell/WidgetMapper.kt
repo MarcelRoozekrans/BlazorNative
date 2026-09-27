@@ -778,9 +778,10 @@ class WidgetMapper(
             if (patch is RenderPatch.CommitFrame) {
                 val batch = pending.toList()
                 pending.clear()
-                // Phase 16.2: the back state offered since the last page rides the batch that
-                // shows the next one, so main applies it in the same runnable that puts that
-                // page on screen (spec decision 2). A swap's removal batch carries nothing.
+                // Phase 16.2: the back state rides the first batch after its notice that is
+                // not removal-only, the new page's mount, so main applies it in the same
+                // runnable that puts that page on screen (spec decision 2). A swap's removal
+                // batch carries nothing; an empty mount, a lone CommitFrame, does carry it.
                 val carriedBackState = backState.takeForBatch(batch)
                 mainHandler.post { applyBatch(batch, carriedBackState) }
             }

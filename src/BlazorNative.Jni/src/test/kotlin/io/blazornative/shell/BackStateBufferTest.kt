@@ -9,8 +9,8 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 /**
- * Phase 16.2 (#346, spec decision 2) — the pushed back state is HELD until the batch that
- * shows a page carries it; and a press handed to the platform puts the back callback back.
+ * Phase 16.2 (#346, spec decision 2) — the pushed back state is HELD until the first batch that
+ * is not removal-only carries it; and a press handed to the platform puts the back callback back.
  *
  * .NET sends BackState for a navigation BEFORE the frames that show the new page, and a swap is
  * two frames: the old root's removal, then the new page. If the shell applied the value on
