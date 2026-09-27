@@ -381,9 +381,12 @@ units of pending work. Checked against the code rather than left to age:
   parses them from source into the shells' deep-link map; duplicate routes are refused at build time
   (#224). The `[Route("/product/{id}")]` *attribute* this line described is not the mechanism, and
   parameterised routes are not part of it.
-- **Back stack** — *partly built.* `INavigationManager.NavigateBackAsync()` exists and the Android
-  predictive-back gesture routes through it. `GoToRootAsync()` and `CanGoBack` do **not** exist; if
-  they are wanted, they are ordinary additions to the existing contract, not a package.
+- **Back stack** — *partly built.* `INavigationManager.NavigateBackAsync()` exists, and since Phase
+  16.2 back runs from a `BackState` notice `NativeNavigationManager` pushes to the shell, toggling
+  Android's `OnBackPressedCallback` off the main thread. `canGoBack` exists too, but only
+  internally, as `_previousRoute != null` — a single slot, not a stack. `GoToRootAsync()` and a
+  public `CanGoBack` do **not** exist; a real back **stack** (more than one level of history) is
+  still later work, an ordinary addition to the existing contract, not a package.
 
 Plus `BlazorNative.Templates` (the `dotnet new blazornative` pack), which ships separately.
 

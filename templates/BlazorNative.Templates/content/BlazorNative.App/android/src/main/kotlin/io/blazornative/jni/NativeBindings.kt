@@ -117,9 +117,9 @@ interface NativeBindings : Library {
 
     /**
      * Phase 5.1 (M5 DoD #5): host-INITIATED event ingress. Two routes on ONE
-     * export: the reserved name "back" routes to navigation-back (the
-     * predictive-back production path — Android's OnBackInvokedCallback and the
-     * JVM test drive it identically; the back→NavigateBack mapping lives in
+     * export: the reserved name "back" routes to navigation-back (since Phase 16.2
+     * Android's AndroidX OnBackPressedCallback dispatches it fire-and-forget, and
+     * the JVM test drives it identically; the back→NavigateBack mapping lives in
      * .NET); ANY OTHER name fires the runtime's real
      * NativeShellBridge.NativeEvents multicast so a mounted component
      * (HostEventProbe) re-renders. [nameUtf8] is NUL-terminated UTF-8 (e.g.
@@ -130,9 +130,10 @@ interface NativeBindings : Library {
      *   0 = delivered/handled — a lifecycle event reached its subscribers (incl.
      *       none — an unheard signal is not an error); OR "back" navigated to
      *       the previous route
-     *   1 = "back" NOT handled — at the origin (no previous route / no session):
-     *       the shell falls through to default back (Android finishes). ONLY the
-     *       "back" route returns rc 1; the multicast path never does
+     *   1 = "back" NOT handled — at the origin (no previous route / no session).
+     *       Since Phase 16.2 no shell reads this: .NET also sends a BackUnhandled
+     *       notice, and Android hands that press to the platform default. The
+     *       multicast path never returns rc 1
      *   2 = a subscriber (or the re-render it drove) faulted — CONTAINED
      *       (isolation) but surfaced; OR the back swap faulted; detail on the
      *       runtime's stderr → LOGCAT under `BlazorNative/…` since Phase 11.4

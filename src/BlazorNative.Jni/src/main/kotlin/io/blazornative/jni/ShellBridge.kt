@@ -253,6 +253,12 @@ object HostCallStatus {
  */
 class BridgeRegistrar(
     private val handlers: ShellBridgeHandlers,
+    // Phase 16.2 (#346): .NET's two back notices, answered here like FaultNotice so no
+    // [ShellBridgeHandlers] can drop one. See [BlazorNativeRuntime]'s parameters of the
+    // same names for their thread set. Before [onError] so a trailing lambda still binds
+    // to the error sink.
+    private val onBackState: (canGoBack: Boolean) -> Unit = {},
+    private val onBackUnhandled: () -> Unit = {},
     // (JVM-friendly default is deliberate NOT provided: callers choose the
     // sink — Android must pass android.util.Log, stderr is /dev/null there.)
     private val onError: (String, Throwable) -> Unit,
@@ -348,10 +354,11 @@ class BridgeRegistrar(
             // getString copies. hostCallBegin returns quickly; the result is
             // pushed later via BridgeHostCallCompleter (the fetchBegin shape).
             val argsJson = argsJsonUtf8.getString(0, "UTF-8")
-            if (op == HostCallOp.FAULT_NOTICE) {
-                deliverFaultNotice(requestId, argsJson)
-            } else {
-                handlers.hostCallBegin(requestId, op, argsJson)
+            when (op) {
+                HostCallOp.FAULT_NOTICE -> deliverFaultNotice(requestId, argsJson)
+                HostCallOp.BACK_STATE -> deliverBackState(requestId, argsJson)
+                HostCallOp.BACK_UNHANDLED -> deliverBackUnhandled(requestId)
+                else -> handlers.hostCallBegin(requestId, op, argsJson)
             }
             0
         }
@@ -379,6 +386,53 @@ class BridgeRegistrar(
             lastFaultNoticeCompleteRcForTest =
                 BridgeHostCallCompleter.complete(requestId, HostCallStatus.GRANTED, null)
         }
+    }
+
+    /**
+     * Phase 16.2 (#346): whether .NET can go back, pushed so the shell never asks on its main
+     * thread. The args are flat JSON, canGoBack as the string true or false. Handed to
+     * [onBackState] on the thread .NET sent it from, which may be the mount caller, the render
+     * thread or the dispatch lane, so the listener must only record the value. A value that is
+     * neither true nor false is a .NET writer bug: it reaches [onError] and the listener is not
+     * called, so the shell keeps the state it had. Completed OK either way.
+     */
+    private fun deliverBackState(requestId: Long, argsJson: String) {
+        try {
+            when (val value = FlatJson.parse(argsJson)["canGoBack"]) {
+                "true" -> onBackState(true)
+                "false" -> onBackState(false)
+                else -> onError(
+                    "BackState notice carried canGoBack='$value', not true or false: $argsJson",
+                    IllegalArgumentException("malformed BackState args"),
+                )
+            }
+        } catch (t: Throwable) {
+            onError("BackState notice listener threw", t)
+        } finally {
+            completeNotice(HostCallOp.BACK_STATE, requestId)
+        }
+    }
+
+    /**
+     * Phase 16.2 (#346): a back reached .NET and could not be handled, at the root or with no
+     * session. The shell acts on it through [onBackUnhandled]: Android hands the press to the
+     * platform's default back, and a host with no system back ignores it. A press is never
+     * swallowed now that back is dispatched fire-and-forget and its rc is read by nobody. The
+     * args are an empty flat JSON object and are ignored. Completed OK even if the listener throws.
+     */
+    private fun deliverBackUnhandled(requestId: Long) {
+        try {
+            onBackUnhandled()
+        } catch (t: Throwable) {
+            onError("BackUnhandled notice listener threw", t)
+        } finally {
+            completeNotice(HostCallOp.BACK_UNHANDLED, requestId)
+        }
+    }
+
+    /** Completes a notice OK with a null payload; .NET ignores the result. */
+    private fun completeNotice(op: Int, requestId: Long) {
+        noticeCompleteRcForTest[op] = BridgeHostCallCompleter.complete(requestId, HostCallStatus.GRANTED, null)
     }
 
     /**
@@ -444,6 +498,10 @@ class BridgeRegistrar(
          * .NET found the notice's pending entry and removed it. */
         @Volatile
         internal var lastFaultNoticeCompleteRcForTest: Int = -1
+
+        /** Test-only: op → the rc of the last completion of that back notice. 0 means .NET
+         * found the notice's pending entry and removed it. */
+        internal val noticeCompleteRcForTest = java.util.concurrent.ConcurrentHashMap<Int, Int>()
 
         /**
          * The shared buffer-write helper (host half of the buffer protocol):

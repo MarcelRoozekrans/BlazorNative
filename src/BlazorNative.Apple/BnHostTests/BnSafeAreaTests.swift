@@ -20,14 +20,16 @@
 // comment: "the test owns the single native session") — every class in this
 // suite already bypasses it and drives `BnRuntime` directly, the way this one
 // does. `BnRuntime.dispatchHostEventAndWait(_:payload:)` is not a seam added
-// for this test: it is the SAME public dispatch primitive
+// for this test: it is the SAME dispatch primitive family
 // `HostViewController.reportSafeAreaIfChanged` calls (there, the fire-and-forget
-// `dispatchHostEvent` overload; here, the blocking twin so this test does not
-// need to poll) — both route through the identical `blazornative_host_event`
-// C-ABI export. Calling it directly is this harness's version of what
-// `BnSafeAreaAndroidTest` does by feeding a synthetic `WindowInsets` to
-// `MainActivity`'s real listener: the furthest either harness can reach into
-// production code while still exercising the actual wire path end to end.
+// `dispatchHostEvent` overload; here, the blocking twin, `internal` and
+// test-only since 16.2 Task 5, reached through `@testable import BnHost` so
+// this test does not need to poll) — both route through the identical
+// `blazornative_host_event` C-ABI export. Calling it directly is this
+// harness's version of what `BnSafeAreaAndroidTest` does by feeding a
+// synthetic `WindowInsets` to `MainActivity`'s real listener: the furthest
+// either harness can reach into production code while still exercising the
+// actual wire path end to end.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import XCTest

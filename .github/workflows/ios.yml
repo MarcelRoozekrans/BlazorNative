@@ -574,7 +574,7 @@ jobs:
             > ios-out/xcresult.json 2>/dev/null || true
           ls -la ios-out/crash || true
 
-      - name: Assert XCTest baseline (276 passed / 0 failed)
+      - name: Assert XCTest baseline (282 passed / 0 failed)
         if: ${{ always() && matrix.runs_tests }}
         run: |
           log=ios-out/xcodebuild-test.log
@@ -1413,9 +1413,18 @@ jobs:
           # handler awaits an open camera call returns rc 0 within 2 s while the call
           # is still in flight). Measured on the ios lane at 521d4c3, 276 passed and 0
           # failed, red there only on this stale 271 bar; no Swift changed after it.
-          if [ "$failed" -ne 0 ] || [ "$passed" -ne 276 ]; then
+          # 276 -> 282 (16.2, +6): BnBackOffMainTests. BnBackOffMainNavigateTests (2:
+          # #346's iOS pin, a warm deep link returns within 1 s while BackHoldProbe's
+          # synchronous handler holds the lane on a camera call, and the navigate still
+          # lands after the release; the control, that the blocking
+          # dispatchHostEventAndWait does NOT return until that release, so the probe
+          # really holds the lane) and BnBackOpArmTests (4: ops 6 and 7 are frozen;
+          # BackState true and false each complete status 0 with no payload and reach
+          # no onError; BackUnhandled likewise; the next op still completes Error, the
+          # control). Expected, not yet measured on the ios lane.
+          if [ "$failed" -ne 0 ] || [ "$passed" -ne 282 ]; then
             grep -E "Test Case '.*' (passed|failed)" "$log" || true
-            echo "iOS XCTest baseline drift: expected 276 passed / 0 failed, got passed=$passed failed=$failed" >&2
+            echo "iOS XCTest baseline drift: expected 282 passed / 0 failed, got passed=$passed failed=$failed" >&2
             exit 1
           fi
 

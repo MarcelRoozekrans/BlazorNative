@@ -310,8 +310,14 @@ final class BnRuntime {
         // the delegate's `didReceive` re-routes over host_event on the serial lane (the ABI
         // is never called from the delegate's main thread directly). The non-nil dispatcher
         // is also BnNotifications' "session is live" signal (warm re-route vs cold stash).
+        //
+        // Phase 16.2 (#346): FIRE-AND-FORGET. Both navigators used to call
+        // `dispatchHostEventAndWait`, a `dispatchLane.sync` from main, so a link or a tap
+        // while a handler held the lane froze the app until the handler let go. Nobody read
+        // the rc they waited for: BnDeepLink discarded it, and BnNotifications kept it only
+        // for a test seam. BnBackOffMainTests pins the deep link against a held lane.
         bridge.notifications.navigateDispatcher = { [weak self] route in
-            self?.dispatchHostEventAndWait(.navigate, payload: route) ?? 1
+            self?.dispatchHostEvent(.navigate, payload: route)
         }
 
         // The deep-link surface gets the SAME dispatcher for the same reason: a URL
@@ -319,7 +325,7 @@ final class BnRuntime {
         // serial lane. Non-nil is likewise its "session is live" signal, so a link
         // opened from now on re-routes warm instead of stashing.
         BnDeepLink.shared.navigateDispatcher = { [weak self] route in
-            self?.dispatchHostEventAndWait(.navigate, payload: route) ?? 1
+            self?.dispatchHostEvent(.navigate, payload: route)
         }
 
         // Published LAST, after mount: `current` means "a session that can be
@@ -330,14 +336,16 @@ final class BnRuntime {
 
     /// Phase 9.1 / 14.1: dispatches a host-INITIATED event over the EXISTING
     /// `blazornative_host_event` export. FIRE-AND-FORGET — the Swift twin of Kotlin's
-    /// `BlazorNativeRuntime.dispatchHostEvent`, and the overload LIFECYCLE uses.
+    /// `BlazorNativeRuntime.dispatchHostEvent`, and the overload LIFECYCLE uses, as do
+    /// both navigators since 16.2 (#346).
     ///
     /// #339: this used to be the blocking one, and `BnAppLifecycle` called it from
     /// main. When an async host call already held the lane — a camera or geolocation
     /// capture waiting on the user — `willResignActive` blocked main on a lane that
     /// could not drain, and the app was dead until force-quit. Android never had the
     /// bug because its lifecycle path has always called the non-blocking overload.
-    /// Callers that need the rc use `dispatchHostEventAndWait`.
+    /// Since 16.2 (#346) no production caller needs the rc any more — both navigators
+    /// moved here too — so `dispatchHostEventAndWait` is `internal` and test-only.
     func dispatchHostEvent(_ event: BnHostEvent, payload: String?) {
         dispatchLane.async {
             _ = event.rawValue.withCString { n -> Int32 in
@@ -349,10 +357,15 @@ final class BnRuntime {
         }
     }
 
-    /// Phase 14.1: the BLOCKING host-event dispatch — the Swift twin of Kotlin's
-    /// `dispatchHostEventAndWait`. Marshals through the SAME serial lane but blocks
-    /// the caller until the dispatch has completed, so the re-route swap's frames are
-    /// applied before it returns, and returns the rc (0 = navigated).
+    /// Phase 14.1 — the BLOCKING host-event dispatch, the Swift twin of Kotlin's
+    /// `dispatchHostEventAndWait`. Until Phase 16.2 it was the deep-link and warm
+    /// notification navigate path; both now dispatch fire-and-forget through
+    /// `dispatchHostEvent` instead, because a caller blocked here waits on .NET
+    /// (#346), and no production code calls this any more. `internal` and
+    /// test-only by owner decision (16.2 Task 5) — reachable from XCTest through
+    /// `@testable import BnHost`. It still marshals through the SAME serial lane but
+    /// blocks the caller until the dispatch has completed, and returns the rc
+    /// (0 = navigated).
     ///
     /// Safe from any thread EXCEPT the dispatch lane itself — a call FROM the lane
     /// would self-deadlock, exactly as Kotlin's KDoc warns of its twin. Since Phase
@@ -360,7 +373,7 @@ final class BnRuntime {
     /// export returns at its first await), so this no longer blocks behind one;
     /// BnDispatchLaneTests pins the lane half of that on the simulator.
     @discardableResult
-    func dispatchHostEventAndWait(_ event: BnHostEvent, payload: String?) -> Int32 {
+    internal func dispatchHostEventAndWait(_ event: BnHostEvent, payload: String?) -> Int32 {
         dispatchLane.sync {
             event.rawValue.withCString { n in
                 if let payload = payload {

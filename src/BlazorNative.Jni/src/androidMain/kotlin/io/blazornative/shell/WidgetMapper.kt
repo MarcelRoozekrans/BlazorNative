@@ -679,7 +679,7 @@ class WidgetMapper(
      * back event is consumed (even with no click wire attached — a hand-rolled
      * modal without the attach still must not let back NAVIGATE out from under
      * an open overlay; the gap is logged loudly). Main-thread only, like every
-     * map in this class — [MainActivity.onBackPressed] runs there.
+     * map in this class — MainActivity's OnBackPressedCallback runs there.
      */
     internal fun requestTopmostModalDismissal(): Boolean {
         val topmost = modalOverlays.entries.lastOrNull() ?: return false
@@ -738,18 +738,75 @@ class WidgetMapper(
     internal val scrollBusyWireCount: Int
         get() = scrollWires.values.count { it.inFlight || it.pendingOffsetDp != null }
 
+    // ── Phase 16.2 (#346): the back state, applied with the page it describes ──
+
+    /** .NET's pushed back state, HELD until a batch carries it — see [BackStateBuffer] for
+     * why applying it on arrival would let back act on a page not yet on screen. */
+    private val backState = BackStateBuffer()
+
+    /** The last value handed to [onBackEnabledChanged]. Main thread only. */
+    private var publishedBackEnabled = false
+
+    /**
+     * Phase 16.2 (#346): told, on main, whenever [backEnabled] changes. MainActivity sets its
+     * OnBackPressedCallback's `isEnabled` from it. Checked at the end of every batch, which
+     * is where both inputs change: a batch applies the buffered back state, and modals open
+     * and close only inside batches. It publishes only on a change, so anything that sets the
+     * callback directly must put it back to [backEnabled] afterwards, or the two drift
+     * (handBackToPlatform does).
+     */
+    internal var onBackEnabledChanged: ((Boolean) -> Unit)? = null
+
+    /** Phase 16.2: at least one modal overlay is live, so back must dismiss it. Main thread. */
+    internal val hasOpenModal: Boolean get() = modalOverlays.isNotEmpty()
+
+    /** Phase 16.2: the back state this shell acts on, as the last batch applied it. Main thread. */
+    internal val canGoBack: Boolean get() = backState.canGoBack
+
+    /** Phase 16.2: whether the shell must intercept back — to dismiss a modal, or to hand the
+     * back to .NET because .NET can go back. False means the system's default back, which
+     * finishes the Activity. Main thread. */
+    internal val backEnabled: Boolean get() = canGoBack || hasOpenModal
+
+    /** Phase 16.2 (#346): .NET's BackState notice, from any thread. HELD for the next batch,
+     * never applied here. */
+    fun offerBackState(canGoBack: Boolean) = backState.offer(canGoBack)
+
     fun apply(frame: RenderFrame) {
         for (patch in frame.patches) {
             pending.add(patch)
             if (patch is RenderPatch.CommitFrame) {
                 val batch = pending.toList()
                 pending.clear()
-                mainHandler.post { applyBatch(batch) }
+                // Phase 16.2: the back state rides the first batch after its notice that is
+                // not removal-only, the new page's mount, so main applies it in the same
+                // runnable that puts that page on screen (spec decision 2). A swap's removal
+                // batch carries nothing; an empty mount, a lone CommitFrame, does carry it.
+                val carriedBackState = backState.takeForBatch(batch)
+                mainHandler.post { applyBatch(batch, carriedBackState) }
             }
         }
     }
 
-    private fun applyBatch(patches: List<RenderPatch>) {
+    /**
+     * Phase 16.2 (#346), test-only: true for the WHOLE of one batch's runnable, from its first
+     * patch to its [onBackEnabledChanged] publish. BackAndroidTest reads it inside the callback
+     * to prove the back state took effect in the runnable that showed the page, not in one
+     * posted before or after it. [applyingBatch] cannot answer that: it drops before the tail.
+     */
+    internal var inBatchRunnableForTest = false
+        private set
+
+    private fun applyBatch(patches: List<RenderPatch>, carriedBackState: Boolean? = null) {
+        inBatchRunnableForTest = true
+        try {
+            applyBatchBody(patches, carriedBackState)
+        } finally {
+            inBatchRunnableForTest = false
+        }
+    }
+
+    private fun applyBatchBody(patches: List<RenderPatch>, carriedBackState: Boolean?) {
         applyingBatch = true
         try {
             for (patch in patches) when (patch) {
@@ -793,6 +850,18 @@ class WidgetMapper(
         // AFTER the guard dropped — a dispatch from inside the guard would be
         // swallowed, and the re-clamped offset would never reach .NET.
         flushScrollWires()
+        // Phase 16.2 (#346): the back state this batch carried, and any modal it opened or
+        // closed, take effect in this same runnable, together with the page it shows.
+        backState.applyFromBatch(carriedBackState)
+        publishBackEnabled()
+    }
+
+    /** Hands [backEnabled] to [onBackEnabledChanged] when it changed. Main thread only. */
+    private fun publishBackEnabled() {
+        val enabled = backEnabled
+        if (enabled == publishedBackEnabled) return
+        publishedBackEnabled = enabled
+        onBackEnabledChanged?.invoke(enabled)
     }
 
     /**

@@ -101,7 +101,7 @@ final class BnDeepLinkTests: XCTestCase {
         // is precisely what "a live session exists" means to this type, so this
         // exercises the actual warm branch.
         var dispatched: [String] = []
-        BnDeepLink.shared.navigateDispatcher = { dispatched.append($0); return 0 }
+        BnDeepLink.shared.navigateDispatcher = { dispatched.append($0) }
 
         XCTAssertTrue(BnDeepLink.shared.handle(url: URL(string: "blazornative://geolocation")!))
 

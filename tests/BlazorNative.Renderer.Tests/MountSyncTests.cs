@@ -24,9 +24,10 @@ public sealed class MountSyncTests
         // SetParametersAsync is awaited by Renderer.RenderRootComponentAsync,
         // so overriding it with a never-completing await guarantees the
         // returned MountAsync task is observably incomplete when Mount<T>
-        // inspects IsCompletedSuccessfully. (OnInitializedAsync isn't enough:
-        // ComponentBase fire-and-forgets its continuation onto pending tasks
-        // and the first render task completes anyway.)
+        // inspects IsCompletedSuccessfully. (An OnInitializedAsync that awaits
+        // would do too: measured in Phase 16.2, Mount<T> throws for it today,
+        // because the root render task stays incomplete until OnInitializedAsync
+        // finishes. This override is kept as the most direct way to hold it.)
         private static readonly TaskCompletionSource _neverCompletes = new();
 
         Task IComponent.SetParametersAsync(ParameterView parameters)

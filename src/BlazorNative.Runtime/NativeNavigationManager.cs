@@ -147,6 +147,15 @@ public sealed class NativeNavigationManager : INavigationManager
 
     public ValueTask NavigateToAsync(string route)
     {
+        Navigate(route, isBack: false);
+        return ValueTask.CompletedTask;
+    }
+
+    /// <summary>The navigation, forward or back. A forward step records the page it
+    /// leaves in <see cref="_previousRoute"/>; a back CONSUMES the slot instead. Both
+    /// happen inside afterSwap, so a failed swap leaves the slot untouched.</summary>
+    private void Navigate(string route, bool isBack)
+    {
         if (!Routes.TryGetValue(route, out string? component))
         {
             throw new ArgumentException(
@@ -175,41 +184,100 @@ public sealed class NativeNavigationManager : INavigationManager
         //    CurrentRoute pointing at a page that never mounted.
         //    RouteChanged subscribers are ISOLATED (Phase 4.2, DoD #4) — see
         //    RaiseRouteChanged.
-        HostSession.SwapRoot(component, afterSwap: () =>
-        {
-            _previousRoute = from;
-            _currentRoute = route;
-            RaiseRouteChanged(route);
-            // #201 developer trace (Debug, IsEnabled-guarded). Inside afterSwap, so it
-            // fires only when the swap SUCCEEDED — it tracks the screen, like the route
-            // state above. Route strings are app-authored, not user data.
-            if (BnLog.IsEnabled(BnLogLevel.Debug))
-                BnLog.Debug("NativeNavigationManager", $"navigated '{from}' → '{route}' (component '{component}')");
-        });
-        return ValueTask.CompletedTask;
+        //
+        //    Phase 16.2 (#346, spec decision 2): the BackState notice goes out in
+        //    beforeSwap, NOT in afterSwap. The swap's frames are emitted between
+        //    the two, so a notice sent where the route state is recorded would
+        //    reach the shell after the page it describes. It therefore carries the
+        //    value this navigation is ABOUT to produce: a forward step can always
+        //    go back, and a back consumes the only slot. A swap that throws resends
+        //    the value the route state still holds.
+        HostSession.SwapRoot(
+            component,
+            beforeSwap: () => PublishBackState(canGoBack: !isBack),
+            afterSwap: () =>
+            {
+                _previousRoute = isBack ? null : from;
+                _currentRoute = route;
+                RaiseRouteChanged(route);
+                // #201 developer trace (Debug, IsEnabled-guarded). Inside afterSwap, so it
+                // fires only when the swap SUCCEEDED — it tracks the screen, like the route
+                // state above. Route strings are app-authored, not user data.
+                if (BnLog.IsEnabled(BnLogLevel.Debug))
+                    BnLog.Debug("NativeNavigationManager", $"navigated '{from}' → '{route}' (component '{component}')");
+            },
+            swapFailed: () => PublishBackState(CanGoBack));
     }
 
     /// <summary>Host-initiated back (Phase 5.1, design §2): swaps to the
     /// <see cref="_previousRoute"/> slot and returns true; at the origin (no
-    /// prior) returns false so the Android shell finishes. The slot is CONSUMED
-    /// by the back — cleared AFTER the swap so a second consecutive back has no
-    /// prior (returns false) rather than ping-ponging forever between two pages.
-    /// The nested <see cref="NavigateToAsync"/> re-records the slot (with the
-    /// page we're leaving) as part of its normal contract; the clear then wipes
-    /// that so back leaves no re-back trail — a fresh FORWARD navigation is what
-    /// re-arms it. Runs off the dispatch lane (host-initiated): the swap's
-    /// RunAfterDispatch drains immediately (no open batch — the pinned
-    /// no-open-batch path). On a failed swap the exception propagates and the
-    /// slot survives (the clear is skipped), so back can be retried.</summary>
-    public async ValueTask<bool> NavigateBackAsync()
+    /// prior) returns false, and the shell hands the press to the platform's default
+    /// back. The slot is CONSUMED by the back — cleared inside the swap unit, so a
+    /// second consecutive back has no prior (returns false) rather than ping-ponging
+    /// forever between two pages.
+    /// A fresh FORWARD navigation is what re-arms it. Runs off the dispatch lane
+    /// (host-initiated): the swap's RunAfterDispatch drains immediately (no open
+    /// batch — the pinned no-open-batch path). On a failed swap the exception
+    /// propagates and the slot survives, so back can be retried.
+    /// Phase 16.2: the clear moved from after the swap into afterSwap. The two
+    /// are the same off the dispatch lane; inside a click handler, where the
+    /// swap is deferred, the old order cleared the slot BEFORE the deferred swap
+    /// re-recorded it, so a back from a handler left a re-back trail.</summary>
+    public ValueTask<bool> NavigateBackAsync()
     {
         if (_previousRoute is not { } target)
-            return false; // at the origin — the shell falls through to finish
+            return ValueTask.FromResult(false); // at the origin — the shell falls through to finish
 
-        await NavigateToAsync(target);
-        _previousRoute = null; // a back consumes the slot — no auto re-back
-        return true;
+        Navigate(target, isBack: true);
+        return ValueTask.FromResult(true);
     }
+
+    // ── The back state (Phase 16.2, #346) ────────────────────────────────────
+    //
+    // The shell no longer asks whether .NET can go back; this pushes the answer as a
+    // BackState notice. _lastSentCanGoBack is what the shell was last told, null until
+    // the session's first mount. It needs no reset of its own: this manager is born
+    // with its session, and a new session builds a new one.
+
+    private readonly object _backStateLock = new();
+    private bool? _lastSentCanGoBack;
+
+    /// <summary>Whether a back would be handled now: the previous-route slot is set.</summary>
+    internal bool CanGoBack => _previousRoute is not null;
+
+    /// <summary>Tells the shell <paramref name="canGoBack"/> when it differs from what
+    /// the shell was last told. Always sends the first time, which is the session's first
+    /// mount. Never throws: the send is fire-and-forget.
+    ///
+    /// The send happens INSIDE the lock, so the order the shell receives notices in is
+    /// the order the recorded value changed in. Callers are not all on one thread:
+    /// TryMount publishes from the mount export's thread, and navigation from the render
+    /// thread. Holding the lock across the send cannot deadlock: under it runs only
+    /// SendBackState, whose hostCallBegin is a begin that must return at once by the
+    /// host-call contract, and a shell that answers inline re-enters .NET only through
+    /// CompleteHostCall, which takes no lock of this manager and runs no continuation
+    /// inline. The lock is private and taken nowhere else.</summary>
+    internal void PublishBackState(bool canGoBack) => PublishBackState(canGoBack, force: false);
+
+    private void PublishBackState(bool canGoBack, bool force)
+    {
+        lock (_backStateLock)
+        {
+            if (!force && _lastSentCanGoBack == canGoBack)
+                return;
+            _lastSentCanGoBack = canGoBack;
+            NativeShellBridge.SendBackState(canGoBack);
+        }
+    }
+
+    /// <summary>HostSession calls this before EVERY mount, so the shell's back state is set
+    /// before the mount's first frame arrives. It sends even when the value is unchanged:
+    /// a mount after the first is a NEW shell on this process-global session, such as an
+    /// Android Activity recreated by a rotation, and a new shell starts with back disabled.
+    /// Deduplicating here would leave it disabled while .NET can go back, and a later forward
+    /// step that keeps the value true would not correct it, so back would finish the app from
+    /// a sub-page.</summary>
+    internal void PublishBackState() => PublishBackState(CanGoBack, force: true);
 
     /// <summary>Raises <see cref="RouteChanged"/> with per-subscriber
     /// isolation (Phase 4.2, DoD #4 — the DevHostBridge.RaiseNativeEvent

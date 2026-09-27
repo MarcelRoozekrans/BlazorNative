@@ -279,9 +279,11 @@ class HostEventTest {
     /**
      * #346, FIXED BY PHASE 16.1 and pinned the right way round.
      *
-     * MainActivity's `handleBack` calls [BlazorNativeRuntime.dispatchHostEventAndWait]
-     * from the main thread inside the predictive-back callback, and that method does an
-     * untimed `future.get()` against the single `BlazorNative-Dispatch` lane. #339's
+     * Until Phase 16.2, MainActivity's `handleBack` called
+     * [BlazorNativeRuntime.dispatchHostEventAndWait] from the main thread inside the
+     * predictive-back callback; since 16.2 it dispatches back fire-and-forget and this test
+     * drives the blocking method directly. That method does an untimed `future.get()`
+     * against the single `BlazorNative-Dispatch` lane. #339's
      * condition is a PRIOR async handler suspended on an open host call: the unanswered-
      * permission-sheet state. Until 16.1 that handler held the lane's one worker thread
      * inside `blazornative_dispatch_event`, so the back Callable queued behind it and
@@ -327,7 +329,7 @@ class HostEventTest {
             )
 
             // From another thread — standing in for Android's main thread inside
-            // OnBackInvokedCallback — make the EXACT call MainActivity's handleBack makes.
+            // OnBackInvokedCallback — make the call MainActivity's handleBack made until Phase 16.2.
             val backReturned = AtomicBoolean(false)
             var backThrew: Throwable? = null
             backThread = Thread({

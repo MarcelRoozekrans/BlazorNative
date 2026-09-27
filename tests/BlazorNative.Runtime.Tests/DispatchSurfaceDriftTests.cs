@@ -46,7 +46,7 @@ namespace BlazorNative.Runtime.Tests;
 
 public sealed class DispatchSurfaceDriftTests
 {
-    private sealed record Method(string Name, string Semantics, string[]? Platforms, string? Reason);
+    private sealed record Method(string Name, string Semantics, string[]? Platforms, string? Reason, string? Visibility);
     private sealed record IgnoredMethod(string Name, string[]? Platforms, string? Reason);
 
     private static Method[] Surface()
@@ -65,7 +65,8 @@ public sealed class DispatchSurfaceDriftTests
                 m.GetProperty("name").GetString()!,
                 m.GetProperty("semantics").GetString()!,
                 platforms,
-                m.TryGetProperty("reason", out JsonElement r) ? r.GetString() : null));
+                m.TryGetProperty("reason", out JsonElement r) ? r.GetString() : null,
+                m.TryGetProperty("visibility", out JsonElement v) ? v.GetString() : null));
         }
 
         Assert.True(methods.Count >= 4,
@@ -309,6 +310,77 @@ public sealed class DispatchSurfaceDriftTests
                     + $"dispatchLane.{(laneBlocks ? "sync" : "async")}. This is #339's exact "
                     + "shape: a method whose name matches its twin and whose behaviour does not.");
             }
+        }
+    }
+
+    /// <summary>Phase 16.2 Task 5 (#346) — <c>dispatchHostEventAndWait</c> became
+    /// internal and test-only by owner decision, and the manifest now carries an
+    /// optional <c>visibility</c> field to record it. This is the differential half:
+    /// the semantics fact above compares a method's LANE CALL to its declared
+    /// semantics; this one compares a method's ACCESS MODIFIER to its declared
+    /// visibility, in both shells, the same manifest-vs-both-shells shape #339's own
+    /// pin uses. <c>visibility</c> is optional — a method the manifest does not
+    /// restrict is skipped, exactly like an absent <c>platforms</c>/<c>reason</c>
+    /// pair elsewhere in this file — so this fact only ever grows the guarded set,
+    /// never shrinks what the other facts already check.
+    ///
+    /// <para>FIX ROUND 1 (Rule 2): optional means the loop below can iterate zero
+    /// times, which passed with nothing asserted at all when the manifest's one
+    /// <c>visibility</c> entry was removed and both shells made public — measured
+    /// in review. The floor below requires at least one entry, NAMED as
+    /// <c>dispatchHostEventAndWait</c> rather than merely counted, so the anchor
+    /// cannot be satisfied by some unrelated method while this one's own entry goes
+    /// missing.</para>
+    ///
+    /// <para>Kotlin's `internal` modifier keyword is source-level truth here, not the
+    /// compiled bytecode: a JVM member marked `internal` still comes out
+    /// `ACC_PUBLIC`, only its name gets a `$ModuleName` mangled suffix (measured with
+    /// javap against the compiled class) — the bytecode access flag alone cannot
+    /// distinguish `internal` from `public`. This fact reads the Kotlin SOURCE
+    /// keyword instead, which is unambiguous and is what
+    /// <c>DispatchHostEventAndWaitVisibilityTest</c> (the JVM suite, via
+    /// <c>KVisibility</c>) independently re-proves at the reflection level.</para></summary>
+    [Fact]
+    public void MethodsWithADeclaredVisibility_MatchBothShells()
+    {
+        string kotlin = KotlinRuntime();
+        string swift = SwiftRuntime();
+
+        // THE FLOOR (fix round 1): `visibility` is optional, so a loop with nothing to
+        // iterate would pass here having asserted nothing at all -- exactly the
+        // vacuous-pin shape pin-standard.md Rule 2 exists for, and exactly what the
+        // review measured by deleting the manifest's one `"visibility"` line and
+        // making both shells public: all five facts stayed green. A NAMED anchor,
+        // not just a count, so the floor cannot be satisfied by some unrelated method
+        // picking up a `visibility` entry later while dispatchHostEventAndWait's own
+        // goes missing.
+        Method[] declaredVisibility = [.. Surface().Where(m => m.Visibility is not null)];
+        Assert.True(declaredVisibility.Length > 0,
+            "no method in src/dispatch-surface.json declares a 'visibility' -- this fact's loop "
+            + "would run zero iterations and pass while checking nothing. dispatchHostEventAndWait "
+            + "must carry 'visibility': 'internal' (16.2 Task 5, #346).");
+        Assert.Contains(declaredVisibility, m => m.Name == "dispatchHostEventAndWait");
+
+        foreach (Method m in declaredVisibility)
+        {
+            Assert.Equal("internal", m.Visibility);
+            // The only value this fact knows how to check today — a future second
+            // value needs its own modifier-keyword mapping added here, deliberately.
+
+            bool wantKotlin = m.Platforms is null || m.Platforms.Contains("kotlin");
+            bool wantSwift = m.Platforms is null || m.Platforms.Contains("swift");
+
+            if (wantKotlin)
+                Assert.True(Regex.IsMatch(kotlin, $@"\binternal\s+fun\s+{Regex.Escape(m.Name)}\s*\("),
+                    $"src/dispatch-surface.json declares '{m.Name}' visibility 'internal', but the "
+                    + "Kotlin runtime does not declare it with the internal modifier — the manifest "
+                    + "and the shell disagree on visibility.");
+
+            if (wantSwift)
+                Assert.True(Regex.IsMatch(swift, $@"\binternal\s+func\s+{Regex.Escape(m.Name)}\s*\("),
+                    $"src/dispatch-surface.json declares '{m.Name}' visibility 'internal', but the "
+                    + "Swift runtime does not declare it with the internal modifier — the manifest "
+                    + "and the shell disagree on visibility.");
         }
     }
 
