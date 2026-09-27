@@ -636,8 +636,8 @@ public sealed class SlowHandlerWarningTests
         private int _selected;
         private void Select(int item) { _selected = item; Run("select", SlowMs); }
         private void BnSlowOne() => Run("bn-one", SlowMs);
-        private string? _bindA;
-        private string? _bindB;
+        private string _bindA = "";
+        private string _bindB = "";
         private void BnInSlowA(string _) => Run("bn-in-a", SlowMs);
         private void BnInSlowB(string _) => Run("bn-in-b", SlowMs);
         private void BnSlowTwo() => Run("bn-two", SlowMs);
@@ -690,12 +690,12 @@ public sealed class SlowHandlerWarningTests
             b.OpenElement(40, "input");
             b.AddAttribute(41, "placeholder", "bind-a");
             b.AddAttribute(42, "onchange", EventCallback.Factory.CreateBinder(this,
-                v => { _bindA = v; Run("bind-a", SlowMs); }, _bindA));
+                v => { _bindA = v ?? ""; Run("bind-a", SlowMs); }, _bindA));
             b.CloseElement();
             b.OpenElement(43, "input");
             b.AddAttribute(44, "placeholder", "bind-b");
             b.AddAttribute(45, "onchange", EventCallback.Factory.CreateBinder(this,
-                v => { _bindB = v; Run("bind-b", SlowMs); }, _bindB));
+                v => { _bindB = v ?? ""; Run("bind-b", SlowMs); }, _bindB));
             b.CloseElement();
             // Two BnInputs: each wraps the app's ValueChanged in its own HandleChange.
             b.OpenComponent<BnInput>(50);
