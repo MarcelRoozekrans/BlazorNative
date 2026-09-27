@@ -183,6 +183,11 @@ public static class SampleAppPages
         // `@if (_loaded)` page behind an async load. BackNoticeTest mounts it to pin that
         // the back state still rides its mount. Scaffolding, like HostEventProbe.
         BlazorNativePage.Named<EmptyFirstRenderProbe>("EmptyFirstRenderProbe"),
+        // Phase 16.3 (#9): two BnButtons with different slow synchronous handlers, and an
+        // echo of the slow-handler warnings. SlowHandlerProbeTest mounts it through the
+        // published dll to prove the warning names the app's method under NativeAOT.
+        // Scaffolding, like HostEventProbe.
+        BlazorNativePage.Named<SlowHandlerProbe>("SlowHandlerProbe"),
     ];
 
     private static bool s_registered;

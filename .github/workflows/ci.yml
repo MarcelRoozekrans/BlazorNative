@@ -4,7 +4,7 @@
 #
 #   build-test (windows-latest) — the local verification procedure verbatim
 #   (setup.ps1 §1–7 documents the toolchain pins):
-#     build (analyzers ride it) → .NET tests (1278 passed / 0 skipped) →
+#     build (analyzers ride it) → .NET tests (1295 passed / 0 skipped) →
 #     three NativeAOT publishes of samples/BlazorNative.SampleApp — the
 #     publish head since Phase 8.0: the app owns PublishAot, the exports stay
 #     in Runtime via UnmanagedEntryPointsAssembly, and the artifact is
@@ -13,7 +13,7 @@
 #     each publish must show exactly the 4 accepted IL2072 trim warnings) →
 #     ten-export verification (dumpbin via vswhere / llvm-readelf from the
 #     pinned NDK) → Gradle testDebugUnitTest against the fresh win-x64 dll
-#     (190 passed / 0 failed — the assertion is the step near the end of this
+#     (191 passed / 0 failed — the assertion is the step near the end of this
 #     job; this header is a copy, and it read 92 for four milestones) →
 #     the instrumented sources COMPILE →
 #     consumer smoke (EIGHT packages packed at the one props version, nupkg
@@ -2313,7 +2313,14 @@ jobs:
       # if any shipped Kotlin (src/main, src/androidMain, both template mirrors) or
       # Swift (BnHost/) source calls dispatchHostEventAndWait outside its own
       # declaration.
-      - name: .NET tests (assert 1278 passed / 0 skipped)
+      # 1278 -> 1294 (16.3, +16): the slow-handler warning (Renderer unchanged at 147,
+      # Analyzers unchanged at 27, Runtime 1104 -> 1120): SlowHandlerWarningTests, keyed
+      # by the handler's owner method, combined with the call site for framework-declared
+      # methods such as @bind, capped at 32 per session, timing the synchronous part only.
+      # 1294 -> 1295 (16.3 final review, +1): Runtime 1120 -> 1121,
+      # TheCallSiteMap_StaysFlat_AcrossFiftyReRendersOfCapturingLambdas pins that the
+      # call-site map holds live handlers only.
+      - name: .NET tests (assert 1295 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -2331,8 +2338,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 1278 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 1278 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 1295 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 1295 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # 15.5 (#291): every docs sample a consumer might copy is compiled. The fence
@@ -2713,7 +2720,11 @@ jobs:
       #    buffer's removal-only rule and handBackToPlatform's restore) and
       #    DispatchHostEventAndWaitVisibilityTest (2: KVisibility.INTERNAL on the
       #    compiled member, and a control that the check tells PUBLIC from INTERNAL).
-      - name: JVM tests (Gradle testDebugUnitTest — assert 190 passed / 0 failed)
+      # 190 -> 191 (16.3, +1): SlowHandlerProbeTest, the NativeAOT half of the
+      #    slow-handler warning's owner key — two BnButtons with different 500 ms
+      #    handlers, driven through the published win-x64 dll, read two warnings naming
+      #    SlowHandlerProbe.SlowOne and .SlowTwo, never BnButton.
+      - name: JVM tests (Gradle testDebugUnitTest — assert 191 passed / 0 failed)
         working-directory: src/BlazorNative.Jni
         run: |
           .\gradlew.bat --no-daemon testDebugUnitTest
@@ -2727,8 +2738,8 @@ jobs:
             $errors += [int]$suite.errors; $skipped += [int]$suite.skipped
           }
           Write-Host "JVM test totals across $($xmls.Count) suites: tests=$tests failures=$failures errors=$errors skipped=$skipped"
-          if ($tests -ne 190 -or $failures -ne 0 -or $errors -ne 0 -or $skipped -ne 0) {
-            throw "JVM test baseline drift: expected 190 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped"
+          if ($tests -ne 191 -or $failures -ne 0 -or $errors -ne 0 -or $skipped -ne 0) {
+            throw "JVM test baseline drift: expected 191 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped"
           }
 
       # the instrumented-sources compile gate moved to its own required job

@@ -28,6 +28,7 @@ const sidebars = {
       label: 'Guides',
       items: [
         'guides/state',
+        'guides/threading',
         'guides/rest-backends',
         'guides/safe-area',
       ],

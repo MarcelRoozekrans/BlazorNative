@@ -1,5 +1,6 @@
 ﻿using System.Globalization;
 using System.Diagnostics.CodeAnalysis;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using BlazorNative.Core;
 using Microsoft.AspNetCore.Components;
@@ -456,6 +457,12 @@ public sealed class NativeRenderer : BlazorRenderer
             foreach (ref var disposedId in batch.DisposedComponentIDs)
                 CleanupDisposedComponent(disposedId);
 
+            // Phase 16.3: forget the call sites of handler ids Blazor has disposed, so
+            // the map holds only live handlers and never grows without bound. Pinned by
+            // SlowHandlerWarningTests.TheCallSiteMap_StaysFlat_AcrossFiftyReRendersOfCapturingLambdas.
+            foreach (ref var disposedHandler in batch.DisposedEventHandlerIDs)
+                _handlerCallSites.Remove((int)disposedHandler);
+
             patches.Add(new CommitFramePatch(frameId, timestamp));
 
             var frame = new RenderFrame(frameId, timestamp, patches.AsSpan().ToArray());
@@ -875,7 +882,7 @@ public sealed class NativeRenderer : BlazorRenderer
                     if (slot.IsNode)
                     {
                         var attrFrame = new BnRenderTreeFrame(ref referenceFrames[bnEdit.ReferenceFrameIndex]);
-                        ProcessAttribute(slot.NodeId, ref attrFrame, ref patches);
+                        ProcessAttribute(cursor.ComponentId, slot.NodeId, ref attrFrame, ref patches);
                     }
                     break;
                 }
@@ -1063,7 +1070,7 @@ public sealed class NativeRenderer : BlazorRenderer
                     var child = new BnRenderTreeFrame(ref frames[frameIndex + i]);
                     if (child.FrameType == RenderTreeFrameType.Attribute)
                     {
-                        ProcessAttribute(nodeId, ref child, ref patches);
+                        ProcessAttribute(componentId, nodeId, ref child, ref patches);
                     }
                     else if (child.FrameType == RenderTreeFrameType.Component)
                     {
@@ -1323,6 +1330,7 @@ public sealed class NativeRenderer : BlazorRenderer
         // Event registrations for every node the component still owned die
         // with its buckets (Task 5 registry cleanup).
         _tree.RemoveComponent(componentId, RemoveNodeEventRegistrations);
+        _componentTypes.Remove(componentId);
     }
 
     /// <summary>Narrows Blazor's <c>ulong</c> event-handler id to the <c>int</c>
@@ -1350,7 +1358,7 @@ public sealed class NativeRenderer : BlazorRenderer
         return (int)handlerId;
     }
 
-    private void ProcessAttribute(int nodeId, ref BnRenderTreeFrame frame, ref PooledList<RenderPatch> patches)
+    private void ProcessAttribute(int componentId, int nodeId, ref BnRenderTreeFrame frame, ref PooledList<RenderPatch> patches)
     {
         var name = frame.AttributeName ?? "";
         var value = frame.AttributeValue?.ToString();
@@ -1363,6 +1371,8 @@ public sealed class NativeRenderer : BlazorRenderer
             // handlerId here (a SetAttribute re-attach overwrites: last wins,
             // so a later detach carries the LIVE handlerId). Task 5.
             RegisterEventHandler(nodeId, eventName, handlerId);
+            RecordCallSite(componentId, handlerId, frame.Sequence, eventName,
+                BlazorInterop.HandlerDelegate(frame.AttributeValue));
             patches.Add(new AttachEventPatch(nodeId, eventName, handlerId));
         }
         else if (name == ScrollToAttributeName)
@@ -1565,6 +1575,203 @@ public sealed class NativeRenderer : BlazorRenderer
     /// literal would leave the absence assertions passing while checking nothing.</summary>
     internal const string LateFaultLogLabel = "render fault (after the handler's first await)";
 
+    // ── The slow-handler warning (Phase 16.3, #9) ────────────────────────────
+    //
+    // Since 16.1 an async handler frees the dispatch lane when it yields, so what
+    // can still starve the lane is a handler whose SYNCHRONOUS part is slow: the
+    // render thread runs it while the shell's dispatch lane waits, and every later
+    // event queues behind it, one-for-one (the measurement is in
+    // docs/plans/2026-09-27-phase-16.3-record.md). This makes that stall
+    // diagnosable: DispatchSyncPart times its scope, Exports times the host-event
+    // arms, and a synchronous part over the budget logs ONE Warn per key per
+    // renderer, at most SlowHandlerWarningCap of them. A dispatch is keyed by its
+    // handler's call site, a host event by its name. A renderer lives exactly as
+    // long as its HostSession, so the set and the cap reset with the session. BnLog.DefaultLevel is Warn in every build: the
+    // once-per-key rule is what keeps Release quiet. Pinned by SlowHandlerWarningTests.
+
+    /// <summary>The slow-handler budget, in milliseconds (Phase 16.3). A synchronous
+    /// part longer than this logs <see cref="SlowHandlerLogLabel"/> once per handler
+    /// call site, or per event name for a host-event arm, per session. Internal on purpose:
+    /// it is a diagnostic threshold, not API. Chosen from the phase record's
+    /// measurement; the record gives the reason.</summary>
+    internal const int SlowHandlerBudget = 100;
+
+    /// <summary>The leading text of the slow-handler warning. A constant so the pins
+    /// that assert its absence track the real text.</summary>
+    internal const string SlowHandlerLogLabel = "slow handler";
+
+    /// <summary>The most slow-handler warnings one session logs. The next distinct slow
+    /// key logs <see cref="SlowHandlerSuppressedLogText"/> once, and then the warning is
+    /// silent until the session resets. A backstop for the Release-quiet promise: it
+    /// also bounds the host-event keys, whose names the shell supplies.</summary>
+    internal const int SlowHandlerWarningCap = 32;
+
+    /// <summary>The one line logged when <see cref="SlowHandlerWarningCap"/> is reached.</summary>
+    internal const string SlowHandlerSuppressedLogText = "further slow-handler warnings suppressed";
+
+    private static readonly long s_slowHandlerBudgetTicks = SlowHandlerBudget * Stopwatch.Frequency / 1000;
+
+    /// <summary>Test-only: replaces <see cref="Stopwatch.GetTimestamp"/> as THIS
+    /// renderer's clock for the slow-handler timing, so a pin can make a synchronous
+    /// part "slow" without waiting. Per renderer, never static: other renderers in
+    /// the process keep the real clock. Null in production.</summary>
+    internal Func<long>? TimestampForTests { get; set; }
+
+    /// <summary>Keys already warned about, for the once-per-key rule. Render thread
+    /// only in practice; locked anyway, because the lock is uncontended and a
+    /// wrong-thread caller must not corrupt it.</summary>
+    private readonly HashSet<string> _slowHandlerWarned = new(StringComparer.Ordinal);
+
+    /// <summary>Slow-handler warnings logged so far this session, the suppression line
+    /// included. Guarded by the <see cref="_slowHandlerWarned"/> lock.</summary>
+    private int _slowHandlerWarnings;
+
+    /// <summary>Where a live handler id was attached. Written at the AttachEvent
+    /// emission site, pruned by the batch's disposed handler ids, and read by the
+    /// slow-handler warning. Render thread only.</summary>
+    private readonly Dictionary<int, HandlerCallSite> _handlerCallSites = new();
+
+    /// <summary>Test-only: how many call sites the map holds. Pins that it holds the live
+    /// handlers only, never one entry per render.</summary>
+    internal int HandlerCallSiteCountForTests => OnRenderThread(() => _handlerCallSites.Count);
+
+    /// <summary>A handler's identity for the once-per-handler rule. Blazor hands a
+    /// lambda that captures per-render state a NEW handler id on every render, and
+    /// every item of a <c>foreach</c> its own, so the id cannot key the rule.
+    /// <para>The key is the handler's OWNER: the method its delegate runs, declaring
+    /// type and name. The compiler emits one method per lambda call site, so that is
+    /// stable across renders and items and unique per call site in code. It is NOT the
+    /// component whose render tree holds the attribute: <c>BnButton</c> forwards every
+    /// app's <c>OnClick</c> from one line, and a <c>BnView</c>'s ChildContent renders
+    /// into BnView's tree with the page's sequence numbers, so a tree-owner key would
+    /// merge every such handler in the app into one.</para>
+    /// <para>The fallback, when no delegate can be reached or its method cannot be
+    /// resolved, is the tree owner: the component type, the attribute frame's sequence
+    /// number and the event name. The delegate is only read here; its method is
+    /// resolved when a dispatch is already over budget, never on the render path.</para></summary>
+    private readonly record struct HandlerCallSite(Type Component, int Sequence, string EventName, Delegate? Handler)
+    {
+        public (string Key, string Owner) Resolve()
+        {
+            if (Handler is not null)
+            {
+                try
+                {
+                    System.Reflection.MethodInfo method = Handler.Method;
+                    if (method.DeclaringType is { FullName: { } declaring } type)
+                    {
+                        // A FRAMEWORK method is shared by every call site that uses it: each
+                        // @bind of one value type runs Blazor's own binder lambda, and a
+                        // BlazorNative.Components wrapper runs its own handler for every
+                        // instance. Combined with the tree-owner key it stays per call site,
+                        // and the warning names the component that holds the call site.
+                        if (IsFrameworkAssembly(type.Assembly))
+                            return ($"{declaring}::{method.Name}#{Component.FullName}#{Sequence}#{EventName}",
+                                Component.FullName ?? Component.Name);
+                        return ($"{declaring}::{method.Name}#{EventName}", $"{declaring}.{method.Name}");
+                    }
+                }
+                catch (NotSupportedException)
+                {
+                    // A method with no reflection metadata under NativeAOT: fall back.
+                }
+            }
+            return ($"{Component.FullName}#{Sequence}#{EventName}", Component.FullName ?? Component.Name);
+        }
+    }
+
+    /// <summary>Whether <paramref name="assembly"/> is framework code for the slow-handler
+    /// key: Blazor (<c>Microsoft.AspNetCore.Components*</c>), the BCL (<c>System*</c>), or
+    /// <c>BlazorNative.Components</c>, whose wrappers run their own handler for every
+    /// instance. Any other assembly, the sample app included, is app code.</summary>
+    private static bool IsFrameworkAssembly(System.Reflection.Assembly assembly)
+    {
+        string name = assembly.GetName().Name ?? "";
+        return name.StartsWith("Microsoft.AspNetCore.Components", StringComparison.Ordinal)
+            || name == "System" || name.StartsWith("System.", StringComparison.Ordinal)
+            || name == "BlazorNative.Components";
+    }
+
+    private void RecordCallSite(int componentId, int handlerId, int sequence, string eventName, Delegate? handler)
+    {
+        if (_componentTypes.TryGetValue(componentId, out Type? component))
+            _handlerCallSites[handlerId] = new HandlerCallSite(component, sequence, eventName, handler);
+    }
+
+    /// <summary>Each live component's type, for <see cref="RecordCallSite"/>. Kept here
+    /// rather than read through <c>GetComponentState</c>: a component rendered and then
+    /// disposed in the SAME batch still has its diff in the batch, but Blazor has already
+    /// removed its state, and <c>GetComponentState</c> would throw mid-frame. Removed in
+    /// <see cref="CleanupDisposedComponent"/>, after the batch's diffs. Render thread only.</summary>
+    private readonly Dictionary<int, Type> _componentTypes = new();
+
+    /// <inheritdoc/>
+    protected override Microsoft.AspNetCore.Components.Rendering.ComponentState CreateComponentState(
+        int componentId, IComponent component, Microsoft.AspNetCore.Components.Rendering.ComponentState? parentComponentState)
+    {
+        _componentTypes[componentId] = component.GetType();
+        return base.CreateComponentState(componentId, component, parentComponentState);
+    }
+
+    /// <summary>The slow-handler key and subject of a UI dispatch: its call site when
+    /// the attach was recorded, else its handler id. Formatted only once a dispatch
+    /// is over budget, so the hot path allocates nothing for the warning.</summary>
+    private static (string Key, string Subject) DispatchSubject(NativeUiEvent e, HandlerCallSite? site)
+    {
+        if (site is not { } s)
+            return ($"handler {e.HandlerId}", $"handler {e.HandlerId} '{e.EventName}'");
+        (string key, string owner) = s.Resolve();
+        return (key, $"handler {e.HandlerId} '{e.EventName}' in {owner}");
+    }
+
+    /// <summary>The start timestamp of a timed synchronous part.</summary>
+    internal long SyncPartTimestamp() => TimestampForTests?.Invoke() ?? Stopwatch.GetTimestamp();
+
+    /// <summary>Called by Exports when a host-event arm's synchronous part, which runs
+    /// outside any <see cref="DispatchScope"/>, has finished on the render thread.
+    /// Keyed by <paramref name="eventName"/>. Never the payload.</summary>
+    internal void NoteHostEventSyncPart(string eventName, long started)
+    {
+        if (OverBudget(started, out long elapsed))
+            WarnSlowOnce($"host event {eventName}", $"host event '{eventName}'", elapsed);
+    }
+
+    /// <summary>Whether the part that began at <paramref name="started"/> ran over
+    /// <see cref="SlowHandlerBudget"/>, and for how many ticks.</summary>
+    private bool OverBudget(long started, out long elapsed)
+    {
+        elapsed = SyncPartTimestamp() - started;
+        return elapsed > s_slowHandlerBudgetTicks;
+    }
+
+    /// <summary>Logs the slow-handler Warn, the first time only for
+    /// <paramref name="key"/> and at most <see cref="SlowHandlerWarningCap"/> times per
+    /// session. <paramref name="subject"/> names the handler; the caller never passes
+    /// the payload, which can carry user input.</summary>
+    private void WarnSlowOnce(string key, string subject, long elapsed)
+    {
+        lock (_slowHandlerWarned)
+        {
+            if (_slowHandlerWarnings > SlowHandlerWarningCap)
+                return; // the cap was reached and announced: silent until the session resets
+            if (!_slowHandlerWarned.Add(key))
+                return;
+            if (++_slowHandlerWarnings > SlowHandlerWarningCap)
+            {
+                BnLog.Warn("NativeRenderer",
+                    $"{SlowHandlerLogLabel}: {SlowHandlerSuppressedLogText} for this session, "
+                    + $"after {SlowHandlerWarningCap} distinct slow handlers.");
+                return;
+            }
+        }
+        long ms = elapsed * 1000 / Stopwatch.Frequency;
+        BnLog.Warn("NativeRenderer",
+            $"{SlowHandlerLogLabel}: {subject} held the render thread for {ms} ms, over the "
+            + $"{SlowHandlerBudget} ms budget. The shell's dispatch lane waited with it, and every "
+            + "event behind it waited too. Move the work after an await, or off the render thread. "
+            + $"Warned once per call site per session, at most {SlowHandlerWarningCap} times.");
+    }
+
     /// <summary>Test-only: whether a dispatch scope flows in the CURRENT execution
     /// context. DispatchWindowScopeTests reads it from unrelated render-thread work to
     /// pin that <see cref="DispatchSyncPart"/> restores it.</summary>
@@ -1595,6 +1802,13 @@ public sealed class NativeRenderer : BlazorRenderer
         var scope = new DispatchScope(this);
         DispatchScope? outer = _currentScope;
         DispatchScope? outerFlowing = s_flowingScope.Value;
+        // Phase 16.3: the slow-handler clock starts as the scope OPENS. The call site
+        // is resolved NOW: the handler's own re-render can dispose its id, when its
+        // delegate changed, and that prunes the id from the call-site map.
+        HandlerCallSite? callSite = _handlerCallSites.TryGetValue(e.HandlerId, out HandlerCallSite found)
+            ? found
+            : null;
+        long started = SyncPartTimestamp();
         _currentScope = scope;
         s_flowingScope.Value = scope;
         Task? task = null;
@@ -1624,6 +1838,14 @@ public sealed class NativeRenderer : BlazorRenderer
                 DrainPostDispatchActions(scope);
             else if (scope.PostDispatchActions is { } queued)
                 (outer.PostDispatchActions ??= new List<Action>()).AddRange(queued);
+        }
+        // ...and stops once it has CLOSED, its queued swap included: the whole
+        // interval the shell's dispatch lane waits for. Keyed by the handler's call
+        // site; the payload is never passed.
+        if (OverBudget(started, out long slowElapsed))
+        {
+            (string slowKey, string slowSubject) = DispatchSubject(e, callSite);
+            WarnSlowOnce(slowKey, slowSubject, slowElapsed);
         }
 
         // The handler is finished on these two returns, so the scope is Done at once:

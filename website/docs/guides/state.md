@@ -167,25 +167,13 @@ reference to a component that has been disposed.
 **Everything above assumes you are on the render thread.** Handlers raised by native widgets are;
 work you start yourself may not be.
 
-The renderer's dispatcher runs work on the **calling** thread — it does not marshal — so nothing
-moves you back automatically. Mutating state and calling `StateHasChanged` from a background thread
-drives a render batch from that thread, and the render tree is not safe to touch concurrently.
+Calling `StateHasChanged` off the render thread throws — exactly the rule Blazor Server enforces,
+for the same reason: the render tree is not safe to touch from two threads at once. Marshal back
+first, with `InvokeAsync(StateHasChanged)`. Awaiting inside a handler is fine on its own; the
+concern is work that starts on a thread-pool thread or arrives from a native callback of its own.
 
-The renderer reports this rather than letting it pass silently. A batch driven from a thread other
-than the one that drove the first batch is logged — as a warning when
-`StrictErrors` is on, at `Debug` level otherwise — naming both threads:
-
-```
-render batch driven from thread 14, but this renderer's batches are owned by
-thread 1 — the render tree is not safe to drive concurrently.
-```
-
-It is a **report, not an exception**: it tells you, it does not stop you. If you see it, the fix is
-to get the state change back onto the render thread — raise it from a native event handler, or
-route it through whatever your app already uses to reach the UI thread.
-
-Awaiting inside a handler is fine. The concern is work that starts on a pool thread or arrives from
-a native callback on a thread of its own.
+The full contract — what runs where, why an `await` doesn't move you off the render thread, and
+what a slow handler costs the app — is its own page: [Threading](./threading.md).
 
 ## What about a store, Flux, or Redux?
 

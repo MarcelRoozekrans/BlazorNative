@@ -45,6 +45,22 @@ internal static class BlazorInterop
     /// <summary>Idempotent trigger for the static constructor (probes layout).</summary>
     public static void EnsureInitialized() { }
 
+    /// <summary>The delegate an element's event attribute runs (Phase 16.3), or null
+    /// when the value is neither shape Blazor stores: a raw delegate, or a boxed
+    /// <see cref="EventCallback"/> whose delegate is not bound to its receiver.</summary>
+    public static Delegate? HandlerDelegate(object? attributeValue)
+    {
+        switch (attributeValue)
+        {
+            case Delegate handler:
+                return handler;
+            case EventCallback callback:
+                return RefAccessors.EventCallbackDelegate(ref callback);
+            default:
+                return null;
+        }
+    }
+
     private static void VerifyVersion()
     {
         var actual = typeof(BlazorRenderer).Assembly.GetName().Version;
@@ -112,6 +128,11 @@ internal static class BlazorInterop
             modifiers: null);
         if (stateHasChanged is null)
             failures.Add("ComponentBase.StateHasChanged() not found");
+
+        // Phase 16.3: EventCallback's internal Delegate field backs the slow-handler
+        // warning's owner key (RefAccessors.EventCallbackDelegate).
+        if (typeof(EventCallback).GetField("Delegate", BindingFlags.Instance | BindingFlags.NonPublic) is null)
+            failures.Add("EventCallback.Delegate field not found");
 
         if (failures.Count > 0)
             throw new BlazorVersionMismatchException(
@@ -302,6 +323,7 @@ internal ref struct BnRenderBatch
     public BnArrayRange<RenderTreeDiff>  UpdatedComponents    => new(_batch.UpdatedComponents);
     public BnArrayRange<RenderTreeFrame> ReferenceFrames      => new(_batch.ReferenceFrames);
     public BnArrayRange<int>             DisposedComponentIDs => new(_batch.DisposedComponentIDs);
+    public BnArrayRange<ulong>           DisposedEventHandlerIDs => new(_batch.DisposedEventHandlerIDs);
 }
 
 // ── RenderTreeDiff ───────────────────────────────────────────────────────────
@@ -351,6 +373,8 @@ internal ref struct BnRenderTreeFrame
     public string?             AttributeName            => _frame.AttributeName;
     public object?             AttributeValue           => _frame.AttributeValue;
     public ulong               AttributeEventHandlerId  => _frame.AttributeEventHandlerId;
+    // Phase 16.3: the frame's sequence number, half of the slow-handler call-site key.
+    public int                 Sequence                 => _frame.Sequence;
     public string?             TextContent              => _frame.TextContent;
     // Phase 7.0: the Razor compiler emits Markup frames (inter-element
     // whitespace at minimum) — the walk's Markup arm reads the content to
@@ -369,6 +393,13 @@ internal static class RefAccessors
         [UnsafeAccessorType("Microsoft.AspNetCore.Components.RenderTree.EventFieldInfo, Microsoft.AspNetCore.Components")]
         object? fieldInfo,
         EventArgs eventArgs);
+
+    // Phase 16.3: EventCallback.Delegate is internal. Blazor stores an element's
+    // event attribute either as the raw delegate or, when the delegate's target is not
+    // the receiver (a lambda's closure), as a boxed EventCallback; this reads the
+    // delegate out of the latter (verified in VerifyAccessors).
+    [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "Delegate")]
+    public static extern ref MulticastDelegate? EventCallbackDelegate(ref EventCallback callback);
 
     // Phase 4.2: StateHasChanged is protected on ComponentBase — the
     // test-only re-render seam calls it through this accessor (verified in

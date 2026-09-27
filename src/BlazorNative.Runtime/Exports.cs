@@ -854,7 +854,7 @@ public static class Exports
             NativeRenderer? renderer = HostSession.CurrentRenderer;
             bool faulted = renderer is null
                 ? NativeShellBridge.RaiseNativeEvent(evt)
-                : OnRenderThread(renderer, () => NativeShellBridge.RaiseNativeEvent(evt));
+                : OnRenderThread(renderer, name, () => NativeShellBridge.RaiseNativeEvent(evt));
             return faulted ? 2 : 0;
         }
         catch (Exception ex)
@@ -888,7 +888,7 @@ public static class Exports
 
         try
         {
-            Task<bool> back = OnRenderThread(renderer,
+            Task<bool> back = OnRenderThread(renderer, BnHostEvents.Back,
                 () => HostBackWorkForTests?.Invoke() ?? nav.NavigateBackAsync().AsTask());
             if (!back.IsCompleted)
             {
@@ -952,7 +952,7 @@ public static class Exports
 
         try
         {
-            Task navigation = OnRenderThread(renderer,
+            Task navigation = OnRenderThread(renderer, BnHostEvents.Navigate,
                 () => HostNavigateWorkForTests?.Invoke(route) ?? nav.NavigateToAsync(route).AsTask());
             if (!navigation.IsCompleted)
             {
@@ -1035,7 +1035,7 @@ public static class Exports
             BnSafeAreaInsets.Report(insets);
             return 1;
         }
-        OnRenderThread(renderer, () =>
+        OnRenderThread(renderer, BnHostEvents.SafeAreaChanged, () =>
         {
             BnSafeAreaInsets.Report(insets);
             return 0;
@@ -1048,9 +1048,26 @@ public static class Exports
     /// thread runs inline. Generic ON PURPOSE: with <typeparamref name="T"/> open, the
     /// call binds to <c>InvokeAsync(Func&lt;T&gt;)</c> even when T is a Task, so an
     /// arm that returns its Task gets that Task back, not a wait for its completion.
-    /// That is how the arms wait for the synchronous part only.</summary>
-    private static T OnRenderThread<T>(NativeRenderer renderer, Func<T> work)
-        => renderer.Dispatcher.InvokeAsync(work).GetAwaiter().GetResult();
+    /// That is how the arms wait for the synchronous part only.
+    /// Phase 16.3 (#9): the arm runs outside any DispatchScope, so it is timed HERE, on
+    /// the render thread, from the moment its work starts to the moment it returns —
+    /// never the time the post waited in the queue, which belongs to whatever ran
+    /// ahead of it. Over <see cref="NativeRenderer.SlowHandlerBudget"/> the renderer
+    /// logs its slow-handler Warn once per <paramref name="eventName"/> per session.
+    /// Never the payload.</summary>
+    private static T OnRenderThread<T>(NativeRenderer renderer, string eventName, Func<T> work)
+        => renderer.Dispatcher.InvokeAsync(() =>
+        {
+            long started = renderer.SyncPartTimestamp();
+            try
+            {
+                return work();
+            }
+            finally
+            {
+                renderer.NoteHostEventSyncPart(eventName, started);
+            }
+        }).GetAwaiter().GetResult();
 
     /// <summary>Parses one edge's value out of the flat-JSON payload. Rejects — as a
     /// PARSE failure (rc 3 in <see cref="DispatchHostSafeArea"/>), same as a missing
