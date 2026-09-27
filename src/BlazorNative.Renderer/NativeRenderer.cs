@@ -1,5 +1,6 @@
 ﻿using System.Globalization;
 using System.Diagnostics.CodeAnalysis;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using BlazorNative.Core;
 using Microsoft.AspNetCore.Components;
@@ -1565,6 +1566,74 @@ public sealed class NativeRenderer : BlazorRenderer
     /// literal would leave the absence assertions passing while checking nothing.</summary>
     internal const string LateFaultLogLabel = "render fault (after the handler's first await)";
 
+    // ── The slow-handler warning (Phase 16.3, #9) ────────────────────────────
+    //
+    // Since 16.1 an async handler frees the dispatch lane when it yields, so what
+    // can still starve the lane is a handler whose SYNCHRONOUS part is slow: the
+    // render thread runs it while the shell's dispatch lane waits, and every later
+    // event queues behind it, one-for-one (the measurement is in
+    // docs/plans/2026-09-27-phase-16.3-record.md). This makes that stall
+    // diagnosable: DispatchSyncPart times its scope, Exports times the host-event
+    // arms, and a synchronous part over the budget logs ONE Warn per key per
+    // renderer. A renderer lives exactly as long as its HostSession, so the set
+    // resets with the session. BnLog.DefaultLevel is Warn in every build: the
+    // once-per-key rule is what keeps Release quiet. Pinned by SlowHandlerWarningTests.
+
+    /// <summary>The slow-handler budget, in milliseconds (Phase 16.3). A synchronous
+    /// part longer than this logs <see cref="SlowHandlerLogLabel"/> once per handler
+    /// id, or per event name for a host-event arm, per session. Internal on purpose:
+    /// it is a diagnostic threshold, not API. Chosen from the phase record's
+    /// measurement; the record gives the reason.</summary>
+    internal const int SlowHandlerBudget = 100;
+
+    /// <summary>The leading text of the slow-handler warning. A constant so the pins
+    /// that assert its absence track the real text.</summary>
+    internal const string SlowHandlerLogLabel = "slow handler";
+
+    private static readonly long s_slowHandlerBudgetTicks = SlowHandlerBudget * Stopwatch.Frequency / 1000;
+
+    /// <summary>Test-only: replaces <see cref="Stopwatch.GetTimestamp"/> as THIS
+    /// renderer's clock for the slow-handler timing, so a pin can make a synchronous
+    /// part "slow" without waiting. Per renderer, never static: other renderers in
+    /// the process keep the real clock. Null in production.</summary>
+    internal Func<long>? TimestampForTests { get; set; }
+
+    /// <summary>Keys already warned about, for the once-per-key rule. Render thread
+    /// only in practice; locked anyway, because the lock is uncontended and a
+    /// wrong-thread caller must not corrupt it.</summary>
+    private readonly HashSet<string> _slowHandlerWarned = new(StringComparer.Ordinal);
+
+    /// <summary>The start timestamp of a timed synchronous part.</summary>
+    internal long SyncPartTimestamp() => TimestampForTests?.Invoke() ?? Stopwatch.GetTimestamp();
+
+    /// <summary>Called by Exports when a host-event arm's synchronous part, which runs
+    /// outside any <see cref="DispatchScope"/>, has finished on the render thread.
+    /// Keyed by <paramref name="eventName"/>. Never the payload.</summary>
+    internal void NoteHostEventSyncPart(string eventName, long started)
+        => NoteSyncPart($"host event {eventName}", $"host event '{eventName}'", started);
+
+    /// <summary>Logs the slow-handler Warn when the part that began at
+    /// <paramref name="started"/> ran over <see cref="SlowHandlerBudget"/>, the first
+    /// time only for <paramref name="key"/>. <paramref name="subject"/> names the
+    /// handler; the caller never passes the payload, which can carry user input.</summary>
+    private void NoteSyncPart(string key, string subject, long started)
+    {
+        long elapsed = SyncPartTimestamp() - started;
+        if (elapsed <= s_slowHandlerBudgetTicks)
+            return;
+        lock (_slowHandlerWarned)
+        {
+            if (!_slowHandlerWarned.Add(key))
+                return;
+        }
+        long ms = elapsed * 1000 / Stopwatch.Frequency;
+        BnLog.Warn("NativeRenderer",
+            $"{SlowHandlerLogLabel}: {subject} held the render thread for {ms} ms, over the "
+            + $"{SlowHandlerBudget} ms budget. The shell's dispatch lane waited with it, and every "
+            + "event behind it waited too. Move the work after an await, or off the render thread. "
+            + "Warned once per handler per session.");
+    }
+
     /// <summary>Test-only: whether a dispatch scope flows in the CURRENT execution
     /// context. DispatchWindowScopeTests reads it from unrelated render-thread work to
     /// pin that <see cref="DispatchSyncPart"/> restores it.</summary>
@@ -1595,6 +1664,8 @@ public sealed class NativeRenderer : BlazorRenderer
         var scope = new DispatchScope(this);
         DispatchScope? outer = _currentScope;
         DispatchScope? outerFlowing = s_flowingScope.Value;
+        // Phase 16.3: the slow-handler clock starts as the scope OPENS...
+        long started = SyncPartTimestamp();
         _currentScope = scope;
         s_flowingScope.Value = scope;
         Task? task = null;
@@ -1625,6 +1696,10 @@ public sealed class NativeRenderer : BlazorRenderer
             else if (scope.PostDispatchActions is { } queued)
                 (outer.PostDispatchActions ??= new List<Action>()).AddRange(queued);
         }
+        // ...and stops once it has CLOSED, its queued swap included: the whole
+        // interval the shell's dispatch lane waits for. Keyed by handler id; the
+        // payload is never passed.
+        NoteSyncPart($"handler {e.HandlerId}", $"handler {e.HandlerId} '{e.EventName}'", started);
 
         // The handler is finished on these two returns, so the scope is Done at once:
         // fire-and-forget work it started must not have a later fault attributed to it.
