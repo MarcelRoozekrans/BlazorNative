@@ -3532,12 +3532,14 @@ register in `docs/pin-standard.md` and in census rows 13a and 14a.
   commit with `--no-verify`, `2df5c94` in the reflog. It was reset at once with `--soft`, and it was
   never pushed.
 
-#### Phase 16.3: Starvation, measured [status: pending]
+#### Phase 16.3: Starvation, measured [status: active]
 **Goal:** With async offload in place, measure what a slow *synchronous* handler still costs, then
 fix #9 or re-ledger it with a new trigger; publish an app-author page on what runs where and what
 rc and async faults mean.
 **Surface:** Mixed
 **HelpWanted:** no
+**Design:** [`docs/superpowers/specs/2026-09-27-phase-16.3-design.md`](../superpowers/specs/2026-09-27-phase-16.3-design.md)
+**Plan:** [`docs/superpowers/plans/2026-09-27-phase-16.3-starvation.md`](../superpowers/plans/2026-09-27-phase-16.3-starvation.md)
 
 #### Phase 16.4: Audit and close [status: pending]
 **Goal:** Run `audit-milestone` against the DoD on live evidence and close M16. **No tag**, per
