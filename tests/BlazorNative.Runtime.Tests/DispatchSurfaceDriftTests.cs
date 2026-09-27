@@ -324,6 +324,14 @@ public sealed class DispatchSurfaceDriftTests
     /// pair elsewhere in this file — so this fact only ever grows the guarded set,
     /// never shrinks what the other facts already check.
     ///
+    /// <para>FIX ROUND 1 (Rule 2): optional means the loop below can iterate zero
+    /// times, which passed with nothing asserted at all when the manifest's one
+    /// <c>visibility</c> entry was removed and both shells made public — measured
+    /// in review. The floor below requires at least one entry, NAMED as
+    /// <c>dispatchHostEventAndWait</c> rather than merely counted, so the anchor
+    /// cannot be satisfied by some unrelated method while this one's own entry goes
+    /// missing.</para>
+    ///
     /// <para>Kotlin's `internal` modifier keyword is source-level truth here, not the
     /// compiled bytecode: a JVM member marked `internal` still comes out
     /// `ACC_PUBLIC`, only its name gets a `$ModuleName` mangled suffix (measured with
@@ -338,11 +346,23 @@ public sealed class DispatchSurfaceDriftTests
         string kotlin = KotlinRuntime();
         string swift = SwiftRuntime();
 
-        foreach (Method m in Surface())
-        {
-            if (m.Visibility is null)
-                continue;
+        // THE FLOOR (fix round 1): `visibility` is optional, so a loop with nothing to
+        // iterate would pass here having asserted nothing at all -- exactly the
+        // vacuous-pin shape pin-standard.md Rule 2 exists for, and exactly what the
+        // review measured by deleting the manifest's one `"visibility"` line and
+        // making both shells public: all five facts stayed green. A NAMED anchor,
+        // not just a count, so the floor cannot be satisfied by some unrelated method
+        // picking up a `visibility` entry later while dispatchHostEventAndWait's own
+        // goes missing.
+        Method[] declaredVisibility = [.. Surface().Where(m => m.Visibility is not null)];
+        Assert.True(declaredVisibility.Length > 0,
+            "no method in src/dispatch-surface.json declares a 'visibility' -- this fact's loop "
+            + "would run zero iterations and pass while checking nothing. dispatchHostEventAndWait "
+            + "must carry 'visibility': 'internal' (16.2 Task 5, #346).");
+        Assert.Contains(declaredVisibility, m => m.Name == "dispatchHostEventAndWait");
 
+        foreach (Method m in declaredVisibility)
+        {
             Assert.Equal("internal", m.Visibility);
             // The only value this fact knows how to check today — a future second
             // value needs its own modifier-keyword mapping added here, deliberately.
