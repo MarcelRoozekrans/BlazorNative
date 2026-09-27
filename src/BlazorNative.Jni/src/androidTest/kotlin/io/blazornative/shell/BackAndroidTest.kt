@@ -20,6 +20,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
@@ -33,16 +34,17 @@ import java.util.concurrent.atomic.AtomicReference
  * Now .NET pushes whether it can go back (a BackState notice), WidgetMapper applies it on main
  * in the same batch as the frame that shows the page, and an AndroidX OnBackPressedCallback is
  * enabled only while back must be intercepted: .NET can go back, or a modal is open. Disabled,
- * back takes the system default and finishes. Enabled, the press is handed to .NET
- * fire-and-forget, and a back .NET cannot handle after all comes back as BackUnhandled, which
- * finishes.
+ * back takes the platform default, which finishes an activity launched as these tests launch it.
+ * Enabled, the press is handed to .NET fire-and-forget, and a back .NET cannot handle after all
+ * comes back as BackUnhandled, which hands the press to that same platform default.
  *
  * Five proofs, all through the real MainActivity:
  *   - back from a page navigates to its parent, and the callback is enabled WITH the page;
  *   - back at the root finishes the activity: the scenario reaches DESTROYED. The first on-device
  *     pin of that path; HostEventAndroidTest used to leave it to the JVM and .NET;
- *   - #346's own scenario: while a handler holds a host call open, a back press returns at once,
- *     and the navigation lands once the call is released;
+ *   - #346's own scenario: while a SYNCHRONOUS handler holds the render thread (and with it the
+ *     dispatch lane) on a camera call, a back press returns at once, and the navigation lands
+ *     after the release. The old blocking back took ~3 s here, the release delay;
  *   - navigate, then press back in the very main-thread turn that first shows the new page: the
  *     press navigates back rather than exiting, and is not swallowed;
  *   - with a modal open and nothing to go back to, back dismisses the modal, and the callback
@@ -51,7 +53,8 @@ import java.util.concurrent.atomic.AtomicReference
  * HARNESS: the launch/poll/tap helpers and the structural finders are NavigationAndroidTest's and
  * HostEventAndroidTest's (form, settingsTitle, hasEditText, pollUntil, tapButton, firstMatch);
  * the camera hold is BnCameraAndroidTest's seam, AndroidShellBridge.cameraCaptureHook, with the
- * capture held instead of answered. Back is driven through `onBackPressedDispatcher.onBackPressed()`
+ * capture held instead of answered, under the sample's BackHoldProbe. "Same runnable" is read
+ * through WidgetMapper.inBatchRunnableForTest from inside a wrapped onBackEnabledChanged. Back is driven through `onBackPressedDispatcher.onBackPressed()`
  * on the main thread, the entry API 34's predictive back also feeds, because committing a
  * predictive-back GESTURE under instrumentation is unreliable. The callback's state is read
  * through `hasEnabledCallbacks()`, the dispatcher's own public answer.
@@ -90,20 +93,18 @@ class BackAndroidTest {
     fun back_from_a_page_navigates_to_its_parent() {
         launch().use { scenario ->
             assertTrue("BnDemo never rendered within 60s", pollUntil(scenario, 60_000) { form(it) != null })
+            // Start from the root, so the tap below is what turns back ON.
+            goForwardAndBackToTheRoot(scenario)
+            val toggles = recordEnableToggles(scenario)
 
             tapButton(scenario, "Settings →")
-            // The callback is enabled WITH the page (spec decision 2): checked in the same
-            // main-thread turn that first sees the settings page on screen.
-            val enabledWithPage = AtomicReference<Boolean?>(null)
             assertTrue("the swap to settings never completed within 10s",
-                pollUntil(scenario, 10_000) { act ->
-                    val shown = settingsTitle(act) != null && !hasEditText(act)
-                    if (shown) enabledWithPage.set(act.onBackPressedDispatcher.hasEnabledCallbacks())
-                    shown
-                })
-            assertEquals("the settings page was on screen with back DISABLED: the back state did not " +
-                "arrive with the page, so a press now would finish the app from a sub-page",
-                true, enabledWithPage.get())
+                pollUntil(scenario, 10_000) { act -> settingsTitle(act) != null && !hasEditText(act) })
+            // THE PIN (spec decision 2), DETERMINISTIC: back turned on exactly once, INSIDE the
+            // batch runnable, with the settings page already applied. Too early (on arrival, or
+            // with the swap's removal batch) sees no settings page; too late (a runnable posted
+            // after the batch) sees the flag down.
+            assertEnabledOnceWithThePage(toggles)
 
             scenario.onActivity { it.onBackPressedDispatcher.onBackPressed() }
 
@@ -139,52 +140,73 @@ class BackAndroidTest {
         }
     }
 
-    // ── 3. #346: a held host call does not hold the back press ───────────────
+    // ── 3. #346: a held RENDER THREAD does not hold the back press ───────────
 
     @Test
-    fun back_while_a_handler_holds_a_host_call_returns_at_once_and_navigates_after_release() {
+    fun back_while_the_render_thread_is_held_returns_at_once_and_navigates_after_release() {
         val held = AtomicReference<AndroidShellBridge.CameraCapture?>(null)
         val cameraCall = CountDownLatch(1)
-        // BnCameraAndroidTest's seam, HELD rather than answered: Take Photo's handler awaits
-        // this call and stays suspended on it, the state #339 and #346 were measured in.
+        // BnCameraAndroidTest's seam, HELD rather than answered.
         AndroidShellBridge.cameraCaptureHook = { capture -> held.set(capture); cameraCall.countDown() }
 
+        // History first: a forward step from BnDemo, so the probe mounted next can go back.
         launch().use { scenario ->
             assertTrue("BnDemo never rendered within 60s", pollUntil(scenario, 60_000) { form(it) != null })
-            // Forward to the camera page: history exists, so back is enabled and goes to .NET.
-            tapButton(scenario, "Camera")
-            assertTrue("the camera page never mounted within 10s",
-                pollUntil(scenario, 10_000) { buttonLabelled(it, "Take Photo") != null })
-            assertTrue("back must be enabled on the camera page, or the press never reaches .NET",
-                pollUntil(scenario, 10_000) { it.onBackPressedDispatcher.hasEnabledCallbacks() })
+            tapButton(scenario, "Settings →")
+            assertTrue("the swap to settings never completed within 10s",
+                pollUntil(scenario, 10_000) { settingsTitle(it) != null && !hasEditText(it) })
+        }
 
-            tapButton(scenario, "Take Photo")
-            assertTrue("Take Photo never began the camera call within 10s",
-                cameraCall.await(10, TimeUnit.SECONDS))
-
+        val released = AtomicBoolean(false)
+        var releaser: Thread? = null
+        launch(component = "BackHoldProbe").use { scenario ->
             try {
-                // THE PIN: the press returns at once. Before 16.2 it waited on the dispatch lane
-                // from the main thread, and a lane held by a handler held the press with it.
+                assertTrue("BackHoldProbe never rendered within 60s",
+                    pollUntil(scenario, 60_000) { buttonLabelled(it, "Hold") != null })
+                assertTrue("back must be enabled on the probe, or the press never reaches .NET",
+                    pollUntil(scenario, 10_000) { it.onBackPressedDispatcher.hasEnabledCallbacks() })
+
+                // Hold's SYNCHRONOUS handler blocks the render thread on the camera call, so
+                // the dispatch lane is held too (BackNoticeTest's positive control proves it).
+                tapButton(scenario, "Hold")
+                assertTrue("Hold never began the camera call within 10s",
+                    cameraCall.await(10, TimeUnit.SECONDS))
+
+                // Release in ~3 s from a thread of its own, so the OLD back, which waited on
+                // the lane from the main thread, finishes in ~3 s rather than hanging forever.
+                releaser = Thread({
+                    Thread.sleep(3_000)
+                    released.set(true)
+                    held.getAndSet(null)?.cancel()
+                }, "back-hold-releaser").apply { isDaemon = true; start() }
+
+                // THE PIN: the press returns at once. The pre-16.2 back took ~3 s here.
                 val elapsedMs = AtomicLong(-1)
                 scenario.onActivity { act ->
                     val t0 = System.nanoTime()
                     act.onBackPressedDispatcher.onBackPressed()
                     elapsedMs.set(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - t0))
                 }
-                assertTrue("the back press held the main thread for ${elapsedMs.get()} ms while a " +
-                    "handler held a host call open. That is #346: back waits on .NET.",
+                assertTrue("the back press held the main thread for ${elapsedMs.get()} ms while the " +
+                    "render thread was held. That is #346: back waits on .NET.",
                     elapsedMs.get() in 0 until 1_000)
-            } finally {
-                // Release the held call whatever happened above; the .NET session is shared.
-                held.getAndSet(null)?.cancel()
-            }
 
-            assertTrue("the back never navigated to BnDemo within 10s of the call's release",
-                pollUntil(scenario, 10_000) { act ->
-                    form(act) != null && buttonLabelled(act, "Take Photo") == null
-                })
-            scenario.onActivity { act ->
-                assertFalse("a handled back must not finish the activity", act.isFinishing)
+                // Nothing can have moved yet: the render thread is still held.
+                scenario.onActivity { act ->
+                    assertFalse("the release fired before this check; the window is too short to " +
+                        "observe the held state", released.get())
+                    assertNotNull("the page changed while the render thread was held",
+                        buttonLabelled(act, "Hold"))
+                    assertFalse("the press finished the activity", act.isFinishing)
+                }
+
+                // After the release the queued back lands: BnDemo, the history's page.
+                assertTrue("the back never navigated to BnDemo within 15s of the press",
+                    pollUntil(scenario, 15_000) { act -> form(act) != null && buttonLabelled(act, "Hold") == null })
+                assertTrue("the navigation cannot precede the release", released.get())
+            } finally {
+                releaser?.join(10_000)
+                held.getAndSet(null)?.cancel() // never leave the shared session held
             }
         }
     }
@@ -196,12 +218,10 @@ class BackAndroidTest {
         launch().use { scenario ->
             assertTrue("BnDemo never rendered within 60s", pollUntil(scenario, 60_000) { form(it) != null })
             goForwardAndBackToTheRoot(scenario)
+            val toggles = recordEnableToggles(scenario)
 
             tapButton(scenario, "Settings →")
-            // Press back in the SAME main-thread turn that first sees the settings page. The
-            // back state must already be applied: it rode the batch that showed the page. A
-            // back state applied later would leave this press disabled, and it would finish
-            // the app from a sub-page.
+            // Press back in the SAME main-thread turn that first sees the settings page.
             val pressed = AtomicBoolean(false)
             assertTrue("the swap to settings never completed within 10s",
                 pollUntil(scenario, 10_000, sleepMs = 5) { act ->
@@ -213,6 +233,9 @@ class BackAndroidTest {
                     shown
                 })
             assertTrue(pressed.get())
+            // Deterministic half: back was already ON when the page appeared, because it
+            // turned on inside the very runnable that applied the page.
+            assertEnabledOnceWithThePage(toggles)
 
             // Not swallowed: the press navigated back. Not an exit: the activity lives.
             assertTrue("the back pressed as the settings page appeared never navigated back " +
@@ -269,6 +292,37 @@ class BackAndroidTest {
     }
 
     // ── Harness (NavigationAndroidTest / HostEventAndroidTest conventions) ───
+
+    /** One `true` publish of the back state: whether it ran inside a batch runnable, and
+     * whether the settings page was already applied when it did. */
+    private data class Toggle(val inBatchRunnable: Boolean, val settingsShown: Boolean)
+
+    /** Wraps MainActivity's `onBackEnabledChanged` to record every toggle to `true`, then
+     * forwards it, so the production callback still runs. */
+    private fun recordEnableToggles(scenario: ActivityScenario<MainActivity>): MutableList<Toggle> {
+        val toggles = CopyOnWriteArrayList<Toggle>()
+        scenario.onActivity { act ->
+            val production = act.mapper.onBackEnabledChanged
+            assertNotNull("MainActivity no longer wires onBackEnabledChanged", production)
+            act.mapper.onBackEnabledChanged = { enabled ->
+                if (enabled) toggles.add(Toggle(
+                    inBatchRunnable = act.mapper.inBatchRunnableForTest,
+                    settingsShown = settingsTitle(act) != null && !hasEditText(act),
+                ))
+                production?.invoke(enabled)
+            }
+        }
+        return toggles
+    }
+
+    private fun assertEnabledOnceWithThePage(toggles: List<Toggle>) {
+        assertEquals("back must turn ON exactly once for the forward step; toggles: $toggles",
+            1, toggles.size)
+        assertTrue("back turned on OUTSIDE the batch runnable (${toggles[0]}): the back state was " +
+            "applied in a runnable of its own, before or after the page", toggles[0].inBatchRunnable)
+        assertTrue("back turned on before the settings page was applied (${toggles[0]}): it rode " +
+            "an earlier batch, such as the swap's removal", toggles[0].settingsShown)
+    }
 
     /** An explicit Intent with no action; see the class KDoc for why not launch(Class). */
     private fun launch(component: String? = null): ActivityScenario<MainActivity> {

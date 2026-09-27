@@ -202,7 +202,8 @@ class MainActivity : FragmentActivity() {
      * It is ENABLED only while the shell must intercept back: a modal is open, or .NET has
      * said it can go back. [WidgetMapper.onBackEnabledChanged] sets that, on main, in the same
      * batch as the frame that shows the page (spec decision 2), so the screen the user sees
-     * decides what back does. Disabled, back takes the system default and finishes, without
+     * decides what back does. Disabled, back takes the platform default (finish, or on API 31+
+     * a launcher task root moves to the background), without
      * asking .NET, which is what closes #346: the main thread never waits on .NET for a back.
      * Starts disabled, the root's answer, until the first batch says otherwise.
      */
@@ -325,9 +326,11 @@ class MainActivity : FragmentActivity() {
             // Phase 16.2 (#346): on whatever thread .NET sent it from — only BUFFERED here,
             // for the mapper's next batch to apply on main (spec decision 2).
             onBackState = { canGoBack -> mapper.offerBackState(canGoBack) },
-            // Phase 16.2 (#346): a back reached .NET with nothing to go back to. Finish, so
-            // the press is never swallowed. Posted: this arrives off the main thread.
-            onBackUnhandled = { runOnUiThread { finish() } },
+            // Phase 16.2 (#346): a back reached .NET with nothing to go back to. Hand the press
+            // to the platform's default, so it is never swallowed: on API 31+ a launcher task
+            // root moves to the background rather than finishing, exactly as a back at the
+            // root does when the callback is disabled. Posted: this arrives off the main thread.
+            onBackUnhandled = { runOnUiThread { handBackUnhandledToPlatform() } },
         )
 
         // Phase 5.1 (M5 DoD #5): a VIEW-intent deep link (blazornative://<route>)
@@ -610,23 +613,42 @@ class MainActivity : FragmentActivity() {
      * thread with it. Now the back is queued and this returns at once. .NET
      * navigates back, and its BackState for the page it lands on arrives ahead of
      * that page's frames; or, if it could not go back after all, its BackUnhandled
-     * notice finishes the activity (the runtime's onBackUnhandled), so a press that
-     * found a stale enabled state is never swallowed.
+     * notice hands the press to the platform's default (the runtime's
+     * onBackUnhandled), so a press that found a stale enabled state is never swallowed.
      *
      * Before boot there is no session to enter, and entering the lane then would put
-     * two threads in .NET at once. The callback cannot normally be enabled that early,
-     * but if it is, the press takes the system default, as a pre-boot back always has:
-     * disable, and re-dispatch.
+     * two threads in .NET at once. The mount's batches are posted before `booted`
+     * flips, so the callback CAN be enabled in that window; the press then takes the
+     * platform's default, as a pre-boot back always has.
      */
     private fun handleBack() {
+        // A predictive-back gesture already in progress is delivered to its callback even
+        // after that callback was disabled mid-gesture. Disabled means the shell no longer
+        // intercepts back, so do nothing rather than act on a stale enabled state.
+        if (!backCallback.isEnabled) return
         if (mapper.requestTopmostModalDismissal()) return
         if (!booted) {
-            backCallback.isEnabled = false
-            onBackPressedDispatcher.onBackPressed()
+            passBackToPlatform()
             return
         }
         runtime.dispatchHostEvent(BnHostEvent.Back)
     }
+
+    /** Phase 16.2 (#346): .NET's BackUnhandled, on main. Nothing to do once the activity is
+     * already going away; otherwise the press goes to the platform's default. */
+    private fun handBackUnhandledToPlatform() {
+        if (isFinishing || isDestroyed) return
+        passBackToPlatform()
+    }
+
+    /** Phase 16.2 (#346): the platform's default back, with [backCallback] put back to the
+     * state the mapper computes afterwards — never left disabled, or a later batch that
+     * computes `true` publishes nothing and back exits from a sub-page (handBackToPlatform). */
+    private fun passBackToPlatform() = handBackToPlatform(
+        setEnabled = { backCallback.isEnabled = it },
+        enabledNow = { mapper.backEnabled },
+        dispatch = { onBackPressedDispatcher.onBackPressed() },
+    )
 
     /**
      * Phase 11.0 (M11 DoD #1): the deep-link route → mount-component map, read

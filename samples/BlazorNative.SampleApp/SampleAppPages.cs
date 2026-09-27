@@ -175,6 +175,10 @@ public static class SampleAppPages
         // read/write + share → echo BnText — M5 DoD #6). Scaffolding, like
         // HostEventProbe.
         BlazorNativePage.Named<ClipboardProbe>("ClipboardProbe"),
+        // Phase 16.2 (#346): the render-thread hold (a SYNCHRONOUS handler blocked on a
+        // camera capture) BackAndroidTest presses back against. Scaffolding, like
+        // HostEventProbe.
+        BlazorNativePage.Named<BackHoldProbe>("BackHoldProbe"),
     ];
 
     private static bool s_registered;

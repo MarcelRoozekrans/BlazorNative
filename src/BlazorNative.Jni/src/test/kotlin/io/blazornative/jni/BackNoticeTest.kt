@@ -174,7 +174,132 @@ class BackNoticeTest {
         }
     }
 
-    /** The control for the pin above. The exemption is for BACK's rc 1 only: another event's
+    /**
+     * The JVM twin of the instrumented "same runnable" pin, against the dll's REAL frames.
+     * WidgetMapper offers each BackState to a [io.blazornative.shell.BackStateBuffer] and asks
+     * it, at every CommitFrame, what the batch carries; this drives the same two calls from the
+     * runtime's own listener and frame callback, in the order the shell receives them. A swap is
+     * two frames, the old root's removal and the new page; the value must ride the page's.
+     */
+    @Test
+    fun the_back_state_rides_the_frame_that_mounts_the_page_not_the_removal() {
+        val buffer = io.blazornative.shell.BackStateBuffer()
+        val carried = Collections.synchronizedList(mutableListOf<Pair<RenderFrame, Boolean?>>())
+        val runtime = BlazorNativeRuntime(
+            onFrame = { f -> carried.add(f to buffer.takeForBatch(f.patches)) },
+            onBackState = { buffer.offer(it) },
+        )
+        runtime.start(componentName = "BnDemo", platformOs = "test-host", bridge = RecordingHost())
+        try {
+            // Drain to the root, then start from an empty log.
+            runtime.dispatchHostEventBlocking(BnHostEvent.Back.wireName)
+            carried.clear()
+
+            assertEquals(0, runtime.dispatchHostEventBlocking(BnHostEvent.Navigate.wireName, "/settings"))
+            val window = carried.toList()
+
+            // Anchor, Rule 4: the swap is the two-frame shape this pin is about. If it ever
+            // becomes one frame, re-point the pin deliberately rather than let it pass.
+            val removal = window.indexOfFirst { (f, _) -> f.patches.any { it is RenderPatch.RemoveNode } }
+            val page = window.indexOfFirst { (f, _) -> f.patches.any { it is RenderPatch.ReplaceText && it.text == "Settings" } }
+            assertTrue(removal >= 0 && page > removal,
+                "expected the old root's removal frame, then the settings page's frame; got " +
+                    window.map { (f, c) -> "${f.patches.size} patches carried=$c" })
+
+            assertEquals(true, window[page].second,
+                "the settings page's frame did not carry BackState(true)")
+            assertTrue(window.take(page).all { it.second == null },
+                "a frame BEFORE the page carried the back state, so back would change while the old " +
+                    "page or a blank screen is shown: ${window.map { it.second }}")
+        } finally {
+            runtime.retire()
+        }
+    }
+
+    /** Holds the camera call open and records it; the test answers it. */
+    private class HoldingCameraHost : ShellBridgeHandlers {
+        @Volatile private var route: String = "/"
+        val cameraCall = CountDownLatch(1)
+        @Volatile var heldRequestId: Long = -1
+        override fun navigate(route: String) { this.route = route }
+        override fun currentRoute(): String = route
+        override fun storageRead(key: String): String? = null
+        override fun storageWrite(key: String, value: String) {}
+        override fun storageDelete(key: String) {}
+        override fun fetchBegin(requestId: Long, request: BridgeFetchRequest) {
+            BridgeFetchCompleter.completeFailure(requestId, "BackNoticeTest performs no fetch")
+        }
+        override fun clipboardRead(): String = ""
+        override fun clipboardWrite(text: String) {}
+        override fun share(text: String) {}
+        override fun hostCallBegin(requestId: Long, op: Int, argsJson: String) {
+            if (op == HostCallOp.CAMERA) {
+                heldRequestId = requestId
+                cameraCall.countDown() // NOT completed: the test answers it
+            } else {
+                BridgeHostCallCompleter.complete(requestId, HostCallStatus.ERROR, null)
+            }
+        }
+    }
+
+    /**
+     * The positive control for BackAndroidTest's #346 pin: BackHoldProbe really HOLDS the
+     * dispatch lane. Its synchronous "Hold" handler blocks the render thread on a camera call,
+     * so the dispatch export that runs it cannot return, and the pre-16.2 back path, the
+     * blocking [BlazorNativeRuntime.dispatchHostEventAndWait], cannot either, until the call is
+     * released. That is what makes the device pin able to tell the old back from the new one:
+     * if this probe ever stopped holding, the old code would pass it too. It also proves the
+     * probe does not deadlock: after the release, the held handler finishes and the back lands.
+     *
+     * DOES NOT COVER: the new, fire-and-forget back itself, which returns at once by
+     * construction here; the device pin times it from Android's main thread.
+     */
+    @Test
+    fun back_hold_probe_holds_the_lane_until_its_camera_call_is_released() {
+        // History first: a forward step from BnDemo, so the probe's back is handled.
+        val warmup = BlazorNativeRuntime(onFrame = {})
+        warmup.start(componentName = "BnDemo", platformOs = "test-host", bridge = RecordingHost())
+        assertEquals(0, warmup.dispatchHostEventBlocking(BnHostEvent.Navigate.wireName, "/settings"))
+        warmup.retire()
+
+        val host = HoldingCameraHost()
+        val frames = Collections.synchronizedList(mutableListOf<RenderFrame>())
+        val runtime = BlazorNativeRuntime(onFrame = { frames.add(it) })
+        runtime.start(componentName = "BackHoldProbe", platformOs = "test-host", bridge = host)
+        var releaser: Thread? = null
+        try {
+            val mount = frames.first()
+            val hold = checkNotNull(
+                mount.patches.filterIsInstance<RenderPatch.AttachEvent>().singleOrNull { it.eventName == "click" }
+            ) { "expected exactly one click wire, the Hold button; got ${mount.patches}" }.handlerId
+
+            runtime.dispatchEvent(hold, "click")
+            assertTrue(host.cameraCall.await(10, TimeUnit.SECONDS), "Hold never began the camera call")
+
+            // Release after 1.5 s, from a thread of its own, as the shell's completer would.
+            val releasedAt = java.util.concurrent.atomic.AtomicLong(0)
+            releaser = Thread({
+                Thread.sleep(1_500)
+                releasedAt.set(System.nanoTime())
+                BridgeHostCallCompleter.complete(host.heldRequestId, CameraStatus.CANCELLED, null)
+            }, "releaser").apply { isDaemon = true; start() }
+
+            val rc = runtime.dispatchHostEventAndWait(BnHostEvent.Back)
+            val returnedAt = System.nanoTime()
+
+            assertTrue(releasedAt.get() != 0L && returnedAt >= releasedAt.get(),
+                "the blocking back returned BEFORE the held camera call was released, so the probe " +
+                    "does not hold the lane and cannot tell the old back from the new")
+            assertEquals(0, rc, "after the release the back must be handled: the probe had history")
+            assertTrue(frames.any { f -> f.patches.any { it is RenderPatch.ReplaceText && it.text == "released:Cancelled" } },
+                "the held handler never finished after the release: ${frames.size} frames")
+        } finally {
+            releaser?.join(10_000)
+            runtime.retire()
+        }
+    }
+
+    /** The control for a_back_at_the_root_routes_back_unhandled_and_raises_no_onError. The exemption is for BACK's rc 1 only: another event's
      * rc 1 still reaches onError, on the same runtime and the same lane. Without this, a
      * runtime that routed nothing to onError at all would pass the pin above. */
     @Test

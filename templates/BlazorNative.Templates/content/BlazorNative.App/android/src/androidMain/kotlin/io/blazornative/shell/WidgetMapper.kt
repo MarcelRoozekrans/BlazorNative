@@ -751,7 +751,9 @@ class WidgetMapper(
      * Phase 16.2 (#346): told, on main, whenever [backEnabled] changes. MainActivity sets its
      * OnBackPressedCallback's `isEnabled` from it. Checked at the end of every batch, which
      * is where both inputs change: a batch applies the buffered back state, and modals open
-     * and close only inside batches.
+     * and close only inside batches. It publishes only on a change, so anything that sets the
+     * callback directly must put it back to [backEnabled] afterwards, or the two drift
+     * (handBackToPlatform does).
      */
     internal var onBackEnabledChanged: ((Boolean) -> Unit)? = null
 
@@ -776,15 +778,34 @@ class WidgetMapper(
             if (patch is RenderPatch.CommitFrame) {
                 val batch = pending.toList()
                 pending.clear()
-                // Phase 16.2: the back state offered since the last batch rides THIS one, so
-                // main applies it in the same runnable that shows the page (spec decision 2).
-                val carriedBackState = backState.takeForBatch()
+                // Phase 16.2: the back state offered since the last page rides the batch that
+                // shows the next one, so main applies it in the same runnable that puts that
+                // page on screen (spec decision 2). A swap's removal batch carries nothing.
+                val carriedBackState = backState.takeForBatch(batch)
                 mainHandler.post { applyBatch(batch, carriedBackState) }
             }
         }
     }
 
+    /**
+     * Phase 16.2 (#346), test-only: true for the WHOLE of one batch's runnable, from its first
+     * patch to its [onBackEnabledChanged] publish. BackAndroidTest reads it inside the callback
+     * to prove the back state took effect in the runnable that showed the page, not in one
+     * posted before or after it. [applyingBatch] cannot answer that: it drops before the tail.
+     */
+    internal var inBatchRunnableForTest = false
+        private set
+
     private fun applyBatch(patches: List<RenderPatch>, carriedBackState: Boolean? = null) {
+        inBatchRunnableForTest = true
+        try {
+            applyBatchBody(patches, carriedBackState)
+        } finally {
+            inBatchRunnableForTest = false
+        }
+    }
+
+    private fun applyBatchBody(patches: List<RenderPatch>, carriedBackState: Boolean?) {
         applyingBatch = true
         try {
             for (patch in patches) when (patch) {
