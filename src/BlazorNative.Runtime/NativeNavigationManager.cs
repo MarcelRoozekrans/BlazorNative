@@ -256,20 +256,27 @@ public sealed class NativeNavigationManager : INavigationManager
     /// host-call contract, and a shell that answers inline re-enters .NET only through
     /// CompleteHostCall, which takes no lock of this manager and runs no continuation
     /// inline. The lock is private and taken nowhere else.</summary>
-    internal void PublishBackState(bool canGoBack)
+    internal void PublishBackState(bool canGoBack) => PublishBackState(canGoBack, force: false);
+
+    private void PublishBackState(bool canGoBack, bool force)
     {
         lock (_backStateLock)
         {
-            if (_lastSentCanGoBack == canGoBack)
+            if (!force && _lastSentCanGoBack == canGoBack)
                 return;
             _lastSentCanGoBack = canGoBack;
             NativeShellBridge.SendBackState(canGoBack);
         }
     }
 
-    /// <summary>HostSession calls this before a session's mount, so the shell's back state
-    /// is set before the first frame arrives.</summary>
-    internal void PublishBackState() => PublishBackState(CanGoBack);
+    /// <summary>HostSession calls this before EVERY mount, so the shell's back state is set
+    /// before the mount's first frame arrives. It sends even when the value is unchanged:
+    /// a mount after the first is a NEW shell on this process-global session, such as an
+    /// Android Activity recreated by a rotation, and a new shell starts with back disabled.
+    /// Deduplicating here would leave it disabled while .NET can go back, and a later forward
+    /// step that keeps the value true would not correct it, so back would finish the app from
+    /// a sub-page.</summary>
+    internal void PublishBackState() => PublishBackState(CanGoBack, force: true);
 
     /// <summary>Raises <see cref="RouteChanged"/> with per-subscriber
     /// isolation (Phase 4.2, DoD #4 — the DevHostBridge.RaiseNativeEvent

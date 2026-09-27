@@ -449,7 +449,7 @@ class BnModalDemoAndroidTest {
             // BEFORE navigation-back (decision 3), dispatch-requests dismissal on
             // the modal's click wire, and CONSUMES the event: no navigation, no
             // finish — and the hide that follows is .NET's, not the shell's.
-            scenario.onActivity { act -> act.onBackPressed() }
+            scenario.onActivity { act -> act.onBackPressedDispatcher.onBackPressed() }
             assertTrue("back never dismissed the open modal", pollForClosed(scenario))
             scenario.onActivity { act ->
                 assertFalse("back with a live overlay must NOT finish the activity",
@@ -471,7 +471,7 @@ class BnModalDemoAndroidTest {
             // that drops the consult reddens back #1 above while this half —
             // and HostEventAndroidTest.predictive_back — stays green: the
             // design's own mutation expectation.)
-            scenario.onActivity { act -> act.onBackPressed() }
+            scenario.onActivity { act -> act.onBackPressedDispatcher.onBackPressed() }
             assertTrue("back with NO live overlay must take the navigation-back path " +
                 "(BnDemo returns, or the at-root default finishes)",
                 pollUntilBackNavigatedAway(scenario))

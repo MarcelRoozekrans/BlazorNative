@@ -449,8 +449,9 @@ internal static unsafe class HostSession
                 effective = nav.ResolveComponent(nav.CurrentRoute);
             }
 
-            // Phase 16.2 (#346): the session's back state reaches the shell before its
-            // first frame. A no-op when unchanged, so a second mount sends nothing.
+            // Phase 16.2 (#346): the session's back state reaches the shell before the
+            // mount's first frame. Sent on EVERY mount, changed or not: a second mount is a
+            // new shell, such as a recreated Activity, that has not been told yet.
             Volatile.Read(ref s_navigation)?.PublishBackState();
             MountRoot(effective, renderer);
             // #201 developer trace (Debug, IsEnabled-guarded). `effective` is the

@@ -84,6 +84,13 @@ dependencies {
     // compatible with this project's compileSdk 34.
     implementation("androidx.core:core:1.13.1")
 
+    // androidx.activity, pinned EXPLICITLY (Phase 16.2). The shell's back is an AndroidX
+    // OnBackPressedCallback, and the version biometric/fragment pull in transitively,
+    // 1.1.0, predates predictive back on API 33+ (added 1.6.0). 1.9.3 is the newest
+    // release compatible with this project's compileSdk 34; 1.10.0 and later require
+    // compileSdk 35. It must stay pinned to the same version the reference shell uses.
+    implementation("androidx.activity:activity:1.9.3")
+
     // Kotlin stdlib
     implementation(kotlin("stdlib-jdk8", kotlinVersion))
 }

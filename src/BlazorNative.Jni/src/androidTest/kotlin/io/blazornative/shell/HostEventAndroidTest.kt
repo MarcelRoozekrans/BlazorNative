@@ -23,8 +23,7 @@ import java.util.concurrent.atomic.AtomicReference
  * Phase 5.1 Gate 3 — host-INITIATED events live on the AVD (M5 DoD #5), the
  * on-device third of HostEventProbeTests.cs / NavigationTests.cs (.NET) and
  * HostEventTest.kt (JVM). Three proofs, all through the real MainActivity
- * wiring (lifecycle overrides, predictive-back OnBackInvokedCallback, deep-link
- * parse):
+ * wiring (lifecycle overrides, the AndroidX back callback, deep-link parse):
  *
  *   (1) LIFECYCLE — EXTRA_COMPONENT=HostEventProbe, moveToState(STARTED) from
  *       RESUMED fires onPause → dispatchHostEvent("onPause") → the probe's echo
@@ -33,14 +32,13 @@ import java.util.concurrent.atomic.AtomicReference
  *   (2) DEEP LINK — an ACTION_VIEW intent (blazornative://settings) seeds the
  *       startup route before boot → the 3.5 startup-honor mounts BnSettingsPage
  *       (title + Back, no input);
- *   (3) PREDICTIVE BACK — BnDemo → tap "Settings →" → system back (API 34's
- *       OnBackInvokedCallback → dispatchHostEventAndWait("back") → NavigateBack)
+ *   (3) PREDICTIVE BACK — BnDemo → tap "Settings →" → system back (since
+ *       Phase 16.2 the AndroidX OnBackPressedCallback, enabled by .NET's pushed
+ *       BackState → fire-and-forget dispatchHostEvent("back") → NavigateBack)
  *       → BnDemo returns.
  *
- * The back-at-root → finish() path (rc 1) is NOT asserted here (finish() is
- * awkward to observe cleanly through ActivityScenario after a back); it is
- * covered by the JVM back-at-root rc-1 pin (HostEventTest) and the .NET
- * HostBackEvent_AtRoot_Returns1 test — the SAME .NET routing all three drive.
+ * The back-at-root → finish() path is pinned on the device by BackAndroidTest
+ * (Phase 16.2), along with the rest of the back contract.
  *
  * Views are found structurally / by text (nodeIds are process-global counters).
  * STRICT MODE guaranteed by BlazorNativeTestRunner. Polling deadlines mirror
@@ -119,15 +117,14 @@ class HostEventAndroidTest {
                 pollUntil(scenario, 10_000) { settingsTitle(it) != null && !hasEditText(it) }
             )
 
-            // Drive the single back entry point directly. On API 34 the
-            // registered OnBackInvokedCallback delegates to onBackPressed()
-            // (verified: the callback registration appears in logcat), so this
-            // exercises the IDENTICAL production back logic — handleBack() →
-            // dispatchHostEventAndWait("back") → NavigateBack (rc 0, consumed).
-            // Committing a system predictive-back GESTURE under instrumentation
-            // is unreliable (it starts then cancels), so the entry point is
-            // driven directly rather than through an injected gesture/key.
-            scenario.onActivity { it.onBackPressed() }
+            // Drive the single back entry point directly: the AndroidX dispatcher
+            // that API 34's predictive back also feeds (Phase 16.2), so this runs
+            // the IDENTICAL production back logic — the enabled callback →
+            // handleBack() → fire-and-forget dispatchHostEvent("back") →
+            // NavigateBack. Committing a system predictive-back GESTURE under
+            // instrumentation is unreliable (it starts then cancels), so the entry
+            // point is driven directly rather than through an injected gesture/key.
+            scenario.onActivity { it.onBackPressedDispatcher.onBackPressed() }
 
             // BnDemo returns: its full form is back with the input on screen and
             // the settings title gone (mutually-exclusive trees).

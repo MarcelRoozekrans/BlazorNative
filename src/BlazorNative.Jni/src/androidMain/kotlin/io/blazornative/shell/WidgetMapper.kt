@@ -679,7 +679,7 @@ class WidgetMapper(
      * back event is consumed (even with no click wire attached — a hand-rolled
      * modal without the attach still must not let back NAVIGATE out from under
      * an open overlay; the gap is logged loudly). Main-thread only, like every
-     * map in this class — [MainActivity.onBackPressed] runs there.
+     * map in this class — MainActivity's OnBackPressedCallback runs there.
      */
     internal fun requestTopmostModalDismissal(): Boolean {
         val topmost = modalOverlays.entries.lastOrNull() ?: return false
@@ -738,18 +738,53 @@ class WidgetMapper(
     internal val scrollBusyWireCount: Int
         get() = scrollWires.values.count { it.inFlight || it.pendingOffsetDp != null }
 
+    // ── Phase 16.2 (#346): the back state, applied with the page it describes ──
+
+    /** .NET's pushed back state, HELD until a batch carries it — see [BackStateBuffer] for
+     * why applying it on arrival would let back act on a page not yet on screen. */
+    private val backState = BackStateBuffer()
+
+    /** The last value handed to [onBackEnabledChanged]. Main thread only. */
+    private var publishedBackEnabled = false
+
+    /**
+     * Phase 16.2 (#346): told, on main, whenever [backEnabled] changes. MainActivity sets its
+     * OnBackPressedCallback's `isEnabled` from it. Checked at the end of every batch, which
+     * is where both inputs change: a batch applies the buffered back state, and modals open
+     * and close only inside batches.
+     */
+    internal var onBackEnabledChanged: ((Boolean) -> Unit)? = null
+
+    /** Phase 16.2: at least one modal overlay is live, so back must dismiss it. Main thread. */
+    internal val hasOpenModal: Boolean get() = modalOverlays.isNotEmpty()
+
+    /** Phase 16.2: the back state this shell acts on, as the last batch applied it. Main thread. */
+    internal val canGoBack: Boolean get() = backState.canGoBack
+
+    /** Phase 16.2: whether the shell must intercept back — to dismiss a modal, or to hand the
+     * back to .NET because .NET can go back. False means the system's default back, which
+     * finishes the Activity. Main thread. */
+    internal val backEnabled: Boolean get() = canGoBack || hasOpenModal
+
+    /** Phase 16.2 (#346): .NET's BackState notice, from any thread. HELD for the next batch,
+     * never applied here. */
+    fun offerBackState(canGoBack: Boolean) = backState.offer(canGoBack)
+
     fun apply(frame: RenderFrame) {
         for (patch in frame.patches) {
             pending.add(patch)
             if (patch is RenderPatch.CommitFrame) {
                 val batch = pending.toList()
                 pending.clear()
-                mainHandler.post { applyBatch(batch) }
+                // Phase 16.2: the back state offered since the last batch rides THIS one, so
+                // main applies it in the same runnable that shows the page (spec decision 2).
+                val carriedBackState = backState.takeForBatch()
+                mainHandler.post { applyBatch(batch, carriedBackState) }
             }
         }
     }
 
-    private fun applyBatch(patches: List<RenderPatch>) {
+    private fun applyBatch(patches: List<RenderPatch>, carriedBackState: Boolean? = null) {
         applyingBatch = true
         try {
             for (patch in patches) when (patch) {
@@ -793,6 +828,18 @@ class WidgetMapper(
         // AFTER the guard dropped — a dispatch from inside the guard would be
         // swallowed, and the re-clamped offset would never reach .NET.
         flushScrollWires()
+        // Phase 16.2 (#346): the back state this batch carried, and any modal it opened or
+        // closed, take effect in this same runnable, together with the page it shows.
+        backState.applyFromBatch(carriedBackState)
+        publishBackEnabled()
+    }
+
+    /** Hands [backEnabled] to [onBackEnabledChanged] when it changed. Main thread only. */
+    private fun publishBackEnabled() {
+        val enabled = backEnabled
+        if (enabled == publishedBackEnabled) return
+        publishedBackEnabled = enabled
+        onBackEnabledChanged?.invoke(enabled)
     }
 
     /**

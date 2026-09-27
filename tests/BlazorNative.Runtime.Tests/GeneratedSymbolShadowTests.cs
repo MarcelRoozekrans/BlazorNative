@@ -520,11 +520,9 @@ public sealed class GeneratedSymbolShadowTests
             + "consumed and this one is emitted for symmetry with them, byte-pinned by the codegen tests. "
             + "Verified no hand-written twin exists in the Apple tree (not a #279 shadow): `kNodeTypes` "
             + "occurs exactly once, in its own generated declaration.",
-        // Phase 16.2, Task 2 generated ops 6 and 7 without shell arms; Tasks 3 and 4 add
-        // the arms. These four entries are TEMPORARY: the stale-entry check in the pin below reds
-        // the moment an arm consumes the symbol, so they cannot outlive the arms.
-        ["BACK_STATE"] = PendingShellArm,
-        ["BACK_UNHANDLED"] = PendingShellArm,
+        // Phase 16.2, Task 2 generated ops 6 and 7 without shell arms; Task 3 added Android's
+        // and Task 4 adds iOS's. These two entries are TEMPORARY: the stale-entry check in the
+        // pin below reds the moment an arm consumes the symbol, so they cannot outlive the arms.
         ["backState"] = PendingShellArm,
         ["backUnhandled"] = PendingShellArm,
     };

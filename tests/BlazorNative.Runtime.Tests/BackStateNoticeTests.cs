@@ -9,8 +9,8 @@ namespace BlazorNative.Runtime.Tests;
 //
 // Android stops asking .NET "can you go back?" on the main thread. Instead .NET
 // pushes the answer: a BackState notice, host-call op 6, whose flat-JSON args
-// are {"canGoBack":"true"|"false"}, sent when the value changes and once for a
-// session's first mount. When a back still reaches .NET with nothing to go back
+// are {"canGoBack":"true"|"false"}, sent when the value changes and before every
+// mount, even unchanged, because a later mount is a new shell. When a back still reaches .NET with nothing to go back
 // to, .NET sends BackUnhandled, op 7, so the shell finishes and the press is
 // never swallowed. Both ride FaultNotice's fire-and-forget delivery on the
 // existing hostCallBegin slot, with no ABI change.
@@ -245,6 +245,35 @@ public sealed class BackStateNoticeTests
             // on a real state change rather than on a navigation that never ran.
             Assert.Equal("/layout", Nav().CurrentRoute);
             Assert.Equal(before, BackStates().Count);
+        });
+    }
+
+    /// <summary>EVERY mount sends the current value, changed or not. A recreated Android
+    /// Activity, after a rotation for instance, is a new shell on the same process-global
+    /// session: its back callback starts disabled and it mounts again. If that mount sent
+    /// nothing because the value had not changed, the new shell would never learn that .NET
+    /// can go back, a later forward step that keeps the value true would send nothing either,
+    /// and back would finish the app from a sub-page.</summary>
+    [Fact]
+    public void ASecondMount_ResendsTheUnchangedBackState_SoANewShellLearnsIt()
+    {
+        InSession(log =>
+        {
+            Assert.Equal(0, HostSession.TryMount("BnDemo"));
+            Go("/settings");
+            Assert.Equal([false, true], BackStates()); // anchor: the value is true, and was sent
+
+            Assert.Equal(0, HostSession.TryMount("BnDemo")); // the recreated shell's mount
+
+            Assert.Equal([false, true, true], BackStates());
+            // And it precedes that mount's frame, like the first mount's does.
+            List<Entry> entries = log.Snapshot();
+            int first = FirstFrame(entries, IsBnDemoMount, "BnDemo");
+            int second = entries.FindIndex(first + 1, e => e.Frame is { } f && IsBnDemoMount(f));
+            Assert.True(second > first,
+                $"no second BnDemo mount frame was logged, so the order cannot be checked. Log: [{Describe(entries)}]");
+            Assert.True(LastBackStateBeforeIs(entries, true, second),
+                $"the second mount's BackState must precede its frame. Log: [{Describe(entries)}]");
         });
     }
 

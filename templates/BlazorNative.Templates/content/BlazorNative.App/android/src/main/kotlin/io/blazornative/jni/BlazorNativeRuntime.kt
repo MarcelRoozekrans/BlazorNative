@@ -47,6 +47,20 @@ class BlazorNativeRuntime(
     // arrives as a FaultNotice that BridgeRegistrar hands to this sink on whatever .NET
     // thread sent it. A sink that touches UI must post to the main thread first.
     private val onError: (String, Throwable) -> Unit = { msg, t -> System.err.println("$msg: $t") },
+    // Phase 16.2 (#346): .NET's BackState notice — whether a back would be handled now.
+    // Sent when the value changes, before every mount, and for a navigation BEFORE the
+    // frames that show the new page. THREAD SET: whichever thread .NET sent it from —
+    // the start() caller for a mount, the render thread for a navigation, the dispatch
+    // lane for a back. Inside .NET's hostCallBegin, which must return at once: record
+    // the value and return. The Android shell buffers it in WidgetMapper and applies it
+    // on main with the next frame batch (spec decision 2). A host with no system back
+    // leaves the default.
+    private val onBackState: (canGoBack: Boolean) -> Unit = {},
+    // Phase 16.2 (#346): .NET's BackUnhandled notice — a back reached .NET at the root or
+    // with no session. The Android shell finishes. Same THREAD SET and the same must-
+    // return-at-once rule as [onBackState]; it may also arrive on a .NET thread-pool
+    // thread, for a back that yielded and later resolved unhandled.
+    private val onBackUnhandled: () -> Unit = {},
 ) {
     private val callback = object : NativeBindings.FrameCallback {
         override fun invoke(frame: Pointer) {
@@ -274,12 +288,14 @@ class BlazorNativeRuntime(
      * components re-render; the reserved name "back" routes to navigation-back
      * (the mapping lives in .NET — see [NativeBindings.blazornative_host_event]).
      *
-     * FIRE-AND-FORGET: a non-zero rc is routed to [onError]. This is the right
-     * shape for lifecycle events (rc 0 expected; rc 2 = fault). PREDICTIVE BACK,
-     * which must READ the handled/not-handled decision to choose finish, uses a
-     * BLOCKING variant instead ([dispatchHostEventAndWait]) so the rc 1
-     * "not handled → finish" is DATA, not an error — Gate 3's MainActivity wires
-     * that. [payload] is optional (omitted/NULL — most host events carry none).
+     * FIRE-AND-FORGET: a non-zero rc is routed to [onError], with ONE exception:
+     * a BACK's rc 1. Since Phase 16.2 (#346) back is dispatched here too, never
+     * blocking the main thread, and "not handled" reaches the shell as .NET's
+     * BackUnhandled notice ([onBackUnhandled]), which finishes. rc 1 is that
+     * normal outcome, not a failure, so it is not reported a second time as an
+     * error; a back's rc 2 still is. Every other event's rc 1, such as a navigate
+     * to an unknown route, still reaches [onError]. [payload] is optional
+     * (omitted/NULL — most host events carry none).
      */
     internal fun dispatchHostEvent(event: BnHostEvent, payload: String? = null) =
         dispatchHostEventUnchecked(event.wireName, payload)
@@ -299,7 +315,7 @@ class BlazorNativeRuntime(
         dispatchLane.execute {
             try {
                 val rc = hostEventCore(name, payload)
-                if (rc != 0) {
+                if (rc != 0 && !isNormalHostEventOutcome(name, rc)) {
                     onError(describeHostEventFailure(rc, name), IllegalStateException("host_event rc=$rc"))
                 }
             } catch (t: Throwable) {
@@ -308,19 +324,27 @@ class BlazorNativeRuntime(
         }
     }
 
+    /** Phase 16.2 (#346): a back's rc 1 is the BackUnhandled outcome, delivered through
+     * [onBackUnhandled], not an error. Only back, and only rc 1. */
+    private fun isNormalHostEventOutcome(name: String, rc: Int): Boolean =
+        rc == 1 && name == BnHostEvent.Back.wireName
+
     /**
      * Test seam: same marshalling as [dispatchHostEvent] but runs INLINE on the
      * calling thread and returns the raw rc (JVM tests assert the 0/1/2/3
      * contract directly, their calling thread IS the dispatch-discipline
-     * thread). Production callers use [dispatchHostEvent] (lifecycle, fire-and-
-     * forget) or [dispatchHostEventAndWait] (back, needs the rc).
+     * thread). Production callers use [dispatchHostEvent], fire-and-forget, for
+     * every host event since Phase 16.2.
      */
     internal fun dispatchHostEventBlocking(name: String, payload: String? = null): Int =
         hostEventCore(name, payload)
 
     /**
-     * Phase 5.1 — the HOST-blocking host-event dispatch (the predictive-back
-     * production path, Gate 3): marshals through the SAME single [dispatchLane]
+     * Phase 5.1 — the HOST-blocking host-event dispatch. Until Phase 16.2 it was
+     * the predictive-back and warm deep-link path on Android; both now dispatch
+     * fire-and-forget through [dispatchHostEvent], because a main thread blocked
+     * here waits on .NET (#346), and no Android production code calls it. It
+     * marshals through the SAME single [dispatchLane]
      * (post-boot .NET entry stays serialized) but BLOCKS until the export has
      * returned — including any synchronous re-render / swap frame deliveries,
      * made on .NET's render thread — and returns the raw rc (0 handled / 1 not handled
@@ -351,8 +375,9 @@ class BlazorNativeRuntime(
     /** Human-readable onError message per non-zero host_event rc (internal so
      * the message contract is unit-tested; parallels [describeDispatchFailure]). */
     internal fun describeHostEventFailure(rc: Int, name: String): String = when (rc) {
-        1 -> "host_event('$name') → rc 1: not handled — at the origin (no previous " +
-            "route / no session); the shell falls through to default back"
+        1 -> "host_event('$name') → rc 1: not handled — no session, a navigate to an " +
+            "unknown route, or a back at the origin (which is reported as BackUnhandled " +
+            "instead of here)"
         2 -> "host_event('$name') → rc 2: faulted — a NativeEvents subscriber, its " +
             "re-render, or the back swap threw (detail on the runtime's stderr — " +
             "logcat `BlazorNative/…` on Android)"
@@ -458,7 +483,12 @@ class BlazorNativeRuntime(
             // Registered BEFORE mount. register() throws on non-zero status;
             // the registrar keeps the callback trampolines alive (field here
             // + the process-lifetime park list inside BridgeRegistrar).
-            bridgeRegistrar = BridgeRegistrar(bridge, onError).also { it.register() }
+            bridgeRegistrar = BridgeRegistrar(
+                bridge,
+                onBackState = onBackState,
+                onBackUnhandled = onBackUnhandled,
+                onError = onError,
+            ).also { it.register() }
             lines += "[BOOT] shell bridge registered"
         }
 
