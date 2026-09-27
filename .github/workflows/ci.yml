@@ -4,7 +4,7 @@
 #
 #   build-test (windows-latest) — the local verification procedure verbatim
 #   (setup.ps1 §1–7 documents the toolchain pins):
-#     build (analyzers ride it) → .NET tests (1255 passed / 0 skipped) →
+#     build (analyzers ride it) → .NET tests (1276 passed / 0 skipped) →
 #     three NativeAOT publishes of samples/BlazorNative.SampleApp — the
 #     publish head since Phase 8.0: the app owns PublishAot, the exports stay
 #     in Runtime via UnmanagedEntryPointsAssembly, and the artifact is
@@ -13,7 +13,7 @@
 #     each publish must show exactly the 4 accepted IL2072 trim warnings) →
 #     ten-export verification (dumpbin via vswhere / llvm-readelf from the
 #     pinned NDK) → Gradle testDebugUnitTest against the fresh win-x64 dll
-#     (170 passed / 0 failed — the assertion is the step near the end of this
+#     (190 passed / 0 failed — the assertion is the step near the end of this
 #     job; this header is a copy, and it read 92 for four milestones) →
 #     the instrumented sources COMPILE →
 #     consumer smoke (EIGHT packages packed at the one props version, nupkg
@@ -2291,7 +2291,20 @@ jobs:
       # generated HostCallOp table) and GeneratedSymbolShadowTests (+1: the op
       # constant shadow control). The flips of DispatchLaneBlockingTests (#345),
       # MountSyncTests and RenderThreadWarningTests change assertions, not counts.
-      - name: .NET tests (assert 1255 passed / 0 skipped)
+      # 1255 -> 1276 (16.2 back off the main thread, +21): Runtime 1081 -> 1102;
+      # Renderer 147 and Analyzers 27 unchanged. Runtime gains BackStateNoticeTests
+      # (18: the BackState and BackUnhandled notices, op 6 and op 7, their order
+      # before the frame that shows the page on the direct, back and click-handler
+      # paths, the resend after a failed swap and on every mount, a back that yields
+      # and then resolves unhandled, and the slot clear), GeneratedSymbolShadowTests
+      # (+2: OpArmPattern_MatchesAnArm_AndNotABareReference and
+      # UnconsumedByDesign_IsKeyedByLanguage, the controls for the arm-only
+      # consumption rule and the shipped-sources-only scan) and
+      # DispatchSurfaceDriftTests (+1: MethodsWithADeclaredVisibility_MatchBothShells,
+      # floored on a named dispatchHostEventAndWait entry). The frozen-op list in
+      # WireVocabularyCodegenTests and the androidx.activity row in TemplateDriftTests
+      # change assertions inside existing facts, not the count.
+      - name: .NET tests (assert 1276 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -2309,8 +2322,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 1255 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 1255 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 1276 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 1276 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # 15.5 (#291): every docs sample a consumer might copy is compiled. The fence
@@ -2682,7 +2695,16 @@ jobs:
       #    named BlazorNative-Render. Run locally with --rerun: testDebugUnitTest
       #    does not declare the native dll as an input and can report a stale
       #    UP-TO-DATE, #424.
-      - name: JVM tests (Gradle testDebugUnitTest — assert 170 passed / 0 failed)
+      # 170 -> 190 (16.2 back off the main thread, +20): BackNoticeTest (7: ops 6
+      #    and 7 routed by BridgeRegistrar and completed OK, a back at the root that
+      #    raises no onError with a navigate control that still does, the back state
+      #    riding the frame that mounts the page rather than the removal, including a
+      #    page whose first render is empty, and the BackHoldProbe control that the
+      #    blocking dispatch waits for the release), BackStateBufferTest (11: the
+      #    buffer's removal-only rule and handBackToPlatform's restore) and
+      #    DispatchHostEventAndWaitVisibilityTest (2: KVisibility.INTERNAL on the
+      #    compiled member, and a control that the check tells PUBLIC from INTERNAL).
+      - name: JVM tests (Gradle testDebugUnitTest — assert 190 passed / 0 failed)
         working-directory: src/BlazorNative.Jni
         run: |
           .\gradlew.bat --no-daemon testDebugUnitTest
@@ -2696,8 +2718,8 @@ jobs:
             $errors += [int]$suite.errors; $skipped += [int]$suite.skipped
           }
           Write-Host "JVM test totals across $($xmls.Count) suites: tests=$tests failures=$failures errors=$errors skipped=$skipped"
-          if ($tests -ne 170 -or $failures -ne 0 -or $errors -ne 0 -or $skipped -ne 0) {
-            throw "JVM test baseline drift: expected 170 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped"
+          if ($tests -ne 190 -or $failures -ne 0 -or $errors -ne 0 -or $skipped -ne 0) {
+            throw "JVM test baseline drift: expected 190 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped"
           }
 
       # the instrumented-sources compile gate moved to its own required job

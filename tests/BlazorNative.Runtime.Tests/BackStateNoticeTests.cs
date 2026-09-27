@@ -29,10 +29,9 @@ namespace BlazorNative.Runtime.Tests;
 // design that passed in strict mode while production stayed silent.
 //
 // DOES NOT COVER:
-//   - what a shell DOES with the notices. Tasks 3 and 4 add the arms and their
-//     tests; until then an unknown op takes the shells' unknown-op branch and
-//     completes with Error, which is safe and fails SAFE: the shell keeps its
-//     current back behaviour;
+//   - what a shell DOES with the notices. The Android arms are pinned by the JVM
+//     BackNoticeTest and the instrumented BackAndroidTest, the iOS arms by the
+//     XCTest BnBackOpArmTests;
 //   - that the shell applies BackState in the same batch as the frame. .NET can
 //     only guarantee the notice arrives first; the batching is Android's, pinned
 //     by the instrumented suite;

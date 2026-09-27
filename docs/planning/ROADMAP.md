@@ -3366,6 +3366,154 @@ update `src/dispatch-surface.json`, add the iOS twin pin, and update the templat
 **Design:** [`docs/superpowers/specs/2026-09-27-phase-16.2-design.md`](../superpowers/specs/2026-09-27-phase-16.2-design.md)
 **Plan:** [`docs/superpowers/plans/2026-09-27-phase-16.2-back-off-main.md`](../superpowers/plans/2026-09-27-phase-16.2-back-off-main.md)
 
+> **16.2 outcome: no main-thread entry point waits on .NET any more, on either shell.** Android's
+> back is driven by a back state that .NET pushes, and deep-link and notification navigation are
+> fire-and-forget on both shells. #346 is to be closed after the phase PR merges.
+
+**What shipped:**
+- **Two notice ops.** `src/wire-vocabulary.json` gains `BackState` = 6, with args exactly
+  `{"canGoBack":"true"|"false"}`, and `BackUnhandled` = 7, with args `{}`. Both are generated into
+  C#, Kotlin and Swift, and both ride FaultNotice's fire-and-forget delivery over the existing
+  `hostCallBegin` slot. **No ABI change:** no header differs from `main`.
+- **The order.** `NativeNavigationManager` sends `BackState` from the swap unit's new `beforeSwap`
+  step. It carries the value the navigation is about to produce, because a swap's frames are
+  emitted before `afterSwap` records the route. A failed swap resends the held value. Every mount
+  resends the back state, even unchanged. Every rc-1 back sends `BackUnhandled` first: at the root,
+  with no session, and a back that yields and later resolves false.
+- **Android.** One AndroidX `OnBackPressedCallback`, enabled only while .NET can go back or a modal
+  is open. `BackStateBuffer` holds each value until the first frame batch that is NOT removal-only,
+  and `WidgetMapper` applies it at the end of that batch's own main-thread runnable. So back changes
+  with the page, never with the blank removal frame before it. Disabled, back takes the platform
+  default. Enabled, the press goes to .NET fire-and-forget. `BackUnhandled` hands the press back to
+  the platform default through `handBackToPlatform`, which restores the callback afterwards.
+  `registerPredictiveBack`, the `OnBackInvokedCallback` and the `onBackPressed` override are gone.
+- **`androidx.activity` 1.9.3,** pinned explicitly in the shell's and the template's Gradle files.
+  The transitive 1.1.0, through biometric and fragment, predates the dispatcher's predictive-back
+  integration, which arrived in 1.6.0. 1.10.x fails `checkDebugAarMetadata` because it needs
+  compileSdk 35; that was measured with 1.10.1.
+- **Fire-and-forget navigators.** Android's `onNewIntent` and both iOS navigators, the deep link's
+  and the notification tap's, call `dispatchHostEvent`. The iOS closures are now
+  `(String) -> Void`, since a fire-and-forget call has no rc.
+- **iOS arms.** `AppleShellBridge` has `backState` and `backUnhandled` arms that complete OK with no
+  payload. iOS has no system back, so they do nothing else. `completeFaultNotice` is renamed
+  `completeNotice`.
+- **`dispatchHostEventAndWait` is internal and test-only.** Kotlin was already `internal` since
+  14.0, and Swift already defaulted to `internal`; the Swift keyword is now explicit. `src/dispatch-surface.json` records `"visibility": "internal"`,
+  and a .NET differential pin and a JVM `KVisibility` pin hold it.
+
+**What the reviews found, fixed in the loop:**
+- **The back state landed on a blank screen.** A swap is two frames, the removal and then the page.
+  "Apply with the next batch" applied the value with the removal, one runnable before the page. It
+  now rides the first batch that is not removal-only.
+- **The empty-first-render gap.** The round-1 rule, "a batch that creates a parentless node", never
+  applied the value to a page whose first render is empty, because its mount frame is a lone
+  CommitFrame. Back stayed disabled on that sub-page, so a press exited the app, which is #346's
+  symptom. The removal-only rule closes it, pinned against the dll's real frames.
+- **Callback and mapper drift.** The pre-boot branch and `BackUnhandled` both disabled the callback
+  to re-dispatch, and nothing re-enabled it, because the mapper publishes only on a change.
+  `handBackToPlatform` restores it in a `finally`, reading the state after the dispatch.
+- **A #346 device pin that could not tell old code from new.** Since 16.1 frees the lane at a
+  handler's first await, the old blocking back also returned quickly behind a held camera call.
+  The pin now holds the RENDER THREAD with `BackHoldProbe`, whose synchronous handler blocks on a
+  camera call. A JVM control proves the old blocking dispatch waits for the release there.
+- **A consumption pin fooled twice.** Deleting a Swift op arm stayed green, because the scan read
+  test trees and a test named the op. Deleting a Kotlin arm stayed green even with tests excluded,
+  because the arm's own completion call named the constant. `GeneratedSymbolShadowTests` now scans
+  shipped sources only, and an op counts as consumed only through a routing arm.
+- **A vacuous visibility pin.** `MethodsWithADeclaredVisibility_MatchBothShells` passed with the
+  manifest's visibility line deleted and both shells public. It is now floored on a named entry.
+- **Smaller fixes:** the pending-then-unhandled back that swallowed a press; a re-back trail when a
+  click handler calls back twice; the stale "the shell finishes" doc for `BackUnhandled` in about
+  fifteen places; and a stale DOES NOT COVER bullet in `BackStateNoticeTests`, corrected in this
+  record.
+
+**Behaviour changes, for the changelog and for shell authors:**
+- **Back never blocks the main thread** on Android. Deep-link and notification navigation never
+  block it on either shell.
+- **An unhandled back goes to the platform's default.** On Android 12 and later, API 31+, that
+  moves a launcher task root to the background rather than finishing it. Owner decision 2 said
+  "finish"; the Task 3 ruling made it match the platform's own root back.
+- **A faulted back, rc 2, keeps the app.** This is a policy decision: a fault means history
+  existed, the failed swap has already resent the held back state, and the fault reaches the shell
+  through `onError` or FaultNotice. The next press retries.
+- **Every mount re-sends the back state,** so a recreated Activity starts with the right callback
+  state.
+- **A refused warm deep link now logs at `Log.e` through `onError`,** where it used to log at
+  `Log.w`. `onNewIntent` uses the fire-and-forget dispatch, whose rc-1 path reports to `onError`.
+- **Test seams retired:** iOS `lastHostEventRcForTest` and Android `lastNavigateHostEventRcForTest`
+  with `resetNavigateRcForTest`.
+- **`dispatchHostEventAndWait` has no production caller left** on either shell. Its effective
+  access did not change: Kotlin was already `internal`, and Swift's method, in a class with no
+  modifier, already defaulted to `internal`. What is new is the explicit Swift keyword and two pins
+  that hold both.
+
+**Counts, measured on `602a5e6`.** The .NET build was a clean
+`dotnet build BlazorNative.sln -c Release --no-incremental -v q`: 0 errors and the 24 warnings that
+already existed. Each project was then tested with `-c Release --no-build`. The JVM run followed a
+fresh `dotnet publish samples/BlazorNative.SampleApp -c Release -r win-x64`, which exited 0 with 4
+IL2072 and wrote a dll newer than the run. Gradle ran with `--rerun`, and `verifyNativeAssets`
+passed without `-PciSoDir`.
+
+| Surface | Before (16.1) | After | Change |
+|---|---|---|---|
+| .NET total | 1255 | **1276** | +21 |
+| · Renderer | 147 | 147 | 0 |
+| · Analyzers | 27 | 27 | 0 |
+| · Runtime | 1081 | 1102 | +21: `BackStateNoticeTests` 18, `GeneratedSymbolShadowTests` +2, `DispatchSurfaceDriftTests` +1 |
+| JVM | 170 | **190**, 0 failed | +20: `BackNoticeTest` 7, `BackStateBufferTest` 11, `DispatchHostEventAndWaitVisibilityTest` 2 |
+| Android | 228 | **233** | +5: `BackAndroidTest`. The android-instrumented lane, run 36316252930 at `d32f97f`, was green at 233. No instrumented test changed after `d32f97f` |
+| iOS | 276 | **282** | +6: `BnBackOffMainTests`. The ios lane, run 36321225204 at `ba27ec5`, passed 282 and failed 0. After it, `BnRuntime.swift` changed in Task 5 and `BnSafeAreaTests.swift` changed in a comment only, so the final lane must cover both |
+
+**Notable mutations.** Each went red unless marked otherwise. The per-pin cells are in the
+register in `docs/pin-standard.md` and in census rows 13a and 14a.
+- **The order:** sending `BackState` in `afterSwap` reds the three ordering pins and the failed-swap
+  pin. A log whose frames stop draining host calls reds 5.
+- **Never swallowed:** skipping `SendBackUnhandled` reds the at-root and no-session pins. Removing
+  the continuation's send reds the yielding-back pin alone.
+- **The slot clear:** moving it back after the swap reds only
+  `TwoBacksFromOneClickHandler_DoNotLeaveAReBackTrail`; 35 other facts stay green.
+- **The buffer:** the round-1 parentless rule reds the empty-render pins; dropping the removal-only
+  skip reds the removal pins; a `handBackToPlatform` that stops restoring reds all three restore
+  tests.
+- **The probe:** making `BackHoldProbe`'s handler `async` reds the JVM control, because the blocking
+  back then returns before the release.
+- **The consumption pin:** deleting the Swift `backState` arm or the Kotlin `BACK_STATE` arm reds it.
+  **Green, recorded:** the Kotlin arm deletion before the arm rule, and a name-only reference with an
+  arm also deleted.
+- **The visibility pin:** `internal` removed from either shell reds it, and deleting the manifest's
+  `visibility` line reds the floor. **Never seen red:** the JVM `KVisibility` pin, because removing
+  `internal` in Kotlin fails `compileDebugKotlin` first.
+- **Device, not run locally, for the final review.** Android: apply the back state in a separate
+  runnable, or on arrival; drop the `hasOpenModal` term; drop `publishBackEnabled()`; remove the
+  modal consult in `handleBack`; revert `handleBack` to `dispatchHostEventAndWait`, expected to red
+  the #346 pin at about 3 s. iOS: restore the blocking deep-link navigator; make it a no-op; delete
+  either back arm; make an arm call `completeUnknownOp`; make Hold `async`; remove the Hold tap.
+  Inspection only: the restore in the pre-boot and `BackUnhandled` paths, and the
+  `if (!backCallback.isEnabled) return` guard.
+
+**Coverage limits:**
+- **Below API 33** AndroidX dispatches the classic back. Only AndroidX's own contract covers that
+  path; the instrumented lane runs API 34.
+- **The `BackUnhandled` hand-off to the platform is pinned on the JVM only.** On the device, back at
+  the root goes through the disabled callback and the platform default, and no deterministic trigger
+  gives a stale ENABLED state at the root. An `onBackUnhandled` that did nothing would stay green on
+  the device.
+- **The iOS notification navigator** under a held lane is pinned only by reading. It shares the
+  deep link's one-line dispatch.
+- **Unpinned:** an unmount that emits a frame which is not removal-only, followed by a mount that
+  throws. The value applied with that frame stays until the next batch, as the `BackStateBuffer`
+  KDoc says.
+
+**Open items:**
+- **#425** now also carries the history-reset question. A recreated Activity mounts the default page
+  while .NET's history still points at the old sub-page, so back on that visible root navigates
+  rather than exiting. Should a mount reset history?
+- **#426**, the unredacted FaultNotice message in Android's Release logcat, is unchanged by this
+  phase.
+- **A process slip, reported to the owner.** During Task 4's fix round an implementer made a local
+  commit with `--no-verify`, `2df5c94` in the reflog. It was reset at once with `--soft`, and it was
+  never pushed.
+
 #### Phase 16.3: Starvation, measured [status: pending]
 **Goal:** With async offload in place, measure what a slow *synchronous* handler still costs, then
 fix #9 or re-ledger it with a new trigger; publish an app-author page on what runs where and what
