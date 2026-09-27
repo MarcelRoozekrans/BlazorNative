@@ -600,7 +600,7 @@ public sealed class NativeRenderer : BlazorRenderer
             && !BlazorInterop.IsParameterBindingFault(exception))
         {
             Interlocked.CompareExchange(ref flowing.LateFault, exception, null);
-            BnLog.Error("BlazorNative.Renderer", "render fault (after the handler's first await)", exception);
+            BnLog.Error("BlazorNative.Renderer", LateFaultLogLabel, exception);
             return;
         }
 
@@ -1558,6 +1558,12 @@ public sealed class NativeRenderer : BlazorRenderer
     /// thread does not flow a poster's execution context, so a value left set would
     /// leak into whatever work item ran next.</summary>
     private static readonly AsyncLocal<DispatchScope?> s_flowingScope = new();
+
+    /// <summary>The log line for a fault attributed to a handler after its first await
+    /// (Phase 16.1). A constant so the tests that assert a fault was NOT attributed
+    /// this way, and the one that asserts it WAS, track the real text: a reworded
+    /// literal would leave the absence assertions passing while checking nothing.</summary>
+    internal const string LateFaultLogLabel = "render fault (after the handler's first await)";
 
     /// <summary>Test-only: whether a dispatch scope flows in the CURRENT execution
     /// context. DispatchWindowScopeTests reads it from unrelated render-thread work to

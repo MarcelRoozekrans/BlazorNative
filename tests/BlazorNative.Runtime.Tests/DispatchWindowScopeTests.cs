@@ -334,7 +334,9 @@ public sealed class DispatchWindowScopeTests
     // in production, which is not strict, the fault was logged and the pending Task
     // ran to completion, so nothing downstream could ever deliver it.
 
-    private static async Task<Task> RunLateFault(bool strict)
+    /// <summary>With <paramref name="log"/>, every BnLog line from opening the gate to
+    /// the handler finishing is captured into it.</summary>
+    private static async Task<Task> RunLateFault(bool strict, List<string>? log = null)
     {
         var pending = new List<Task>();
         var (renderer, frames) = StartSession();
@@ -355,8 +357,23 @@ public sealed class DispatchWindowScopeTests
             }
             Assert.False(handler.IsCompleted, "the handler finished before its gate opened");
 
-            LateFaultProbe.Gate.SetResult();
-            await Task.WhenAny(handler, Task.Delay(Budget));
+            Action<BnLogLevel, string, string>? originalSink = BnLog.Sink;
+            BnLogLevel originalLevel = BnLog.Level;
+            if (log is not null)
+            {
+                BnLog.Level = BnLogLevel.Warn;
+                BnLog.Sink = (_, c, m) => { lock (log) log.Add($"{c}: {m}"); };
+            }
+            try
+            {
+                LateFaultProbe.Gate.SetResult();
+                await Task.WhenAny(handler, Task.Delay(Budget));
+            }
+            finally
+            {
+                BnLog.Sink = originalSink;
+                BnLog.Level = originalLevel;
+            }
             Assert.True(handler.IsCompleted, "the handler never finished after its gate opened");
             return handler;
         }
@@ -370,7 +387,8 @@ public sealed class DispatchWindowScopeTests
     [Fact]
     public async Task ALateFault_InProductionMode_FaultsThePendingTask()
     {
-        Task handler = await RunLateFault(strict: false);
+        var log = new List<string>();
+        Task handler = await RunLateFault(strict: false, log);
 
         Assert.True(handler.IsFaulted,
             $"the handler threw after its first await, in production mode, and its pending Task "
@@ -378,6 +396,16 @@ public sealed class DispatchWindowScopeTests
             + "HandleException, which found no dispatch to attribute it to, so no FaultNotice "
             + "could ever reach the shell.");
         Assert.Equal("late-boom", handler.Exception!.GetBaseException().Message);
+
+        // Rule 3 for the three ABSENCE assertions in this file, which say a fault was
+        // NOT logged with this label: the attributed path does log it. Without this, a
+        // reworded log line would leave all three passing while checking nothing.
+        List<string> lines;
+        lock (log) lines = log.ToList();
+        Assert.True(lines.Any(l => l.Contains(NativeRenderer.LateFaultLogLabel) && l.Contains("late-boom")),
+            $"the attributed late fault was not logged with NativeRenderer.LateFaultLogLabel "
+            + $"(\"{NativeRenderer.LateFaultLogLabel}\"). Got: "
+            + string.Join(" | ", lines.Select(l => l.Split('\n')[0])));
     }
 
     [Fact]
@@ -561,7 +589,7 @@ public sealed class DispatchWindowScopeTests
         // PRODUCTION: logged as an ordinary render fault, never as the handler's.
         RunFireAndForget(strict: false, out List<string> log);
         Assert.Contains(log, l => l.Contains("ff-boom"));
-        Assert.DoesNotContain(log, l => l.Contains("after the handler's first await"));
+        Assert.DoesNotContain(log, l => l.Contains(NativeRenderer.LateFaultLogLabel));
     }
 
     [Fact]
@@ -581,7 +609,7 @@ public sealed class DispatchWindowScopeTests
         // PRODUCTION: logged as an ordinary render fault, never as the handler's.
         RunPendingThenFireAndForget(strict: false, out List<string> log);
         Assert.Contains(log, l => l.Contains("pff-boom"));
-        Assert.DoesNotContain(log, l => l.Contains("after the handler's first await"));
+        Assert.DoesNotContain(log, l => l.Contains(NativeRenderer.LateFaultLogLabel));
     }
 
     /// <summary>Clicks PendingThenFireAndForgetProbe's "photo" with the host call held,
@@ -701,7 +729,7 @@ public sealed class DispatchWindowScopeTests
             Assert.True(log.Any(l => l.Contains("parameter-binding fault") && l.Contains("#164")),
                 "the binding fault raised after the first await never took #164's path: no "
                 + "'parameter-binding fault … #164' line was logged. Got: " + string.Join(" | ", log.Select(l => l.Split('\n')[0])));
-            Assert.DoesNotContain(log, l => l.Contains("after the handler's first await"));
+            Assert.DoesNotContain(log, l => l.Contains(NativeRenderer.LateFaultLogLabel));
             Assert.True(handler.IsFaulted, $"the pending Task ended {handler.Status}");
         }
         finally

@@ -335,7 +335,12 @@ internal static unsafe class HostSession
     /// if it did not join. Work posted after this completes as cancelled.</item>
     /// </list>
     /// Steps 2 to 4 run outside s_lock. The renderer is not disposed: its components'
-    /// Dispose needs the render thread, which a handler may still hold.</summary>
+    /// Dispose needs the render thread, which a handler may still hold.
+    /// The quiescence guarantee covers FRAMES only. A late fault that races shutdown —
+    /// a handler resuming and throwing as this runs — may be dropped, because its
+    /// pending Task is cancelled first, or its FaultNotice may be delivered after this
+    /// returns. Either is safe: the bridge callbacks live for the whole process, and
+    /// the fault still reaches stderr.</summary>
     internal static void Shutdown()
     {
         (NativeRenderer? renderer, FrameGate? gate) = Detach();

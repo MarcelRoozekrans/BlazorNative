@@ -37,7 +37,15 @@ namespace BlazorNative.Runtime.Tests;
 //   - fire-and-forget work a handler starts and does not await. Its fault takes
 //     Blazor's no-window path once the handler has finished, and is logged only;
 //   - a handler still pending at shutdown: its mirror ends Canceled, which is not
-//     a fault and sends nothing. ShutdownQuiescenceTests pins the cancellation.
+//     a fault and sends nothing. ShutdownQuiescenceTests pins the cancellation;
+//   - a late fault that RACES shutdown: the handler resumes and throws, and
+//     HostSession.Shutdown runs at once. AwaitWholeHandler resumes on the thread
+//     pool, so either the mirror is cancelled first and no notice is sent, or the
+//     notice arrives after Shutdown has returned. Measured by the final review,
+//     over 30 runs: no notice in 28, a notice after Shutdown returned in 2. The
+//     fault still reaches stderr in both. Shutdown is process exit only, and the
+//     bridge callbacks live for the whole process, so this is documented on
+//     HostSession.Shutdown rather than changed, and it is not pinned.
 // ─────────────────────────────────────────────────────────────────────────────
 
 [Collection("host-session")]

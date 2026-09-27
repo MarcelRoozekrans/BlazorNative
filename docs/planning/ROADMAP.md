@@ -3259,7 +3259,9 @@ No hit needed a fix. #427 is the analyzer that would catch a component doing thi
 `dotnet build BlazorNative.sln --no-incremental -v q`: 0 errors, and 24 warnings that already
 existed, BL0006 and CS8669 in the test project. The JVM run followed a fresh
 `dotnet publish samples/BlazorNative.SampleApp -c Release -r win-x64`, which exited 0 with 4 IL2072
-and wrote a dll newer than the stamp. Gradle then ran with `--rerun`.
+and wrote a dll newer than the stamp. Gradle then ran with `--rerun`. A local JVM run on a machine
+where no bionic `.so` has been built also needs `-PciSoDir=<bionic publish dir>`; without it
+`verifyNativeAssets` fails before any test runs. #424 covers the related UP-TO-DATE trap.
 
 | Surface | Before (`main`) | After | Change |
 |---|---|---|---|
