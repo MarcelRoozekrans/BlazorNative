@@ -876,7 +876,8 @@ public static class Exports
     /// later fault is sent to the shell as a FaultNotice, the dispatch_event contract.
     /// Phase 16.2 (#346): every rc 1 also sends a BackUnhandled notice. The shell now
     /// dispatches back fire-and-forget and never reads this rc, so the notice is what
-    /// makes it finish; without it a back at the root would be swallowed.</summary>
+    /// makes it finish; without it a back at the root would be swallowed. A back still
+    /// pending at return that later resolves false sends it too, from a continuation.</summary>
     private static int DispatchHostBack()
     {
         NativeNavigationManager? nav = HostSession.CurrentNavigationManager;
@@ -892,6 +893,21 @@ public static class Exports
             {
                 // Decision 5, as in dispatch_event: hand on the shutdown-tracked mirror.
                 ObservePendingHostEvent(BnHostEvents.Back, TrackUntilShutdown(renderer, back));
+                // Phase 16.2: rc 0 said "handled" before the back decided. If it later
+                // resolves false, the shell must still be told to finish, because it no
+                // longer reads the rc; without this the press is swallowed. Success only:
+                // a fault is ObservePendingHostEvent's FaultNotice, and the test file's
+                // header records why a faulted back does not finish. On the thread pool,
+                // never inline on the render thread that completed the back.
+                _ = back.ContinueWith(
+                    static t =>
+                    {
+                        if (!t.Result)
+                            NativeShellBridge.SendBackUnhandled();
+                    },
+                    CancellationToken.None,
+                    TaskContinuationOptions.OnlyOnRanToCompletion,
+                    TaskScheduler.Default);
                 return 0;
             }
             return back.GetAwaiter().GetResult() ? 0 : NotHandledBack();

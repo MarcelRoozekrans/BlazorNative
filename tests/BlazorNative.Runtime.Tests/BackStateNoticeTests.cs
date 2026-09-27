@@ -35,16 +35,19 @@ namespace BlazorNative.Runtime.Tests;
 //   - that the shell applies BackState in the same batch as the frame. .NET can
 //     only guarantee the notice arrives first; the batching is Android's, pinned
 //     by the instrumented suite;
-//   - a back whose work is still running when DispatchHostBack returns: it
-//     reports rc 0 and, if it later resolves "not handled", sends nothing.
-//     NavigateBackAsync completes synchronously today, so this path is reached
-//     only through the HostBackWorkForTests hook. It fails UNSAFE — the press
-//     would be swallowed — and is disclosed in the task report;
-//   - a back that FAULTS, rc 2: no BackUnhandled is sent. The screen is in an
-//     unknown state and the fault is logged;
+//   - a back whose work is still running when DispatchHostBack returns and is
+//     cut off by shutdown: its Task never completes, so nothing is sent. That is
+//     process exit, where there is no press left to honour;
 //   - the notice's delivery machinery itself: FaultNoticeTests pins that an
 //     answered notice leaves nothing pending and an unanswered one is dropped
 //     after its timeout. Both notices share that code path.
+//
+// DECISION, not a gap: a back that FAULTS, rc 2, sends no BackUnhandled and does
+// not finish the app. At the root NavigateBackAsync returns false without
+// swapping, so a fault means history existed. The swap's swapFailed step has
+// already resent the back state the route state still holds, true, and the
+// fault reaches the shell through the rc-2 onError path, or through FaultNotice
+// when the back had yielded. The next press retries the back.
 // ─────────────────────────────────────────────────────────────────────────────
 
 [Collection("host-session")]
@@ -173,10 +176,14 @@ public sealed class BackStateNoticeTests
         return index;
     }
 
-    /// <summary>The index of the LAST BackState notice with <paramref name="value"/> before
-    /// <paramref name="before"/>, or -1.</summary>
-    private static int LastBackStateBefore(List<Entry> log, bool value, int before)
-        => log.Take(before).ToList().FindLastIndex(e => e.Op == BackStateOp && CanGoBackOf(e.Args) == value);
+    /// <summary>True when the LAST BackState notice before <paramref name="before"/> carries
+    /// <paramref name="value"/>: the state the shell holds when that frame arrives. An
+    /// earlier notice with the value does not count, because a later one overrode it.</summary>
+    private static bool LastBackStateBeforeIs(List<Entry> log, bool value, int before)
+    {
+        int last = log.Take(before).ToList().FindLastIndex(e => e.Op == BackStateOp);
+        return last >= 0 && CanGoBackOf(log[last].Args) == value;
+    }
 
     // ── The value, and when it is sent ──────────────────────────────────────
 
@@ -193,7 +200,7 @@ public sealed class BackStateNoticeTests
             // stale back state from a previous session.
             List<Entry> entries = log.Snapshot();
             int page = FirstFrame(entries, IsBnDemoMount, "BnDemo");
-            Assert.True(LastBackStateBefore(entries, false, page) >= 0,
+            Assert.True(LastBackStateBeforeIs(entries, false, page),
                 $"the first mount's BackState must precede its frame. Log: [{Describe(entries)}]");
         });
     }
@@ -285,6 +292,18 @@ public sealed class BackStateNoticeTests
             Assert.True(sent >= 0 && after >= 0, $"both hand-sent calls must be logged: [{Describe(entries)}]");
             Assert.True(sent < page, $"a call made before a frame must be logged before it: [{Describe(entries)}]");
             Assert.True(after > page, $"a call made after a frame must be logged after it: [{Describe(entries)}]");
+
+            // And the order check reads the LAST notice before the frame, not any notice:
+            // [true, false, frame] leaves the shell at false.
+            var overridden = new List<Entry>
+            {
+                new(BackStateOp, """{"canGoBack":"true"}""", null),
+                new(BackStateOp, """{"canGoBack":"false"}""", null),
+                entries[page],
+            };
+            Assert.False(LastBackStateBeforeIs(overridden, true, 2),
+                "an overridden BackState(true) must not satisfy the order check");
+            Assert.True(LastBackStateBeforeIs(overridden, false, 2));
         });
     }
 
@@ -298,7 +317,7 @@ public sealed class BackStateNoticeTests
 
             List<Entry> entries = log.Snapshot();
             int page = FirstFrame(entries, f => HasText(f, "Settings"), "BnSettingsPage");
-            Assert.True(LastBackStateBefore(entries, true, page) >= 0,
+            Assert.True(LastBackStateBeforeIs(entries, true, page),
                 "the BackState(true) for the navigation to /settings reached the shell AFTER the "
                 + "frame that shows the page. The shell would show the new page with the back "
                 + "callback still disabled, and a back pressed in that window finishes the app: "
@@ -319,7 +338,7 @@ public sealed class BackStateNoticeTests
 
             List<Entry> entries = log.Snapshot().Skip(baseline).ToList();
             int page = FirstFrame(entries, IsBnDemoMount, "BnDemo");
-            Assert.True(LastBackStateBefore(entries, false, page) >= 0,
+            Assert.True(LastBackStateBeforeIs(entries, false, page),
                 "the BackState(false) for a back to the root reached the shell after the frame that "
                 + $"shows the root. Log: [{Describe(entries)}]");
         });
@@ -345,7 +364,7 @@ public sealed class BackStateNoticeTests
             Assert.Equal("/settings", Nav().CurrentRoute);
             List<Entry> entries = log.Snapshot().Skip(baseline).ToList();
             int page = FirstFrame(entries, f => HasText(f, "Settings"), "BnSettingsPage");
-            Assert.True(LastBackStateBefore(entries, true, page) >= 0,
+            Assert.True(LastBackStateBeforeIs(entries, true, page),
                 "a navigation from a click handler sent its BackState after the frame that shows "
                 + $"the page. Log: [{Describe(entries)}]");
         });
@@ -425,6 +444,120 @@ public sealed class BackStateNoticeTests
         finally
         {
             TearDown(previousStrict);
+        }
+    }
+
+    // ── A back that yields: its verdict arrives after the export returned ───
+
+    /// <summary>Runs a back host event whose work is still pending when the export returns,
+    /// then completes that work with <paramref name="handled"/>.</summary>
+    private static void RunPendingBack(bool handled)
+    {
+        var work = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        Exports.HostBackWorkForTests = () => work.Task;
+        try
+        {
+            Assert.Equal(0, HostSession.TryMount("BnDemo"));
+
+            // Rule 3 anchor: the export returned rc 0 on a back that has not decided yet,
+            // and sent nothing for it.
+            Assert.Equal(0, Exports.DispatchHostEventCore("back", null));
+            Assert.DoesNotContain(FakeShellHost.HostCalls(), c => c.Op == BackUnhandledOp);
+
+            work.SetResult(handled);
+        }
+        finally
+        {
+            Exports.HostBackWorkForTests = null;
+        }
+    }
+
+    private static bool WaitForBackUnhandled(TimeSpan budget)
+    {
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        while (sw.Elapsed < budget)
+        {
+            if (FakeShellHost.HostCalls().Any(c => c.Op == BackUnhandledOp))
+                return true;
+            Thread.Sleep(10);
+        }
+        return FakeShellHost.HostCalls().Any(c => c.Op == BackUnhandledOp);
+    }
+
+    [Fact]
+    public void ABackThatYields_ThenResolvesUnhandled_SendsBackUnhandled()
+    {
+        InSession(_ =>
+        {
+            RunPendingBack(handled: false);
+            Assert.True(WaitForBackUnhandled(TimeSpan.FromSeconds(10)),
+                "a back that yielded and then resolved 'not handled' sent no BackUnhandled. The "
+                + "export had already returned rc 0, and the shell no longer reads the rc, so the "
+                + "press was swallowed.");
+            Assert.Single(FakeShellHost.HostCalls(), c => c.Op == BackUnhandledOp);
+        });
+    }
+
+    [Fact]
+    public void ABackThatYields_ThenResolvesHandled_SendsNoBackUnhandled()
+    {
+        // Rule 3 negative, with a bounded wait far longer than the positive twin needs.
+        InSession(_ =>
+        {
+            RunPendingBack(handled: true);
+            Assert.False(WaitForBackUnhandled(TimeSpan.FromMilliseconds(500)),
+                "a back that resolved 'handled' must not make the shell finish");
+        });
+    }
+
+    // ── Two backs from one click handler: the slot is consumed by the swap ──
+
+    [Fact]
+    public void TwoBacksFromOneClickHandler_DoNotLeaveAReBackTrail()
+    {
+        InSession(_ =>
+        {
+            Assert.Equal(0, HostSession.TryMount("BnDemo"));
+            Go("/settings"); // the slot holds "/"
+            NativeRenderer renderer = Assert.IsType<NativeRenderer>(HostSession.CurrentRenderer);
+            var frames = new List<RenderFrame>();
+            renderer.Frames += (f, _) => { lock (frames) frames.Add(f); return ValueTask.CompletedTask; };
+            renderer.Mount<DoubleBackProbe>(); // an extra root, which the swaps leave alone
+            int handler;
+            lock (frames)
+                handler = frames.SelectMany(f => f.Patches.OfType<AttachEventPatch>())
+                    .Single(p => p.EventName == "click").HandlerId;
+            var routes = new List<string>();
+            Nav().RouteChanged += routes.Add;
+
+            // Both backs run inside one dispatch, so both swaps are deferred to its unwind.
+            Assert.Equal(0, Exports.DispatchEventCore((ulong)handler, ClickArgs));
+
+            Assert.Equal("/", Nav().CurrentRoute);
+            Assert.DoesNotContain("/settings", routes); // the second back went nowhere forward
+            Assert.False(Assert.IsType<NativeNavigationManager>(HostSession.CurrentNavigationManager).CanGoBack,
+                "two backs from one handler left the previous-route slot set, so a later back "
+                + "would navigate FORWARD to the page the user just left");
+            Assert.Equal(1, Exports.DispatchHostEventCore("back", null)); // a later back finishes
+            Assert.Equal("/", Nav().CurrentRoute);
+        });
+    }
+
+    /// <summary>One button whose click goes back twice.</summary>
+    private sealed class DoubleBackProbe : Microsoft.AspNetCore.Components.ComponentBase
+    {
+        [Microsoft.AspNetCore.Components.Inject] public INavigationManager Nav { get; set; } = default!;
+
+        protected override void BuildRenderTree(Microsoft.AspNetCore.Components.Rendering.RenderTreeBuilder b)
+        {
+            b.OpenElement(0, "button");
+            b.AddAttribute(1, "onclick", Microsoft.AspNetCore.Components.EventCallback.Factory.Create<Microsoft.AspNetCore.Components.Web.MouseEventArgs>(this, async () =>
+            {
+                await Nav.NavigateBackAsync();
+                await Nav.NavigateBackAsync();
+            }));
+            b.AddContent(2, "back twice");
+            b.CloseElement();
         }
     }
 

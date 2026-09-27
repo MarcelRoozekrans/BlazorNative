@@ -246,7 +246,16 @@ public sealed class NativeNavigationManager : INavigationManager
 
     /// <summary>Tells the shell <paramref name="canGoBack"/> when it differs from what
     /// the shell was last told. Always sends the first time, which is the session's first
-    /// mount. Never throws: the send is fire-and-forget.</summary>
+    /// mount. Never throws: the send is fire-and-forget.
+    ///
+    /// The send happens INSIDE the lock, so the order the shell receives notices in is
+    /// the order the recorded value changed in. Callers are not all on one thread:
+    /// TryMount publishes from the mount export's thread, and navigation from the render
+    /// thread. Holding the lock across the send cannot deadlock: under it runs only
+    /// SendBackState, whose hostCallBegin is a begin that must return at once by the
+    /// host-call contract, and a shell that answers inline re-enters .NET only through
+    /// CompleteHostCall, which takes no lock of this manager and runs no continuation
+    /// inline. The lock is private and taken nowhere else.</summary>
     internal void PublishBackState(bool canGoBack)
     {
         lock (_backStateLock)
@@ -254,8 +263,8 @@ public sealed class NativeNavigationManager : INavigationManager
             if (_lastSentCanGoBack == canGoBack)
                 return;
             _lastSentCanGoBack = canGoBack;
+            NativeShellBridge.SendBackState(canGoBack);
         }
-        NativeShellBridge.SendBackState(canGoBack);
     }
 
     /// <summary>HostSession calls this before a session's mount, so the shell's back state
