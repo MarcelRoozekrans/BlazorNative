@@ -1370,7 +1370,8 @@ public sealed class NativeRenderer : BlazorRenderer
             // handlerId here (a SetAttribute re-attach overwrites: last wins,
             // so a later detach carries the LIVE handlerId). Task 5.
             RegisterEventHandler(nodeId, eventName, handlerId);
-            RecordCallSite(componentId, handlerId, frame.Sequence, eventName);
+            RecordCallSite(componentId, handlerId, frame.Sequence, eventName,
+                BlazorInterop.HandlerDelegate(frame.AttributeValue));
             patches.Add(new AttachEventPatch(nodeId, eventName, handlerId));
         }
         else if (name == ScrollToAttributeName)
@@ -1624,26 +1625,50 @@ public sealed class NativeRenderer : BlazorRenderer
     /// included. Guarded by the <see cref="_slowHandlerWarned"/> lock.</summary>
     private int _slowHandlerWarnings;
 
-    /// <summary>Where a live handler id was attached: the component type, the
-    /// attribute frame's sequence number and the event name. Written at the
-    /// AttachEvent emission site, pruned by the batch's disposed handler ids, and
-    /// read by the slow-handler warning. Render thread only.</summary>
+    /// <summary>Where a live handler id was attached. Written at the AttachEvent
+    /// emission site, pruned by the batch's disposed handler ids, and read by the
+    /// slow-handler warning. Render thread only.</summary>
     private readonly Dictionary<int, HandlerCallSite> _handlerCallSites = new();
 
-    /// <summary>A handler's call site in code. Blazor hands a lambda that captures
-    /// per-render state a NEW handler id on every render, and every item of a
-    /// <c>foreach</c> its own, so the id cannot key a once-per-handler rule. The
-    /// component type and the frame's sequence number name the line of markup, and
-    /// stay the same across renders and items. No reflection: NativeAOT-safe.</summary>
-    private readonly record struct HandlerCallSite(Type Component, int Sequence, string EventName)
+    /// <summary>A handler's identity for the once-per-handler rule. Blazor hands a
+    /// lambda that captures per-render state a NEW handler id on every render, and
+    /// every item of a <c>foreach</c> its own, so the id cannot key the rule.
+    /// <para>The key is the handler's OWNER: the method its delegate runs, declaring
+    /// type and name. The compiler emits one method per lambda call site, so that is
+    /// stable across renders and items and unique per call site in code. It is NOT the
+    /// component whose render tree holds the attribute: <c>BnButton</c> forwards every
+    /// app's <c>OnClick</c> from one line, and a <c>BnView</c>'s ChildContent renders
+    /// into BnView's tree with the page's sequence numbers, so a tree-owner key would
+    /// merge every such handler in the app into one.</para>
+    /// <para>The fallback, when no delegate can be reached or its method cannot be
+    /// resolved, is the tree owner: the component type, the attribute frame's sequence
+    /// number and the event name. The delegate is only read here; its method is
+    /// resolved when a dispatch is already over budget, never on the render path.</para></summary>
+    private readonly record struct HandlerCallSite(Type Component, int Sequence, string EventName, Delegate? Handler)
     {
-        public string Key => $"{Component.FullName}#{Sequence}#{EventName}";
+        public (string Key, string Owner) Resolve()
+        {
+            if (Handler is not null)
+            {
+                try
+                {
+                    System.Reflection.MethodInfo method = Handler.Method;
+                    if (method.DeclaringType?.FullName is { } declaring)
+                        return ($"{declaring}::{method.Name}#{EventName}", $"{declaring}.{method.Name}");
+                }
+                catch (NotSupportedException)
+                {
+                    // A method with no reflection metadata under NativeAOT: fall back.
+                }
+            }
+            return ($"{Component.FullName}#{Sequence}#{EventName}", Component.FullName ?? Component.Name);
+        }
     }
 
-    private void RecordCallSite(int componentId, int handlerId, int sequence, string eventName)
+    private void RecordCallSite(int componentId, int handlerId, int sequence, string eventName, Delegate? handler)
     {
         if (_componentTypes.TryGetValue(componentId, out Type? component))
-            _handlerCallSites[handlerId] = new HandlerCallSite(component, sequence, eventName);
+            _handlerCallSites[handlerId] = new HandlerCallSite(component, sequence, eventName, handler);
     }
 
     /// <summary>Each live component's type, for <see cref="RecordCallSite"/>. Kept here
@@ -1665,9 +1690,12 @@ public sealed class NativeRenderer : BlazorRenderer
     /// the attach was recorded, else its handler id. Formatted only once a dispatch
     /// is over budget, so the hot path allocates nothing for the warning.</summary>
     private static (string Key, string Subject) DispatchSubject(NativeUiEvent e, HandlerCallSite? site)
-        => site is { } s
-            ? (s.Key, $"handler {e.HandlerId} '{e.EventName}' in {s.Component.FullName}")
-            : ($"handler {e.HandlerId}", $"handler {e.HandlerId} '{e.EventName}'");
+    {
+        if (site is not { } s)
+            return ($"handler {e.HandlerId}", $"handler {e.HandlerId} '{e.EventName}'");
+        (string key, string owner) = s.Resolve();
+        return (key, $"handler {e.HandlerId} '{e.EventName}' in {owner}");
+    }
 
     /// <summary>The start timestamp of a timed synchronous part.</summary>
     internal long SyncPartTimestamp() => TimestampForTests?.Invoke() ?? Stopwatch.GetTimestamp();

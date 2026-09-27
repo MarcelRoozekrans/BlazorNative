@@ -1,10 +1,12 @@
 using System.Diagnostics;
 using System.Text.RegularExpressions;
+using BlazorNative.Components;
 using BlazorNative.Core;
 using BlazorNative.Renderer;
 using BlazorNative.Runtime;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Rendering;
+using Microsoft.AspNetCore.Components.Web;
 using Xunit;
 
 namespace BlazorNative.Runtime.Tests;
@@ -42,14 +44,17 @@ namespace BlazorNative.Runtime.Tests;
 //     part starts. That wait is the symptom, charged to the handler ahead of it,
 //     never to the one waiting;
 //   - the async remainder of a handler after its first await: it holds nothing;
-//   - two DIFFERENT call sites sharing one key. A dispatch is keyed by its call
-//     site: the component type, the attribute frame's sequence and the event
-//     name, so a lambda that gets a new handler id on every render still warns
-//     once. A RenderFragment passed in by a parent renders into the CHILD's
-//     tree with the PARENT's sequence numbers, so two parents' fragments inside
-//     one child type can collide. Fails quiet: the second slow site is not
-//     warned about. The 32-warning cap per session is the other quiet path, and
-//     it is pinned;
+//   - the FALLBACK key's collisions. A dispatch is keyed by its handler's owner,
+//     the method its delegate runs, so a lambda that gets a new handler id on every
+//     render still warns once, and BnButton or a BnView's ChildContent forwarding
+//     many apps' handlers from one line warns for each. When no delegate can be
+//     reached, or its method cannot be resolved, the key falls back to the tree
+//     owner: component type, frame sequence and event. Under that fallback a
+//     RenderFragment from a parent renders into the CHILD's tree with the PARENT's
+//     sequence numbers, so handlers can merge. Fails quiet. The fallback is not
+//     reached by any pin here; whether the NativeAOT build resolves the method is
+//     measured on the JVM lane, by SlowHandlerProbeTest. The 32-warning cap per
+//     session is the other quiet path, and it is pinned;
 //   - the navigate and safeAreaChanged arms by name. They share the timed helper
 //     with back and the lifecycle multicast, which are pinned;
 //   - the shells: this is the .NET side only.
@@ -421,6 +426,51 @@ public sealed class SlowHandlerWarningTests
     }
 
     [Fact]
+    public void TwoBnButtons_WithDifferentSlowHandlers_WarnTwice_NamingTheAppsMethods_NeverBnButton()
+    {
+        using var s = new Session();
+        int one = s.Handler("bn-one");
+        int two = s.Handler("bn-two");
+        Assert.NotEqual(one, two);
+
+        Assert.Equal(0, Dispatch(one, Click));
+        Assert.Equal(0, Dispatch(two, Click));
+
+        Assert.Equal(1, SlowProbe.RunsOf("bn-one")); // anchor: both app handlers ran
+        Assert.Equal(1, SlowProbe.RunsOf("bn-two"));
+        string[] lines = s.SlowLines();
+        Assert.True(lines.Length == 2,
+            $"two BnButtons with different slow OnClick handlers gave {lines.Length} warnings, "
+            + $"not 2. BnButton forwards every app's OnClick from one line, so a key built from "
+            + $"the tree that holds the attribute merges them:\n{string.Join("\n", lines)}");
+        Assert.Single(lines, l => l.Contains("BnSlowOne"));
+        Assert.Single(lines, l => l.Contains("BnSlowTwo"));
+        Assert.DoesNotContain(lines, l => l.Contains(typeof(BnButton).FullName!));
+    }
+
+    [Fact]
+    public void TwoPageTypes_WithSlowButtonsInBnViewChildContent_AtTheSameSequence_WarnTwice()
+    {
+        using var s = new Session();
+        int a = s.Handler("page-a");
+        int b = s.Handler("page-b");
+
+        Assert.Equal(0, Dispatch(a, Click));
+        Assert.Equal(0, Dispatch(b, Click));
+
+        Assert.Equal(1, SlowProbe.RunsOf("page-a")); // anchor: both pages' handlers ran
+        Assert.Equal(1, SlowProbe.RunsOf("page-b"));
+        string[] lines = s.SlowLines();
+        Assert.True(lines.Length == 2,
+            $"two pages' slow buttons inside BnView ChildContent gave {lines.Length} warnings, not "
+            + $"2. The fragments render into BnView's tree with the pages' sequence numbers, so a "
+            + $"tree-owner key merges them:\n{string.Join("\n", lines)}");
+        Assert.Single(lines, l => l.Contains(nameof(ChildPageA)));
+        Assert.Single(lines, l => l.Contains(nameof(ChildPageB)));
+        Assert.DoesNotContain(lines, l => l.Contains(typeof(BnView).FullName!));
+    }
+
+    [Fact]
     public void TheCap_Allows32Warnings_ThenOneSuppressionLine_ThenSilence()
     {
         using var s = new Session();
@@ -506,6 +556,8 @@ public sealed class SlowHandlerWarningTests
         private void OnChange(ChangeEventArgs e) { LastPayload = e.Value as string; Run("change", SlowMs); }
         private int _selected;
         private void Select(int item) { _selected = item; Run("select", SlowMs); }
+        private void BnSlowOne() => Run("bn-one", SlowMs);
+        private void BnSlowTwo() => Run("bn-two", SlowMs);
 
         protected override void BuildRenderTree(RenderTreeBuilder b)
         {
@@ -540,8 +592,72 @@ public sealed class SlowHandlerWarningTests
             b.AddAttribute(15, "onclick", EventCallback.Factory.Create(this, () => Select(other)));
             b.AddContent(16, "other");
             b.CloseElement();
+            // Two BnButtons: BnButton forwards both OnClicks from its own sequence 100.
+            b.OpenComponent<BnButton>(20);
+            b.AddComponentParameter(21, nameof(BnButton.Label), "bn-one");
+            b.AddComponentParameter(22, nameof(BnButton.OnClick),
+                EventCallback.Factory.Create<MouseEventArgs>(this, BnSlowOne));
+            b.CloseComponent();
+            b.OpenComponent<BnButton>(23);
+            b.AddComponentParameter(24, nameof(BnButton.Label), "bn-two");
+            b.AddComponentParameter(25, nameof(BnButton.OnClick),
+                EventCallback.Factory.Create<MouseEventArgs>(this, BnSlowTwo));
+            b.CloseComponent();
+            // Two page types, each with a slow button inside BnView ChildContent.
+            b.OpenComponent<ChildPageA>(30);
+            b.CloseComponent();
+            b.OpenComponent<ChildPageB>(31);
+            b.CloseComponent();
         }
 
         public void Dispose() => Bridge.NativeEvents -= OnNativeEvent;
+
+        internal static void RunSlow(string tag) => Run(tag, SlowMs);
+    }
+
+    // Two page types whose BuildRenderTree is the same line for line: a BnView whose
+    // ChildContent is a button at sequence 2. The button's attribute frame sits in
+    // BnView's tree, at the same sequence for both, so only the handler's owner tells
+    // them apart. The handler is a lambda capturing a local, so Blazor stores it as a
+    // boxed EventCallback rather than a raw delegate: this pair covers the
+    // EventCallback accessor path, and the BnButton pair the raw-delegate one.
+    private sealed class ChildPageA : ComponentBase
+    {
+        private int _clicks;
+        private void Slow(int clicks) { _clicks = clicks + 1; SlowProbe.RunSlow("page-a"); }
+
+        protected override void BuildRenderTree(RenderTreeBuilder b)
+        {
+            int clicks = _clicks;
+            b.OpenComponent<BnView>(0);
+            b.AddComponentParameter(1, nameof(BnView.ChildContent), (RenderFragment)(c =>
+            {
+                c.OpenElement(2, "button");
+                c.AddAttribute(3, "onclick", EventCallback.Factory.Create(this, () => Slow(clicks)));
+                c.AddContent(4, "page-a");
+                c.CloseElement();
+            }));
+            b.CloseComponent();
+        }
+    }
+
+    private sealed class ChildPageB : ComponentBase
+    {
+        private int _clicks;
+        private void Slow(int clicks) { _clicks = clicks + 1; SlowProbe.RunSlow("page-b"); }
+
+        protected override void BuildRenderTree(RenderTreeBuilder b)
+        {
+            int clicks = _clicks;
+            b.OpenComponent<BnView>(0);
+            b.AddComponentParameter(1, nameof(BnView.ChildContent), (RenderFragment)(c =>
+            {
+                c.OpenElement(2, "button");
+                c.AddAttribute(3, "onclick", EventCallback.Factory.Create(this, () => Slow(clicks)));
+                c.AddContent(4, "page-b");
+                c.CloseElement();
+            }));
+            b.CloseComponent();
+        }
     }
 }
