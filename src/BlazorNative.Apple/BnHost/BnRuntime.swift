@@ -310,8 +310,14 @@ final class BnRuntime {
         // the delegate's `didReceive` re-routes over host_event on the serial lane (the ABI
         // is never called from the delegate's main thread directly). The non-nil dispatcher
         // is also BnNotifications' "session is live" signal (warm re-route vs cold stash).
+        //
+        // Phase 16.2 (#346): FIRE-AND-FORGET. Both navigators used to call
+        // `dispatchHostEventAndWait`, a `dispatchLane.sync` from main, so a link or a tap
+        // while a handler held the lane froze the app until the handler let go. Nobody read
+        // the rc they waited for: BnDeepLink discarded it, and BnNotifications kept it only
+        // for a test seam. BnBackOffMainTests pins the deep link against a held lane.
         bridge.notifications.navigateDispatcher = { [weak self] route in
-            self?.dispatchHostEventAndWait(.navigate, payload: route) ?? 1
+            self?.dispatchHostEvent(.navigate, payload: route)
         }
 
         // The deep-link surface gets the SAME dispatcher for the same reason: a URL
@@ -319,7 +325,7 @@ final class BnRuntime {
         // serial lane. Non-nil is likewise its "session is live" signal, so a link
         // opened from now on re-routes warm instead of stashing.
         BnDeepLink.shared.navigateDispatcher = { [weak self] route in
-            self?.dispatchHostEventAndWait(.navigate, payload: route) ?? 1
+            self?.dispatchHostEvent(.navigate, payload: route)
         }
 
         // Published LAST, after mount: `current` means "a session that can be
@@ -330,7 +336,8 @@ final class BnRuntime {
 
     /// Phase 9.1 / 14.1: dispatches a host-INITIATED event over the EXISTING
     /// `blazornative_host_event` export. FIRE-AND-FORGET — the Swift twin of Kotlin's
-    /// `BlazorNativeRuntime.dispatchHostEvent`, and the overload LIFECYCLE uses.
+    /// `BlazorNativeRuntime.dispatchHostEvent`, and the overload LIFECYCLE uses, as do
+    /// both navigators since 16.2 (#346).
     ///
     /// #339: this used to be the blocking one, and `BnAppLifecycle` called it from
     /// main. When an async host call already held the lane — a camera or geolocation

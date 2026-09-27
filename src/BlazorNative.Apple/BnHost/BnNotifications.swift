@@ -99,7 +99,10 @@ final class BnNotifications: NSObject, UNUserNotificationCenterDelegate {
     /// serial dispatch lane — the ABI must NOT be called from the delegate's arbitrary
     /// (main) thread directly. Its being non-nil is also the "a live session exists"
     /// signal `handleTap` uses to choose warm re-route over cold stash.
-    var navigateDispatcher: ((String) -> Int32)?
+    ///
+    /// Returns nothing since 16.2 (#346): the dispatch is fire-and-forget, so there is no
+    /// rc to hand back. The `BnDeepLink.navigateDispatcher` twin.
+    var navigateDispatcher: ((String) -> Void)?
 
     // ── Test seams (static, reset in teardown — the BnGeolocation companion twins) ──
 
@@ -120,19 +123,14 @@ final class BnNotifications: NSObject, UNUserNotificationCenterDelegate {
     static var completeHookForTest: ((Int64, Int32, String?) -> Int32)?
 
     /// Intercepts the WARM navigate dispatch so a pure unit test observes the (route)
-    /// the tap fires without a live .NET continuation. Null → the wired dispatcher (or
-    /// the direct export fallback) is called.
-    static var navigateHookForTest: ((String) -> Int32)?
+    /// the tap fires without a live .NET continuation. Null → the wired dispatcher is
+    /// called. Returns nothing, like the dispatcher it stands in for.
+    static var navigateHookForTest: ((String) -> Void)?
 
     /// The rc of the most recent `blazornative_host_call_complete` — 0 = delivered to a
     /// live .NET continuation, 1 = unknown/already-completed id (benign). Int32.min
     /// before any completion. The BnGeolocation.lastHostCallCompleteRcForTest twin.
     static var lastHostCallCompleteRcForTest: Int32 = Int32.min
-
-    /// The rc of the most recent `blazornative_host_event("navigate", …)` — 0 = the live
-    /// session re-routed, 1 = not handled (no session / unknown route). Int32.min before
-    /// any warm tap. Proves the iOS shell CALLED the pre-existing host_event export.
-    static var lastHostEventRcForTest: Int32 = Int32.min
 
     /// The UNNotificationRequest most recently handed to the center (captured BEFORE the
     /// add, so a show/schedule's construction — id, content, userInfo route, trigger — is
@@ -157,7 +155,6 @@ final class BnNotifications: NSObject, UNUserNotificationCenterDelegate {
         completeHookForTest = nil
         navigateHookForTest = nil
         lastHostCallCompleteRcForTest = Int32.min
-        lastHostEventRcForTest = Int32.min
         lastAddedRequestForTest = nil
         lastCancelledIdForTest = nil
     }
@@ -268,20 +265,20 @@ final class BnNotifications: NSObject, UNUserNotificationCenterDelegate {
     private func navigateHookForTestIsSet() -> Bool { BnNotifications.navigateHookForTest != nil }
 
     /// Fires the reserved "navigate" host event (route as the bare payload). In
-    /// production the wired dispatcher hops to the serial lane before calling the ABI;
-    /// the test hook / direct fallback call inline.
+    /// production the wired dispatcher hops to the serial lane before calling the ABI,
+    /// fire-and-forget since 16.2 (#346); the test hook records inline.
+    ///
+    /// Phase 16.2 retired two things here. `lastHostEventRcForTest` lost its source when
+    /// the dispatch stopped returning an rc; the warm-tap tests observe the route the hook
+    /// saw, and the booted one observes the page the navigate mounted, which is the
+    /// stronger proof. And the direct `blazornative_host_event` fallback was unreachable:
+    /// `handleTap` calls this only when the hook or the dispatcher is set.
     private func fireNavigate(_ route: String) {
-        let rc: Int32
         if let hook = BnNotifications.navigateHookForTest {
-            rc = hook(route)
+            hook(route)
         } else if let dispatcher = navigateDispatcher {
-            rc = dispatcher(route)
-        } else {
-            rc = BnHostEvent.navigate.rawValue.withCString { n in
-                route.withCString { p in blazornative_host_event(n, p) }
-            }
+            dispatcher(route)
         }
-        BnNotifications.lastHostEventRcForTest = rc
     }
 
     /// Reads the current authorization status (override in test; the async

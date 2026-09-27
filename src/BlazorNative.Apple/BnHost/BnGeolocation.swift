@@ -159,10 +159,11 @@ final class BnGeolocation: NSObject, CLLocationManagerDelegate {
         complete(requestId, BnHostCallStatus.error, nil)
     }
 
-    /// Phase 16.1: a FaultNotice is answered OK (0) with no payload once the shell has
-    /// routed it to onError. The `completeUnknownOp` twin, through the same funnel, so
-    /// `completeHookForTest` observes it and .NET removes the notice's pending entry.
-    func completeFaultNotice(requestId: Int64) {
+    /// Phase 16.1: a notice is answered OK (0) with no payload once the shell has handled
+    /// it. The `completeUnknownOp` twin, through the same funnel, so `completeHookForTest`
+    /// observes it and .NET removes the notice's pending entry. Used by FaultNotice and,
+    /// since 16.2, by BackState and BackUnhandled, which iOS acknowledges and ignores.
+    func completeNotice(requestId: Int64) {
         complete(requestId, BnHostCallStatus.granted, nil)
     }
 

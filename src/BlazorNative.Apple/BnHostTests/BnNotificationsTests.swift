@@ -247,11 +247,12 @@ final class BnNotificationsTests: BnHostTestCase {
     func testWarmTapFiresTheNavigateHostEventWithTheRoute() {
         let bridge = AppleShellBridge()
         var fired: [String] = []
-        BnNotifications.navigateHookForTest = { route in fired.append(route); return 0 }
+        BnNotifications.navigateHookForTest = { route in fired.append(route) }
 
         bridge.notifications.fireTapForTest(route: "/notifications")
+        // Since 16.2 (#346) the dispatch is fire-and-forget and returns no rc, so the route
+        // the hook saw is the whole observation; lastHostEventRcForTest was retired with it.
         XCTAssertEqual(fired, ["/notifications"], "a warm tap fires host_event(navigate, route)")
-        XCTAssertEqual(BnNotifications.lastHostEventRcForTest, 0, "the warm re-route reported rc 0")
     }
 
     func testColdTapStashesTheLaunchRouteAndResolvesTheMountComponent() {
@@ -267,7 +268,7 @@ final class BnNotificationsTests: BnHostTestCase {
     func testATapWithNoRouteFiresNothingAndStashesNothing() {
         let bridge = AppleShellBridge()
         var fired: [String] = []
-        BnNotifications.navigateHookForTest = { route in fired.append(route); return 0 }
+        BnNotifications.navigateHookForTest = { route in fired.append(route) }
         bridge.notifications.fireTapForTest(route: nil)
         bridge.notifications.fireTapForTest(route: "")
         XCTAssertTrue(fired.isEmpty, "a routeless tap acts on nothing")
@@ -336,8 +337,9 @@ final class BnNotificationsTests: BnHostTestCase {
 
         XCTAssertTrue(pollUntil { self.findLabel(in: self.root, text: "arrived:/notifications") != nil },
                       "the warm re-route never mounted the /notifications page (host_event did not re-route)")
-        XCTAssertEqual(BnNotifications.lastHostEventRcForTest, 0,
-                       "host_event(navigate) did not reach a live .NET continuation (rc 0)")
+        // No rc assertion since 16.2 (#346): the navigator is fire-and-forget and returns
+        // none. The mounted page above is the proof that host_event reached .NET and
+        // re-routed, which is stronger than the rc 0 it replaced.
     }
 
     // ── Boot + tree accessors (the BnGeolocationTests house style) ───────────────

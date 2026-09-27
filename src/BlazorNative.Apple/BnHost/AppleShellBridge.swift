@@ -240,6 +240,10 @@ final class AppleShellBridge {
             camera.begin(requestId: requestId, argsJson: argsJson)
         case BnHostCallOp.faultNotice:
             deliverFaultNotice(requestId: requestId, argsJson: argsJson)
+        case BnHostCallOp.backState:
+            geolocation.completeNotice(requestId: requestId) // iOS has no system back: nothing to enable.
+        case BnHostCallOp.backUnhandled:
+            geolocation.completeNotice(requestId: requestId) // iOS has no system back: nothing to hand on.
         default:
             BnLog.warn("AppleShellBridge", "hostCallBegin: unknown op \(op) (request \(requestId)) — completing Error")
             geolocation.completeUnknownOp(requestId: requestId)
@@ -266,7 +270,7 @@ final class AppleShellBridge {
         } else {
             BnLog.error("AppleShellBridge", msg)
         }
-        geolocation.completeFaultNotice(requestId: requestId)
+        geolocation.completeNotice(requestId: requestId)
     }
 
     // ── the -needed buffer-write helper (twin of ShellBridge.writeUtf8) ──────
