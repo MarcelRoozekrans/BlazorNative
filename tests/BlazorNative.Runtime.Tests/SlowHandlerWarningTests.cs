@@ -42,8 +42,14 @@ namespace BlazorNative.Runtime.Tests;
 //     part starts. That wait is the symptom, charged to the handler ahead of it,
 //     never to the one waiting;
 //   - the async remainder of a handler after its first await: it holds nothing;
-//   - a handler whose delegate changes on every render. Blazor gives it a new
-//     handler id each render, so it can warn once per id rather than once in all;
+//   - two DIFFERENT call sites sharing one key. A dispatch is keyed by its call
+//     site: the component type, the attribute frame's sequence and the event
+//     name, so a lambda that gets a new handler id on every render still warns
+//     once. A RenderFragment passed in by a parent renders into the CHILD's
+//     tree with the PARENT's sequence numbers, so two parents' fragments inside
+//     one child type can collide. Fails quiet: the second slow site is not
+//     warned about. The 32-warning cap per session is the other quiet path, and
+//     it is pinned;
 //   - the navigate and safeAreaChanged arms by name. They share the timed helper
 //     with back and the lifecycle multicast, which are pinned;
 //   - the shells: this is the .NET side only.
@@ -141,6 +147,40 @@ public sealed class SlowHandlerWarningTests
             throw new Xunit.Sdk.XunitException(
                 $"no frame created a '{eventName}' handler for '{label}'. SlowProbe moved or was "
                 + "relabelled; re-point this pin deliberately rather than deleting it.");
+        }
+
+        /// <summary>The node id of the button whose text is <paramref name="label"/>.</summary>
+        public int NodeOf(string label)
+        {
+            List<RenderFrame> all;
+            lock (_frames) all = _frames.ToList();
+            foreach (RenderFrame f in all)
+            {
+                ReplaceTextPatch? text = f.Patches.OfType<ReplaceTextPatch>().FirstOrDefault(p => p.Text == label);
+                if (text is null)
+                    continue;
+                if (f.Patches.OfType<CreateNodePatch>().FirstOrDefault(p => p.NodeId == text.NodeId)?.ParentId is int button)
+                    return button;
+            }
+            throw new Xunit.Sdk.XunitException(
+                $"no frame created a button labelled '{label}'. SlowProbe moved or was relabelled; "
+                + "re-point this pin deliberately rather than deleting it.");
+        }
+
+        /// <summary>The LIVE click handler on <paramref name="node"/>: the latest attach,
+        /// which a re-render's SetAttribute replaces when the delegate changed.</summary>
+        public int LatestHandlerOn(int node)
+        {
+            List<RenderFrame> all;
+            lock (_frames) all = _frames.ToList();
+            for (int i = all.Count - 1; i >= 0; i--)
+            {
+                AttachEventPatch? attach = all[i].Patches.OfType<AttachEventPatch>()
+                    .LastOrDefault(p => p.NodeId == node && p.EventName == "click");
+                if (attach is not null)
+                    return attach.HandlerId;
+            }
+            throw new Xunit.Sdk.XunitException($"node {node} never had a click handler attached.");
         }
 
         public void Dispose()
@@ -270,6 +310,15 @@ public sealed class SlowHandlerWarningTests
     public void ASlowBackArm_IsWarned_KeyedByEventName_Once()
     {
         using var s = new Session();
+        // Every clock read records its thread: the arm must be timed ON the render
+        // thread, from the moment its work starts, so the time its post waited in the
+        // queue is never charged to it. A read on the caller would include that wait.
+        var readThreads = new List<int>();
+        s.Renderer.TimestampForTests = () =>
+        {
+            lock (readThreads) readThreads.Add(Environment.CurrentManagedThreadId);
+            return FakeClock.Now();
+        };
         int backs = 0;
         Exports.HostBackWorkForTests = () =>
         {
@@ -282,6 +331,17 @@ public sealed class SlowHandlerWarningTests
         Assert.Equal(0, Exports.DispatchHostEventCore(BnHostEvents.Back, null));
 
         Assert.Equal(2, backs); // anchor: the arm's work ran, twice
+        int[] reads;
+        lock (readThreads) reads = readThreads.ToArray();
+        Assert.True(reads.Length >= 4,
+            $"the two back arms read the renderer's clock {reads.Length} times; timing each "
+            + "reads it at least twice. The arm timing moved off TimestampForTests, so the "
+            + "thread assertion below would check nothing.");
+        int owner = s.Renderer.RenderThreadId;
+        Assert.True(reads.All(t => t == owner),
+            $"the back arm read its clock on threads [{string.Join(", ", reads)}], but the render "
+            + $"thread is {owner}. A read off the render thread times the queue wait too, which "
+            + "belongs to whatever ran ahead of the arm.");
         var line = Assert.Single(s.SlowLines());
         Assert.Contains($"host event '{BnHostEvents.Back}'", line);
         Assert.Contains($"{SlowMs} ms", line);
@@ -321,6 +381,70 @@ public sealed class SlowHandlerWarningTests
     }
 
     [Fact]
+    public void ACapturingLambda_ClickedThreeTimesAcrossReRenders_WarnsOnce()
+    {
+        using var s = new Session();
+        int node = s.NodeOf("item-0");
+        var ids = new List<int>();
+        for (int i = 0; i < 3; i++)
+        {
+            int id = s.LatestHandlerOn(node);
+            ids.Add(id);
+            Assert.Equal(0, Dispatch(id, Click));
+        }
+
+        // Anchors: every click ran, and Blazor really did hand the lambda a NEW handler
+        // id on each render. Without that, keying by handler id would pass too.
+        Assert.Equal(3, SlowProbe.RunsOf("select"));
+        Assert.True(ids.Distinct().Count() == 3,
+            $"the capturing lambda kept handler ids [{string.Join(", ", ids)}] across its "
+            + "re-renders, so this pin no longer separates a call-site key from a handler-id "
+            + "key. Has SlowProbe's item button stopped capturing per-render state?");
+        var line = Assert.Single(s.SlowLines());
+        Assert.Contains($"handler {ids[0]} 'click'", line);
+        Assert.Contains(nameof(SlowProbe), line);
+    }
+
+    [Fact]
+    public void TwoCallSites_WarnTwice_AndTwoItemsOfOneCallSite_WarnOnce()
+    {
+        using var s = new Session();
+        Assert.Equal(0, Dispatch(s.LatestHandlerOn(s.NodeOf("item-0")), Click));
+        Assert.Equal(0, Dispatch(s.LatestHandlerOn(s.NodeOf("item-1")), Click));
+        Assert.Equal(0, Dispatch(s.LatestHandlerOn(s.NodeOf("other")), Click));
+
+        Assert.Equal(3, SlowProbe.RunsOf("select")); // anchor: all three ran
+        string[] lines = s.SlowLines();
+        Assert.True(lines.Length == 2,
+            $"expected one warning for the item loop's call site and one for 'other', got "
+            + $"{lines.Length}:\n{string.Join("\n", lines)}");
+    }
+
+    [Fact]
+    public void TheCap_Allows32Warnings_ThenOneSuppressionLine_ThenSilence()
+    {
+        using var s = new Session();
+        SlowProbe.SlowLifecycle = true;
+        int cap = NativeRenderer.SlowHandlerWarningCap;
+        Assert.Equal(32, cap);
+
+        for (int i = 0; i <= cap; i++) // cap + 1 distinct slow keys
+            Assert.Equal(0, Exports.DispatchHostEventCore($"capProbe{i}", null));
+
+        string[] lines = s.SlowLines();
+        Assert.Equal(cap, lines.Count(l => !l.Contains(NativeRenderer.SlowHandlerSuppressedLogText)));
+        Assert.Single(lines, l => l.Contains(NativeRenderer.SlowHandlerSuppressedLogText));
+
+        // A further distinct slow key, on each path: silence.
+        Assert.Equal(0, Exports.DispatchHostEventCore($"capProbe{cap + 1}", null));
+        Assert.Equal(0, Dispatch(s.Handler("slow-a"), Click));
+
+        Assert.Equal(cap + 2, SlowProbe.RunsOf("lifecycle")); // anchor: every arm ran slow
+        Assert.Equal(1, SlowProbe.RunsOf("slow-a"));
+        Assert.Equal(cap + 1, s.SlowLines().Length);
+    }
+
+    [Fact]
     public void TheRealTimer_WarnsForASynchronousPartFiveTimesTheBudget()
     {
         using var s = new Session(fakeClock: false);
@@ -333,11 +457,14 @@ public sealed class SlowHandlerWarningTests
         var line = Assert.Single(s.SlowLines());
         Match ms = Regex.Match(line, @"for (\d+) ms");
         Assert.True(ms.Success, $"the warning no longer states its milliseconds as 'for N ms': {line}");
-        Assert.True(int.Parse(ms.Groups[1].Value) >= SlowMs,
+        // Over the budget, not ">= SlowMs": a Windows sleep can end a little early and the
+        // milliseconds are truncated. The property proved is "the real timer saw it slow",
+        // and the sleep gives it a five-fold margin.
+        Assert.True(int.Parse(ms.Groups[1].Value) > NativeRenderer.SlowHandlerBudget,
             $"a {SlowMs} ms sleep was reported as {ms.Groups[1].Value} ms: {line}");
     }
 
-    /// <summary>Three buttons, an input and a lifecycle subscriber. The slow ones
+    /// <summary>Buttons on method groups and on capturing lambdas, an input and a lifecycle subscriber. The slow ones
     /// advance <see cref="FakeClock"/> by <see cref="SlowMs"/>, or really sleep that
     /// long when <see cref="RealSleep"/> is set. Static slots are safe under the
     /// "host-session" collection.</summary>
@@ -377,6 +504,8 @@ public sealed class SlowHandlerWarningTests
         private void SlowB() => Run("slow-b", SlowMs);
         private void Quick() => Run("quick", QuickMs);
         private void OnChange(ChangeEventArgs e) { LastPayload = e.Value as string; Run("change", SlowMs); }
+        private int _selected;
+        private void Select(int item) { _selected = item; Run("select", SlowMs); }
 
         protected override void BuildRenderTree(RenderTreeBuilder b)
         {
@@ -394,6 +523,22 @@ public sealed class SlowHandlerWarningTests
             b.CloseElement();
             b.OpenElement(9, "input");
             b.AddAttribute(10, "onchange", EventCallback.Factory.Create<ChangeEventArgs>(this, OnChange));
+            b.CloseElement();
+            // One call site, two items: each render builds a new closure per item, so
+            // Blazor gives each item's button a NEW handler id on every render.
+            for (int i = 0; i < 2; i++)
+            {
+                int item = i;
+                b.OpenElement(11, "button");
+                b.AddAttribute(12, "onclick", EventCallback.Factory.Create(this, () => Select(item)));
+                b.AddContent(13, $"item-{item}");
+                b.CloseElement();
+            }
+            // A second capturing call site.
+            int other = _selected + 100;
+            b.OpenElement(14, "button");
+            b.AddAttribute(15, "onclick", EventCallback.Factory.Create(this, () => Select(other)));
+            b.AddContent(16, "other");
             b.CloseElement();
         }
 

@@ -302,6 +302,7 @@ internal ref struct BnRenderBatch
     public BnArrayRange<RenderTreeDiff>  UpdatedComponents    => new(_batch.UpdatedComponents);
     public BnArrayRange<RenderTreeFrame> ReferenceFrames      => new(_batch.ReferenceFrames);
     public BnArrayRange<int>             DisposedComponentIDs => new(_batch.DisposedComponentIDs);
+    public BnArrayRange<ulong>           DisposedEventHandlerIDs => new(_batch.DisposedEventHandlerIDs);
 }
 
 // ── RenderTreeDiff ───────────────────────────────────────────────────────────
@@ -351,6 +352,8 @@ internal ref struct BnRenderTreeFrame
     public string?             AttributeName            => _frame.AttributeName;
     public object?             AttributeValue           => _frame.AttributeValue;
     public ulong               AttributeEventHandlerId  => _frame.AttributeEventHandlerId;
+    // Phase 16.3: the frame's sequence number, half of the slow-handler call-site key.
+    public int                 Sequence                 => _frame.Sequence;
     public string?             TextContent              => _frame.TextContent;
     // Phase 7.0: the Razor compiler emits Markup frames (inter-element
     // whitespace at minimum) — the walk's Markup arm reads the content to
