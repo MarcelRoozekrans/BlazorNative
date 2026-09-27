@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.RegularExpressions;
 using BlazorNative.Tests.Shared;
 
@@ -205,7 +206,7 @@ public sealed class GeneratedSymbolShadowTests
     /// What makes a declaration a second copy of the WIRE value is the literal integer, so
     /// that is what this matches.</para></summary>
     private static string OpConstantDeclarationPattern(string symbol)
-        => $@"\b(?:static\s+let|let|val|var)\s+{Regex.Escape(symbol)}\s*(?::\s*\w+)?\s*=\s*-?\d+\s*$";
+        => $@"\b(?:static\s+let|let|val|var)\s+{Regex.Escape(symbol)}\s*(?::\s*\w+)?\s*=\s*-?(?:0[xX][0-9A-Fa-f]+|\d+)\s*$";
 
     /// <summary>THE FORWARDING WINDOW — the pin's SUPPRESSION BRANCH, and therefore the
     /// branch that can go quiet by accident (pin standard Rule 7). Scans the declaration
@@ -435,9 +436,19 @@ public sealed class GeneratedSymbolShadowTests
     /// at the spliced line; the unspliced files must report none, which is the negative
     /// for <c>let camera = BnCamera()</c>, a property that shares an op's name.
     ///
-    /// <para>DOES NOT COVER (Rule 5): an op twin written with a non-literal initializer,
-    /// such as <c>let camera: Int32 = 2 + 2</c>. That is contrived enough to leave to
-    /// review; the consumption pin still reds if the generated constant goes dead.</para></summary>
+    /// <para>A HEX twin, <c>static let camera: Int32 = 0x4</c>, is matched too: the control
+    /// splices the generated line rewritten in hex as a second fixture.</para>
+    ///
+    /// <para>DOES NOT COVER (Rule 5):
+    /// <list type="bullet">
+    /// <item>an op twin written with a non-literal initializer, such as
+    /// <c>let camera: Int32 = 2 + 2</c>;</item>
+    /// <item>an op twin written as an enum CASE, <c>case camera = 4</c> inside an
+    /// <c>enum …: Int32</c>. The pattern matches only <c>let</c>/<c>val</c>/<c>var</c>
+    /// bindings, and a case is not one.</item>
+    /// </list>
+    /// Both are left to review; the consumption pin still reds if the generated constant
+    /// goes dead.</para></summary>
     [Fact]
     public void TheOpConstantShadowDetector_MatchesAnIntegerTwin_AndNotACapabilityProperty()
     {
@@ -465,13 +476,20 @@ public sealed class GeneratedSymbolShadowTests
                 + $"{string.Join(", ", unspliced.Select(u => u.Line))}. It has widened past the integer "
                 + "literal and now flags a capability property that merely shares the op's name.");
 
-            var spliced = real.ToList();
-            spliced.Insert(1, twin);
-            var found = DeclarationSitesIn([.. spliced], symbol, c: false, opConstant: true);
-            Assert.True(found.Count == 1 && found[0].Line == 2 && !found[0].Forwards,
-                $"the op-constant shadow detector did not report the spliced twin '{twin.Trim()}' "
-                + $"at line 2 of {consumer}; found {found.Count}. A hand-written op constant would no "
-                + "longer be detected.");
+            // The generated line as written, then the same binding with its id in hex.
+            string hexTwin = Regex.Replace(twin, @"=\s*(\d+)\s*$",
+                m => "= 0x" + int.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture).ToString("X", CultureInfo.InvariantCulture));
+            Assert.NotEqual(twin, hexTwin);
+            foreach (string candidate in new[] { twin, hexTwin })
+            {
+                var spliced = real.ToList();
+                spliced.Insert(1, candidate);
+                var found = DeclarationSitesIn([.. spliced], symbol, c: false, opConstant: true);
+                Assert.True(found.Count == 1 && found[0].Line == 2 && !found[0].Forwards,
+                    $"the op-constant shadow detector did not report the spliced twin '{candidate.Trim()}' "
+                    + $"at line 2 of {consumer}; found {found.Count}. A hand-written op constant would no "
+                    + "longer be detected.");
+            }
         }
     }
 

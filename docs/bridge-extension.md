@@ -182,9 +182,11 @@ mechanism; that table is the rule.
 - **A permission-gated async capability** (needs a system prompt, a possible app
   suspension, and a denial that must come back as *data*) — the geolocation shape. **Do
   NOT grow the ABI.** Ride the generic `HostCallBegin` slot + the `host_call_complete`
-  export: pick an `op` constant (`NativeShellBridge.HostCallOp`), a status mapping, a
-  typed `IMobileBridge` method + a `DevHostBridge` mock, host handlers on both shells, and
-  (optionally) a `BlazorNative.Device` façade. No new export, no struct grow, no drift-test
+  export: add an `op` to the generated op table (see section (f) step 6 for the
+  procedure — `HostCallOp` is generated from `src/wire-vocabulary.json` since Phase
+  16.1, so never hand-edit it), a status mapping, a typed `IMobileBridge` method + a
+  `DevHostBridge` mock, host handlers on both shells, and (optionally) a
+  `BlazorNative.Device` façade. No new export, no struct grow, no drift-test
   move, no export-gate edit. See section (f) — this is the whole point of paying the 9.0
   export grow once. Skip steps 1–2 and 6's struct-literal growth; the rest apply.
 - **A synchronous capability** (a near-instant, ungated round-trip — clipboard's shape) —
@@ -411,10 +413,26 @@ These land with the shell providers at Gates 2/3.
 ### 6. Adding a permission-gated cap — NOT a new export
 
 Per section (c)'s first bullet, restated as the pattern: to add capability `X` (a system
-prompt, a possible suspension, a denial), pick an **`op` constant**
-(`NativeShellBridge.HostCallOp`) + a **status mapping** + a typed **`IMobileBridge`**
-method + a **`DevHostBridge`** mock + **host handlers on both shells** + (optionally) a
-**`BlazorNative.Device`** façade. The generic `HostCallBegin`/`host_call_complete` are
+prompt, a possible suspension, a denial), add an **`op`** + a **status mapping** + a
+typed **`IMobileBridge`** method + a **`DevHostBridge`** mock + **host handlers on both
+shells** + (optionally) a **`BlazorNative.Device`** façade.
+
+**Adding the `op` (Phase 16.1: the op table is GENERATED).** `HostCallOp` (.NET,
+`src/BlazorNative.Runtime/BnHostCallOps.g.cs`), Kotlin's `HostCallOp` and Swift's
+`BnHostCallOp` (both in their `BnWireVocabulary.g.*` files) are emitted by
+`tools/BlazorNative.WireGen`. Do not edit them by hand: `WireVocabularyCodegenTests`
+byte-compares every generated file against the manifest and fails the build.
+
+1. Add the op to the `hostCallOps.ops` list in `src/wire-vocabulary.json` with the
+   **next unused id** and a `doc` string. Ids are **frozen** once shipped — never
+   renumber or reuse one. `TheHostCallOps_KeepTheirFrozenIds` pins the shipped ids, and
+   the manifest validation rejects a duplicate id or name and a missing `doc`.
+2. Run `dotnet run --project tools/BlazorNative.WireGen` and commit the regenerated
+   files (`-- --check` answers "did I forget to regenerate?" without writing).
+3. Give **both shells** an arm for it: `AndroidShellBridge.hostCallBegin` (Kotlin) and
+   `AppleShellBridge.hostCallBegin` (Swift), and apply the Kotlin change to the template
+   mirror under `templates/BlazorNative.Templates/content/BlazorNative.App/android/`
+   too. A shell without an arm takes its unknown-op branch and completes with Error. The generic `HostCallBegin`/`host_call_complete` are
 **shared** — **NOT a new export, NOT a struct grow, NOT an export-gate edit, NOT a
 drift-test move.** The export grew **once** (9→10) in 9.0 and will not again this
 milestone. That is the reuse the 9.0 export event bought — **and Phase 9.1 collected on

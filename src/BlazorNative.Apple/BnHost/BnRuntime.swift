@@ -125,6 +125,12 @@ final class BnRuntime {
     /// Phase 11.4: the error's description is REDACTED by default (BnLog.swift's
     /// privacy rule) — an `Error`'s text is exactly the "internal exception detail"
     /// #155 asks not to leak at Release verbosity, and `NSLog` had no way to say so.
+    ///
+    /// THREAD: called on ANY thread, never guaranteed main — the dispatch lane, the frame
+    /// callback's thread, and since Phase 16.1 a .NET thread-pool thread: a handler fault
+    /// after its first await arrives as a FaultNotice that AppleShellBridge hands here on
+    /// whatever .NET thread sent it. An override that touches UI must hop to
+    /// `DispatchQueue.main` first.
     var onError: ((String, Error) -> Void) = { msg, err in
         BnLog.error(BnRuntime.logCategory, "\(msg): \(err)")
     }
