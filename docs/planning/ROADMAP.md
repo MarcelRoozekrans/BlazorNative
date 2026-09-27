@@ -3356,13 +3356,15 @@ tables are in the register in `docs/pin-standard.md`.
 FaultNotice could never have fired on a device. The first design passed every test. **Every fault
 pin in 16.1 now runs in production mode, and strict mode appears only as a control.**
 
-#### Phase 16.2: Back and navigation off the main thread [status: pending]
+#### Phase 16.2: Back and navigation off the main thread [status: active]
 **Goal:** Push `canGoBack` from .NET and toggle Android's `OnBackInvokedCallback` to match; make back
 and deep-link navigation fire-and-forget on both shells; write and test the stale-window rule;
 update `src/dispatch-surface.json`, add the iOS twin pin, and update the template mirrors. Closes
 #346.
 **Surface:** Mixed
 **HelpWanted:** no
+**Design:** [`docs/superpowers/specs/2026-09-27-phase-16.2-design.md`](../superpowers/specs/2026-09-27-phase-16.2-design.md)
+**Plan:** [`docs/superpowers/plans/2026-09-27-phase-16.2-back-off-main.md`](../superpowers/plans/2026-09-27-phase-16.2-back-off-main.md)
 
 #### Phase 16.3: Starvation, measured [status: pending]
 **Goal:** With async offload in place, measure what a slow *synchronous* handler still costs, then
