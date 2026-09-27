@@ -64,9 +64,14 @@ internal sealed class SlowHandlerProbe : ComponentBase, IDisposable
             Console.Error.WriteLine(BnLog.FormatLine(level, category, message));
     }
 
+    // BN0004 is right about these two lines, and they are the point of the page: each is
+    // the blocking synchronous handler the slow-handler warning exists to report. They run
+    // only when a test clicks them.
+#pragma warning disable BN0004 // justification: a deliberate slow handler, the warning's subject
     private void SlowOne() => Thread.Sleep(SlowMs);
 
     private void SlowTwo() => Thread.Sleep(SlowMs);
+#pragma warning restore BN0004
 
     private static void Report() { }
 
