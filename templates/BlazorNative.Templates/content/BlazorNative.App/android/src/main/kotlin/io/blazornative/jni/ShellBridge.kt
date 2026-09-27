@@ -415,9 +415,10 @@ class BridgeRegistrar(
 
     /**
      * Phase 16.2 (#346): a back reached .NET and could not be handled, at the root or with no
-     * session. The shell finishes through [onBackUnhandled], so a press is never swallowed now
-     * that back is dispatched fire-and-forget and its rc is read by nobody. The args are an
-     * empty flat JSON object and are ignored. Completed OK even if the listener throws.
+     * session. The shell acts on it through [onBackUnhandled]: Android hands the press to the
+     * platform's default back, and a host with no system back ignores it. A press is never
+     * swallowed now that back is dispatched fire-and-forget and its rc is read by nobody. The
+     * args are an empty flat JSON object and are ignored. Completed OK even if the listener throws.
      */
     private fun deliverBackUnhandled(requestId: Long) {
         try {

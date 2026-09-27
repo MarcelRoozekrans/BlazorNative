@@ -15,9 +15,9 @@ import java.util.concurrent.atomic.AtomicInteger
  *
  * Android no longer asks .NET "can you go back?" on the main thread. .NET pushes the answer as
  * a BackState notice, op 6, and a back that still reaches .NET with nothing to go back to sends
- * BackUnhandled, op 7, so the shell finishes. The shared [BridgeRegistrar] answers both, as it
- * answers FaultNotice: the host's own [ShellBridgeHandlers] never see them, so no host can drop
- * one, and each is completed OK.
+ * BackUnhandled, op 7, and the Android shell hands the press to the platform's default back. The
+ * shared [BridgeRegistrar] answers both, as it answers FaultNotice: the host's own
+ * [ShellBridgeHandlers] never see them, so no host can drop one, and each is completed OK.
  *
  * It also pins the other half of taking back off the main thread: back is now dispatched
  * fire-and-forget, so its rc 1 is not read by anyone. rc 1 from a back is a NORMAL outcome whose

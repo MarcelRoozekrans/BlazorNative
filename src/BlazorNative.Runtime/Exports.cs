@@ -868,7 +868,7 @@ public static class Exports
 
     /// <summary>Routes the reserved "back" host event to the session's nav
     /// manager (Phase 5.1). rc 0 = handled (navigated to the previous route) /
-    /// 1 = not handled (at the origin, or no session — the shell finishes) /
+    /// 1 = not handled (at the origin, or no session: BackUnhandled is sent) /
     /// 2 = the back swap faulted. Runs on the render thread and waits for its
     /// synchronous part: the swap's frames are delivered before this returns
     /// (RunAfterDispatch finds no open scope and runs at once). NavigateBackAsync
@@ -876,8 +876,9 @@ public static class Exports
     /// later fault is sent to the shell as a FaultNotice, the dispatch_event contract.
     /// Phase 16.2 (#346): every rc 1 also sends a BackUnhandled notice. The shell now
     /// dispatches back fire-and-forget and never reads this rc, so the notice is what
-    /// makes it finish; without it a back at the root would be swallowed. A back still
-    /// pending at return that later resolves false sends it too, from a continuation.</summary>
+    /// tells it to hand the press to the platform's default back; without it a back at
+    /// the root would be swallowed. A back still pending at return that later resolves
+    /// false sends it too, from a continuation.</summary>
     private static int DispatchHostBack()
     {
         NativeNavigationManager? nav = HostSession.CurrentNavigationManager;
@@ -894,7 +895,7 @@ public static class Exports
                 // Decision 5, as in dispatch_event: hand on the shutdown-tracked mirror.
                 ObservePendingHostEvent(BnHostEvents.Back, TrackUntilShutdown(renderer, back));
                 // Phase 16.2: rc 0 said "handled" before the back decided. If it later
-                // resolves false, the shell must still be told to finish, because it no
+                // resolves false, the shell must still be told, because it no
                 // longer reads the rc; without this the press is swallowed. Success only:
                 // a fault is ObservePendingHostEvent's FaultNotice, and the test file's
                 // header records why a faulted back does not finish. On the thread pool,
@@ -919,7 +920,8 @@ public static class Exports
         }
     }
 
-    /// <summary>A back .NET cannot handle: tells the shell to finish, then reports rc 1.</summary>
+    /// <summary>A back .NET cannot handle: sends BackUnhandled, then reports rc 1. On Android the
+    /// shell hands the press to the platform's default back; iOS has no system back.</summary>
     private static int NotHandledBack()
     {
         NativeShellBridge.SendBackUnhandled();

@@ -11,9 +11,10 @@ namespace BlazorNative.Runtime.Tests;
 // pushes the answer: a BackState notice, host-call op 6, whose flat-JSON args
 // are {"canGoBack":"true"|"false"}, sent when the value changes and before every
 // mount, even unchanged, because a later mount is a new shell. When a back still reaches .NET with nothing to go back
-// to, .NET sends BackUnhandled, op 7, so the shell finishes and the press is
-// never swallowed. Both ride FaultNotice's fire-and-forget delivery on the
-// existing hostCallBegin slot, with no ABI change.
+// to, .NET sends BackUnhandled, op 7: Android hands the press to the platform's
+// default back, so it is never swallowed; iOS has no system back and ignores it.
+// Both ride FaultNotice's fire-and-forget delivery on the existing hostCallBegin
+// slot, with no ABI change.
 //
 // THE HEART OF IT IS ORDER (spec decision 2). The shell applies the back state
 // in the same main-thread batch as the frame that shows the page, so the notice
@@ -424,7 +425,7 @@ public sealed class BackStateNoticeTests
         });
     }
 
-    // ── BackUnhandled: a back .NET cannot handle makes the shell finish ─────
+    // ── BackUnhandled: a back .NET cannot handle is handed back to the shell ─
 
     [Fact]
     public void BackAtRoot_SendsBackUnhandled_AndReturns1()
@@ -458,7 +459,7 @@ public sealed class BackStateNoticeTests
     [Fact]
     public void BackWithNoSession_SendsBackUnhandled_AndReturns1()
     {
-        // rc 1 means "the shell finishes". Under 16.2 the shell no longer reads the rc, so
+        // rc 1 means "not handled". Under 16.2 the shell no longer reads the rc, so
         // every rc 1 must also be a BackUnhandled, or the press is swallowed.
         bool previousStrict = HostSession.StrictErrorsForTests;
         FakeShellHost.Reset();

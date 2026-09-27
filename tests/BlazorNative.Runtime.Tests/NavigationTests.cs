@@ -520,7 +520,7 @@ public sealed class NavigationTests
     // Predictive-back (Gate 3 Android) and the JVM test both drive the SAME
     // reserved "back" host event: Exports.DispatchHostEventCore intercepts it
     // and routes to NavigateBackAsync. rc 0 = handled / 1 = not handled (at
-    // root — the shell finishes) / 2 = fault. The mapping lives in .NET so
+    // root: BackUnhandled is sent) / 2 = fault. The mapping lives in .NET so
     // every shell shares the semantics — pinned here headlessly.
 
     [Fact]

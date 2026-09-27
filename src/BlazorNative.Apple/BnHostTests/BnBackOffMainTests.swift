@@ -101,10 +101,14 @@ final class BnBackOffMainNavigateTests: BnHostTestCase {
                        "to observe the held state")
         XCTAssertNotNil(findButton(in: root, title: "Hold"), "the page changed while the lane was held")
 
-        // The navigate was ISSUED, not dropped: after the release it lands on /settings.
-        XCTAssertTrue(pollUntil(deadline: 15) { self.findButton(in: self.root, title: "Hold") == nil },
-                      "the fire-and-forget navigate never replaced BackHoldProbe within 15 s of the " +
-                      "release, so it was dropped rather than queued")
+        // The navigate was ISSUED, not dropped: after the release it lands on /settings. Both
+        // halves, as NavigationAndroidTest's settingsTitle does: the probe gone is not enough,
+        // because a failed mount also removes it; only the Settings page shows its title.
+        XCTAssertTrue(pollUntil(deadline: 15) {
+            self.findButton(in: self.root, title: "Hold") == nil
+                && self.findLabel(in: self.root, text: "Settings") != nil
+        }, "the fire-and-forget navigate never mounted the Settings page within 15 s of the " +
+           "release, so it was dropped rather than queued, or the swap failed")
         releaseLock.lock(); let releasedAtTheEnd = released; releaseLock.unlock()
         XCTAssertTrue(releasedAtTheEnd, "the navigation cannot precede the release")
     }
@@ -193,6 +197,16 @@ final class BnBackOffMainNavigateTests: BnHostTestCase {
         if let b = view as? UIButton, b.title(for: .normal) == title { return b }
         for sub in view.subviews {
             if let f = findButton(in: sub, title: title) { return f }
+        }
+        return nil
+    }
+
+    /// A UILabel with the given text, anywhere in the tree. Copied from
+    /// BnNotificationsTests.swift, which reads a re-routed page the same way.
+    private func findLabel(in view: UIView, text: String) -> UILabel? {
+        if let label = view as? UILabel, label.text == text { return label }
+        for sub in view.subviews {
+            if let f = findLabel(in: sub, text: text) { return f }
         }
         return nil
     }
@@ -289,5 +303,6 @@ final class BnBackOpArmTests: BnHostTestCase {
 
         XCTAssertEqual(rc, 0)
         XCTAssertEqual(captured.map({ $0.status }), [BnHostCallStatus.error])
+        XCTAssertTrue(errors.isEmpty, "an unknown op must not reach onError, as in BnFaultNoticeTests")
     }
 }

@@ -499,20 +499,32 @@ public sealed class GeneratedSymbolShadowTests
     /// consumer and no hand-written twin is harmless. It is here so that ADDING one
     /// is a decision somebody wrote down, rather than a file quietly growing a dead
     /// symbol that a future hand-written twin can then shadow. That progression is
-    /// exactly how #279 happened.</para></summary>
-    private static readonly Dictionary<string, string> UnconsumedByDesign = new(StringComparer.Ordinal)
+    /// exactly how #279 happened.</para>
+    ///
+    /// <para>KEYED BY LANGUAGE AND SYMBOL, not by symbol alone (Phase 16.2). An entry
+    /// is a reason about ONE generated file's copy of a name: Swift's
+    /// <c>yogaStyles</c> being test-only says nothing about a Kotlin or C symbol that
+    /// happens to share the spelling. Keyed by name alone, one entry would silently
+    /// exempt every language's copy. <see cref="UnconsumedByDesign_IsKeyedByLanguage"/>
+    /// pins the keying.</para></summary>
+    private static readonly Dictionary<(string Language, string Symbol), string> UnconsumedByDesign = new()
     {
-        ["visualStyles"] =
+        [("Swift", "visualStyles")] =
             "Swift has no visual-style routing of its own — BnWidgetMapper switches on style names "
             + "directly. Emitted for symmetry with Kotlin and byte-pinned by the codegen tests.",
-        ["scrollIgnoredContainerStyles"] =
+        [("Swift", "scrollIgnoredContainerStyles")] =
             "Same: the Swift scroll path checks the names inline. Emitted for symmetry, byte-pinned.",
-        ["VISUAL_STYLES"] =
+        [("Swift", "yogaStyles")] =
+            "Swift's layout path never names it: the Yoga style question is answered in "
+            + "Objective-C++ by bn_yoga_is_layout_style over the C header's kYogaStyles, which IS "
+            + "consumed. Only BnHostTests reads the Swift copy, and tests are not consumers (Phase "
+            + "16.2: ShippedShellSources). Emitted for symmetry, byte-pinned by the codegen tests.",
+        [("Kotlin", "VISUAL_STYLES")] =
             "Kotlin's WidgetMapper.kt switches on style-name literals directly (\"backgroundColor\" ->, "
             + "\"color\" ->, \"fontSize\" ->) rather than checking membership in this set — the same "
             + "pattern as Swift's visualStyles. Verified no hand-written twin exists (not a #279 shadow). "
             + "Emitted for symmetry, byte-pinned by the codegen tests.",
-        ["kNodeTypes"] =
+        [("C", "kNodeTypes")] =
             "The Objective-C++ layer is a YOGA seam and nothing else: BnYogaLayout.mm and BnYogaProbe.mm "
             + "answer style questions (bn_yoga_is_layout_style, bn_yoga_is_scroll_ignored_container_style) "
             + "and never see a node type — the wire byte is decoded and routed entirely in Swift, where "
@@ -531,6 +543,123 @@ public sealed class GeneratedSymbolShadowTests
         + "unknown-op branch, which completes with Error. REMOVE this entry when the arm lands; "
         + "the stale-entry check forces it.";
 
+    /// <summary>The language a generated shell file is written in, which is the first half of
+    /// an <see cref="UnconsumedByDesign"/> key. Throws for a file it does not know, so a new
+    /// generated file is keyed deliberately rather than falling into another language.</summary>
+    private static string LanguageOf(string generatedFile) =>
+        generatedFile.EndsWith(".swift", StringComparison.Ordinal) ? "Swift"
+        : generatedFile.EndsWith(".kt", StringComparison.Ordinal) ? "Kotlin"
+        : IsCHeader(generatedFile) ? "C"
+        : throw new InvalidOperationException($"no language for generated file {generatedFile}");
+
+    /// <summary>The written reason <paramref name="symbol"/>, as generated into
+    /// <paramref name="generatedFile"/>, has no consumer, or null if it has none.</summary>
+    private static string? UnconsumedReason(string generatedFile, string symbol) =>
+        UnconsumedByDesign.TryGetValue((LanguageOf(generatedFile), symbol), out string? reason) ? reason : null;
+
+    /// <summary>The shell source that SHIPS: <see cref="ShellSources"/> minus the test trees,
+    /// `BnHostTests/`, `src/test/` and `src/androidTest/`.
+    ///
+    /// <para>Phase 16.2: a test naming a generated symbol is not a consumer. With the tests
+    /// scanned, deleting the Swift `BnHostCallOp.backState` arm left the consumption pin
+    /// green, because `BnBackOffMainTests.swift` names the op, so the pin could not see its
+    /// subject leave (pin standard Rule 4). Only the consumption pin uses this. The shadow
+    /// pin keeps scanning the tests: a hand-written twin there is still worth flagging.</para></summary>
+    private static string[] ShippedShellSources(string generatedFile)
+    {
+        char s = Path.DirectorySeparatorChar;
+        string[] testTrees = [$"{s}BnHostTests{s}", $"{s}src{s}test{s}", $"{s}src{s}androidTest{s}"];
+        return [.. ShellSources(generatedFile)
+            .Where(f => !testTrees.Any(t => f.Contains(t, StringComparison.Ordinal)))];
+    }
+
+    /// <summary>A host-call op is CONSUMED only by a routing arm: Swift's
+    /// <c>case BnHostCallOp.backState:</c> or Kotlin's <c>HostCallOp.BACK_STATE -&gt;</c>, alone
+    /// or among other ops in one arm. A bare reference is not enough.
+    ///
+    /// <para>Phase 16.2: Kotlin's <c>deliverBackState</c> ends in
+    /// <c>completeNotice(HostCallOp.BACK_STATE, requestId)</c>. With the name-only check,
+    /// deleting the <c>HostCallOp.BACK_STATE -&gt;</c> arm left that call naming the op, and the
+    /// pin stayed green while BackState took the unknown-op branch. The arm, not the name, is
+    /// what an op's consumption means.</para></summary>
+    private static string OpArmPattern(string opTable, string symbol)
+    {
+        string t = Regex.Escape(opTable);
+        string op = $@"{t}\.{Regex.Escape(symbol)}\b";
+        string other = $@"{t}\.\w+";
+        return opTable == "BnHostCallOp"
+            ? $@"^\s*case\s+(?:{other}\s*,\s*)*{op}\s*(?:,\s*{other}\s*)*:"
+            : $@"^\s*(?:{other}\s*,\s*)*{op}\s*(?:,\s*{other}\s*)*->";
+    }
+
+    /// <summary>Rule 3 control for <see cref="OpArmPattern"/>: it matches an arm, alone and
+    /// among other ops, in both languages, and does NOT match a call that merely names the op,
+    /// which is the Kotlin shape that hid a deleted arm.
+    ///
+    /// <para>DOES NOT COVER: an arm that routes through a `let` or a range, or a Swift
+    /// `case` split over several lines. None exists today; each would read as unconsumed and
+    /// fail RED, not green.</para></summary>
+    [Fact]
+    public void OpArmPattern_MatchesAnArm_AndNotABareReference()
+    {
+        string swift = OpArmPattern("BnHostCallOp", "backState");
+        Assert.Matches(swift, "        case BnHostCallOp.backState:");
+        Assert.Matches(swift, "        case BnHostCallOp.faultNotice, BnHostCallOp.backState:");
+        Assert.DoesNotMatch(swift, "        let rc = bridge.hostCallBegin(60, BnHostCallOp.backState, \"{}\")");
+        Assert.DoesNotMatch(swift, "        case BnHostCallOp.backStateX:");
+
+        string kotlin = OpArmPattern("HostCallOp", "BACK_STATE");
+        Assert.Matches(kotlin, "                HostCallOp.BACK_STATE -> deliverBackState(requestId, argsJson)");
+        Assert.Matches(kotlin, "                HostCallOp.FAULT_NOTICE, HostCallOp.BACK_STATE -> x()");
+        Assert.DoesNotMatch(kotlin, "            completeNotice(HostCallOp.BACK_STATE, requestId)");
+        Assert.DoesNotMatch(kotlin, "                HostCallOp.BACK_STATE_X -> x()");
+    }
+
+    /// <summary>Rule 3 control for the keying and the test-tree exclusion together. An
+    /// entry exempts one language's copy only, so the Swift <c>yogaStyles</c> entry must not
+    /// exempt the same spelling generated into Kotlin or C. And the exclusion must still
+    /// be doing work: the Swift tests DO name <c>yogaStyles</c>, so it is dead only because
+    /// they are no longer scanned, and each test tree must still exist and hold source.
+    ///
+    /// <para>DOES NOT COVER: a NEW test tree under a path the exclusion does not name, such
+    /// as a future `src/iosTest/`. That fails GREEN: the consumption pin would count its
+    /// references as consumers again. A RENAMED tree is covered, because the existence
+    /// checks below red when one of the three named trees disappears.</para></summary>
+    [Fact]
+    public void UnconsumedByDesign_IsKeyedByLanguage()
+    {
+        string root = BnRepo.Root();
+        string swift = Path.Combine(root, "src", "BlazorNative.Apple", "BnHost", "BnWireVocabulary.g.swift");
+        string kotlin = Path.Combine(root, "src", "BlazorNative.Jni", "src", "main", "kotlin", "io", "blazornative", "jni", "BnWireVocabulary.g.kt");
+        string c = Path.Combine(root, "src", "BlazorNative.Apple", "BnHost", "BnWireVocabulary.g.h");
+
+        Assert.NotNull(UnconsumedReason(swift, "yogaStyles"));
+        Assert.Null(UnconsumedReason(kotlin, "yogaStyles"));
+        Assert.Null(UnconsumedReason(c, "yogaStyles"));
+
+        foreach (string tree in new[]
+        {
+            Path.Combine(root, "src", "BlazorNative.Apple", "BnHostTests"),
+            Path.Combine(root, "src", "BlazorNative.Jni", "src", "test"),
+            Path.Combine(root, "src", "BlazorNative.Jni", "src", "androidTest"),
+        })
+        {
+            Assert.True(Directory.Exists(tree),
+                $"the test tree {tree} is gone. ShippedShellSources excludes it by path; re-point the "
+                + "exclusion deliberately, or test references count as consumers again.");
+        }
+
+        string[] all = ShellSources(swift);
+        string[] shipped = ShippedShellSources(swift);
+        string reference = @"BnWireVocabulary\.yogaStyles\b";
+        Assert.True(all.Any(f => CodeLines(f).Any(l => Regex.IsMatch(l, reference))),
+            "no Swift source names BnWireVocabulary.yogaStyles any more, so this control no longer "
+            + "shows the exclusion doing work. Re-point it at another test-only reference.");
+        Assert.False(shipped.Any(f => CodeLines(f).Any(l => Regex.IsMatch(l, reference))),
+            "shipped Swift now names BnWireVocabulary.yogaStyles: remove its UnconsumedByDesign entry "
+            + "and re-point this control, or the exclusion has stopped excluding BnHostTests.");
+    }
+
     /// <summary>Advisory pin: a generated symbol is consumed, or it is on the list above
     /// with a reason. Catches the state that PRECEDES a shadow — a dead generated symbol
     /// is what a hand-written twin later shadows without anyone noticing.
@@ -546,8 +675,8 @@ public sealed class GeneratedSymbolShadowTests
     /// (`event.wireName`), and no `BnWireVocabulary.wireName` will ever exist for it
     /// to match. Without this third shape the detector reports every enum property
     /// dead regardless of real use, which is what happened here: `wireName` is
-    /// consumed as `event.wireName` in `BlazorNativeRuntime.kt`. <see cref="ShellSources"/>
-    /// itself only walks `src/BlazorNative.Jni` — the `templates/` mirror is NOT
+    /// consumed as `event.wireName` in `BlazorNativeRuntime.kt`. <see cref="ShippedShellSources"/>
+    /// itself only walks `src/BlazorNative.Jni`, minus its test trees — the `templates/` mirror is NOT
     /// independently scanned here; it is held byte-identical to that file by
     /// TemplateDriftTests instead, which is how consumption in the template copy
     /// is actually guaranteed, not by this test reaching it directly. The old
@@ -571,18 +700,19 @@ public sealed class GeneratedSymbolShadowTests
             string reference = IsCHeader(file)
                 ? $@"\b{Regex.Escape(symbol)}\b"
                 : opTable is not null
-                    ? $@"\b{Regex.Escape(opTable)}\.{Regex.Escape(symbol)}\b"
+                    ? OpArmPattern(opTable, symbol)
                     : inHostEventEnum
                         ? $@"\.{Regex.Escape(symbol)}\b"
                         : $@"BnWireVocabulary\.{Regex.Escape(symbol)}\b";
 
-            bool referenced = ShellSources(file)
+            // Shipped source only: a test naming the symbol is not a consumer (Phase 16.2).
+            bool referenced = ShippedShellSources(file)
                 .Any(src => CodeLines(src).Any(line => Regex.IsMatch(line, reference)));
 
-            bool allowlisted = UnconsumedByDesign.ContainsKey(symbol);
-            if (!referenced && !allowlisted)
+            string? reason = UnconsumedReason(file, symbol);
+            if (!referenced && reason is null)
                 dead.Add($"{symbol} (generated into {Path.GetFileName(file)})");
-            else if (referenced && allowlisted && UnconsumedByDesign[symbol] == PendingShellArm)
+            else if (referenced && reason == PendingShellArm)
                 stale.Add($"{symbol} (generated into {Path.GetFileName(file)})");
         }
 

@@ -57,7 +57,8 @@ class BlazorNativeRuntime(
     // leaves the default.
     private val onBackState: (canGoBack: Boolean) -> Unit = {},
     // Phase 16.2 (#346): .NET's BackUnhandled notice — a back reached .NET at the root or
-    // with no session. The Android shell finishes. Same THREAD SET and the same must-
+    // with no session. The Android shell hands the press to the platform's default back;
+    // a host with no system back leaves the default. Same THREAD SET and the same must-
     // return-at-once rule as [onBackState]; it may also arrive on a .NET thread-pool
     // thread, for a back that yielded and later resolved unhandled.
     private val onBackUnhandled: () -> Unit = {},
@@ -291,10 +292,11 @@ class BlazorNativeRuntime(
      * FIRE-AND-FORGET: a non-zero rc is routed to [onError], with ONE exception:
      * a BACK's rc 1. Since Phase 16.2 (#346) back is dispatched here too, never
      * blocking the main thread, and "not handled" reaches the shell as .NET's
-     * BackUnhandled notice ([onBackUnhandled]), which finishes. rc 1 is that
-     * normal outcome, not a failure, so it is not reported a second time as an
-     * error; a back's rc 2 still is. Every other event's rc 1, such as a navigate
-     * to an unknown route, still reaches [onError]. [payload] is optional
+     * BackUnhandled notice ([onBackUnhandled]), which hands the press to the
+     * platform's default back. rc 1 is that normal outcome, not a failure, so it
+     * is not reported a second time as an error; a back's rc 2 still is. Every
+     * other event's rc 1, such as a navigate to an unknown route, still reaches
+     * [onError]. [payload] is optional
      * (omitted/NULL — most host events carry none).
      */
     internal fun dispatchHostEvent(event: BnHostEvent, payload: String? = null) =
@@ -348,7 +350,7 @@ class BlazorNativeRuntime(
      * (post-boot .NET entry stays serialized) but BLOCKS until the export has
      * returned — including any synchronous re-render / swap frame deliveries,
      * made on .NET's render thread — and returns the raw rc (0 handled / 1 not handled
-     * → the shell finishes / 2 faulted). Safe from any thread EXCEPT the
+     * → BackUnhandled is sent / 2 faulted). Safe from any thread EXCEPT the
      * dispatch lane itself (a call from the lane would self-deadlock, same as
      * [dispatchEventAndWait]). A throw from the dispatch core is rethrown
      * unwrapped.

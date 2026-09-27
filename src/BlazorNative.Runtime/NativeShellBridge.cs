@@ -552,7 +552,8 @@ public sealed class NativeShellBridge : IMobileBridge
     //
     // BackState and BackUnhandled (#346): the shell stops asking .NET whether it can go
     // back on the main thread. NativeNavigationManager pushes the answer instead, and a
-    // back that still reaches .NET with nothing to go back to tells the shell to finish.
+    // back that still reaches .NET with nothing to go back to tells the shell, and Android
+    // hands the press to the platform's default back. iOS has no system back.
     // A shell that predates the ops completes them with Error through its unknown-op
     // branch and keeps its current back behaviour.
 
@@ -611,8 +612,9 @@ public sealed class NativeShellBridge : IMobileBridge
         }
     }
 
-    /// <summary>Tells the shell a back reached .NET and could not be handled, so the shell
-    /// finishes and the press is never swallowed. Args are the empty flat JSON object.
+    /// <summary>Tells the shell a back reached .NET and could not be handled. On Android the
+    /// shell hands the press to the platform's default back, so it is never swallowed; iOS
+    /// has no system back and ignores it. Args are the empty flat JSON object.
     /// Fire-and-forget and never throws, like <see cref="SendFaultNotice"/>.</summary>
     internal static void SendBackUnhandled()
     {

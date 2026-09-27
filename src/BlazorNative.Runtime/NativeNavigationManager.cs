@@ -211,9 +211,10 @@ public sealed class NativeNavigationManager : INavigationManager
 
     /// <summary>Host-initiated back (Phase 5.1, design §2): swaps to the
     /// <see cref="_previousRoute"/> slot and returns true; at the origin (no
-    /// prior) returns false so the shell finishes. The slot is CONSUMED by the
-    /// back — cleared inside the swap unit, so a second consecutive back has no
-    /// prior (returns false) rather than ping-ponging forever between two pages.
+    /// prior) returns false, and the shell hands the press to the platform's default
+    /// back. The slot is CONSUMED by the back — cleared inside the swap unit, so a
+    /// second consecutive back has no prior (returns false) rather than ping-ponging
+    /// forever between two pages.
     /// A fresh FORWARD navigation is what re-arms it. Runs off the dispatch lane
     /// (host-initiated): the swap's RunAfterDispatch drains immediately (no open
     /// batch — the pinned no-open-batch path). On a failed swap the exception
