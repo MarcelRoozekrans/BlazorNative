@@ -130,8 +130,8 @@ A few things worth knowing about the warning before you see one:
   twice warns once, and a different slow handler warns on its own. A host-event arm (`back`,
   `navigate`, the lifecycle multicast) is keyed by event name instead, for the same reason.
 - **It is capped at 32 distinct warnings per session.** The next one after that logs one line —
-  `further slow-handler warnings suppressed` — and then the warning goes silent until the app
-  restarts. Together with the once-per-call-site rule, this is what keeps a Release build quiet:
+  `further slow-handler warnings suppressed` — and then the warning goes silent until the session
+  ends. Together with the once-per-call-site rule, this is what keeps a Release build quiet:
   `BnLog`'s default level is `Warn` in every build (see [Logging](../logging.md)), so without these
   two limits a genuinely slow handler could spam every run.
 - **It never includes the payload.** The message names the handler, the event and the elapsed
@@ -156,6 +156,13 @@ button to route this way, so this section is Android-specific.
 ## Shutdown
 
 `blazornative_shutdown` quiesces the render pipeline before it returns: no frame reaches the
-shell after that call comes back, even from a handler that never yielded. A late fault that is
-still in flight when shutdown runs may simply be dropped rather than delivered — by then there
-is no session left to attribute it to, and nothing on the other end still listening.
+shell after that call comes back, even from a handler that never yielded. That guarantee covers
+frames only. A late fault that races shutdown — a handler resuming and throwing while shutdown
+runs — has two possible outcomes:
+
+- it is dropped, because its pending task was cancelled first; or
+- its fault notice is delivered **after** `blazornative_shutdown` has returned.
+
+The bridge callbacks live for the whole process, so the second outcome is safe, but it means your
+shell's `onError` **can fire after shutdown**. Don't tear down what `onError` touches on the
+assumption that shutdown silenced it. Either way the fault still reaches stderr.

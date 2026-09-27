@@ -458,7 +458,8 @@ public sealed class NativeRenderer : BlazorRenderer
                 CleanupDisposedComponent(disposedId);
 
             // Phase 16.3: forget the call sites of handler ids Blazor has disposed, so
-            // the map holds only live handlers and never grows without bound.
+            // the map holds only live handlers and never grows without bound. Pinned by
+            // SlowHandlerWarningTests.TheCallSiteMap_StaysFlat_AcrossFiftyReRendersOfCapturingLambdas.
             foreach (ref var disposedHandler in batch.DisposedEventHandlerIDs)
                 _handlerCallSites.Remove((int)disposedHandler);
 
@@ -1630,6 +1631,10 @@ public sealed class NativeRenderer : BlazorRenderer
     /// slow-handler warning. Render thread only.</summary>
     private readonly Dictionary<int, HandlerCallSite> _handlerCallSites = new();
 
+    /// <summary>Test-only: how many call sites the map holds. Pins that it holds the live
+    /// handlers only, never one entry per render.</summary>
+    internal int HandlerCallSiteCountForTests => OnRenderThread(() => _handlerCallSites.Count);
+
     /// <summary>A handler's identity for the once-per-handler rule. Blazor hands a
     /// lambda that captures per-render state a NEW handler id on every render, and
     /// every item of a <c>foreach</c> its own, so the id cannot key the rule.
@@ -1764,7 +1769,7 @@ public sealed class NativeRenderer : BlazorRenderer
             $"{SlowHandlerLogLabel}: {subject} held the render thread for {ms} ms, over the "
             + $"{SlowHandlerBudget} ms budget. The shell's dispatch lane waited with it, and every "
             + "event behind it waited too. Move the work after an await, or off the render thread. "
-            + $"Warned once per handler per session, at most {SlowHandlerWarningCap} times.");
+            + $"Warned once per call site per session, at most {SlowHandlerWarningCap} times.");
     }
 
     /// <summary>Test-only: whether a dispatch scope flows in the CURRENT execution

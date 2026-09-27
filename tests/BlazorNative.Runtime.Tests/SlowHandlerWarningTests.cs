@@ -24,8 +24,8 @@ namespace BlazorNative.Runtime.Tests;
 // The renderer times that part — from opening the dispatch's DispatchScope to
 // closing it — and the host-event arms, which run outside any scope, are timed
 // in Exports around their render-thread work. Over
-// NativeRenderer.SlowHandlerBudget it logs ONE BnLog.Warn per handler id, or per
-// event name for a host-event arm, per session. BnLog.DefaultLevel is Warn in
+// NativeRenderer.SlowHandlerBudget it logs ONE BnLog.Warn per call site, keyed by
+// the handler's owner method, or per event name for a host-event arm, per session. BnLog.DefaultLevel is Warn in
 // every build, so that once-per-key rule is what keeps Release quiet.
 //
 // Every pin runs in PRODUCTION mode (StrictErrors = false) and captures BnLog at
@@ -283,6 +283,7 @@ public sealed class SlowHandlerWarningTests
         Assert.Contains("'click'", line);
         Assert.Contains($"{SlowMs} ms", line);
         Assert.Contains($"{NativeRenderer.SlowHandlerBudget} ms budget", line);
+        Assert.Contains("Warned once per call site per session", line);
     }
 
     [Fact]
@@ -441,6 +442,39 @@ public sealed class SlowHandlerWarningTests
         var line = Assert.Single(s.SlowLines());
         Assert.Contains($"handler {ids[0]} 'click'", line);
         Assert.Contains(nameof(SlowProbe), line);
+    }
+
+    [Fact]
+    public void TheCallSiteMap_StaysFlat_AcrossFiftyReRendersOfCapturingLambdas()
+    {
+        using var s = new Session();
+        int mounted = s.Renderer.HandlerCallSiteCountForTests;
+        // Anchor: the mount recorded the probe's handlers, so there is a map to watch.
+        Assert.True(mounted >= 10,
+            $"the mount recorded {mounted} call sites; SlowProbe attaches at least 10 handlers. "
+            + "The call-site map is no longer written at the AttachEvent site, so this pin would "
+            + "check nothing.");
+
+        int node = s.NodeOf("item-0");
+        var ids = new HashSet<int>();
+        for (int i = 0; i < 50; i++)
+        {
+            int id = s.LatestHandlerOn(node);
+            ids.Add(id);
+            Assert.Equal(0, Dispatch(id, Click));
+        }
+
+        // Anchor: every render really did hand the capturing lambdas new ids, so a map
+        // that never forgot a disposed id would have grown by several per render.
+        Assert.Equal(50, SlowProbe.RunsOf("select"));
+        Assert.True(ids.Count == 50,
+            $"item-0 kept {50 - ids.Count + 1} ids across 50 re-renders; it must get a new one "
+            + "on each, or this pin cannot see growth.");
+        int after = s.Renderer.HandlerCallSiteCountForTests;
+        Assert.True(after == mounted,
+            $"the call-site map held {mounted} entries after the mount and {after} after 50 "
+            + "re-renders. It must hold the live handlers only: disposed handler ids are pruned "
+            + "per batch, or the map grows by one per capturing lambda per render.");
     }
 
     [Fact]

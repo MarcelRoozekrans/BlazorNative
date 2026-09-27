@@ -3620,10 +3620,10 @@ on this branch, so Android and iOS are carried forward unchanged.
 
 | Surface | Before (16.2) | After | Change |
 |---|---|---|---|
-| .NET total | 1278 | **1294** | +16 |
+| .NET total | 1278 | **1295** | +17 |
 | · Renderer | 147 | 147 | 0 |
 | · Analyzers | 27 | 27 | 0 |
-| · Runtime | 1104 | 1120 | +16: `SlowHandlerWarningTests` |
+| · Runtime | 1104 | 1121 | +17: `SlowHandlerWarningTests`, the last from the final review |
 | JVM | 190 | **191**, 0 failed | +1: `SlowHandlerProbeTest` |
 | Android | 233 | **233**, unchanged | no instrumented test changed on this branch |
 | iOS | 282 | **282**, unchanged | no XCTest file changed on this branch |

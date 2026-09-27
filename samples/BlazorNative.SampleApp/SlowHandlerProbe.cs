@@ -16,6 +16,10 @@ namespace BlazorNative.SampleApp;
 //   root div
 //     ├─ BnButton "Slow one" → SlowOne, a synchronous 500 ms sleep
 //     ├─ BnButton "Slow two" → SlowTwo, the same, a different method
+//     ├─ BnButton "Slow three" → a CAPTURING LAMBDA that sleeps the same: its method
+//     │                         is compiler-generated, and Blazor stores it as a boxed
+//     │                         EventCallback, so it proves both the lambda shape and the
+//     │                         EventCallback accessor under NativeAOT
 //     ├─ BnButton "Report"   → restores the previous BnLog sink, and re-renders the echo
 //     └─ BnText echo: "slow-warnings:<n>" then one "\n<line>" per warning
 //
@@ -47,6 +51,7 @@ internal sealed class SlowHandlerProbe : ComponentBase, IDisposable
     internal const int SlowMs = 500;
 
     private readonly List<string> _warnings = new();
+    private int _threePresses;
     private Action<BnLogLevel, string, string>? _previousSink;
 
     protected override void OnInitialized()
@@ -68,9 +73,9 @@ internal sealed class SlowHandlerProbe : ComponentBase, IDisposable
             Console.Error.WriteLine(BnLog.FormatLine(level, category, message));
     }
 
-    // BN0004 is right about these two lines, and they are the point of the page: each is
-    // the blocking synchronous handler the slow-handler warning exists to report. They run
-    // only when a test clicks them.
+    // BN0004 is right about these sleeps, here and in SlowThree's lambda below, and they
+    // are the point of the page: each is the blocking synchronous handler the slow-handler
+    // warning exists to report. They run only when a test clicks them.
 #pragma warning disable BN0004 // justification: a deliberate slow handler, the warning's subject
     private void SlowOne() => Thread.Sleep(SlowMs);
 
@@ -101,6 +106,21 @@ internal sealed class SlowHandlerProbe : ComponentBase, IDisposable
         b.AddComponentParameter(21, nameof(BnButton.Label), "Slow two");
         b.AddComponentParameter(22, nameof(BnButton.OnClick),
             EventCallback.Factory.Create<MouseEventArgs>(this, SlowTwo));
+        b.CloseComponent();
+
+        // SlowThree: a lambda capturing a per-render local, so its delegate's target is a
+        // compiler-generated closure, not this component.
+        int presses = _threePresses;
+        b.OpenComponent<BnButton>(25);
+        b.AddComponentParameter(26, nameof(BnButton.Label), "Slow three");
+        b.AddComponentParameter(27, nameof(BnButton.OnClick),
+            EventCallback.Factory.Create<MouseEventArgs>(this, () =>
+            {
+                _threePresses = presses + 1;
+#pragma warning disable BN0004 // justification: a deliberate slow handler, the warning's subject
+                Thread.Sleep(SlowMs);
+#pragma warning restore BN0004
+            }));
         b.CloseComponent();
 
         b.OpenComponent<BnButton>(30);

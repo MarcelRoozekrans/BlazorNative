@@ -15,12 +15,15 @@ import java.util.Collections
  * forwards every app's OnClick from one line. The .NET suite runs on CoreCLR, where the
  * method always resolves, so only the published dll can say which key a device gets.
  *
- * The sample's SlowHandlerProbe has two BnButtons whose OnClick handlers are different
- * methods that each sleep 500 ms, five times the budget. It captures every slow-handler
+ * The sample's SlowHandlerProbe has three BnButtons whose OnClick handlers each sleep
+ * 500 ms, five times the budget: two different methods, and a capturing lambda. The
+ * lambda's method is compiler-generated, on a closure class nested in the probe, and
+ * Blazor stores it as a boxed EventCallback, so it also proves the renderer's
+ * EventCallback accessor in the published dll. It captures every slow-handler
  * line through a BnLog sink and echoes them in a BnText when "Report" re-renders it.
  * "Report" also puts the previous sink back, so the probe's sink does not outlive this
  * test in the shared JVM process.
- * Owner keys give two warnings, one per method. The fallback would give ONE, naming
+ * Owner keys give three warnings, one per method. The fallback would give ONE, naming
  * BnButton.
  *
  * DOES NOT COVER: the ChildContent and lambda shapes, the budget, the once-per-handler
@@ -32,7 +35,7 @@ import java.util.Collections
 class SlowHandlerProbeTest {
 
     @Test
-    fun two_bnbuttons_with_different_slow_handlers_warn_twice_naming_the_apps_methods() {
+    fun three_bnbuttons_with_different_slow_handlers_warn_three_times_naming_the_apps_methods() {
         val frames = Collections.synchronizedList(mutableListOf<RenderFrame>())
         val runtime = BlazorNativeRuntime(onFrame = { frames.add(it) }, onError = { _, _ -> })
         runtime.start(componentName = "SlowHandlerProbe", platformOs = "test-host", bridge = NoopBridge)
@@ -40,23 +43,34 @@ class SlowHandlerProbeTest {
             val mount = frames.first()
             val one = clickHandlerOn(mount, containerOfText(mount, "Slow one"))
             val two = clickHandlerOn(mount, containerOfText(mount, "Slow two"))
+            val threeNode = containerOfText(mount, "Slow three")
             val report = clickHandlerOn(mount, containerOfText(mount, "Report"))
             // Anchor: the echo starts empty, so any line below came from these clicks.
             assertEquals("slow-warnings:0", latestEcho(frames), "the probe's echo did not start at zero")
 
             assertEquals(0, runtime.dispatchEventBlocking(one, "click"))
             assertEquals(0, runtime.dispatchEventBlocking(two, "click"))
+            // The lambda is a new closure on every render, so its handler id is read from
+            // the LATEST frame, after the two clicks above re-rendered the probe.
+            val three = latestClickHandlerOn(frames, threeNode)
+            assertTrue(three != clickHandlerOn(mount, threeNode),
+                "Slow three kept its mount-time handler id across two re-renders, so it is no longer " +
+                    "a capturing lambda and this test no longer proves that shape")
+            assertEquals(0, runtime.dispatchEventBlocking(three, "click"))
             assertEquals(0, runtime.dispatchEventBlocking(report, "click"))
 
             val lines = latestEcho(frames).split("\n")
             val warnings = lines.drop(1)
             assertEquals("slow-warnings:${warnings.size}", lines[0], "the echo's count and lines disagree: $lines")
-            assertEquals(2, warnings.size,
-                "two BnButtons with different slow handlers gave ${warnings.size} warnings, not 2. One " +
+            assertEquals(3, warnings.size,
+                "three BnButtons with different slow handlers gave ${warnings.size} warnings, not 3. One " +
                     "warning naming BnButton means Delegate.Method did not resolve in the NativeAOT " +
                     "dll and the key fell back to the tree owner. Got: $warnings")
             assertTrue(warnings.single { it.contains("SlowHandlerProbe.SlowOne") }.isNotEmpty())
             assertTrue(warnings.single { it.contains("SlowHandlerProbe.SlowTwo") }.isNotEmpty())
+            // The lambda: a compiler-generated method on a closure nested in the probe.
+            assertTrue(warnings.single { it.contains("SlowHandlerProbe+") && it.contains("<BuildRenderTree>") }
+                .isNotEmpty(), "no warning named the capturing lambda's generated method: $warnings")
             assertTrue(warnings.none { it.contains("BnButton") }, "a warning named BnButton: $warnings")
         } finally {
             runtime.retire()
@@ -88,6 +102,14 @@ class SlowHandlerProbeTest {
             snapshot.flatMap { it.patches.filterIsInstance<RenderPatch.ReplaceText>() }
                 .lastOrNull { it.text.startsWith("slow-warnings:") }
         ) { "no frame carried the probe's 'slow-warnings:' echo; has SlowHandlerProbe moved?" }.text
+    }
+
+    private fun latestClickHandlerOn(frames: List<RenderFrame>, nodeId: Int): Int {
+        val snapshot = synchronized(frames) { frames.toList() }
+        return checkNotNull(
+            snapshot.flatMap { it.patches.filterIsInstance<RenderPatch.AttachEvent>() }
+                .lastOrNull { it.nodeId == nodeId && it.eventName == "click" }
+        ) { "node $nodeId never had a click handler attached" }.handlerId
     }
 
     private fun createOf(frame: RenderFrame, nodeId: Int): RenderPatch.CreateNode =
