@@ -15,8 +15,9 @@ import org.junit.jupiter.api.Test
  * .NET sends BackState for a navigation BEFORE the frames that show the new page, and a swap is
  * two frames: the old root's removal, then the new page. If the shell applied the value on
  * arrival, or with the removal batch, back would change while the old page, or a blank screen,
- * is what the user sees. [BackStateBuffer] therefore only holds a value, and only a batch that
- * creates a parentless node, a page's root, carries it. WidgetMapper is the only production
+ * is what the user sees. [BackStateBuffer] therefore only holds a value, and the first batch
+ * after it that is NOT removal-only carries it, including a lone CommitFrame, which is how a
+ * page whose first render is empty mounts. WidgetMapper is the only production
  * caller: offer from the notice, take at CommitFrame, apply at the end of applyBatch.
  *
  * DOES NOT COVER: WidgetMapper's wiring of the three calls or that the value is applied in the
@@ -33,6 +34,12 @@ class BackStateBufferTest {
         RenderPatch.CommitFrame(frameId = 1, timestampMs = 0),
     )
     private val removal = listOf(RenderPatch.RemoveNode(7), RenderPatch.CommitFrame(frameId = 1, timestampMs = 0))
+    private val removalWithDetach = listOf(
+        RenderPatch.DetachEvent(nodeId = 7, handlerId = 3, eventName = "click"),
+        RenderPatch.RemoveNode(7),
+        RenderPatch.CommitFrame(frameId = 1, timestampMs = 0),
+    )
+    private val emptyMount = listOf(RenderPatch.CommitFrame(frameId = 1, timestampMs = 0))
     private val rerender = listOf(
         RenderPatch.CreateNode(nodeId = 3, nodeType = "text", parentId = 1),
         RenderPatch.ReplaceText(3, "x"),
@@ -65,9 +72,30 @@ class BackStateBufferTest {
         assertNull(buffer.takeForBatch(removal),
             "the removal batch carried the value: back would change on a blank screen, one " +
                 "runnable before the page it describes")
-        assertNull(buffer.takeForBatch(rerender), "a re-render that mounts no page carried the value")
+        assertNull(buffer.takeForBatch(removalWithDetach),
+            "a removal that also detaches handlers is still a removal, and carried the value")
         // Positive control for the nulls above: the value was still held for the page.
         assertEquals(true, buffer.takeForBatch(page), "the page's batch must still carry it")
+    }
+
+    /** Fix round 2: a page whose first render creates NOTHING still mounts with a batch, a
+     * lone CommitFrame (measured through the dll: BackNoticeTest). That batch shows the new,
+     * empty page and must carry the value; the old "creates a parentless node" rule skipped
+     * it, leaving back disabled on a sub-page until the page's content appeared, if ever. */
+    @Test
+    fun an_empty_mount_batch_carries_the_value() {
+        val buffer = BackStateBuffer()
+        buffer.offer(true)
+        assertEquals(true, buffer.takeForBatch(emptyMount),
+            "the empty page's mount batch did not carry the value")
+    }
+
+    @Test
+    fun any_batch_that_is_not_removal_only_carries_the_value() {
+        val buffer = BackStateBuffer()
+        buffer.offer(true)
+        assertEquals(true, buffer.takeForBatch(rerender),
+            "a batch that creates nested nodes is not a removal and must carry the value")
     }
 
     @Test

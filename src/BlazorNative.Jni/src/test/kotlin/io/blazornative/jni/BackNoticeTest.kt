@@ -216,6 +216,53 @@ class BackNoticeTest {
         }
     }
 
+    /**
+     * Fix round 2, against the dll's REAL frames: a page whose FIRST render creates nothing
+     * mounts with a frame that is a lone CommitFrame (measured: the swap into such a page is
+     * `removal | CommitFrame only | the later content`, and a mount is `CommitFrame only |
+     * the later content`). That frame is the one that puts the new page on screen, so the back
+     * state .NET sent for the mount must ride it. A rule that waited for a created root node
+     * left back disabled on the sub-page until content appeared, if it ever did.
+     *
+     * Driven as a MOUNT, not a navigation: EmptyFirstRenderProbe is a Named scaffolding page
+     * with no route. A navigation's second frame is the same MountRoot, so the frame is the
+     * same one.
+     */
+    @Test
+    fun the_back_state_rides_the_mount_of_a_page_whose_first_render_is_empty() {
+        // History first, so the mount below sends BackState(true).
+        val warmup = BlazorNativeRuntime(onFrame = {})
+        warmup.start(componentName = "BnDemo", platformOs = "test-host", bridge = RecordingHost())
+        assertEquals(0, warmup.dispatchHostEventBlocking(BnHostEvent.Navigate.wireName, "/settings"))
+        warmup.retire()
+
+        val buffer = io.blazornative.shell.BackStateBuffer()
+        val carried = Collections.synchronizedList(mutableListOf<Pair<RenderFrame, Boolean?>>())
+        val runtime = BlazorNativeRuntime(
+            onFrame = { f -> carried.add(f to buffer.takeForBatch(f.patches)) },
+            onBackState = { buffer.offer(it) },
+        )
+        runtime.start(componentName = "EmptyFirstRenderProbe", platformOs = "test-host", bridge = RecordingHost())
+        try {
+            // Wait for the content, so a rule that carried the value late is observable too.
+            assertTrue(waitFor(10_000) {
+                carried.any { (f, _) -> f.patches.any { it is RenderPatch.ReplaceText && it.text == "loaded" } }
+            }, "the probe's content never rendered")
+            val window = carried.toList()
+
+            // Anchor, Rule 4: the mount frame is the empty shape this pin is about.
+            assertTrue(window[0].first.patches.all { it is RenderPatch.CommitFrame },
+                "the probe's mount frame is no longer a lone CommitFrame, so this pin no longer " +
+                    "exercises an empty first render; re-point it. Got ${window[0].first.patches}")
+
+            assertEquals(true, window[0].second,
+                "the empty page's mount frame did not carry BackState(true): back stays disabled " +
+                    "on a sub-page, and a press exits the app. Carried per frame: ${window.map { it.second }}")
+        } finally {
+            runtime.retire()
+        }
+    }
+
     /** Holds the camera call open and records it; the test answers it. */
     private class HoldingCameraHost : ShellBridgeHandlers {
         @Volatile private var route: String = "/"

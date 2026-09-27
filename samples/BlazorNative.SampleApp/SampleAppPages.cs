@@ -179,6 +179,10 @@ public static class SampleAppPages
         // camera capture) BackAndroidTest presses back against. Scaffolding, like
         // HostEventProbe.
         BlazorNativePage.Named<BackHoldProbe>("BackHoldProbe"),
+        // Phase 16.2 (#346): a page whose FIRST render creates nothing, the shape of an
+        // `@if (_loaded)` page behind an async load. BackNoticeTest mounts it to pin that
+        // the back state still rides its mount. Scaffolding, like HostEventProbe.
+        BlazorNativePage.Named<EmptyFirstRenderProbe>("EmptyFirstRenderProbe"),
     ];
 
     private static bool s_registered;
