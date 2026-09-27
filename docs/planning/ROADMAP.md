@@ -3356,7 +3356,7 @@ tables are in the register in `docs/pin-standard.md`.
 FaultNotice could never have fired on a device. The first design passed every test. **Every fault
 pin in 16.1 now runs in production mode, and strict mode appears only as a control.**
 
-#### Phase 16.2: Back and navigation off the main thread [status: active]
+#### Phase 16.2: Back and navigation off the main thread [status: complete]
 **Goal:** Push `canGoBack` from .NET and toggle Android's `OnBackInvokedCallback` to match; make back
 and deep-link navigation fire-and-forget on both shells; write and test the stale-window rule;
 update `src/dispatch-surface.json`, add the iOS twin pin, and update the template mirrors. Closes
@@ -3365,6 +3365,7 @@ update `src/dispatch-surface.json`, add the iOS twin pin, and update the templat
 **HelpWanted:** no
 **Design:** [`docs/superpowers/specs/2026-09-27-phase-16.2-design.md`](../superpowers/specs/2026-09-27-phase-16.2-design.md)
 **Plan:** [`docs/superpowers/plans/2026-09-27-phase-16.2-back-off-main.md`](../superpowers/plans/2026-09-27-phase-16.2-back-off-main.md)
+**Completed:** 2026-09-27 · [PR #431](https://github.com/MarcelRoozekrans/BlazorNative/pull/431) · #346 closed with evidence
 
 > **16.2 outcome: no main-thread entry point waits on .NET any more, on either shell.** Android's
 > back is driven by a back state that .NET pushes, and deep-link and notification navigation are
