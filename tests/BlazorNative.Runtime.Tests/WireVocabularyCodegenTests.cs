@@ -398,6 +398,7 @@ public sealed class WireVocabularyCodegenTests
     [
         ("Geolocation", 0), ("Notifications", 1), ("Biometrics", 2),
         ("SecureStorage", 3), ("Camera", 4), ("FaultNotice", 5),
+        ("BackState", 6), ("BackUnhandled", 7),
     ];
 
     [Fact]
@@ -405,7 +406,7 @@ public sealed class WireVocabularyCodegenTests
     {
         WireVocabulary v = LoadManifest();
 
-        // Rule 2: the manifest must still hold at least the six ops this pins.
+        // Rule 2: the manifest must still hold at least the eight ops this pins.
         Assert.True(v.HostCallOps.Ops.Length >= FrozenHostCallOps.Length,
             $"the manifest declares {v.HostCallOps.Ops.Length} host-call ops, fewer than the "
             + $"{FrozenHostCallOps.Length} frozen ones. An op was deleted, and a shipped shell still "

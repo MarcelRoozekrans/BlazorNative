@@ -449,6 +449,9 @@ internal static unsafe class HostSession
                 effective = nav.ResolveComponent(nav.CurrentRoute);
             }
 
+            // Phase 16.2 (#346): the session's back state reaches the shell before its
+            // first frame. A no-op when unchanged, so a second mount sends nothing.
+            Volatile.Read(ref s_navigation)?.PublishBackState();
             MountRoot(effective, renderer);
             // #201 developer trace (Debug, IsEnabled-guarded). `effective` is the
             // resolved registry name — a route-aware initial mount may differ from `name`.
@@ -483,7 +486,16 @@ internal static unsafe class HostSession
     /// <param name="afterSwap">Runs INSIDE the swap unit, after the new root
     /// mounted — the nav manager finalizes route state + RouteChanged here so
     /// neither happens when a (possibly deferred) swap fails.</param>
-    internal static void SwapRoot(string name, Action? afterSwap = null)
+    /// <param name="beforeSwap">Runs INSIDE the swap unit, before the old root is
+    /// unmounted, so before any of the swap's frames. Phase 16.2: the nav manager
+    /// sends its BackState notice here, because the shell must have it before the
+    /// frame that shows the new page.</param>
+    /// <param name="swapFailed">Runs INSIDE the swap unit when the unmount or the
+    /// mount throws, before the exception propagates. Phase 16.2: the nav manager
+    /// resends the back state its route state still holds, since beforeSwap already
+    /// announced the one this swap would have produced.</param>
+    internal static void SwapRoot(
+        string name, Action? afterSwap = null, Action? beforeSwap = null, Action? swapFailed = null)
     {
         if (!Components.ContainsKey(name))
         {
@@ -496,23 +508,39 @@ internal static unsafe class HostSession
         // its own dispatch scope; a full wait from anywhere else.
         renderer.Dispatcher.InvokeAsync(() => renderer.RunAfterDispatch(() =>
         {
-            int current = Volatile.Read(ref s_currentRootComponentId);
-            if (current >= 0)
+            beforeSwap?.Invoke();
+            try
             {
-                // Tracking clears BEFORE Unmount (unmount-as-best-effort): a
-                // strict-mode disposal fault leaves the old root in an
-                // undefined half-disposed state, and keeping its dead id
-                // would make every LATER swap re-call Unmount on it — each
-                // raising Blazor's "not a live root component"
-                // ArgumentException and masking the original fault forever.
-                // The fault itself still surfaces (thrown here → rc 2 on the
-                // deferred path), and the next swap can proceed to a mount.
-                Volatile.Write(ref s_currentRootComponentId, -1);
-                renderer.Unmount(current);
+                UnmountAndMount(name, renderer);
             }
-            MountRoot(name, renderer);
+            catch
+            {
+                swapFailed?.Invoke();
+                throw;
+            }
             afterSwap?.Invoke();
         })).GetAwaiter().GetResult();
+    }
+
+    /// <summary>The body of the swap unit: unmounts the tracked current root, then
+    /// mounts <paramref name="name"/>. Both emit frames. Throws on failure.</summary>
+    private static void UnmountAndMount(string name, NativeRenderer renderer)
+    {
+        int current = Volatile.Read(ref s_currentRootComponentId);
+        if (current >= 0)
+        {
+            // Tracking clears BEFORE Unmount (unmount-as-best-effort): a
+            // strict-mode disposal fault leaves the old root in an
+            // undefined half-disposed state, and keeping its dead id
+            // would make every LATER swap re-call Unmount on it — each
+            // raising Blazor's "not a live root component"
+            // ArgumentException and masking the original fault forever.
+            // The fault itself still surfaces (thrown here → rc 2 on the
+            // deferred path), and the next swap can proceed to a mount.
+            Volatile.Write(ref s_currentRootComponentId, -1);
+            renderer.Unmount(current);
+        }
+        MountRoot(name, renderer);
     }
 
     /// <summary>Mounts a registry component (callers verified the key) and

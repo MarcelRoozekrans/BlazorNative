@@ -873,13 +873,16 @@ public static class Exports
     /// synchronous part: the swap's frames are delivered before this returns
     /// (RunAfterDispatch finds no open scope and runs at once). NavigateBackAsync
     /// completes synchronously today; if it ever yields, this reports rc 0 and a
-    /// later fault is sent to the shell as a FaultNotice, the dispatch_event contract.</summary>
+    /// later fault is sent to the shell as a FaultNotice, the dispatch_event contract.
+    /// Phase 16.2 (#346): every rc 1 also sends a BackUnhandled notice. The shell now
+    /// dispatches back fire-and-forget and never reads this rc, so the notice is what
+    /// makes it finish; without it a back at the root would be swallowed.</summary>
     private static int DispatchHostBack()
     {
         NativeNavigationManager? nav = HostSession.CurrentNavigationManager;
         NativeRenderer? renderer = HostSession.CurrentRenderer;
         if (nav is null || renderer is null)
-            return 1; // nothing mounted → nothing to go back from (not handled)
+            return NotHandledBack(); // nothing mounted → nothing to go back from
 
         try
         {
@@ -891,13 +894,20 @@ public static class Exports
                 ObservePendingHostEvent(BnHostEvents.Back, TrackUntilShutdown(renderer, back));
                 return 0;
             }
-            return back.GetAwaiter().GetResult() ? 0 : 1;
+            return back.GetAwaiter().GetResult() ? 0 : NotHandledBack();
         }
         catch (Exception ex)
         {
             BnLog.Error("Exports", "host_event 'back' faulted", ex);
             return 2;
         }
+    }
+
+    /// <summary>A back .NET cannot handle: tells the shell to finish, then reports rc 1.</summary>
+    private static int NotHandledBack()
+    {
+        NativeShellBridge.SendBackUnhandled();
+        return 1;
     }
 
     /// <summary>Routes the reserved "navigate" host event to the session's nav

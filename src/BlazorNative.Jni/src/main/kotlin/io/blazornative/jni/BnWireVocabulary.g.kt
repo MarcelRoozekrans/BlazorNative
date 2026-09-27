@@ -94,4 +94,8 @@ object HostCallOp {
     const val CAMERA = 4
     /** Phase 16.1, #8. A handler faulted after its first await, too late to be its dispatch rc 2. Args are flat JSON: handlerId (0 for a reserved host event), event, type and message; never a stack trace or an event payload, because either can carry user data. The shell routes it to onError and completes it OK with a null payload. Sent fire-and-forget: .NET ignores the result. */
     const val FAULT_NOTICE = 5
+    /** Phase 16.2, #346. Whether .NET can go back. Args are flat JSON: canGoBack, the string true or false. Sent when the value changes and once for a session's first mount, and for a navigation BEFORE the frames that show the new page, so the shell can apply it in the same main-thread batch as that page. The shell enables or disables its back callback from it and completes it OK with a null payload. Sent fire-and-forget: .NET ignores the result. */
+    const val BACK_STATE = 6
+    /** Phase 16.2, #346. A back reached .NET and could not be handled, because it is at the root or has no session. Args are an empty flat JSON object. The shell finishes, so a back press is never swallowed, and completes it OK with a null payload. Sent fire-and-forget: .NET ignores the result. */
+    const val BACK_UNHANDLED = 7
 }
