@@ -1038,4 +1038,167 @@ public sealed class GeneratedSymbolShadowTests
             + "declaration — pattern: " + SeamDeclarationPattern + " — which is the same failure "
             + "wearing a different hat: re-point it rather than editing the list to match.");
     }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Phase 16.2 Task 5 fix round (final whole-branch review, Important #1) —
+    // dispatchHostEventAndWait BECOMES A DOOR NOTHING CAN OPEN, NOT JUST A KEYWORD
+    // NOBODY CHECKS.
+    //
+    // Task 5 made the method `internal` in both shells and pinned the KEYWORD:
+    // DispatchSurfaceDriftTests.MethodsWithADeclaredVisibility_MatchBothShells and the
+    // JVM DispatchHostEventAndWaitVisibilityTest. Neither stops a CALLER. Kotlin's
+    // `internal` is module-wide and MainActivity shares BlazorNativeRuntime's module;
+    // Swift's BnHost is an app target where a class with no modifier is already
+    // `internal`, so the new keyword changed nothing a same-target caller could not
+    // already do. The review measured it directly: reverting onNewIntent's call back
+    // to the blocking one, in the repo copy only, left Runtime at 1102/1102 and the
+    // JVM suite green — the #346 shape back on main with every existing gate still
+    // green.
+    //
+    // THE FIX IS A SOURCE SCAN, not a stronger keyword — there is no stronger
+    // Kotlin/Swift visibility available that still reaches same-module/`@testable`
+    // tests. So the guard is "nothing SHIPPED calls it", read from source, the same
+    // shape NoProductionShellSource_CallsTheHostEventSeamsDirectly already uses for
+    // the raw-String doors — except this one must also see the method's OWN home
+    // file, because the exact regression (a navigator closure inside BnRuntime.swift,
+    // or MainActivity's onNewIntent) can sit right next to the declaration it must
+    // not call. Excluding the home file by name, the way ProductionHostEventSources
+    // excludes BlazorNativeRuntime.kt for the seam pin, would have hidden precisely
+    // the bug this pin exists to catch. So the detector excludes only the
+    // DECLARATION LINE itself (`fun`/`func dispatchHostEventAndWait(`), never the file.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// <summary>Every production Kotlin file under `src/main/kotlin` and
+    /// `src/androidMain/kotlin`, repo AND template mirror — deliberately NOT filtered by
+    /// filename the way <see cref="ProductionHostEventSources"/> excludes
+    /// `BlazorNativeRuntime.kt`. That exclusion is right for the raw-String-seam pin,
+    /// whose only legitimate callers live outside the seam's home file; it would be
+    /// WRONG here, because the exact regression this pin exists to catch — a caller
+    /// reaching back for the blocking overload — can sit in the SAME file as the
+    /// declaration. <see cref="IsOffendingCallLine"/> excludes only the declaration
+    /// line, not the file, so a call anywhere else in it is still caught.</summary>
+    private static string[] AllProductionKotlinSources()
+    {
+        string root = BnRepo.Root();
+        string[] roots =
+        [
+            Path.Combine(root, "src", "BlazorNative.Jni", "src", "main", "kotlin"),
+            Path.Combine(root, "src", "BlazorNative.Jni", "src", "androidMain", "kotlin"),
+            Path.Combine(root, "templates", "BlazorNative.Templates", "content", "BlazorNative.App", "android", "src", "main", "kotlin"),
+            Path.Combine(root, "templates", "BlazorNative.Templates", "content", "BlazorNative.App", "android", "src", "androidMain", "kotlin"),
+        ];
+
+        return [.. roots
+            .Where(Directory.Exists)
+            .SelectMany(dir => Directory.EnumerateFiles(dir, "*.kt", SearchOption.AllDirectories))
+            .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}build{Path.DirectorySeparatorChar}", StringComparison.Ordinal))];
+    }
+
+    /// <summary>Every Swift file in `BnHost/` — the production Apple shell target.
+    /// `BnHostTests/` is a SIBLING directory, not a subdirectory, so walking `BnHost/`
+    /// alone already excludes the test tree without a separate filter.</summary>
+    private static string[] BnHostProductionSwiftSources()
+    {
+        string dir = Path.Combine(BnRepo.Root(), "src", "BlazorNative.Apple", "BnHost");
+        if (!Directory.Exists(dir))
+            return [];
+
+        return [.. Directory.EnumerateFiles(dir, "*.swift", SearchOption.AllDirectories)];
+    }
+
+    /// <summary>A MENTION of `dispatchHostEventAndWait` immediately followed by `(` — matches
+    /// both a real call and the method's own declaration line, which is why
+    /// <see cref="IsOffendingCallLine"/> exists.</summary>
+    private static readonly Regex DispatchHostEventAndWaitMention = new(@"\bdispatchHostEventAndWait\s*\(");
+
+    /// <summary>The method's own declaration, in either language — the one shape
+    /// <see cref="DispatchHostEventAndWaitMention"/> must NOT be allowed to count as a
+    /// call.</summary>
+    private static readonly Regex DispatchHostEventAndWaitDeclaration =
+        new(@"\b(?:internal\s+)?(?:fun|func)\s+dispatchHostEventAndWait\s*\(");
+
+    /// <summary>A CALL to `dispatchHostEventAndWait` on this line — a mention immediately
+    /// followed by `(`, and NOT that same line's own `fun`/`func` declaration.</summary>
+    private static bool IsOffendingCallLine(string line) =>
+        DispatchHostEventAndWaitMention.IsMatch(line) && !DispatchHostEventAndWaitDeclaration.IsMatch(line);
+
+    /// <summary>THE POSITIVE CONTROL (pin standard Rule 3), fed synthetic lines rather than a
+    /// tree walk: proves the detector recognises a real call in BOTH languages, and does not
+    /// mistake either language's declaration for one — the exact confusion that would leave
+    /// the pin below blind to a call sitting right next to the method it must not reach.</summary>
+    [Fact]
+    public void OffendingCallDetector_MatchesACall_AndNotTheDeclaration()
+    {
+        Assert.True(IsOffendingCallLine("        runtime.dispatchHostEventAndWait(BnHostEvent.Back)"));
+        Assert.True(IsOffendingCallLine("            self?.dispatchHostEventAndWait(.navigate, payload: route)"));
+        Assert.True(IsOffendingCallLine("val rc = dispatchHostEventAndWait(event, payload)"));
+
+        Assert.False(IsOffendingCallLine(
+            "    internal fun dispatchHostEventAndWait(event: BnHostEvent, payload: String? = null): Int {"));
+        Assert.False(IsOffendingCallLine(
+            "    internal func dispatchHostEventAndWait(_ event: BnHostEvent, payload: String?) -> Int32 {"));
+    }
+
+    /// <summary>THE PIN (final whole-branch review, Important #1). No shipped shell source may
+    /// call the blocking `dispatchHostEventAndWait` — Task 5 made it internal and test-only by
+    /// owner decision, but `internal` alone enforces nothing a caller in the SAME
+    /// module/target cannot ignore, and the review proved it: reverting `onNewIntent`'s call
+    /// in the repo copy left the whole Runtime suite and the JVM suite green. This scan is the
+    /// actual enforcement — the third of the three mechanisms this phase ends with, alongside
+    /// the keyword and the manifest.
+    ///
+    /// <para>ANCHORS (Rule 2), NAMED rather than counted: both `MainActivity.kt` copies and
+    /// `BnRuntime.swift` must be among the scanned files, because those three are exactly
+    /// where the regression the review measured, and #346 before it, lived.</para>
+    ///
+    /// <para>DOES NOT COVER (Rule 5): `dispatchEventAndWait`, the Inspector's JVM-host-only
+    /// blocking seam — a different, allowed method (`src/dispatch-surface.json` scopes it
+    /// `platforms: ["kotlin"]` for exactly that reason) — which this fact does not touch at
+    /// all, by name, not by tree exclusion; `src/jvmHost/kotlin`, which this scan's roots
+    /// never include; a call reached through reflection or a stored function reference rather
+    /// than a literal name; and Objective-C++, which cannot call a Swift member across the
+    /// language boundary in the first place.</para></summary>
+    [Fact]
+    public void NoShippedShellSource_CallsTheBlockingHostEventDispatch()
+    {
+        string root = BnRepo.Root();
+        string[] kotlinSources = AllProductionKotlinSources();
+        string[] swiftSources = BnHostProductionSwiftSources();
+
+        string repoMainActivity = Path.Combine(root, "src", "BlazorNative.Jni", "src", "androidMain",
+            "kotlin", "io", "blazornative", "shell", "MainActivity.kt");
+        string templateMainActivity = Path.Combine(root, "templates", "BlazorNative.Templates", "content",
+            "BlazorNative.App", "android", "src", "androidMain", "kotlin", "io", "blazornative", "shell",
+            "MainActivity.kt");
+        string bnRuntimeSwift = Path.Combine(root, "src", "BlazorNative.Apple", "BnHost", "BnRuntime.swift");
+
+        Assert.True(kotlinSources.Contains(repoMainActivity),
+            $"the Kotlin scan did not see {repoMainActivity} — either the source-set layout moved "
+            + "or the walk found nothing, and this pin would then be checking an empty set.");
+        Assert.True(kotlinSources.Contains(templateMainActivity),
+            $"the Kotlin scan did not see the template mirror {templateMainActivity} — the template "
+            + "copy is exactly where the #346 shape could regress unnoticed if only the repo copy "
+            + "were scanned.");
+        Assert.True(swiftSources.Contains(bnRuntimeSwift),
+            $"the Swift scan did not see {bnRuntimeSwift} — the method's own home file, and the "
+            + "file the review's Swift-navigator mutation lives in.");
+
+        var offenders = new List<string>();
+        foreach (string file in kotlinSources.Concat(swiftSources))
+        {
+            string[] lines = CodeLines(file);
+            for (int i = 0; i < lines.Length; i++)
+            {
+                if (IsOffendingCallLine(lines[i]))
+                    offenders.Add($"{Path.GetFileName(file)}:{i + 1}: {lines[i].Trim()}");
+            }
+        }
+
+        Assert.True(offenders.Count == 0,
+            "Shipped shell code calls dispatchHostEventAndWait, the blocking host-event dispatch "
+            + "Phase 16.2 Task 5 made internal and test-only (#346). A caller blocked here waits "
+            + "on .NET; the sanctioned production entry point is the fire-and-forget "
+            + "dispatchHostEvent. See this fact's DOES NOT COVER note for dispatchEventAndWait, a "
+            + "different method this scan does not touch.\n  " + string.Join("\n  ", offenders));
+    }
 }

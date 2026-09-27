@@ -3397,9 +3397,16 @@ update `src/dispatch-surface.json`, add the iOS twin pin, and update the templat
 - **iOS arms.** `AppleShellBridge` has `backState` and `backUnhandled` arms that complete OK with no
   payload. iOS has no system back, so they do nothing else. `completeFaultNotice` is renamed
   `completeNotice`.
-- **`dispatchHostEventAndWait` is internal and test-only.** Kotlin was already `internal` since
-  14.0, and Swift already defaulted to `internal`; the Swift keyword is now explicit. `src/dispatch-surface.json` records `"visibility": "internal"`,
-  and a .NET differential pin and a JVM `KVisibility` pin hold it.
+- **`dispatchHostEventAndWait` is internal and test-only, held by three mechanisms, not two.**
+  Kotlin was already `internal` since 14.0, and Swift already defaulted to `internal`; the Swift
+  keyword is now explicit — but `internal` alone stops nothing a same-module or same-target caller
+  could not already do, and the final review proved it by reverting a fire-and-forget call back to
+  the blocking one and watching every existing gate stay green. So three mechanisms hold it: the
+  keyword itself; `src/dispatch-surface.json`'s `"visibility": "internal"`, held by a .NET
+  differential pin and a JVM `KVisibility` pin; and a new source scan,
+  `GeneratedSymbolShadowTests.NoShippedShellSource_CallsTheBlockingHostEventDispatch`, that reds if
+  any shipped Kotlin (`src/main`, `src/androidMain`, both template mirrors) or Swift (`BnHost/`)
+  source calls it outside its own declaration.
 
 **What the reviews found, fixed in the loop:**
 - **The back state landed on a blank screen.** A swap is two frames, the removal and then the page.
@@ -3422,6 +3429,12 @@ update `src/dispatch-surface.json`, add the iOS twin pin, and update the templat
   shipped sources only, and an op counts as consumed only through a routing arm.
 - **A vacuous visibility pin.** `MethodsWithADeclaredVisibility_MatchBothShells` passed with the
   manifest's visibility line deleted and both shells public. It is now floored on a named entry.
+- **`internal` enforced nothing a caller could not already do.** MainActivity shares
+  `BlazorNativeRuntime`'s Kotlin module, and `BnHost` is an app target where a modifier-less class
+  is already `internal`, so the keyword changed nothing a same-target caller could not already
+  reach. The final review measured it: reverting `onNewIntent`'s call and a Swift navigator's call
+  back to the blocking one, one at a time, left every existing gate green. The new source scan is
+  what actually enforces it now.
 - **Smaller fixes:** the pending-then-unhandled back that swallowed a press; a re-back trail when a
   click handler calls back twice; the stale "the shell finishes" doc for `BackUnhandled` in about
   fifteen places; and a stale DOES NOT COVER bullet in `BackStateNoticeTests`, corrected in this
@@ -3444,10 +3457,15 @@ update `src/dispatch-surface.json`, add the iOS twin pin, and update the templat
   with `resetNavigateRcForTest`.
 - **`dispatchHostEventAndWait` has no production caller left** on either shell. Its effective
   access did not change: Kotlin was already `internal`, and Swift's method, in a class with no
-  modifier, already defaulted to `internal`. What is new is the explicit Swift keyword and two pins
-  that hold both.
+  modifier, already defaulted to `internal` too — a keyword that stops nothing a same-module or
+  same-target caller could not already do, as the final review proved by reverting a call and
+  watching every gate stay green. What actually holds "no caller" is three mechanisms: the
+  explicit Swift keyword; `src/dispatch-surface.json`'s `"visibility": "internal"`, held by a .NET
+  differential pin and a JVM `KVisibility` pin; and a new source scan across every shipped Kotlin
+  and Swift file that reds on a call anywhere outside the method's own declaration.
 
-**Counts, measured on `602a5e6`.** The .NET build was a clean
+**Counts, measured on `602a5e6`, with the .NET total and Runtime row re-measured after the final
+review round added its two new facts.** The .NET build was a clean
 `dotnet build BlazorNative.sln -c Release --no-incremental -v q`: 0 errors and the 24 warnings that
 already existed. Each project was then tested with `-c Release --no-build`. The JVM run followed a
 fresh `dotnet publish samples/BlazorNative.SampleApp -c Release -r win-x64`, which exited 0 with 4
@@ -3456,10 +3474,10 @@ passed without `-PciSoDir`.
 
 | Surface | Before (16.1) | After | Change |
 |---|---|---|---|
-| .NET total | 1255 | **1276** | +21 |
+| .NET total | 1255 | **1278** | +23 |
 | · Renderer | 147 | 147 | 0 |
 | · Analyzers | 27 | 27 | 0 |
-| · Runtime | 1081 | 1102 | +21: `BackStateNoticeTests` 18, `GeneratedSymbolShadowTests` +2, `DispatchSurfaceDriftTests` +1 |
+| · Runtime | 1081 | 1104 | +23: `BackStateNoticeTests` 18, `GeneratedSymbolShadowTests` +4, `DispatchSurfaceDriftTests` +1 |
 | JVM | 170 | **190**, 0 failed | +20: `BackNoticeTest` 7, `BackStateBufferTest` 11, `DispatchHostEventAndWaitVisibilityTest` 2 |
 | Android | 228 | **233** | +5: `BackAndroidTest`. The android-instrumented lane, run 36316252930 at `d32f97f`, was green at 233. No instrumented test changed after `d32f97f` |
 | iOS | 276 | **282** | +6: `BnBackOffMainTests`. The ios lane, run 36321225204 at `ba27ec5`, passed 282 and failed 0. After it, `BnRuntime.swift` changed in Task 5 and `BnSafeAreaTests.swift` changed in a comment only, so the final lane must cover both |
