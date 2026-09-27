@@ -34,9 +34,12 @@ import io.blazornative.jni.RenderPatch
  * resends the value its route state still holds. If the swap threw before any frame, the
  * resend supersedes the unapplied value and the next batch carries the value already applied,
  * which changes nothing. If it threw after its removal frame, that frame carried nothing, and
- * the same holds. If the unmount itself emitted a frame that is not removal-only and then the
- * mount threw, that frame applied the new value and the resend waits for the next batch; that
- * is a failed navigation on a half-built screen, and it is not pinned.
+ * the same holds. The case that does apply a value the resend then contradicts is MEASURED
+ * (Task 3 re-review): when the swap target's mount fails after rendering, as an async-init page
+ * does, the failed mount first emits its first render, with content, and then throws. That frame
+ * is not removal-only, so it carries the new value, and the resend waits for the page's next
+ * re-render. Harmless: a press in that window reaches .NET, which answers BackUnhandled, and the
+ * press goes to the platform default. Not pinned.
  *
  * It lives in `src/main/kotlin`, not `androidMain`, so the JVM suite can test it without a
  * device (BackStateBufferTest, and BackNoticeTest against the dll's real frames), the
@@ -84,7 +87,10 @@ class BackStateBuffer {
         /** True when [batch] only takes nodes away: at least one RemoveNode, and nothing but
          * RemoveNode, DetachEvent and CommitFrame. A swap's first frame, the old root's
          * removal, is this shape; a mount, even an empty one that is a lone CommitFrame, is
-         * not. */
+         * not. CAVEAT, measured: a swap FROM a page whose current render is empty disposes it
+         * with a lone-CommitFrame frame (`BackState false | CommitFrame only | BnDemo`). That
+         * frame is not removal-only, so it carries the value one runnable early. Harmless: the
+         * screen is blank both before and after it. */
         fun isRemovalOnly(batch: List<RenderPatch>): Boolean =
             batch.any { it is RenderPatch.RemoveNode } &&
                 batch.all { it is RenderPatch.RemoveNode || it is RenderPatch.DetachEvent || it is RenderPatch.CommitFrame }
