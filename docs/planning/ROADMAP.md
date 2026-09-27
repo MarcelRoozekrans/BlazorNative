@@ -3173,7 +3173,7 @@ the six JVM failures, and it is requirement 1.
 failed because `vswhere` was not on the shell PATH, and Gradle loaded a stale library built from
 `main`. Check the publish exit code and the library's timestamp before trusting a JVM count.
 
-#### Phase 16.1: The render thread [status: active]
+#### Phase 16.1: The render thread [status: complete]
 **Goal:** Replace the inline dispatcher with a .NET-owned render thread and carry the 16.0 spike's
 11 requirements: correct the false `Exports.cs` comment first, free the lane on yield and flip
 `DispatchLaneBlockingTests`, scope the capture window per dispatch, pin render-thread ownership,
@@ -3188,6 +3188,7 @@ never a merged state where a fault after the first await is only logged. Closes 
 **HelpWanted:** no
 **Design:** [`docs/superpowers/specs/2026-09-26-phase-16.1-design.md`](../superpowers/specs/2026-09-26-phase-16.1-design.md)
 **Plan:** [`docs/superpowers/plans/2026-09-26-phase-16.1-render-thread.md`](../superpowers/plans/2026-09-26-phase-16.1-render-thread.md)
+**Completed:** 2026-09-27 · [PR #428](https://github.com/MarcelRoozekrans/BlazorNative/pull/428) · #345 and #8 closed with evidence
 
 > **16.1 outcome: the render thread shipped, #345 and #8 are fixed in code, and all 11 spike
 > requirements are accounted for. Three are carried in part, and each is named below.** The
