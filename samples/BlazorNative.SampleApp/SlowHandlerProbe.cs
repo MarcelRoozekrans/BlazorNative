@@ -16,7 +16,7 @@ namespace BlazorNative.SampleApp;
 //   root div
 //     ├─ BnButton "Slow one" → SlowOne, a synchronous 500 ms sleep
 //     ├─ BnButton "Slow two" → SlowTwo, the same, a different method
-//     ├─ BnButton "Report"   → re-renders the echo, and nothing else
+//     ├─ BnButton "Report"   → restores the previous BnLog sink, and re-renders the echo
 //     └─ BnText echo: "slow-warnings:<n>" then one "\n<line>" per warning
 //
 // WHY. The warning keys a dispatch by the method its delegate runs. BnButton
@@ -27,10 +27,14 @@ namespace BlazorNative.SampleApp;
 // reads the echo.
 //
 // WHY THE ECHO READS A SINK. The warning goes to BnLog, which the JVM lane cannot
-// read from the native process's stderr. The page installs a BnLog.Sink while it
-// is mounted, keeps every slow-handler line, forwards every line to the sink it
-// replaced (or to stderr in BnLog's own format), and restores it in Dispose. The
-// warning is logged after the dispatch's own re-render, so "Report" shows it.
+// read from the native process's stderr. The page installs a BnLog.Sink when it
+// mounts, keeps every slow-handler line, and forwards every line to the sink it
+// replaced (or to stderr in BnLog's own format). "Report" puts the previous sink
+// back once the warnings it needs are captured: a session retired without
+// disposing its components never runs Dispose, so the sink would otherwise stay
+// installed for the rest of the process. Dispose restores it too, for a probe
+// torn down before Report. The warning is logged after the dispatch's own
+// re-render, so "Report" shows it.
 // 500 ms is five times the renderer's 100 ms budget, never near the boundary.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -73,7 +77,15 @@ internal sealed class SlowHandlerProbe : ComponentBase, IDisposable
     private void SlowTwo() => Thread.Sleep(SlowMs);
 #pragma warning restore BN0004
 
-    private static void Report() { }
+    private void Report() => RestoreSink();
+
+    /// <summary>Puts the replaced sink back, unless something else has replaced ours
+    /// since.</summary>
+    private void RestoreSink()
+    {
+        if (BnLog.Sink == (Action<BnLogLevel, string, string>)Capture)
+            BnLog.Sink = _previousSink;
+    }
 
     protected override void BuildRenderTree(RenderTreeBuilder b)
     {
@@ -107,9 +119,5 @@ internal sealed class SlowHandlerProbe : ComponentBase, IDisposable
         b.CloseElement();
     }
 
-    public void Dispose()
-    {
-        if (BnLog.Sink == (Action<BnLogLevel, string, string>)Capture)
-            BnLog.Sink = _previousSink;
-    }
+    public void Dispose() => RestoreSink();
 }

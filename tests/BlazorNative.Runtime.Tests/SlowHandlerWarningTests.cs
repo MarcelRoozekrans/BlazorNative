@@ -55,6 +55,18 @@ namespace BlazorNative.Runtime.Tests;
 //     reached by any pin here; whether the NativeAOT build resolves the method is
 //     measured on the JVM lane, by SlowHandlerProbeTest. The 32-warning cap per
 //     session is the other quiet path, and it is pinned;
+//   - a handler whose method is the FRAMEWORK's: Blazor's own (every @bind runs
+//     Blazor's binder lambda), System's, or BlazorNative.Components'. Its owner key
+//     is combined with the tree-owner key, so @bind handlers stay apart by call
+//     site and the warning names the component holding the call site. When that
+//     component is itself a BlazorNative.Components wrapper, the call site is the
+//     wrapper's own line, so every instance in an app merges into one warning
+//     naming the wrapper, not the app's handler. Exactly: BnInput's change
+//     (HandleChange, sequence 102; pinned as a known limit), and by the same
+//     shape BnCheckbox, BnPicker, BnSlider and BnSwitch change, and BnModal's
+//     dismiss click (HandleDismissRequest). Fails quiet: one warning per wrapper
+//     type per session. BnButton, BnImage's onerror and BnScroll's onscroll
+//     forward the app's delegate itself and are keyed by the app's method;
 //   - the navigate and safeAreaChanged arms by name. They share the timed helper
 //     with back and the lifecycle multicast, which are pinned;
 //   - the shells: this is the .NET side only.
@@ -152,6 +164,27 @@ public sealed class SlowHandlerWarningTests
             throw new Xunit.Sdk.XunitException(
                 $"no frame created a '{eventName}' handler for '{label}'. SlowProbe moved or was "
                 + "relabelled; re-point this pin deliberately rather than deleting it.");
+        }
+
+        /// <summary>The live <paramref name="eventName"/> handler on the element whose
+        /// placeholder is <paramref name="placeholder"/>.</summary>
+        public int HandlerByPlaceholder(string placeholder, string eventName)
+        {
+            List<RenderFrame> all;
+            lock (_frames) all = _frames.ToList();
+            int? node = all.SelectMany(f => f.Patches).OfType<UpdatePropPatch>()
+                .FirstOrDefault(p => p.Name == "placeholder" && p.Value == placeholder)?.NodeId;
+            if (node is not int n)
+                throw new Xunit.Sdk.XunitException(
+                    $"no frame set placeholder '{placeholder}'. SlowProbe moved; re-point this pin deliberately.");
+            for (int i = all.Count - 1; i >= 0; i--)
+            {
+                AttachEventPatch? attach = all[i].Patches.OfType<AttachEventPatch>()
+                    .LastOrDefault(p => p.NodeId == n && p.EventName == eventName);
+                if (attach is not null)
+                    return attach.HandlerId;
+            }
+            throw new Xunit.Sdk.XunitException($"node {n} ('{placeholder}') never had a '{eventName}' handler.");
         }
 
         /// <summary>The node id of the button whose text is <paramref name="label"/>.</summary>
@@ -471,6 +504,52 @@ public sealed class SlowHandlerWarningTests
     }
 
     [Fact]
+    public void TwoBindChangeHandlers_OfTheSameType_WarnTwice_NeverNamingBlazorInternals()
+    {
+        using var s = new Session();
+        // Each binder is a new closure on every render, so each handler id is read just
+        // before its own dispatch: the first dispatch's re-render replaces both.
+        Assert.Equal(0, Dispatch(s.HandlerByPlaceholder("bind-a", "change"), Change("x")));
+        Assert.Equal(0, Dispatch(s.HandlerByPlaceholder("bind-b", "change"), Change("y")));
+
+        Assert.Equal(1, SlowProbe.RunsOf("bind-a")); // anchor: both binders' setters ran
+        Assert.Equal(1, SlowProbe.RunsOf("bind-b"));
+        string[] lines = s.SlowLines();
+        // Every @bind of one value type runs Blazor's OWN binder lambda, so an owner key
+        // alone merges every such handler in an app, and names Blazor's internals.
+        Assert.True(lines.Length == 2,
+            $"two @bind change handlers of one type gave {lines.Length} warnings, not 2. A handler "
+            + $"whose method is the framework's must also be keyed by its call site:\n{string.Join("\n", lines)}");
+        Assert.DoesNotContain(lines, l => l.Contains("EventCallbackFactoryBinderExtensions"));
+        Assert.All(lines, l => Assert.Contains(nameof(SlowProbe), l));
+    }
+
+    /// <summary>A KNOWN LIMIT, pinned so it is exact rather than folklore. BnInput wraps
+    /// the app's ValueChanged in its own HandleChange, so the delegate the renderer sees
+    /// is BnInput's, and the call site that holds it is BnInput's own sequence 102. Every
+    /// BnInput change in an app therefore shares ONE key and ONE warning, which names
+    /// BnInput rather than the app's handler. When BnInput exposes the app's delegate, or
+    /// the key walks to the parent component, this pin goes red: flip it to two warnings
+    /// naming the app's methods, do not delete it.</summary>
+    [Fact]
+    public void TwoBnInputs_WithDifferentSlowHandlers_StillShareOneWarning_NamingBnInput_KnownLimit()
+    {
+        using var s = new Session();
+        int a = s.HandlerByPlaceholder("bn-in-a", "change");
+        int b = s.HandlerByPlaceholder("bn-in-b", "change");
+        Assert.NotEqual(a, b);
+
+        Assert.Equal(0, Dispatch(a, Change("x")));
+        Assert.Equal(0, Dispatch(b, Change("y")));
+
+        Assert.Equal(1, SlowProbe.RunsOf("bn-in-a")); // anchor: both app handlers ran
+        Assert.Equal(1, SlowProbe.RunsOf("bn-in-b"));
+        var line = Assert.Single(s.SlowLines());
+        Assert.Contains($"in {typeof(BnInput).FullName} held", line);
+        Assert.DoesNotContain("HandleChange", line);
+    }
+
+    [Fact]
     public void TheCap_Allows32Warnings_ThenOneSuppressionLine_ThenSilence()
     {
         using var s = new Session();
@@ -557,6 +636,10 @@ public sealed class SlowHandlerWarningTests
         private int _selected;
         private void Select(int item) { _selected = item; Run("select", SlowMs); }
         private void BnSlowOne() => Run("bn-one", SlowMs);
+        private string? _bindA;
+        private string? _bindB;
+        private void BnInSlowA(string _) => Run("bn-in-a", SlowMs);
+        private void BnInSlowB(string _) => Run("bn-in-b", SlowMs);
         private void BnSlowTwo() => Run("bn-two", SlowMs);
 
         protected override void BuildRenderTree(RenderTreeBuilder b)
@@ -602,6 +685,28 @@ public sealed class SlowHandlerWarningTests
             b.AddComponentParameter(24, nameof(BnButton.Label), "bn-two");
             b.AddComponentParameter(25, nameof(BnButton.OnClick),
                 EventCallback.Factory.Create<MouseEventArgs>(this, BnSlowTwo));
+            b.CloseComponent();
+            // Two @bind change handlers of one value type: both run Blazor's binder lambda.
+            b.OpenElement(40, "input");
+            b.AddAttribute(41, "placeholder", "bind-a");
+            b.AddAttribute(42, "onchange", EventCallback.Factory.CreateBinder(this,
+                v => { _bindA = v; Run("bind-a", SlowMs); }, _bindA));
+            b.CloseElement();
+            b.OpenElement(43, "input");
+            b.AddAttribute(44, "placeholder", "bind-b");
+            b.AddAttribute(45, "onchange", EventCallback.Factory.CreateBinder(this,
+                v => { _bindB = v; Run("bind-b", SlowMs); }, _bindB));
+            b.CloseElement();
+            // Two BnInputs: each wraps the app's ValueChanged in its own HandleChange.
+            b.OpenComponent<BnInput>(50);
+            b.AddComponentParameter(51, nameof(BnInput.Placeholder), "bn-in-a");
+            b.AddComponentParameter(52, nameof(BnInput.ValueChanged),
+                EventCallback.Factory.Create<string>(this, BnInSlowA));
+            b.CloseComponent();
+            b.OpenComponent<BnInput>(53);
+            b.AddComponentParameter(54, nameof(BnInput.Placeholder), "bn-in-b");
+            b.AddComponentParameter(55, nameof(BnInput.ValueChanged),
+                EventCallback.Factory.Create<string>(this, BnInSlowB));
             b.CloseComponent();
             // Two page types, each with a slow button inside BnView ChildContent.
             b.OpenComponent<ChildPageA>(30);

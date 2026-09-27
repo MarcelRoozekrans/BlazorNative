@@ -18,6 +18,8 @@ import java.util.Collections
  * The sample's SlowHandlerProbe has two BnButtons whose OnClick handlers are different
  * methods that each sleep 500 ms, five times the budget. It captures every slow-handler
  * line through a BnLog sink and echoes them in a BnText when "Report" re-renders it.
+ * "Report" also puts the previous sink back, so the probe's sink does not outlive this
+ * test in the shared JVM process.
  * Owner keys give two warnings, one per method. The fallback would give ONE, naming
  * BnButton.
  *

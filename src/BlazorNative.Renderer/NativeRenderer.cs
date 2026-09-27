@@ -1653,8 +1653,18 @@ public sealed class NativeRenderer : BlazorRenderer
                 try
                 {
                     System.Reflection.MethodInfo method = Handler.Method;
-                    if (method.DeclaringType?.FullName is { } declaring)
+                    if (method.DeclaringType is { FullName: { } declaring } type)
+                    {
+                        // A FRAMEWORK method is shared by every call site that uses it: each
+                        // @bind of one value type runs Blazor's own binder lambda, and a
+                        // BlazorNative.Components wrapper runs its own handler for every
+                        // instance. Combined with the tree-owner key it stays per call site,
+                        // and the warning names the component that holds the call site.
+                        if (IsFrameworkAssembly(type.Assembly))
+                            return ($"{declaring}::{method.Name}#{Component.FullName}#{Sequence}#{EventName}",
+                                Component.FullName ?? Component.Name);
                         return ($"{declaring}::{method.Name}#{EventName}", $"{declaring}.{method.Name}");
+                    }
                 }
                 catch (NotSupportedException)
                 {
@@ -1663,6 +1673,18 @@ public sealed class NativeRenderer : BlazorRenderer
             }
             return ($"{Component.FullName}#{Sequence}#{EventName}", Component.FullName ?? Component.Name);
         }
+    }
+
+    /// <summary>Whether <paramref name="assembly"/> is framework code for the slow-handler
+    /// key: Blazor (<c>Microsoft.AspNetCore.Components*</c>), the BCL (<c>System*</c>), or
+    /// <c>BlazorNative.Components</c>, whose wrappers run their own handler for every
+    /// instance. Any other assembly, the sample app included, is app code.</summary>
+    private static bool IsFrameworkAssembly(System.Reflection.Assembly assembly)
+    {
+        string name = assembly.GetName().Name ?? "";
+        return name.StartsWith("Microsoft.AspNetCore.Components", StringComparison.Ordinal)
+            || name == "System" || name.StartsWith("System.", StringComparison.Ordinal)
+            || name == "BlazorNative.Components";
     }
 
     private void RecordCallSite(int componentId, int handlerId, int sequence, string eventName, Delegate? handler)
