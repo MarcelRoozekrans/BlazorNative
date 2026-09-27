@@ -344,7 +344,8 @@ final class BnRuntime {
     /// capture waiting on the user — `willResignActive` blocked main on a lane that
     /// could not drain, and the app was dead until force-quit. Android never had the
     /// bug because its lifecycle path has always called the non-blocking overload.
-    /// Callers that need the rc use `dispatchHostEventAndWait`.
+    /// Since 16.2 (#346) no production caller needs the rc any more — both navigators
+    /// moved here too — so `dispatchHostEventAndWait` is `internal` and test-only.
     func dispatchHostEvent(_ event: BnHostEvent, payload: String?) {
         dispatchLane.async {
             _ = event.rawValue.withCString { n -> Int32 in
@@ -356,10 +357,15 @@ final class BnRuntime {
         }
     }
 
-    /// Phase 14.1: the BLOCKING host-event dispatch — the Swift twin of Kotlin's
-    /// `dispatchHostEventAndWait`. Marshals through the SAME serial lane but blocks
-    /// the caller until the dispatch has completed, so the re-route swap's frames are
-    /// applied before it returns, and returns the rc (0 = navigated).
+    /// Phase 14.1 — the BLOCKING host-event dispatch, the Swift twin of Kotlin's
+    /// `dispatchHostEventAndWait`. Until Phase 16.2 it was the deep-link and warm
+    /// notification navigate path; both now dispatch fire-and-forget through
+    /// `dispatchHostEvent` instead, because a caller blocked here waits on .NET
+    /// (#346), and no production code calls this any more. `internal` and
+    /// test-only by owner decision (16.2 Task 5) — reachable from XCTest through
+    /// `@testable import BnHost`. It still marshals through the SAME serial lane but
+    /// blocks the caller until the dispatch has completed, and returns the rc
+    /// (0 = navigated).
     ///
     /// Safe from any thread EXCEPT the dispatch lane itself — a call FROM the lane
     /// would self-deadlock, exactly as Kotlin's KDoc warns of its twin. Since Phase
@@ -367,7 +373,7 @@ final class BnRuntime {
     /// export returns at its first await), so this no longer blocks behind one;
     /// BnDispatchLaneTests pins the lane half of that on the simulator.
     @discardableResult
-    func dispatchHostEventAndWait(_ event: BnHostEvent, payload: String?) -> Int32 {
+    internal func dispatchHostEventAndWait(_ event: BnHostEvent, payload: String?) -> Int32 {
         dispatchLane.sync {
             event.rawValue.withCString { n in
                 if let payload = payload {

@@ -115,6 +115,15 @@ dependencies {
     // Kotlin stdlib
     implementation(kotlin("stdlib-jdk8", kotlinVersion))
 
+    // Phase 16.2 Task 5 (#346): kotlin-reflect, JVM-unit-test-only. dispatchHostEventAndWait
+    // became internal and test-only; KVisibility is the only signal that actually
+    // distinguishes internal from public on the JVM — an internal member function still
+    // compiles ACC_PUBLIC, so the bytecode access flag alone cannot tell them apart
+    // (verified with javap: only the mangled `$ModuleName` name suffix and Kotlin's own
+    // reflection metadata carry the distinction, and the mangling suffix is an
+    // implementation detail this test should not have to hardcode).
+    testImplementation(kotlin("reflect", kotlinVersion))
+
     // JVM unit tests (Phase 2.1)
     testImplementation("org.junit.jupiter:junit-jupiter-api:6.1.3")
     testImplementation("org.junit.jupiter:junit-jupiter-params:6.1.3")
