@@ -498,9 +498,11 @@ class BlazorNativeRuntime(
      * Tears down the process-lifetime native session (retiring the dispatch
      * lane first — no event may enter the dll after the frame callback is
      * cleared). QUIESCENT (Phase 16.1): `blazornative_shutdown` closes .NET's
-     * frame gate, waits for any callback in flight, clears the callback and
-     * joins the render thread before it returns, so no frame, not even one
-     * from a late continuation, reaches this runtime afterwards
+     * frame gate, waits for any callback in flight and clears the callback,
+     * then joins the render thread, BOUNDED at 5 s: the join times out when a
+     * handler never yields. Quiescence holds because of the gate, which stays
+     * closed whether or not the join finished, so no frame, not even one from
+     * a late continuation, reaches this runtime after it returns
      * (ShutdownQuiescenceTest). Do NOT call this from Activity teardown (onDestroy) —
      * Activity recreation re-runs start() against the same process-global
      * session (see the recreation contract on [start]); shutting down between

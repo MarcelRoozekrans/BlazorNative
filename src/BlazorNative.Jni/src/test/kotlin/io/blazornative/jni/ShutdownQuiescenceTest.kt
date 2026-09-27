@@ -28,13 +28,24 @@ import java.util.concurrent.atomic.AtomicInteger
  * would have gone to whichever callback registered next.
  *
  * Positive control: the same held call released WITHOUT shutdown does deliver the
- * continuation's frame, so the pin's "no frame" is the gate's doing, not a continuation
- * that never runs or a demo that never echoes.
+ * continuation's frame, so the pin's "no frame" is shutdown's doing (the frame gate and
+ * the render-thread join together), not a continuation that never runs or a demo that
+ * never echoes.
  *
- * DOES NOT COVER: a handler that never yields (it holds the render thread, so the join
- * times out and only the gate stands between its frames and the host; the .NET
- * ShutdownQuiescenceTests pin that case, which the sample components cannot reach), or
- * [BlazorNativeRuntime.retire], which is NOT quiescent (RetireLateContinuationTest).
+ * DOES NOT COVER:
+ *  - Either mechanism ALONE. The gate and the join each stop this late frame on their
+ *    own, so losing only the gate close (mutation N2) or only the join (N3) stays GREEN
+ *    here: both are equivalent mutants for this pin, measured. Losing both, or the whole
+ *    pre-16.1 shutdown, reds it. Each mechanism is pinned separately in
+ *    tests/BlazorNative.Runtime.Tests/ShutdownQuiescenceTests.cs: the gate by
+ *    Shutdown_ReturnsWithinBudget_WhenAHandlerNeverYields (a handler that never yields
+ *    defeats the join, so only the gate can stop its frames) and
+ *    Shutdown_WaitsForACallbackAlreadyInFlight (the gate's drain); the join by
+ *    NoFrameReachesTheCallback_AfterShutdownReturns (the render thread must be gone
+ *    after shutdown) and ResetForTests_JoinsTheRenderThread_AndLeaksNone.
+ *  - A handler that never yields (the join times out and only the gate stands between its
+ *    frames and the host); the sample components cannot reach it, the .NET test above does.
+ *  - [BlazorNativeRuntime.retire], which is NOT quiescent (RetireLateContinuationTest).
  *
  * Shares the process-global session with every other JVM test class. `shutdown` detaches
  * it, so the next mount, the replacement's included, builds a fresh one; that is the
@@ -80,14 +91,15 @@ class ShutdownQuiescenceTest {
             assertEquals(
                 emptyList<RenderFrame>(), framesAfterShutdown.toList(),
                 "a frame reached the SHUT-DOWN runtime after shutdown() returned: its late " +
-                    "continuation got through. blazornative_shutdown must close the frame gate " +
-                    "before it returns."
+                    "continuation got through. blazornative_shutdown must quiesce before it " +
+                    "returns: the frame gate and the render-thread join together stop this frame."
             )
             val stray = framesB.drop(replacementMountFrames)
             assertTrue(
                 stray.none { it.hasText(CANCELLED_ECHO) },
                 "the shut-down session's late continuation framed into the REPLACEMENT's " +
                     "callback ('$CANCELLED_ECHO' arrived): shutdown did not quiesce the old " +
+                    "session (neither the frame gate nor the render-thread join stopped it) " +
                     "render thread; stray frames: $stray"
             )
         } finally {
