@@ -3541,6 +3541,97 @@ rc and async faults mean.
 **Design:** [`docs/superpowers/specs/2026-09-27-phase-16.3-design.md`](../superpowers/specs/2026-09-27-phase-16.3-design.md)
 **Plan:** [`docs/superpowers/plans/2026-09-27-phase-16.3-starvation.md`](../superpowers/plans/2026-09-27-phase-16.3-starvation.md)
 
+> **16.3 outcome: a slow synchronous handler now warns once, naming its own owner, instead of
+> silently starving the lane.** The measured cost is one-for-one with no fixed overhead, so the
+> fix is a warning at a budget rather than a mechanism change. #9 to be closed after the phase PR
+> merges.
+
+**What shipped:**
+- **The measurement.** `docs/plans/2026-09-27-phase-16.3-record.md`: a slow handler's synchronous
+  part costs the dispatch lane exactly what it takes, and a second event queued behind it waits
+  the same amount, one for one, with no amplification and no fixed overhead:
+
+  | Sync part (ms) | Dispatch sync time, median (ms) | Second event behind it, median (ms) | `back` behind it, median (ms) |
+  |---:|---:|---:|---:|
+  | 0 | 0.1 | 0.1 | 0.0 |
+  | 200 | 205.8 | 204.5 | 206.3 |
+  | 1,000 | 1,004.8 | 1,004.7 | 1,005.0 |
+
+  Small rows are inflated by the 15.6 ms Windows scheduler quantum, not by BlazorNative. **The
+  budget stays at `NativeRenderer.SlowHandlerBudget`, 100 ms, unchanged.** The cost is linear and
+  one-for-one, so the budget is simply the delay the next event may suffer before the app author
+  is told; 100 ms is the conventional limit for a response that still feels immediate, and a lower
+  budget would sit inside the timer's own noise, since a requested 50 ms measured 63 ms on this
+  host.
+- **The warning fires once per call site per session.** Its key is the handler's owner: the
+  declaring type and method of the delegate the handler runs, read where the renderer emits the
+  AttachEvent patch, resolved only once a dispatch is over budget. For a framework-declared
+  method, meaning Blazor's own binder such as `@bind`, the BCL, or a `BlazorNative.Components`
+  wrapper, the owner key is combined with the call site: component type, frame sequence and event
+  name. It is capped at `NativeRenderer.SlowHandlerWarningCap`, 32, per session; the next distinct
+  slow key past the cap logs one `further slow-handler warnings suppressed` line, then stays
+  silent until the session resets. It never includes the payload. Timing covers the synchronous
+  part only: for a UI dispatch the clock runs from `DispatchScope` open to close, and for a host-
+  event arm it runs inside the render-thread work item, so queue wait is excluded in both cases.
+  `ASlowBackArm_IsWarned_KeyedByEventName_Once` pins this by recording the thread of every clock
+  read and asserting it is always the render thread. The NativeAOT evidence is
+  `SlowHandlerProbeTest`, which drives the published win-x64 dll's sample page
+  `SlowHandlerProbe`, two `BnButton`s with different 500 ms handlers, and reads two warnings
+  naming `SlowHandlerProbe.SlowOne` and `.SlowTwo`, never `BnButton`.
+- **The page.** `website/docs/guides/threading.md`, new: the render thread and its honest
+  `CheckAccess`, the rc contract, late-fault delivery through `FaultNotice`, off-thread
+  `StateHasChanged` throwing, the blocking-handler anti-pattern with the measured one-for-one
+  cost, the slow-handler warning's budget and keying and cap, the `BnInput` known limit, Android
+  back, and shutdown. `website/docs/guides/state.md`'s stale "Threading" section, still describing
+  the pre-16.1 inline dispatcher, is fixed to point at the new page as the canonical contract.
+
+**What the reviews found, fixed in the loop:**
+- A capturing lambda, such as `() => Select(item)`, gets a new handler id on every render, so
+  keying the warning by handler id alone warned on every click of the same button.
+- Keying by the tree that holds the AttachEvent attribute merged every `BnButton` click in an app
+  into one warning, because `BnButton` forwards every app's `OnClick` from its own render-tree
+  sequence.
+- Keying by the handler's owner method alone then merged every `@bind` of one value type onto a
+  single Blazor-internal key, because each runs Blazor's own binder lambda; the fix combines a
+  framework-declared owner with the tree-owner key.
+- "Queue wait is excluded from the timing" had no pin; `ASlowBackArm_IsWarned_KeyedByEventName_Once`
+  now asserts every clock read happens on the render thread.
+
+**Known limit.** A `BlazorNative.Components` wrapper that runs its own handler for every instance
+still shares one warning across instances, naming the wrapper rather than the app's method:
+`BnInput`'s change handler, `BnCheckbox`, `BnPicker`, `BnSlider` and `BnSwitch`'s change handlers,
+and `BnModal`'s dismiss click. `BnButton`, `BnImage`'s `onerror` and `BnScroll`'s `onscroll`
+forward the app's own delegate and are unaffected. Filed as **#435**; pinned as a known limit by
+`TwoBnInputs_WithDifferentSlowHandlers_StillShareOneWarning_NamingBnInput_KnownLimit`.
+
+**The accepted suppression.** `SlowHandlerProbe`'s two deliberately blocking handlers,
+`SlowOne` and `SlowTwo`, carry a site-scoped `#pragma warning disable BN0004` with the
+justification "a deliberate slow handler, the warning's subject". This is the analyzers doc's own
+documented escape hatch for a justified, scoped suppression, not a workaround: BN0004 is right
+that `Thread.Sleep` blocks a runtime thread, and blocking is the whole point of this probe page,
+which exists only to be clicked in a test.
+
+**Counts, re-measured on `4e3edb1`.** The .NET build was a clean
+`dotnet build BlazorNative.sln -c Release --no-incremental -v q`: 0 errors, the 24 warnings that
+already existed. Each project was then tested with `-c Release --no-build`. The JVM run followed
+a fresh `dotnet publish samples/BlazorNative.SampleApp -c Release -r win-x64`, exit 0 with 4
+IL2072, dll newer than the run; Gradle ran with `--rerun`. No instrumented or XCTest file changed
+on this branch, so Android and iOS are carried forward unchanged.
+
+| Surface | Before (16.2) | After | Change |
+|---|---|---|---|
+| .NET total | 1278 | **1294** | +16 |
+| · Renderer | 147 | 147 | 0 |
+| · Analyzers | 27 | 27 | 0 |
+| · Runtime | 1104 | 1120 | +16: `SlowHandlerWarningTests` |
+| JVM | 190 | **191**, 0 failed | +1: `SlowHandlerProbeTest` |
+| Android | 233 | **233**, unchanged | no instrumented test changed on this branch |
+| iOS | 282 | **282**, unchanged | no XCTest file changed on this branch |
+
+**Open items:**
+- **#9**, the phase's own tracking issue, to be closed after the phase PR merges, with an evidence
+  comment pointing at the record and the counts above.
+
 #### Phase 16.4: Audit and close [status: pending]
 **Goal:** Run `audit-milestone` against the DoD on live evidence and close M16. **No tag**, per
 `CONVENTIONS.md`.
