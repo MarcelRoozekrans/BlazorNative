@@ -308,13 +308,16 @@ public static class Exports
     {
         try
         {
-            // Phase 3.0d: clear the frame callback so a post-shutdown re-render
-            // (possible once Phase 3.2 wires event-driven re-renders) can never
-            // dispatch into a freed JNA trampoline after the host releases its
-            // callback object. Renderer/session state is NOT disposed (frame
-            // flush / teardown is later-phase work); the static cstrings are
-            // intentionally leaked — process-scoped lifetime.
-            HostSession.SetFrameCallback(IntPtr.Zero);
+            // Phase 16.1: shutdown QUIESCES before it returns. A render-thread
+            // continuation can emit a frame at any time, so clearing the pointer
+            // alone would leave a callback in flight inside the host's trampoline,
+            // and a thread still rendering. HostSession.Shutdown closes and drains
+            // the frame gate, clears the pointer, then joins the render thread,
+            // bounded at 5 s. After it returns no frame reaches the host, even from
+            // a handler that never yields. The session is detached, so a later
+            // mount builds a fresh one. The static cstrings are intentionally
+            // leaked — process-scoped lifetime.
+            HostSession.Shutdown();
         }
         catch (Exception ex)
         {
@@ -434,32 +437,63 @@ public static class Exports
         }
     }
 
+    /// <summary>TEST TAP: also receives the pending Task of a reserved host event,
+    /// <c>back</c> or <c>navigate</c>, whose navigation was still running when its export
+    /// returned rc 0, with the event name (Phase 16.1). Delivery of a later fault never
+    /// depends on it: see <see cref="PendingDispatchObserver"/>.</summary>
+    internal static Action<string, Task>? PendingHostEventObserver;
+
+    /// <summary>Test-only: replaces <c>NavigateBackAsync</c> inside the <c>back</c> arm.
+    /// The real navigation completes synchronously today, so a test needs this to hold
+    /// the arm's work pending across shutdown. Runs on the render thread.</summary>
+    internal static Func<Task<bool>>? HostBackWorkForTests;
+
+    /// <summary>Test-only: replaces <c>NavigateToAsync</c> inside the <c>navigate</c> arm,
+    /// for the same reason as <see cref="HostBackWorkForTests"/>.</summary>
+    internal static Func<string, Task>? HostNavigateWorkForTests;
+
+    /// <summary>TEST TAP: also receives every dispatch whose handler was still running
+    /// when its export returned rc 0: the handler id, the event name and the pending Task
+    /// (Phase 16.1). Tests save and restore it, so it must never carry production
+    /// behaviour: a late fault is delivered by <see cref="DeliverLateFault"/>, attached
+    /// directly by the export whether or not this is set.</summary>
+    internal static Action<ulong, string, Task>? PendingDispatchObserver;
+
     /// <summary>
     /// Managed core of blazornative_dispatch_event (testable without the ABI
     /// crossing). Args are flat JSON via the 3.1 FlatJson parser
     /// (NativeShellBridge internals — same hand-rolled pair the Kotlin side
     /// mirrors): <c>{"name":"click"}</c> / <c>{"name":"change","payload":"…"}</c>.
     ///
+    /// The rc contract, written once here and once in BlazorNativeRuntimeC.h:
+    ///
+    /// rc reports the SYNCHRONOUS part of the handler: 0 = it ran and did not fault before its
+    /// first await (the handler may still be running); 2 = it faulted before yielding. A fault
+    /// after the first await is delivered later through the FaultNotice host-call op, never as
+    /// an rc. Frames from the synchronous part are delivered before this returns; frames from a
+    /// continuation are delivered later, from the render thread.
+    ///
     /// Return codes:
-    ///   0 = dispatched — INCLUDING a stale handlerId: delivery is
-    ///       at-most-once, the renderer catches Blazor's ArgumentException for
-    ///       a handler that died in a re-render and logs it (a stale tap is
-    ///       not an error);
+    ///   0 = dispatched, and the synchronous part did not fault — INCLUDING a
+    ///       handler still suspended on an await, and a stale handlerId:
+    ///       delivery is at-most-once, the renderer catches Blazor's
+    ///       ArgumentException for a handler that died in a re-render and logs
+    ///       it (a stale tap is not an error);
     ///   1 = no session / nothing mounted;
-    ///   2 = dispatch faulted — the handler, the resulting re-render, or
-    ///       frame delivery threw (anything routed to HandleException inside
-    ///       the dispatch window; detail ex.ToString() on stderr — Kotlin
-    ///       logs loudly);
+    ///   2 = the synchronous part faulted — the handler before its first await,
+    ///       the resulting re-render, frame delivery, or a navigation swap it
+    ///       queued (anything routed to HandleException inside this dispatch's
+    ///       window; detail ex.ToString() on stderr — Kotlin logs loudly);
     ///   3 = malformed or NULL args, including a handlerId outside the int
     ///       range of the renderer's handler table.
     ///
-    /// SYNCHRONOUS by contract: the renderer's InlineDispatcher runs the
-    /// handler, the re-render, and the FrameSink callback on the calling
-    /// thread, so everything — including frame delivery to the host — has
-    /// completed when this returns. Frames therefore still fire only inside
-    /// host calls (mount OR dispatch), containing the 3.0d trampoline hazard.
-    /// The host-side threading contract (single BlazorNative-Dispatch lane,
-    /// never the UI thread) lives in BlazorNativeRuntime.kt.
+    /// Threading (Phase 16.1): the synchronous part is posted to the renderer's
+    /// render thread, and this waits only until the handler has returned its Task,
+    /// never until that Task completes. So an async handler awaiting the host no
+    /// longer holds the calling thread, the shell's dispatch lane (#345). A handler
+    /// still running is handed to <see cref="DeliverLateFault"/>. The
+    /// host-side threading contract (single BlazorNative-Dispatch lane, never the
+    /// UI thread) lives in BlazorNativeRuntime.kt.
     /// </summary>
     internal static int DispatchEventCore(ulong handlerId, string? argsJson)
     {
@@ -499,31 +533,97 @@ public static class Exports
         if (renderer is null)
             return 1;
 
+        DispatchOutcome outcome;
         try
         {
-            // GetAwaiter().GetResult() is the sync contract, not a blocking
-            // wait: the InlineDispatcher completed the work before the Task
-            // was handed back (Phase 2.4 decision).
-            renderer.DispatchUiEventAsync(new NativeUiEvent(0, (int)handlerId, name, payload))
+            // Waits for the SYNCHRONOUS part only: DispatchSyncPart returns as soon as
+            // Blazor hands back the handler's Task, complete or not. This is the fix for
+            // #345, whose blocking wait on the whole handler held the dispatch lane.
+            var uiEvent = new NativeUiEvent(0, (int)handlerId, name, payload);
+            outcome = renderer.Dispatcher.InvokeAsync(() => renderer.DispatchSyncPart(uiEvent))
                 .GetAwaiter().GetResult();
-            // #201 developer trace — the "I pressed a button and saw it" line. Debug, so
-            // the default (Warn) stays quiet; IsEnabled-guarded so the interpolation never
-            // runs on the hot dispatch path when off. Name only, never `payload` (it can
-            // carry the user's text-field input).
-            if (BnLog.IsEnabled(BnLogLevel.Debug))
-                BnLog.Debug("Exports", $"dispatch_event handler {handlerId} '{name}' → rc 0");
-            return 0;
         }
         catch (Exception ex)
         {
-            // Dispatch fault (DoD #9 partial): the handler, the resulting
-            // re-render, or frame delivery threw — visible via rc 2 + full
-            // detail on stderr so a device-side crash is diagnosable from
-            // logcat.
+            // Not a handler fault — the post itself failed, e.g. the render thread was
+            // shut down under the call. Still rc 2, with the detail on stderr.
             BnLog.Error("Exports", $"dispatch_event handler {handlerId} faulted", ex);
             return 2;
         }
+
+        switch (outcome.Kind)
+        {
+            case DispatchOutcomeKind.Faulted:
+                // Dispatch fault (DoD #9 partial): the handler before its first await, the
+                // resulting re-render, or frame delivery threw — visible via rc 2 + full
+                // detail on stderr so a device-side crash is diagnosable from logcat.
+                BnLog.Error("Exports", $"dispatch_event handler {handlerId} faulted", outcome.Fault!);
+                return 2;
+
+            case DispatchOutcomeKind.Pending:
+                // Decision 5: hand on a mirror the render thread cancels at shutdown. The
+                // handler's own Task never completes once its continuation is dropped with
+                // the thread, and anything awaiting it would hang.
+                ObservePendingDispatch(handlerId, name, TrackUntilShutdown(renderer, outcome.Pending!));
+                break;
+        }
+
+        // #201 developer trace — the "I pressed a button and saw it" line. Debug, so
+        // the default (Warn) stays quiet; IsEnabled-guarded so the interpolation never
+        // runs on the hot dispatch path when off. Name only, never `payload` (it can
+        // carry the user's text-field input).
+        if (BnLog.IsEnabled(BnLogLevel.Debug))
+            BnLog.Debug("Exports", $"dispatch_event handler {handlerId} '{name}' → rc 0");
+        return 0;
     }
+
+    /// <summary>Hands a still-running dispatch to <see cref="DeliverLateFault"/>, then to
+    /// the <see cref="PendingDispatchObserver"/> test tap if one is set.
+    /// <paramref name="pending"/> is the dispatcher's shutdown-tracked mirror: it ends
+    /// cancelled if the render thread shuts down while the handler is still suspended,
+    /// and a cancellation is not a fault, so nothing is sent for it.</summary>
+    private static void ObservePendingDispatch(ulong handlerId, string name, Task pending)
+    {
+        DeliverLateFault(handlerId, name, $"dispatch_event handler {handlerId} '{name}'", pending);
+        PendingDispatchObserver?.Invoke(handlerId, name, pending);
+    }
+
+    /// <summary>Decision 5: a mirror of <paramref name="pending"/> that the renderer's
+    /// render thread cancels at shutdown. A continuation posted to a thread that has
+    /// exited is dropped, so the raw Task would never complete. Every export that hands
+    /// on a still-running Task hands on this mirror instead.</summary>
+    private static Task TrackUntilShutdown(NativeRenderer renderer, Task pending)
+        => renderer.Dispatcher is RenderThreadDispatcher dispatcher
+            ? dispatcher.TrackUntilShutdown(pending)
+            : pending;
+
+    /// <summary>Hands a reserved host event's still-running navigation to
+    /// <see cref="DeliverLateFault"/> with handler id 0, then to the
+    /// <see cref="PendingHostEventObserver"/> test tap if one is set.</summary>
+    private static void ObservePendingHostEvent(string name, Task pending)
+    {
+        DeliverLateFault(0, name, $"host_event '{name}'", pending);
+        PendingHostEventObserver?.Invoke(name, pending);
+    }
+
+    /// <summary>#8: once a Task that was still running when its export returned FAULTS,
+    /// logs the fault with <c>BnLog.Error</c> and sends it to the shell as a FaultNotice
+    /// host call, so it reaches the shell's onError. Runs on the thread pool, never the
+    /// render thread, and never throws: SendFaultNotice swallows its own failures. Never
+    /// the payload: it can carry the user's input.</summary>
+    private static void DeliverLateFault(ulong handlerId, string eventName, string what, Task pending)
+        => pending.ContinueWith(
+            static (t, state) =>
+            {
+                var (id, evt, label) = ((ulong, string, string))state!;
+                Exception fault = t.Exception!.InnerException ?? t.Exception;
+                BnLog.Error("Exports", $"{label} faulted after its first await", fault);
+                NativeShellBridge.SendFaultNotice(id, evt, fault);
+            },
+            (handlerId, eventName, what),
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted,
+            TaskScheduler.Default);
 
     /// <summary>
     /// Phase 3.1 / Phase 5.4: COPIES the host's callback struct into
@@ -597,8 +697,8 @@ public static class Exports
     /// UTF-8 pointers (name required, payload optional/NULL) and guarantees no
     /// exception crosses the ABI. Unlike dispatch_event this carries NO
     /// handlerId: it fires the real <see cref="NativeShellBridge.NativeEvents"/>
-    /// multicast, so a mounted component's subscriber (and the re-render its
-    /// StateHasChanged drives) runs synchronously before this returns.
+    /// multicast on the render thread, so a mounted component's subscriber (and the
+    /// re-render its StateHasChanged drives) runs before this returns.
     /// </summary>
     [UnmanagedCallersOnly(EntryPoint = "blazornative_host_event", CallConvs = new[] { typeof(CallConvCdecl) })]
     public static int HostEvent(IntPtr nameUtf8, IntPtr payloadUtf8)
@@ -722,12 +822,17 @@ public static class Exports
     ///       payload is otherwise LEGAL (most lifecycle events, and "back",
     ///       carry none).
     ///
-    /// SYNCHRONOUS by contract, like dispatch_event: raised on the calling
-    /// (dispatch-lane) thread, so a subscriber's StateHasChanged re-render — or
-    /// the back swap's remove+create frames — have all been delivered when this
-    /// returns. Not called from inside a dispatch window (host-initiated,
-    /// between clicks), so both StateHasChanged's batch and the swap's
-    /// RunAfterDispatch drain cleanly at depth 0 — see the off-lane pin.
+    /// Threading (Phase 16.1): EVERY arm that touches the renderer runs on the
+    /// session renderer's render thread and this waits for its synchronous part —
+    /// "back", "navigate", "safeAreaChanged" and the multicast fallthrough alike.
+    /// Blazor rejects StateHasChanged off the render thread, and the multicast's and
+    /// the safe-area report's subscribers call it (16.0 spike requirement 5). So a
+    /// subscriber's re-render, or the back swap's remove+create frames, have been
+    /// delivered when this returns. Each arm posts outside any dispatch's
+    /// synchronous part, so the swap's RunAfterDispatch finds no open scope and runs
+    /// at once, even while another handler is suspended on an await — see the
+    /// off-lane pin. With no session there is no render thread and nothing to
+    /// re-render, and the arm runs on the calling thread.
     /// </summary>
     internal static int DispatchHostEventCore(string? name, string? payload)
     {
@@ -745,7 +850,11 @@ public static class Exports
 
         try
         {
-            bool faulted = NativeShellBridge.RaiseNativeEvent(new NativeEvent(name, payload));
+            var evt = new NativeEvent(name, payload);
+            NativeRenderer? renderer = HostSession.CurrentRenderer;
+            bool faulted = renderer is null
+                ? NativeShellBridge.RaiseNativeEvent(evt)
+                : OnRenderThread(renderer, () => NativeShellBridge.RaiseNativeEvent(evt));
             return faulted ? 2 : 0;
         }
         catch (Exception ex)
@@ -760,18 +869,29 @@ public static class Exports
     /// <summary>Routes the reserved "back" host event to the session's nav
     /// manager (Phase 5.1). rc 0 = handled (navigated to the previous route) /
     /// 1 = not handled (at the origin, or no session — the shell finishes) /
-    /// 2 = the back swap faulted. Sync: the swap's frames are delivered before
-    /// this returns (off-lane RunAfterDispatch drains immediately).</summary>
+    /// 2 = the back swap faulted. Runs on the render thread and waits for its
+    /// synchronous part: the swap's frames are delivered before this returns
+    /// (RunAfterDispatch finds no open scope and runs at once). NavigateBackAsync
+    /// completes synchronously today; if it ever yields, this reports rc 0 and a
+    /// later fault is sent to the shell as a FaultNotice, the dispatch_event contract.</summary>
     private static int DispatchHostBack()
     {
         NativeNavigationManager? nav = HostSession.CurrentNavigationManager;
-        if (nav is null)
+        NativeRenderer? renderer = HostSession.CurrentRenderer;
+        if (nav is null || renderer is null)
             return 1; // nothing mounted → nothing to go back from (not handled)
 
         try
         {
-            bool handled = nav.NavigateBackAsync().GetAwaiter().GetResult();
-            return handled ? 0 : 1;
+            Task<bool> back = OnRenderThread(renderer,
+                () => HostBackWorkForTests?.Invoke() ?? nav.NavigateBackAsync().AsTask());
+            if (!back.IsCompleted)
+            {
+                // Decision 5, as in dispatch_event: hand on the shutdown-tracked mirror.
+                ObservePendingHostEvent(BnHostEvents.Back, TrackUntilShutdown(renderer, back));
+                return 0;
+            }
+            return back.GetAwaiter().GetResult() ? 0 : 1;
         }
         catch (Exception ex)
         {
@@ -784,8 +904,10 @@ public static class Exports
     /// manager (Phase 9.1) — the WARM half of notification tap-through. The payload
     /// is the target route. rc 0 = navigated / 1 = not handled (no session, or an
     /// unknown/empty route — the shell had a route the app does not know, benign) /
-    /// 2 = the navigation swap faulted. Sync: NavigateToAsync runs the swap inline,
-    /// so the target page's frames are delivered before this returns. An unknown
+    /// 2 = the navigation swap faulted. Runs on the render thread and waits for its
+    /// synchronous part: NavigateToAsync runs the swap inline, so the target page's
+    /// frames are delivered before this returns. If it ever yields, this reports rc 0
+    /// and a later fault is sent to the shell as a FaultNotice, the dispatch_event contract. An unknown
     /// route surfaces as ArgumentException from NavigateToAsync and is mapped to
     /// rc 1 (not handled) rather than rc 2 (fault): a stale deep link is not a
     /// renderer fault, and a live session that cannot honour the route simply stays
@@ -796,12 +918,21 @@ public static class Exports
             return 1; // a navigate with no route is nothing to act on (not handled)
 
         NativeNavigationManager? nav = HostSession.CurrentNavigationManager;
-        if (nav is null)
+        NativeRenderer? renderer = HostSession.CurrentRenderer;
+        if (nav is null || renderer is null)
             return 1; // nothing mounted → nowhere to navigate from (not handled)
 
         try
         {
-            nav.NavigateToAsync(route).GetAwaiter().GetResult();
+            Task navigation = OnRenderThread(renderer,
+                () => HostNavigateWorkForTests?.Invoke(route) ?? nav.NavigateToAsync(route).AsTask());
+            if (!navigation.IsCompleted)
+            {
+                // Decision 5, as in dispatch_event: hand on the shutdown-tracked mirror.
+                ObservePendingHostEvent(BnHostEvents.Navigate, TrackUntilShutdown(renderer, navigation));
+                return 0;
+            }
+            navigation.GetAwaiter().GetResult();
             return 0;
         }
         catch (ArgumentException)
@@ -867,11 +998,31 @@ public static class Exports
 
         // Store unconditionally, even when nothing is mounted to re-render, so a
         // later mount starts with the right values instead of rendering at zero
-        // a second time.
-        BnSafeAreaInsets.Report(new BnSafeAreaInsets(top, right, bottom, left));
-
-        return HostSession.CurrentRenderer is null ? 1 : 0;
+        // a second time. With a session, on the render thread: BnSafeArea's
+        // subscriber re-renders, and its frames are delivered before this returns.
+        var insets = new BnSafeAreaInsets(top, right, bottom, left);
+        NativeRenderer? renderer = HostSession.CurrentRenderer;
+        if (renderer is null)
+        {
+            BnSafeAreaInsets.Report(insets);
+            return 1;
+        }
+        OnRenderThread(renderer, () =>
+        {
+            BnSafeAreaInsets.Report(insets);
+            return 0;
+        });
+        return 0;
     }
+
+    /// <summary>Runs a host-event arm's synchronous part on the session renderer's
+    /// render thread and waits for it (Phase 16.1). A call already on the render
+    /// thread runs inline. Generic ON PURPOSE: with <typeparamref name="T"/> open, the
+    /// call binds to <c>InvokeAsync(Func&lt;T&gt;)</c> even when T is a Task, so an
+    /// arm that returns its Task gets that Task back, not a wait for its completion.
+    /// That is how the arms wait for the synchronous part only.</summary>
+    private static T OnRenderThread<T>(NativeRenderer renderer, Func<T> work)
+        => renderer.Dispatcher.InvokeAsync(work).GetAwaiter().GetResult();
 
     /// <summary>Parses one edge's value out of the flat-JSON payload. Rejects — as a
     /// PARSE failure (rc 3 in <see cref="DispatchHostSafeArea"/>), same as a missing

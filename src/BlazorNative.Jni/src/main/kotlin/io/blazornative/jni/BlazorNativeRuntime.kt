@@ -24,10 +24,16 @@ import java.util.concurrent.TimeUnit
  * instead of calling android.util.Log directly — the Activity passes Log.e.
  */
 class BlazorNativeRuntime(
-    // Called with every decoded frame. THREAD SET: {the start() caller thread
-    // (the mount's synchronous first frame), the BlazorNative-Dispatch lane
-    // (re-render frames delivered inside dispatchEvent)} — consumers must be
-    // safe for both (Android: post to the main thread before touching views).
+    // Called with every decoded frame. THREAD SET (Phase 16.1): exactly ONE
+    // thread per session, .NET's render thread, seen here as one Java thread
+    // named BlazorNative-Render (see the init block). It delivers the mount's first
+    // frame while start() waits, a handler's synchronous re-render while the
+    // dispatch export waits, and, later, frames from a handler's continuation
+    // after an await, when no host call is in progress at all. Never the
+    // start() caller, never the BlazorNative-Dispatch lane, and never two
+    // frames at once. A frame from a second thread is reported to [onError]
+    // (see [checkFrameProducer]). Consumers still post to the main thread
+    // before touching views.
     private val onFrame: (RenderFrame) -> Unit,
     // (JVM-only default — Android callers must pass a Log-based sink. This is
     // the SHELL's own Kotlin diagnostics, and it is NOT what Phase 11.4 Gate B's
@@ -35,11 +41,17 @@ class BlazorNativeRuntime(
     // NATIVE runtime writes; ART routes a JVM `System.err.println` through its
     // own path with the tag "System.err", losing the level and the category. So
     // the pluggable sink stays, and the Activity still passes Log.e.)
+    //
+    // THREAD SET: ANY thread — the start() caller, the BlazorNative-Dispatch lane, and
+    // since Phase 16.1 a .NET THREAD-POOL thread: a handler fault after its first await
+    // arrives as a FaultNotice that BridgeRegistrar hands to this sink on whatever .NET
+    // thread sent it. A sink that touches UI must post to the main thread first.
     private val onError: (String, Throwable) -> Unit = { msg, t -> System.err.println("$msg: $t") },
 ) {
     private val callback = object : NativeBindings.FrameCallback {
         override fun invoke(frame: Pointer) {
             try {
+                checkFrameProducer()
                 // NativeFrameAdapter.read copies everything (arena memory is
                 // valid only during this invocation), so onFrame receives a
                 // fully detached RenderFrame.
@@ -47,6 +59,45 @@ class BlazorNativeRuntime(
             } catch (t: Throwable) {
                 onError("frame dropped (adapter/consumer threw)", t)
             }
+        }
+    }
+
+    init {
+        // Phase 16.1: keep the render thread ATTACHED between frames. By default JNA
+        // attaches a native thread for one callback and detaches it on return, so every
+        // frame from the SAME .NET render thread arrived on a NEW java.lang.Thread
+        // ("Thread-4", then "Thread-5"), which made thread identity meaningless on this
+        // side and paid an attach per frame. Attached once, the render thread is one
+        // daemon Thread named BlazorNative-Render for its life (JNA detaches it when the
+        // native thread exits), and [checkFrameProducer] can compare identities.
+        com.sun.jna.Native.setCallbackThreadInitializer(
+            callback,
+            com.sun.jna.CallbackThreadInitializer(true, false, RENDER_THREAD_NAME),
+        )
+    }
+
+    /** The thread that delivered this runtime's first frame; see [checkFrameProducer]. */
+    private val frameProducer = java.util.concurrent.atomic.AtomicReference<Thread?>(null)
+
+    /**
+     * Phase 16.1, the single-producer check. The first frame records the thread
+     * that delivered it; a later frame from a DIFFERENT thread is reported to
+     * [onError] and still delivered. Every frame of a session comes from .NET's
+     * render thread, so a report means a second producer: two sessions framing
+     * into one runtime (start() again after shutdown), or a runtime change that
+     * frames on another thread. Android's WidgetMapper buffers patches in an
+     * unsynchronized list until CommitFrame, which is only safe with one
+     * producer. The check lives here rather than in WidgetMapper because this
+     * shared class is what the JVM suite can build; FrameProducerTest pins it.
+     * Internal so that test can drive it directly.
+     */
+    internal fun checkFrameProducer(current: Thread = Thread.currentThread()) {
+        if (frameProducer.compareAndSet(null, current)) return
+        val first = frameProducer.get()
+        if (first !== current) {
+            val msg = "frame delivered on thread '${current.name}', but this runtime's frames " +
+                "come from '${first?.name}': a second frame producer (single-producer contract)"
+            onError(msg, IllegalStateException(msg))
         }
     }
 
@@ -95,9 +146,11 @@ class BlazorNativeRuntime(
      *
      * Args cross the ABI as FlatJson `{"name":…}` / `{"name":…,"payload":…}`
      * (the payload key is OMITTED when [payload] is null — .NET-side absent
-     * key maps to null EventArgs payload). Any re-render's frame callback has
-     * completed before the underlying export returns (synchronous dispatch
-     * contract in Exports.cs).
+     * key maps to null EventArgs payload). Since Phase 16.1 the export returns
+     * once the handler's SYNCHRONOUS part has run: a re-render from that part
+     * has been delivered by then, on .NET's render thread, but a handler that
+     * awaits frees the lane at its first await, and its later re-renders
+     * arrive afterwards, from a continuation, with no call in progress.
      *
      * Non-zero return codes are routed to [onError] (the tap is dropped):
      * rc 1 = nothing mounted (shell bug — dispatch before start()), rc 2 =
@@ -168,8 +221,9 @@ class BlazorNativeRuntime(
      * marshals through the SAME single [dispatchLane] as [dispatchEvent] —
      * post-boot .NET entry stays serialized on `BlazorNative-Dispatch`, the
      * documented threading contract — but BLOCKS the caller until the
-     * dispatch (including its synchronous re-render frame deliveries, which
-     * run on the lane thread) has completed, and returns the raw rc
+     * export has returned (the handler's synchronous part and its re-render
+     * frames, delivered on .NET's render thread; since Phase 16.1 not the
+     * work after an await), and returns the raw rc
      * (0/1/2/3 — [dispatchEvent]'s table; non-zero is DATA to this caller,
      * not an onError event). Safe to call from any thread EXCEPT the dispatch
      * lane itself — concurrent callers queue up behind each other on the
@@ -267,9 +321,9 @@ class BlazorNativeRuntime(
     /**
      * Phase 5.1 — the HOST-blocking host-event dispatch (the predictive-back
      * production path, Gate 3): marshals through the SAME single [dispatchLane]
-     * (post-boot .NET entry stays serialized) but BLOCKS until the dispatch —
-     * including any synchronous re-render / swap frame deliveries on the lane
-     * thread — has completed, and returns the raw rc (0 handled / 1 not handled
+     * (post-boot .NET entry stays serialized) but BLOCKS until the export has
+     * returned — including any synchronous re-render / swap frame deliveries,
+     * made on .NET's render thread — and returns the raw rc (0 handled / 1 not handled
      * → the shell finishes / 2 faulted). Safe from any thread EXCEPT the
      * dispatch lane itself (a call from the lane would self-deadlock, same as
      * [dispatchEventAndWait]). A throw from the dispatch core is rethrown
@@ -310,7 +364,8 @@ class BlazorNativeRuntime(
     /**
      * Boots the runtime: init → register frame callback → mount. The first
      * frame callback fires synchronously INSIDE the mount call (sync mount
-     * contract), on the calling thread.
+     * contract): delivered on .NET's render thread while the calling thread
+     * waits in the export (Phase 16.1).
      *
      * ACTIVITY-RECREATION CONTRACT: calling start() a second time in the same
      * process (e.g. from a recreated Activity) is safe TODAY —
@@ -325,12 +380,23 @@ class BlazorNativeRuntime(
      * callback re-registration against the in-flight dispatch's frame
      * delivery. Secondary hazard: an old-lane dispatch that survives the
      * window delivers its re-render frame to the OLD onFrame (a destroyed
-     * Activity's views). BOTH are closed the same way: [retire] the old
-     * runtime (drains its lane) BEFORE constructing/starting the replacement.
-     * Frames still fire only inside host calls (mount OR dispatch_event — no
-     * free-running frame source), so a retired runtime is fully quiescent.
-     * Concurrent start() calls (multiple threads) are unguarded — callers
-     * must serialize.
+     * Activity's views). [retire] the old runtime (drains its lane) BEFORE
+     * constructing/starting the replacement: that closes the concurrent-entry
+     * hazard, and only that one.
+     *
+     * FRAMES ARE NOT CONFINED TO HOST CALLS (Phase 16.1). They come from .NET's
+     * render thread, during a host call OR later from a continuation: a handler
+     * that awaited a host call re-renders when that call completes, with no
+     * export in progress. So [retire] does NOT quiesce .NET: it drains only the
+     * Kotlin lane and never calls into the runtime, and a late continuation can
+     * still deliver a frame to the retired runtime's onFrame (until the
+     * replacement's start() re-registers the callback), and afterwards to the
+     * replacement's. RetireLateContinuationTest pins that hazard as it stands.
+     * [shutdown] IS quiescent: it calls `blazornative_shutdown`, which closes
+     * .NET's frame gate and waits out any callback in flight before it
+     * returns, so no frame reaches this runtime afterwards
+     * (ShutdownQuiescenceTest). Concurrent start() calls (multiple threads) are
+     * unguarded — callers must serialize.
      *
      * Returns human-readable status lines for a console pane.
      * Throws [IllegalStateException] on init/registration/mount failure.
@@ -415,7 +481,9 @@ class BlazorNativeRuntime(
      * (Activity recreation) — see the recreation contract on [start]: an
      * old-lane dispatch must never execute concurrently with the
      * replacement's start(). Does NOT touch the native session (that is
-     * [shutdown]'s job); idempotent.
+     * [shutdown]'s job); idempotent. NOT QUIESCENT: a handler continuation
+     * that resumes after this returns can still deliver a frame to this
+     * runtime's onFrame — see the recreation contract on [start].
      *
      * @return true when the lane drained in time; false on timeout — the
      *   in-flight dispatch is stuck inside the dll (log loudly; proceeding
@@ -429,7 +497,13 @@ class BlazorNativeRuntime(
     /**
      * Tears down the process-lifetime native session (retiring the dispatch
      * lane first — no event may enter the dll after the frame callback is
-     * cleared). Do NOT call this from Activity teardown (onDestroy) —
+     * cleared). QUIESCENT (Phase 16.1): `blazornative_shutdown` closes .NET's
+     * frame gate, waits for any callback in flight and clears the callback,
+     * then joins the render thread, BOUNDED at 5 s: the join times out when a
+     * handler never yields. Quiescence holds because of the gate, which stays
+     * closed whether or not the join finished, so no frame, not even one from
+     * a late continuation, reaches this runtime after it returns
+     * (ShutdownQuiescenceTest). Do NOT call this from Activity teardown (onDestroy) —
      * Activity recreation re-runs start() against the same process-global
      * session (see the recreation contract on [start]); shutting down between
      * recreations would kill the session the new Activity expects. Reserved
@@ -438,6 +512,11 @@ class BlazorNativeRuntime(
     fun shutdown() {
         retire()
         NativeBindings.INSTANCE.blazornative_shutdown()
+    }
+
+    internal companion object {
+        /** The JVM name of .NET's render thread while it delivers frames (see the init block). */
+        const val RENDER_THREAD_NAME = "BlazorNative-Render"
     }
 
     /** Caller-allocated NUL-terminated UTF-8 cstring for input pointers. */

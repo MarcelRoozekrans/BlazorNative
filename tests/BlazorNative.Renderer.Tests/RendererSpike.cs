@@ -104,8 +104,13 @@ public class RendererSpike
     // win-x64) — bound 600 KB (~2x slack for runtime/GC incidentals, per the
     // design's flake mitigation). What it catches: List resizes, boxing, an
     // accidental per-edit allocation joining the walk.
+    //
+    // Phase 16.1: the walk runs on the renderer's RENDER THREAD now, and
+    // GC.GetAllocatedBytesForCurrentThread() counts only the calling thread. Measured
+    // from the test thread it would see the marshalling and none of the walk, so the
+    // whole measurement runs ON the render thread, and a floor proves the walk was seen.
     [Fact]
-    public void RenderWalk_IsAllocationFree_OnSteadyState()
+    public async Task RenderWalk_IsAllocationFree_OnSteadyState()
     {
         var services = new ServiceCollection().AddBlazorNativeRenderer().BuildServiceProvider();
         using var renderer = new NativeRenderer(services);
@@ -113,18 +118,26 @@ public class RendererSpike
 
         int componentId = renderer.Mount<SteadyStateComponent>();
 
-        // Warm-up: JIT the walk + let Blazor's diff builder grow its pooled
-        // buffers to steady-state capacity (FrameArenaTests pattern).
-        for (int i = 0; i < 100; i++)
-            renderer.TriggerRootRenderForTests(componentId);
+        (long delta, int measuredOn) = await renderer.Dispatcher.InvokeAsync(() =>
+        {
+            // Warm-up: JIT the walk + let Blazor's diff builder grow its pooled
+            // buffers to steady-state capacity (FrameArenaTests pattern).
+            for (int i = 0; i < 100; i++)
+                renderer.TriggerRootRenderForTests(componentId);
 
-        long before = GC.GetAllocatedBytesForCurrentThread();
+            long before = GC.GetAllocatedBytesForCurrentThread();
 
-        for (int i = 0; i < 900; i++)
-            renderer.TriggerRootRenderForTests(componentId);
+            for (int i = 0; i < 900; i++)
+                renderer.TriggerRootRenderForTests(componentId);
 
-        long delta = GC.GetAllocatedBytesForCurrentThread() - before;
+            return (GC.GetAllocatedBytesForCurrentThread() - before, Environment.CurrentManagedThreadId);
+        });
 
+        Assert.Equal(renderer.RenderThreadId, measuredOn);
+        // Anti-vacuity floor: 900 frames allocate their envelopes by design (baseline
+        // 295200). Far below that, the measurement is not seeing the walk at all.
+        Assert.True(delta > 100_000,
+            $"measured only {delta} bytes across 900 re-renders — the measurement is not on the thread that runs the walk");
         Assert.True(delta < 600_000,
             $"Expected < 600000 managed bytes across 900 steady-state re-renders " +
             $"(measured baseline 295200 — see comment above), got {delta}");

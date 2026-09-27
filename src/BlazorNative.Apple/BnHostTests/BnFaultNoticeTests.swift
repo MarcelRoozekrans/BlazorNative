@@ -1,0 +1,118 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// BnFaultNoticeTests — Phase 16.1 (#8): the iOS arm of the FaultNotice host-call op.
+//
+// Since #345's fix a dispatch export returns once the handler's synchronous part has
+// run, so a fault AFTER the handler's first await can no longer be its rc 2. .NET
+// sends it instead as a FaultNotice: op 5 on the existing hostCallBegin slot, flat-JSON
+// args {handlerId, event, type, message}. This suite pins that AppleShellBridge routes
+// it to the live runtime's onError and completes it OK with no payload, returning 0.
+//
+// UNIT LAYER ONLY, the BnGeolocationTests house style: completions are captured
+// through BnGeolocation.completeHookForTest instead of crossing into .NET, and the
+// onError sink is a capturing BnRuntime installed as BnRuntime.shared for the test.
+//
+// DOES NOT COVER: that .NET SENDS the notice, which is FaultNoticeTests.cs; the round
+// trip through a booted NativeAOT session, which FaultNoticeTest.kt covers on the JVM
+// against the same .NET code; or the Android arm, which lives in the shared Kotlin
+// BridgeRegistrar.
+// ─────────────────────────────────────────────────────────────────────────────
+
+import XCTest
+import UIKit
+@testable import BnHost
+
+final class BnFaultNoticeTests: BnHostTestCase {
+
+    private static let noticeArgs =
+        "{\"handlerId\":\"7\",\"event\":\"click\",\"type\":\"System.InvalidOperationException\",\"message\":\"late\"}"
+
+    /// The completions the hook captured this test (id, status, payload), in order.
+    private var captured: [(id: Int64, status: Int32, payload: String?)] = []
+    /// What reached the runtime's onError this test, in order.
+    private var errors: [(message: String, error: Error)] = []
+    private var runtime: BnRuntime?
+    private var savedShared: BnRuntime?
+
+    override func setUp() {
+        super.setUp()
+        BnGeolocation.resetForTest()
+        captured = []
+        errors = []
+        savedShared = BnRuntime.shared
+        BnGeolocation.completeHookForTest = { [weak self] id, status, payload in
+            self?.captured.append((id, status, payload))
+            return 0
+        }
+    }
+
+    override func tearDown() {
+        BnRuntime.shared = savedShared
+        runtime = nil
+        BnGeolocation.resetForTest()
+        super.tearDown()
+    }
+
+    /// A never-booted runtime whose onError captures, installed as the one the bridge
+    /// routes to. Nothing here crosses into .NET.
+    private func installCapturingRuntime() {
+        let root = UIView(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+        let rt = BnRuntime(mapper: bnMapper(root: root))
+        rt.onError = { [weak self] msg, err in self?.errors.append((msg, err)) }
+        runtime = rt
+        BnRuntime.shared = rt
+    }
+
+    func testFaultNoticeIsOpFive() {
+        // The wire value, frozen: .NET's HostCallOp.FaultNotice and Kotlin's FAULT_NOTICE.
+        XCTAssertEqual(BnHostCallOp.faultNotice, 5)
+    }
+
+    func testAFaultNoticeRoutesToOnErrorAndCompletesOk() {
+        installCapturingRuntime()
+        let bridge = AppleShellBridge()
+
+        let rc = bridge.hostCallBegin(40, BnHostCallOp.faultNotice, Self.noticeArgs)
+
+        XCTAssertEqual(rc, 0, "hostCallBegin must return 0 for a FaultNotice")
+        XCTAssertEqual(errors.count, 1, "the notice must reach onError exactly once")
+        XCTAssertTrue(errors.first?.message.hasPrefix(
+            "handler fault after await: System.InvalidOperationException: late") == true,
+            "onError message was: \(errors.first?.message ?? "<none>")")
+        let fault = errors.first?.error as? BnFaultNotice
+        XCTAssertEqual(fault?.handlerId, "7")
+        XCTAssertEqual(fault?.eventName, "click")
+        XCTAssertEqual(fault?.type, "System.InvalidOperationException")
+        XCTAssertEqual(fault?.message, "late")
+
+        // Completed OK (0) with no payload, for THIS request, so .NET drops its entry.
+        XCTAssertEqual(captured.count, 1)
+        XCTAssertEqual(captured.first?.id, 40)
+        XCTAssertEqual(captured.first?.status, BnHostCallStatus.granted)
+        XCTAssertNil(captured.first?.payload)
+    }
+
+    func testAnUnknownOpStillTakesTheErrorBranch_Control() {
+        // Rule 3: the capture and the onError sink can tell the two branches apart. An op
+        // no shell knows completes with Error and never reaches onError on iOS.
+        installCapturingRuntime()
+        let bridge = AppleShellBridge()
+
+        let rc = bridge.hostCallBegin(41, 99, "{}")
+
+        XCTAssertEqual(rc, 0)
+        XCTAssertEqual(captured.map({ $0.status }), [BnHostCallStatus.error])
+        XCTAssertTrue(errors.isEmpty, "an unknown op must not be reported as a handler fault")
+    }
+
+    func testAFaultNoticeWithNoRuntimeIsStillCompletedOk() {
+        // Before boot, or under a test bundle that owns no session: logged through BnLog,
+        // and still answered, so .NET never waits on it.
+        BnRuntime.shared = nil
+        let bridge = AppleShellBridge()
+
+        let rc = bridge.hostCallBegin(42, BnHostCallOp.faultNotice, Self.noticeArgs)
+
+        XCTAssertEqual(rc, 0)
+        XCTAssertEqual(captured.map({ $0.status }), [BnHostCallStatus.granted])
+    }
+}

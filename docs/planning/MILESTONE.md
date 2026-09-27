@@ -64,15 +64,19 @@ and the back gesture always answers.**
 ## Phases
 
 1. Phase 16.0 — the render-thread spike [complete] — PROCEED, not a clean GO: 5 of 7, G1 and G6 fail as written with every failure fixable; 11 named 16.1 requirements; spike unmerged at 9df59f0 (#422)
-2. Phase 16.1 — the render thread [pending]
-3. Phase 16.2 — async faults [pending]
-4. Phase 16.3 — back and navigation off the main thread [pending]
-5. Phase 16.4 — starvation, measured [pending]
-6. Phase 16.5 — audit and close [pending]
+2. Phase 16.1 — the render thread, with async faults folded in from the former 16.2 [active]
+3. Phase 16.2 — back and navigation off the main thread [pending]
+4. Phase 16.3 — starvation, measured [pending]
+5. Phase 16.4 — audit and close [pending]
+
+> **Phases renumbered 2026-09-26, by owner decision.** Async fault delivery was folded into 16.1,
+> so no merged state exists in which a fault after the first await is only logged. That window is
+> what a separate 16.2 would have opened, and only a manual rule against merging a release PR would
+> have guarded it. Old 16.3–16.5 are now 16.2–16.4.
 
 **Ordering rationale.** 16.0 first because it is the only phase that can end the milestone: **a
-measured no-go stops M16 and goes to the owner.** 16.1 next. 16.2 and 16.3 each depend on 16.1 and
-not on each other. 16.4 needs 16.1's offload in place, or there is nothing new to measure.
+measured no-go stops M16 and goes to the owner.** 16.1 next. 16.2 depends on 16.1. 16.3 needs
+16.1's offload in place, or there is nothing new to measure. 16.4 audits.
 
 ## Risk areas
 
@@ -81,7 +85,7 @@ not on each other. 16.4 needs 16.1's offload in place, or there is nothing new t
 | **13.2's door is shut for a reason not yet found** | M16's core does not work | 16.0 is a spike with an explicit no-go that stops the milestone — not a phase that must succeed |
 | **Frames arriving after the export returns break shell assumptions** | Device-only glitches | The render thread is the only frame emitter, so frames stay serial; 16.1 audits Android's `pending` list and the iOS trampoline; both device lanes run every phase |
 | **The rc meaning changes quietly** | A third-party shell reads rc 0 as "handler finished" | The contract is written in the C header and `Exports.cs`, and called out in the changelog as a behaviour change |
-| **The `canGoBack` stale window** | A back press swallowed at root, or the app finishing one step early | 16.3 writes down which side wins and tests each direction |
+| **The `canGoBack` stale window** | A back press swallowed at root, or the app finishing one step early | 16.2 writes down which side wins and tests each direction |
 | **A threading bug only a device exposes** | Green CI, a hung phone | Both device lanes, `headSha` compared; the iOS twin pin makes iOS measurable |
 | **New pins that pass while checking nothing** | M15's lesson repeats inside M16 | The DoD applies the standard; every pin mutation-proven |
 
@@ -94,8 +98,8 @@ not on each other. 16.4 needs 16.1's offload in place, or there is nothing new t
 
 ## Open questions
 
-- **16.3:** which side wins in the `canGoBack` stale window.
-- **16.4:** whether #9 is fixed or re-ledgered — decided on measurement.
+- **16.2:** which side wins in the `canGoBack` stale window.
+- **16.3:** whether #9 is fixed or re-ledgered — decided on measurement.
 
 ## Audit History
 

@@ -56,11 +56,13 @@ public sealed class CameraAbiUnchangedTests
         // The ONLY op-enum change: Camera = 4 beside Geolocation = 0, Notifications = 1,
         // Biometrics = 2, SecureStorage = 3. An enum value is wire vocabulary carried on
         // the existing `int op` field — not a struct grow, not an export, not a
-        // drift-pin move.
-        Assert.Equal(0, (int)NativeShellBridge.HostCallOp.Geolocation);
-        Assert.Equal(1, (int)NativeShellBridge.HostCallOp.Notifications);
-        Assert.Equal(2, (int)NativeShellBridge.HostCallOp.Biometrics);
-        Assert.Equal(3, (int)NativeShellBridge.HostCallOp.SecureStorage);
-        Assert.Equal(4, (int)NativeShellBridge.HostCallOp.Camera);
+        // drift-pin move. Phase 16.1 moved the enum into src/wire-vocabulary.json
+        // codegen and added FaultNotice = 5 the same way; these values are unchanged.
+        Assert.Equal(0, (int)HostCallOp.Geolocation);
+        Assert.Equal(1, (int)HostCallOp.Notifications);
+        Assert.Equal(2, (int)HostCallOp.Biometrics);
+        Assert.Equal(3, (int)HostCallOp.SecureStorage);
+        Assert.Equal(4, (int)HostCallOp.Camera);
+        Assert.Equal(5, (int)HostCallOp.FaultNotice);
     }
 }

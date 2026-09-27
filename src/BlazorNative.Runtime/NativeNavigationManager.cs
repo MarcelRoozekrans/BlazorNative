@@ -16,8 +16,9 @@ namespace BlazorNative.Runtime;
 // NativeNavigationManager — Phase 3.5 (design §1, M3 DoD #7)
 //
 // The INavigationManager implementation for the native shell. NavigateToAsync
-// runs the whole swap SYNCHRONOUSLY (inline dispatcher / sync bridge
-// contract), in this order — the order the Gate 1-3 tests pin:
+// runs the whole swap SYNCHRONOUSLY (the renderer's entry points post to its
+// render thread and wait; sync bridge contract), in this order — the order
+// the Gate 1-3 tests pin:
 //   1. resolve the route (unknown → ArgumentException, strict conventions);
 //   2. notify the host via the 3.1 Navigate bridge callback (the host updates
 //      its @Volatile route + logs);
