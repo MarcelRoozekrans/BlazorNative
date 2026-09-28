@@ -49,6 +49,54 @@
 import Foundation
 import LocalAuthentication
 
+/// 16.4 (#438): times `LAContext` creation and warns ONCE per process when it is
+/// pathologically slow. Shared by BnBiometrics and BnSecureStorage, the two handlers
+/// that create contexts.
+///
+/// WHY IT EXISTS. Until 16.4 a cold `LAContext()` ran inside `hostCallBegin`, on the
+/// .NET render thread, so 16.3's slow-handler warning saw it: that line, "held the
+/// render thread for 33381 ms", was the only evidence of the worst sample. Moving the
+/// creation onto the handler's own queue fixed the contract and blinded that warning,
+/// so a recurrence would otherwise leave no trace. This line puts the trace back, at
+/// the call that is slow.
+///
+/// THE THRESHOLD, 5000 ms, and why. The phase record logged cold creation at 525, 909
+/// and 1667 ms, warm at 3 to 5 ms, and one synchronous part of 33381 ms that was almost
+/// all creation. 5 s is three times the slowest normal cold start, so an ordinary
+/// first prompt never warns, and it is six times below the boot tests' 30 s wait, so a
+/// recurrence of the 33 s case is logged long before a test gives up. It is also a
+/// delay no user should see before a Face ID sheet appears.
+///
+/// ONCE PER PROCESS, one flag for both handlers: a cold start is a property of the
+/// process, and after the first slow creation every later one is warm. The message
+/// carries a duration and constant text only, never a reason string, key or value, so
+/// it is written with `.safe` privacy: redacting it would erase the one number it
+/// exists to report. It is a diagnostic and is not pinned by a test.
+enum BnLAContextTiming {
+    static let slowCreationThresholdMs: UInt64 = 5_000
+
+    private static let lock = NSLock()
+    private static var warned = false
+
+    static func timed(_ category: String, _ create: () -> LAContext) -> LAContext {
+        let start = DispatchTime.now().uptimeNanoseconds
+        let context = create()
+        let elapsedMs = (DispatchTime.now().uptimeNanoseconds - start) / 1_000_000
+        guard elapsedMs > slowCreationThresholdMs else { return context }
+        lock.lock()
+        let first = !warned
+        warned = true
+        lock.unlock()
+        if first {
+            BnLog.warn(category, "slow LAContext creation: \(elapsedMs) ms, over the "
+                + "\(slowCreationThresholdMs) ms threshold. A cold LocalAuthentication start; "
+                + "the first biometric prompt waits for it. Warned once per process.",
+                privacy: .safe)
+        }
+        return context
+    }
+}
+
 /// The wire-mirrored biometric status (mirror of .NET BiometricStatus / Kotlin
 /// BiometricStatus, byte-identical — SIX values). Failure (1), cancellation (2),
 /// unavailability (3), lockout (4) and error (5) are all VALUES the awaiting .NET
@@ -233,8 +281,10 @@ final class BnBiometrics {
         }
     }
 
+    /// Every context this handler creates, for `check` and for `armEvaluation`, comes
+    /// from here, timed by `BnLAContextTiming` so a pathological cold start is logged.
     private static func makeContext() -> LAContext {
-        contextFactoryForTest?() ?? LAContext()
+        BnLAContextTiming.timed("BnBiometrics") { contextFactoryForTest?() ?? LAContext() }
     }
 
     private func finishAuthenticate(_ requestId: Int64, success: Bool, error: Error?) {

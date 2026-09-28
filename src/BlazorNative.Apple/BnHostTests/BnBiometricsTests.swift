@@ -386,6 +386,13 @@ final class BnBiometricsTests: BnHostTestCase {
     /// yet sent, the request is in flight by construction.
     ///
     /// It checks BEFORE it yields to the run loop; the reply-arming pin relies on that.
+    ///
+    /// A TIMEOUT DIAGNOSES ITSELF (16.4). Since the context moved off the render thread,
+    /// 16.3's slow-handler line no longer sees a cold `LAContext()`, so the failure says
+    /// which side of the record it stopped on. Recorded but not armed means the queue
+    /// was still creating the context: a cold LocalAuthentication start, #438's S1,
+    /// accepted as real first-prompt latency. Not recorded means the tap never reached
+    /// the op.
     private func awaitArmedReply(_ box: ArmedReply, on bio: BnBiometrics, deadline seconds: TimeInterval,
                                  file: StaticString = #filePath, line: UInt = #line) -> ((Bool, Error?) -> Void)? {
         let end = Date().addingTimeInterval(seconds)
@@ -395,7 +402,20 @@ final class BnBiometricsTests: BnHostTestCase {
                               file: file, line: line)
                 return reply
             }
-            if Date() >= end { return nil }
+            if Date() >= end {
+                let message: String
+                if bio.hasInFlightRequestForTest() {
+                    message = "no reply armed within \(seconds) s, but the request IS recorded "
+                        + "(hasInFlightRequestForTest() == true): stuck between the record and the arming, "
+                        + "which is LAContext creation on the biometrics queue, a cold LocalAuthentication "
+                        + "start, #438 S1. Look for the 'slow LAContext creation' warning."
+                } else {
+                    message = "no reply armed within \(seconds) s and no request recorded "
+                        + "(hasInFlightRequestForTest() == false): the tap never reached the biometrics op."
+                }
+                XCTFail(message, file: file, line: line)
+                return nil
+            }
             RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.05))
         }
     }

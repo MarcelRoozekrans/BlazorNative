@@ -78,8 +78,14 @@
 // Keychain calls, which are synchronous IPC to securityd, and on the auth paths an
 // `LAContext()`, whose first creation in a process is a cold cost of up to seconds.
 // Since 16.1 the caller is the .NET RENDER thread. Now `begin` parses and enqueues, and
-// the action runs on `workQueue`, a serial queue this handler owns, so a set and the
-// get that follows it keep their order. The cores `secureSet`, `secureGet` and
+// the action STARTS on `workQueue`, a serial queue this handler owns, so a set and the
+// get that follows it keep their order. Every action runs to its end there except one:
+// a getWithAuth of an auth-bound item arms the gate on the queue, and its completion,
+// `finishAuthorizedRead` with its `SecItemCopyMatching` on a device, runs wherever the
+// gate answers. In production that is LocalAuthentication's reply queue, which is
+// also off the calling thread; under the test seam it is the thread that calls the
+// gate. So the contract holds on every path, but "all Keychain work on workQueue" does
+// not. The cores `secureSet`, `secureGet` and
 // `secureDelete` stay synchronous, because the keystore-half tests call them directly;
 // only the op entry moved. The pin is `testHostCallBeginReturnsWhileContextCreationIsBlocked`
 // and its getWithAuth twin in BnSecureStorageTests.
@@ -178,7 +184,25 @@ final class BnSecureStorage {
     /// `authLabel` marker; on a REAL device the OS refusal (errSecInteractionNotAllowed) is
     /// authoritative and this is only a fast-path. Populated on an auth-bound set, cleared
     /// on delete / a plain overwrite. Static because the Keychain is process-global.
+    ///
+    /// Guarded by `authBoundAccountsLock`. Since 16.4 the op entry mutates it on
+    /// `workQueue` while tests call the cores directly on main, so every read and write
+    /// goes through the three accessors below.
     private static var authBoundAccounts: Set<String> = []
+    private static let authBoundAccountsLock = NSLock()
+
+    private static func markAuthBound(_ key: String) {
+        authBoundAccountsLock.lock(); authBoundAccounts.insert(key); authBoundAccountsLock.unlock()
+    }
+
+    private static func unmarkAuthBound(_ key: String) {
+        authBoundAccountsLock.lock(); authBoundAccounts.remove(key); authBoundAccountsLock.unlock()
+    }
+
+    private static func isMarkedAuthBound(_ key: String) -> Bool {
+        authBoundAccountsLock.lock(); defer { authBoundAccountsLock.unlock() }
+        return authBoundAccounts.contains(key)
+    }
 
     /// Intercepts the completion so a PURE unit test (no NativeAOT boot) observes the
     /// routed (requestId, status, payload) without a live .NET continuation.
@@ -198,7 +222,7 @@ final class BnSecureStorage {
         contextFactoryForTest = nil
         authGateHookForTest = nil
         lastSetAccessControlForTest = nil
-        authBoundAccounts = []
+        authBoundAccountsLock.lock(); authBoundAccounts = []; authBoundAccountsLock.unlock()
         completeHookForTest = nil
         lastHostCallCompleteRcForTest = Int32.min
     }
@@ -284,7 +308,7 @@ final class BnSecureStorage {
             // the account so it can still learn the item is auth-bound. On a real device
             // the OS refuses first, so these are sim affordances, not the security.
             query[kSecAttrLabel as String] = Self.authLabel
-            Self.authBoundAccounts.insert(key)
+            Self.markAuthBound(key)
             // The add must not itself prompt on the sim (there is no gesture to satisfy).
             // A context with interaction disabled keeps SecItemAdd non-interactive.
             let context = Self.makeContext()
@@ -319,7 +343,7 @@ final class BnSecureStorage {
     /// delete: drop the item. Idempotent — a missing item is still Ok (the Android twin).
     @discardableResult
     func secureDelete(key: String) -> Int32 {
-        Self.authBoundAccounts.remove(key)
+        Self.unmarkAuthBound(key)
         let status = SecItemDelete(baseQuery(key) as CFDictionary)
         if status == errSecSuccess || status == errSecItemNotFound { return BnSecureStorageStatus.ok }
         BnLog.error("BnSecureStorage", "delete('\(key)') SecItemDelete → OSStatus \(status)")
@@ -421,7 +445,7 @@ final class BnSecureStorage {
             let value = (dict[kSecValueData as String] as? Data).flatMap { String(data: $0, encoding: .utf8) }
             // Classify off the SHELL's own signals (cache/marker), never the sim's
             // unreliable kSecAttrAccessControl attribute (returned for plain items too).
-            let isAuthBound = Self.authBoundAccounts.contains(key)
+            let isAuthBound = Self.isMarkedAuthBound(key)
                 || (dict[kSecAttrLabel as String] as? String) == Self.authLabel
             if isAuthBound { return .authBound(value) }
             if let value = value { return .plain(value) }
@@ -455,8 +479,10 @@ final class BnSecureStorage {
         }
     }
 
+    /// Every context this handler creates comes from here, timed by `BnLAContextTiming`
+    /// (in BnBiometrics.swift) so a pathological cold start is logged.
     private static func makeContext() -> LAContext {
-        contextFactoryForTest?() ?? LAContext()
+        BnLAContextTiming.timed("BnSecureStorage") { contextFactoryForTest?() ?? LAContext() }
     }
 
     /// The flat string→string {"value":…} payload the wire carries — the SECOND user of
