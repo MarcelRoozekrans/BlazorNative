@@ -3533,7 +3533,7 @@ register in `docs/pin-standard.md` and in census rows 13a and 14a.
   commit with `--no-verify`, `2df5c94` in the reflog. It was reset at once with `--soft`, and it was
   never pushed.
 
-#### Phase 16.3: Starvation, measured [status: active]
+#### Phase 16.3: Starvation, measured [status: complete]
 **Goal:** With async offload in place, measure what a slow *synchronous* handler still costs, then
 fix #9 or re-ledger it with a new trigger; publish an app-author page on what runs where and what
 rc and async faults mean.
@@ -3541,6 +3541,7 @@ rc and async faults mean.
 **HelpWanted:** no
 **Design:** [`docs/superpowers/specs/2026-09-27-phase-16.3-design.md`](../superpowers/specs/2026-09-27-phase-16.3-design.md)
 **Plan:** [`docs/superpowers/plans/2026-09-27-phase-16.3-starvation.md`](../superpowers/plans/2026-09-27-phase-16.3-starvation.md)
+**Completed:** 2026-09-27 · [PR #437](https://github.com/MarcelRoozekrans/BlazorNative/pull/437) · #9 closed with evidence
 
 > **16.3 outcome: a slow synchronous handler now warns once, naming its own owner, instead of
 > silently starving the lane.** The measured cost is one-for-one with no fixed overhead, so the
