@@ -3634,7 +3634,7 @@ on this branch, so Android and iOS are carried forward unchanged.
 - **#9**, the phase's own tracking issue, to be closed after the phase PR merges, with an evidence
   comment pointing at the record and the counts above.
 
-#### Phase 16.4: The lost first tap (#438) [status: pending]
+#### Phase 16.4: The lost first tap (#438) [status: active]
 **Goal:** Find and fix why the first tap after a cold boot sometimes never reaches its host call on
 iOS — measured at 2 failures in 12 runs of `BnBiometricsTests.testAuthenticateBootDeniedIsDataWithinABoundedAwaitNoHang`,
 where 16.3's own slow-handler warning showed `BnSecureDemo.AuthenticateAsync`'s synchronous part
@@ -3644,6 +3644,8 @@ cause, and pin it. Inserted 2026-09-28 by owner decision, before the audit, beca
 FAIL on the tests item was already known.
 **Surface:** Mixed
 **HelpWanted:** no
+**Design:** [`docs/superpowers/specs/2026-09-28-phase-16.4-design.md`](../superpowers/specs/2026-09-28-phase-16.4-design.md)
+**Plan:** [`docs/superpowers/plans/2026-09-28-phase-16.4-lost-first-tap.md`](../superpowers/plans/2026-09-28-phase-16.4-lost-first-tap.md)
 
 #### Phase 16.5: Audit and close [status: pending]
 **Goal:** Run `audit-milestone` against the DoD on live evidence and close M16. **No tag**, per
