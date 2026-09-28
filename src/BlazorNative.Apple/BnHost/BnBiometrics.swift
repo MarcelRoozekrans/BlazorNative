@@ -32,6 +32,18 @@
 // — and CI asserts the authenticated path + the failed/cancelled/lockout/unavailable
 // matrix as DATA (no hang). The production `LAContext.evaluatePolicy` /
 // `canEvaluatePolicy` calls are unsuppressed and untouched.
+//
+// THE BEGIN CONTRACT, KEPT OFF THE CALLING THREAD (16.4, #438). `hostCallBegin` must
+// return at once; the outcome arrives later through `host_call_complete`. The first
+// `LAContext()` in a process is a cold, synchronous cost: 0.5 to 1.7 s on the simulator
+// lane, once about 33 s, against 3 to 5 ms warm. Until 16.4 it ran inside
+// `hostCallBegin`, so it held whatever thread called it, and since 16.1 that is the
+// .NET RENDER thread, on a user's first Authenticate. Now every LocalAuthentication
+// call, creating the context, `canEvaluatePolicy` and arming `evaluatePolicy`, runs on
+// `workQueue`, a serial queue this handler owns. `begin` only parses, records the
+// request and enqueues. The pin is `testHostCallBeginReturnsWhileContextCreationIsBlocked`
+// and its `check` twin in BnBiometricsTests, which block `contextFactoryForTest` and
+// require `hostCallBegin` to return while the factory is still blocked.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import Foundation
@@ -55,8 +67,23 @@ final class BnBiometrics {
 
     private let lock = NSLock()
 
+    /// Serial, owned by this handler: every LocalAuthentication call runs here, never on
+    /// the thread that called `hostCallBegin` (see THE BEGIN CONTRACT in the header).
+    /// Serial so requests keep their order, and so `drainForTest` is a barrier.
+    private let workQueue = DispatchQueue(label: "io.blazornative.biometrics", qos: .userInitiated)
+
     /// The single in-flight requestId (one authenticate per op — the one-in-flight
     /// rule). `complete(...)` consumes it (one-shot), so a late/duplicate reply no-ops.
+    ///
+    /// WHAT IT MEANS, AND WHAT IT DOES NOT (16.4, #438). It is published in `begin`, on
+    /// the calling thread, BEFORE the evaluation is armed on `workQueue`. So it means
+    /// "the request is recorded", NOT "the reply is armed". That order is required, not
+    /// incidental: an evaluation, or the test seam standing in for it, may reply
+    /// synchronously, and `complete` clears the slot only when the id matches, so a
+    /// record written after the reply would leave a stale in-flight id behind. No
+    /// production code waits on this flag; only `complete` reads it, and
+    /// `hasInFlightRequestForTest` exposes it. A caller that needs the evaluation armed
+    /// must wait for the arming itself, which is what the boot tests do since 16.4.
     private var inFlightRequestId: Int64?
 
     /// STRONG. The `LAContext` under evaluation — held for the call's duration so a
@@ -83,6 +110,17 @@ final class BnBiometrics {
     /// the real `blazornative_host_call_complete` export is called.
     static var completeHookForTest: ((Int64, Int32, String?) -> Int32)?
 
+    /// Replaces `LAContext()` so a test can make context creation SLOW on demand, by
+    /// blocking inside the factory, and prove `hostCallBegin` does not wait for it (the
+    /// begin-contract pin). Null in production → a real `LAContext()`.
+    static var contextFactoryForTest: (() -> LAContext)?
+
+    /// Runs on `workQueue` after the context exists and before the evaluation is armed:
+    /// the window in which `hasInFlightRequestForTest()` is already true but no reply is
+    /// armed yet. A test blocks here to hold that window open deterministically (the
+    /// reply-arming pin). Null in production.
+    static var beforeEvaluationArmedHookForTest: (() -> Void)?
+
     /// The rc of the most recent `blazornative_host_call_complete` — 0 = delivered to a
     /// live .NET continuation, 1 = unknown/already-completed id (benign). Int32.min
     /// before any completion. The BnGeolocation/BnNotifications twin.
@@ -92,8 +130,15 @@ final class BnBiometrics {
         canEvaluatePolicyOverrideForTest = nil
         evaluatePolicyReplyOverrideForTest = nil
         completeHookForTest = nil
+        contextFactoryForTest = nil
+        beforeEvaluationArmedHookForTest = nil
         lastHostCallCompleteRcForTest = Int32.min
     }
+
+    /// Returns once everything already enqueued on `workQueue` has run. The queue is
+    /// serial, so this is a barrier: a unit test calls it after `hostCallBegin` instead
+    /// of sleeping. Never call it from `workQueue` itself.
+    func drainForTest() { workQueue.sync {} }
 
     func clearInFlightForTest() { lock.lock(); inFlightRequestId = nil; inFlightContext = nil; lock.unlock() }
     func hasInFlightRequestForTest() -> Bool { lock.lock(); defer { lock.unlock() }; return inFlightRequestId != nil }
@@ -105,14 +150,18 @@ final class BnBiometrics {
 
     /// action=check is the read-only availability peek (never prompts — the geolocation
     /// `mode:check` sibling); action=authenticate presents the Face/Touch ID prompt and
-    /// maps its outcome to a status. Returns FAST (the begin contract); the terminal
-    /// status is a deferred `complete(...)`.
+    /// maps its outcome to a status. Returns FAST (the begin contract): both actions do
+    /// their LocalAuthentication work on `workQueue`, and the terminal status is a
+    /// deferred `complete(...)`.
     func begin(requestId: Int64, argsJson: String) {
         let args = BnFlatJson.parseObject(argsJson) ?? [:]
         let action = args["action"] ?? "authenticate"
         switch action {
         case "check":
-            complete(requestId, canAuthenticateStatus(), nil)
+            workQueue.async { [weak self] in
+                guard let self = self else { return }
+                self.complete(requestId, self.canAuthenticateStatus(), nil)
+            }
         case "authenticate":
             authenticate(requestId: requestId, reason: args["reason"] ?? "Authenticate")
         default:
@@ -141,7 +190,7 @@ final class BnBiometrics {
             (canEvaluate, error) = override()
         } else {
             var err: NSError?
-            canEvaluate = LAContext().canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &err)
+            canEvaluate = Self.makeContext().canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &err)
             error = err
         }
         if canEvaluate { return BnBiometricStatus.authenticated }
@@ -149,14 +198,29 @@ final class BnBiometrics {
     }
 
     /// Presents the Face/Touch ID prompt (or the seam reply) and maps the outcome. The
-    /// requestId + the LAContext are recorded synchronously BEFORE the async evaluation
-    /// so a reply can never precede the record.
+    /// requestId is recorded synchronously, on the calling thread, BEFORE any evaluation
+    /// is armed, so a reply can never precede the record. Everything else, the cold
+    /// `LAContext()` included, runs on `workQueue`, so `begin` returns at once.
     private func authenticate(requestId: Int64, reason: String) {
-        let context = LAContext()
         lock.lock()
         inFlightRequestId = requestId
-        inFlightContext = context // retained for the call's duration (see the file header)
         lock.unlock()
+        workQueue.async { [weak self] in
+            self?.armEvaluation(requestId: requestId, reason: reason)
+        }
+    }
+
+    /// On `workQueue`: create and retain the context, then arm the evaluation.
+    private func armEvaluation(requestId: Int64, reason: String) {
+        let context = Self.makeContext()
+        lock.lock()
+        // Retained for the call's duration (see the file header), but only while this
+        // request is still the in-flight one, so a request cleared or superseded while it
+        // waited on the queue cannot pin a context that no completion will release.
+        if inFlightRequestId == requestId { inFlightContext = context }
+        lock.unlock()
+
+        Self.beforeEvaluationArmedHookForTest?()
 
         if let override = Self.evaluatePolicyReplyOverrideForTest {
             override(reason) { [weak self] success, error in
@@ -167,6 +231,10 @@ final class BnBiometrics {
         context.evaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, localizedReason: reason) { [weak self] success, error in
             self?.finishAuthenticate(requestId, success: success, error: error)
         }
+    }
+
+    private static func makeContext() -> LAContext {
+        contextFactoryForTest?() ?? LAContext()
     }
 
     private func finishAuthenticate(_ requestId: Int64, success: Bool, error: Error?) {
