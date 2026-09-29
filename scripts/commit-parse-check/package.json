@@ -4,6 +4,6 @@
   "description": "Runs release-please's own commit parser over a PR's commits, so a message it would silently drop reds before merge (#302).",
   "license": "UNLICENSED",
   "dependencies": {
-    "release-please": "17.6.0"
+    "release-please": "17.11.2"
   }
 }
